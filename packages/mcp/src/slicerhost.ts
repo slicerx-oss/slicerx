@@ -41,6 +41,30 @@ function positionsFromParts(parts: MeshPart[]): Float32Array {
   return new Float32Array(out)
 }
 
+/**
+ * Triangles (three positions each, as an STL stores them) as an indexed mesh: corners at the same position
+ * share one vertex. Without it every edge looks open, and a mesh check calls a closed STL leaky.
+ */
+export function weld(soup: Float32Array): { positions: Float32Array; indices: Uint32Array } {
+  const index = new Map<string, number>()
+  const positions: number[] = []
+  const indices = new Uint32Array(soup.length / 3)
+  for (let v = 0; v < indices.length; v++) {
+    const x = soup[v * 3] ?? 0
+    const y = soup[v * 3 + 1] ?? 0
+    const z = soup[v * 3 + 2] ?? 0
+    const key = `${x},${y},${z}`
+    let i = index.get(key)
+    if (i === undefined) {
+      i = positions.length / 3
+      index.set(key, i)
+      positions.push(x, y, z)
+    }
+    indices[v] = i
+  }
+  return { positions: new Float32Array(positions), indices }
+}
+
 /** Keys that differ from the schema defaults: what profiles and overrides chose, which is all an engine with its own defaults needs. */
 export function explicitKeys(config: PrintConfig): Record<string, SettingValue> {
   const defaults = defaultConfig()
@@ -156,8 +180,7 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
     parts(meshId) {
       const m = meshes.get(meshId)
       if (!m) return []
-      const n = m.positions.length / 3
-      return [{ name: m.handle.name, slot: 1, positions: m.positions, indices: Uint32Array.from({ length: n }, (_, i) => i) }]
+      return [{ name: m.handle.name, slot: 1, ...weld(m.positions) }]
     },
     minCorner(meshId) {
       return meshes.get(meshId)?.minMm ?? [0, 0, 0]

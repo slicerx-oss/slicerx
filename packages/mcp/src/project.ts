@@ -209,9 +209,25 @@ export class McpProject implements PilotProject {
     return { bed: { widthMm: width, depthMm: depth, heightMm: height }, objects }
   }
 
-  replaceObjects(ids: string[], replacements: ProjectObject[]): void {
+  /**
+   * Replaces objects with others (cut parts, a repaired or hollowed mesh). Each replacement's geometry is
+   * loaded, so it slices; a replacement that keeps an object's id keeps its rotation.
+   */
+  async replaceObjects(ids: string[], replacements: ProjectObject[]): Promise<void> {
+    const loaded = await Promise.all(
+      replacements.map(async (r): Promise<Entry> => {
+        const parts = r.mesh ? await r.mesh() : []
+        if (parts.length === 0) return { obj: r }
+        const handle = await this.host.loadParts(r.name, parts)
+        return { obj: { ...r, triangles: handle.triangles, mesh: async () => this.host.parts(handle.id) }, meshId: handle.id }
+      }),
+    )
+    const rotations = new Map(ids.map((id) => [id, this.entries.get(id)?.rotate]))
     for (const id of ids) this.entries.delete(id)
-    for (const r of replacements) this.entries.set(r.id, { obj: r })
+    for (const e of loaded) {
+      const rotate = rotations.get(e.obj.id)
+      this.entries.set(e.obj.id, rotate ? { ...e, rotate } : e)
+    }
     for (const p of this.layout) p.items = p.items.filter((i) => !ids.includes(i.objectId))
     const first = this.layout[0]
     if (first) for (const r of replacements) first.items.push({ objectId: r.id, copies: 1 })

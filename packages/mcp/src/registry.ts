@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ApprovalToken, ApprovalVerifier, PilotContext, PrinterHost, SettingValue } from '@slicerx/contracts'
 import { hashParams } from '@slicerx/contracts'
-import { builtinTools, createCombinedPlanner, createKnowledgeBase, pluginToolsFrom, type KbIndex, type KnowledgeBase, type PilotTool, type SettingsPlanner, type ToolContext, type ToolHost } from '@slicerx/pilot'
+import { builtinTools, createAppFunctionTools, createCombinedPlanner, createKnowledgeBase, createShared, pluginToolsFrom, type GeomHost, type KbIndex, type KnowledgeBase, type PilotTool, type SettingsPlanner, type ToolContext, type ToolHost } from '@slicerx/pilot'
 import kbIndex from '@slicerx/pilot/kb.json' with { type: 'json' }
 import type { ProjectRef } from './tools'
 import type { NodeSlicerHost } from './slicerhost'
@@ -15,9 +15,15 @@ import type { NodeSlicerHost } from './slicerhost'
 /** Tools that need the app itself (its command palette, a web search key, the report card). */
 const APP_ONLY = new Set(['pilot.report', 'web.lookup'])
 
-/** mimir's built-in tools, minus the ones that need the app itself. */
+/**
+ * mimir's built-in tools, minus the ones that need the app itself, plus the checks and project
+ * operations the app runs as plain functions (gcode_inspect, risk_report, supports, ams_mapping and the
+ * rest), so a client can do what a person does from the app's panels. They share one state, so the
+ * checks read the plates slicerx_slice sliced.
+ */
 export function pilotTools(planner: SettingsPlanner): PilotTool<never>[] {
-  return builtinTools({ planner, commands: [] }).filter((t) => !APP_ONLY.has(t.name) && t.source !== 'command')
+  const shared = createShared()
+  return [...builtinTools({ planner, commands: [], shared }), ...createAppFunctionTools(shared)].filter((t) => !APP_ONLY.has(t.name) && t.source !== 'command')
 }
 
 /**
@@ -60,6 +66,8 @@ export interface ContextDeps {
   profiles: NonNullable<ToolHost['profiles']>
   kb: KnowledgeBase
   setup?: NonNullable<ToolHost['setup']>
+  /** sx-geom, for the tools that measure or change meshes (mesh_analyze, mesh_repair, hollow and the rest). */
+  geom?: GeomHost
   project: ProjectRef
   today(): string
 }
@@ -77,7 +85,7 @@ export function toolContext(deps: ContextDeps, token: ApprovalToken | undefined,
     ...(machine ? { machine } : {}),
   }
   return {
-    host: { printers: deps.printers ?? NO_PRINTERS, slicer: deps.slicer, profiles: deps.profiles, ...(deps.setup ? { setup: deps.setup } : {}) },
+    host: { printers: deps.printers ?? NO_PRINTERS, slicer: deps.slicer, profiles: deps.profiles, ...(deps.setup ? { setup: deps.setup } : {}), ...(deps.geom ? { geom: deps.geom } : {}) },
     sessionId: 'mcp',
     callId: `call-${Math.random().toString(36).slice(2, 10)}`,
     signal,
