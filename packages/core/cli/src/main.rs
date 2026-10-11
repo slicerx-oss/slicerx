@@ -6,6 +6,7 @@
 //! sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]
 //! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions]
 //! sx schema [request | result]
+//! sx --version
 //! sx metadata <project.3mf>
 //! sx bench --config <bench.json> [--runs 15] [--warmup 3] [--threads N]
 //!          [--append <results.jsonl>] [--change <text>] [--ab <baseline sx>]
@@ -55,9 +56,14 @@ fn main() -> ExitCode {
         Some("metadata") => cmd_metadata(&args[1..]),
         Some("bench") => cmd_bench(&args[1..]),
         Some("time") => cmd_time(&args[1..]),
+        // Which engine this is, for a host checking the binary it ships or finds.
+        Some("--version" | "-V") => {
+            println!("sx {}", env!("CARGO_PKG_VERSION"));
+            return ExitCode::SUCCESS;
+        }
         _ => {
             eprintln!(
-                "usage: sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [-o out.gcode] [--preview out.sxpv]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
+                "usage: sx --version\n       sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [-o out.gcode] [--preview out.sxpv]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
             );
             return ExitCode::from(2);
         }
