@@ -33,9 +33,9 @@ export function useScope(): { scope: SettingsScope; name: string } {
 }
 
 /**
- * The pill: Plate, or the selection with how many settings it has of its own. One row of the same height whatever is
- * selected, so nothing under it moves as a selection starts or ends: with nothing selected the second option waits,
- * unavailable. What a change reaches is in each option's tip.
+ * The switch, flat in the card like the other segmented controls: Plate, or the selection with how many settings it
+ * has of its own. One row of the same height whatever is selected, so nothing under it moves as a selection starts or
+ * ends: with nothing selected the second option waits, unavailable. What a change reaches is in each option's tip.
  */
 export function ScopeBar() {
   const ids = useApp((s) => selectedIds(s).length)
@@ -74,7 +74,7 @@ export function ScopeBar() {
         label="Settings apply to"
         full
         size="sm"
-        className="scope-seg sx-overlay"
+        className="scope-seg"
         value={scope.kind === 'plate' ? 'plate' : 'objects'}
         onChange={(v) => set({ settingsScope: v })}
         options={[
