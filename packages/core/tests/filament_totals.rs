@@ -52,7 +52,7 @@ fn cube() -> Arc<Mesh> {
     Arc::new(Mesh::load(&bytes, "cube.stl").unwrap())
 }
 
-fn slice(config: Map<String, Value>, objects: Value) -> api::SliceRun {
+fn slice(config: Map<String, Value>, objects: &Value) -> api::SliceRun {
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": objects},
         "config": Value::Object(config),
@@ -66,7 +66,7 @@ fn slice(config: Map<String, Value>, objects: Value) -> api::SliceRun {
 fn one_cube(config: Map<String, Value>) -> api::SliceRun {
     slice(
         config,
-        json!([{"id": "a", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 100, 0, 1]}]),
+        &json!([{"id": "a", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 100, 0, 1]}]),
     )
 }
 
@@ -155,7 +155,7 @@ fn each_filament_converts_with_its_own_diameter() {
         c.insert("nozzle_temperature".into(), json!([210, 210]));
         slice(
             c,
-            json!([
+            &json!([
                 {"id": "a", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 60, 100, 0, 1]},
                 {"id": "b", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 140, 100, 0, 1],
                  "slotOverrides": {"cube.stl": 2}},
