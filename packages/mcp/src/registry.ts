@@ -10,6 +10,7 @@ import { hashParams } from '@slicerx/contracts'
 import { builtinTools, createAppFunctionTools, createCombinedPlanner, createKnowledgeBase, createShared, pluginToolsFrom, type GeomHost, type KbIndex, type KnowledgeBase, type PilotTool, type SettingsPlanner, type ToolContext, type ToolHost } from '@slicerx/pilot'
 import kbIndex from '@slicerx/pilot/kb.json' with { type: 'json' }
 import type { ProjectRef } from './tools'
+import type { McpProject } from './project'
 import type { NodeSlicerHost } from './slicerhost'
 
 /** Tools that need the app itself (its command palette, a web search key, the report card). */
@@ -76,6 +77,15 @@ const NO_PRINTERS: PrinterHost = new Proxy({} as PrinterHost, {
   get: () => () => Promise.reject(Object.assign(new Error('Printer access is off on this server (--printers off).'), { code: 'not_supported' })),
 })
 
+/** The slicer the tools use, adding the project's height ranges (slicerx_project_height_ranges) to each slice of a plate. */
+function withHeightRanges(slicer: NodeSlicerHost, project: McpProject): NodeSlicerHost {
+  if (project.heightRanges().length === 0) return slicer
+  return {
+    ...slicer,
+    slice: (req, opts) => slicer.slice({ ...req, options: { ...req.options, heightRanges: [...(req.options?.heightRanges ?? []), ...project.heightRangesFor(req.plate)] } }, opts),
+  }
+}
+
 /** Builds the ToolContext each call runs with. */
 export function toolContext(deps: ContextDeps, token: ApprovalToken | undefined, signal: AbortSignal, progress?: (line: string, fraction?: number) => void): ToolContext {
   const project = deps.project.current
@@ -85,7 +95,7 @@ export function toolContext(deps: ContextDeps, token: ApprovalToken | undefined,
     ...(machine ? { machine } : {}),
   }
   return {
-    host: { printers: deps.printers ?? NO_PRINTERS, slicer: deps.slicer, profiles: deps.profiles, ...(deps.setup ? { setup: deps.setup } : {}), ...(deps.geom ? { geom: deps.geom } : {}) },
+    host: { printers: deps.printers ?? NO_PRINTERS, slicer: project ? withHeightRanges(deps.slicer, project) : deps.slicer, profiles: deps.profiles, ...(deps.setup ? { setup: deps.setup } : {}), ...(deps.geom ? { geom: deps.geom } : {}) },
     sessionId: 'mcp',
     callId: `call-${Math.random().toString(36).slice(2, 10)}`,
     signal,

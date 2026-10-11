@@ -5,7 +5,7 @@
 // before the core ships.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import type { SettingValue } from '@slicerx/contracts'
+import type { HeightRange, SettingValue, VolumeRole } from '@slicerx/contracts'
 import { readStl } from './mesh'
 import { ToolInputError } from './models'
 
@@ -31,7 +31,21 @@ export interface SliceJob {
   /** Paint written over the model's own (sx engine, one object): { part: { color | seam | support | fuzzy: { triangle: text } } }. */
   paint?: Record<string, Record<string, Record<string, string>>>
   /** A whole plate: every object's mesh file and transform (sx engine). `modelPath` is then a combined STL for engines that take one file. */
-  plate?: { bed?: { widthMm: number; depthMm: number; heightMm: number }; objects: { path: string; name: string; transform?: number[] }[] }
+  plate?: { bed?: { widthMm: number; depthMm: number; heightMm: number }; objects: SliceJobObject[] }
+  /** Settings by height (sx engine); `objects` names the plate objects by their `id`. */
+  heightRanges?: HeightRange[]
+}
+
+export interface SliceJobObject {
+  path: string
+  name: string
+  /** The plate object's id, which height ranges name. */
+  id?: string
+  transform?: number[]
+  /** The object's own settings (sx engine). */
+  settings?: Record<string, SettingValue>
+  /** Cuts, support regions and settings modifiers in the object's own coordinates (sx engine). */
+  volumes?: { path: string; role: VolumeRole; name?: string; transform?: number[]; settings?: Record<string, SettingValue> }[]
 }
 
 export interface SliceSummary {

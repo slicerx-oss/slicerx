@@ -3,14 +3,36 @@
 // The project an MCP client works on: models, plates and settings, held in
 // memory by the server. mimir's skills (orient, arrange, cut, slice,
 // estimate) read and change it through the PilotProject interface.
-import type { MeshPart, PilotMachine, Plate, PlateObject, PrintConfig, SettingValue } from '@slicerx/contracts'
+import type { HeightRange, MeshPart, PilotMachine, Plate, PlateObject, PrintConfig, SettingValue, VolumeRole } from '@slicerx/contracts'
 import { rotationMatrix, type PilotProject, type ProjectObject, type ProjectPlate } from '@slicerx/pilot'
 import type { DataStore } from './data'
 import type { ProfileCatalog } from './profiles'
 import { isGcodeKey, SHIPPED_GCODE_SOURCES } from './config'
+import { ToolInputError } from './models'
 import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import type { NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
+
+/** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
+export interface ProjectVolume {
+  id: string
+  name: string
+  role: VolumeRole
+  meshId: string
+  /** What it is, for the read-back: `box 10 x 10 x 5 mm at [x, y, z]` and the like. */
+  shape: string
+  /** For a modifier: the settings inside it. */
+  settings?: Record<string, SettingValue>
+}
+
+/** Settings for a band of heights, mm above the bed, for every object or the ones named. */
+export interface ProjectHeightRange {
+  zFromMm: number
+  zToMm: number
+  settings: Record<string, SettingValue>
+  /** Project object ids; absent for every object. */
+  objects?: string[]
+}
 
 interface Entry {
   obj: ProjectObject
@@ -19,6 +41,27 @@ interface Entry {
   rotate?: [number, number, number]
   /** Parts the object was loaded with: the bodies of a file kept as one object (1 for a plain model). */
   parts?: number
+  /** Scale per axis in the object's own coordinates, applied before the rotation. 1 is as modeled. */
+  scale?: [number, number, number]
+  /** Center of the footprint on the bed, mm in bed coordinates, when a client placed it; otherwise it goes in the rows. */
+  position?: [number, number]
+  /** The object's own settings, over the project's and the plate's. */
+  settings?: Record<string, SettingValue>
+  volumes?: ProjectVolume[]
+}
+
+/** Where one copy sits on its plate. */
+export interface Placement {
+  /** The plate object id the slice uses: `<object id>-<copy>`. */
+  id: string
+  objectId: string
+  copy: number
+  /** Center of its footprint, mm in bed coordinates. */
+  centerMm: [number, number]
+  /** Size as placed (rotation and scale applied), mm. */
+  sizeMm: [number, number, number]
+  /** Placed by a client (slicerx_project_move) rather than in the rows. */
+  manual: boolean
 }
 
 export interface ProjectSettings {
@@ -47,7 +90,9 @@ export class McpProject implements PilotProject {
   private projectOverrides: Record<string, SettingValue> = {}
   /** Filaments a client set, by number; the rest follow the filament profile. */
   private filamentSetup: Record<number, FilamentSetup> = {}
+  private ranges: ProjectHeightRange[] = []
   private nextId = 1
+  private nextVolume = 1
 
   constructor(
     settings: ProjectSettings,
@@ -94,7 +139,7 @@ export class McpProject implements PilotProject {
     const e = this.entries.get(objectId)
     if (!e) throw new Error(`No object ${objectId}`)
     e.rotate = rotate
-    if (e.meshId) e.obj = { ...e.obj, bboxMm: this.host.boundsAfter(e.meshId, rotationMatrix(rotate)).size }
+    if (e.meshId) e.obj = { ...e.obj, bboxMm: this.placedBounds(e as Entry & { meshId: string }).size }
   }
 
   objects(): ProjectObject[] {
@@ -189,25 +234,44 @@ export class McpProject implements PilotProject {
     return { ...this.baseConfig(), ...this.filamentConfig(), ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
   }
 
-  /**
-   * Places every copy in rows, then moves the whole layout to the middle of the printable area (from its own corner, so
-   * a bed that does not start at 0 works too). Nothing downstream re-centers it: the sx CLI slices the plate where it is,
-   * and a layout left in the front left corner put a skirt or brim off the bed.
-   */
-  async plate(plateIndex: number): Promise<Plate> {
+  /** Bed size and its corner from the plate's config. */
+  private bed(plateIndex: number): { x0: number; y0: number; width: number; depth: number; height: number } {
     const cfg = this.config(plateIndex)
     const area = Array.isArray(cfg['printable_area']) ? (cfg['printable_area'] as unknown[]) : []
     const xs = area.flatMap((p) => (Array.isArray(p) && typeof p[0] === 'number' ? [p[0]] : []))
     const ys = area.flatMap((p) => (Array.isArray(p) && typeof p[1] === 'number' ? [p[1]] : []))
     const x0 = xs.length ? Math.min(...xs) : 0
     const y0 = ys.length ? Math.min(...ys) : 0
-    const width = xs.length ? Math.max(...xs) - x0 : 256
-    const depth = ys.length ? Math.max(...ys) - y0 : 256
-    const height = num(cfg['printable_height']) ?? 250
+    return { x0, y0, width: xs.length ? Math.max(...xs) - x0 : 256, depth: ys.length ? Math.max(...ys) - y0 : 256, height: num(cfg['printable_height']) ?? 250 }
+  }
+
+  /** The object's rotation and scale as one 4x4 (column-major, scale first), with no move. */
+  private orientation(e: Entry): number[] {
+    const m = e.rotate ? [...rotationMatrix(e.rotate)] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const s = e.scale ?? [1, 1, 1]
+    for (let col = 0; col < 3; col++) for (let row = 0; row < 3; row++) m[col * 4 + row] = (m[col * 4 + row] ?? 0) * (s[col] ?? 1)
+    return m
+  }
+
+  /** Size and lowest corner of an object as placed: rotation and scale applied. */
+  private placedBounds(e: Entry & { meshId: string }): { size: [number, number, number]; min: [number, number, number] } {
+    return this.host.boundsAfter(e.meshId, this.orientation(e))
+  }
+
+  /**
+   * Every copy on a plate with its transform. Copies a client placed (slicerx_project_move) go where it put them; the
+   * rest go in rows, and the rows move to the middle of the printable area (from its own corner, so a bed that does not
+   * start at 0 works too). Nothing downstream re-centers it: the sx CLI slices the plate where it is, and a layout left
+   * in the front left corner put a skirt or brim off the bed. Every object sits on the bed (its lowest point at Z 0).
+   */
+  private layoutPlate(plateIndex: number): { objects: PlateObject[]; placements: Placement[] } {
+    const { x0, y0, width, depth } = this.bed(plateIndex)
     const plate = this.layout.find((p) => p.index === plateIndex)
     if (!plate) throw new Error(`No plate ${plateIndex}`)
     const objects: PlateObject[] = []
-    // The layout's own extent, to center it once every copy is placed.
+    const placements: Placement[] = []
+    const rowed: number[] = []
+    // The rows' own extent, to center them once every copy is placed.
     const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
     // A row ends before it would reach into the edge room at either side; a part wider than that still gets a row.
     const rowWidth = width - 2 * EDGE_MM
@@ -217,41 +281,68 @@ export class McpProject implements PilotProject {
     for (const item of plate.items) {
       const e = this.entries.get(item.objectId)
       if (!e?.meshId) continue
-      const rot = e.rotate ? rotationMatrix(e.rotate) : undefined
-      const placed = rot ? this.host.boundsAfter(e.meshId, rot) : undefined
-      const [w, d] = placed?.size ?? e.obj.bboxMm
-      const [mx, my, mz] = placed?.min ?? this.host.minCorner(e.meshId)
+      const placed = this.placedBounds(e as Entry & { meshId: string })
+      const [w, d] = placed.size
+      const [mx, my, mz] = placed.min
+      const m = this.orientation(e)
       for (let c = 0; c < item.copies; c++) {
-        if (x > 0 && x + w > rowWidth) {
-          x = 0
-          y += rowDepth + GAP_MM
-          rowDepth = 0
+        let at: [number, number]
+        if (e.position) {
+          // Further copies of a placed object line up to its right.
+          at = [e.position[0] - w / 2 + c * (w + GAP_MM), e.position[1] - d / 2]
+        } else {
+          if (x > 0 && x + w > rowWidth) {
+            x = 0
+            y += rowDepth + GAP_MM
+            rowDepth = 0
+          }
+          at = [x, y]
+          box.x0 = Math.min(box.x0, x)
+          box.y0 = Math.min(box.y0, y)
+          box.x1 = Math.max(box.x1, x + w)
+          box.y1 = Math.max(box.y1, y + d)
+          x += w + GAP_MM
+          rowDepth = Math.max(rowDepth, d)
+          rowed.push(objects.length)
         }
-        // Rotation first (the upper 3x3), then the move that sets the rotated part down at (x, y).
-        const r = rot ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-        objects.push({ id: `${item.objectId}-${c + 1}`, name: e.obj.name, mesh: e.meshId, transform: [...r.slice(0, 12), x - mx, y - my, -mz, 1] })
-        box.x0 = Math.min(box.x0, x)
-        box.y0 = Math.min(box.y0, y)
-        box.x1 = Math.max(box.x1, x + w)
-        box.y1 = Math.max(box.y1, y + d)
-        x += w + GAP_MM
-        rowDepth = Math.max(rowDepth, d)
+        const id = `${item.objectId}-${c + 1}`
+        // Rotation and scale first (the upper 3x3), then the move that sets the part down at its place.
+        const o: PlateObject = { id, name: e.obj.name, mesh: e.meshId, transform: [...m.slice(0, 12), at[0] - mx, at[1] - my, -mz, 1] }
+        if (e.settings && Object.keys(e.settings).length) o.settings = { ...e.settings }
+        if (e.volumes?.length) o.volumes = e.volumes.map((v) => ({ name: v.name, role: v.role, mesh: v.meshId, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
+        objects.push(o)
+        placements.push({ id, objectId: item.objectId, copy: c + 1, centerMm: [at[0] + w / 2, at[1] + d / 2], sizeMm: placed.size, manual: Boolean(e.position) })
       }
     }
-    if (objects.length) {
+    if (rowed.length) {
       const dx = x0 + width / 2 - (box.x0 + box.x1) / 2
       const dy = y0 + depth / 2 - (box.y0 + box.y1) / 2
-      for (const o of objects) {
+      for (const i of rowed) {
+        const o = objects[i]
+        const p = placements[i]
+        if (!o || !p) continue
         o.transform[12] = (o.transform[12] ?? 0) + dx
         o.transform[13] = (o.transform[13] ?? 0) + dy
+        p.centerMm = [p.centerMm[0] + dx, p.centerMm[1] + dy]
       }
     }
-    return { bed: { widthMm: width, depthMm: depth, heightMm: height }, objects }
+    for (const p of placements) p.centerMm = [round2(p.centerMm[0]), round2(p.centerMm[1])]
+    return { objects, placements }
+  }
+
+  async plate(plateIndex: number): Promise<Plate> {
+    const { width, depth, height } = this.bed(plateIndex)
+    return { bed: { widthMm: width, depthMm: depth, heightMm: height }, objects: this.layoutPlate(plateIndex).objects }
+  }
+
+  /** Where every copy of a plate sits, as the slice will place it. */
+  placements(plateIndex: number): Placement[] {
+    return this.layoutPlate(plateIndex).placements
   }
 
   /**
    * Replaces objects with others (cut parts, a repaired or hollowed mesh). Each replacement's geometry is
-   * loaded, so it slices; a replacement that keeps an object's id keeps its rotation.
+   * loaded, so it slices; a replacement that keeps an object's id keeps its rotation, scale, place, settings and volumes.
    */
   async replaceObjects(ids: string[], replacements: ProjectObject[]): Promise<void> {
     const loaded = await Promise.all(
@@ -262,26 +353,203 @@ export class McpProject implements PilotProject {
         return { obj: { ...r, triangles: handle.triangles, mesh: async () => this.host.parts(handle.id) }, meshId: handle.id }
       }),
     )
-    const rotations = new Map(ids.map((id) => [id, this.entries.get(id)?.rotate]))
+    const before = new Map(ids.map((id) => [id, this.entries.get(id)]))
     for (const id of ids) this.entries.delete(id)
     for (const e of loaded) {
-      const rotate = rotations.get(e.obj.id)
-      this.entries.set(e.obj.id, rotate ? { ...e, rotate } : e)
+      const old = before.get(e.obj.id)
+      const kept: Entry = { ...e }
+      if (old?.rotate) kept.rotate = old.rotate
+      if (old?.scale) kept.scale = old.scale
+      if (old?.position) kept.position = old.position
+      if (old?.settings) kept.settings = old.settings
+      if (old?.volumes) kept.volumes = old.volumes
+      this.entries.set(e.obj.id, kept)
     }
     for (const p of this.layout) p.items = p.items.filter((i) => !ids.includes(i.objectId))
     const first = this.layout[0]
     if (first) for (const r of replacements) first.items.push({ objectId: r.id, copies: 1 })
+    this.ranges = this.ranges.map((r) => (r.objects ? { ...r, objects: r.objects.filter((o) => !ids.includes(o) || replacements.some((x) => x.id === o)) } : r))
+  }
+
+  private entry(objectId: string): Entry & { meshId: string } {
+    const e = this.entries.get(objectId) ?? [...this.entries.values()].find((x) => x.obj.name === objectId)
+    if (!e) throw new ToolInputError(`No object ${objectId}. slicerx_project_show lists them.`)
+    if (!e.meshId) throw new ToolInputError(`${e.obj.name} has no mesh to place.`)
+    return e as Entry & { meshId: string }
+  }
+
+  private refreshBox(e: Entry & { meshId: string }): void {
+    const s = this.placedBounds(e).size
+    e.obj = { ...e.obj, bboxMm: [round2(s[0]), round2(s[1]), round2(s[2])] }
+  }
+
+  /** Puts an object's footprint center at (x, y) on the bed, or back in the rows with null. */
+  move(objectId: string, position: [number, number] | null): string {
+    const e = this.entry(objectId)
+    if (position) e.position = position
+    else delete e.position
+    return e.obj.id
+  }
+
+  /** Scale per axis, 1 as modeled; [1, 1, 1] clears it. */
+  setScale(objectId: string, scale: [number, number, number]): string {
+    const e = this.entry(objectId)
+    if (scale.every((v) => v === 1)) delete e.scale
+    else e.scale = scale
+    this.refreshBox(e)
+    return e.obj.id
+  }
+
+  /** Sets and clears an object's own settings. */
+  setOwnSettings(objectId: string, set: Record<string, SettingValue>, clear: string[]): Record<string, SettingValue> {
+    const e = this.entry(objectId)
+    const next = { ...(e.settings ?? {}) }
+    for (const k of clear) delete next[k]
+    for (const [k, v] of Object.entries(set)) next[k] = toSchemaValue(this.store.setting(k), v)
+    if (Object.keys(next).length) e.settings = next
+    else delete e.settings
+    return next
+  }
+
+  /** Adds a volume whose mesh the host already holds. */
+  addHeldVolume(objectId: string, v: Omit<ProjectVolume, 'id'>): ProjectVolume {
+    const e = this.entry(objectId)
+    const settings = v.settings ? Object.fromEntries(Object.entries(v.settings).map(([k, x]) => [k, toSchemaValue(this.store.setting(k), x)])) : undefined
+    const volume: ProjectVolume = { ...v, id: `vol-${this.nextVolume++}`, ...(settings ? { settings } : {}) }
+    e.volumes = [...(e.volumes ?? []), volume]
+    return volume
+  }
+
+  removeVolume(objectId: string, volumeId: string): void {
+    const e = this.entry(objectId)
+    if (!e.volumes?.some((v) => v.id === volumeId)) throw new ToolInputError(`${e.obj.name} has no volume ${volumeId}`)
+    e.volumes = e.volumes.filter((v) => v.id !== volumeId)
+    if (e.volumes.length === 0) delete e.volumes
+  }
+
+  /** The object's own size and lowest corner as modeled, for placing volumes in its coordinates. */
+  modelBounds(objectId: string): { min: [number, number, number]; max: [number, number, number] } {
+    const e = this.entry(objectId)
+    const b = this.host.boundsAfter(e.meshId, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+    return { min: b.min.map(round2) as [number, number, number], max: b.min.map((m, i) => round2(m + (b.size[i] ?? 0))) as [number, number, number] }
+  }
+
+  heightRanges(): ProjectHeightRange[] {
+    return this.ranges.map((r) => ({ ...r, settings: { ...r.settings }, ...(r.objects ? { objects: [...r.objects] } : {}) }))
+  }
+
+  setHeightRanges(ranges: ProjectHeightRange[]): void {
+    for (const r of ranges) for (const o of r.objects ?? []) this.entry(o)
+    this.ranges = ranges.map((r) => ({
+      zFromMm: r.zFromMm,
+      zToMm: r.zToMm,
+      settings: Object.fromEntries(Object.entries(r.settings).map(([k, v]) => [k, toSchemaValue(this.store.setting(k), v)])),
+      ...(r.objects ? { objects: r.objects.map((o) => this.entry(o).obj.id) } : {}),
+    }))
+  }
+
+  /** The height ranges for a plate the slice was built from, naming its plate objects (every copy). */
+  heightRangesFor(plate: Plate): HeightRange[] {
+    if (this.ranges.length === 0) return []
+    const objectOf = (plateObjectId: string): string => plateObjectId.replace(/-\d+$/, '')
+    return this.ranges.flatMap((r) => {
+      if (!r.objects) return [{ zFromMm: r.zFromMm, zToMm: r.zToMm, settings: r.settings }]
+      const ids = plate.objects.filter((o) => r.objects?.includes(objectOf(o.id))).map((o) => o.id)
+      return ids.length ? [{ zFromMm: r.zFromMm, zToMm: r.zToMm, settings: r.settings, objects: ids }] : []
+    })
+  }
+
+  /** Adds an empty plate and returns its number. */
+  addPlate(): number {
+    const index = Math.max(0, ...this.layout.map((p) => p.index)) + 1
+    this.layout.push({ index, items: [] })
+    return index
+  }
+
+  /** Removes a plate; its objects go to `moveTo`, or the plate must be empty. Plates after it move up one. */
+  removePlate(index: number, moveTo?: number): void {
+    const plate = this.layout.find((p) => p.index === index)
+    if (!plate) throw new ToolInputError(`No plate ${index}`)
+    if (plate.items.length && moveTo === undefined) throw new ToolInputError(`Plate ${index} holds ${plate.items.length} object(s). Name a plate to move them to (move_to), or move them first.`)
+    if (moveTo !== undefined) {
+      const target = this.layout.find((p) => p.index === moveTo)
+      if (!target || moveTo === index) throw new ToolInputError(`No other plate ${moveTo} to move the objects to`)
+      for (const item of plate.items) addItem(target, item.objectId, item.copies)
+    }
+    this.layout = this.layout.filter((p) => p !== plate).map((p) => (p.index > index ? { ...p, index: p.index - 1 } : p))
+  }
+
+  /** Moves every copy of an object to one plate. */
+  moveToPlate(objectId: string, index: number): void {
+    const e = this.entry(objectId)
+    const target = this.layout.find((p) => p.index === index)
+    if (!target) throw new ToolInputError(`No plate ${index}. slicerx_project_plate_add makes one.`)
+    let copies = 0
+    for (const p of this.layout) {
+      for (const i of p.items) if (i.objectId === e.obj.id) copies += i.copies
+      p.items = p.items.filter((i) => i.objectId !== e.obj.id)
+    }
+    addItem(target, e.obj.id, Math.max(1, copies))
+  }
+
+  /** Takes an object out of the project. */
+  removeObject(objectId: string): void {
+    const e = this.entry(objectId)
+    this.entries.delete(e.obj.id)
+    for (const p of this.layout) p.items = p.items.filter((i) => i.objectId !== e.obj.id)
+    this.ranges = this.ranges.flatMap((r) => {
+      if (!r.objects) return [r]
+      const left = r.objects.filter((o) => o !== e.obj.id)
+      return left.length ? [{ ...r, objects: left }] : []
+    })
   }
 
   describe(): Record<string, unknown> {
+    const plateOf = (id: string): number[] => this.layout.filter((p) => p.items.some((i) => i.objectId === id)).map((p) => p.index)
     return {
       name: this.name,
       settings: this.settings,
       machine: this.machine() ?? null,
-      objects: this.objects().map((o) => ({ id: o.id, name: o.name, bbox_mm: o.bboxMm, triangles: o.triangles ?? null, has_mesh: Boolean(this.entries.get(o.id)?.meshId), parts: this.entries.get(o.id)?.parts ?? 1 })),
-      plates: this.plates(),
+      objects: this.objects().map((o) => {
+        const e = this.entries.get(o.id)
+        return {
+          id: o.id,
+          name: o.name,
+          bbox_mm: o.bboxMm,
+          triangles: o.triangles ?? null,
+          has_mesh: Boolean(e?.meshId),
+          parts: e?.parts ?? 1,
+          ...(e?.meshId ? { model_bounds: this.modelBounds(o.id) } : {}),
+          plates: plateOf(o.id),
+          rotate: e?.rotate ?? [0, 0, 0],
+          scale: e?.scale ?? [1, 1, 1],
+          position: e?.position ?? null,
+          settings: e?.settings ?? {},
+          volumes: (e?.volumes ?? []).map((v) => ({ id: v.id, name: v.name, role: v.role, shape: v.shape, ...(v.settings ? { settings: v.settings } : {}) })),
+        }
+      }),
+      plates: this.plates().map((p) => ({ ...p, placements: this.safePlacements(p.index) })),
       filaments: this.filaments(),
       overrides: this.projectOverrides,
+      height_ranges: this.heightRanges(),
     }
   }
+
+  private safePlacements(index: number): Placement[] {
+    try {
+      return this.placements(index)
+    } catch {
+      return []
+    }
+  }
+}
+
+function addItem(plate: ProjectPlate, objectId: string, copies: number): void {
+  const at = plate.items.find((i) => i.objectId === objectId)
+  if (at) at.copies += copies
+  else plate.items.push({ objectId, copies })
+}
+
+function round2(v: number): number {
+  return Math.round(v * 100) / 100
 }

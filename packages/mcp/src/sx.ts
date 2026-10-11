@@ -154,17 +154,39 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       const bed = job.plate?.bed ?? bedOf(job.config)
       // Paint goes with the one object it was given for; part indices are those of that object's mesh.
       if (job.paint && objects.length !== 1) throw new ToolInputError(`Paint applies to one object, and this plate has ${objects.length}. Slice the painted object on its own, or give it a plate of its own.`, 'invalid_input')
-      const meshes = Object.fromEntries(objects.map((o, i) => [`m${i}`, job.paint ? { file: o.path, paint: job.paint } : o.path]))
+      const meshes: Record<string, string | { file: string; paint: NonNullable<typeof job.paint> }> = Object.fromEntries(objects.map((o, i) => [`m${i}`, job.paint ? { file: o.path, paint: job.paint } : o.path]))
+      // An object's or a volume's own settings, in the engine's shapes (a line width in % of the plate's nozzle).
+      const local = (s: Record<string, SettingValue>): Record<string, SettingValue> => {
+        const out = sxConfig({ nozzle_diameter: job.config['nozzle_diameter'] ?? 0.4, ...s })
+        if (!('nozzle_diameter' in s)) delete out['nozzle_diameter']
+        return out
+      }
+      const requestObjects = objects.map((o, i) => {
+        const volumes = (('volumes' in o ? o.volumes : undefined) ?? []).map((v, j) => {
+          meshes[`m${i}v${j}`] = v.path
+          return { role: v.role, mesh: `m${i}v${j}`, ...(v.name ? { name: v.name } : {}), ...(v.transform ? { transform: v.transform } : {}), ...(v.settings ? { settings: local(v.settings) } : {}) }
+        })
+        const settings = 'settings' in o ? o.settings : undefined
+        return { id: `o${i}`, name: o.name, mesh: `m${i}`, ...(o.transform ? { transform: o.transform } : {}), ...(settings ? { settings: local(settings) } : {}), ...(volumes.length ? { volumes } : {}) }
+      })
+      // Height ranges name plate objects by their own ids; the request names them o0, o1 and so on.
+      const requestId = new Map(objects.flatMap((o, i) => ('id' in o && o.id ? [[o.id, `o${i}`] as const] : [])))
+      const heightRanges = (job.heightRanges ?? []).map((r) => ({
+        zFromMm: r.zFromMm,
+        zToMm: r.zToMm,
+        settings: local(r.settings),
+        ...(r.objects ? { objects: r.objects.map((id) => requestId.get(id) ?? id) } : {}),
+      }))
       const request = {
         schemaVersion: 1,
         plate: {
           ...(bed ? { bed } : {}),
-          objects: objects.map((o, i) => ({ id: `o${i}`, name: o.name, mesh: `m${i}`, ...(o.transform ? { transform: o.transform } : {}) })),
+          objects: requestObjects,
         },
         config: sxConfig(job.explicitConfig),
         // The config is a whole resolved profile, so the engine's list of keys it never reads would be long and say
         // nothing about the person's file (import_report does that); a refused value names its key instead.
-        options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, configReport: false, ...(job.trustedGcode ? { trustedGcode: true } : {}) },
+        options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, configReport: false, ...(job.trustedGcode ? { trustedGcode: true } : {}), ...(heightRanges.length ? { heightRanges } : {}) },
         meshes,
       }
       const requestPath = join(job.outDir, 'request.json')

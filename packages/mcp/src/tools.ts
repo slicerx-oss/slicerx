@@ -13,6 +13,7 @@ import type { DataStore } from './data'
 import { resolveModel, type PathPolicy } from './models'
 import type { ProfileCatalog } from './profiles'
 import { readStlPositions, splitBodies } from './mesh'
+import { placementTools } from './placement'
 import { McpProject } from './project'
 import { FILAMENT_TYPES, MAX_FILAMENTS } from './filaments'
 import { validateConfig } from './settings'
@@ -281,5 +282,5 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     summary: (i) => `${i.printerId}: sent ${i.line.trim()}`,
   })
 
-  return [open, add, show, setOverrides, addFilament, setFilament, temperature, filament, gcode] as PilotTool<never>[]
+  return [open, add, show, setOverrides, addFilament, setFilament, ...placementTools(deps, need), temperature, filament, gcode] as PilotTool<never>[]
 }

@@ -10,7 +10,7 @@ import { extname, join } from 'node:path'
 import type { GcodeExport, GcodeTarget, MeshHandle, MeshPart, PrintConfig, SettingValue, SliceRequest, SliceResult, SlicerHost } from '@slicerx/contracts'
 import { defaultConfig, sameValue } from '@slicerx/settings'
 import { meshStats, readStlPositions, transformPositions, writeBinaryStl } from './mesh'
-import type { SlicerBackend } from './slicer'
+import type { SliceJobObject, SlicerBackend } from './slicer'
 
 interface StoredMesh {
   handle: MeshHandle
@@ -117,12 +117,23 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
       const modelPath = join(dir, 'plate.stl')
       writeFileSync(modelPath, writeBinaryStl(total))
       // One file per mesh, so an engine that takes a plate keeps each object's own transform.
-      const objects = req.plate.objects.map((obj) => {
-        const m = meshes.get(obj.mesh)
-        const path = join(dir, `${obj.mesh}.stl`)
-        if (m && !existsSync(path)) writeFileSync(path, writeBinaryStl(m.positions))
-        return { path, name: obj.name, transform: obj.transform }
-      })
+      const file = (meshId: string): string => {
+        const m = meshes.get(meshId)
+        if (!m) throw new Error(`Mesh ${meshId} is not loaded`)
+        const path = join(dir, `${meshId}.stl`)
+        if (!existsSync(path)) writeFileSync(path, writeBinaryStl(m.positions))
+        return path
+      }
+      const objects = req.plate.objects.map((obj): SliceJobObject => ({
+        path: file(obj.mesh),
+        name: obj.name,
+        id: obj.id,
+        transform: obj.transform,
+        ...(obj.settings && Object.keys(obj.settings).length ? { settings: obj.settings as Record<string, SettingValue> } : {}),
+        ...(obj.volumes?.length
+          ? { volumes: obj.volumes.map((v) => ({ path: file(v.mesh), role: v.role, ...(v.name ? { name: v.name } : {}), ...(v.transform ? { transform: v.transform } : {}), ...(v.settings ? { settings: v.settings } : {}) })) }
+          : {}),
+      }))
       const summary = await backend.slice({
         plate: { bed: req.plate.bed, objects },
         modelPath,
@@ -134,6 +145,7 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
         emitGcode: req.options?.emitGcode ?? true,
         trustedGcode: trustGcode?.(req.config as unknown as Record<string, SettingValue>) ?? false,
         emitPreview: req.options?.emitPreview ?? false,
+        ...(req.options?.heightRanges?.length ? { heightRanges: req.options.heightRanges } : {}),
       })
       const costPerKg = (() => {
         const v = req.config['filament_cost']
