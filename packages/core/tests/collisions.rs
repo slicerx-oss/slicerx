@@ -536,6 +536,105 @@ fn the_toolhead_hits_a_tall_neighbor_and_the_order_that_clears_it_is_offered() {
     assert_eq!(order.order, ["low", "tall"]);
 }
 
+/// A box `w` by `d` by `h` mm whose every face is cut into an `n` by `n` grid of squares (`12 n^2` triangles), the
+/// way a scanned or sculpted part is finely meshed.
+fn fine_block(width: f32, depth: f32, height: f32, cuts: u32) -> Arc<Mesh> {
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut triangles: Vec<[u32; 3]> = Vec::new();
+    #[allow(clippy::cast_precision_loss, reason = "a grid of a few hundred steps")]
+    let step = |i: u32| i as f32 / cuts as f32;
+    // Each face: an origin and two edges; the corners are listed so the normal points out.
+    let faces: [([f32; 3], [f32; 3], [f32; 3]); 6] = [
+        ([0.0, 0.0, 0.0], [0.0, depth, 0.0], [width, 0.0, 0.0]),
+        ([0.0, 0.0, height], [width, 0.0, 0.0], [0.0, depth, 0.0]),
+        ([0.0, 0.0, 0.0], [width, 0.0, 0.0], [0.0, 0.0, height]),
+        ([0.0, depth, 0.0], [0.0, 0.0, height], [width, 0.0, 0.0]),
+        ([0.0, 0.0, 0.0], [0.0, 0.0, height], [0.0, depth, 0.0]),
+        ([width, 0.0, 0.0], [0.0, depth, 0.0], [0.0, 0.0, height]),
+    ];
+    for (origin, a, b) in faces {
+        let base = u32::try_from(positions.len()).unwrap();
+        for row in 0..=cuts {
+            for col in 0..=cuts {
+                let (along, up) = (step(col), step(row));
+                positions.push([0, 1, 2].map(|k| origin[k] + along * a[k] + up * b[k]));
+            }
+        }
+        let corner = |col: u32, row: u32| base + row * (cuts + 1) + col;
+        for row in 0..cuts {
+            for col in 0..cuts {
+                triangles.push([corner(col, row), corner(col + 1, row), corner(col + 1, row + 1)]);
+                triangles.push([corner(col, row), corner(col + 1, row + 1), corner(col, row + 1)]);
+            }
+        }
+    }
+    let mut part = cuboid([0.0, 1.0], [0.0, 1.0], [0.0, 1.0], 1);
+    part.positions = positions;
+    part.triangles = triangles;
+    mesh(vec![part])
+}
+
+#[test]
+fn a_toolhead_hit_on_a_finely_meshed_neighbor_is_found_as_on_a_plain_box_and_quickly() {
+    // The toolhead hit of the test above, with the tall box cut into 43,200 triangles. Where the head meets the part
+    // is looked up on the mesh at every probe that may strike, so the check must not scan the whole mesh each time:
+    // before, a plate like this took minutes.
+    let plain = run(
+        &[
+            ("tall", block(20.0, 20.0, 30.0), 60.0, 100.0),
+            ("low", block(20.0, 20.0, 5.0), 88.0, 100.0),
+        ],
+        json!({}),
+        json!({}),
+    );
+    let started = std::time::Instant::now();
+    let fine = run(
+        &[
+            ("tall", fine_block(20.0, 20.0, 30.0, 60), 60.0, 100.0),
+            ("low", block(20.0, 20.0, 5.0), 88.0, 100.0),
+        ],
+        json!({}),
+        json!({}),
+    );
+    let took = started.elapsed().as_secs_f64();
+    let hit = |r: &SliceRun| {
+        r.report
+            .collisions
+            .iter()
+            .find(|c| c.kind == Kind::Hotend && c.severity == Severity::Hit)
+            .cloned()
+            .expect("a toolhead hit")
+    };
+    let (a, b) = (hit(&plain), hit(&fine));
+    assert_eq!(kinds(&plain), kinds(&fine));
+    assert_eq!(
+        (b.object_id.as_str(), b.hit_id.as_str(), b.part),
+        ("low", "tall", Part::Toolhead)
+    );
+    // The same box, so the same strike: where it lands, how deep and how far the head must move.
+    for k in 0..3 {
+        assert!(
+            (a.point[k] - b.point[k]).abs() < 0.05,
+            "{:?} against {:?}",
+            a.point,
+            b.point
+        );
+    }
+    assert!(
+        (a.depth_mm - b.depth_mm).abs() < 0.05,
+        "{} against {}",
+        a.depth_mm,
+        b.depth_mm
+    );
+    assert!(
+        (a.push_mm - b.push_mm).abs() < 0.05,
+        "{} against {}",
+        a.push_mm,
+        b.push_mm
+    );
+    assert!(took < 20.0, "{took:.1} s");
+}
+
 #[test]
 fn a_travel_between_the_islands_of_one_object_runs_through_the_object_printed_before() {
     // Two 4 mm feet 120 mm apart, one object, with a 15 mm box between them printed first.
