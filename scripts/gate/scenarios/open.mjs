@@ -66,6 +66,11 @@ export async function openSignedOut(s) {
   await s.shot('opened-cleared', 'Signed out: Cable clip opened on a cleared plate')
 
   // A change: leave the object out of the print. Then another design asks first.
+  // The right pane starts shut and never opens by itself (docs/direction.md), so pull it out first, as a person would.
+  if (!(await s.ids())['object-printable']) {
+    await s.click('edge-tab-right')
+    if (!(await s.waitFor('object-printable', 'visible', 10_000))) s.stop('the objects list shows in the right pane', 'no object-printable after opening the pane')
+  }
   await s.click('object-printable')
   const changed = await waitUntil(async () => ((await s.state()).plate.objects[0]?.printable === false ? true : null), { timeoutMs: 5000, everyMs: 200 })
   s.check('changed the plate (left the object out of the print)', !changed.timedOut)
