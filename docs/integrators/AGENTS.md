@@ -505,6 +505,8 @@ A refused tool call has `isError: true` and `structuredContent.error` with a sta
 | `collision` | Paths on the plate cross (two objects, or an object and the prime tower) or enter a keep-out zone such as an exclusion area or the A1's nozzle wrap check corner, with a print path or a travel (a travel also counts when it passes within the nozzle's width of the zone). Show the message; `details.collisions` lists each one (`paths_cross` with its two objects, `keep_out` with the zone and object, with `first_layer` and `last_layer`) and `details.fixes` the engine's suggestions. Call again with `allow_collisions: true` only when the person asks to slice it anyway. |
 | `not_configured`, `auth_failed`, `not_invited`, `quota_exceeded`, `rate_limited`, `service_error` | Optional account and cloud features only. A local slice never returns them. |
 | `sxlock_<reason>` | Optional locked projects; `@slicerx/embed/sxlock` throws `SxlockError` with the same reason as `code`. |
+| `not_found` | List again (for a design, `slicerx_design_list`); the id is stale or mistyped. Retrying the same call does not help. |
+| `not_supported` | This server cannot do it as asked; do what the message suggests instead (for STL modeling without sx-geom, use a design). Retrying does not help. |
 | `internal_error` | Report it on the SlicerX Discord. |
 
 [quickstart.md](quickstart.md#error-codes) has every code.
