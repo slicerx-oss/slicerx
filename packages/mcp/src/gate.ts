@@ -110,7 +110,9 @@ function toResult(tool: PilotTool<unknown>, out: ToolOutput, extra: Record<strin
   // The same text mimir sends its own model: printer and file output is wrapped and marked as data.
   let text = toolMessage(out)
   if (text.length > CHARACTER_LIMIT) text = `${text.slice(0, CHARACTER_LIMIT)}\n[truncated]`
-  return { content: [{ type: 'text', text }], structuredContent: data, ...(out.ok === false ? { isError: true } : {}) }
+  // Images a tool returns (a camera frame, a rendered model) go to the client as image content after the text.
+  const images = (out.images ?? []).map((i) => ({ type: 'image' as const, data: i.data, mimeType: i.mime }))
+  return { content: [{ type: 'text', text }, ...images], structuredContent: data, ...(out.ok === false ? { isError: true } : {}) }
 }
 
 function fail(message: string, data?: Record<string, unknown>): CallToolResult {
