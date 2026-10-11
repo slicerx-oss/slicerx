@@ -50,6 +50,9 @@ export class MockMachine {
   failG90 = 0
   /** How long an upload takes before the file lands, in milliseconds (`/slow`), to race uploads and starts. */
   uploadDelayMs = 0
+  /** Status reads that start before this time (ms since the epoch) answer with the state at their start, `statusHoldMs` later. */
+  statusHoldUntil = 0
+  statusHoldMs = 0
   /** When the running job started, seconds since the epoch. */
   startedAt = 0
   /** Finished and stopped prints, newest first, in Moonraker's history shape. */

@@ -5,7 +5,8 @@ that has the [agent bridge](agent-bridge.md), drives it through the running-app 
 against production, and writes one HTML report with screenshots. It works the same on Windows, macOS and Linux. A
 release needs a pass on every platform it ships to.
 
-It never prints, never sends anything to a printer and never deletes anything. It never reads mail and never opens a
+It never prints, never sends anything to a real printer and never deletes anything (w drives a fake printer on this
+computer's loopback address). It never reads mail and never opens a
 sign-in link. When a link has to be opened, it says which one and waits for an operator (see [The operator](#the-operator)).
 
 ## Build the test build
@@ -41,6 +42,7 @@ node scripts/gate/run.mjs --app target/agent-bridge/release/slicerx.exe --platfo
 | `--wait-review <min>` | How long to wait for review approval. The default is 60. |
 | `--profile <dir>` | Reuse a web profile folder instead of a fresh one (Windows, Linux). |
 | `--commit <hash>` | The commit the build was made from. The default is this checkout's HEAD. |
+| `--hub-dir <dir>` | The bridge build's printer hub folder for w. The default is `<app data>/app.slicerx.desktop.agent-bridge/hub`. |
 
 The exit code is 0 when every scenario that ran passed, 1 when any of them failed (a wait that ran out counts as a
 failure), and 2 when the gate could not start.
@@ -77,6 +79,16 @@ runs, and no printer is ever contacted.
 | b2 | Open signed in | The same open on a cleared plate, on the account's session. This runs after c. |
 | e | Starters | Every starter design opens from the Vault alone on the plate and slices on the A1 (0.4 mm, PLA) with zero warnings. The report lists each one's time and grams. The temperature tower's exported G-code changes the nozzle temperature once per floor, through the tower's temperatures in order, at rising heights. |
 | d | Creator page and upload | The creator page saves: it's made on first use, otherwise its bio gets this run's date. Then a fresh two-color coaster is made for the run, opened, and uploaded as This project. Its swatches are derived from the model's colors, and its cover is drawn from the model. The malware scan passes, a reviewer approves it, and it shows in the Feed and opens. The Export menu offers no mesh export, and no STL or OBJ export command is on (sealed). |
+| w | Watch pause | A fake Klipper printer (packages/connect/mock-printers, loopback only) prints. The gate pairs with the app's own printer hub as an app and as a failure detector, adds the fake with the watch allowed to pause it, and reports a confirmed spaghetti finding while one of the hub's status reads is still on its way (the race #574 fixed). The finding pauses the print, the printer reports paused, and with nobody answering the pause the hub turns the bed off, then the nozzle, each after its time and nothing else. |
+
+w runs the hub's watch steps in seconds: the gate starts the app with `SX_GATE_WATCH_PAUSE=2000,12000,20000` (a
+reading every 2 s, the bed off after 12 s and the nozzle after 20 s, instead of 30 minutes and 2 hours), which only a
+bridge build reads (`apps/desktop/src-tauri/src/link.rs`; `check-agent-bridge.mjs` fails a release binary that has
+the name). For the race, the fake answers every status read that starts within one hub tick a few seconds late, with
+the state the read started with, and the gate reports in that window, so the reading that lands after the pause still
+says printing. The hub keeps its codes in the bridge build's data folder (`hub/pairing-code`, `hub/watch-code`,
+`hub/hub-key.pub`); the gate reads them there, removes the fake printer and turns the permission off again at the end,
+and stops the fake by its process id. w takes about a minute. Run it alone with `--only w`.
 
 When an account is given, e runs signed in, so the gate's downloads stay out of the public counts (test accounts are
 flagged). b1's downloads are anonymous. Anonymous downloads count against the per-network limit (20 per clock hour by
