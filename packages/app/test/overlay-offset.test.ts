@@ -48,17 +48,24 @@ describe('where toasts sit', () => {
   it('goes under the top controls when there is no room above the bars', () => {
     const vp = box(0, 0, 800, 300)
     const place = toastPlace(vp, { bottom: [box(12, 200, 300, 40)], top: [box(300, 12, 200, 160)] }, 300)
-    expect(place).toEqual({ top: 172 + OVERLAY_GAP, center: 400 })
+    expect(place).toEqual({ top: 172 + OVERLAY_GAP, center: 400, width: 800 - 2 * OVERLAY_GAP })
   })
 
   it('a hidden control takes no room', () => {
     const vp = box(0, 0, 800, 600)
-    expect(toastPlace(vp, { bottom: [box(12, 548, 300, 40)], top: [box(0, 0, 0, 0)], side: [box(0, 0, 0, 0)] }, 600)).toEqual({ bottom: 600 - 548 + OVERLAY_GAP, center: 400 })
+    expect(toastPlace(vp, { bottom: [box(12, 548, 300, 40)], top: [box(0, 0, 0, 0)], side: [box(0, 0, 0, 0)] }, 600)).toEqual({ bottom: 600 - 548 + OVERLAY_GAP, center: 400, width: 800 - 2 * OVERLAY_GAP })
   })
 
   it('keeps to the room right of the color legend', () => {
     const vp = box(433, 69, 677, 786)
     const place = toastPlace(vp, { bottom: [box(445, 560, 300, 36)], top: [box(608, 125, 317, 40)], left: [box(445, 220, 170, 330)] }, 900)
     expect(place).toEqual({ bottom: 900 - 560 + OVERLAY_GAP, center: Math.round((615 + OVERLAY_GAP + 1110 - OVERLAY_GAP) / 2), width: 1110 - OVERLAY_GAP - 615 - OVERLAY_GAP })
+  })
+
+  it('a toast with nothing beside it keeps to the viewport, so a long one wraps instead of running past the window', () => {
+    // the Slice view between two side panes at 1440 wide
+    const vp = box(420, 68, 690, 760)
+    const place = toastPlace(vp, { bottom: [box(570, 760, 300, 40)] }, 860)
+    expect(place).toMatchObject({ center: 420 + 345, width: 690 - 2 * OVERLAY_GAP })
   })
 })
