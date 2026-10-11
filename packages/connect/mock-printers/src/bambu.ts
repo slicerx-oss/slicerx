@@ -24,6 +24,8 @@ export interface BambuExtra {
   lastJob?: string
   /** When set, the next project starts are refused with this reason (`POST /bambu {refuse}`). */
   refuse?: string
+  /** When set, `pause`, `resume` and `stop` are answered `result: fail` with this reason and change nothing (`POST /bambu {refuseControl}`). */
+  refuseControl?: string
   /** The model code `get_version` and the SSDP answer report (`N2S` A1, `N1` A1 mini, `O1D` H2D; default `BL-P001`, X1 Carbon). An H2D reports the two nozzles, AMS units and external spools of `fixtures/bambu-h2d-pushall.json`. */
   model?: string
   /** `lite`: one AMS lite (the fixture's four slots) beside the external spool; `none`: the external spool only. Default: one AMS. */
@@ -271,6 +273,13 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
       }
       const pr = msg.print
       if (!pr) return
+      // The printer answers pause, resume and stop on the report topic with `result` and `reason`.
+      if (pr.command === 'pause' || pr.command === 'resume' || pr.command === 'stop') {
+        const refused = extra.refuseControl
+        const body = Buffer.from(JSON.stringify({ print: { command: pr.command, sequence_id: pr.sequence_id, param: '', result: refused ? 'fail' : 'success', reason: refused ?? 'success' } }))
+        for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, body))
+        if (refused) { log.push(`${String(pr.command)} refused ${refused}`); return }
+      }
       switch (pr.command) {
         case 'print_speed': log.push(`print_speed ${String(pr.param)}`); extra.speedLevel = Number(pr.param); break
         case 'pause': m.pause(); break

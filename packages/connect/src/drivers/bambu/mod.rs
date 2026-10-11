@@ -1734,17 +1734,7 @@ impl BambuSession {
     async fn await_project_start(&self, seq: &str, error_before: u64) -> Result<()> {
         let end = tokio::time::Instant::now() + PROJECT_ANSWER_WAIT;
         loop {
-            let reply = {
-                let r = self.shared.replies.lock().unwrap_or_else(PoisonError::into_inner);
-                r.iter()
-                    .rev()
-                    .find(|v| {
-                        v.get("sequence_id").and_then(Value::as_str) == Some(seq)
-                            && v.get("command").and_then(Value::as_str) == Some("project_file")
-                    })
-                    .cloned()
-            };
-            if let Some(v) = reply {
+            if let Some(v) = self.answer(seq, "project_file") {
                 return match project_refusal(&v) {
                     Some(reason) => Err(Error::Refused {
                         printer: self.id().to_owned(),
@@ -1777,6 +1767,51 @@ impl BambuSession {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+    }
+
+    /// Sends `pause`, `resume` or `stop` and waits for the printer's answer on the report topic, as
+    /// a project start does: a `result` of "fail" comes back as [`Error::Refused`] with the printer's
+    /// reason, so a refused command never reads as done. The report showing a state in `done` also
+    /// settles it, and with neither in [`CONTROL_ANSWER_WAIT`] the command stands as sent.
+    async fn control(&self, command: &str, done: &[&str]) -> Result<()> {
+        let seq = self.next_seq();
+        self.command(json!({ "print": { "sequence_id": seq, "command": command, "param": "" } }))
+            .await?;
+        let end = tokio::time::Instant::now() + CONTROL_ANSWER_WAIT;
+        loop {
+            if let Some(v) = self.answer(&seq, command) {
+                return match project_refusal(&v) {
+                    Some(reason) => Err(Error::Refused {
+                        printer: self.id().to_owned(),
+                        reason: self.with_developer_hint(reason),
+                    }),
+                    None => Ok(()),
+                };
+            }
+            let state = {
+                let v = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+                v.get("gcode_state")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned()
+            };
+            if done.contains(&state.as_str()) || tokio::time::Instant::now() >= end {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    /// The printer's answer to the command sent as `seq`, when it has come.
+    fn answer(&self, seq: &str, command: &str) -> Option<Value> {
+        let r = self.shared.replies.lock().unwrap_or_else(PoisonError::into_inner);
+        r.iter()
+            .rev()
+            .find(|v| {
+                v.get("sequence_id").and_then(Value::as_str) == Some(seq)
+                    && v.get("command").and_then(Value::as_str) == Some(command)
+            })
+            .cloned()
     }
 
     /// Whether the printer reports Developer Mode off: it then sends status but refuses commands
@@ -1965,6 +2000,10 @@ const PROJECT_ANSWER_WAIT: Duration = Duration::from_secs(10);
 /// How long a slot write waits for the printer's answer.
 const SLOT_ANSWER_WAIT: Duration = Duration::from_secs(5);
 
+/// How long pause, resume and stop wait for the printer's answer or for the report to show the
+/// change, whichever comes first.
+const CONTROL_ANSWER_WAIT: Duration = Duration::from_secs(3);
+
 /// Where a slot id from [`parse_slots`] sits in Bambu Studio's terms: `ams_id`, `slot_id` and
 /// `tray_id` of `ams_filament_setting` (DeviceManager.cpp, `command_ams_filament_settings`). A
 /// regular AMS is units 0 to 3 (A to D), an AMS HT unit 128 and up (E on); the external spool is
@@ -2020,9 +2059,9 @@ fn refusal_with_hint(reason: String, p: &Value) -> String {
 /// Why a printer with Developer Mode off takes no command from SlicerX, and the two ways to print.
 const MONITOR_ONLY: &str = "Developer Mode is off on the printer, so it sends status but takes no commands from other apps. Print through Bambu Connect, or turn on Developer Mode in its LAN Only settings to print directly.";
 
-/// The printer's reason when its reply to `project_file` is a refusal, else `None`. `result` is
-/// "success" or "fail" in any case; the reason is the reply's `reason` text when that says more than
-/// the result, else its `err_code` read like a `print_error`.
+/// The printer's reason when its reply to a command (`project_file`, `pause`, `resume`, `stop`) is a
+/// refusal, else `None`. `result` is "success" or "fail" in any case; the reason is the reply's
+/// `reason` text when that says more than the result, else its `err_code` read like a `print_error`.
 pub(crate) fn project_refusal(v: &Value) -> Option<String> {
     let result = v
         .get("result")
@@ -2303,8 +2342,7 @@ impl PrinterSession for BambuSession {
             .check(token, Action::Pause, self.id(), &params::printer(self.id()))?;
         self.require_control()?;
         self.require_state("pause", &[PrinterState::Printing])?;
-        self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "pause", "param": "" } }))
-            .await
+        self.control("pause", &["PAUSE"]).await
     }
 
     async fn resume(&self, token: &ApprovalToken) -> Result<()> {
@@ -2312,8 +2350,7 @@ impl PrinterSession for BambuSession {
             .check(token, Action::Resume, self.id(), &params::printer(self.id()))?;
         self.require_control()?;
         self.require_state("resume", &[PrinterState::Paused])?;
-        self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "resume", "param": "" } }))
-            .await
+        self.control("resume", &["RUNNING"]).await
     }
 
     async fn cancel(&self, token: &ApprovalToken) -> Result<()> {
@@ -2328,8 +2365,7 @@ impl PrinterSession for BambuSession {
                 PrinterState::Preparing,
             ],
         )?;
-        self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "stop", "param": "" } }))
-            .await
+        self.control("stop", &["IDLE", "FINISH", "FAILED"]).await
     }
 
     /// Reads one frame from the port 6000 JPEG stream (A1, P1). X1 and H2 printers serve H.264
@@ -2541,17 +2577,7 @@ impl PrinterSession for BambuSession {
         // The printer answers on the report topic; a `fail` there is its refusal.
         let end = tokio::time::Instant::now() + SLOT_ANSWER_WAIT;
         while tokio::time::Instant::now() < end {
-            let reply = {
-                let r = self.shared.replies.lock().unwrap_or_else(PoisonError::into_inner);
-                r.iter()
-                    .rev()
-                    .find(|v| {
-                        v.get("sequence_id").and_then(Value::as_str) == Some(seq.as_str())
-                            && v.get("command").and_then(Value::as_str) == Some("ams_filament_setting")
-                    })
-                    .cloned()
-            };
-            if let Some(v) = reply {
+            if let Some(v) = self.answer(&seq, "ams_filament_setting") {
                 return match v.get("result").and_then(Value::as_str) {
                     Some(r) if r.eq_ignore_ascii_case("fail") => Err(Error::Refused {
                         printer: self.id().to_owned(),
