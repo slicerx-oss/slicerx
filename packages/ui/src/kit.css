@@ -29,12 +29,17 @@
 .sx-popover[data-align="end"] { left: auto; right: 0; }
 .sx-popover[data-side="top"] { top: auto; bottom: calc(100% + 4px); }
 
-/* split button: main action and its menu as two joined buttons */
+/* split button: main action and its menu as one shape, no gap, a thin line between the halves. The main half's own
+   right border is that line; a primary button has no visible border, so its menu half draws one. A focused half's
+   ring sits over its neighbour. The corner rules carry .sx-btn so they outrank the sized button's own radius
+   (.sx-btn[data-size]), which otherwise rounded the inner corners too. */
 .sx-split { display: inline-flex; align-items: stretch; }
 .sx-split[data-full] { display: flex; width: 100%; }
 .sx-split[data-full] > .sx-split-main { flex: 1; }
-.sx-split > .sx-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.sx-split > .sx-split-menu { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; padding: 0; width: var(--h-md); }
+.sx-split > .sx-btn.sx-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.sx-split > .sx-btn.sx-split-menu { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; padding: 0; width: var(--h-md); }
+.sx-split > .sx-split-menu[data-variant="primary"] { box-shadow: inset 1px 0 0 color-mix(in srgb, var(--on-grad) 22%, transparent); }
+.sx-split > button:focus-visible { position: relative; z-index: 1; }
 .sx-split > .sx-split-menu[data-size="lg"] { width: 40px; }
 .sx-split > .sx-split-menu[data-size="sm"] { width: var(--h-sm); }
 .sx-split > .sx-split-menu[aria-expanded="true"] .sx-ic { transform: rotate(180deg); }
