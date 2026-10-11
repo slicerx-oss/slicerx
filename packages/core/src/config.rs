@@ -1966,6 +1966,7 @@ pub const META_KEYS: &[&str] = &[
 
 /// Every key the engine's code names (see `build.rs`): a key outside these, [`READ_KEYS`] and [`FUZZY_KEYS`] is never
 /// read, whatever its value.
+#[cfg(not(target_arch = "wasm32"))]
 fn engine_keys() -> &'static std::collections::HashSet<&'static str> {
     static KEYS: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
     KEYS.once(|| {
@@ -1977,6 +1978,17 @@ fn engine_keys() -> &'static std::collections::HashSet<&'static str> {
 
 /// True when the engine reads `key` in some way (or the key only describes the preset). False means a config that
 /// sets it prints exactly as without it.
+///
+/// The browser build always says yes: it never lists unused keys (its host sends a whole profile and leaves
+/// `options.configReport` off), so the key lists stay out of it.
+#[cfg(target_arch = "wasm32")]
+pub fn is_used_key(_key: &str) -> bool {
+    true
+}
+
+/// True when the engine reads `key` in some way (or the key only describes the preset). False means a config that
+/// sets it prints exactly as without it.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn is_used_key(key: &str) -> bool {
     let named = |k: &str| READ_KEYS.contains(&k) || FUZZY_KEYS.contains(&k) || engine_keys().contains(k);
     META_KEYS.contains(&key) || named(key) || built_key(key, &named)
@@ -1985,6 +1997,7 @@ pub fn is_used_key(key: &str) -> bool {
 /// A key the code builds from a template (see `build.rs`): `filament_retraction_speed` from `filament_{key}` with
 /// a key it names, `cool_plate_temp_initial_layer` from `{key}_initial_layer`, `machine_max_speed_x` from
 /// `machine_max_speed_{axis}` with a short part.
+#[cfg(not(target_arch = "wasm32"))]
 fn built_key(key: &str, named: &dyn Fn(&str) -> bool) -> bool {
     static TEMPLATES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
     let templates = TEMPLATES.once(|| {
