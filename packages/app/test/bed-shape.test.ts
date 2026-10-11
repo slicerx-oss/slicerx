@@ -11,9 +11,10 @@ import { areaOrigin } from '../src/plate/bed-origin'
 import { arrange, NO_MARGINS, setAvoidAreas, setMarginSource, type ArrangeItem } from '../src/plate/arrange'
 import { bedCircle, boxInBed, circleArea, circleOfArea } from '../src/plate/bed-shape'
 import { nearestFreeShift } from '../src/plate/clipboard'
+import { objectWarnings } from '../src/plate/object-list'
 import { bounds, compose, fitsBed, type Box } from '../src/plate/transform'
 import { profileReady } from '../src/state/profile-sync'
-import { get, set } from '../src/state/store'
+import { get, set, type PlateEntry } from '../src/state/store'
 
 afterEach(() => {
   set({ printerModel: null, plate: [] })
@@ -165,5 +166,47 @@ describe('placing a copy on a circular bed', () => {
   it('finds nothing for a group wider than the circle allows', () => {
     expect(nearestFreeShift(box(0, 0, 230, 230), [], round)).toBeNull()
     expect(nearestFreeShift(box(0, 0, 230, 230), [], square)).not.toBeNull()
+  })
+})
+
+describe('the off-bed warning on a circular bed uses the outline', () => {
+  // A 120 x 10 mm bar turned 45 degrees, lying along the rim's tangent at 120 mm from the center.
+  const bar = (dist: number, length = 120): PlateEntry => {
+    const k = Math.SQRT1_2
+    const parts = blockOf(length, 10)
+    return {
+      id: 'bar',
+      name: 'Bar',
+      handle: { id: 'bar', hash: 'bar', name: 'bar', triangles: 12, bboxMm: [length, 10, 20], openEdges: 0, parts: [] },
+      parts,
+      colors: ['#bd93f9'],
+      transform: compose({ position: [150 + dist * k, 150 - dist * k, 0], rotation: [0, 0, 45], scale: [1, 1, 1] }),
+    } as unknown as PlateEntry
+  }
+  const slots = { bed: round, printerSlots: [] as never[] }
+  const kinds = (e: PlateEntry, margins = NO_MARGINS) => objectWarnings(e, slots, margins).map((w) => w.kind)
+
+  it('keeps a long diagonal part near the rim on the bed though its box corner is outside the circle', () => {
+    const e = bar(120)
+    const b = bounds(e.parts, e.transform)!
+    expect(fitsBed(b, round)).toBe(false)
+    expect(kinds(e)).toEqual([])
+  })
+
+  it('flags the part once its outline passes the rim', () => {
+    expect(kinds(bar(125, 120))).toEqual([])
+    expect(kinds(bar(145, 120))).toEqual(['off-bed'])
+  })
+
+  it('flags a brim that reaches past the rim', () => {
+    const brim = { ...NO_MARGINS, reach: () => 12 }
+    expect(kinds(bar(120), brim)).toEqual(['off-bed'])
+    expect(kinds(bar(100), brim)).toEqual([])
+  })
+
+  it('judges a rectangular bed by the box as before', () => {
+    const e = bar(120)
+    expect(objectWarnings(e, { bed: square, printerSlots: [] }, NO_MARGINS)).toEqual([])
+    expect(objectWarnings(bar(400), { bed: square, printerSlots: [] }, NO_MARGINS).map((w) => w.kind)).toEqual(['off-bed'])
   })
 })
