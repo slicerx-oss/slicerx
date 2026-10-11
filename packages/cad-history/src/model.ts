@@ -11,11 +11,32 @@ import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleS
 export type { EdgeRef, Mat4 }
 
 /** A mesh in the engine's flat form, with the part's name and filament slot. */
+/** A paint layer, as the app and a 3MF name them. */
+export type PaintLayer = 'color' | 'seam' | 'support' | 'fuzzy'
+
+/** Paint by layer: each painted triangle's text, by triangle index, as a 3MF stores it per triangle. */
+export type PaintTexts = Partial<Record<PaintLayer, Record<number, string>>>
+
+/**
+ * What a paint step paints, in words a person uses, found again on every replay (sx-geom `paint.select`): the whole
+ * part; the faces facing a direction (with a pick among the regions they make); a height band; region growing from a
+ * point (smart fill across gentle edges, or a bucket over one state), the point's face kept by its key as push steps
+ * keep theirs; or one state for another. World values at the step's transform.
+ */
+export type PaintTarget =
+  | { kind: 'part' }
+  | { kind: 'direction'; direction: 'bottom' | 'top' | 'front' | 'back' | 'left' | 'right' | Vec3; angleDeg?: number; pick?: 'all' | 'largest' | { nearest: Vec3 } }
+  | { kind: 'height'; below?: number; above?: number; from?: number; to?: number }
+  | { kind: 'seed'; point: Vec3; faceKey?: number; angleDeg?: number; mode?: 'smart' | 'bucket' }
+  | { kind: 'replace'; from: number }
+
 export interface HistoryMesh {
   name: string
   slot: number
   positions: ArrayLike<number>
   indices: ArrayLike<number>
+  /** Paint on the part; a step that changes its triangles drops it (with a note on the step). */
+  paint?: PaintTexts
   /** The engine's faces, with the keys steps name them by (docs/cad-history.md, "Face keys"); a replay keeps them. */
   faces?: { ids: ArrayLike<number>; table: unknown[]; keys?: number[] }
 }
@@ -35,6 +56,7 @@ export type StepParams =
   | { op: 'hole.apply'; hole: Hole; spec: HoleSpec; label: string }
   | { op: 'thread.apply'; thread: ThreadPlace; spec: ThreadSpec; label: string }
   | { op: 'shell'; open: OpenFace[]; wallMm: number }
+  | { op: 'paint'; layer: PaintLayer; state: number; target: PaintTarget; maxDepth?: number }
 
 export type StepOp = StepParams['op']
 
@@ -543,7 +565,37 @@ export function madeName(s: Pick<Step, 'params'>): string {
     case 'hole.apply':
     case 'thread.apply':
       return p.label
+    case 'paint':
+      return paintName(p)
   }
+}
+
+const SIDE_WORDS: Record<string, string> = { bottom: 'the bottom', top: 'the top', front: 'the front', back: 'the back', left: 'the left side', right: 'the right side' }
+
+/** "Paint the bottom filament 2", "Clear paint below 10 mm", "Seam from a point". */
+function paintName(p: Extract<StepParams, { op: 'paint' }>): string {
+  const t = p.target
+  const where =
+    t.kind === 'part'
+      ? 'the part'
+      : t.kind === 'direction'
+        ? typeof t.direction === 'string'
+          ? (SIDE_WORDS[t.direction] ?? 'faces')
+          : 'faces in a direction'
+        : t.kind === 'height'
+          ? t.from !== undefined && t.to !== undefined
+            ? `${n2(t.from)} to ${n2(t.to)} mm`
+            : t.below !== undefined
+              ? `below ${n2(t.below)} mm`
+              : `above ${n2(t.above ?? 0)} mm`
+          : t.kind === 'seed'
+            ? t.mode === 'bucket'
+              ? 'a filled area'
+              : 'from a point'
+            : 'state ' + String(t.from)
+  if (p.layer === 'color') return p.state > 0 ? `Paint ${where} filament ${p.state}` : `Clear paint, ${where}`
+  const what = p.layer === 'seam' ? 'Seam' : p.layer === 'support' ? (p.state === 2 ? 'Support blocker' : 'Support') : 'Fuzzy skin'
+  return p.state > 0 ? `${what}, ${where}` : `Clear ${what.toLowerCase()}, ${where}`
 }
 
 /** The one number a step is mostly about, for editing it in place in the list. Null when it has none. */
@@ -569,6 +621,11 @@ export function mainNumber(p: StepParams): { label: string; value: number; unit:
       return { label: 'Length', value: p.spec.lengthMm ?? p.thread.lengthMm, unit: 'mm', min: 0 }
     case 'shell':
       return { label: 'Wall', value: p.wallMm, unit: 'mm', min: 0 }
+    case 'paint':
+      // A one-sided height band is about its height.
+      if (p.target.kind === 'height' && p.target.below !== undefined) return { label: 'Below', value: p.target.below, unit: 'mm' }
+      if (p.target.kind === 'height' && p.target.above !== undefined) return { label: 'Above', value: p.target.above, unit: 'mm' }
+      return null
     case 'subtract': {
       const s = p.solids.length === 1 ? p.solids[0]! : null
       if (s?.type === 'cylinder') return { label: 'Diameter', value: s.diameterMm, unit: 'mm', min: 0 }
@@ -604,6 +661,10 @@ export function withNumber(p: StepParams, v: number): StepParams | string {
       return v > 0 ? { ...p, spec: { ...p.spec, lengthMm: v } } : 'The length must be more than 0 mm.'
     case 'shell':
       return v > 0 ? { ...p, wallMm: v } : 'The wall must be more than 0 mm.'
+    case 'paint':
+      if (p.target.kind === 'height' && p.target.below !== undefined) return { ...p, target: { ...p.target, below: v } }
+      if (p.target.kind === 'height' && p.target.above !== undefined) return { ...p, target: { ...p.target, above: v } }
+      return 'This step has no number to change.'
     case 'subtract': {
       const s = p.solids.length === 1 ? p.solids[0]! : null
       if (!(v > 0) || !s) return 'The size must be more than 0 mm.'
