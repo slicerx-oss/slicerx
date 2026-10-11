@@ -121,6 +121,11 @@ if [ "$side" = wsl ]; then
 fi
 name="a record from a side this one cannot ask is kept"
 fake 1 'side elsewhere'; waiter 2 w7; ok kept 1
+# WSL distros belong to one Windows user, so another account (a CI runner's) sees none of them: a holder in a distro
+# this user does not have is kept, never cleared as if its distro had stopped.
+name="a WSL record from a distro this user does not have is kept"
+fake 1 "$(printf 'side wsl\nstart 1\nboot 00000000-0000-0000-0000-000000000000\ndistro heavy-test-no-such-distro')"
+waiter 3 w7b; ok kept 1
 rm -rf "$dir"
 
 name="a ticket left by a dead waiter does not hold up the queue"
