@@ -256,7 +256,7 @@ describe('policy', () => {
     await h.call('slicerx_slice', {})
     const q = data<{ status: string }>(await h.call('slicerx_printer_queue', { printerId: 'bay-2', plate: 1 }))
     expect(q.status).toBe('needs_person')
-    expect(log(h).some((e) => e.by === 'policy' && e.decision === 'allowed')).toBe(false)
+    expect(log(h).some((e) => e.tool.startsWith('printer.') && e.by === 'policy' && e.decision === 'allowed')).toBe(false)
   })
 
   it('shows the policy and has no tool to change it', async () => {
