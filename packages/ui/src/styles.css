@@ -160,6 +160,8 @@ button { cursor: pointer; }
 .sx-scrub-input:disabled { color: var(--dim); }
 .sx-scrub-unit { display: none; font: var(--fw-regular) var(--fs-xs) var(--f-body); color: var(--dim); }
 .sx-scrub:focus-within .sx-scrub-unit { display: inline; }
+/* a vector row says its unit once, beside its name: in its narrow fields the unit would push the number out */
+.sx-vector-box .sx-scrub:focus-within .sx-scrub-unit { display: none; }
 .sx-scrub-handle { flex: none; align-self: stretch; display: grid; place-items: center; width: 22px; font: var(--fw-bold) var(--fs-xs)/1 var(--f-body); letter-spacing: 0.02em; color: var(--dim); border-radius: calc(var(--r-sm) - 1px); cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none; }
 .sx-scrub-handle:not([data-axis])::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 /* the gizmo's colors, a step darker on light themes so the letter stays readable */
@@ -168,6 +170,9 @@ button { cursor: pointer; }
 .sx-scrub-handle[data-axis="z"] { color: light-dark(color-mix(in oklab, var(--axis-z) 72%, black), var(--axis-z)); }
 .sx-scrub-handle:hover, .sx-scrub[data-dragging] .sx-scrub-handle { background: var(--accent-tint); }
 .sx-scrub[data-disabled] .sx-scrub-handle { cursor: default; opacity: 0.5; }
+/* a refused entry: the field flags it, and the reason floats under it for a moment */
+.sx-scrub[data-refused][data-boxed] { border-color: var(--red); }
+.sx-scrub-refused { position: absolute; z-index: var(--z-menu); top: calc(100% + 4px); left: 0; padding: 3px 8px; border-radius: var(--r-sm); background: var(--ink-4); border: 1px solid var(--line); box-shadow: var(--shadow-float); color: var(--fg); font: var(--fw-medium) var(--fs-xs) var(--f-body); white-space: nowrap; pointer-events: none; }
 .sx-scrub[data-dragging] .sx-scrub-input { color: var(--accent); }
 .sx-field-hint[data-tone="error"] { color: var(--red); }
 

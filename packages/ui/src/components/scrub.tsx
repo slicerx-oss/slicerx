@@ -68,6 +68,13 @@ export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCance
   const shown = fmt(value)
   const [draft, setDraft] = useState(shown)
   const [dragging, setDragging] = useState(false)
+  // why a typed value was turned down, for a moment under the field (drawn over what follows, so nothing moves)
+  const [refused, setRefused] = useState<string | null>(null)
+  useEffect(() => {
+    if (!refused) return
+    const t = window.setTimeout(() => setRefused(null), 2600)
+    return () => window.clearTimeout(t)
+  }, [refused])
   const drag = useRef<Drag | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const selectOnUp = useRef(false)
@@ -86,6 +93,7 @@ export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCance
   const commit = () => {
     const v = parse(draft.trim())
     if (draft.trim() === '' || !Number.isFinite(v) || (min !== undefined && v < min) || (max !== undefined && v > max)) {
+      if (draft.trim() !== '' && draft.trim() !== shown) setRefused(!Number.isFinite(v) ? 'Enter a number' : min !== undefined && v < min ? `${withUnit(fmt(min), unit)} or more` : `Up to ${withUnit(fmt(max ?? 0), unit)}`)
       setDraft(shown)
       return
     }
@@ -198,7 +206,7 @@ export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCance
   ) : null
   const cls = ['sx-scrub', className].filter(Boolean).join(' ')
   return (
-    <span className={cls} data-boxed={boxed || undefined} data-axis={axis} data-dragging={dragging || undefined} data-handle={handle || undefined} data-disabled={disabled || undefined}>
+    <span className={cls} data-boxed={boxed || undefined} data-axis={axis} data-dragging={dragging || undefined} data-handle={handle || undefined} data-disabled={disabled || undefined} data-refused={refused ? true : undefined}>
       {grip}
       <input
         ref={input}
@@ -231,8 +239,18 @@ export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCance
           {unit}
         </span>
       ) : null}
+      {refused ? (
+        <span className="sx-scrub-refused" role="status">
+          {refused}
+        </span>
+      ) : null}
     </span>
   )
+}
+
+/** 0.01 mm, 360°, 100%. */
+function withUnit(n: string, unit: string | undefined): string {
+  return !unit ? n : /^[a-z]/i.test(unit) ? `${n} ${unit}` : `${n}${unit}`
 }
 
 const SPOKEN: Readonly<Record<string, string>> = { mm: 'millimeters', '°': 'degrees', '%': 'percent', deg: 'degrees' }
