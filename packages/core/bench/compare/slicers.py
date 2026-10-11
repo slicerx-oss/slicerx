@@ -195,11 +195,15 @@ class Bambu:
                     return cand
         raise RuntimeError("Bambu Studio profile folder not found; pass --bambu-profiles .../profiles/BBL")
 
-    def _resolve(self, kind, name):
+    def _resolve(self, kind, name, includes=False):
+        """One installed preset with what it inherits. With `includes`, also the template presets it lists
+        under `include` (the H2D keeps its G-code in those)."""
         with open(os.path.join(self.profiles, kind, name + ".json")) as f:
             d = json.load(f)
-        base = self._resolve(kind, d["inherits"]) if d.get("inherits") else {}
-        skip = {"inherits", "name", "from", "instantiation", "setting_id", "type", "filament_id"}
+        base = self._resolve(kind, d["inherits"], includes) if d.get("inherits") else {}
+        for extra in (d.get("include") or []) if includes else []:
+            base.update(self._resolve(kind, extra, includes))
+        skip = {"inherits", "name", "from", "instantiation", "setting_id", "type", "filament_id", "include"}
         base.update({k: v for k, v in d.items() if k not in skip})
         return base
 
@@ -239,12 +243,11 @@ class Bambu:
                 m.write(b'    </triangles>\n   </mesh>\n  </object>\n </resources>\n <build>\n  <item objectid="1" printable="1"/>\n </build>\n</model>\n')
             z.writestr("Metadata/project_settings.config", json.dumps(project_settings))
 
-    def prepare(self, work, models):
-        self.work = work
+    def defaults(self, work, stl):
+        """Bambu Studio's own default settings, asked for through a project with only a printer name."""
         self.profiles = self._find_profiles()
-        # Step 1: ask Bambu Studio for its own default settings, through a project with only a printer name.
         seed = os.path.join(work, "bambu-seed.3mf")
-        self._write_3mf(seed, models["cube"], {"printer_settings_id": self.MACHINE}, legacy_header=False)
+        self._write_3mf(seed, stl, {"printer_settings_id": self.MACHINE}, legacy_header=False)
         out = os.path.abspath(os.path.join(work, "bambu-seed-out"))
         os.makedirs(out, exist_ok=True)
         base_path = os.path.join(out, "defaults.json")
@@ -252,7 +255,12 @@ class Bambu:
         m = re.search(r"Current BambuStudio Version (\S+)", r.stdout + r.stderr)
         self.version = m.group(1) if m else "unknown"
         with open(base_path) as f:
-            cfg = json.load(f)
+            return json.load(f)
+
+    def prepare(self, work, models):
+        self.work = work
+        # Step 1: Bambu Studio's own defaults.
+        cfg = self.defaults(work, models["cube"])
         # Step 2: layer the installed machine, process and filament presets, then the matched settings.
         for kind, name in (("machine", self.MACHINE), ("process", self.PROCESS), ("filament", self.FILAMENT)):
             cfg.update(self._resolve(kind, name))
