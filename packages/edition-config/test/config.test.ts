@@ -48,6 +48,7 @@ describe('edition config', () => {
     expect(c.library.moderation.mode).toBe('owner-approves-all')
     expect(c.library.moderation.allowedFormats).toEqual(['3mf', 'sx3mf', 'stl'])
     expect(c.routes.creator).toBe('/creators/:handle')
+    expect(c.routes.listing).toBe('/vault/:slug')
     expect(c.firstRun.defaultLook).toBe('slicerx')
     expect(c.funding).toEqual({})
     expect(c.downloads).toEqual({})

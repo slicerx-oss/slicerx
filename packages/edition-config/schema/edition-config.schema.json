@@ -712,6 +712,11 @@
           "type": "string",
           "pattern": "^\\/[a-z0-9/:_-]*$"
         },
+        "listing": {
+          "default": "/vault/:slug",
+          "type": "string",
+          "pattern": "^\\/[a-z0-9/:_-]*$"
+        },
         "dashboard": {
           "default": "/dashboard",
           "type": "string",

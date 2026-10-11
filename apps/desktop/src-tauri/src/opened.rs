@@ -3,7 +3,8 @@
 //! Files and links the system hands to the app: a double-clicked model or project, and "Open in" links
 //! (`slicerx://open?url=https://...`, with the edition's own scheme in a white-label build). Files join the same registry the open dialog uses, so the webview
 //! still never names a path. A link's file is downloaded to the app's cache folder first: https only, a size
-//! limit, and only the model extensions below.
+//! limit, and only the model extensions below. Vault links (`slicerx://vault/<slug>`, from a design's page on the
+//! website) go to the page, which opens that design's sheet.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -25,6 +26,43 @@ pub struct Pending(Mutex<Vec<FileRef>>);
 /// Sign-in links (`slicerx://auth/callback?code=...`) waiting for the page to finish them.
 #[derive(Default)]
 pub struct PendingAuth(Mutex<Vec<String>>);
+
+/// Vault designs asked for by link (`slicerx://vault/<slug>`, from a design's page on the website), by slug.
+#[derive(Default)]
+pub struct PendingVault(Mutex<Vec<String>>);
+
+/// The design a Vault link names: `<scheme>://vault/<slug>`, with the slug as the Vault writes them.
+pub fn vault_link_slug(url: &str) -> Option<String> {
+    vault_link_slug_for(&crate::brand::get().scheme, url)
+}
+
+fn vault_link_slug_for(scheme: &str, url: &str) -> Option<String> {
+    let rest = url.strip_prefix(scheme)?.strip_prefix("://vault/")?;
+    let slug = rest.split(['?', '#']).next()?.trim_end_matches('/');
+    let ok = (2..=81).contains(&slug.len())
+        && slug
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !slug.starts_with('-');
+    ok.then(|| slug.to_owned())
+}
+
+/// Holds a Vault link for the page, which opens the design's sheet, and brings the window forward.
+fn hand_over_vault(app: &AppHandle, slug: String) {
+    {
+        let state = app.state::<PendingVault>();
+        let mut pending = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A cold start can see the same link twice (the launch arguments and the deep link plugin).
+        if !pending.contains(&slug) {
+            pending.push(slug);
+        }
+    }
+    let _ = app.emit("sx-open-vault", ());
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
 
 /// True for this edition's sign-in callback link, which the page exchanges for a session.
 pub fn is_auth_callback(url: &str) -> bool {
@@ -139,6 +177,10 @@ pub fn handle(app: &AppHandle, items: Vec<String>) {
     for item in items {
         if is_auth_callback(&item) {
             hand_over_sign_in(app, item);
+            continue;
+        }
+        if let Some(slug) = vault_link_slug(&item) {
+            hand_over_vault(app, slug);
             continue;
         }
         if let Some(target) = link_target(&item) {
@@ -476,9 +518,41 @@ pub fn auth_callback_take(state: State<'_, PendingAuth>) -> Vec<String> {
     std::mem::take(&mut *state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
 }
 
+/// Vault links that arrived since the page last asked, each handed over once.
+#[tauri::command]
+pub fn vault_link_take(state: State<'_, PendingVault>) -> Vec<String> {
+    std::mem::take(&mut *state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vault_links_name_a_design_by_slug() {
+        assert_eq!(
+            vault_link_slug_for("slicerx", "slicerx://vault/x-mark").as_deref(),
+            Some("x-mark")
+        );
+        assert_eq!(
+            vault_link_slug_for("slicerx", "slicerx://vault/temperature-tower/?from=site").as_deref(),
+            Some("temperature-tower")
+        );
+        assert_eq!(
+            vault_link_slug_for("acmeslicer", "acmeslicer://vault/cube-20").as_deref(),
+            Some("cube-20")
+        );
+        assert_eq!(vault_link_slug_for("slicerx", "slicerx://vault/"), None);
+        assert_eq!(vault_link_slug_for("slicerx", "slicerx://vault/X-Mark"), None);
+        assert_eq!(vault_link_slug_for("slicerx", "slicerx://vault/../etc"), None);
+        assert_eq!(vault_link_slug_for("slicerx", "slicerx://vault/a/b"), None);
+        assert_eq!(vault_link_slug_for("slicerx", "slicerx://vault/-x"), None);
+        assert_eq!(vault_link_slug_for("slicerx", "acmeslicer://vault/x-mark"), None);
+        assert_eq!(
+            vault_link_slug_for("slicerx", "slicerx://open?url=https://example.com/a.stl"),
+            None
+        );
+    }
 
     #[test]
     fn sign_in_links_with_the_edition_scheme_go_to_the_page() {
