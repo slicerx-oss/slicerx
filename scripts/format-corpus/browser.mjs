@@ -67,15 +67,15 @@ async function once(file, reader) {
 
 // one page first, so the module transforms are done before anything is timed
 await once(picked[0] ?? files[0], 'ts')
-console.log('| File | Size | Reader | First ms | Fastest ms | Peak MB | Objects | Parts |\n| --- | --- | --- | --- | --- | --- | --- | --- |')
+console.log('| File | Size | Reader | First ms | Fastest ms | Read ms | Engine ms | Peak MB | Objects | Parts |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
 for (const file of picked) {
   const base = await once(file, 'none')
   for (const reader of ['ts', 'geom']) {
     const r = await once(file, reader)
     const name = file.split('/').pop()
     const size = `${(statSync(file).size / 1024).toFixed(0)} KB`
-    if (r.error) console.log(`| ${name} | ${size} | ${reader} | fails: ${r.error} | | | | |`)
-    else console.log(`| ${name} | ${size} | ${reader} | ${r.times[0].toFixed(1)} | ${Math.min(...r.times).toFixed(1)} | ${((r.kb - base.kb) / 1024).toFixed(1)} | ${r.objects} | ${r.parts} |`)
+    if (r.error) console.log(`| ${name} | ${size} | ${reader} | fails: ${r.error} | | | | | | |`)
+    else console.log(`| ${name} | ${size} | ${reader} | ${r.times[0].toFixed(1)} | ${Math.min(...r.times).toFixed(1)} | ${Math.min(...r.scans).toFixed(1)} | ${r.engines?.length ? Math.min(...r.engines).toFixed(1) : ''} | ${((r.kb - base.kb) / 1024).toFixed(1)} | ${r.objects} | ${r.parts} |`)
   }
 }
 await server.close()
