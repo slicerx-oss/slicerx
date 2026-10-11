@@ -16,7 +16,7 @@ import type { DataStore, KnowledgeKind } from './data'
 import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, type ExtraLayers, type SlotLayer } from './config'
 import { gcode3mf, PLATE_THUMBNAILS } from './gcode3mf'
 import { readPresetFiles } from './presets'
-import { importReportLines, readProjectFile } from './projectfile'
+import { importReportLines, readProjectFile, sliceWalls, type WallsNote } from './projectfile'
 import { listDocs, settingEntry, settingsReference } from './docs'
 import { BED_CONFIRM_NOTE, gatedCall, mcpName, resolvePending, type GateDeps, type ToolProgress } from './gate'
 import { resolveModel, ToolInputError, type ErrorCode, type PathPolicy } from './models'
@@ -152,8 +152,11 @@ const summaryShape = {
       other_slicer: z.array(z.string()),
       renamed: z.array(z.object({ from: z.string(), to: z.string() })),
       invalid: z.array(z.object({ key: z.string(), value: z.unknown() })),
+      walls: z.object({ generator: z.string(), source: z.enum(['kept', 'project', 'request', 'profile']), text: z.string() }).optional(),
     })
     .optional(),
+  /** Which wall generator the slice ran and why. */
+  walls: z.object({ generator: z.string(), source: z.enum(['kept', 'project', 'request', 'profile']), text: z.string() }).optional(),
   /** Warnings with a code an app can act on, each also in `warnings`: `no_printer` when no printer was named. */
   notices: z.array(z.object({ code: z.enum(['no_printer']), message: z.string() })).optional(),
   note: z.string().optional(),
@@ -298,6 +301,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       result.gcode_3mf_path = path
     }
     await progress(1, 'Done')
+    const walls: WallsNote = sliceWalls(config['wall_generator'], args.overrides, importReport?.walls)
     const notices = noPrinter ? [{ code: 'no_printer' as const, message: noPrinterMessage(config) }] : []
     for (const n of notices) result.warnings.push(n.message)
     const lines = [
@@ -307,12 +311,13 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       ...(result.gcode_path ? [`G-code: ${result.gcode_path}`] : []),
       ...(result.gcode_3mf_path ? [`G-code 3MF: ${result.gcode_3mf_path}`] : []),
       ...(result.preview_path ? [`Preview: ${result.preview_path}`] : []),
+      `Walls: ${walls.text}`,
       ...result.warnings.map((w) => `Warning: ${w}`),
-      ...(importReport ? importReportLines(importReport).map((l) => `Project settings: ${l}`) : []),
+      ...(importReport ? importReportLines(importReport, false).map((l) => `Project settings: ${l}`) : []),
       ...(result.note ? [result.note] : []),
     ]
     return ok(
-      { ...result, applied, ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}) },
+      { ...result, applied, ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}), walls },
       [...lines, ...projectGcode.map((g) => g.message)].join('\n'),
     )
   }
