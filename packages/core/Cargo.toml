@@ -53,6 +53,12 @@ serde_json = "=1.0.151"
 criterion = { version = "=0.8.2", default-features = false, features = ["cargo_bench_support"] }
 # Small thread pools for the tests that check the parallel stages cannot hang.
 rayon = "=1.12.0"
+# The format corpus reader (examples/format_read.rs) reads the sx: entries with it.
+sx3mf = { path = "../sx3mf" }
+
+[[example]]
+name = "format_read"
+required-features = ["import"]
 
 [[bench]]
 name = "slice"

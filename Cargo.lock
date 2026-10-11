@@ -5571,6 +5571,7 @@ dependencies = [
  "sx-boostvoronoi",
  "sx-geom",
  "sx-i-overlay",
+ "sx3mf",
  "thiserror 2.0.21",
 ]
 

@@ -101,10 +101,10 @@ precedence = "closest"
 SPDX-FileCopyrightText = ["Prusa Research a.s.", "Flashforge"]
 SPDX-License-Identifier = "LicenseRef-Trademark-Permission"
 
-# Preset files and a project saved by OrcaSlicer, Bambu Studio and PrusaSlicer for the import tests and
-# the parity reference. The settings in them come from those apps' AGPL profiles; the meshes are ours.
+# Preset files and projects saved by OrcaSlicer, Bambu Studio and PrusaSlicer for the import tests, the parity
+# reference and the format corpus. The settings in them come from those apps' AGPL profiles; the meshes are ours.
 [[annotations]]
-path = ["packages/settings/fixtures/preset-files/**", "packages/core/bench/models/x-mark-2color-orca.3mf"]
+path = ["packages/settings/fixtures/preset-files/**", "packages/core/bench/models/x-mark-2color-orca.3mf", "packages/geom/tests/corpus/orca-*.3mf", "packages/geom/tests/corpus/bambu-*.3mf", "packages/geom/tests/corpus/prusa-*.3mf"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = ["The OrcaSlicer, Bambu Studio and PrusaSlicer contributors", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "AGPL-3.0-or-later"
