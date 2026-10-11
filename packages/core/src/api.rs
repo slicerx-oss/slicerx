@@ -41,6 +41,7 @@ pub use crate::output::{
 pub use crate::plate::{Bed, Plate, PlateObject};
 pub use crate::preview::{preview_buffers, stitch as stitch_preview};
 pub use crate::session::{HeightRange, SliceSession};
+pub use crate::session_key::{SESSION_FREE_KEYS, session_key};
 pub use crate::threemf::{ProjectMetadata, metadata as project_metadata};
 pub use crate::validate::{GcodeReport, validate_gcode};
 pub use crate::{Cancellable, NoProgress, Progress, SliceEngine, SliceOptions, SxEngine, slice, slice_range};
@@ -865,9 +866,46 @@ pub fn run_request_with(
     progress: &dyn Progress,
 ) -> Result<SliceRun> {
     let timer = Timer::start();
-    let (config, config_issues) = request_config_checked(req)?;
+    let prepared = prepare(req, meshes)?;
+    run_prepared_timed(req, &prepared, progress, &timer)
+}
+
+/// A request's plate made into a session ([`build_session`]): the part of a slice a host may keep and slice again
+/// with ([`run_prepared`]) while [`session_key`] stays the same.
+pub struct Prepared {
+    session: SliceSession,
+}
+
+impl Prepared {
+    /// The prepared session.
+    pub fn session(&self) -> &SliceSession {
+        &self.session
+    }
+}
+
+/// Prepares `req`'s session ([`build_plate`], then [`build_session`]).
+pub fn prepare(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>) -> Result<Prepared> {
+    let (config, _) = request_config_checked(req)?;
     let plate = build_plate(req, meshes)?;
     let session = build_session(req, &plate, &config)?;
+    Ok(Prepared { session })
+}
+
+/// [`run_request_with`] on a session prepared before ([`prepare`]), for a request with the same [`session_key`]:
+/// the same bytes as a fresh run. The session keeps what slicing works out (shells, bridges, support and the
+/// other plans), so a second run on it does less.
+pub fn run_prepared(req: &SliceRequest, prepared: &Prepared, progress: &dyn Progress) -> Result<SliceRun> {
+    run_prepared_timed(req, prepared, progress, &Timer::start())
+}
+
+fn run_prepared_timed(
+    req: &SliceRequest,
+    prepared: &Prepared,
+    progress: &dyn Progress,
+    timer: &Timer,
+) -> Result<SliceRun> {
+    let (config, config_issues) = request_config_checked(req)?;
+    let session = &prepared.session;
     let n = session.layer_count();
     let shards = req.options.shards.unwrap_or(1).clamp(1, n.max(1));
     let want_gcode = req.options.emit_gcode.unwrap_or(true);
@@ -908,7 +946,7 @@ pub fn run_request_with(
         let mut sink = Vec::new();
         let target: &mut Vec<u8> = if want_gcode { &mut run.gcode } else { &mut sink };
         let before = target.len();
-        let mut out = slice_shard_paths(req, &session, &config, lo..hi, progress)?;
+        let mut out = slice_shard_paths(req, session, &config, lo..hi, progress)?;
         hits.merge(std::mem::take(&mut out.collisions));
         let drawing = if draw {
             let side = thumb_specs
@@ -929,7 +967,7 @@ pub fn run_request_with(
         };
         // The G-code, the preview and the thumbnail are written from the same paths at the same time.
         let (stats, preview) = crate::par::join(
-            || emit_shard(req, &session, &config, &out, progress, &mut *target),
+            || emit_shard(req, session, &config, &out, progress, &mut *target),
             || {
                 crate::par::join(
                     || want_preview.then(|| preview_buffers(&out)),
