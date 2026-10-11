@@ -12,7 +12,9 @@
 //!   scores its flush volume (as seconds of flushing, `FLUSH_VOLUME_TO_SCORE`) plus the seconds its changes
 //!   take. A filament whose parts reach past an extruder's printable area stays off that extruder; the
 //!   master extruder gets a small penalty when it ends up with fewer than half the filaments; on a tie the
-//!   first split in Bambu Studio's enumeration order wins.
+//!   first split in Bambu Studio's enumeration order wins. Only the filaments the plate prints with take part
+//!   (a part whose features all print with other filaments leaves its own filament out); the others go to the
+//!   left extruder.
 //! - On the H2C each filament of the right extruder gets a hotend of its own from the rack while there are
 //!   hotends (`extruder_max_nozzle_count`), so changes between them are hotend swaps and flush nothing.
 //!
@@ -168,17 +170,24 @@ impl Usage {
             for part in o.mesh.parts.iter().filter(|p| !p.triangles.is_empty()) {
                 let slot = o.slot_for(&part.name, part.slot);
                 let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+                let mut footprint = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
                 for &v in &part.positions {
                     let p = o.apply(v);
                     lo = lo.min(p[2]);
                     hi = hi.max(p[2]);
-                    grow(&mut boxes, slot, p);
+                    footprint = [
+                        footprint[0].min(p[0]),
+                        footprint[1].min(p[1]),
+                        footprint[2].max(p[0]),
+                        footprint[3].max(p[1]),
+                    ];
                 }
                 top = top.max(hi);
-                spans.push((slot, lo, hi));
-                // A feature on a filament of its own (`sparse_infill_filament_id` and the like, the object's own
-                // settings first) prints with it over the part's footprint: walls on every layer, sparse infill
-                // between the shells, solid infill and the surfaces on the shell layers at the bottom and the top.
+                // Each feature prints with its filament (`sparse_infill_filament_id` and the like, the object's own
+                // settings first, the part's filament when unset) over the part's footprint: walls on every layer,
+                // sparse infill between the shells, solid infill and the surfaces on the shell layers at the bottom
+                // and the top. The part's own filament counts only for the features left on it: with every feature
+                // moved to others it prints nothing, as Bambu Studio maps it.
                 let get = |name: &str| o.settings.get(name).or_else(|| cfg.raw.get(name));
                 let (top_n, bottom_n) = cfg.shell_layers(step);
                 let bottom = lo + first + f64::from(bottom_n.saturating_sub(1)) * step;
@@ -194,12 +203,11 @@ impl Usage {
                     (bottom_f, lo, bottom),
                 ];
                 for (f, a, b) in bands {
-                    if f != slot && f > 0 && b > a {
+                    let f = if f == 0 { slot } else { f };
+                    if b > a {
                         spans.push((f, a, b));
-                        if let Some(Some(r)) = boxes.get(usize::from(slot.max(1) - 1)).copied() {
-                            grow(&mut boxes, f, [r[0], r[1], 0.0]);
-                            grow(&mut boxes, f, [r[2], r[3], 0.0]);
-                        }
+                        grow(&mut boxes, f, [footprint[0], footprint[1], 0.0]);
+                        grow(&mut boxes, f, [footprint[2], footprint[3], 0.0]);
                     }
                 }
                 for f in &part.paint {
@@ -376,8 +384,14 @@ impl Map {
                 layers: &usage.layers,
                 tools,
             };
-            let mut best_map = vec![u8::try_from(master).unwrap_or(0); n];
+            // A filament the plate never prints with goes to the left extruder, as Bambu Studio maps it.
+            let mut best_map = vec![0u8; n];
             if used.len() < 2 || ext != 2 {
+                for &s in &used {
+                    if let Some(m) = best_map.get_mut(usize::from(s - 1)) {
+                        *m = u8::try_from(master).unwrap_or(0);
+                    }
+                }
                 if let Some(&s) = used.first()
                     && !allowed(s, master)
                     && let Some(m) = best_map.get_mut(usize::from(s - 1))
@@ -731,6 +745,20 @@ mod tests {
         };
         assert_eq!(m.extruder, vec![0, 0, 1]);
         assert!(!m.auto);
+    }
+
+    #[test]
+    fn a_filament_the_plate_never_prints_with_goes_left() {
+        // Bambu Studio maps filament 3, which nothing prints with, to the left extruder: "2 1 1".
+        let Some(m) = Map::resolve(&h2d(&[]), 3, &every_layer(&[1, 2], 20)) else {
+            panic!("a map")
+        };
+        assert_eq!(m.extruder, vec![1, 0, 0]);
+        // One filament printing: it takes the master extruder, the unused one the left.
+        let Some(m) = Map::resolve(&h2d(&[]), 2, &every_layer(&[2], 20)) else {
+            panic!("a map")
+        };
+        assert_eq!(m.extruder, vec![0, 1]);
     }
 
     #[test]
