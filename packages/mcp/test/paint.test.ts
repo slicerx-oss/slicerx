@@ -5,7 +5,7 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { connect, data } from './helpers'
+import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
 
 const geomBin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release/sx-geom')
 
@@ -76,5 +76,22 @@ describe.skipIf(!existsSync(geomBin))('painting a design', () => {
     const both = await h.call('slicerx_paint_preview', { design: d, state: 2, target: { kind: 'height', below: 5, above: 2 } })
     expect(both.isError).toBe(true)
     expect(JSON.stringify(both.content)).toMatch(/below, above, or from and to/)
+  })
+
+  it.skipIf(noSx())('saves the paint in the 3MF, and a slice of it uses the painted filament', { timeout: sxTimeout }, async () => {
+    const h = await connect({ sxGeomBin: geomBin, engine: 'sx', sxBin })
+    const d = data<{ output: { design: string } }>(await h.call('slicerx_design_new', { name: 'Cube', from: 'sample:cube-20' })).output.design
+    const slice = async (path: string) => {
+      const r = await h.call('slicerx_slice_file', { model: path, profiles: ['filament:pla'], filaments: [{ slot: 2, profile: 'filament:pla', color: '#00AE42' }], overrides: { layer_height: 0.2, smart_layer: 'off' } })
+      expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+      return data<{ filaments: { slot: number; filament_g: number }[] }>(r).filaments.find((f) => f.slot === 2)?.filament_g ?? 0
+    }
+    const plain = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d, file_name: 'plain' })).output.path
+    expect(await slice(plain)).toBe(0)
+    // The bottom and one side in filament 2.
+    const pv = data<{ output: Preview }>(await h.call('slicerx_paint_preview', { design: d, state: 2, target: { kind: 'height', below: 4 } })).output
+    expect((await h.call('slicerx_paint_apply', { preview: pv.preview })).isError).toBeFalsy()
+    const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d, file_name: 'painted' })).output.path
+    expect(await slice(saved)).toBeGreaterThan(0)
   })
 })
