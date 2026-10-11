@@ -52,8 +52,9 @@ if (__SX_FEATURE_CONNECT__) {
 }
 
 // The AI clients' marks identify them in "Connect your AI agent"; unaltered, never implying endorsement.
+// From its own subpath, so the agent list loads with the brand marks and stays out of the startup shell.
 if (__SX_FEATURE_PILOT__) {
-  const [{ registerAgentMarks }, { BrandLogo }] = await Promise.all([import('@slicerx/app'), import('@slicerx/brand-icons')])
+  const [{ registerAgentMarks }, { BrandLogo }] = await Promise.all([import('@slicerx/app/pilot-connect/agents'), import('@slicerx/brand-icons')])
   registerAgentMarks((mark, size, title) => <BrandLogo slug={mark} size={size} title={title} />)
 }
 
