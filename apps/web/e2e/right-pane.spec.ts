@@ -59,8 +59,9 @@ test.describe('the right pane', () => {
     // Seen: shutting it again does not bring the glow back for the same warnings.
     await tab(page).click()
     await expect(tab(page)).not.toHaveAttribute('data-attention', /./)
-    // The person's choice persists.
+    // The person's choice persists. Wait for the click to land before reloading: a busy page can take it late.
     await tab(page).click()
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
     await page.reload()
     await plateIn(page)
     await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
