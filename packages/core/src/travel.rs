@@ -811,7 +811,10 @@ impl Layout {
         );
         let (pa, pb) = ([a.x_mm(), a.y_mm()], [b.x_mm(), b.y_mm()]);
         let mut pts: Vec<Pt> = vec![pb];
+        // From a point to itself there is no travel to comb (from the outer wall, outside the area combing keeps to,
+        // the router would go in and come back).
         if comb
+            && a != b
             && !contains_segment(&self.inner, pa, pb)
             && let Some(bound) = self.boundary.as_ref().filter(|bd| !bd.rings.is_empty())
         {
@@ -894,6 +897,21 @@ mod tests {
         let p = l.plan(Point::from_mm(5.0, 5.0), Point::from_mm(35.0, 5.0), true, 0.0);
         assert_eq!(p.route.len(), 1);
         assert!(p.internal);
+    }
+
+    /// A path that starts where the last one ended needs no travel: on the outer wall, outside the area combing keeps
+    /// to, the planner gave a detour out and back (over a millimetre), and the writer then retracted and wiped for it.
+    #[test]
+    fn a_travel_to_where_the_nozzle_already_is_goes_nowhere() {
+        let l = layout();
+        for at in [
+            Point::from_mm(0.21, 20.0),
+            Point::from_mm(39.79, 7.5),
+            Point::from_mm(5.0, 5.0),
+        ] {
+            let p = l.plan(at, at, true, 0.0);
+            assert_eq!(p.route, vec![at], "{p:?}");
+        }
     }
 
     #[test]

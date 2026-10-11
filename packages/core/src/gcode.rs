@@ -2544,8 +2544,12 @@ fn emit_layer(
                     ok
                 })
             });
+        // A path that starts where the last one ended makes no travel, so it does not retract either (Orca's
+        // GCode::_extrude calls travel_to, where the retraction is decided, only when the nozzle is not already
+        // there). A planned detour between the two would otherwise retract, wipe the nozzle away and leave it there.
         let need_retract = style.active(retract)
             && !retracted
+            && cursor != Some(start)
             && (zone_lift.is_some()
                 || (route_len > rc.retraction_minimum_travel && !in_infill && !in_support && !within_tower));
         // Orca's GCode::_extrude calls travel_to, which writes the travel's acceleration and jerk, only when the
