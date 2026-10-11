@@ -3,7 +3,7 @@
 //! One reader of the format corpus on one file, for scripts/format-corpus/run.mjs:
 //!
 //! ```text
-//! cargo run --release -p sx-core --example format_read -- <core|geom|sx3mf|none> <file> [repeats]
+//! cargo run --release -p sx-core --example format_read -- <core|legacy|geom|sx3mf|none> <file> [repeats]
 //! ```
 //!
 //! Prints one JSON summary (plates, objects, parts with their type, slot, triangles and painted triangles, and the
@@ -15,7 +15,7 @@ use std::time::Instant;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (Some(reader), Some(file)) = (args.get(1), args.get(2)) else {
-        eprintln!("usage: format_read <core|geom|sx3mf|none> <file> [repeats]");
+        eprintln!("usage: format_read <core|legacy|geom|sx3mf|none> <file> [repeats]");
         std::process::exit(2);
     };
     let repeats: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(3).max(1);
@@ -54,16 +54,22 @@ fn read(reader: &str, bytes: &[u8], name: &str) -> Result<Value, String> {
         .to_ascii_lowercase();
     match reader {
         "none" => Ok(Value::Null),
-        "core" => core(bytes, name, &ext),
+        "core" => core(bytes, name, &ext, false),
+        "legacy" => core(bytes, name, &ext, true),
         "geom" => geom(bytes, name, &ext),
         "sx3mf" => sx3mf(bytes, &ext),
         _ => Err(format!("unknown reader {reader}")),
     }
 }
 
-fn core(bytes: &[u8], name: &str, ext: &str) -> Result<Value, String> {
+fn core(bytes: &[u8], name: &str, ext: &str, legacy: bool) -> Result<Value, String> {
     if ext == "3mf" || ext == "sx3mf" {
-        let plates = sx_core::api::load_3mf_plate_objects(bytes, name).map_err(|e| e.to_string())?;
+        let plates = if legacy {
+            sx_core::api::load_3mf_plate_objects_legacy(bytes, name)
+        } else {
+            sx_core::api::load_3mf_plate_objects(bytes, name)
+        }
+        .map_err(|e| e.to_string())?;
         let settings = sx_core::threemf::metadata(bytes, name)
             .ok()
             .and_then(|m| m.project_settings)
