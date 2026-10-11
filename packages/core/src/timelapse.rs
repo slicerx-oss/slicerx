@@ -82,6 +82,18 @@ pub(crate) fn timelapse_spot(
     })
 }
 
+/// True when the print's last layer `l` ends with its timelapse block, so the print's closing retraction and wipe go
+/// before the block, as Orca and Bambu Studio write them: the block parks the head off the part, and nothing moves or
+/// extrudes from there before the end G-code. The layer and the footer each ask, so shards agree.
+pub(crate) fn ends_print_with_block(
+    cfg: &PrintConfig,
+    flavor: GcodeFlavor,
+    l: &LayerPaths,
+    tower: bool,
+) -> bool {
+    timelapse_spot(cfg, flavor, l, tower) == Some(Spot::End) && has_text(cfg, "time_lapse_gcode")
+}
+
 /// Where the wrapping detection block of layer `l` goes, or None when the profile has none.
 pub(crate) fn wrapping_spot(cfg: &PrintConfig, l: &LayerPaths) -> Option<Spot> {
     if !crate::firmware::truthy(cfg, "enable_wrapping_detection")

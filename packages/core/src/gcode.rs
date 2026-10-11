@@ -1228,6 +1228,36 @@ fn footer(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Result<Vec
     Ok(b)
 }
 
+/// The print's closing retraction: Orca wipes along the last path while it retracts, when the filament wipes.
+fn closing_retract(b: &mut Vec<u8>, style: Retraction, rc: &PrintConfig, c: &PrintConfig, last: &LayerPaths) {
+    let tail = last.wipe_tail();
+    if rc.retraction_length > 0.0
+        && rc.wipe
+        && !style.firmware
+        && let Some(&at) = tail.points.last()
+    {
+        let speed = if tail.speed_mm_s > 0.0 {
+            feed(f64::from(tail.speed_mm_s))
+        } else {
+            -1
+        };
+        retract_wiping(
+            b,
+            style,
+            (rc, c),
+            (at, &tail.points, tail.forward),
+            (e_units(rc.retraction_length), feed(rc.retraction_speed)),
+            speed,
+        );
+    } else if rc.retraction_length > 0.0 {
+        b.extend_from_slice(b"G1 E-");
+        put_fixed(b, e_units(rc.retraction_length), 5);
+        b.extend_from_slice(b" F");
+        put_int(b, feed(rc.retraction_speed));
+        b.push(b'\n');
+    }
+}
+
 fn footer_body(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Result<Vec<u8>, String> {
     let mut b = Vec::with_capacity(256);
     let top = out.layers.last().map_or(0.0, |l| f64::from(l.z));
@@ -1246,32 +1276,14 @@ fn footer_body(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Resul
         .map_or(1, |p| p.tool.max(1));
     let rc = c.for_filament(last_tool);
     let style = Retraction::of(c, flavor);
-    // orca's closing retract wipes along the last path too
-    let tail = out.layers.last().map(LayerPaths::wipe_tail).unwrap_or_default();
-    if rc.retraction_length > 0.0
-        && rc.wipe
-        && !style.firmware
-        && let Some(&at) = tail.points.last()
-    {
-        let speed = if tail.speed_mm_s > 0.0 {
-            feed(f64::from(tail.speed_mm_s))
-        } else {
-            -1
-        };
-        retract_wiping(
-            &mut b,
-            style,
-            (&rc, c),
-            (at, &tail.points, tail.forward),
-            (e_units(rc.retraction_length), feed(rc.retraction_speed)),
-            speed,
-        );
-    } else if rc.retraction_length > 0.0 {
-        b.extend_from_slice(b"G1 E-");
-        put_fixed(&mut b, e_units(rc.retraction_length), 5);
-        b.extend_from_slice(b" F");
-        put_int(&mut b, feed(rc.retraction_speed));
-        b.push(b'\n');
+    // When the last layer ends with its timelapse block, it made the closing retraction before the block (the
+    // head is parked off the part now).
+    let done = out
+        .layers
+        .last()
+        .is_some_and(|l| crate::timelapse::ends_print_with_block(c, flavor, l, out.prime_tower.is_some()));
+    if !done && let Some(l) = out.layers.last() {
+        closing_retract(&mut b, style, &rc, c, l);
     }
     let mut ctx = crate::customgcode::context(c, out);
     ctx.set_num("layer_num", f64::from(out.layer_count.saturating_sub(1)));
@@ -2949,7 +2961,30 @@ fn emit_layer(
     if pending_lift.is_some() {
         write_normal_lift(b, z, z_feed);
     }
-    for (_, text) in blocks.iter().filter(|(s, _)| *s == crate::timelapse::Spot::End) {
+    // The print's last layer ending with its timelapse block: the closing retraction and wipe first, along the last
+    // path, then the label closes and the block parks the head, and nothing comes after it but the end G-code (Orca
+    // and Bambu Studio write it so). The footer leaves its own closing retraction out then.
+    let closing = out.layer_count > 0
+        && l.index + 1 == out.layer_count
+        && crate::timelapse::ends_print_with_block(base, flavor, l, out.prime_tower.is_some());
+    if closing {
+        if !retracted {
+            let last_tool = l.paths.last().map_or(1, |p| p.tool.max(1));
+            closing_retract(b, style, &c.for_filament(last_tool), c, l);
+        }
+        if let (Some(lb), Some(prev)) = (labels.as_ref(), open_object.take()) {
+            for t in [lb.comment_end(prev), lb.fw_end(prev)].into_iter().flatten() {
+                b.extend_from_slice(t.as_bytes());
+            }
+        }
+        for (_, text) in blocks.iter().filter(|(s, _)| *s == crate::timelapse::Spot::End) {
+            push_lines(b, text);
+        }
+    }
+    for (_, text) in blocks
+        .iter()
+        .filter(|(s, _)| !closing && *s == crate::timelapse::Spot::End)
+    {
         let primed = !retracted && style.active(retract);
         if primed {
             retract_move(b, style, -retract, retract_feed);
@@ -2963,6 +2998,18 @@ fn emit_layer(
             write_eager_lift(b, &rc, Lift::of_block(&rc), cursor, cur_z, hop, z_feed);
         }
         push_lines(b, text);
+        // A block that parked the head off the part: back to where the layer's last path ended, still lifted, before
+        // the nozzle comes down and primes, so the next layer's wipe and prime happen over the part and nothing
+        // extrudes or wipes from the park position.
+        if crate::timelapse::moves_head(text)
+            && let Some(at) = cursor
+        {
+            b.extend_from_slice(b"G0");
+            put_xy(b, at);
+            b.extend_from_slice(b" F");
+            put_int(b, travel_feed);
+            b.push(b'\n');
+        }
         if crate::timelapse::moves_z(text) || (lift_ok && style.active(retract)) {
             b.extend_from_slice(b"G1 Z");
             put_fixed(b, cur_z, 3);
