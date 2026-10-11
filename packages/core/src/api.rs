@@ -1312,6 +1312,8 @@ pub const REQUEST_SCHEMA: &str = r#"{
     "options": {
       "type": "object",
       "properties": {
+        "configReport": { "type": "boolean", "description": "List the config keys this engine never reads in the result's configReport.notApplied, with one warning. Off by default; sx turns it on" },
+        "strict": { "type": "boolean", "description": "Refuse the slice when the config sets a key this engine never reads or a value it cannot use" },
         "engine": { "enum": ["sx", "orca"] },
         "flavor": { "enum": ["marlin2", "klipper", "reprapfirmware", "bambu", "marlin", "reprap", "repetier", "teacup", "makerware", "sailfish", "mach3", "machinekit", "smoothie", "no-extrusion", "griffin", "cheetah"] },
         "shards": { "type": "integer", "minimum": 1 },
@@ -1381,6 +1383,22 @@ pub const RESULT_SCHEMA: &str = r#"{
           "code": { "enum": ["open_edges", "thin_wall", "floating_region", "long_bridge", "outside_bed", "unsupported_setting", "manual_step", "safety_limit"] },
           "message": { "type": "string" },
           "layer": { "type": "integer" }
+        }
+      }
+    },
+    "configReport": {
+      "type": "object",
+      "description": "What the config set that the slice did not use; absent when it used everything",
+      "properties": {
+        "notApplied": { "type": "array", "items": { "type": "string" }, "description": "Keys this engine never reads (with options.configReport or strict)" },
+        "invalid": {
+          "type": "array",
+          "description": "Values the engine could not use; those settings kept their defaults",
+          "items": {
+            "type": "object",
+            "required": ["key", "value", "reason"],
+            "properties": { "key": { "type": "string" }, "value": {}, "reason": { "type": "string" } }
+          }
         }
       }
     },
