@@ -41,6 +41,8 @@ pub mod font;
 pub mod hole;
 #[cfg(feature = "hollow")]
 pub mod hollow;
+#[cfg(feature = "formats")]
+pub mod format;
 pub mod import;
 pub mod json;
 mod json_cad;

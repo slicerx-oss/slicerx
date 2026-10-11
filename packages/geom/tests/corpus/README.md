@@ -1,6 +1,6 @@
 # Format corpus
 
-Model files that every reader in the repository opens, so their answers can be compared: sx-core's loader (`threemf.rs`, `mesh.rs`), sx-geom's import, the app's 3MF and STL readers (`packages/app/src/export`) and the sx3mf crate. `corpus.json` lists the files and which app wrote each one; most live next to the tests that already use them.
+Model files that every reader in the repository opens, so their answers can be compared: sx-core's loader (`threemf.rs`, `mesh.rs`), sx-geom's import and 3MF reader (`format::read_3mf`), the app's 3MF and STL readers (`packages/app/src/export`) and the sx3mf crate. `corpus.json` lists the files and which app wrote each one; most live next to the tests that already use them.
 
 ```sh
 node scripts/format-corpus/run.mjs                      # report in target/format-corpus/report.md
