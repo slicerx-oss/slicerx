@@ -29,6 +29,10 @@ fn data_copies_match_the_settings_schema() {
             include_str!(concat!(env!("OUT_DIR"), "/engine-choices.json")),
         ),
         (
+            "prusa-map.json",
+            include_str!(concat!(env!("OUT_DIR"), "/prusa-map.json")),
+        ),
+        (
             "head-shapes.json",
             include_str!(concat!(env!("OUT_DIR"), "/head-shapes.json")),
         ),

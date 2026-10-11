@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! The 3MF loader through `sx-geom` gives the same meshes as the engine's own reader, field for field and bit for
 //! bit (positions, triangles, decoded paint, names, slots, volumes, settings, notes), or the same error, on every
-//! 3MF in the format corpus (`packages/geom/tests/corpus/corpus.json`). `SX_CORPUS_PRIVATE=<dir>` adds the 3MF files
-//! in a folder outside the repository.
+//! 3MF in the format corpus (`packages/geom/tests/corpus/corpus.json`) but `PrusaSlicer` projects, whose volumes the
+//! engine's reader merged into one printed mesh. `SX_CORPUS_PRIVATE=<dir>` adds the 3MF files in a folder outside the
+//! repository.
 
 use std::path::{Path, PathBuf};
 
@@ -44,6 +45,9 @@ fn geom_reader_matches_the_legacy_one() {
     let mut checked = 0;
     for path in files() {
         let bytes = std::fs::read(&path).expect("a corpus file");
+        if sx_geom::format::read_3mf(&bytes).is_ok_and(|p| p.layout == sx_geom::format::Layout::Prusa) {
+            continue;
+        }
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("model.3mf");
         let new = sx_core::api::load_3mf_plate_objects(&bytes, name);
         let old = sx_core::api::load_3mf_plate_objects_legacy(&bytes, name);
@@ -64,4 +68,32 @@ fn geom_reader_matches_the_legacy_one() {
         checked += 1;
     }
     assert!(checked >= 20, "only {checked} corpus files");
+}
+
+#[test]
+fn prusaslicer_modifiers_are_volumes_with_their_settings() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let bytes = std::fs::read(root.join("packages/settings/fixtures/preset-files/prusaslicer-2.9.6.3mf"))
+        .expect("the fixture");
+    let plates = sx_core::api::load_3mf_plate_objects(&bytes, "prusaslicer-2.9.6.3mf").expect("reads");
+    let mesh = &plates[0].1[0];
+    assert_eq!(mesh.name, "Cube with modifier");
+    assert_eq!(mesh.parts.len(), 1);
+    assert_eq!(mesh.parts[0].triangles.len(), 12);
+    assert_eq!(mesh.volumes.len(), 1);
+    let v = &mesh.volumes[0];
+    assert_eq!(v.role, sx_core::plate::VolumeRole::Modifier);
+    assert_eq!(v.part.name, "Denser core");
+    // the object's settings, then the modifier's, in Orca's keys
+    let s = v.settings.as_object().expect("settings");
+    assert_eq!(
+        s.get("sparse_infill_pattern").and_then(|v| v.as_str()),
+        Some("gyroid")
+    );
+    assert_eq!(s.get("wall_loops").and_then(|v| v.as_str()), Some("4"));
+    assert_eq!(
+        s.get("sparse_infill_density").and_then(|v| v.as_str()),
+        Some("40%")
+    );
+    assert_eq!(s.get("sparse_infill_speed").and_then(|v| v.as_str()), Some("120"));
 }
