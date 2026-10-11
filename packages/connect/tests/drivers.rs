@@ -380,6 +380,43 @@ async fn bambu_refused_project_start_says_why() {
     session.start(&rf, opts, &t).await.unwrap();
 }
 
+// A printer that refuses pause, resume or stop answers `result: fail` with its reason, as it does
+// a project start. The command fails with `refused` and the reason instead of reading as done, and
+// the printer keeps printing; once it accepts again, the pause goes through.
+#[tokio::test]
+async fn bambu_refused_pause_says_why() {
+    use serde_json::json;
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    mocks.set_state("bambu", "printing").await;
+    let session = BambuConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    mocks
+        .control("/bambu", json!({ "refuseControl": "the printer is busy" }))
+        .await;
+    let t = gate.mint(Action::Pause, "bay-1", &params::printer("bay-1"));
+    match session.pause(&t).await {
+        Err(e) => {
+            assert_eq!(e.code(), ErrorCode::Refused);
+            assert!(e.to_string().contains("the printer is busy"), "{e}");
+        }
+        Ok(()) => panic!("a refused pause must fail"),
+    }
+    assert_eq!(mocks.state().await["bambu"]["state"], "printing");
+
+    mocks.control("/bambu", json!({ "refuseControl": null })).await;
+    let t = gate.mint(Action::Pause, "bay-1", &params::printer("bay-1"));
+    session.pause(&t).await.unwrap();
+    assert_eq!(mocks.state().await["bambu"]["state"], "paused");
+}
+
 /// Connects to the Bambu fake after making it another printer through `/bambu`, uploads a
 /// .gcode.3mf and starts it with `slot_map`, and returns the session and the project start line.
 async fn bambu_as(
