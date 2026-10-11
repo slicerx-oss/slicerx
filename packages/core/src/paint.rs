@@ -371,37 +371,71 @@ fn stamp(g: &Grid, mask: &mut [bool], a: (f64, f64), b: (f64, f64)) {
 #[allow(clippy::indexing_slicing, reason = "rows and columns stay inside the grid")]
 fn fill(g: &Grid, shapes: &Shapes) -> Vec<bool> {
     let mut out = vec![false; g.len()];
+    // Where each row's center line crosses the shape's edges: an edge only visits the rows it spans.
+    let mut rows: Vec<Vec<f64>> = vec![Vec::new(); g.ny];
     for shape in shapes {
-        for iy in 0..g.ny {
-            let y = g.center(0, iy).1;
-            let mut xs: Vec<f64> = Vec::new();
-            for ring in shape {
-                let n = ring.len();
-                for k in 0..n {
-                    let (Some(&a), Some(&b)) = (ring.get(k), ring.get((k + 1) % n)) else {
-                        continue;
-                    };
-                    let ((ax, ay), (bx, by)) = (to_mm(a), to_mm(b));
-                    if (ay > y) != (by > y) {
-                        xs.push(ax + (y - ay) / (by - ay) * (bx - ax));
-                    }
+        for ring in shape {
+            let n = ring.len();
+            for k in 0..n {
+                let (Some(&a), Some(&b)) = (ring.get(k), ring.get((k + 1) % n)) else {
+                    continue;
+                };
+                let ((ax, ay), (bx, by)) = (to_mm(a), to_mm(b));
+                // A row's center y is crossed when it is in [low end, high end) of the edge.
+                let (from, to) = (first_row(g, ay.min(by)), first_row(g, ay.max(by)));
+                for (iy, xs) in rows.iter_mut().enumerate().take(to).skip(from) {
+                    let y = g.center(0, iy).1;
+                    xs.push(ax + (y - ay) / (by - ay) * (bx - ax));
                 }
+            }
+        }
+        for (iy, xs) in rows.iter_mut().enumerate() {
+            if xs.is_empty() {
+                continue;
             }
             xs.sort_by(f64::total_cmp);
             for k in (0..xs.len().saturating_sub(1)).step_by(2) {
                 let (Some(&lo), Some(&hi)) = (xs.get(k), xs.get(k + 1)) else {
                     continue;
                 };
-                for ix in 0..g.nx {
-                    let x = g.center(ix, 0).0;
-                    if x >= lo && x < hi {
-                        out[iy * g.nx + ix] = true;
-                    }
+                // The cells whose center x is in [lo, hi).
+                let (from, to) = (first_column(g, lo), first_column(g, hi));
+                if from < to {
+                    out[iy * g.nx + from..iy * g.nx + to].fill(true);
                 }
             }
+            xs.clear();
         }
     }
     out
+}
+
+/// The first row whose center y is at or above `v` (`ny` when none is). Centers rise with the row.
+fn first_row(g: &Grid, v: f64) -> usize {
+    let (mut lo, mut hi) = (0, g.ny);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if g.center(0, mid).1 >= v {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    lo
+}
+
+/// The first column whose center x is at or above `v` (`nx` when none is).
+fn first_column(g: &Grid, v: f64) -> usize {
+    let (mut lo, mut hi) = (0, g.nx);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if g.center(mid, 0).0 >= v {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    lo
 }
 
 /// Distance in mm from every cell to the nearest marked cell (a large number when none is marked).
@@ -412,18 +446,19 @@ fn distance(g: &Grid, mask: &[bool]) -> Vec<f32> {
     let (nx, ny) = (g.nx, g.ny);
     let mut line = vec![0.0f32; nx.max(ny)];
     let mut out = vec![0.0f32; nx.max(ny)];
+    let mut scratch = Envelope::new(nx.max(ny));
     for ix in 0..nx {
         for iy in 0..ny {
             line[iy] = d[iy * nx + ix];
         }
-        squared_1d(&line[..ny], &mut out[..ny]);
+        squared_1d(&line[..ny], &mut out[..ny], &mut scratch);
         for iy in 0..ny {
             d[iy * nx + ix] = out[iy];
         }
     }
     for iy in 0..ny {
         line[..nx].copy_from_slice(&d[iy * nx..iy * nx + nx]);
-        squared_1d(&line[..nx], &mut out[..nx]);
+        squared_1d(&line[..nx], &mut out[..nx], &mut scratch);
         d[iy * nx..iy * nx + nx].copy_from_slice(&out[..nx]);
     }
     #[allow(clippy::cast_possible_truncation, reason = "distances are small")]
@@ -434,6 +469,22 @@ fn distance(g: &Grid, mask: &[bool]) -> Vec<f32> {
     d
 }
 
+/// The lower envelope's work space for rows of up to `n` cells, made once per distance transform: each parabola's
+/// cell, and where each one starts to be the lowest.
+struct Envelope {
+    v: Vec<usize>,
+    z: Vec<f32>,
+}
+
+impl Envelope {
+    fn new(n: usize) -> Self {
+        Self {
+            v: vec![0; n.max(1)],
+            z: vec![0.0; n + 1],
+        }
+    }
+}
+
 /// One pass of the squared distance transform (lower envelope of parabolas).
 #[allow(
     clippy::indexing_slicing,
@@ -442,12 +493,12 @@ fn distance(g: &Grid, mask: &[bool]) -> Vec<f32> {
     clippy::float_cmp,
     reason = "indexes stay inside the row"
 )]
-fn squared_1d(f: &[f32], out: &mut [f32]) {
+fn squared_1d(f: &[f32], out: &mut [f32], scratch: &mut Envelope) {
     const INF: f32 = 1.0e12;
     let n = f.len();
-    let mut v = vec![0usize; n];
-    let mut z = vec![0.0f32; n + 1];
+    let Envelope { v, z } = scratch;
     let mut k = 0usize;
+    v[0] = 0;
     z[0] = -INF;
     z[1] = INF;
     for q in 1..n {
@@ -1025,31 +1076,44 @@ impl LayerPaint<'_> {
         if !self.below.is_empty() {
             apply(&mut limit, self.below, below);
         }
-        // In filament order already (a map's order), so a list: collecting a map sorts again.
-        let dist: Vec<(u8, Vec<f32>)> = sources
-            .iter()
+        // In filament order already (a map's order), so a list: collecting a map sorts again. Each mask goes once its
+        // distances are made: on a big layer every grid is megabytes, and the layers are cut side by side.
+        drop(painted);
+        let mut dist: Vec<(u8, Vec<f32>)> = sources
+            .into_iter()
             .filter(|(_, m)| m.iter().any(|&x| x))
-            .map(|(s, m)| (*s, distance(&g, m)))
+            .map(|(s, m)| (s, distance(&g, &m)))
             .collect();
+        let last = dist.iter().rposition(|(s, _)| *s != self.default_slot);
         let mut out = Vec::new();
-        for (state, own) in &dist {
-            let state = *state;
+        for k in 0..dist.len() {
+            let state = dist.get(k).map_or(self.default_slot, |d| d.0);
             if state == self.default_slot {
                 continue;
             }
-            let field: Vec<f32> = (0..n)
-                .map(|c| {
-                    let mine = own.get(c).copied().unwrap_or(f32::INFINITY);
-                    let other = dist
-                        .iter()
-                        .filter(|(s, _)| *s != state)
-                        .map(|(_, d)| d.get(c).copied().unwrap_or(f32::INFINITY))
-                        .fold(f32::INFINITY, f32::min);
-                    let closer = if other.is_finite() { other - mine } else { 1.0 };
-                    let reach = limit.get(c).copied().unwrap_or(f32::INFINITY) - mine;
-                    closer.min(if reach.is_finite() { reach } else { 1.0 })
-                })
-                .collect();
+            let value = |c: usize, mine: f32, dist: &[(u8, Vec<f32>)]| {
+                let other = dist
+                    .iter()
+                    .filter(|(s, _)| *s != state)
+                    .map(|(_, d)| d.get(c).copied().unwrap_or(f32::INFINITY))
+                    .fold(f32::INFINITY, f32::min);
+                let closer = if other.is_finite() { other - mine } else { 1.0 };
+                let reach = limit.get(c).copied().unwrap_or(f32::INFINITY) - mine;
+                closer.min(if reach.is_finite() { reach } else { 1.0 })
+            };
+            // The last color's distances are not read again: its field takes their place.
+            let field: Vec<f32> = if Some(k) == last {
+                let mut own = dist.get_mut(k).map(|d| std::mem::take(&mut d.1)).unwrap_or_default();
+                for (c, v) in own.iter_mut().enumerate() {
+                    *v = value(c, *v, &dist);
+                }
+                own
+            } else {
+                let own = dist.get(k).map_or(&[][..], |d| &d.1[..]);
+                (0..n)
+                    .map(|c| value(c, own.get(c).copied().unwrap_or(f32::INFINITY), &dist))
+                    .collect()
+            };
             let shapes = loops_to_shapes(&contour(&g, &field));
             if !shapes.is_empty() {
                 out.push((state, shapes));
