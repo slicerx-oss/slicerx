@@ -2384,7 +2384,9 @@ fn emit_layer(
                     // the nozzle held, the rest the new one (Bambu Studio's used weight).
                     // The template's own extrusion (a chute flush on the X1 and P1 series, its retractions and
                     // primes) is filament used as well: the old filament's before the template selects the new
-                    // one, the new filament's after.
+                    // one, the new filament's after. Lines inside firmware conditionals (`M622` to `M623`) count
+                    // too: a change's purge is what the totals exist to count. Only the start and end sequences
+                    // leave their conditional lines out (`firmware::SequenceE`).
                     let (before, after) = change_extrusion_mm(&text);
                     if let Some(e) = usize::try_from(prev).ok().and_then(|o| chunk.e_units.get_mut(o)) {
                         *e += e_units(before);
