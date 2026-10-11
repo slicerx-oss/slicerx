@@ -133,15 +133,37 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       const objects = job.plate?.objects ?? [{ path: job.modelPlate ? `${job.modelPath}#${job.modelPlate}` : job.modelPath, name: basename(job.modelPath) }]
       // A file is placed on the printer's own bed, so a project keeps its objects where they fit.
       const bed = job.plate?.bed ?? bedOf(job.config)
-      const meshes = Object.fromEntries(objects.map((o, i) => [`m${i}`, o.path]))
+      const meshes: Record<string, string> = Object.fromEntries(objects.map((o, i) => [`m${i}`, o.path]))
+      // An object's or a volume's own settings, in the engine's shapes (a line width in % of the plate's nozzle).
+      const local = (s: Record<string, SettingValue>): Record<string, SettingValue> => {
+        const out = sxConfig({ nozzle_diameter: job.config['nozzle_diameter'] ?? 0.4, ...s })
+        if (!('nozzle_diameter' in s)) delete out['nozzle_diameter']
+        return out
+      }
+      const requestObjects = objects.map((o, i) => {
+        const volumes = (('volumes' in o ? o.volumes : undefined) ?? []).map((v, j) => {
+          meshes[`m${i}v${j}`] = v.path
+          return { role: v.role, mesh: `m${i}v${j}`, ...(v.name ? { name: v.name } : {}), ...(v.transform ? { transform: v.transform } : {}), ...(v.settings ? { settings: local(v.settings) } : {}) }
+        })
+        const settings = 'settings' in o ? o.settings : undefined
+        return { id: `o${i}`, name: o.name, mesh: `m${i}`, ...(o.transform ? { transform: o.transform } : {}), ...(settings ? { settings: local(settings) } : {}), ...(volumes.length ? { volumes } : {}) }
+      })
+      // Height ranges name plate objects by their own ids; the request names them o0, o1 and so on.
+      const requestId = new Map(objects.flatMap((o, i) => ('id' in o && o.id ? [[o.id, `o${i}`] as const] : [])))
+      const heightRanges = (job.heightRanges ?? []).map((r) => ({
+        zFromMm: r.zFromMm,
+        zToMm: r.zToMm,
+        settings: local(r.settings),
+        ...(r.objects ? { objects: r.objects.map((id) => requestId.get(id) ?? id) } : {}),
+      }))
       const request = {
         schemaVersion: 1,
         plate: {
           ...(bed ? { bed } : {}),
-          objects: objects.map((o, i) => ({ id: `o${i}`, name: o.name, mesh: `m${i}`, ...(o.transform ? { transform: o.transform } : {}) })),
+          objects: requestObjects,
         },
         config: sxConfig(job.explicitConfig),
-        options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, ...(job.trustedGcode ? { trustedGcode: true } : {}) },
+        options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, ...(job.trustedGcode ? { trustedGcode: true } : {}), ...(heightRanges.length ? { heightRanges } : {}) },
         meshes,
       }
       const requestPath = join(job.outDir, 'request.json')

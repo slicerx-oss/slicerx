@@ -11,6 +11,7 @@ import { z } from 'zod'
 import type { DataStore } from './data'
 import { resolveModel, type PathPolicy } from './models'
 import type { ProfileCatalog } from './profiles'
+import { placementTools } from './placement'
 import { McpProject } from './project'
 import { validateConfig } from './settings'
 import type { NodeSlicerHost } from './slicerhost'
@@ -212,5 +213,5 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     summary: (i) => `${i.printerId}: sent ${i.line.trim()}`,
   })
 
-  return [open, add, show, setOverrides, temperature, filament, gcode] as PilotTool<never>[]
+  return [open, add, show, setOverrides, ...placementTools(deps, need), temperature, filament, gcode] as PilotTool<never>[]
 }
