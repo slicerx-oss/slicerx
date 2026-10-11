@@ -112,8 +112,13 @@ test('Advanced shows Arrange and Transform on the bar, and Transform opens the n
   await expect(page.getByTestId('slice-selection-arrange')).toBeVisible()
   // The number rows live in the popover now, not under the list.
   await expect(page.locator('[data-section="objects"] [data-section="transform"]')).toHaveCount(0)
+  // Opening it moves nothing in the pane: its first field takes focus without scrolling the pane.
+  const card = page.locator('[data-section="objects"]')
+  const before = (await card.boundingBox())!.y
   await openTransform(page)
   const pop = page.locator('.selbar-transform')
+  await expect(pop.locator(':focus')).toHaveCount(1)
+  expect(Math.abs((await card.boundingBox())!.y - before)).toBeLessThanOrEqual(0.5)
   await expect(pop.getByRole('group', { name: 'Position' })).toBeVisible()
   await expect(pop.getByRole('group', { name: 'Size' })).toBeVisible()
   await page.keyboard.press('Escape')
