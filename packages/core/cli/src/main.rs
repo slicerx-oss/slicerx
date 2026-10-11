@@ -123,12 +123,37 @@ fn load_ref(base: &Path, full: &str) -> sx_core::Result<std::sync::Arc<Mesh>> {
 }
 
 /// The request's `meshes` map: reference to file path.
+/// The request's `meshes`: each key's file, given as a path or as `{ "file": path, "paint": ... }`.
 fn mesh_paths(raw: &Value) -> std::collections::HashMap<String, String> {
     raw.get("meshes")
         .and_then(Value::as_object)
         .map(|m| {
             m.iter()
-                .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+                .filter_map(|(k, v)| {
+                    let file = v.as_str().or_else(|| v.get("file").and_then(Value::as_str))?;
+                    Some((k.clone(), file.to_owned()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A `meshes` entry's mesh: its file, with the entry's paint written over the file's own.
+fn load_entry(base: &Path, full: &str, paint: Option<&Value>) -> sx_core::Result<std::sync::Arc<Mesh>> {
+    let mesh = load_ref(base, full)?;
+    let Some(paint) = paint else { return Ok(mesh) };
+    let mut m = (*mesh).clone();
+    m.apply_paint(paint)?;
+    Ok(std::sync::Arc::new(m))
+}
+
+/// The paint a `meshes` entry writes over its file's, by key (`sx_core::Mesh::apply_paint` reads it).
+fn mesh_paint(raw: &Value) -> std::collections::HashMap<String, Value> {
+    raw.get("meshes")
+        .and_then(Value::as_object)
+        .map(|m| {
+            m.iter()
+                .filter_map(|(k, v)| Some((k.clone(), v.get("paint")?.clone())))
                 .collect()
         })
         .unwrap_or_default()
@@ -149,6 +174,7 @@ fn split_projects(
     req: &mut sx_core::api::SliceRequest,
     base: &Path,
     paths: &std::collections::HashMap<String, String>,
+    painted: &std::collections::HashMap<String, Value>,
 ) -> sx_core::Result<std::collections::HashMap<String, std::sync::Arc<Mesh>>> {
     use sx_core::api;
     let mut cache = std::collections::HashMap::new();
@@ -162,7 +188,11 @@ fn split_projects(
         let key = o.mesh_ref();
         let full = paths.get(&key).map_or(key.as_str(), String::as_str);
         let (rel, plate) = split_ref(full);
-        let plain = o.transform.is_none() && o.volumes.is_empty() && o.brim_points.is_empty();
+        // A mesh given paint stays one object, so the paint's part indices are those of the mesh as loaded.
+        let plain = o.transform.is_none()
+            && o.volumes.is_empty()
+            && o.brim_points.is_empty()
+            && !painted.contains_key(&key);
         if !plain || !rel.to_ascii_lowercase().ends_with(".3mf") {
             out.push(o);
             continue;
@@ -244,8 +274,8 @@ fn cmd_request(args: &[String]) -> ExitCode {
     if let Some(config) = req.config.as_object() {
         req.options.stock_gcode_keys = stock::stock_keys(config);
     }
-    let paths = mesh_paths(&raw);
-    let cache = match split_projects(&mut req, &base, &paths) {
+    let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
+    let cache = match split_projects(&mut req, &base, &paths, &painted) {
         Ok(split) => std::sync::Mutex::new(split),
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
     };
@@ -253,7 +283,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
         if let Some(m) = cache.lock().ok().and_then(|c| c.get(id).cloned()) {
             return Ok(m);
         }
-        let mesh = load_ref(&base, paths.get(id).map_or(id, String::as_str))?;
+        let mesh = load_entry(&base, paths.get(id).map_or(id, String::as_str), painted.get(id))?;
         if let Ok(mut c) = cache.lock() {
             c.insert(id.to_owned(), mesh.clone());
         }

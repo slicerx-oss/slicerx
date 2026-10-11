@@ -133,7 +133,9 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       const objects = job.plate?.objects ?? [{ path: job.modelPlate ? `${job.modelPath}#${job.modelPlate}` : job.modelPath, name: basename(job.modelPath) }]
       // A file is placed on the printer's own bed, so a project keeps its objects where they fit.
       const bed = job.plate?.bed ?? bedOf(job.config)
-      const meshes = Object.fromEntries(objects.map((o, i) => [`m${i}`, o.path]))
+      // Paint goes with the one object it was given for; part indices are those of that object's mesh.
+      if (job.paint && objects.length !== 1) throw new ToolInputError(`Paint applies to one object, and this plate has ${objects.length}. Slice the painted object on its own, or give it a plate of its own.`, 'invalid_input')
+      const meshes = Object.fromEntries(objects.map((o, i) => [`m${i}`, job.paint ? { file: o.path, paint: job.paint } : o.path]))
       const request = {
         schemaVersion: 1,
         plate: {

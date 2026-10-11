@@ -1182,7 +1182,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
         "printerId": { "type": "string", "description": "Printer profile id (bambu-h2d): the head, gantry and tool changer the collision check uses" }
       }
     },
-    "meshes": { "type": "object", "additionalProperties": { "type": "string" }, "description": "sx CLI only: mesh reference to file path" }
+    "meshes": { "type": "object", "additionalProperties": { "oneOf": [ { "type": "string" }, { "type": "object", "required": ["file"], "properties": { "file": { "type": "string" }, "paint": { "type": "object", "description": "Paint written over the file's own: { part index: { color | seam | support | fuzzy: { triangle index: paint text } } }, texts as a 3MF's per-triangle paint; an empty text clears a triangle" } } } ] }, "description": "sx CLI only: mesh reference to file path, or to { file, paint }" }
   }
 }
 "#;
