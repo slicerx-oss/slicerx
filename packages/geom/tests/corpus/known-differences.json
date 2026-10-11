@@ -9,44 +9,14 @@
   "packages/geom/tests/corpus/two-colors.obj": [],
   "packages/geom/tests/corpus/two-materials.amf": [],
   "packages/geom/tests/corpus/subtypes.3mf": [
-    "plate 1 object 1 extent",
-    "plate 1 object 1 part 1 name",
-    "plate 1 object 1 part 2 name",
-    "plate 1 object 1 part 2 type",
-    "plate 1 object 1 part 3 name",
-    "plate 1 object 1 part 3 type",
-    "plate 1 object 1 part 4 name",
-    "plate 1 object 1 part 4 type",
-    "plate 1 object 1 part 5 name",
-    "plate 1 object 1 part 5 type",
-    "plate 1 object 1 part types"
+    "plate 1 object 1 part 1 name"
   ],
   "packages/geom/tests/corpus/bambu-subtypes.3mf": [
-    "plate 1 object 1 extent",
     "plate 1 object 1 part 1 name",
-    "plate 1 object 1 part 2 name",
-    "plate 1 object 1 part 2 type",
-    "plate 1 object 1 part 3 name",
-    "plate 1 object 1 part 3 type",
-    "plate 1 object 1 part 4 name",
-    "plate 1 object 1 part 4 type",
-    "plate 1 object 1 part 5 name",
-    "plate 1 object 1 part 5 type",
-    "plate 1 object 1 part types",
     "settings keys"
   ],
   "packages/geom/tests/corpus/orca-subtypes.3mf": [
-    "plate 1 object 1 extent",
     "plate 1 object 1 part 1 name",
-    "plate 1 object 1 part 2 name",
-    "plate 1 object 1 part 2 type",
-    "plate 1 object 1 part 3 name",
-    "plate 1 object 1 part 3 type",
-    "plate 1 object 1 part 4 name",
-    "plate 1 object 1 part 4 type",
-    "plate 1 object 1 part 5 name",
-    "plate 1 object 1 part 5 type",
-    "plate 1 object 1 part types",
     "settings keys"
   ],
   "packages/geom/tests/corpus/prusa-subtypes.3mf": [
