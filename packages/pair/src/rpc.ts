@@ -110,7 +110,8 @@ export const ApprovalRequestSchema = z.looseObject({
  * phone signs covers the request unchanged). Its facts hash to the request's action parameter
  * hashes: print to `printer.upload` `{printerId, name, sha256}` and `printer.start`
  * `{printerId, name, opts, sha256}` (`opts` `{}` when absent); resume, pause and cancel to
- * `{printerId}`; gcode to `{printerId, line}`; adjust to `{printerId, change}`. A phone shows the
+ * `{printerId}`; gcode to `{printerId, line}`; adjust to `{printerId, change}`; plugin to `plugin.call`
+ * `{pluginId, tool, input}`, targeting the connected app. A phone shows the
  * summary only when every hash matches, and offers no Approve when one does not. `sizeBytes` is the
  * hub's count of the bytes it holds; the hash binds the name and content hash.
  */
@@ -125,6 +126,8 @@ export const WorkSummary = z.discriminatedUnion('kind', [
   // One command a card shows whole, the hub's own rule (`MAX_GCODE_LINE` in sx-connect).
   z.object({ kind: z.literal('gcode'), printerId: z.string().max(128), line: z.string().max(96).regex(/^[\x20-\x7e]+$/) }),
   z.object({ kind: z.literal('adjust'), printerId: z.string().max(128), change: z.unknown() }),
+  // A connected app's tool, hashed to `plugin.call` `{pluginId, tool, input}`; `printerId` is empty.
+  z.object({ kind: z.literal('plugin'), printerId: z.string().max(128), pluginId: z.enum(['spoolman', 'home-assistant']), tool: z.string().max(64).regex(/^[a-z0-9_]+$/), input: z.looseObject({}) }),
 ])
 export type WorkSummary = z.infer<typeof WorkSummary>
 

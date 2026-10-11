@@ -52,12 +52,48 @@ pub(crate) enum Work {
     Cancel {
         printer: String,
     },
+    /// A connected app's tool a person has to approve, such as switching a Home Assistant device.
+    Plugin {
+        plugin: String,
+        tool: String,
+        input: Value,
+    },
 }
+
+/// Connected apps whose tools can ride on a card, and so be run by the hub once a person approves.
+const PLUGIN_WORK: [&str; 2] = ["spoolman", "home-assistant"];
 
 impl Work {
     /// `work: {kind: "print", printerId, file: {name, kind, sha256, dataBase64}, opts?}`,
     /// `{kind: "resume", printerId}` or `{kind: "gcode", printerId, line}`.
     pub(crate) fn parse(p: &Value) -> Rpc<Self> {
+        // `{kind: "plugin", pluginId, tool, input}`: a connected app's tool, by its bare name.
+        if p.get("kind").and_then(Value::as_str) == Some("plugin") {
+            let plugin = str_arg(p, "pluginId")?;
+            if !PLUGIN_WORK.contains(&plugin.as_str()) {
+                return Err(RpcError::new(
+                    "bad_request",
+                    "work.pluginId is a connected app: spoolman or home-assistant",
+                ));
+            }
+            let tool = str_arg(p, "tool")?;
+            let bare = !tool.is_empty()
+                && tool.len() <= 64
+                && tool
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_');
+            if !bare {
+                return Err(RpcError::new(
+                    "bad_request",
+                    "work.tool is the tool's bare name, such as call_service",
+                ));
+            }
+            let input = p.get("input").cloned().unwrap_or_else(|| json!({}));
+            if !input.is_object() {
+                return Err(RpcError::new("bad_request", "work.input is an object"));
+            }
+            return Ok(Work::Plugin { plugin, tool, input });
+        }
         let printer = str_arg(p, "printerId")?;
         match p.get("kind").and_then(Value::as_str) {
             Some("print") => {
@@ -101,7 +137,7 @@ impl Work {
             }),
             _ => Err(RpcError::new(
                 "bad_request",
-                "work.kind is print, resume, gcode or adjust",
+                "work.kind is print, resume, gcode, adjust or plugin",
             )),
         }
     }
@@ -114,6 +150,8 @@ impl Work {
             | Work::Adjust { printer, .. }
             | Work::Pause { printer }
             | Work::Cancel { printer } => printer,
+            // a connected app's tool targets no printer
+            Work::Plugin { .. } => "",
         }
     }
 
@@ -134,6 +172,9 @@ impl Work {
             }
             Work::Pause { printer } => json!({ "kind": "pause", "printerId": printer }),
             Work::Cancel { printer } => json!({ "kind": "cancel", "printerId": printer }),
+            Work::Plugin { plugin, tool, input } => {
+                json!({ "kind": "plugin", "printerId": "", "pluginId": plugin, "tool": tool, "input": input })
+            }
         }
     }
 
@@ -190,6 +231,12 @@ impl Work {
                     hash(&json!({ "printerId": printer })),
                 )]
             }
+            // the same parameters the plugin checks its token against (`params::plugin`)
+            Work::Plugin { plugin, tool, input } => vec![(
+                "plugin.call".into(),
+                plugin.clone(),
+                hash(&json!({ "pluginId": plugin, "tool": tool, "input": input })),
+            )],
         }
     }
 }
@@ -215,6 +262,7 @@ impl Work {
             Work::Adjust { .. } => "adjust",
             Work::Pause { .. } => "pause",
             Work::Cancel { .. } => "cancel",
+            Work::Plugin { .. } => "plugin",
         }
     }
 }
@@ -335,6 +383,11 @@ async fn execute(b: &Arc<Bridge>, work: Work, token: &ApprovalToken) -> Rpc<()> 
         Work::Adjust { printer, change } => crate::adjust::apply(b, &printer, &change, token).await,
         Work::Pause { printer } => Ok(session(b, &printer).await?.pause(token).await?),
         Work::Cancel { printer } => Ok(session(b, &printer).await?.cancel(token).await?),
+        Work::Plugin { plugin, tool, input } => {
+            crate::rpc::service_call(b, &plugin, &tool, input, Some(token))
+                .await
+                .map(|_| ())
+        }
     }
 }
 
@@ -411,6 +464,41 @@ mod tests {
             .unwrap();
         assert!(!w.holds("r1"));
         assert!(w.holds("local"));
+    }
+
+    #[test]
+    fn a_connected_app_tool_rides_a_card_hashed_as_the_plugin_checks_it() {
+        let input = json!({ "domain": "switch", "service": "turn_off", "entityId": "switch.bay_1_power" });
+        let w = Work::parse(&json!({ "kind": "plugin", "pluginId": "home-assistant", "tool": "call_service", "input": input }))
+            .unwrap();
+        assert_eq!(w.kind(), "plugin");
+        assert_eq!(w.printer(), "");
+        let want = sx_permit::hash_params(
+            &serde_json::from_str::<Value>(&sx_connect::params::plugin(
+                "home-assistant",
+                "call_service",
+                &input,
+            ))
+            .unwrap(),
+        );
+        assert_eq!(
+            w.actions(),
+            vec![("plugin.call".to_owned(), "home-assistant".to_owned(), want)]
+        );
+        assert_eq!(w.summary()["entityId"], Value::Null);
+        assert_eq!(w.summary()["input"]["entityId"], "switch.bay_1_power");
+        // Only the connected apps the hub runs, a bare tool name and an object input.
+        for bad in [
+            json!({ "kind": "plugin", "pluginId": "duet", "tool": "x", "input": {} }),
+            json!({ "kind": "plugin", "pluginId": "home-assistant", "tool": "home-assistant.call_service", "input": {} }),
+            json!({ "kind": "plugin", "pluginId": "home-assistant", "tool": "call_service", "input": [] }),
+        ] {
+            assert_eq!(
+                Work::parse(&bad).err().map(|e| e.code),
+                Some("bad_request".to_owned()),
+                "{bad}"
+            );
+        }
     }
 
     fn gcode(line: &str) -> Rpc<Work> {

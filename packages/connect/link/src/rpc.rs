@@ -1773,32 +1773,7 @@ async fn call_tool(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         .transpose()
         .map_err(|_| RpcError::new("bad_request", "token is malformed"))?;
     match plugin.as_str() {
-        "spoolman" | "home-assistant" => {
-            let (base, secret_ref) = {
-                let svc = b.services.lock().await;
-                let c = svc.get(&plugin).ok_or_else(|| {
-                    RpcError::new(
-                        "not_found",
-                        format!("{plugin} is not configured; call services.configure"),
-                    )
-                })?;
-                (c.base_url.clone(), c.secret_ref.clone())
-            };
-            let out = if plugin == "spoolman" {
-                SpoolmanPlugin::new(&base, b.gate.clone())?
-                    .call(&tool, input, token.as_ref())
-                    .await
-            } else {
-                let secret = secret_ref
-                    .as_deref()
-                    .and_then(|r| sx_connect::Secrets::get(b.secrets.as_ref(), r))
-                    .ok_or_else(|| RpcError::new("auth", "Home Assistant token is not set"))?;
-                HomeAssistantPlugin::new(&base, secret, b.gate.clone())?
-                    .call(&tool, input, token.as_ref())
-                    .await
-            };
-            Ok(out?)
-        }
+        "spoolman" | "home-assistant" => service_call(b, &plugin, &tool, input, token.as_ref()).await,
         _ => {
             let name = tool.strip_prefix(&format!("{plugin}.")).unwrap_or(&tool);
             if name == "status" {
@@ -1814,6 +1789,41 @@ async fn call_tool(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
             ))
         }
     }
+}
+
+/// Calls a connected app's tool: for an agent's `callTool`, and for a card a person approved
+/// (`Work::Plugin` in `agent_work.rs`). The app's key comes from the secret store by name.
+pub(crate) async fn service_call(
+    b: &Arc<Bridge>,
+    plugin: &str,
+    tool: &str,
+    input: Value,
+    token: Option<&ApprovalToken>,
+) -> Rpc<Value> {
+    let (base, secret_ref) = {
+        let svc = b.services.lock().await;
+        let c = svc.get(plugin).ok_or_else(|| {
+            RpcError::new(
+                "not_found",
+                format!("{plugin} is not configured; call services.configure"),
+            )
+        })?;
+        (c.base_url.clone(), c.secret_ref.clone())
+    };
+    let out = if plugin == "spoolman" {
+        SpoolmanPlugin::new(&base, b.gate.clone())?
+            .call(tool, input, token)
+            .await
+    } else {
+        let secret = secret_ref
+            .as_deref()
+            .and_then(|r| sx_connect::Secrets::get(b.secrets.as_ref(), r))
+            .ok_or_else(|| RpcError::new("auth", "Home Assistant token is not set"))?;
+        HomeAssistantPlugin::new(&base, secret, b.gate.clone())?
+            .call(tool, input, token)
+            .await
+    };
+    Ok(out?)
 }
 
 /// Finds printers on the network: every connector's own discovery (Bambu Lab SSDP announcements,

@@ -27,6 +27,30 @@ const names = (id: string) => (id === 'bay-4' ? 'Bay 4' : id)
 describe('agent cards', () => {
   beforeEach(() => set({ approval: null }))
 
+  it('words a Home Assistant call from the hub-checked work, and blocks one it cannot word', () => {
+    const input = { domain: 'switch', service: 'turn_off', entityId: 'switch.bay_1_power' }
+    const ha = (over: Partial<HubCard> = {}) =>
+      card({
+        tool: 'home-assistant.call_service',
+        title: 'Turn on the lights',
+        actions: [{ action: 'plugin.call', target: 'home-assistant', paramsHash: 'p' }],
+        work: { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'call_service', input },
+        ...over,
+      })
+    const t = describeCard(ha(), names)
+    expect(t.title).toBe('Turn off switch.bay_1_power in Home Assistant?')
+    expect(t.lines).toContain('Change: Turn off switch.bay_1_power in Home Assistant')
+    expect(t.blocked).toBeUndefined()
+    // A service or a domain it does not know, or work aimed at another app, gets no Approve.
+    for (const bad of [
+      { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'call_service', input: { ...input, service: 'unlock' } },
+      { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'call_service', input: { domain: 'lock', service: 'turn_off', entityId: 'lock.front_door' } },
+      { kind: 'plugin', printerId: '', pluginId: 'spoolman', tool: 'call_service', input },
+    ] as const) {
+      expect(describeCard(ha({ work: bad as NonNullable<HubCard['work']> }), names).blocked, JSON.stringify(bad)).toBeTruthy()
+    }
+  })
+
   it('takes the action from the hub-checked work, never from the title the agent wrote', () => {
     const t = describeCard(card(), names)
     expect(t.title).toBe('Start a print on Bay 4?')

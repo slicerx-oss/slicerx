@@ -95,6 +95,8 @@ export type AgentWork =
   | { kind: 'print'; printerId: string; file: JobFile; opts?: StartOptions }
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
+  /** A connected app's tool a person has to approve, such as switching a Home Assistant device. */
+  | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 
 export interface PilotTool<I = unknown> {
   name: string

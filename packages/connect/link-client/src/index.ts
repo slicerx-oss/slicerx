@@ -420,6 +420,8 @@ export type AgentWork =
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
   | { kind: 'adjust'; printerId: string; change: PrintAdjustment }
+  /** A connected app's tool a person has to approve, by its bare name (`call_service`). */
+  | { kind: 'plugin'; pluginId: 'spoolman' | 'home-assistant'; tool: string; input: Record<string, unknown> }
 
 export interface ApprovalDone {
   requestId: string

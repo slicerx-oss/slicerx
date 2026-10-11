@@ -66,3 +66,31 @@ it('shows a long G-code line whole and refuses one that hides a second command (
     expect(await gcode(line)).toEqual({ state: 'mismatch' })
   }
 })
+
+it('words a Home Assistant call only when the hash and the words check out', async () => {
+  const input = { domain: 'switch', service: 'turn_off', entityId: 'switch.bay_1_power' }
+  const request = async (over: Record<string, unknown> = {}) => ({
+    id: 'r9',
+    sessionId: 's',
+    tool: 'home-assistant.call_service',
+    permission: 'start',
+    title: 'Turn on the lights',
+    lines: [],
+    paramsHash: 'x',
+    origin: 'mcp',
+    actions: [{ action: 'plugin.call', target: 'home-assistant', paramsHash: await hashParams({ pluginId: 'home-assistant', tool: 'call_service', input }) }],
+    expiresAt: '2026-10-02T00:05:00Z',
+    work: { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'call_service', input },
+    ...over,
+  }) as unknown as ApprovalRequest
+  const ok = await checkWork(await request(), name)
+  expect(ok).toEqual({ state: 'verified', title: 'Turn off switch.bay_1_power in Home Assistant?', lines: ['Home Assistant switch.bay_1_power'] })
+  // Work that says another entity than the hash covers, or a call the phone cannot word, offers no Approve.
+  expect((await checkWork(await request({ work: { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'call_service', input: { ...input, entityId: 'switch.bay_2_power' } } }), name)).state).toBe('mismatch')
+  const unlock = { domain: 'lock', service: 'unlock', entityId: 'lock.front_door' }
+  const r = await request({
+    actions: [{ action: 'plugin.call', target: 'home-assistant', paramsHash: await hashParams({ pluginId: 'home-assistant', tool: 'call_service', input: unlock }) }],
+    work: { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'call_service', input: unlock },
+  })
+  expect((await checkWork(r, name)).state).toBe('mismatch')
+})
