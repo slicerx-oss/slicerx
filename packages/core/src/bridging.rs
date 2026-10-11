@@ -914,9 +914,10 @@ pub(crate) struct LayerBridges {
     /// Strand spacing, mm, and the plate point the strands are aligned to.
     pub(crate) spacing: f64,
     pub(crate) reference: (i32, i32),
-    /// Strands are round with diameter `width`, else normal beads.
+    /// Strands are round with diameter `width`, else flat beads `width` wide at `flow`.
     pub(crate) thick: bool,
     pub(crate) width: f64,
+    pub(crate) flow: f64,
     /// The layer's own facts, worked out for its whole outline with the layer's settings.
     pub(crate) own: Option<Arc<Facts>>,
 }
