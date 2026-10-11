@@ -3,8 +3,8 @@
 // Builds a test build of the desktop app with the agent bridge (docs/agent-bridge.md): the shell with the
 // `agent-bridge` Cargo feature and the page with SLICERX_AGENT_BRIDGE=1. Never a release: no installers and no
 // signing, into its own Cargo target folder (target/agent-bridge), and the release scripts refuse a bridge build.
-// It gets its own identifier (the edition's plus .agent-bridge), so it keeps its own data folder, web profile, paired
-// printers and single-instance lock, and runs next to an installed copy without reading or changing its state.
+// It gets its own identifier (the edition's plus .agent-bridge), so it keeps its own data folder, web profile (on macOS
+// a web data store named from it), paired printers and single-instance lock, and runs next to an installed copy without reading or changing its state.
 //   node apps/desktop/scripts/bridge-build.mjs [--debug] [--target <triple>] [--same-identifier] [--no-geom]
 // The app is target/agent-bridge/[<triple>/]release/slicerx(.exe), or debug/ with --debug. The geometry engine's WASM
 // (packages/geom/wasm/scripts/build.sh) is built first, as the release scripts do: opening a model runs its repair and
@@ -43,7 +43,15 @@ if (!values['no-geom']) {
 }
 run(['tauri:config'])
 const conf = JSON.parse(readFileSync(join(desktop, 'src-tauri', 'gen', 'edition.conf.json'), 'utf8'))
-if (!values['same-identifier']) conf.identifier = `${conf.identifier}.agent-bridge`
+if (!values['same-identifier']) {
+  conf.identifier = `${conf.identifier}.agent-bridge`
+  // macOS keeps an unbundled binary's web data (localStorage, IndexedDB) under the executable's name, so every bridge
+  // and dev binary called slicerx shared one store in ~/Library/WebKit/slicerx. The shell opens this build's window
+  // itself, with a store of its own named from the identifier (agent_bridge/window.rs). A merge patch replaces arrays
+  // whole, so the windows are written out in full.
+  const base = JSON.parse(readFileSync(join(desktop, 'src-tauri', 'tauri.conf.json'), 'utf8'))
+  conf.app = { ...conf.app, windows: (conf.app?.windows ?? base.app.windows).map((w) => ({ ...w, create: false })) }
+}
 writeFileSync(join(desktop, 'src-tauri', 'gen', 'edition.bridge.conf.json'), `${JSON.stringify(conf, null, 2)}
 `)
 run(['tauri', 'build', '--config', 'src-tauri/gen/edition.bridge.conf.json', '--features', 'agent-bridge', '--no-bundle', ...(values.debug ? ['--debug'] : []), ...(values.target ? ['--target', values.target] : [])])
