@@ -10,6 +10,8 @@ import type { Readable } from 'node:stream'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { connectLink } from '@slicerx/link-client'
 import { MOCK_HA_TOKEN, startMocks, type RunningMocks } from '@slicerx/mock-printers'
+// The connected apps sample in the integrator kit, run here against the same hub.
+import { readConnectedApps } from '../../../docs/integrators/connected-apps/read-connected-apps.mjs'
 import { connect, data, text } from './helpers'
 
 // Runs only when SX_LINK_BIN names a built sx-link, with a throwaway state directory and file
@@ -117,6 +119,25 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     expect(text(g)).toMatch(/partner app may ask only to print, pause or cancel/)
     await app.clients.revoke(clientId)
     app.close()
+  })
+
+  it('connected apps: the integrator sample reads Spoolman and Home Assistant, and switching a plug waits for a person', async () => {
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    const names = (await h.client.listTools()).tools.map((t) => t.name)
+    for (const n of ['slicerx_spoolman_list_spools', 'slicerx_spoolman_get_spool', 'slicerx_spoolman_record_usage', 'slicerx_home_assistant_list_entities', 'slicerx_home_assistant_call_service']) expect(names).toContain(n)
+    const r = await readConnectedApps(h.call, names)
+    expect(Array.isArray(r.spools) && r.spools.length > 0 && r.spools.every((s) => s.material === 'PLA'), JSON.stringify(r.spools)).toBe(true)
+    expect(Array.isArray(r.switches) && r.switches.length > 0 && r.switches.every((e) => e.entityId.startsWith('switch.')), JSON.stringify(r.switches)).toBe(true)
+    // Locks stay out of the list even though the Home Assistant serves one.
+    const all = data<{ output: { entityId: string }[] }>(await h.call('slicerx_home_assistant_list_entities', {}))
+    expect(all.output.some((e) => e.entityId.startsWith('lock.'))).toBe(false)
+    expect(r.plugCard?.status).toBe('needs_person')
+    expect((await h.call('slicerx_approve', { request_id: r.plugCard?.requestId, approve: true })).isError).toBe(true)
+    await h.call('slicerx_approve', { request_id: r.plugCard?.requestId, approve: false })
+    // Spoolman inventory asks first; nothing changes before an answer.
+    const usage = data<{ status: string; request_id: string }>(await h.call('slicerx_spoolman_record_usage', { id: 1, grams: 5 }))
+    expect(usage.status).toBe('approval_required')
+    await h.call('slicerx_approve', { request_id: usage.request_id, approve: false })
   })
 
   it('Home Assistant: an agent asks to switch a plug, and the hub switches it once a person approves in SlicerX', async () => {
