@@ -12,20 +12,68 @@ import { expect, test as base, type Locator, type Page } from '@playwright/test'
 /** How long a cold start may take before a spec gives up, on a loaded machine with software graphics. */
 export const COLD_START_MS = 120_000
 
+/**
+ * A request the browser dropped because the computer's network changed under it, not because of the app: Chrome
+ * cancels every request in flight, loopback ones too, when the network changes (a Wi-Fi roam between mesh points,
+ * a DHCP renewal). A cold start that loses one of its script chunks that way never comes up.
+ */
+export const NETWORK_CHANGED = /ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED/
+
+/** Per page: the first request dropped by a network change since the page last loaded, and the page's own reload. */
+const dropped = new WeakMap<Page, string>()
+const rawReload = new WeakMap<Page, () => Promise<unknown>>()
+
+/** Notes the requests a network change drops on `page`, so a cold start wait can load the page again. */
+export function watchNetworkChange(page: Page, reload: () => Promise<unknown> = () => page.reload()): void {
+  rawReload.set(page, reload)
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) dropped.delete(page)
+  })
+  page.on('requestfailed', (request) => {
+    const why = request.failure()?.errorText ?? ''
+    if (NETWORK_CHANGED.test(why) && !dropped.has(page)) dropped.set(page, `${why} ${request.url()}`)
+  })
+}
+
+/**
+ * Waits for the app's ready mark `selector`. When a network change dropped one of the page's requests on the way, the
+ * page cannot come up any more, so it is loaded again (twice at most), with the full time for each load. Used only for
+ * the cold start, where a reload loses nothing a spec did.
+ */
+async function untilReady(page: Page, selector: string): Promise<void> {
+  const mark = page.locator(selector)
+  for (let reloads = 0; ; reloads++) {
+    const until = Date.now() + COLD_START_MS
+    while (Date.now() < until) {
+      if ((await mark.count()) > 0) return
+      const what = dropped.get(page)
+      if (what && reloads < 2) break
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    const what = dropped.get(page)
+    if (!what || reloads >= 2) break
+    console.log(`the network changed under the page and dropped ${what}; loading it again`)
+    dropped.delete(page)
+    await (rawReload.get(page) ?? (() => page.reload()))()
+  }
+  const what = dropped.get(page)
+  throw new Error(`the app did not reach ${selector} within ${COLD_START_MS / 1000} s${what ? ` (the network changed under it again: ${what})` : ''}`)
+}
+
 /** Waits until the app is up with its slicer loaded. */
 export async function appReady(page: Page): Promise<void> {
-  await page.locator('html[data-sx-ready]').waitFor({ state: 'attached', timeout: COLD_START_MS })
+  await untilReady(page, 'html[data-sx-ready]')
 }
 
 /** Waits until the first plate has loaded (the example plate, or a restored one), then checks it is the layered X. */
 export async function plateReady(page: Page): Promise<void> {
-  await page.locator('html[data-sx-ready="plate"], html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: COLD_START_MS })
+  await untilReady(page, 'html[data-sx-ready="plate"], html[data-sx-ready="viewport"]')
   await expect(page.locator('.obj-name', { hasText: 'Layered X' })).toBeVisible()
 }
 
 /** Waits until the plate has loaded and the 3D view is up, ready for picks, touches and a first frame. */
 export async function viewportReady(page: Page): Promise<void> {
-  await page.locator('html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: COLD_START_MS })
+  await untilReady(page, 'html[data-sx-ready="viewport"]')
 }
 
 export const test = base.extend<object, { graphics: void }>({
@@ -83,6 +131,7 @@ export const test = base.extend<object, { graphics: void }>({
     // A page that goes to the app or reloads it has the app up, with the slicer loaded, before the spec goes on.
     const goto = page.goto.bind(page)
     const reload = page.reload.bind(page)
+    watchNetworkChange(page, reload)
     page.goto = (async (...args: Parameters<Page['goto']>) => {
       const response = await goto(...args)
       await appReady(page)
