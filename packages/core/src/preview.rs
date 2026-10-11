@@ -254,6 +254,56 @@ pub fn with_extras(mut b: Vec<u8>, segs: &[crate::extras::SegExtra], travels: &[
     b
 }
 
+/// Puts the start G-code's extrusions ([`crate::startlines`]) at the front of the first layer, as custom
+/// paths, in a buffer that has no extras yet. Their extras go first in the table [`with_extras`] takes.
+pub fn with_start(b: Vec<u8>, moves: &[crate::startlines::StartMove]) -> Vec<u8> {
+    let Ok(info) = read_info(&b) else { return b };
+    if moves.is_empty() || info.layers == 0 || info.extras_at.is_some() {
+        return b;
+    }
+    let n = moves.len();
+    let mut out = Vec::with_capacity(b.len() + n * (SEGMENT_BYTES + OBJECT_BYTES + EXTRA_BYTES) + 4);
+    out.extend_from_slice(b.get(..info.layer_start).unwrap_or_default());
+    let count = u32::try_from(info.segments + n).unwrap_or(u32::MAX);
+    if let Some(d) = out.get_mut(8..12) {
+        d.copy_from_slice(&count.to_le_bytes());
+    }
+    // the first layer starts where it did; every later one starts n segments on
+    for k in 0..=info.layers {
+        let at = rd32(&b, info.layer_start + k * 4).unwrap_or(0);
+        let at = if k == 0 {
+            at
+        } else {
+            at.saturating_add(u32::try_from(n).unwrap_or(u32::MAX))
+        };
+        out.extend_from_slice(&at.to_le_bytes());
+    }
+    out.extend_from_slice(b.get(info.layer_z..info.segments_at).unwrap_or_default());
+    for m in moves {
+        for v in [m.from.0, m.from.1, m.to.0, m.to.1, m.z] {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        out.extend_from_slice(&m.width_um.to_le_bytes());
+        out.extend_from_slice(&m.height_um.to_le_bytes());
+        out.push(Feature::Custom as u8);
+        out.push(m.tool);
+        out.extend_from_slice(&m.speed.to_le_bytes());
+        out.extend_from_slice(&m.flow.to_le_bytes());
+    }
+    match info.objects_at {
+        Some(at) => {
+            out.extend_from_slice(b.get(info.segments_at..at).unwrap_or_default());
+            for _ in 0..n {
+                out.extend_from_slice(&OBJECT_NONE.to_le_bytes());
+            }
+            out.extend_from_slice(b.get(at..at + info.segments * OBJECT_BYTES).unwrap_or_default());
+            pad4(&mut out);
+        }
+        None => out.extend_from_slice(b.get(info.segments_at..).unwrap_or_default()),
+    }
+    out
+}
+
 /// [`with_extras`] with the lines of each layer counted from its `;LAYER_CHANGE` line ([`FLAG_LAYER_LINES`]).
 pub fn with_layer_extras(b: Vec<u8>, layers: &[(u32, crate::extras::LayerExtras)]) -> Vec<u8> {
     let (segs, travels) = crate::extras::relative(layers);

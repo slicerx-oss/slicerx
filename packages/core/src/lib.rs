@@ -202,6 +202,7 @@ mod shells;
 mod smooth;
 mod sorting;
 mod spiral;
+mod startlines;
 #[doc(hidden)]
 pub mod subst;
 mod support;

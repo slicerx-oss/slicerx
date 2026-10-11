@@ -1508,7 +1508,35 @@ fn run_prepared_timed(
                 (last, sha)
             },
         );
+        // The start G-code's own extrusions (a purge line, an A1's calibration lines) print before the first layer
+        // and are drawn with it. A resume starts at a later layer, so it draws none.
+        let start = if want_preview && resume_at == 0 {
+            crate::startlines::read(
+                &String::from_utf8_lossy(&text),
+                config.filament_diameter,
+                config.nozzle_diameter,
+            )
+        } else {
+            Vec::new()
+        };
+        run.preview = crate::preview::with_start(std::mem::take(&mut run.preview), &start);
         if let Some((segs, travels)) = lines {
+            let segs = if start.is_empty() {
+                segs
+            } else {
+                let list = if config.nozzle_temperature_initial_layer.is_empty() {
+                    &config.nozzle_temperature
+                } else {
+                    &config.nozzle_temperature_initial_layer
+                };
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "temperatures are small"
+                )]
+                let temp = PrintConfig::per_slot(list, 1, 220.0).round().clamp(0.0, 65535.0) as u16;
+                [crate::startlines::extras(&start, temp), segs].concat()
+            };
             run.preview = crate::preview::with_extras(std::mem::take(&mut run.preview), &segs, &travels);
         }
         run.gcode = last.unwrap_or(text);
