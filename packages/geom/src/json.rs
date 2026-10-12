@@ -740,9 +740,25 @@ impl MeshOut {
     }
 }
 
+/// One part of a 3MF project: the file, the build item's object (0 first) and its part.
+#[cfg(feature = "formats")]
+#[derive(Deserialize)]
+pub(crate) struct PartRef {
+    path: String,
+    #[serde(default)]
+    object: usize,
+    #[serde(default)]
+    part: usize,
+}
+
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub(crate) enum MeshIn {
+    /// One part of a 3MF project, in its object's space in millimeters, its triangles in the file's order (so
+    /// per-triangle paint and texture references line up).
+    #[cfg(feature = "formats")]
+    #[serde(rename_all = "camelCase")]
+    PartOf { part_of: PartRef },
     #[serde(rename_all = "camelCase")]
     Stl { stl_base64: String },
     #[serde(rename_all = "camelCase")]
@@ -784,6 +800,28 @@ pub(crate) fn mesh_value(v: &Value, key: &str, files: FileLoader<'_>) -> Result<
             TriMesh::from_stl(&bytes, key)?
         }
         MeshIn::Path { stl_path } => TriMesh::from_stl(&files(&stl_path)?, &stl_path)?,
+        #[cfg(feature = "formats")]
+        MeshIn::PartOf { part_of } => {
+            let p = crate::format::read_3mf(&files(&part_of.path)?)?;
+            let part = p
+                .objects
+                .get(part_of.object)
+                .and_then(|o| o.parts.get(part_of.part))
+                .ok_or_else(|| {
+                    Error::mesh(
+                        key,
+                        format!("the file has no object {} part {}", part_of.object, part_of.part),
+                    )
+                })?;
+            let positions = part
+                .in_object(p.unit_scale)
+                .iter()
+                .map(|q| [f64::from(q[0]), f64::from(q[1]), f64::from(q[2])])
+                .collect();
+            let m = TriMesh::new(positions, part.triangles.clone());
+            m.validate(key)?;
+            m
+        }
         MeshIn::Raw { raw_path } => TriMesh::from_raw(&files(&raw_path)?, &raw_path)?,
         MeshIn::Flat {
             positions,
@@ -978,7 +1016,7 @@ fn regions_json(r: &[paint_ops::Region]) -> Value {
 /// A paint target from JSON: `{ "kind": "part" }`, `{ "kind": "direction", "direction": "bottom" | [x, y, z],
 /// "angleDeg": 30, "pick": "all" | "largest" | { "nearest": [x, y, z] } }`, `{ "kind": "height", "below": z }` (or
 /// `above`, or `from` and `to`), `{ "kind": "seed", "point": [x, y, z], "angleDeg": 30, "mode": "smart" | "bucket" }`
-/// or `{ "kind": "replace", "from": state }`.
+/// or `{ "kind": "replace", "from": state }`. The `image` target is read by `paint_image`.
 fn paint_target(v: &Value) -> Result<paint_ops::Target> {
     let kind: String = field(v, "kind")?;
     Ok(match kind.as_str() {
@@ -1050,10 +1088,13 @@ fn paint_target(v: &Value) -> Result<paint_ops::Target> {
 /// the new text of each triangle it changes (an empty text leaves it unpainted), the area it picked and its regions.
 fn paint_select_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let (m, paint) = paint_input(req, files)?;
-    let target = paint_target(
-        req.get("target")
-            .ok_or_else(|| Error::invalid("target", "missing"))?,
-    )?;
+    let target = req
+        .get("target")
+        .ok_or_else(|| Error::invalid("target", "missing"))?;
+    if target.get("kind").and_then(Value::as_str) == Some("image") {
+        return paint_image(&m, &paint, target, req, files);
+    }
+    let target = paint_target(target)?;
     let state: u8 = field(req, "state")?;
     let depth: u32 = field_or(req, "maxDepth", paint_ops::DEFAULT_DEPTH)?;
     let sel = paint_ops::select(&m, &paint, &target, state, depth.min(10))?;
@@ -1064,6 +1105,135 @@ fn paint_select_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
         "regionCount": sel.regions.len(),
         "regions": regions_json(&sel.regions),
     }))
+}
+
+/// The `image` target of `paint.select`: `{ "kind": "image", "from": { "path" | "base64", "object": 0, "part": 0 },
+/// "colors": ["#rrggbb", ...] (the project's filament colors when left out), "map": [{ "color": "#rrggbb", "slot": n }], "maxDeltaE": 0.15, "unmatched": "leave" |
+/// "nearest" }`. The part `from` names (a 3MF with the materials extension's textures, the same mesh as `mesh`)
+/// is painted from its texture: each textured triangle takes the filament (slot n is `colors[n - 1]`) nearest its
+/// texture's color in `OKLab`, split where the color changes, down to `maxDepth` levels.
+#[cfg(feature = "textures")]
+fn paint_image(
+    m: &TriMesh,
+    paint: &std::collections::BTreeMap<u32, String>,
+    target: &Value,
+    req: &Value,
+    files: FileLoader<'_>,
+) -> Result<Value> {
+    use crate::texture::{self, Palette, Unmatched};
+    let from = target
+        .get("from")
+        .ok_or_else(|| Error::invalid("from", "missing"))?;
+    let bytes = if let Some(p) = from.get("path").and_then(Value::as_str) {
+        files(p)?
+    } else if let Some(b) = from.get("base64").and_then(Value::as_str) {
+        base64_decode(b).ok_or_else(|| Error::invalid("from", "bad base64"))?
+    } else {
+        return Err(Error::invalid("from", "a path or base64 of the 3MF"));
+    };
+    let object: usize = field_or(from, "object", 0)?;
+    let part: usize = field_or(from, "part", 0)?;
+    let project = crate::format::read_3mf(&bytes)?;
+    let p = project
+        .objects
+        .get(object)
+        .and_then(|o| o.parts.get(part))
+        .ok_or_else(|| Error::invalid("from", format!("the file has no object {object} part {part}")))?;
+    if p.triangles.len() != m.triangles.len() {
+        return Err(Error::invalid(
+            "from",
+            format!(
+                "that part has {} triangles and the mesh {}; give the same part as mesh",
+                p.triangles.len(),
+                m.triangles.len()
+            ),
+        ));
+    }
+    // The filaments: given, or the project's own colors.
+    let colors: Vec<String> = match field_or::<Option<Vec<String>>>(target, "colors", None)? {
+        Some(c) => c,
+        None => project
+            .files
+            .project_settings
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .and_then(|v| v.get("filament_colour").cloned())
+            .and_then(|v| serde_json::from_value::<Vec<String>>(v).ok())
+            .filter(|c| !c.is_empty())
+            .ok_or_else(|| Error::invalid("colors", "give the filament colors; the project names none"))?,
+    };
+    // Projects write `#rrggbbaa`; the alpha is dropped.
+    let colors = colors
+        .iter()
+        .map(|c| {
+            let rgb = if c.len() == 9 {
+                c.get(..7).unwrap_or(c)
+            } else {
+                c.as_str()
+            };
+            hex_color(rgb).ok_or_else(|| Error::invalid("colors", format!("{c} is not #rrggbb")))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let map: Vec<Value> = field_or_default(target, "map")?;
+    let map = map
+        .iter()
+        .map(|e| {
+            let c: String = field(e, "color")?;
+            let s: u8 = field(e, "slot")?;
+            Ok((
+                hex_color(&c).ok_or_else(|| Error::invalid("map", format!("{c} is not #rrggbb")))?,
+                s,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let unmatched = match field_or(target, "unmatched", "leave".to_owned())?.as_str() {
+        "leave" => Unmatched::Leave,
+        "nearest" => Unmatched::Nearest,
+        other => {
+            return Err(Error::invalid(
+                "unmatched",
+                format!("{other} is not leave or nearest"),
+            ));
+        }
+    };
+    let palette = Palette::new(&colors, &map, field_or(target, "maxDeltaE", 0.15)?, unmatched)?;
+    let depth: u32 = field_or(req, "maxDepth", paint_ops::DEFAULT_DEPTH)?;
+    let images = texture::images(&project.textures, &p.props.model, &bytes)?;
+    let cover = texture::cover_part(
+        &p.positions,
+        &p.triangles,
+        &p.props,
+        &project.textures,
+        &images,
+        &palette,
+        depth,
+    );
+    let painted: f64 = cover.slot_area.values().sum();
+    let sel = paint_ops::select_covers(paint, &cover.triangles, painted);
+    let round = |a: f64| (a * 100.0).round() / 100.0;
+    Ok(json!({
+        "changed": sel.changed.iter().map(|(k, v)| (k.to_string(), Value::from(v.clone()))).collect::<serde_json::Map<_, _>>(),
+        "changedTriangles": sel.changed.len(),
+        "selectedAreaMm2": round(sel.area_mm2),
+        "regionCount": 0,
+        "regions": [],
+        "texturedTriangles": cover.triangles.len(),
+        "splitTriangles": cover.split,
+        "slotAreaMm2": cover.slot_area.iter().map(|(s, a)| (s.to_string(), json!(round(*a)))).collect::<serde_json::Map<_, _>>(),
+        "unmatchedAreaMm2": round(cover.unmatched_area),
+        "unmatchedColors": cover.unmatched_colors.iter().map(|(c, a)| json!({ "color": c, "areaMm2": round(*a) })).collect::<Vec<_>>(),
+    }))
+}
+
+#[cfg(not(feature = "textures"))]
+fn paint_image(
+    _: &TriMesh,
+    _: &std::collections::BTreeMap<u32, String>,
+    _: &Value,
+    _: &Value,
+    _: FileLoader<'_>,
+) -> Result<Value> {
+    Err(Error::invalid("kind", "image paint needs a build with textures"))
 }
 
 /// `paint.regions`: the layer's `paint` on `mesh` read back, per painted state: area, triangles and connected regions.

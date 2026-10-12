@@ -513,6 +513,45 @@ pub fn select(
     })
 }
 
+/// What a texture paints (`texture::cover_part`): the new text of each covered triangle, a three-sided split where a
+/// cover splits, in the order a painted triangle's text has its pieces. A piece no filament matched keeps the
+/// triangle's state when the whole triangle has one (unpainted otherwise); a triangle no filament matched at all is
+/// left as it is. `area_mm2` is the area the texture painted.
+#[cfg(feature = "textures")]
+pub fn select_covers(
+    texts: &BTreeMap<u32, String>,
+    covers: &[(u32, crate::texture::Cover)],
+    area_mm2: f64,
+) -> Selection {
+    use crate::texture::Cover as C;
+    fn node(c: &C, keep: u8) -> Node {
+        match c {
+            C::Slot(s) => Node::Leaf(*s),
+            C::Unmatched => Node::Leaf(keep),
+            C::Split(kids) => Node::Split {
+                splits: 3,
+                special: 0,
+                kids: kids.iter().map(|k| node(k, keep)).collect(),
+            },
+        }
+    }
+    let mut changed = BTreeMap::new();
+    for (t, c) in covers {
+        if matches!(c, C::Unmatched) {
+            continue;
+        }
+        let text = text_of(node(c, uniform(texts, *t).unwrap_or(0)));
+        if texts.get(t).cloned().unwrap_or_default() != text {
+            changed.insert(*t, text);
+        }
+    }
+    Selection {
+        changed,
+        regions: Vec::new(),
+        area_mm2,
+    }
+}
+
 /// The layer's paint read back: per painted state, its area, the triangles holding it and its connected regions.
 /// Texts that do not read are counted as `bad`.
 pub fn regions(m: &TriMesh, texts: &BTreeMap<u32, String>) -> (Vec<StateRegions>, usize) {

@@ -369,5 +369,62 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     },
   })
 
-  return [cut, split, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract, render, paintRegions] as PilotTool<never>[]
+  const paintImage = defineTool({
+    name: 'geom.paint_image',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Paint a 3MF part from its own texture (the 3MF materials extension): each textured triangle takes the filament whose color is nearest the texture there (OKLab), and triangles split where the texture changes color. Filament colors come from colors (slot 1 first) or the project. A texture color farther than maxDeltaE from every filament is left unpainted unless unmatched is nearest; the reply lists those colors so a filament or a map entry can be added. Returns the paint read back (area per filament slot) and the paint texts by triangle, ready for geom.render or a design. Nothing is changed and no file is written.',
+    input: z.object({
+      model: modelArg.describe('A 3MF whose part has a texture'),
+      object: z.number().int().min(0).default(0).describe('Build item, 0 first'),
+      part: z.number().int().min(0).default(0).describe('Part of that item, 0 first'),
+      colors: z.array(z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/)).min(1).max(32).optional().describe('Filament colors by slot, slot 1 first; the project\'s filament colors when left out'),
+      map: z.array(z.object({ color: z.string().regex(/^#[0-9a-fA-F]{6}$/), slot: z.number().int().min(1).max(32) })).max(64).optional().describe('Texture colors that take a given slot'),
+      maxDeltaE: z.number().min(0).max(1).optional().describe('Farthest OKLab distance from a filament color; 0.15 when left out'),
+      unmatched: z.enum(['leave', 'nearest']).default('leave').describe('What a texture color past maxDeltaE gets'),
+      maxDepth: z.number().int().min(0).max(10).optional().describe('How deep a triangle splits where the color changes; 6 when left out'),
+    }),
+    async run(i) {
+      const path = await resolveModel(deps.policy, i.model)
+      const ref = { path, object: i.object, part: i.part }
+      const target = {
+        kind: 'image',
+        from: ref,
+        unmatched: i.unmatched,
+        ...(i.colors ? { colors: i.colors } : {}),
+        ...(i.map ? { map: i.map } : {}),
+        ...(i.maxDeltaE !== undefined ? { maxDeltaE: i.maxDeltaE } : {}),
+      }
+      const out = (await call('paint.select', { mesh: { partOf: ref }, target, state: 0, ...(i.maxDepth !== undefined ? { maxDepth: i.maxDepth } : {}) })) as {
+        changed?: Record<string, string>
+        changedTriangles?: number
+        texturedTriangles?: number
+        splitTriangles?: number
+        slotAreaMm2?: Record<string, number>
+        unmatchedAreaMm2?: number
+        unmatchedColors?: { color: string; areaMm2: number }[]
+      }
+      const paint = out.changed ?? {}
+      const back = (await call('paint.regions', { mesh: { partOf: ref }, paint })) as { states?: { state: number; areaMm2: number }[] }
+      const states = back.states ?? []
+      const painted = states.length ? states.map((s) => `slot ${s.state} ${s.areaMm2} mm2`).join(', ') : 'nothing painted'
+      const missed = out.unmatchedAreaMm2 ? `; ${out.unmatchedAreaMm2} mm2 matched no filament (${(out.unmatchedColors ?? []).map((c) => c.color).join(', ')})` : ''
+      return {
+        summary: `Painted ${String(out.changedTriangles ?? 0)} of ${String(out.texturedTriangles ?? 0)} textured triangles of ${basename(i.model)} from its texture: ${painted}${missed}`,
+        output: {
+          paintedAreaMm2: Object.fromEntries(states.map((s) => [String(s.state), s.areaMm2])),
+          textureAreaMm2: out.slotAreaMm2 ?? {},
+          unmatchedAreaMm2: out.unmatchedAreaMm2 ?? 0,
+          unmatchedColors: out.unmatchedColors ?? [],
+          texturedTriangles: out.texturedTriangles ?? 0,
+          splitTriangles: out.splitTriangles ?? 0,
+          paint,
+        },
+      }
+    },
+  })
+
+  return [cut, split, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract, render, paintRegions, paintImage] as PilotTool<never>[]
 }

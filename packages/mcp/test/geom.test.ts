@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { copyFileSync, existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { resolveModel } from '../src/models'
 import { connect, data } from './helpers'
@@ -35,7 +35,28 @@ describe.skipIf(!existsSync(geomBin))('mesh tools with the real sx-geom', () => 
   it('lists the tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['cut', 'split', 'orient', 'repair', 'hollow', 'emboss', 'calibration_model', 'resume_plan', 'layers_plan', 'build', 'subtract', 'render', 'paint_regions']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['cut', 'split', 'orient', 'repair', 'hollow', 'emboss', 'calibration_model', 'resume_plan', 'layers_plan', 'build', 'subtract', 'render', 'paint_regions', 'paint_image']) expect(names).toContain(`slicerx_geom_${n}`)
+  })
+
+  it('paints a textured 3MF from its texture, as a client would, and reads the paint back by filament', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    // A 20 mm cube whose bottom shows a yellow and blue checker; every other face reads a blue texel.
+    const model = join(h.dir, 'textured-cube.3mf')
+    copyFileSync(resolve(__dirname, '../../geom/tests/corpus/textured-cube.3mf'), model)
+    const r = await h.call('slicerx_geom_paint_image', { model, colors: ['#ffdc00', '#0046c8'] })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const out = data<{ output: { paintedAreaMm2: Record<string, number>; unmatchedAreaMm2: number; splitTriangles: number; paint: Record<string, string> } }>(r).output
+    expect(out.paintedAreaMm2['1']).toBeCloseTo(200, -1)
+    expect(out.paintedAreaMm2['2']).toBeCloseTo(2200, -1)
+    expect(out.unmatchedAreaMm2).toBe(0)
+    expect(out.splitTriangles).toBe(2)
+    expect(Object.keys(out.paint)).toHaveLength(12)
+    // With no filament near the texture's colors nothing is painted, and the colors seen come back.
+    const none = data<{ output: { paintedAreaMm2: Record<string, number>; unmatchedColors: { color: string }[] } }>(
+      await h.call('slicerx_geom_paint_image', { model, colors: ['#ff0000'], maxDeltaE: 0.01 }),
+    ).output
+    expect(none.paintedAreaMm2).toEqual({})
+    expect(none.unmatchedColors[0]?.color).toBe('#0848c8')
   })
 
   it('cuts a cube in two and writes both parts', async () => {
