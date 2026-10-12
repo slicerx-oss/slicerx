@@ -12,6 +12,22 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // A startup script that fails to download (a dropped connection, a deploy that replaced it) leaves an empty page,
+      // and the browser keeps the failure: only a reload fetches it again. Once, not again within 30 s. After the app
+      // is up, the parts it loads later are its own to handle.
+      addEventListener('error', function (e) {
+        var t = e.target
+        if (!t || t.tagName !== 'SCRIPT' || document.documentElement.hasAttribute('data-sx-ready')) return
+        try {
+          if (Date.now() - Number(sessionStorage.getItem('sx-boot-reload') || 0) < 30000) return
+          sessionStorage.setItem('sx-boot-reload', String(Date.now()))
+        } catch (_) {
+          return
+        }
+        location.reload()
+      }, true)
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
