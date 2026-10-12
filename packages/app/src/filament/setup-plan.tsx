@@ -2,10 +2,11 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The settings plan, inline. When the printer, nozzle or filament changes, planSettings (packages/settings/js/plan.ts) works out what
 // the new setup needs from the knowledge base: blockers (an abrasive filament on a soft nozzle), warnings, questions and what it moved.
-// It shows under the Filament block only when there is something to say, so a normal setup stays quiet.
+// It shows only when there is something to say, so a normal setup stays quiet: in the line under the filament rail,
+// in place of its hint, so the panel keeps its height whether or not the plan has loaded yet.
 import type { SettingsPlan, SetupRef } from '@slicerx/contracts'
-import { Button } from '@slicerx/ui'
-import { useEffect, useRef, useState } from 'react'
+import { Button, LinkButton, tipAttrs } from '@slicerx/ui'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { dryKey, isDryingNote, pruneMarks, spoolOf, stillDry } from './dry-marks'
 import { resolveSlots } from './slots'
 import { set, useApp, type AppState } from '../state/store'
@@ -80,16 +81,52 @@ export function markDry(printerId: string | null, slot: { label: string; spool: 
   set((s) => ({ dryMarks: { ...pruneMarks(s.dryMarks, now), [dryKey(printerId, slot.label)]: { at: now, spool: slot.spool } } }))
 }
 
-/** The notes as a short list under the Filament block. The drying note has "It's dry", which hides it for that spool. */
-export function SetupNotes() {
+export interface NoteRow {
+  t: string
+  k: 'block' | 'warn' | 'ask'
+}
+
+/** The notes to show, blockers first, without the drying note for a spool marked dry; null while there is nothing to say. */
+export function useSetupNotes(): { rows: NoteRow[]; slot: PlanNotes['slot']; printerId: string | null } | null {
   const notes = usePlanNotes()
   const printerId = useApp((s) => s.printerId)
   const mark = useApp((s) => (notes?.slot ? s.dryMarks[dryKey(s.printerId, notes.slot.label)] : undefined))
   if (!notes) return null
   const slot = notes.slot
   const dry = slot !== null && stillDry(mark, slot.spool, Date.now())
-  const rows = [...notes.blockers.map((t) => ({ t, k: 'block' })), ...notes.warnings.map((t) => ({ t, k: 'warn' })), ...notes.questions.map((t) => ({ t, k: 'ask' }))].filter(({ t }) => !(dry && isDryingNote(t)))
-  if (!rows.length) return null
+  const rows: NoteRow[] = [
+    ...notes.blockers.map((t) => ({ t, k: 'block' as const })),
+    ...notes.warnings.map((t) => ({ t, k: 'warn' as const })),
+    ...notes.questions.map((t) => ({ t, k: 'ask' as const })),
+  ].filter(({ t }) => !(dry && isDryingNote(t)))
+  return rows.length ? { rows, slot, printerId } : null
+}
+
+/**
+ * The notes in the one line under the filament rail: the first in full width, the rest in its tip. The drying note has
+ * "It's dry", which hides it for that spool. `after` stays at the end of the line (Reset to printer).
+ */
+export function SetupNoteLine({ notes, after }: { notes: NonNullable<ReturnType<typeof useSetupNotes>>; after?: ReactNode }) {
+  const { rows, slot, printerId } = notes
+  const first = rows[0]!
+  return (
+    <p className={`rail-foot-text setup-notes setup-note ${first.k}`} role="status" aria-label="Setup notes" {...tipAttrs({ title: rows.length > 1 ? `${rows.length} setup notes` : 'Setup note', body: rows.map((r) => r.t).join(' ') })}>
+      <span className="rail-foot-line">{first.t}</span>
+      {slot && isDryingNote(first.t) ? (
+        <LinkButton {...tipAttrs({ title: "It's dry", body: `Hides this for the spool in ${slot.label} until it is swapped, or for 7 days.` })} onClick={() => markDry(printerId, slot)}>
+          It's dry
+        </LinkButton>
+      ) : null}
+      {after}
+    </p>
+  )
+}
+
+/** The notes as a short list under the Filament block, while there is no rail to hold them (no slots yet). */
+export function SetupNotes() {
+  const notes = useSetupNotes()
+  if (!notes) return null
+  const { rows, slot, printerId } = notes
   return (
     <div className="setup-notes" role="status" aria-label="Setup notes">
       {rows.map(({ t, k }) => (
