@@ -7,6 +7,7 @@ import { createElement, type FunctionComponent } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
+import { editionHasCad } from '../src/edition'
 import { compose, decompose, modelOrigin } from '../src/plate/transform'
 import { listedInMode, setHostSlices } from '../src/state/model-mode'
 import { get, set, type PlateEntry } from '../src/state/store'
@@ -66,11 +67,15 @@ describe('the Model surface', () => {
   })
 
   it('leaves the slicing commands out of the command bar in Model', () => {
-    for (const id of ['slice', 'slice-cancel', 'export-gcode', 'gcode-lines']) {
+    for (const id of ['slice', 'slice-cancel', 'export-gcode', 'export-gcode-3mf', 'export-all-plates', 'gcode-lines']) {
       expect(listedInMode(id, 'design')).toBe(false)
       expect(listedInMode(id, 'slice')).toBe(true)
     }
     expect(listedInMode('mode-slice', 'design')).toBe(true)
+    // one Go to Slice in Model, not the plate workspace's as well
+    expect(editionHasCad()).toBe(true)
+    expect(listedInMode('open-prepare', 'design')).toBe(false)
+    expect(listedInMode('open-prepare', 'slice')).toBe(true)
     setHostSlices(false)
     expect(listedInMode('mode-slice', 'design')).toBe(false)
   })
