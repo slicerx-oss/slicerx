@@ -42,10 +42,11 @@ fn files() -> Vec<PathBuf> {
 
 #[test]
 fn geom_reader_matches_the_legacy_one() {
-    let mut checked = 0;
+    let (mut checked, mut prusa) = (0, 0);
     for path in files() {
         let bytes = std::fs::read(&path).expect("a corpus file");
         if sx_geom::format::read_3mf(&bytes).is_ok_and(|p| p.layout == sx_geom::format::Layout::Prusa) {
+            prusa += 1;
             continue;
         }
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("model.3mf");
@@ -67,7 +68,11 @@ fn geom_reader_matches_the_legacy_one() {
         }
         checked += 1;
     }
-    assert!(checked >= 20, "only {checked} corpus files");
+    // the PrusaSlicer projects are held by their own tests below
+    assert!(
+        checked >= 15 && prusa >= 5,
+        "only {checked} corpus files and {prusa} PrusaSlicer projects"
+    );
 }
 
 #[test]
