@@ -7,6 +7,8 @@
 //! fixed base instead, and a change of a schema default does not move them. Keys a test sets win.
 #![allow(dead_code)]
 
+pub mod organic_models;
+
 use serde_json::Value;
 use std::sync::Arc;
 use sx_core::api::{self, Mesh, SliceRequest, SliceRun};
