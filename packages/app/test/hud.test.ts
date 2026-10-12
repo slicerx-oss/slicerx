@@ -250,12 +250,17 @@ describe('device view of a printing H2D', () => {
     const { host, calls } = fakeHost()
     await show(H2D, host)
     const deny = async () => act(async () => void (await get().approval!.deny()))
+    // The card comes after the send flow loads (a lazy module, fetched on the first press) and the request is hashed,
+    // so the test waits for the card itself: a fixed pause was too short when the machine was busy.
+    const card = () => act(async () => vi.waitFor(() => expect(get().approval).not.toBeNull(), { timeout: 10_000 }))
 
     await click(button('Pause'))
+    await card()
     expect(get().approval?.requests[0]?.actions.map((a) => a.action)).toEqual(['printer.pause'])
     await deny()
 
     await click(button('Stop'))
+    await card()
     const stop = get().approval?.requests[0]
     expect(stop?.actions.map((a) => a.action)).toEqual(['printer.cancel'])
     expect(stop?.lines).toContain('The job stops and cannot be resumed')
@@ -266,11 +271,11 @@ describe('device view of a printing H2D', () => {
       speed.value = '166'
       speed.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    await settle()
-    const card = get().approval?.requests[0]
-    expect(card?.tool).toBe('printer.adjust')
-    expect(card?.title).toBe('Print Tawain #1 at Ludicrous speed?')
-    expect(card?.actions.map((a) => [a.action, a.target])).toEqual([['printer.adjust', 'h2d']])
+    await card()
+    const adjust = get().approval?.requests[0]
+    expect(adjust?.tool).toBe('printer.adjust')
+    expect(adjust?.title).toBe('Print Tawain #1 at Ludicrous speed?')
+    expect(adjust?.actions.map((a) => [a.action, a.target])).toEqual([['printer.adjust', 'h2d']])
     await deny()
 
     expect(calls.pause).not.toHaveBeenCalled()
