@@ -6,11 +6,12 @@
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Composer, useAttachments } from '@slicerx/pilot/ui'
 import '@slicerx/pilot/ui/pilot.css'
-import { Icon, ResizeEdge, tipAttrs } from '@slicerx/ui'
+import { Icon, RavenMark, ResizeEdge, tipAttrs } from '@slicerx/ui'
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
 import { get, setCamera, useApp } from '../../state/store'
+import { useMimirLink } from './connection'
 import './mimir.css'
 
 /** The chat column's width: 420 px to start, 340 px at least and half the window at most. */
@@ -43,6 +44,8 @@ export function MimirChat() {
   const name = designName(useApp((s) => s.projectFile))
   const ref = useRef<HTMLElement>(null)
   const attachments = useAttachments()
+  // The battle ravens stand behind the conversation until a model answers here.
+  const ravens = useMimirLink() !== 'model'
   // A file dragged anywhere over the chat can be dropped onto the message.
   const [dropping, setDropping] = useState(false)
   const files = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
@@ -80,10 +83,14 @@ export function MimirChat() {
           {name}
         </span>
       </header>
-      <div className="mimir-transcript" data-testid="mimir-transcript" role="log" aria-label="Conversation" tabIndex={0}>
-        <div className="mimir-empty">
-          <Icon name="mimir" size={28} />
-          <p>Describe a part, or drop a photo of what it fits. {ASSISTANT_NAME} models it here, and every step lands in the timeline, where you can edit or undo it.</p>
+      <div className="mimir-stage">
+        <div className="mimir-ravens" data-testid="mimir-ravens" data-shown={ravens || undefined} aria-hidden="true">
+          <RavenMark />
+        </div>
+        <div className="mimir-transcript" data-testid="mimir-transcript" role="log" aria-label="Conversation" tabIndex={0}>
+          <div className="mimir-empty">
+            <p>Describe a part, or drop a photo of what it fits. {ASSISTANT_NAME} models it here, and every step lands in the timeline, where you can edit or undo it.</p>
+          </div>
         </div>
       </div>
       <div className="mimir-chat-foot">
