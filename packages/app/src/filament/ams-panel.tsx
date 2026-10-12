@@ -200,7 +200,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
         </>
       )}
       <NozzleRows slots={slots} />
-      <SetupNotes />
+      {loading || slots.length === 0 ? <SetupNotes /> : null}
       <Suspense fallback={null}>{dialogOpen ? <Dialogs /> : null}</Suspense>
     </Block>
   )
