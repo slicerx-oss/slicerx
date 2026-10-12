@@ -117,6 +117,17 @@ impl Trace {
         if !self.on || std::env::var("SX_ORGANIC2_TRACE").ok().as_deref() != Some("roots") {
             return;
         }
+        if let Ok(range) = std::env::var("SX_ORGANIC2_CLASSES") {
+            let mut it = range.split(',').filter_map(|v| v.parse::<usize>().ok());
+            let (lo, hi) = (it.next().unwrap_or(0), it.next().unwrap_or(0));
+            for (l, layer) in nodes.iter().enumerate().skip(lo).take(hi.saturating_sub(lo)) {
+                let bed = layer.iter().filter(|n| n.to_bed).count();
+                let flat = layer.iter().filter(|n| n.flat && !n.to_bed).count();
+                let gap = layer.iter().filter(|n| n.min_gap).count();
+                eprintln!("organic2 layer {l} nodes {} bed {bed} flat-only {flat} min-gap {gap}", layer.len());
+            }
+            return;
+        }
         for (l, layer) in nodes.iter().enumerate().take(20) {
             for n in layer {
                 eprintln!(
