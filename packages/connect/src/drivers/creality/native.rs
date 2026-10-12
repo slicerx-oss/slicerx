@@ -28,7 +28,7 @@ use crate::wslink::{OnLink, OnText, WsLink, WsLinkSpec};
 /// The frame that asks the printer for its full state.
 const REQUEST_STATE: &str = r#"{"method":"get","params":{"ReqPrinterPara":1}}"#;
 
-/// The frame that asks for the CFS boxes (`boxsInfo`), as OrcaSlicer's `query_boxes_info` sends it.
+/// The frame that asks for the CFS boxes (`boxsInfo`), as OrcaSlicer sends it.
 const REQUEST_BOXES: &str = r#"{"method":"get","params":{"boxsInfo":1}}"#;
 
 /// How often the CFS boxes are asked for: the printer sends them only on request.
@@ -280,7 +280,7 @@ fn num(v: &Value) -> Option<f64> {
     }
 }
 
-/// The CFS boxes of a `boxsInfo` answer, read as OrcaSlicer's `parse_cfs_response` reads them:
+/// The CFS boxes of a `boxsInfo` answer, read as OrcaSlicer reads them:
 /// boxes with `state` 1 and `type` 0, lettered A, B, ... in order (box ids have gaps); a slot with a
 /// non-zero `state` and a vendor or type is loaded; colors come as `#0RRGGBB`. Slot ids are the box
 /// letter and the slot's `id` plus one.

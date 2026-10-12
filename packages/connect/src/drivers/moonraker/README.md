@@ -13,7 +13,7 @@ Filament units: `filament.rs` (Happy Hare MMU, QIDI Box, Snapmaker U1).
 ## Sources
 
 - Moonraker API and authorization: the `docs/external_api` pages of https://github.com/Arksine/moonraker
-- OrcaSlicer `src/slic3r/Utils`: `MoonrakerPrinterAgent.cpp` (`machine_name`, the upload's five minute limit), `QidiPrinterAgent.cpp` (QIDI Box), `SnapmakerPrinterAgent.cpp` (U1 toolheads)
+- OrcaSlicer's Moonraker, QIDI and Snapmaker support (`machine_name`, the upload's five minute limit, the QIDI Box, the U1 toolheads), read as protocol references
 
 ## Unverified
 

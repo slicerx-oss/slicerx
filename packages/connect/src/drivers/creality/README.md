@@ -10,7 +10,7 @@ Plugin id `creality`. Two protocols, picked by probing when the printer config d
 ## Native interface
 
 - Telemetry over WebSocket `ws://host:9999/` with the subprotocol `wsslicer`, and with none when the printer refuses it (OrcaSlicer offers none). The printer pushes JSON objects whose members are merged into one state. `{"method":"get","params":{"ReqPrinterPara":1}}` asks for the full state and is repeated every 10 seconds. The printer's `{"ModeCode":"heart_beat"}` frames are answered with the text `ok`.
-- `{"method":"get","params":{"boxsInfo":1}}` on connect and every 30 seconds for the CFS, parsed as OrcaSlicer's `parse_cfs_response` does.
+- `{"method":"get","params":{"boxsInfo":1}}` on connect and every 30 seconds for the CFS, parsed as OrcaSlicer parses it.
 - Fields read: `model`, `modelVersion`, `hostname`, `webrtcSupport`, `curPosition`, `modelFanPct`, `caseFanPct`, `auxiliaryFanPct`, `lightSw`, `boxsInfo`, `nozzleTemp`, `targetNozzleTemp`, `bedTemp0`, `targetBedTemp0`, `boxTemp`, `targetBoxTemp`, `state`, `err.errcode`, `withSelfTest`, `printFileName`, `printProgress` (percent), `layer`, `TotalLayer`, `printLeftTime` (seconds). Numbers sometimes arrive as strings.
 - State: a non-zero `err.errcode` is error; `withSelfTest` from 1 to 99 is preparing; with a file name, progress 100 is finished, `state` 5 paused, 1 printing, 0 preparing, 4 (stopped) idle; without a file, idle.
 - Commands are `{"method":"set","params":{...}}` with no acknowledgment: `{"pause":1}` and `{"pause":0}`, `{"stop":1}`, `{"gcodeCmd":"..."}`, and `{"opGcodeFile":"printprt:<path>"}` to start. The path is `/usr/data/printer_data/gcodes/<name>` on K1 family models and `/mnt/UDISK/printer_data/gcodes/<name>` on the others, chosen from the `model` that `GET /info` reports.
@@ -20,13 +20,13 @@ Plugin id `creality`. Two protocols, picked by probing when the printer config d
 
 ## Sources
 
-- OrcaSlicer's Creality host, which uploads and starts prints the way Creality Print does, its discovery and its CFS agent: `CrealityPrint.cpp`, `CrealityHostDiscovery.cpp`, `CrealityPrintAgent.cpp` in https://github.com/OrcaSlicer/OrcaSlicer/tree/main/src/slic3r/Utils
+- OrcaSlicer's Creality host, which uploads and starts prints the way Creality Print does, its discovery and its CFS agent: https://github.com/OrcaSlicer/OrcaSlicer
 - Telemetry fields, state codes, the heartbeat and the `set` commands: https://github.com/3dg1luk43/ha_creality_ws (`ws_client.py`, `utils.py`, and the test server in `tools/`)
 - Moonraker API: https://moonraker.readthedocs.io/en/latest/web_api/
 
 ## Source licenses
 
-OrcaSlicer's sources named above and `ha_creality_ws` are AGPL-3.0 projects. They were read as protocol references only: message names, field names, ports, URLs, paths and state codes, which are facts about the printer's interface. The Rust driver, its structure and its tests were written for this crate from those facts and do not copy or translate their code. The mock printer was written the same way.
+OrcaSlicer's Creality support and `ha_creality_ws` are AGPL-3.0 projects. They were read as protocol references only: message names, field names, ports, URLs, paths and state codes, which are facts about the printer's interface. The Rust driver, its structure and its tests were written for this crate from those facts and do not copy or translate their code. The mock printer was written the same way.
 
 ## State table to re-derive
 

@@ -56,7 +56,7 @@ A user login is `POST /access/login`; the access token goes as `Authorization: B
 
 Hardware at setup: nozzle diameters, `kinematics`, `max_velocity`, `max_accel` and a delta's `print_radius` (else `delta_radius`) from `configfile.settings`; the build volume from `toolhead.axis_maximum` less `axis_minimum` (a negative minimum, a probe offset, counts as 0); the host name and Klipper version from `/printer/info`; `machine_name` from `/server/info` when a vendor build sets it (QIDI, as OrcaSlicer reads it), else U1 for a printer with `print_task_config`; and the filament units.
 
-Filament units: a Happy Hare MMU's gates (`gate_material`, `gate_color`); a QIDI Box read as OrcaSlicer's QidiPrinterAgent reads it (`box_count`, `filament_slot<N>`, `color_slot<N>` from `save_variables`, a slot loaded when `box_stepper slot<N>` `runout_button` is 0, names and colors from `/server/files/config/officiall_filas_list.cfg`); the Snapmaker U1's four toolheads from `print_task_config` (`filament_exist`, `filament_type` with `filament_sub_type`, `filament_color_rgba`). Slot ids are 1, 2, ... for an MMU and the U1, A1 to A4 then B1 for QIDI Boxes. File info falls back to the file list where `/server/files/metadata` answers 404 (QIDI's Moonraker on the Q2 and X-Max 4).
+Filament units: a Happy Hare MMU's gates (`gate_material`, `gate_color`); a QIDI Box read as OrcaSlicer reads it (`box_count`, `filament_slot<N>`, `color_slot<N>` from `save_variables`, a slot loaded when `box_stepper slot<N>` `runout_button` is 0, names and colors from `/server/files/config/officiall_filas_list.cfg`); the Snapmaker U1's four toolheads from `print_task_config` (`filament_exist`, `filament_type` with `filament_sub_type`, `filament_color_rgba`). Slot ids are 1, 2, ... for an MMU and the U1, A1 to A4 then B1 for QIDI Boxes. File info falls back to the file list where `/server/files/metadata` answers 404 (QIDI's Moonraker on the Q2 and X-Max 4).
 
 Mapping: `print_stats.state` `printing` and `paused` map directly, `complete` to `finished`, `error` to `error`, `standby` and `cancelled` to `idle`. Time left is estimated from print duration and progress.
 
@@ -70,7 +70,7 @@ The Moonraker mock backs `moonraker_contract`, `creality_contract_over_moonraker
 
 ### Sources
 
-Moonraker web API and authorization: https://moonraker.readthedocs.io/en/latest/external_api/introduction/ (`docs/external_api` in the Moonraker repository). OrcaSlicer's MoonrakerPrinterAgent, QidiPrinterAgent and SnapmakerPrinterAgent for the QIDI Box, the U1 and `machine_name`.
+Moonraker web API and authorization: https://moonraker.readthedocs.io/en/latest/external_api/introduction/ (`docs/external_api` in the Moonraker repository). OrcaSlicer's Moonraker, QIDI and Snapmaker support, read as protocol references for the QIDI Box, the U1 and `machine_name`.
 
 ### Untested on hardware
 

@@ -182,7 +182,7 @@ pub(crate) fn u1_unit(status: &Value) -> Option<FilamentUnit> {
     })
 }
 
-/// A U1 material and its sub type as one name, the way OrcaSlicer's `combine_filament_type` joins
+/// A U1 material and its sub type as one name, the way OrcaSlicer joins
 /// them: CF and GF as suffixes, SnapSpeed as high speed, other brand words dropped.
 fn combine_type(base: &str, sub: &str) -> String {
     let base = base.trim().to_ascii_uppercase();
