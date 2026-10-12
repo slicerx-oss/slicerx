@@ -275,6 +275,18 @@ describe('printers (demo fleet)', () => {
     expect(text(st)).toContain('printing')
   })
 
+  it('lists printers briefly by default, with temperatures and messages on request', async () => {
+    const h = await connect()
+    type Row = { id: string; status: { state: string; slots?: unknown[]; nozzles?: unknown } }
+    const short = await h.call('slicerx_printer_list')
+    const full = await h.call('slicerx_printer_list', { detail: 'full' })
+    const rows = data<{ output: Row[] }>(short).output
+    expect(rows.find((r) => r.id === 'bay-1')?.status.state).toBe('printing')
+    expect(rows.every((r) => r.status.nozzles === undefined)).toBe(true)
+    expect(data<{ output: Row[] }>(full).output.some((r) => r.status.nozzles !== undefined)).toBe(true)
+    expect(JSON.stringify(short).length).toBeLessThan(JSON.stringify(full).length * 0.6)
+  })
+
   it('manages fleets without approval and logs each edit', async () => {
     const h = await connect()
     const list = data<{ fleets: { id: string; printerIds: string[] }[] }>(await h.call('slicerx_list_fleets'))
