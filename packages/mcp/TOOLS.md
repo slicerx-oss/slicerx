@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-139 tools.
+141 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -113,10 +113,12 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_printer_snapshot` | Camera snapshot | printers | read, ungated | Take a camera snapshot from a printer and return it as an image. |
 | `slicerx_printer_status` |  |  | read | Current status of one printer: state, job, layer, time left, temperatures, filament slots and its message. |
 | `slicerx_printer_test` |  |  | printer_config | Tests that SlicerX can reach the printer: reaches it, signs in and reads its state. |
+| `slicerx_project_add_filament` |  |  | slice | Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. |
 | `slicerx_project_add_model` |  |  | read | Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. |
 | `slicerx_project_open` |  |  | read | Start a new project for mimir skills to work on (replaces the current one). |
+| `slicerx_project_set_filament` |  |  | slice | Change a filament of the open project: its material type, its color, or both (the app's filament dialog, opened by clicking a ring on the Slice filament rail). |
 | `slicerx_project_set_overrides` |  |  | slice | Set OrcaSlicer settings for the open project, such as the config_patch from slicerx_plan_settings. |
-| `slicerx_project_show` |  |  | read | Show the open project: printer, filament, objects, plates and setting overrides. |
+| `slicerx_project_show` |  |  | read | Show the open project: printer, filament profile, its filaments (number, type, color), objects, plates and setting overrides. |
 | `slicerx_region_modifiers` |  |  | slice | Settings for a goal only where it matters, such as strong screw holes without slowing the whole part. |
 | `slicerx_remove_from_fleet` | Remove a printer from a fleet | fleets | read, ungated | Remove a printer from a fleet. |
 | `slicerx_rename_fleet` | Rename a fleet | fleets | read, ungated | Rename a fleet. |

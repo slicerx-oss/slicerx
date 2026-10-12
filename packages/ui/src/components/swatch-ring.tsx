@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { type RefObject, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-import { nearPanel, panelBackground } from './swatch-contrast'
 
 export interface SwatchRingProps {
   /** #rrggbb; anything else draws as unknown (a checker). */
@@ -70,15 +69,24 @@ function useNearPanel(color: string | null): { ref: RefObject<HTMLSpanElement | 
   useLayoutEffect(() => {
     const el = ref.current
     if (!el || !color || typeof getComputedStyle !== 'function') return void setOn(false)
-    const check = () => {
-      const panel = panelBackground(el)
-      setOn(panel !== null && nearPanel(color, panel))
+    let live = true
+    let watch: MutationObserver | null = null
+    // The color math loads on first use, so it stays out of the startup shell.
+    void import('./swatch-contrast').then(({ nearPanel, panelBackground }) => {
+      if (!live) return
+      const check = () => {
+        const panel = panelBackground(el)
+        setOn(panel !== null && nearPanel(color, panel))
+      }
+      check()
+      // A theme switch changes the html element's attributes or its style; the panel's color follows.
+      watch = typeof MutationObserver === 'function' ? new MutationObserver(check) : null
+      watch?.observe(document.documentElement, { attributes: true })
+    })
+    return () => {
+      live = false
+      watch?.disconnect()
     }
-    check()
-    // A theme switch changes the html element's attributes or its style; the panel's color follows.
-    const watch = typeof MutationObserver === 'function' ? new MutationObserver(check) : null
-    watch?.observe(document.documentElement, { attributes: true })
-    return () => watch?.disconnect()
   }, [color])
   return { ref, on }
 }
