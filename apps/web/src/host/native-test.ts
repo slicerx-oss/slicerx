@@ -5,7 +5,7 @@
 // as in the CAD-only build (meshes.ts). Slices run in the native engine behind e2e/native-host/server.mjs, the same
 // sx-core the desktop app links, with the request and result shapes of the desktop's slicer
 // (apps/desktop/src/host/slicer.ts), so the browser suite tests what the desktop slices.
-import type { GcodeExport, ProjectMetadata, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import type { GcodeExport, MeshPart, ProjectMetadata, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
 import { encodeParts, sliceClock } from '@slicerx/slicer'
 import { createMeshHost } from './meshes'
 
@@ -54,6 +54,29 @@ export function lineStarts(gcode: Uint8Array): Uint32Array {
   return Uint32Array.from(out)
 }
 
+/** The parts of a model in the raw parts format (SXMP, as `Mesh::from_raw` reads it), without the paint after them; null for any other file. */
+export function rawParts(data: ArrayBuffer): MeshPart[] | null {
+  const b = new Uint8Array(data)
+  if (b.length < 8 || String.fromCharCode(...b.subarray(0, 4)) !== 'SXMP') return null
+  const v = new DataView(data)
+  const parts: MeshPart[] = []
+  let o = 8
+  for (let i = v.getUint32(4, true); i > 0; i--) {
+    const slot = v.getUint8(o)
+    const len = v.getUint16(o + 1, true)
+    const name = new TextDecoder().decode(b.subarray(o + 3, o + 3 + len))
+    o += 3 + len
+    const nv = v.getUint32(o, true)
+    const positions = new Float32Array(data.slice(o + 4, o + 4 + nv * 12))
+    o += 4 + nv * 12
+    const nt = v.getUint32(o, true)
+    const indices = new Uint32Array(data.slice(o + 4, o + 4 + nt * 12))
+    o += 4 + nt * 12
+    parts.push({ name, slot, positions, indices })
+  }
+  return parts
+}
+
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   const d = await crypto.subtle.digest('SHA-256', bytes)
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('')
@@ -62,6 +85,8 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 export function createNativeTestSlicer(url: string): SlicerHost {
   const meshes = createMeshHost()
   const sent = new Set<string>()
+  // models loaded from raw parts (a painted object's copy) go to the engine as they came, paint block included
+  const raw = new Map<string, ArrayBuffer>()
   const gcode = new Map<string, Promise<Uint8Array>>()
   let nextJob = 1
   // Every page of a run shares the server, so each keeps its meshes and slices under its own session.
@@ -74,8 +99,8 @@ export function createNativeTestSlicer(url: string): SlicerHost {
   // Each mesh crosses once, in the raw parts format with its paint, the way the desktop app hands meshes to the engine.
   const upload = async (id: string): Promise<void> => {
     if (sent.has(id)) return
-    const parts = await meshes.meshParts!(id)
-    await call(`/meshes/${encodeURIComponent(id)}`, { method: 'PUT', body: encodeParts(parts) as BodyInit })
+    const body = raw.get(id) ?? encodeParts(await meshes.meshParts!(id))
+    await call(`/meshes/${encodeURIComponent(id)}`, { method: 'PUT', body: body as BodyInit })
     sent.add(id)
   }
   const bytesOf = (id: string): Promise<Uint8Array> => {
@@ -87,7 +112,13 @@ export function createNativeTestSlicer(url: string): SlicerHost {
     return g
   }
   return {
-    loadModel: (data, fileName) => meshes.loadModel(data, fileName),
+    async loadModel(data, fileName) {
+      const parts = rawParts(data)
+      if (!parts) return meshes.loadModel(data, fileName)
+      const handle = await meshes.loadParts(fileName, parts)
+      raw.set(handle.id, data)
+      return handle
+    },
     loadParts: (name, parts) => meshes.loadParts(name, parts),
     meshParts: (id) => meshes.meshParts!(id),
     async projectMetadata(data: ArrayBuffer, fileName: string): Promise<ProjectMetadata> {
@@ -137,6 +168,7 @@ export function createNativeTestSlicer(url: string): SlicerHost {
       }
       meshes.release(id)
       sent.delete(id)
+      raw.delete(id)
     },
   }
 }
