@@ -237,15 +237,16 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // sending frames with their connections left open. `printerType` puts a `printer_type` in its reports; `storage`
     // (`none`, `normal`, `abnormal`, `readonly`) is the SD card it reports, and `emmc: true` says it prints without one.
     // `developerMode: false` makes it a printer with Developer Mode off: status only, every command and upload refused
-    // (null: no `fun` flags in its reports, as before). `authorizationControl: true` makes it Authorization Control
-    // firmware without Developer Mode and without `fun` flags: status and the light work, print commands go
-    // unanswered, and the FTPS connection closes on a file (false: off again). `refuseControl` makes it answer pause, resume, stop, speed, G-code lines, skips and the light with
+    // (null: no `fun` flags in its reports, as before). `authorizationControl` makes it Authorization Control
+    // firmware without Developer Mode and without `fun` flags: status and the light work, and print commands get the
+    // unsigned-command refusal (`verify`) or no answer with the FTPS connection closing on a file (`silent`; null: off
+    // again). `storageFull: true` answers an upload `452` (false: room again). `refuseControl` makes it answer pause, resume, stop, speed, G-code lines, skips and the light with
     // `result: fail` and that reason, changing nothing (null: accepts them again). `dropMqtt: true` closes every MQTT
     // connection, as a link that drops (the log says `mqtt dropped`, and `pushall` for each full report asked for). `cameraFrame: 'hand'` makes its JPEG camera show a hand reaching
     // in (null: the placeholder again); `cameraFrameFile` sends that JPEG file instead, a photo for a capture (null: off).
     if (req.path === '/bambu' && req.method === 'POST') {
       if (!bambuExtra) return { status: 404 }
-      const b = req.json() as { refuse?: string | null; refuseControl?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; grams?: Record<number, number>; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; authorizationControl?: boolean; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null; dropMqtt?: boolean }
+      const b = req.json() as { refuse?: string | null; refuseControl?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; grams?: Record<number, number>; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; authorizationControl?: BambuExtra['authorizationControl'] | null; storageFull?: boolean; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null; dropMqtt?: boolean }
       if (b.dropMqtt) bambuDropMqtt?.()
       if (b.printerType !== undefined) bambuExtra.printerType = b.printerType
       if (b.refuseControl === null) delete bambuExtra.refuseControl
@@ -254,7 +255,9 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.emmc !== undefined) bambuExtra.emmc = b.emmc
       if (b.developerMode === null) delete bambuExtra.developerMode
       else if (b.developerMode !== undefined) bambuExtra.developerMode = b.developerMode
-      if (b.authorizationControl !== undefined) bambuExtra.authorizationControl = b.authorizationControl
+      if (b.authorizationControl === null) delete bambuExtra.authorizationControl
+      else if (b.authorizationControl !== undefined) bambuExtra.authorizationControl = b.authorizationControl
+      if (b.storageFull !== undefined) bambuExtra.storageFull = b.storageFull
       // The older names for `POST /camera`: a file wins over the hand, and dropping the file shows the hand again.
       if (b.cameraFrame !== undefined || b.cameraFrameFile !== undefined) {
         if (b.cameraFrame !== undefined) bambuCamera.hand = b.cameraFrame === 'hand'

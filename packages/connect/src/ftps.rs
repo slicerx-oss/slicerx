@@ -256,7 +256,7 @@ async fn run(t: &FtpsTarget<'_>, name: &str, data: &[u8]) -> Result<()> {
         .map_err(|e| Error::unreachable(t.printer, e))?;
     let code = reply(t, &mut rd).await?;
     if code != 150 && code != 125 {
-        return Err(Error::protocol(t.printer, format!("FTP {code} after STOR")));
+        return Err(stor_failure(t.printer, code, "STOR"));
     }
     dtls.write_all(data)
         .await
@@ -270,10 +270,34 @@ async fn run(t: &FtpsTarget<'_>, name: &str, data: &[u8]) -> Result<()> {
     let mut rest = Vec::new();
     let _ = tokio::time::timeout(Duration::from_secs(5), dtls.read_to_end(&mut rest)).await;
     drop(dtls);
-    expect(t, &mut rd, 226).await?;
+    let code = reply(t, &mut rd).await?;
+    if code != 226 {
+        return Err(stor_failure(t.printer, code, "the upload"));
+    }
     let _ = send(t, &mut wr, "QUIT").await;
     Ok(())
 }
+
+/// Whether an FTP reply code says the server has no room for the file: 452 (insufficient storage)
+/// or 552 (storage allocation exceeded), as RFC 959 defines them.
+pub(crate) fn storage_full(code: u16) -> bool {
+    matches!(code, 452 | 552)
+}
+
+/// The error for FTP reply `code` where an upload wanted 150 or 226 (`after`: what it answered).
+/// A storage reply is [`Error::StorageFull`] with what to do; anything else stays a protocol error.
+fn stor_failure(printer: &str, code: u16, after: &str) -> Error {
+    if storage_full(code) {
+        return Error::StorageFull {
+            printer: printer.to_owned(),
+            reason: format!("its storage is full (FTP {code} after {after}). {STORAGE_FULL}"),
+        };
+    }
+    Error::protocol(printer, format!("FTP {code} after {after}"))
+}
+
+/// What to do when the printer's storage is full.
+const STORAGE_FULL: &str = "Free space on the printer's SD card (or its internal storage): delete old print files on the printer's screen, or take the card out and clear it on a computer. Then send the print again.";
 
 async fn send<W: AsyncWrite + Unpin>(t: &FtpsTarget<'_>, wr: &mut W, line: &str) -> Result<()> {
     wr.write_all(format!("{line}\r\n").as_bytes())
@@ -356,6 +380,25 @@ mod tests {
         );
         assert!(super::parse_list_line("total 12", now).is_none());
         assert!(super::parse_list_line("lrwxrwxrwx 1 root root 3 Oct 01 09:30 a -> b", now).is_none());
+    }
+
+    #[test]
+    fn storage_replies_say_the_card_is_full() {
+        use super::stor_failure;
+        for code in [452, 552] {
+            let e = stor_failure("p", code, "STOR");
+            assert_eq!(e.code(), crate::ErrorCode::StorageFull, "{code}");
+            let text = e.to_string();
+            assert!(text.contains(&format!("FTP {code} after STOR")), "{text}");
+            assert!(text.contains("Free space on the printer's SD card"), "{text}");
+        }
+        for code in [550, 451, 530] {
+            assert_eq!(
+                stor_failure("p", code, "STOR").code(),
+                crate::ErrorCode::Protocol,
+                "{code}"
+            );
+        }
     }
 
     #[test]

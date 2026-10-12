@@ -63,22 +63,30 @@ export interface BambuExtra {
   /** `fun2` bit 0: the printer prints from its internal storage without an SD card. */
   emmc?: boolean
   /**
-   * Developer Mode as the report's `fun` flags give it (bit 0x20000000 set while it is off). Off, the printer keeps
-   * sending status but refuses every command and file from a third party, as Bambu Lab's Authorization Control does:
-   * a command gets `result: fail` on the report topic and an upload is refused. The real firmware's refusal words are
-   * not recorded here; the driver refuses before sending anything when the flag says off. Absent: no `fun` flags.
+   * Developer Mode as the report's `fun` flags give it (bit 0x20000000 set while it is off, as ha-bambulab reads
+   * it). Off, the printer keeps sending status and takes the light (Bambu Lab's January 16, 2025 notes keep LED
+   * control open), and answers every other command with the unsigned-command refusal (UNSIGNED_REPLY); an upload is
+   * refused. The driver refuses print commands before sending anything when the flag says off. Absent: no `fun` flags.
    */
   developerMode?: boolean
   /**
-   * Authorization Control without Developer Mode, as a Discord report from an A1 mini showed it (camera and light
-   * work, sending a print fails) and as Bambu Lab's January 2025 notes describe it (status and LED control are not
-   * restricted; starting prints over LAN is). Its reports carry no `fun` flags that would say so. Status keeps
-   * coming and `ledctrl` works; `project_file`, `gcode_file` and the other print commands get no answer and change
-   * nothing; the FTPS login works and the connection closes when a file is sent. How the real firmware turns the
-   * upload away (a stall or a dropped connection) is not recorded; the driver treats both alike.
+   * Authorization Control without Developer Mode and without `fun` flags that would say so. Status keeps coming and
+   * `ledctrl` works (Bambu Lab's January 16, 2025 notes). `verify`: every `print` command is answered with the
+   * unsigned-command refusal (UNSIGNED_REPLY, as OpenBambuAPI's cloud-x509-auth.md records it) and the FTPS upload
+   * works. `silent`: as a Discord report from an A1 mini read (camera and light work, the send fails), print commands
+   * get no answer and the FTPS connection closes when a file is sent. Which of the two real firmware does without
+   * Developer Mode has not been captured on SlicerX hardware.
    */
-  authorizationControl?: boolean
+  authorizationControl?: 'verify' | 'silent'
+  /** The card has no room: STOR is answered `452` and nothing is stored. */
+  storageFull?: boolean
 }
+
+/**
+ * How Bambu Lab firmware answers a `print` command that needs a signature and has none (OpenBambuAPI,
+ * cloud-x509-auth.md): `err_code` 0x05024007.
+ */
+export const UNSIGNED_REPLY = { result: 'failed', reason: 'mqtt message verify failed', err_code: 0x0502_4007 } as const
 
 /** `fun` values seen on printers: Developer Mode on, and off (signed commands wanted). */
 const FUN = { on: '3EC18FFF9CFF', off: '3EC1AFFF9CFF' } as const
@@ -277,18 +285,26 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
         for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, body))
         return
       }
-      // Developer Mode off: status only. Every command is answered with a refusal and changes nothing.
-      if (extra.developerMode === false) {
+      // Developer Mode off: status and the light. Every other command is answered with the unsigned-command refusal
+      // and changes nothing.
+      if (extra.developerMode === false && msg.system?.command !== 'ledctrl') {
         const [group, body] = Object.entries(msg)[0] ?? []
         if (!group || !body) return
         log.push(`refused ${String(body.command)}`)
-        const answer = Buffer.from(JSON.stringify({ [group]: { command: body.command, sequence_id: body.sequence_id, result: 'fail', reason: 'not authorized' } }))
+        const answer = Buffer.from(JSON.stringify({ [group]: { command: body.command, sequence_id: body.sequence_id, ...UNSIGNED_REPLY } }))
         for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, answer))
         return
       }
-      // Authorization Control without Developer Mode: the light still works, every print command is dropped unanswered.
+      // Authorization Control without Developer Mode: the light still works, every print command is refused as
+      // unsigned (`verify`) or dropped unanswered (`silent`).
       if (extra.authorizationControl && msg.print) {
-        log.push(`ignored ${String(msg.print.command)}`)
+        if (extra.authorizationControl === 'silent') {
+          log.push(`ignored ${String(msg.print.command)}`)
+          return
+        }
+        log.push(`unsigned ${String(msg.print.command)}`)
+        const answer = Buffer.from(JSON.stringify({ print: { command: msg.print.command, sequence_id: msg.print.sequence_id, ...UNSIGNED_REPLY } }))
+        for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, answer))
         return
       }
       if (msg.system?.command === 'ledctrl') {
@@ -416,7 +432,8 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
         case 'STOR': {
           if (!authed || !dataReady) { reply('530 not logged in'); break }
           if (extra.developerMode === false) { log.push(`refused STOR ${arg}`); reply('550 not authorized'); break }
-          if (extra.authorizationControl) { log.push(`dropped STOR ${arg}`); dataServer?.close(); ctl.destroy(); break }
+          if (extra.authorizationControl === 'silent') { log.push(`dropped STOR ${arg}`); dataServer?.close(); ctl.destroy(); break }
+          if (extra.storageFull) { log.push(`full STOR ${arg}`); dataServer?.close(); reply('452 insufficient storage space'); break }
           const name = arg
           reply('150 send it')
           const sock = await dataReady
