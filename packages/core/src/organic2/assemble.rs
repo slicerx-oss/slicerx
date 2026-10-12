@@ -25,6 +25,9 @@ pub(crate) struct Layer {
     pub(crate) bottom_contact: Shapes,
     /// The overhangs the top contact holds up.
     pub(crate) hang: Shapes,
+    /// Counting up from the bed, which layer with dense roof areas this is (1 for the first), or 0.
+    /// Roof lines turn between the two diagonals from one such layer to the next.
+    pub(crate) roof_ordinal: usize,
 }
 
 /// What one branch adds to the layers.
@@ -223,6 +226,7 @@ pub(crate) fn layers(
             base,
             bottom_contact,
             hang,
+            roof_ordinal: 0,
         }
     });
     // Bottom interface layers above each bottom contact take the branch area there.
@@ -263,6 +267,13 @@ pub(crate) fn layers(
         ]);
         let clear = ops::union(&v.collision(0.0, 0, true), &others);
         first.base = ops::union(&first.base, &ops::diff(&wide, &clear));
+    }
+    let mut ordinal = 0;
+    for x in &mut out {
+        if !(x.top_contact.is_empty() && x.interface.is_empty() && x.base_interface.is_empty()) {
+            ordinal += 1;
+            x.roof_ordinal = ordinal;
+        }
     }
     // Everything stays on the bed.
     let bed = v.bed();
