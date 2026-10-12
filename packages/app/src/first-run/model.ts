@@ -11,9 +11,11 @@ export { ONBOARDING_VERSION, SETUP_STEPS, STEP_SINCE, onboardingRerun, type Setu
 /** The screens without the mimir step, for editions without mimir and for people already connected. */
 export const BASE_STEPS: readonly SetupStep[] = ['theme', 'printer', 'look']
 
-/** The screens for an edition: the open step only where the edition has modeling tools, mimir where it is offered. With `since`, only the steps newer than that onboarding version. */
-export function setupSteps(o: { cad: boolean; mimir: boolean; since?: number }): SetupStep[] {
-  const all: SetupStep[] = [...BASE_STEPS, ...(o.cad ? (['open'] as const) : []), ...(o.mimir ? (['mimir'] as const) : [])]
+/** The screens for an edition: the open step only where the edition has modeling tools, mimir where it is offered. A host that
+ * cannot slice skips the printer, the slicer look and the open step. With `since`, only the steps newer than that onboarding version. */
+export function setupSteps(o: { cad: boolean; mimir: boolean; slicing?: boolean; since?: number }): SetupStep[] {
+  const base: readonly SetupStep[] = o.slicing === false ? ['theme'] : [...BASE_STEPS, ...(o.cad ? (['open'] as const) : [])]
+  const all: SetupStep[] = [...base, ...(o.mimir ? (['mimir'] as const) : [])]
   if (o.since === undefined) return all
   const newer = all.filter((s) => STEP_SINCE[s] > (o.since as number))
   return newer.length ? newer : all
