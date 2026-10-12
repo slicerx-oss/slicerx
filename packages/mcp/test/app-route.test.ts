@@ -77,4 +77,48 @@ describe('design tools over the app link', () => {
     expect(edit.input.safeParse({ design: 'd1', step: 1, value: 10_001 }).success).toBe(false)
     expect(edit.input.safeParse({ design: 'd1', step: 1, value: -10_001 }).success).toBe(false)
   })
+
+  it('bound fillet and chamfer at 1000 mm and hollow and shell walls at 50 mm when a step is edited', async () => {
+    const steps = [
+      { op: 'edge.fillet', edges: [], radiusMm: 2 },
+      { op: 'edge.chamfer', edges: [], distanceMm: 1 },
+      { op: 'hollow', wallMm: 2 },
+      { op: 'shell', wallMm: 2, faces: [] },
+    ]
+    const replayed: number[] = []
+    const design = {
+      id: 'd1',
+      name: 'Part',
+      history: { version: 1, base: [], steps: steps.map((params, i) => ({ id: `s${i}`, part: 0, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], params })) },
+      transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      parts: [],
+      status: [],
+      madeBy: {},
+      redo: [],
+    }
+    const host = {
+      ...NO_ENGINE_HOST,
+      get: () => design,
+      // A step within its bound reaches the replay; this host stops there.
+      replay: async () => {
+        replayed.push(1)
+        throw new Error('replayed')
+      },
+    } as unknown as typeof NO_ENGINE_HOST
+    const edit = designToolset(host).find((t) => t.name === 'design.edit_step')!
+    const run = (step: number, value: number) => edit.run({ design: 'd1', step, value } as never, {} as never).then(() => new Error('ran'), (e: unknown) => e as Error)
+    for (const [step, over, within] of [
+      [1, 1001, 1000],
+      [2, 1001, 1000],
+      [3, 51, 50],
+      [4, 51, 50],
+    ] as const) {
+      const refused = await run(step, over)
+      expect(refused, `step ${step}`).toBeInstanceOf(ToolInputError)
+      expect(refused.message).toMatch(/at most/)
+      const before = replayed.length
+      expect((await run(step, within)).message, `step ${step}`).toBe('replayed')
+      expect(replayed.length).toBe(before + 1)
+    }
+  })
 })
