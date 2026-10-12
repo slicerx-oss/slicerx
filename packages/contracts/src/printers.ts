@@ -169,7 +169,8 @@ export interface PrinterLive {
   monitorOnly?: boolean
   /**
    * True while a Bambu Lab printer needs LAN Only Mode and Developer Mode (or Bambu Connect) to take a print from this
-   * app: its report says Developer Mode is off, or it refused or ignored a send while its status kept coming.
+   * app, as the printer said it: its report says Developer Mode is off, or it answered a command with the
+   * unsigned-command refusal. A send that only failed or went unanswered does not set it.
    */
   needsDeveloperMode?: boolean
 }
@@ -431,6 +432,8 @@ export type PrinterErrorCode =
    * Mode). The remedies are LAN Only Mode plus Developer Mode, or Bambu Connect (developerModeRemedies).
    */
   | 'needs_developer_mode'
+  /** The printer's storage (its SD card or internal storage) has no room for the file; the message says what to free. */
+  | 'printer_storage_full'
   /** No access code is stored on this computer for the printer (the keychain kept it only for a session). */
   | 'credential_missing'
 
@@ -491,3 +494,17 @@ export interface DemoFleet {
   fleets: Fleet[]
   spools: SpoolFixture[]
 }
+
+/** The error code for an upload the printer turned away because its storage is full. */
+export const PRINTER_STORAGE_FULL = 'printer_storage_full'
+
+/** What to tell the person when the printer's storage is full, for the app and for clients. */
+export const STORAGE_FULL_REMEDY = {
+  id: 'free_storage',
+  title: "Free space on the printer's storage",
+  steps: [
+    "Delete old print files on the printer: on its screen, open the file list and delete what you no longer need. Or take the SD card out and clear it on a computer.",
+    'Then send the print again.',
+  ],
+  note: 'Nothing was sent to print. The file did not fit on the printer.',
+} as const
