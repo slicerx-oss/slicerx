@@ -109,6 +109,12 @@
     "https://www.prusa3d.com/product/prusa-core-one/"
    ]
   },
+  "prusa-core-one-l": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Prusa/machine/Prusa%20CORE%20One%20L.json"
+   ]
+  },
   "prusa-xl": {
    "flavor": "marlin2",
    "sources": [
