@@ -57,6 +57,7 @@ export function Fleet() {
     if (refresh) void refetch()
   }, [refresh, refetch])
   const view = useApp((s) => s.printersView)
+  const reconnecting = useApp((s) => s.bridgeStatus.state === 'reconnecting')
   const bays = useApp((s) => s.bays)
   const printerBays = useApp((s) => s.printerBays)
   const groups = useGroups()
@@ -97,7 +98,13 @@ export function Fleet() {
           Add printer
         </Button>
       </header>
-      {fleet.isError ? <p className="app-err">Printers did not answer: {fleet.error.message}</p> : null}
+      {reconnecting ? (
+        <p className="sx-small sx-muted" role="status" data-testid="bridge-reconnecting">
+          The connection to the printer bridge dropped. Reconnecting.
+        </p>
+      ) : fleet.isError ? (
+        <p className="app-err">Printers did not answer: {fleet.error.message}</p>
+      ) : null}
       {tripped.length ? (
         <section className="guard-list" aria-label="Camera guard">
           {tripped.map((r) => (
