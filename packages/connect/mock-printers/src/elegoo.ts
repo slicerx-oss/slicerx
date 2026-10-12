@@ -39,6 +39,10 @@ function statusMessage(m: MockMachine): string {
       TempOfNozzle: n?.current, TempTargetNozzle: n?.target,
       TempOfHotbed: m.fx.bed?.current, TempTargetHotbed: m.fx.bed?.target,
       TempOfBox: m.fx.chamber?.current, TempTargetBox: 0,
+      // The head's position as "x,y,z" (the name spelled as the printer spells it), Z climbing with the layers while a
+      // job runs, and the light.
+      CurrenCoord: `${m.position[0].toFixed(2)},${m.position[1].toFixed(2)},${(active && m.job ? m.job.layer * 0.2 : m.position[2]).toFixed(2)}`,
+      LightStatus: { SecondLight: true },
       PrintInfo: {
         Status: PRINT_STATUS[m.state] ?? 0,
         CurrentLayer: active ? m.job?.layer ?? 0 : 0,
@@ -47,6 +51,7 @@ function statusMessage(m: MockMachine): string {
         TotalTicks: m.job ? 3600 : 0,
         Filename: active && m.job ? `/local/${m.job.name}` : '',
         Progress: m.job ? Math.round(m.job.progress * 100) : 0,
+        PrintSpeedPct: 100,
       },
     },
     MainboardID: MOCK_MAINBOARD,
