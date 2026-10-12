@@ -626,7 +626,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'slice',
     description:
-      'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. With "design" it adds a shell step (the open faces kept by their keys, so the step follows them through edits); with a model it writes the new STL and reports the walls.',
+      'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. With "design" it adds a shell step (the open faces kept by their keys, and its wall an editable number); with a model it writes the new STL and reports the walls.',
     input: z.object({
       model: modelOrDesign,
       design: designArg.optional(),

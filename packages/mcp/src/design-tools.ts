@@ -49,7 +49,8 @@ export function faceAt(d: HostDesign, at: V3, normal?: V3, parts: readonly Histo
   })
   const hit = best as { part: number; triangle: number; normal: V3; score: number } | null
   if (!hit) throw new ToolInputError(`at: no face of the design within ${NEAR_MM} mm of (${at.join(', ')}); slicerx_geom_faces with the design lists a point on every flat face`)
-  if (normal && hit.score < Math.cos((2 * Math.PI) / 180)) throw new ToolInputError('normal: no face at that point faces that way; give the outward normal of the face you mean')
+  // The normal only says which face at a shared point is meant; a curved wall's facets lean a few degrees off it.
+  if (normal && hit.score < Math.cos((10 * Math.PI) / 180)) throw new ToolInputError('normal: no face at that point faces that way; give the outward normal of the face you mean')
   const key = keyOfTriangle(parts[hit.part]!, hit.triangle)
   return { part: hit.part, triangle: hit.triangle, normal: hit.normal, key: key || undefined }
 }

@@ -36,9 +36,9 @@ describe('a design read back at any step', () => {
     const solid = await ok<{ measurement: { distanceMm: number } }>('slicerx_geom_measure', { design: d, step: 1, a: { at: [15, 10, 10], normal: [0, 0, 1] }, b: { at: [15, 10, 0], normal: [0, 0, -1] } })
     expect(solid.measurement.distanceMm).toBeCloseTo(10, 3)
 
-    // The wall follows the top through an edit: a taller box keeps a 2 mm floor and an open top.
-    const taller = await h.call('slicerx_design_edit_step', { design: d, step: 1, value: 14 })
-    expect(taller.isError, text(taller)).toBeFalsy()
-    expect(data<{ output: { volumeMm3: number } }>(taller).output.volumeMm3).toBeCloseTo(30 * 20 * 14 - 26 * 16 * 12, 1)
+    // A thicker wall is an edit of the step's number.
+    const thicker = await h.call('slicerx_design_edit_step', { design: d, step: 2, value: 3 })
+    expect(thicker.isError, text(thicker)).toBeFalsy()
+    expect(data<{ output: { volumeMm3: number } }>(thicker).output.volumeMm3).toBeCloseTo(6000 - 24 * 14 * 7, 1)
   }, 60_000)
 })
