@@ -109,7 +109,7 @@ async function main() {
     // gate's downloads out of the public counts.
     if (has('b') && opts.account && (await bridge.call('app_user')).data?.signedIn) add(await scenario('b2', 'Open a design signed in', (s) => openSignedIn(s)))
     else if (has('b')) result.notes.push('b2 (open signed in) did not run: not signed in')
-    if (has('e')) add(await scenario('e', SCENARIOS.e, (s) => starters(s, { only: opts.starters })))
+    if (has('e')) add(await scenario('e', SCENARIOS.e, (s) => starters(s, { only: opts.starters, account: opts.account, waitSignin: opts.waitSignin })))
     if (has('d')) add(await scenario('d', SCENARIOS.d, (s) => upload(s, opts)))
     if (has('w')) add(await scenario('w', SCENARIOS.w, (s) => watchPause(s, { hub: opts.hubDir ?? hubDir({ platform: opts.platform, env: app.env }), url: `ws://127.0.0.1:${hubPort}` })))
   } catch (e) {

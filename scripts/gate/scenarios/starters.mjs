@@ -3,17 +3,25 @@
 // e. Every starter design opened from the Vault and sliced on the gate's printer (Bambu Lab A1, 0.4 mm, PLA, no
 // connection): one design alone on the plate, zero warnings, its time and grams, and for the temperature tower one
 // M104 per floor in the exported G-code (written to the bridge's own temporary folder, never sent anywhere).
+// The designs download on the gate account's session (from c when it ran, else a sign-in link for the operator), never
+// anonymously: anonymous downloads share one limit per network with every other gate run there.
 import { readFileSync } from 'node:fs'
+import { signIn } from './accounts.mjs'
 import { STARTERS, TOWER } from '../lib/starters.mjs'
 import { duration, towerCheck } from '../lib/util.mjs'
 import { isGatePrinter } from './start.mjs'
 
-export async function starters(s, { only } = {}) {
+export async function starters(s, { only, account, waitSignin = 10 } = {}) {
   const st0 = await s.state()
   if (!isGatePrinter(st0)) s.stop('the printer is the A1, 0.4 mm', st0.printer)
   s.check(`sliced on ${st0.printer.vendor} ${st0.printer.model}, ${st0.printer.nozzleMm} mm, ${st0.filament?.[0]?.type ?? '?'}`, st0.filament?.[0]?.type === 'PLA', st0.filament?.[0])
-  const who = await s.user()
-  s.info(who.signedIn ? `signed in as ${who.email}` : 'signed out (anonymous downloads)')
+  let who = await s.user()
+  if (!who.signedIn) {
+    if (!account) s.stop('signed in for the starter downloads', 'not signed in and no --account: anonymous downloads share this network's limit with other gate runs')
+    await signIn(s, account, waitSignin, 'Sign in for the starters')
+    who = await s.user()
+  }
+  s.check(`downloads signed in as ${who.email}`, who.signedIn === true, who)
   const table = []
   for (const slug of only ?? STARTERS) {
     if (!(await s.clearPlate())) {

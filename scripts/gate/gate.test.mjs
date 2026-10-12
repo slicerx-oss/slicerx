@@ -265,13 +265,18 @@ describe('the command line', () => {
     assert.throws(() => options(['--only', 'x']), /no scenario x/)
     assert.throws(() => options(['--only', 'c']), /need --account/)
     assert.throws(() => options(['--platform', 'amiga', '--only', 'a']), /windows, macos or linux/)
-    assert.throws(() => options(['--only', 'e', '--starters', 'nope']), /no starter nope/)
+    assert.throws(() => options(['--only', 'e', '--account', 'qa@qa.slicerx.app', '--starters', 'nope']), /no starter nope/)
   })
   it('runs a subset without an account', () => {
-    const o = options(['--only', 'a,b,e', '--wait-signin', '1'])
-    assert.deepEqual(o.run, ['a', 'b', 'e'])
+    const o = options(['--only', 'a,b,w', '--wait-signin', '1'])
+    assert.deepEqual(o.run, ['a', 'b', 'w'])
     assert.equal(o.account, null)
-    assert.deepEqual(options(['--skip', 'c,d']).run, ['a', 'b', 'e', 'w'])
+    assert.deepEqual(options(['--skip', 'c,d,e']).run, ['a', 'b', 'w'])
+  })
+  it('needs the account for e, which downloads the starters signed in', () => {
+    assert.throws(() => options(['--only', 'e']), /scenario e downloads the starters signed in and needs --account/)
+    assert.throws(() => options(['--skip', 'c,d']), /scenario e .* needs --account/)
+    assert.deepEqual(options(['--only', 'e', '--account', 'qa-linux@qa.slicerx.app']).run, ['e'])
   })
   it('runs the watch pause alone, with a hub folder of its own', () => {
     const o = options(['--only', 'w', '--hub-dir', 'hub-here'])
