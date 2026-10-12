@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, mainNumber, stepName, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -34,9 +34,9 @@ export interface DesignFiles {
 }
 
 /** The part and triangle under a point on a face (world), facing `normal` when given. */
-export function faceAt(d: HostDesign, at: V3, normal?: V3): { part: number; triangle: number; normal: V3; key: number | undefined } {
+export function faceAt(d: HostDesign, at: V3, normal?: V3, parts: readonly HistoryMesh[] = d.parts): { part: number; triangle: number; normal: V3; key: number | undefined } {
   let best: { part: number; triangle: number; normal: V3; score: number } | null = null
-  d.parts.forEach((p, part) => {
+  parts.forEach((p, part) => {
     const w = bakeMesh(p, d.transform)
     for (let t = 0; t + 2 < w.indices.length; t += 3) {
       const tri = corners(w, t)
@@ -50,8 +50,17 @@ export function faceAt(d: HostDesign, at: V3, normal?: V3): { part: number; tria
   const hit = best as { part: number; triangle: number; normal: V3; score: number } | null
   if (!hit) throw new ToolInputError(`at: no face of the design within ${NEAR_MM} mm of (${at.join(', ')}); slicerx_geom_faces with the design lists a point on every flat face`)
   if (normal && hit.score < Math.cos((2 * Math.PI) / 180)) throw new ToolInputError('normal: no face at that point faces that way; give the outward normal of the face you mean')
-  const key = keyOfTriangle(d.parts[hit.part]!, hit.triangle)
+  const key = keyOfTriangle(parts[hit.part]!, hit.triangle)
   return { part: hit.part, triangle: hit.triangle, normal: hit.normal, key: key || undefined }
+}
+
+/** The parts as they were right after `step` (an index from 1, an id or a step's name); the latest parts without one. */
+export async function partsAt(host: DesignHost, d: HostDesign, step?: number | string): Promise<HistoryMesh[]> {
+  if (step === undefined) return d.parts
+  const k = stepIndex(d, step)
+  if (k === d.history.steps.length - 1) return d.parts
+  const r = await replayHistory((op, request) => host.call(op, request), { history: { ...d.history, steps: d.history.steps.slice(0, k + 1) } })
+  return r.parts
 }
 
 /** The part whose surface holds a point (world), or the first part when none is near. */
@@ -64,9 +73,9 @@ export function partAt(d: HostDesign, at: V3): number {
 }
 
 /** A part as an engine mesh item, with the object's transform. */
-export function item(d: HostDesign, part: number): { mesh: { positions: number[]; indices: number[]; faces?: unknown }; transform: Mat4 } {
-  const p = d.parts[part]
-  if (!p) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+export function item(d: HostDesign, part: number, parts: readonly HistoryMesh[] = d.parts): { mesh: { positions: number[]; indices: number[]; faces?: unknown }; transform: Mat4 } {
+  const p = parts[part]
+  if (!p) throw new ToolInputError(`part: the design has ${parts.length} part${parts.length === 1 ? '' : 's'}`)
   return { mesh: { positions: Array.from(p.positions), indices: Array.from(p.indices), ...(p.faces ? { faces: p.faces } : {}) }, transform: d.transform }
 }
 
@@ -177,9 +186,11 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
   }
 }
 
-/** The step a client names: its 1-based index or its id. */
-function stepIndex(d: Design, step: number | string): number {
-  const i = typeof step === 'number' ? step - 1 : d.history.steps.findIndex((s) => s.id === step)
+/** The step a client names: its 1-based index, its id, or its name ("Fillet 1.5 mm", the last one by that name). */
+export function stepIndex(d: HostDesign, step: number | string): number {
+  const named = (s: Step): boolean => typeof step === 'string' && stepName(s).toLowerCase() === step.trim().toLowerCase()
+  const byName = d.history.steps.map((s, i) => (named(s) ? i : -1)).filter((i) => i >= 0).pop() ?? -1
+  const i = typeof step === 'number' ? step - 1 : d.history.steps.some((s) => s.id === step) ? d.history.steps.findIndex((s) => s.id === step) : byName
   if (i < 0 || i >= d.history.steps.length) throw new ToolInputError(`step: the design has ${d.history.steps.length} step${d.history.steps.length === 1 ? '' : 's'}; give an index from 1 or a step id from slicerx_design_steps`)
   return i
 }
