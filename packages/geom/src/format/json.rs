@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! `format.read3mf` for the json api: the project as json, each part's positions and triangles as output buffers
 
-use super::threemf::{Paint, PartKind, PartUv, Textures, read_3mf};
+use super::threemf::{Paint, PartKind, PartProps, Textures, read_3mf};
 use crate::error::{Error, Result};
 use crate::json::{FileLoader, OutFile, base64_decode, push_out_file};
 use serde_json::{Value, json};
@@ -35,7 +35,7 @@ fn paint(p: &Paint) -> Value {
 /// a part's property references: its model part, the object's default `[pid, pindex]`, and `refs`, one output
 /// buffer: a count, then per triangle that names its own its number, `pid`, `p1`, `p2` and `p3`, all u32; `null`
 /// when there are none
-fn uv(u: &PartUv) -> Value {
+fn props(u: &PartProps) -> Value {
     if u.is_empty() {
         return Value::Null;
     }
@@ -131,7 +131,7 @@ pub fn read(req: &Value, files: FileLoader<'_>) -> Result<Value> {
                 "slot": p.slot,
                 "settings": pairs(&p.settings),
                 "paint": paint(&p.paint),
-                "uv": uv(&p.uv),
+                "props": props(&p.props),
                 "transformed": p.transformed,
                 "positionsOut": push_out_file(OutFile::Positions(positions)),
                 "trianglesOut": push_out_file(OutFile::Triangles(triangles)),
