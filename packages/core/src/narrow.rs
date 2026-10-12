@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Narrow internal solid infill. Orca (`split_solid_surface` in `Fill/Fill.cpp`) splits an internal solid
-//! surface into the part where full scanlines fit and the narrow rest, the bands a sloped wall leaves.
-//! The narrow rest is not filled with lines: `FillConcentricInternal` runs the variable-width wall
-//! generator over it, so a band a line and a half wide gets one or two beads that follow it.
+//! Narrow internal solid infill. OrcaSlicer splits an internal solid surface into the part where full
+//! scanlines fit and the narrow rest, the bands a sloped wall leaves. The narrow rest is not filled with
+//! lines: it gets concentric beads from the variable-width wall generator, so a band a line and a half
+//! wide gets one or two beads that follow it.
 //!
-//! The split follows Orca's anti-vibration rule (from `PrusaSlicer`'s `FillEnsuring.cpp`): scanline
+//! The split follows OrcaSlicer's and PrusaSlicer's anti-vibration rule: scanline
 //! sections longer than one spacing are kept, chains of short ones are dropped, and the area the kept
 //! sections cover is the normal infill.
 //!
@@ -57,7 +57,7 @@ fn overlapping(a: (i64, i64), b: (i64, i64)) -> bool {
         || (a.0 <= b.1 && b.1 <= a.1)
 }
 
-/// Orca's `filter_vibrating_extrusions`: drops chains of short sections. Sections are per scanline,
+/// Drops chains of short sections, as OrcaSlicer's narrow solid infill does. Sections are per scanline,
 /// `(t0, t1)`, in line order.
 fn filter_vibrating(sections: &[Vec<(i64, i64)>]) -> Vec<Vec<(i64, i64)>> {
     let limit = max_line();
@@ -271,7 +271,7 @@ fn union_shapes(s: &Shapes) -> Shapes {
 }
 
 /// Normal and narrow parts of an internal solid region whose pattern is made of straight lines along `dir`
-/// at `spacing` (in `s` units, `spacing_mm` in mm), as `split_solid_surface` does.
+/// at `spacing` (in `s` units, `spacing_mm` in mm), as OrcaSlicer splits them.
 pub(crate) fn split_lines(region: &Shapes, dir: Dir, spacing: i64, spacing_mm: f64) -> (Shapes, Shapes) {
     if region.is_empty() {
         return (Vec::new(), Vec::new());
@@ -496,7 +496,7 @@ fn reconstruct(sections: &[Vec<(i64, i64)>], s_min: i64, spacing: i64, dir: Dir)
         .collect()
 }
 
-/// `FillConcentricInternal`: the variable-width walls of the narrow region, as thick lines (points with a
+/// The concentric fill of a narrow region: its variable-width walls, as thick lines (points with a
 /// width each), filling the region to its middle.
 pub(crate) fn concentric_lines(
     narrow: &Shapes,
@@ -552,7 +552,7 @@ pub(crate) fn concentric_lines(
     out
 }
 
-/// Orca's `loop_clipping` for fills: `seam_gap`, a length or a percent of the nozzle.
+/// The clipping at the end of a fill loop: `seam_gap`, a length or a percent of the nozzle.
 fn loop_clipping(cfg: &crate::config::PrintConfig) -> f64 {
     let nozzle = cfg.nozzle_diameter;
     match cfg.raw.get("seam_gap") {
@@ -571,9 +571,9 @@ fn loop_clipping(cfg: &crate::config::PrintConfig) -> f64 {
     .max(0.0)
 }
 
-/// The beads of one band as `FillConcentricInternal::fill_surface_extrusion` hands them on: a closed bead starts
+/// The beads of one band in the order OrcaSlicer prints them: a closed bead starts
 /// at its point nearest the origin, every bead loses `clip` mm at its end (so a loop does not print over its
-/// own start), and the beads are chained by their start points (`reorder_by_shortest_traverse`).
+/// own start), and the beads are chained by their start points.
 fn order_band(lines: Vec<crate::arachne::WallLine>, clip: f64) -> Vec<crate::arachne::WallLine> {
     let mut kept: Vec<crate::arachne::WallLine> = Vec::with_capacity(lines.len());
     for mut l in lines {
@@ -602,7 +602,7 @@ fn order_band(lines: Vec<crate::arachne::WallLine>, clip: f64) -> Vec<crate::ara
             kept.push(l);
         }
     }
-    // Orca chains the beads by their start points alone (`chain_points`), so a bead may start far from where
+    // OrcaSlicer chains the beads by their start points alone, so a bead may start far from where
     // the one before it ended. Taking next the bead whose start is nearest the last bead's end, from the origin
     // as Orca's loop starts are, keeps the beads of a band in one sweep.
     let mut order: Vec<usize> = Vec::with_capacity(kept.len());

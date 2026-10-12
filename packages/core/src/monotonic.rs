@@ -8,9 +8,8 @@
 //! overlaps only it. A region is printed as one zigzag, each turn joined to the next line along
 //! the edge of the surface when the turn is short. Regions are ordered so every region is printed
 //! after all regions on its left, taking the nearest start next, and a region continues into a
-//! right neighbor without lifting when the gap is short. This follows the structure of Orca's
-//! `FillRectilinear.cpp` (`generate_montonous_regions`, `polylines_from_paths`); the order of the
-//! regions is chosen greedily instead of by Orca's ant colony search.
+//! right neighbor without lifting when the gap is short. This matches how OrcaSlicer prints monotonic
+//! surfaces; the order of the regions is chosen greedily.
 
 use crate::edge::Edge;
 use crate::geom::Point;
@@ -159,8 +158,8 @@ pub(crate) fn polylines_with(
 }
 
 /// Monotonic polylines over the lines of a surface pulled in by half a spacing (`spans`, where the turns
-/// happen and lines are neighbors when the wall joins their ends, as Orca's
-/// `connect_segment_intersections_by_contours` decides) and pulled in by 0.05 spacing (`outer`, where the
+/// happen and lines are neighbors when the wall joins their ends, as OrcaSlicer links them) and pulled in by
+/// 0.05 spacing (`outer`, where the
 /// two ends of each path reach).
 pub(crate) fn polylines_outer(
     spans: &[Iv],
@@ -196,7 +195,7 @@ struct Cand {
     at: crate::edge::Place,
 }
 
-/// What `connect_segment_intersections_by_contours` decides for one end and one direction along the wall:
+/// How the wall links one end in one direction along it:
 /// the end of the same kind on the neighboring line nearest in wall segments (a horizontal link), or an
 /// end of the other kind on this line when that is strictly nearer (a vertical link, past a notch).
 struct Side {
@@ -391,8 +390,8 @@ fn polylines_core(
     let lay = Layout::new(&merged);
     let segs = &lay.segs;
     let n = segs.len();
-    // Neighbors of a run: the runs that any end of its spans is linked to along the wall (Orca's
-    // `left_overlap` and `right_overlap` read the horizontal link of every inner intersection of the run).
+    // Neighbors of a run: the runs that any end of its spans is linked to along the wall (every inner
+    // intersection of the run counts, by its horizontal link).
     let lay0 = Layout::new(spans);
     let contour0 = links
         .edge
@@ -723,7 +722,7 @@ pub(crate) fn orca_point(dir: crate::infill::Dir, s: i64, t: i64) -> Point {
     }
 }
 
-/// Polylines for rectilinear fills: the sweep of Orca's `traverse_graph_generate_polylines`. From the
+/// Polylines for rectilinear fills, swept the way OrcaSlicer prints them. From the
 /// leftmost unused line, go up to its end, turn along the wall onto the neighboring line (the shorter turn
 /// when both are possible, the previous line's on a tie), go back down it, and so on until no turn is
 /// possible; a line that meets a notch in the wall goes on past it. Then start again at the leftmost unused
@@ -738,8 +737,7 @@ pub(crate) fn zigzag_with(
     zigzag_pass(spans, spacing, outer, links, to_point, None)
 }
 
-/// [`zigzag_with`] for the fills that keep one pattern from layer to layer (Orca's `consistent_pattern`, used
-/// by zigzag, cross zag and locked zag): a path starts at the bottom of a line with an even `parity` of its
+/// [`zigzag_with`] for the fills that keep one pattern from layer to layer (zigzag, cross zag and locked zag): a path starts at the bottom of a line with an even `parity` of its
 /// index and at the top of the others, and a turn only goes to the next line, never back to the previous.
 /// `parity` gives the start direction of a line index (true: from the bottom).
 pub(crate) fn zigzag_consistent(
