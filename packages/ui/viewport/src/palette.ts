@@ -23,7 +23,7 @@ export const FEATURE_COLORS: readonly FeatureStyle[] = [
   { id: FEATURE.topSurface, label: 'Top surface', color: '#e8461e' },
   { id: FEATURE.bottomSurface, label: 'Bottom surface', color: '#a59cff' },
   { id: FEATURE.internalSolid, label: 'Internal solid infill', color: '#9b59e0' },
-  { id: FEATURE.sparseInfill, label: 'Sparse infill', color: '#2f8fe0' },
+  { id: FEATURE.sparseInfill, label: 'Sparse infill', color: '#2878f0' },
   { id: FEATURE.bridge, label: 'Bridge', color: '#5a4fd6' },
   { id: FEATURE.support, label: 'Support', color: '#50fa7b' },
   { id: FEATURE.supportInterface, label: 'Support interface', color: '#2f9e5a' },
