@@ -123,7 +123,7 @@ export function triangleAt(tris: Tri[], at: V3, normal?: V3): number {
   if (want) {
     const best = near.reduce((a, b) => (dot(b.t.n, want) > dot(a.t.n, want) ? b : a))
     // The normal only says which face at a shared point is meant; a curved wall's facets lean a few degrees off it.
-    if (dot(best.t.n, want) < Math.cos((10 * Math.PI) / 180)) throw new ToolInputError('normal: no face at that point faces that way; give the outward normal of the face you mean')
+    if (dot(best.t.n, want) < Math.cos((30 * Math.PI) / 180)) throw new ToolInputError('normal: no face at that point faces that way; give the outward normal of the face you mean')
     return best.i
   }
   const first = near[0]
