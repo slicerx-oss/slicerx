@@ -73,7 +73,7 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
   it('lists the CAD tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('extrudes a rectangle, then cuts a hole into its top face', async () => {
@@ -171,6 +171,21 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
     const issues = data<{ output: { ok: boolean; issues: { kind: string }[] } }>(open).output
     expect(issues.ok).toBe(false)
     expect(issues.issues[0]?.kind).toBe('open')
+  })
+
+  it('reads a model back: its size, volume and whether it is closed, a hole diameter and a face distance', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    const body = data<{ output: MeshOut }>(await h.call('slicerx_geom_extrude', { shape: rect, placement: place, distance_mm: 10 })).output.mesh.stlPath
+    const holed = data<{ output: MeshOut }>(await h.call('slicerx_geom_extrude', { shape: { type: 'circle', diameterMm: 6 }, frame: { origin: [15, 10, 10], normal: [0, 0, 1] }, distance_mm: 10, operation: 'cut', target: body })).output.mesh.stlPath
+    const info = data<{ output: { watertight: boolean; components: number; bounds: { min: V3; max: V3 } } }>(await h.call('slicerx_geom_info', { model: holed })).output
+    expect(info.watertight).toBe(true)
+    expect(info.bounds.max[2]).toBeCloseTo(10)
+    // The hole wall, picked at its deepest point toward +x, faces back into the hole (-x).
+    const hole = await h.call('slicerx_geom_measure', { model: holed, a: { at: [18, 10, 5], normal: [-1, 0, 0] } })
+    expect(hole.isError, JSON.stringify(hole.content)).toBeFalsy()
+    expect(data<{ output: { measurement: { diameterMm: number } } }>(hole).output.measurement.diameterMm).toBeCloseTo(6, 1)
+    const span = await h.call('slicerx_geom_measure', { model: holed, a: { at: [5, 5, 10], normal: [0, 0, 1] }, b: { at: [5, 5, 0], normal: [0, 0, -1] } })
+    expect(data<{ output: { measurement: { distanceMm: number } } }>(span).output.measurement.distanceMm).toBeCloseTo(10, 3)
   })
 
   it('rejects bad requests with a reason', async () => {
