@@ -58,6 +58,17 @@ python3 filament_map_parity.py --sx path/to/sx --orca path/to/OrcaSlicer --bambu
 
 With `--bambu` (a path, or the default install) it builds a Bambu Studio project from the installed H2D presets with the same flush volumes for both slicers (`--flush`), and puts the feature filaments in the object's settings, since Bambu Studio prints plate-wide feature filaments with the object's own. Its command line fails every H2D slice unless the project names one nozzle per extruder (`extruder_nozzle_stats`). Bambu Studio gives the same map on every run.
 
+## First layer footprint
+
+`footprint_parity.py` slices models with both slicers on the matched settings of `parity.py` (elephant foot compensation 0.2 mm unless `--set` says otherwise) and measures the outer wall loops of layers 1 and 2 side by side: per side of the part, how far SlicerX's loop lies from Orca's, and how far each slicer's layer 2 reaches past its layer 1, as a distance and an area. It exits 1 when a side differs by more than `--tol` (0.02 mm).
+
+```
+python3 footprint_parity.py --sx path/to/sx --orca path/to/OrcaSlicer
+python3 footprint_parity.py --models x-reference --set elefant_foot_compensation=0.3 --set elefant_foot_compensation_layers=3
+```
+
+Orca is told not to arrange (`--arrange 0`) in every comparison that slices a generated model: the models are written on the bed center, and Orca's own arrangement may turn a part, which mirrors anything asymmetric (the X plate turned 180 degrees, the leaning slabs 90).
+
 ## Limits
 
 - Bambu Studio and OrcaSlicer have a fixed startup cost that dominates the smallest models (tens of milliseconds before slicing begins). That is part of using them from a script and is reported as measured, with the phase split next to it.
