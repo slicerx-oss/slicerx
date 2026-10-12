@@ -15,7 +15,7 @@ import type { BridgeAppLink } from '../src/link/bridge'
 
 const bridge = vi.hoisted(() => ({ appLink: null as unknown }))
 vi.mock('../src/link/bridge', () => ({ liveBridge: () => (bridge.appLink ? { appLink: bridge.appLink } : null) }))
-import { set } from '../src/state/store'
+import { get, set } from '../src/state/store'
 
 /** The hub's pinned list, read from roles.rs. */
 function hubMethods(): Record<string, string> {
@@ -94,6 +94,36 @@ describe('app link methods', () => {
       expect(e, m).toBeInstanceOf(LinkError)
       expect((e as LinkError).code).toBe('not_found')
     }
+  })
+})
+
+describe('the preview over the link', () => {
+  const sliced = () => set({ preview: { layerCount: 10, layerZ: Float32Array.from({ length: 10 }, (_, i) => 0.2 * (i + 1)) } as never, layerLo: 1, layerHi: 10, camera: 'iso', colorMode: 'feature' })
+
+  it('says there is nothing to preview before a slice, and moves only the camera', async () => {
+    set({ preview: null, camera: 'iso' })
+    expect(await runCall('preview.get', {})).toMatchObject({ sliced: false, camera: 'iso' })
+    expect(await runCall('preview.set', { camera: 'top' })).toMatchObject({ camera: 'top' })
+    const e = await runCall('preview.set', { layer: 3 }).catch((x: unknown) => x)
+    expect((e as LinkError).code).toBe('not_ready')
+  })
+
+  it('moves the layer slider, one layer mode and the colors, and shows the toolpaths', async () => {
+    sliced()
+    expect(await runCall('preview.set', { layer: 4 })).toMatchObject({ range: [1, 4], oneLayer: false, topZMm: 0.8 })
+    expect(await runCall('preview.set', { oneLayer: true })).toMatchObject({ range: [4, 4], oneLayer: true })
+    expect(await runCall('preview.set', { oneLayer: false, colorMode: 'speed' })).toMatchObject({ range: [1, 4], colorMode: 'speed' })
+    expect(await runCall('preview.set', { range: [2, 6] })).toMatchObject({ range: [2, 6], layers: 10 })
+    expect(get()).toMatchObject({ workspace: 'prepare', modelMode: 'slice', sliceLook: 'toolpaths' })
+  })
+
+  it('refuses a bad argument and moves nothing', async () => {
+    sliced()
+    for (const args of [{ layer: 0 }, { layer: 11 }, { layer: 2.5 }, { range: [5, 2] }, { range: [1] }, { oneLayer: 'yes' }, { colorMode: 'rainbow' }, { camera: 'side', layer: 3 }]) {
+      const e = await runCall('preview.set', args).catch((x: unknown) => x)
+      expect((e as LinkError).code, JSON.stringify(args)).toBe('invalid_input')
+    }
+    expect(get()).toMatchObject({ layerLo: 1, layerHi: 10, camera: 'iso', colorMode: 'feature' })
   })
 })
 
