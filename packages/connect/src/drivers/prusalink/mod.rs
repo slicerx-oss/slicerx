@@ -665,7 +665,13 @@ impl PrinterSession for PrusaLinkSession {
             .inner
             .client
             .put(format!("{}/api/v1/job/{id}/pause", self.inner.base));
-        self.inner.send(rb).await?;
+        self.inner.send(rb).await.map_err(|e| {
+            busy(
+                e,
+                "not printing: the job is already paused or not running",
+                "pause the print",
+            )
+        })?;
         Ok(())
     }
 
@@ -681,7 +687,13 @@ impl PrinterSession for PrusaLinkSession {
             .inner
             .client
             .put(format!("{}/api/v1/job/{id}/resume", self.inner.base));
-        self.inner.send(rb).await?;
+        self.inner.send(rb).await.map_err(|e| {
+            busy(
+                e,
+                "not paused: the job is printing or waiting on the printer",
+                "resume the print",
+            )
+        })?;
         Ok(())
     }
 
@@ -697,7 +709,10 @@ impl PrinterSession for PrusaLinkSession {
             .inner
             .client
             .delete(format!("{}/api/v1/job/{id}", self.inner.base));
-        self.inner.send(rb).await?;
+        self.inner
+            .send(rb)
+            .await
+            .map_err(|e| busy(e, "the job is already stopping or has ended", "cancel the print"))?;
         Ok(())
     }
 
