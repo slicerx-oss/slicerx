@@ -69,6 +69,15 @@ export interface BambuExtra {
    * not recorded here; the driver refuses before sending anything when the flag says off. Absent: no `fun` flags.
    */
   developerMode?: boolean
+  /**
+   * Authorization Control without Developer Mode, as a Discord report from an A1 mini showed it (camera and light
+   * work, sending a print fails) and as Bambu Lab's January 2025 notes describe it (status and LED control are not
+   * restricted; starting prints over LAN is). Its reports carry no `fun` flags that would say so. Status keeps
+   * coming and `ledctrl` works; `project_file`, `gcode_file` and the other print commands get no answer and change
+   * nothing; the FTPS login works and the connection closes when a file is sent. How the real firmware turns the
+   * upload away (a stall or a dropped connection) is not recorded; the driver treats both alike.
+   */
+  authorizationControl?: boolean
 }
 
 /** `fun` values seen on printers: Developer Mode on, and off (signed commands wanted). */
@@ -277,6 +286,11 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
         for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, answer))
         return
       }
+      // Authorization Control without Developer Mode: the light still works, every print command is dropped unanswered.
+      if (extra.authorizationControl && msg.print) {
+        log.push(`ignored ${String(msg.print.command)}`)
+        return
+      }
       if (msg.system?.command === 'ledctrl') {
         // Answered in a `system` object, refused as the print commands are.
         const refused = extra.refuseControl
@@ -402,6 +416,7 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
         case 'STOR': {
           if (!authed || !dataReady) { reply('530 not logged in'); break }
           if (extra.developerMode === false) { log.push(`refused STOR ${arg}`); reply('550 not authorized'); break }
+          if (extra.authorizationControl) { log.push(`dropped STOR ${arg}`); dataServer?.close(); ctl.destroy(); break }
           const name = arg
           reply('150 send it')
           const sock = await dataReady

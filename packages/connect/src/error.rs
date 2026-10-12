@@ -38,6 +38,11 @@ pub enum Error {
     /// The printer answered a start with a refusal. `reason` is the printer's own reason in plain words.
     #[error("printer {printer} refused the print: {reason}")]
     Refused { printer: String, reason: String },
+    /// A Bambu Lab printer sends status but takes no prints or commands from other apps: its report
+    /// says Developer Mode is off, or it refused or ignored a send while its status kept coming.
+    /// The remedies are LAN Only Mode plus Developer Mode, or printing through Bambu Connect.
+    #[error("printer {printer} takes no prints from other apps: {reason}")]
+    NeedsDeveloperMode { printer: String, reason: String },
     #[error("bad configuration: {0}")]
     Config(String),
     /// The printer has a camera but it does not stream. `reason` is one plain line saying what to change.
@@ -99,6 +104,7 @@ pub enum ErrorCode {
     BadState,
     Protocol,
     Refused,
+    NeedsDeveloperMode,
 }
 
 impl Error {
@@ -115,6 +121,7 @@ impl Error {
             Error::BadState { .. } => ErrorCode::BadState,
             Error::Protocol { .. } | Error::Config(_) => ErrorCode::Protocol,
             Error::Refused { .. } => ErrorCode::Refused,
+            Error::NeedsDeveloperMode { .. } => ErrorCode::NeedsDeveloperMode,
         }
     }
 

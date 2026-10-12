@@ -123,6 +123,11 @@ pub struct PrinterLive {
     /// with Developer Mode off). Absent when it takes commands or does not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub monitor_only: Option<bool>,
+    /// True while a Bambu Lab printer needs LAN Only Mode and Developer Mode (or Bambu Connect) to take
+    /// a print from this app: its report says Developer Mode is off, or it refused or ignored a send
+    /// while its status kept coming. Absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_developer_mode: Option<bool>,
 }
 
 /// Fan speeds in percent.
