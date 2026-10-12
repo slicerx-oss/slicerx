@@ -19,6 +19,7 @@ import sys
 
 import firmware_parity as fp
 import profile_parity
+import measure
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -105,7 +106,7 @@ def measure(path):
 
 
 def run(args):
-    return subprocess.run(args, capture_output=True, text=True)
+    return subprocess.run(args, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
 
 
 def main():

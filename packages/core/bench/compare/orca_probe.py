@@ -20,6 +20,7 @@ import sys
 import models as model_lib
 import settings
 import slicers
+import measure
 
 
 def main():
@@ -71,7 +72,7 @@ def main():
     cmd = [orca.path, "--slice", "0", "--outputdir", d, "--arrange", "1",
            "--load-settings", f"{orca.files['machine']};{orca.files['process']}",
            "--load-filaments", orca.files["filament"], *stls]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     files = sorted(f for f in os.listdir(d) if f.endswith((".gcode", ".bgcode", ".3mf")))
     if not files:
         print(r.stderr[-800:] or r.stdout[-800:], file=sys.stderr)

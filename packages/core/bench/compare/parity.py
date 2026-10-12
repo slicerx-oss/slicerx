@@ -26,6 +26,7 @@ import orca_base
 import settings
 import slicers
 from gcode import is_layer_mark, plain
+import measure
 
 # Features compared by default: name, relative tolerance, absolute floor in mm of filament.
 DEFAULT_CHECKS = {"Outer wall": (0.10, 15.0), "Inner wall": (0.10, 15.0), "Top surface": (0.20, 20.0),
@@ -373,11 +374,11 @@ def run_case(name, c, sx_path, orca_path, work):
     cfg_path = os.path.join(d, "sx.json")
     json.dump(cfg, open(cfg_path, "w"))
     sx_gcode = os.path.join(d, "sx.gcode")
-    subprocess.run([sx_path, "slice", stl, "--config", cfg_path, "-o", sx_gcode], capture_output=True, check=True)
+    subprocess.run([sx_path, "slice", stl, "--config", cfg_path, "-o", sx_gcode], capture_output=True, check=True, timeout=measure.REF_TIMEOUT)
     orca = ParityOrca(orca_path, {**ORCA_ONLY, **c["overrides"]})
     orca.prepare(d, {"cube": stl})
     job = orca.job(model, d)
-    r = subprocess.run(job.cmd, capture_output=True, text=True)
+    r = subprocess.run(job.cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     if not os.path.exists(job.gcode):
         return {"name": name, "error": f"Orca produced no G-code: {r.stderr[-300:]}"}
     res = compare(name, c, parse(sx_gcode), parse(job.gcode))

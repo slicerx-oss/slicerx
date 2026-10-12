@@ -24,6 +24,7 @@ import models as model_lib
 import settings
 import slicers
 from gcode import is_layer_mark
+import measure
 
 # Lines a slicer writes around the profile's own G-code. Not compared.
 OWN = re.compile(r"^(M73|M20[1345]|M83|M82|G90|G91|G21|M106 S0|M107|G92 E0|M140|M104|M190|M109|M141|M191)\b", re.I)
@@ -124,7 +125,7 @@ def main():
         o.extra_machine = over
         prepare(o, d, {"cube": stl}, over)
         job = o.job("cube", d)
-        subprocess.run(job.cmd, capture_output=True, text=True)
+        subprocess.run(job.cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
         if not os.path.exists(job.gcode):
             print(f"ORCAERR {fam}: no G-code")
             continue

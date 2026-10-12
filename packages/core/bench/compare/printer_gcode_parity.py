@@ -28,6 +28,7 @@ import parity_gcode as pg
 import settings
 import slicers
 from gcode import is_layer_mark
+import measure
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROFILES = os.path.join(HERE, "..", "..", "..", "profiles")
@@ -180,7 +181,7 @@ def run_printer(printer_id, family, machine, sections, sx_path, orca_path, work,
     if moved:
         # where the file puts it, not arranged
         job.cmd = o._cmd(stl, os.path.dirname(job.gcode), ["--debug", "1", "--arrange", "0"])
-    subprocess.run(job.cmd, capture_output=True, text=True)
+    subprocess.run(job.cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     if not os.path.exists(job.gcode):
         return {"printer": printer_id, "family": family, "error": "Orca produced no G-code"}
     a, b = control_commands(sx_gcode, strict), control_commands(job.gcode, strict)
