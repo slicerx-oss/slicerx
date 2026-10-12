@@ -1832,6 +1832,46 @@ fn a_filament_only_a_feature_prints_with_gets_an_extruder() {
     assert_eq!(g.lines().find(|l| l.starts_with("; map ")), Some("; map 2 1"));
 }
 
+/// The tools (`T<n>` lines) each feature (`; FEATURE: ` comment) of `g` printed with.
+fn feature_tools(g: &str) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
+    let mut out = std::collections::BTreeMap::<String, std::collections::BTreeSet<String>>::default();
+    let mut tool = String::from("T0");
+    for l in g.lines() {
+        if l.len() <= 4 && l.starts_with('T') && l[1..].chars().all(|c| c.is_ascii_digit()) {
+            l.clone_into(&mut tool);
+        } else if let Some(f) = l.strip_prefix("; FEATURE: ") {
+            out.entry(f.to_owned()).or_default().insert(tool.clone());
+        }
+    }
+    out
+}
+
+#[test]
+fn on_a_bambu_printer_solid_infill_stays_on_the_parts_filament_when_sparse_infill_moves() {
+    // Bambu Studio keeps solid infill and the top and bottom surfaces on the object's own filament when only the
+    // sparse infill has a filament of its own (OrcaSlicer moves them with it).
+    let c = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab H2D",
+        "nozzle_diameter": [0.4, 0.4],
+        "physical_extruder_map": [1, 0],
+        "master_extruder_id": 2,
+        "single_extruder_multi_material": true,
+        "sparse_infill_filament_id": 2,
+        "nozzle_temperature": [220, 225],
+        "filament_diameter": [1.75, 1.75],
+    });
+    let tools = feature_tools(&cube_on(c, 1));
+    let t0: std::collections::BTreeSet<String> = ["T0".to_owned()].into();
+    for f in ["Internal solid infill", "Top surface", "Bottom surface"] {
+        assert_eq!(tools.get(f), Some(&t0), "{f}: {tools:?}");
+    }
+    assert!(
+        tools.get("Sparse infill").is_some_and(|t| t.contains("T1")),
+        "{tools:?}"
+    );
+}
+
 #[test]
 fn a_filament_whose_features_all_print_with_others_is_left_out_of_the_map() {
     // An H2D cube with its walls on filament 2, sparse infill on 3 and solid infill and surfaces on 4: filament 1
