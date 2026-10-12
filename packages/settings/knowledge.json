@@ -7545,6 +7545,66 @@
     ]
    }
   },
+  "flsun_v400": {
+   "name": "FLSUN V400",
+   "vendor": "FLSUN",
+   "firmware": "klipper",
+   "build": {
+    "round": true,
+    "diameter": 300,
+    "z": 410,
+    "src": [
+     "orca:FLSun/machine/FLSun V400 0.4 nozzle.json"
+    ]
+   },
+   "hotend": {
+    "nozzleDiameters": [
+     0.4
+    ],
+    "stockNozzle": {
+     "diameter": 0.4,
+     "material": "hardened_steel"
+    },
+    "highFlow": false,
+    "src": [
+     "orca:FLSun/machine/FLSun V400 0.4 nozzle.json"
+    ]
+   },
+   "bed": {
+    "src": []
+   },
+   "enclosure": {
+    "src": []
+   },
+   "motion": {
+    "maxSpeed": 1000,
+    "maxAccel": 20000,
+    "src": [
+     "orca:FLSun/machine/fdm_machine_common.json",
+     "orca:FLSun/machine/FLSun V400 0.4 nozzle.json"
+    ]
+   },
+   "materials": {},
+   "baselineProcess": "0.20mm Standard @FLSun V400",
+   "baseline": {
+    "values": {
+     "outer_wall_speed": 120,
+     "inner_wall_speed": 200,
+     "sparse_infill_speed": 250,
+     "top_surface_speed": 200,
+     "initial_layer_speed": 50,
+     "travel_speed": 400,
+     "default_acceleration": 5000,
+     "outer_wall_acceleration": 4000,
+     "inner_wall_acceleration": 5000,
+     "travel_acceleration": 5000,
+     "initial_layer_acceleration": 1000
+    },
+    "src": [
+     "orca:FLSun/process/0.20mm Standard @FLSun V400.json"
+    ]
+   }
+  },
   "prusa_core_one": {
    "name": "Prusa CORE One",
    "vendor": "Prusa Research",

@@ -58,7 +58,8 @@ export interface PrinterKnowledge {
   vendor?: string
   firmware?: string
   extruder?: string
-  build?: { x?: number; y?: number; z?: number; zDefault?: number; src: string[] }
+  /** A round bed (a delta) gives its diameter and no x or y. */
+  build?: { x?: number; y?: number; z?: number; zDefault?: number; round?: boolean; diameter?: number; src: string[] }
   hotend: { maxTemp?: number; nozzleDiameters?: number[]; nozzleMaterials?: string[]; stockNozzle?: { diameter?: number; material?: string }; highFlow: boolean; maxFlow?: number; src: string[] }
   bed: { maxTemp?: number; src: string[] }
   enclosure: { type?: string; chamberHeating?: string; src: string[] }
