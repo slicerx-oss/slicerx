@@ -3,6 +3,7 @@
 // Plate tools on the plate tab: numeric transform fields, scale to size, undo and redo, tool keys.
 import { type Page } from '@playwright/test'
 import { addMenu, closeSheet, expect, openSheet, openTransform, panesSettled, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
+import { pressable } from './canvas-press'
 
 /**
  * The G-code the printer runs. Files for Bambu Lab printers open with the header and the full settings (hundreds
@@ -412,6 +413,7 @@ test('the paint tool paints the object with a filament color, and undo takes it 
   if (!box) throw new Error('no canvas')
   const cx = box.x + box.width / 2
   const cy = box.y + box.height / 2
+  await pressable(page, { x: cx - 30, y: cy })
   await page.mouse.move(cx - 30, cy)
   await page.mouse.down()
   await page.mouse.move(cx + 30, cy + 10, { steps: 12 })
@@ -676,6 +678,7 @@ test('seam paint changes where the seam lands in the sliced G-code', { tag: '@gp
   if (!box) throw new Error('no canvas')
   const cx = box.x + box.width / 2
   const cy = box.y + box.height / 2
+  await pressable(page, { x: cx, y: cy })
   // Bucket fill on a spread of points over the model paints whole surfaces with the seam enforcer.
   for (const [dx, dy] of [[-50, 0], [50, 0], [0, -40], [0, 40], [-30, 25], [30, -25], [-70, 30], [70, -30], [0, 0]] as const) await page.mouse.click(cx + dx, cy + dy)
   await expect(panel.getByRole('button', { name: /Clear seam/ })).toBeEnabled()
@@ -1186,6 +1189,7 @@ test('brim ears: click the model to add ears, they print as discs on the first l
   await panesSettled(page)
   const vp = page.locator('.vp-canvas').first()
   const box = (await vp.boundingBox())!
+  await pressable(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 })
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   await expect(panel.getByTestId('brim-ear-count')).toHaveText(/1 ear/)
   // A click inside the footprint prints nothing (the ear is cut by the part). A second ear goes on the model's left edge,

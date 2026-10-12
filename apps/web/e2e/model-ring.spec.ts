@@ -6,6 +6,7 @@
 import { type Page } from '@playwright/test'
 import { facePick, freshBox, openStudio } from './cad-helpers'
 import { expect, test } from './fixtures'
+import { pressable } from './canvas-press'
 
 type Hit = { objectId: string | null; partIndex: number | null; triangle: number | null; point: [number, number, number] | null }
 
@@ -107,6 +108,7 @@ test.describe('Model ring menu', () => {
     await page.keyboard.press('Escape')
     await expect(ring(page)).toHaveCount(0)
     // right click in the middle of the view, where the box is
+    await pressable(page, { x: c.x + c.width / 2, y: c.y + c.height / 2 })
     await page.mouse.click(c.x + c.width / 2, c.y + c.height / 2, { button: 'right' })
     await expect(ring(page)).toBeVisible()
     await page.keyboard.press('Escape')

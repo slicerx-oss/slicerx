@@ -3,6 +3,7 @@
 // Brim ears in the viewport: rectangle select (hidden ears skipped), ear drag and Ctrl+wheel head size.
 import { type Page } from '@playwright/test'
 import { expect, plateReady, test } from './fixtures'
+import { pressable } from './canvas-press'
 
 interface Vp {
   camera: { position: { clone(): { set(x: number, y: number, z: number): { applyMatrix4(m: unknown): { project(c: unknown): { x: number; y: number } } } } } }
@@ -87,6 +88,7 @@ test('rectangle select, ear drag and Ctrl+wheel work on the plate', async ({ pag
   const right = Math.max(...pts.map((p) => p.x)) + 25
   const top = Math.min(...pts.map((p) => p.y)) - 25
   const bottom = Math.max(...pts.map((p) => p.y)) + 25
+  await pressable(page, { x: left, y: top })
   await page.keyboard.down('Shift')
   await page.mouse.move(left, top)
   await page.mouse.down()
@@ -97,6 +99,7 @@ test('rectangle select, ear drag and Ctrl+wheel work on the plate', async ({ pag
   await expect(panel.getByTestId('brim-ear-count')).toHaveText(/2 selected/)
   // Alt and drag over one of them deselects it.
   const c = { x: pts[0]!.x, y: pts[0]!.y }
+  await pressable(page, { x: c.x - 30, y: c.y - 30 })
   await page.keyboard.down('Alt')
   await page.mouse.move(c.x - 30, c.y - 30)
   await page.mouse.down()
@@ -110,6 +113,7 @@ test('rectangle select, ear drag and Ctrl+wheel work on the plate', async ({ pag
   const camBefore = await camera(page)
   const from = await screen(page, before.x, before.y)
   const to = await screen(page, before.x + 12, before.y - 12)
+  await pressable(page, from)
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 })

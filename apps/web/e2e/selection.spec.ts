@@ -4,6 +4,7 @@
 // list with its actions and menu, the same items in the context menus on a row and in the view, and Transform's popover.
 import { type Page } from '@playwright/test'
 import { closeSheet, expect, openSheet, openTransform, plateReady, test } from './fixtures'
+import { pressable } from './canvas-press'
 
 type Sx = { getState(): { selection: string | null; selectedIds: string[]; plate: { id: string; printable?: boolean; locked?: boolean }[] } }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
@@ -183,6 +184,7 @@ test('a right click on an object in the view opens the same menu there', async (
   await page.keyboard.press('z')
   await page.waitForTimeout(600)
   const box = (await page.locator('.vp-canvas').first().boundingBox())!
+  await pressable(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 })
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' })
   const ctx = page.getByTestId('slice-ctx')
   await expect(ctx).toBeVisible()
