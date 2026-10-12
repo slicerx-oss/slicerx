@@ -203,6 +203,22 @@ describe('hosting the link', () => {
     expect(linkAsks.getState().asks).toEqual([])
   })
 
+  it('runs one call at a time per agent', async () => {
+    const f = fakeLink()
+    hostAppLink(f.link)
+    // Both arrive before the first answers: the second from the same agent is busy, another agent's goes through.
+    f.call({ callId: 1, method: 'app.info', args: {}, client: { id: 'c1', name: 'A' } })
+    f.call({ callId: 2, method: 'app.info', args: {}, client: { id: 'c1', name: 'A' } })
+    f.call({ callId: 3, method: 'app.info', args: {}, client: { id: 'c2', name: 'B' } })
+    await vi.waitFor(() => expect(f.link.reply).toHaveBeenCalledTimes(3))
+    expect(f.link.reply).toHaveBeenCalledWith(2, expect.objectContaining({ ok: false, code: 'busy' }))
+    expect(f.link.reply).toHaveBeenCalledWith(1, expect.objectContaining({ ok: true }))
+    expect(f.link.reply).toHaveBeenCalledWith(3, expect.objectContaining({ ok: true }))
+    // Once it answered, the agent may call again.
+    f.call({ callId: 4, method: 'app.info', args: {}, client: { id: 'c1', name: 'A' } })
+    await vi.waitFor(() => expect(f.link.reply).toHaveBeenCalledWith(4, expect.objectContaining({ ok: true })))
+  })
+
   it('keeps one question per client and at most three waiting', async () => {
     const f = fakeLink()
     hostAppLink(f.link)
