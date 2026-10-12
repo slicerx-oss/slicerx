@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 The SlicerX contributors
 # Builds sx-wasm and copies it to pkg/ (generated, git-ignored), where
-# createWebSlicer() looks for it by default. Fails when the module is over its
-# download budget, 1056 KB gzip.
+# createWebSlicer() looks for it by default. Reports the module's gzip size against
+# its 1056 KB reference size, without failing over it.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 root=$(cd "$here/../../.." && pwd)
@@ -49,9 +49,13 @@ fi
 # gzip level 9 in node's zlib, as apps/web/scripts/bundle-size.mjs measures it
 gz=$(node -e 'console.log(require("node:zlib").gzipSync(require("node:fs").readFileSync(process.argv[1]), { level: 9 }).length)' "$pkg/sx_wasm.wasm")
 echo "pkg/sx_wasm.wasm: $(wc -c < "$pkg/sx_wasm.wasm") bytes, $gz gzip"
-# 1056 KB (1,081,344 B): raised from 1048 KB when the browser engine's loadModel started reading a 3MF project's
-# part types (cuts, modifiers, support volumes); the owner's direction is that web size is not a constraint here.
-if [ "$gz" -gt $((1056 * 1024)) ]; then
-  echo "build-wasm: $gz bytes gzip is over the 1056 KB budget" >&2
-  exit 1
+# 1056 KB (1,081,344 B) is a reference size only. The browser no longer slices and the CAD-only web build doesn't
+# ship this module, so its size is reported, never a failure (owner, 2026-10-12). The geom module and the startup
+# shell keep their blocking budgets in apps/web/scripts/bundle-size.mjs.
+ref=$((1056 * 1024))
+echo "build-wasm: $gz bytes gzip, $((gz - ref)) against the 1056 KB reference"
+if [ "$gz" -gt "$ref" ]; then
+  echo "build-wasm: over the 1056 KB reference; reported only" >&2
+  [ -n "${GITHUB_ACTIONS:-}" ] && echo "::warning title=sx_wasm size::$gz bytes gzip, $((gz - ref)) over the 1056 KB reference (report only)"
 fi
+exit 0
