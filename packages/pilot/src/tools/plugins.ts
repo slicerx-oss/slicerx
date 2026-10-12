@@ -82,6 +82,10 @@ export function pluginToolsFrom(manifests: PluginManifest[]): PilotTool<never>[]
               actions: [{ action: 'plugin.call', target: m.id, params: { pluginId: m.id, tool: bare, input: i } }],
             }
           },
+          // A connected app's change a person approves (Home Assistant) is run by the hub once they do.
+          ...(m.id === 'spoolman' || m.id === 'home-assistant'
+            ? { agentWork: async (i: unknown) => ({ kind: 'plugin' as const, pluginId: m.id as 'spoolman' | 'home-assistant', tool: bare, input: i && typeof i === 'object' ? (i as Record<string, unknown>) : {} }) }
+            : {}),
           async run(i: unknown, ctx) {
             const res = await ctx.host.printers.callTool(m.id, bare, i, ctx.token)
             return { summary: summarize(name, res), output: res, display: displayFor(res), untrusted: true }

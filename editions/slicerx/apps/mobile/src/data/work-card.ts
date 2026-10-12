@@ -11,6 +11,7 @@ type Work =
   | { kind: 'resume' | 'pause' | 'cancel'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
   | { kind: 'adjust'; printerId: string; change: unknown }
+  | { kind: 'plugin'; printerId: string; pluginId: string; tool: string; input: Record<string, unknown> }
 
 export const MISMATCH = 'This request does not match what your computer checked. Do not approve it'
 
@@ -44,6 +45,10 @@ export function readWork(request: ApprovalRequest): Work | null | 'unknown' {
       return typeof raw['line'] === 'string' && plainGcodeLine(raw['line']) ? { kind: 'gcode', printerId, line: raw['line'] } : 'unknown'
     case 'adjust':
       return { kind: 'adjust', printerId, change: raw['change'] }
+    case 'plugin':
+      return typeof raw['pluginId'] === 'string' && typeof raw['tool'] === 'string' && obj(raw['input'])
+        ? { kind: 'plugin', printerId, pluginId: raw['pluginId'], tool: raw['tool'], input: raw['input'] }
+        : 'unknown'
     default:
       return 'unknown'
   }
@@ -66,7 +71,22 @@ async function expected(w: Work): Promise<{ action: string; target: string; para
       return [{ action: 'printer.gcode', target: t, paramsHash: await hashParams({ printerId: t, line: w.line }) }]
     case 'adjust':
       return [{ action: 'printer.adjust', target: t, paramsHash: await hashParams({ printerId: t, change: w.change }) }]
+    case 'plugin':
+      return [{ action: 'plugin.call', target: w.pluginId, paramsHash: await hashParams({ pluginId: w.pluginId, tool: w.tool, input: w.input }) }]
   }
+}
+
+const HA_VERBS: Record<string, string> = { turn_on: 'Turn on', turn_off: 'Turn off', toggle: 'Toggle', press: 'Press' }
+const HA_DOMAINS = new Set(['switch', 'light', 'fan', 'input_boolean', 'button'])
+
+/** A Home Assistant call in plain words ("Turn off switch.bay_2_power"), or null for anything else. */
+export function pluginWords(w: { pluginId: string; tool: string; input: Record<string, unknown> }): { verb: string; entityId: string } | null {
+  if (w.pluginId !== 'home-assistant' || w.tool !== 'call_service') return null
+  const { domain, service, entityId } = w.input
+  if (typeof domain !== 'string' || typeof service !== 'string' || typeof entityId !== 'string') return null
+  const verb = HA_VERBS[service]
+  if (!verb || !HA_DOMAINS.has(domain) || entityId.length > 120 || !/^[a-z0-9_]+\.[a-z0-9_]+$/.test(entityId) || !entityId.startsWith(`${domain}.`)) return null
+  return { verb, entityId }
 }
 
 /** `code` is a G-code line to show whole, in a monospace font. */
@@ -91,6 +111,11 @@ export async function checkWork(request: ApprovalRequest, printerName: (id: stri
   const got = request.actions
   const same = want.length === got.length && want.every((e, i) => got[i] && got[i].action === e.action && got[i].target === e.target && got[i].paramsHash === e.paramsHash)
   if (!same || (request.printerId !== undefined && request.printerId !== w.printerId)) return { state: 'mismatch' }
+  if (w.kind === 'plugin') {
+    // Only what this phone can word is offered for approval.
+    const said = pluginWords(w)
+    return said ? { state: 'verified', title: `${said.verb} ${said.entityId} in Home Assistant?`, lines: [`Home Assistant ${said.entityId}`] } : { state: 'mismatch' }
+  }
   const on = printerName(w.printerId)
   switch (w.kind) {
     case 'print': {
