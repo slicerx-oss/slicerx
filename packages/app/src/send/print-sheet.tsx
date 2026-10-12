@@ -6,7 +6,7 @@
 // empty; Upload only and Queue for later sit in the button's menu. The file and its filaments were
 // decided before the sheet opened, so they show as a summary; a slot is picked here only when no
 // loaded slot fits a filament.
-import { developerModeRemedies, followsSlotMap, type PrinterInfo, type PrinterStatus } from '@slicerx/contracts'
+import { developerModeRemedies, followsSlotMap, STORAGE_FULL_REMEDY, type PrinterInfo, type PrinterStatus } from '@slicerx/contracts'
 import { Button, Chip, Dialog, Field, Icon, Input, Menu, MenuAnchor, MenuItem, Pill, Switch, tipAttrs, type IconName } from '@slicerx/ui'
 import { useEffect, useMemo, useState } from 'react'
 import { formatDuration } from '../lib/preview-stats'
@@ -56,9 +56,11 @@ export interface PrintSheetAsk {
    * Set when the printer refused the .gcode.3mf this sheet sent: its reason, the hash of the plain G-code the
    * "Send as plain G-code" button would send, and the person's last choices, which the sheet opens with.
    * `developerMode` is set when the printer sends status but takes no print from other apps until Developer Mode
-   * is on: the sheet then offers the Developer Mode steps and Bambu Connect, not plain G-code.
+   * is on: the sheet then offers the Developer Mode steps and Bambu Connect, not plain G-code. `sure` says the
+   * printer said so (its flags or its reply); without it the words say "may". `storageFull` is set when the
+   * printer's storage had no room for the file: the sheet says to free space, then Start sends again.
    */
-  refusal?: { reason: string; plainSha256: string; last: SendChoice; developerMode?: boolean }
+  refusal?: { reason: string; plainSha256: string; last: SendChoice; developerMode?: boolean; sure?: boolean; storageFull?: boolean }
   /**
    * A Bambu Lab printer can also print through Bambu Connect: `open` hands the file to it, `save` saves the file where
    * Bambu Connect cannot be opened from here (Linux, the browser). Offered after a refusal.
@@ -178,12 +180,12 @@ export function PrintSheet() {
       <Button variant="ghost" onClick={() => finish(null)}>
         Cancel
       </Button>
-      {ask?.refusal && start && ask.bambuConnect && !ask.refusal.developerMode ? (
+      {ask?.refusal && start && ask.bambuConnect && !ask.refusal.developerMode && !ask.refusal.storageFull ? (
         <Button variant="default" icon="export" disabled={busy || checking || errors.length > 0} onClick={sendConnect}>
           {connectLabel}
         </Button>
       ) : null}
-      {ask?.refusal && start && !ask.refusal.developerMode ? (
+      {ask?.refusal && start && !ask.refusal.developerMode && !ask.refusal.storageFull ? (
         <Button variant="default" icon="export" disabled={busy || checking || errors.length > 0} onClick={sendPlain}>
           Send as plain G-code
         </Button>
@@ -223,6 +225,8 @@ export function PrintSheet() {
           lines={[
             ...(ask.refusal?.developerMode
               ? [{ tone: 'bad' as const, text: `${ask.printer.name} didn't take the print`, tip: `It said: ${ask.refusal.reason}` }]
+              : ask.refusal?.storageFull
+              ? [{ tone: 'bad' as const, text: `${ask.printer.name} has no room for the file`, tip: `It said: ${ask.refusal.reason}` }]
               : ask.refusal
               ? [{ tone: 'bad' as const, text: `${ask.printer.name} did not start the print`, tip: `It said: ${ask.refusal.reason} Send as plain G-code sends the same plate as ${withEnding(name, '.gcode')} (SHA-256 ${ask.refusal.plainSha256.slice(0, 12)}). The printer then feeds filament 1 from slot 1, filament 2 from slot 2 and so on, whatever the slots below say, and its screen shows no picture or object list for skipping.` }]
               : []),
@@ -234,8 +238,9 @@ export function PrintSheet() {
           ]}
         />
         {ask.refusal?.developerMode ? (
-          <DeveloperModeHelp printer={ask.printer} connect={ask.bambuConnect ?? null} disabled={busy || checking || errors.length > 0} onConnect={sendConnect} />
+          <DeveloperModeHelp printer={ask.printer} sure={ask.refusal.sure === true} connect={ask.bambuConnect ?? null} disabled={busy || checking || errors.length > 0} onConnect={sendConnect} />
         ) : null}
+        {ask.refusal?.storageFull ? <StorageFullHelp printer={ask.printer} /> : null}
         <div className="ps-body">
           {pick && mapping ? (
             <div className="ps-map" role="group" aria-label="Pick a slot">
@@ -324,14 +329,16 @@ export function PrintSheet() {
 /**
  * A Bambu Lab printer that sends status but took no print: the two ways past it. Bambu Connect sends the same plate
  * now; the Developer Mode steps for the model are shown in full, so nothing opens or moves, and Start sends again
- * once they are done.
+ * once they are done. `sure` is set when the printer said so; otherwise the words say Developer Mode may be the cause.
  */
-function DeveloperModeHelp({ printer, connect, disabled, onConnect }: { printer: PrinterInfo; connect: 'open' | 'save' | null; disabled: boolean; onConnect: () => void }) {
+function DeveloperModeHelp({ printer, sure, connect, disabled, onConnect }: { printer: PrinterInfo; sure: boolean; connect: 'open' | 'save' | null; disabled: boolean; onConnect: () => void }) {
   const [dev, bambu] = developerModeRemedies(printer.model)
   return (
     <section className="ps-devmode" data-testid="developer-mode-needed" aria-label="Developer Mode needed">
       <p className="ps-devmode-why">
-        {printer.name} sends its status but didn't take the print. Bambu Lab printers do that while Developer Mode is off. Send this plate with Bambu Connect, or turn on Developer Mode and press Start again.
+        {sure
+          ? `${printer.name} sends its status but turned the print away. Bambu Lab printers do that while Developer Mode is off. Send this plate with Bambu Connect, or turn on Developer Mode and press Start again.`
+          : `${printer.name} sends its status but didn't take the print. That may be Developer Mode being off. Check the printer's screen first. If nothing started, send this plate with Bambu Connect, or turn on Developer Mode and press Start again.`}
       </p>
       {connect ? (
         <div className="ps-devmode-acts">
@@ -352,6 +359,24 @@ function DeveloperModeHelp({ printer, connect, disabled, onConnect }: { printer:
           <p className="ps-devmode-note">{dev.note}</p>
         </div>
       ) : null}
+    </section>
+  )
+}
+
+/** A printer whose storage had no room for the file: what to free, shown in full. Start sends again once there is room. */
+function StorageFullHelp({ printer }: { printer: PrinterInfo }) {
+  return (
+    <section className="ps-devmode" data-testid="storage-full-needed" aria-label="Printer storage full">
+      <p className="ps-devmode-why">{printer.name} has no room for the file: its storage is full. Free some space on the printer, then send again.</p>
+      <div className="ps-devmode-steps">
+        <p className="ps-devmode-head">{STORAGE_FULL_REMEDY.title}</p>
+        <ol>
+          {STORAGE_FULL_REMEDY.steps.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ol>
+        <p className="ps-devmode-note">{STORAGE_FULL_REMEDY.note}</p>
+      </div>
     </section>
   )
 }

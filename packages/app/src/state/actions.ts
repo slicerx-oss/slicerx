@@ -585,9 +585,20 @@ export function refusalReason(e: unknown): string | null {
  */
 export function developerModeReason(e: unknown): string | null {
   if (!e || typeof e !== 'object' || (e as { code?: unknown }).code !== 'needs_developer_mode') return null
+  return afterPrefix(e, /(takes no prints from other apps|may need Developer Mode to take prints from this app): /)
+}
+
+/** The printer's reason when an error says its storage has no room for the file (`printer_storage_full`), else null. */
+export function storageFullReason(e: unknown): string | null {
+  if (!e || typeof e !== 'object' || (e as { code?: unknown }).code !== 'printer_storage_full') return null
+  return afterPrefix(e, /has no room for the file: /)
+}
+
+/** An error's message after the part that names the printer (`prefix`), or the whole message. */
+function afterPrefix(e: object, prefix: RegExp): string {
   const m = e instanceof Error ? e.message : String((e as { message?: unknown }).message ?? '')
-  const at = m.indexOf('takes no prints from other apps: ')
-  return (at >= 0 ? m.slice(at + 'takes no prints from other apps: '.length) : m).trim() || 'The printer gave no reason.'
+  const hit = prefix.exec(m)
+  return (hit ? m.slice(hit.index + hit[0].length) : m).trim() || 'The printer gave no reason.'
 }
 
 /** The send and printer flow loads on first use, so the startup shell stays small (send-actions.ts). */

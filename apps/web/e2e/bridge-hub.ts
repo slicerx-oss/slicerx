@@ -34,7 +34,7 @@ export interface Admin {
   addPrinter(c: unknown, i?: unknown): Promise<unknown>
   removePrinter(id: string): Promise<void>
   setSecret(n: string, v: string): Promise<void>
-  status(id: string): Promise<{ state: string; message?: string; live?: { monitorOnly?: boolean } }>
+  status(id: string): Promise<{ state: string; message?: string; live?: { monitorOnly?: boolean; needsDeveloperMode?: boolean } }>
   settings: { set(s: Record<string, unknown>): Promise<unknown> }
   clients: { create(name: string, role: 'agent' | 'watch', opts?: { partner?: boolean }): Promise<{ clientKey?: string }> }
 }

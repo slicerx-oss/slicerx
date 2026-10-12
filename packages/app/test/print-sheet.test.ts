@@ -222,6 +222,22 @@ describe('Print sheet after a Developer Mode refusal', () => {
     expect(box?.querySelector('[aria-expanded]')).toBeNull()
   })
 
+  it('says Developer Mode may be the cause when the printer said nothing, and says it plainly when it did', () => {
+    const guess = open(refused())
+    expect(guess.querySelector('[data-testid="developer-mode-needed"]')?.textContent).toContain('That may be Developer Mode being off')
+    const sure = open(
+      ask({
+        printer: { id: 'a1m', name: 'Mini', vendor: 'Bambu Lab', model: 'Bambu Lab A1 mini', plugin: 'bambu-lan', filamentSystem: 'ams' } as PrintSheetAsk['printer'],
+        bambuConnect: 'open',
+        refusal: { reason: 'It answered "mqtt message verify failed".', plainSha256: 'ffff', last: { options: {}, start: true, name: 'benchy.gcode.3mf' }, developerMode: true, sure: true },
+        resolve: () => {},
+      }),
+    )
+    const text = sure.querySelector('[data-testid="developer-mode-needed"]')?.textContent ?? ''
+    expect(text).toContain('Mini sends its status but turned the print away. Bambu Lab printers do that while Developer Mode is off.')
+    expect(text).not.toContain('may be')
+  })
+
   it('sends the same plate through Bambu Connect on one click', () => {
     const resolve = vi.fn()
     const el = open(refused(resolve))
@@ -237,5 +253,35 @@ describe('needs_developer_mode errors', () => {
     expect(developerModeReason(e)).toBe('It sends status, but it did not answer the print start.')
     expect(refusalReason(e)).toBeNull()
     expect(developerModeReason(Object.assign(new Error('x'), { code: 'refused' }))).toBeNull()
+  })
+})
+
+// A printer whose card is full: the sheet says so with what to free, and offers no other way to send the file.
+describe('Print sheet after the printer ran out of storage', () => {
+  it('shows the storage box with the steps, not Developer Mode, plain G-code or Bambu Connect', () => {
+    const el = open(
+      ask({
+        printer: { id: 'a1m', name: 'Mini', vendor: 'Bambu Lab', model: 'Bambu Lab A1 mini', plugin: 'bambu-lan', filamentSystem: 'ams' } as PrintSheetAsk['printer'],
+        bambuConnect: 'open',
+        refusal: { reason: "its storage is full (FTP 452 after STOR). Free space on the printer's SD card.", plainSha256: 'ffff', last: { options: {}, start: true, name: 'benchy.gcode.3mf' }, storageFull: true },
+        resolve: () => {},
+      }),
+    )
+    const box = el.querySelector('[data-testid="storage-full-needed"]')
+    expect(box?.textContent).toContain('Mini has no room for the file: its storage is full.')
+    expect(box?.textContent).toContain('Delete old print files on the printer')
+    expect(el.querySelector('[data-testid="developer-mode-needed"]')).toBeNull()
+    const buttons = [...el.querySelectorAll('button')].map((b) => b.textContent)
+    expect(buttons).not.toContain('Send as plain G-code')
+    expect(buttons).not.toContain('Open in Bambu Connect')
+  })
+
+  it('reads the reason after the printer name', async () => {
+    const { storageFullReason, developerModeReason } = await import('../src/state/actions')
+    const e = Object.assign(new Error('printer a1m has no room for the file: its storage is full (FTP 452 after STOR).'), { code: 'printer_storage_full' })
+    expect(storageFullReason(e)).toBe('its storage is full (FTP 452 after STOR).')
+    expect(developerModeReason(e)).toBeNull()
+    const guess = Object.assign(new Error('printer a1m may need Developer Mode to take prints from this app: It sends status.'), { code: 'needs_developer_mode' })
+    expect(developerModeReason(guess)).toBe('It sends status.')
   })
 })
