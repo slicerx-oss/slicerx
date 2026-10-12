@@ -72,7 +72,8 @@ export function Legend() {
   // Each slot reads the filament it uses, as Filament use does, so the two agree; the toolpath length is the fallback
   // for a slice that reports no filament.
   const filamentMm = useApp((s) => shownSlice(s.slice)?.result.stats.filamentMm)
-  if (!preview) return null
+  const hidden = useApp((s) => s.legendHidden)
+  if (!preview || hidden) return null
   const stats = colorMode === 'feature' ? previewStats(preview) : null
   const tools = colorMode === 'tool' ? previewStats(preview).toolLengthM : null
   const colors = slotColors.split(',')
