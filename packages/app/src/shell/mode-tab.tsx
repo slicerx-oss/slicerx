@@ -7,7 +7,7 @@
 import { Icon } from '@slicerx/ui'
 import { useRef } from 'react'
 import { useFullEngine, warmFullEngine } from '../geom/full-engine'
-import { mimirShown, useModelMode } from '../state/model-mode'
+import { hostSlices, mimirShown, useModelMode } from '../state/model-mode'
 import { setModelMode, useApp, type ModelMode } from '../state/store'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 
@@ -26,7 +26,8 @@ export function ModeTabs() {
   // A tool left open in Model: an orange dot on its tab; the tip and the description say which.
   const parked = useApp((s) => (s.parked?.tool ? (s.parked.label ?? 'A tool') : null))
   const mimir = useApp(mimirShown)
-  return (mimir ? MODES : MODES.slice(1)).map((m) => {
+  // A host that cannot slice shows Model alone.
+  return (mimir ? MODES : MODES.slice(1)).filter((m) => hostSlices() || m.mode === 'design').map((m) => {
     const model = m.mode === 'design'
     return (
       <button

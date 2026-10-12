@@ -15,6 +15,8 @@ export interface HostCapabilities {
   threads: number
   /** Secrets live in the OS keychain (desktop, sx-link) rather than nowhere. */
   secureStorage: boolean
+  /** False where the host cannot slice (the CAD-only browser build): the app shows Model only. Absent means it can. */
+  slicing?: boolean
 }
 
 export interface FileRef {
