@@ -3,7 +3,7 @@
 // Server state through TanStack Query. Printer events
 // write into the same cache, so every view of a printer agrees.
 import type { PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/contracts'
-import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { useHasFeature } from '../features'
 import { printerAllowed, useEdition } from '../edition'
@@ -82,6 +82,8 @@ export function useFleet() {
   const q = useQuery({
     ...fleetQuery(printers, epoch),
     enabled: printers !== undefined,
+    // A reconnected bridge is a new epoch: its rows replace the last ones when they arrive, so no card leaves and comes back.
+    placeholderData: keepPreviousData,
     // Printer families the edition switched off never show.
     select: (rows: FleetRow[]) => rows.filter((r) => printerAllowed(edition, r.plugin)),
   })

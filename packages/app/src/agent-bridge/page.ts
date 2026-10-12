@@ -104,7 +104,8 @@ export function appState(s: AppState): Record<string, unknown> {
     setupOpen: s.setup !== null,
     unsavedPrompt: s.unsavedPrompt?.what ?? null,
     // The printer bridge: off, connecting, on, reconnecting (after a dropped connection, with the try it is on) or error.
-    printerBridge: { state: s.bridgeStatus.state, ...(s.bridgeStatus.attempt ? { attempt: s.bridgeStatus.attempt } : {}), ...(s.bridgeStatus.state === 'error' && s.bridgeStatus.message ? { message: s.bridgeStatus.message } : {}) },
+    // While it reconnects the printer cards show their last known state and their controls are off (`cardsDisabled`).
+    printerBridge: { state: s.bridgeStatus.state, ...(s.bridgeStatus.attempt ? { attempt: s.bridgeStatus.attempt } : {}), ...(s.bridgeStatus.state === 'reconnecting' ? { cardsDisabled: true } : {}), ...(s.bridgeStatus.state === 'error' && s.bridgeStatus.message ? { message: s.bridgeStatus.message } : {}) },
     // Where the time of the last file open went (lib/open-timing.ts), or null before the first open.
     lastOpen: openTiming(),
     // How long the 3D view took to its first frame, or null before it.
