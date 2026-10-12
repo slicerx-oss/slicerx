@@ -5144,6 +5144,8 @@ impl SliceSession {
             tip_diameter: t.tip_diameter,
             top_rate: t.top_rate,
             branch_distance: t.branch_distance_organic,
+            first_layer_expansion: cfg.raw_number("raft_first_layer_expansion", 2.0).max(0.0),
+            line_join: cfg.anchor_max_mm(),
             xy_distance: s.xy_distance,
             top_distance: if zero_top { 0.0 } else { gap(s.top_z_distance) },
             bottom_distance: if zero_bottom {

@@ -110,6 +110,22 @@ impl Trace {
         eprintln!("organic2 {name}");
     }
 
+    /// Tip positions by print Z, with `SX_ORGANIC2_TRACE=tips`.
+    #[allow(clippy::print_stderr, reason = "a trace asked for by environment variable")]
+    fn tips_by_layer(&self, tips: &[(usize, node::Node)], tops: &[f64]) {
+        if !self.on || std::env::var("SX_ORGANIC2_TRACE").ok().as_deref() != Some("tips") {
+            return;
+        }
+        for (l, n) in tips {
+            let z = tops.get(*l).copied().unwrap_or(f64::NAN);
+            eprintln!(
+                "organic2 tip z {z:.2} at {:.3} {:.3}",
+                f64::from(n.target.x) / crate::geom::SCALE,
+                f64::from(n.target.y) / crate::geom::SCALE
+            );
+        }
+    }
+
     #[allow(clippy::print_stderr, reason = "a trace asked for by environment variable")]
     fn stats(&self, s: &Stats) {
         if self.on {
@@ -175,6 +191,7 @@ pub(crate) fn plan(inp: &Input<'_>) -> Plan {
     let mut tips = tips::generate(&p, &v, &overhangs, top, inp.center);
     tips::drop_inside_raft(&p, &mut tips, &inp.raft_contact);
     let tip_count = tips.tips.len();
+    trace.tips_by_layer(&tips.tips, &tops);
     trace.stage("tips");
     let mut nodes: Vec<Vec<node::Node>> = vec![Vec::new(); top + 1];
     for (l, n) in tips.tips {

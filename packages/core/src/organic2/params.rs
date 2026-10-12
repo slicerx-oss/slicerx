@@ -129,6 +129,9 @@ pub(crate) struct Settings {
     /// Percent.
     pub(crate) top_rate: f64,
     pub(crate) branch_distance: f64,
+    /// Neighboring sampling lines are joined along the part's edge when the way round is at most this
+    /// long (mm), as the normal infill joins its lines; tip spacing then holds across lines (spec 4.8).
+    pub(crate) line_join: f64,
     pub(crate) xy_distance: f64,
     /// The Z gaps as used (already rounded to whole layers, or 0 with a zero gap interface).
     pub(crate) top_distance: f64,
@@ -144,6 +147,9 @@ pub(crate) struct Settings {
     pub(crate) zero_top_gap: bool,
     pub(crate) raft_layers: usize,
     pub(crate) raft_expansion: f64,
+    /// Without a raft, the first support layer widens by this much (mm), clear of the model
+    /// (`raft_first_layer_expansion`).
+    pub(crate) first_layer_expansion: f64,
     pub(crate) quirks: Quirks,
 }
 
@@ -163,6 +169,7 @@ impl Default for Settings {
             tip_diameter: 0.8,
             top_rate: 30.0,
             branch_distance: 1.0,
+            line_join: 20.0,
             xy_distance: 0.35,
             top_distance: 0.2,
             bottom_distance: 0.2,
@@ -175,6 +182,7 @@ impl Default for Settings {
             zero_top_gap: false,
             raft_layers: 0,
             raft_expansion: 1.5,
+            first_layer_expansion: 2.0,
             quirks: Quirks::default(),
         }
     }

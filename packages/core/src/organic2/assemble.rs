@@ -247,6 +247,23 @@ pub(crate) fn layers(
             }
         }
     }
+    // Without a raft the first support layer is widened for adhesion, kept clear of the model.
+    let grow0 = p.s.first_layer_expansion;
+    if p.s.raft_layers == 0
+        && grow0 > 0.0
+        && let Some(first) = out.first_mut()
+        && !first.base.is_empty()
+    {
+        let wide = ops::grow_round(&first.base, grow0);
+        let others = ops::union_many(&[
+            &first.top_contact,
+            &first.interface,
+            &first.base_interface,
+            &first.bottom_contact,
+        ]);
+        let clear = ops::union(&v.collision(0.0, 0, true), &others);
+        first.base = ops::union(&first.base, &ops::diff(&wide, &clear));
+    }
     // Everything stays on the bed.
     let bed = v.bed();
     for x in &mut out {
