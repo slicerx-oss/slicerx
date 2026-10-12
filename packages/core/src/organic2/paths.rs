@@ -33,7 +33,7 @@ pub(crate) struct PathsIn {
 const DOUBLE_WALL_Z: f64 = 100.0;
 
 impl PathsIn {
-    /// The island area (mm^2) past which a hollow branch gets a second, inner wall.
+    /// The area (mm^2) inside a hollow branch's outer wall center line past which it gets a second wall.
     pub(crate) fn double_wall_area(&self) -> f64 {
         match self.wall_count {
             0 => 0.25 * std::f64::consts::PI * 25.0,
@@ -120,7 +120,8 @@ pub(crate) fn branch_walls(base: &Shapes, inp: &PathsIn, print_z: f64) -> Vec<Ve
             out.extend(loops(&ops::grow(&island, -inp.width / 4.0), clip));
             continue;
         }
-        let second = print_z > DOUBLE_WALL_Z || ops::area(&island) > inp.double_wall_area();
+        // Measured on the outer wall's center line, as the reference does.
+        let second = print_z > DOUBLE_WALL_Z || ops::area(&outer) > inp.double_wall_area();
         let reach = ANCHOR_SPACINGS * inp.spacing;
         let inner = ops::grow(&outer, -inp.spacing);
         if second {
