@@ -451,7 +451,7 @@ jobs:
           echo "SX_LINK_BIN=$RUNNER_TEMP/sx-link/sx-link" >> "$GITHUB_ENV"
       - run: pnpm --filter @slicerx/link-client test
       - run: pnpm --filter @slicerx/connect test
-      - run: pnpm --filter @slicerx/mcp exec vitest run test/link.test.ts
+      - run: pnpm --filter @slicerx/mcp exec vitest run test/link.test.ts test/link-live.test.ts
       - run: pnpm --filter @slicerx/pair exec vitest run test/link.integration.test.ts
 
   # The browser suite (apps/web/e2e) against `vite preview` of the web build. playwright.config.ts builds it with
