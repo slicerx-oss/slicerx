@@ -170,6 +170,49 @@ test.describe('the mimir tab', () => {
     await expect(page.locator('.mimir-dock')).toBeVisible()
   })
 
+  test('scripted mimir asks, shows what it found as a card in the view, and the card closes but stays in the record', async ({ page }) => {
+    await open(page)
+    await openEmpty(page)
+    const composer = page.getByTestId('mimir-composer')
+    await composer.getByRole('textbox').fill('Hey mimir, I need a wall mount for this thermostat. Can we print it?')
+    await composer.getByRole('button', { name: 'Send' }).click()
+    const choice = page.getByTestId('mimir-choice')
+    await expect(choice).toBeVisible()
+    // picking moves nothing: both chips keep their boxes
+    const chips = choice.getByRole('button')
+    const before = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
+    await choice.getByRole('button', { name: 'Yes, that one' }).click()
+    await expect(choice).toHaveAttribute('data-picked', 'same')
+    const after = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
+    after.forEach((a, i) => {
+      const b = before[i]!
+      expect(Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.width - b.width), Math.abs(a.height - b.height))).toBeLessThanOrEqual(0.5)
+    })
+    const card = page.getByTestId('mimir-lookup-card')
+    await expect(card).toContainText('150.4 x 110.4 mm')
+    await expect(card.getByRole('link')).toHaveAttribute('href', /^https:\/\/example\.com\//)
+    // the card sits at the view's bottom, left aligned with the caption, at most 96 px tall
+    const c = (await card.boundingBox())!
+    const cap = (await page.getByTestId('mimir-caption').boundingBox())!
+    const vp = (await page.locator('.studio > .vp').boundingBox())!
+    expect(Math.abs(c.x - cap.x)).toBeLessThanOrEqual(0.5)
+    expect(c.height).toBeLessThanOrEqual(96.5)
+    expect(vp.y + vp.height - (c.y + c.height)).toBeLessThan(48)
+    await page.screenshot({ path: test.info().outputPath('mimir-lookup-dark.png') })
+    await page.getByTestId('mimir-lookup-close').click()
+    await expect(card).toHaveCount(0)
+    await expect(page.getByTestId('mimir-transcript').locator('[data-lookup-id]')).toHaveCount(1)
+    // a second lookup: Escape on the focused card closes it
+    await composer.getByRole('textbox').fill('another backplate for the thermostat')
+    await composer.getByRole('button', { name: 'Send' }).click()
+    await expect(page.getByTestId('mimir-choice')).toHaveCount(2)
+    await page.getByTestId('mimir-choice').last().getByRole('button', { name: 'Yes, that one' }).click()
+    await expect(card).toHaveCount(1)
+    await card.focus()
+    await page.keyboard.press('Escape')
+    await expect(card).toHaveCount(0)
+  })
+
   for (const scheme of ['dark', 'light'] as const) {
     test(`screenshot, empty, ${scheme}`, async ({ page }, info) => {
       await open(page, scheme)

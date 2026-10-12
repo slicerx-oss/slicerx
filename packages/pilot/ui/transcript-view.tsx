@@ -4,6 +4,7 @@ import { Fragment, memo } from 'react'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
 import { ChoiceCard } from './choice-card'
+import { LookupRecord } from './lookup-record'
 import { Citations } from './citations'
 import { Diff } from './diff'
 import { ErrorLine, PermLine, PlanList, PluginsLoading } from './notes'
@@ -11,7 +12,7 @@ import type { Block, Transcript } from './reduce'
 import { Say } from './say'
 import { Summary } from './summary'
 import { Think } from './think'
-import { ToolGroup } from './tool-group'
+import { ToolGroup, type StepWords } from './tool-group'
 import { Bubble, PilotTurn } from './turn'
 
 export interface ApprovalHandlers {
@@ -23,7 +24,7 @@ export interface ApprovalHandlers {
 }
 
 // Unchanged blocks keep their identity in the reducer, so a streaming delta repaints only its own block.
-const BlockView = memo(function BlockView({ block, showThinking, approvals }: { block: Block; showThinking: boolean; approvals: ApprovalHandlers }) {
+const BlockView = memo(function BlockView({ block, showThinking, approvals, words }: { block: Block; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords | undefined }) {
   switch (block.kind) {
     case 'plugins':
       return <PluginsLoading plugins={block.plugins} />
@@ -34,7 +35,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals }: { 
     case 'plan':
       return <PlanList steps={block.steps} />
     case 'tools':
-      return <ToolGroup rows={block.rows} />
+      return <ToolGroup rows={block.rows} words={words} />
     case 'diff':
       return <Diff diff={block.diff} />
     case 'perm':
@@ -50,6 +51,8 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals }: { 
           onEditPlan={approvals.onEditPlan}
         />
       )
+    case 'lookup':
+      return <LookupRecord lookup={block.lookup} />
     case 'choice':
       return <ChoiceCard askId={block.askId} title={block.title} question={block.question} choices={block.choices} picked={block.picked} actionable={!block.replay} onChoose={approvals.onChoose} />
     case 'summary':
@@ -61,8 +64,11 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals }: { 
   }
 })
 
-/** Every turn in order: the bubble, then mimir's reply. */
-export function TranscriptView({ transcript, showThinking, approvals }: { transcript: Transcript; showThinking: boolean; approvals: ApprovalHandlers }) {
+/**
+ * Every turn in order. `words` puts tool calls in the person's words ("Sketching the outline"); the tool's own name moves
+ * to the row's tooltip.
+ */
+export function TranscriptView({ transcript, showThinking, approvals, words }: { transcript: Transcript; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords }) {
   return (
     <>
       {transcript.turns.map((t) => (
@@ -70,7 +76,7 @@ export function TranscriptView({ transcript, showThinking, approvals }: { transc
           {t.user !== null ? <Bubble text={t.user} where={t.where} attachments={t.attachments} /> : null}
           <PilotTurn>
             {t.blocks.map((b) => (
-              <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} />
+              <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} />
             ))}
           </PilotTurn>
         </Fragment>

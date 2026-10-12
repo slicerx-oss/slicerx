@@ -5,9 +5,12 @@
 /* the pilot styles' own grid and terminal colors give way to the column's */
 .mimir-chat.sx-pilot { --t-bg: var(--ink-1); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); grid-template-columns: minmax(0, 1fr); }
 .mimir-chat { position: relative; order: 0; flex: none; width: var(--w-chat, 420px); min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-1); border-right: 1px solid var(--line-soft); }
+.mimir-chat[hidden] { display: none; }
 .mimir-chat-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
 .mimir-chat-mark { display: inline-flex; color: var(--purple); }
 .mimir-chat-head h2 { margin: 0; font: var(--fw-medium) var(--fs-md) var(--f-display); letter-spacing: 0.01em; color: var(--fg); }
+.mimir-chat-scripted { flex: none; padding: 2px 8px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--muted); font-size: 11px; }
+.mimir-turns { display: flex; flex-direction: column; gap: var(--s-4); }
 .mimir-chat-design { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--muted); font-size: var(--fs-sm); }
 .mimir-transcript { min-height: 0; overflow: auto; padding: var(--s-4) var(--s-3); }
 .mimir-stage { position: relative; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); container-type: size; --mark: min(66cqw, 400px); }
@@ -27,3 +30,19 @@
 .mimir-chat[data-drop]::after { content: ""; position: absolute; inset: 6px; border: 1px dashed var(--purple); border-radius: var(--r-md); background: color-mix(in srgb, var(--purple) 6%, transparent); pointer-events: none; }
 .studio[data-model-mode="mimir"] > .vp { order: 1; }
 .mimir-caption { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--fg); white-space: nowrap; }
+/* Lookup cards: a band at the view's bottom left, above the timeline's edge tab. Lifted (they float over the view). */
+.mimir-lookups { position: absolute; left: 12px; bottom: 28px; z-index: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 276px)) auto; grid-template-rows: 96px; align-items: end; gap: 8px; max-width: calc(100% - 24px); pointer-events: none; }
+.mimir-lookups > * { pointer-events: auto; }
+.mimir-lookup { display: grid; grid-template-rows: auto 1fr auto; gap: 4px; grid-row: 1; height: 96px; min-width: 0; padding: 8px 6px 8px 12px; border-radius: var(--r-md); outline-offset: 2px; animation: mimir-rise 200ms var(--ease) both; }
+.mimir-lookup-h { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
+.mimir-lookup-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: var(--fw-medium); }
+.mimir-lookup-f { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0 10px; align-content: start; overflow: hidden; font-size: var(--fs-sm); }
+.mimir-lookup-f > div { display: contents; }
+.mimir-lookup-f dt { color: var(--muted); white-space: nowrap; }
+.mimir-lookup-f dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mimir-lookup-s { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cyan); font-size: var(--fs-sm); text-decoration: none; }
+.mimir-lookup-s:hover { text-decoration: underline; }
+.mimir-lookup-more { grid-row: 1; height: 32px; padding: 0 12px; border-radius: 999px; color: var(--fg); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+@keyframes mimir-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes mimir-fade { from { opacity: 0; } to { opacity: 1; } }
+:root[data-motion="reduced"] .mimir-lookup { animation-name: mimir-fade; }
