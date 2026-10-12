@@ -235,7 +235,7 @@ pub struct SliceSession {
     /// height). Empty when every object has the same layers.
     interleaved: Vec<(f64, Vec<Option<u32>>)>,
     /// With features on filaments of their own: the filaments each object layer prints, from a
-    /// slice of the whole plate at build time (as OrcaSlicer collects the filaments of a plate). Empty
+    /// slice of the whole plate at build time (as Orca collects the filaments of a plate). Empty
     /// otherwise.
     used_tools: Vec<Vec<u8>>,
     /// The support filaments each object layer adds to the tool order (`support_filament`,
@@ -259,7 +259,7 @@ pub struct SliceSession {
     /// The turn of the objects about Z, degrees (`align_infill_direction_to_model`); 0 when the objects of the
     /// session differ, which the plate avoids by giving each its own session.
     model_rotation: f64,
-    /// The support columns that stand on the raft (as OrcaSlicer's raft base has them): the raft's
+    /// The support columns that stand on the raft (as Orca's raft base has them): the raft's
     /// layers print under them too.
     raft_columns: Shapes,
     /// The infill combination groups (`infill_combination`), planned on first use.
@@ -502,7 +502,7 @@ struct SupportPaths {
 }
 
 /// One loop around the top contact `contact`, kept to the stretch under the overhangs `hang`, with notches
-/// around small hexagons placed every three of their radii along it (OrcaSlicer's loop
+/// around small hexagons placed every three of their radii along it (Orca's loop
 /// interface, one contact loop). Returns the loop pieces and the area the interface fill keeps out of.
 fn contact_loops(contact: &Shapes, hang: &Shapes, w: f64) -> (Vec<Vec<crate::geom::Point>>, Shapes) {
     let r = 1.5 * w;
@@ -622,7 +622,7 @@ impl Clone for LiftHang {
     }
 }
 
-/// The overhangs an auto lift spirals over, as OrcaSlicer finds them for its lifts: per layer, what hangs more than 30 percent of a line past the layer below, opened
+/// The overhangs an auto lift spirals over, as Orca finds them for its lifts: per layer, what hangs more than 30 percent of a line past the layer below, opened
 /// by a tenth of a line; this layer's and those of the layers up to 0.4 mm below it.
 fn lift_overhangs<'a>(
     plan: &crate::layers::LayerPlan,
@@ -1789,7 +1789,7 @@ impl SliceSession {
     }
 
     /// `skirt_type` `perobject`: objects whose skirts would reach each other share one; the rest get a skirt
-    /// of their own, as in OrcaSlicer: each object's occupied outline (here its footprint hull and
+    /// of their own, as in Orca: each object's occupied outline (here its footprint hull and
     /// its brim) grown by `skirt_distance` plus the loops' width; groups whose grown hulls touch merge, until
     /// none do. Returns the hull of each group, or nothing when there is one group or fewer.
     fn skirt_groups(&self, config: &PrintConfig) -> Vec<Vec<IntPoint<i32>>> {
@@ -2254,7 +2254,7 @@ impl SliceSession {
 
     /// Plans the tool order again: from what each layer really prints when that is known
     /// (`used_tools`), else from the parts and the support filaments, with the first layer in
-    /// OrcaSlicer's first-layer order (the outer wall filaments, the one whose smallest island is
+    /// Orca's first-layer order (the outer wall filaments, the one whose smallest island is
     /// largest first).
     fn replan_tools(&mut self, config: &PrintConfig) -> Result<()> {
         if self.slots.len() < 2 && self.used_tools.iter().all(|u| u.len() < 2) && self.tool_count < 2 {
@@ -2599,7 +2599,7 @@ impl SliceSession {
     }
 
     /// Several filaments: the regions of every layer are cut here to learn which filaments each layer really
-    /// prints, as OrcaSlicer's tool ordering reads the sliced layers (after the painted
+    /// prints, as Orca's tool ordering reads the sliced layers (after the painted
     /// segmentation). From the parts alone, a part claims its filament on every layer between its lowest and
     /// highest point and a painted triangle its color on every layer it spans, so layers looked like they
     /// change filament when they do not, and the prime tower was sized for purges that never happen. The
@@ -2692,7 +2692,7 @@ impl SliceSession {
     }
 
     /// Puts the raft under the part: the raft's layers come first among the print layers and the part's
-    /// layers move up by the raft's height and the gap to it (as OrcaSlicer plans a raft).
+    /// layers move up by the raft's height and the gap to it (as Orca plans a raft).
     fn plan_raft(&mut self, config: &PrintConfig) {
         let Some(mut raft) = self.raft.take() else { return };
         let n = self.plan.count();
@@ -3599,7 +3599,7 @@ impl SliceSession {
     }
 
     /// The area painted with fuzzy skin on a layer: each painted part's outline split by its fuzzy paint
-    /// the way color paint splits it (OrcaSlicer runs the color segmentation on the fuzzy skin
+    /// the way color paint splits it (Orca runs the color segmentation on the fuzzy skin
     /// facets), the painted pieces together. `None` with no fuzzy paint here.
     fn fuzzy_mask(&self, layer: u32) -> Option<Shapes> {
         if self.fuzzy_paint.is_empty() {
@@ -4060,7 +4060,7 @@ impl SliceSession {
             .as_ref()
     }
 
-    /// The seams of the whole object, planned once as OrcaSlicer plans them: the outer wall of every layer
+    /// The seams of the whole object, planned once as Orca plans them: the outer wall of every layer
     /// is the slice pulled in half a line, scored and aligned over the object, with surface visibility
     /// from a raycast over the model when the mode reads it.
     fn seam_plan(&self, cfg: &PrintConfig) -> Option<&crate::seamplan::Plan> {
@@ -4789,7 +4789,7 @@ impl SliceSession {
         s.style == SupportStyle::TreeOrganic || (s.tree && !s.style.is_tree())
     }
 
-    /// The support parameters organic trees read, as OrcaSlicer derives them.
+    /// The support parameters organic trees read, as Orca derives them.
     fn organic_params(cfg: &PrintConfig) -> crate::organic::Params {
         let s = &cfg.support;
         let w = cfg.support_width();
@@ -4933,7 +4933,7 @@ impl SliceSession {
     }
 
     /// The paths of an organic layer, with the contact loops and support ironing of the top contact
-    /// (OrcaSlicer's loop interface and its support ironing pass). OrcaSlicer builds its organic
+    /// (Orca's loop interface and its support ironing pass). Orca builds its organic
     /// contacts without the overhangs they hold up, so its loops come out empty there; here they follow the
     /// overhangs as on normal supports.
     fn organic_support_paths(
@@ -4983,7 +4983,7 @@ impl SliceSession {
         }
     }
 
-    /// The first layer area the brim takes, which organic support keeps out of, as in OrcaSlicer.
+    /// The first layer area the brim takes, which organic support keeps out of, as in Orca.
     fn organic_brim(&self, cfg: &PrintConfig, first: Option<&Shapes>) -> Option<Shapes> {
         let first = first?;
         let kind = match cfg.raw.get("brim_type") {
@@ -5111,7 +5111,7 @@ impl SliceSession {
     }
 
     /// How many support layers under support layer `layer` print interface: the interface
-    /// count that turns the interface lines of snug supports between layers, as in OrcaSlicer.
+    /// count that turns the interface lines of snug supports between layers, as in Orca.
     fn interface_id(&self, cfg: &PrintConfig, layer: u32) -> usize {
         let n = layer as usize;
         if self.stack.is_empty() {
@@ -5146,7 +5146,7 @@ impl SliceSession {
 
     /// The support, support interface and support ironing paths of one support layer. `layer` is its
     /// index (layer 0 prints the first-layer pad) and `z` the plane the object was cut at, as
-    /// OrcaSlicer prints support.
+    /// Orca prints support.
     fn support_paths(
         &self,
         cfg: &PrintConfig,
@@ -5526,7 +5526,7 @@ impl SliceSession {
     }
 
     /// The lightning lines of slim, strong and hybrid tree bases (`support_base_pattern` = lightning) on
-    /// every support layer, mm, as OrcaSlicer fills tree support with
+    /// every support layer, mm, as Orca fills tree support with
     /// lightning: each layer with support and another below it hands the layer below its
     /// base as the outline and, as what to hold up, that base pulled in two support widths less its own;
     /// the density doubles the support base density, at least 0.15, and the angles are 45 degrees.
@@ -5602,7 +5602,7 @@ impl SliceSession {
 
     /// The first support layer: the base widened by `raft_first_layer_expansion` in steps that each stay
     /// `support_object_first_layer_gap` clear of the part, printed as one loop around a fill of
-    /// `raft_first_layer_density` across the base lines (OrcaSlicer's raft
+    /// `raft_first_layer_density` across the base lines (Orca's raft
     /// base and its base flange).
     fn support_pad(
         &self,
@@ -8214,7 +8214,7 @@ fn conical_params(cfg: &PrintConfig) -> Option<(f64, f64)> {
 }
 
 /// A hole that is a convex polygon of more than eight points whose points and edge midpoints all lie within
-/// the margin of one circle, as OrcaSlicer measures it for polyholes: its center, radius (the farthest point),
+/// the margin of one circle, as Orca measures it for polyholes: its center, radius (the farthest point),
 /// and the margin, all in internal units. `threshold` is `hole_to_polyhole_threshold`, mm or percent of the
 /// mean radius.
 fn circular(hole: &[IntPoint<i32>], threshold: &serde_json::Value) -> Option<((f64, f64), f64, f64)> {
@@ -8268,7 +8268,7 @@ fn circular(hole: &[IntPoint<i32>], threshold: &serde_json::Value) -> Option<((f
     (dmax - dmin < var * 2.0 && lmax - lmin < var * 2.0).then_some((center, dmax, var))
 }
 
-/// A polyhole as OrcaSlicer makes it: a polygon with `max(3, round(4 r 0.4 / nozzle))` sides whose edges sit at the
+/// A polyhole as Orca makes it: a polygon with `max(3, round(4 r 0.4 / nozzle))` sides whose edges sit at the
 /// circle's radius, clockwise. With `multiple` five of them, each turned a fifth of a side from the last, in
 /// the order Orca lays them out, so successive layers turn the hole.
 #[allow(clippy::cast_precision_loss, reason = "small side and polygon counts")]
@@ -8450,7 +8450,7 @@ fn skirt_loops(
 }
 
 /// The loops around one hull (a whole-part hull already includes the brim), outermost first.
-/// As in OrcaSlicer: `skirt_loops` of them, and with `min_skirt_length` more until the filament
+/// As in Orca: `skirt_loops` of them, and with `min_skirt_length` more until the filament
 /// of the loops, counted extruder by extruder, reaches that many mm for the extruder in turn.
 fn loops_around(
     hull: Vec<IntPoint<i32>>,
@@ -8536,7 +8536,7 @@ fn ring_length_mm(ring: &[IntPoint<i32>]) -> f64 {
 /// The filament of each feature of a region on `slot`: `outer_wall_filament_id`,
 /// `inner_wall_filament_id`, `sparse_infill_filament_id`, `internal_solid_filament_id`,
 /// `top_surface_filament_id` and `bottom_surface_filament_id` (0 is the region's own filament),
-/// filled in as OrcaSlicer does: internal solid from sparse, then from top or bottom,
+/// filled in as Orca does: internal solid from sparse, then from top or bottom,
 /// and top and bottom from internal solid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FeatureTools {
@@ -8875,7 +8875,7 @@ fn support_tools(cfg: &PrintConfig, active: u8) -> (u8, u8) {
 
 /// Puts a layer's support into the work of its filaments, adding a work for a filament the layer
 /// does not print otherwise. Ironing goes with the interface.
-/// The areas a travel to support may cross without a retraction, as in OrcaSlicer: every
+/// The areas a travel to support may cross without a retraction, as in Orca: every
 /// support island of the layer (`support_islands`, normal and organic support), or the branch areas of slim,
 /// strong and hybrid trees.
 fn support_islands(sl: &crate::support::SupportLayer) -> Option<Box<crate::output::SupportAreas>> {
@@ -9556,7 +9556,7 @@ fn translate_shapes(shapes: &Shapes, dx: i32, dy: i32) -> Shapes {
         .collect()
 }
 
-/// OrcaSlicer's rectilinear sweep over `area` for lines along `d` at `density`: lines joined end to end along the
+/// Orca's rectilinear sweep over `area` for lines along `d` at `density`: lines joined end to end along the
 /// walls. The lines end at the area pulled in by 0.05 spacing, the turns follow it pulled in by half a spacing, and
 /// a line that never reaches the inner contour is dropped.
 /// `consistent` is the pattern that keeps its place from layer to layer (zigzag, cross zag, locked zag: paths start
