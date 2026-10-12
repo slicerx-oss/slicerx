@@ -85,6 +85,22 @@ fn reference_plate_gates() {
     );
 }
 
+#[test]
+fn the_reference_x_second_layer_has_no_bridge() {
+    // The plinth leaves three slivers a few hundredths of a millimeter wide over air on the second layer. Under half
+    // a solid line, they print as the solid around them: no bridge, so no bridge speed or fan on that layer.
+    let (plate, config) = reference();
+    let session = SliceSession::new(&plate, &config).unwrap();
+    let out = session
+        .slice_range_with(&config, 1..2, &sx_core::NoProgress)
+        .unwrap();
+    let mut g = Vec::new();
+    sx_core::emit_gcode(&out, &config, config.gcode_flavor, &mut g).unwrap();
+    let g = String::from_utf8_lossy(&g);
+    assert!(!g.contains(";TYPE:Bridge"), "a bridge on the second layer");
+    assert!(g.contains(";TYPE:Internal solid infill"));
+}
+
 /// Layer tops that cycle through thin and thick layers until they clear `top`.
 fn varied_tops(top: f64) -> Vec<f64> {
     let cycle = [0.12, 0.2, 0.28, 0.2, 0.16];

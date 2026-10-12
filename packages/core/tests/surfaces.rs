@@ -249,3 +249,33 @@ fn interface_shells_put_solid_layers_where_filaments_meet() {
     );
     assert!(feature_e(&shells, "Bridge", Some(20)) < 1e-9);
 }
+
+/// G-code of `parts` as one object at 0.2 mm layers.
+fn slice_parts(parts: Vec<api::MeshPart>) -> String {
+    let mesh = Arc::new(Mesh {
+        name: "parts".into(),
+        parts,
+        ..Mesh::default()
+    });
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "c", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 118,118,0,1]}]},
+        "config": {"brim_width": 0, "skirt_loops": 0, "sparse_infill_density": 15},
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let r = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    String::from_utf8(r.gcode).unwrap()
+}
+
+#[test]
+fn an_overhang_wider_than_half_a_line_is_still_a_bridge() {
+    // The box's top half sticks out 3 mm: well past half a solid line, so the sliver rule leaves it a bridge.
+    let g = slice_parts(vec![
+        cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 2.0]),
+        cuboid([0.0, 23.0], [0.0, 20.0], [2.0, 4.0]),
+    ]);
+    assert!(
+        feature_e(&g, "Bridge", None) > 0.0,
+        "no bridge on a 3 mm overhang"
+    );
+}
