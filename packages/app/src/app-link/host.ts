@@ -38,7 +38,14 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
   linkAsks.setState({ link, asks: [] })
   if (loader) void useDesignHost(loader).catch(() => undefined)
   const timers = new Set<ReturnType<typeof setTimeout>>()
+  // One call at a time per agent, so no agent can keep the window busy with a stream of calls.
+  const inFlight = new Set<string>()
   const stopCall = link.onCall((c) => {
+    if (inFlight.has(c.client.id)) {
+      void link.reply(c.callId, { ok: false, code: 'busy', message: 'this agent already has a call running in the app; wait for its answer' }).catch(() => undefined)
+      return
+    }
+    inFlight.add(c.client.id)
     runCall(c.method, c.args)
       .then(
         (value) => link.reply(c.callId, { ok: true, value: value ?? null }),
@@ -50,6 +57,7 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
           }),
       )
       .catch(() => undefined)
+      .finally(() => inFlight.delete(c.client.id))
   })
   const stopAsk = link.onAsk((a) => {
     // A client asks again only after its last question ended, so a repeat replaces it in place.
