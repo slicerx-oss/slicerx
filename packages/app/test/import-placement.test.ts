@@ -9,6 +9,7 @@ import type { Bed, Host, MeshHandle, MeshPart } from '@slicerx/contracts'
 import { readProject } from '../src/export/import3mf'
 import { zip } from '../src/export/zip'
 import { NO_MARGINS } from '../src/plate/arrange'
+import { boxInBed } from '../src/plate/bed-shape'
 import { objectWarnings } from '../src/plate/object-list'
 import { bounds, decompose } from '../src/plate/transform'
 import { placeOnSelectedBed } from '../src/project/place-import'
@@ -137,6 +138,18 @@ describe('placing an opened plate on the selected bed', () => {
     const e = bounds(existing[0]!.parts, existing[0]!.transform)!
     const apart = b.max[0] <= e.min[0] || b.min[0] >= e.max[0] || b.max[1] <= e.min[1] || b.min[1] >= e.max[1]
     expect(apart).toBe(true)
+  })
+  it('on a round bed, judges the layout by the circle and not its square box', () => {
+    // The FLSUN V400's 300 mm circle: a part in the box's front left corner is off the bed.
+    const round: Bed = { widthMm: 300, depthMm: 300, heightMm: 400, round: true }
+    const inside = [box(150, 150), box(150, 260)]
+    expect(placeOnSelectedBed(inside, round)).toBe('kept')
+    const objects = [box(20, 20), box(60, 20)]
+    expect(placeOnSelectedBed(objects, round)).not.toBe('kept')
+    for (const o of objects) {
+      const b = bounds(o.parts, o.transform)!
+      expect(boxInBed(round, b.min[0], b.min[1], b.max[0], b.max[1])).toBe(true)
+    }
   })
 })
 

@@ -6,6 +6,7 @@
 // arranged when the group is wider or deeper than the bed. Objects already on the plate stay where they are.
 import type { Bed, MeshPart } from '@slicerx/contracts'
 import { arrange, ARRANGE_DEFAULTS, type ArrangeItem } from '../plate/arrange'
+import { boxInBed } from '../plate/bed-shape'
 import { bounds, type Box } from '../plate/transform'
 
 export interface Placeable {
@@ -17,9 +18,9 @@ export type Placement = 'kept' | 'moved' | 'arranged'
 
 const TOL = 0.01
 
-/** Inside the bed in X and Y. Height is the "too tall" check's, not placement's. */
-function onBed(b: Box, bed: Pick<Bed, 'widthMm' | 'depthMm'>): boolean {
-  return b.min[0] >= -TOL && b.min[1] >= -TOL && b.max[0] <= bed.widthMm + TOL && b.max[1] <= bed.depthMm + TOL
+/** Inside the bed in X and Y (inside the circle of a round bed). Height is the "too tall" check's, not placement's. */
+function onBed(b: Box, bed: Pick<Bed, 'widthMm' | 'depthMm' | 'round'>): boolean {
+  return boxInBed(bed, b.min[0], b.min[1], b.max[0], b.max[1], -TOL)
 }
 
 function boxOf(objects: readonly Placeable[]): Box | null {
