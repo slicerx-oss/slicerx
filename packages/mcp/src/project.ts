@@ -10,6 +10,7 @@ import type { ProfileCatalog } from './profiles'
 import { isGcodeKey, SHIPPED_GCODE_SOURCES } from './config'
 import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import type { NodeSlicerHost } from './slicerhost'
+import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
 
 interface Entry {
   obj: ProjectObject
@@ -42,6 +43,8 @@ export class McpProject implements PilotProject {
   private readonly entries = new Map<string, Entry>()
   private layout: ProjectPlate[] = []
   private projectOverrides: Record<string, SettingValue> = {}
+  /** Filaments a client set, by number; the rest follow the filament profile. */
+  private filamentSetup: Record<number, FilamentSetup> = {}
   private nextId = 1
 
   constructor(
@@ -112,6 +115,41 @@ export class McpProject implements PilotProject {
     for (const [k, v] of Object.entries(changes)) this.projectOverrides[k] = toSchemaValue(this.store.setting(k), v)
   }
 
+  /** The filament type the project's filament profile sets, for filaments no client set. */
+  private profileType(): string {
+    const t = this.baseConfig()['filament_type']
+    const first = Array.isArray(t) ? t[0] : t
+    return typeof first === 'string' && first ? first : 'PLA'
+  }
+
+  /** Every filament of the project, numbered as the plate uses them. */
+  filaments(): ProjectFilament[] {
+    return listFilaments(this.filamentSetup, this.profileType())
+  }
+
+  /** Adds a filament after the last one, with the profile's type and the default color unless given. */
+  addFilament(patch: { type?: string | undefined; color?: string | undefined }): ProjectFilament {
+    const slot = this.filaments().length + 1
+    if (slot > MAX_FILAMENTS) throw new Error(`The project already has ${MAX_FILAMENTS} filaments, the most it holds.`)
+    return this.setFilament(slot, patch, defaultFilament(slot, this.profileType()))
+  }
+
+  /** Changes filament `slot`'s type or color; what is not given stays. */
+  setFilament(slot: number, patch: { type?: string | undefined; color?: string | undefined }, from?: FilamentSetup): ProjectFilament {
+    const cur = from ?? this.filaments().find((f) => f.slot === slot)
+    if (!cur) throw new Error(`No filament ${slot}: the project has ${this.filaments().length}. Add one with slicerx_project_add_filament.`)
+    const next = { type: patch.type !== undefined ? filamentType(patch.type) : cur.type, color: patch.color !== undefined ? filamentColor(patch.color) : cur.color }
+    this.filamentSetup = { ...this.filamentSetup, [slot]: next }
+    return { slot, ...next, source: 'set' }
+  }
+
+  /** filament_type and filament_colour for the slice, once a client set a filament; until then the profile's alone. */
+  private filamentConfig(): Record<string, SettingValue> {
+    if (Object.keys(this.filamentSetup).length === 0) return {}
+    const list = this.filaments()
+    return { filament_type: list.map((f) => f.type), filament_colour: list.map((f) => f.color) }
+  }
+
   private baseConfig(): Record<string, SettingValue> {
     const cfg: Record<string, SettingValue> = { ...defaultConfig(this.store) }
     const ids = [...this.settings.profiles]
@@ -146,7 +184,7 @@ export class McpProject implements PilotProject {
 
   config(plateIndex: number): PrintConfig {
     const plate = this.layout.find((p) => p.index === plateIndex)
-    return { ...this.baseConfig(), ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
+    return { ...this.baseConfig(), ...this.filamentConfig(), ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
   }
 
   /**
@@ -240,6 +278,7 @@ export class McpProject implements PilotProject {
       machine: this.machine() ?? null,
       objects: this.objects().map((o) => ({ id: o.id, name: o.name, bbox_mm: o.bboxMm, triangles: o.triangles ?? null, has_mesh: Boolean(this.entries.get(o.id)?.meshId) })),
       plates: this.plates(),
+      filaments: this.filaments(),
       overrides: this.projectOverrides,
     }
   }
