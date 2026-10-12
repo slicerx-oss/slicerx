@@ -4,7 +4,7 @@
 // one warning icon, lock and print toggles that show on hover (and stay while on), and a chevron that opens the tree
 // of its parts and volumes. A click selects it, Cmd or Ctrl adds it, a double-click or F2 renames it in place.
 import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, useContextMenu, type IconName } from '@slicerx/ui'
-import { lazy, Suspense, useState, type KeyboardEvent } from 'react'
+import { lazy, Suspense, useEffect, useState, type KeyboardEvent } from 'react'
 import { slotLabel } from '../../filament/rail'
 import { effectiveSlot } from '../../filament/slots'
 import { useResolvedSlots } from '../../filament/use-slots'
@@ -14,7 +14,7 @@ import { usePhoneLayout } from '../../lib/phone-layout'
 import { MiddleName } from '../../lib/short-name'
 import { Silhouette } from '../../parts'
 import { selectObject } from '../../plate/edit'
-import { moveObject, objectWarnings, renameObject, setPartSlot, toggleLock, togglePrintable, type ObjectMatch } from '../../plate/object-list'
+import { moveObject, objectWarnings, onRenameRequest, renameObject, setPartSlot, toggleLock, togglePrintable, type ObjectMatch } from '../../plate/object-list'
 import { countSettings } from '../../plate/easy-groups'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
 import { get, selectedIds, set, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
@@ -56,6 +56,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const phone = usePhoneLayout()
   const [open, setOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  useEffect(() => (phone ? undefined : onRenameRequest(p.id, () => setRenaming(true))), [p.id, phone])
   const [drop, setDrop] = useState(false)
   const [slotMenu, setSlotMenu] = useState<{ part: string; at: { x: number; y: number } } | null>(null)
   const warnings = objectWarnings(p, { bed, printerSlots })

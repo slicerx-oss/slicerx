@@ -5,7 +5,7 @@
 import type { CommandSpec, Host, LookAndFeelChoice } from '@slicerx/contracts'
 import { exportAllPlates, exportGcode3mf, saveProject } from '../export/actions'
 import { keymapFor, type KeyAction } from '@slicerx/ui'
-import { togglePrintable } from './object-list'
+import { requestRename, togglePrintable } from './object-list'
 import { clipboard, copySelection, cutSelection, duplicateSelection, pasteClipboard } from './clipboard'
 import { get, openSettings, selectedIds, set, toast, type VolumeRole } from '../state/store'
 import { orientSelected, repairSelected } from './geom-ops'
@@ -20,6 +20,12 @@ import { SHELF_TOOLS } from '../workspaces/design/shelf-tools'
 import { fromVault } from '../export/vault'
 
 const hasSelection = () => get().selection !== null
+
+/** Starts renaming the selected object in its row, as F2 does there. */
+function renameSelected(): void {
+  const id = get().selection
+  if (id) requestRename(id)
+}
 
 function reportError(e: unknown): void {
   toast(e instanceof Error ? e.message : String(e), 'error')
@@ -87,6 +93,7 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
     withKey({ id: 'copy', title: 'Copy the selected objects', section: 'plate', keywords: ['clipboard', 'duplicate'], workspace: 'prepare', enabled: hasSelection, run: () => void copySelection() }, 'edit.copy'),
     withKey({ id: 'cut', title: 'Cut the selected objects', section: 'plate', keywords: ['clipboard', 'move'], workspace: 'prepare', tool: { permission: 'slice' }, enabled: hasSelection, run: () => void cutSelection() }, 'edit.cut'),
     withKey({ id: 'paste', title: 'Paste', section: 'plate', keywords: ['clipboard', 'objects', 'volume'], workspace: 'prepare', tool: { permission: 'slice' }, enabled: () => clipboard() !== null, run: () => void pasteClipboard() }, 'edit.paste'),
+    { id: 'object-rename', title: 'Rename the selected object', section: 'plate', keywords: ['name', 'label', 'f2'], enabled: hasSelection, run: renameSelected },
     withKey({ id: 'duplicate', title: 'Duplicate the selected objects', section: 'plate', keywords: ['clone', 'copy'], workspace: 'prepare', tool: { permission: 'slice' }, enabled: hasSelection, run: () => void duplicateSelection() }, 'edit.duplicate'),
     { id: 'tool-paint', title: 'Paint tool: color, seam and support', section: 'plate', keywords: ['paint', 'brush', 'color paint', 'multicolor', 'mmu', 'painting'], workspace: 'prepare', run: () => { setTool('paint'); getPaintBus()?.set({ layer: 'color' }) } },
     withKey({ id: 'paint-support', title: 'Paint support: enforce and block', section: 'plate', keywords: ['support painting', 'enforcer', 'blocker', 'paint supports'], workspace: 'prepare', run: () => { setTool('paint'); getPaintBus()?.set({ layer: 'support', state: 1 }) } }, 'tool.supports'),
