@@ -25,7 +25,12 @@ describe('bead shading', () => {
     expect(vertex).not.toContain('#include <begin_vertex>')
     for (const chunk of ['color_fragment', 'roughnessmap_fragment', 'metalnessmap_fragment', 'normal_fragment_begin', 'aomap_fragment']) expect(fragment, chunk).not.toContain(`#include <${chunk}>`)
     expect(fragment).toContain('vec3 normal = sxKeep')
-    expect(fragment).toContain('material.clearcoat = vFinish.y;')
+    expect(fragment).toContain('material.clearcoat = vFinish.y * ( uColorMode == 1 ? 1.0 : 0.3 );')
+    // Colored by line type or a measure, highlights stay small and bright light rolls off without bleaching the color.
+    expect(fragment).toContain('uniform int uColorMode;')
+    expect(fragment).toContain('mix( diffuseColor.rgb, vec3( 1.0 ), uColorMode == 1 ? 0.45 : 0.0 )')
+    expect(fragment).toContain('reflectedLight.directSpecular *= 0.35;')
+    expect(fragment).toContain('if ( sxPeak > 0.8 ) outgoingLight *=')
     expect(fragment).toContain('#include <tonemapping_fragment>')
     // Stale paths dim before the output, through the same material.
     expect(fragment).toContain('* ( 1.0 - 0.35 * uStale )')

@@ -281,6 +281,7 @@ const BEAD_PIXEL = /* glsl */ `
 
 /** Declarations the bead fragment code below reads, on top of the physical material's own. */
 const BEAD_FRAG_DECL = /* glsl */ `
+uniform int uColorMode;
 uniform vec3 uLiveColor;
 uniform float uGlow;
 uniform float uCrease;
@@ -336,15 +337,23 @@ if ( vSurf > 0.5 && vSurf < 1.5 ) {
 /** The finish's gloss on top of the physical material's (one value per tool): clearcoat and sheen, as the model view sets them. */
 const BEAD_FINISH = /* glsl */ `
 #ifdef USE_CLEARCOAT
-material.clearcoat = vFinish.y;
+material.clearcoat = vFinish.y * ( uColorMode == 1 ? 1.0 : 0.3 );
 #endif
 #ifdef USE_SHEEN
-material.sheenColor = mix( diffuseColor.rgb, vec3( 1.0 ), 0.45 ) * vFinish.z;
+material.sheenColor = mix( diffuseColor.rgb, vec3( 1.0 ), uColorMode == 1 ? 0.45 : 0.0 ) * vFinish.z;
 #endif
 `
 
-/** Stale paths (the plate changed, a new slice is coming) are drawn darker and less saturated, never hidden. */
+/**
+ * Stale paths (the plate changed, a new slice is coming) are drawn darker and less saturated, never hidden. Colored by
+ * anything but filament, a bead keeps its key color: light that would clip a channel rolls all three off together,
+ * so a bright orange stays orange instead of bleaching toward yellow or white, and lit faces stay brighter than shaded ones.
+ */
 const BEAD_STALE = /* glsl */ `
+if ( uColorMode != 1 ) {
+  float sxPeak = max( max( outgoingLight.r, outgoingLight.g ), outgoingLight.b );
+  if ( sxPeak > 0.8 ) outgoingLight *= ( 0.8 + 0.2 * ( 1.0 - exp( ( 0.8 - sxPeak ) / 0.2 ) ) ) / sxPeak;
+}
 outgoingLight = mix( outgoingLight, vec3( dot( outgoingLight, vec3( 0.299, 0.587, 0.114 ) ) ), 0.5 * uStale ) * ( 1.0 - 0.35 * uStale );
 `
 
@@ -354,6 +363,11 @@ reflectedLight.indirectDiffuse *= sxOcc;
 reflectedLight.directDiffuse *= sxOcc;
 reflectedLight.directSpecular *= mix( 1.0, sxOcc, 0.5 );
 reflectedLight.indirectSpecular *= mix( 1.0, sxOcc, 0.5 );
+// Colored by line type or a measure, highlights stay small so they never wash the key color out.
+if ( uColorMode != 1 ) {
+  reflectedLight.directSpecular *= 0.35;
+  reflectedLight.indirectSpecular *= 0.35;
+}
 #if NUM_DIR_LIGHTS > 0
 if ( vFinish.w > 0.0 ) {
   // Silk: a bright streak across the bead, along its length (Kajiya-Kay), tinted by the filament.

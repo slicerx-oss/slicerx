@@ -26,6 +26,17 @@ describe('FEATURE_COLORS', () => {
     }
   })
 
+  it('keeps the everyday line types apart in hue, and infill far from the walls', () => {
+    const hue = (id: number) => hueSat(FEATURE_COLORS.find((f) => f.id === id)!.color).h
+    const apart = (a: number, b: number) => {
+      const d = Math.abs(hue(a) - hue(b)) % 360
+      return Math.min(d, 360 - d)
+    }
+    const everyday = [FEATURE.outerWall, FEATURE.innerWall, FEATURE.topSurface, FEATURE.internalSolid, FEATURE.sparseInfill]
+    for (const a of everyday) for (const b of everyday) if (a < b) expect(apart(a, b), `${a} and ${b}`).toBeGreaterThanOrEqual(15)
+    for (const wall of [FEATURE.outerWall, FEATURE.innerWall]) expect(apart(wall, FEATURE.sparseInfill)).toBeGreaterThanOrEqual(90)
+  })
+
   it('has one distinct color per feature', () => {
     expect(new Set(FEATURE_COLORS.map((f) => f.color)).size).toBe(FEATURE_COLORS.length)
     expect(new Set(FEATURE_COLORS.map((f) => f.id)).size).toBe(FEATURE_COLORS.length)
