@@ -13,7 +13,7 @@ use std::time::Duration;
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use sx_connect::MemorySecrets;
-use sx_link::{BrokerGate, Link, LinkConfig, serve_with_approvals};
+use sx_link::{AppLinkWaits, BrokerGate, Link, LinkConfig, serve_with_approvals};
 use sx_permit::ApprovalBroker;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
@@ -25,11 +25,16 @@ const CODE: &str = "TEST-CODE";
 const AGENT_CODE: &str = "AGNT-CODE";
 
 async fn hub() -> Link {
+    hub_with(AppLinkWaits::default()).await
+}
+
+async fn hub_with(app_link_waits: AppLinkWaits) -> Link {
     let broker = Arc::new(ApprovalBroker::new().unwrap());
     let cfg = LinkConfig {
         port: 0,
         fixed_code: Some(CODE.to_owned()),
         fixed_agent_code: Some(AGENT_CODE.to_owned()),
+        app_link_waits,
         ..LinkConfig::loopback()
     };
     serve_with_approvals(
@@ -525,4 +530,62 @@ async fn the_app_hears_when_a_question_ends() {
     assert_eq!(ended["askId"], ask["askId"]);
     let (_, r) = pending.await.unwrap();
     assert_eq!(code(&r), "denied", "{r}");
+}
+
+#[tokio::test]
+async fn an_unanswered_question_holds_that_client_off_for_the_cooldown() {
+    let link = hub_with(AppLinkWaits {
+        ask: Duration::from_millis(300),
+        cooldown: Duration::from_millis(1500),
+    })
+    .await;
+    let mut a = app(&link).await;
+    call(&mut a, 2, "settings.set", json!({ "appLink": true })).await;
+    call(&mut a, 3, "appLink.host", json!({})).await;
+    let (agent, id, key) = remembered_agent(&link, "Claude Code").await;
+    let pending = spawn_call(agent, "app.info", json!({}));
+    let ask = event(&mut a, "appLink.ask").await;
+    // Nobody answers: the call ends unanswered and the app hears the question ended.
+    let (mut agent, r) = pending.await.unwrap();
+    assert_eq!(code(&r), "not_answered", "{r}");
+    assert_eq!(event(&mut a, "appLink.askEnded").await["askId"], ask["askId"]);
+    // Within the cooldown it asks nothing.
+    let r = call(&mut agent, 3, "app.call", json!({ "method": "app.info" })).await;
+    assert_eq!(code(&r), "not_answered", "{r}");
+    no_event(&mut a, "appLink.ask").await;
+    // Another client is not held off by it.
+    let (other, _, _) = remembered_agent(&link, "Other").await;
+    let pending = spawn_call(other, "app.info", json!({}));
+    let ask2 = event(&mut a, "appLink.ask").await;
+    assert_ne!(ask2["clientId"], id);
+    call(
+        &mut a,
+        4,
+        "appLink.answer",
+        json!({ "askId": ask2["askId"], "decision": "deny" }),
+    )
+    .await;
+    let _ = pending.await.unwrap();
+    // After it, the client is asked again.
+    tokio::time::sleep(Duration::from_millis(1600)).await;
+    let pending = spawn_call(reconnect(&link, &key).await, "app.info", json!({}));
+    let again = event(&mut a, "appLink.ask").await;
+    assert_eq!(again["clientId"], id);
+    call(
+        &mut a,
+        5,
+        "appLink.answer",
+        json!({ "askId": again["askId"], "decision": "allow" }),
+    )
+    .await;
+    let c = event(&mut a, "appLink.call").await;
+    call(
+        &mut a,
+        6,
+        "appLink.reply",
+        json!({ "callId": c["callId"], "ok": true, "value": 1 }),
+    )
+    .await;
+    let (_, r) = pending.await.unwrap();
+    assert_eq!(r["result"], 1, "{r}");
 }
