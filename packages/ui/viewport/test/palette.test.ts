@@ -37,6 +37,13 @@ describe('FEATURE_COLORS', () => {
     for (const wall of [FEATURE.outerWall, FEATURE.innerWall]) expect(apart(wall, FEATURE.sparseInfill)).toBeGreaterThanOrEqual(90)
   })
 
+  it('draws sparse infill in a clear blue, well clear of the cyan band', () => {
+    const { h, s } = hueSat(FEATURE_COLORS.find((f) => f.id === FEATURE.sparseInfill)!.color)
+    expect(h).toBeGreaterThanOrEqual(212)
+    expect(h).toBeLessThanOrEqual(235)
+    expect(s).toBeGreaterThanOrEqual(0.6)
+  })
+
   it('has one distinct color per feature', () => {
     expect(new Set(FEATURE_COLORS.map((f) => f.color)).size).toBe(FEATURE_COLORS.length)
     expect(new Set(FEATURE_COLORS.map((f) => f.id)).size).toBe(FEATURE_COLORS.length)
