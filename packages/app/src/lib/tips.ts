@@ -69,6 +69,9 @@ export const TIPS = {
     return modelTip()
   },
   'mode.slice': a('Slice', 'The plate, print settings and the sliced layers.', 'model.mode'),
+  get 'nav.openInApp'() {
+    return f(`Open in ${appName()}`, `Save this design and open it in the ${appName()} app on this computer, to slice and print it.`)
+  },
   get 'nav.settings'() {
     return f('Settings', `Change how ${appName()} looks, behaves and connects.`)
   },

@@ -6,6 +6,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
+- `slicerx_open_in_app` opens a model or project in the SlicerX desktop app on this computer, as the browser's Open in SlicerX button does.
 - The checks and project operations the SlicerX app runs from its panels are tools now, so a client can do what a person does there: `slicerx_gcode_inspect`, `slicerx_risk_report`, `slicerx_energy_estimate`, `slicerx_fit_check`, `slicerx_mesh_analyze`, `slicerx_printer_config_check`, `slicerx_spool_fit`, `slicerx_overnight_readiness`, `slicerx_spool_inventory`, `slicerx_printer_match`, `slicerx_fleet_overview` and `slicerx_ams_mapping` read; `slicerx_supports`, `slicerx_orientation_search`, `slicerx_mesh_repair`, `slicerx_hollow`, `slicerx_emboss`, `slicerx_scale_with_tolerance`, `slicerx_threads_and_fits`, `slicerx_smart_layer`, `slicerx_multicolor_assign` and `slicerx_region_modifiers` change the open project (class slice). The checks read the plates `slicerx_slice` sliced; the mesh tools need `sx-geom`. None of them starts a print.
 
 - Slice and estimate results carry `notices`, warnings with a code. `no_printer` says the slice named no printer, so the engine used its generic machine ("No printer chosen, so this slice used a generic 200 mm machine; times and limits are not for your printer."). The same line is in `warnings`.

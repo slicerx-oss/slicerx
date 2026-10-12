@@ -6,7 +6,7 @@
 import { Icon } from '@slicerx/ui'
 import { useRef } from 'react'
 import { useFullEngine, warmFullEngine } from '../geom/full-engine'
-import { useModelMode } from '../state/model-mode'
+import { hostSlices, useModelMode } from '../state/model-mode'
 import { setModelMode, useApp, type ModelMode } from '../state/store'
 
 const MODES: readonly { mode: ModelMode; label: string; icon: 'model' | 'slice'; tab: string; tip: string }[] = [
@@ -22,7 +22,8 @@ export function ModeTabs() {
   const rest = useRef<ReturnType<typeof setTimeout>>(undefined)
   // A tool left open in Model: an orange dot on its tab; the tip and the description say which.
   const parked = useApp((s) => (s.parked?.tool ? (s.parked.label ?? 'A tool') : null))
-  return MODES.map((m) => {
+  // A host that cannot slice shows Model alone.
+  return MODES.filter((m) => hostSlices() || m.mode === 'design').map((m) => {
     const model = m.mode === 'design'
     return (
       <button
