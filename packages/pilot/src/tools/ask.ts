@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// pilot.ask and lookup.show: a question with fixed answers that waits for the person's pick, and a record shown as a
-// card with its source. Neither changes anything; they are how mimir checks with the person and shows what it found.
+// pilot.ask, pilot.sheet and lookup.show: a question with fixed answers that waits for the person's pick, a sheet of
+// the sizes a part is built from that waits for the person to confirm or edit them, and a record shown as a card with
+// its source. None changes anything; they are how mimir checks with the person and shows what it found.
+import type { PilotDim } from '@slicerx/contracts'
 import { z } from 'zod'
 import { defineTool, type PilotTool } from '../tool'
 
@@ -42,6 +44,46 @@ export function lookupTool(): PilotTool<never> {
     args: (i) => `"${i.title}"`,
     async run(i) {
       return { summary: i.title, output: { shown: true }, lookup: { title: i.title, fields: i.fields, source: i.source } }
+    },
+  }) as PilotTool<never>
+}
+
+const dim = z.object({
+  key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
+  label: z.string().min(1).max(60),
+  value: z.number().min(-100_000).max(100_000),
+  unit: z.enum(['mm', 'deg', '%']),
+  min: z.number().min(-100_000).max(100_000).optional(),
+  max: z.number().min(-100_000).max(100_000).optional(),
+  source: z.enum(['asked', 'lookup', 'photo', 'guess']).describe('asked: the person said it; lookup: from a page (give sourceTitle and sourceUrl); photo: measured from their photo; guess: your best guess'),
+  sourceTitle: z.string().min(1).max(80).optional(),
+  sourceUrl: z.url({ protocol: /^https?$/ }).optional(),
+  note: z.string().max(160).optional(),
+})
+
+export function sheetTool(): PilotTool<never> {
+  return defineTool({
+    name: 'pilot.sheet',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed. A sheet with one row asks for one number.',
+    input: z
+      .object({
+        title: z.string().min(2).max(60),
+        views: z.array(z.enum(['front', 'top', 'side', 'iso'])).min(1).max(4).default(['iso']),
+        dims: z.array(dim).min(1).max(30),
+      })
+      .refine((i) => new Set(i.dims.map((d) => d.key)).size === i.dims.length, 'each dimension needs its own key')
+      .refine((i) => i.dims.every((d) => (d.min === undefined || d.value >= d.min) && (d.max === undefined || d.value <= d.max)), 'a value is outside its own min and max')
+      .refine((i) => i.dims.every((d) => d.source !== 'lookup' || d.sourceUrl !== undefined), 'a looked-up value needs its sourceUrl'),
+    args: (i) => `"${i.title}", ${i.dims.length} sizes`,
+    async run(i, ctx) {
+      if (!ctx.sheet) return { ok: false, summary: 'Nobody here can confirm a sheet' }
+      const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[] })
+      const n = answer.changed.length
+      return { summary: n ? `Confirmed, ${n} size${n === 1 ? '' : 's'} changed` : 'Confirmed as shown', output: answer }
     },
   }) as PilotTool<never>
 }
