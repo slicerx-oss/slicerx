@@ -44,7 +44,7 @@ Start passes bed leveling (`Calibration_switch`, default on) and timelapse (`Tlp
 
 ### Untested on hardware
 
-Written from the public protocol and community write-ups, and checked against a simulator, not a printer. Check first: the upload form fields, the status codes, the unit of the time counters (read as seconds; the spec says milliseconds), the unit of `RemainingMemory` (read as bytes; the spec says bits), and how many apps the printer serves at once.
+Written from the public protocol and community write-ups, and checked against a simulator, not a printer. Check first: the upload form fields, the status codes, the unit of the time counters (read as seconds; the spec says milliseconds), the unit of `RemainingMemory` (read as bytes; the spec says bits), the unit of `CurrentFanSpeed` (not shown yet), and how many apps the printer serves at once.
 
 ## For integrators
 
@@ -60,6 +60,8 @@ Upload is `POST /uploadFile/upload`, one megabyte per request, form fields `Chec
 
 Status mapping. The spec's `PrintInfo.Status` codes (6 paused, 8 stopped, 9 complete) differ from what a Centauri Carbon was seen sending (5 pausing, 8 preparing, 9 starting, 10 paused, 13 printing, 20 resuming). `CurrentStatus` settles it: while it holds 1 (printing), 5, 6 and 10 are paused, 1, 8 and 9 preparing, anything else printing; once it is idle, the sub status keeps its last value, so 9 is finished and 8 is idle with "The print was stopped". `CurrentStatus` 2, 3 and 4 read as idle with "Receiving a file", "Calibrating" or "Running a self check". A nonzero `PrintInfo.ErrorNumber` outside an active print is an error with its reason. Without `CurrentStatus`, the Centauri Carbon codes apply alone. The camera reads as available unless the attributes say `CameraStatus` 0.
 
+Live view. `PrintInfo.PrintSpeedPct` is the print speed in percent, `LightStatus.SecondLight` the light (true or 1 when on), and while a print is active the Z of `CurrenCoord` (`"x,y,z"`, spelled as the printer spells it) is the height printing now. `CurrentFanSpeed` is left out until its unit (percent or 0 to 255) is confirmed.
+
 Scanning broadcasts `M99999` to UDP 3000 and parses the JSON replies. An IP address typed in setup gets the same `M99999` sent to it alone, so the printer is confirmed, with its name, model and firmware, before the WebSocket is tried.
 
 ### History
@@ -72,7 +74,7 @@ Pushed by the printer. Status events fire when anything other than the timestamp
 
 ### Testing
 
-`elegoo_sdcp_contract` and `elegoo_reads_attributes_files_and_free_storage` in `tests/drivers.rs`, against a fake with hand written WebSocket framing. The fake's free storage is set with `POST /elegoo {remainingMemory}` on its control port.
+`elegoo_sdcp_contract`, `elegoo_reads_attributes_files_and_free_storage` and `elegoo_live_view_reads_speed_light_and_height` in `tests/drivers.rs`, against a fake with hand written WebSocket framing. The fake's free storage is set with `POST /elegoo {remainingMemory}` on its control port. `packages/mcp/test/link-live.test.ts` reads the live view through `slicerx_printer_status` on a built sx-link.
 
 ### Sources
 
