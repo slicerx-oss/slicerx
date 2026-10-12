@@ -39,9 +39,15 @@ describe('design tools over the app link', () => {
 
   it('keep a model file here, and run here while the link is not this server\'s to use', async () => {
     // off, the app closed, a partner key or a code-only pairing the hub refuses, and an older hub without the link
-    for (const code of ['app_link_off', 'app_closed', 'forbidden', 'unauthorized', 'bad_request']) {
+    for (const [code, message] of [
+      ['app_link_off', ''],
+      ['app_closed', ''],
+      ['forbidden', ''],
+      ['unauthorized', ''],
+      ['bad_request', 'unknown method app.call'],
+    ]) {
       const call = vi.fn(async () => {
-        throw fail(code)
+        throw Object.assign(new Error(message || code), { code })
       })
       const { run } = routed(call as AppLinkCaller['call'])
       const e = await run('design.new', { name: 'Clip' }).catch((x: unknown) => x)
@@ -60,6 +66,8 @@ describe('design tools over the app link', () => {
       ['denied', 'not_supported'],
       ['invalid_input', 'invalid_input'],
       ['not_found', 'not_found'],
+      ['busy', 'busy'],
+      ['pending', 'busy'],
       ['timeout', 'internal_error'],
     ] as const) {
       const { run } = routed((async () => {
@@ -120,5 +128,23 @@ describe('design tools over the app link', () => {
       expect((await run(step, within)).message, `step ${step}`).toBe('replayed')
       expect(replayed.length).toBe(before + 1)
     }
+  })
+
+  it('report an oversized call as it is, rather than run it here', async () => {
+    const { run } = routed((async () => {
+      throw Object.assign(new Error('args are over 64 KB'), { code: 'bad_request' })
+    }) as AppLinkCaller['call'])
+    const e = (await run('geom.extrude', { design: 'obj_1', shape: { type: 'svg', svg: 'x', widthMm: 10 }, distance_mm: 1 }).catch((x: unknown) => x)) as ToolInputError
+    expect(e.code).toBe('invalid_input')
+    expect(e.message).toBe('args are over 64 KB')
+  })
+
+  it('say a busy app is worth another try', async () => {
+    const { run } = routed((async () => {
+      throw Object.assign(new Error('the person is changing that object in the app'), { code: 'busy' })
+    }) as AppLinkCaller['call'])
+    const e = (await run('design.undo', { design: 'obj_1' }).catch((x: unknown) => x)) as ToolInputError
+    expect(e.code).toBe('busy')
+    expect(e.message).toMatch(/wait a moment and call again/)
   })
 })
