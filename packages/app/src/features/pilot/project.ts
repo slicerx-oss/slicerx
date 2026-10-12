@@ -4,12 +4,13 @@
 // resolved settings and the slice request, all read from the store at call time. Each change is
 // one store update inside one undo step per tool call, and marks the slice stale like the panels do.
 import type { Bed, Host, MeshPart, PilotMachine, Plate, PrintConfig, SettingValue, SliceWarning, SlicerHost } from '@slicerx/contracts'
-import type { PilotProject, ProjectObject, ProjectPlate } from '@slicerx/pilot'
+import type { PilotProject, ProjectObject, ProjectPlate, ProjectVolume, VolumeSpec } from '@slicerx/pilot'
 import { resolveSlots } from '../../filament/slots'
 import { arrange } from '../../plate/arrange'
 import { getArrangeOptions, sourceOf } from '../../plate/edit'
 import { inStep } from '../../plate/history'
 import { allPlates, projectBase } from '../../plate/plates'
+import { shapedPart, volumeAt } from '../../plate/volumes'
 import { bounds, centerOnBed, decompose, dropToBed, identity, sizeOf, withTrs, type Mat4, type Vec3 } from '../../plate/transform'
 import { GCODE_TEXT_KEYS, plateObjects, plateSliceConfig, trustOptions } from '../../state/actions'
 import { get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta } from '../../state/store'
@@ -198,6 +199,32 @@ export function appProject(host: Pick<Host, 'slicer'>): () => PilotProject {
         const plates = draft()
         for (const p of plates) p.objects = p.objects.map((o) => (sourceOf(o) === objectId && !o.locked ? { ...o, transform: rotated(o, rotate) } : o))
         edit(() => commit(plates))
+      },
+      /** Adds a volume to an object and its copies, placed in the object's own coordinates. One undo step. */
+      async addVolume(objectId: string, v: VolumeSpec): Promise<{ id: string }> {
+        if (!find(objectId)) throw new Error(`No object ${objectId}`)
+        const part = shapedPart(v.shape)
+        const handle = await host.slicer.loadParts(v.name, [part])
+        const id = `vol_${Date.now().toString(36)}m${(++seq).toString(36)}`
+        const volume = volumeAt(id, v.name, v.role, handle, part, v.centerMm, v.settings)
+        const plates = draft()
+        for (const p of plates) p.objects = p.objects.map((o) => (sourceOf(o) === objectId ? { ...o, volumes: [...(o.volumes ?? []), volume] } : o))
+        edit(() => commit(plates))
+        return { id }
+      },
+      volumes(objectId: string): ProjectVolume[] {
+        return (find(objectId)?.entry.volumes ?? []).map((v) => ({ id: v.id, name: v.name, role: v.role, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
+      },
+      /** The object's own settings, shared by its copies, as the object's settings panel shows them. One undo step. */
+      setObjectSettings(objectId: string, changes: Record<string, SettingValue>): void {
+        if (!find(objectId)) throw new Error(`No object ${objectId}`)
+        edit(() => {
+          set((s) => ({ objectSettings: { ...s.objectSettings, [objectId]: { ...(s.objectSettings[objectId] ?? {}), ...changes } } }))
+          markStale()
+        })
+      },
+      objectSettings(objectId: string): Record<string, SettingValue> {
+        return { ...(get().objectSettings[objectId] ?? {}) }
       },
       /** A made object goes in free space on the shown plate, or on a new plate when it has no room. */
       async addObject(obj: ProjectObject, parts: MeshPart[]): Promise<void> {
