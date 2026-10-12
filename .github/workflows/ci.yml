@@ -390,6 +390,9 @@ jobs:
           if-no-files-found: error
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @slicerx/web build
+      # Neither product build (the default and the CAD-only studio) carries the end-to-end test slicer.
+      - run: SLICERX_WEB_SLICING=0 pnpm --filter @slicerx/web exec vite build --outDir dist-cad-only
+      - run: node apps/web/scripts/check-test-host.mjs apps/web/dist apps/web/dist-cad-only
 
   # The printer bridge (sx-link) for bridge.spec.ts, built beside the WASM modules so the shards do not wait longer.
   # A debug build without debug info: quicker to build, and a smaller artifact.
@@ -411,6 +414,48 @@ jobs:
         with:
           name: sx-link
           path: target/debug/sx-link
+          retention-days: 3
+          if-no-files-found: error
+
+  # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
+  # so the specs test what the desktop slices, and no spec needs the WebAssembly slicer. Built once per run beside the
+  # WASM modules and cached like them; the shards and the smoke job download it.
+  sx-cli:
+    needs: detect
+    if: needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: sx-cli
+      - run: cargo build --release -p sx-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sx-cli
+          path: target/release/sx
+          retention-days: 3
+          if-no-files-found: error
+
+  # The same for the Windows GPU runners, only when the GPU lane runs.
+  sx-cli-windows:
+    needs: detect
+    if: needs.detect.outputs.e2e == 'true' && github.event_name != 'pull_request' && vars.E2E_ON_PC != 'true' && vars.E2E_GPU_LANE != 'false'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: sx-cli
+      - run: cargo build --release -p sx-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sx-cli-windows
+          path: target/release/sx.exe
           retention-days: 3
           if-no-files-found: error
 
@@ -462,7 +507,7 @@ jobs:
   # (label sx-pc), each project whole under the machine's heavy lock, with the @gpu specs included and no GPU lane.
   e2e-shard:
     name: e2e (${{ matrix.project }} ${{ matrix.shard }})
-    needs: [detect, wasm, sx-link]
+    needs: [detect, wasm, sx-link, sx-cli]
     if: needs.detect.outputs.e2e == 'true'
     runs-on: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('["self-hosted","sx-pc"]') || 'ubuntu-latest' }}
     # on the PC: up to 20 minutes for the heavy lock (SX_HEAVY_WAIT) plus 15 for the run (timeout 900) plus setup; a
@@ -498,6 +543,13 @@ jobs:
           name: sx-link
           path: ${{ runner.temp }}/sx-link
       - run: chmod +x "$RUNNER_TEMP/sx-link/sx-link"
+      - uses: actions/download-artifact@v4
+        with:
+          name: sx-cli
+          path: ${{ runner.temp }}/sx-cli
+      - run: |
+          chmod +x "$RUNNER_TEMP/sx-cli/sx"
+          echo "SX_CLI_BIN=$RUNNER_TEMP/sx-cli/sx" >> "$GITHUB_ENV"
       - id: pw
         run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
       - if: runner.environment != 'self-hosted'
@@ -568,7 +620,7 @@ jobs:
   # app starts, loads the plate, slices, and draws each workspace (detect, "smoke"). Software WebGL, no sx-link.
   e2e-smoke:
     name: e2e smoke
-    needs: [detect, wasm]
+    needs: [detect, wasm, sx-cli]
     if: needs.detect.outputs.smoke == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -584,6 +636,13 @@ jobs:
         with:
           name: wasm-modules
           path: packages
+      - uses: actions/download-artifact@v4
+        with:
+          name: sx-cli
+          path: ${{ runner.temp }}/sx-cli
+      - run: |
+          chmod +x "$RUNNER_TEMP/sx-cli/sx"
+          echo "SX_CLI_BIN=$RUNNER_TEMP/sx-cli/sx" >> "$GITHUB_ENV"
       - id: pw
         run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
@@ -623,7 +682,7 @@ jobs:
   # PowerShell script policy). Never for pull requests. If the runners are offline, set E2E_GPU_LANE to false.
   e2e-gpu:
     name: e2e (desktop @gpu)
-    needs: [detect, wasm]
+    needs: [detect, wasm, sx-cli-windows]
     if: needs.detect.outputs.e2e == 'true' && github.event_name != 'pull_request' && vars.E2E_ON_PC != 'true' && vars.E2E_GPU_LANE != 'false'
     runs-on: [self-hosted, sx-gpu]
     # up to 20 minutes for each hold of the heavy lock (SX_HEAVY_WAIT), 15 for the run (timeout 900), 5 for the
@@ -657,6 +716,11 @@ jobs:
         with:
           name: wasm-modules
           path: packages
+      - uses: actions/download-artifact@v4
+        with:
+          name: sx-cli-windows
+          path: ${{ runner.temp }}/sx-cli
+      - run: echo "SX_CLI_BIN=$RUNNER_TEMP/sx-cli/sx.exe" >> "$GITHUB_ENV"
       # One retry per failing test; the next step decides from the results, as in e2e-shard. The runner's port comes
       # from its .env (4317 is the default on a developer's machine, 4417 and 4418 are the WSL runners'), 4419 when it
       # sets none.

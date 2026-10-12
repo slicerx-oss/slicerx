@@ -49,6 +49,14 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
     })
   // About 640,000 triangles: an expected slice of 1.6 s, a big one, on any machine.
   const file = zip({ '3D/3dmodel.model': tube(800, 400) })
+  // A slice can start and finish between two looks (the native engine is quick): a new start or a newly finished
+  // slice both count.
+  const slices = async () => Number((await page.locator('.studio').getAttribute('data-slices')) ?? 0)
+  const started = async (since: { startedAt: number | null; slices: number }) => {
+    const s = await state()
+    return (s.status === 'running' && s.startedAt !== since.startedAt) || (await slices()) > since.slices
+  }
+  const before = { startedAt: (await state()).startedAt, slices: await slices() }
   await expect(async () => {
     const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
     await page.keyboard.press('ControlOrMeta+o')
@@ -58,12 +66,13 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
   // Well inside the fit check's longest wait (FIT_WAIT_MS, 15 s): the check ran and said it was done.
   const soon = 7_500
   let from = Date.now()
-  await expect.poll(async () => (await state()).status, { timeout: soon, intervals: [50] }).toBe('running')
+  await expect.poll(() => started(before), { timeout: soon, intervals: [50] }).toBe(true)
   const opened = Date.now() - from
-  // A preset edit (the Fine goal) while that slice runs: it is canceled and the next one starts as soon.
-  const first = (await state()).startedAt
+  // A preset edit (the Fine goal) once that slice is done: the next one starts as soon.
+  await expect.poll(async () => (await state()).status, { timeout: 120_000 }).not.toBe('running')
+  const first = { startedAt: (await state()).startedAt, slices: await slices() }
   from = Date.now()
   await page.getByTestId('slice-goal-fine').click()
-  await expect.poll(async () => { const s = await state(); return s.status === 'running' && s.startedAt !== first }, { timeout: soon, intervals: [50] }).toBe(true)
+  await expect.poll(() => started(first), { timeout: soon, intervals: [50] }).toBe(true)
   test.info().annotations.push({ type: 'auto slice', description: `started ${opened} ms after the open and ${Date.now() - from} ms after the edit` })
 })
