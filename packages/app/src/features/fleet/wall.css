@@ -2,7 +2,12 @@
 /* Copyright (C) 2026 The SlicerX contributors */
 /* Printers as a camera wall. Tiles and the count strip belong to the page and stay flat; only what floats over a
    camera (the state pill, the time left) is lifted. A tile glows softly on hover and keyboard focus. */
-.wall-h { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); margin-bottom: var(--s-5); }
+.wall-h { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); margin-bottom: var(--s-5); }
+/* The reconnecting note sits in the header's bottom margin, so it never moves the page. */
+.wall-away-note { position: absolute; left: 0; top: calc(100% + 2px); margin: 0; white-space: nowrap; }
+/* A card while the bridge reconnects: the same size and place, dimmed, its controls off. */
+.pcard[data-away] { opacity: 0.55; }
+.pcard[data-away] .wall-open { cursor: default; }
 .wall-h h1 { flex: 1 1 240px; margin: 0; font-size: calc(26px * var(--text-scale)); }
 
 .wall-counts { list-style: none; margin: 0 0 var(--s-6); padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: var(--s-3); }

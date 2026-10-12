@@ -259,17 +259,21 @@ async function nameOf(host: Host, printerId: string): Promise<string> {
  * Follows the hub's guard for the life of a bridge connection: the trips it already has, then each new one, which
  * brings up the Printers tab with that printer's card in focus and an OS notification.
  */
-export function watchGuard(host: Host): () => void {
+export function watchGuard(host: Host): (keep?: boolean) => void {
   const hub = guardHub(host)
   if (!hub) return () => undefined
   let live = true
+  // What a dropped connection kept on screen: the hub's state replaces it, unless an event changed it since.
+  const keptTrips = trips
+  const keptPlates = plates
+  const since = <T,>(now: Record<string, T>, kept: Record<string, T>) => Object.fromEntries(Object.entries(now).filter(([k, v]) => kept[k] !== v))
   void hub.watch
     .guardState()
     .then((s) => {
       if (!live) return
       // An event that came in while this was on the way is newer.
-      trips = { ...s.trips, ...trips }
-      plates = { ...s.plates, ...plates }
+      trips = { ...s.trips, ...since(trips, keptTrips) }
+      plates = { ...s.plates, ...since(plates, keptPlates) }
       emit()
     })
     .catch(() => undefined)
@@ -284,9 +288,11 @@ export function watchGuard(host: Host): () => void {
       osNotify(n.title, n.body)
     })
   })
-  return () => {
+  // `keep`: the connection dropped and will come back, so what is on screen stays until the hub says otherwise.
+  return (keep = false) => {
     live = false
     off()
+    if (keep) return
     trips = {}
     plates = {}
     held.clear()
