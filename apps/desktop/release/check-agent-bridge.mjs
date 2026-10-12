@@ -16,9 +16,9 @@ import { parseArgs } from 'node:util'
 
 /**
  * Names only the shell side of the bridge has (apps/desktop/src-tauri/src/agent_bridge, and in src/link.rs the gate's
- * watch pause timings and the test hub port).
+ * watch pause timings and the test hub port), and the printer drivers' test hooks (sx-connect's `test-hooks`).
  */
-export const SHELL_MARKERS = ['SX_AGENT_BRIDGE_PORT', 'agent_bridge_reply', 'sx-agent-bridge', 'SX_GATE_WATCH_PAUSE', 'SX_TEST_HUB_PORT']
+export const SHELL_MARKERS = ['SX_AGENT_BRIDGE_PORT', 'agent_bridge_reply', 'sx-agent-bridge', 'SX_GATE_WATCH_PAUSE', 'SX_TEST_HUB_PORT', 'SX_TEST_NEIGHBORS']
 /** Names only the page side has (packages/app/src/agent-bridge). */
 export const PAGE_MARKERS = ['agent_bridge_ready', 'agent_bridge_reply', 'sx-agent-bridge']
 const PAGE_FILES = /\.(m?js|html)$/i

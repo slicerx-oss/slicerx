@@ -31,6 +31,31 @@ pub use prusalink::PrusaLinkConnector;
 pub use snapmaker::SnapmakerConnector;
 pub use ultimaker::UltiMakerConnector;
 
+/// The PrusaLink connector. In a test build (`test-hooks`) its scan takes the addresses in `SX_TEST_NEIGHBORS`
+/// instead of the neighbour table, so a test can point the hub's scan at a fake printer.
+fn prusalink(gate: Arc<dyn ApprovalGate>) -> PrusaLinkConnector {
+    let c = PrusaLinkConnector::new(gate);
+    #[cfg(feature = "test-hooks")]
+    if let Some((ips, port)) = test_neighbors(std::env::var("SX_TEST_NEIGHBORS").ok().as_deref()) {
+        return c.with_neighbors(ips).with_probe_port(port);
+    }
+    c
+}
+
+/// `SX_TEST_NEIGHBORS` as `<ipv4>:<port>[,<ipv4>:<port>...]`: the addresses a scan probes, all on the first entry's
+/// port. Anything else is no hook.
+#[cfg(feature = "test-hooks")]
+pub(crate) fn test_neighbors(value: Option<&str>) -> Option<(Vec<std::net::Ipv4Addr>, u16)> {
+    let mut port = None;
+    let mut ips = Vec::new();
+    for entry in value?.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+        let addr: std::net::SocketAddrV4 = entry.parse().ok()?;
+        port.get_or_insert(addr.port());
+        ips.push(*addr.ip());
+    }
+    Some((ips, port?))
+}
+
 pub(crate) fn all(
     gate: Arc<dyn ApprovalGate>,
     discovery_bind: std::net::IpAddr,
@@ -38,7 +63,7 @@ pub(crate) fn all(
     vec![
         Box::new(BambuConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
         Box::new(MoonrakerConnector::new(gate.clone())),
-        Box::new(PrusaLinkConnector::new(gate.clone())),
+        Box::new(prusalink(gate.clone())),
         Box::new(OctoPrintConnector::new(gate.clone())),
         Box::new(DuetConnector::new(gate.clone())),
         Box::new(CrealityConnector::new(gate.clone())),
@@ -48,4 +73,24 @@ pub(crate) fn all(
         Box::new(AnycubicConnector::new(gate.clone())),
         Box::new(BambuddyConnector::new(gate)),
     ]
+}
+
+#[cfg(all(test, feature = "test-hooks"))]
+mod tests {
+    use super::test_neighbors;
+
+    #[test]
+    fn the_test_hook_reads_addresses_with_their_port_and_nothing_else() {
+        let (ips, port) = test_neighbors(Some("127.0.0.1:5001, 127.0.0.2:5001")).unwrap();
+        assert_eq!((ips.len(), port), (2, 5001));
+        for bad in [
+            None,
+            Some(""),
+            Some("127.0.0.1"),
+            Some("printer:80"),
+            Some("[::1]:80"),
+        ] {
+            assert!(test_neighbors(bad).is_none(), "{bad:?}");
+        }
+    }
 }
