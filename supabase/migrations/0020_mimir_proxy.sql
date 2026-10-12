@@ -28,9 +28,18 @@ create table public.mimir_limits (
   ip_daily_micros bigint not null default 2000000 check (ip_daily_micros >= 0),
   install_per_minute integer not null default 20 check (install_per_minute between 1 and 600),
   registers_per_ip_day integer not null default 3 check (registers_per_ip_day between 1 and 1000),
-  -- calls not yet settled, per install and per edition
+  -- new installs per edition per Melbourne day, whatever their addresses
+  registers_per_day integer not null default 5000 check (registers_per_day between 1 and 1000000),
+  -- requests per address per minute, refused ones included
+  ip_per_minute integer not null default 60 check (ip_per_minute between 1 and 6000),
+  -- calls not yet settled, per install, per address and per edition; the edition's is far
+  -- above any one address's share, so one network cannot hold every slot
   install_in_flight integer not null default 3 check (install_in_flight between 1 and 100),
-  edition_in_flight integer not null default 50 check (edition_in_flight between 1 and 10000),
+  ip_in_flight integer not null default 6 check (ip_in_flight between 1 and 1000),
+  edition_in_flight integer not null default 400 check (edition_in_flight between 1 and 100000),
+  -- how long an unsettled call counts as in flight: just over the edge function's wall
+  -- clock limit, so a call the runtime killed frees its slot
+  call_open_seconds integer not null default 420 check (call_open_seconds between 60 and 3600),
   -- shared session bytes an install may write per Melbourne day
   install_store_daily_bytes bigint not null default 8388608 check (install_store_daily_bytes >= 0),
   -- sha256 of the edition's registration key, and of the previous key while it rotates out
@@ -70,9 +79,13 @@ create table public.mimir_installs (
   edition text not null references public.mimir_limits (edition),
   token_hash text not null unique,
   created_at timestamptz not null default now(),
-  created_ip_hash text not null
+  created_ip_hash text not null,
+  -- the last reservation; an install never used for 7 days is removed
+  last_call_at timestamptz
 );
 create index mimir_installs_ip_idx on public.mimir_installs (created_ip_hash);
+create index mimir_installs_edition_created_idx on public.mimir_installs (edition, created_at);
+create index mimir_installs_unused_idx on public.mimir_installs (created_at) where last_call_at is null;
 
 -- One row per model call. cost_micros is null until the call settles; until then
 -- the reservation counts.
@@ -99,6 +112,18 @@ create index mimir_calls_ip_day_idx on public.mimir_calls (ip_hash, day);
 create index mimir_calls_edition_day_idx on public.mimir_calls (edition, day);
 create index mimir_calls_created_idx on public.mimir_calls (created_at);
 create index mimir_calls_open_idx on public.mimir_calls (edition, created_at) where settled_at is null;
+create index mimir_calls_ip_open_idx on public.mimir_calls (ip_hash, created_at) where settled_at is null;
+create index mimir_calls_ip_created_idx on public.mimir_calls (ip_hash, created_at);
+
+-- Refused reservations, so a refused install or address still counts toward its per-minute
+-- rate. Kept an hour.
+create table public.mimir_refusals (
+  install_id uuid not null references public.mimir_installs (id) on delete cascade,
+  ip_hash text not null,
+  created_at timestamptz not null default now()
+);
+create index mimir_refusals_install_idx on public.mimir_refusals (install_id, created_at);
+create index mimir_refusals_ip_idx on public.mimir_refusals (ip_hash, created_at);
 
 -- Shared sessions: the latest request and reply of a conversation (each turn
 -- carries the whole history, so the last one is complete).
@@ -123,10 +148,13 @@ alter table public.mimir_secret enable row level security;
 alter table public.mimir_installs enable row level security;
 alter table public.mimir_calls enable row level security;
 alter table public.mimir_sessions enable row level security;
+alter table public.mimir_refusals enable row level security;
 revoke all on public.mimir_limits, public.mimir_prices, public.mimir_secret, public.mimir_installs,
-  public.mimir_calls, public.mimir_sessions from public, anon, authenticated;
+  public.mimir_calls, public.mimir_sessions, public.mimir_refusals from public, anon, authenticated;
+-- the salt stays with the functions below, which run as their owner
+revoke all on public.mimir_secret from service_role;
 grant select, insert, update, delete on public.mimir_limits, public.mimir_prices, public.mimir_installs,
-  public.mimir_calls, public.mimir_sessions to service_role;
+  public.mimir_calls, public.mimir_sessions, public.mimir_refusals to service_role;
 
 -- The Melbourne day, which every cap counts in.
 create function public.mimir_day() returns date
@@ -134,15 +162,34 @@ language sql stable set search_path = '' as $$
   select (now() at time zone 'Australia/Melbourne')::date;
 $$;
 
--- HMAC of the IP and the Melbourne day, so counts cannot be linked across days. A call
--- without an address is refused rather than counted in a shared bucket.
+-- The Melbourne midnight that started today.
+create function public.mimir_day_start() returns timestamptz
+language sql stable set search_path = '' as $$
+  select public.mimir_day()::timestamp at time zone 'Australia/Melbourne';
+$$;
+
+-- HMAC of the address and the Melbourne day, so counts cannot be linked across days. An
+-- IPv6 address counts by its /64, since one home or server line holds the whole /64. A call
+-- without a readable address is refused rather than counted in a shared bucket.
 create function public.mimir_ip_hash(p_ip text) returns text
 language plpgsql stable security definer set search_path = '' as $$
+declare
+  v inet;
+  v_key text;
 begin
-  if nullif(btrim(coalesce(p_ip, '')), '') is null then
+  begin
+    v := btrim(p_ip)::inet;
+  exception when others then
+    v := null;
+  end;
+  if v is null then
     raise exception 'no client address' using errcode = '22023', hint = 'no_ip';
   end if;
-  return encode(extensions.hmac(convert_to(btrim(p_ip) || '|' || public.mimir_day()::text, 'UTF8'),
+  if family(v) = 6 and host(v) ~ '^::ffff:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' then
+    v := substr(host(v), 8)::inet;
+  end if;
+  v_key := case when family(v) = 4 then host(v) else host(network(set_masklen(v, 64))) || '/64' end;
+  return encode(extensions.hmac(convert_to(v_key || '|' || public.mimir_day()::text, 'UTF8'),
     (select salt from public.mimir_secret), 'sha256'), 'hex');
 end;
 $$;
@@ -178,6 +225,13 @@ begin
   if (select count(*) from public.mimir_installs where created_ip_hash = v_ip) >= v_lim.registers_per_ip_day then
     raise exception 'too many new installs from this address today' using errcode = 'P0001', hint = 'register_limit';
   end if;
+  if (select count(*) from public.mimir_installs i where i.edition = p_edition
+      and i.created_at >= public.mimir_day_start()) >= v_lim.registers_per_day then
+    raise exception 'too many new installs for this edition today' using errcode = 'P0001', hint = 'edition_register_limit';
+  end if;
+  -- installs that never made a call go after 7 days, a few at a time
+  delete from public.mimir_installs where id in (
+    select i.id from public.mimir_installs i where i.last_call_at is null and i.created_at < now() - interval '7 days' limit 100);
   insert into public.mimir_installs (edition, token_hash, created_ip_hash)
   values (p_edition, public.mimir_token_hash(v_token), v_ip)
   returning id into v_id;
@@ -252,21 +306,35 @@ begin
   if not v_lim.enabled then
     raise exception 'mimir is paused' using errcode = 'P0001', hint = 'paused';
   end if;
-  -- One reservation at a time, so two calls cannot both slip under a cap (the IP cap spans
-  -- editions, so the lock does too).
-  perform pg_advisory_xact_lock(hashtext('public.mimir_reserve'));
+  -- Rates first and outside the lock, so refused traffic does not queue behind it. Refused
+  -- requests count too (mimir_refused).
   if (select count(*) from public.mimir_calls
+      where install_id = v_inst.id and created_at > now() - interval '1 minute')
+    + (select count(*) from public.mimir_refusals
       where install_id = v_inst.id and created_at > now() - interval '1 minute') >= v_lim.install_per_minute then
     raise exception 'too many requests' using errcode = 'P0001', hint = 'install_rate';
   end if;
-  -- A call that never settled stops counting as in flight after 15 minutes; its
+  if (select count(*) from public.mimir_calls
+      where ip_hash = v_ip and created_at > now() - interval '1 minute')
+    + (select count(*) from public.mimir_refusals
+      where ip_hash = v_ip and created_at > now() - interval '1 minute') >= v_lim.ip_per_minute then
+    raise exception 'too many requests from this address' using errcode = 'P0001', hint = 'ip_rate';
+  end if;
+  -- One reservation at a time, so two calls cannot both slip under a cap (the IP cap spans
+  -- editions, so the lock does too).
+  perform pg_advisory_xact_lock(hashtext('public.mimir_reserve'));
+  -- A call that never settled stops counting as in flight after call_open_seconds; its
   -- reservation still counts against the caps.
   if (select count(*) from public.mimir_calls where install_id = v_inst.id and settled_at is null
-      and created_at > now() - interval '15 minutes') >= v_lim.install_in_flight then
+      and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.install_in_flight then
     raise exception 'too many calls at once' using errcode = 'P0001', hint = 'install_busy';
   end if;
+  if (select count(*) from public.mimir_calls where ip_hash = v_ip and settled_at is null
+      and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.ip_in_flight then
+    raise exception 'too many calls at once from this address' using errcode = 'P0001', hint = 'ip_busy';
+  end if;
   if (select count(*) from public.mimir_calls where edition = v_inst.edition and settled_at is null
-      and created_at > now() - interval '15 minutes') >= v_lim.edition_in_flight then
+      and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.edition_in_flight then
     raise exception 'too many calls at once for this edition' using errcode = 'P0001', hint = 'edition_busy';
   end if;
   select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) into v_edition_used from public.mimir_calls
@@ -290,7 +358,25 @@ begin
   insert into public.mimir_calls (day, edition, install_id, ip_hash, reserved_micros)
   values (v_day, v_inst.edition, v_inst.id, v_ip, p_max_micros)
   returning id into v_id;
+  update public.mimir_installs set last_call_at = now() where id = v_inst.id;
   return v_id;
+end;
+$$;
+
+-- Records a refused reservation for the install holding p_token, from p_ip, so it counts
+-- toward the per-minute rates. Clears refusals over an hour old a few at a time.
+create function public.mimir_refused(p_token text, p_ip text) returns void
+language plpgsql volatile security definer set search_path = '' as $$
+declare
+  v_id uuid;
+begin
+  select id into v_id from public.mimir_installs where token_hash = public.mimir_token_hash(p_token);
+  if not found then
+    return;
+  end if;
+  insert into public.mimir_refusals (install_id, ip_hash) values (v_id, public.mimir_ip_hash(p_ip));
+  delete from public.mimir_refusals where ctid in (
+    select ctid from public.mimir_refusals where created_at < now() - interval '1 hour' limit 20);
 end;
 $$;
 
@@ -331,6 +417,8 @@ begin
   if not found or v_call.settled_at is null or v_call.stored_bytes is not null then
     raise exception 'unknown, open or stored call' using errcode = '22023', hint = 'invalid';
   end if;
+  -- one store at a time per install, so the day's sum below holds
+  perform 1 from public.mimir_installs where id = v_call.install_id for update;
   select * into v_lim from public.mimir_limits where edition = v_call.edition;
   if v_bytes > 262144 or (select coalesce(sum(stored_bytes), 0) from public.mimir_calls
       where install_id = v_call.install_id and day = v_call.day) + v_bytes > v_lim.install_store_daily_bytes then
@@ -395,14 +483,15 @@ begin
 end;
 $$;
 
-revoke execute on function public.mimir_day(), public.mimir_ip_hash(text), public.mimir_token_hash(text),
-  public.mimir_install_cap(public.mimir_limits, bigint),
+revoke execute on function public.mimir_day(), public.mimir_day_start(), public.mimir_ip_hash(text), public.mimir_token_hash(text),
+  public.mimir_install_cap(public.mimir_limits, bigint), public.mimir_refused(text, text),
   public.mimir_register(text, text, text), public.mimir_reserve(text, text, text, bigint, bigint, integer),
   public.mimir_cost(text, bigint, bigint, bigint, bigint, integer),
   public.mimir_settle(uuid, text, bigint, bigint, bigint, bigint, integer),
   public.mimir_store_session(uuid, text, text, text, jsonb), public.mimir_forget(text),
   public.mimir_quota(text, text) from public, anon, authenticated;
 grant execute on function public.mimir_register(text, text, text), public.mimir_reserve(text, text, text, bigint, bigint, integer),
+  public.mimir_refused(text, text),
   public.mimir_settle(uuid, text, bigint, bigint, bigint, bigint, integer),
   public.mimir_store_session(uuid, text, text, text, jsonb), public.mimir_forget(text),
   public.mimir_quota(text, text) to service_role;
