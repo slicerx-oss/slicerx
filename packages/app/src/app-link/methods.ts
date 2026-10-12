@@ -122,12 +122,24 @@ function setPreview(args: Record<string, unknown>) {
   return previewState()
 }
 
+/**
+ * The bed the plate is laid out on, in the plate's coordinates (its front left corner at 0, 0): a round bed (a delta)
+ * by its diameter and middle, any other by its width and depth. Objects' minMm and maxMm read against it.
+ */
+function bedShape() {
+  const b = get().bed
+  return b.round
+    ? { shape: 'round', diameterMm: round(Math.min(b.widthMm, b.depthMm)), heightMm: round(b.heightMm), centerMm: [round(b.widthMm / 2), round(b.depthMm / 2)] }
+    : { shape: 'rectangle', widthMm: round(b.widthMm), depthMm: round(b.depthMm), heightMm: round(b.heightMm) }
+}
+
 const HANDLERS: Record<string, Handler> = {
   'app.info': () => {
     const s = get()
     return { app: appName(), tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS }
   },
   'plate.list': () => ({
+    bed: bedShape(),
     objects: get().plate.map((e) => {
       const b = bounds(e.parts, e.transform)
       return {
