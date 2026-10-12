@@ -35,8 +35,6 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.boolean': 'edit',
   'geom.fillet': 'edit',
   'geom.chamfer': 'edit',
-  'geom.info': 'read',
-  'geom.measure': 'read',
 }
 
 /** A refusal with a code the hub passes on (invalid_input, not_found, not_ready, refused, busy). */
@@ -160,7 +158,17 @@ export async function useDesignHost(loader: Loader): Promise<void> {
 
 const TOOL_CODES = new Set(['invalid_input', 'not_found'])
 
+/** An agent's edit waits for the person: not while they edit a step of that object, or while it replays. */
+async function personBusy(design: unknown): Promise<boolean> {
+  if (typeof design !== 'string') return false
+  const { replaying } = await import('../cad/history/ops')
+  return get().historyEdit?.objectId === design || replaying(design)
+}
+
 async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): Promise<unknown> {
+  if (APP_LINK_METHODS[tool.name] === 'edit' && (await personBusy(args['design']))) {
+    throw new LinkError('busy', 'the person is changing that object in the app; try again when they are done')
+  }
   const parsed = tool.input.safeParse(args)
   if (!parsed.success) throw new LinkError('invalid_input', parsed.error.issues.map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; '))
   try {
