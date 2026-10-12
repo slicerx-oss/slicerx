@@ -8,6 +8,7 @@ import { stepName, type HistoryMesh, type PaintLayer, type PaintTarget, type Ste
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { designArg, designSummary, type Design, type Designs } from './design'
+import { faceAt } from './design-tools'
 import { ToolInputError } from './models'
 
 type V3 = [number, number, number]
@@ -150,7 +151,7 @@ export function paintTools(designs: Designs): PilotTool<never>[] {
       let part = i.part ?? -1
       if (target.kind === 'seed') {
         // The seed's face, kept by its key as push steps keep theirs, and the part it is on.
-        const at = designs.faceAt(d, target.point)
+        const at = faceAt(d, target.point)
         part = at.part
         target = { ...target, ...(at.key ? { faceKey: at.key } : {}) }
       }
