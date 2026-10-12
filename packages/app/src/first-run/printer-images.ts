@@ -39,6 +39,7 @@ export const IMAGE_IDS: ReadonlySet<string> = new Set([
   'elegoo-neptune-4',
   'flsun-v400',
   'prusa-core-one',
+  'prusa-core-one-l',
   'prusa-mini-plus',
   'prusa-mk4',
   'prusa-mk4s',

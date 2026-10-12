@@ -328,6 +328,17 @@ describe('the Bambu Lab H2D Pro and X2D', () => {
   })
 })
 
+describe('the Prusa Core One L', () => {
+  it('is found by a client and comes with its own machine settings', async () => {
+    const h = await connect()
+    const hits = data<{ output: { id: string }[] }>(await h.call('slicerx_printer_profile_search', { query: 'prusa core one l' }))
+    expect(hits.output.map((x) => x.id)).toContain('prusa-core-one-l')
+    const p = data<{ config: Record<string, unknown> }>(await h.call('slicerx_get_profile', { profile: 'machine:prusa-core-one-l' }))
+    expect(p.config['printable_height']).toBe(331)
+    expect(p.config['gcode_flavor']).toBe('marlin2')
+  })
+})
+
 describe('theming', () => {
   it('returns a built-in theme with a stylesheet and passing contrast', async () => {
     const h = await connect()

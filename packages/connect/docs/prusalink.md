@@ -1,6 +1,6 @@
 # PrusaLink
 
-Connects to Prusa printers that run PrusaLink: MK4S, MK4, MK3.9, MINI+, XL and Core One. The MK3.5 and Core One L are not in the printer list yet. It needs firmware 4.7.0 or later, and 5.1.0 or later on the MINI. Status, temperatures, uploads to a USB drive, start, pause, resume, cancel and camera snapshots. Prusa Connect (the cloud service) is not used.
+Connects to Prusa printers that run PrusaLink: MK4S, MK4, MK3.9, MINI+, XL and Core One. The MK3.5 is not in the printer list yet. It needs firmware 4.7.0 or later, and 5.1.0 or later on the MINI. Status, temperatures, uploads to a USB drive, start, pause, resume, cancel and camera snapshots. Prusa Connect (the cloud service) is not used.
 
 ## For users
 
