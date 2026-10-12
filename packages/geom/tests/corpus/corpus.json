@@ -8,6 +8,7 @@
     { "path": "packages/geom/tests/corpus/two-colors.obj", "made": "SlicerX (make.py)" },
     { "path": "packages/geom/tests/corpus/two-materials.amf", "made": "SlicerX (make.py)" },
     { "path": "packages/geom/tests/corpus/subtypes.3mf", "made": "SlicerX, Bambu Studio layout (make.py)" },
+    { "path": "packages/geom/tests/corpus/textured-cube.3mf", "made": "SlicerX, 3MF materials extension texture (make.py)" },
     { "path": "packages/geom/tests/corpus/bambu-subtypes.3mf", "made": "Bambu Studio 2.8 CLI, from subtypes.3mf" },
     { "path": "packages/geom/tests/corpus/orca-subtypes.3mf", "made": "OrcaSlicer 2.4 CLI, from subtypes.3mf" },
     { "path": "packages/geom/tests/corpus/prusa-subtypes.3mf", "made": "PrusaSlicer 2.9 CLI, from subtypes.3mf" },

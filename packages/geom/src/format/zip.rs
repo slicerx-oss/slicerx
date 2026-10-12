@@ -131,6 +131,11 @@ impl<'a> Zip<'a> {
         self.entry(name).is_some()
     }
 
+    /// an entry's inflated size, when the archive has it
+    pub fn size(&self, name: &str) -> Option<usize> {
+        self.entry(name).map(|e| e.size)
+    }
+
     fn entry(&self, name: &str) -> Option<&Entry> {
         let name = name.trim_start_matches('/');
         self.entries

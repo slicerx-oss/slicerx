@@ -59,6 +59,90 @@ impl Paint {
     }
 }
 
+/// a `<texture2d>` of the materials extension. the image stays in the archive and is read on demand with
+/// [`Texture2d::read`], so a large textured project holds no image memory until something samples it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Texture2d {
+    /// the model part whose resources hold it; resource ids are unique only within one model part
+    pub model: String,
+    pub id: u32,
+    /// the archive entry, without a leading slash
+    pub path: String,
+    pub content_type: String,
+    /// the entry's inflated size in bytes
+    pub size: u64,
+    pub tilestyle_u: Option<String>,
+    pub tilestyle_v: Option<String>,
+    pub filter: Option<String>,
+}
+
+impl Texture2d {
+    /// the image's bytes, from the archive the project was read from
+    pub fn read(&self, archive: &[u8]) -> Result<Vec<u8>> {
+        read_entry(archive, &self.path)
+    }
+}
+
+/// a `<texture2dgroup>`: texture coordinates into one texture, which triangle corners index
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TextureGroup {
+    /// the model part whose resources hold it
+    pub model: String,
+    pub id: u32,
+    /// the id of the [`Texture2d`] in the same model part
+    pub texture: u32,
+    /// `(u, v)` per `<tex2coord>`, in order
+    pub uvs: Vec<[f32; 2]>,
+}
+
+/// the textures of every model part the build reaches, ordered by model part, then id
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Textures {
+    pub images: Vec<Texture2d>,
+    pub groups: Vec<TextureGroup>,
+}
+
+impl Textures {
+    pub fn is_empty(&self) -> bool {
+        self.images.is_empty() && self.groups.is_empty()
+    }
+
+    pub fn group(&self, model: &str, id: u32) -> Option<&TextureGroup> {
+        self.groups.iter().find(|g| g.model == model && g.id == id)
+    }
+
+    pub fn image(&self, model: &str, id: u32) -> Option<&Texture2d> {
+        self.images.iter().find(|t| t.model == model && t.id == id)
+    }
+}
+
+/// the property references of a part's triangles (`pid` and `p1` to `p3`): into a texture group, or into a color
+/// group or base materials, which are kept as references and not read here
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PartUv {
+    /// the model part whose resources the ids name
+    pub model: String,
+    /// the object's own `pid` and `pindex`, which a triangle without its own takes on all three corners
+    pub default: Option<(u32, u32)>,
+    /// `(triangle, pid, [p1, p2, p3])` for the triangles that name their own, by triangle. a missing `pid` is the
+    /// object's, a missing `p1` the object's `pindex`, and a missing `p2` or `p3` is `p1`.
+    pub triangles: Vec<(u32, u32, [u32; 3])>,
+}
+
+impl PartUv {
+    pub fn is_empty(&self) -> bool {
+        self.default.is_none() && self.triangles.is_empty()
+    }
+
+    /// the property group of one triangle and the index of each corner in it
+    pub fn of(&self, triangle: u32) -> Option<(u32, [u32; 3])> {
+        match self.triangles.binary_search_by_key(&triangle, |t| t.0) {
+            Ok(i) => self.triangles.get(i).map(|t| (t.1, t.2)),
+            Err(_) => self.default.map(|(pid, p)| (pid, [p; 3])),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Part {
     /// the mesh object's id in its model file
@@ -77,6 +161,8 @@ pub struct Part {
     pub positions: Vec<[f32; 3]>,
     pub triangles: Vec<[u32; 3]>,
     pub paint: Paint,
+    /// texture coordinates and other property references, by triangle; empty on an untextured part
+    pub uv: PartUv,
     pub settings: Vec<(String, String)>,
     /// component transforms from the object down to this mesh, outermost first
     pub chain: Vec<Transform>,
@@ -148,6 +234,8 @@ pub struct Project {
     /// a model part declares a document type, which a 3mf never needs
     pub doctype: bool,
     pub files: Files,
+    /// the materials extension's textures; a part's [`PartUv`] indexes them
+    pub textures: Textures,
     pub entries: Vec<String>,
     pub notes: Vec<String>,
 }
@@ -273,7 +361,26 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
     }
     let mut notes = Vec::new();
     let doctype = models.values().any(|m| m.doctype);
-    let objects = objects_of(&build, placed, &mut models, &root, &meta, &mut notes);
+    let mut paths: Vec<String> = models.keys().cloned().collect();
+    paths.sort();
+    let mut textures = Textures::default();
+    // per model part: property ids dropped, and those of other property resources
+    let mut refs: HashMap<String, (Vec<u32>, Vec<u32>)> = HashMap::new();
+    for path in &paths {
+        if let Some(m) = models.get_mut(path) {
+            textures.images.append(&mut m.images);
+            textures.groups.append(&mut m.groups);
+            notes.append(&mut m.notes);
+            refs.insert(
+                path.clone(),
+                (std::mem::take(&mut m.dropped), std::mem::take(&mut m.other_props)),
+            );
+        }
+    }
+    let mut objects = objects_of(&build, placed, &mut models, &root, &meta, &mut notes);
+    for part in objects.iter_mut().flat_map(|o| o.parts.iter_mut()) {
+        settle_uv(part, &textures, refs.get(&part.uv.model), &mut notes);
+    }
     Ok(Project {
         objects,
         plates: meta.plates,
@@ -282,9 +389,44 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
         metadata,
         doctype,
         files,
+        textures,
         entries: zip.names().map(str::to_owned).collect(),
         notes,
     })
+}
+
+/// a part's property references that name a dropped resource, no resource, or a coordinate past their texture
+/// group are left out, with one note per part
+fn settle_uv(
+    part: &mut Part,
+    textures: &Textures,
+    refs: Option<&(Vec<u32>, Vec<u32>)>,
+    notes: &mut Vec<String>,
+) {
+    if part.uv.is_empty() {
+        return;
+    }
+    let model = part.uv.model.as_str();
+    let ok = |pid: u32, p: &[u32]| match textures.group(model, pid) {
+        Some(g) => p.iter().all(|&i| (i as usize) < g.uvs.len()),
+        None => refs.is_some_and(|(dropped, other)| other.contains(&pid) && !dropped.contains(&pid)),
+    };
+    let mut left = 0usize;
+    if let Some((pid, i)) = part.uv.default
+        && !ok(pid, &[i])
+    {
+        part.uv.default = None;
+        left += 1;
+    }
+    let before = part.uv.triangles.len();
+    part.uv.triangles.retain(|&(_, pid, p)| ok(pid, &p));
+    left += before - part.uv.triangles.len();
+    if left > 0 {
+        notes.push(format!(
+            "{}: {left} property references name a resource that is missing, left out, or too short; left out",
+            part.name
+        ));
+    }
 }
 
 /// each build item with its parts; a mesh placed once moves into its part, one placed more often is copied
@@ -342,6 +484,7 @@ fn objects_of(
                     part.range = Some((first, last));
                     part.chain.clone_from(&leaf.chain);
                     part.transformed = leaf.transformed;
+                    part.uv.model.clone_from(&leaf.path);
                     info.fill(&mut part, notes);
                     parts.push(part);
                 }
@@ -351,6 +494,7 @@ fn objects_of(
             part.id = leaf.id;
             part.chain = leaf.chain;
             part.transformed = leaf.transformed;
+            part.uv.model = leaf.path;
             if let Some(info) = own.and_then(|o| o.parts.get(&leaf.id)) {
                 info.fill(&mut part, notes);
             }
@@ -400,6 +544,10 @@ struct MeshObject {
     positions: Vec<[f32; 3]>,
     triangles: Vec<[u32; 3]>,
     paint: Paint,
+    /// property references; `model` is filled in when the object becomes a part
+    uv: PartUv,
+    /// triangles whose property references did not read, dropped with one note
+    bad_uv: usize,
     /// (object id, model path, transform); an empty path is this model
     components: Vec<(u32, String, Transform, bool)>,
     metadata: Vec<(String, String)>,
@@ -413,6 +561,7 @@ impl MeshObject {
             positions: std::mem::take(&mut self.positions),
             triangles: std::mem::take(&mut self.triangles),
             paint: std::mem::take(&mut self.paint),
+            uv: std::mem::take(&mut self.uv),
             ..Part::default()
         }
     }
@@ -424,6 +573,7 @@ impl MeshObject {
             positions: self.positions.clone(),
             triangles: self.triangles.clone(),
             paint: self.paint.clone(),
+            uv: self.uv.clone(),
             ..Part::default()
         }
     }
@@ -454,12 +604,24 @@ impl MeshObject {
                 *k -= first;
             }
         }
+        let uv = PartUv {
+            model: String::new(),
+            default: self.uv.default,
+            triangles: self
+                .uv
+                .triangles
+                .iter()
+                .filter(|t| (first..=last).contains(&t.0))
+                .map(|&(k, pid, p)| (k - first, pid, p))
+                .collect(),
+        };
         Part {
             name: self.name.clone(),
             mesh_name: self.name.clone(),
             positions,
             triangles,
             paint,
+            uv,
             ..Part::default()
         }
     }
@@ -472,6 +634,14 @@ struct Model {
     unit_scale: f32,
     metadata: Vec<(String, String)>,
     doctype: bool,
+    /// texture2d resources, `model` and `size` not yet filled in
+    images: Vec<Texture2d>,
+    groups: Vec<TextureGroup>,
+    /// ids of the other property resources (color groups, base materials, composites, multiproperties)
+    other_props: Vec<u32>,
+    /// ids of property resources dropped because they did not read
+    dropped: Vec<u32>,
+    notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -521,6 +691,7 @@ fn load_model(zip: &Zip<'_>, path: &str) -> Result<Model> {
         },
         current: None,
         meta_name: None,
+        group: None,
     };
     let mut buf: Vec<u8> = Vec::new();
     let mut head = true;
@@ -569,7 +740,53 @@ fn load_model(zip: &Zip<'_>, path: &str) -> Result<Model> {
     if let Some((id, o)) = p.current.take() {
         p.model.objects.insert(id, o);
     }
-    Ok(p.model)
+    if let Some((g, _)) = p.group.take() {
+        p.model.dropped.push(g.id);
+        p.model
+            .notes
+            .push(format!("texture group {} is not closed; left out", g.id));
+    }
+    let mut m = p.model;
+    settle_textures(zip, path, &mut m);
+    Ok(m)
+}
+
+/// textures whose image is in the archive, and groups whose texture is kept; the rest dropped with a note
+fn settle_textures(zip: &Zip<'_>, path: &str, m: &mut Model) {
+    let mut images = Vec::with_capacity(m.images.len());
+    for mut t in std::mem::take(&mut m.images) {
+        if let Some(size) = zip.size(&t.path) {
+            path.clone_into(&mut t.model);
+            t.size = size as u64;
+            images.push(t);
+        } else {
+            m.notes.push(format!(
+                "texture {} names {}, which the archive lacks; left out",
+                t.id, t.path
+            ));
+            m.dropped.push(t.id);
+        }
+    }
+    let mut groups = Vec::with_capacity(m.groups.len());
+    for mut g in std::mem::take(&mut m.groups) {
+        if images.iter().any(|t| t.id == g.texture) {
+            path.clone_into(&mut g.model);
+            groups.push(g);
+        } else {
+            m.notes.push(format!(
+                "texture group {} uses texture {}, which is missing or left out; left out",
+                g.id, g.texture
+            ));
+            m.dropped.push(g.id);
+        }
+    }
+    images.sort_by_key(|t| t.id);
+    groups.sort_by_key(|g| g.id);
+    m.images = images;
+    m.groups = groups;
+    for n in &mut m.notes {
+        *n = format!("{path}: {n}");
+    }
 }
 
 struct ModelParser {
@@ -577,6 +794,22 @@ struct ModelParser {
     current: Option<(u32, MeshObject)>,
     /// the name of an open `<metadata>`
     meta_name: Option<String>,
+    /// an open `<texture2dgroup>`, and whether a coordinate in it failed to read
+    group: Option<(TextureGroup, bool)>,
+}
+
+/// a property index or id as the file writes it; `None` when absent, `Err` when it does not read
+fn prop(v: Option<&str>) -> std::result::Result<Option<u32>, ()> {
+    v.map(|v| xml::u32_of(v).ok_or(())).transpose()
+}
+
+/// a triangle's `pid` and corner indices with the object's defaults; `None` when one does not read or none is
+/// given where the spec needs one
+fn resolve_props(props: [Option<&str>; 4], default: Option<(u32, u32)>) -> Option<(u32, [u32; 3])> {
+    let [pid, p1, p2, p3] = props.map(prop);
+    let pid = pid.ok()?.or(default.map(|d| d.0))?;
+    let p1 = p1.ok()?.or(default.map(|d| d.1))?;
+    Some((pid, [p1, p2.ok()?.unwrap_or(p1), p3.ok()?.unwrap_or(p1)]))
 }
 
 fn id_of(t: &Tag<'_>, key: &str, owner: u32) -> std::result::Result<u32, Refused> {
@@ -619,7 +852,20 @@ impl ModelParser {
             let mut v = [None; 3];
             // paint by layer, the first name of each pair preferred
             let mut paint: [(u8, &str); 4] = [(0, ""); 4];
+            // pid, p1, p2, p3 as written
+            let mut props: [Option<&str>; 4] = [None; 4];
             for (key, val) in xml::attrs(t.attrs) {
+                let at = match key {
+                    "pid" => Some(0),
+                    "p1" => Some(1),
+                    "p2" => Some(2),
+                    "p3" => Some(3),
+                    _ => None,
+                };
+                if let Some(slot) = at.and_then(|i| props.get_mut(i)) {
+                    *slot = Some(val);
+                    continue;
+                }
                 let (slot, layer, rank) = match key {
                     "v1" => (Some(0), 0, 0),
                     "v2" => (Some(1), 0, 0),
@@ -653,46 +899,142 @@ impl ModelParser {
                     layer.push((at, code.to_owned()));
                 }
             }
+            if props.iter().any(Option::is_some) {
+                match resolve_props(props, o.uv.default) {
+                    Some((pid, p)) => o.uv.triangles.push((at, pid, p)),
+                    None => o.bad_uv += 1,
+                }
+            }
             o.triangles.push(tri);
         }
         Ok(())
+    }
+
+    /// a `<texture2d>`; one that does not read is left out with a note
+    fn texture(&mut self, t: &Tag<'_>) {
+        let id = prop(t.attr("id"));
+        let path = t
+            .attr("path")
+            .map(|p| xml::unescape(p).trim_start_matches('/').to_owned());
+        match (id, path) {
+            (Ok(Some(id)), Some(path)) if !path.is_empty() => self.model.images.push(Texture2d {
+                id,
+                path,
+                content_type: xml::unescape(t.attr("contenttype").unwrap_or("")),
+                tilestyle_u: t.attr("tilestyleu").map(xml::unescape),
+                tilestyle_v: t.attr("tilestylev").map(xml::unescape),
+                filter: t.attr("filter").map(xml::unescape),
+                ..Texture2d::default()
+            }),
+            (id, _) => {
+                let id = id.ok().flatten();
+                self.model.notes.push(format!(
+                    "texture {} has no id or path that reads; left out",
+                    id.map_or_else(|| "?".to_owned(), |i| i.to_string())
+                ));
+                if let Some(id) = id {
+                    self.model.dropped.push(id);
+                }
+            }
+        }
+    }
+
+    /// an `<object>` opening or closing, with its default property
+    fn object(&mut self, t: &Tag<'_>) -> std::result::Result<(), Refused> {
+        if t.opens() {
+            let id = id_of(t, "id", 0)?;
+            let mut o = MeshObject {
+                name: xml::unescape(t.attr("name").unwrap_or("")),
+                ..MeshObject::default()
+            };
+            match (prop(t.attr("pid")), prop(t.attr("pindex"))) {
+                (Ok(None), Ok(None)) => {}
+                (Ok(Some(pid)), Ok(Some(pindex))) => o.uv.default = Some((pid, pindex)),
+                _ => self.model.notes.push(format!(
+                    "object {id}: its pid or pindex does not read; its default property left out"
+                )),
+            }
+            self.current = Some((id, o));
+        }
+        if t.closes()
+            && let Some((id, o)) = self.current.take()
+        {
+            let n = o.positions.len();
+            if let Some(k) = o
+                .triangles
+                .iter()
+                .position(|tri| tri.iter().any(|&i| i as usize >= n))
+            {
+                return Err(Refused("index", id, k, n.to_string()));
+            }
+            if o.bad_uv > 0 {
+                self.model.notes.push(format!(
+                    "object {id}: {} triangles name properties that do not read; left out",
+                    o.bad_uv
+                ));
+            }
+            self.model.objects.insert(id, o);
+        }
+        Ok(())
+    }
+
+    /// a `<texture2dgroup>` opening or closing; one that does not read is left out with a note
+    fn texture_group(&mut self, t: &Tag<'_>) {
+        if t.opens() {
+            let (id, texture) = (prop(t.attr("id")), prop(t.attr("texid")));
+            let ok = matches!((id, texture), (Ok(Some(_)), Ok(Some(_))));
+            let group = TextureGroup {
+                id: id.ok().flatten().unwrap_or(u32::MAX),
+                texture: texture.ok().flatten().unwrap_or(u32::MAX),
+                ..TextureGroup::default()
+            };
+            self.group = Some((group, !ok));
+        }
+        if t.closes()
+            && let Some((g, broken)) = self.group.take()
+        {
+            if broken {
+                self.model.notes.push(format!(
+                    "texture group {} has an id, texture or coordinate that does not read; left out",
+                    g.id
+                ));
+                self.model.dropped.push(g.id);
+            } else {
+                self.model.groups.push(g);
+            }
+        }
+    }
+
+    /// a `<tex2coord>` of the open texture group
+    fn tex2coord(&mut self, t: &Tag<'_>) {
+        if let Some((g, broken)) = self.group.as_mut() {
+            let uv = |key| t.attr(key).and_then(xml::f32_of).filter(|f| f.is_finite());
+            match (uv("u"), uv("v")) {
+                (Some(u), Some(v)) => g.uvs.push([u, v]),
+                _ => *broken = true,
+            }
+        }
     }
 
     fn tag(&mut self, t: &Tag<'_>) -> std::result::Result<(), Refused> {
         match t.name {
             "vertex" if t.opens() => self.vertex(t)?,
             "triangle" if t.opens() => self.triangle(t)?,
-            "object" => {
-                if t.opens() {
-                    let id = id_of(t, "id", 0)?;
-                    self.current = Some((
-                        id,
-                        MeshObject {
-                            name: xml::unescape(t.attr("name").unwrap_or("")),
-                            ..MeshObject::default()
-                        },
-                    ));
-                }
-                if t.closes()
-                    && let Some((id, o)) = self.current.take()
-                {
-                    let n = o.positions.len();
-                    if let Some(k) = o
-                        .triangles
-                        .iter()
-                        .position(|tri| tri.iter().any(|&i| i as usize >= n))
-                    {
-                        return Err(Refused("index", id, k, n.to_string()));
-                    }
-                    self.model.objects.insert(id, o);
-                }
-            }
+            "object" => self.object(t)?,
             "component" if t.opens() => {
                 if let Some((owner, o)) = self.current.as_mut() {
                     let id = id_of(t, "objectid", *owner)?;
                     let path = t.attr("p:path").unwrap_or("").trim_start_matches('/').to_owned();
                     let tr = transform(t.attr("transform"), *owner, o.components.len())?;
                     o.components.push((id, path, tr, t.attr("transform").is_some()));
+                }
+            }
+            "texture2d" if t.opens() => self.texture(t),
+            "texture2dgroup" => self.texture_group(t),
+            "tex2coord" if t.opens() => self.tex2coord(t),
+            "colorgroup" | "basematerials" | "compositematerials" | "multiproperties" if t.opens() => {
+                if let Ok(Some(id)) = prop(t.attr("id")) {
+                    self.model.other_props.push(id);
                 }
             }
             "item" if t.opens() => {
