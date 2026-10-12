@@ -37,7 +37,7 @@ export function lookupTool(): PilotTool<never> {
     input: z.object({
       title: z.string().min(2).max(60),
       fields: z.array(z.tuple([z.string().min(1).max(32), z.string().min(1).max(80)])).min(1).max(4),
-      source: z.object({ title: z.string().min(1).max(80), url: z.url() }),
+      source: z.object({ title: z.string().min(1).max(80), url: z.url({ protocol: /^https?$/ }) }),
     }),
     args: (i) => `"${i.title}"`,
     async run(i) {

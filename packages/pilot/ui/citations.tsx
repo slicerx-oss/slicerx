@@ -3,7 +3,7 @@
 import type { Citation } from '@slicerx/contracts'
 
 // Titles and URLs come from the model and web search, so only plain web links become anchors.
-function safeUrl(url: string | undefined): string | null {
+export function safeUrl(url: string | undefined): string | null {
   if (!url) return null
   try {
     const u = new URL(url)
