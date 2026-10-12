@@ -29,7 +29,6 @@ import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice 
 import { useAskForPrinter } from './first-run/ask-printer'
 import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
-import { enableMultiBodyPrompt } from './state/multi-body'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
 import { updaterRegistered } from './updates/hold'
@@ -188,8 +187,18 @@ function Shell() {
   const projectsOpen = useApp((s) => s.projectsDialog !== null)
   const unsavedOpen = useApp((s) => s.unsavedPrompt !== null)
   const multiBodyOpen = useApp((s) => s.multiBodyPrompt !== null)
-  // A model file of several bodies asks how to load them while the app shows.
-  useEffect(() => enableMultiBodyPrompt(), [])
+  // A model file of several bodies asks how to load them while the app shows. Loaded after first paint, with the import.
+  useEffect(() => {
+    let off: (() => void) | undefined
+    let gone = false
+    void import('./state/multi-body').then((m) => {
+      if (!gone) off = m.enableMultiBodyPrompt()
+    })
+    return () => {
+      gone = true
+      off?.()
+    }
+  }, [])
   const projectGcodeOpen = useApp((s) => s.projectGcode?.asking === true)
   const projectOpenAsk = useApp((s) => s.projectOpenAsk !== null)
   const settingsOpen = useApp((s) => s.settingsOpen)
