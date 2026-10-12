@@ -8,15 +8,13 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { readFileSync } from 'node:fs'
 import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type StepParams } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost } from '@slicerx/cad-history'
-import { designArg, designSummary, faceAt, item, partAt, type Design } from './design'
-import { geomCaller, modelArg, vec3, type GeomToolDeps } from './geom'
-import { readStlPositions } from './mesh'
-import { resolveModel, ToolInputError } from './models'
+import { modelArg, vec3, type GeomCall } from './args'
+import { designArg, designSummary, faceAt, item, partAt, type Design } from './design-tools'
+import { ToolInputError } from './errors'
 
 type V3 = [number, number, number]
 
@@ -58,7 +56,6 @@ function soupTriangles(pos: ArrayLike<number>): Tri[] {
   return out
 }
 
-const triangles = (stlPath: string): Tri[] => soupTriangles(readStlPositions(readFileSync(stlPath)))
 
 /** An indexed part as triangles, in triangle order. */
 function partTriangles(m: Pick<HistoryMesh, 'positions' | 'indices'>): Tri[] {
@@ -274,9 +271,22 @@ function stepOut(d: Design, verb: string): { summary: string; output: Record<str
   return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}`, output: designSummary(d) }
 }
 
-export function cadTools(deps: GeomToolDeps & { designs?: DesignHost | undefined }): PilotTool<never>[] {
-  const call = geomCaller(deps)
-  const path = (model: string): Promise<string> => resolveModel(deps.policy, model)
+/**
+ * What the CAD tools do with model files, which only the server has: the engine on STL files, a model's path, and an
+ * STL's triangle soup. In the app every call answers that files are for the server; designs work the same in both.
+ */
+export interface CadFiles {
+  /** True when the engine runs on files here (the sx-geom program). */
+  engine: boolean
+  call: GeomCall
+  path(model: string): Promise<string>
+  stl(stlPath: string): Float32Array
+}
+
+export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined }): PilotTool<never>[] {
+  const call = deps.files.call
+  const path = (model: string): Promise<string> => deps.files.path(model)
+  const triangles = (stlPath: string): Tri[] => soupTriangles(deps.files.stl(stlPath))
   const designOf = (id: string): Design => {
     if (!deps.designs) throw new ToolInputError('Designs need the sx-geom engine, which this server did not find.', 'not_supported')
     return deps.designs.get(id)
@@ -400,7 +410,7 @@ export function cadTools(deps: GeomToolDeps & { designs?: DesignHost | undefined
     description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. There is no constraint solver; positions are as typed.',
     input: z.object({ loops }),
     async run(i) {
-      const out = deps.designs && !deps.bin ? await engine('sketch.check', { loops: i.loops }) : await call('sketch.check', { loops: i.loops })
+      const out = deps.designs && !deps.files.engine ? await engine('sketch.check', { loops: i.loops }) : await call('sketch.check', { loops: i.loops })
       return { ok: out['ok'] === true, summary: out['ok'] === true ? `The sketch is closed, ${String(out['areaMm2'])} mm2` : `The sketch has ${Array.isArray(out['issues']) ? out['issues'].length : 0} problem(s)`, output: out }
     },
   })
