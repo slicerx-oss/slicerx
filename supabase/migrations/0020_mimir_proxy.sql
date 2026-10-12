@@ -28,14 +28,19 @@ create table public.mimir_limits (
   ip_daily_micros bigint not null default 2000000 check (ip_daily_micros >= 0),
   install_per_minute integer not null default 20 check (install_per_minute between 1 and 600),
   registers_per_ip_day integer not null default 3 check (registers_per_ip_day between 1 and 1000),
+  -- the same per IPv6 /48, the block one site or tunnel gets: many /64s, one owner
+  registers_per_net_day integer not null default 20 check (registers_per_net_day between 1 and 100000),
+  net_daily_micros bigint not null default 6000000 check (net_daily_micros >= 0),
   -- new installs per edition per Melbourne day, whatever their addresses
   registers_per_day integer not null default 5000 check (registers_per_day between 1 and 1000000),
   -- requests per address per minute, refused ones included
   ip_per_minute integer not null default 60 check (ip_per_minute between 1 and 6000),
-  -- calls not yet settled, per install, per address and per edition; the edition's is far
-  -- above any one address's share, so one network cannot hold every slot
+  -- calls not yet settled, per install, per address, per IPv6 /48 and per edition; the
+  -- edition's is far above any one network's share, so one network cannot hold every slot.
+  -- An IPv4 address behind carrier NAT is many people, so its share is not too tight.
   install_in_flight integer not null default 3 check (install_in_flight between 1 and 100),
-  ip_in_flight integer not null default 6 check (ip_in_flight between 1 and 1000),
+  ip_in_flight integer not null default 10 check (ip_in_flight between 1 and 1000),
+  net_in_flight integer not null default 24 check (net_in_flight between 1 and 10000),
   edition_in_flight integer not null default 400 check (edition_in_flight between 1 and 100000),
   -- how long an unsettled call counts as in flight: just over the edge function's wall
   -- clock limit, so a call the runtime killed frees its slot
@@ -80,12 +85,17 @@ create table public.mimir_installs (
   token_hash text not null unique,
   created_at timestamptz not null default now(),
   created_ip_hash text not null,
-  -- the last reservation; an install never used for 7 days is removed
+  -- the IPv6 /48 it registered from (null for IPv4)
+  created_net_hash text,
+  -- the last reservation; an install never used for 7 days, or idle for 30 with no shared
+  -- sessions, is removed
   last_call_at timestamptz
 );
 create index mimir_installs_ip_idx on public.mimir_installs (created_ip_hash);
 create index mimir_installs_edition_created_idx on public.mimir_installs (edition, created_at);
 create index mimir_installs_unused_idx on public.mimir_installs (created_at) where last_call_at is null;
+create index mimir_installs_idle_idx on public.mimir_installs (last_call_at);
+create index mimir_installs_net_idx on public.mimir_installs (created_net_hash) where created_net_hash is not null;
 
 -- One row per model call. cost_micros is null until the call settles; until then
 -- the reservation counts.
@@ -96,6 +106,8 @@ create table public.mimir_calls (
   edition text not null references public.mimir_limits (edition),
   install_id uuid not null references public.mimir_installs (id) on delete cascade,
   ip_hash text not null,
+  -- the IPv6 /48 (null for IPv4)
+  net_hash text,
   reserved_micros bigint not null check (reserved_micros >= 0),
   cost_micros bigint check (cost_micros >= 0),
   input_tokens bigint,
@@ -114,9 +126,11 @@ create index mimir_calls_created_idx on public.mimir_calls (created_at);
 create index mimir_calls_open_idx on public.mimir_calls (edition, created_at) where settled_at is null;
 create index mimir_calls_ip_open_idx on public.mimir_calls (ip_hash, created_at) where settled_at is null;
 create index mimir_calls_ip_created_idx on public.mimir_calls (ip_hash, created_at);
+create index mimir_calls_net_day_idx on public.mimir_calls (net_hash, day) where net_hash is not null;
+create index mimir_calls_net_open_idx on public.mimir_calls (net_hash, created_at) where settled_at is null and net_hash is not null;
 
 -- Refused reservations, so a refused install or address still counts toward its per-minute
--- rate. Kept an hour.
+-- rate. Kept only as long as the rate window.
 create table public.mimir_refusals (
   install_id uuid not null references public.mimir_installs (id) on delete cascade,
   ip_hash text not null,
@@ -171,11 +185,10 @@ $$;
 -- HMAC of the address and the Melbourne day, so counts cannot be linked across days. An
 -- IPv6 address counts by its /64, since one home or server line holds the whole /64. A call
 -- without a readable address is refused rather than counted in a shared bucket.
-create function public.mimir_ip_hash(p_ip text) returns text
-language plpgsql stable security definer set search_path = '' as $$
+create function public.mimir_addr(p_ip text) returns inet
+language plpgsql immutable set search_path = '' as $$
 declare
   v inet;
-  v_key text;
 begin
   begin
     v := btrim(p_ip)::inet;
@@ -188,9 +201,36 @@ begin
   if family(v) = 6 and host(v) ~ '^::ffff:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' then
     v := substr(host(v), 8)::inet;
   end if;
-  v_key := case when family(v) = 4 then host(v) else host(network(set_masklen(v, 64))) || '/64' end;
-  return encode(extensions.hmac(convert_to(v_key || '|' || public.mimir_day()::text, 'UTF8'),
+  return v;
+end;
+$$;
+
+create function public.mimir_hmac(p_key text) returns text
+language sql stable security definer set search_path = '' as $$
+  select encode(extensions.hmac(convert_to(p_key || '|' || public.mimir_day()::text, 'UTF8'),
     (select salt from public.mimir_secret), 'sha256'), 'hex');
+$$;
+
+create function public.mimir_ip_hash(p_ip text) returns text
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v inet := public.mimir_addr(p_ip);
+begin
+  return public.mimir_hmac(case when family(v) = 4 then host(v) else host(network(set_masklen(v, 64))) || '/64' end);
+end;
+$$;
+
+-- The IPv6 /48 an address is in, hashed the same way, or null for IPv4: a site, a home
+-- line or a tunnel gets a /48 or /56, so its /64s share these wider caps.
+create function public.mimir_net_hash(p_ip text) returns text
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v inet := public.mimir_addr(p_ip);
+begin
+  if family(v) = 4 then
+    return null;
+  end if;
+  return public.mimir_hmac(host(network(set_masklen(v, 48))) || '/48');
 end;
 $$;
 
@@ -207,6 +247,7 @@ language plpgsql volatile security definer set search_path = '' as $$
 declare
   v_lim public.mimir_limits;
   v_ip text := public.mimir_ip_hash(p_ip);
+  v_net text := public.mimir_net_hash(p_ip);
   v_token text := encode(extensions.gen_random_bytes(32), 'hex');
   v_id uuid;
 begin
@@ -225,15 +266,23 @@ begin
   if (select count(*) from public.mimir_installs where created_ip_hash = v_ip) >= v_lim.registers_per_ip_day then
     raise exception 'too many new installs from this address today' using errcode = 'P0001', hint = 'register_limit';
   end if;
+  if v_net is not null and (select count(*) from public.mimir_installs where created_net_hash = v_net) >= v_lim.registers_per_net_day then
+    raise exception 'too many new installs from this network today' using errcode = 'P0001', hint = 'register_limit';
+  end if;
   if (select count(*) from public.mimir_installs i where i.edition = p_edition
       and i.created_at >= public.mimir_day_start()) >= v_lim.registers_per_day then
     raise exception 'too many new installs for this edition today' using errcode = 'P0001', hint = 'edition_register_limit';
   end if;
-  -- installs that never made a call go after 7 days, a few at a time
+  -- installs that never made a call go after 7 days, and idle ones without shared sessions
+  -- after 30 (their calls go with them), a few at a time; the app registers again on
+  -- unknown_install
   delete from public.mimir_installs where id in (
     select i.id from public.mimir_installs i where i.last_call_at is null and i.created_at < now() - interval '7 days' limit 100);
-  insert into public.mimir_installs (edition, token_hash, created_ip_hash)
-  values (p_edition, public.mimir_token_hash(v_token), v_ip)
+  delete from public.mimir_installs where id in (
+    select i.id from public.mimir_installs i where i.last_call_at < now() - interval '30 days'
+      and not exists (select 1 from public.mimir_sessions s where s.install_id = i.id) limit 100);
+  insert into public.mimir_installs (edition, token_hash, created_ip_hash, created_net_hash)
+  values (p_edition, public.mimir_token_hash(v_token), v_ip, v_net)
   returning id into v_id;
   return query select v_id, v_token;
 end;
@@ -289,6 +338,7 @@ declare
   v_lim public.mimir_limits;
   v_day date := public.mimir_day();
   v_ip text := public.mimir_ip_hash(p_ip);
+  v_net text := public.mimir_net_hash(p_ip);
   v_id uuid;
   v_edition_used bigint;
   v_install_used bigint;
@@ -333,6 +383,10 @@ begin
       and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.ip_in_flight then
     raise exception 'too many calls at once from this address' using errcode = 'P0001', hint = 'ip_busy';
   end if;
+  if v_net is not null and (select count(*) from public.mimir_calls where net_hash = v_net and settled_at is null
+      and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.net_in_flight then
+    raise exception 'too many calls at once from this network' using errcode = 'P0001', hint = 'ip_busy';
+  end if;
   if (select count(*) from public.mimir_calls where edition = v_inst.edition and settled_at is null
       and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.edition_in_flight then
     raise exception 'too many calls at once for this edition' using errcode = 'P0001', hint = 'edition_busy';
@@ -352,11 +406,15 @@ begin
       where ip_hash = v_ip and day = v_day) + p_max_micros > v_lim.ip_daily_micros then
     raise exception 'daily limit for this address reached' using errcode = 'P0001', hint = 'ip_daily';
   end if;
+  if v_net is not null and (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) from public.mimir_calls
+      where net_hash = v_net and day = v_day) + p_max_micros > v_lim.net_daily_micros then
+    raise exception 'daily limit for this network reached' using errcode = 'P0001', hint = 'ip_daily';
+  end if;
   if v_edition_used + p_max_micros > v_lim.edition_daily_micros then
     raise exception 'daily limit for this edition reached' using errcode = 'P0001', hint = 'edition_daily';
   end if;
-  insert into public.mimir_calls (day, edition, install_id, ip_hash, reserved_micros)
-  values (v_day, v_inst.edition, v_inst.id, v_ip, p_max_micros)
+  insert into public.mimir_calls (day, edition, install_id, ip_hash, net_hash, reserved_micros)
+  values (v_day, v_inst.edition, v_inst.id, v_ip, v_net, p_max_micros)
   returning id into v_id;
   update public.mimir_installs set last_call_at = now() where id = v_inst.id;
   return v_id;
@@ -364,7 +422,7 @@ end;
 $$;
 
 -- Records a refused reservation for the install holding p_token, from p_ip, so it counts
--- toward the per-minute rates. Clears refusals over an hour old a few at a time.
+-- toward the per-minute rates. Clears refusals past the one-minute window a few at a time.
 create function public.mimir_refused(p_token text, p_ip text) returns void
 language plpgsql volatile security definer set search_path = '' as $$
 declare
@@ -376,7 +434,7 @@ begin
   end if;
   insert into public.mimir_refusals (install_id, ip_hash) values (v_id, public.mimir_ip_hash(p_ip));
   delete from public.mimir_refusals where ctid in (
-    select ctid from public.mimir_refusals where created_at < now() - interval '1 hour' limit 20);
+    select ctid from public.mimir_refusals where created_at < now() - interval '1 minute' limit 50);
 end;
 $$;
 
@@ -484,6 +542,7 @@ end;
 $$;
 
 revoke execute on function public.mimir_day(), public.mimir_day_start(), public.mimir_ip_hash(text), public.mimir_token_hash(text),
+  public.mimir_addr(text), public.mimir_hmac(text), public.mimir_net_hash(text),
   public.mimir_install_cap(public.mimir_limits, bigint), public.mimir_refused(text, text),
   public.mimir_register(text, text, text), public.mimir_reserve(text, text, text, bigint, bigint, integer),
   public.mimir_cost(text, bigint, bigint, bigint, bigint, integer),
