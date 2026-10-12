@@ -140,9 +140,12 @@ impl Trace {
         for (l, n) in tips {
             let z = tops.get(*l).copied().unwrap_or(f64::NAN);
             eprintln!(
-                "organic2 tip z {z:.2} at {:.3} {:.3}",
+                "organic2 tip z {z:.2} at {:.3} {:.3} bed {} flat {} safe {}",
                 f64::from(n.target.x) / crate::geom::SCALE,
-                f64::from(n.target.y) / crate::geom::SCALE
+                f64::from(n.target.y) / crate::geom::SCALE,
+                n.to_bed,
+                n.flat,
+                n.safe
             );
         }
     }
