@@ -13,6 +13,7 @@ import { setLookups } from './lookups'
 import { stepWords } from './step-words'
 import { followSteps, useStepCaption, viewStep } from './view-step'
 import { newSessionId, noteMessage, tabMimir } from './session'
+import { useHost } from '../../host'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
 import { get, setCamera, useApp } from '../../state/store'
@@ -61,7 +62,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const link = useMimirLink()
   // They fade out once the conversation starts, so no piece of the ring shows between its cards.
   const ravensOn = link !== 'model'
-  const pilot = useMemo(() => tabMimir(), [])
+  const host = useHost()
+  const pilot = useMemo(() => tabMimir(host.slicer), [host])
   const [sessionId, setSessionId] = useState(newSessionId)
   const run = usePilotRun(pilot, sessionId)
   const { reset, transcript } = run
