@@ -177,7 +177,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: 'Show the open project: printer, filament profile, its filaments (number, type, color), objects, plates and setting overrides.',
+    description: 'Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides.',
     input: z.object({}),
     async run() {
       const project = need()
