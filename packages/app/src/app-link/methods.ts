@@ -5,7 +5,8 @@
 // test checks the two lists match. Nothing here prints, queues, approves, signs in or changes settings.
 import { appName } from '../edition'
 import { bounds } from '../plate/transform'
-import { get, pickColorMode, set, setCamera, showSliced, showsLayers, type CameraView, type ColorMode } from '../state/store'
+import { toolStore } from '../plate/tools'
+import { get, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -59,9 +60,19 @@ const layerArg = (v: unknown, n: number, key: string): number => {
   return v
 }
 
-/** Moves the preview: `layer` (the top handle), `range` [bottom, top], `oneLayer`, `colorMode`, `camera`. Moving the layers shows the toolpaths. */
+/** Tools a person is in the middle of, which an agent's view change must not end. */
+const BUSY_TOOLS = ['paint', 'brim', 'face']
+
+/**
+ * Moves the preview: `layer` (the top handle), `range` [bottom, top], `oneLayer`, `colorMode`, `camera`. It never
+ * interrupts the person: it answers busy unless the window is already on Slice with no paint, brim or face tool open,
+ * and it changes only what the window shows now, never a saved choice (the tab, the look, a picked color mode).
+ */
 function setPreview(args: Record<string, unknown>) {
   const s = get()
+  if (s.workspace !== 'prepare' || s.modelMode !== 'slice' || BUSY_TOOLS.includes(toolStore.getState().tool)) {
+    throw new LinkError('busy', 'the person is working elsewhere in the window; the preview moves only while Slice is open and no tool is in use')
+  }
   if (args['camera'] !== undefined && !CAMERAS.includes(args['camera'] as CameraView)) throw new LinkError('invalid_input', `camera is one of ${CAMERAS.join(', ')}`)
   if (args['colorMode'] !== undefined && !COLORS.includes(args['colorMode'] as ColorMode)) throw new LinkError('invalid_input', `colorMode is one of ${COLORS.join(', ')}`)
   if (args['oneLayer'] !== undefined && typeof args['oneLayer'] !== 'boolean') throw new LinkError('invalid_input', 'oneLayer is true or false')
@@ -88,9 +99,8 @@ function setPreview(args: Record<string, unknown>) {
   // Everything is checked before anything moves, so a refused call changes nothing.
   if (args['camera'] !== undefined) setCamera(args['camera'] as CameraView)
   if (layered) {
-    if (args['colorMode'] !== undefined) pickColorMode(args['colorMode'] as ColorMode)
-    showSliced()
-    set({ layerLo: lo, layerHi: hi, moveCut: 1, toolChange: null })
+    // The color mode the person picked stays theirs: an agent's choice is not remembered as a pick.
+    set({ layerLo: lo, layerHi: hi, moveCut: 1, toolChange: null, ...(args['colorMode'] !== undefined ? { colorMode: args['colorMode'] as ColorMode } : {}) })
   }
   return previewState()
 }
