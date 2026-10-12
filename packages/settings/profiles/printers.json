@@ -560,6 +560,33 @@
    ]
   },
   {
+   "id": "prusa-core-one-l",
+   "brand": "prusa",
+   "vendor": "Prusa Research",
+   "model": "Core One L",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 300,
+    "y": 300,
+    "z": 331
+   },
+   "nozzles": [
+    0.4,
+    0.5,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 1,
+   "flavor": "marlin2",
+   "limits": {},
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Prusa/machine/Prusa%20CORE%20One%20L.json"
+   ]
+  },
+  {
    "id": "prusa-xl",
    "brand": "prusa",
    "vendor": "Prusa Research",
