@@ -1,5 +1,6 @@
 additional_cooling_fan_speed
 additional_fan_full_speed_layer
+bottom_color_penetration_layers
 bottom_shell_layers
 bottom_surface_filament_id
 chamber_minimal_temperature
@@ -79,6 +80,7 @@ textured_cool_plate_temp
 textured_cool_plate_temp_initial_layer
 textured_plate_temp
 textured_plate_temp_initial_layer
+top_color_penetration_layers
 top_shell_layers
 top_surface_filament_id
 tree_support_wall_count

@@ -103,8 +103,9 @@ describe("SlicerX's engine choices in an opened project", () => {
   it('keep aegis walls when the project inherited its wall generator', async () => {
     const h = await connect()
     const read = readProjectFile(wallsProject(h.dir, 'inherited.3mf', 'sparse_infill_density'))
-    expect(read.config['wall_generator']).toBeUndefined()
-    expect(read.config['precise_outer_wall']).toBeUndefined()
+    // SlicerX's own values (engine-choices.json), as sx slice <project.3mf> uses them.
+    expect(read.config['wall_generator']).toBe('aegis')
+    expect(read.config['precise_outer_wall']).toBe(true)
     const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'inherited.3mf', config: read.config } })
     expect(r.config['wall_generator']).toBe('aegis')
   })
@@ -113,7 +114,8 @@ describe("SlicerX's engine choices in an opened project", () => {
     const h = await connect()
     const read = readProjectFile(wallsProject(h.dir, 'changed.3mf', 'wall_generator;sparse_infill_density'))
     expect(read.config['wall_generator']).toBe('arachne')
-    expect(read.config['precise_outer_wall']).toBeUndefined()
+    // Not listed as changed, so SlicerX's precise outer wall stays.
+    expect(read.config['precise_outer_wall']).toBe(true)
     const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'changed.3mf', config: read.config } })
     expect(r.config['wall_generator']).toBe('arachne')
   })
@@ -160,5 +162,37 @@ describe("a project's reduce_infill_retraction_mode", () => {
     expect(readProjectFile(retractionProject(h.dir, 'petg.3mf', 'Auto', ['None', 'High'])).config['reduce_infill_retraction']).toBe(false)
     expect(readProjectFile(retractionProject(h.dir, 'off.3mf', 'Disabled', ['None'])).config['reduce_infill_retraction']).toBe(false)
     expect(readProjectFile(retractionProject(h.dir, 'on.3mf', 'Enabled', ['High'])).config['reduce_infill_retraction']).toBe(true)
+  })
+})
+
+describe('a project read for slicing', () => {
+  it("keeps SlicerX's engine choices at SlicerX's values and reads the painted color depths", async () => {
+    const h = await connect()
+    const path = join(h.dir, 'kept.3mf')
+    writeFileSync(
+      path,
+      writeZip([
+        { name: '3D/3dmodel.model', data: MODEL },
+        {
+          name: 'Metadata/project_settings.config',
+          data: JSON.stringify({
+            printer_settings_id: 'Bambu Lab A1 0.4 nozzle',
+            layer_height: '0.2',
+            wall_generator: 'classic',
+            precise_outer_wall: '0',
+            top_color_penetration_layers: '5',
+            bottom_color_penetration_layers: '3',
+            // Inherited: the person changed only the layer height.
+            different_settings_to_system: ['layer_height', '', ''],
+          }),
+        },
+      ]),
+    )
+    const read = readProjectFile(path)
+    expect(read.config['wall_generator']).toBe('aegis')
+    expect(read.config['precise_outer_wall']).toBe(true)
+    expect(read.config['top_color_penetration_layers']).toBe(5)
+    expect(read.config['bottom_color_penetration_layers']).toBe(3)
+    expect(read.summary.import_report.other_slicer).toEqual([])
   })
 })

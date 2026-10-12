@@ -110,6 +110,15 @@ describe('importProject', () => {
     for (const [k, v] of Object.entries(merged)) if (k in r.config) expect(r.config[k], k).toEqual(v)
   })
 
+  it("reads Bambu Studio's painted color depths as settings", () => {
+    // Bambu Studio writes them; the import dropped them as another slicer's keys, so they never reached the engine.
+    const own = importProject({ projectSettings: { top_color_penetration_layers: '5', bottom_color_penetration_layers: '4' } })
+    expect(own.config['top_color_penetration_layers']).toBe(5)
+    expect(own.config['bottom_color_penetration_layers']).toBe(4)
+    expect(own.ignoredKeys).toEqual([])
+    expect(own.unknownKeys).toEqual([])
+  })
+
   it('rejects a settings file that is not an object', () => {
     expect(() => importProject({ projectSettings: [] })).toThrow(TypeError)
     expect(() => importProject({ projectSettings: 'x' })).toThrow(TypeError)
