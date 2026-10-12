@@ -143,6 +143,24 @@ export function parseSxOutput(stdout: string): Parsed {
   return { layers: Number(layers[1]), timeS: Number(time[1]), filamentMm }
 }
 
+/** One bridge over air as the sx result JSON has it. */
+export interface SxBridge {
+  layer?: number
+  angleDeg?: number
+  anchors?: number
+  areaMm2?: number
+}
+
+/** How many bridges a slice summary lists; the rest are counted in `bridge_count`. */
+export const BRIDGES_LISTED = 100
+
+/** The slice summary's `bridges` (and `bridge_count` when the list is cut), from the sx result's `bridges`. */
+export function bridgeSummary(bridges: SxBridge[] | undefined): Pick<SliceSummary, 'bridges' | 'bridge_count'> {
+  if (!bridges?.length) return {}
+  const listed = bridges.slice(0, BRIDGES_LISTED).map((b) => ({ layer: b.layer ?? 0, angle_deg: b.angleDeg ?? 0, anchors: b.anchors ?? 0, area_mm2: b.areaMm2 ?? 0 }))
+  return { bridges: listed, ...(bridges.length > listed.length ? { bridge_count: bridges.length } : {}) }
+}
+
 /**
  * Slices with `sx slice --request <json> --out-dir <dir>`: one object for a
  * file, or every object of a project plate with its transform. The result
@@ -208,6 +226,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         gcodeSha256?: string
         stats?: { timeS?: number; filamentMm?: number[]; filamentG?: number[]; toolChanges?: number }
         warnings?: { message?: string }[]
+        bridges?: SxBridge[]
         files?: { gcode?: string; preview?: string } & Record<string, unknown>
       }
       const sum = (v: number[] | undefined): number => (v ?? []).reduce((a, b) => a + b, 0)
@@ -227,6 +246,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         ...(out.stats?.toolChanges !== undefined ? { tool_changes: out.stats.toolChanges } : {}),
         ...(job.modelPlate && !job.plate ? { plate: job.modelPlate } : {}),
         ...(job.emitGcode && out.gcodeSha256 ? { gcode_sha256: out.gcodeSha256 } : {}),
+        ...bridgeSummary(out.bridges),
         warnings: (out.warnings ?? []).map((w) => String(w.message ?? '')),
         ...(job.emitGcode ? { gcode_path: gcodePath } : {}),
         ...(job.emitPreview ? { preview_path: previewPath } : {}),

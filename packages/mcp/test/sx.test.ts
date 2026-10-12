@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as pilot from '@slicerx/pilot'
-import { parseSxOutput, sxConfig, sxFailure } from '../src/sx'
+import { BRIDGES_LISTED, bridgeSummary, parseSxOutput, sxConfig, sxFailure } from '../src/sx'
 import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
 
 describe('sx output', () => {
@@ -99,5 +99,46 @@ describe.skipIf(noSx() || !hasRegistry)('a project through mimir with the real c
     expect(r.isError).toBe(true)
     const st = await h.call('slicerx_printer_status', { printerId: 'bay-2' })
     expect(JSON.stringify(st.structuredContent)).toMatch(/idle/)
+  })
+})
+
+describe('bridges in the slice summary', () => {
+  it('lists each bridge with its angle and anchors, and counts the rest past the first 100', () => {
+    expect(bridgeSummary(undefined)).toEqual({})
+    expect(bridgeSummary([{ layer: 12, angleDeg: 90, anchors: 2, areaMm2: 41.5 }])).toEqual({ bridges: [{ layer: 12, angle_deg: 90, anchors: 2, area_mm2: 41.5 }] })
+    const many = Array.from({ length: BRIDGES_LISTED + 5 }, (_, i) => ({ layer: i, angleDeg: 0, anchors: 1, areaMm2: 1 }))
+    const s = bridgeSummary(many)
+    expect(s.bridges).toHaveLength(BRIDGES_LISTED)
+    expect(s.bridge_count).toBe(BRIDGES_LISTED + 5)
+  })
+})
+
+// A 30 mm slab on two pillars 20 mm apart: the slab's underside between them is a bridge over air, held by the
+// pillars' tops on both sides, so its strands run from pillar to pillar (along X).
+function bridgeStl(): string {
+  const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): number[][][] => {
+    const p = (x: number, y: number, z: number) => [x, y, z]
+    const [a, b, c, d] = [p(x0, y0, z0), p(x1, y0, z0), p(x1, y1, z0), p(x0, y1, z0)]
+    const [e, f, g, h] = [p(x0, y0, z1), p(x1, y0, z1), p(x1, y1, z1), p(x0, y1, z1)]
+    return [[a, c, b], [a, d, c], [e, f, g], [e, g, h], [a, b, f], [a, f, e], [b, c, g], [b, g, f], [c, d, h], [c, h, g], [d, a, e], [d, e, h]]
+  }
+  const tris = [...box(0, 0, 0, 5, 10, 10), ...box(25, 0, 0, 30, 10, 10), ...box(0, 0, 10, 30, 10, 13)]
+  return `solid b\n${tris.map((t) => `facet normal 0 0 0\nouter loop\n${t.map((v) => `vertex ${v.join(' ')}`).join('\n')}\nendloop\nendfacet`).join('\n')}\nendsolid b\n`
+}
+
+describe.skipIf(noSx())('bridges with the real sx CLI', { timeout: sxTimeout }, () => {
+  it('reports the bridge over the gap with the way its strands run', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const model = join(h.dir, 'bridge.stl')
+    writeFileSync(model, bridgeStl())
+    const r = await h.call('slicerx_slice_file', { model, profiles: ['filament:pla'], overrides: { layer_height: 0.2, smart_layer: 'off' } })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const s = data<{ bridges?: { layer: number; angle_deg: number; anchors: number; area_mm2: number }[] }>(r)
+    const over = (s.bridges ?? []).filter((b) => b.area_mm2 > 50)
+    expect(over.length, JSON.stringify(s.bridges)).toBeGreaterThan(0)
+    for (const b of over) {
+      expect(Math.min(b.angle_deg, 180 - b.angle_deg), JSON.stringify(b)).toBeLessThan(5)
+      expect(b.anchors).toBeGreaterThan(0)
+    }
   })
 })
