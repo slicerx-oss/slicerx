@@ -14,6 +14,10 @@ function executable(text: string): string {
   return at < 0 ? text : text.slice(at)
 }
 
+function withoutThumbnails(text: string): string {
+  return text.replace(/; THUMBNAIL_BLOCK_START[\s\S]*?; THUMBNAIL_BLOCK_END[^\n]*\n/g, '')
+}
+
 async function prepare(page: Page): Promise<void> {
   await page.addInitScript(() => {
     if (sessionStorage.getItem('sx-e2e')) return
@@ -1126,7 +1130,8 @@ for (const printer of [
     await expect(page.locator('.warns li').filter({ hasText: /G-code|lint|blocked|refused/i })).toHaveCount(0)
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
     const text = fs.readFileSync(await download.path(), 'utf8')
-    expect(executable(text).slice(0, 20_000)).toContain(printer.start)
+    // near the top of what runs, past the thumbnails (their size follows the printer's thumbnail list, not the G-code)
+    expect(withoutThumbnails(executable(text)).slice(0, 20_000)).toContain(printer.start)
   })
 }
 

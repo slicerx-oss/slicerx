@@ -19,8 +19,11 @@ The build reads an edition config (`@slicerx/edition-config`): the product name,
 pnpm --filter @slicerx/web dev                      # http://localhost:5173
 pnpm --filter @slicerx/web build                    # build, then the size budget check
 SX_FEATURES= pnpm --filter @slicerx/web build       # base app only
+cargo build --release -p sx-cli                     # the native slicer the e2e suite slices with
 pnpm --filter @slicerx/web e2e                      # Playwright, headless, 1440 and 390 px
 ```
+
+The e2e build leaves the WebAssembly slicer out and slices in the native engine, the one the desktop app links. `playwright.config.ts` starts `e2e/native-host/server.mjs` on a free loopback port, runs `sx` from `SX_CLI_BIN` (or this checkout's `target/release/sx`), and builds the app against it (`src/host/native-test.ts`). No other build includes that host: `scripts/check-test-host.mjs` checks the default and CAD-only bundles in CI.
 
 The e2e build has no backend, so the store and feed run on the bundled demo catalog. `SX_E2E_PORT` serves it on another port than 4317, and `SX_TEST_HUB_PORT` moves the bridge specs' sx-link (and the hub the test build pairs with) off 47615, so a second run, the release gate or a running sx-link can share the machine. CI runs the suite in shards, five for the desktop project and one for the phone (job `e2e` in `.github/workflows/ci.yml`), on every change to the web app, the app, the UI or the engine; `vault-flow.spec.ts` and `bridge.spec.ts` skip there, since they need the stack from `e2e/stack/vault-stack.sh` or a built sx-link.
 

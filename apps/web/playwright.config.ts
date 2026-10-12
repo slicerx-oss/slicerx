@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { defineConfig } from '@playwright/test'
 
 // SX_E2E_PORT serves the app on another port, for a second run on the same machine.
@@ -9,6 +12,15 @@ const port = Number(process.env['SX_E2E_PORT'] ?? 4317)
 // it from the environment set here.
 const hubPort = process.env['SX_TEST_HUB_PORT'] || '47615'
 process.env['SX_TEST_HUB_PORT'] = hubPort
+// The app slices in the native engine (e2e/native-host/server.mjs runs `sx` from SX_CLI_BIN, else this checkout's release
+// build), on a free loopback port picked here and shared with the workers through the environment.
+const sxBin = process.env['SX_CLI_BIN'] || resolve(import.meta.dirname, '../../target/release/sx')
+if (!existsSync(sxBin)) throw new Error(`The browser suite slices with the native sx (${sxBin}); build it with cargo build --release -p sx-cli, or set SX_CLI_BIN`)
+const nativePort =
+  process.env['SX_E2E_NATIVE_PORT'] ||
+  execFileSync(process.execPath, ['-e', "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{process.stdout.write(String(s.address().port));s.close()})"]).toString()
+process.env['SX_E2E_NATIVE_PORT'] = nativePort
+const nativeUrl = `http://127.0.0.1:${nativePort}`
 // SX_E2E_GPU=1 runs the installed Chrome with hardware WebGL, on a machine with a GPU (the project's GPU runner).
 const gpu = process.env['SX_E2E_GPU'] === '1'
 
@@ -41,5 +53,9 @@ export default defineConfig({
     { name: 'phone', use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
   ],
   // Always build and serve a fresh bundle with the test environment. A server left running from an earlier build hides changes (and lacks the relay URL the phone pairing tests need).
-  webServer: { command: `pnpm exec vite build && pnpm exec vite preview --port ${port} --strictPort --host 127.0.0.1`, url: `http://127.0.0.1:${port}/studio/`, reuseExistingServer: false, timeout: 120_000, env: { SLICERX_E2E: '1', SX_TEST_HUB_PORT: hubPort, SLICERX_SUPABASE_URL: '', SLICERX_SUPABASE_ANON_KEY: '', SLICERX_RELAY_URL: 'https://relay.example.invalid' } },
+  // The build leaves the WebAssembly slicer out (SLICERX_WEB_SLICING=0) and slices through the native test host.
+  webServer: [
+    { command: `node e2e/native-host/server.mjs --port ${nativePort} --origin http://127.0.0.1:${port}`, url: `${nativeUrl}/healthz`, reuseExistingServer: false, timeout: 30_000, env: { SX_CLI_BIN: sxBin } },
+    { command: `pnpm exec vite build && pnpm exec vite preview --port ${port} --strictPort --host 127.0.0.1`, url: `http://127.0.0.1:${port}/studio/`, reuseExistingServer: false, timeout: 120_000, env: { SLICERX_E2E: '1', SLICERX_WEB_SLICING: '0', SLICERX_E2E_NATIVE_URL: nativeUrl, SX_TEST_HUB_PORT: hubPort, SLICERX_SUPABASE_URL: '', SLICERX_SUPABASE_ANON_KEY: '', SLICERX_RELAY_URL: 'https://relay.example.invalid' } },
+  ],
 })

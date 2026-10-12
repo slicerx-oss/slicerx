@@ -53,6 +53,8 @@ export async function sharedConfig(appDir: string, port: number, editionFile?: s
       // SLICERX_WEB_SLICING=0 builds the browser app without the slicing engine (the CAD-only studio).
       __SX_WEB_SLICING__: JSON.stringify(env['SLICERX_WEB_SLICING'] !== '0'),
       // The printer hub port of an end-to-end run (SX_TEST_HUB_PORT); empty, so sx-link's default, in any other build.
+      // The native test slicer of an end-to-end run (apps/web/e2e/native-host); empty, so no test host, in any other build.
+      __SX_E2E_NATIVE_URL__: JSON.stringify(env['SLICERX_E2E'] === '1' ? (env['SLICERX_E2E_NATIVE_URL'] ?? '') : ''),
       __SX_TEST_HUB_PORT__: JSON.stringify(env['SLICERX_E2E'] === '1' ? (env['SX_TEST_HUB_PORT'] ?? '') : ''),
       ...viteDefines(edition, env),
     },
