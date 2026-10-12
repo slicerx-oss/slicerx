@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The plate tabs: mimir, Design and Slice share one viewport, so switching never rebuilds the scene; the panes around
 // it change with the mode. mimir and Design show the same design; mimir puts the chat beside it in place of the panes. Slice shows the slice in place (toolpaths by default), with the layer dock and the slice summary.
-import { lazy, Suspense, useEffect, useMemo, useRef, type CSSProperties } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { RenderMenu, ViewMenu } from './view-menus'
 import { useLayout, useLookChoice } from '../first-run/look'
 import { registerCommands } from '../commands/registry'
@@ -82,6 +82,7 @@ const SelectPill = lazy(() => import('./design/design-panes').then((m) => ({ def
 // mimir's chat and view caption load the first time its tab opens.
 const MimirChat = lazy(() => import('./mimir/mimir-panes').then((m) => ({ default: m.MimirChat })))
 const MimirCaption = lazy(() => import('./mimir/mimir-panes').then((m) => ({ default: m.MimirCaption })))
+const LookupCards = lazy(() => import('./mimir/lookup-cards').then((m) => ({ default: m.LookupCards })))
 
 // norn (edit from Preview) loads with the first click on a toolpath.
 const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default: m.NornLayer })))
@@ -126,6 +127,8 @@ export function Studio() {
   useBoundValues(true)
   const design = modelMode === 'design'
   const mimir = modelMode === 'mimir'
+  const [chatSeen, setChatSeen] = useState(mimir)
+  if (mimir && !chatSeen) setChatSeen(true)
   // Either one shows the design rather than the plate set up for printing.
   const cad = design || mimir
   // Slice shows the sliced toolpaths in place of the models (the default look); the layer dock, legend and color menu come with them.
@@ -207,11 +210,13 @@ export function Studio() {
           <Shelf />
         </Suspense>
       ) : null}
-      {mimir ? (
-        <Suspense fallback={<div className="mimir-chat" aria-hidden="true" />}>
-          <MimirChat />
+      {/* Once opened, the chat stays mounted and hides on Model and Slice, so a running build carries on. */}
+      {chatSeen ? (
+        <Suspense fallback={mimir ? <div className="mimir-chat" aria-hidden="true" /> : null}>
+          <MimirChat hidden={!mimir} />
         </Suspense>
-      ) : design ? (
+      ) : null}
+      {mimir ? null : design ? (
         <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280} tab={{ panel: 'model-tree', shutFully: true }}>
           <Suspense fallback={<Loading />}>
             <DesignLeft />
@@ -285,6 +290,11 @@ export function Studio() {
         {layers && nornOn ? (
           <Suspense fallback={null}>
             <NornLayer />
+          </Suspense>
+        ) : null}
+        {mimir ? (
+          <Suspense fallback={null}>
+            <LookupCards />
           </Suspense>
         ) : null}
         {cad ? (

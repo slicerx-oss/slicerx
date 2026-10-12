@@ -58,6 +58,8 @@ export interface CreatePilotOptions {
   store?: SessionStore
   /** Extra tools (skills from packages/pilot/skills are included by default). */
   tools?: PilotTool<never>[]
+  /** False leaves out the built-in tools (printers, settings, knowledge, commands), so `tools` is the whole toolset. */
+  builtins?: boolean
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -159,6 +161,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const client: LlmClient = opts.client ?? createTransportClient(opts.host.llm, opts.config.provider, opts.config.baseUrl === undefined ? {} : { baseUrl: opts.config.baseUrl })
   const history = new Map<string, LlmMessage[]>()
   const pending = new Map<string, Pending>()
+  // Questions waiting for the person's pick, by ask id.
+  const asks = new Map<string, (choiceId: string) => void>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
 
   const tools = new Map<string, AnyTool>()
@@ -168,11 +172,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   }
   const shared = createShared()
   for (const [id, rate] of Object.entries(opts.machineRates ?? {})) shared.machineRates.set(id, rate)
-  for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared })) add(t as AnyTool)
+  if (opts.builtins !== false) for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared })) add(t as AnyTool)
   for (const t of opts.tools ?? []) add(t as AnyTool)
 
   let pluginTools: AnyTool[] | null = null
   async function loadPluginTools(): Promise<{ loads: PluginLoad[]; tools: AnyTool[] }> {
+    // A toolset without the built-ins has no printer plugins either.
+    if (opts.builtins === false) return { loads: [], tools: [] }
     const { pluginToolsFrom } = await import('./tools/plugins')
     const manifests = await opts.host.printers.plugins().catch(() => [])
     const printers = await opts.host.printers.list().catch(() => [])
@@ -350,6 +356,21 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     if (project) ctx.project = project
     if (web) ctx.web = web
+    ctx.ask = (q) =>
+      new Promise<string>((resolve, reject) => {
+        const askId = `ask_${newId()}`
+        const onAbort = (): void => {
+          asks.delete(askId)
+          reject(new Error('Run canceled.'))
+        }
+        asks.set(askId, (choiceId) => {
+          signal.removeEventListener('abort', onAbort)
+          emit({ type: 'ask_answered', askId, choiceId })
+          resolve(choiceId)
+        })
+        signal.addEventListener('abort', onAbort, { once: true })
+        emit({ type: 'ask', askId, title: q.title, question: q.question, choices: q.choices })
+      })
 
     let gated: Gated
     try {
@@ -377,6 +398,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     emit(result)
     if (out.diff) emit({ type: 'settings_diff', diff: out.diff })
     if (out.report) emit({ type: 'summary', title: out.report.title, rows: out.report.rows, stopped: false })
+    if (out.lookup) emit({ type: 'lookup', lookup: { id: `lk_${newId()}`, ...out.lookup } })
     if (out.citations) for (const c of out.citations) if (!citations.some((x) => x.id === c.id)) citations.push(c)
     return { message: toolMessage(out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
@@ -520,6 +542,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const p = pending.get(requestId)
       if (!p) throw new Error(`No pending approval ${requestId}`)
       p.resolve(decision)
+    },
+    async answer(askId: string, choiceId: string): Promise<void> {
+      const done = asks.get(askId)
+      if (!done) throw new Error(`No open question ${askId}`)
+      asks.delete(askId)
+      done(choiceId)
     },
     run(sessionId: string, message: string, runOpts: { signal?: AbortSignal; context?: PilotContext } = {}): AsyncIterable<PilotEvent> {
       const signal = runOpts.signal ?? new AbortController().signal

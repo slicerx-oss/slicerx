@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { Fragment, useId, useState } from 'react'
 import type { Cell, ToolDisplay } from '@slicerx/contracts'
-import { Icon } from '@slicerx/ui'
+import { Icon, tipAttrs } from '@slicerx/ui'
 import { argTokens, barCells, fmtSeconds, toneClass } from './format'
 import type { ToolRowModel } from './reduce'
 import { Spinner } from './spinner'
@@ -122,14 +122,21 @@ function LiveProgress({ row }: { row: ToolRowModel }) {
   )
 }
 
+/**
+ * A tool call in the person's words: what it is doing while it runs, what it did after. Null hides the row, for
+ * calls whose result shows on its own (a choice card, a lookup card).
+ */
+export type StepWords = (row: ToolRowModel) => { doing: string; done: string } | null
+
 /** A tool call: status, keyword, name, one line summary and duration; opens to the command and its output. */
-export function ToolRow({ row }: { row: ToolRowModel }) {
+export function ToolRow({ row, words }: { row: ToolRowModel; words?: StepWords | undefined }) {
   const detId = useId()
   const [manual, setManual] = useState<boolean | null>(null)
   const open = manual ?? hasProgress(row)
   const summary = row.state === 'running' ? (row.callSummary ?? 'Running') : (row.summary ?? '')
   const images = row.display.filter((d) => d.kind === 'image')
   const rest = row.display.filter((d) => d.kind !== 'image')
+  const said = words?.(row) ?? null
   return (
     <div className={open ? 'tool open' : 'tool'}>
       <button type="button" className="trow" aria-expanded={open} aria-controls={detId} onClick={() => setManual(!open)}>
@@ -137,10 +144,16 @@ export function ToolRow({ row }: { row: ToolRowModel }) {
           {row.state === 'running' ? isRecall(row.tool) ? <RavenWait who="muninn"><Spinner /></RavenWait> : <Spinner /> : row.state === 'ok' ? <Icon name="check" /> : <Icon name="alert" className="bad" />}
           <span className="vh">{row.state === 'running' ? 'Running' : row.state === 'ok' ? 'Done' : 'Failed'}</span>
         </span>
-        <span className="tname">
-          <span className={`kw ${row.source}`}>{row.source}</span>
-          {row.tool}
-        </span>
+        {said ? (
+          <span className="tname plain" {...tipAttrs({ title: row.tool })}>
+            {row.state === 'running' ? said.doing : said.done}
+          </span>
+        ) : (
+          <span className="tname">
+            <span className={`kw ${row.source}`}>{row.source}</span>
+            {row.tool}
+          </span>
+        )}
         <span className="tsum">{summary}</span>
         <span className="dur">{row.ms !== undefined ? fmtSeconds(row.ms) : ''}</span>
         <Icon name="chevron-down" className="chev" />
@@ -205,25 +218,36 @@ export function foldLine(rows: ToolRowModel[]): string {
   return what ? `Checked ${what}, ${steps}` : steps
 }
 
+/** The fold line in plain words: the step running now, or the last one done. */
+export function plainFold(rows: ToolRowModel[], words: StepWords): string {
+  const running = rows.find((r) => r.state === 'running')
+  if (running) return words(running)?.doing ?? 'Working'
+  const last = rows.at(-1)
+  return last ? (words(last)?.done ?? '') : ''
+}
+
 /** Consecutive tool calls in one bordered group, folded to one line until opened. */
-export function ToolGroup({ rows }: { rows: ToolRowModel[] }) {
+export function ToolGroup({ rows: all, words }: { rows: ToolRowModel[]; words?: StepWords | undefined }) {
   const [open, setOpen] = useState(false)
   const id = useId()
+  // In plain words, calls whose result shows as its own card have no row.
+  const rows = words ? all.filter((r) => words(r) !== null) : all
   const running = rows.some((r) => r.state === 'running')
   const warn = rows.some(actionable)
   // Pictures (a camera frame) stay visible with the group folded; they are what the user asked to see.
   const images = rows.flatMap((r) => r.display.filter((d) => d.kind === 'image'))
+  if (rows.length === 0) return null
   return (
     <div className={open ? 'tools open' : 'tools folded'}>
       <button type="button" className="tfold" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
         <span className="st">{running ? rows.some((r) => r.state === 'running' && isRecall(r.tool)) ? <RavenWait who="muninn"><Spinner /></RavenWait> : <Spinner /> : warn ? <Icon name="alert" className="bad" /> : <Icon name="check" />}</span>
-        <span className="tsum">{foldLine(rows)}</span>
+        <span className="tsum">{words ? plainFold(rows, words) : foldLine(rows)}</span>
         <Icon name="chevron-down" className="chev" />
       </button>
       {!open ? images.map((d, i) => <DisplayView key={i} display={d} />) : null}
       <div id={id} className="tlist" hidden={!open}>
         {rows.map((r) => (
-          <ToolRow key={r.callId} row={r} />
+          <ToolRow key={r.callId} row={r} words={words} />
         ))}
       </div>
     </div>
