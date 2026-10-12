@@ -20,11 +20,16 @@ export function hostSlices(): boolean {
   return slicing
 }
 
-/** Keeps the first tab in Model and the workspace on it; returns the unsubscribe. */
+/** The workspaces a host that cannot slice may show; another non-slicing tab (mimir) joins here. */
+export const MODEL_ONLY_WORKSPACES = new Set<string>(['prepare'])
+
+/** Keeps the first tab off Slice and the workspace on one listed above; returns the unsubscribe. */
 export function stayInModel(): () => void {
   const fix = () => {
     const s = get()
-    if (s.modelMode !== 'design' || s.workspace !== 'prepare') set({ modelMode: 'design', workspace: 'prepare' })
+    const mode = s.modelMode === 'slice' ? 'design' : s.modelMode
+    const workspace = MODEL_ONLY_WORKSPACES.has(s.workspace) ? s.workspace : 'prepare'
+    if (mode !== s.modelMode || workspace !== s.workspace) set({ modelMode: mode, workspace })
   }
   fix()
   return appStore.subscribe(fix)
@@ -53,13 +58,14 @@ const shownMode = (s: { modelMode: ModelMode; devBuild: boolean; settingsMode: S
 export function useModelMode(): ModelMode {
   const mode = useApp(shownMode)
   const cad = useCadShown()
-  if (!slicing) return 'design'
+  if (!slicing) return mode === 'slice' ? 'design' : mode
   return cad ? mode : 'slice'
 }
 
 export function modelMode(): ModelMode {
-  if (!slicing) return 'design'
-  return cadShown() ? shownMode(get()) : 'slice'
+  const mode = shownMode(get())
+  if (!slicing) return mode === 'slice' ? 'design' : mode
+  return cadShown() ? mode : 'slice'
 }
 
 /** mimir and Model both show the design: the CAD look, the ground grid, the picks and the timeline. */
