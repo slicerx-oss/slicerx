@@ -156,7 +156,7 @@ export function Shelf() {
         <div className="shelf-next" data-testid="model-shelf-next" data-tip-avoid=".shelf-next" aria-label={`For ${words}`} role="group">
           {pick && (pick.kind !== 'object' || pick.count > 1) ? (
             <span className="shelf-pick" data-testid="model-shelf-next-count" aria-label={words} data-tip-title={words}>
-              <b>{pick.count}</b>
+              <b>{pick.count > 99 ? '99+' : pick.count}</b>
               <span>{words.slice(String(pick.count).length + 1)}</span>
             </span>
           ) : null}

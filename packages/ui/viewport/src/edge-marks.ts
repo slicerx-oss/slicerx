@@ -4,7 +4,10 @@
 // face as a thinner line, and the edge under the pointer as a dashed line whose dashes march along it (still dashes
 // under reduced motion). Every line keeps about the same width on screen: the viewport sizes it from the camera
 // distance and redraws it when the camera moves far enough to change it.
-import { Color, CylinderGeometry, Group, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, Vector3 } from 'three'
+// All of them are an overlay the pipeline draws after the frame is composed, above the selection outline, so they stay
+// readable on it. The hover is tested against the scene's depth there, so only an edge the camera can see lights up;
+// the picks show through, so a pick on the far side is not lost.
+import { Color, CylinderGeometry, Group, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, Vector2, Vector3, type PerspectiveCamera, type Texture } from 'three'
 import { SCENE } from './palette'
 
 export type MarkLine = { from: [number, number, number]; to: [number, number, number] }
@@ -29,9 +32,13 @@ type Px = (p: [number, number, number]) => number
 export class EdgeMarks {
   /** Child of the objects root (bed frame, Z up, mm). */
   readonly group = new Group()
+  /** Every mark: hidden in the scene pass, drawn over the composed frame. */
+  readonly overlay = new Group()
+  /** The scene's depth for the hover's test: its texture, the drawing buffer's size, the camera's near and far. */
+  readonly depth = { sxDepth: { value: null as Texture | null }, sxSize: { value: new Vector2(1, 1) }, sxNear: { value: 0.1 }, sxFar: { value: 1000 }, sxOn: { value: 0 } }
   private readonly picked = new MeshBasicMaterial({ color: new Color(SCENE.liveLayer), depthTest: false, transparent: true, opacity: 0.98, toneMapped: false })
   private readonly outline = new MeshBasicMaterial({ color: new Color(SCENE.liveLayer), depthTest: false, transparent: true, opacity: 0.9, toneMapped: false })
-  private readonly hover = new MeshBasicMaterial({ color: new Color(SCENE.liveLayer), depthTest: false, transparent: true, opacity: 0.8, toneMapped: false })
+  private readonly hover = depthTested(new MeshBasicMaterial({ color: new Color(SCENE.liveLayer), depthTest: false, transparent: true, opacity: 0.85, toneMapped: false }), this.depth)
   private lines: { picked: readonly MarkLine[]; hover: readonly MarkLine[]; outline: readonly MarkLine[] } = { picked: [], hover: [], outline: [] }
   private scale = 0
   /** The marching dashes' shift, pixels, and when it last moved. */
@@ -41,6 +48,8 @@ export class EdgeMarks {
   constructor() {
     this.group.name = 'edge-marks'
     this.group.renderOrder = 6
+    this.overlay.name = 'edge-marks-overlay'
+    this.group.add(this.overlay)
   }
 
   /** The picked and hovered edges to draw, keeping the face outlines. True when anything was or is now drawn. */
@@ -78,10 +87,24 @@ export class EdgeMarks {
   }
 
   private redraw(lines: EdgeMarks['lines'], mmPerPx: Px): boolean {
-    const had = this.group.children.length > 0
+    const had = this.count() > 0
     this.lines = lines
     this.draw(mmPerPx)
-    return had || this.group.children.length > 0
+    return had || this.count() > 0
+  }
+
+  /** The scene's depth as the last frame drew it, for the hover's test; null turns the test off. */
+  setSceneDepth(depth: Texture | null, size: Vector2, camera: PerspectiveCamera): void {
+    const d = this.depth
+    d.sxDepth.value = depth
+    d.sxOn.value = depth ? 1 : 0
+    d.sxSize.value.copy(size)
+    d.sxNear.value = camera.near
+    d.sxFar.value = camera.far
+  }
+
+  private count(): number {
+    return this.overlay.children.length
   }
 
   private first(): MarkLine | undefined {
@@ -89,14 +112,14 @@ export class EdgeMarks {
   }
 
   private draw(mmPerPx: Px): void {
-    for (const c of [...this.group.children]) this.group.remove(c)
+    this.clear()
     const first = this.first()
     this.scale = first ? mmPerPx(first.from) : 0
     const mid = (l: MarkLine): [number, number, number] => [(l.from[0] + l.to[0]) / 2, (l.from[1] + l.to[1]) / 2, (l.from[2] + l.to[2]) / 2]
     const add = (mesh: Mesh) => {
       mesh.renderOrder = 6
       mesh.raycast = () => {}
-      this.group.add(mesh)
+      this.overlay.add(mesh)
     }
     const bar = (a: Vector3, b: Vector3, r: number, m: MeshBasicMaterial) => {
       const len = a.distanceTo(b)
@@ -147,12 +170,44 @@ export class EdgeMarks {
     this.hover.color.set(color)
   }
 
+  private clear(): void {
+    for (const c of [...this.overlay.children]) this.overlay.remove(c)
+  }
+
   dispose(): void {
-    for (const c of [...this.group.children]) this.group.remove(c)
+    this.clear()
     this.picked.dispose()
     this.outline.dispose()
     this.hover.dispose()
   }
+}
+
+/**
+ * A material that draws only where it is not behind the scene: each fragment's distance from the camera against the
+ * scene's depth there, with a margin that grows with the distance, so a mark lying on a face still passes.
+ */
+function depthTested(m: MeshBasicMaterial, u: EdgeMarks['depth']): MeshBasicMaterial {
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, u)
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        'void main() {',
+        `uniform sampler2D sxDepth;
+uniform vec2 sxSize;
+uniform float sxNear;
+uniform float sxFar;
+uniform float sxOn;
+float sxDist(float d) { return (sxNear * sxFar) / (sxFar - d * (sxFar - sxNear)); }
+void main() {
+  if (sxOn > 0.5) {
+    float scene = sxDist(texture2D(sxDepth, gl_FragCoord.xy / sxSize).x);
+    if (sxDist(gl_FragCoord.z) > scene + max(0.2, 0.015 * scene)) discard;
+  }`,
+      )
+  }
+  m.customProgramCacheKey = () => 'sx-depth-tested'
+  m.userData.depthTested = true
+  return m
 }
 
 /** The outline of a face patch: the edges of its triangles that no other triangle of the patch shares. */
