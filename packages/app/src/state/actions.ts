@@ -4,38 +4,29 @@
 // to a printer. Commands, buttons and Pilot tools all call these.
 import { engineErrorText } from '../lib/engine-errors'
 import { isGcodeName, openGcodeRef } from '../workspaces/preview/gcode-file'
-import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, JobFile, LayerGcode, PermissionClass, PlateObject, PrintConfig, PrinterHost, PrinterInfo, PrinterStatus, SettingValue, SideEffectAction, SlicerHost } from '@slicerx/contracts'
-import { followsSlotMap, grantApproval, hashParams, pluginHas, readPreview, slotMapLine } from '@slicerx/contracts'
+import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, LayerGcode, PermissionClass, PlateObject, PrintConfig, PrinterInfo, SideEffectAction, SlicerHost } from '@slicerx/contracts'
+import { grantApproval, hashParams, readPreview } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { noteSliceTiming, plateTriangles } from './slice-estimate'
-import { defaultColorMode, formatDuration } from '../lib/preview-stats'
+import { defaultColorMode } from '../lib/preview-stats'
 import type { DecodedModel } from '@slicerx/embed/mesh'
 import { resumeSliceOptions } from '../geom/resume'
-import { resolveSlots, slotConfig, slotOverridesFor, usedSlots } from '../filament/slots'
+import { slotConfig, slotOverridesFor } from '../filament/slots'
 import type { QueueItem } from '../queue/queue'
-import type { PrintSheetAsk } from '../send/print-sheet'
-import { EXTERNAL_SLOT, matchSlots, mergeOptions, printEnding, withEnding, optionLines, slotMapFor, startSlotMap, supportedOptions, withoutSlotMap, type SendChoice, type SendOptionSpec, type SendOptions } from '../send/options'
-import { bounds } from '../plate/transform'
 import { requestVolumes } from '../plate/volumes'
 import { areaOrigin, objectToMachine, towerToPlate } from '../plate/bed-origin'
-import { holdUpdates } from '../updates/hold'
-import { exportPlateGcode, sha256Hex } from '../calibration/gcode'
 import { sliceHandle, sliceShards } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
 import { bedTypeConfig } from '../plate/bed-type'
 import { plateSequence } from '../plate/plate-sequence'
 import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
-import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
 import { beginOpen, confirmDiscard, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { markOpenEnded, markOpenStage, markOpenStarted } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
-import { isExportOnly } from '../lib/hand-printers'
 import { colorModeAfterSlice, fullPlate, get, markStale, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource } from './store'
-import { appName, brandAccent } from '../edition'
-import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/bambu-connect'
-import { openLink } from '../lib/links'
+import { brandAccent } from '../edition'
 
 
 let sliceAbort: AbortController | null = null
@@ -483,14 +474,6 @@ export function cancelSlice(opts: { quiet?: boolean } = {}): void {
 /** Whether a slice is in flight. */
 export const slicing = (): boolean => sliceAbort !== null
 
-/** "Desk hook" becomes "desk-hook_plate-1.gcode". */
-/** What a printer that does not follow a slot map does with a plain G-code file: each filament from the slot of its number. */
-function gcodeSlotsLine(fixed: Record<number, string>): string {
-  return `Filament slots: as the G-code says, ${Object.entries(fixed)
-    .map(([n, id]) => `filament ${n} from ${id === EXTERNAL_SLOT ? 'the external spool' : `slot ${id}`}`)
-    .join(', ')}`
-}
-
 /**
  * The job's name: the object's own on a plate of one, else the plate's, so a new print order does not rename it after
  * whichever object now prints first.
@@ -519,30 +502,7 @@ function gcodeName(plate: string): string {
 }
 
 /** What Export and Print say when the slice on screen is from before the plate changed. */
-const STALE_SLICE = 'The plate changed after this slice. Slice it again first.'
-
-export async function exportGcode(host: Host): Promise<void> {
-  const s = get().slice
-  if (s.status !== 'done') {
-    toast('Slice the plate first')
-    return
-  }
-  // A slice with a strike, or from before the objects moved, must not leave as the plate's G-code.
-  const unsafe = printBlock(get())
-  if (unsafe) {
-    toast(unsafe, 'error')
-    return
-  }
-  // A slice from before the plate changed is not the plate's G-code.
-  if (s.stale) {
-    toast(STALE_SLICE, 'warn')
-    return
-  }
-  const name = jobFileName(get(), s.result.fileName)
-  const out = await exportPlateGcode(host, s.result.id)
-  if (out.blob) await host.files.save(name, out.blob, { accept: [name.endsWith('.bgcode') ? '.bgcode' : '.gcode'] })
-  toast(`Exported ${name}`)
-}
+export const STALE_SLICE = 'The plate changed after this slice. Slice it again first.'
 
 /**
  * One approval covering one or more host calls. Each action's hash is the
@@ -601,262 +561,14 @@ export function askApproval(approvals: ApprovalHost, request: ApprovalRequest, e
   })
 }
 
-function connected(host: Host): { printers: PrinterHost; approvals: ApprovalHost } | null {
-  return host.printers && host.approvals ? { printers: host.printers, approvals: host.approvals } : null
-}
-
-/** The plate's bounds in bed coordinates, for the preflight. */
-function plateBoundsOf(st: AppState, bounds: (parts: PlateEntry['parts'], t: number[]) => { min: number[]; max: number[] } | null): { min: [number, number, number]; max: [number, number, number] } | null {
-  let out: { min: [number, number, number]; max: [number, number, number] } | null = null
-  for (const p of st.plate) {
-    const b = bounds(p.parts, p.transform)
-    if (!b) continue
-    out = out ? { min: [0, 1, 2].map((i) => Math.min(out!.min[i]!, b.min[i]!)) as [number, number, number], max: [0, 1, 2].map((i) => Math.max(out!.max[i]!, b.max[i]!)) as [number, number, number] } : { min: [...b.min] as [number, number, number], max: [...b.max] as [number, number, number] }
-  }
-  return out
-}
-
 /**
- * Prints the sliced plate on a printer through the Print sheet (packages/app/src/send/print-sheet.tsx). The sheet is
- * the approval: it shows the file, the printer, the preflight result and the choices, and its confirm button is the
- * person's click. The token is granted on that click and bound to the
- * exact upload and start parameters. Remote, mimir, queued and scheduled starts keep the approval card.
+ * The layer range a new slice shows. An ordinary slice starts at the full stack. A slice that replaces one after a
+ * change made from Preview (norn) keeps the layer being looked at, clamped if the stack got shorter.
  */
-export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<void> {
-  // Restart to update waits while a print is on its way (updates/updates.ts).
-  const release = holdUpdates()
-  try {
-    await sendNow(host, printer)
-  } finally {
-    release()
-  }
-}
-
-async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
-  // A printer added without a connection gets the file to carry over instead.
-  if (isExportOnly(printer)) return exportGcode(host)
-  const conn = connected(host)
-  const s = get().slice
-  if (!conn) return
-  if (s.status !== 'done') {
-    toast('Slice the plate first')
-    return
-  }
-  const unsafe = printBlock(get())
-  if (unsafe) {
-    toast(unsafe, 'error')
-    return
-  }
-  if (s.stale) {
-    toast(STALE_SLICE, 'warn')
-    return
-  }
-  const plateName = jobName(get())
-  const status = await conn.printers.status(printer.id).catch(() => null)
-  const specs = supportedOptions(printer, status)
-  const ending = printEnding(printer.plugin)
-  const st0 = get()
-  const filaments = resolveSlots(st0).filter((r) => r.used).map((r) => ({ index: r.index, color: r.color, type: r.type }))
-  // A printer that follows a slot map starts from the loaded slot of the same material and closest color; one that
-  // does not takes filament N from slot N, which is what the sheet shows.
-  const auto = ending === '.gcode.3mf' ? matchSlots(filaments, st0.printerSlots) : slotMapFor(filaments.map((f) => f.index), st0.printerSlots)
-  const grams = s.result.stats.filamentG.reduce((a, b) => a + b, 0)
-  const [{ bedStateFor, localPrintHost }, { preflight }, { bounds }] = await Promise.all([import('../send/bed-state'), import('../plate/preflight'), import('../plate/transform')])
-  const bed = await bedStateFor(host, printer.id, status)
-  // A Bambu Lab printer with Developer Mode off sends status but takes no print from here: the plate goes through
-  // Bambu Connect (send/bambu-connect.ts). Any Bambu Lab printer offers it after a refusal too.
-  const connectHow = printer.plugin === 'bambu-lan' ? (host.bambuConnect && !onLinux() ? 'open' as const : 'save' as const) : null
-  const connectOnly = printRoute(printer, status) === 'bambu-connect'
-  // The sheet opens at once with the estimate; the file is exported and checked while it is open.
-  let check0: PrintSheetAsk['check'] = null
-  let thumb0: string | undefined
-  // The sheet as it opened, for opening it again after a refusal with the person's last choices kept.
-  const sheetAsk = (): Omit<PrintSheetAsk, 'resolve'> => ({
-    printer,
-    status,
-    plateName,
-    specs,
-    initial: mergeOptions(specs, get().sendChoices[printer.id]),
-    name: withEnding(jobFileName(get(), s.result.fileName), ending),
-    ending,
-    filaments,
-    slots: st0.printerSlots,
-    auto,
-    stats: { timeS: s.result.stats.timeS, grams, layers: s.result.layerCount },
-    check: check0,
-    ...(thumb0 ? { thumb: thumb0 } : {}),
-    bed,
-    ...(connectHow ? { bambuConnect: connectHow } : {}),
-    ...(connectOnly ? { connectOnly } : {}),
-  })
-  const choice = new Promise<SendChoice | null>((resolve) => set({ printSheet: { ...sheetAsk(), resolve } }))
-  const out = await exportPlateGcode(host, s.result.id)
-  if (!out.blob) {
-    set({ printSheet: null })
-    toast('The slicer returned no G-code', 'error')
-    return
-  }
-  const data = await out.blob.arrayBuffer()
-  // A Bambu Lab printer gets the plate as a .gcode.3mf (export/actions.ts, printGcode3mf): the file it starts with
-  // `project_file`, so it follows the slot choice. The hash the start is bound to is taken from the bytes that go
-  // up, not from what the engine reported.
-  const project = ending === '.gcode.3mf' ? await (await import('../export/actions')).printGcode3mf(new TextDecoder().decode(data)) : null
-  const sent = project ? (project.buffer.slice(project.byteOffset, project.byteOffset + project.byteLength) as ArrayBuffer) : data
-  const sha256 = await sha256Hex(sent)
-  const st = get()
-  const plateBounds = plateBoundsOf(st, bounds)
-  // The config the plate was sliced with, filament slots included, so the material, nozzle and flow checks see what is in the file.
-  const config = plateSliceConfig(st, st.plates.find((p) => p.id === st.activePlate)) as Record<string, SettingValue | undefined>
-  // Preflight: the file against the printer as it is now (docs/safety.md). Shown in the sheet before the person decides.
-  const checkFor = (name: string, hash = sha256) => preflight({ printer, status, config, plateBounds, plateBed: st.bed, file: { name, sha256: hash, layers: s.result.layerCount, timeS: s.result.stats.timeS, grams }, layerZ: s.result.layerZ, ...(s.result.collisions ? { collisions: s.result.collisions, objectNames: Object.fromEntries(st.plate.map((p) => [p.id, p.name])) } : {}) })
-  const first = checkFor(withEnding(jobFileName(get(), s.result.fileName), ending))
-  check0 = { errors: first.errors, warnings: first.warnings.map((text) => ({ text })), sha256, spots: first.spots }
-  // The plate's picture, from the thumbnails the engine wrote into the G-code.
-  const shot = await import('../export/threemf').then((m) => m.gcodeThumbnails(new TextDecoder().decode(data.slice(0, 4_000_000)))).catch(() => [])
-  const pic = shot.find((t) => t.w <= 300) ?? shot[shot.length - 1]
-  if (pic) thumb0 = `data:image/png;base64,${btoa(Array.from(pic.png, (b) => String.fromCharCode(b)).join(''))}`
-  set((cur) => (cur.printSheet ? { printSheet: { ...cur.printSheet, check: check0, ...(thumb0 ? { thumb: thumb0 } : {}) } } : {}))
-  // The G-code lint (flow and temperature against the material) joins the warnings when it finishes.
-  const types = [...new Set(filaments.map((f) => f.type).filter(Boolean))]
-  // The engine held every move to the used filaments' max volumetric speed, so the lint checks against that.
-  const mvs = config['filament_max_volumetric_speed']
-  const caps = filaments.map((f) => Number(Array.isArray(mvs) ? mvs[f.index - 1] : mvs)).filter((v) => Number.isFinite(v) && v > 0)
-  void import('../plate/lint')
-    .then(({ sendWarnings }) => sendWarnings({ data, printers: conn.printers, printerId: printer.id, result: s.result, slots: Object.values(auto), ...(types.length === 1 && types[0] ? { material: types[0] } : {}), ...(caps.length ? { maxFlowMm3s: Math.max(...caps) } : {}) }))
-    .then((lint) => {
-      if (lint.length && check0) check0 = { ...check0, warnings: [...check0.warnings, ...lint] }
-      if (lint.length) set((cur) => (cur.printSheet?.check ? { printSheet: { ...cur.printSheet, check: { ...cur.printSheet.check, warnings: [...cur.printSheet.check.warnings, ...lint] } } } : {}))
-    })
-    .catch(() => {})
-  const plainSha = project ? await sha256Hex(data) : sha256
-  const result = s.result
-  let picked = await choice
-  for (;;) {
-    if (!picked) {
-      toast('Nothing was sent')
-      return
-    }
-    const outcome = await sendPicked(picked)
-    if (outcome === 'done') return
-    // The printer refused the .gcode.3mf. The sheet opens again with its reason in plain words. Sending the same
-    // plate as plain G-code is the person's own choice there, never a fallback taken here.
-    const reason = outcome.refused
-    const last = picked
-    picked = await new Promise<SendChoice | null>((resolve) =>
-      set({ printSheet: { ...sheetAsk(), refusal: { reason, plainSha256: plainSha, last }, resolve } }),
-    )
-  }
-
-  /** Sends one choice from the sheet. 'done' when it went (or failed in a way the toast already said), else the printer's refusal. */
-  async function sendPicked(picked: SendChoice): Promise<'done' | { refused: string }> {
-    if (picked.bambuConnect) return viaBambuConnect(picked)
-    let opts: SendOptions = picked.options
-    if (specs.length) set((cur) => ({ sendChoices: { ...cur.sendChoices, [printer.id]: Object.fromEntries(specs.map((sp) => [sp.id, Boolean(picked.options[sp.id])])) } }))
-    // "Send as plain G-code" sends the G-code itself, under the same name with a .gcode ending.
-    const plain = !project || picked.plainGcode === true
-    let file: JobFile = plain ? { name: withEnding(picked.name, '.gcode'), kind: 'gcode', data, sha256: plainSha } : { name: picked.name, kind: 'gcode.3mf', data: sent, sha256 }
-    // A plugin that rewrites files (BamBuddy stamps a non-Bambu profile) prepares them first, so the hash on the
-    // approval is the hash of the bytes that will be posted. Every other printer gets the file as it is.
-    const prepare = conn?.printers.prepareUpload
-    if (prepare && pluginHas(printer.plugin, 'rewrites_upload')) file = await prepare(printer.id, file)
-    const check = checkFor(file.name, file.sha256)
-    if (check.errors.length) {
-      toast(check.errors[0]!, 'error')
-      return 'done'
-    }
-    // A slot map goes only to a printer that follows one for this file; the start options count filaments from 0.
-    const fixedSlots = slotMapFor(usedSlots(get()), get().printerSlots)
-    const follows = followsSlotMap(printer.plugin, file.name)
-    if (follows && (picked.start || picked.queue)) {
-      const slotMap = startSlotMap(picked.slotMap ?? fixedSlots)
-      if (Object.keys(slotMap).length) opts = { ...opts, slotMap }
-    }
-    const start = picked.start
-    const slotLine = slotMapLine(opts.slotMap) ?? (Object.keys(fixedSlots).length ? gcodeSlotsLine(fixedSlots) : null)
-    const request = await buildApproval({
-      tool: 'printer.send',
-      permission: start ? 'start' : 'queue',
-      title: start ? `Print ${plateName} on ${printer.name}?` : picked.queue ? `Upload ${plateName} to ${printer.name} and add it to the queue?` : `Send ${plateName} to ${printer.name} without starting it?`,
-      lines: [
-        ...check.facts,
-        ...(start ? optionLines(specs, opts) : []),
-        ...(start && slotLine ? [slotLine] : []),
-        ...(start ? [bed === 'clear' ? 'The printer confirmed the bed is clear' : 'Confirmed on the Print sheet: the bed is clear and the right build plate is on it'] : []),
-        start ? `Uploads ${file.name}, then heats and starts the printer` : picked.queue ? `Uploads ${file.name} to the printer and queues it${picked.queue.startAfter ? ` for after ${new Date(picked.queue.startAfter).toLocaleString()}` : ''}. It does not start on its own: you start it from the Printers page and approve again` : `Uploads ${file.name} to the printer. It does not start; you start it on the printer or from here later`,
-      ],
-      printerId: printer.id,
-      actions: [
-        { action: 'printer.upload' as const, target: printer.id, params: { printerId: printer.id, name: file.name, sha256: file.sha256 } },
-        ...(start ? [{ action: 'printer.start' as const, target: printer.id, params: { printerId: printer.id, name: file.name, opts, sha256: file.sha256 } }] : []),
-      ],
-    })
-    try {
-      const hub = localPrintHost(host)
-      if (start && hub) {
-        // A hub starts a local print in one call, no card: the sheet's click was the approval, and it carried the bed statement when the hub asked for one.
-        // Bambu Lab printers cannot list the objects of their print; the hub keeps the plate's so they can be skipped.
-        const { plateObjectsFromGcode } = await import('../features/fleet/device')
-        const objects = plateObjectsFromGcode(new TextDecoder().decode(data))
-        const go = async (plateOk: boolean) => {
-          await hub.printLocal(printer.id, file, opts, bed !== 'clear', objects.length ? objects : undefined, plateOk)
-          toast(`${plateName} started on ${printer.name}`, 'ok')
-          void rememberStartedUse(printer, file.name)
-        }
-        try {
-          await go(false)
-        } catch (e) {
-          if ((e as { code?: unknown } | null)?.code !== 'plate_check') throw e
-          // The camera guard saw something on the plate. Its card on the Printers tab shows the picture and can start
-          // this same plate anyway.
-          const { holdStart } = await import('../features/fleet/guard')
-          holdStart(printer.id, () => go(true))
-          toast(`${printer.name}: something is on the plate. The start is on hold on the Printers tab.`, 'warn')
-        }
-        return 'done'
-      }
-      // Other hosts: the click on the sheet's confirm button is the approval. Register the request it described and take its token.
-      await conn!.approvals.register(request)
-      // The sheet's confirm button is the approval and carried the bed statement when one was needed.
-      const token = await grantApproval(conn!.approvals, request, start && bed !== 'clear')
-      const remote = await conn!.printers.upload(printer.id, file, token)
-      if (start) {
-        await conn!.printers.start({ ...remote, sha256: remote.sha256 ?? file.sha256 }, opts, token)
-        toast(`${plateName} started on ${printer.name}`, 'ok')
-        void rememberStartedUse(printer, file.name)
-      } else if (picked.queue) {
-        const { addToQueue, queueId } = await import('../queue/queue')
-        addToQueue({ id: queueId(), printerId: printer.id, printerName: printer.name, plateName, remote, sha256: file.sha256, layers: result.layerCount, timeS: result.stats.timeS, grams, options: opts, ...(picked.queue.startAfter ? { startAfter: picked.queue.startAfter } : {}), addedAt: new Date().toISOString() })
-        toast(`${plateName} is queued for ${printer.name}. It has not started.`, 'ok')
-      } else {
-        toast(`${file.name} is on ${printer.name}. It has not started.`, 'ok')
-      }
-      return 'done'
-    } catch (e) {
-      const refused = refusalReason(e)
-      if (refused !== null && !plain && start) return { refused }
-      toast(e instanceof Error ? e.message : `Could not reach ${printer.name}`, 'error')
-      return 'done'
-    }
-  }
-
-  /** Opens the plate's .gcode.3mf in Bambu Connect, or saves it where that cannot happen, and says which in one line. */
-  async function viaBambuConnect(picked: SendChoice): Promise<'done'> {
-    const name = withEnding(picked.name, '.gcode.3mf')
-    const check = checkFor(name)
-    if (check.errors.length) {
-      toast(check.errors[0]!, 'error')
-      return 'done'
-    }
-    try {
-      const handed = await handToBambuConnect(host, { name, data: sent }, plateName)
-      const copy = handOffCopy(handed, appName())
-      const link = copy.download
-      toast(copy.text, copy.tone, link ? { label: 'Get Bambu Connect', run: () => void openLink(link) } : undefined)
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Could not open Bambu Connect', 'error')
-    }
-    return 'done'
-  }
+export function layersAfterSlice(prev: { layerHi: number; layerLo: number; moveCut: number }, layerCount: number, keep: boolean): { layerHi: number; layerLo: number; moveCut: number } {
+  if (!keep || prev.layerHi < 1) return { layerHi: layerCount, layerLo: 1, moveCut: 1 }
+  const hi = Math.max(1, Math.min(prev.layerHi, layerCount))
+  return { layerHi: hi, layerLo: Math.max(1, Math.min(prev.layerLo, hi)), moveCut: prev.moveCut }
 }
 
 /** The printer's own reason when an error is a refused start (`refused`), else null. */
@@ -867,115 +579,25 @@ export function refusalReason(e: unknown): string | null {
   return (at >= 0 ? m.slice(at + 'refused the print: '.length) : m).trim() || 'The printer gave no reason.'
 }
 
-/** Starts a queued plate: the same approval card and bed-clear question as a send, on the file already on the printer. */
+/** The send and printer flow loads on first use, so the startup shell stays small (send-actions.ts). */
+const sendActions = () => import('./send-actions')
+
+export async function exportGcode(host: Host): Promise<void> {
+  return (await sendActions()).exportGcode(host)
+}
+
+export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<void> {
+  return (await sendActions()).sendToPrinter(host, printer)
+}
+
 export async function startQueued(host: Host, item: QueueItem): Promise<void> {
-  const release = holdUpdates()
-  try {
-    await startQueuedNow(host, item)
-  } finally {
-    release()
-  }
+  return (await sendActions()).startQueued(host, item)
 }
 
-async function startQueuedNow(host: Host, item: QueueItem): Promise<void> {
-  const conn = connected(host)
-  if (!conn) return
-  const { removeFromQueue } = await import('../queue/queue')
-  const status = await conn.printers.status(item.printerId).catch(() => null)
-  if (status && status.state !== 'idle' && status.state !== 'finished') {
-    toast(`${item.printerName} is busy. Start it when the printer is free.`, 'warn')
-    return
-  }
-  // Queue items from before the slot map contract hold 1 based keys on plain G-code. No printer follows a map
-  // for those files, so the start goes without one and the card says what the printer will do.
-  const info = (await Promise.resolve().then(() => conn.printers.list()).catch(() => [] as PrinterInfo[])).find((p) => p.id === item.printerId)
-  const options = info && followsSlotMap(info.plugin, item.remote.name) ? item.options : withoutSlotMap(item.options)
-  const request = await buildApproval({
-    tool: 'printer.start',
-    permission: 'start',
-    title: `Start ${item.plateName} on ${item.printerName}?`,
-    lines: [
-      `${item.printerName}: ${item.remote.name}`,
-      `${item.layers} layers, ${formatDuration(item.timeS)}, ${item.grams.toFixed(1)} g`,
-      `File check: ${item.sha256.slice(0, 12)}`,
-      ...[slotMapLine(options.slotMap)].filter((l): l is string => l !== null),
-      'Heats and starts the printer',
-    ],
-    printerId: item.printerId,
-    actions: [{ action: 'printer.start' as const, target: item.printerId, params: { printerId: item.printerId, name: item.remote.name, opts: options, sha256: item.remote.sha256 ?? item.sha256 } }],
-  })
-  try {
-    const token = await askApproval(conn.approvals, request, { confirm: 'The bed is clear and the right build plate is on it', go: 'Bed is clear, start print' })
-    if (!token) return
-    await conn.printers.start({ ...item.remote, sha256: item.remote.sha256 ?? item.sha256 }, options, token)
-    removeFromQueue(item.id)
-    toast(`${item.plateName} started on ${item.printerName}`, 'ok')
-  } catch (e) {
-    toast(e instanceof Error ? e.message : `Could not reach ${item.printerName}`, 'error')
-  }
-}
-
-/** Remembers what a started plate will use, so the print's finish can offer the Spoolman subtraction. */
-async function rememberStartedUse(printer: PrinterInfo & { status?: PrinterStatus }, jobName: string): Promise<void> {
-  const s = get()
-  if (s.slice.status !== 'done' || !s.spools?.length) return
-  const { rememberUse, usesFor } = await import('../inventory/usage')
-  const uses = usesFor(s.slice.result.stats.filamentG, s.spools, s.spoolLinks, printer.status?.slots.map((x) => x.spoolmanId))
-  rememberUse({ printerId: printer.id, jobName, uses })
-}
-
-/** Subtracts what a slice used from the Spoolman spools linked to its slots. One approval covers every spool and amount listed. */
 export async function recordSpoolUse(host: Host, uses: { spoolId: number; label: string; grams: number }[]): Promise<void> {
-  const conn = connected(host)
-  if (!conn || uses.length === 0) return
-  const inputs = uses.map((u) => ({ id: u.spoolId, grams: Math.round(u.grams * 10) / 10 }))
-  const request = await buildApproval({
-    tool: 'spoolman.record_usage',
-    permission: 'profile',
-    title: 'Subtract this print from your spools in Spoolman?',
-    lines: uses.map((u) => `${u.label}: ${u.grams.toFixed(1)} g`),
-    actions: inputs.map((input) => ({ action: 'plugin.call' as const, target: 'spoolman', params: { pluginId: 'spoolman', tool: 'record_usage', input } })),
-  })
-  try {
-    const token = await askApproval(conn.approvals, request)
-    if (!token) return
-    for (const input of inputs) await conn.printers.callTool('spoolman', 'record_usage', input, token)
-    const { loadSpools } = await import('../inventory/spools')
-    await loadSpools(host)
-    toast('Spools updated in Spoolman', 'ok')
-  } catch (e) {
-    toast(e instanceof Error ? e.message : 'Could not reach Spoolman', 'error')
-  }
+  return (await sendActions()).recordSpoolUse(host, uses)
 }
 
 export async function printerAction(host: Host, printer: PrinterInfo, action: 'pause' | 'resume' | 'cancel'): Promise<void> {
-  const conn = connected(host)
-  if (!conn) return
-  const verb = action === 'pause' ? 'Pause' : action === 'resume' ? 'Resume' : 'Cancel'
-  const request = await buildApproval({
-    tool: `printer.${action}`,
-    permission: 'start',
-    title: `${verb} the print on ${printer.name}?`,
-    lines: [`${printer.name}: ${printer.vendor} ${printer.model}`, action === 'cancel' ? 'The job stops and cannot be resumed' : action === 'pause' ? 'The printer parks the head and holds temperatures' : 'The printer reheats and continues the job'],
-    printerId: printer.id,
-    actions: [{ action: `printer.${action}`, target: printer.id, params: { printerId: printer.id } }],
-  })
-  try {
-    const token = await askApproval(conn.approvals, request)
-    if (!token) return
-    await conn.printers[action](printer.id, token)
-    toast(`${action === 'pause' ? 'Paused' : action === 'resume' ? 'Resumed' : 'Canceled'} on ${printer.name}`, 'ok')
-  } catch (e) {
-    toast(e instanceof Error ? e.message : `Could not reach ${printer.name}`, 'error')
-  }
-}
-
-/**
- * The layer range a new slice shows. An ordinary slice starts at the full stack. A slice that replaces one after a
- * change made from Preview (norn) keeps the layer being looked at, clamped if the stack got shorter.
- */
-export function layersAfterSlice(prev: { layerHi: number; layerLo: number; moveCut: number }, layerCount: number, keep: boolean): { layerHi: number; layerLo: number; moveCut: number } {
-  if (!keep || prev.layerHi < 1) return { layerHi: layerCount, layerLo: 1, moveCut: 1 }
-  const hi = Math.max(1, Math.min(prev.layerHi, layerCount))
-  return { layerHi: hi, layerLo: Math.max(1, Math.min(prev.layerLo, hi)), moveCut: prev.moveCut }
+  return (await sendActions()).printerAction(host, printer, action)
 }
