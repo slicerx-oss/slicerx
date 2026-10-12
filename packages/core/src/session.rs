@@ -4233,6 +4233,38 @@ impl SliceSession {
         self.lightning.plan(|| {
             let areas = self.whole_sparse(cfg);
             let ang = |key: &str| cfg.raw_number(key, 45.0);
+            // `lightning_engine` = `v2` picks the second planner; `lightning_parity` turns on its reference
+            // output mode.
+            if matches!(cfg.raw.get("lightning_engine"), Some(serde_json::Value::String(e)) if e == "v2") {
+                let width = cfg.sparse_infill_width();
+                let spacing = cfg.spacing_for(width);
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "clamped to 1..=10 first"
+                )]
+                let lines_per_branch = cfg.raw_number("fill_multiline", 1.0).round().clamp(1.0, 10.0) as u32;
+                return crate::lightning2::plan(
+                    &areas,
+                    &crate::lightning2::Params {
+                        line_width: width,
+                        spacing,
+                        junction_trim: 0.5 * spacing,
+                        density_percent: cfg.sparse_infill_density,
+                        lines_per_branch,
+                        layer_height: self.plan.height,
+                        thickness: (0..self.plan.count()).map(|l| self.plan.thickness(l)).collect(),
+                        overhang_angle: ang("lightning_overhang_angle"),
+                        prune_angle: ang("lightning_prune_angle"),
+                        straighten_angle: ang("lightning_straightening_angle"),
+                        quirks: if crate::firmware::truthy(cfg, "lightning_parity") {
+                            crate::lightning2::Quirks::reference()
+                        } else {
+                            crate::lightning2::Quirks::default()
+                        },
+                    },
+                );
+            }
             crate::lightning::plan(
                 &areas,
                 &crate::lightning::Params {
