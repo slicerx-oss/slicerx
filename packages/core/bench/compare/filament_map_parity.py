@@ -45,6 +45,8 @@ CASES = {
     "three": ({"sparse_infill_filament": "2", "solid_infill_filament": "3"}, 3),
     "three-walls": ({"wall_filament": "2", "sparse_infill_filament": "3"}, 3),
     "four": ({"wall_filament": "2", "sparse_infill_filament": "3", "solid_infill_filament": "4"}, 4),
+    # a project filament the plate never prints with: still listed, on the left extruder
+    "three-one-unused": ({"sparse_infill_filament": "2"}, 3),
 }
 SX_KEYS = {"sparse_infill_filament": ["sparse_infill_filament_id"],
            "wall_filament": ["outer_wall_filament_id", "inner_wall_filament_id"],
