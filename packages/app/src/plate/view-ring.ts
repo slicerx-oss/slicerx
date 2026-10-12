@@ -41,3 +41,12 @@ export function setLayFace(fn: ((objectId: string) => boolean) | null): void {
 export function layPickedFace(objectId: string): boolean {
   return layFace?.(objectId) ?? false
 }
+
+/** Picks every edge of the loop through the last picked edge (the ring of edges around its face); set by the host. */
+let edgeLoop: (() => Promise<boolean>) | null = null
+export function setEdgeLoop(fn: (() => Promise<boolean>) | null): void {
+  edgeLoop = fn
+}
+export function selectEdgeLoop(): Promise<boolean> {
+  return edgeLoop?.() ?? Promise.resolve(false)
+}
