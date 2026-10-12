@@ -3,9 +3,34 @@
 // Camera framing: the product-shot default, view presets, animated moves and
 // near and far planes fitted to the scene so the depth buffer keeps its
 // precision for stacked color parts.
-import { Box3, PerspectiveCamera, Sphere, Spherical, Vector3 } from 'three'
+import { Box3, PerspectiveCamera, Quaternion, Sphere, Spherical, Vector3, type Camera } from 'three'
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { ViewPreset } from './types'
+
+/**
+ * Whether the camera really moved since the last call. OrbitControls reports a change on every update while the
+ * camera sits on its distance limit (rounding puts the radius a hair past it, and the clamp counts as a zoom), so its
+ * own answer would keep the view redrawing a still picture forever. Same thresholds as OrbitControls.
+ */
+export class PoseWatch {
+  private readonly pos = new Vector3(Number.NaN, 0, 0)
+  private readonly quat = new Quaternion()
+  private readonly target = new Vector3()
+  private zoom = Number.NaN
+
+  moved(camera: Camera & { zoom?: number }, target: Vector3): boolean {
+    const eps = 1e-6
+    const zoom = camera.zoom ?? 1
+    const moved = !(this.pos.distanceToSquared(camera.position) <= eps) || 8 * (1 - Math.abs(this.quat.dot(camera.quaternion))) > eps || this.target.distanceToSquared(target) > eps || zoom !== this.zoom
+    if (moved) {
+      this.pos.copy(camera.position)
+      this.quat.copy(camera.quaternion)
+      this.target.copy(target)
+      this.zoom = zoom
+    }
+    return moved
+  }
+}
 
 export interface CameraMove {
   t0: number
