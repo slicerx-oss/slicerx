@@ -313,6 +313,7 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 | `service_error` | The cloud or account service failed or could not be reached |
 | `not_found` | The id names nothing this server has, such as a design that was never opened; the message says how to list them |
 | `not_supported` | This server cannot do that call as asked, such as STL modeling without the sx-geom program; the message says what works instead |
+| `busy` | The open SlicerX app is in use: the person is changing that object, a question is up for them, or the agent already has a call running. Call again in a moment |
 | `internal_error` | Anything else; please report it |
 | `sxlock_<reason>` | A locked project could not be opened or made: `sxlock_wrong_account`, `sxlock_offline`, `sxlock_signed_out`, `sxlock_revoked`, `sxlock_unknown_key`, `sxlock_missing_scope`, `sxlock_rate_limited`, `sxlock_banned`, `sxlock_invalid`, `sxlock_not_sxlock`, `sxlock_unsupported`, `sxlock_damaged` |
 
