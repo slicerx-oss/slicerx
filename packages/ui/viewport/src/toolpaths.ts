@@ -1017,6 +1017,12 @@ export class Toolpaths {
     this.apply()
   }
 
+  /** Whether the layer range or the move cut shows less than the whole print: someone is inspecting a layer. */
+  narrowed(): boolean {
+    const b = this.buf
+    return !!b && (this.lo > 0 || this.hi < b.layerCount - 1 || this.moveCut !== null)
+  }
+
   /** The last move drawn: its segment index, layer and G-code line (0 when the buffer has none). Null with no preview. */
   currentMove(): { segment: number; layer: number; gcodeLine: number } | null {
     const b = this.buf
