@@ -294,6 +294,33 @@
    ]
   },
   {
+   "id": "bambu-h2d-pro",
+   "brand": "bambu-lab",
+   "vendor": "Bambu Lab",
+   "model": "H2D Pro",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 350,
+    "y": 320,
+    "z": 325
+   },
+   "nozzles": [
+    0.2,
+    0.4,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 2,
+   "flavor": "marlin",
+   "limits": {},
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/BBL/machine/Bambu%20Lab%20H2D%20Pro.json"
+   ]
+  },
+  {
    "id": "bambu-h2c",
    "brand": "bambu-lab",
    "vendor": "Bambu Lab",
@@ -324,6 +351,33 @@
    },
    "sources": [
     "https://bambulab.com/en/h2c"
+   ]
+  },
+  {
+   "id": "bambu-x2d",
+   "brand": "bambu-lab",
+   "vendor": "Bambu Lab",
+   "model": "X2D",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 256,
+    "y": 256,
+    "z": 261
+   },
+   "nozzles": [
+    0.2,
+    0.4,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 2,
+   "flavor": "marlin",
+   "limits": {},
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/BBL/machine/Bambu%20Lab%20X2D.json"
    ]
   },
   {

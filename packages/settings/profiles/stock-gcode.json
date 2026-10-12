@@ -341,6 +341,33 @@
     "88f20101ff9283ab65d898c8c4eac654"
    ]
   },
+  "bambu-h2d-pro": {
+   "change_filament_gcode": [
+    "694ec2930c14c793348005b892075d76",
+    "afc5a4d642e512394ff3a6a10ce3e422"
+   ],
+   "layer_change_gcode": [
+    "f4b60fd235cc79bd54bcf7246dbdda9d"
+   ],
+   "machine_end_gcode": [
+    "37e2aa0a5d44507d0918d12d1a5ade9a",
+    "7dc7986138aec953bf0407200f0855d3"
+   ],
+   "machine_pause_gcode": [
+    "3ba8fe3c593046dd6662a6befdebff2f"
+   ],
+   "machine_start_gcode": [
+    "6f2be3a652d27cef6b62c4e22e5041aa",
+    "9a4091bb0ff45c25b06d128eff0dd674"
+   ],
+   "time_lapse_gcode": [
+    "2137110147c4dad93db6b42a8937447d",
+    "903a7f43b3cadb1ac37e23ade66e4ec6"
+   ],
+   "wrapping_detection_gcode": [
+    "f933bf496f18a7f109c64f25d00ba512"
+   ]
+  },
   "bambu-h2s": {
    "change_filament_gcode": [
     "0db57ffe668fc8a380e300645b66f4f8",
@@ -972,6 +999,31 @@
     "10787b6eec5735f26460a17cb2e1b0f7",
     "1ccbb6e2d28bc1d3d647f365a38cfa2f",
     "8643dedd5ecf6abca53ab4cb40184e31"
+   ]
+  },
+  "bambu-x2d": {
+   "change_filament_gcode": [
+    "38844f5a26ac41ecbbc85a3dcc04e2cb",
+    "7af7a97f0dd5f81f8d6d0a1881c18b0d"
+   ],
+   "layer_change_gcode": [
+    "1783c8cc1832acdfc85ada39c6a7428c",
+    "a91368c22d6e470684304fb7aa8e8df6"
+   ],
+   "machine_end_gcode": [
+    "13b6bc55ba05d2331ed97988aec70dfb",
+    "352cc7d05a4219a18bcda49b3db7910d"
+   ],
+   "machine_pause_gcode": [
+    "3ba8fe3c593046dd6662a6befdebff2f"
+   ],
+   "machine_start_gcode": [
+    "94d6d870df5af951fee7f3bb613a8077",
+    "af27abc81ad986cb6efdfc753ca558e6"
+   ],
+   "time_lapse_gcode": [
+    "11f4ac45c6237a976fcfa5404e226bc9",
+    "7d9465550e3b2e5c537dfecfbc29c30d"
    ]
   },
   "creality-ender-3-octoprint": {

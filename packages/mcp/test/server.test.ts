@@ -302,6 +302,21 @@ describe('SlicerX printer profiles and process presets', () => {
   })
 })
 
+describe('the Bambu Lab H2D Pro and X2D', () => {
+  it('are found by a client and come with their own machine settings', async () => {
+    const h = await connect()
+    for (const [query, id] of [['bambu h2d pro', 'bambu-h2d-pro'], ['bambu x2d', 'bambu-x2d']] as const) {
+      const hits = data<{ output: { id: string }[] }>(await h.call('slicerx_printer_profile_search', { query }))
+      expect(hits.output[0]?.id, query).toBe(id)
+    }
+    const pro = data<{ config: Record<string, unknown> }>(await h.call('slicerx_get_profile', { profile: 'machine:bambu-h2d-pro' }))
+    expect(pro.config['printable_height']).toBe(325)
+    const x2d = data<{ config: Record<string, unknown> }>(await h.call('slicerx_get_profile', { profile: 'machine:bambu-x2d' }))
+    expect(x2d.config['printable_height']).toBe(261)
+    expect(x2d.config['nozzle_diameter']).toEqual([0.4, 0.4])
+  })
+})
+
 describe('theming', () => {
   it('returns a built-in theme with a stylesheet and passing contrast', async () => {
     const h = await connect()
