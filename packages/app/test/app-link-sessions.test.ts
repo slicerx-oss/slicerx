@@ -69,4 +69,19 @@ describe('mimir sessions over the app link', () => {
       expect(e, String(id)).toBeInstanceOf(LinkError)
     }
   })
+
+  it('count how mimir checked sizes, for the bench', async () => {
+    const s = createMemorySessionStore()
+    const add = (e: unknown) => s.append('mimir_c', e as PilotEvent)
+    for (const e of [
+      start('mimir_c', '2026-10-12T12:00:00Z'),
+      { type: 'ask', askId: 'a1', title: 'Which phone', question: '?', choices: [] },
+      { type: 'lookup', lookup: { id: 'l1', title: 'Size', fields: [], source: { title: 'x', url: 'https://example.com' } } },
+      { type: 'sheet', sheet: { id: 'sh1', title: 'Sizes', views: ['iso'], dims: [] } },
+      { type: 'sheet_answered', sheetId: 'sh1', answer: { confirmed: true, values: {}, changed: ['lean', 'wall'] } },
+      { type: 'done', stopReason: 'end', ms: 1 },
+    ]) await add(e)
+    setSessionSource({ store: s })
+    expect(await runCall('mimir.session', { id: 'mimir_c' })).toMatchObject({ stats: { questions: 2, sheets: 1, lookups: 1, sheetsConfirmed: 1, sizesChanged: 2 } })
+  })
 })
