@@ -410,6 +410,14 @@ pub(crate) fn parse_status(id: &str, v: &Value, dual: bool) -> PrinterStatus {
     } else {
         None
     };
+    // The live part: while a job runs, the head's `z` is the height printing now. The status has no
+    // speed, fan or light field.
+    let live = f64_at(v, &["z"]).filter(|z| active && z.is_finite()).map(|z| {
+        Box::new(crate::types::PrinterLive {
+            layer_z_mm: Some((z * 100.0).round() / 100.0),
+            ..crate::types::PrinterLive::default()
+        })
+    });
     PrinterStatus {
         printer_id: id.to_owned(),
         state,
@@ -425,7 +433,7 @@ pub(crate) fn parse_status(id: &str, v: &Value, dual: bool) -> PrinterStatus {
         camera_available: false,
         message,
         updated_at: now_iso(),
-        live: None,
+        live,
     }
 }
 
@@ -662,6 +670,19 @@ mod tests {
             false,
         );
         assert_eq!(by_lines.progress, Some(0.25));
+        let z = |status: &str| {
+            parse_status(
+                "x",
+                &json!({ "status": status, "fileName": "a", "z": 12.345 }),
+                false,
+            )
+            .live
+            .and_then(|l| l.layer_z_mm)
+        };
+        assert_eq!(
+            (z("RUNNING"), z("PAUSED"), z("IDLE")),
+            (Some(12.35), Some(12.35), None)
+        );
     }
 
     #[test]
