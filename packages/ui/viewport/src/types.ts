@@ -361,8 +361,12 @@ export interface PathPick {
 
 export interface ViewportEvents {
   pick: PickEvent
-  /** Prepare: a right click that did not drag, on an object or not. `screen` is the client point for a menu there. */
-  contextpick: { objectId: string | null; screen: [number, number] }
+  /**
+   * Prepare: a right click that did not drag, a touch held still, or Shift+F10 and the menu key (`key`, at the middle
+   * of the view, for what is selected). What is under the point comes as a pick reports it; `screen` is the client
+   * point for a menu there.
+   */
+  contextpick: { objectId: string | null; partIndex: number | null; triangle: number | null; point: [number, number, number] | null; screen: [number, number]; key?: true }
   select: { ids: string[] }
   /** While a scale handle is dragged: the factors applied to the model's own axes since the drag began (`snapped`: Shift is down). */
   scale: { id: string; factors: [number, number, number]; uniform: boolean; snapped: boolean }
@@ -589,6 +593,8 @@ export interface Viewport {
   setPickFaces?(on: boolean): void
   /** The faces picked in Model, drawn until changed: each the patch around a triangle. */
   setSelectedFaces?(faces: readonly { objectId: string; partIndex: number; triangle: number }[]): void
+  /** The face around a triangle as lay on face takes it (normal and center), for a face picked in Model. */
+  facePickAt?(objectId: string, partIndex: number, triangle: number): FacePick | null
   pickFace(clientX: number, clientY: number): FacePick | null
   /** Packs objects on the bed and emits `transform` events. Returns the new transforms. */
   arrange(opts?: { animate?: boolean; gapMm?: number }): Record<string, number[]>

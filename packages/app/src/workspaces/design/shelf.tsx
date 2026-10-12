@@ -16,6 +16,7 @@ import { set, toast, useApp } from '../../state/store'
 import { SHAPES } from '../prepare/object-actions'
 import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { openTool } from './open-tool'
+import { ViewRing } from './view-ring'
 import { availableTools, nextTools, SHELF_GROUPS, shelfGroup, type DialogTool, type ShelfGroup, type ShelfTool } from './shelf-tools'
 
 const ToolDialog = lazy(() => import('../prepare/tool-dialog').then((m) => ({ default: m.ToolDialog })))
@@ -117,6 +118,7 @@ export function Shelf() {
         <Button variant="ghost" size="sm" icon="undo" aria-label="Undo" tip="edit.undo" disabled={undo === 0} onClick={() => history().undo()} />
         <Button variant="ghost" size="sm" icon="redo" aria-label="Redo" tip="edit.redo" disabled={redo === 0} onClick={() => history().redo()} />
       </div>
+      <ViewRing />
       {dialog ? (
         <Suspense fallback={null}>
           <ToolDialog tool={dialog} onClose={() => set({ objectTool: null })} />

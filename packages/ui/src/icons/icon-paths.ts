@@ -269,6 +269,7 @@ export const ICON_PATHS = {
   "shapes": "<circle cx=\"7.5\" cy=\"7.5\" r=\"4\"/><rect x=\"13\" y=\"3.5\" width=\"7.5\" height=\"7.5\" rx=\"1.5\"/><path d=\"M12 13l4.5 7.5h-9z\"/>",
   "push-pull": "<path d=\"M14.9 11.1c.2-4-1.4-6.9-4.1-6.9-2 0-3.4 1.3-3.6 3.1a1.3 1.3 0 0 0 2.6.3c.1-.5.6-.9 1.2-.9 1.3 0 1.9 1.7 1.6 4.1\"/><path d=\"M11.4 14.6 8.4 9.3a1.8 1.8 0 0 0-3.2 1.8l3 5.3\"/><path d=\"M14.9 11.1a2.3 2.3 0 0 1 4.6.7v2.7c0 3.6-2.9 6.5-6.5 6.5h-1c-1.4 0-2.6-.8-3.8-2.7l-.1-2\"/>",
   "fillet-edge": "<path d=\"M4.5 3.5v8a9 9 0 0 0 9 9h7\"/><path d=\"M4.5 16v4.5H9\" stroke-dasharray=\"1.6 2.2\"/>",
+  "chamfer-edge": "<path d=\"M4.5 3.5v9l8 8h7\"/><path d=\"M4.5 16v4.5H9\" stroke-dasharray=\"1.6 2.2\"/>",
   "hole-fit": "<ellipse cx=\"12\" cy=\"8.5\" rx=\"8.5\" ry=\"4\"/><path d=\"M3.5 8.5v7c0 2.2 3.8 4 8.5 4s8.5-1.8 8.5-4v-7\"/><ellipse cx=\"12\" cy=\"8.5\" rx=\"4.5\" ry=\"2\"/><path d=\"M10 9.6v2.2c0 .6.9 1 2 1s2-.4 2-1V9.6\"/>",
   "thread-bolt": "<path d=\"M7 3.5h10v4H7z\"/><path d=\"M9 7.5v13h6v-13\"/><path d=\"M9 11l6-1.5M9 14.5l6-1.5M9 18l6-1.5\"/>",
   "on-face": "<path d=\"M2.5 16 8 11h13.5L16 16z\"/><ellipse cx=\"12\" cy=\"13.5\" rx=\"3\" ry=\"1.2\"/><path d=\"M9 13.5V7.2c0-.7 1.3-1.2 3-1.2s3 .5 3 1.2v6.3\"/><path d=\"M9 7.2c0 .7 1.3 1.2 3 1.2s3-.5 3-1.2\"/>",
@@ -440,7 +441,7 @@ export type { IconName } from './icon-names'
 export const ICON_GROUPS: Readonly<Record<string, readonly IconName[]>> = {
   "Workspace": ["prepare","preview","feed","library","fleet","pilot","pocket"],
   "Slicing": ["slice","layer-height","walls","infill","support","brim","seam","ironing","speed","time","weight","cost","preset-draft","preset-standard","preset-fine","preset-strong","layers","toolpath","travel","retract","wipe","layer-time","cooling","overhang","bridge","thin-wall","gap-fill","elephant-foot","z-hop","purge-line","skirt","raft","tree-support","normal-support","variable-layer"],
-  "Plate tools": ["move","rotate","scale","orient","arrange","cut","paint","new-plate","plate","plates","mirror","lay-flat","snap","group","ungroup","select-all","deselect","measure","ruler","split","merge","hollow","drain-hole","text","shapes","sphere","cube","cylinder","cone","support-painting","seam-painting","color-painting","push-pull","fillet-edge","hole-fit","thread-bolt","on-face","svg-face","shell-open","subtract-shape","named-values","simplify-mesh"],
+  "Plate tools": ["move","rotate","scale","orient","arrange","cut","paint","new-plate","plate","plates","mirror","lay-flat","snap","group","ungroup","select-all","deselect","measure","ruler","split","merge","hollow","drain-hole","text","shapes","sphere","cube","cylinder","cone","support-painting","seam-painting","color-painting","push-pull","fillet-edge","chamfer-edge","hole-fit","thread-bolt","on-face","svg-face","shell-open","subtract-shape","named-values","simplify-mesh"],
   "Hardware": ["printer","nozzle","bed-temp","fan","spool","multi-material","camera","send-to-printer","queue","hotend","extruder","direct-drive","bowden","heatbreak","bed-plate","textured-plate","smooth-plate","engineering-plate","glass-plate","magnet","clip","chamber","chamber-temp","enclosure","led","ams-unit","ams-slot","ams-empty","ams-loaded"],
   "Creators": ["creator","subscribe","drop","vault","sx3mf","license","fingerprint","cloud-slice","heart","download","bookmark"],
   "Library": ["folder","version","grid","list","filter","more"],
@@ -469,4 +470,4 @@ export const ICON_GROUPS: Readonly<Record<string, readonly IconName[]>> = {
   "Picking": ["select-object","select-face","select-edge","box-select","roll-to-here"],
 }
 
-export const ICON_COUNT = 426
+export const ICON_COUNT = 427
