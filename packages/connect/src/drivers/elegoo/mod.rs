@@ -886,6 +886,22 @@ impl PrinterSession for ElegooSession {
     }
 }
 
+/// The build volume in an SDCP `XYZsize` ("256x256x256", millimetres), when all three sizes read
+/// as positive numbers.
+fn build_volume(xyz: &str) -> Option<[f64; 3]> {
+    let mut out = [0.0; 3];
+    let mut parts = xyz.split(['x', 'X', '*']);
+    for o in &mut out {
+        *o = parts
+            .next()?
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v > 0.0)?;
+    }
+    parts.next().is_none().then_some(out)
+}
+
 /// The hardware in an SDCP `Attributes` object.
 pub(crate) fn elegoo_hardware(a: &Value) -> PrinterHardware {
     let text = |k: &str| {
@@ -900,6 +916,7 @@ pub(crate) fn elegoo_hardware(a: &Value) -> PrinterHardware {
         firmware: text("FirmwareVersion"),
         serial: text("MainboardID"),
         extruders: vec![ExtruderInfo::default()],
+        build_volume_mm: a.get("XYZsize").and_then(Value::as_str).and_then(build_volume),
         ..PrinterHardware::default()
     }
 }
@@ -1032,6 +1049,11 @@ mod tests {
         let h = elegoo_hardware(&a);
         assert_eq!(h.model.as_deref(), Some("Centauri Carbon"));
         assert_eq!(h.serial.as_deref(), Some("000000000001d354"));
+        assert_eq!(h.build_volume_mm, Some([256.0, 256.0, 256.0]));
+        assert_eq!(build_volume("300 x 300 x 400"), Some([300.0, 300.0, 400.0]));
+        for bad in ["", "256x256", "256x256x256x1", "0x256x256", "axbxc"] {
+            assert_eq!(build_volume(bad), None, "{bad}");
+        }
         let files = parse_file_list(&json!({ "Ack": 0, "FileList": [
             { "name": "/local/cube.gcode", "type": 1 }, { "name": "/local/dir", "type": 0 }
         ]}));
