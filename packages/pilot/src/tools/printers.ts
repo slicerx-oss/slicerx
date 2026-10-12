@@ -130,8 +130,11 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     version: '1.0.0',
     source: 'plugin',
     permission: 'read',
-    description: 'List printers with their state, loaded filament, temperatures and machine cost. All printers by default; pass a fleet name (an optional group the user made) to narrow it.',
-    input: z.object({ fleet: z.string().optional().describe('Name of a user fleet group; omit for all printers') }),
+    description: 'List printers with their state, job progress, loaded filament and machine cost. All printers by default; pass a fleet name (an optional group the user made) to narrow it. detail "full" adds temperatures, nozzle, firmware and the printer\'s message; printer.status reads one printer in full.',
+    input: z.object({
+      fleet: z.string().optional().describe('Name of a user fleet group; omit for all printers'),
+      detail: z.enum(['summary', 'full']).default('summary'),
+    }),
     args: (i) => (i.fleet ? `--fleet "${i.fleet}"` : '--all'),
     async run(i, ctx) {
       const sel = await resolvePrinters(ctx, { fleet: i.fleet })
@@ -144,22 +147,36 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
         return [p.id, `${p.name} ${p.model}`, { text: state, tone: state === 'idle' ? 'ok' : state === 'offline' || state === 'error' ? 'bad' : 'warn' }, s?.slots.map((x) => x.material ?? 'empty').join(', ') ?? '', rate === undefined ? '' : `$${rate.toFixed(2)}/h`]
       })
       const idle = statuses.filter((s) => s?.state === 'idle').length
+      const full = i.detail === 'full'
       return {
         summary: `${printers.length} printers, ${idle} idle`,
-        output: printers.map((p, i) => ({
+        output: printers.map((p, k) => ({
           id: p.id,
           name: p.name,
           vendor: p.vendor,
           model: p.model,
           plugin: p.plugin,
           machineRatePerHour: shared.machineRates.get(p.id) ?? null,
-          status: statuses[i] ?? { state: 'offline' },
+          status: full ? (statuses[k] ?? { state: 'offline' }) : brief(statuses[k]),
         })),
         display: [{ kind: 'table', head: ['id', 'printer', 'state', 'loaded', 'machine cost'], rows }],
         untrusted: true,
       }
     },
   })
+
+  /** A printer's state in a few fields, for lists: what it is doing and what is loaded. */
+  const brief = (s: PrinterStatus | null | undefined) =>
+    s
+      ? {
+          state: s.state,
+          ...(s.jobName ? { jobName: s.jobName } : {}),
+          ...(s.progress !== undefined ? { progress: s.progress } : {}),
+          ...(s.timeLeftS !== undefined ? { timeLeftS: s.timeLeftS } : {}),
+          slots: s.slots.map((x) => x.material ?? 'empty'),
+          ...(s.needsCode ? { needsCode: true } : {}),
+        }
+      : { state: 'offline' }
 
   const status = defineTool({
     name: 'printer.status',
