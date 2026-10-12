@@ -102,16 +102,17 @@ export function createFakeSlicer(opts: FakeSlicerOptions = {}): SlicerHost {
   const previews = new Map<string, ArrayBuffer>()
   let nextId = 1
 
-  const handle = (name: string, triangles: number): MeshHandle => {
+  const handle = (name: string, triangles: number, from?: MeshPart[]): MeshHandle => {
     const id = `mesh-${nextId++}`
     const h: MeshHandle = {
       id,
       hash: id,
       name,
       triangles,
-      bboxMm: [75.18, 84.85, 101.53],
+      bboxMm: (from && sizeOf(from)) ?? [75.18, 84.85, 101.53],
       openEdges: 0,
-      parts: [{ name, slot: 1, triangles }],
+      // Parts handed in keep their names and filament slots, as the real engine's do, so multi-filament plates behave alike.
+      parts: from?.length ? from.map((p) => ({ name: p.name, slot: p.slot, triangles: p.indices.length / 3 })) : [{ name, slot: 1, triangles }],
     }
     meshes.set(id, h)
     return h
@@ -123,7 +124,7 @@ export function createFakeSlicer(opts: FakeSlicerOptions = {}): SlicerHost {
     },
     loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> {
       const triangles = parts.reduce((n, p) => n + p.indices.length / 3, 0)
-      return Promise.resolve(handle(name, triangles))
+      return Promise.resolve(handle(name, triangles, parts))
     },
     slice(req: SliceRequest, o?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal }): Promise<SliceResult> {
       const started = performance.now()
@@ -175,4 +176,18 @@ export function createFakeSlicer(opts: FakeSlicerOptions = {}): SlicerHost {
       previews.delete(id)
     },
   }
+}
+
+/** The size of the parts' box in mm, or null with no vertices. */
+function sizeOf(parts: MeshPart[]): [number, number, number] | null {
+  const lo = [Infinity, Infinity, Infinity]
+  const hi = [-Infinity, -Infinity, -Infinity]
+  for (const p of parts)
+    for (let i = 0; i + 2 < p.positions.length; i += 3)
+      for (let k = 0; k < 3; k++) {
+        const v = p.positions[i + k]!
+        if (v < lo[k]!) lo[k] = v
+        if (v > hi[k]!) hi[k] = v
+      }
+  return lo[0]! <= hi[0]! ? [hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!] : null
 }
