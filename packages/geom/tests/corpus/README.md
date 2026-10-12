@@ -13,7 +13,7 @@ It builds the Rust reader in release (`packages/core/examples/format_read.rs`) a
 
 The files made here:
 
-- `make.py` writes `subtypes.3mf` (one object with a part of each subtype), `two-colors.obj`, `two-materials.amf` and `box-ascii.stl`: `python3 make.py <dir>`.
+- `make.py` writes `subtypes.3mf` (one object with a part of each subtype), `textured-cube.3mf` (a cube with a 4 x 4 checker texture through the 3MF materials extension), `two-colors.obj`, `two-materials.amf` and `box-ascii.stl`: `python3 make.py <dir>`.
 - `bambu-*.3mf`, `orca-*.3mf` and `prusa-*.3mf` are SlicerX's own models (`subtypes.3mf`, `packages/core/cli/tests/fixtures/painted.3mf`, `packages/core/bench/models/x-mark-2color.3mf`, `two-colors.obj`) saved again by the Bambu Studio 2.8, OrcaSlicer 2.4 and PrusaSlicer 2.9 command lines (`--export-3mf`). The settings in them come from those apps' profiles (REUSE.toml).
 
 Designs we may not commit (customer files, Vault designs) stay in a private folder and come in with `--private`; they are left out of `--check`.
