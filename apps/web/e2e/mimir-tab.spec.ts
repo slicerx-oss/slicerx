@@ -135,6 +135,26 @@ test.describe('the mimir tab', () => {
     await page.screenshot({ path: test.info().outputPath('mimir-attach-dark.png') })
   })
 
+  test('the battle ravens stand still behind the chat, centered and out of the way, until a model answers', async ({ page }) => {
+    await open(page)
+    await openEmpty(page)
+    const ravens = page.getByTestId('mimir-ravens')
+    await expect(ravens).toHaveAttribute('data-shown', 'true')
+    await expect(ravens).toHaveAttribute('aria-hidden', 'true')
+    expect(await ravens.evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none')
+    // still: nothing in it animates
+    expect(await ravens.evaluate((e) => e.getAnimations({ subtree: true }).length)).toBe(0)
+    const chat = (await page.getByTestId('mimir-chat').boundingBox())!
+    const r = (await ravens.boundingBox())!
+    expect(r.width / chat.width).toBeGreaterThan(0.55)
+    expect(r.width / chat.width).toBeLessThan(0.75)
+    expect(Math.abs(r.x + r.width / 2 - (chat.x + chat.width / 2))).toBeLessThan(1)
+    // the composer is still the top thing at its own spot
+    const c = (await page.getByTestId('mimir-composer').boundingBox())!
+    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid]')?.getAttribute('data-testid'), [c.x + c.width / 2, c.y + c.height / 2])
+    expect(hit).toBe('mimir-composer')
+  })
+
   test('the docked chat stands aside on the mimir tab; its button keeps its place', async ({ page }) => {
     await open(page)
     const btn = page.locator('.mimir-btn')
