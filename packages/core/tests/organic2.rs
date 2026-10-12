@@ -5,7 +5,10 @@
 //! nowhere it should not, each compatibility flag works both ways, and contact loops still print.
 
 #![allow(clippy::needless_pass_by_value, clippy::cast_possible_truncation)]
-#![allow(clippy::disallowed_methods, reason = "test measurements of G-code; no output depends on them")]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "test measurements of G-code; no output depends on them"
+)]
 
 mod common;
 
