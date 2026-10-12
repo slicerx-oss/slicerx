@@ -85,6 +85,8 @@ async function handle(req, res) {
       const body = JSON.parse((await read(req)).toString('utf8'))
       const ids = new Set(body.plate.objects.flatMap((o) => [o.mesh, ...(o.volumes ?? []).map((v) => v.mesh)]))
       body.meshes = Object.fromEntries([...ids].map((m) => [m, join(dir, `${m}.sxmp`)]))
+      // the app sends a whole resolved profile, as the desktop does, so leave out the unused-key list the command line adds
+      body.options = { ...body.options, configReport: false }
       mkdirSync(out, { recursive: true })
       const request = join(out, 'request.json')
       writeFileSync(request, JSON.stringify(body))
