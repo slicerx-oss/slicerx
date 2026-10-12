@@ -235,6 +235,18 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
         resting = meet(&bottom, below);
         bottom = sub(&bottom, below);
     }
+    // A piece over air narrower than half a solid line is no bridge: the elephant foot shrink of the first layer
+    // leaves slivers a few hundredths of a millimeter wide along a part's edge. They print as the solid around them.
+    if i.layer > 0 && !bottom.is_empty() {
+        let (thin, wide): (Shapes, Shapes) = bottom.into_iter().partition(|piece| {
+            let one = vec![piece.clone()];
+            perimeters::offset(&one, -mm(w_solid / 4.0)).is_empty()
+        });
+        if !thin.is_empty() {
+            shell = union(&shell, &thin);
+        }
+        bottom = wide;
+    }
     if i.layer > 0 && !bottom.is_empty() {
         let e = crate::bridging::external(&bottom, &shell, &sparse, &top, into_shell, into_sparse, closing);
         shell = e.shell;
