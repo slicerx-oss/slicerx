@@ -6,6 +6,7 @@
 import { HISTORY_VERSION, appendStep, stepId, type Design, type DesignHost, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
+import { geom } from '../geom/client'
 import { identity } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
@@ -43,6 +44,8 @@ export function appDesignHost(loader: Loader): DesignHost {
   }
 
   const host: DesignHost = {
+    call: (op, request) => geom().call(op, request),
+
     get(id) {
       const e = get().plate.find((p) => p.id === id)
       if (e) return fromEntry(e)

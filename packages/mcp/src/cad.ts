@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs'
 import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type StepParams } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { designArg, designSummary, type Design, type Designs } from './design'
+import type { DesignHost } from '@slicerx/cad-history'
+import { designArg, designSummary, faceAt, item, partAt, type Design } from './design'
 import { geomCaller, modelArg, vec3, type GeomToolDeps } from './geom'
 import { readStlPositions } from './mesh'
 import { resolveModel, ToolInputError } from './models'
@@ -273,14 +274,14 @@ function stepOut(d: Design, verb: string): { summary: string; output: Record<str
   return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}`, output: designSummary(d) }
 }
 
-export function cadTools(deps: GeomToolDeps & { designs?: Designs | undefined }): PilotTool<never>[] {
+export function cadTools(deps: GeomToolDeps & { designs?: DesignHost | undefined }): PilotTool<never>[] {
   const call = geomCaller(deps)
   const path = (model: string): Promise<string> => resolveModel(deps.policy, model)
   const designOf = (id: string): Design => {
     if (!deps.designs) throw new ToolInputError('Designs need the sx-geom engine, which this server did not find.', 'not_supported')
     return deps.designs.get(id)
   }
-  const designs = (): Designs => deps.designs!
+  const designs = (): DesignHost => deps.designs!
   const target = async (model: string | undefined, op: string): Promise<Record<string, unknown>> => {
     if (op === 'new') return {}
     if (!model) throw new ToolInputError(`target: ${op} needs a target model`)
@@ -309,11 +310,11 @@ export function cadTools(deps: GeomToolDeps & { designs?: Designs | undefined })
       return { part, triangle: face.triangle, at, normal: t.n, key: key || undefined }
     }
     if (!face.at) throw new ToolInputError('face: give "at" (a point on the face) or "triangle"')
-    return { ...designs().faceAt(d, face.at, face.normal), at: face.at }
+    return { ...faceAt(d, face.at, face.normal), at: face.at }
   }
   const plane = (f: z.infer<typeof frameSchema> | undefined): Record<string, unknown> => (f ? { frame: frameFor(f.origin, f.normal, f.u) } : {})
   const frameOf = (f: z.infer<typeof frameSchema> | undefined): FaceFrame | undefined => (f ? frameFor(f.origin, f.normal, f.u) : undefined)
-  const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().deps.engine(op, request) as Promise<Record<string, unknown>>
+  const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().call(op, request) as Promise<Record<string, unknown>>
 
   const faces = defineTool({
     name: 'geom.faces',
@@ -359,7 +360,7 @@ export function cadTools(deps: GeomToolDeps & { designs?: Designs | undefined })
       if (i.design) {
         const d = designOf(i.design)
         const f = pickIn(d, i.face)
-        out = { ...(await engine('face.pick', { mesh: designs().item(d, f.part), triangle: f.triangle, at: f.at })), part: f.part, ...(f.key ? { key: f.key } : {}) }
+        out = { ...(await engine('face.pick', { mesh: item(d, f.part), triangle: f.triangle, at: f.at })), part: f.part, ...(f.key ? { key: f.key } : {}) }
       } else {
         const stlPath = await path(i.model!)
         out = await call('face.pick', { mesh: { stlPath }, ...(await pick(stlPath, i.face)) })
@@ -382,7 +383,7 @@ export function cadTools(deps: GeomToolDeps & { designs?: Designs | undefined })
       if (i.design) {
         const d = designOf(i.design)
         const f = pickIn(d, i.face)
-        out = { ...(await engine('edge.pick', { mesh: designs().item(d, f.part), triangle: f.triangle, at: f.at })), part: f.part }
+        out = { ...(await engine('edge.pick', { mesh: item(d, f.part), triangle: f.triangle, at: f.at })), part: f.part }
       } else {
         const stlPath = await path(i.model!)
         out = await call('edge.pick', { mesh: { stlPath }, ...(await pick(stlPath, i.face)) })
@@ -529,7 +530,7 @@ export function cadTools(deps: GeomToolDeps & { designs?: Designs | undefined })
 
   const edges = z.array(edgeRef).min(1).max(256)
   const plural = (n: number): string => `${n} edge${n === 1 ? '' : 's'}`
-  const edgePart = (d: Design, e: { edges: z.infer<typeof edges>; part?: number | undefined }): number => e.part ?? designs().partAt(d, e.edges[0]!.a)
+  const edgePart = (d: Design, e: { edges: z.infer<typeof edges>; part?: number | undefined }): number => e.part ?? partAt(d, e.edges[0]!.a)
 
   const fillet = defineTool({
     name: 'geom.fillet',
