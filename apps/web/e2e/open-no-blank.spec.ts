@@ -122,18 +122,23 @@ test('a model added to the plate fades in beside the others, which stay as they 
   await viewportReady(page)
   type Part = { mesh: { material: { opacity: number; transparent: boolean } } }
   type FadeVp = { objects: Map<string, { parts: Part[] }>; renderFrame(...a: unknown[]): unknown }
-  // On every drawn frame: the lowest opacity among the objects there before, and whether a new one was see-through.
+  // On every drawn frame: the lowest opacity among the objects there before, whether a new one has been drawn yet,
+  // and whether it was see-through.
   const ids = await page.evaluate(() => {
-    const w = window as unknown as { __vp: FadeVp; __old: number; __faded: boolean }
+    const w = window as unknown as { __vp: FadeVp; __old: number; __drawn: boolean; __faded: boolean }
     const vp = w.__vp
     const old = new Set(vp.objects.keys())
     w.__old = 1
+    w.__drawn = false
     w.__faded = false
     const render = vp.renderFrame.bind(vp)
     vp.renderFrame = (...a: unknown[]) => {
       for (const [id, o] of vp.objects) for (const p of o.parts) {
         if (old.has(id)) w.__old = Math.min(w.__old, p.mesh.material.opacity)
-        else if (p.mesh.material.transparent && p.mesh.material.opacity < 1) w.__faded = true
+        else {
+          w.__drawn = true
+          if (p.mesh.material.transparent && p.mesh.material.opacity < 1) w.__faded = true
+        }
       }
       return render(...a)
     }
@@ -144,7 +149,9 @@ test('a model added to the plate fades in beside the others, which stay as they 
   await expect.poll(() => seen.length).toBe(1)
   await seen[0]!.setFiles(fileURLToPath(new URL('../../../packages/core/bench/models/x-mark.stl', import.meta.url)))
   await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plateLoading: boolean; plate: { name: string }[] } } }).__sx.getState()).then((s) => !s.plateLoading && s.plate.some((p) => /x-mark/i.test(p.name))), { timeout: 60_000 }).toBe(true)
-  await page.waitForTimeout(600)
+  // The fade's clock starts on the first frame that draws the new model, and a busy page can go a while without one
+  // after the load ends, so wait for that frame rather than a fixed time.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __drawn: boolean }).__drawn), { timeout: 30_000 }).toBe(true)
   const r = await page.evaluate(() => {
     const w = window as unknown as { __vp: FadeVp; __old: number; __faded: boolean }
     return { old: w.__old, faded: w.__faded, now: [...w.__vp.objects.values()].flatMap((o) => o.parts).map((p) => p.mesh.material.opacity) }
