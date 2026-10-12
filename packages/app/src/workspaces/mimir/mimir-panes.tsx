@@ -72,7 +72,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   useEffect(() => setLookups(lookupsIn(transcript)), [transcript])
   useEffect(() => followSteps(transcript), [transcript])
   useEffect(() => () => viewStep.setState({ caption: null }), [])
-  const handlers = useMemo<ApprovalHandlers>(() => ({ onApprove: NO_APPROVAL, onCancel: NO_APPROVAL, onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve() }), [pilot])
+  const handlers = useMemo<ApprovalHandlers>(() => ({ onApprove: NO_APPROVAL, onCancel: NO_APPROVAL, onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(), onConfirmSheet: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve() }), [pilot])
   // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
   const body = useRef<HTMLDivElement>(null)
   const stick = useRef(true)

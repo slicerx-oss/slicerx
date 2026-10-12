@@ -54,6 +54,8 @@ describe('the scripted mimir', () => {
     for await (const e of p.run('s', message)) {
       events.push(e)
       if (e.type === 'ask' && pick) void p.answer!(e.askId, pick)
+      // The sheet that follows is confirmed as shown; these tests are about the question and the lookup.
+      if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, {})
     }
     return events
   }
