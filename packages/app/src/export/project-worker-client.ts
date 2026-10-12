@@ -76,14 +76,83 @@ export function buffersIn(value: unknown): ArrayBuffer[] {
   return [...out]
 }
 
+/** Hands the page back to the browser for a moment, so it can draw a frame between two pieces of work. */
+function breather(): Promise<void> {
+  const scheduler = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler
+  return scheduler?.yield ? scheduler.yield() : new Promise((r) => setTimeout(r, 0))
+}
+
+/** Painted triangles per message: 16,384 of them take the page about 5 ms to send. */
+export const PAINT_CHUNK = 16_384
+
 /**
  * Writes a project file (threemf.ts, deflated) in the worker. The page keeps its plates and meshes: the worker gets
- * one copy of them, handed over rather than copied again, and the file comes back handed over. Rejects when the
- * project cannot be copied or the worker fails; the caller writes it on the page then.
+ * one copy of them, handed over rather than copied again, and the file comes back handed over. The copy goes over in
+ * pieces, with the page free to draw between them: each mesh part, then the painted triangles a few thousand at a
+ * time, then the rest of the project. Sent in one go, a plate of 3.4 million triangles with 118,000 painted ones held
+ * the page for about 90 ms. Rejects when the project cannot be copied or the worker fails; the caller writes it on the
+ * page then.
  */
-export function writeProjectInWorker(input: ProjectInput): Promise<Uint8Array> {
-  const copy = structuredClone(input)
-  return ask<Uint8Array>({ write: copy }, buffersIn(copy))
+export async function writeProjectInWorker(input: ProjectInput): Promise<Uint8Array> {
+  const id = ++seq
+  const done = new Promise<Uint8Array>((resolve, reject) => pending.set(id, { resolve: resolve as (r: unknown) => void, reject }))
+  // A failure below rejects here too; the caller hears of it from the throw.
+  done.catch(() => undefined)
+  const send = (message: Record<string, unknown>, transfer: Transferable[] = []): void => {
+    // The worker failed while the page was away: the pieces sent so far went with it.
+    if (!pending.has(id)) throw new Error('The project writer stopped.')
+    workerFor().postMessage({ id, ...message }, transfer)
+  }
+  try {
+    for (const [i, plate] of input.plates.entries()) {
+      for (const [j, object] of plate.objects.entries()) {
+        for (const [k, part] of object.parts.entries()) {
+          await breather()
+          const copy = structuredClone(part)
+          send({ part: { at: [i, j, k], part: copy } }, buffersIn(copy))
+        }
+        for (const [part, layers] of Object.entries(object.paint ?? {})) {
+          for (const [layer, codes] of Object.entries(layers ?? {})) {
+            let chunk: Record<string, string> = {}
+            let n = 0
+            const flush = async (): Promise<void> => {
+              await breather()
+              send({ paint: { at: [i, j], part, layer, codes: chunk } })
+              chunk = {}
+              n = 0
+            }
+            for (const t in codes) {
+              chunk[t] = codes[t as unknown as number]!
+              if (++n === PAINT_CHUNK) await flush()
+            }
+            if (n > 0) await flush()
+          }
+        }
+      }
+    }
+    await breather()
+    // The rest of the project, with a gap for each part and an empty record for each paint layer, which the worker
+    // fills from the pieces it was sent.
+    const rest = {
+      ...input,
+      plates: input.plates.map((p) => ({
+        ...p,
+        objects: p.objects.map((o) => ({
+          ...o,
+          parts: o.parts.map(() => null),
+          ...(o.paint ? { paint: Object.fromEntries(Object.entries(o.paint).map(([part, layers]) => [part, Object.fromEntries(Object.keys(layers ?? {}).map((l) => [l, {}]))])) } : {}),
+        })),
+      })),
+    }
+    const copy = structuredClone(rest)
+    send({ write: copy }, buffersIn(copy))
+  } catch (e) {
+    pending.delete(id)
+    worker?.postMessage({ id, drop: true })
+    if (pending.size === 0 && worker) idle = setTimeout(stop, IDLE_MS)
+    throw e instanceof Error ? e : new Error(String(e))
+  }
+  return done
 }
 
 /** Inflates and scans a 3MF project in the worker. The caller keeps its bytes (the worker gets a copy). */
