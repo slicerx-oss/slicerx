@@ -906,6 +906,14 @@ impl Hub {
     // ---- remembered clients ----
 
     /// Remembers a client and returns its key (shown once) and id.
+    /// Remembered agents that are not partner apps.
+    pub(crate) fn agent_clients(&self) -> usize {
+        lock(&self.clients)
+            .iter()
+            .filter(|c| c.role == crate::roles::Role::Agent && !c.partner)
+            .count()
+    }
+
     pub(crate) fn remember_client(&self, name: &str, role: crate::roles::Role) -> (String, String) {
         let key = random_hex(32);
         let id = format!("client-{}", random_hex(6));

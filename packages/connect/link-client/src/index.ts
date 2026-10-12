@@ -629,7 +629,7 @@ export interface LinkHost extends PrinterHost {
    */
   appLink: {
     call<T = unknown>(method: string, args?: Record<string, unknown>, opts?: { timeoutMs?: number }): Promise<T>
-    host(): Promise<{ on: boolean }>
+    host(): Promise<{ on: boolean; origin?: string | null }>
     onCall(cb: (c: AppLinkCall) => void): () => void
     onAsk(cb: (a: AppLinkAsk) => void): () => void
     /** A question ended on the hub (answered, timed out, the link turned off or the client revoked). */
@@ -1224,7 +1224,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     },
     appLink: {
       call: (method, args, opts) => call('app.call', { method, args: args ?? {}, ...(opts?.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) }),
-      host: () => call<{ on: boolean }>('appLink.host'),
+      host: () => call<{ on: boolean; origin?: string | null }>('appLink.host'),
       onCall: (cb) => {
         linkCallListeners.add(cb)
         return () => void linkCallListeners.delete(cb)

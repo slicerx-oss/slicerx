@@ -51,7 +51,7 @@ export interface BridgeAppLink {
   /** The person's switch, kept by the hub. */
   isOn(): Promise<boolean>
   setOn(on: boolean): Promise<boolean>
-  host(): Promise<{ on: boolean }>
+  host(): Promise<{ on: boolean; origin?: string | null }>
   onCall(cb: (c: { callId: number; method: string; args: Record<string, unknown>; client: { id: string; name: string } }) => void): () => void
   onAsk(cb: (a: { askId: number; clientId: string; name: string; createdAt: string }) => void): () => void
   onAskEnded(cb: (askId: number) => void): () => void
