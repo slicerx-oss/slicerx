@@ -350,7 +350,7 @@ pub(crate) fn layer_paths(
             work.support.extend(crate::organic2::paths::raft_walls(
                 trees,
                 w,
-                rounded(cfg.layer_height),
+                use_cfg.spacing_for(w),
                 cfg.support.tree_settings.wall_count,
             ));
         } else {
