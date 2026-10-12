@@ -2,8 +2,8 @@
 # Copyright (C) 2026 The SlicerX contributors
 # Writes OrcaSlicer and Bambu Studio preset bundles in the apps' own export format, from the system
 # profiles of the installed app. Neither app's command line can export a bundle, so this follows the
-# export code (Orca 2.4.2 ExportConfigsDialog::archive_preset_bundle_to_file and
-# archive_filament_bundle_to_file, Bambu Studio 2.8 the same functions) and Preset::save for the
+# apps' own bundle export (Orca 2.4.2 and Bambu Studio 2.8 write them the same way) and their
+# preset save for the
 # preset files: only the keys that differ from the parent, plus from, inherits, name, version and
 # the *_settings_id key, sorted, four space indent; bundle_structure.json is compact with sorted keys.
 #

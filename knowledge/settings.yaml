@@ -1,5 +1,5 @@
 # Canonical slicer settings that mimir may read or change.
-# Keys are OrcaSlicer config keys, checked against src/libslic3r/PrintConfig.cpp,
+# Keys are OrcaSlicer config keys, checked against OrcaSlicer's settings,
 # except entries marked origin: slicerx, which are SlicerX settings
 # at commit 7d42ad17a45c1c44d07f382f14244223565e9cb8 (source prefix orca_src).
 # Every key referenced anywhere under knowledge/ must be listed here.

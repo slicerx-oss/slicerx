@@ -167,7 +167,7 @@ export interface SendChoice {
 
 const ILLEGAL = /[<>:"/\\|?*\u0000-\u001f]/
 
-/** The rules Orca's send dialog applies to the name of a file sent to a printer (SendToPrinter.cpp): not empty, no space at either end, no illegal characters, not too long. Null when fine. */
+/** The rules Orca's send dialog applies to the name of a file sent to a printer: not empty, no space at either end, no illegal characters, not too long. Null when fine. */
 export function jobNameProblem(name: string): string | null {
   if (name.length === 0) return 'The name cannot be empty.'
   if (name.startsWith(' ')) return 'The name cannot start with a space.'

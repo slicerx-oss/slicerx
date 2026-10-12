@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Auto-generate for brim ears, after OrcaSlicer's brim ears gizmo (GLGizmoBrimEars.cpp: first_layer_slicer,
-// generate_points, get_detection_radius_max). The first layer is the mesh cut 0.1 mm above the lowest point; its outer
+// Auto-generate for brim ears, after OrcaSlicer's brim ears tool.
+// The first layer is the mesh cut 0.1 mm above the lowest point; its outer
 // contours give ears at their convex corners and its holes at their concave corners, after the contour is simplified
 // by the detection length (Douglas-Peucker). A corner counts when it turns by more than 180 - max angle degrees.
 import type { PlateEntry } from '../state/store'

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Painted brim ears, after OrcaSlicer's brim ears gizmo (src/slic3r/GUI/Gizmos/GLGizmoBrimEars.cpp). A click on the
+// Painted brim ears, after OrcaSlicer's brim ears tool. A click on the
 // model puts an ear on the bed at the click's x and y (z = -0.0001, as Orca places it); a right click on an ear
 // removes it. The head diameter runs from 5 to 20 mm and starts at 16 times the first layer line width. An ear that
-// does not touch the first layer, directly or through other ears, is flagged (Orca's `is_error`), since it would
+// does not touch the first layer, directly or through other ears, is flagged, as in Orca, since it would
 // print as an island. The points are kept in the object's own space, like Orca's, so they follow the object.
 import { createStore, useStore } from 'zustand'
 import { get, markStale, set, type PlateEntry } from '../state/store'

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Pause, color change and custom G-code at a layer, set on the Preview layer slider as in Orca and Bambu Studio
-// (slic3r/GUI/IMSlider.cpp: "Add Pause", "Add Custom G-code", "Change Filament"; the code goes in at the start
+// ("Add Pause", "Add Custom G-code", "Change Filament"; the code goes in at the start
 // of the layer). A mark is kept by the layer's height, not its number, so it stays put when the layer plan changes.
 import { get, markStale, set } from '../state/store'
 

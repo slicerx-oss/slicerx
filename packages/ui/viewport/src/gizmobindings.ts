@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Modifier keys, steps and layouts of the move, scale and paint tools, one set per look preset, read from the
-// sources of the apps the presets imitate (Orca v2.4.2 and Bambu Studio: src/slic3r/GUI/Gizmos GLGizmoScale.cpp,
-// GLGizmoMove.cpp, GLGizmoPainterBase.cpp, libslic3r TriangleSelector.cpp; PrusaSlicer 3.0 alpha: slic3r-shared
-// src/Slic3r/App/Plater ScaleGizmo.cpp and PaintOnGizmoBase.cpp). SlicerX follows Bambu Studio. Pure data, no
-// three.js; Settings edits it with `withGizmoOverrides`.
+// Modifier keys, steps and layouts of the move, scale and paint tools, one set per look preset, as the apps the
+// presets imitate have them (Orca v2.4.2, Bambu Studio and PrusaSlicer 3.0 alpha). SlicerX follows Bambu Studio.
+// Pure data, no three.js; Settings edits it with `withGizmoOverrides`.
 
 export type ModKey = 'shift' | 'ctrl' | 'alt'
 export type PaintToolId = 'brush' | 'triangle' | 'fill' | 'smart' | 'height' | 'gap' | 'replace'
@@ -48,7 +46,7 @@ export interface MoveBindings {
 export interface RotateBindings {
   /**
    * Holding this snaps the angle of a ring drag to `snapStepDeg`. None of the three apps has such a key (Orca, Bambu Studio and
-   * PrusaSlicer snap by where the cursor sits on the ring, GLGizmoRotate::on_dragging); SlicerX uses the key the look snaps moves
+   * PrusaSlicer snap by where the cursor sits on the ring); SlicerX uses the key the look snaps moves
    * and scales with, Shift, on every look.
    */
   snapKey: ModKey | null

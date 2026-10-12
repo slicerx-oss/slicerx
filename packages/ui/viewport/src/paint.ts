@@ -708,7 +708,7 @@ function faceNormal(mesh: PaintMesh, t: number): V3 {
 }
 
 /**
- * One brush dab the way OrcaSlicer's `select_patch` does it: start at the triangle under the pointer
+ * One brush dab the way OrcaSlicer paints one: start at the triangle under the pointer
  * and spread to neighbors that face the viewer (`normal . dir < 0`, `dir` from the camera to the hit),
  * painting every triangle the region touches and continuing only through those. Nothing is painted
  * behind a thin wall or on a disconnected surface, and no depth buffer is involved. The start triangle
@@ -791,7 +791,7 @@ export function paintDab(mesh: PaintMesh, map: PaintMap, bounds: [V3, V3], regio
 }
 
 /**
- * Bucket fill (Orca's `bucket_fill_select_triangles`): every leaf that has the state under the seed point, in triangles connected to the
+ * Bucket fill, as in Orca: every leaf that has the state under the seed point, in triangles connected to the
  * seed through shared edges, takes `state`. Pieces inside split triangles are matched by leaf, so
  * a fill stops at painted borders inside a triangle. Returns the changed triangle indexes.
  */

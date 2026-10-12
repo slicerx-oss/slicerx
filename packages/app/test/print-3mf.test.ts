@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The .gcode.3mf a Bambu Lab printer starts with `project_file`, part by part against what Orca 2.4.2 writes for
-// an A1 and an A1 mini plate (bbs_3mf.cpp), and the Print sheet's send of it.
+// an A1 and an A1 mini plate, and the Print sheet's send of it.
 import { describe, expect, it, vi } from 'vitest'
 import type { Host, JobFile, MeshHandle } from '@slicerx/contracts'
 import { sha256Hex } from '../src/calibration/gcode'

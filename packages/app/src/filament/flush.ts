@@ -3,8 +3,7 @@
 
 // Flush volumes: how much filament (mm3) a color change purges through the nozzle before the new color
 // runs clean. The matrix has one row per filament changed from and one column per filament changed to.
-// Auto flush is OrcaSlicer 2.4.2's and Bambu Studio's calculation (src/libslic3r/FlushVolCalc.cpp,
-// FlushVolPredictor.cpp, and Plater.cpp get_min_flush_volumes and auto_calc_flushing_volumes_internal):
+// Auto flush is OrcaSlicer 2.4.2's and Bambu Studio's calculation:
 //   1. A pair of colors that are both within delta E 5 (CIEDE2000) of one of the twelve measured colors takes the
 //      measured volume (resources/flush/flush_data_standard.txt).
 //   2. Any other pair takes the color model: the hue and saturation distance plus a luminance term, joined at 120
@@ -54,7 +53,7 @@ export interface FlushFilament {
   retract: number | null
 }
 
-/** The extra volume a change from this filament carries (Plater.cpp get_min_flush_volumes). */
+/** The extra volume a change from this filament carries, as Bambu Studio counts it. */
 export function minFlushFor(p: FlushPrinter, f: FlushFilament): number {
   let retract = p.level !== 0 && p.machineActivated ? Math.trunc(p.machineRetract) : 0
   if (!f.activated) retract = 0
@@ -86,7 +85,7 @@ export function flushInputs(cfg: Record<string, SettingValue | undefined>, slots
 
 /**
  * How many extruders the printer has (`nozzle_diameter` entries): the flush matrix holds one block per extruder, as
- * Bambu Studio reads it (`get_flush_volumes_matrix`). A printer without a diameter list counts its per-nozzle lists.
+ * Bambu Studio reads it. A printer without a diameter list counts its per-nozzle lists.
  */
 export function extruderCount(cfg: Record<string, SettingValue | undefined>): number {
   const len = (k: string): number => {
@@ -168,7 +167,7 @@ const toLab = ([r8, g8, b8]: Rgb): [number, number, number] => {
   return [116 * yn - 16, 500 * (xn - yn), 200 * (yn - zn)]
 }
 
-/** CIEDE2000 between two colors (FlushVolPredictor.cpp calc_color_distance). */
+/** CIEDE2000 between two colors, as Bambu Studio measures color distance. */
 export function deltaE2000(a: Rgb, b: Rgb): number {
   const [l1, a1, b1] = toLab(a)
   const [l2, a2, b2] = toLab(b)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! more calibrations after `OrcaSlicer`'s dialogs and `GCode.cpp`
+//! more calibrations after `OrcaSlicer`'s calibration dialogs
 #![allow(
     clippy::indexing_slicing,
     clippy::format_push_string,

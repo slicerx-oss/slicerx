@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The Preview layer slider with its marks: a + and a right-click menu add a pause, a color change or custom
-// G-code at the start of the current layer (Orca and Bambu Studio, IMSlider.cpp), marks sit on the track, and a
+// G-code at the start of the current layer (as in Orca and Bambu Studio), marks sit on the track, and a
 // click on one deletes or edits it. The marks go into the next slice as layer G-code.
 import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Textarea, tipAttrs, type IconName } from '@slicerx/ui'
 import { useState, type KeyboardEvent } from 'react'

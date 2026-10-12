@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Which filament and process presets a printer offers. Follows OrcaSlicer 2.4.2's `is_compatible_with_printer` and
-// `is_compatible_with_print` (libslic3r/Preset.cpp) and `update_library_profile_excluded_from`:
+// Which filament and process presets a printer offers. Follows OrcaSlicer 2.4.2's rules for which
+// presets go with a printer and a process, and which library presets it leaves out:
 //  - a preset with a `compatible_printers` list is compatible with exactly the printers named in it (or, for a printer
 //    the person made from a system one, the system printer it inherits from);
 //  - with an empty list, `compatible_printers_condition` is evaluated against the printer's settings, plus

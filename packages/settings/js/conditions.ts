@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The boolean expression language of the preset compatibility fields (`compatible_printers_condition`,
-// `compatible_prints_condition`), as OrcaSlicer 2.4.2 evaluates them (libslic3r/PlaceholderParser.cpp, the boolean
-// expression start rule and its `expr` operators). Written from the grammar, not copied.
+// `compatible_prints_condition`), as OrcaSlicer 2.4.2 evaluates them
+// (its boolean expressions and their operators). Written from the grammar, not copied.
 //
 // Grammar: ternary `a ? b : c`, `or`/`||`, `and`/`&&`, equality (`== != <> =~ !~`), relational (`< > <= >=`), `+ -`,
 // `* / %`, unary `- + not !`, parentheses, numbers, `true`/`false`, "strings", variable names (a vector needs an index,

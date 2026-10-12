@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Dual nozzle printers: the strips of the bed only one nozzle reaches. Bambu Studio keeps one printable area per
-// extruder (`extruder_printable_area`, PrintConfig.cpp) and treats the overlap as the shared area
-// (Print::get_extruder_shared_printable_polygon); what lies outside an extruder's area is unreachable for it
-// (get_extruder_unprintable_polygons). The areas come from the printer profile's `extruder_printable_area`
+// extruder (`extruder_printable_area`) and treats the overlap as the shared area;
+// what lies outside an extruder's area is unreachable for it.
+// The areas come from the printer profile's `extruder_printable_area`
 // (packages/profiles/machine.json), so any profile carrying the key gets its zones.
 import type { NozzleZone } from '@slicerx/viewport'
 import type { Bed } from '@slicerx/contracts'

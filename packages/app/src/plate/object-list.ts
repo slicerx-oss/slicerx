@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // What the object list changes on an object: its name, whether it prints, and the filament of each part.
-// Orca's object list (GUI_ObjectList.cpp) has the same three: rename, the printable toggle (key V) and the
+// Orca's object list has the same three: rename, the printable toggle (key V) and the
 // extruder column per object and part. Each is one store update, so one undo step.
 import { get, markStale, selectedIds, set, type AppState, type PlateEntry } from '../state/store'
 import { effectiveSlot } from '../filament/slots'
@@ -100,7 +100,7 @@ export function toggleLock(ids: readonly string[] = selectedIds()): boolean | nu
 
 /**
  * Moves an object to a place in the list, which is the order the objects are printed in by object and the order
- * they appear in. Orca's drag and drop does the same within a plate (ObjectList::OnDrop, "Object order changed").
+ * they appear in. Orca's drag and drop does the same within a plate ("Object order changed").
  * One undo step. Returns false when nothing moved.
  */
 export function moveObject(id: string, toIndex: number): boolean {

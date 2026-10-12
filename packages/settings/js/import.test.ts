@@ -159,7 +159,7 @@ describe('Easy mode on a real profile', () => {
 
 describe("Bambu Studio's -1 for auto", () => {
   it('reads as the value Bambu Studio resolves it to', () => {
-    // Bambu Studio's raft and support first layer grows 2 mm on auto (SupportCommon.cpp); its auto wall count is Orca's 0.
+    // Bambu Studio's raft and support first layer grows 2 mm on auto; its auto wall count is Orca's 0.
     const r = importFlat({ raft_first_layer_expansion: '-1', tree_support_wall_count: '-1', support_interface_bottom_layers: '-1', prime_tower_brim_width: '-1' })
     expect(r.config['raft_first_layer_expansion']).toBe(2)
     expect(r.config['tree_support_wall_count']).toBe(0)

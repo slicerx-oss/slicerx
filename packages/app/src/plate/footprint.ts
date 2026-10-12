@@ -112,7 +112,7 @@ function towerOf(cfg: Record<string, SettingValue>, tools: number): Rect[] {
 export function marginsFor(cfg: Record<string, SettingValue>, tools = 1): PrintMargins {
   const keepOut = towerOf(cfg, tools)
   const support = supportOf(cfg)
-  // Orca and Bambu Studio arrange a by-object plate with the extruder clearance between objects (Arrange.cpp).
+  // Orca and Bambu Studio arrange a by-object plate with the extruder clearance between objects.
   const byObject = text(cfg['print_sequence']) === 'by object'
   return {
     ...(byObject ? { apart: Math.max(0, num(cfg['extruder_clearance_radius'], 40)) + MARGIN_SAFETY_MM } : {}),

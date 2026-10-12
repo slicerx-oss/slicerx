@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! The settings schema. `schema.json` is generated from Orca's `PrintConfig.cpp` by
+//! The settings schema. `schema.json` is generated from Orca's settings definitions by
 //! `scripts/gen-schema.py`; the TypeScript package reads the same file.
 
 use std::collections::HashMap;

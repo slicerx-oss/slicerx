@@ -29,7 +29,7 @@ export const LEGACY_GROUPS: Readonly<{ obsolete: ReadonlySet<string>; foreign: R
   dropIfPercent: DROP_IF_PERCENT,
 }
 
-/** Orca's legacy key names, from its `handle_legacy`, that older profiles still use. */
+/** Orca's legacy key names, that older profiles still use. */
 export const LEGACY_KEYS: Readonly<Record<string, string>> = LEGACY.rename
 
 function mapLegacyValue(key: string, raw: unknown): unknown {

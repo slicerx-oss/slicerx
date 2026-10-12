@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Brim ears tool options (OrcaSlicer's brim ears gizmo, GLGizmoBrimEars.cpp): head diameter, max angle, detection
+// Brim ears tool options (as OrcaSlicer's brim ears tool has them): head diameter, max angle, detection
 // radius, Auto-generate, and removing the selected ears or all of them. The viewport places, selects, drags and
 // removes ears; this panel sets the options and counts them.
 import { Block, Button, Field, Range } from '@slicerx/ui'

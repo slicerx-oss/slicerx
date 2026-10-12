@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Labels and groups for the keyboard shortcuts in Settings > Controls, and the keys every look shares.
-// The list follows the shortcut dialogs of OrcaSlicer (KBShortcutsDialog.cpp, v2.4.2), Bambu Studio and
+// The list follows the shortcut dialogs of OrcaSlicer (v2.4.2), Bambu Studio and
 // PrusaSlicer: Global, Prepare (plater and toolbar), Preview.
 import { KEY_ACTIONS, keymapFor, KEYMAPS, type KeyAction } from '@slicerx/ui'
 import { matchShortcut } from '../lib/keys'
