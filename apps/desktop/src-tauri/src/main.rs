@@ -46,6 +46,8 @@ fn main() {
     probe::mark_start();
     // First, so a panic anywhere after this leaves a report for the next launch.
     crash::install_hook();
+    // Before any slice: the engine sizes its memory guards from it.
+    slicing::give_available_memory();
     // The edition's name and link scheme, from the config this build was made with; the menu and links read it.
     let context = tauri::generate_context!();
     brand::init(context.config());

@@ -15,6 +15,26 @@ use sx_core::{Error, Mesh};
 use tauri::State;
 use tauri::ipc::{Channel, InvokeBody, Request, Response};
 
+/// Gives the engine the memory Windows has available, before the first slice; Linux and macOS
+/// read their own figure inside the engine, so there it changes nothing.
+pub fn give_available_memory() {
+    #[cfg(windows)]
+    sx_core::api::set_available_memory(windows_memory().map(|(avail, _)| avail));
+}
+
+/// The physical memory available and in total, bytes, from `GlobalMemoryStatusEx`.
+#[cfg(windows)]
+fn windows_memory() -> Option<(u64, u64)> {
+    use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    let mut status = MEMORYSTATUSEX {
+        dwLength: size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: `status` is a valid MEMORYSTATUSEX with its length set.
+    unsafe { GlobalMemoryStatusEx(&mut status) }.ok()?;
+    Some((status.ullAvailPhys, status.ullTotalPhys))
+}
+
 #[derive(Default)]
 pub struct Slicer {
     meshes: Mutex<HashMap<u32, Arc<Mesh>>>,
@@ -414,6 +434,14 @@ impl Slicer {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    #[test]
+    fn windows_available_memory_is_below_total() {
+        let (avail, total) = super::windows_memory().expect("GlobalMemoryStatusEx");
+        assert!(avail > 0, "available {avail}");
+        assert!(avail < total, "available {avail} of {total}");
+    }
+
     use super::*;
 
     fn starts(text: &[u8]) -> Vec<u32> {
