@@ -223,6 +223,9 @@ pub struct SliceSession {
     support_pending: Pending,
     /// Organic trees over a raft: the branches passing through each raft layer.
     organic_raft: std::sync::OnceLock<Vec<Shapes>>,
+    /// Organic trees of the v2 engine: the areas by kind of each support layer, in the order of
+    /// `support`.
+    organic2: std::sync::OnceLock<Vec<std::sync::Arc<crate::organic2::Layer>>>,
     /// The print layers when they are not the object's own: support on layers of its own height
     /// merged with the object's by height. Empty when every print layer is an object layer.
     print: Vec<crate::layers::PrintLayer>,
@@ -1691,6 +1694,7 @@ impl SliceSession {
             support: std::sync::OnceLock::new(),
             support_pending: Pending::default(),
             organic_raft: std::sync::OnceLock::new(),
+            organic2: std::sync::OnceLock::new(),
             print: Vec::new(),
             object_print: Vec::new(),
             stack: Vec::new(),
@@ -5100,6 +5104,337 @@ impl SliceSession {
         }
     }
 
+    /// Organic trees from the v2 engine (`organic_support_engine: "v2"`); the default
+    /// `legacy` keeps the existing engine.
+    fn organic_v2(cfg: &PrintConfig) -> bool {
+        crate::organic2::selected(cfg)
+    }
+
+    /// The v2 engine's settings, from the same values the existing engine reads.
+    fn organic2_settings(cfg: &PrintConfig) -> crate::organic2::Settings {
+        let s = &cfg.support;
+        let t = &s.tree_settings;
+        let independent = cfg.independent_support_layer_height();
+        let gap = |d: f64| {
+            if independent {
+                d
+            } else {
+                (d / cfg.layer_height + 1e-6).round() * cfg.layer_height
+            }
+        };
+        let zero_top = s.interface_top_layers > 0 && s.top_z_distance <= 0.0;
+        let zero_bottom =
+            s.interface_bottom_layers > 0 && (s.bottom_z_distance <= 0.0 || s.top_z_distance <= 0.0);
+        let w = cfg.support_width();
+        let quirks = match cfg.raw.get("organic_quirks") {
+            Some(serde_json::Value::String(q)) => crate::organic2::Quirks::parse(q),
+            _ => crate::organic2::Quirks::default(),
+        };
+        crate::organic2::Settings {
+            layer_height: cfg.layer_height,
+            line_width: cfg.line_width,
+            support_width: w,
+            external_perimeter_width: cfg.outer_wall_width(),
+            resolution: cfg.raw_number("resolution", 0.012),
+            min_feature_size: cfg.raw_number("min_feature_size", 25.0) / 100.0 * cfg.nozzle_diameter,
+            branch_angle: t.branch_angle_organic,
+            angle_slow: t.angle_slow,
+            branch_diameter: t.branch_diameter_organic,
+            branch_diameter_angle: t.branch_diameter_angle,
+            tip_diameter: t.tip_diameter,
+            top_rate: t.top_rate,
+            branch_distance: t.branch_distance_organic,
+            first_layer_expansion: cfg.raw_number("raft_first_layer_expansion", 2.0).max(0.0),
+            line_join: cfg.anchor_max_mm(),
+            xy_distance: s.xy_distance,
+            top_distance: if zero_top { 0.0 } else { gap(s.top_z_distance) },
+            bottom_distance: if zero_bottom {
+                0.0
+            } else {
+                gap(s.bottom_z_distance)
+            },
+            top_layers: s.interface_top_layers,
+            bottom_layers: s.interface_bottom_layers,
+            on_bed_only: s.on_build_plate_only,
+            threshold_angle: s.threshold_angle,
+            support_angle: s.angle,
+            interface_spacing: s.interface_spacing,
+            zero_top_gap: zero_top,
+            raft_layers: 0,
+            raft_expansion: cfg.raw_number("raft_expansion", 1.5),
+            quirks,
+        }
+    }
+
+    /// The walls and bottom-bridge surfaces of every region of `layer`, as the layer's own paths make them
+    /// (`region_preps`), for the bridge removal of the v2 organic engine.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the slice's shared state, as region_preps takes it"
+    )]
+    fn organic2_regions<'a>(
+        &self,
+        layer: u32,
+        cfg: &PrintConfig,
+        mods: &[PrintConfig],
+        get: &(dyn Fn(u32) -> Option<&'a LayerRegions> + Sync),
+        micros: &Micros,
+        tags: &Tags<'_>,
+    ) -> Vec<crate::organic2::overhang::RegionIn> {
+        let n = self.plan.count();
+        let Some(here) = get(layer) else { return Vec::new() };
+        let below: Option<Shapes> =
+            layer
+                .checked_sub(1)
+                .and_then(get)
+                .map(|r| match (&r.lslices, r.regions.as_slice()) {
+                    (Some(foot), _) => foot.clone(),
+                    (None, [(_, only)]) => only.clone(),
+                    _ => perimeters::union_all(&r.regions.iter().map(|(_, s)| s).collect::<Vec<_>>()),
+                });
+        let upper = layer
+            .checked_add(1)
+            .filter(|&u| u < n)
+            .and_then(get)
+            .map(lower_shapes);
+        let shell = self.shell_of(cfg);
+        let preps = self.region_preps(
+            layer,
+            cfg,
+            &shell,
+            mods,
+            get,
+            below.as_ref(),
+            upper.as_ref(),
+            micros,
+            tags,
+            None,
+        );
+        let open = |ring: &[IntPoint<i32>]| -> Vec<IntPoint<i32>> {
+            let mut pl = ring.to_vec();
+            if let Some(&f) = pl.first() {
+                pl.push(f);
+            }
+            pl
+        };
+        preps
+            .iter()
+            .enumerate()
+            .filter_map(|(ri, prep)| {
+                let prep = prep.as_ref()?;
+                let rc = match here.region_cfg.get(ri).copied().unwrap_or(0) {
+                    0 => cfg,
+                    k => mods.get(usize::from(k) - 1).unwrap_or(cfg),
+                };
+                let bridge = if rc.thick_bridges {
+                    rc.nozzle_diameter
+                } else {
+                    rc.outer_wall_width()
+                };
+                let mut walls: Vec<Vec<IntPoint<i32>>> = Vec::new();
+                for island in &prep.islands {
+                    walls.extend(island.loops.iter().map(|(_, ring)| open(ring)));
+                    walls.extend(island.wide.iter().filter(|l| !l.is_odd).map(|l| l.points.clone()));
+                }
+                Some(crate::organic2::overhang::RegionIn {
+                    walls,
+                    bridges: prep.cls.bridges.iter().map(|b| b.area.clone()).collect(),
+                    bridge_width: bridge,
+                    bridge_spacing: bridge,
+                })
+            })
+            .collect()
+    }
+
+    /// Organic trees from the v2 engine, one support layer per object layer.
+    fn organic2_layers(&self, cfg: &PrintConfig, input: &SupportInput) -> crate::organic2::Plan {
+        let n = self.plan.count();
+        let tops: Vec<f64> = (0..n).map(|l| self.plan.top(l)).collect();
+        // What the layers' own paths read, for the walls and bridge surfaces of the layers with overhang.
+        let micros = Micros::default();
+        let whole = self.whole_regions(Families::new(cfg), &micros);
+        let mods: Vec<PrintConfig> = self
+            .modifier_settings()
+            .into_iter()
+            .filter_map(|o| {
+                let mut c = cfg.clone();
+                c.apply_value(o).ok()?;
+                c.check().ok()?;
+                Some(c)
+            })
+            .collect();
+        let tags = Tags::of_all(std::iter::once(cfg).chain(&mods), self.tool_count);
+        let get = |l: u32| whole.get(l as usize);
+        let regions = |k: usize| -> Vec<crate::organic2::overhang::RegionIn> {
+            u32::try_from(k).map_or_else(
+                |_| Vec::new(),
+                |l| self.organic2_regions(l, cfg, &mods, &get, &micros, &tags),
+            )
+        };
+        let inp = crate::organic2::Input {
+            models: &input.models,
+            tops: &tops,
+            force: &input.force,
+            block: &input.block,
+            bed: cfg.bed_rect(),
+            center: input.center,
+            settings: Self::organic2_settings(cfg),
+            detect: {
+                // The walls' bridge flow: a round bead of the nozzle with thick bridges, else the line.
+                let bridge = if cfg.thick_bridges {
+                    cfg.nozzle_diameter
+                } else {
+                    cfg.outer_wall_width()
+                };
+                crate::organic2::overhang::Detect {
+                    manual: cfg.support.manual,
+                    enforce_layers: cfg.support.enforce_layers as usize,
+                    remove_small: cfg.support.remove_small_overhang,
+                    critical_only: crate::firmware::truthy(cfg, "support_critical_regions_only"),
+                    max_bridge: cfg.support.max_bridge_length,
+                    bridge_width: bridge,
+                    bridge_spacing: bridge,
+                    outer_wall_width: cfg.outer_wall_width(),
+                    inner_wall_spacing: cfg.spacing_for(cfg.inner_wall_width()),
+                    wall_loops: cfg.wall_loops,
+                    slice_z: self.plan.slice_z.clone(),
+                }
+            },
+            vertical_points: self
+                .painted_supports
+                .iter()
+                .filter(|(_, st)| *st == 1)
+                .filter(|(t, _)| {
+                    ((t[1][0] - t[0][0]) * (t[2][1] - t[0][1]) - (t[2][0] - t[0][0]) * (t[1][1] - t[0][1]))
+                        .abs()
+                        < 1e-9
+                })
+                .map(|(t, _)| {
+                    [
+                        (t[0][0] + t[1][0] + t[2][0]) / 3.0,
+                        (t[0][1] + t[1][1] + t[2][1]) / 3.0,
+                        (t[0][2] + t[1][2] + t[2][2]) / 3.0,
+                    ]
+                })
+                .collect(),
+            raft_tops: self
+                .raft
+                .as_ref()
+                .map(|r| r.layers.iter().map(|l| l.top).collect())
+                .unwrap_or_default(),
+            raft_offset: self.raft.as_ref().map_or(0.0, |r| r.offset),
+            raft_contact: self
+                .raft
+                .as_ref()
+                .map(|r| r.area(crate::raft::Kind::Contact, &r.first_layer))
+                .unwrap_or_default(),
+            regions: Some(&regions),
+        };
+        crate::organic2::plan(&inp)
+    }
+
+    /// The v2 organic areas of a support layer of this session's plan, if it has them.
+    fn organic2_for(&self, sl: &crate::support::SupportLayer) -> Option<&crate::organic2::Layer> {
+        let areas = self.organic2.get()?;
+        let k = self.support.get()?.iter().position(|x| std::ptr::eq(x, sl))?;
+        areas.get(k).map(std::convert::AsRef::as_ref)
+    }
+
+    /// What the v2 organic toolpaths read.
+    fn organic2_paths_in(
+        cfg: &PrintConfig,
+        center: [f64; 2],
+        first_height: f64,
+    ) -> crate::organic2::paths::PathsIn {
+        let s = &cfg.support;
+        let w = cfg.support_width();
+        let spacing = cfg.spacing_for(w);
+        let first_width = cfg.feature_widths.initial_layer.unwrap_or(w);
+        let pattern = match cfg.raw.get("support_base_pattern") {
+            Some(serde_json::Value::String(t)) => t.clone(),
+            _ => "default".to_string(),
+        };
+        let top = s.interface_top_layers;
+        let support_density = (spacing / (s.base_spacing + spacing)).min(1.0);
+        let top_interface_density = if top == 0 {
+            support_density
+        } else {
+            (spacing / (if s.ironing { 0.0 } else { s.interface_spacing } + spacing)).min(1.0)
+        };
+        crate::organic2::paths::PathsIn {
+            width: w,
+            spacing,
+            first_spacing: (first_width - first_height * (1.0 - std::f64::consts::FRAC_PI_4))
+                .max(first_width * 0.5),
+            first_density: (cfg.raw_number("raft_first_layer_density", 90.0) / 100.0).clamp(0.01, 1.0),
+            support_density,
+            top_interface_density,
+            bottom_interface_density: (spacing / (s.bottom_interface_spacing + spacing)).min(1.0),
+            angle: s.angle,
+            wall_count: s.tree_settings.wall_count,
+            hollow: matches!(pattern.as_str(), "default" | "hollow" | "none"),
+            join: cfg.anchor_max_mm(),
+            center,
+        }
+    }
+
+    /// The paths of a v2 organic layer, with the contact loops and support ironing of the top
+    /// contact as on the other organic layers.
+    fn organic2_support_paths(
+        &self,
+        cfg: &PrintConfig,
+        o: &crate::organic2::Layer,
+        index: u32,
+        z: f64,
+        center: [f64; 2],
+    ) -> SupportPaths {
+        let s = &cfg.support;
+        let wmm = cfg.support_width();
+        let p = Self::organic2_paths_in(cfg, center, self.plan.thickness(0));
+        let mut iron = Vec::new();
+        if s.ironing && s.interface_top_layers > 0 && !o.top_contact.is_empty() {
+            let gap = s.ironing_spacing.max(0.01);
+            iron = if s.ironing_concentric {
+                crate::surface::fill(&o.top_contact, crate::surface::Curve::Concentric, gap, 0.0)
+            } else {
+                crate::patterns::support_lines(
+                    &o.top_contact,
+                    gap,
+                    gap,
+                    s.angle + 90.0,
+                    false,
+                    3.0 * gap,
+                    center,
+                )
+            };
+        }
+        let mut loops = Vec::new();
+        let looped;
+        let layer_in = if s.interface_loops
+            && s.interface_top_layers > 0
+            && !o.top_contact.is_empty()
+            && !o.hang.is_empty()
+        {
+            let (l, keep_out) = contact_loops(&o.top_contact, &o.hang, wmm);
+            loops = l;
+            let mut c = o.clone();
+            c.top_contact = perimeters::difference(&o.top_contact, &keep_out);
+            looped = c;
+            &looped
+        } else {
+            o
+        };
+        // Over a raft no support layer is the print's first.
+        let first = index == 0;
+        let (support, mut interface) = crate::organic2::paths::layer_paths(layer_in, first, z, &p);
+        loops.append(&mut interface);
+        SupportPaths {
+            support,
+            interface: loops,
+            ironing: iron,
+        }
+    }
+
     /// The support area of every layer, planned once for the whole plate.
     fn support_layers(&self, cfg: &PrintConfig) -> &[crate::support::SupportLayer] {
         debug_assert!(
@@ -5125,6 +5460,16 @@ impl SliceSession {
     ) -> (Vec<crate::support::SupportLayer>, Option<Vec<Shapes>>) {
         if cfg.support.style.is_classic_tree() {
             return (self.classic_tree_layers(cfg, input), None);
+        }
+        if Self::is_organic(cfg) && Self::organic_v2(cfg) {
+            let plan = self.organic2_layers(cfg, input);
+            let (layers, areas): (Vec<crate::support::SupportLayer>, Vec<_>) = plan
+                .layers
+                .into_iter()
+                .map(crate::organic2::Layer::into_support)
+                .unzip();
+            let _ = self.organic2.set(areas);
+            return (layers, Some(plan.raft));
         }
         if Self::is_organic(cfg) {
             let plan = self.organic_layers(cfg, input);
@@ -5195,6 +5540,9 @@ impl SliceSession {
             f64::midpoint(self.bounds[1], self.bounds[3]),
         ];
         let tree = s.style.is_tree() || s.tree;
+        if let Some(o) = self.organic2_for(sl) {
+            return self.organic2_support_paths(cfg, o, layer, z, center);
+        }
         if let Some(t) = &sl.classic {
             return self.classic_tree_paths(cfg, t, layer, center);
         }
@@ -7948,7 +8296,9 @@ impl SliceSession {
             // Asked only with support on: the question builds the whole support plan, which with support off
             // nothing else needs.
             let no_brim: Shapes = match cfg.enable_support.then(|| self.support_at(cfg, 0)).flatten() {
-                Some((sl, ..)) if sl.classic.is_none() && sl.organic.is_none() => {
+                Some((sl, ..))
+                    if sl.classic.is_none() && sl.organic.is_none() && self.organic2_for(sl).is_none() =>
+                {
                     let pad = if sl.base.is_empty() {
                         Vec::new()
                     } else {

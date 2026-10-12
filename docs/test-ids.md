@@ -355,8 +355,9 @@ Ids that tests read for their text:
 | `model-box-select` | The box while a Shift and left drag selects in Model; `data-dir` is `inside` (left to right) or `touch` (right to left) |
 | `model-shelf` | Model's tool shelf |
 | `model-shelf-tool` | A tool on the shelf; `data-tool` names it |
-| `model-shelf-next` | The shelf's next slot: up to three tools for what is picked; hidden with nothing picked |
-| `model-shelf-next-tool` | A tool in the next slot; `data-next-tool` names it |
+| `model-shelf-next` | The shelf's next slot: the tools for what is picked (an object, faces, edges or holes); hidden with nothing picked |
+| `model-shelf-next-tool` | A tool in the next slot; `data-next-tool` names it (`chamfer` for the fillet tool's other shape). One that cannot take that many picks is `aria-disabled`, with the reason in its tip |
+| `model-shelf-next-count` | The next slot's chip: what is picked and how many (its `aria-label`, such as `1 face`, `3 edges` or `1 round face`); none for a single object |
 | `model-select-pill` | Model's selection pill at the top left of the view |
 | `model-select-filter` | A pick filter button in the pill; `data-kind` is `object`, `face` or `edge`, and `aria-pressed` says whether it is on |
 | `model-select-readout` | What is picked, in words ("1 face on Box") |

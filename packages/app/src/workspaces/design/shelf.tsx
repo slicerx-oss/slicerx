@@ -12,20 +12,36 @@ import { useHost } from '../../host'
 import { addPrimitive } from '../../plate/edit'
 import { repairSelected } from '../../plate/geom-ops'
 import { history } from '../../plate/history'
-import { set, toast, useApp } from '../../state/store'
+import { set, toast, useApp, type AppState } from '../../state/store'
 import { SHAPES } from '../prepare/object-actions'
 import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
-import { availableTools, nextTools, SHELF_GROUPS, shelfGroup, type DialogTool, type ShelfGroup, type ShelfTool } from './shelf-tools'
+import { startFillet } from '../../cad/start-hint'
+import { availableTools, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
 
 const ToolDialog = lazy(() => import('../prepare/tool-dialog').then((m) => ({ default: m.ToolDialog })))
+
+/** What is picked, for the next slot: the faces or edges (round when every one of them is), else the selected objects. */
+export function nextPick(s: Pick<AppState, 'subPicks' | 'selection' | 'selectedIds'>): NextPick | null {
+  const last = s.subPicks.at(-1)
+  if (last) {
+    const same = s.subPicks.filter((p) => p.kind === last.kind)
+    return { kind: same.every((p) => p.round) ? 'round' : last.kind, count: same.length }
+  }
+  if (!s.selection) return null
+  return { kind: 'object', count: Math.max(1, s.selectedIds.length) }
+}
 
 const MENU_LABEL = { face: { label: 'On a face', icon: 'on-face' }, mesh: { label: 'Mesh', icon: 'mesh-menu' } } as const
 
 export function Shelf() {
   const host = useHost()
   const hasSel = useApp((s) => s.selection !== null)
+  const pickKey = useApp((s) => {
+    const p = nextPick(s)
+    return p ? `${p.kind}:${p.count}` : ''
+  })
   const objectTool = useApp((s) => s.objectTool)
   const drawing = useApp((s) => s.cadTools)
   const modeling = editionHasCad(useEdition())
@@ -45,14 +61,43 @@ export function Shelf() {
   const off = (t: ShelfTool) => Boolean(t.needsSelection && !hasSel) || (Boolean(t.modeling) && engine === 'loading')
   const groupName = (id: ShelfGroup) => SHELF_GROUPS.find((g) => g.id === id)?.label ?? ''
   const tip = (t: ShelfTool) => (t.tip ? { 'data-tip': t.tip } : { 'data-tip-title': `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}` })
-  const toolButton = (t: ShelfTool, extra: { className?: string; next?: boolean } = {}) => (
-    <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} {...(extra.next ? { 'data-next-tool': t.id, 'data-testid': 'model-shelf-next-tool', 'data-tip-title': `Next for this object · ${t.label}`, 'data-tip-body': 'Shown because an object is picked: a tool that works on it.' } : { 'data-tool': t.id, 'data-testid': 'model-shelf-tool', ...tip(t) })} aria-label={t.label} aria-pressed={t.tool !== undefined && objectTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
+  const toolButton = (t: ShelfTool, extra: { className?: string } = {}) => (
+    <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} data-tool={t.id} data-testid="model-shelf-tool" {...tip(t)} aria-label={t.label} aria-pressed={t.tool !== undefined && objectTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
       <Icon name={t.icon} />
       <span>{t.short ?? t.label}</span>
     </button>
   )
-  // The next slot: what to do with the pick. Faces and edges join with the pick filter.
-  const next = nextTools(tools, hasSel ? 'object' : null)
+  // The next slot: what to do with the pick, how many are picked, and which tools take that many.
+  const [kind, countText] = pickKey.split(':')
+  const pick: NextPick | null = pickKey ? { kind: kind as NextPick['kind'], count: Number(countText) } : null
+  const next = nextSlot(tools, pick)
+  const words = pick ? pickWords(pick) : ''
+  const nextButton = (e: NextEntry) => {
+    const label = e.chamfer ? 'Chamfer' : e.tool.label
+    const short = e.chamfer ? 'Chamfer' : (e.tool.short ?? e.tool.label)
+    const disabled = Boolean(e.off) || off(e.tool)
+    return (
+      <button
+        key={e.chamfer ? 'chamfer' : e.tool.id}
+        type="button"
+        className="shelf-tool"
+        data-next-tool={e.chamfer ? 'chamfer' : e.tool.id}
+        data-testid="model-shelf-next-tool"
+        data-tip-title={`Next for ${words} · ${label}`}
+        data-tip-body={e.off ?? `Shown because ${words === '1 object' ? 'an object is' : words.startsWith('1 ') ? `a ${words.slice(2)} is` : `${words} are`} picked: a tool that works on ${words.startsWith('1 ') ? 'it' : 'them'}.`}
+        aria-label={label}
+        aria-disabled={disabled || undefined}
+        onClick={() => {
+          if (disabled) return
+          if (e.chamfer) startFillet('chamfer')
+          choose(e.tool)
+        }}
+      >
+        <Icon name={e.chamfer ? 'chamfer-edge' : e.tool.icon} />
+        <span>{short}</span>
+      </button>
+    )
+  }
   const dialog = objectTool === 'simplify' || objectTool === 'hollow' || objectTool === 'hole' ? (objectTool as DialogTool) : null
 
   return (
@@ -108,8 +153,14 @@ export function Shelf() {
         </div>
       ))}
       {next.length ? (
-        <div className="shelf-next" data-testid="model-shelf-next" data-tip-avoid=".shelf-next" aria-label="For this object" role="group">
-          {next.map((t) => toolButton(t, { next: true }))}
+        <div className="shelf-next" data-testid="model-shelf-next" data-tip-avoid=".shelf-next" aria-label={`For ${words}`} role="group">
+          {pick && (pick.kind !== 'object' || pick.count > 1) ? (
+            <span className="shelf-pick" data-testid="model-shelf-next-count" aria-label={words} data-tip-title={words}>
+              <b>{pick.count}</b>
+              <span>{words.slice(String(pick.count).length + 1)}</span>
+            </span>
+          ) : null}
+          {next.map(nextButton)}
         </div>
       ) : null}
       <div className="shelf-end">
