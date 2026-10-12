@@ -12,7 +12,7 @@
 .mimir-empty .sx-ic { color: var(--purple); }
 .mimir-empty p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
 .mimir-composer { display: flex; align-items: center; gap: 6px; margin: 0 var(--s-3) var(--s-3); padding: 6px 6px 6px 12px; border-radius: var(--r-md); }
-.mimir-composer input { flex: 1; min-width: 0; height: 32px; border: 0; background: none; color: var(--fg); font: inherit; outline: none; }
+.mimir-composer input { flex: 1; min-width: 0; height: 32px; border: 0; background: none; color: var(--fg); font: inherit; }
 .mimir-composer input::placeholder { color: var(--dim); }
 .mimir-composer:focus-within { border-color: var(--line); }
 .mimir-split { position: absolute; top: 0; bottom: 0; right: 0; width: 0; }
