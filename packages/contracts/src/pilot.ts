@@ -241,6 +241,16 @@ export interface PilotSheet {
   dims: PilotDim[]
 }
 
+/** A sheet row tied to the step it sets, so editing the row after the build edits that step's main number. */
+export interface PilotSheetBind {
+  key: string
+  /** The step, from 1, in the design's history. */
+  step: number
+  /** The step's number is the row's value times `scale` plus `offset` (a symmetric extrude is half a width). */
+  scale?: number
+  offset?: number
+}
+
 /** The person's answer to a sheet: every value as confirmed, and the keys they changed. */
 export interface PilotSheetAnswer {
   confirmed: boolean
@@ -284,6 +294,8 @@ export type PilotEvent =
   /** The sizes a part needs, for the person to confirm or edit; the run waits until they do. */
   | { type: 'sheet'; sheet: PilotSheet }
   | { type: 'sheet_answered'; sheetId: string; answer: PilotSheetAnswer }
+  /** After the build: which rows set which steps of which design. */
+  | { type: 'sheet_bound'; sheetId: string; design: string; binds: PilotSheetBind[] }
   | { type: 'lookup'; lookup: PilotLookup }
   | { type: 'approval_resolved'; requestId: string; decision: ApprovalDecision; by: 'user' | 'policy' | 'expiry'; via?: 'card' | 'phone' }
   | { type: 'summary'; title: string; rows: [string, string][]; stopped: boolean }

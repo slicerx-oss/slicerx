@@ -22,6 +22,8 @@ export interface ApprovalHandlers {
   onEditPlan?: ((request: ApprovalRequest) => void) | undefined
   /** Answers a choice card; without it the cards cannot be answered. */
   onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
+  /** Confirms a dimension sheet with its values; without it a sheet waits for another surface to answer it. */
+  onConfirmSheet?: ((sheetId: string, values: Record<string, number>) => Promise<void>) | undefined
 }
 
 // Unchanged blocks keep their identity in the reducer, so a streaming delta repaints only its own block.
@@ -55,7 +57,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
     case 'lookup':
       return <LookupRecord lookup={block.lookup} />
     case 'sheet':
-      return <SheetRecord sheet={block.sheet} answer={block.answer} />
+      return <SheetRecord sheet={block.sheet} answer={block.answer} actionable={!block.replay} onConfirm={approvals.onConfirmSheet} />
     case 'choice':
       return <ChoiceCard askId={block.askId} title={block.title} question={block.question} choices={block.choices} picked={block.picked} actionable={!block.replay} onChoose={approvals.onChoose} />
     case 'summary':

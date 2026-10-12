@@ -3,7 +3,7 @@
 // pilot.ask, pilot.sheet and lookup.show: a question with fixed answers that waits for the person's pick, a sheet of
 // the sizes a part is built from that waits for the person to confirm or edit them, and a record shown as a card with
 // its source. None changes anything; they are how mimir checks with the person and shows what it found.
-import type { PilotDim } from '@slicerx/contracts'
+import type { PilotDim, PilotSheetBind } from '@slicerx/contracts'
 import { z } from 'zod'
 import { defineTool, type PilotTool } from '../tool'
 
@@ -84,6 +84,29 @@ export function sheetTool(): PilotTool<never> {
       const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[] })
       const n = answer.changed.length
       return { summary: n ? `Confirmed, ${n} size${n === 1 ? '' : 's'} changed` : 'Confirmed as shown', output: answer }
+    },
+  }) as PilotTool<never>
+}
+
+export function sheetBindTool(): PilotTool<never> {
+  return defineTool({
+    name: 'pilot.sheet_bind',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'After building from a sheet, tie its rows to the steps they set, so editing a row later edits that step: for each row its key, the step (from 1) in the design, and how the step number follows the row (scale and offset; a symmetric extrude is half a width). Rows that shape a sketch rather than one number stay unbound; editing those asks you to build again.',
+    input: z.object({
+      design: z.string().min(1).max(80),
+      binds: z
+        .array(z.object({ key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/), step: z.number().int().min(1).max(1000), scale: z.number().min(-1000).max(1000).optional(), offset: z.number().min(-100_000).max(100_000).optional() }))
+        .min(1)
+        .max(30),
+    }),
+    args: (i) => `${i.binds.length} rows to ${i.design}`,
+    async run(i, ctx) {
+      if (!ctx.bindSheet?.(i.design, i.binds as PilotSheetBind[])) return { ok: false, summary: 'No sheet to bind in this conversation' }
+      return { summary: `Tied ${i.binds.length} row${i.binds.length === 1 ? '' : 's'} to the design`, output: { bound: i.binds.length } }
     },
   }) as PilotTool<never>
 }
