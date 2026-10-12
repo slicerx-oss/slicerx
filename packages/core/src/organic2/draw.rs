@@ -150,6 +150,9 @@ impl EdgeGrid {
     }
 }
 
+/// How far (mm) past the widest branch around the nodes the nudge looks for model edges.
+const NEAR_MARGIN: f64 = 10.0;
+
 /// Smooths the centers and pushes them out of the model (spec 7.2).
 #[allow(clippy::too_many_lines, reason = "one iteration loop")]
 pub(crate) fn smooth(p: &Params, v: &Volumes<'_>, hs: &Heights<'_>, layers: &mut [Vec<Node>]) {
@@ -231,10 +234,22 @@ pub(crate) fn smooth(p: &Params, v: &Volumes<'_>, hs: &Heights<'_>, layers: &mut
         .collect();
     let grids: Vec<std::sync::OnceLock<EdgeGrid>> =
         (0..layers.len()).map(|_| std::sync::OnceLock::new()).collect();
+    // Only edges near the branches matter. Bucketing the whole collision area (with the wall outside
+    // the bed) on every layer cost hundreds of megabytes on tall prints.
+    let reach = radius.iter().copied().fold(0.0, f64::max) + NEAR_MARGIN;
+    let near = pos
+        .iter()
+        .fold(None, |b: Option<[f64; 4]>, q| {
+            Some(b.map_or([q[0], q[1], q[0], q[1]], |b| {
+                [b[0].min(q[0]), b[1].min(q[1]), b[2].max(q[0]), b[3].max(q[1])]
+            }))
+        })
+        .map(|b| ops::rect([b[0] - reach, b[1] - reach, b[2] + reach, b[3] + reach]))
+        .unwrap_or_default();
     let grid = |l: usize| -> Option<&EdgeGrid> {
         grids
             .get(l)
-            .map(|g| g.once(|| EdgeGrid::new(&v.collision(0.0, l, true))))
+            .map(|g| g.once(|| EdgeGrid::new(&ops::inter(&v.collision(0.0, l, true), &near))))
     };
     let m_slow = p.m_slow;
     for _ in 0..100 {
