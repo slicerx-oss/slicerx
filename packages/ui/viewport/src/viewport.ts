@@ -789,7 +789,7 @@ class ViewportImpl implements Viewport {
     const ao = this.aoOn && aoMix > 0 && this.display !== 'wireframe' && !(this.mode === 'prepare' && this.renderMode === 'xray')
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
-    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, overlay: [this.edgeMarks.overlay], overlayDepth: (d, size) => this.edgeMarks.setSceneDepth(d, size, this.camera), silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
+    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, overlay: [this.edgeMarks.overlay], outlineCut: [this.edgeMarks.overlay], overlayDepth: (d, size) => this.edgeMarks.setSceneDepth(d, size, this.camera), silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
     // the new decor holds its programs now, so what it replaced can go without them being compiled again
     this.stage.releaseRetired()
     if (this.swapNext) {

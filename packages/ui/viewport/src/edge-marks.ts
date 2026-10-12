@@ -145,6 +145,8 @@ export class EdgeMarks {
       }
     }
     for (const l of this.lines.outline) bar(new Vector3(...l.from), new Vector3(...l.to), OUTLINE_PX * mmPerPx(mid(l)), this.outline)
+    // a face outline hides the selection outline along it, so its edges read in the pick color and not the accent
+    for (const c of this.overlay.children) if ((c as Mesh).material === this.outline) c.userData.cutsOutline = true
     for (const l of this.lines.picked) bar(new Vector3(...l.from), new Vector3(...l.to), PICKED_PX * mmPerPx(mid(l)), this.picked)
     // A dot at each end of a picked edge; a chain of lines gets them at its two loose ends only.
     const key = (p: readonly number[]) => p.map((v) => v.toFixed(4)).join(',')

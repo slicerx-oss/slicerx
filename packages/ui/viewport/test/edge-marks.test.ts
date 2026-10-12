@@ -70,6 +70,8 @@ describe('picked edge marks', () => {
     expect(m.overlay.children.length - tested.length).toBe(3)
     m.setOutline([line], () => 0.1)
     expect(m.overlay.children.length - tested.length).toBe(4)
+    // only the face outline cuts the selection outline
+    expect(m.overlay.children.filter((c) => c.userData.cutsOutline)).toHaveLength(1)
     // the test runs once the pipeline hands over the scene's depth
     expect(m.depth.sxOn.value).toBe(0)
     m.setSceneDepth(new Texture(), new Vector2(1440, 900), new PerspectiveCamera(40, 1.6, 1, 5000))
