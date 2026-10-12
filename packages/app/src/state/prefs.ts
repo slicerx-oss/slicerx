@@ -5,6 +5,12 @@
 // own. No schema library: this runs before first paint and stays out of the shell budget.
 import { LOOK_IDS, type LookAndFeelChoice, type FirstRunState } from '@slicerx/contracts'
 
+/** A model file with several separate bodies opens as one object with parts or as separate objects (state/multi-body.ts). */
+export type MultiBodyPref = 'ask' | 'parts' | 'objects'
+
+/** What a new install does with a file of several bodies. */
+export const MULTI_BODY_DEFAULT: MultiBodyPref = 'ask'
+
 const KEY = 'slicerx.prefs.v1'
 
 export interface Prefs {
@@ -53,6 +59,8 @@ export interface Prefs {
   autoSlice?: boolean | undefined
   /** With autoSlice on: Auto (true) or Always (false). Absent reads as Auto, so a saved on from before is Auto now. */
   autoSliceBySize?: boolean | undefined
+  /** A model file with several separate bodies: ask, or always one object with parts, or always separate objects. */
+  multiBodyImport?: MultiBodyPref | undefined
   electricity?: { pricePerKwh: number; symbol: string } | undefined
   tooltips?: { enabled: boolean; media: boolean } | undefined
   setupPilotOff?: boolean | undefined
@@ -300,6 +308,7 @@ export function normalizePrefs(v: unknown): Prefs {
     // Absent stays absent, so the store picks the default (browser tests turn it off for the session); a bad value reads as on.
     ...opt('autoSlice', r['autoSlice'] === undefined ? undefined : or(bool(r['autoSlice']), true)),
     ...opt('autoSliceBySize', bool(r['autoSliceBySize'])),
+    ...opt('multiBodyImport', oneOf(r['multiBodyImport'], ['ask', 'parts', 'objects'] as const)),
     ...opt('electricity', isRec(r['electricity']) && num(r['electricity']['pricePerKwh'], 0, 5) !== undefined && str(r['electricity']['symbol'], 4) ? { pricePerKwh: r['electricity']['pricePerKwh'] as number, symbol: r['electricity']['symbol'] as string } : undefined),
     tooltips: or(isRec(r['tooltips']) && bool(r['tooltips']['enabled']) !== undefined && bool(r['tooltips']['media']) !== undefined ? { enabled: r['tooltips']['enabled'] as boolean, media: r['tooltips']['media'] as boolean } : undefined, { enabled: true, media: true }),
     setupPilotOff: or(bool(r['setupPilotOff']), false),
