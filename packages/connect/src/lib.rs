@@ -20,6 +20,7 @@ mod ftps;
 mod gate;
 mod http;
 mod manifest;
+mod neighbors;
 pub mod onvif;
 mod poll;
 mod push;

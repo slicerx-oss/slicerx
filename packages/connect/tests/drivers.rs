@@ -1276,6 +1276,34 @@ async fn prusalink_probe_confirms_a_typed_address() {
     assert_eq!((p.plugin.as_str(), p.name), ("prusalink", None));
 }
 
+// A scan probes the addresses the neighbour table lists with Prusa's MAC prefix (here handed in) and keeps the ones
+// that answer as PrusaLink; with none listed it finds nothing.
+#[tokio::test]
+async fn prusalink_scan_finds_a_printer_from_the_neighbour_table() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("prusalink", &[]).await;
+    let found = PrusaLinkConnector::new(gate.clone())
+        .with_probe_port(mocks.port("prusalink"))
+        .with_neighbors(vec![std::net::Ipv4Addr::LOCALHOST])
+        .discover(Duration::from_secs(2))
+        .await;
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(
+        (
+            found[0].plugin.as_str(),
+            found[0].host.as_str(),
+            found[0].name.as_deref()
+        ),
+        ("prusalink", "127.0.0.1", Some("mock"))
+    );
+    let none = PrusaLinkConnector::new(gate)
+        .with_probe_port(mocks.port("prusalink"))
+        .with_neighbors(Vec::new())
+        .discover(Duration::from_secs(2))
+        .await;
+    assert!(none.is_empty());
+}
+
 // A refused Moonraker sign-in says why: no key on a server that does not trust this computer, a
 // wrong key, or logins forced on the server.
 #[tokio::test]

@@ -31,11 +31,27 @@ pub struct PrusaLinkConnector {
     gate: Arc<dyn ApprovalGate>,
     /// The port `probe` asks: 80, another in tests.
     probe_port: u16,
+    /// The addresses a scan probes instead of the neighbour table's Prusa entries (tests).
+    neighbors: Option<Vec<std::net::Ipv4Addr>>,
 }
+
+/// The start of the MAC address of Prusa's network modules (10:9C:70), as DHCP sees them.
+const PRUSA_MAC_PREFIX: [u8; 3] = [0x10, 0x9c, 0x70];
 
 impl PrusaLinkConnector {
     pub fn new(gate: Arc<dyn ApprovalGate>) -> Self {
-        Self { gate, probe_port: 80 }
+        Self {
+            gate,
+            probe_port: 80,
+            neighbors: None,
+        }
+    }
+
+    /// Scans these addresses instead of the neighbour table's Prusa entries (tests).
+    #[must_use]
+    pub fn with_neighbors(mut self, ips: Vec<std::net::Ipv4Addr>) -> Self {
+        self.neighbors = Some(ips);
+        self
     }
 
     /// Probes `port` instead of 80.
@@ -52,11 +68,25 @@ impl PrinterConnector for PrusaLinkConnector {
         manifest("prusalink").unwrap_or_else(|| unreachable_manifest("prusalink"))
     }
 
-    /// Nothing to listen for: no Prusa printer has been seen announcing itself over mDNS (the
-    /// `_prusalink._tcp` names in `mdns.rs` are unconfirmed), so the user enters the address and
-    /// `probe` confirms it.
-    async fn discover(&self, _timeout: Duration) -> Vec<DiscoveredPrinter> {
-        Vec::new()
+    /// No Prusa printer has been seen announcing itself (the `_prusalink._tcp` names in `mdns.rs`
+    /// are unconfirmed), so a scan looks for Prusa's MAC prefix (10:9C:70) in the computer's
+    /// neighbour table and asks each such address for `GET /api/version`, as `probe` does. A printer
+    /// the computer has not talked to lately is not in the table; the user then enters its address.
+    async fn discover(&self, timeout: Duration) -> Vec<DiscoveredPrinter> {
+        let ips = match &self.neighbors {
+            Some(v) => v.clone(),
+            None => crate::neighbors::with_prefix(
+                &crate::neighbors::read(timeout.min(Duration::from_secs(2))).await,
+                PRUSA_MAC_PREFIX,
+            ),
+        };
+        let each = timeout.min(Duration::from_secs(3));
+        let hosts: Vec<String> = ips.iter().map(ToString::to_string).collect();
+        futures::future::join_all(hosts.iter().map(|h| self.probe(h, each)))
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     /// Asks a typed address for `GET /api/version`. PrusaLink answers with `text` "PrusaLink" and
