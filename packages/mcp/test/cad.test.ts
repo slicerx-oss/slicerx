@@ -73,7 +73,7 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
   it('lists the CAD tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'shell', 'info', 'measure']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('extrudes a rectangle, then cuts a hole into its top face', async () => {
@@ -171,6 +171,20 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
     const issues = data<{ output: { ok: boolean; issues: { kind: string }[] } }>(open).output
     expect(issues.ok).toBe(false)
     expect(issues.issues[0]?.kind).toBe('open')
+  })
+
+  it('shells a box with its top open into a tray', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    writeFileSync(join(h.dir, 'box.stl'), boxStl(30, 20, 10))
+    const r = await h.call('slicerx_geom_shell', { model: join(h.dir, 'box.stl'), open: [{ at: [15, 10, 10], normal: [0, 0, 1] }], wall_mm: 2 })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const tray = data<{ output: MeshOut }>(r).output
+    // The walls and floor: the box less the 26 x 16 x 8 mm pocket the open top leaves.
+    expect(tray.volumeMm3).toBeCloseTo(6000 - 26 * 16 * 8, 1)
+    expect(tray.watertight).toBe(true)
+    const closed = data<{ output: MeshOut }>(await h.call('slicerx_geom_shell', { model: join(h.dir, 'box.stl'), wall_mm: 2 })).output
+    expect(closed.volumeMm3).toBeCloseTo(6000 - 26 * 16 * 6, 1)
+    expect(closed.shells).toBe(2)
   })
 
   it('reads a model back: its size, volume and whether it is closed, a hole diameter and a face distance', async () => {
