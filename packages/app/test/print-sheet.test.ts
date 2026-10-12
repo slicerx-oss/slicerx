@@ -213,13 +213,18 @@ describe('Print sheet after a Developer Mode refusal', () => {
     const buttons = [...el.querySelectorAll('button')].map((b) => b.textContent)
     expect(buttons).not.toContain('Send as plain G-code')
     expect(buttons).not.toContain('Open in Bambu Connect')
-    // Nothing to open: the steps are there from the start, after the Bambu Connect button.
+    // The steps sit behind a disclosure, closed at first so the sheet fits; it opens below the Bambu Connect button.
+    const toggle = el.querySelector<HTMLButtonElement>('[data-testid="developer-mode-steps-toggle"]')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(el.querySelector('[data-testid="developer-mode-steps-list"]')).toBeNull()
+    expect(el.querySelector('dialog')?.classList.contains('ps-anchored')).toBe(true)
+    flushSync(() => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
     const list = el.querySelector('[data-testid="developer-mode-steps-list"]')
     expect(list?.textContent).toContain('swipe to page 3')
     expect(list?.textContent).toContain('Developer Mode (firmware 01.05.00.00 and later)')
     expect(list?.textContent).not.toContain('WLAN, then LAN Only Mode')
     expect(list?.textContent).toContain('Bambu Handy')
-    expect(box?.querySelector('[aria-expanded]')).toBeNull()
   })
 
   it('says Developer Mode may be the cause when the printer said nothing, and says it plainly when it did', () => {
