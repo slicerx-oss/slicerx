@@ -1003,7 +1003,16 @@ impl SliceSession {
         check_extent(plate)?;
         let map = if crate::nozzles::shared(config) {
             let usage = crate::nozzles::Usage::of_plate(plate, config);
-            let tools = usage.layers.iter().flatten().copied().max().unwrap_or(1);
+            // Every filament of the project, not only up to the highest the plate prints with: Bambu Studio lists
+            // the unused ones too, on the left extruder.
+            let tools = usage
+                .layers
+                .iter()
+                .flatten()
+                .copied()
+                .max()
+                .unwrap_or(1)
+                .max(crate::nozzles::project_filaments(config));
             crate::nozzles::Map::resolve(config, tools, &usage)
         } else {
             None

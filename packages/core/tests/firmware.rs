@@ -1795,6 +1795,27 @@ fn a_filament_only_a_feature_prints_with_gets_an_extruder() {
 }
 
 #[test]
+fn the_map_lists_every_project_filament_and_puts_the_unused_ones_left() {
+    // The same plate in a project with three filaments: filament 3 prints nothing. Bambu Studio still lists it,
+    // on the left extruder (`filament_map = 2,1,1`); the map stopped at the highest filament the plate prints with.
+    let c = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab H2D",
+        "nozzle_diameter": [0.4, 0.4],
+        "physical_extruder_map": [1, 0],
+        "master_extruder_id": 2,
+        "single_extruder_multi_material": true,
+        "sparse_infill_filament_id": 2,
+        "nozzle_temperature": [220, 225, 230],
+        "filament_diameter": [1.75, 1.75, 1.75],
+        "filament_colour": ["#ff0000", "#00ff00", "#0000ff"],
+        "machine_start_gcode": "; map {filament_map[0]} {filament_map[1]} {filament_map[2]}",
+    });
+    let g = cube_on(c, 1);
+    assert_eq!(g.lines().find(|l| l.starts_with("; map ")), Some("; map 2 1 1"));
+}
+
+#[test]
 fn a_filament_whose_features_all_print_with_others_is_left_out_of_the_map() {
     // An H2D cube with its walls on filament 2, sparse infill on 3 and solid infill and surfaces on 4: filament 1
     // prints nothing and goes to the left extruder. Filament 2 prints on every layer and 3 and 4 never on the same
