@@ -497,13 +497,29 @@ export function cadTools(deps: GeomToolDeps & { designs?: Designs | undefined })
   const BOOL = { union: 'union', subtract: 'difference', intersect: 'intersection' } as const
   const boolean = defineTool({
     name: 'geom.boolean',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
-    description: 'Union, subtract or intersect closed models: union joins "model" and every model in "with", subtract removes them from "model", intersect keeps what they share. Writes one manifold STL, or fails with a reason. For a design, join or cut with slicerx_geom_extrude, or subtract boxes and cylinders with slicerx_geom_subtract.',
-    input: z.object({ op: z.enum(['union', 'subtract', 'intersect']), model: modelArg, with: z.array(modelArg).min(1).max(32) }),
+    description:
+      'Union, subtract or intersect closed bodies. With a model: union joins "model" and every model in "with", subtract removes them from "model", intersect keeps what they share; writes one manifold STL. With "design": "part" is combined with the parts in "with_parts", which go away as their own parts; adds a step.',
+    input: z.object({
+      op: z.enum(['union', 'subtract', 'intersect']),
+      model: modelOrDesign,
+      with: z.array(modelArg).min(1).max(32).optional(),
+      design: designArg.optional(),
+      part: partArg,
+      with_parts: z.array(z.number().int().min(0)).min(1).max(64).optional().describe('With a design: the other parts, from 0'),
+    }),
     async run(i) {
-      const a = [{ stlPath: await path(i.model) }]
+      oneOf(i)
+      if (i.design) {
+        if (!i.with_parts) throw new ToolInputError('with_parts: name the parts to combine with, from 0')
+        const d = designOf(i.design)
+        await designs().add(d, i.part ?? 0, { op: 'boolean', kind: BOOL[i.op], with: i.with_parts })
+        return stepOut(d, `${i.op[0]?.toUpperCase()}${i.op.slice(1)}`)
+      }
+      if (!i.with) throw new ToolInputError('with: give the models to combine with')
+      const a = [{ stlPath: await path(i.model!) }]
       const b = await Promise.all(i.with.map(async (m) => ({ stlPath: await path(m) })))
       const out = await call('boolean', i.op === 'union' ? { op: 'union', a: [...a, ...b], b: [] } : { op: BOOL[i.op], a, b })
       return { summary: `${i.op[0]?.toUpperCase()}${i.op.slice(1)}: ${String(out['shells'] ?? '?')} shell(s), ${Math.round(Number(out['volumeMm3'] ?? 0))} mm3`, output: out }

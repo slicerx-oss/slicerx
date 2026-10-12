@@ -5,8 +5,8 @@
 // provider. Steps run in order; the first one that fails is marked broken with the engine's sentence,
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
-import type { EdgeRef, MovedFace } from './types'
-import { bakeMesh, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, type History, type HistoryMesh, type ReplayResult, type Step, type StepStatus } from './model'
+import type { EdgeRef, MovedFace, Vec3 } from './types'
+import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, point, type History, type HistoryMesh, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 
@@ -178,6 +178,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   const local = (m: { positions: number[]; indices: number[] }, like: Pick<Flat, 'name' | 'slot'>): Flat => flat(bakeMesh({ ...like, ...m }, invert(s.transform)))
   const newBody = (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') === 'new') || (p.op === 'sketch.revolve' && (p.operation ?? 'new') === 'new')
   if (p.op === 'parts.add') return [...out, ...p.parts.map(flat)]
+  if (p.op === 'boolean' || p.op === 'plane.cut' || p.op === 'split' || p.op === 'mirror') return partsStep(call, s, p, out)
   if (newBody) {
     const name = (p.op === 'shape.extrude' || p.op === 'sketch.revolve') && p.name ? p.name : 'Body'
     const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: 'new' }
@@ -300,6 +301,69 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     }
   }
   return out
+}
+
+type PartsParams = Extract<StepParams, { op: 'boolean' | 'plane.cut' | 'split' | 'mirror' }>
+
+const unit3 = (v: Vec3): Vec3 => {
+  const l = Math.hypot(v[0], v[1], v[2]) || 1
+  return [v[0] / l, v[1] / l, v[2] / l]
+}
+
+/** A plane given in world at the step's transform, in the part's own frame. */
+function localPlane(s: Step, plane: { point: Vec3; normal: Vec3 }): { point: Vec3; normal: Vec3 } {
+  const inv = invert(s.transform)
+  return { point: point(inv, plane.point), normal: unit3(direction(inv, plane.normal)) }
+}
+
+const hasTriangles = (m: { indices?: ArrayLike<number> } | undefined): m is { positions: number[]; indices: number[]; faces?: Faces } => (m?.indices?.length ?? 0) >= 3
+
+/** Steps that change which parts there are: combining parts, cutting one in two, splitting it to fit, mirroring it. */
+async function partsStep(call: EngineCall, s: Step, p: PartsParams, parts: Flat[]): Promise<Flat[]> {
+  const part = parts[s.part]
+  if (!part) throw new Broken('The part this step works on is gone.')
+  const item = (f: Flat) => ({ mesh: meshOf(f), transform: s.transform })
+  const out = parts.slice()
+  switch (p.op) {
+    case 'boolean': {
+      const others = p.with.map((i) => parts[i])
+      if (p.with.includes(s.part) || others.some((o) => !o)) throw new Broken('A part this step combines is gone.')
+      const rest = others as Flat[]
+      const r = (await call('boolean', p.kind === 'union' ? { op: 'union', a: [item(part), ...rest.map(item)], b: [] } : { op: p.kind, a: [item(part)], b: rest.map(item) })) as { mesh: Flat }
+      if (!hasTriangles(r.mesh)) throw new Broken('Nothing is left of the part after this step.')
+      out[s.part] = next(part, r.mesh)
+      return out.filter((_, i) => !p.with.includes(i))
+    }
+    case 'plane.cut': {
+      const r = (await call('cut', { mesh: meshOf(part), plane: localPlane(s, p.plane), options: {} })) as { below?: Flat; above?: Flat }
+      const below = hasTriangles(r.below) ? r.below : undefined
+      const above = hasTriangles(r.above) ? r.above : undefined
+      if (!below || !above) throw new Broken('The plane no longer crosses the part.')
+      if (p.keep === 'below') out[s.part] = next(part, below)
+      else if (p.keep === 'above') out[s.part] = next(part, above)
+      else out.splice(s.part, 1, next(part, below), { ...next(part, above), name: `${part.name} top` })
+      return out
+    }
+    case 'split': {
+      const r = (await call('split', { mesh: meshOf(part), options: { buildVolumeMm: p.buildVolumeMm, ...(p.marginMm !== undefined ? { marginMm: p.marginMm } : {}) } })) as { parts?: { mesh: Flat }[] }
+      const pieces = (r.parts ?? []).map((x) => x.mesh).filter(hasTriangles)
+      if (!pieces.length) throw new Broken('The part could not be split to fit.')
+      out.splice(s.part, 1, ...pieces.map((m, k) => ({ ...next(part, m), ...(pieces.length > 1 ? { name: `${part.name} ${k + 1}` } : {}) })))
+      return out
+    }
+    case 'mirror': {
+      const { point: q, normal: n } = localPlane(s, p.plane)
+      const d = 2 * (q[0] * n[0] + q[1] * n[1] + q[2] * n[2])
+      // Reflection through the plane, column-major: I - 2nn^T, moved by 2(n.q)n.
+      const m: number[] = [1 - 2 * n[0] * n[0], -2 * n[1] * n[0], -2 * n[2] * n[0], 0, -2 * n[0] * n[1], 1 - 2 * n[1] * n[1], -2 * n[2] * n[1], 0, -2 * n[0] * n[2], -2 * n[1] * n[2], 1 - 2 * n[2] * n[2], 0, d * n[0], d * n[1], d * n[2], 1]
+      const image = bakeMesh(part, m)
+      const flipped = { positions: Array.from(image.positions), indices: Array.from(image.indices) }
+      const r = (await call('boolean', { op: 'union', a: p.copy ? [{ mesh: meshOf(part) }, { mesh: flipped }] : [{ mesh: flipped }], b: [] })) as { mesh: Flat }
+      if (!hasTriangles(r.mesh)) throw new Broken('The mirror made nothing.')
+      out[s.part] = next(part, r.mesh)
+      return out
+    }
+  }
 }
 
 function font(name: string, fonts: Record<string, string>): string {

@@ -36,6 +36,14 @@ export function stepIcon(p: StepParams): IconName {
       return 'hole-fit'
     case 'thread.apply':
       return 'thread-bolt'
+    case 'boolean':
+      return p.kind === 'difference' ? 'subtract-shape' : 'merge'
+    case 'plane.cut':
+      return 'cut'
+    case 'split':
+      return 'split'
+    case 'mirror':
+      return 'mirror'
   }
 }
 
