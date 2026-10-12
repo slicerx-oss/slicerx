@@ -5,6 +5,8 @@
 // test checks the two lists match. Nothing here prints, queues, approves, signs in or changes settings.
 import { appName } from '../edition'
 import { bounds } from '../plate/transform'
+import { LinkError } from './methods-error'
+import { listSessions, readSession } from './sessions'
 import { get } from '../state/store'
 
 export type LinkClass = 'read' | 'edit'
@@ -12,17 +14,12 @@ export type LinkClass = 'read' | 'edit'
 export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'app.info': 'read',
   'plate.list': 'read',
+  // mimir's conversations in this window: what was said and what mimir did.
+  'mimir.sessions': 'read',
+  'mimir.session': 'read',
 }
 
-/** A refusal with a code the hub passes on (invalid_input, not_found, not_ready, refused, busy). */
-export class LinkError extends Error {
-  constructor(
-    readonly code: 'invalid_input' | 'not_found' | 'not_ready' | 'refused' | 'busy',
-    message: string,
-  ) {
-    super(message)
-  }
-}
+export { LinkError } from './methods-error'
 
 const round = (v: number): number => Math.round(v * 1000) / 1000
 
@@ -46,6 +43,8 @@ const HANDLERS: Record<keyof typeof APP_LINK_METHODS, Handler> = {
       }
     }),
   }),
+  'mimir.sessions': () => listSessions(),
+  'mimir.session': (args) => readSession(args),
 }
 
 /** Runs one call the hub handed over. The hub already checked the method and the client's grant. */
