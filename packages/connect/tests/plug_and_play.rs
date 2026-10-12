@@ -135,9 +135,10 @@ async fn bambu_without_developer_mode_connects_monitor_only() {
         format!("{:?}", r.as_ref().err()).contains("Bambu Connect"),
         "{r:?}"
     );
-    expect_code(r, ErrorCode::Refused);
+    expect_code(r, ErrorCode::NeedsDeveloperMode);
+    assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), Some(true));
     let t = gate.mint(Action::Pause, "bay-1", &params::printer("bay-1"));
-    expect_code(s.pause(&t).await, ErrorCode::Refused);
+    expect_code(s.pause(&t).await, ErrorCode::NeedsDeveloperMode);
     let state = mocks.state().await;
     assert!(state["bambu"]["files"].as_array().unwrap().is_empty());
     let log = state["log"].as_array().unwrap();
@@ -151,6 +152,63 @@ async fn bambu_without_developer_mode_connects_monitor_only() {
     let (_mocks, _gate, s) = bambu(serde_json::json!({ "model": "N2S", "developerMode": true })).await;
     assert_eq!(s.status().await.unwrap().live.and_then(|l| l.monitor_only), None);
     assert!(s.capabilities().contains(&Capability::Start));
+}
+
+// Authorization Control without Developer Mode, with no `fun` flags to say so (a Discord report from
+// an A1 mini): status and the light work, the upload is turned away and a start goes unanswered.
+// Both come back as `needs_developer_mode`, and the status then says so for clients to read back.
+#[tokio::test]
+async fn bambu_on_authorization_control_without_developer_mode_says_what_to_do() {
+    let (mocks, gate, s) = bambu(serde_json::json!({ "model": "N1", "authorizationControl": true })).await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Idle);
+    assert_eq!(st.live.as_ref().and_then(|l| l.monitor_only), None);
+    assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), None);
+    assert!(s.capabilities().contains(&Capability::Start));
+    let t = gate.mint(Action::Adjust, "bay-1", &params::light("bay-1", false));
+    s.set_light(false, &t).await.unwrap();
+    mocks.wait_log("ledctrl chamber_light off").await;
+
+    let file = job_file("cube.gcode.3mf", JobKind::Gcode3mf);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-1",
+        &params::upload("bay-1", &file.name, &file.sha256),
+    );
+    let r = s.upload(file.clone(), &t).await;
+    let words = format!("{:?}", r.as_ref().err());
+    assert!(
+        words.contains("Developer Mode") && words.contains("Bambu Connect"),
+        "{words}"
+    );
+    expect_code(r, ErrorCode::NeedsDeveloperMode);
+    mocks.wait_log("dropped STOR cube.gcode.3mf").await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Idle);
+    assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), Some(true));
+
+    // The start goes out and gets no answer while the reports keep coming.
+    let rf = sx_connect::RemoteFile {
+        printer_id: "bay-1".into(),
+        path: file.name.clone(),
+        name: file.name.clone(),
+        sha256: Some(file.sha256.clone()),
+    };
+    let opts = StartOptions::default();
+    let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+    let r = s.start(&rf, opts, &t).await;
+    assert!(
+        format!("{r:?}").contains("did not answer the print start"),
+        "{r:?}"
+    );
+    expect_code(r, ErrorCode::NeedsDeveloperMode);
+    mocks.wait_log("ignored project_file").await;
+    assert!(
+        mocks.state().await["bambu"]["files"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// A Moonraker session to the fake, after `/moonraker` made it `variant` (a QIDI printer, a U1).

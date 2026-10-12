@@ -512,6 +512,44 @@ test('Bambu: the camera follows POST /camera, and faults are not modeled', async
   }
 })
 
+// Authorization Control without Developer Mode: no `fun` flags say so, the FTPS login works and the connection closes
+// when a file is sent. The MQTT side (status and the light work, print commands go unanswered) is driven from the Rust
+// suite (packages/connect/tests/plug_and_play.rs).
+test('Bambu: Authorization Control without Developer Mode takes the FTPS login and drops the file', async () => {
+  const { MOCK_ACCESS_CODE, reportFor } = await import('./bambu.ts')
+  const { MockMachine } = await import('./machine.ts')
+  const { connect: tlsConnect } = await import('node:tls')
+  const fixture = JSON.parse(readFileSync(fileURLToPath(new URL('../../fixtures/demo-fleet.json', import.meta.url)), 'utf8'))
+  const report = reportFor(new MockMachine(fixture, 'bay-1'), { skipped: [], printError: 0, authorizationControl: true }).print as { fun?: string }
+  assert.equal(report.fun, undefined)
+  const mocks = await startMocks({ only: ['bambu'] })
+  try {
+    assert.equal((await post(mocks, '/bambu', { authorizationControl: true })).status, 200)
+    const replies: string[] = []
+    const closed = await new Promise<boolean>((resolve, reject) => {
+      const sock = tlsConnect({ port: mocks.ports['bambu-ftp']!, host: '127.0.0.1', rejectUnauthorized: false })
+      const steps = [`USER bblp`, `PASS ${MOCK_ACCESS_CODE}`, 'PASV', 'STOR cube.gcode.3mf']
+      sock.on('error', reject)
+      sock.on('data', (d: Buffer) => {
+        for (const line of d.toString('utf8').split('\r\n').filter(Boolean)) {
+          replies.push(line)
+          const next = steps.shift()
+          if (next) sock.write(`${next}\r\n`)
+        }
+      })
+      sock.on('close', () => resolve(steps.length === 0))
+    })
+    assert.equal(closed, true)
+    assert.deepEqual(replies.map((r) => r.slice(0, 3)), ['220', '331', '230', '227'])
+    const st = await mockState(mocks, 'bambu')
+    assert.equal(st.files.length, 0)
+    const log = (await json(await fetch(`http://127.0.0.1:${mocks.control}/state`))).log as string[]
+    assert.ok(log.includes('dropped STOR cube.gcode.3mf'), JSON.stringify(log))
+  } finally {
+    await mocks.stop()
+  }
+})
+
 test('stopping the mocks closes the Elegoo WebSocket clients too', async () => {
   const mocks = await startMocks({ only: ['elegoo'] })
   const ws = new WebSocket(`ws://127.0.0.1:${mocks.ports.elegoo}/websocket`)
