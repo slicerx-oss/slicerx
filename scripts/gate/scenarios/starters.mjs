@@ -17,7 +17,7 @@ export async function starters(s, { only, account, waitSignin = 10 } = {}) {
   s.check(`sliced on ${st0.printer.vendor} ${st0.printer.model}, ${st0.printer.nozzleMm} mm, ${st0.filament?.[0]?.type ?? '?'}`, st0.filament?.[0]?.type === 'PLA', st0.filament?.[0])
   let who = await s.user()
   if (!who.signedIn) {
-    if (!account) s.stop('signed in for the starter downloads', 'not signed in and no --account: anonymous downloads share this network's limit with other gate runs')
+    if (!account) s.stop('signed in for the starter downloads', "not signed in and no --account: anonymous downloads share this network's limit with other gate runs")
     await signIn(s, account, waitSignin, 'Sign in for the starters')
     who = await s.user()
   }
