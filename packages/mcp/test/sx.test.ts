@@ -19,12 +19,13 @@ describe('sx output', () => {
   })
 
   it('turns an off-bed refusal into a preflight error that names the object and the arrange tool', () => {
-    const why = 'sx slice: blocked by the safety preflight: 5 toolpath points lie outside the printable area, first at layer 1 (X78.8 Y211.1, skirt nearest "cube"); move "cube" onto the bed or arrange the plate'
+    const why = 'sx slice: blocked by the safety preflight: toolpaths lie outside the printable area from layer 1 (X78.8 Y211.1, skirt nearest "cube"), 5 points in layers 1 to 30; move "cube" onto the bed or arrange the plate'
     const e = sxFailure(1, why)
     expect(e.code).toBe('preflight_blocked')
     expect(e.message).toContain('move "cube" onto the bed or arrange the plate')
     expect(e.message).toContain('slicerx_arrange')
-    expect(e.details).toEqual({ reason: 'outside_bed', fix: 'slicerx_arrange' })
+    expect(e.details).toEqual({ reason: 'outside_bed', fix: 'slicerx_arrange', layers: [1, 30] })
+    expect(sxFailure(1, why.replace('in layers 1 to 30', 'in layer 1')).details).toEqual({ reason: 'outside_bed', fix: 'slicerx_arrange', layers: [1, 1] })
     // Other refusals keep their code and words, with no arrange hint.
     const other = sxFailure(1, 'sx slice: blocked by the safety preflight: 3 layers reach above the printable height')
     expect(other.code).toBe('preflight_blocked')
