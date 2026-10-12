@@ -103,8 +103,30 @@ pub(crate) enum LinkClass {
 /// whether it reads or edits. The hub refuses any other name. None of them prints, queues, starts
 /// or sends a job, answers a card, signs in, buys, deletes, or changes printers, the network or
 /// settings: those stay with a person. Adding one here needs its entry in the test below.
-pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] =
-    &[("app.info", LinkClass::Read), ("plate.list", LinkClass::Read)];
+pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
+    ("app.info", LinkClass::Read),
+    ("plate.list", LinkClass::Read),
+    // The design tools, run in the app on its plate, each step a history step the person can undo.
+    // Opening and saving files stay with the server and the person.
+    ("design.new", LinkClass::Edit),
+    ("design.list", LinkClass::Read),
+    ("design.steps", LinkClass::Read),
+    ("design.edit_step", LinkClass::Edit),
+    ("design.undo", LinkClass::Edit),
+    ("design.redo", LinkClass::Edit),
+    ("geom.faces", LinkClass::Read),
+    ("geom.face_pick", LinkClass::Read),
+    ("geom.edge_pick", LinkClass::Read),
+    ("geom.sketch_check", LinkClass::Read),
+    ("geom.extrude", LinkClass::Edit),
+    ("geom.revolve", LinkClass::Edit),
+    ("geom.push_pull", LinkClass::Edit),
+    ("geom.boolean", LinkClass::Edit),
+    ("geom.fillet", LinkClass::Edit),
+    ("geom.chamfer", LinkClass::Edit),
+    ("geom.info", LinkClass::Read),
+    ("geom.measure", LinkClass::Read),
+];
 
 /// The class of an app link method, or None when the link has no such method.
 pub(crate) fn link_class(method: &str) -> Option<LinkClass> {
@@ -279,13 +301,35 @@ mod tests {
     #[test]
     fn the_app_link_has_exactly_its_pinned_methods_and_none_a_person_keeps() {
         // A new method lands here on purpose, with its class, after a review of what it can do.
-        let pinned: &[(&str, LinkClass)] = &[("app.info", LinkClass::Read), ("plate.list", LinkClass::Read)];
+        let pinned: &[(&str, LinkClass)] = &[
+            ("app.info", LinkClass::Read),
+            ("plate.list", LinkClass::Read),
+            ("design.new", LinkClass::Edit),
+            ("design.list", LinkClass::Read),
+            ("design.steps", LinkClass::Read),
+            ("design.edit_step", LinkClass::Edit),
+            ("design.undo", LinkClass::Edit),
+            ("design.redo", LinkClass::Edit),
+            ("geom.faces", LinkClass::Read),
+            ("geom.face_pick", LinkClass::Read),
+            ("geom.edge_pick", LinkClass::Read),
+            ("geom.sketch_check", LinkClass::Read),
+            ("geom.extrude", LinkClass::Edit),
+            ("geom.revolve", LinkClass::Edit),
+            ("geom.push_pull", LinkClass::Edit),
+            ("geom.boolean", LinkClass::Edit),
+            ("geom.fillet", LinkClass::Edit),
+            ("geom.chamfer", LinkClass::Edit),
+            ("geom.info", LinkClass::Read),
+            ("geom.measure", LinkClass::Read),
+        ];
         assert_eq!(APP_LINK_METHODS, pinned);
         for (m, _) in APP_LINK_METHODS {
             assert!(!APP_ONLY.contains(m), "{m}");
             for word in [
-                "print", "queue", "start", "send", "upload", "gcode", "approv", "grant", "sign", "auth",
-                "buy", "purchase", "delete", "remove", "secret", "printer", "setting", "pair", "client",
+                "print", "queue", "start", "send", "upload", "gcode", "approv", "grant", "sign_in", "signin",
+                "login", "auth", "buy", "purchase", "delete", "remove", "secret", "printer", "setting",
+                "pair", "client",
             ] {
                 assert!(
                     !m.to_ascii_lowercase().contains(word),
@@ -294,6 +338,10 @@ mod tests {
             }
         }
         assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
+        assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
+        for m in ["design.open", "design.save"] {
+            assert_eq!(link_class(m), None, "{m} reads or writes files");
+        }
         assert_eq!(link_class("print.local"), None);
         assert_eq!(link_class(""), None);
         // The app's side of the link is the app's alone.
