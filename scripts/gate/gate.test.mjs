@@ -3,7 +3,8 @@
 // The release gate's own rules, without an app: masking, bounded waits, the tower's G-code check, the upload model,
 // the gate printer, the command line, the starter list against the starters the Vault is seeded with, and the report.
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
@@ -409,5 +410,16 @@ describe('the export menus on an opened upload', () => {
     const texts = await exportOffers(s)
     assert.deepEqual(s.clicks, ['export-menu'])
     assert.equal(texts.length, 4)
+  })
+})
+
+describe('the gate files', () => {
+  // run.mjs loads every scenario before it starts, so one file that does not parse stops the whole gate on every
+  // platform. The other tests here import only some of them.
+  it('all parse', () => {
+    const dir = import.meta.dirname
+    const files = readdirSync(dir, { recursive: true }).filter((f) => String(f).endsWith('.mjs'))
+    assert.ok(files.length > 5)
+    for (const f of files) execFileSync(process.execPath, ['--check', join(dir, String(f))], { stdio: 'pipe' })
   })
 })
