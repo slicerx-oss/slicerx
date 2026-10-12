@@ -11,7 +11,7 @@ export { createKnowledgeBase, EMPTY_KB_INDEX, type KbIndex, type KnowledgeBase }
 export { createKbPlanner } from './kb/planner'
 export { createCombinedPlanner } from './kb/combined-planner'
 export { parseIntent, type Intent } from './intent'
-export type { PilotProject, ProjectObject, ProjectPlate } from './project'
+export type { PilotProject, ProjectObject, ProjectPlate, ProjectVolume, VolumeShape, VolumeSpec } from './project'
 export type { PlanResult, PlannedChange, SettingsPlanner } from './planner'
 export { createAnthropicAdapter } from './provider/anthropic'
 export { createOpenAiAdapter } from './provider/openai'

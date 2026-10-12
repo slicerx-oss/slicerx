@@ -143,6 +143,51 @@ describe('planners never claim to apply anything', () => {
   })
 })
 
+describe('region_modifiers apply', () => {
+  it('rings each named hole with a modifier, sets the feature-only keys on the object, and reads them back', async () => {
+    const { tool, ctxFor, env } = setup()
+    const input = { goals: ['strong_holes', 'flat_tops', 'overhangs'], objectId: 'bracket', apply: true, holes: [{ center: [10, 20, 15], diameter: 5 }] }
+    const plan = await tool('region_modifiers').approval?.(input, ctxFor('a1'))
+    expect(plan?.title).toBe('Add 1 modifier and 3 object settings to Shelf bracket?')
+    expect(plan?.lines).toContain('Modifier: cylinder 11 mm across (the 5 mm hole plus a 3 mm ring), 30 mm tall, at [10, 20, 15]: wall_loops 2 -> 4')
+    const out = await tool('region_modifiers').run(input, ctxFor('c1'))
+    const res = out.output as { applied: boolean; objectSettings: Record<string, unknown>; volumes: { id: string; shape: unknown; centerMm: number[]; settings: Record<string, unknown>; what: string }[]; left: { goal: string; keys: string[] }[]; readBack: { objectSettings: Record<string, unknown>; volumes: { id: string; role: string; settings?: Record<string, unknown> }[] } }
+    expect(res.applied).toBe(true)
+    expect(res.objectSettings).toEqual({ ironing_type: 'top', ironing_speed: 20, enable_overhang_speed: true })
+    expect(res.volumes).toEqual([
+      expect.objectContaining({ id: 'vol-1', shape: { kind: 'cylinder', diameterMm: 11, heightMm: 30 }, centerMm: [10, 20, 15], settings: { wall_loops: 4 } }),
+    ])
+    // The overhang slowdown would slow every outer wall, so with no region named it stays a plan.
+    expect(res.left).toEqual([expect.objectContaining({ goal: 'overhangs', keys: ['outer_wall_speed'] })])
+    expect(res.readBack.objectSettings).toEqual(res.objectSettings)
+    expect(res.readBack.volumes).toEqual([{ id: 'vol-1', name: 'Hole ring 5 mm', role: 'modifier', settings: { wall_loops: 4 } }])
+    expect(env.project.addedVolumes).toEqual([expect.objectContaining({ objectId: 'bracket', role: 'modifier', centerMm: [10, 20, 15] })])
+    expect(env.project.appliedOverrides()).toEqual({})
+    expect(out.summary).toMatch(/1 modifier and 3 object settings on Shelf bracket; overhangs left as a plan/)
+  })
+
+  it('places a goal in a named region, and leaves holes unnamed as a plan', async () => {
+    const { tool, ctxFor, env } = setup()
+    const out = await tool('region_modifiers').run({ goals: ['strong_holes', 'thin_walls'], apply: true, regions: [{ goal: 'thin_walls', shape: { box: [10, 5, 30] }, center: [70, 20, 15] }] }, ctxFor('c1'))
+    const res = out.output as { volumes: { what: string; settings: Record<string, unknown> }[]; left: { goal: string; why: string }[]; objectSettings: Record<string, unknown> }
+    expect(res.objectSettings).toEqual({ detect_thin_wall: true })
+    expect(res.volumes).toHaveLength(1)
+    expect(res.volumes[0]?.what).toMatch(/^box 10 x 5 x 30 mm at \[70, 20, 15\]: outer_wall_speed/)
+    expect(res.left).toEqual([expect.objectContaining({ goal: 'strong_holes', why: expect.stringMatching(/No holes were named/) })])
+    expect(env.project.addedVolumes).toHaveLength(1)
+  })
+
+  it('stays a plan on a project that cannot hold volumes', async () => {
+    const { tool, ctxFor, env } = setup()
+    const ctx = ctxFor('c1')
+    const { addVolume: _a, setObjectSettings: _s, ...bare } = env.project
+    const out = await tool('region_modifiers').run({ goals: ['strong_holes'], apply: true, holes: [{ center: [0, 0, 0], diameter: 3 }] }, { ...ctx, project: bare })
+    expect((out.output as { applied: boolean; note: string }).applied).toBe(false)
+    expect((out.output as { note: string }).note).toMatch(/cannot hold volumes/)
+    expect(env.project.addedVolumes).toEqual([])
+  })
+})
+
 describe('printer_config_check', () => {
   it('lists findings with citations from the printer entry', async () => {
     const { tool, ctxFor } = setup()

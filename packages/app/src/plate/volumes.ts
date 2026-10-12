@@ -2,13 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Extra volumes of an object: negative volumes cut material out of every layer, support blockers keep
 // support out, support enforcers put support in at any angle. A volume belongs to an object and moves
-// with it; its own placement is kept in the object's coordinates. Modifier volumes with their own
-// settings wait on the slicer.
+// with it; its own placement is kept in the object's coordinates. A modifier prints the object inside it with its own
+// settings.
 import type { MeshHandle, MeshPart, PlateVolume, SettingValue } from '@slicerx/contracts'
 import { get, markStale, set, type PlateEntry, type PlateVolumeEntry, type VolumeRole } from '../state/store'
 import { selectedEntry } from './select'
 import { bake } from './mesh-ops'
-import { primitive, type PrimitiveShape } from './mesh-ops'
+import { boxMesh, cylinderMesh, primitive, sphereMesh, type PrimitiveShape } from './mesh-ops'
 import { bounds, compose, decompose, identity, multiply, type Mat4, type Trs, type Vec3 } from './transform'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -47,6 +47,18 @@ function objectBox(e: PlateEntry): { center: Vec3; size: Vec3 } {
   const b = bounds(e.parts, identity())
   if (!b) return { center: [0, 0, 0], size: [20, 20, 20] }
   return { center: [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2], size: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]] }
+}
+
+/** A volume's shape sized in mm, centered on its own origin (a cylinder stands along Z), for a volume a tool places. */
+export function shapedPart(shape: { kind: 'box'; sizeMm: [number, number, number] } | { kind: 'cylinder'; diameterMm: number; heightMm: number } | { kind: 'sphere'; diameterMm: number }): MeshPart {
+  if (shape.kind === 'box') return centered(boxMesh(shape.sizeMm[0], shape.sizeMm[1], shape.sizeMm[2]))
+  if (shape.kind === 'cylinder') return centered(cylinderMesh(shape.diameterMm, shape.heightMm))
+  return centered(sphereMesh(shape.diameterMm))
+}
+
+/** A volume entry for an object: the part centered at `position` in the object's coordinates. */
+export function volumeAt(id: string, name: string, role: VolumeRole, handle: MeshHandle, part: MeshPart, position: Vec3, settings?: Record<string, SettingValue>): PlateVolumeEntry {
+  return { id, name, role, handle, part, local: at(position), ...(role === 'modifier' && settings && Object.keys(settings).length ? { settings } : {}) }
 }
 
 /** Adds a shape as a volume of the object, at its center, a third of its largest side across. */

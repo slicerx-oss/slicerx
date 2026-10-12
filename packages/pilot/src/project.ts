@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The view of the open project that skills work on. The app implements it over
 // its store; the evals implement it in memory.
-import type { MeshPart, PilotMachine, Plate, PrintConfig, SettingValue, SliceWarning } from '@slicerx/contracts'
+import type { MeshPart, PilotMachine, Plate, PrintConfig, SettingValue, SliceWarning, VolumeRole } from '@slicerx/contracts'
 
 export interface ProjectObject {
   id: string
@@ -32,6 +32,27 @@ export interface ProjectPlate {
   overrides?: Record<string, SettingValue>
 }
 
+/** A simple shape for a volume, sized in mm. A cylinder stands along Z. */
+export type VolumeShape = { kind: 'box'; sizeMm: [number, number, number] } | { kind: 'cylinder'; diameterMm: number; heightMm: number } | { kind: 'sphere'; diameterMm: number }
+
+/** A volume to add to an object: placed by its center in the object's own coordinates (as modeled), mm. */
+export interface VolumeSpec {
+  role: VolumeRole
+  name: string
+  shape: VolumeShape
+  centerMm: [number, number, number]
+  /** For a modifier: the settings inside it, Orca keys. */
+  settings?: Record<string, SettingValue>
+}
+
+/** A volume as the project holds it, for read-back. */
+export interface ProjectVolume {
+  id: string
+  name: string
+  role: VolumeRole
+  settings?: Record<string, SettingValue>
+}
+
 export interface PilotProject {
   name: string
   machine(): PilotMachine | undefined
@@ -57,4 +78,12 @@ export interface PilotProject {
    * host already sliced it; null when it has no current slice.
    */
   warnings?(plateIndex: number): Promise<SliceWarning[] | null>
+  /** Add a volume (a cut, a support region or a settings modifier) to an object and its copies. Class slice. */
+  addVolume?(objectId: string, volume: VolumeSpec): Promise<{ id: string }>
+  /** An object's volumes, for read-back. */
+  volumes?(objectId: string): ProjectVolume[]
+  /** Set an object's own settings over the project's (Orca keys). Class slice. */
+  setObjectSettings?(objectId: string, changes: Record<string, SettingValue>): void
+  /** An object's own settings, for read-back. */
+  objectSettings?(objectId: string): Record<string, SettingValue>
 }

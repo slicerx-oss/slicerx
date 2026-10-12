@@ -85,7 +85,7 @@ const ALL: Scenario[] = [
     'Make the screw holes strong without slowing the whole part.',
     PETG,
     [BRACKET],
-    [{ calls: [{ name: 'region_modifiers', args: { goals: ['strong_holes', 'flat_tops'], objectId: 'bracket' } }] }, { text: 'Plan only: extra walls around holes and ironing on flat tops. The modifier API is not available, so nothing was applied.' }],
+    [{ calls: [{ name: 'region_modifiers', args: { goals: ['strong_holes', 'flat_tops'], objectId: 'bracket' } }] }, { text: 'Plan only: extra walls around holes and ironing on flat tops. Nothing was applied; say apply and name the holes to place them.' }],
     { tools: ['region_modifiers'], citations: true, reply: [/plan only/i] },
   ),
 
