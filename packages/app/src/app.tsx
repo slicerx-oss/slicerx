@@ -30,6 +30,7 @@ import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice 
 import { useAskForPrinter } from './first-run/ask-printer'
 import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
+import { startChunkReload } from './lib/chunk-reload'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
 import { hostSlices, setHostSlices, stayInModel, useCadShown, useModelMode } from './state/model-mode'
@@ -165,6 +166,8 @@ function Shell() {
   useEffect(() => startAutoSlice(host), [host])
   // The page says when it is ready, so scripts wait on that and not on a fixed time.
   useEffect(() => startReadySignal(), [])
+  // Code that failed to download (a dropped connection while the app starts) is fetched again by a reload.
+  useEffect(() => startChunkReload(), [])
   // Closing the tab with unsaved changes asks first. The desktop app asks through confirmDiscard.
   useEffect(() => {
     startDirtyTracking()
