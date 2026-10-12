@@ -21,6 +21,7 @@ import { HostContext, useHost } from './host'
 import { inTextField, matchShortcut } from './lib/keys'
 import { lookCommandFor, onControl } from './controls/global-keys'
 import { WorkspaceBoundary } from './shell/boundary'
+import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { CommandBar } from './shell/command-bar'
 import { bridgeConnector } from './link/connector'
 import { ApprovalDialog, Status, ToastBridge } from './shell/overlays'
@@ -31,7 +32,7 @@ import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
-import { hostSlices, setHostSlices, stayInModel } from './state/model-mode'
+import { hostSlices, setHostSlices, stayInModel, useCadShown, useModelMode } from './state/model-mode'
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
@@ -210,6 +211,10 @@ function Shell() {
   const stored = useApp((s) => s.workspace)
   const current = workspaces.find((w) => w.id === stored) ?? workspaces[0]
   const workspace = current?.id ?? 'prepare'
+  // a crash names the tab the person is on: the plate workspace shows as Model or mimir as well as Slice
+  const mode = useModelMode()
+  const cad = useCadShown()
+  const shownName = workspace === 'prepare' && cad && mode !== 'slice' ? (mode === 'mimir' ? ASSISTANT_NAME : 'Model') : (current?.label ?? 'This workspace')
 
   useEffect(() => registerCommands(builtinCommands(host, workspaces)), [host, workspaces])
   useEffect(() => registerCommands(features.flatMap((f) => f.commands?.(host) ?? [])), [host, features])
@@ -248,7 +253,7 @@ function Shell() {
   return (
     <>
       <Frame bar={<TopBar />} status={<Status />} className="app" data-workspace={workspace}>
-        <WorkspaceBoundary name={current?.label ?? 'This workspace'}>
+        <WorkspaceBoundary name={shownName}>
           {covered ? null : (
             <Suspense fallback={<Loading />}>
               {workspace === 'prepare' ? <Studio /> : null}
