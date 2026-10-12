@@ -16,7 +16,7 @@ export default (d: ServerToolDeps) =>
     toolset: 'settings',
     ungated: true,
     description:
-      'Work out which OrcaSlicer settings to change for a filament, printer, nozzle and print intent. Returns each changed key with before, after, a reason and sources from the SlicerX knowledge base, plus any validation issues and a config_patch you can pass as overrides to slicerx_slice_file or to slicerx_project_set_overrides. Nothing is saved.',
+      'Work out which OrcaSlicer settings to change for a filament, printer, nozzle and print intent. Returns each changed key with before, after and a reason (detail "full" adds the knowledge base sources), plus any validation issues and a config_patch you can pass as overrides to slicerx_slice_file or to slicerx_project_set_overrides. Nothing is saved.',
     input: z.object({
       filament: z.string().optional().describe('Target filament id or name, such as "petg", "PA-CF" or "TPU 95A"'),
       printer: z.string().optional().describe('Target printer id or name, such as "bambu_x1c" or "Prusa MK4S"'),
@@ -25,6 +25,7 @@ export default (d: ServerToolDeps) =>
       from_filament: z.string().optional().describe('Filament currently loaded, to show before values against it'),
       from_printer: z.string().optional().describe('Only when switching printers: the printer the current settings are for. Omit it when the printer stays the same'),
       current: z.record(z.string(), settingValue).optional().describe('Current settings, if the client has them'),
+      detail: z.enum(['summary', 'full']).default('summary').describe('summary: each change with its reason; full: also the sources behind each reason'),
     }),
     async run(args) {
       if (!args.filament && !args.printer && args.nozzle_diameter === undefined && !args.intent) throw new ToolInputError('Pass at least one of filament, printer, nozzle_diameter or intent.')
@@ -37,6 +38,7 @@ export default (d: ServerToolDeps) =>
         ...(args.from_printer !== undefined ? { fromPrinter: args.from_printer } : {}),
         ...(args.current !== undefined ? { current: args.current } : {}),
       })
-      return { summary: 'Planned settings', structured: plan as unknown as Record<string, unknown> }
+      const out = args.detail === 'full' ? plan : { ...plan, changes: plan.changes.map(({ sources: _s, ...c }) => c), sources_omitted: true }
+      return { summary: 'Planned settings', structured: out as unknown as Record<string, unknown> }
     },
   })

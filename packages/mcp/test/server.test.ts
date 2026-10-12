@@ -166,7 +166,7 @@ describe('settings tools', () => {
   it('plans a PLA to PETG switch with reasons and sources', async () => {
     const h = await connect()
     const plan = data<{ changes: { key: string; before: unknown; after: unknown; reason: string; sources: string[] }[]; config_patch: Record<string, unknown> }>(
-      await h.call('slicerx_plan_settings', { from_filament: 'pla', filament: 'PETG', printer: 'bambu_x1c' }),
+      await h.call('slicerx_plan_settings', { from_filament: 'pla', filament: 'PETG', printer: 'bambu_x1c', detail: 'full' }),
     )
     const temp = plan.changes.find((c) => c.key === 'nozzle_temperature')
     expect(temp?.after).toEqual([245])
@@ -174,6 +174,17 @@ describe('settings tools', () => {
     expect(temp?.sources.some((s) => s.startsWith('knowledge:filaments/petg'))).toBe(true)
     expect(plan.config_patch['filament_type']).toEqual(['PETG'])
     for (const c of plan.changes) expect(c.reason.length, c.key).toBeGreaterThan(5)
+  })
+
+  it('leaves the sources out of a plan unless asked, which keeps the reply small', async () => {
+    const h = await connect()
+    const args = { from_filament: 'pla', filament: 'PETG', printer: 'bambu_x1c' }
+    const short = await h.call('slicerx_plan_settings', args)
+    const full = await h.call('slicerx_plan_settings', { ...args, detail: 'full' })
+    const plan = data<{ changes: { key: string; reason: string; sources?: string[] }[]; sources_omitted?: boolean }>(short)
+    expect(plan.sources_omitted).toBe(true)
+    expect(plan.changes.every((c) => c.sources === undefined && c.reason.length > 5)).toBe(true)
+    expect(JSON.stringify(short).length).toBeLessThan(JSON.stringify(full).length * 0.8)
   })
 
   it('maps a free-text intent to an Easy goal', async () => {
