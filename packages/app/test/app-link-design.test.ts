@@ -33,6 +33,16 @@ describe('design tools over the app link', () => {
     expect(get().plate).toHaveLength(0)
   })
 
+  it('wait for the person: busy while they edit a step of that object', async () => {
+    const started = (await runCall('design.new', { name: 'Box' })) as { output: { design: string } }
+    const design = started.output.design
+    set({ historyEdit: { objectId: design } as never })
+    expect(await code(runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 3 }))).toBe('busy')
+    // Reading is fine meanwhile.
+    expect(await runCall('design.steps', { design })).toBeTruthy()
+    set({ historyEdit: null })
+  })
+
   it('refuse bad input and a design that is not there', async () => {
     expect(await code(runCall('geom.extrude', { design: 'x', distance_mm: -1 }))).toBe('invalid_input')
     expect(await code(runCall('design.steps', { design: 'obj_nope' }))).toBe('not_found')

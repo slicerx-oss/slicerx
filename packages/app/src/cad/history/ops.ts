@@ -84,6 +84,9 @@ function pushMoves(before: History | undefined, after: History, moved: Record<st
 
 const running = new Map<string, AbortController>()
 
+/** Whether a replay of this object is running now (a person's edit, or another step). */
+export const replaying = (objectId: string): boolean => running.has(objectId)
+
 /**
  * Replays `next` on the object and lands it in one store update: parts, the history with broken
  * marks, kept dimensions found again. Throws the broken step's sentence when nothing is left to

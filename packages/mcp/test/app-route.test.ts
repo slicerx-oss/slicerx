@@ -21,6 +21,9 @@ describe('design tools over the app link', () => {
     for (const n of APP_DESIGN_TOOLS) expect(names, n).toContain(n)
     expect(APP_DESIGN_TOOLS.has('design.open')).toBe(false)
     expect(APP_DESIGN_TOOLS.has('design.save')).toBe(false)
+    // These take only a model file, which the app does not open.
+    expect(APP_DESIGN_TOOLS.has('geom.info')).toBe(false)
+    expect(APP_DESIGN_TOOLS.has('geom.measure')).toBe(false)
   })
 
   it('run in the app while it answers, and say so on the first reply only', async () => {
@@ -34,8 +37,9 @@ describe('design tools over the app link', () => {
     expect(second.summary).toBe('ran geom.extrude (in SlicerX)')
   })
 
-  it('keep a model file here, and run here while the link is off or the app is closed', async () => {
-    for (const code of ['app_link_off', 'app_closed']) {
+  it('keep a model file here, and run here while the link is not this server\'s to use', async () => {
+    // off, the app closed, a partner key or a code-only pairing the hub refuses, and an older hub without the link
+    for (const code of ['app_link_off', 'app_closed', 'forbidden', 'unauthorized', 'bad_request']) {
       const call = vi.fn(async () => {
         throw fail(code)
       })
@@ -46,7 +50,7 @@ describe('design tools over the app link', () => {
     }
     const call = vi.fn()
     const { run } = routed(call as AppLinkCaller['call'])
-    await run('geom.info', { model: '/tmp/part.stl' }).catch(() => undefined)
+    await run('geom.faces', { model: '/tmp/part.stl' }).catch(() => undefined)
     expect(call).not.toHaveBeenCalled()
   })
 
@@ -65,5 +69,12 @@ describe('design tools over the app link', () => {
       expect(e, code).toBeInstanceOf(ToolInputError)
       expect((e as ToolInputError).code, code).toBe(want)
     }
+  })
+
+  it('bound an edited step\'s number as its tool does', () => {
+    const edit = designToolset(NO_ENGINE_HOST).find((t) => t.name === 'design.edit_step')!
+    expect(edit.input.safeParse({ design: 'd1', step: 1, value: 10_000 }).success).toBe(true)
+    expect(edit.input.safeParse({ design: 'd1', step: 1, value: 10_001 }).success).toBe(false)
+    expect(edit.input.safeParse({ design: 'd1', step: 1, value: -10_001 }).success).toBe(false)
   })
 })
