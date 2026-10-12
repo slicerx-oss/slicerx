@@ -58,6 +58,8 @@ Text frames of JSON. Request `{"id", "method", "params"}`, reply `{"id", "result
 | `services.remove` | `pluginId` | `{removed}` |
 | `callTool` | `pluginId`, `tool`, `input`, `token?` | tool result |
 | `secrets.set/has/delete` | `name`, `value?` | |
+| `app.call` | `method`, `args?`, `timeoutMs?` | The app link: an agent's call on the project open in the app, answered by the app. Agents only, from a remembered client; never a partner app. Refused with `app_link_off` until the person turns on Let agents use the open project (`settings.set` with `appLink`), `app_closed` when no app hosts the link, `forbidden` for a method outside the pinned list (`roles.rs`, `APP_LINK_METHODS`), and `read_only` for an edit method from a client the person allowed to read only. The first call from a client asks the person in the app; `denied` when they say no. |
+| `appLink.host`, `appLink.reply`, `appLink.answer`, `appLink.grants`, `appLink.revoke` | | App only: host the link on this connection, answer its calls (`appLink.call` events) and questions (`appLink.ask` events), and list or take back what the person allowed each agent. Only the hosting connection may answer. |
 
 `llm.*` answers `not_supported` until `sx-llm` is wired in.
 

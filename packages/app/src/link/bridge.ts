@@ -41,7 +41,23 @@ export interface ConnectedBridge {
   hubKey?: string
   /** Keys the hub remembers: partner app keys (Connect your AI agent) and the Devices list (Printer bridge). */
   clients?: BridgeClients
+  /** The app link's app side (app-link/host.ts): the desktop app only, never the browser build. */
+  appLink?: BridgeAppLink
   close(): void
+}
+
+/** The hub's app link, as the app hosting it sees it (packages/connect/link/src/app_link.rs). */
+export interface BridgeAppLink {
+  /** The person's switch, kept by the hub. */
+  isOn(): Promise<boolean>
+  setOn(on: boolean): Promise<boolean>
+  host(): Promise<{ on: boolean }>
+  onCall(cb: (c: { callId: number; method: string; args: Record<string, unknown>; client: { id: string; name: string } }) => void): () => void
+  onAsk(cb: (a: { askId: number; clientId: string; name: string }) => void): () => void
+  reply(callId: number, out: { ok: true; value: unknown } | { ok: false; code: string; message: string }): Promise<void>
+  answer(askId: number, decision: 'allow' | 'read' | 'deny'): Promise<void>
+  grants(): Promise<{ clientId: string; name: string; rights: 'read' | 'edit' | null; grantedAt: string | null; denied: boolean }[]>
+  revoke(clientId: string): Promise<void>
 }
 
 /** A key the hub remembers, as Devices lists it. Never the key itself. */
@@ -122,6 +138,7 @@ function explain(e: unknown): string {
 let stopCards: (() => void) | null = null
 let stopFinished: (() => void) | null = null
 let stopGuard: (() => void) | null = null
+let stopLink: (() => void) | null = null
 
 /** Cards the hub raises (an AI agent's start, a queued plate whose turn came) show in the approval dialog. Loaded with the first connection. */
 function watchCards(bridge: ConnectedBridge): void {
@@ -170,6 +187,12 @@ async function connect(host: Host, code?: string): Promise<boolean> {
     // One saved by hand with an address the bridge can reach without a code becomes a real connection.
     void promoteHandPrinters((input) => bridge.setup.addPrinter(input))
     watchCards(bridge)
+    // The app link answers agents' calls on the open project once the person turns it on (Settings, Agents).
+    if (bridge.appLink) {
+      void import('../app-link/host').then((m) => {
+        if (live?.bridge === bridge) stopLink = m.hostAppLink(bridge.appLink!)
+      })
+    }
     // The camera guard brings a tripped printer's card up on the Printers tab. It listens before the bridge counts as
     // connected: a trip that came while its module loaded would reach the list but bring no card up.
     const guard = await import('../features/fleet/guard').catch(() => null)
@@ -215,6 +238,8 @@ export function disconnectBridge(host: Host): void {
   stopFinished = null
   stopGuard?.()
   stopGuard = null
+  stopLink?.()
+  stopLink = null
   setRemoteAccess(null)
   setPairSource(null)
   setPhoneAccess(null)

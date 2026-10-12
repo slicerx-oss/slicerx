@@ -54,6 +54,7 @@ const Studio = lazy(() => import('./workspaces/studio').then((m) => ({ default: 
 const FitWatch = lazy(() => import('./plate/fit-check').then((m) => ({ default: m.FitWatch })))
 const Library = lazy(() => import('./workspaces/library/library').then((m) => ({ default: m.Library })))
 // Not part of first paint: each loads the first time it opens. The command bar stays eager so the first keystroke after Cmd+K lands.
+const AppLinkPrompt = lazy(() => import('./app-link/prompt').then((m) => ({ default: m.AppLinkPrompt })))
 const SettingsDialog = lazy(() => import('./shell/settings').then((m) => ({ default: m.SettingsDialog })))
 const PrintSheet = lazy(() => import('./send/print-sheet').then((m) => ({ default: m.PrintSheet })))
 const AboutDialog = lazy(() => import('./shell/about').then((m) => ({ default: m.AboutDialog })))
@@ -187,6 +188,7 @@ function Shell() {
   const projectGcodeOpen = useApp((s) => s.projectGcode?.asking === true)
   const projectOpenAsk = useApp((s) => s.projectOpenAsk !== null)
   const settingsOpen = useApp((s) => s.settingsOpen)
+  const bridgeOn = useApp((s) => s.bridgeStatus.state === 'on')
   const printSheetOpen = useApp((s) => s.printSheet !== null)
   const aboutOpen = useApp((s) => s.aboutOpen)
   const shortcutsOpen = useApp((s) => s.shortcutsOpen)
@@ -275,6 +277,11 @@ function Shell() {
         </Suspense>
       ) : null}
       <ApprovalDialog />
+      {bridgeOn ? (
+        <Suspense fallback={null}>
+          <AppLinkPrompt />
+        </Suspense>
+      ) : null}
       {settingsOpen ? (
         <Suspense fallback={null}>
           <SettingsDialog />

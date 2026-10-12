@@ -455,6 +455,8 @@ export interface PushPrefs {
  */
 export interface HubSettings {
   experimentalConnectors: boolean
+  /** Let agents use the project open in the app (the app link). Off until the person turns it on. Absent on an older hub. */
+  appLink?: boolean
   /** Printers the watch may pause on its own when a detector is at least 80 % sure. Set with `watch.setAutoPause`. */
   watchAutoPausePrinters: string[]
   /** Bed masks per printer. Set with `watch.setMask`. */
@@ -503,6 +505,33 @@ export interface RemoteStatus {
   signedIn: boolean
   quota: RemoteQuota | null
 }
+
+/** An agent's call on the open project, as the hub hands it to the app hosting the link. */
+export interface AppLinkCall {
+  callId: number
+  method: string
+  args: Record<string, unknown>
+  client: { id: string; name: string }
+}
+
+/** The hub asks the person whether a client may use the open project. */
+export interface AppLinkAsk {
+  askId: number
+  clientId: string
+  name: string
+}
+
+/** A remembered agent and what the person allowed it on the open project (null: not asked yet). */
+export interface AppLinkGrant {
+  clientId: string
+  name: string
+  rights: 'read' | 'edit' | null
+  grantedAt: string | null
+  /** The person said no since the hub started. */
+  denied: boolean
+}
+
+export type AppLinkDecision = 'allow' | 'read' | 'deny'
 
 /** A key the hub remembers, as Settings, Devices lists it. Never the key itself. */
 export interface RememberedClient {
@@ -590,6 +619,21 @@ export interface LinkHost extends PrinterHost {
    * partner app (`partner: true`, role agent) or a failure detector: it is in this reply once and
    * never again. `revoke` also closes the client's open connections.
    */
+  /**
+   * The app link: agents use the project open in the app. `call` is the agent's side (`app.call`, a method from the
+   * hub's pinned list). The rest is the app's: `host` makes this connection the one that answers, `onCall` and
+   * `onAsk` hear calls and questions, `reply` and `answer` send the answers, and `grants` and `revoke` back Settings.
+   */
+  appLink: {
+    call<T = unknown>(method: string, args?: Record<string, unknown>, opts?: { timeoutMs?: number }): Promise<T>
+    host(): Promise<{ on: boolean }>
+    onCall(cb: (c: AppLinkCall) => void): () => void
+    onAsk(cb: (a: AppLinkAsk) => void): () => void
+    reply(callId: number, out: { ok: true; value: unknown } | { ok: false; code: string; message: string }): Promise<void>
+    answer(askId: number, decision: AppLinkDecision): Promise<void>
+    grants(): Promise<AppLinkGrant[]>
+    revoke(clientId: string): Promise<void>
+  }
   clients: {
     /** `clientKey` for a local client; a remote agent (`remote: true`) gets only `remote`, its relay pairing. */
     create(name: string, role: 'agent' | 'watch', opts?: { remote?: boolean; partner?: boolean }): Promise<{ clientId: string; clientKey?: string; role: 'agent' | 'watch'; partner?: boolean; remote?: RemoteAgentAccess }>
@@ -828,6 +872,8 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   const dismissedListeners = new Set<(d: { printerId: string; kind: string; at: string }) => void>()
   const quotaListeners = new Set<(q: RemoteQuota) => void>()
   const revokedListeners = new Set<(pairingId: string) => void>()
+  const linkCallListeners = new Set<(c: AppLinkCall) => void>()
+  const linkAskListeners = new Set<(a: AppLinkAsk) => void>()
   const findingListeners = new Set<(f: { printerId: string; kind: string; confidence: number; note?: string; at: string }) => void>()
   const guardListeners = new Set<(t: GuardTrip) => void>()
   const alertListeners = new Set<(a: HubAlert) => void>()
@@ -905,6 +951,14 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     }
     if (msg.event === 'remote.quota' && msg.data) {
       for (const cb of quotaListeners) cb(msg.data as unknown as RemoteQuota)
+    }
+    if (msg.event === 'appLink.call' && msg.data) {
+      for (const cb of linkCallListeners) cb(msg.data as unknown as AppLinkCall)
+      return
+    }
+    if (msg.event === 'appLink.ask' && msg.data) {
+      for (const cb of linkAskListeners) cb(msg.data as unknown as AppLinkAsk)
+      return
     }
     if (msg.event === 'remote.pairing.revoked') {
       const id = (msg.data as unknown as { pairingId?: unknown } | undefined)?.pairingId
@@ -1156,6 +1210,22 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     onAlert: (cb) => {
       alertListeners.add(cb)
       return () => void alertListeners.delete(cb)
+    },
+    appLink: {
+      call: (method, args, opts) => call('app.call', { method, args: args ?? {}, ...(opts?.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) }),
+      host: () => call<{ on: boolean }>('appLink.host'),
+      onCall: (cb) => {
+        linkCallListeners.add(cb)
+        return () => void linkCallListeners.delete(cb)
+      },
+      onAsk: (cb) => {
+        linkAskListeners.add(cb)
+        return () => void linkAskListeners.delete(cb)
+      },
+      reply: async (callId, out) => void (await call('appLink.reply', { callId, ...out })),
+      answer: async (askId, decision) => void (await call('appLink.answer', { askId, decision })),
+      grants: () => call<AppLinkGrant[]>('appLink.grants'),
+      revoke: async (clientId) => void (await call('appLink.revoke', { clientId })),
     },
     clients: {
       create: (name, role, opts) => call('clients.create', { name, role, ...(opts?.remote ? { remote: true } : {}), ...(opts?.partner ? { partner: true } : {}) }),

@@ -163,6 +163,9 @@ pub(crate) struct HubSettings {
     /// Show and allow the connectors that have not been tested on real printers yet.
     #[serde(default)]
     pub experimental_connectors: bool,
+    /// Let agents use the project open in the app (`app_link.rs`). Off until the person turns it on.
+    #[serde(default)]
+    pub app_link: bool,
     /// Printers the person allowed the print watch to pause on its own, when a failure detector
     /// reports a finding at or above `WATCH_PAUSE_AT`. A standing permission per printer, off by default.
     #[serde(default)]
@@ -252,6 +255,9 @@ pub(crate) struct ClientRecord {
     pub created_at_ms: u64,
     #[serde(default)]
     pub last_seen_ms: u64,
+    /// What the person allowed this client to do with the open project (`app_link.rs`). None: not asked yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_link: Option<crate::app_link::Grant>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -911,6 +917,7 @@ impl Hub {
             partner: false,
             created_at_ms: now_ms(),
             last_seen_ms: now_ms(),
+            app_link: None,
         });
         (key, id)
     }
@@ -930,6 +937,7 @@ impl Hub {
             partner: true,
             created_at_ms: now_ms(),
             last_seen_ms: 0,
+            app_link: None,
         });
         Ok((key, id))
     }

@@ -918,6 +918,14 @@ pub(crate) async fn settings_call(b: &Arc<Bridge>, method: &str, p: &Value) -> R
                     .ok_or_else(|| RpcError::new("bad_request", "experimentalConnectors is true or false"))?;
                 lock(&b.hub.settings).experimental_connectors = on;
             }
+            if let Some(v) = p.get("appLink") {
+                let on = v
+                    .as_bool()
+                    .ok_or_else(|| RpcError::new("bad_request", "appLink is true or false"))?;
+                lock(&b.hub.settings).app_link = on;
+                b.hub
+                    .audit(json!({ "origin": "local_click", "action": "settings.appLink", "on": on }));
+            }
             save(b).await;
             to_json(&*lock(&b.hub.settings))
         }

@@ -77,6 +77,8 @@ pub(crate) struct Bridge {
     pub(crate) agent_work: crate::agent_work::Waiting,
     /// Live connections of remembered clients, so revoking a key closes them at once.
     pub(crate) live_clients: StdMutex<Vec<(String, mpsc::UnboundedSender<Message>)>>,
+    /// The app link's host and the agent calls in flight (`app_link.rs`).
+    pub(crate) app_link: crate::app_link::Link,
     /// Pairings the hub answers over the relay, and the relay connection.
     pub(crate) remote: crate::remote::Remote,
     /// Names Bambu Lab printers announce for themselves (SSDP `DevName`), by serial. Heard by a
@@ -184,6 +186,7 @@ impl Bridge {
             card_partners: StdMutex::new(HashMap::new()),
             agent_work: crate::agent_work::Waiting::default(),
             live_clients: StdMutex::new(Vec::new()),
+            app_link: crate::app_link::Link::default(),
             remote,
             own_names: StdMutex::new(crate::own_names::OwnNames::default()),
             names_asked: StdMutex::new(HashSet::new()),
@@ -524,6 +527,7 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
         let out = dispatch(&bridge, &mut conn, &tx, &method, params).await;
         let _ = tx.send(reply(&id, out));
     }
+    bridge.app_link.closed(conn.id);
     for (_, h) in conn.subs.drain() {
         h.abort();
     }
@@ -783,6 +787,11 @@ async fn dispatch(
         m if m.starts_with("queue.") => hub_rpc::queue_call(b, m, &p).await,
         m if m.starts_with("settings.") => hub_rpc::settings_call(b, m, &p).await,
         m if m.starts_with("clients.") => hub_rpc::clients_call(b, m, &p).await,
+        "app.call" => {
+            crate::app_link::agent_call(b, conn.role, conn.client.as_deref(), conn.partner.is_some(), &p)
+                .await
+        }
+        m if m.starts_with("appLink.") => crate::app_link::app_call(b, conn.id, m, &p).await,
         m if m.starts_with("push.") => crate::push::call(b, m, &p).await,
         m if m.starts_with("remote.") => {
             crate::remote::call(b, m, &p, crate::remote::owner_of(conn.client.as_deref(), &p))
