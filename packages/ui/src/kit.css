@@ -61,6 +61,8 @@
 .sx-swatch-ring { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 3px; flex: none; }
 .sx-swatch-ring > svg { display: block; overflow: visible; }
 .sx-swatch-disc { stroke: color-mix(in srgb, var(--fg) 22%, transparent); stroke-width: 1; }
+/* A color close to the panel behind it: a stronger edge, so it never reads as an empty ring. */
+.sx-swatch-ring[data-edge] .sx-swatch-disc { stroke: var(--muted); stroke-width: 1.5; }
 .sx-swatch-track { fill: none; stroke: var(--line); stroke-width: 2.5; }
 .sx-swatch-arc { fill: none; stroke: var(--fg); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dasharray var(--t-base) var(--ease); }
 .sx-swatch-check-a { fill: var(--ink-3); }

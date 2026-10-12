@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useId, type CSSProperties } from 'react'
+import { type RefObject, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { nearPanel, panelBackground } from './swatch-contrast'
 
 export interface SwatchRingProps {
   /** #rrggbb; anything else draws as unknown (a checker). */
@@ -24,7 +25,9 @@ const isHex = (c: string) => /^#[0-9a-f]{6}$/i.test(c)
 
 /**
  * A filament color as a disc with an optional usage arc, label, dim state and mismatch dot. The disc carries a thin
- * outline in the theme's line color, so white and black spools stay visible on light and dark themes alike.
+ * outline in the theme's line color, so white and black spools stay visible on light and dark themes alike. A color
+ * close to the panel behind it (measured on the resolved colors, see swatch-contrast) gets a stronger edge in the
+ * muted text color, so it never reads as an empty ring.
  */
 export function SwatchRing({ color, label, usage, dim, mismatch, selected, size = 32, className }: SwatchRingProps) {
   const known = isHex(color)
@@ -32,9 +35,12 @@ export function SwatchRing({ color, label, usage, dim, mismatch, selected, size 
   const share = usage === undefined ? undefined : Math.max(0, Math.min(1, usage))
   // the arc runs on a circle of radius 15 in a 32 box, from twelve o'clock clockwise
   const length = 2 * Math.PI * 15
+  const edge = useNearPanel(known ? color : null)
   return (
     <span
+      ref={edge.ref}
       className={className ? `sx-swatch-ring ${className}` : 'sx-swatch-ring'}
+      data-edge={edge.on ? true : undefined}
       data-dim={dim ? true : undefined}
       data-selected={selected ? true : undefined}
       style={{ '--sw-size': `${size}px` } as CSSProperties}
@@ -55,4 +61,24 @@ export function SwatchRing({ color, label, usage, dim, mismatch, selected, size 
       {label ? <span className="sx-swatch-label">{label}</span> : null}
     </span>
   )
+}
+
+/** Whether `color` is near the background the ring sits on, measured after layout and again when the theme changes. */
+function useNearPanel(color: string | null): { ref: RefObject<HTMLSpanElement | null>; on: boolean } {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [on, setOn] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !color || typeof getComputedStyle !== 'function') return void setOn(false)
+    const check = () => {
+      const panel = panelBackground(el)
+      setOn(panel !== null && nearPanel(color, panel))
+    }
+    check()
+    // A theme switch changes the html element's attributes or its style; the panel's color follows.
+    const watch = typeof MutationObserver === 'function' ? new MutationObserver(check) : null
+    watch?.observe(document.documentElement, { attributes: true })
+    return () => watch?.disconnect()
+  }, [color])
+  return { ref, on }
 }
