@@ -26,6 +26,7 @@ import {
   type Object3D,
   type PerspectiveCamera,
   type Scene,
+  type Texture,
   type WebGLRenderer,
 } from 'three'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
@@ -254,6 +255,10 @@ export interface FrameOptions {
   /** Draw without MSAA (the camera is moving; FXAA still runs). Still frames use MSAA 4x. */
   fast: boolean
   outline: readonly Object3D[]
+  /** Marks drawn over the composed frame, above the selection outline: hidden in the scene pass, then drawn without a depth buffer. */
+  overlay?: readonly Object3D[]
+  /** Called before the overlay draws, with the scene's depth, for marks that test against it themselves. */
+  overlayDepth?: (depth: Texture | null, size: Vector2) => void
   /** Model's CAD look: a near-black silhouette where solid models meet what is behind them. */
   silhouette?: boolean
   /** Increments per frame so AO noise rotates; still frames average it away. */
@@ -403,6 +408,7 @@ export class Pipeline {
     depthTexture.magFilter = NearestFilter
   }
 
+  private readonly bufferSize = new Vector2()
   private readonly probe = new WebGLRenderTarget(1, 1, { depthBuffer: false })
   private readonly probePx = new Uint8Array(4)
 
@@ -482,7 +488,10 @@ export class Pipeline {
     r.setRenderTarget(target)
     r.setClearColor(0x000000, 0)
     r.clear(true, true, true)
+    const overlay = (opts.overlay ?? []).filter((o) => o.visible)
+    for (const o of overlay) o.visible = false
     r.render(scene, camera)
+    for (const o of overlay) o.visible = true
 
     const g = this.gradeMat.uniforms
     const ao = opts.ao
@@ -520,6 +529,14 @@ export class Pipeline {
       this.pass(this.fxaaMat, null)
     } else {
       this.pass(this.gradeMat, null)
+    }
+    // on the canvas, after the grade: above the outline it drew
+    if (overlay.some((o) => o.children.length)) {
+      opts.overlayDepth?.(target.depthTexture, r.getDrawingBufferSize(this.bufferSize))
+      const prevAuto = r.shadowMap.autoUpdate
+      r.shadowMap.autoUpdate = false
+      for (const o of overlay) if (o.children.length) r.render(o, camera)
+      r.shadowMap.autoUpdate = prevAuto
     }
   }
 
