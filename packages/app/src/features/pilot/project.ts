@@ -10,7 +10,6 @@ import { arrange } from '../../plate/arrange'
 import { getArrangeOptions, sourceOf } from '../../plate/edit'
 import { inStep } from '../../plate/history'
 import { allPlates, projectBase } from '../../plate/plates'
-import { shapedPart, volumeAt } from '../../plate/volumes'
 import { bounds, centerOnBed, decompose, dropToBed, identity, sizeOf, withTrs, type Mat4, type Vec3 } from '../../plate/transform'
 import { GCODE_TEXT_KEYS, plateObjects, plateSliceConfig, trustOptions } from '../../state/actions'
 import { get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta } from '../../state/store'
@@ -203,6 +202,8 @@ export function appProject(host: Pick<Host, 'slicer'>): () => PilotProject {
       /** Adds a volume to an object and its copies, placed in the object's own coordinates. One undo step. */
       async addVolume(objectId: string, v: VolumeSpec): Promise<{ id: string }> {
         if (!find(objectId)) throw new Error(`No object ${objectId}`)
+        // Loaded when first used, so the volume code stays out of the startup chunk.
+        const { shapedPart, volumeAt } = await import('../../plate/volume-shapes')
         const part = shapedPart(v.shape)
         const handle = await host.slicer.loadParts(v.name, [part])
         const id = `vol_${Date.now().toString(36)}m${(++seq).toString(36)}`
