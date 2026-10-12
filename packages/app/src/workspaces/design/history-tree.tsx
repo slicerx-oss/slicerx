@@ -6,10 +6,10 @@
 // It is a tree to the keyboard: one row is in the tab order, Up and Down move between rows, Right opens an object or
 // goes into it (on a step, to its More button), Left closes it or goes back to its object, and Home and End jump.
 import { Icon, useContextMenu } from '@slicerx/ui'
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { HistorySteps } from '../../cad/history/history-panel'
 import { selectObject } from '../../plate/edit'
-import { MAX_NAME, renameObject } from '../../plate/object-list'
+import { MAX_NAME, onRenameRequest, renameObject } from '../../plate/object-list'
 import { get, useApp, type PlateEntry } from '../../state/store'
 import { ObjectMenu } from './context-menus'
 import { filterTree, startsFilter } from './tree-filter'
@@ -180,6 +180,7 @@ export function HistoryTree() {
 function ObjectRow({ entry: p, kind, steps, isOpen, isSel, setOpen }: { entry: PlateEntry; kind: 'body' | 'mesh'; steps: number; isOpen: boolean; isSel: boolean; setOpen: (open: boolean) => void }) {
   const nameRef = useRef<HTMLButtonElement>(null)
   const [renaming, setRenaming] = useState(false)
+  useEffect(() => onRenameRequest(p.id, () => setRenaming(true)), [p.id])
   // The menu acts on the selection, so a right click on an object outside it selects that object first.
   const pick = () => {
     if (!get().selectedIds.includes(p.id)) selectObject(p.id, false)

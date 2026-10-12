@@ -46,6 +46,22 @@ export function searchObjects(plate: readonly PlateEntry[], query: string): Obje
   return out
 }
 
+/** Asks the row of an object to start its rename, as F2 on the row does (the object-rename command). */
+const renames = new EventTarget()
+
+export function requestRename(id: string): void {
+  renames.dispatchEvent(new CustomEvent('rename', { detail: id }))
+}
+
+/** Calls `start` when a rename of object `id` is asked for; returns the unsubscribe. */
+export function onRenameRequest(id: string, start: () => void): () => void {
+  const listen = (e: Event) => {
+    if ((e as CustomEvent<string>).detail === id) start()
+  }
+  renames.addEventListener('rename', listen)
+  return () => renames.removeEventListener('rename', listen)
+}
+
 export function renameObject(id: string, name: string): boolean {
   const n = name.replace(/[\u0000-\u001f]/g, '').trim().slice(0, MAX_NAME)
   const e = get().plate.find((p) => p.id === id)
