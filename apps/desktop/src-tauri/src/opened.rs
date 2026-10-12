@@ -370,6 +370,7 @@ fn private_dir() -> Result<std::path::PathBuf, String> {
     for _ in 0..16 {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!("sx-open-{}-{nanos}-{n}", std::process::id()));
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut b = std::fs::DirBuilder::new();
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
