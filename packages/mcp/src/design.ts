@@ -19,6 +19,8 @@ import {
   stepId,
   stepName,
   withNumber,
+  type Design as HostDesign,
+  type DesignHost,
   type EngineCall,
   type History,
   type HistoryMesh,
@@ -36,23 +38,12 @@ import { readZip, writeZip } from './zip'
 
 type V3 = [number, number, number]
 
-export interface Design {
-  id: string
-  name: string
-  history: History
-  /** The object's transform: the frame of every point a client gives and gets. Identity unless a file set one. */
-  transform: Mat4
-  /** The parts after the last replay, in the object's own frame. */
-  parts: HistoryMesh[]
-  status: StepStatus[]
-  /** The step that made each face, by face key. */
-  madeBy: Record<number, string>
+/** A design on this server: the host's design (cad-history host.ts), plus the STL files it writes. */
+export interface Design extends HostDesign {
   /** The STL of the parts after the last change, in the output folder. */
   stl?: string
   /** How many STL files this design has written, for their names. */
-  written: number
-  /** Steps undone, last undone last; a new step clears them. */
-  redo: Step[]
+  written?: number
 }
 
 export interface DesignDeps {
@@ -62,12 +53,16 @@ export interface DesignDeps {
 
 export const designArg = z.string().min(1).describe('A design id from slicerx_design_new or slicerx_design_open')
 
-/** Keeps the designs of this server, and runs their steps. */
-export class Designs {
+/** Keeps the designs of this server, and runs their steps: the MCP server's design host. */
+export class Designs implements DesignHost {
   private readonly all = new Map<string, Design>()
   private seq = 0
 
   constructor(readonly deps: DesignDeps) {}
+
+  call(op: string, request: unknown): Promise<unknown> {
+    return this.deps.engine(op, request)
+  }
 
   get(id: string): Design {
     const d = this.all.get(id)
@@ -120,47 +115,48 @@ export class Designs {
     if (!d.parts.length) return
     const dir = join(this.deps.policy.outDir, 'designs', d.id)
     mkdirSync(dir, { recursive: true })
-    const file = join(dir, `${slug(d.name)}-${++d.written}.stl`)
+    d.written = (d.written ?? 0) + 1
+    const file = join(dir, `${slug(d.name)}-${d.written}.stl`)
     writeFileSync(file, writeBinaryStl(soup(d.parts.map((p) => bakeMesh(p, d.transform)))))
     d.stl = file
   }
+}
 
-  /** The part and triangle under a point on a face (world), facing `normal` when given. */
-  faceAt(d: Design, at: V3, normal?: V3): { part: number; triangle: number; normal: V3; key: number | undefined } {
-    let best: { part: number; triangle: number; normal: V3; score: number } | null = null
-    d.parts.forEach((p, part) => {
-      const w = bakeMesh(p, d.transform)
-      for (let t = 0; t + 2 < w.indices.length; t += 3) {
-        const tri = corners(w, t)
-        const n = triNormal(tri)
-        if (!n) continue
-        if (distance(at, tri) > NEAR_MM) continue
-        const score = normal ? dot(n, unit(normal) ?? n) : 1
-        if (!best || score > best.score) best = { part, triangle: t / 3, normal: n, score }
-      }
-    })
-    const hit = best as { part: number; triangle: number; normal: V3; score: number } | null
-    if (!hit) throw new ToolInputError(`at: no face of the design within ${NEAR_MM} mm of (${at.join(', ')}); slicerx_geom_faces with the design lists a point on every flat face`)
-    if (normal && hit.score < Math.cos((2 * Math.PI) / 180)) throw new ToolInputError('normal: no face at that point faces that way; give the outward normal of the face you mean')
-    const key = keyOfTriangle(d.parts[hit.part]!, hit.triangle)
-    return { part: hit.part, triangle: hit.triangle, normal: hit.normal, key: key || undefined }
-  }
-
-  /** The part whose surface holds a point (world), or the first part when none is near. */
-  partAt(d: Design, at: V3): number {
-    for (const [i, p] of d.parts.entries()) {
-      const w = bakeMesh(p, d.transform)
-      for (let t = 0; t + 2 < w.indices.length; t += 3) if (distance(at, corners(w, t)) <= NEAR_MM) return i
+/** The part and triangle under a point on a face (world), facing `normal` when given. */
+export function faceAt(d: HostDesign, at: V3, normal?: V3): { part: number; triangle: number; normal: V3; key: number | undefined } {
+  let best: { part: number; triangle: number; normal: V3; score: number } | null = null
+  d.parts.forEach((p, part) => {
+    const w = bakeMesh(p, d.transform)
+    for (let t = 0; t + 2 < w.indices.length; t += 3) {
+      const tri = corners(w, t)
+      const n = triNormal(tri)
+      if (!n) continue
+      if (distance(at, tri) > NEAR_MM) continue
+      const score = normal ? dot(n, unit(normal) ?? n) : 1
+      if (!best || score > best.score) best = { part, triangle: t / 3, normal: n, score }
     }
-    return 0
-  }
+  })
+  const hit = best as { part: number; triangle: number; normal: V3; score: number } | null
+  if (!hit) throw new ToolInputError(`at: no face of the design within ${NEAR_MM} mm of (${at.join(', ')}); slicerx_geom_faces with the design lists a point on every flat face`)
+  if (normal && hit.score < Math.cos((2 * Math.PI) / 180)) throw new ToolInputError('normal: no face at that point faces that way; give the outward normal of the face you mean')
+  const key = keyOfTriangle(d.parts[hit.part]!, hit.triangle)
+  return { part: hit.part, triangle: hit.triangle, normal: hit.normal, key: key || undefined }
+}
 
-  /** A part as an engine mesh item, with the object's transform. */
-  item(d: Design, part: number): { mesh: { positions: number[]; indices: number[]; faces?: unknown }; transform: Mat4 } {
-    const p = d.parts[part]
-    if (!p) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
-    return { mesh: { positions: Array.from(p.positions), indices: Array.from(p.indices), ...(p.faces ? { faces: p.faces } : {}) }, transform: d.transform }
+/** The part whose surface holds a point (world), or the first part when none is near. */
+export function partAt(d: HostDesign, at: V3): number {
+  for (const [i, p] of d.parts.entries()) {
+    const w = bakeMesh(p, d.transform)
+    for (let t = 0; t + 2 < w.indices.length; t += 3) if (distance(at, corners(w, t)) <= NEAR_MM) return i
   }
+  return 0
+}
+
+/** A part as an engine mesh item, with the object's transform. */
+export function item(d: HostDesign, part: number): { mesh: { positions: number[]; indices: number[]; faces?: unknown }; transform: Mat4 } {
+  const p = d.parts[part]
+  if (!p) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+  return { mesh: { positions: Array.from(p.positions), indices: Array.from(p.indices), ...(p.faces ? { faces: p.faces } : {}) }, transform: d.transform }
 }
 
 function withBroken(s: Step, st: StepStatus | undefined): Step {
@@ -371,8 +367,8 @@ export function readDesigns(buf: Buffer, label: string): { name: string; transfo
   })
 }
 
-export function designTools(designs: Designs): PilotTool<never>[] {
-  const { policy } = designs.deps
+/** The design tools on a host; `policy` places the files design.new reads and design.open and design.save use. */
+export function designTools(designs: DesignHost, policy: PathPolicy): PilotTool<never>[] {
   const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
 
   const create = defineTool({
