@@ -83,6 +83,8 @@ export interface FilamentSlot {
   material?: string
   color?: string
   remainingPct?: number
+  /** What is left in grams, when the printer reports it exactly (Bambu Lab `remain_g`). Shown before `remainingPct`, an estimate. */
+  remainingG?: number
   spoolmanId?: number
   /** The spool's own tag, when the printer reads one (Bambu Lab RFID `tray_uuid`), so a swapped spool reads as a new one. */
   spoolUid?: string

@@ -4,6 +4,7 @@
 // the product line as the material, and what the person edits staying theirs.
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { FilamentSlot, MeshHandle } from '@slicerx/contracts'
+import { spoolLeft } from '../src/filament/left'
 import { resetSlots, resolveSlots, setSlot } from '../src/filament/slots'
 import { slotMapFor } from '../src/send/options'
 import { get, set, type PlateEntry } from '../src/state/store'
@@ -11,7 +12,7 @@ import { get, set, type PlateEntry } from '../src/state/store'
 // What sx-connect's Bambu driver reports for an AMS with trays 1 and 3 loaded and an AMS HT beside it.
 const AMS: FilamentSlot[] = [
   { id: 'A1' },
-  { id: 'A2', material: 'PETG HF', color: '#1a2b3c', remainingPct: 40 },
+  { id: 'A2', material: 'PETG HF', color: '#1a2b3c', remainingPct: 40, remainingG: 312 },
   { id: 'A3' },
   { id: 'A4', material: 'PLA', color: '#ffffff' },
   { id: 'E1', material: 'ABS', color: '#000000', remainingPct: 90 },
@@ -48,5 +49,15 @@ describe('filament sync from the AMS', () => {
     expect(resolve()[3]).toMatchObject({ source: 'printer' })
     resetSlots()
     expect(resolve()[1]).toMatchObject({ color: '#1a2b3c', source: 'printer' })
+  })
+})
+
+describe('what is left on a spool', () => {
+  it("passes the printer's exact grams through, and says them before its percentage", () => {
+    const [, a2, , a4] = resolveSlots(get())
+    expect(a2).toMatchObject({ remainingPct: 40, remainingG: 312 })
+    expect(spoolLeft(a2!)).toBe('312 g left')
+    expect(spoolLeft({ remainingPct: 90 })).toBe('90% left')
+    expect(spoolLeft(a4!)).toBeNull()
   })
 })

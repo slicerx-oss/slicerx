@@ -51,6 +51,10 @@ pub struct FilamentSlot {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remaining_pct: Option<f64>,
+    /// What is left on the spool in grams, when the printer reports it exactly (Bambu Lab's
+    /// `remain_g`). Shown before `remaining_pct`, which is an estimate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining_g: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spoolman_id: Option<u64>,
     /// The spool's own tag, when the printer reads one (Bambu Lab RFID `tray_uuid`), so a swapped

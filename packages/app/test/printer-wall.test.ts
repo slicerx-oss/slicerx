@@ -18,7 +18,7 @@ vi.mock('../src/features/fleet/hud-view', () => ({
 const { HostContext } = await import('../src/host')
 const { FeaturesContext } = await import('../src/features')
 const { Fleet } = await import('../src/features/fleet/fleet')
-const { bayGroups, baySummary, statusLine, timeLeftText, wallCounts, wallOrder } = await import('../src/features/fleet/wall')
+const { bayGroups, baySummary, lowSlots, statusLine, timeLeftText, wallCounts, wallOrder } = await import('../src/features/fleet/wall')
 const { moveToBay, newBay } = await import('../src/features/fleet/bays')
 const { get, set } = await import('../src/state/store')
 const { normalizePrefs } = await import('../src/state/prefs')
@@ -60,7 +60,17 @@ describe('count strip', () => {
     expect(c['ready']).toMatchObject({ value: 1, sub: 'Atlas' })
     expect(c['off']).toMatchObject({ value: 1, sub: 'Voron 350' })
     // Atlas A2 at 20% and Mini's empty slot; the offline Voron's 5% does not count.
-    expect(c['low']).toMatchObject({ value: 2, sub: 'Slots under 25%' })
+    expect(c['low']).toMatchObject({ value: 2, sub: 'Slots under 25% or 250 g' })
+  })
+
+  it('counts a slot by its exact grams when the printer reports them, as its row shows', () => {
+    const rows = [
+      // 40 % says plenty; 180 g says low, and the row says 180 g.
+      row('a', 'A', { slots: [{ id: 'A1', material: 'PLA', remainingPct: 40, remainingG: 180 }] }),
+      // 10 % says low; 600 g, what the row shows, does not.
+      row('b', 'B', { slots: [{ id: 'A1', material: 'PLA', remainingPct: 10, remainingG: 600 }] }),
+    ]
+    expect(lowSlots(rows).map((x) => x.printer.name)).toEqual(['A'])
   })
 
   it('reads plainly with no printers in a state', () => {

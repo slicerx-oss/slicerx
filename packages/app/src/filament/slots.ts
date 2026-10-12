@@ -36,6 +36,8 @@ export interface ResolvedSlot extends SlotSetup {
   label: string
   source: SlotSource
   remainingPct?: number
+  /** Exact grams left, when the printer reports them. */
+  remainingG?: number
   /** Parts on any plate use it. */
   used: boolean
 }
@@ -106,7 +108,7 @@ export function resolveSlots(s: SlotInputs): ResolvedSlot[] {
     const fallback = defaultColors()[i % 8]!
     const mine = s.slotSetup[index]
     const printer: FilamentSlot | undefined = s.printerSlots[i]
-    const base = { index, used: used.has(index), ...(printer?.remainingPct !== undefined ? { remainingPct: printer.remainingPct } : {}) }
+    const base = { index, used: used.has(index), ...(printer?.remainingPct !== undefined ? { remainingPct: printer.remainingPct } : {}), ...(printer?.remainingG !== undefined ? { remainingG: printer.remainingG } : {}) }
     if (mine) return { ...base, ...mine, label: printer?.id ?? String(index), source: 'user' as const }
     if (printer && (printer.material || printer.color)) {
       const match = s.slotMatch?.[index]

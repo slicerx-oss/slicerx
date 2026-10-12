@@ -27,6 +27,7 @@ import { bayGroups, progressOf, statusLine, timeLeftText, wallCounts, wallKind, 
 import { moveToBay, newBay } from './bays'
 import { askToNotify, guardHub, notePlate, useGuard } from './guard'
 import { GuardCard } from './guard-card'
+import { spoolLeft } from '../../filament/left'
 import './wall.css'
 
 const DeviceDialog = lazy(() => import('./device-dialog').then((m) => ({ default: m.DeviceDialog })))
@@ -290,7 +291,7 @@ function Tile({ r, now, groups, onView }: { r: FleetRow; now: number; groups: re
             {slots.length ? (
               <span className="wall-slots" aria-label="Loaded filament">
                 {slots.map((s) => (
-                  <span key={s.id} className="wall-slot" data-active={s.id === active || undefined} {...tipAttrs({ title: `${slotName(s)}${s.remainingPct !== undefined ? `, ${s.remainingPct}%` : ''}${s.id === active ? ', printing now' : ''}` })}>
+                  <span key={s.id} className="wall-slot" data-active={s.id === active || undefined} {...tipAttrs({ title: `${slotName(s)}${spoolLeft(s) ? `, ${spoolLeft(s)}` : ''}${s.id === active ? ', printing now' : ''}` })}>
                     <Swatch color={s.color ?? 'var(--ink-4)'} size="sm" />
                   </span>
                 ))}

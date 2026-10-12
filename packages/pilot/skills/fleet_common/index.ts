@@ -143,9 +143,11 @@ export const spoolLabel = (s: SpoolRec): string => [s.vendor, s.name ?? s.materi
 export const NOMINAL_SPOOL_G = 1000
 
 /** Grams left in a printer slot, from Spoolman when linked, else from the percent on a nominal spool. */
-export function slotGrams(slot: { spoolmanId?: number | undefined; remainingPct?: number | undefined }, spools: SpoolRec[]): { grams: number; source: 'spoolman' | 'estimated' } | null {
+export function slotGrams(slot: { spoolmanId?: number | undefined; remainingPct?: number | undefined; remainingG?: number | undefined }, spools: SpoolRec[]): { grams: number; source: 'spoolman' | 'printer' | 'estimated' } | null {
   const sp = slot.spoolmanId === undefined ? undefined : spools.find((s) => s.id === slot.spoolmanId)
   if (sp?.remainingG !== undefined) return { grams: sp.remainingG, source: 'spoolman' }
+  // The printer's own exact grams (Bambu Lab remain_g), before an estimate from its percentage.
+  if (slot.remainingG !== undefined && slot.remainingG > 0) return { grams: slot.remainingG, source: 'printer' }
   // -1 or 0 is how an AMS says it has no reading (a spool without a tag), so only a figure above 0 counts.
   if (slot.remainingPct !== undefined && slot.remainingPct > 0 && slot.remainingPct <= 100) return { grams: (slot.remainingPct / 100) * (sp?.initialG ?? NOMINAL_SPOOL_G), source: 'estimated' }
   return null

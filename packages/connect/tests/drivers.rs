@@ -254,6 +254,10 @@ async fn a_canceled_bambu_connect_leaves_no_connection() {
 async fn bambu_contract() {
     let gate = Arc::new(MemoryGate::new());
     let mocks = Mocks::start("bambu", &[]).await;
+    // The first AMS slot reports exact grams, as newer firmware does.
+    mocks
+        .control("/bambu", serde_json::json!({ "grams": { "0": 312 } }))
+        .await;
     let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
     cfg.serial = Some(mocks.str("serial"));
     cfg.credential_ref = Some("bambu-code".to_owned());
@@ -321,6 +325,8 @@ async fn bambu_contract() {
     assert_eq!(st.slots[0].material.as_deref(), Some("PLA"));
     assert_eq!(st.slots[3].material.as_deref(), Some("TPU"));
     assert_eq!(st.slots[3].color.as_deref(), Some("#f97316"));
+    assert_eq!(st.slots[0].remaining_g, Some(312.0));
+    assert_eq!(st.slots[1].remaining_g, None);
 }
 
 // `gcode_file` carries no mapping, so the printer would feed each filament from the slot its

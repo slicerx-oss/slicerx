@@ -18,6 +18,15 @@ describe('send sheet preflight', () => {
     expect(out.some((w) => /runs out/.test(w.text) && /3[0-9] g left/.test(w.tip ?? ''))).toBe(true)
   })
 
+  it("goes by the printer's exact grams over its percentage when it reports both", async () => {
+    // 90 % of a spool would be plenty; the printer says 40 g, which is not.
+    const exact = { list: async () => [info], status: async () => ({ ...status, slots: [{ id: '1', material: 'PLA', remainingPct: 90, remainingG: 40 }] }), callTool: async () => { throw new Error('none') } } as unknown as PrinterHost
+    const out = await sendWarnings({ data: new TextEncoder().encode(gcode(210)).buffer as ArrayBuffer, printers: exact, printerId: 'bay-1', result, material: 'PLA' })
+    const w = out.find((x) => /runs out/.test(x.text))
+    expect(w?.tip).toMatch(/About 40 g left/)
+    expect(w?.tip).not.toMatch(/percentage/)
+  })
+
   // An AMS with no reading reports -1 (or 0 for a spool without a tag): that is not an empty spool, so nothing is said.
   for (const pct of [-1, 0, undefined]) {
     it(`says nothing about the spool when the remaining amount is ${pct === undefined ? 'missing' : pct}`, async () => {
