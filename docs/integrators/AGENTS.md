@@ -508,6 +508,7 @@ A refused tool call has `isError: true` and `structuredContent.error` with a sta
 | `sxlock_<reason>` | Optional locked projects; `@slicerx/embed/sxlock` throws `SxlockError` with the same reason as `code`. |
 | `not_found` | List again (for a design, `slicerx_design_list`); the id is stale or mistyped. Retrying the same call does not help. |
 | `not_supported` | This server cannot do it as asked; do what the message suggests instead (for STL modeling without sx-geom, use a design). Retrying does not help. |
+| `busy` | The open SlicerX app is in use (the person is changing that object, a question is up for them, or your last call there is still running). Wait a moment and call again. |
 | `internal_error` | Report it on the SlicerX Discord. |
 
 [quickstart.md](quickstart.md#error-codes) has every code.

@@ -34,12 +34,15 @@ export interface AppLinkCaller {
 
 /**
  * Answers that mean the app link is not this server's to use: the link is off, the app is closed, the hub does not
- * take this client on the link (a partner key, or one paired by code alone), or the hub is older than the link. The
- * call runs on the server's own designs instead.
+ * take this client on the link (a partner key, or one paired by code alone), or the hub is older than the link and
+ * does not know `app.call`. The call runs on the server's own designs instead. Any other refusal, such as arguments
+ * over the link's size, comes back as it is.
  */
-const NOT_THERE = new Set(['app_link_off', 'app_closed', 'forbidden', 'unauthorized', 'bad_request'])
+function notThere(code: string, message: string): boolean {
+  return ['app_link_off', 'app_closed', 'forbidden', 'unauthorized'].includes(code) || (code === 'bad_request' && message.startsWith('unknown method'))
+}
 /** Codes the app may answer with that the server's error codes have. */
-const PASSED: Record<string, ErrorCode> = { invalid_input: 'invalid_input', not_found: 'not_found', read_only: 'not_supported', denied: 'not_supported', refused: 'not_supported' }
+const PASSED: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_found', read_only: 'not_supported', denied: 'not_supported', refused: 'not_supported', busy: 'busy', pending: 'busy', not_answered: 'busy' }
 
 /** Whether a call works on a design (the app's), rather than a model file (this server's). */
 function onDesign(name: string, input: Record<string, unknown>): boolean {
@@ -60,9 +63,12 @@ export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appNa
       try {
         out = await link.call<{ summary?: string; output?: unknown }>(t.name, args)
       } catch (e) {
-        const code = (e as { code?: unknown }).code
-        if (typeof code === 'string' && NOT_THERE.has(code)) return local(input, ctx)
-        throw new ToolInputError(e instanceof Error ? e.message : String(e), (typeof code === 'string' && PASSED[code]) || 'internal_error')
+        const code = String((e as { code?: unknown }).code ?? '')
+        const message = e instanceof Error ? e.message : String(e)
+        if (notThere(code, message)) return local(input, ctx)
+        const mapped = PASSED[code] ?? 'internal_error'
+        // busy: the person is working in the app, or a question is up; the same call can go again shortly.
+        throw new ToolInputError(mapped === 'busy' ? `${message} (busy in ${appName}: wait a moment and call again)` : message, mapped)
       }
       // The first reply says where designs live now, once per session.
       const note = told ? '' : ` Designs now live in the project open in ${appName}, with their steps in its history; start the server with --no-app to keep them here.`
