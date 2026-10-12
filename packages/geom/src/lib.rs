@@ -76,6 +76,8 @@ pub mod solids;
 pub mod split;
 #[cfg(feature = "svg")]
 pub mod svg;
+#[cfg(feature = "textures")]
+pub mod texture;
 #[cfg(feature = "threads")]
 pub mod thread;
 pub mod vec3;

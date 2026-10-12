@@ -24,7 +24,7 @@ serde_json = "=1.0.151"
 
 # The engine's optional parts, all on by default; scripts/build.sh takes SX_GEOM_FEATURES to pick some.
 [features]
-default = ["cad", "holes", "threads", "shell", "text", "svg", "nest", "calib", "hollow", "formats"]
+default = ["cad", "holes", "threads", "shell", "text", "svg", "nest", "calib", "hollow", "formats", "textures"]
 cad = ["sx-geom/cad"]
 holes = ["sx-geom/holes"]
 threads = ["sx-geom/threads"]
@@ -35,3 +35,4 @@ nest = ["sx-geom/nest"]
 calib = ["sx-geom/calib"]
 hollow = ["sx-geom/hollow"]
 formats = ["sx-geom/formats"]
+textures = ["sx-geom/textures"]
