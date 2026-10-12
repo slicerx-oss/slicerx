@@ -817,6 +817,10 @@ struct Shared {
     /// The last `device.nozzle` object (H2 printers). Kept apart because later reports send `device`
     /// without it.
     nozzle: Mutex<Option<Value>>,
+    /// Set when the printer refused or ignored a send while its status kept coming (Authorization
+    /// Control with Developer Mode off, when the report carries no `fun` flags that say so). Cleared
+    /// when a start goes through or the report says Developer Mode is on.
+    refused_send: AtomicBool,
 }
 
 /// Command answers kept for a start to find its own.
@@ -913,7 +917,26 @@ impl Shared {
             return PrinterStatus::offline(&self.cfg.id);
         }
         let v = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        parse_status(&self.cfg.id, &v)
+        let mut st = parse_status(&self.cfg.id, &v);
+        if needs_developer_mode(&v, self.refused_send.load(Ordering::Relaxed)) {
+            st.live.get_or_insert_with(Box::default).needs_developer_mode = Some(true);
+        }
+        st
+    }
+
+    /// Records that the printer refused or ignored a send while its status kept coming, and says so
+    /// in the status.
+    fn note_refused_send(&self) {
+        if !self.refused_send.swap(true, Ordering::Relaxed) {
+            self.publish_changes();
+        }
+    }
+
+    /// A start went through: the printer takes prints from this app.
+    fn note_send_taken(&self) {
+        if self.refused_send.swap(false, Ordering::Relaxed) {
+            self.publish_changes();
+        }
     }
 
     /// Merges one report and broadcasts what changed.
@@ -934,6 +957,7 @@ impl Shared {
             model: Mutex::new(None),
             firmware: Mutex::new(None),
             nozzle: Mutex::new(None),
+            refused_send: AtomicBool::new(false),
         }
     }
 
@@ -1311,6 +1335,7 @@ fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
         layer_z_mm: None,
         // Status keeps coming with Developer Mode off; commands need Bambu Connect then.
         monitor_only: (developer_mode(p) == Some(false)).then_some(true),
+        needs_developer_mode: (developer_mode(p) == Some(false)).then_some(true),
     };
     (live != PrinterLive::default()).then(|| Box::new(live))
 }
@@ -1868,19 +1893,16 @@ impl BambuSession {
     /// "fail", read the way Bambu Studio reads it), or the job showing as
     /// prepared or printing, or a new `print_error` with the job failed. A refusal comes back as
     /// [`Error::Refused`] with the printer's reason in plain words, so the person decides what to do
-    /// next; nothing is retried or changed here. With no answer at all the start stands as sent and
-    /// the status shows what the printer does.
+    /// next; nothing is retried or changed here. With no answer at all, see [`Self::unanswered_start`].
     async fn await_project_start(&self, seq: &str, error_before: u64) -> Result<()> {
         let end = tokio::time::Instant::now() + PROJECT_ANSWER_WAIT;
         loop {
             if let Some(v) = self.answer(seq, "project_file") {
-                return match project_refusal(&v) {
-                    Some(reason) => Err(Error::Refused {
-                        printer: self.id().to_owned(),
-                        reason: self.with_developer_hint(reason),
-                    }),
-                    None => Ok(()),
-                };
+                if let Some(reason) = project_refusal(&v) {
+                    return Err(self.refusal(reason));
+                }
+                self.shared.note_send_taken();
+                return Ok(());
             }
             let (state, error) = {
                 let v = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -1893,16 +1915,14 @@ impl BambuSession {
                 )
             };
             if matches!(state.as_str(), "PREPARE" | "SLICING" | "RUNNING") {
+                self.shared.note_send_taken();
                 return Ok(());
             }
             if state == "FAILED" && error != 0 && error != error_before {
-                return Err(Error::Refused {
-                    printer: self.id().to_owned(),
-                    reason: self.with_developer_hint(print_error_words(error)),
-                });
+                return Err(self.refusal(print_error_words(error)));
             }
             if tokio::time::Instant::now() >= end {
-                return Ok(());
+                return self.unanswered_start();
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -1921,10 +1941,7 @@ impl BambuSession {
         loop {
             if let Some(v) = self.answer(&seq, command) {
                 return match project_refusal(&v) {
-                    Some(reason) => Err(Error::Refused {
-                        printer: self.id().to_owned(),
-                        reason: self.with_developer_hint(reason),
-                    }),
+                    Some(reason) => Err(self.refusal(reason)),
                     None => Ok(()),
                 };
             }
@@ -1961,10 +1978,7 @@ impl BambuSession {
         loop {
             if let Some(v) = self.answer(&seq, &command) {
                 return match project_refusal(&v) {
-                    Some(reason) => Err(Error::Refused {
-                        printer: self.id().to_owned(),
-                        reason: self.with_developer_hint(reason),
-                    }),
+                    Some(reason) => Err(self.refusal(reason)),
                     None => Ok(()),
                 };
             }
@@ -1999,16 +2013,53 @@ impl BambuSession {
         if !self.monitor_only() {
             return Ok(());
         }
-        Err(Error::Refused {
+        Err(Error::NeedsDeveloperMode {
             printer: self.id().to_owned(),
             reason: MONITOR_ONLY.to_owned(),
         })
     }
 
-    /// A refusal's reason, with the likely cause added while the printer reports Developer Mode off.
-    fn with_developer_hint(&self, reason: String) -> String {
+    /// A command the printer answered with a refusal: [`Error::NeedsDeveloperMode`] with the
+    /// printer's reason and the cause while the report says Developer Mode is off, else
+    /// [`Error::Refused`] with the reason alone.
+    fn refusal(&self, reason: String) -> Error {
         let state = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
-        refusal_with_hint(reason, &state)
+        refusal_for(self.id(), reason, &state)
+    }
+
+    /// A project start the printer did not answer in [`PROJECT_ANSWER_WAIT`] while the job did not
+    /// change. With the status still coming and no report that Developer Mode is on, that is how a
+    /// start refused by Authorization Control can look (the firmware drops the command without a
+    /// reply), so the person hears it and gets the two remedies. Otherwise the start stands as sent.
+    fn unanswered_start(&self) -> Result<()> {
+        let dev = {
+            let state = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+            developer_mode(&state)
+        };
+        if !self.shared.connected.load(Ordering::Relaxed) || dev == Some(true) {
+            return Ok(());
+        }
+        self.shared.note_refused_send();
+        Err(Error::NeedsDeveloperMode {
+            printer: self.id().to_owned(),
+            reason: START_UNANSWERED.to_owned(),
+        })
+    }
+
+    /// An FTPS upload that failed while MQTT stayed up. Returns the error as it came, or
+    /// [`Error::NeedsDeveloperMode`] when it reads as Authorization Control turning the file away.
+    fn upload_failure(&self, e: Error) -> Error {
+        let dev = {
+            let state = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+            developer_mode(&state)
+        };
+        match upload_refusal(self.id(), e, self.shared.connected.load(Ordering::Relaxed), dev) {
+            Ok(refused) => {
+                self.shared.note_refused_send();
+                refused
+            }
+            Err(e) => e,
+        }
     }
 
     fn next_seq(&self) -> String {
@@ -2225,14 +2276,56 @@ fn print_error_words(e: u64) -> String {
         .unwrap_or_else(|| format!("The printer reported error {}.", wiki_code(e >> 16, e & 0xffff)))
 }
 
-/// A refused command's reason, plus what to do when the report `p` says Developer Mode is off: the
-/// printer then wants signed commands and refuses ours whatever the job.
-fn refusal_with_hint(reason: String, p: &Value) -> String {
+/// A refused command as an error for printer `id`: while the report `p` says Developer Mode is off
+/// the printer wants signed commands and refuses ours whatever the job, so the reason gets that
+/// cause and the error is [`Error::NeedsDeveloperMode`]; otherwise it is [`Error::Refused`].
+fn refusal_for(id: &str, reason: String, p: &Value) -> Error {
     if developer_mode(p) != Some(false) {
-        return reason;
+        return Error::Refused {
+            printer: id.to_owned(),
+            reason,
+        };
     }
-    format!("{}. {MONITOR_ONLY}", reason.trim_end_matches('.'))
+    Error::NeedsDeveloperMode {
+        printer: id.to_owned(),
+        reason: format!("{}. {MONITOR_ONLY}", reason.trim_end_matches('.')),
+    }
 }
+
+/// Whether the status should say the printer needs Developer Mode: its report `p` says it is off,
+/// or a send was refused or ignored (`refused`) and the report does not say it is on.
+fn needs_developer_mode(p: &Value, refused: bool) -> bool {
+    match developer_mode(p) {
+        Some(false) => true,
+        Some(true) => false,
+        None => refused,
+    }
+}
+
+/// Reads a failed FTPS upload for printer `id`. With MQTT up (`mqtt_up`) and no report that
+/// Developer Mode is on (`dev`), a connection that times out, drops or is refused is what
+/// Authorization Control looks like from here (Developer Mode is what opens FTP to other apps,
+/// per Bambu Lab), so it comes back as `Ok` with [`Error::NeedsDeveloperMode`]. Anything
+/// else (MQTT down too, a wrong access code, a full card) comes back unchanged as `Err`.
+fn upload_refusal(id: &str, e: Error, mqtt_up: bool, dev: Option<bool>) -> std::result::Result<Error, Error> {
+    let detail = match &e {
+        Error::Unreachable { detail, .. } | Error::Timeout { detail, .. } => detail.clone(),
+        _ => return Err(e),
+    };
+    if !mqtt_up || dev == Some(true) {
+        return Err(e);
+    }
+    Ok(Error::NeedsDeveloperMode {
+        printer: id.to_owned(),
+        reason: format!("It sends status, but the file upload failed ({detail}). {UPLOAD_REFUSED}"),
+    })
+}
+
+/// The likely cause of an upload that failed while status kept coming, and the two ways to print.
+const UPLOAD_REFUSED: &str = "The likely cause is Developer Mode being off: with Bambu Lab's Authorization Control firmware, a printer takes no files or prints from other apps until LAN Only Mode and Developer Mode are on. Turn both on, or print through Bambu Connect.";
+
+/// What a start that got no answer, while status kept coming, most likely means.
+const START_UNANSWERED: &str = "It sends status, but it did not answer the print start. With Bambu Lab's Authorization Control firmware that is what a refused start can look like while Developer Mode is off. Check the printer's screen first: if the print started after all, there is nothing to do. Otherwise turn on LAN Only Mode and Developer Mode, or print through Bambu Connect.";
 
 /// Why a printer with Developer Mode off takes no command from SlicerX, and the two ways to print.
 const MONITOR_ONLY: &str = "Developer Mode is off on the printer, so it sends status but takes no commands from other apps. Print through Bambu Connect, or turn on Developer Mode in its LAN Only settings to print directly.";
@@ -2469,7 +2562,9 @@ impl PrinterSession for BambuSession {
                 reason: why.to_owned(),
             });
         }
-        ftps::store(&self.ftps(), &file.name, &file.data).await?;
+        ftps::store(&self.ftps(), &file.name, &file.data)
+            .await
+            .map_err(|e| self.upload_failure(e))?;
         Ok(RemoteFile {
             printer_id: self.id().to_owned(),
             path: file.name.clone(),
@@ -3202,18 +3297,77 @@ mod tests {
 
     #[test]
     fn a_refusal_names_developer_mode_when_it_is_off() {
-        use super::refusal_with_hint;
+        use super::refusal_for;
+        let words = |e: crate::Error| match e {
+            crate::Error::Refused { reason, .. } => ("refused", reason),
+            crate::Error::NeedsDeveloperMode { reason, .. } => ("needs_developer_mode", reason),
+            other => panic!("{other:?}"),
+        };
         let off = json!({ "fun": "3EC1AFFF9CFF" });
         assert_eq!(
-            refusal_with_hint("verify failed".to_owned(), &off),
-            "verify failed. Developer Mode is off on the printer, so it sends status but takes no commands from other apps. Print through Bambu Connect, or turn on Developer Mode in its LAN Only settings to print directly."
+            words(refusal_for("p", "verify failed".to_owned(), &off)),
+            (
+                "needs_developer_mode",
+                "verify failed. Developer Mode is off on the printer, so it sends status but takes no commands from other apps. Print through Bambu Connect, or turn on Developer Mode in its LAN Only settings to print directly.".to_owned()
+            )
         );
         let on = json!({ "fun": "3EC18FFF9CFF" });
         assert_eq!(
-            refusal_with_hint("MD5 verify failed".to_owned(), &on),
-            "MD5 verify failed"
+            words(refusal_for("p", "MD5 verify failed".to_owned(), &on)),
+            ("refused", "MD5 verify failed".to_owned())
         );
-        assert_eq!(refusal_with_hint("no flags".to_owned(), &json!({})), "no flags");
+        assert_eq!(
+            words(refusal_for("p", "no flags".to_owned(), &json!({}))),
+            ("refused", "no flags".to_owned())
+        );
+    }
+
+    // mcivor's A1 mini: status and the light work, the upload times out. With MQTT up and no report
+    // that Developer Mode is on, that reads as the firmware's refusal, with the upload's own words.
+    #[test]
+    fn an_upload_that_fails_while_status_flows_needs_developer_mode() {
+        use super::upload_refusal;
+        let timed_out = || crate::Error::unreachable("p", "FTPS upload timed out");
+        let e = upload_refusal("p", timed_out(), true, None).unwrap();
+        assert_eq!(e.code(), crate::ErrorCode::NeedsDeveloperMode);
+        let text = e.to_string();
+        assert!(text.contains("(FTPS upload timed out)"), "{text}");
+        assert!(text.contains("LAN Only Mode and Developer Mode"), "{text}");
+        assert!(text.contains("Bambu Connect"), "{text}");
+        let dropped = crate::Error::Timeout {
+            printer: "p".into(),
+            detail: "FTP control connection closed".into(),
+        };
+        assert!(upload_refusal("p", dropped, true, Some(false)).is_ok());
+        // MQTT down too: the printer is just unreachable.
+        assert_eq!(
+            upload_refusal("p", timed_out(), false, None).unwrap_err().code(),
+            crate::ErrorCode::Unreachable
+        );
+        // Developer Mode on: the cause is something else, so the error stays as it came.
+        assert_eq!(
+            upload_refusal("p", timed_out(), true, Some(true))
+                .unwrap_err()
+                .code(),
+            crate::ErrorCode::Unreachable
+        );
+        // A wrong access code is not a refusal.
+        let auth = crate::Error::Auth { printer: "p".into() };
+        assert_eq!(
+            upload_refusal("p", auth, true, None).unwrap_err().code(),
+            crate::ErrorCode::Auth
+        );
+    }
+
+    #[test]
+    fn the_status_says_developer_mode_is_needed() {
+        use super::needs_developer_mode;
+        let off = json!({ "fun": "3EC1AFFF9CFF" });
+        let on = json!({ "fun": "3EC18FFF9CFF" });
+        assert!(needs_developer_mode(&off, false));
+        assert!(!needs_developer_mode(&on, true));
+        assert!(!needs_developer_mode(&json!({}), false));
+        assert!(needs_developer_mode(&json!({}), true));
     }
 
     #[test]
