@@ -46,6 +46,23 @@ afterEach(() => {
 })
 
 describe('Set up local AI card', () => {
+  it('holds the Get Ollama block while it looks, so nothing under the card moves when the search comes back empty', async () => {
+    const waiting: ((v: string | null) => void)[] = []
+    const net: LocalNet = { get: () => new Promise((r) => waiting.push(r)), post: () => (async function* () {})() }
+    registerLocalAi(() => ({ hardware: async () => ({ gpu: null, ramMb: 16384, cores: 8, source: 'browser' }), net }))
+    render(createElement(LocalAiCard))
+    const again = await screen.findByRole('button', { name: 'Check again' })
+    expect(again.getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Get Ollama' })).toBeTruthy()
+    const busy = again.closest('.la-act')!
+    expect(busy.getAttribute('aria-busy')).toBe('true')
+    await act(async () => waiting.forEach((r) => r(null)))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check again' }).hasAttribute('aria-disabled')).toBe(false))
+    // the same block, not a new one
+    expect(screen.getByRole('button', { name: 'Check again' }).closest('.la-act')).toBe(busy)
+    expect(busy.hasAttribute('aria-busy')).toBe(false)
+  })
+
   it('shows the size and license and asks before downloading, then cancels the pull', async () => {
     let release: () => void = () => undefined
     const { posts, signals } = setup([], (signal) =>

@@ -125,19 +125,19 @@ function Helper({ background }: { background: boolean }) {
       ) : null}
 
       {rec?.kind !== 'too-weak' ? (
-        runners === null ? (
-          <p className="la-note">Looking for Ollama or LM Studio on this computer.</p>
-        ) : runner ? (
+        runner ? (
           <p className="la-found">
             <Icon name="check" size={16} /> {runner.label} is running.
           </p>
         ) : (
-          <div className="la-act">
+          // While it looks, the block it lands on is already there, so nothing under the card moves when the
+          // search comes back empty (a closed port can take a while to answer).
+          <div className="la-act" aria-busy={runners === null || undefined}>
             <span className="la-what">A free model app runs the model. Ollama is the simplest; its installer opens in your browser.</span>
             <Button icon="external" onClick={() => void openLink(OLLAMA_DOWNLOAD)}>
               Get Ollama
             </Button>
-            <Button variant="ghost" icon="refresh" onClick={() => void detect()}>
+            <Button variant="ghost" icon="refresh" disabled={runners === null} {...(runners === null ? { tip: 'Looking for Ollama or LM Studio on this computer' } : {})} onClick={() => void detect()}>
               Check again
             </Button>
           </div>
