@@ -5,12 +5,10 @@
 //!
 //! - `filament_map_mode` `Manual` (or `Nozzle Manual`) takes `filament_map` as given: the extruder of each
 //!   filament, 1 the left and 2 the right.
-//! - Anything else (`Auto For Flush`, the default) picks the map with the least waste, the way Bambu
-//!   Studio does (`ToolOrdering::get_recommended_filament_maps`, `FilamentGroup::calc_group_by_enum`):
-//!   every split of the plate's filaments between the two extruders is tried, each layer printed one
-//!   extruder's filaments after the other's (`reorder_filaments_for_minimum_flush_volume`), and the split
-//!   scores its flush volume (as seconds of flushing, `FLUSH_VOLUME_TO_SCORE`) plus the seconds its changes
-//!   take. A filament whose parts reach past an extruder's printable area stays off that extruder; the
+//! - Anything else (`Auto For Flush`, the default) picks the map with the least waste, as Bambu Studio
+//!   maps them: every split of the plate's filaments between the two extruders is tried, each layer printed
+//!   one extruder's filaments after the other's, and the split scores its flush volume (as seconds of
+//!   flushing) plus the seconds its changes take. A filament whose parts reach past an extruder's printable area stays off that extruder; the
 //!   master extruder gets a small penalty when it ends up with fewer than half the filaments; on a tie the
 //!   first split in Bambu Studio's enumeration order wins. Only the filaments the plate prints with take part
 //!   (a part whose features all print with other filaments leaves its own filament out); the others go to the
@@ -23,12 +21,12 @@
 
 use crate::config::PrintConfig;
 
-/// Bambu Studio's weight of a flushed mm3 against a second of change time (`FLUSH_VOLUME_TO_SCORE`:
-/// 1.26 g/cm3 at 180 s/g, doubled).
+/// The weight of a flushed mm3 against a second of change time, as Bambu Studio weighs them: 1.26 g/cm3 at
+/// 180 s/g, doubled.
 const FLUSH_SCORE: f64 = 1.26 * 180.0 * 2.0 / 1000.0;
 
-/// Bambu Studio's penalty when the master extruder prints fewer than half the filaments
-/// (`ABSOLUTE_FLUSH_GAP_TOLERANCE`).
+/// The penalty, in seconds of score, when the master extruder prints fewer than half the filaments, as Bambu Studio
+/// adds it.
 const MASTER_PENALTY: f64 = 10.0;
 
 /// Most filaments the splits are enumerated for; past this a split is improved one filament at a time.
@@ -223,9 +221,8 @@ impl Usage {
             }
         }
         // A plate of one filament prints its skirt with it too: the skirt runs skirt_distance past the parts and
-        // their brim, so the map must keep that within the extruder's reach. (Orca's geometric check reads only the
-        // objects' walls and fills, PrintObject::detect_extruder_geometric_unprintables, and its skirt can land out
-        // of reach.) With several filaments the skirt goes to one whose extruder reaches it (session.rs
+        // their brim, so the map must keep that within the extruder's reach. (OrcaSlicer's reach check reads only the
+        // objects' walls and fills, and its skirt can land out of reach.) With several filaments the skirt goes to one whose extruder reaches it (session.rs
         // `skirt_tool_at`).
         let used: Vec<usize> = boxes
             .iter()
@@ -649,7 +646,7 @@ impl Groups {
     }
 
     /// The order of a layer printing `here` after filament `cur`, each extruder's filaments together
-    /// (Bambu Studio's `reorder_filaments_for_minimum_flush_volume` with a filament map): the extruder
+    /// (as Bambu Studio orders a layer under a filament map): the extruder
     /// that printed last goes on first, then the others; inside an extruder the order with the least flush
     /// from the filament it last printed (`last`, per extruder, 0 for none), looking at the next layer as
     /// Orca does. `w(extruder, a, b)` is the flush from `a` to `b` on that extruder.
