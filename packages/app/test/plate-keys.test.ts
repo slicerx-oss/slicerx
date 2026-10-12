@@ -105,6 +105,14 @@ describe('the layer slider keys in Slice', () => {
     expect(press('ArrowDown', select).defaultPrevented).toBe(false)
     expect(get().layerHi).toBe(10)
     select.remove()
+    // A panel's resize edge takes the arrows to resize, as the playback bar's does.
+    const edge = document.body.appendChild(document.createElement('div'))
+    edge.setAttribute('role', 'separator')
+    edge.tabIndex = 0
+    edge.focus()
+    expect(press('ArrowDown', edge).defaultPrevented).toBe(false)
+    expect(get().layerHi).toBe(10)
+    edge.remove()
     set({ preview: null })
     expect(press('ArrowDown').defaultPrevented).toBe(false)
     expect(get().layerHi).toBe(10)

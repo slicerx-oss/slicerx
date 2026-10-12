@@ -86,6 +86,13 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
   return out
 }
 
+/** Focusable widgets that move with their own arrows: a panel's resize edge, a list, a menu, a toolbar. */
+const OWNS_ARROWS = '[role=separator],[role=scrollbar],[role=spinbutton],[role=listbox],[role=tree],[role=treegrid],[role=grid],[role=menu],[role=menubar],[role=tablist],[role=radiogroup],[role=toolbar]'
+
+function ownsArrows(target: EventTarget | null): boolean {
+  return typeof Element !== 'undefined' && target instanceof Element && target.closest(OWNS_ARROWS) !== null
+}
+
 function layerKey(by: number): void {
   if (get().sliceLook !== 'toolpaths') set({ sliceLook: 'toolpaths' })
   stepLayer(by)
@@ -97,7 +104,7 @@ function layerKey(by: number): void {
  * only while the toolpaths show, so a look that shares a letter (L for supports and for one layer) keeps the tool there.
  */
 function previewKeyOn(action: KeyAction, s: ReturnType<typeof get>, e: KeyboardEvent): boolean {
-  if (s.modelMode !== 'slice' || layerCountNow() < 1 || onControl(e.target)) return false
+  if (s.modelMode !== 'slice' || layerCountNow() < 1 || onControl(e.target) || ownsArrows(e.target)) return false
   return action === 'preview.layerUp' || action === 'preview.layerDown' || s.sliceLook === 'toolpaths'
 }
 
