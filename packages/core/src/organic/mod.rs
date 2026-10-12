@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Organic tree supports, as Orca builds them with `TreeSupport3D` (`Support/TreeSupport3D.cpp`,
-//! `Support/TreeModelVolumes.cpp`), the tree supports of Thomas Rahm that `PrusaSlicer`'s organic style also uses:
+//! Organic tree supports, as Orca builds them,
+//! the tree supports of Thomas Rahm that Prusa's organic style also uses:
 //!
 //! 1. overhangs from the same detection as the slim, strong and hybrid trees (`treeclassic`);
 //! 2. the model volumes branches must avoid ([`volumes`]);
@@ -11,7 +11,7 @@
 //! 6. interface layers projected from the contacts, the first layer widened, and the layers merged by height
 //!    ([`layers`]), then toolpaths ([`paths`]).
 //!
-//! Orca 2.4.2 and `PrusaSlicer` 2.8 share this code; Orca's copy has its later fixes (roofs recovered from the
+//! Orca 2.4.2 and Prusa 2.8 build them the same way; Orca's has its later fixes (roofs recovered from the
 //! branch slices, flat feet on the bed, smoothing that never moves a point past what the branch may lean, and
 //! bottom contacts kept when the bottom gap is not zero), so Orca's is followed.
 
@@ -43,7 +43,7 @@ use std::sync::Arc;
 
 pub(crate) use layers::OrganicLayer;
 
-/// The support parameters tip placement and toolpaths read (Orca's `SupportParameters`).
+/// The support parameters tip placement and toolpaths read.
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools, reason = "one field per support parameter")]
 pub(crate) struct Params {
@@ -69,7 +69,7 @@ pub(crate) struct Params {
 }
 
 impl Params {
-    /// Orca's tip circle (`make_circle(0.01 mm, 25 nm)`) scaled to `radius` by a whole factor.
+    /// Orca's tip circle (a 0.01 mm circle within 25 nm) scaled to `radius` by a whole factor.
     pub(crate) fn base_circle(radius: i64) -> Vec<(f64, f64)> {
         let base = geo::sc(0.01);
         let error = 25.0 * crate::geom::SCALE / 1e6;
@@ -81,7 +81,7 @@ impl Params {
     }
 }
 
-/// The roofs and contacts placed while the trees are planned (Orca's `InterfacePlacer`), per layer.
+/// The roofs and contacts placed while the trees are planned, per layer.
 #[derive(Debug, Default)]
 pub(crate) struct Placer {
     pub(crate) top_contacts: Vec<Option<Vec<geo::Ring>>>,
@@ -102,7 +102,7 @@ impl Placer {
         }
     }
 
-    /// `add_roof_unguarded`: the contact layer for depth 0, an interface layer below it, base interfaces
+    /// A roof: the contact layer for depth 0, an interface layer below it, base interfaces
     /// further down when the interface uses another filament.
     pub(crate) fn add_roof(&mut self, rings: Vec<geo::Ring>, layer: i64, dtt_roof: usize) {
         let mut threshold = self.num_top_interface_layers - self.num_top_base_interface_layers;
@@ -183,7 +183,7 @@ pub(crate) fn plan(inp: &OrganicIn<'_>) -> OrganicPlan {
             }
         })
         .collect();
-    // Painted vertical walls get a small overhang at their facets' centers (Orca's `m_vertical_enforcer_points`),
+    // Painted vertical walls get a small overhang at their facets' centers,
     // on the first layer whose top reaches the point.
     let mut overhangs = overhangs;
     let circle = geo::circle(geo::sc(0.5) as f64, 25.0 * crate::geom::SCALE / 1e6);

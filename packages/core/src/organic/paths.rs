@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Toolpaths of organic tree supports, as Orca's `generate_support_toolpaths` prints them
-//! (Support/SupportCommon.cpp) with the sheath organic trees always have:
+//! Toolpaths of organic tree supports, as Orca prints them
+//! with the sheath organic trees always have:
 //!
 //! - the interface joins the top contact of its layer; bottom contacts join the base when there are no top or
 //!   no bottom interface layers, or the top contact, and are otherwise not printed themselves (the interface
@@ -27,7 +27,7 @@ use crate::perimeters::{self, Shapes};
 
 type Path = Vec<Point>;
 
-/// The contact filler (Orca's `contact_fill_pattern`).
+/// The contact filler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ContactFill {
     SupportBase,
@@ -61,7 +61,7 @@ pub(crate) struct PathsIn {
     pub(crate) bottom_layers: u32,
     /// The support base pattern is default or hollow: branches print as walls only.
     pub(crate) hollow: bool,
-    /// Islands wider than this get a second wall, mm2 (Orca's `tree_branch_diameter_double_wall_area_scaled`).
+    /// Islands wider than this get a second wall, mm2.
     pub(crate) double_wall_mm2: f64,
     pub(crate) center: [f64; 2],
     pub(crate) anchor_max: f64,
@@ -100,7 +100,7 @@ fn base_fill(
     }
 }
 
-/// `fill_expolygons_with_sheath_generate_paths` with a sheath: a loop half a line in, and the filler inside it.
+/// Fills an area with a sheath: a loop half a line in, and the filler inside it.
 fn with_sheath(
     area: &Shapes,
     width: f64,
@@ -150,7 +150,7 @@ fn contact_fill(area: &Shapes, density: f64, angle: f64, layer: u32, z: f64, p: 
 
 /// The support and interface paths of one organic layer. `layer` is the support layer's index (0 is the
 /// first layer) and `z` its top, mm.
-/// The interface angle of an organic layer, degrees (Orca's `support_interface_angle`).
+/// The interface angle of an organic layer, degrees.
 pub(crate) fn interface_angle(ol: &OrganicLayer, p: &PathsIn) -> f64 {
     let turning = if ol.interface_id % 2 == 1 { -45.0 } else { 45.0 };
     match p.interface_pattern {

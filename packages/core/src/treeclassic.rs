@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Slim, strong and hybrid tree supports, as Orca's `TreeSupport` (Support/TreeSupport.cpp) builds them:
+//! Slim, strong and hybrid tree supports, as Orca builds them:
 //!
-//! 1. Overhangs per layer from the extrudable slices (`detect_overhangs`): the outline beyond the layer
+//! 1. Overhangs per layer from the extrudable slices: the outline beyond the layer
 //!    below grown by the threshold step, sharp tails (islands that start in mid-air) every half millimeter,
 //!    cantilevers, clusters of tiny overhangs dropped, blockers, enforcers and short bridges.
-//! 2. Contact points (`generate_contact_points`) under each overhang part: its sharp corners, points along
+//! 2. Contact points under each overhang part: its sharp corners, points along
 //!    its outline every branch distance, and a grid turned 22 degrees inside it.
-//! 3. Dropping (`drop_nodes`), layer by layer down: the nodes of each part are joined by a minimum spanning
+//! 3. Dropping, layer by layer down: the nodes of each part are joined by a minimum spanning
 //!    tree, close neighbors merge, and each node moves one step, out of the part's avoidance area or toward
 //!    its neighbors (slim trees weight them by inverse squared distance and pull from the bed up, the others
 //!    sum the directions and stay still under 5 mm).
-//! 4. Smoothing each branch (`smooth_nodes`), then drawing (`draw_circles`): a circle per node, stretched
+//! 4. Smoothing each branch, then drawing: a circle per node, stretched
 //!    along its movement, the roof and the first roof layer from the interface nodes, floors where a branch
 //!    rests on the part, trimmed by the part.
 //!
@@ -39,7 +39,7 @@ const MIN_BRANCH_RADIUS: f64 = 0.4;
 const MAX_BRANCH_RADIUS: f64 = 10.0;
 const MIN_BRANCH_RADIUS_FIRST_LAYER: f64 = 2.0;
 const MAX_BRANCH_RADIUS_FIRST_LAYER: f64 = 12.0;
-/// Orca's `g_config_tree_support_collision_resolution`, mm.
+/// The resolution tree collisions are checked at, mm, as in Orca.
 const RESOLUTION_MM: f64 = 0.2;
 const EPS: f64 = 1e-4;
 
@@ -74,7 +74,7 @@ fn inside(s: &Shapes, p: Pt) -> bool {
     crate::support::point_in(s, x, y)
 }
 
-/// The closest point to `p` on any ring of `s` (Orca's `projection_onto`), or `p` when `s` is empty.
+/// The closest point to `p` on any ring of `s`, or `p` when `s` is empty.
 fn projection_onto(s: &Shapes, p: Pt) -> Pt {
     let mut best = p;
     let mut best_d = f64::MAX;
@@ -106,7 +106,7 @@ fn d2_mm(v: Pt) -> f64 {
     to_mm(v.0).m_powi(2) + to_mm(v.1).m_powi(2)
 }
 
-/// `v` scaled to `len` internal units (Orca's `normal`), or `v` when it is shorter than a unit.
+/// `v` scaled to `len` internal units, or `v` when it is shorter than a unit.
 fn normal(v: Pt, len: f64) -> Pt {
     let l = (v.0 as f64).m_hypot(v.1 as f64);
     if l < 1.0 {
@@ -126,7 +126,7 @@ fn sub(a: Pt, b: Pt) -> Pt {
     (a.0 - b.0, a.1 - b.1)
 }
 
-/// Orca's `move_out_expolys`: moves `from` out of `polys` grown by `distance_mm`, by at most `max_mm`.
+/// Moves `from` out of `polys` grown by `distance_mm`, by at most `max_mm`.
 fn move_out(polys: &Shapes, from: &mut Pt, distance_mm: f64, max_mm: f64) -> bool {
     let dilated = perimeters::offset(polys, u(distance_mm));
     let mut pt = projection_onto(&dilated, *from);
@@ -155,7 +155,7 @@ fn cut_by(s: &Shapes, a: Pt, b: Pt) -> bool {
     !crate::support::clip_inside(&[p(a), p(b)], s).is_empty()
 }
 
-/// Orca's `avoid_object_remove_extra_small_parts`: `area` less `avoid`, keeping only the largest piece.
+/// `area` less `avoid`, keeping only the largest piece.
 fn largest_piece(area: &Shapes, avoid: &Shapes) -> Shapes {
     let rest = perimeters::difference(area, avoid);
     let best = rest
@@ -228,7 +228,7 @@ pub(crate) struct TreeIn<'a> {
     pub(crate) first_layer_gap: f64,
     pub(crate) min_layer_height: f64,
     pub(crate) raft_first_layer_expansion: f64,
-    /// `independent_support_layer_height`, and the thickest support layer (Orca's `max_suport_layer_height`), mm.
+    /// `independent_support_layer_height`, and the thickest support layer, mm.
     pub(crate) independent: bool,
     pub(crate) max_layer_height: f64,
 }
@@ -240,7 +240,7 @@ enum Kind {
     SharpTail,
 }
 
-/// Overhangs over consecutive layers that touch (Orca's `OverhangCluster`).
+/// Overhangs over consecutive layers that touch.
 struct Cluster {
     layer_part: BTreeMap<usize, Island>,
     /// The first part and the grown parts that joined it; their union is the cluster's area.
@@ -267,7 +267,7 @@ struct Scan {
     cantilevers: Shapes,
 }
 
-/// Orca's `TreeSupport::detect_overhangs`.
+/// The overhangs of every layer that slim, strong and hybrid trees hold up, as Orca detects them.
 #[allow(clippy::too_many_lines, reason = "one pass, in Orca's order")]
 fn detect_overhangs(inp: &TreeIn<'_>) -> Overhangs {
     let cfg = inp.cfg;
@@ -555,7 +555,7 @@ fn detect_overhangs(inp: &TreeIn<'_>) -> Overhangs {
     }
 }
 
-/// The overhangs of every layer as Orca's organic trees read them (`layer->loverhangs` with their types): the
+/// The overhangs of every layer as Orca's organic trees read them, with their types: the
 /// detected and enforced parts, and the sharp tails apart.
 pub(crate) fn overhang_areas(inp: &TreeIn<'_>) -> Vec<(Shapes, Shapes)> {
     detect_overhangs(inp)
@@ -576,7 +576,7 @@ pub(crate) fn overhang_areas(inp: &TreeIn<'_>) -> Vec<(Shapes, Shapes)> {
         .collect()
 }
 
-/// Bridges a tree branch need not hold up (Orca's `PrintObject::remove_bridges_from_contacts` without breaking
+/// Bridges a tree branch need not hold up (as Orca removes them from the contacts, without breaking
 /// long bridges): straight wall runs over air that rest on the layer below at both ends and are no longer than
 /// `max_mm`, and bottom surfaces over air inside the walls whose box is shorter than `max_mm` both ways.
 fn bridges(inp: &TreeIn<'_>, i: usize, fw_mm: f64, max_mm: f64) -> Shapes {
@@ -680,7 +680,7 @@ enum NodeType {
     Polygon,
 }
 
-/// Orca's `SupportNode`.
+/// A node of a tree branch on one support layer.
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools, reason = "Orca's node flags")]
 struct Node {
@@ -707,8 +707,7 @@ struct Node {
     height: f64,
 }
 
-/// A support layer: its top, its thickness and the object layer it is planned against (Orca's
-/// `LayerHeightData`).
+/// A support layer: its top, its thickness and the object layer it is planned against.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LayerH {
     pub(crate) z: f64,
@@ -733,7 +732,7 @@ struct Params {
 }
 
 impl Params {
-    /// Orca's `TreeSupport::calc_branch_radius` by distance to the top, mm.
+    /// The branch radius by distance to the top, mm, as Orca computes it.
     fn calc_radius(&self, mm_to_top: f64) -> f64 {
         let tip = self.base_radius;
         let r = if mm_to_top > tip {
@@ -827,7 +826,7 @@ impl Nodes {
         self.all[i].radius
     }
 
-    /// Orca's `get_max_move_dist`, mm.
+    /// How far a node may move in one layer, mm, as Orca allows.
     fn max_move(&mut self, i: usize, p: &Params) -> f64 {
         if self.all[i].max_move == 0.0 {
             self.radius(i, p);
@@ -837,7 +836,7 @@ impl Nodes {
     }
 }
 
-/// Collision and avoidance areas per radius and layer (Orca's `TreeSupportData`).
+/// Collision and avoidance areas per radius and layer.
 struct Volumes {
     outlines: Vec<Shapes>,
     outlines_below: Vec<Shapes>,
@@ -914,7 +913,7 @@ impl Volumes {
     }
 }
 
-/// Orca's `generate_contact_points`: the contact nodes of each layer, on the layer under the overhang.
+/// The contact nodes of each layer, on the layer under the overhang.
 #[allow(clippy::too_many_lines, reason = "one pass, in Orca's order")]
 fn contact_points(inp: &TreeIn<'_>, oh: &Overhangs, p: &Params, nodes: &mut Nodes) {
     let n = inp.models.len();
@@ -1115,13 +1114,13 @@ fn contact_points(inp: &TreeIn<'_>, oh: &Overhangs, p: &Params, nodes: &mut Node
     }
 }
 
-/// The union of the outlines up to the layer under `layer`, simplified (Orca's `m_layer_outlines_below`).
+/// The union of the outlines up to the layer under `layer`, simplified.
 fn oh_below(inp: &TreeIn<'_>, layer: usize) -> Shapes {
     let refs: Vec<&Shapes> = inp.models.iter().take(layer).collect();
     simplify(&perimeters::union_all(&refs), RESOLUTION_MM)
 }
 
-/// The neighbors of each point in the minimum spanning tree of `pts` (Orca's `MinimumSpanningTree`, Prim's
+/// The neighbors of each point in the minimum spanning tree of `pts` (Prim's
 /// method from the first point).
 fn spanning_tree(pts: &[Pt]) -> HashMap<Pt, Vec<Pt>> {
     let mut adj: HashMap<Pt, Vec<Pt>> = HashMap::new();
@@ -1160,7 +1159,7 @@ fn spanning_tree(pts: &[Pt]) -> HashMap<Pt, Vec<Pt>> {
     adj
 }
 
-/// Orca's `TreeSupport::drop_nodes`: moves every node down one layer at a time.
+/// Moves every node down one layer at a time.
 #[allow(clippy::too_many_lines, reason = "one pass, in Orca's order")]
 /// Below this height slim branches merge more readily, mm.
 const SLIM_LOW_MERGE_Z: f64 = 5.0;
@@ -1534,7 +1533,7 @@ fn centroid(s: &Shapes) -> Pt {
     ((ax / (3.0 * a)).round() as i64, (ay / (3.0 * a)).round() as i64)
 }
 
-/// Orca's `TreeSupport::smooth_nodes`: each branch is averaged with its neighbors along it.
+/// Each branch is averaged with its neighbors along it.
 fn smooth_nodes(inp: &TreeIn<'_>, nodes: &mut Nodes) {
     for l in &nodes.layers {
         for &i in l {
@@ -1627,7 +1626,7 @@ pub(crate) struct TreeArea {
     pub(crate) extra_wall: bool,
 }
 
-/// The support of one layer, by kind (Orca's `area_groups`).
+/// The support of one layer, by kind.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TreeLayer {
     pub(crate) base: Vec<TreeArea>,
@@ -1636,7 +1635,7 @@ pub(crate) struct TreeLayer {
     pub(crate) floor: Shapes,
 }
 
-/// Orca's `TreeSupport::draw_circles` for every layer.
+/// Draws the branches of every layer: a circle per node.
 #[allow(clippy::too_many_lines, reason = "one pass, in Orca's order")]
 fn draw(
     inp: &TreeIn<'_>,
@@ -1979,7 +1978,7 @@ fn draw(
     out
 }
 
-/// Orca's `TreeSupport::get_trim_support_regions` for support layer `layer` on the object's layers.
+/// The regions that trim support layer `layer` on the object's layers.
 fn trim_regions(
     inp: &TreeIn<'_>,
     top: f64,
@@ -2060,7 +2059,7 @@ pub(crate) fn plan(inp: &TreeIn<'_>) -> Vec<(LayerH, TreeLayer)> {
     heights.into_iter().zip(layers).collect()
 }
 
-/// Orca's `TreeSupport::plan_layer_heights`: the support layers, and the contact nodes moved onto them.
+/// The support layers, and the contact nodes moved onto them.
 /// With `independent_support_layer_height` the layers between contacts are as few as the maximum support layer
 /// height allows, all the same thickness; otherwise they are the object's layers.
 fn plan_heights(inp: &TreeIn<'_>, p: &Params, nodes: &mut Nodes) -> Vec<LayerH> {

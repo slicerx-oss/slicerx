@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! `smooth_outward`, as Orca's MutablePolygon.cpp has it (adapted there from Cura's
+//! `smooth_outward`, as Orca has it (adapted there from Cura's
 //! `ConstPolygonRef::smooth_outward`): concave corners sharper than 135 degrees are cut, narrow cracks are
 //! closed up to the clip distance, and small clockwise triangles (tiny holes) are filled. Convex corners stay.
 
@@ -31,7 +31,7 @@ struct Node {
     next: i32,
 }
 
-/// A ring as a doubly linked list (`MutablePolygon`).
+/// A ring as a doubly linked list.
 struct Poly {
     d: Vec<Node>,
     size: i32,
@@ -139,7 +139,7 @@ impl Poly {
     }
 }
 
-/// The unprocessed elements, from `begin` to `end` inclusive (`MutablePolygon::range`).
+/// The unprocessed elements, from `begin` to `end` inclusive.
 struct Range {
     begin: i32,
     end: i32,

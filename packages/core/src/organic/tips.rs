@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Tip placement of organic trees, as Orca's `generate_initial_areas`, `sample_overhang_area` and
-//! `RichInterfacePlacer` (Support/TreeSupport3D.cpp):
+//! Tip placement of organic trees, as Orca places them under each overhang with its interface placer:
 //!
 //! - each overhang, `z_distance_top_layers + 1` layers above, is trimmed by what a tip may not touch and grown
 //!   in steps to make up for the tip radius;
@@ -122,7 +121,7 @@ pub(crate) fn safe_offset_inc(
     ret
 }
 
-/// `get_avoidance_status` and the status test of `convert_lines_to_internal`.
+/// Which avoidance a tip line uses, and whether it still holds a layer down.
 fn status_of(volumes: &Volumes, cfg: &Settings, p: Pt, layer: i64) -> LineStatus {
     let min_xy = cfg.xy_distance > cfg.xy_min_distance;
     let r0 = cfg.get_radius(0, 0.0);
@@ -184,7 +183,7 @@ fn convert_lines_to_internal(
     out
 }
 
-/// `evaluate_point_for_next_layer_function`: true when the point is still valid a layer down.
+/// True when the point is still valid a layer down.
 fn valid_next_layer(volumes: &Volumes, cfg: &Settings, current_layer: i64, p: &(Pt, LineStatus)) -> bool {
     let min_xy = cfg.xy_distance > cfg.xy_min_distance;
     let r0 = cfg.get_radius(0, 0.0);
@@ -246,7 +245,7 @@ fn split_lines(
     (kept, freed)
 }
 
-/// `polyline_sample_next_point_at_distance`: the next point `dist` from `start` along `poly` from segment
+/// The next point `dist` from `start` along `poly` from segment
 /// `start_idx` on, with the segment it lies on.
 fn sample_next(poly: &[Pt], start: Pt, start_idx: usize, dist: f64) -> Option<(Pt, usize)> {
     let dist2 = dist * dist;
@@ -383,7 +382,7 @@ fn ensure_maximum_distance_polyline(input: &[Vec<Pt>], distance: f64, min_points
     result
 }
 
-/// `generate_support_infill_lines`: support base lines (or interface lines for a roof) over `area`.
+/// Support base lines (or interface lines for a roof) over `area`.
 fn infill_lines(
     area: &Shapes,
     p: &Params,
@@ -414,7 +413,7 @@ fn infill_lines(
         return Vec::new();
     }
     // The filler has no object box here, so each island's lines run on a lattice through the middle of its
-    // own outline's box (`Fill::_infill_direction`).
+    // own outline's box.
     let mut out = Vec::new();
     for island in geo::union(area) {
         let outline: Shapes = vec![vec![island[0].clone()]];
@@ -461,7 +460,7 @@ enum Op {
     },
 }
 
-/// `RichInterfacePlacer`'s state shared by the tips of one overhang layer.
+/// The interface placer's state shared by the tips of one overhang layer.
 struct Rich<'a> {
     volumes: &'a Volumes,
     cfg: &'a Settings,

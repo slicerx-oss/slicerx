@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! The influence areas of organic trees and their state, as Orca's `SupportElement` and `SupportElementState`
-//! (Support/TreeSupport3D.hpp): one element per branch and layer, with the area its center may take, links to
+//! The influence areas of organic trees and their state, as Orca keeps them:
+//! one element per branch and layer, with the area its center may take, links to
 //! the elements it holds up on the layer above, and the point it is finally drawn at.
 
 #![allow(
@@ -16,7 +16,7 @@ use super::settings::Settings;
 use super::volumes::AvoidanceType;
 use crate::perimeters::Shapes;
 
-/// How an influence area was grown to the layer below (`AreaIncreaseSettings`).
+/// How an influence area was grown to the layer below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AreaIncrease {
     pub(crate) t: AvoidanceType,
@@ -103,7 +103,7 @@ impl State {
     }
 }
 
-/// One influence area (`SupportElement`).
+/// One influence area.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Element {
     pub(crate) state: State,
@@ -112,7 +112,7 @@ pub(crate) struct Element {
     pub(crate) influence_area: Shapes,
 }
 
-/// `getEffectiveDTT`.
+/// The effective distance to the tip in layers, for the element's radius.
 pub(crate) fn effective_dtt(cfg: &Settings, s: &State) -> usize {
     let until = cfg.increase_radius_until_layer;
     if (s.effective_radius_height as usize) < until {
@@ -122,12 +122,12 @@ pub(crate) fn effective_dtt(cfg: &Settings, s: &State) -> usize {
     }
 }
 
-/// `support_element_radius`.
+/// The element's radius.
 pub(crate) fn radius(cfg: &Settings, s: &State) -> i64 {
     cfg.get_radius(effective_dtt(cfg, s), s.elephant_foot_increases)
 }
 
-/// `support_element_collision_radius`.
+/// The radius the element's collision is checked with.
 pub(crate) fn collision_radius(cfg: &Settings, s: &State) -> i64 {
     cfg.get_radius(s.effective_radius_height as usize, s.elephant_foot_increases)
 }

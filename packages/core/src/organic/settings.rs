@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! The settings of organic trees, as Orca derives them (`TreeSupportMeshGroupSettings` and `TreeSupportSettings`
-//! in Support/TreeSupportCommon.hpp). Lengths are plate units (`crate::geom::SCALE` per mm), truncated from
-//! millimeters the way Orca's `scaled<coord_t>()` does.
+//! The settings of organic trees, as Orca derives them.
+//! Lengths are plate units (`crate::geom::SCALE` per mm), truncated from
+//! millimeters the way Orca scales them.
 
 #![allow(
     clippy::cast_possible_truncation,
@@ -32,7 +32,7 @@ pub(crate) struct Raw {
     pub(crate) bottom_layers: u32,
     pub(crate) on_bed_only: bool,
     pub(crate) xy_distance: f64,
-    /// Orca's `gap_support_object` and `gap_object_support` (the top and bottom Z distances, rounded to layers).
+    /// The top and bottom Z distances between support and object, rounded to layers.
     pub(crate) top_distance: f64,
     pub(crate) bottom_distance: f64,
     pub(crate) top_z_gap: f64,
@@ -46,7 +46,7 @@ pub(crate) struct Raw {
     pub(crate) tip_diameter: f64,
 }
 
-/// `TreeSupportMeshGroupSettings` and `TreeSupportSettings` together.
+/// The settings of the trees of one object.
 #[derive(Debug, Clone)]
 pub(crate) struct Settings {
     pub(crate) layer_height: i64,
@@ -139,7 +139,7 @@ impl Settings {
         let z_distance_top_layers = (top_distance as f64 / layer_height as f64).round() as usize;
         let layer_start_bp_radius =
             ((bp_radius - branch_radius) as f64 / bp_radius_increase_per_layer) as i64;
-        // `TreeSupportSettings::zero_top_z_gap`, set when the top Z distance is zero.
+        // Set when the top Z distance is zero.
         if r.top_z_gap < eps {
             xy_min_distance = xy_min_distance.max(sc(0.1));
             xy_distance = xy_distance.max(xy_min_distance);
@@ -186,7 +186,7 @@ impl Settings {
         }
     }
 
-    /// `getRadius`: the radius of an element `distance_to_top` layers under its tip.
+    /// The radius of an element `distance_to_top` layers under its tip.
     pub(crate) fn get_radius(&self, distance_to_top: usize, elephant_foot_increases: f64) -> i64 {
         let base = if distance_to_top <= self.tip_layers {
             (self.min_radius
@@ -202,7 +202,7 @@ impl Settings {
             as i64
     }
 
-    /// `recommendedMinRadius`: the radius an element should reach on `layer_idx` to end in the bed foot.
+    /// The radius an element should reach on `layer_idx` to end in the bed foot.
     pub(crate) fn recommended_min_radius(&self, layer_idx: i64) -> i64 {
         let widened = (self.layer_start_bp_radius - layer_idx) as f64;
         if widened > 0.0 {

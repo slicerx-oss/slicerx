@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Polygon helpers for organic tree supports: offsets with Clipper's miter and round joins (Orca's
-//! `offset(..., jtMiter, 1.2)` and `jtRound` calls), Douglas-Peucker simplification of every ring
-//! (`polygons_simplify`), point containment with the even-odd rule (`contains`), `remove_small`, and
+//! Polygon helpers for organic tree supports: offsets with Clipper's miter and round joins (as Orca
+//! offsets them), Douglas-Peucker simplification of every ring,
+//! point containment with the even-odd rule (`contains`), `remove_small`, and
 //! Cura's `move_inside`.
 //!
 //! Shapes are plate units (`crate::geom::SCALE` per mm), outer rings counterclockwise and holes clockwise.
@@ -37,7 +37,7 @@ pub(crate) enum Join {
     Square,
 }
 
-/// Orca's `scaled<coord_t>()`: millimeters to plate units, truncated.
+/// Millimeters to plate units, truncated, as Orca scales them.
 pub(crate) fn sc(mm: f64) -> i64 {
     (mm * crate::geom::SCALE) as i64
 }
@@ -128,7 +128,7 @@ pub(crate) fn inter(a: &Shapes, b: &Shapes) -> Shapes {
     perimeters::intersection(a, b)
 }
 
-/// Signed area in square plate units (holes subtract), Orca's `area(Polygons)`.
+/// Signed area in square plate units (holes subtract).
 pub(crate) fn area(s: &Shapes) -> f64 {
     rings(s).map(|r| ring_area(r)).sum()
 }
@@ -137,13 +137,13 @@ pub(crate) fn ring_area(r: &[IntPoint<i32>]) -> f64 {
     crate::geom::area2_int(r) as f64 / 2.0
 }
 
-/// Orca's `tiny_area_threshold()`: a square micrometer.
+/// The smallest area that counts: a square micrometer, as in Orca.
 pub(crate) fn tiny_area() -> f64 {
     let u = crate::geom::SCALE * 0.001;
     u * u
 }
 
-/// Total outline length, Orca's `total_length(Polygons)`.
+/// Total outline length.
 pub(crate) fn total_length(s: &Shapes) -> f64 {
     rings(s)
         .map(|r| {
@@ -210,7 +210,7 @@ fn point_in_ring(p: Pt, r: &[IntPoint<i32>]) -> i32 {
     result
 }
 
-/// Orca's `contains(Polygons, Point)`: inside an odd number of rings, or on any ring.
+/// Inside an odd number of rings, or on any ring.
 pub(crate) fn contains(s: &Shapes, p: Pt) -> bool {
     let mut count = 0;
     for r in rings(s) {
@@ -222,7 +222,7 @@ pub(crate) fn contains(s: &Shapes, p: Pt) -> bool {
     count % 2 == 1
 }
 
-/// Orca's `remove_small`: drops every ring (outer or hole) smaller than `min_area`.
+/// Drops every ring (outer or hole) smaller than `min_area`.
 pub(crate) fn remove_small(s: &mut Shapes, min_area: f64) {
     for sh in s.iter_mut() {
         let keep_shape = sh.first().is_some_and(|o| ring_area(o).abs() >= min_area);
@@ -240,7 +240,7 @@ pub(crate) fn remove_small(s: &mut Shapes, min_area: f64) {
     s.retain(|sh| !sh.is_empty());
 }
 
-/// Douglas-Peucker on a closed ring, the first point repeated at the end (`MultiPoint::_douglas_peucker`).
+/// Douglas-Peucker on a closed ring, the first point repeated at the end.
 fn douglas_peucker(pts: &[Pt], tol: f64) -> Vec<Pt> {
     let mut out: Vec<Pt> = Vec::with_capacity(pts.len());
     let Some(&first) = pts.first() else { return out };
@@ -279,7 +279,7 @@ fn douglas_peucker(pts: &[Pt], tol: f64) -> Vec<Pt> {
     out
 }
 
-/// Squared distance from `p` to the segment `a`-`b` (Orca's `Line::distance_to_squared`).
+/// Squared distance from `p` to the segment `a`-`b`.
 pub(crate) fn seg_dist2(p: Pt, a: Pt, b: Pt) -> f64 {
     let (vx, vy) = ((b.0 - a.0) as f64, (b.1 - a.1) as f64);
     let (wx, wy) = ((p.0 - a.0) as f64, (p.1 - a.1) as f64);
@@ -299,7 +299,7 @@ pub(crate) fn seg_dist2(p: Pt, a: Pt, b: Pt) -> f64 {
     }
 }
 
-/// Orca's `polygons_simplify` (not strictly simple): each ring simplified on its own, rings that fall below
+/// Ring simplification as Orca does it (not strictly simple): each ring simplified on its own, rings that fall below
 /// three points dropped. The rings keep their shape grouping; a shape whose outline goes keeps none of its holes.
 pub(crate) fn simplify(s: &Shapes, tol: f64) -> Shapes {
     let mut rings_out: Vec<Ring> = Vec::new();
@@ -455,7 +455,7 @@ fn offset_ring(r: &[IntPoint<i32>], delta: f64, join: Join) -> Option<Ring> {
     Some(out)
 }
 
-/// Orca's `offset(Polylines, delta, jtMiter, 1.2)` with butt ends: each open path grown into a band.
+/// A miter offset of open paths with butt ends, as Orca offsets them: each open path grown into a band.
 pub(crate) fn offset_polylines(lines: &[Vec<Pt>], delta: f64) -> Shapes {
     let mut raw: Vec<Ring> = Vec::new();
     for l in lines {
@@ -489,7 +489,7 @@ pub(crate) fn offset_polylines(lines: &[Vec<Pt>], delta: f64) -> Shapes {
     merge_rings(&raw, FillRule::NonZero)
 }
 
-/// Each ring as a closed polyline, first point repeated (Orca's `to_polylines(Polygons)`).
+/// Each ring as a closed polyline, first point repeated .
 pub(crate) fn to_polylines(s: &Shapes) -> Vec<Vec<Pt>> {
     rings(s)
         .filter(|r| !r.is_empty())
@@ -501,12 +501,12 @@ pub(crate) fn to_polylines(s: &Shapes) -> Vec<Vec<Pt>> {
         .collect()
 }
 
-/// A ring per shape outline and hole, as separate shapes of one ring (Orca's flat `Polygons`).
+/// A ring per shape outline and hole, as separate shapes of one ring .
 pub(crate) fn from_rings(r: Vec<Ring>) -> Shapes {
     r.into_iter().filter(|r| r.len() >= 3).map(|r| vec![r]).collect()
 }
 
-/// Orca's `make_circle(radius, error)`: a regular polygon starting on the x axis.
+/// A circle as a regular polygon within `error`, as Orca makes it, starting on the x axis.
 pub(crate) fn circle(radius: f64, error: f64) -> Vec<(f64, f64)> {
     let angle = 2.0 * (1.0 - error / radius).m_acos();
     let n = (std::f64::consts::TAU / angle).ceil() as usize;
@@ -590,7 +590,7 @@ pub(crate) fn move_inside(s: &Shapes, from: Pt, max_dist2: i64) -> Option<Pt> {
     (found && best < max_dist2 as f64).then_some(ret)
 }
 
-/// Orca's `move_inside_if_outside`: `from` when inside `s`, else the closest outline point.
+/// `from` when inside `s`, else the closest outline point.
 pub(crate) fn move_inside_if_outside(s: &Shapes, from: Pt) -> Pt {
     if contains(s, from) {
         return from;

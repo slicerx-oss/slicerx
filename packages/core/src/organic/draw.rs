@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Drawing organic trees, as Orca's `organic_draw_branches` (Support/TreeSupport3D.cpp):
+//! Drawing organic trees, as Orca draws them:
 //!
-//! 1. The branch points are smoothed (`organic_smooth_branches_avoid_collisions`): each point is a sphere of
+//! 1. The branch points are smoothed: each point is a sphere of
 //!    the branch radius, nudged out of the object's collision lines of the layers it spans and pulled toward
 //!    the average of its neighbors, in up to 100 rounds, never further from a linked point than the branch may
 //!    lean.
@@ -68,7 +68,7 @@ fn d2(a: V3, b: V3) -> f64 {
     d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
 }
 
-/// The Z of support layer `idx` as Orca's organic trees take it (`layer_z`): the raft layers, then the first
+/// The Z of support layer `idx` as Orca's organic trees take it: the raft layers, then the first
 /// object layer and steps of the layer height.
 pub(crate) struct Heights {
     pub(crate) raft: Vec<f64>,
@@ -281,7 +281,7 @@ struct Sphere {
     layer_end: usize,
 }
 
-/// `organic_smooth_branches_avoid_collisions` (the version with per layer line trees).
+/// Smooths the branch points while keeping them out of the model (with per layer line trees).
 fn smooth_branches(
     volumes: &Volumes,
     cfg: &Settings,
@@ -534,7 +534,7 @@ impl Mesh {
         }
     }
 
-    /// `triangulate_strip`.
+    /// Triangles between two rings of the mesh.
     fn strip(&mut self, b1: usize, e1: usize, b2: usize, e2: usize) {
         let (mut n1, mut n2) = (e1 - b1, e2 - b2);
         let p1 = self.v[b1];
@@ -570,7 +570,7 @@ impl Mesh {
         }
     }
 
-    /// `discretize_circle`.
+    /// A ring of points around `center`, square to `normal`, close to the circle within `eps`.
     fn circle(&mut self, center: V3, normal: V3, radius: f64, eps: f64) -> (usize, usize) {
         let mut step = 2.0 * (1.0 - eps / radius).m_acos();
         let n = (std::f64::consts::TAU / step).ceil().max(3.0) as usize;
@@ -834,14 +834,14 @@ fn visit(move_bounds: &mut [Vec<Element>], start: (usize, usize), out: &mut Vec<
 /// One tree's slices from its first layer, and the roofs recovered from its branches (rings, layer, depth).
 type TreeResult = (i64, Vec<Slice>, Vec<(Vec<Ring>, i64, usize)>);
 
-/// The areas `organic_draw_branches` hands on, per support layer.
+/// The areas drawing the branches gives, per support layer.
 #[derive(Default, Clone)]
 pub(crate) struct Drawn {
     pub(crate) base: Vec<Shapes>,
     pub(crate) bottom_contacts: Vec<Shapes>,
 }
 
-/// `organic_draw_branches`.
+/// Draws the branches as meshes and slices them into support areas per layer.
 pub(crate) fn draw_branches(
     volumes: &mut Volumes,
     cfg: &Settings,

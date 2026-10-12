@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! The model volumes organic trees avoid, as Orca's `TreeModelVolumes` (Support/TreeModelVolumes.cpp) computes
+//! The model volumes organic trees avoid, as Orca computes
 //! them for one object:
 //!
 //! - collision per radius and layer: the outlines grown by the radius and the minimum XY distance over the
@@ -70,7 +70,7 @@ impl Cache {
         l.range(..=radius).next_back().map(|(k, v)| (*k, v.clone()))
     }
 
-    /// `getMaxCalculatedLayer`: the highest layer above 0 that has `radius`, or -1.
+    /// The highest layer above 0 that has `radius`, or -1.
     fn max_layer(&self, radius: i64) -> i64 {
         let Ok(d) = self.data.read() else { return -1 };
         let mut l = d.len() as i64 - 1;
@@ -106,7 +106,7 @@ impl Cache {
     }
 }
 
-/// `TreeModelVolumes` for one object.
+/// The model volumes of one object.
 pub(crate) struct Volumes {
     /// The object's outlines per layer, simplified by the resolution.
     outlines: Vec<Shapes>,
@@ -229,7 +229,7 @@ impl Volumes {
         }
     }
 
-    /// `getRadiusNextCeil`.
+    /// The next cached radius at or above `radius`.
     pub(crate) fn radius_next_ceil(&self, radius: i64, min_xy_dist: bool) -> i64 {
         if min_xy_dist {
             self.ceil_radius_raw(radius)
@@ -299,7 +299,7 @@ impl Volumes {
         self.calculate_wall_restrictions(&avoidance_keys);
     }
 
-    /// `getCollision`.
+    /// The collision area of a radius on a layer, cached.
     pub(crate) fn collision(&self, orig_radius: i64, layer: i64, min_xy_dist: bool) -> Area {
         let radius = self.ceil_radius(orig_radius, min_xy_dist);
         if let Some(a) = self.collision.get(radius, layer) {
@@ -309,7 +309,7 @@ impl Volumes {
         self.collision.get(radius, layer).unwrap_or_default()
     }
 
-    /// `get_collision_lower_bound_area`: the collision of the largest cached radius not above `max_radius`.
+    /// The collision of the largest cached radius not above `max_radius`.
     pub(crate) fn collision_lower_bound(&self, layer: i64, max_radius: i64) -> Option<(i64, Area)> {
         self.collision.lower_bound(max_radius, layer)
     }
@@ -322,7 +322,7 @@ impl Volumes {
         self.collision_holefree.get(radius, layer).unwrap_or_default()
     }
 
-    /// `getAvoidance`.
+    /// The avoidance area of a radius on a layer, of one type, cached.
     pub(crate) fn avoidance(
         &self,
         orig_radius: i64,
@@ -347,7 +347,7 @@ impl Volumes {
         self.cache(t, to_model).get(radius, layer).unwrap_or_default()
     }
 
-    /// `getPlaceableAreas`.
+    /// Where a branch of a radius may rest on the model on a layer, cached.
     pub(crate) fn placeable(&self, orig_radius: i64, layer: i64) -> Area {
         let radius = self.ceil_radius_raw(orig_radius);
         if let Some(a) = self.placeable.get(radius, layer) {
@@ -360,7 +360,7 @@ impl Volumes {
         self.placeable.get(radius, layer).unwrap_or_default()
     }
 
-    /// `getWallRestriction`.
+    /// How far a branch of a radius may move between this layer and the one below.
     pub(crate) fn wall_restriction(&self, orig_radius: i64, layer: i64, min_xy_dist: bool) -> Area {
         if layer == 0 {
             return self.collision(orig_radius, layer, min_xy_dist);
@@ -379,7 +379,7 @@ impl Volumes {
         cache.get(radius, layer).unwrap_or_default()
     }
 
-    /// `calculateCollision` for `radius` from the first layer not yet cached up to `max_layer`, and the
+    /// Computes the collision for `radius` from the first layer not yet cached up to `max_layer`, and the
     /// placeable areas of radius 0 with it.
     fn calculate_collision(&self, radius: i64, max_layer: i64) {
         let begin = self.collision.max_layer(radius) + 1;
@@ -467,7 +467,7 @@ impl Volumes {
         self.collision.insert(radius, begin, data);
     }
 
-    /// `calculateCollisionHolefree`.
+    /// Computes the collision without small holes.
     fn calculate_collision_holefree(&self, keys: &[(i64, i64)]) {
         let max_layer = keys.iter().map(|k| k.1).max().unwrap_or(0);
         let inc = self.increase_until_radius;
@@ -494,7 +494,7 @@ impl Volumes {
             .insert_pairs(items.into_iter().flatten().collect());
     }
 
-    /// `calculatePlaceables` for `radius` up to `max_layer`.
+    /// Computes the placeable areas for `radius` up to `max_layer`.
     fn calculate_placeables(&self, radius: i64, max_layer: i64) {
         let start = 1 + self.placeable.max_layer(radius);
         if start > max_layer {
@@ -512,7 +512,7 @@ impl Volumes {
         self.placeable.insert(radius, start, data);
     }
 
-    /// `calculateAvoidance`: the avoidance of every key to the bed and to the model, of each type.
+    /// Computes the avoidance of every key to the bed and to the model, of each type.
     fn calculate_avoidance(&self, keys: &[(i64, i64)], to_bed: bool, to_model: bool) {
         struct Task {
             t: AvoidanceType,
@@ -598,7 +598,7 @@ impl Volumes {
         });
     }
 
-    /// `calculateWallRestrictions`.
+    /// Computes the wall restrictions.
     fn calculate_wall_restrictions(&self, keys: &[(i64, i64)]) {
         crate::par::map(keys, |&(radius, max_layer)| {
             let bottom = 1.max(self.wall_restrictions.max_layer(radius));
@@ -627,7 +627,7 @@ impl Volumes {
         });
     }
 
-    /// Drops everything but the collisions (`clear_all_but_object_collision`).
+    /// Drops everything but the collisions.
     pub(crate) fn clear_all_but_collision(&mut self) {
         self.collision_holefree = Cache::default();
         self.avoidance = Default::default();

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Growing the tips of organic trees down to the bed or the model, as Orca's `create_layer_pathing`,
-//! `increase_areas_one_layer`, `merge_influence_areas` and `create_nodes_from_area` (Support/TreeSupport3D.cpp):
+//! Growing the tips of organic trees down to the bed or the model, as Orca grows them: the areas grow
+//! one layer down, merge, and get their nodes:
 //!
 //! - layer by layer from the top, each influence area grows by the slow branch movement, or the fast one,
 //!   less what the branch may not enter; the order of attempts prefers staying slow, safe from holes and on the
@@ -30,7 +30,7 @@ use super::tips::{safe_offset_inc, safe_union};
 use super::volumes::{AvoidanceType, Volumes};
 use crate::perimeters::Shapes;
 
-/// Threads Orca splits the first merge round between (`tbb::this_task_arena::max_concurrency()`), fixed so
+/// Threads Orca splits the first merge round between (as many as the machine has), fixed here so
 /// the result does not depend on the machine.
 const MERGE_THREADS: usize = 8;
 
@@ -80,7 +80,7 @@ fn safe_movement_distance(cfg: &Settings, use_min: bool) -> i64 {
     if d == 0 { geo::sc(0.1) } else { d }
 }
 
-/// `increase_single_area`. Orca's `safe_union` around each difference is left out: the difference is a
+/// Grows one area. The extra union Orca makes around each difference is left out: the difference is a
 /// boolean's result already, which a union gives back unchanged, and it is empty only when the union is.
 fn increase_single_area(
     volumes: &Volumes,
@@ -274,7 +274,7 @@ enum Grown {
     Lost,
 }
 
-/// `increase_areas_one_layer` for one element of the layer above.
+/// Grows the area of one element of the layer above one layer down.
 fn grow_one(
     volumes: &Volumes,
     cfg: &Settings,
@@ -611,7 +611,7 @@ fn grow_one(
     Grown::Area(Box::new(m))
 }
 
-/// `merge_support_element_states`.
+/// The state of two elements merged into one.
 fn merge_states(cfg: &Settings, first: &State, second: &State, next_position: Pt, layer_idx: i64) -> State {
     let mut out = State {
         next_position,
@@ -657,7 +657,7 @@ fn merge_states(cfg: &Settings, first: &State, second: &State, next_position: Pt
     out
 }
 
-/// `merge_influence_areas_two_elements`: merges `src` into `dst` when one branch can hold up both.
+/// Merges `src` into `dst` when one branch can hold up both.
 fn merge_two(
     volumes: &Volumes,
     cfg: &Settings,
@@ -800,7 +800,7 @@ fn pair(v: &mut [Merging], a: usize, b: usize) -> (&mut Merging, &mut Merging) {
     }
 }
 
-/// `merge_influence_areas_leaves`: every pair of one bucket.
+/// Merges every pair of one bucket.
 fn merge_leaves(
     volumes: &Volumes,
     cfg: &Settings,
@@ -832,7 +832,7 @@ fn merge_leaves(
     end
 }
 
-/// `merge_influence_areas_two_sets`: merges the elements of `src` into those of `dst`.
+/// Merges the elements of `src` into those of `dst`.
 fn merge_sets(
     volumes: &Volumes,
     cfg: &Settings,
@@ -887,7 +887,7 @@ fn merge_sets(
     dst_end
 }
 
-/// The order `AABBTreeIndirect::Tree::build_modify_input` leaves its input in: split at the median along the
+/// The order Orca's box tree build leaves its input in: split at the median along the
 /// longer side of the box, recursively (quickselect with a median of three).
 fn aabb_order(v: &mut [Merging], left: usize, right: usize) {
     if left >= right {
@@ -1122,7 +1122,7 @@ fn set_to_model_contact_simple(elem: &mut Element) {
     ));
 }
 
-/// `set_to_model_contact_to_model_gracious`: rests the branch on the highest layer above where it fits on
+/// Rests the branch on the highest layer above where it fits on
 /// the model, dropping the elements below.
 fn set_to_model_contact_gracious(
     volumes: &Volumes,

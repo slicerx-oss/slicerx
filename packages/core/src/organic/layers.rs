@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! The support layers of organic trees, from the drawn branches and the placed roofs, as Orca's common support
-//! code finishes them (Support/SupportCommon.cpp):
+//! code finishes them:
 //!
-//! - `generate_interface_layers`: the top contacts within `support_interface_top_layers` above a base layer and
+//! - Interface layers: the top contacts within `support_interface_top_layers` above a base layer and
 //!   the bottom contacts within `support_interface_bottom_layers` below it are closed, smoothed outward and cut
 //!   from the base as interface; roofs placed with the tips at the same height join them;
-//! - `generate_raft_base` without a raft: the first base layer grows by `raft_first_layer_expansion` in steps
+//! - The raft base without a raft: the first base layer grows by `raft_first_layer_expansion` in steps
 //!   that stay `support_object_first_layer_gap` clear of the part, and leaves the brim alone;
-//! - `generate_support_layers`: the interface number of each layer, which turns the interface lines;
+//! - The support layers: the interface number of each layer, which turns the interface lines;
 //! - everything clipped to the bed.
 
 #![allow(
@@ -45,7 +45,7 @@ pub(crate) struct OrganicLayer {
     pub(crate) base: Shapes,
     /// Where branches rest on the part.
     pub(crate) bottom_contact: Shapes,
-    /// Orca's support layer `interface_id`, which turns the interface lines between layers.
+    /// The support layer's interface number, which turns the interface lines between layers.
     pub(crate) interface_id: usize,
     /// The overhangs the top contact holds up, which contact loops follow.
     pub(crate) hang: Shapes,
@@ -61,7 +61,7 @@ fn rings_union(r: &[geo::Ring]) -> Shapes {
     geo::merge_rings(r, i_overlay::core::fill_rule::FillRule::NonZero)
 }
 
-/// Orca's `closing` with square joins: grown by `d1`, shrunk by `d2`.
+/// A closing with square joins: grown by `d1`, shrunk by `d2`.
 fn closing(s: &Shapes, d1: f64, d2: f64) -> Shapes {
     geo::offset(&geo::offset(s, d1, Join::Square), -d2, Join::Square)
 }
@@ -103,7 +103,7 @@ pub(crate) fn finish(
     let mut iface: Vec<Option<(Shapes, Kind)>> = vec![None; n];
     let mut base_iface: Vec<Option<Shapes>> = vec![None; n];
 
-    // `generate_interface_layers`.
+    // The interface layers.
     let inter: Vec<usize> = (0..n).filter(|&l| !base[l].is_empty()).collect();
     let tops: Vec<usize> = (0..n).filter(|&l| !top_contact[l].is_empty()).collect();
     let bottoms: Vec<usize> = (0..n).filter(|&l| !bottom_contact[l].is_empty()).collect();
@@ -238,7 +238,7 @@ pub(crate) fn finish(
         }
     }
 
-    // `generate_raft_base` without a raft: the first base layer.
+    // The raft base without a raft: the first base layer.
     if n > 0 && !base[0].is_empty() && inp.raft_tops.is_empty() {
         let mut interface_polygons: Vec<&Shapes> = Vec::new();
         if !top_contact[0].is_empty() && print_z(0) <= inp.first_layer_height + EPS {
@@ -287,7 +287,7 @@ pub(crate) fn finish(
         }
     }
 
-    // `generate_support_layers` and the clip to the bed.
+    // The support layers and the clip to the bed.
     let mut out: Vec<Option<OrganicLayer>> = vec![None; n];
     let mut layer_id_interface = 0usize;
     let mut prev_layer: Option<(usize, usize)> = None;

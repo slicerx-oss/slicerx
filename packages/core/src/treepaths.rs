@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Toolpaths of slim, strong and hybrid tree supports, as Orca's `TreeSupport::generate_toolpaths` and
-//! `tree_supports_generate_paths` (Support/TreeSupport.cpp, Support/SupportCommon.cpp) draw them: branch walls
+//! Toolpaths of slim, strong and hybrid tree supports, as Orca
+//! draws them: branch walls
 //! that start with a short anchor into the wall inside, a second wall on wide or flagged branches, walls and
 //! infill on the normal-support part of hybrid trees, a perimeter and a fill on the first roof layer, the roof
 //! and floor with the interface filler, and a dense pad on the bed.
@@ -37,7 +37,7 @@ fn len(a: Point, b: Point) -> f64 {
     f64::from(b.x - a.x).m_hypot(f64::from(b.y - a.y))
 }
 
-/// Orca's `Polyline::clip_end`.
+/// Cuts `d` off the end of a path.
 fn clip_end(pl: &mut Path, mut d: f64) {
     while d > 0.0 {
         let Some(last) = pl.pop() else { return };
@@ -55,7 +55,7 @@ fn clip_end(pl: &mut Path, mut d: f64) {
     }
 }
 
-/// Orca's `draw_perimeters`: every outline as a loop, holes reversed so all run one way, clipped at the end.
+/// Every outline as a loop, holes reversed so all run one way, clipped at the end.
 pub(crate) fn draw_perimeters(shape: &Shapes, clip: f64) -> Vec<Path> {
     let mut out = Vec::new();
     for sh in shape {
@@ -80,7 +80,7 @@ fn area(s: &Shapes) -> f64 {
         .sum()
 }
 
-/// Orca's `tree_supports_generate_paths`: each island pulled in half a line becomes a loop; islands wider
+/// Each island pulled in half a line becomes a loop; islands wider
 /// than `double_wall_mm2` get a second loop outside it. The inner loop starts with an anchor: it continues
 /// along the wall one line further in for up to six line spacings from the point nearest its seam.
 pub(crate) fn branch_walls(polys: &Shapes, w_mm: f64, spacing_mm: f64, double_wall_mm2: f64) -> Vec<Path> {
@@ -191,7 +191,7 @@ fn anchor_from(candidates: &Shapes, seam: Point, max_d: f64, length: f64) -> Opt
     Some(out)
 }
 
-/// Orca's `_make_loops` from `make_perimeter_and_infill`: up to `walls` loops, each further in by 1.4
+/// Up to `walls` loops, each further in by 1.4
 /// spacings and grown back 0.4.
 fn make_loops(area: &Shapes, walls: u32, spacing_mm: f64) -> Vec<Path> {
     let s = spacing_mm * SCALE;
@@ -209,7 +209,7 @@ fn make_loops(area: &Shapes, walls: u32, spacing_mm: f64) -> Vec<Path> {
     out
 }
 
-/// Orca's `make_perimeter_and_infill` with the infill drawn by `fill` inside `walls` spacings.
+/// Loops with the infill drawn by `fill` inside `walls` spacings.
 fn perimeter_and_infill(
     area: &Shapes,
     walls: u32,
@@ -305,7 +305,7 @@ pub(crate) fn layer_paths(t: &TreeLayer, p: &TreePathsIn) -> (Vec<Path>, Vec<Pat
     }
     for a in &t.base {
         if p.on_bed {
-            // A dense pad on the bed inside one loop (Orca's `fill_expolygons_with_sheath_generate_paths`).
+            // A dense pad on the bed inside one loop.
             let ring = perimeters::offset(&a.shape, -u(0.5 * p.first_width));
             support.extend(draw_perimeters(&ring, p.first_spacing * SCALE * 0.15));
             let inner = perimeters::offset(&ring, -u(0.4 * p.first_spacing));
