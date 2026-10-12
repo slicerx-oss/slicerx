@@ -6,6 +6,10 @@ import subprocess
 import sys
 import time
 
+# Longest a single slicer run may take (seconds) before it is stopped. A reference slicer's
+# command line can hang without exiting, so every harness run carries this limit.
+REF_TIMEOUT = int(os.environ.get("SX_REF_TIMEOUT", "600"))
+
 
 def run(cmd, stdout=None, stderr=None, cwd=None, timeout=None):
     """Returns a dict: wall_ms, rc, rss_mb and cpu_s (None where the platform gives no data). With `timeout`

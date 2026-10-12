@@ -19,6 +19,7 @@ import sys
 import firmware_parity as fp
 import models as model_lib
 import settings
+import measure
 
 
 def minutes(text):
@@ -72,7 +73,7 @@ def one_object(sx, work, cfg, name):
     cfgp = os.path.join(d, "cfg.json")
     json.dump(cfg, open(cfgp, "w"))
     out = os.path.join(d, "out.gcode")
-    r = subprocess.run([sx, "slice", stl, "--config", cfgp, "-o", out], capture_output=True, text=True)
+    r = subprocess.run([sx, "slice", stl, "--config", cfgp, "-o", out], capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     if r.returncode != 0:
         raise RuntimeError(r.stderr[-300:])
     return open(out, errors="replace").read()

@@ -20,6 +20,7 @@ import parity_sequence as seq
 import settings
 import slicers
 from gcode import plain
+import measure
 
 
 def mesh_xml(tris):
@@ -217,7 +218,7 @@ def main():
     rp = os.path.join(d, "request.json")
     json.dump(req, open(rp, "w"))
     out = os.path.join(d, "sx")
-    subprocess.run([sx, "slice", "--request", rp, "--out-dir", out], capture_output=True, check=True)
+    subprocess.run([sx, "slice", "--request", rp, "--out-dir", out], capture_output=True, check=True, timeout=measure.REF_TIMEOUT)
     extra = dict(parity.ORCA_ONLY)
     if a.sparse:
         extra["sparse_infill_pattern"] = a.sparse
@@ -233,7 +234,7 @@ def main():
     os.makedirs(od, exist_ok=True)
     for f in os.listdir(od):
         os.remove(os.path.join(od, f))
-    r = subprocess.run(orca._cmd(m3, od, ["--debug", "1", "--arrange", "0"]), capture_output=True, text=True)
+    r = subprocess.run(orca._cmd(m3, od, ["--debug", "1", "--arrange", "0"]), capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     og = os.path.join(od, "plate_1.gcode")
     if not os.path.exists(og):
         print("Orca produced no G-code:", (r.stdout + r.stderr)[-500:])

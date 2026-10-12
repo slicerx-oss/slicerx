@@ -38,6 +38,7 @@ import parity
 import settings
 import slicers
 from gcode import is_layer_mark, plain
+import measure
 
 BINS = 18
 BBOX_MM = 2.0
@@ -318,11 +319,11 @@ def run_case(case, sx_path, orca_path, work):
     cfg_path = os.path.join(d, "sx.json")
     json.dump(cfg, open(cfg_path, "w"))
     sx_gcode = os.path.join(d, "sx.gcode")
-    subprocess.run([sx_path, "slice", stl, "--config", cfg_path, "-o", sx_gcode], capture_output=True, check=True)
+    subprocess.run([sx_path, "slice", stl, "--config", cfg_path, "-o", sx_gcode], capture_output=True, check=True, timeout=measure.REF_TIMEOUT)
     orca = parity.ParityOrca(orca_path, {**parity.ORCA_ONLY, **mode, **c["overrides"]})
     orca.prepare(d, {"cube": stl})
     job = orca.job(model, d)
-    r = subprocess.run(job.cmd, capture_output=True, text=True)
+    r = subprocess.run(job.cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     if not os.path.exists(job.gcode):
         return {"name": case["name"], "error": f"Orca produced no G-code: {r.stderr[-300:]}"}
     return compare_paths(case, parse_paths(sx_gcode), parse_paths(job.gcode))

@@ -19,6 +19,7 @@ import sys
 import zipfile
 
 import settings
+import measure
 
 
 def _first_existing(paths):
@@ -55,7 +56,7 @@ def slice_trusted(sx_path, stl, cfg, gcode, bed=None, keep=False):
     _write_json(req, {"schemaVersion": 1, "meshes": {"model": os.path.abspath(stl)},
                       "plate": plate,
                       "config": cfg, "options": {"trustedGcode": True}})
-    r = subprocess.run([sx_path, "slice", "--request", req, "--out-dir", out], capture_output=True, text=True)
+    r = subprocess.run([sx_path, "slice", "--request", req, "--out-dir", out], capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     made = sorted(f for f in os.listdir(out) if f.endswith(".gcode")) if os.path.isdir(out) else []
     if r.returncode == 0 and made:
         shutil.move(os.path.join(out, made[0]), gcode)
@@ -147,7 +148,7 @@ class Orca:
         log = os.path.join(self.work, "orca-version.log")
         out = os.path.join(self.work, "orca-version-out")
         os.makedirs(out, exist_ok=True)
-        subprocess.run(self._cmd(models["cube"], out, ["--debug", "3", "--logfile", log]), capture_output=True)
+        subprocess.run(self._cmd(models["cube"], out, ["--debug", "3", "--logfile", log]), capture_output=True, timeout=measure.REF_TIMEOUT)
         try:
             m = re.search(r"Current OrcaSlicer Version (\S+)", open(log).read())
             self.version = m.group(1) if m else "unknown"
@@ -251,7 +252,7 @@ class Bambu:
         out = os.path.abspath(os.path.join(work, "bambu-seed-out"))
         os.makedirs(out, exist_ok=True)
         base_path = os.path.join(out, "defaults.json")
-        r = subprocess.run([self.path, "--export-settings", base_path, "--outputdir", out, "--debug", "2", os.path.abspath(seed)], capture_output=True, text=True)
+        r = subprocess.run([self.path, "--export-settings", base_path, "--outputdir", out, "--debug", "2", os.path.abspath(seed)], capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
         m = re.search(r"Current BambuStudio Version (\S+)", r.stdout + r.stderr)
         self.version = m.group(1) if m else "unknown"
         with open(base_path) as f:

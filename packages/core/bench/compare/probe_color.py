@@ -15,6 +15,7 @@ import models as model_lib
 import parity
 import parity_sequence as seq
 import slicers
+import measure
 
 
 def main():
@@ -102,7 +103,7 @@ def main():
     if a.filaments > 1:
         cmd[cmd.index("--load-filaments") + 1] = orca.files["filament"] + ";" + f2
     os.makedirs(os.path.join(d, "orca"), exist_ok=True)
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     print(r.returncode, (r.stdout + r.stderr)[-800:])
     if not a.sx:
         return 0
@@ -173,7 +174,7 @@ def compare(a, d, objs, orca_gcode):
     json.dump({"schemaVersion": 1, "meshes": meshes, "plate": {"objects": plate}, "config": cfg,
                "options": {"flavor": "marlin2"}}, open(rp, "w"))
     out = os.path.join(d, "sx")
-    r = subprocess.run([a.sx, "slice", "--request", rp, "--out-dir", out], capture_output=True, text=True)
+    r = subprocess.run([a.sx, "slice", "--request", rp, "--out-dir", out], capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     if r.returncode:
         print(r.stderr[-500:])
         return 1

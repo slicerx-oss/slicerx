@@ -24,6 +24,7 @@ import orca_base
 import parity
 import slicers
 from gcode import plain
+import measure
 
 WALLS = ("Outer wall", "Inner wall", "Overhang wall")
 
@@ -103,7 +104,7 @@ def slice_sx(sx, stl, cfg, out_dir, options=None, second=None):
     rp = os.path.join(out_dir, "request.json")
     json.dump(req, open(rp, "w"))
     t0 = time.monotonic()
-    r = subprocess.run([sx, "slice", "--request", rp, "--out-dir", out_dir], capture_output=True, text=True)
+    r = subprocess.run([sx, "slice", "--request", rp, "--out-dir", out_dir], capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     dt = time.monotonic() - t0
     g = os.path.join(out_dir, "slice.gcode")
     if r.returncode or not os.path.exists(g):
@@ -179,7 +180,7 @@ def run(a):
             orca.prepare(od, {"cube": ostl})
             job = orca.job(name, od)
             t0 = time.monotonic()
-            subprocess.run(job.cmd, capture_output=True, text=True)
+            subprocess.run(job.cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
             dt = time.monotonic() - t0
             row = {"model": name, "run": "orca-arachne", "ok": os.path.exists(job.gcode), "slice_s": round(dt, 2)}
             if row["ok"]:

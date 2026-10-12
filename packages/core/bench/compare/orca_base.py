@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import measure
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE_PATH = os.path.join(HERE, "orca_base.json")
@@ -55,7 +56,7 @@ def _orca_block(orca_path, work):
     orca = parity.ParityOrca(slicers.Orca(orca_path).path, {})
     orca.prepare(work, {"cube": stl})
     job = orca.job("cube", work)
-    subprocess.run(job.cmd, capture_output=True, text=True)
+    subprocess.run(job.cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     if not os.path.exists(job.gcode):
         raise SystemExit("Orca produced no G-code")
     return profile_parity.config_block(job.gcode)
