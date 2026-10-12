@@ -223,7 +223,7 @@ pub struct SliceSession {
     support_pending: Pending,
     /// Organic trees over a raft: the branches passing through each raft layer.
     organic_raft: std::sync::OnceLock<Vec<Shapes>>,
-    /// Organic trees of the clean-room engine: the areas by kind of each support layer, in the order of
+    /// Organic trees of the v2 engine: the areas by kind of each support layer, in the order of
     /// `support`.
     organic2: std::sync::OnceLock<Vec<std::sync::Arc<crate::organic2::Layer>>>,
     /// The print layers when they are not the object's own: support on layers of its own height
@@ -5104,13 +5104,13 @@ impl SliceSession {
         }
     }
 
-    /// Organic trees from the clean-room engine (`organic_support_engine: "cleanroom"`); the default
+    /// Organic trees from the v2 engine (`organic_support_engine: "v2"`); the default
     /// `legacy` keeps the existing engine.
-    fn organic_cleanroom(cfg: &PrintConfig) -> bool {
+    fn organic_v2(cfg: &PrintConfig) -> bool {
         crate::organic2::selected(cfg)
     }
 
-    /// The clean-room engine's settings, from the same values the existing engine reads.
+    /// The v2 engine's settings, from the same values the existing engine reads.
     fn organic2_settings(cfg: &PrintConfig) -> crate::organic2::Settings {
         let s = &cfg.support;
         let t = &s.tree_settings;
@@ -5167,7 +5167,7 @@ impl SliceSession {
     }
 
     /// The walls and bottom-bridge surfaces of every region of `layer`, as the layer's own paths make them
-    /// (`region_preps`), for the bridge removal of the clean-room organic engine.
+    /// (`region_preps`), for the bridge removal of the v2 organic engine.
     #[allow(
         clippy::too_many_arguments,
         reason = "the slice's shared state, as region_preps takes it"
@@ -5246,7 +5246,7 @@ impl SliceSession {
             .collect()
     }
 
-    /// Organic trees from the clean-room engine, one support layer per object layer.
+    /// Organic trees from the v2 engine, one support layer per object layer.
     fn organic2_layers(&self, cfg: &PrintConfig, input: &SupportInput) -> crate::organic2::Plan {
         let n = self.plan.count();
         let tops: Vec<f64> = (0..n).map(|l| self.plan.top(l)).collect();
@@ -5333,14 +5333,14 @@ impl SliceSession {
         crate::organic2::plan(&inp)
     }
 
-    /// The clean-room organic areas of a support layer of this session's plan, if it has them.
+    /// The v2 organic areas of a support layer of this session's plan, if it has them.
     fn organic2_for(&self, sl: &crate::support::SupportLayer) -> Option<&crate::organic2::Layer> {
         let areas = self.organic2.get()?;
         let k = self.support.get()?.iter().position(|x| std::ptr::eq(x, sl))?;
         areas.get(k).map(std::convert::AsRef::as_ref)
     }
 
-    /// What the clean-room organic toolpaths read.
+    /// What the v2 organic toolpaths read.
     fn organic2_paths_in(
         cfg: &PrintConfig,
         center: [f64; 2],
@@ -5378,7 +5378,7 @@ impl SliceSession {
         }
     }
 
-    /// The paths of a clean-room organic layer, with the contact loops and support ironing of the top
+    /// The paths of a v2 organic layer, with the contact loops and support ironing of the top
     /// contact as on the other organic layers.
     fn organic2_support_paths(
         &self,
@@ -5461,7 +5461,7 @@ impl SliceSession {
         if cfg.support.style.is_classic_tree() {
             return (self.classic_tree_layers(cfg, input), None);
         }
-        if Self::is_organic(cfg) && Self::organic_cleanroom(cfg) {
+        if Self::is_organic(cfg) && Self::organic_v2(cfg) {
             let plan = self.organic2_layers(cfg, input);
             let (layers, areas): (Vec<crate::support::SupportLayer>, Vec<_>) = plan
                 .layers

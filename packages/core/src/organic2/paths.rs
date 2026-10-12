@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Toolpaths of an organic support layer (spec 7.7): hollow branches of one or two walls, or a sheath
+//! Toolpaths of an organic support layer: hollow branches of one or two walls, or a sheath
 //! with infill, a flange on the first layer, and dense lines for contacts and interfaces.
 
 use super::assemble::Layer;

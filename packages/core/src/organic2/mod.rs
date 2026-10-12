@@ -10,7 +10,7 @@
 //! model volumes ([`volumes`]), tips ([`tips`]), growth ([`grow`]) and merging ([`merge`]), centers
 //! ([`centers`]), drawing ([`draw`]), layer areas ([`assemble`]) and toolpaths ([`paths`]).
 //!
-//! Selected with `organic_support_engine: "cleanroom"`; `organic_quirks` turns on behaviors of the
+//! Selected with `organic_support_engine: "v2"`; `organic_quirks` turns on behaviors of the
 //! reference slicer that differ from what its settings describe (see [`params::Quirks`]).
 
 pub(crate) mod assemble;
@@ -31,10 +31,10 @@ use crate::perimeters::Shapes;
 pub(crate) use assemble::Layer;
 pub(crate) use params::{Quirks, Settings};
 
-/// True when `organic_support_engine` asks for this engine (`"cleanroom"`); the default `"legacy"` keeps
+/// True when `organic_support_engine` asks for this engine (`"v2"`); the default `"legacy"` keeps
 /// the existing one.
 pub(crate) fn selected(cfg: &crate::config::PrintConfig) -> bool {
-    matches!(cfg.raw.get("organic_support_engine"), Some(serde_json::Value::String(t)) if t == "cleanroom")
+    matches!(cfg.raw.get("organic_support_engine"), Some(serde_json::Value::String(t)) if t == "v2")
 }
 
 /// What organic trees are planned from.
@@ -59,8 +59,8 @@ pub(crate) struct Input<'a> {
     pub(crate) raft_offset: f64,
     /// The raft's top contact area.
     pub(crate) raft_contact: Shapes,
-    /// The walls and bottom-bridge surfaces of each region of an object layer, which bridge removal reads
-    /// (spec 2.8 and E1). Asked only for layers with overhang; without it they are approximated.
+    /// The walls and bottom-bridge surfaces of each region of an object layer, which bridge removal
+    /// reads. Asked only for layers with overhang; without it they are approximated.
     pub(crate) regions: Option<&'a (dyn Fn(usize) -> Vec<overhang::RegionIn> + Sync)>,
 }
 

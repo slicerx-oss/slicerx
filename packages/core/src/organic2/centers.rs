@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Choosing branch centers bottom-up (spec section 6). Growing down only kept the areas a center may lie
+//! Choosing branch centers bottom-up. Growing down only kept the areas a center may lie
 //! in; here each root takes a point and passes it up to the nodes it carries, and branches that end in
 //! the air are removed.
 

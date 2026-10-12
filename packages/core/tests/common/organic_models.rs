@@ -374,13 +374,13 @@ pub fn all() -> Vec<Model> {
     ]
 }
 
-/// Settings every organic test starts from: organic trees on the clean-room engine.
+/// Settings every organic test starts from: organic trees on the v2 engine.
 pub fn organic_config(extra: &Value, quirks: &str) -> Value {
     let mut c = json!({
         "enable_support": true,
         "support_type": "tree(auto)",
         "support_style": "organic",
-        "organic_support_engine": "cleanroom",
+        "organic_support_engine": "v2",
         "organic_quirks": quirks,
         "brim_width": 0,
         "brim_type": "no_brim",

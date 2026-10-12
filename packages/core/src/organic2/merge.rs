@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Merging branches that meet (spec 5.2), and the top-down loop that grows and merges every layer.
+//! Merging branches that meet, and the top-down loop that grows and merges every layer.
 
 use super::grow::{self, Cadence, Grown};
 use super::node::{Node, Setting, Speed};
@@ -271,7 +271,7 @@ fn merge_tree(p: &Params, v: &Volumes<'_>, mut set: Vec<Node>, layer: usize) -> 
 pub(crate) fn descend(p: &Params, v: &Volumes<'_>, layers: &mut [Vec<Node>]) {
     let top = layers.len().saturating_sub(1);
     let mut cadence = Cadence::new(p, top);
-    // A layer is fresh (spec 5.2 and E6) when it already holds a node as the step from above reaches it:
+    // A layer is fresh when it already holds a node as the step from above reaches it:
     // a tip, or a child of that step that skipped merging. The topmost step is never fresh.
     let mut fresh: Vec<bool> = layers.iter().map(|l| !l.is_empty()).collect();
     if let Some(f) = fresh.get_mut(top) {
