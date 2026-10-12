@@ -25,6 +25,8 @@ pub(crate) struct PathsIn {
     /// The base pattern is none or default: branches print as walls only.
     pub(crate) hollow: bool,
     pub(crate) center: [f64; 2],
+    /// Neighboring fill lines are joined along the edge when the way round is at most this long (mm).
+    pub(crate) join: f64,
 }
 
 /// Above this print Z (mm) every branch island gets a second wall.
@@ -90,12 +92,21 @@ fn loops(s: &Shapes, clip: f64) -> Vec<Vec<Point>> {
     out
 }
 
-fn lines(area: &Shapes, w: f64, spacing: f64, density: f64, angle: f64, center: [f64; 2]) -> Vec<Vec<Point>> {
-    if area.is_empty() || density <= 0.0 {
+struct Fill {
+    w: f64,
+    spacing: f64,
+    density: f64,
+    angle: f64,
+    center: [f64; 2],
+    join: f64,
+}
+
+fn lines(area: &Shapes, f: &Fill) -> Vec<Vec<Point>> {
+    if area.is_empty() || f.density <= 0.0 {
         return Vec::new();
     }
-    let pitch = (spacing / density.min(1.0)).max(spacing);
-    crate::patterns::support_lines(area, w, pitch, angle, false, 0.0, center)
+    let pitch = (f.spacing / f.density.min(1.0)).max(f.spacing);
+    crate::patterns::support_lines(area, f.w, pitch, f.angle, false, f.join.max(0.0), f.center)
 }
 
 /// Walls of the hollow branches of `base` (one, or two for big islands and above 100 mm).
@@ -110,13 +121,94 @@ pub(crate) fn branch_walls(base: &Shapes, inp: &PathsIn, print_z: f64) -> Vec<Ve
             continue;
         }
         let second = print_z > DOUBLE_WALL_Z || ops::area(&island) > inp.double_wall_area();
+        let reach = ANCHOR_SPACINGS * inp.spacing;
+        let inner = ops::grow(&outer, -inp.spacing);
         if second {
-            let inner = ops::grow(&outer, -inp.spacing);
-            out.extend(loops(&inner, clip));
+            let anchor_ring = ops::grow(&inner, -inp.spacing);
+            out.extend(
+                loops(&inner, clip)
+                    .into_iter()
+                    .map(|l| anchored(l, &anchor_ring, reach)),
+            );
         }
-        out.extend(loops(&outer, clip));
+        out.extend(
+            loops(&outer, clip)
+                .into_iter()
+                .map(|l| anchored(l, &inner, reach)),
+        );
     }
     out
+}
+
+/// How far (in line spacings) a wall loop's anchor runs along the next loop inward.
+const ANCHOR_SPACINGS: f64 = 6.0;
+
+/// `pl` started from an anchor: the last `len` mm of the ring of `inner` that ends nearest the loop's
+/// start, so the wall begins on a line laid inside it. Unchanged when nothing lies inward.
+fn anchored(pl: Vec<Point>, inner: &Shapes, len: f64) -> Vec<Point> {
+    let Some(&start) = pl.first() else {
+        return pl;
+    };
+    // The nearest point of any inner ring: ring, segment index, and the point.
+    let mut best: Option<(f64, &Vec<ops::P>, usize, Point)> = None;
+    for ring in inner.iter().flatten() {
+        let n = ring.len();
+        if n < 3 {
+            continue;
+        }
+        for i in 0..n {
+            let (Some(a), Some(b)) = (ring.get(i), ring.get((i + 1) % n)) else {
+                continue;
+            };
+            let (a, b) = (Point::new(a.x, a.y), Point::new(b.x, b.y));
+            let q = nearest_on(a, b, start);
+            let d = q.dist_mm(start);
+            if best.as_ref().is_none_or(|(bd, ..)| d < *bd) {
+                best = Some((d, ring, i, q));
+            }
+        }
+    }
+    let Some((_, ring, i, q)) = best else {
+        return pl;
+    };
+    let n = ring.len();
+    let at = |k: usize| ring.get(k % n).map(|p| Point::new(p.x, p.y));
+    let ring_len: f64 = (0..n).filter_map(|k| Some(at(k)?.dist_mm(at(k + 1)?))).sum();
+    // Walk back from q along the ring, then lay the anchor forward to q.
+    let mut left = len.min(0.9 * ring_len);
+    let mut back = vec![q];
+    let mut cur = q;
+    let mut k = i;
+    while left > 1e-9 {
+        let Some(v) = at(k) else { break };
+        let d = cur.dist_mm(v);
+        if d >= left {
+            let t = left / d;
+            back.push(Point::from_mm(
+                cur.x_mm() + (v.x_mm() - cur.x_mm()) * t,
+                cur.y_mm() + (v.y_mm() - cur.y_mm()) * t,
+            ));
+            break;
+        }
+        back.push(v);
+        left -= d;
+        cur = v;
+        k = (k + n - 1) % n;
+    }
+    back.reverse();
+    back.extend(pl);
+    back
+}
+
+/// The point of segment `a`-`b` nearest `p`.
+fn nearest_on(a: Point, b: Point, p: Point) -> Point {
+    let (dx, dy) = (b.x_mm() - a.x_mm(), b.y_mm() - a.y_mm());
+    let l2 = dx * dx + dy * dy;
+    if l2 <= 0.0 {
+        return a;
+    }
+    let t = (((p.x_mm() - a.x_mm()) * dx + (p.y_mm() - a.y_mm()) * dy) / l2).clamp(0.0, 1.0);
+    Point::from_mm(a.x_mm() + dx * t, a.y_mm() + dy * t)
 }
 
 /// Walls of the branches passing through a raft layer.
@@ -133,6 +225,7 @@ pub(crate) fn raft_walls(trees: &Shapes, width: f64, spacing: f64, wall_count: u
         wall_count,
         hollow: true,
         center: [0.0, 0.0],
+        join: 0.0,
     };
     branch_walls(trees, &inp, 0.0)
 }
@@ -153,11 +246,14 @@ pub(crate) fn layer_paths(
         let inside = ops::grow(&l.base, -w);
         support.extend(lines(
             &inside,
-            w,
-            inp.first_spacing,
-            inp.first_density,
-            inp.angle + 90.0,
-            inp.center,
+            &Fill {
+                w,
+                spacing: inp.first_spacing,
+                density: inp.first_density,
+                angle: inp.angle + 90.0,
+                center: inp.center,
+                join: inp.join,
+            },
         ));
     } else if inp.hollow {
         support.extend(branch_walls(&l.base, inp, print_z));
@@ -167,11 +263,14 @@ pub(crate) fn layer_paths(
         let inside = ops::grow(&l.base, -(w / 2.0 + 0.4 * inp.spacing));
         support.extend(lines(
             &inside,
-            w,
-            inp.spacing,
-            inp.support_density,
-            inp.angle,
-            inp.center,
+            &Fill {
+                w,
+                spacing: inp.spacing,
+                density: inp.support_density,
+                angle: inp.angle,
+                center: inp.center,
+                join: inp.join,
+            },
         ));
     }
     let mut interface = Vec::new();
@@ -179,19 +278,25 @@ pub(crate) fn layer_paths(
     let dense = ops::union_many(&[&l.top_contact, &l.interface, &l.base_interface]);
     interface.extend(lines(
         &dense,
-        w,
-        inp.spacing,
-        inp.top_interface_density,
-        across,
-        inp.center,
+        &Fill {
+            w,
+            spacing: inp.spacing,
+            density: inp.top_interface_density,
+            angle: across,
+            center: inp.center,
+            join: inp.join,
+        },
     ));
     interface.extend(lines(
         &l.bottom_contact,
-        w,
-        inp.spacing,
-        inp.bottom_interface_density,
-        across,
-        inp.center,
+        &Fill {
+            w,
+            spacing: inp.spacing,
+            density: inp.bottom_interface_density,
+            angle: across,
+            center: inp.center,
+            join: inp.join,
+        },
     ));
     (support, interface)
 }
@@ -214,6 +319,7 @@ pub(crate) fn length(paths: &[Vec<Point>]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fm::Fm as _;
     use crate::geom::SCALE;
 
     fn inp(wall_count: u32) -> PathsIn {
@@ -229,6 +335,7 @@ mod tests {
             wall_count,
             hollow: true,
             center: [100.0, 100.0],
+            join: 0.0,
         }
     }
 
@@ -257,5 +364,22 @@ mod tests {
             (total - (std::f64::consts::TAU * 2.0 - 0.06)).abs() < 0.05,
             "{total}"
         );
+    }
+
+    #[test]
+    fn a_wall_starts_on_an_anchor_inside_it() {
+        let i = inp(1);
+        let walls = branch_walls(&disc(2.0), &i, 10.0);
+        let [wall] = walls.as_slice() else {
+            panic!("one wall expected, got {}", walls.len());
+        };
+        let r = |p: &Point| (p.x_mm() - 100.0).m_hypot(p.y_mm() - 100.0);
+        let first = wall.first().map_or(0.0, r);
+        // The anchor lies on the next loop inward: 2.0 - 0.2 - 0.4 from the center.
+        assert!((first - 1.4).abs() < 0.05, "{first}");
+        // Loop (radius 1.8, less the seam clip) plus about six spacings of anchor and the step out.
+        let total = length(&walls);
+        let lap = std::f64::consts::TAU * 1.8 - 0.06;
+        assert!(total > lap + 2.4 && total < lap + 3.0, "{total} vs {lap}");
     }
 }
