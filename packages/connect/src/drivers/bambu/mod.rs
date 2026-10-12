@@ -2098,6 +2098,29 @@ pub(crate) fn camera_route(p: &Value) -> CameraRoute {
     route
 }
 
+/// The RTSP camera on an X1, X1E, P2S or H2 printer. The report's URL gives the path and port; the
+/// address stays the configured one, and a configured RTSP port wins (tests). TLS 1.2 only: these
+/// printers' camera, like their MQTT and FTPS, does not finish a TLS 1.3 handshake.
+pub(crate) fn camera_target(
+    host: &str,
+    rtsp_port: Option<u16>,
+    route: CameraRoute,
+    url: Option<&str>,
+    code: &str,
+    log_as: &str,
+) -> rtsp::Target {
+    let reported = url.and_then(|u| rtsp::parse_url(u, None));
+    rtsp::Target {
+        host: host.to_owned(),
+        port: rtsp_port.or(reported.as_ref().map(|t| t.port)).unwrap_or(322),
+        path: reported.map_or_else(|| "/streaming/live/1".to_owned(), |t| t.path),
+        tls: route != CameraRoute::Rtsp,
+        tls12_only: true,
+        login: Some((USER.to_owned(), code.to_owned())),
+        log_as: log_as.to_owned(),
+    }
+}
+
 /// One frame of the port 6000 stream: a 16 byte header with the size, then the JPEG.
 async fn read_camera_frame<R: AsyncReadExt + Unpin>(tls: &mut R) -> Option<Vec<u8>> {
     let mut head = [0_u8; 16];
@@ -2642,22 +2665,14 @@ impl PrinterSession for BambuSession {
             CameraRoute::Off => return Err(camera_error(LIVEVIEW_OFF)),
             _ => {}
         }
-        // The report's URL gives the path and port; the address stays the configured one, and a
-        // configured RTSP port wins (tests).
-        let reported = url.and_then(|u| rtsp::parse_url(&u, None));
-        let target = rtsp::Target {
-            host: self.cfg.host.clone(),
-            port: self
-                .cfg
-                .rtsp_port
-                .or(reported.as_ref().map(|t| t.port))
-                .unwrap_or(322),
-            path: reported.map_or_else(|| "/streaming/live/1".to_owned(), |t| t.path),
-            tls: route != CameraRoute::Rtsp,
-            tls12_only: true,
-            login: Some((USER.to_owned(), self.code.clone())),
-            log_as: self.id().to_owned(),
-        };
+        let target = camera_target(
+            &self.cfg.host,
+            self.cfg.rtsp_port,
+            route,
+            url.as_deref(),
+            &self.code,
+            self.id(),
+        );
         match rtsp::open(&target).await {
             Ok(s) => Ok(Some(s)),
             Err(rtsp::Failure::LoginRefused) => Err(camera_error(CAMERA_LOGIN_REFUSED)),
@@ -2994,6 +3009,39 @@ mod tests {
             CameraRoute::Off
         );
         assert_eq!(camera_route(&json!({})), CameraRoute::Unknown);
+    }
+
+    #[test]
+    fn the_rtsps_camera_offers_tls_1_2_on_the_reported_port_and_path() {
+        let t = camera_target(
+            "192.0.2.52",
+            None,
+            CameraRoute::Rtsps,
+            Some("rtsps://10.0.0.9:3220/streaming/live/2"),
+            "12345678",
+            "h2d",
+        );
+        assert!(t.tls && t.tls12_only);
+        assert_eq!(
+            (t.host.as_str(), t.port, t.path.as_str()),
+            ("192.0.2.52", 3220, "/streaming/live/2")
+        );
+        assert_eq!(t.login, Some((USER.to_owned(), "12345678".to_owned())));
+        // No URL in the report: 322 and the usual path, still TLS 1.2 only.
+        let t = camera_target("192.0.2.52", None, CameraRoute::Unknown, None, "c", "x1");
+        assert!(t.tls && t.tls12_only);
+        assert_eq!((t.port, t.path.as_str()), (322, "/streaming/live/1"));
+        // A configured port wins, and a plain rtsp URL turns TLS off.
+        let t = camera_target(
+            "h",
+            Some(8554),
+            CameraRoute::Rtsp,
+            Some("rtsp://h/live"),
+            "c",
+            "x",
+        );
+        assert!(!t.tls);
+        assert_eq!(t.port, 8554);
     }
 
     #[test]
