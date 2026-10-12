@@ -48,6 +48,9 @@ pub struct AppLinkWaits {
     pub ask: Duration,
     /// After a question nobody answered, the same client waits this long before it can ask again (5 minutes).
     pub cooldown: Duration,
+    /// After any question ends in a deny or with no answer, no client asks for this long (30 s), so
+    /// a string of agents cannot keep a question in front of the person.
+    pub between: Duration,
 }
 
 impl Default for AppLinkWaits {
@@ -55,6 +58,7 @@ impl Default for AppLinkWaits {
         Self {
             ask: Duration::from_secs(120),
             cooldown: Duration::from_mins(5),
+            between: Duration::from_secs(30),
         }
     }
 }
@@ -83,6 +87,8 @@ pub(crate) struct Link {
     /// Clients whose last question went unanswered, and when.
     unanswered: StdMutex<HashMap<String, Instant>>,
     waits: StdMutex<AppLinkWaits>,
+    /// When the last question ended in a deny or with no answer.
+    quiet_since: StdMutex<Option<Instant>>,
 }
 
 impl Link {
@@ -241,6 +247,12 @@ async fn ask(b: &Bridge, host: u64, client: &str, name: &str, created_ms: u64) -
             "the person did not answer the last question; try again in a few minutes",
         ));
     }
+    if lock(&link.quiet_since).is_some_and(|t| t.elapsed() < link.waits().between) {
+        return Err(RpcError::new(
+            "pending",
+            "the person just answered a question; try again in a minute",
+        ));
+    }
     let id = link.id();
     let (tx, rx) = oneshot::channel();
     {
@@ -286,6 +298,7 @@ async fn ask(b: &Bridge, host: u64, client: &str, name: &str, created_ms: u64) -
         }
         Ok(Ok(None)) => {
             lock(&link.denied).insert(client.to_owned());
+            *lock(&link.quiet_since) = Some(Instant::now());
             b.hub
                 .audit(json!({ "origin": "local_click", "action": "appLink.deny", "clientId": client }));
             Err(RpcError::new(
@@ -295,12 +308,16 @@ async fn ask(b: &Bridge, host: u64, client: &str, name: &str, created_ms: u64) -
         }
         // The question was dropped: the app closed, the link was turned off or the client revoked.
         Ok(Err(_)) if !is_on(b) => Err(off()),
+        Ok(Err(_)) if !lock(&b.hub.clients).iter().any(|r| r.id == client) => {
+            Err(RpcError::new("unauthorized", "this client was revoked"))
+        }
         Ok(Err(_)) => Err(RpcError::new(
             "app_closed",
             format!("{} closed before the person answered", crate::app_name()),
         )),
         Err(_) => {
             lock(&link.unanswered).insert(client.to_owned(), Instant::now());
+            *lock(&link.quiet_since) = Some(Instant::now());
             Err(RpcError::new(
                 "not_answered",
                 "the person did not answer in time; try again in a few minutes",
@@ -344,21 +361,16 @@ async fn relay(
 }
 
 /// Whether a connection that came from `origin` may host the link: the desktop app's own window
-/// (the Tauri webview) or a local development page, never the browser build on the web or a
-/// program that sent no origin.
-pub(crate) fn may_host(origin: Option<&str>) -> bool {
+/// (the Tauri webview), an origin the hub was started with (`--allow-origin`), and in a development
+/// build a local page (`http://localhost` or `http://127.0.0.1`, as `net.rs` reads them). Never the
+/// browser build on the web, and never a program that sent no origin.
+pub(crate) fn may_host(origin: Option<&str>, extra: &[String], dev: bool) -> bool {
     let Some(o) = origin else { return false };
     matches!(
         o,
         "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost"
-    ) || ["http://localhost", "http://127.0.0.1"].iter().any(|base| {
-        o.strip_prefix(base).is_some_and(|rest| {
-            rest.is_empty()
-                || rest
-                    .strip_prefix(':')
-                    .is_some_and(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit()))
-        })
-    })
+    ) || extra.iter().any(|e| e == o)
+        || (dev && o.starts_with("http://") && crate::net::origin_allowed(o, &[]))
 }
 
 /// The app's side: `appLink.host`, `appLink.reply`, `appLink.answer`, `appLink.grants` and
@@ -374,14 +386,19 @@ pub(crate) async fn app_call(
     match method {
         // The desktop app's window registers its connection; a later registration takes over.
         "appLink.host" => {
-            if !may_host(origin) {
+            if !may_host(origin, &b.extra_origins, cfg!(debug_assertions)) {
+                // The origin it saw goes back, so a window refused by mistake can say why.
                 return Err(RpcError::new(
                     "forbidden",
-                    format!("only the {} desktop app hosts the app link", crate::app_name()),
+                    format!(
+                        "only the {} desktop app hosts the app link (this connection's origin: {})",
+                        crate::app_name(),
+                        origin.unwrap_or("none")
+                    ),
                 ));
             }
             *lock(&link.host) = Some(conn);
-            Ok(json!({ "on": lock(&b.hub.settings).app_link }))
+            Ok(json!({ "on": lock(&b.hub.settings).app_link, "origin": origin }))
         }
         "appLink.reply" => {
             let id = id_arg(p, "callId")?;
@@ -453,7 +470,7 @@ pub(crate) async fn app_call(
                     .is_some()
             };
             let undenied = lock(&link.denied).remove(&id);
-            lock(&link.unanswered).remove(&id);
+            link.forget(&id);
             if !found && !undenied {
                 return Err(RpcError::new("not_found", format!("no client {id}")));
             }
@@ -504,15 +521,21 @@ mod tests {
 
     #[test]
     fn only_the_desktop_window_or_a_local_dev_page_hosts_the_link() {
+        let none: &[String] = &[];
         for o in [
             "tauri://localhost",
             "http://tauri.localhost",
             "https://tauri.localhost",
-            "http://localhost:1420",
-            "http://127.0.0.1",
         ] {
-            assert!(may_host(Some(o)), "{o}");
+            assert!(may_host(Some(o), none, false), "{o}");
         }
+        // Local pages only in a development build, or when the hub was started with them.
+        for o in ["http://localhost:1420", "http://127.0.0.1"] {
+            assert!(may_host(Some(o), none, true), "{o}");
+            assert!(!may_host(Some(o), none, false), "{o}");
+        }
+        let started_with = ["http://localhost:1420".to_owned()];
+        assert!(may_host(Some("http://localhost:1420"), &started_with, false));
         for o in [
             "https://slicerx.app",
             "https://evil.example",
@@ -522,9 +545,9 @@ mod tests {
             "null",
             "",
         ] {
-            assert!(!may_host(Some(o)), "{o}");
+            assert!(!may_host(Some(o), none, true), "{o}");
         }
-        assert!(!may_host(None));
+        assert!(!may_host(None, none, true));
     }
 
     #[test]

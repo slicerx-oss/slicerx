@@ -24,8 +24,13 @@ type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 const CODE: &str = "TEST-CODE";
 const AGENT_CODE: &str = "AGNT-CODE";
 
+/// A hub with no pause between questions, so a test can ask again at once.
 async fn hub() -> Link {
-    hub_with(AppLinkWaits::default()).await
+    hub_with(AppLinkWaits {
+        between: Duration::ZERO,
+        ..AppLinkWaits::default()
+    })
+    .await
 }
 
 async fn hub_with(app_link_waits: AppLinkWaits) -> Link {
@@ -537,6 +542,7 @@ async fn an_unanswered_question_holds_that_client_off_for_the_cooldown() {
     let link = hub_with(AppLinkWaits {
         ask: Duration::from_millis(300),
         cooldown: Duration::from_millis(1500),
+        between: Duration::ZERO,
     })
     .await;
     let mut a = app(&link).await;
@@ -588,4 +594,67 @@ async fn an_unanswered_question_holds_that_client_off_for_the_cooldown() {
     .await;
     let (_, r) = pending.await.unwrap();
     assert_eq!(r["result"], 1, "{r}");
+}
+
+#[tokio::test]
+async fn after_a_deny_no_agent_asks_for_a_while() {
+    let link = hub_with(AppLinkWaits {
+        between: Duration::from_millis(600),
+        ..AppLinkWaits::default()
+    })
+    .await;
+    let mut a = app(&link).await;
+    call(&mut a, 2, "settings.set", json!({ "appLink": true })).await;
+    call(&mut a, 3, "appLink.host", json!({})).await;
+    let (first, _, _) = remembered_agent(&link, "First").await;
+    let pending = spawn_call(first, "app.info", json!({}));
+    let ask = event(&mut a, "appLink.ask").await;
+    call(
+        &mut a,
+        4,
+        "appLink.answer",
+        json!({ "askId": ask["askId"], "decision": "deny" }),
+    )
+    .await;
+    let _ = pending.await.unwrap();
+    // A different agent right after: held off, nothing asked.
+    let (mut second, id, _) = remembered_agent(&link, "Second").await;
+    let r = call(&mut second, 2, "app.call", json!({ "method": "app.info" })).await;
+    assert_eq!(code(&r), "pending", "{r}");
+    no_event(&mut a, "appLink.ask").await;
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    let pending = spawn_call(second, "app.info", json!({}));
+    assert_eq!(event(&mut a, "appLink.ask").await["clientId"], id);
+    drop(pending);
+}
+
+#[tokio::test]
+async fn a_client_revoked_while_asked_hears_it_was_revoked() {
+    let link = hub().await;
+    let mut a = app(&link).await;
+    call(&mut a, 2, "settings.set", json!({ "appLink": true })).await;
+    call(&mut a, 3, "appLink.host", json!({})).await;
+    let (agent, id, _) = remembered_agent(&link, "Claude Code").await;
+    let pending = spawn_call(agent, "app.info", json!({}));
+    let _ = event(&mut a, "appLink.ask").await;
+    call(&mut a, 4, "clients.revoke", json!({ "clientId": id })).await;
+    let (_, r) = pending.await.unwrap();
+    assert!(matches!(code(&r), "unauthorized") || r["closed"] == true, "{r}");
+}
+
+#[tokio::test]
+async fn the_agent_code_remembers_only_so_many_agents() {
+    let link = hub().await;
+    for i in 0..32 {
+        let _ = remembered_agent(&link, &format!("Agent {i}")).await;
+    }
+    let mut ws = connect(&link).await;
+    let pp = pairing::proof_params(
+        &mut ws,
+        AGENT_CODE,
+        json!({ "remember": true, "name": "One more" }),
+    )
+    .await;
+    let r = call(&mut ws, 1, "pair", pp).await;
+    assert_eq!(code(&r), "too_many", "{r}");
 }

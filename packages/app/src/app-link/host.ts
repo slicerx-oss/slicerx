@@ -63,7 +63,11 @@ export function hostAppLink(link: BridgeAppLink): () => void {
     timers.add(t)
   })
   const stopEnded = link.onAskEnded(drop)
-  void link.host().catch(() => undefined)
+  // One line either way, so a window that cannot host (an origin the hub does not take) shows why in the console.
+  link.host().then(
+    (r) => console.info(`[app link] this window hosts the app link (origin ${r.origin ?? 'none'}, ${r.on ? 'on' : 'off'})`),
+    (e: unknown) => console.warn(`[app link] this window cannot host the app link: ${e instanceof Error ? e.message : String(e)}`),
+  )
   return () => {
     stopCall()
     stopAsk()
