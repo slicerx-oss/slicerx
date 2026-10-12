@@ -45,6 +45,7 @@
 .wall-float { position: absolute; display: inline-flex; align-items: center; padding: 5px 10px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-0) 72%, transparent); box-shadow: var(--shadow-float); backdrop-filter: var(--lift-glass); -webkit-backdrop-filter: var(--lift-glass); }
 .wall-pill { left: 10px; top: 10px; }
 .wall-left { right: 10px; bottom: 12px; border-radius: var(--r-sm); font: var(--fw-semibold) var(--fs-body) var(--f-body); font-variant-numeric: tabular-nums; color: var(--fg); }
+.wall-seen { left: 10px; bottom: 12px; border-radius: var(--r-sm); font-size: var(--fs-md); color: var(--fg); white-space: nowrap; }
 .wall-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: color-mix(in srgb, var(--ink-4) 80%, transparent); }
 .wall-bar i { display: block; height: 100%; background: var(--cyan); transform-origin: left; transition: transform 0.6s var(--ease); }
 .wall-bar[data-tone=warn] i { background: var(--orange); }
