@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-125 tools.
+126 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -43,6 +43,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_geom_hollow` |  |  | slice | Hollow a solid model to a shell of a given wall thickness, with optional drain holes so resin or trapped material can leave. |
 | `slicerx_geom_layers_plan` |  |  | read | Plan variable layer heights (sleipnir) for a model: thinner layers where the shape needs detail, thicker where it does not, within the nozzle-based limits. |
 | `slicerx_geom_orient` |  |  | read | Rank candidate print orientations by overhang area, support volume, bed contact and height, best first, or score one orientation given as the direction that points down. |
+| `slicerx_geom_paint_regions` |  |  | read | Read paint back: for one paint layer of a model (its per-triangle paint texts, as a 3MF stores them), each painted state with its area in mm2, the triangles holding it and its connected regions with their areas and bounds (largest first, at most 20 listed). |
 | `slicerx_geom_push_pull` |  |  | slice | Push or pull a flat face of a model along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. |
 | `slicerx_geom_render` |  |  | read | Draw a model to check it: a small orthographic picture (384 px on the long side unless size says otherwise) from a fixed view, the model in its filament color and painted pieces in theirs. |
 | `slicerx_geom_repair` |  |  | slice | Repair a mesh: weld vertices, fix winding and normals, and close small holes. |
@@ -56,7 +57,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_hollow` |  |  | slice | Hollow a solid part to a wall thickness and cut drain holes through the face that rests on the bed, for light parts, resin export or filling. |
 | `slicerx_home_assistant_call_service` |  |  | start | Call a Home Assistant service, such as turning a printer power plug on or off. |
 | `slicerx_home_assistant_list_entities` |  |  | read | List switches, sensors and lights, such as printer power plugs and enclosure fans. |
-| `slicerx_inspect_project` | Inspect a 3MF project | core | read, ungated | Read a 3MF or .sx3mf project without slicing it: its plates (with names and object counts), the printer, process and filament presets it was saved with, its filament slots (type and color) and whether it carries print settings. |
+| `slicerx_inspect_project` | Inspect a 3MF project | core | read, ungated | Read a 3MF or .sx3mf project without slicing it: its plates (with names and object counts), the printer, process and filament presets it was saved with, its filament slots (type and color), its support settings (`support`: enable_support, support_* and tree_support_* as the file sets them) and whether it carries print settings. |
 | `slicerx_kb_filament` |  |  | read | Look up a filament in the knowledge base: temperatures, cooling, plates, drying, nozzle needs, flow, retraction, pressure advance, failure modes, with sources. |
 | `slicerx_kb_intent` |  |  | read | Turn a job request in plain words ("12 strong PETG brackets by Friday") into structured goals (count, part, material, strength, speed, detail, deadline, printers) and setting targets by Orca key with reasons. |
 | `slicerx_kb_printer` |  |  | read | Look up a printer model in the knowledge base: build volume, hotend, bed, enclosure, motion limits, supported materials, profile baseline and notes, with sources. |
