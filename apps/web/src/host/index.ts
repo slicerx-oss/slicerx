@@ -12,6 +12,8 @@ declare const __SX_COMMIT__: string
 declare const __SX_E2E__: boolean
 /** False in a browser build without the slicing engine (SLICERX_WEB_SLICING=0): the CAD-only studio. */
 declare const __SX_WEB_SLICING__: boolean
+/** The native test slicer's address in the end-to-end test build (SLICERX_E2E_NATIVE_URL); empty in every other build. */
+declare const __SX_E2E_NATIVE_URL__: string
 declare const __SX_FEATURE_PILOT__: boolean
 declare const __SX_FEATURE_CONNECT__: boolean
 
@@ -78,12 +80,14 @@ export interface HostOverrides {
 export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
   const edition = editionFromBuild()
   // Without the engine (a CAD-only build) the slicer and its WebAssembly module are left out of the bundle, and a host
-  // that only keeps meshes answers the app.
+  // that only keeps meshes answers the app. The end-to-end test build slices in the native engine instead.
   const sl = over.slicer
     ? { host: over.slicer, wasm: false }
-    : __SX_WEB_SLICING__
-      ? await slicer()
-      : { host: (await import('./meshes')).createMeshHost(), wasm: false }
+    : __SX_E2E_NATIVE_URL__
+      ? { host: (await import('./native-test')).createNativeTestSlicer(__SX_E2E_NATIVE_URL__), wasm: false }
+      : __SX_WEB_SLICING__
+        ? await slicer()
+        : { host: (await import('./meshes')).createMeshHost(), wasm: false }
   const host: Host = {
     kind: over.kind ?? 'web',
     capabilities: {
