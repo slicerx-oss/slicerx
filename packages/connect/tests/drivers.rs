@@ -1206,6 +1206,7 @@ async fn prusalink_digest_login_passes_the_contract() {
     let hw = s.hardware().await.unwrap().unwrap();
     assert_eq!(hw.firmware.as_deref(), Some("6.2.4+mock"));
     assert_eq!(hw.serial.as_deref(), Some("CZPXMOCK0001"));
+    assert_eq!(hw.hostname.as_deref(), Some("prusa-mock"));
 
     let session = connector
         .connect(&cfg, &secrets(&[("prusa-pass", mocks.str("digestPassword"))]))

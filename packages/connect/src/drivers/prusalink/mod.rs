@@ -240,6 +240,7 @@ pub(crate) fn prusalink_hardware(v: &Value, version: Option<&Value>) -> PrinterH
         model: version.and_then(model_from_version),
         firmware: version.and_then(|v| text(v, "firmware")),
         serial: text(v, "serial"),
+        hostname: text(v, "hostname"),
         extruders: vec![ExtruderInfo {
             tool: 0,
             nozzle_diameter_mm: v.get("nozzle_diameter").and_then(Value::as_f64),
@@ -873,11 +874,16 @@ mod tests {
     }
 
     #[test]
-    fn hardware_reads_serial_firmware_and_a_named_model() {
-        let info = json!({ "nozzle_diameter": 0.6, "mmu": true, "serial": "CZPX4720X004XC34242" });
+    fn hardware_reads_serial_firmware_hostname_and_a_named_model() {
+        let info = json!({ "nozzle_diameter": 0.6, "mmu": true, "serial": "CZPX4720X004XC34242", "hostname": "prusa-mk4s" });
         let version = json!({ "text": "PrusaLink", "firmware": "6.2.4+9302", "original": "PrusaLink MK4S" });
         let h = prusalink_hardware(&info, Some(&version));
         assert_eq!(h.serial.as_deref(), Some("CZPX4720X004XC34242"));
+        assert_eq!(h.hostname.as_deref(), Some("prusa-mk4s"));
+        assert_eq!(
+            prusalink_hardware(&json!({ "hostname": " " }), None).hostname,
+            None
+        );
         assert_eq!(h.firmware.as_deref(), Some("6.2.4+9302"));
         assert_eq!(h.model.as_deref(), Some("MK4S"));
         assert_eq!(h.extruders[0].nozzle_diameter_mm, Some(0.6));
