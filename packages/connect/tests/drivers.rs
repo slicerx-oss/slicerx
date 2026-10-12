@@ -1164,6 +1164,40 @@ async fn prusalink_key_fallback_storage_and_busy() {
     assert!(none.to_string().contains("USB drive"), "{none}");
 }
 
+// PrusaLink answers a pause, resume or cancel in the wrong state with 409; each says what was wrong, in words for
+// the action, as upload and start do.
+#[tokio::test]
+async fn prusalink_control_in_the_wrong_state_says_why() {
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("prusalink", &[]).await;
+    let cfg = config("bay-3", "prusalink", mocks.port("prusalink"));
+    let s = PrusaLinkConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    let f = job_file("a.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-3",
+        &params::upload("bay-3", &f.name, &f.sha256),
+    );
+    let r = s.upload(f, &t).await.unwrap();
+    let opts = StartOptions::default();
+    let t = gate.mint(Action::Start, "bay-3", &params::start("bay-3", &r, &opts));
+    s.start(&r, opts, &t).await.unwrap();
+    let pause = || gate.mint(Action::Pause, "bay-3", &params::printer("bay-3"));
+    let resume = || gate.mint(Action::Resume, "bay-3", &params::printer("bay-3"));
+    s.pause(&pause()).await.unwrap();
+    let again = s.pause(&pause()).await.unwrap_err();
+    assert_eq!(again.code(), ErrorCode::BadState);
+    assert!(again.to_string().contains("already paused"), "{again}");
+    s.resume(&resume()).await.unwrap();
+    let again = s.resume(&resume()).await.unwrap_err();
+    assert_eq!(again.code(), ErrorCode::BadState);
+    assert!(again.to_string().contains("not paused"), "{again}");
+}
+
 // A typed address is confirmed with `GET /api/version`, open or behind a Digest login. OctoPrint
 // answers the same path and is not taken for PrusaLink.
 #[tokio::test]
