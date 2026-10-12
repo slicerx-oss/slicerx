@@ -70,6 +70,9 @@ export const TIPS = {
   },
   'mode.mimir': f(ASSISTANT_NAME, `Describe a part and watch ${ASSISTANT_NAME} model it, step by step, in the same history as Model.`),
   'mode.slice': a('Slice', 'The plate, print settings and the sliced layers.', 'model.mode'),
+  get 'nav.openInApp'() {
+    return f(`Open in ${appName()}`, `Save this design and open it in the ${appName()} app on this computer, to slice and print it.`)
+  },
   get 'nav.settings'() {
     return f('Settings', `Change how ${appName()} looks, behaves and connects.`)
   },

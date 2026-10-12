@@ -183,6 +183,31 @@ pub fn handle(app: &AppHandle, items: Vec<String>) {
             hand_over_vault(app, slug);
             continue;
         }
+        if let Some((sha, name)) = download_link(&item) {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                if !confirmed_download(&app, &name) {
+                    return;
+                }
+                let found = app
+                    .path()
+                    .download_dir()
+                    .ok()
+                    .and_then(|dir| find_download(&dir, &sha, std::time::SystemTime::now()));
+                match found {
+                    Some(path) => announce(&app, vec![register(&app, path)]),
+                    None => {
+                        let _ = app.emit(
+                            "sx-open-failed",
+                            format!(
+                                "{name} is not in your Downloads folder. Open it from where you saved it."
+                            ),
+                        );
+                    }
+                }
+            });
+            continue;
+        }
         if let Some(target) = link_target(&item) {
             let app = app.clone();
             std::thread::spawn(move || {
@@ -209,6 +234,60 @@ pub fn handle(app: &AppHandle, items: Vec<String>) {
         }
     }
     announce(app, refs);
+}
+
+/// A web page's "open what I just downloaded" link (`<scheme>://open?download=<sha256>&name=<file>`): the file's
+/// SHA-256 and its name. The page never names a path; the app looks for that content in the Downloads folder.
+pub fn download_link(url: &str) -> Option<(String, String)> {
+    download_link_for(&crate::brand::get().scheme, url)
+}
+
+fn download_link_for(scheme: &str, url: &str) -> Option<(String, String)> {
+    let rest = url.strip_prefix(scheme)?.strip_prefix("://open")?;
+    let rest = rest.strip_prefix("/?").or_else(|| rest.strip_prefix('?'))?;
+    let mut sha = None;
+    let mut name = None;
+    for (k, v) in rest.split('&').filter_map(|kv| kv.split_once('=')) {
+        match k {
+            "download" => sha = Some(v.to_ascii_lowercase()),
+            "name" => name = percent_decode(v),
+            _ => {}
+        }
+    }
+    let sha = sha.filter(|s| s.len() == 64 && s.bytes().all(|c| c.is_ascii_hexdigit()))?;
+    let name = name.filter(|n| link_name(n) && !n.contains(['/', '\\']))?;
+    Some((sha, name))
+}
+
+/// How recently a page's download must have landed for its link to open it.
+const DOWNLOAD_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// The model file in `dir` changed in the last ten minutes, no bigger than a link may fetch, whose content hashes to
+/// `sha`. A browser that renames a second copy ("name (1).sx3mf") is still found by its content.
+fn find_download(dir: &Path, sha: &str, now: std::time::SystemTime) -> Option<PathBuf> {
+    use sha2::{Digest, Sha256};
+    let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let path = e.path();
+            let meta = e.metadata().ok()?;
+            let changed = meta.modified().ok()?;
+            let fresh = now
+                .duration_since(changed)
+                .is_ok_and(|age| age <= DOWNLOAD_WINDOW);
+            (meta.is_file() && meta.len() <= MAX_DOWNLOAD && fresh && link_name(&path.to_string_lossy()))
+                .then_some((changed, path))
+        })
+        .collect();
+    // newest first: the file the page just saved
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
+    candidates.into_iter().map(|(_, p)| p).find(|p| {
+        std::fs::read(p).is_ok_and(|bytes| {
+            let digest = Sha256::digest(&bytes);
+            digest.iter().map(|b| format!("{b:02x}")).collect::<String>() == sha
+        })
+    })
 }
 
 /// A link may only fetch a model: STL, 3MF or SlicerX project.
@@ -507,6 +586,18 @@ fn confirmed(app: &AppHandle, target: &str) -> bool {
         .blocking_show()
 }
 
+fn confirmed_download(app: &AppHandle, name: &str) -> bool {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+    app.dialog()
+        .message(format!(
+            "Open {name} from your Downloads folder?\n\nA web page asked {} to open the design it just saved. It is checked and added to your plate; nothing is run.",
+            crate::brand::get().name
+        ))
+        .title("Open a downloaded design")
+        .buttons(MessageDialogButtons::OkCancelCustom("Open".to_owned(), "Cancel".to_owned()))
+        .blocking_show()
+}
+
 /// Files that arrived since the last call, for the webview to open.
 #[tauri::command]
 pub fn opened_take(state: State<'_, Pending>) -> Vec<FileRef> {
@@ -553,6 +644,61 @@ mod tests {
             vault_link_slug_for("slicerx", "slicerx://open?url=https://example.com/a.stl"),
             None
         );
+    }
+
+    #[test]
+    fn download_links_carry_a_hash_and_a_model_name() {
+        let sha = "ab".repeat(32);
+        assert_eq!(
+            download_link_for(
+                "slicerx",
+                &format!("slicerx://open?download={sha}&name=My%20clip.sx3mf")
+            ),
+            Some((sha.clone(), "My clip.sx3mf".to_owned()))
+        );
+        // a name that is a path, a file that is not a model, a short hash or another scheme is no link
+        assert_eq!(
+            download_link_for(
+                "slicerx",
+                &format!("slicerx://open?download={sha}&name=..%2Fx.sx3mf")
+            ),
+            None
+        );
+        assert_eq!(
+            download_link_for("slicerx", &format!("slicerx://open?download={sha}&name=run.sh")),
+            None
+        );
+        assert_eq!(
+            download_link_for("slicerx", "slicerx://open?download=abc&name=a.3mf"),
+            None
+        );
+        assert_eq!(
+            download_link_for("acme", &format!("slicerx://open?download={sha}&name=a.3mf")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_download_is_found_by_its_content_while_it_is_fresh() {
+        use sha2::{Digest, Sha256};
+        let dir = std::env::temp_dir().join(format!("sx-download-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("clip (1).sx3mf"), b"design").unwrap();
+        std::fs::write(dir.join("other.3mf"), b"something else").unwrap();
+        std::fs::write(dir.join("notes.txt"), b"design").unwrap();
+        let sha: String = Sha256::digest(b"design")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let now = std::time::SystemTime::now();
+        assert_eq!(find_download(&dir, &sha, now), Some(dir.join("clip (1).sx3mf")));
+        // an hour later the same file is too old to be the page's
+        assert_eq!(
+            find_download(&dir, &sha, now + std::time::Duration::from_secs(3600)),
+            None
+        );
+        assert_eq!(find_download(&dir, &"00".repeat(32), now), None);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
