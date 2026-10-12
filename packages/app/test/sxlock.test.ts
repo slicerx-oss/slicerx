@@ -76,7 +76,8 @@ describe('locked project format', () => {
     const locked = await sealSxlock(project, accounts.as(RV))
     expect(isSxlock(locked)).toBe(true)
     expect(Buffer.from(locked).includes('bracket-v2')).toBe(false)
-    expect(Buffer.from(locked).includes('PK')).toBe(false)
+    // The whole zip signature: the 2 bytes "PK" turn up in random ciphertext about once in 400 runs.
+    expect(Buffer.from(locked).includes('PK\x03\x04', 0, 'latin1')).toBe(false)
     const h = readSxlockHeader(locked)
     expect(h).toMatchObject({ version: 1, format: 'sx3mf', cipher: 'aes-256-gcm', owner: RV })
     expect(locked.length).toBe(SXLOCK_HEADER_BYTES + project.length + 16)
