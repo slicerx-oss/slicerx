@@ -3,12 +3,14 @@
 // The filament rail: one ring per slot, grouped by the unit that holds it, with the share of the plate's filament as
 // an arc from the last slice. Hovering or focusing a ring picks its filament out in the viewport; a click edits the
 // slot, Alt-click selects every object on it. A slot set to something the printer does not hold carries a corner dot.
-import { Menu, MenuItem, SwatchRing, tipAttrs } from '@slicerx/ui'
+// Under the rail, a line says what a click does and how to add a filament, or, when the printer fills the slots in, why
+// there is no add here and how to change one.
+import { Button, LinkButton, Menu, MenuItem, SwatchRing, tipAttrs } from '@slicerx/ui'
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { selectByFilament } from '../plate/selection'
 import { get, set, shownSlice, toast, useApp } from '../state/store'
 import { colorName, railGroups, slotMismatch, slotUsage, type SlotMismatch } from './rail'
-import { setSlot, type ResolvedSlot } from './slots'
+import { MAX_SLOTS, resetSlots, setSlot, type ResolvedSlot } from './slots'
 import './slot-rail.css'
 
 /** A slot's filament in words: "PLA Matte Black", type, family when it has one, and the nearest plain color name. */
@@ -49,11 +51,9 @@ export interface SlotRailProps {
   left: (s: ResolvedSlot) => string | null
   /** The Tune, Retune or Tuned badge of the slot the line under the rail names, or null. */
   badge?: (s: ResolvedSlot) => ReactNode
-  /** Adds a slot (no printer reports slots): a plus ring at the end of the rail. */
-  onAdd?: () => void
 }
 
-export function SlotRail({ slots, left, badge, onAdd }: SlotRailProps) {
+export function SlotRail({ slots, left, badge }: SlotRailProps) {
   const hover = useApp((s) => s.hoverSlot)
   const printerSlots = useApp((s) => s.printerSlots)
   // The last slice's usage stays while a new one runs; stale arcs draw at half strength.
@@ -125,11 +125,6 @@ export function SlotRail({ slots, left, badge, onAdd }: SlotRailProps) {
                   </div>
                 )
               })}
-              {onAdd ? (
-                <button type="button" className="slot-ring slot-add" aria-label="Add filament" {...tipAttrs({ title: 'Add filament' })} onClick={onAdd}>
-                  <span className="slot-add-disc" aria-hidden="true">+</span>
-                </button>
-              ) : null}
             </div>
           </div>
         ))}
@@ -178,14 +173,81 @@ export function SlotRailSkeleton() {
   )
 }
 
-/** No slot at all: a line and a plus ring that adds the first one. */
+/** No slot at all: a line and the button that adds the first one. */
 export function SlotRailEmpty() {
   return (
     <div className="slot-rail-empty">
-      <button type="button" className="slot-ring slot-add" aria-label="Add filament" onClick={() => setSlot(1, {})}>
-        <span className="slot-add-disc" aria-hidden="true">+</span>
-      </button>
-      <span>No filament yet. Add one.</span>
+      <span>No filament yet.</span>
+      <Button size="sm" icon="plus" data-testid="slice-filament-add" onClick={() => addSlot(1)}>
+        Add filament
+      </Button>
+    </div>
+  )
+}
+
+/** Adds filament `index` with the default material and color, and opens it so the person picks both. */
+export function addSlot(index: number): void {
+  if (index < 1 || index > MAX_SLOTS) return
+  setSlot(index, {})
+  set({ slotDialog: index })
+}
+
+/** The printer's filament unit in words, for the line under a rail it fills in. */
+export function unitWords(system: 'ams' | 'mmu' | 'toolchanger' | undefined): string {
+  if (system === 'mmu') return "the printer's MMU"
+  if (system === 'toolchanger') return "the printer's tool heads"
+  if (system === 'ams') return "the printer's AMS"
+  return 'the printer'
+}
+
+export interface RailFootProps {
+  /** How many slots the project has now. */
+  count: number
+  /** The connected printer reports the slots (its AMS or MMU), so they follow what is loaded there. */
+  fromPrinter: boolean
+  system?: 'ams' | 'mmu' | 'toolchanger' | undefined
+  /** Some slot is set here, over what the printer reports. */
+  edited: boolean
+}
+
+/**
+ * The line under the rail. With no printer filling the slots in: what a click on a ring does, and Add filament. With
+ * the printer's slots: where they come from, how to change one for this project, that a new filament is loaded on the
+ * printer, and Reset to printer once a slot was changed here. The rail above it never changes height, so adding a
+ * filament never moves this line.
+ */
+export function RailFoot({ count, fromPrinter, system, edited }: RailFootProps) {
+  if (fromPrinter) {
+    return (
+      <div className="rail-foot" data-testid="slice-filament-foot" data-from="printer">
+        <p className="rail-foot-text">
+          Filled in from {unitWords(system)}. Click a slot to change its color or material for this project. To add a filament, load it on the printer.
+          {edited ? (
+            <>
+              {' '}
+              <LinkButton data-testid="slice-filament-foot-reset" onClick={() => resetSlots()}>
+                Reset to printer
+              </LinkButton>
+            </>
+          ) : null}
+        </p>
+      </div>
+    )
+  }
+  const full = count >= MAX_SLOTS
+  return (
+    <div className="rail-foot" data-testid="slice-filament-foot">
+      <p className="rail-foot-text">Click a filament to change its color or material.</p>
+      <Button
+        size="sm"
+        icon="plus"
+        data-testid="slice-filament-add"
+        disabled={full}
+        tip={{ title: 'Add filament', body: `Adds filament ${Math.min(count + 1, MAX_SLOTS)} and opens it to pick the material and color.`, ...(full ? { reason: `A project holds ${MAX_SLOTS} filaments at most.` } : {}) }}
+        onClick={() => addSlot(count + 1)}
+      >
+        Add filament
+      </Button>
     </div>
   )
 }

@@ -6,6 +6,9 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
+- Project filaments: `slicerx_project_add_filament` adds a filament after the last one and `slicerx_project_set_filament` changes one's material type or color, as a person does on the app's filament rail. Both answer with the project, and `slicerx_project_show` lists its `filaments`. Once a client sets one, the project's slices carry `filament_type` and `filament_colour` for every filament.
+- `slicerx-mcp call <tool> [<json>] ...` runs tools from a shell, in order in one process, and prints one JSON line per call; it stops with exit code 1 at the first failure.
+
 - `slicerx_printer_history` reads a printer's past jobs through sx-link, newest first: file name, result, start and end time, duration and filament used, as the printer keeps them. Read only; `limit` takes 1 to 200 (default 20). On simulated printers it says the history comes through sx-link.
 
 - The checks and project operations the SlicerX app runs from its panels are tools now, so a client can do what a person does there: `slicerx_gcode_inspect`, `slicerx_risk_report`, `slicerx_energy_estimate`, `slicerx_fit_check`, `slicerx_mesh_analyze`, `slicerx_printer_config_check`, `slicerx_spool_fit`, `slicerx_overnight_readiness`, `slicerx_spool_inventory`, `slicerx_printer_match`, `slicerx_fleet_overview` and `slicerx_ams_mapping` read; `slicerx_supports`, `slicerx_orientation_search`, `slicerx_mesh_repair`, `slicerx_hollow`, `slicerx_emboss`, `slicerx_scale_with_tolerance`, `slicerx_threads_and_fits`, `slicerx_smart_layer`, `slicerx_multicolor_assign` and `slicerx_region_modifiers` change the open project (class slice). The checks read the plates `slicerx_slice` sliced; the mesh tools need `sx-geom`. None of them starts a print.

@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The filament rail in the Slice sidebar: hovering a slot picks its filament out in the viewport, Alt-click selects
 // the objects on it, a slot that differs from the printer's carries a dot and a way back, the rail scrolls inside the
-// card when it overflows, and it fits a phone.
+// card when it overflows, and it fits a phone. Under the rail, every mode says what a click does and offers Add filament,
+// or, when the printer fills the slots in, says why there is no add and how to change one.
 import { type Page } from '@playwright/test'
 import { expect, openSheet, plateReady, test } from './fixtures'
 
@@ -121,6 +122,72 @@ test('a full rail scrolls inside the card, never the page, at any width', async 
   await slot(page, 16).scrollIntoViewIfNeeded()
   await expect(slot(page, 16)).toBeInViewport()
 })
+
+const foot = (page: Page) => page.getByTestId('slice-filament-foot')
+/** A printer added by hand with no connection: it reports no slots, so the project's filaments are all set here. */
+const UNCONNECTED = { handPrinters: [{ id: 'e2e-desk-a1', name: 'Desk A1', profileId: 'bambu-a1', vendor: 'Bambu Lab', model: 'A1', nozzleCount: 1 }], printerId: 'e2e-desk-a1' }
+
+for (const settingsMode of ['simple', 'expert'] as const) {
+  test(`Add filament shows in ${settingsMode === 'simple' ? 'Simple' : 'Expert'}, opens the new filament, and moves nothing`, async ({ page }) => {
+    await open(page, { ...UNCONNECTED, settingsMode })
+    await expect(foot(page)).toContainText('Click a filament to change its color or material.')
+    const add = page.getByTestId('slice-filament-add')
+    await expect(add).toHaveText('Add filament')
+    const count = await page.getByTestId('slice-filament-slot').count()
+    const before = { add: await add.boundingBox(), first: await slot(page, 1).boundingBox() }
+    await add.click()
+    // The new filament opens, so its material and color are picked right away.
+    const dialog = page.getByRole('dialog', { name: `Filament ${count + 1}` })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Done' }).click()
+    // It shows on the rail before anything prints with it, and nothing above or beside the button moved.
+    await expect(page.getByTestId('slice-filament-slot')).toHaveCount(count + 1)
+    await expect(slot(page, count + 1)).toBeVisible()
+    expect(await add.boundingBox()).toEqual(before.add)
+    expect(await slot(page, 1).boundingBox()).toEqual(before.first)
+  })
+}
+
+test("with the printer's slots, the rail says where they come from, has no add, and resets to the printer", async ({ page }) => {
+  await open(page)
+  await expect(foot(page)).toHaveAttribute('data-from', 'printer')
+  await expect(foot(page)).toContainText(/^Filled in from the printer('s \w+)?\. Click a slot to change its color or material for this project\. To add a filament, load it on the printer\.$/)
+  await expect(page.getByTestId('slice-filament-add')).toHaveCount(0)
+  await expect(page.getByTestId('slice-filament-foot-reset')).toHaveCount(0)
+  // A slot changed here offers the way back, in place.
+  await sx(page, { slotSetup: { 1: { type: 'PETG', brand: '', color: '#ffffff' } } })
+  const reset = page.getByTestId('slice-filament-foot-reset')
+  await expect(reset).toHaveText('Reset to printer')
+  await reset.click()
+  await expect(slot(page, 1)).not.toHaveAttribute('data-mismatch', 'true')
+  await expect(reset).toHaveCount(0)
+})
+
+// Screenshots of the rail for review, Simple and Expert with no printer and with the printer's slots, light and dark:
+// SX_SHOTS=1, saved to SX_SHOTS_DIR.
+const shotCases = [
+  { name: 'simple-no-printer', prefs: { ...UNCONNECTED, settingsMode: 'simple' } },
+  { name: 'expert-no-printer', prefs: { ...UNCONNECTED, settingsMode: 'expert' } },
+  { name: 'printer-slots', prefs: { settingsMode: 'simple' } },
+]
+for (const c of shotCases) {
+  test(`shots: the line under the rail, ${c.name}, light and dark`, async ({ page }, info) => {
+    test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+    const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+    const width = page.viewportSize()?.width ?? 0
+    await open(page, c.prefs)
+    const block = page.locator('[data-section="filament"]')
+    for (const scheme of ['dark', 'light'] as const) {
+      await sx(page, { scheme, themeFollowsSystem: false, hoverSlot: null })
+      await expect(page.locator('html')).toHaveAttribute('data-sx-theme', new RegExp(scheme))
+      await block.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+      await page.mouse.move(0, 0)
+      await page.waitForTimeout(500)
+      await block.screenshot({ path: `${dir}/rail-${c.name}-${scheme}-${width}.png` })
+      await page.screenshot({ path: `${dir}/page-${c.name}-${scheme}-${width}.png` })
+    }
+  })
+}
 
 // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
 test('shots: the rail, a slot picked out in the view, its menu and a mismatch, light and dark', async ({ page, isMobile }, info) => {

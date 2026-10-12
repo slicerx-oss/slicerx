@@ -8,6 +8,9 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { createContext, createSlicerxServer, startHttp, SERVER_VERSION, type EngineMode } from './index'
 import { cloudFromEnv } from './cloud'
 import { localAiFromEnv } from './localai'
@@ -17,6 +20,14 @@ import { linkCodeFrom, linkKeyFrom, readHubKey, readKeychainKey } from './link-c
 const HELP = `slicerx-mcp ${SERVER_VERSION}: SlicerX tools for MCP clients
 
 Usage: slicerx-mcp [options]
+       slicerx-mcp [options] call <tool> [<json>] [<tool> [<json>] ...]
+
+call runs tools once, in order, in one process, and prints one JSON line per call
+({"tool", "ok", "text", "output"}), so a project built by the first calls is there
+for the next. It stops at the first call that fails, with exit code 1. The tool may
+be named with or without its slicerx_ prefix; <json> is its arguments (default {}).
+Example: slicerx-mcp call project_open '{"printer":"bambu_a1"}' \
+           project_add_filament '{"type":"PETG","color":"#ff5500"}' project_show
 
 Transport
   --http                   Serve streamable HTTP on /mcp instead of stdio
@@ -67,7 +78,8 @@ function env(name: string): string | undefined {
 const flag = (name: string): boolean => ['1', 'true', 'yes'].includes((env(name) ?? '').toLowerCase())
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
     options: {
       http: { type: 'boolean' },
       host: { type: 'string' },
@@ -96,6 +108,8 @@ async function main(): Promise<void> {
     strict: true,
   })
   if (values.help) return void process.stdout.write(HELP)
+  const calls = positionals[0] === 'call' ? parseCalls(positionals.slice(1)) : undefined
+  if (!calls && positionals.length) throw new Error(`Unknown argument ${positionals[0]}. See slicerx-mcp --help.`)
   if (values.version) return void process.stdout.write(`${SERVER_VERSION}\n`)
   // Command lines are visible to every local user (ps), so a secret never goes there.
   if (values.token !== undefined) throw new Error('--token is no longer accepted, since other users can read command lines. Set SLICERX_MCP_TOKEN, or let the server write a token file (--token-file).')
@@ -139,6 +153,8 @@ async function main(): Promise<void> {
   const engineLine = ctx.slicer ? `engine ${ctx.slicer.kind}` : `no engine (${ctx.slicerUnavailable ?? ''})`
   process.stderr.write(`slicerx-mcp ${SERVER_VERSION}: ${engineLine}, printers ${ctx.printers?.kind ?? 'off'}, ${ctx.tools.length} gated tools, policy ${ctx.gate.policyPath ?? 'defaults'}, log ${ctx.gate.log.path}\n`)
 
+  if (calls) return runCalls(createSlicerxServer(ctx), calls)
+
   if (http) {
     const host = values.host ?? env('HOST') ?? '127.0.0.1'
     const port = Number(values.port ?? env('PORT') ?? '3977')
@@ -154,6 +170,49 @@ async function main(): Promise<void> {
     return
   }
   await createSlicerxServer(ctx).connect(new StdioServerTransport())
+}
+
+/** `call` arguments as tool calls: each tool name, then its arguments when the next word is a JSON object. */
+function parseCalls(words: string[]): { name: string; args: Record<string, unknown> }[] {
+  if (!words.length) throw new Error('call needs a tool name, such as: slicerx-mcp call project_show')
+  const out: { name: string; args: Record<string, unknown> }[] = []
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!
+    if (word.trimStart().startsWith('{')) throw new Error(`Arguments ${word} come before any tool name`)
+    const name = word.startsWith('slicerx_') ? word : `slicerx_${word}`
+    let args: Record<string, unknown> = {}
+    const next = words[i + 1]
+    if (next?.trimStart().startsWith('{')) {
+      try {
+        args = JSON.parse(next) as Record<string, unknown>
+      } catch {
+        throw new Error(`The arguments for ${name} are not JSON: ${next}`)
+      }
+      i++
+    }
+    out.push({ name, args })
+  }
+  return out
+}
+
+/** Runs the calls through an in-process MCP client, the way any client calls the server, one JSON line each. */
+async function runCalls(server: ReturnType<typeof createSlicerxServer>, calls: { name: string; args: Record<string, unknown> }[]): Promise<void> {
+  const [a, b] = InMemoryTransport.createLinkedPair()
+  const client = new Client({ name: 'slicerx-mcp call', version: SERVER_VERSION })
+  await Promise.all([server.connect(a), client.connect(b)])
+  try {
+    for (const c of calls) {
+      const r = (await client.callTool({ name: c.name, arguments: c.args })) as CallToolResult
+      const text = r.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
+      process.stdout.write(`${JSON.stringify({ tool: c.name, ok: r.isError !== true, text, output: r.structuredContent ?? null })}\n`)
+      if (r.isError) {
+        process.exitCode = 1
+        return
+      }
+    }
+  } finally {
+    await client.close()
+  }
 }
 
 /** Writes a fresh file only the current user can read. Never follows a link left at the path. */
