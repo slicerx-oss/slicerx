@@ -9,9 +9,13 @@
   two-colors.obj       two objects with vertex colors, red and blue
   two-materials.amf    two objects on two colored materials
   box-ascii.stl        an ASCII STL of a 20 mm cube
+  textured-cube.3mf    a 20 mm cube with a 4 x 4 checker texture (3MF materials extension): an object-level
+                       pid and pindex, triangles with their own p1 to p3, and one with p1 only
 """
+import struct
 import sys
 import zipfile
+import zlib
 from pathlib import Path
 
 TRIS = [(0, 2, 1), (1, 2, 3), (4, 5, 6), (5, 7, 6), (0, 1, 4), (1, 5, 4),
@@ -63,6 +67,47 @@ def subtypes(out):
         z.writestr('Metadata/model_settings.config', settings)
 
 
+def png(size, cell):
+    """an RGB checker of yellow and blue, `cell` pixels a square"""
+    rows = b''.join(b'\x00' + b''.join(bytes((255, 220, 0) if (x // cell + y // cell) % 2 == 0 else (0, 70, 200))
+                                         for x in range(size)) for y in range(size))
+
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', size, size, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(rows, 9)) + chunk(b'IEND', b''))
+
+
+def textured(out):
+    core = 'http://schemas.microsoft.com/3dmanufacturing/core/2015/02'
+    mat = 'http://schemas.microsoft.com/3dmanufacturing/material/2015/02'
+    uvs = [(0, 0), (1, 0), (0, 1), (1, 1), (0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)]
+    coords = ''.join(f'<m:tex2coord u="{u}" v="{v}"/>' for u, v in uvs)
+    # the bottom pair names all three corners, the next one p1 only; the rest take the object's pid and pindex
+    own = {0: ' pid="2" p1="0" p2="2" p3="1"', 1: ' pid="2" p1="1" p2="2" p3="3"', 2: ' p1="4"'}
+    tris = ''.join(f'<triangle v1="{a}" v2="{b}" v3="{c}"{own.get(i, "")}/>' for i, (a, b, c) in enumerate(TRIS))
+    verts = ''.join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in box(0, 0, 0, 20, 20, 20))
+    model = (f'<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xmlns="{core}" xmlns:m="{mat}" '
+             'requiredextensions="m"><resources>'
+             '<m:texture2d id="1" path="/3D/Texture/checker.png" contenttype="image/png" tilestyleu="wrap" '
+             'tilestylev="mirror" filter="nearest"/>'
+             f'<m:texture2dgroup id="2" texid="1">{coords}</m:texture2dgroup>'
+             f'<object id="3" type="model" name="cube" pid="2" pindex="7"><mesh><vertices>{verts}</vertices>'
+             f'<triangles>{tris}</triangles></mesh></object></resources>'
+             '<build><item objectid="3" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>')
+    rels = ('<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Target="{}" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/{}"/></Relationships>')
+    with zipfile.ZipFile(out / 'textured-cube.3mf', 'w', zipfile.ZIP_DEFLATED) as z:
+        z.writestr('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                   '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                   '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+                   '<Default Extension="png" ContentType="image/png"/></Types>')
+        z.writestr('_rels/.rels', rels.format('/3D/3dmodel.model', '3dmodel'))
+        z.writestr('3D/3dmodel.model', model)
+        z.writestr('3D/_rels/3dmodel.model.rels', rels.format('/3D/Texture/checker.png', '3dtexture'))
+        z.writestr('3D/Texture/checker.png', png(4, 2))
+
+
 def obj(out):
     lines = ['# two boxes with vertex colors']
     base = 0
@@ -100,3 +145,4 @@ if __name__ == '__main__':
     obj(d)
     amf(d)
     stl(d)
+    textured(d)

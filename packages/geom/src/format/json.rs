@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! `format.read3mf` for the json api: the project as json, each part's positions and triangles as output buffers
 
-use super::threemf::{Paint, PartKind, read_3mf};
+use super::threemf::{Paint, PartKind, PartUv, Textures, read_3mf};
 use crate::error::{Error, Result};
 use crate::json::{FileLoader, OutFile, base64_decode, push_out_file};
 use serde_json::{Value, json};
@@ -30,6 +30,63 @@ fn paint(p: &Paint) -> Value {
         }
     }
     json!({ "rawBytes": push_out_file(OutFile::Bytes(out)) })
+}
+
+/// a part's property references: its model part, the object's default `[pid, pindex]`, and `refs`, one output
+/// buffer: a count, then per triangle that names its own its number, `pid`, `p1`, `p2` and `p3`, all u32; `null`
+/// when there are none
+fn uv(u: &PartUv) -> Value {
+    if u.is_empty() {
+        return Value::Null;
+    }
+    let mut out = Vec::with_capacity(4 + u.triangles.len() * 20);
+    out.extend_from_slice(&u32::try_from(u.triangles.len()).unwrap_or(u32::MAX).to_le_bytes());
+    for (k, pid, p) in &u.triangles {
+        for n in [*k, *pid, p[0], p[1], p[2]] {
+            out.extend_from_slice(&n.to_le_bytes());
+        }
+    }
+    json!({
+        "model": u.model,
+        "default": u.default.map(|(pid, i)| json!([pid, i])),
+        "refs": { "rawBytes": push_out_file(OutFile::Bytes(out)) },
+    })
+}
+
+/// the textures without their images, which stay in the archive: each group's coordinates as one output buffer
+/// (`uvs`) of u and v f32 pairs
+fn textures(t: &Textures) -> Value {
+    let images: Vec<Value> = t
+        .images
+        .iter()
+        .map(|i| {
+            json!({
+                "model": i.model,
+                "id": i.id,
+                "path": i.path,
+                "contentType": i.content_type,
+                "size": i.size,
+                "tilestyleU": i.tilestyle_u,
+                "tilestyleV": i.tilestyle_v,
+                "filter": i.filter,
+            })
+        })
+        .collect();
+    let groups: Vec<Value> = t
+        .groups
+        .iter()
+        .map(|g| {
+            let bytes = g.uvs.iter().flatten().flat_map(|c| c.to_le_bytes()).collect();
+            json!({
+                "model": g.model,
+                "id": g.id,
+                "texture": g.texture,
+                "count": g.uvs.len(),
+                "uvs": { "rawBytes": push_out_file(OutFile::Bytes(bytes)) },
+            })
+        })
+        .collect();
+    json!({ "images": images, "groups": groups })
 }
 
 /// `{ data: { path } | { base64 } }`: parts in their object's space in millimeters, with `positionsOut` and
@@ -74,6 +131,7 @@ pub fn read(req: &Value, files: FileLoader<'_>) -> Result<Value> {
                 "slot": p.slot,
                 "settings": pairs(&p.settings),
                 "paint": paint(&p.paint),
+                "uv": uv(&p.uv),
                 "transformed": p.transformed,
                 "positionsOut": push_out_file(OutFile::Positions(positions)),
                 "trianglesOut": push_out_file(OutFile::Triangles(triangles)),
@@ -108,6 +166,7 @@ pub fn read(req: &Value, files: FileLoader<'_>) -> Result<Value> {
         "metadata": pairs(&project.metadata),
         "plates": plates,
         "objects": objects,
+        "textures": textures(&project.textures),
         "notes": project.notes,
     }))
 }

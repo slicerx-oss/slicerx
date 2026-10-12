@@ -7,4 +7,7 @@ pub mod threemf;
 mod xml;
 mod zip;
 
-pub use threemf::{Layout, Object, Paint, Part, PartKind, Plate, Project, read_3mf, read_entry};
+pub use threemf::{
+    Layout, Object, Paint, Part, PartKind, PartUv, Plate, Project, Texture2d, TextureGroup, Textures,
+    read_3mf, read_entry,
+};
