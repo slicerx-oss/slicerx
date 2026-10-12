@@ -23,6 +23,11 @@ useBridge(['moonraker', 'bambu'], async (ctl) => {
 
 /** Puts the Bambu mock back to idle and waits until the hub has seen it. */
 async function idleAgain(id: string): Promise<void> {
+  // A job the hub just started stays busy for the hub until it has read the printer running (a reading right after a
+  // start may still show the state before it), so a job ended before that would refuse the next start as busy.
+  const mock = (await ctl('/state'))['bambu'] as { state?: string } | undefined
+  const running = ['printing', 'paused', 'preparing']
+  if (running.includes(mock?.state ?? '')) await expect.poll(async () => running.includes((await hub.admin.status(id)).state), { timeout: 20_000 }).toBe(true)
   await ctl('/set', { mock: 'bambu', state: 'idle' })
   await expect.poll(async () => (await hub.admin.status(id)).state, { timeout: 20_000 }).toBe('idle')
 }
