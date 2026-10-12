@@ -6,6 +6,7 @@ import { Block, Button, Icon, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useHost } from '../../host'
 import { openModelFiles } from '../../state/actions'
+import { useShownOrigin } from '../../state/model-mode'
 import { isCadTool, selectedIds, set, useApp } from '../../state/store'
 import { bounds, decompose, sizeOf, type Vec3 } from '../../plate/transform'
 import { ObjectActions } from '../prepare/object-actions'
@@ -78,11 +79,12 @@ const fmt = (n: number) => String(Math.round(n * 10) / 10)
 /** The selected object's position on one line, for Transform folded under a tool. */
 function TransformLine() {
   const entry = useApp((s) => s.plate.find((p) => p.id === s.selection))
+  const { origin, frame } = useShownOrigin()
   if (!entry) return null
-  const t = decompose(entry.transform)
+  const p = decompose(entry.transform).position.map((v, i) => v - (origin[i] ?? 0))
   return (
-    <span className="sx-small sx-muted design-tf-line" data-testid="model-transform-summary">
-      X {fmt(t.position[0])} Y {fmt(t.position[1])} Z {fmt(t.position[2])} mm
+    <span className="sx-small sx-muted design-tf-line" data-testid="model-transform-summary" data-frame={frame}>
+      X {fmt(p[0] ?? 0)} Y {fmt(p[1] ?? 0)} Z {fmt(p[2] ?? 0)} mm
     </span>
   )
 }

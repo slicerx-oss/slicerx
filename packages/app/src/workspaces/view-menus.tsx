@@ -4,6 +4,7 @@
 // labeled Color by menu.
 import { Button, Menu, MenuAnchor, MenuItem, type IconName } from '@slicerx/ui'
 import { useState } from 'react'
+import { useModelMode } from '../state/model-mode'
 import { pickColorMode, setCamera, useApp, type CameraView, type ColorMode, type PrepareLook } from '../state/store'
 import { set } from '../state/store'
 
@@ -29,16 +30,25 @@ const COLORS: { value: ColorMode; label: string; id: string }[] = [
   { value: 'layerTime', label: 'Layer time', id: 'layer-time' },
 ]
 
+/** Model draws solids in its own CAD look, or in X-ray; the print looks belong to Slice. */
+const MODEL_LOOKS: { value: PrepareLook; label: string; icon: IconName }[] = [
+  { value: 'studio', label: 'CAD', icon: 'cube' },
+  { value: 'xray', label: 'X-ray', icon: 'x-ray' },
+]
+
 export function RenderMenu() {
-  const look = useApp((s) => s.look)
+  const stored = useApp((s) => s.look)
+  const model = useModelMode() === 'design'
   const [open, setOpen] = useState(false)
-  const cur = LOOKS.find((l) => l.value === look) ?? LOOKS[0]!
+  const looks = model ? MODEL_LOOKS : LOOKS
+  const look = model && stored !== 'xray' ? 'studio' : stored
+  const cur = looks.find((l) => l.value === look) ?? looks[0]!
   return (
     <MenuAnchor>
       <Button variant="ghost" size="sm" icon={cur.icon} aria-haspopup="menu" aria-expanded={open} aria-label={`Render look: ${cur.label}`} tip={{ title: 'Render look', body: 'Change how the model is drawn.' }} onClick={() => setOpen(!open)} />
       <Menu open={open} onClose={() => setOpen(false)} label="Render look">
-        {LOOKS.map((l) => (
-          <MenuItem key={l.value} icon={l.icon} aria-checked={l.value === look} onClick={() => { set({ look: l.value }); setOpen(false) }}>
+        {looks.map((l) => (
+          <MenuItem key={l.value} icon={l.icon} aria-checked={l.value === look} onClick={() => { if (l.value !== look) set({ look: l.value }); setOpen(false) }}>
             {l.label}
           </MenuItem>
         ))}

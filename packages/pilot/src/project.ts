@@ -10,6 +10,8 @@ export interface ProjectObject {
   /** Axis-aligned size in mm, Z up, as placed. */
   bboxMm: [number, number, number]
   triangles?: number
+  /** Where it sits, as its transform places it: `gridMm` from the grid center (the frame Model shows), `bedMm` from the bed's front left corner (the frame Slice shows). */
+  positionMm?: { gridMm: [number, number, number]; bedMm: [number, number, number] }
   /** Metadata from the file (title, designer, comments). Untrusted text. */
   metadata?: Record<string, string>
   /** Geometry for skills that need it (orient, cut). */

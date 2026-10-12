@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { centerSelected, dropSelectedToBed, fillBed, instanceCount, mirrorSelected, scaleSelectedToSize, setInstanceCount, setTrs } from '../../plate/edit'
 import { plateScrub } from '../../plate/scrub'
 import { bounds, decompose, sizeOf, type Vec3 } from '../../plate/transform'
+import { hostSlices, useShownOrigin } from '../../state/model-mode'
 import { selectedIds, useApp } from '../../state/store'
 
 const AXES = ['X', 'Y', 'Z'] as const
@@ -29,8 +30,13 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
   const tool = useTool()
   const space = useRotateSpace()
   const more = useMore('object') || full
+  // Model counts from the grid center and leaves copies to Slice; the stored transform is the same either way
+  const { origin, frame } = useShownOrigin()
+  const model = frame === 'grid'
+  const ground = hostSlices() ? 'bed' : 'ground'
   if (!entry) return null
   const t = decompose(entry.transform)
+  const shown = t.position.map((v, i) => v - (origin[i] ?? 0)) as Vec3
   const b = bounds(entry.parts, entry.transform)
   const size = b ? sizeOf(b) : ([0, 0, 0] as Vec3)
   const bottom = b ? b.min[2] : 0
@@ -49,7 +55,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
     />
   )
   return (
-    <div className="tf" data-section="transform">
+    <div className="tf" data-section="transform" data-frame={frame}>
       {/* more sits above what it opens, so pressing it moves nothing */}
       {full ? null : <div className="tf-head">
         <span className="tf-title">Transform</span>
@@ -57,11 +63,11 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
       </div>}
       {!more && tool !== 'rotate' && tool !== 'scale' ? (
         <p className="tf-readout" aria-label="Position">
-          X {fmt(t.position[0])} Y {fmt(t.position[1])} Z {fmt(t.position[2])} mm
+          X {fmt(shown[0])} Y {fmt(shown[1])} Z {fmt(shown[2])} mm
         </p>
-      ) : row('Position', 'mm', t.position, (i, v) => {
+      ) : row('Position', 'mm', shown, (i, v) => {
         const p = [...t.position] as Vec3
-        p[i] = v
+        p[i] = v + (origin[i] ?? 0)
         setTrs({ position: p })
       })}
       {more || tool === 'rotate' ? row('Rotation', '°', t.rotation, (i, v) => {
@@ -72,7 +78,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
       {tool === 'rotate' ? (
         <div className="tf-row" role="group" aria-label="Rotate rings">
           <span className="tf-name">Rings</span>
-          <Seg label="Rotate about" size="sm" value={space} onChange={setRotateSpace} options={[{ value: 'world', label: 'Bed axes' }, { value: 'local', label: 'Object axes' }]} />
+          <Seg label="Rotate about" size="sm" value={space} onChange={setRotateSpace} options={[{ value: 'world', label: ground === 'bed' ? 'Bed axes' : 'Ground axes' }, { value: 'local', label: 'Object axes' }]} />
         </div>
       ) : null}
       {more || tool === 'scale' ? row('Scale', '%', t.scale.map((s) => s * 100) as Vec3, (i, v) => {
@@ -81,7 +87,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
         setTrs({ scale: uniform ? (t.scale.map((s) => (s * f) / cur) as Vec3) : (t.scale.map((s, k) => (k === i ? f : s)) as Vec3) })
       }, { digits: 1, min: 0.1 }) : null}
       {more || tool === 'scale' ? row('Size', 'mm', size, (i, v) => void scaleSelectedToSize(i, v, uniform), { min: 0.01 }) : null}
-      {more ? <div className="tf-row tf-inst" role="group" aria-label="Instances">
+      {more && !model ? <div className="tf-row tf-inst" role="group" aria-label="Instances">
         <span className="tf-name">Instances</span>
         <span className="tf-stepper">
           <Button size="sm" variant="ghost" icon="minus" aria-label="Remove an instance" disabled={count <= 1} onClick={() => setInstanceCount(entry.id, instanceCount(entry.id) - 1)} />
@@ -98,7 +104,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
         </label> : null}
         {more ? <>
         <Button size="sm" variant="ghost" icon="arrow-down" onClick={() => dropSelectedToBed()} disabled={Math.abs(bottom) < 0.001}>
-          Drop to bed
+          Drop to {ground}
         </Button>
         <Button size="sm" variant="ghost" icon="fit" onClick={() => centerSelected()}>
           Center
