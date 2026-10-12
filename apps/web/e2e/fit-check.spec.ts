@@ -154,7 +154,8 @@ const screen = (page: Page, x: number, y: number, z: number) =>
  * slice lands, the toolpath look's legend, layer strip and playback bar come up over the view and the camera frames
  * the plate again in the space they leave, so a press aimed before then lands somewhere else and turns the view. This
  * waits for the slice to be current, then for the same spot twice, further apart than the view's second look at its
- * overlays (600 ms).
+ * overlays (600 ms). It also waits until the canvas is what is on that spot: a toast (the software-graphics notice sits in
+ * the middle of the view for as long as the page takes to draw it) takes the press, and nothing moves.
  */
 async function aim(page: Page, x: number, y: number, z: number): Promise<{ x: number; y: number }> {
   const sliced = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale })
@@ -168,8 +169,12 @@ async function aim(page: Page, x: number, y: number, z: number): Promise<{ x: nu
       return still
     }, { intervals: [700] })
     .toBe(true)
+  await expect.poll(() => onCanvas(page, at.x, at.y), { message: 'something covers the spot to press' }).toBe(true)
   return at
 }
+
+/** Whether the canvas is the topmost element at a screen point. */
+const onCanvas = (page: Page, x: number, y: number) => page.evaluate(([x, y]) => document.elementFromPoint(x!, y!) === (window as unknown as { __vp: Vp }).__vp.canvas, [x, y] as const)
 
 const lines = (page: Page) => page.evaluate(() => (window as unknown as { __vp: Vp }).__vp.gaps.group.children.map((c) => c.visible))
 
@@ -215,6 +220,39 @@ test('parts of one object that touch never warn; a separate object that touches 
   await page.mouse.up()
   await expect(notes).toHaveCount(0, { timeout: 30_000 })
   await expect.poll(() => lines(page)).toEqual([])
+})
+
+test('a press aimed under a toast waits for the toast to clear, then lands on the object', { tag: '@gpu' }, async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Needs a pointer')
+  test.slow()
+  await open(page)
+  await openFile(page, 'calibration-cube-20mm.sx3mf')
+  await expect(page.locator('.obj-name', { hasText: '20 mm calibration cube' })).toBeVisible({ timeout: 60_000 })
+  await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ selection: null, selectedIds: [] }))
+  const c = await box(page, '20 mm calibration cube')
+  const mid: [number, number, number] = [(c.min[0]! + c.max[0]!) / 2, (c.min[1]! + c.max[1]!) / 2, c.max[2]! / 2]
+  // A toast is put over the spot to press. Hovering it holds its clock, so it stays until it is dismissed.
+  const where = await aim(page, ...mid)
+  await page.addStyleTag({ content: `.sx-toasts { left: ${where.x}px !important; top: ${where.y - 20}px !important; bottom: auto !important; max-width: none !important }` })
+  await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ toast: { id: 9001, text: 'Something to read, right over the spot to press', action: { label: 'Dismiss', run: () => {} } } }))
+  const toast = page.locator('.sx-toast', { hasText: 'Something to read' })
+  await expect(toast).toBeVisible()
+  await toast.hover()
+  expect(await onCanvas(page, where.x, where.y)).toBe(false)
+  let aimed = false
+  const aiming = aim(page, ...mid).then((at) => ((aimed = true), at))
+  await page.waitForTimeout(3000)
+  expect(aimed, 'aim returned while the toast was still on the spot').toBe(false)
+  await toast.getByTestId('toast-action').click()
+  const at = await aiming
+  expect(await onCanvas(page, at.x, at.y)).toBe(true)
+  // The press now grabs the cube: dragging it moves it.
+  const x0 = (await box(page, '20 mm calibration cube')).min[0]!
+  await page.mouse.move(at.x, at.y)
+  await page.mouse.down()
+  for (let i = 1; i <= 8; i++) await page.mouse.move(at.x + i * 6, at.y + i * 3)
+  await page.mouse.up()
+  await expect.poll(async () => (await box(page, '20 mm calibration cube')).min[0]!).not.toBe(x0)
 })
 
 test('every starter opens alone, with no notes and no markers', { tag: '@gpu' }, async ({ page, isMobile }) => {
