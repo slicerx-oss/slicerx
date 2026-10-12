@@ -100,11 +100,12 @@ test('a big project opens with the page answering and each model built once', as
   for (const s of [...stages, 'drawn']) expect(run.ms[s], `stage ${s}`).toBeDefined()
   const ends = stages.map((s) => run.ms[s]!)
   expect(ends).toEqual([...ends].sort((a, b) => a - b))
-  // The meshes are read in the worker: while that runs (from the archive inflated to the meshes as typed arrays), the
-  // page's longest stall stays a small part of it, as it would not if they were read on the main thread. Before that,
-  // from the file's bytes to the archive inflated, the page itself starts the open (the plate loading, the panes that
-  // follow the settings), and on a slow shared runner that alone took 400 ms; it is not the meshes' read.
-  expect(run.parsedIn).toBe('worker')
+  // The meshes are read off the page, by the geometry engine's reader or the TypeScript one in its worker: while that
+  // runs (from the archive inflated to the meshes as typed arrays), the page's longest stall stays a small part of it,
+  // as it would not if they were read on the main thread. Before that, from the file's bytes to the archive inflated,
+  // the page itself starts the open (the plate loading, the panes that follow the settings), and on a slow shared
+  // runner that alone took 400 ms; it is not the meshes' read.
+  expect(['geom', 'worker']).toContain(run.parsedIn)
   const [from, to] = [run.ms['unzip']!, run.ms['parse']!]
   const worst = Math.max(0, ...run.stalls.map(([a, b]) => Math.min(b, to) - Math.max(a, from)))
   expect(worst, `worst stall ${Math.round(worst)} ms while the meshes were read (${Math.round(to - from)} ms)`).toBeLessThan(Math.max((to - from) * 0.5, 200))
