@@ -30,7 +30,7 @@ export function transformAttr(m: readonly number[]): string {
   return [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14].map((i) => f(m[i] ?? 0)).join(' ')
 }
 
-/** The triangle attributes Bambu Studio and OrcaSlicer use for painted surfaces (bbs_3mf.cpp). */
+/** The triangle attributes Bambu Studio and OrcaSlicer projects use for painted surfaces. */
 const PAINT_ATTR = { color: 'paint_color', seam: 'paint_seam', support: 'paint_supports', fuzzy: 'paint_fuzzy_skin' } as const
 export type PaintOfPart = Partial<Record<keyof typeof PAINT_ATTR, Record<number, string>>>
 
@@ -93,7 +93,7 @@ const BED_TYPE_NAMES: Record<string, string> = {
   'smooth-pei': 'High Temp Plate',
 }
 
-/** Orca's `bed_type_to_gcode_string` names, used in plate_N.json. */
+/** The bed type names plate_N.json uses, as Bambu Studio's and Orca's files carry them. */
 const BED_TYPE_KEYS: Record<string, string> = {
   cool: 'cool_plate',
   engineering: 'eng_plate',
@@ -209,7 +209,7 @@ export interface PlateFootprint {
   box: [number, number, number, number]
 }
 
-/** True when any footprint leaves the printable area's bounding rectangle (Orca's `toolpath_outside`). */
+/** True when any footprint leaves the printable area's bounding rectangle (slice_info's `outside`). */
 function outsideOf(boxes: readonly PlateFootprint[], area: readonly [number, number][]): boolean {
   if (area.length < 3 || boxes.length === 0) return false
   const xs = area.map((p) => p[0])
@@ -266,8 +266,8 @@ function usedFilaments(gcode: string): { id: number; m: number; g: number }[] {
 }
 
 /**
- * Metadata/slice_info.config for the sliced plates, in the layout of Bambu Studio and Orca 2.4.2
- * (`_add_slice_info_config_file_to_archive` in bbs_3mf.cpp): a header, then per plate its index, the
+ * Metadata/slice_info.config for the sliced plates, in the layout Bambu Studio's and Orca 2.4.2's files have: a
+ * header, then per plate its index, the
  * printer's facts (extruder and nozzle volume type, model id, nozzle diameters, timelapse type), the
  * estimate (seconds) and weight (g) from the G-code footer, the first layer time from its header, whether
  * the toolpaths leave the bed, whether supports print, one `<object identify_id name skipped/>` per object,
@@ -330,15 +330,15 @@ export function sliceInfoXml(plates: { index: number; gcode: string; names: read
 }
 
 /**
- * The slice format version the file declares, as Orca 2.4.2 writes it (`convert_to_full_version`). Bambu Lab
+ * The slice format version the file declares, in the form Orca 2.4.2's files carry. Bambu Lab
  * firmware and Bambu Handy read the slicer version from this header item, so the value is the one Orca sends.
  */
 const CLIENT_VERSION = '02.06.00.51'
 
 /**
  * The G-code without its thumbnail blocks. The pictures go into the 3MF as Metadata/plate_N.png, which is what the
- * printer and Bambu Studio show, and Orca writes plate_N.gcode without them (`GCode::_do_export` exports thumbnails
- * only for printers other than Bambu Lab's), so the file the printer runs is the same size as Orca's.
+ * printer and Bambu Studio show, and Orca's files for Bambu Lab printers have plate_N.gcode without them (its thumbnail
+ * blocks appear only for other printers), so the file the printer runs is the same size as Orca's.
  */
 export function withoutThumbnails(gcode: string): string {
   const end = gcode.lastIndexOf('; THUMBNAIL_BLOCK_END', 4_000_000)
@@ -371,7 +371,7 @@ export function gcodeThumbnails(gcode: string): { w: number; h: number; png: Uin
 }
 
 /**
- * Metadata/plate_N.json as Orca writes it (`PlateBBoxData` in GCode/ThumbnailData.hpp, version 2): the box around
+ * Metadata/plate_N.json in the form Orca's files carry (version 2): the box around
  * every object's extrusions and one entry per object with its box, area, layer height and name. The ids are the
  * label ids (the same as identify_id in slice_info.config); the area is the box's.
  */
@@ -435,10 +435,10 @@ function meshBytes(input: ProjectInput): number {
 const SPLIT_BYTES = 32 * 1024 * 1024
 const MODEL_OPEN = '<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">'
 
-/** Orca's CustomGCode::Type numbers: color change 0, pause 1, custom 4. */
+/** The mark type numbers in custom_gcode_per_layer.xml: color change 0, pause 1, custom 4. */
 const MARK_TYPE = { color_change: 0, pause: 1, custom: 4 } as const
 
-/** Metadata/custom_gcode_per_layer.xml as Orca writes it (bbs_3mf.cpp, _add_custom_gcode_per_print_z_file_to_archive), or '' without marks. */
+/** Metadata/custom_gcode_per_layer.xml in the form Orca's files carry, or '' without marks. */
 function marksXml(marks: ProjectInput['layerMarks']): string {
   const plates = Object.entries(marks ?? {}).filter(([, list]) => list.length > 0)
   if (plates.length === 0) return ''
@@ -580,8 +580,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
     `<resources>`
   const modelTail = `</resources><build>${build.join('')}</build></model>`
   const model = new TextChunks(() => piecesOf([modelHead, ...resources, modelTail]))
-  // The first sliced plate's picture is the file's cover, under the relationship types Bambu Studio and Orca use
-  // (bbs_3mf.cpp, `_add_relationships_file_to_archive`).
+  // The first sliced plate's picture is the file's cover, under the relationship types Bambu Studio's and Orca's
+  // files use.
   const coverIndex = [...thumbs.keys()].sort((a, b) => a - b)[0]
   const cover = coverIndex !== undefined
     ? `<Relationship Target="/Metadata/plate_${coverIndex + 1}.png" Id="rel-2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"/>` +
@@ -625,7 +625,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   if (sliced.length) files.push({ name: 'Metadata/slice_info.config', data: sliceInfoXml(sliced, machine) })
   for (const { index, gcode, footprints, plate } of sliced) {
     const n = index + 1
-    // Orca writes the digest in capitals (bbs_3mf.cpp, "%02X").
+    // Orca's files carry the digest in capitals.
     const run = withoutThumbnails(gcode)
     files.push({ name: `Metadata/plate_${n}.gcode`, data: run }, { name: `Metadata/plate_${n}.gcode.md5`, data: md5Hex(new TextEncoder().encode(run)).toUpperCase() })
     files.push({ name: `Metadata/plate_${n}.json`, data: plateJson(footprints, gcode, machine, plate?.settings.bedType, plateSequence(plate, input.settings) === 'by-object') })
