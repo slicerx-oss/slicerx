@@ -2,13 +2,14 @@
 -- Copyright (C) 2026 The SlicerX contributors
 -- mimir's cloud model (pgTAP): clients cannot touch the tables or functions, installs
 -- register only with their edition's key and within the per-IP limit, reservations hold
--- every cap (per minute, in flight, install, IP, edition, paused) at their worst case and
+-- every cap (per minute, in flight, install, IP, edition, paused), an IPv6 /64 counts as one
+-- address, unused installs expire, refusals count toward the rates at their worst case and
 -- keep the editions apart, costs follow the prices, sessions store only settled calls
 -- within their size caps and forget, and the reader role sees only LayerMate sessions. Run with
 -- `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(60);
+select plan(74);
 
 create temp table t (k text primary key, v text) on commit drop;
 grant all on t to anon, authenticated, service_role, mimir_session_reader;
@@ -71,6 +72,29 @@ select throws_ok($$ select public.mimir_register('layermate', '10.0.0.8', 'layer
 update public.mimir_limits set register_key_hash = public.mimir_token_hash('layermate-key') where edition = 'layermate';
 insert into t values ('lm', pg_temp.reg('layermate', '10.0.0.4'));
 
+-- Addresses: an IPv6 /64 is one address, and an IPv4-mapped address is its IPv4 one.
+reset role;
+select is(public.mimir_ip_hash('2001:db8:1:2::1'), public.mimir_ip_hash('2001:db8:1:2:ffff:ffff:ffff:9'), 'one IPv6 /64 hashes as one address');
+select isnt(public.mimir_ip_hash('2001:db8:1:2::1'), public.mimir_ip_hash('2001:db8:1:3::1'), 'the next /64 is another address');
+select is(public.mimir_ip_hash('::ffff:10.0.0.1'), public.mimir_ip_hash('10.0.0.1'), 'an IPv4-mapped address is its IPv4 address');
+select throws_ok($$ select public.mimir_ip_hash('not-an-address') $$, '22023', 'no client address', 'an unreadable address is refused');
+set local role service_role;
+select throws_ok($$ select * from public.mimir_secret $$, '42501', null, 'the service role cannot read the IP salt');
+select pg_temp.reg('slicerx', '2001:db8:5:5::1'), pg_temp.reg('slicerx', '2001:db8:5:5::2'), pg_temp.reg('slicerx', '2001:db8:5:5::3');
+select throws_ok($$ select pg_temp.reg('slicerx', '2001:db8:5:5:abcd::7') $$, 'P0001', 'too many new installs from this address today',
+  'new addresses in one /64 share its install limit');
+update public.mimir_limits set registers_per_day = (select count(*) from public.mimir_installs where edition = 'layermate') where edition = 'layermate';
+select throws_ok($$ select pg_temp.reg('layermate', '10.0.0.30') $$, 'P0001', 'too many new installs for this edition today',
+  'an edition has a limit of new installs a day, whatever the addresses');
+update public.mimir_limits set registers_per_day = 5000;
+-- An install that never made a call goes after 7 days; one that did stays.
+insert into public.mimir_installs (edition, token_hash, created_at, created_ip_hash, last_call_at) values
+  ('slicerx', 'stale-unused', now() - interval '8 days', 'x', null),
+  ('slicerx', 'stale-used', now() - interval '8 days', 'x', now() - interval '8 days');
+select pg_temp.reg('slicerx', '10.0.0.31');
+select ok(not exists (select 1 from public.mimir_installs where token_hash = 'stale-unused'), 'an install never used for 7 days is removed');
+select ok(exists (select 1 from public.mimir_installs where token_hash = 'stale-used'), 'an install that made a call stays');
+
 -- Reservations ------------------------------------------------------------------------
 select throws_ok($$ select public.mimir_reserve('not-a-token', '10.0.0.1', 'claude-haiku-5-5', 0, 2000, 0) $$, 'P0001', 'unknown install', 'an unknown token is refused');
 select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.1', 'claude-haiku-5-5', 0, -2, 0) $$, (select v from t where k = 'a')), '22023', null,
@@ -88,6 +112,8 @@ select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.1', 'claude-h
 select is(public.mimir_settle((select v::uuid from t where k = 'c1'), 'claude-haiku-5-5', 100000, 0, 0, 0, 0), 10000::bigint,
   '100K input tokens cost $0.01');
 select is((select cost_micros from public.mimir_calls where id = (select v::uuid from t where k = 'c1')), 10000::bigint, 'the cost is stored');
+select ok((select last_call_at is not null from public.mimir_installs where token_hash = public.mimir_token_hash((select v from t where k = 'a'))),
+  'a reservation marks the install used');
 select throws_ok(format($$ select public.mimir_settle(%L, 'claude-haiku-5-5', 1, 0, 0, 0, 0) $$, (select v from t where k = 'c1')),
   '22023', null, 'a call settles once');
 select lives_ok(format($$ select public.mimir_reserve(%L, '10.0.0.1', 'claude-haiku-5-5', 0, 600000, 0) $$, (select v from t where k = 'a')),
@@ -129,7 +155,21 @@ select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.6', 'claude-h
 update public.mimir_limits set install_in_flight = 3, edition_in_flight = 1 where edition = 'layermate';
 select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.4', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'lm')), 'P0001',
   'too many calls at once for this edition', 'an edition has a limit of calls at once');
-update public.mimir_limits set install_in_flight = 3, edition_in_flight = 50;
+update public.mimir_limits set install_in_flight = 3, edition_in_flight = 400;
+-- 10.0.0.1 has calls open, so a fresh install there is held to the address's share.
+update public.mimir_limits set ip_in_flight = 1 where edition = 'slicerx';
+select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'a5')), 'P0001',
+  'too many calls at once from this address', 'an address has a limit of calls at once');
+update public.mimir_limits set ip_in_flight = 6;
+-- A call left open past the function's time limit (the runtime killed it) frees its place.
+insert into t values ('w', pg_temp.reg('slicerx', '10.0.1.1'));
+update public.mimir_limits set install_in_flight = 1 where edition = 'slicerx';
+select public.mimir_reserve((select v from t where k = 'w'), '10.0.1.1', 'claude-haiku-5-5', 0, 2, 0);
+update public.mimir_calls set created_at = now() - interval '8 minutes'
+where install_id = (select id from public.mimir_installs where token_hash = public.mimir_token_hash((select v from t where k = 'w')));
+select lives_ok(format($$ select public.mimir_reserve(%L, '10.0.1.1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'w')),
+  'a call open past the time limit no longer holds a place');
+update public.mimir_limits set install_in_flight = 3 where edition = 'slicerx';
 
 -- Past half of the edition's cap, an install's cap shrinks with what the edition has left.
 select is(public.mimir_install_cap((select l from public.mimir_limits l where edition = 'slicerx'), 0), 500000::bigint, 'full install cap early in the day');
@@ -149,6 +189,16 @@ select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.4', 'claude-h
 update public.mimir_limits set enabled = true, install_per_minute = 1 where edition = 'layermate';
 select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.4', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'lm')), 'P0001',
   'too many requests', 'the per-minute limit holds');
+-- Refused requests count toward the rates, per install and per address.
+insert into t values ('r', pg_temp.reg('slicerx', '10.0.2.1'));
+select public.mimir_refused((select v from t where k = 'r'), '10.0.2.1'), public.mimir_refused((select v from t where k = 'r'), '10.0.2.1');
+update public.mimir_limits set install_per_minute = 2 where edition = 'slicerx';
+select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.2.9', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'r')), 'P0001',
+  'too many requests', 'refusals count toward the install''s rate');
+update public.mimir_limits set install_per_minute = 20, ip_per_minute = 2 where edition = 'slicerx';
+select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.2.1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'w')), 'P0001',
+  'too many requests from this address', 'refusals count toward the address''s rate');
+update public.mimir_limits set ip_per_minute = 60;
 
 -- Sessions, forget and the reader --------------------------------------------------------
 -- Each stored turn is a settled call of its own.
