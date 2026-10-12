@@ -12,6 +12,7 @@ import { ToolInputError } from './models'
 import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import type { NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
+import { bedArea, boxRows, describeBed, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 
 /** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
 export interface ProjectVolume {
@@ -62,6 +63,8 @@ export interface Placement {
   sizeMm: [number, number, number]
   /** Placed by a client (slicerx_project_move) rather than in the rows. */
   manual: boolean
+  /** Set when the copy reaches past the rim of a round bed; the slice refuses it until it is moved. */
+  offBed?: true
 }
 
 export interface ProjectSettings {
@@ -72,10 +75,6 @@ export interface ProjectSettings {
   filament?: string
   nozzle?: number
 }
-
-const GAP_MM = 5
-/** Room a row leaves at each side of the bed, for a skirt or brim around the parts at its ends. */
-const EDGE_MM = 10
 
 function num(v: SettingValue | undefined): number | undefined {
   const x = Array.isArray(v) ? v[0] : v
@@ -234,15 +233,9 @@ export class McpProject implements PilotProject {
     return { ...this.baseConfig(), ...this.filamentConfig(), ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
   }
 
-  /** Bed size and its corner from the plate's config. */
-  private bed(plateIndex: number): { x0: number; y0: number; width: number; depth: number; height: number } {
-    const cfg = this.config(plateIndex)
-    const area = Array.isArray(cfg['printable_area']) ? (cfg['printable_area'] as unknown[]) : []
-    const xs = area.flatMap((p) => (Array.isArray(p) && typeof p[0] === 'number' ? [p[0]] : []))
-    const ys = area.flatMap((p) => (Array.isArray(p) && typeof p[1] === 'number' ? [p[1]] : []))
-    const x0 = xs.length ? Math.min(...xs) : 0
-    const y0 = ys.length ? Math.min(...ys) : 0
-    return { x0, y0, width: xs.length ? Math.max(...xs) - x0 : 256, depth: ys.length ? Math.max(...ys) - y0 : 256, height: num(cfg['printable_height']) ?? 250 }
+  /** The plate's bed: the box of its printable area and, for a delta, the circle. */
+  private bed(plateIndex: number): BedArea {
+    return bedArea(this.config(plateIndex))
   }
 
   /** The object's rotation and scale as one 4x4 (column-major, scale first), with no move. */
@@ -259,25 +252,24 @@ export class McpProject implements PilotProject {
   }
 
   /**
-   * Every copy on a plate with its transform. Copies a client placed (slicerx_project_move) go where it put them; the
-   * rest go in rows, and the rows move to the middle of the printable area (from its own corner, so a bed that does not
-   * start at 0 works too). Nothing downstream re-centers it: the sx CLI slices the plate where it is, and a layout left
-   * in the front left corner put a skirt or brim off the bed. Every object sits on the bed (its lowest point at Z 0).
+   * Every copy on a plate with its transform. Copies a client placed (slicerx_project_move) go exactly where it put
+   * them; the rest go in rows, and the rows move to the middle of the printable area (from its own corner, so a bed that
+   * does not start at 0 works too). On a round bed (a delta) each row is centered and no wider than the circle is at
+   * that row, the edge room kept, so no part in the rows reaches past the rim; a placed copy past the rim stays where it
+   * is and its placement says offBed. Nothing downstream re-centers the plate: the sx CLI slices it where it is, and a
+   * layout left in the front left corner put a skirt or brim off the bed. Every object sits on the bed (its lowest
+   * point at Z 0).
    */
   private layoutPlate(plateIndex: number): { objects: PlateObject[]; placements: Placement[] } {
-    const { x0, y0, width, depth } = this.bed(plateIndex)
+    const bed = this.bed(plateIndex)
     const plate = this.layout.find((p) => p.index === plateIndex)
     if (!plate) throw new Error(`No plate ${plateIndex}`)
     const objects: PlateObject[] = []
     const placements: Placement[] = []
+    // Copies in the rows: their index in objects and their footprint. They are set down at 0, 0 and moved once the
+    // rows are laid.
     const rowed: number[] = []
-    // The rows' own extent, to center them once every copy is placed.
-    const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
-    // A row ends before it would reach into the edge room at either side; a part wider than that still gets a row.
-    const rowWidth = width - 2 * EDGE_MM
-    let x = 0
-    let y = 0
-    let rowDepth = 0
+    const feet: Foot[] = []
     for (const item of plate.items) {
       const e = this.entries.get(item.objectId)
       if (!e?.meshId) continue
@@ -286,24 +278,11 @@ export class McpProject implements PilotProject {
       const [mx, my, mz] = placed.min
       const m = this.orientation(e)
       for (let c = 0; c < item.copies; c++) {
-        let at: [number, number]
-        if (e.position) {
-          // Further copies of a placed object line up to its right.
-          at = [e.position[0] - w / 2 + c * (w + GAP_MM), e.position[1] - d / 2]
-        } else {
-          if (x > 0 && x + w > rowWidth) {
-            x = 0
-            y += rowDepth + GAP_MM
-            rowDepth = 0
-          }
-          at = [x, y]
-          box.x0 = Math.min(box.x0, x)
-          box.y0 = Math.min(box.y0, y)
-          box.x1 = Math.max(box.x1, x + w)
-          box.y1 = Math.max(box.y1, y + d)
-          x += w + GAP_MM
-          rowDepth = Math.max(rowDepth, d)
+        // Further copies of a placed object line up to its right.
+        const at: [number, number] = e.position ? [e.position[0] - w / 2 + c * (w + GAP_MM), e.position[1] - d / 2] : [0, 0]
+        if (!e.position) {
           rowed.push(objects.length)
+          feet.push({ w, d })
         }
         const id = `${item.objectId}-${c + 1}`
         // Rotation and scale first (the upper 3x3), then the move that sets the part down at its place.
@@ -314,25 +293,27 @@ export class McpProject implements PilotProject {
         placements.push({ id, objectId: item.objectId, copy: c + 1, centerMm: [at[0] + w / 2, at[1] + d / 2], sizeMm: placed.size, manual: Boolean(e.position) })
       }
     }
-    if (rowed.length) {
-      const dx = x0 + width / 2 - (box.x0 + box.x1) / 2
-      const dy = y0 + depth / 2 - (box.y0 + box.y1) / 2
-      for (const i of rowed) {
-        const o = objects[i]
-        const p = placements[i]
-        if (!o || !p) continue
-        o.transform[12] = (o.transform[12] ?? 0) + dx
-        o.transform[13] = (o.transform[13] ?? 0) + dy
-        p.centerMm = [p.centerMm[0] + dx, p.centerMm[1] + dy]
-      }
+    const spots = bed.circle ? roundRows(feet, bed.circle) : boxRows(feet, bed)
+    rowed.forEach((i, k) => {
+      const o = objects[i]
+      const p = placements[i]
+      const at = spots[k]
+      if (!o || !p || !at) return
+      o.transform[12] = (o.transform[12] ?? 0) + at[0]
+      o.transform[13] = (o.transform[13] ?? 0) + at[1]
+      p.centerMm = [p.centerMm[0] + at[0], p.centerMm[1] + at[1]]
+    })
+    for (const p of placements) {
+      const [w, d] = p.sizeMm
+      if (bed.circle && pastRim(bed.circle, { x0: p.centerMm[0] - w / 2, y0: p.centerMm[1] - d / 2, x1: p.centerMm[0] + w / 2, y1: p.centerMm[1] + d / 2 })) p.offBed = true
+      p.centerMm = [round2(p.centerMm[0]), round2(p.centerMm[1])]
     }
-    for (const p of placements) p.centerMm = [round2(p.centerMm[0]), round2(p.centerMm[1])]
     return { objects, placements }
   }
 
   async plate(plateIndex: number): Promise<Plate> {
-    const { width, depth, height } = this.bed(plateIndex)
-    return { bed: { widthMm: width, depthMm: depth, heightMm: height }, objects: this.layoutPlate(plateIndex).objects }
+    const bed = this.bed(plateIndex)
+    return { bed: { widthMm: bed.widthMm, depthMm: bed.depthMm, heightMm: bed.heightMm, ...(bed.circle ? { round: true } : {}) }, objects: this.layoutPlate(plateIndex).objects }
   }
 
   /** Where every copy of a plate sits, as the slice will place it. */
@@ -528,6 +509,7 @@ export class McpProject implements PilotProject {
           volumes: (e?.volumes ?? []).map((v) => ({ id: v.id, name: v.name, role: v.role, shape: v.shape, ...(v.settings ? { settings: v.settings } : {}) })),
         }
       }),
+      bed: describeBed(this.bed(this.layout[0]?.index ?? 1)),
       plates: this.plates().map((p) => ({ ...p, placements: this.safePlacements(p.index) })),
       filaments: this.filaments(),
       overrides: this.projectOverrides,

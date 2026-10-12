@@ -76,7 +76,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
   const move = tool({
     name: 'project.move',
     description:
-      'Place an object on its plate: x and y are the center of its footprint in mm, in bed coordinates (as the printer profile\'s printable area gives them). auto: true puts it back in the automatic rows. Every object sits on the bed (its lowest point at Z 0), so there is no height to set. Further copies line up to its right. Answers with the project, whose plates list where every copy sits (placements).',
+      'Place an object on its plate: x and y are the center of its footprint in mm, in bed coordinates (as the printer profile\'s printable area gives them). auto: true puts it back in the automatic rows. Every object sits on the bed (its lowest point at Z 0), so there is no height to set. Further copies line up to its right. Answers with the project, whose plates list where every copy sits (placements). It stays where it is put; on a round bed a copy that reaches past the rim has offBed: true, and the slice refuses it until it is moved.',
     input: z.union([z.object({ object: objectArg, x: z.number(), y: z.number() }), z.object({ object: objectArg, auto: z.literal(true) })]),
     title: (i) => `Move ${i.object}?`,
     run(i, project) {
