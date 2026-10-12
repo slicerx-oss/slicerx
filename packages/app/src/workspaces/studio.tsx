@@ -62,7 +62,8 @@ const PREVIEW_RIGHT: PaneSection[] = [
  * and an open sheet, which a toast floats above rather than over.
  */
 // With the toolpaths, the color legend runs down the left under the top row: the toast keeps to its right.
-const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .dock', top: '.plate-tools, .slice-look, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend' }
+// mimir's sizes panel runs down the right while a sheet is up: the toast keeps to its left, off Build and Cancel.
+const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .dock', top: '.plate-tools, .slice-look, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel' }
 // On a phone, and beside the toolpaths, the layer slider runs down the right: the toast keeps to its left too.
 const SIDE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, side: '.lstrip' }
 const PHONE_OVERLAYS: OverlaySelectors = { ...SIDE_OVERLAYS, cover: '.pane.sheet.sheet-open' }

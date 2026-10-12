@@ -146,6 +146,18 @@ test.describe('the dimension sheet', () => {
     expect(await plate(page)).toEqual([])
   })
 
+  test('a toast keeps to the left of the sizes panel, off Build and Cancel', async ({ page }) => {
+    await open(page, 'light')
+    await send(page, 'Can you make a box with a lid?')
+    await expect(page.getByTestId('mimir-sheet-panel')).toBeVisible()
+    // The long one the viewport posts when the browser draws 3D on the processor.
+    const text = 'Hardware acceleration looks off in this browser, so the 3D view will be slow. Turn it on in the browser settings and reload.'
+    await page.evaluate((t) => (window as unknown as { __sx: Sx }).__sx.setState({ toast: { id: Date.now(), text: t, tone: 'info' } }), text)
+    const toast = page.getByTestId('toast').filter({ hasText: 'Turn it on in the browser settings' }).last()
+    await expect(toast).toBeVisible()
+    await expect.poll(async () => (await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)).then(() => el.getBoundingClientRect().right)))).toBeLessThanOrEqual((await page.getByTestId('mimir-sheet-panel').boundingBox())!.x)
+  })
+
   test('screenshot, the backplate drawing, light', async ({ page }) => {
     await open(page, 'light')
     await send(page, 'I need a wall mount for this thermostat')
