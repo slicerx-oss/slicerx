@@ -469,6 +469,59 @@ fn distance(g: &Grid, mask: &[bool]) -> Vec<f32> {
     d
 }
 
+/// The grid bytes the painted layers being cut side by side may hold at once ([`LayerPaint::voronoi`]): each layer
+/// holds a mask and a distance grid per color, a depth limit and a field, about 5 bytes per cell and color and 16 more.
+/// A plate whose layers fit never waits; a big painted plate cut on many threads keeps to it instead of holding every
+/// thread's grids at once (Charizard held about 11 layers' grids, 460 MB; at this budget its heap peak is set by the
+/// G-code stage instead, for about 5 percent more time).
+const GRID_BUDGET: usize = 384 << 20;
+
+/// What the layers being cut hold of [`GRID_BUDGET`].
+struct GridBudget {
+    held: std::sync::Mutex<usize>,
+    freed: std::sync::Condvar,
+}
+
+static GRIDS: GridBudget = GridBudget {
+    held: std::sync::Mutex::new(0),
+    freed: std::sync::Condvar::new(),
+};
+
+/// A layer's share of [`GRID_BUDGET`], given back when it is dropped.
+struct Held(usize);
+
+impl GridBudget {
+    /// Waits until `bytes` fit in the budget beside what the other layers hold, and holds them. A layer that holds
+    /// nothing else and does not fit alone still runs once no other layer holds any: the budget only spaces layers out.
+    /// Nothing that holds a share waits on other jobs, so a wait always ends.
+    fn hold(bytes: usize) -> Held {
+        let mut held = GRIDS
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while *held > 0 && held.saturating_add(bytes) > GRID_BUDGET {
+            held = GRIDS
+                .freed
+                .wait(held)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+        *held += bytes;
+        Held(bytes)
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        let mut held = GRIDS
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *held = held.saturating_sub(self.0);
+        drop(held);
+        GRIDS.freed.notify_all();
+    }
+}
+
 /// The lower envelope's work space for rows of up to `n` cells, made once per distance transform: each parabola's
 /// cell, and where each one starts to be the lowest.
 struct Envelope {
@@ -1002,6 +1055,9 @@ impl LayerPaint<'_> {
             f64::from(b[2]) / SCALE,
             f64::from(b[3]) / SCALE,
         ]);
+        // The grids below are megabytes each on a big layer, and the layers are cut side by side: past the budget, a
+        // layer waits for others to finish theirs (the bytes are the same, only when it runs changes).
+        let _held = GridBudget::hold(g.len() * (5 * (walls.len() + 1) + 16));
         // Sources: painted walls per color, and the rest of the outline for the part's own color.
         let mut sources: BTreeMap<u8, Vec<bool>> = BTreeMap::new();
         let mut painted = vec![false; g.len()];
