@@ -21,6 +21,7 @@
 mod adjust;
 mod advert;
 mod agent_work;
+mod app_link;
 mod broker_gate;
 mod camera;
 mod device;

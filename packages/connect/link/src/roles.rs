@@ -86,7 +86,33 @@ const APP_ONLY: &[&str] = &[
     "push.unregister",
 ];
 
-const APP_ONLY_PREFIXES: &[&str] = &["clients.", "secrets.", "remote."];
+const APP_ONLY_PREFIXES: &[&str] = &["clients.", "secrets.", "remote.", "appLink."];
+
+/// Whether an app link method reads the open project or changes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinkClass {
+    Read,
+    #[allow(
+        dead_code,
+        reason = "the first edit methods come with the design and plate methods"
+    )]
+    Edit,
+}
+
+/// Every method an agent may call on the project open in the app (`app.call`, `app_link.rs`), and
+/// whether it reads or edits. The hub refuses any other name. None of them prints, queues, starts
+/// or sends a job, answers a card, signs in, buys, deletes, or changes printers, the network or
+/// settings: those stay with a person. Adding one here needs its entry in the test below.
+pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] =
+    &[("app.info", LinkClass::Read), ("plate.list", LinkClass::Read)];
+
+/// The class of an app link method, or None when the link has no such method.
+pub(crate) fn link_class(method: &str) -> Option<LinkClass> {
+    APP_LINK_METHODS
+        .iter()
+        .find(|(m, _)| *m == method)
+        .map(|(_, c)| *c)
+}
 
 /// The only methods a `watch` connection may call.
 const WATCH_METHODS: &[&str] = &[
@@ -248,6 +274,46 @@ mod tests {
         ] {
             assert!(allowed(Role::Agent, m), "{m}");
         }
+    }
+
+    #[test]
+    fn the_app_link_has_exactly_its_pinned_methods_and_none_a_person_keeps() {
+        // A new method lands here on purpose, with its class, after a review of what it can do.
+        let pinned: &[(&str, LinkClass)] = &[("app.info", LinkClass::Read), ("plate.list", LinkClass::Read)];
+        assert_eq!(APP_LINK_METHODS, pinned);
+        for (m, _) in APP_LINK_METHODS {
+            assert!(!APP_ONLY.contains(m), "{m}");
+            for word in [
+                "print", "queue", "start", "send", "upload", "gcode", "approv", "grant", "sign", "auth",
+                "buy", "purchase", "delete", "remove", "secret", "printer", "setting", "pair", "client",
+            ] {
+                assert!(
+                    !m.to_ascii_lowercase().contains(word),
+                    "{m} looks like something a person keeps ({word})"
+                );
+            }
+        }
+        assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
+        assert_eq!(link_class("print.local"), None);
+        assert_eq!(link_class(""), None);
+        // The app's side of the link is the app's alone.
+        for m in [
+            "appLink.host",
+            "appLink.reply",
+            "appLink.answer",
+            "appLink.grants",
+            "appLink.revoke",
+        ] {
+            assert!(!allowed(Role::Agent, m), "{m}");
+            assert!(!allowed(Role::Watch, m), "{m}");
+            assert!(allowed(Role::App, m), "{m}");
+        }
+        assert!(allowed(Role::Agent, "app.call"));
+        assert!(
+            !partner_allowed("app.call"),
+            "partner apps stay off the open project"
+        );
+        assert!(!allowed(Role::Watch, "app.call"));
     }
 
     #[test]

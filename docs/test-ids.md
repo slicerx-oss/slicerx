@@ -307,6 +307,21 @@ Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the
 | `device-<id>` | A key's row; `<id>` is the hub's client id |
 | `device-revoke-<id>` | Revoke on that row; it also closes the connection the key has open |
 
+## Settings: Agents and the app link
+
+| Test id | Control |
+| --- | --- |
+| `agents-settings` | Settings, Agents (the desktop app only) |
+| `agents-app-link` | Let agents use the open project (off until turned on) |
+| `agents-grants` | The agents the person answered for |
+| `agents-grants-empty` | The line shown when no agent has asked |
+| `agents-grant-<id>` | An agent's row; `<id>` is the hub's client id |
+| `agents-revoke-<id>` | Revoke (or Ask again after a deny) on that row |
+| `app-link-prompt` | The question when an agent first calls on the open project; the agent bridge refuses its buttons |
+| `app-link-allow` | Allow: read and change the open project |
+| `app-link-read` | Allow read only |
+| `app-link-deny` | Deny |
+
 ## Exceptions to the danger- rule
 
 These ids carry one of the rule's words but name no destructive act, so they keep their names and the bridge may use
