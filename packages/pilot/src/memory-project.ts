@@ -5,7 +5,7 @@
 // and hosts without a project store of their own (the MCP server).
 import type { MeshPart, PilotMachine, Plate, PrintConfig, SettingValue, SliceWarning } from '@slicerx/contracts'
 import type { KnowledgeBase } from './kb/kb'
-import type { PilotProject, ProjectObject, ProjectPlate } from './project'
+import type { PilotProject, ProjectObject, ProjectPlate, ProjectVolume, VolumeSpec } from './project'
 
 export interface MemoryObject {
   id: string
@@ -18,6 +18,8 @@ export interface MemoryObject {
 export interface MemoryProject extends PilotProject {
   appliedOverrides(): Record<string, SettingValue>
   replaced: string[]
+  /** Every volume added, with its shape and place, as the tools asked for it. */
+  addedVolumes: (VolumeSpec & { id: string; objectId: string })[]
 }
 
 const round = (v: number): number => Math.round(v * 100) / 100
@@ -59,6 +61,11 @@ export function createMemoryProject(name: string, machine: PilotMachine, objects
   })
   let plates: ProjectPlate[] = objs.length ? [{ index: 1, items: [{ objectId: objs[0]?.id ?? '', copies: 1 }] }] : []
   const overrides: Record<string, SettingValue> = {}
+  const addedVolumes: MemoryProject['addedVolumes'] = []
+  const ownSettings = new Map<string, Record<string, SettingValue>>()
+  const known = (objectId: string): void => {
+    if (!objs.some((o) => o.id === objectId)) throw new Error(`No object ${objectId}`)
+  }
   const replaced: string[] = []
   const modeled = new Map<string, [number, number, number]>()
   const mat = kb.get('filament', machine.material)
@@ -66,6 +73,7 @@ export function createMemoryProject(name: string, machine: PilotMachine, objects
   return {
     name,
     replaced,
+    addedVolumes,
     machine: () => machine,
     ...(opts.warnings ? { warnings: opts.warnings } : {}),
     objects: () => objs,
@@ -127,6 +135,22 @@ export function createMemoryProject(name: string, machine: PilotMachine, objects
         modeled.set(objectId, base)
         o.bboxMm = rotatedBox(base, rotate)
       }
+    },
+    async addVolume(objectId, volume) {
+      known(objectId)
+      const id = `vol-${addedVolumes.length + 1}`
+      addedVolumes.push({ ...volume, id, objectId })
+      return { id }
+    },
+    volumes(objectId): ProjectVolume[] {
+      return addedVolumes.filter((v) => v.objectId === objectId).map((v) => ({ id: v.id, name: v.name, role: v.role, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
+    },
+    setObjectSettings(objectId, changes) {
+      known(objectId)
+      ownSettings.set(objectId, { ...(ownSettings.get(objectId) ?? {}), ...changes })
+    },
+    objectSettings(objectId) {
+      return { ...(ownSettings.get(objectId) ?? {}) }
     },
     replaceObjects(ids, reps) {
       replaced.push(...ids)
