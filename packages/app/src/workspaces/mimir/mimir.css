@@ -49,3 +49,72 @@
 @keyframes mimir-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes mimir-fade { from { opacity: 0; } to { opacity: 1; } }
 :root[data-motion="reduced"] .mimir-lookup { animation-name: mimir-fade; }
+/* The dimension sheet (owner pick B, a drawing): while a sheet waits the view becomes a drawing sheet with four views,
+   and a flat panel docked on the right lists the sizes by callout number. The caption and the timeline stay over the
+   drawing; the view's menus give way, and the timeline and lookups stop at the panel. */
+.studio > .vp { --mimir-sheet-w: 372px; --sheet-part: light-dark(#c4c8d6, #c9ccdb); --sheet-part-dark: light-dark(#6e7387, #444759); }
+.vp[data-mimir-sheet] .bpanel, .vp[data-mimir-sheet] .mimir-lookups { right: calc(var(--mimir-sheet-w) + 12px); }
+.vp[data-mimir-sheet] .mimir-lookups { max-width: calc(100% - var(--mimir-sheet-w) - 24px); }
+.vp[data-mimir-sheet="drawing"] .mimir-lookups { visibility: hidden; }
+.vp[data-mimir-sheet="drawing"] .hud-top .hud-row > :not(.mimir-caption), .vp[data-mimir-sheet] .hud-top .hud-col.end { visibility: hidden; }
+.mimir-drawing { position: absolute; inset: 0 var(--mimir-sheet-w) 0 0; z-index: 1; background-color: var(--ink-0); }
+.mimir-drawing-grid { position: absolute; left: 12px; right: 12px; top: 56px; bottom: 64px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; border: 1px solid var(--line); border-radius: var(--r-xs); overflow: hidden; }
+.mimir-drawing-cell { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+.mimir-drawing-cell:nth-child(2n) { border-right: 0; }
+.mimir-drawing-cell:nth-child(n + 3) { border-bottom: 0; }
+.mimir-drawing-cell > svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.mimir-drawing-label { position: absolute; left: 10px; top: 8px; font-size: 11px; color: var(--muted); pointer-events: none; }
+.mimir-drawing-block { position: absolute; right: 0; bottom: 0; display: grid; grid-template-columns: auto auto auto; border-top: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--ink-0); font-size: 10.5px; color: var(--muted); }
+.mimir-drawing-block > span { padding: 4px 8px; border-right: 1px solid var(--line-soft); white-space: nowrap; }
+.mimir-drawing-block > span:last-child { border-right: 0; }
+.mimir-drawing-face { stroke: light-dark(#4d5164, #2a2c38); stroke-width: 0.9; stroke-linejoin: round; }
+.mimir-dim line, .mimir-dim polyline { stroke: var(--muted); stroke-width: 1; fill: none; }
+.mimir-dim[data-guess] line:last-child, .mimir-dim[data-guess] polyline { stroke-dasharray: 4 3; }
+.mimir-dim-arrow { fill: var(--muted); }
+.mimir-dim[data-on] line, .mimir-dim[data-on] polyline { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: none; }
+.mimir-dim[data-on] .mimir-dim-arrow { fill: var(--accent); }
+.mimir-callout { cursor: pointer; }
+.mimir-callout circle { fill: var(--ink-1); stroke: var(--muted); stroke-width: 1.5; }
+.mimir-callout text { fill: var(--fg); font: var(--fw-bold) 11.5px var(--f-body); font-variant-numeric: tabular-nums; text-anchor: middle; dominant-baseline: central; }
+.mimir-callout[data-source="guess"] circle { stroke: var(--orange); stroke-dasharray: 3 2.2; }
+.mimir-callout[data-source="lookup"] circle { stroke: var(--cyan); }
+.mimir-callout[data-source="asked"] circle { stroke: var(--purple); }
+.mimir-callout[data-source="photo"] circle { stroke: var(--pink); }
+.mimir-callout[data-on] circle { fill: var(--accent); stroke: var(--accent); stroke-dasharray: none; }
+.mimir-callout[data-on] text { fill: var(--on-grad); }
+/* the panel: flat, docked, full height of the view */
+.mimir-sheet-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 3; width: var(--mimir-sheet-w); display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; background: var(--ink-1); border-left: 1px solid var(--line-soft); outline: none; }
+.mimir-sheet-head { display: grid; gap: 4px; padding: 14px 16px 10px; }
+.mimir-sheet-head h3 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mimir-sheet-head p { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
+.mimir-sheet-tally[hidden] { display: none; }
+.mimir-sheet-tally { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.mimir-sheet-rows { margin: 0; padding: 0; list-style: none; overflow: auto; align-content: start; }
+.mimir-sheet-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) 72px 84px; gap: 6px; align-items: center; min-height: 40px; padding: 4px 14px; border-top: 1px solid var(--line-soft); cursor: pointer; }
+.mimir-sheet-row[data-guess] { background: color-mix(in srgb, var(--orange) 5%, transparent); }
+.mimir-sheet-row[data-on] { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.mimir-sheet-label { display: flex; align-items: baseline; gap: 4px; min-width: 0; color: var(--fg); cursor: pointer; }
+.mimir-sheet-label > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mimir-sheet-unit { flex: none; color: var(--dim); font-size: var(--fs-sm); }
+.mimir-sheet-field .sx-scrub { width: 100%; }
+.mimir-sheet-field .sx-scrub-input { font-family: var(--f-body); font-variant-numeric: tabular-nums; text-align: right; }
+.mimir-sheet-row[data-guess] .sx-scrub[data-boxed] { border-style: dashed; border-color: color-mix(in srgb, var(--orange) 70%, var(--line)); }
+.mimir-badge { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; border: 1.5px solid var(--muted); color: var(--fg); background: var(--ink-1); }
+.mimir-badge[data-source="guess"] { border-style: dashed; border-color: var(--orange); }
+.mimir-badge[data-source="lookup"] { border-color: var(--cyan); }
+.mimir-badge[data-source="asked"] { border-color: var(--purple); }
+.mimir-badge[data-source="photo"] { border-color: var(--pink); }
+.mimir-sheet-row[data-on] .mimir-badge { background: var(--accent); border: 1.5px solid var(--accent); color: var(--on-grad); }
+.mimir-chip { justify-self: start; display: inline-flex; align-items: center; gap: 5px; height: 22px; max-width: 100%; padding: 0 8px; border: 1px solid transparent; border-radius: var(--r-pill); font-size: 12px; font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-decoration: none; }
+.mimir-chip > span { overflow: hidden; text-overflow: ellipsis; }
+.mimir-chip .sx-ic { flex: none; width: 13px; height: 13px; }
+a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+.mimir-chip[data-source="asked"] { color: var(--purple); background: var(--purple-tint); }
+.mimir-chip[data-source="lookup"] { color: var(--cyan); background: var(--cyan-tint); }
+.mimir-chip[data-source="photo"] { color: var(--pink); background: var(--pink-tint); }
+.mimir-chip[data-source="guess"] { color: var(--orange); border: 1px dashed color-mix(in srgb, var(--orange) 75%, transparent); }
+/* two lines always, so a long note never moves the footer */
+.mimir-sheet-hint { margin: 0; padding: 8px 16px; min-height: calc(2lh + 16px); max-height: calc(2lh + 16px); overflow: hidden; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
+.mimir-sheet-hint[data-bad] { color: var(--red); }
+.mimir-sheet-foot { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line-soft); }
+.mimir-sheet-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-sm); }

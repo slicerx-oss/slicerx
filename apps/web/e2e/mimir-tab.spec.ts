@@ -191,6 +191,13 @@ test.describe('the mimir tab', () => {
       const b = before[i]!
       expect(Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.width - b.width), Math.abs(a.height - b.height))).toBeLessThanOrEqual(0.5)
     })
+    // The sizes it will build with wait on a sheet, guesses marked, until the person confirms them; the drawing covers
+    // the view meanwhile, and the lookup card comes back once the sheet is answered.
+    const sheet = page.getByTestId('mimir-sheet-record')
+    await expect(sheet).toBeVisible()
+    await expect(sheet.locator('[data-dim="thickness"][data-guess]')).toHaveCount(1)
+    await page.getByTestId('mimir-sheet-build').click()
+    await expect(sheet).toContainText('Confirmed as shown')
     const card = page.getByTestId('mimir-lookup-card')
     await expect(card).toContainText('150.4 x 110.4 mm')
     // both rows it shows fit inside the card
@@ -211,18 +218,14 @@ test.describe('the mimir tab', () => {
     await page.getByTestId('mimir-lookup-close').click()
     await expect(card).toHaveCount(0)
     await expect(page.getByTestId('mimir-transcript').locator('[data-lookup-id]')).toHaveCount(1)
-    // The sizes it will build with wait on a sheet, guesses marked, until the person confirms them.
-    const sheet = page.getByTestId('mimir-sheet-record')
-    await expect(sheet).toBeVisible()
-    await expect(sheet.locator('[data-dim="thickness"][data-guess]')).toHaveCount(1)
-    await page.getByTestId('mimir-sheet-confirm').click()
-    await expect(sheet).toContainText('Confirmed as shown')
     // a second lookup: Escape on the focused card closes it
     await composer.getByRole('textbox').fill('another backplate for the thermostat')
     await composer.getByRole('button', { name: 'Send' }).click()
     await expect(page.getByTestId('mimir-choice')).toHaveCount(2)
     await page.getByTestId('mimir-choice').last().getByRole('button', { name: 'Yes, that one' }).click()
+    await page.getByTestId('mimir-sheet-build').click()
     await expect(card).toHaveCount(1)
+    await expect(card).toBeVisible()
     await card.focus()
     await page.keyboard.press('Escape')
     await expect(card).toHaveCount(0)
@@ -235,7 +238,7 @@ test.describe('the mimir tab', () => {
     await composer.getByRole('textbox').fill('Can you make a box with a lid?')
     await composer.getByRole('button', { name: 'Send' }).click()
     // Nothing is built until the person confirms the sizes.
-    await page.getByTestId('mimir-sheet-confirm').click()
+    await page.getByTestId('mimir-sheet-build').click()
     const plate = () => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: { name: string; parts: { name: string }[]; history?: { steps: unknown[] } }[] } } }).__sx.getState().plate.map((e) => ({ name: e.name, parts: e.parts.map((p) => p.name), steps: e.history?.steps.length ?? 0 })))
     await expect.poll(plate, { timeout: 30_000 }).toEqual([{ name: 'Box with lid', parts: ['Box', 'Lid'], steps: 4 }])
     // no step failed on the way

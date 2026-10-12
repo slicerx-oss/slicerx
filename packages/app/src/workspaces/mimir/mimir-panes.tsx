@@ -12,7 +12,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { setLookups } from './lookups'
 import { stepWords } from './step-words'
 import { followSteps, useStepCaption, viewStep } from './view-step'
-import { newSessionId, noteMessage, tabMimir } from './session'
+import { newSessionId, noteMessage, tabMimir, tabTools } from './session'
+import { editRow } from './sheet-drive'
+import { openSheet, setSheetActions, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
 import { useHost } from '../../host'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
@@ -43,6 +45,15 @@ export function designName(file: { name: string } | null): string {
   return file ? file.name.replace(/\.sx3mf$/i, '') : 'Untitled'
 }
 
+/** The conversation's latest sheet, for the view. */
+export function lastSheet(t: Transcript): ShownSheet | null {
+  for (let i = t.turns.length - 1; i >= 0; i--) {
+    const b = t.turns[i]!.blocks.findLast((x) => x.kind === 'sheet')
+    if (b && b.kind === 'sheet') return { sheet: b.sheet, answer: b.answer, bound: b.bound ?? null, replay: b.replay }
+  }
+  return null
+}
+
 /** Every lookup in the conversation, oldest first. */
 export function lookupsIn(t: Transcript): PilotLookup[] {
   return t.turns.flatMap((turn) => turn.blocks.flatMap((b) => (b.kind === 'lookup' ? [b.lookup] : [])))
@@ -70,9 +81,19 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const ravens = ravensOn && transcript.turns.length === 0
   useEffect(() => reset(), [sessionId, reset])
   useEffect(() => setLookups(lookupsIn(transcript)), [transcript])
+  useEffect(() => setShownSheet(lastSheet(transcript)), [transcript])
+  useEffect(() => {
+    setSheetActions({
+      confirm: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve(),
+      cancel: (sheetId) => pilot.answerSheet?.(sheetId, null) ?? Promise.resolve(),
+      drive: (bound, key, value) => editRow(tabTools(), bound, key, value),
+    })
+    return () => setSheetActions(null)
+  }, [pilot])
+  useEffect(() => () => setShownSheet(null), [])
   useEffect(() => followSteps(transcript), [transcript])
   useEffect(() => () => viewStep.setState({ caption: null }), [])
-  const handlers = useMemo<ApprovalHandlers>(() => ({ onApprove: NO_APPROVAL, onCancel: NO_APPROVAL, onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(), onConfirmSheet: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve() }), [pilot])
+  const handlers = useMemo<ApprovalHandlers>(() => ({ onApprove: NO_APPROVAL, onCancel: NO_APPROVAL, onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(), onOpenSheet: openSheet }), [pilot])
   // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
   const body = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -211,6 +232,14 @@ export function MimirCaption() {
     return () => off?.()
   }, [])
   const step = useStepCaption()
+  const drawing = useSheetUi((s) => sheetMode(s) === 'confirm' && (s.shown?.sheet.part?.length ?? 0) > 0)
+  if (drawing) {
+    return (
+      <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
+        Drawing, four views
+      </div>
+    )
+  }
   return (
     <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
       {step ?? captionFor(preset)}

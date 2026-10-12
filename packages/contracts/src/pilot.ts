@@ -230,6 +230,29 @@ export interface PilotDim {
   sourceTitle?: string
   sourceUrl?: string
   note?: string
+  /** Where the size sits on the sheet's drawing; without it the row has no callout. */
+  at?: PilotDimAt
+}
+
+type Vec3 = [number, number, number]
+
+/**
+ * A size on the drawing, in the part's own mm with Z up: a straight size from `a` to `b`, drawn moved out by `off`
+ * (zero draws it on the part); or an angle at `c` from direction `from` to direction `to`, its arc `r` out.
+ */
+export type PilotDimAt = { a: Vec3; b: Vec3; off: Vec3 } | { c: Vec3; from: Vec3; to: Vec3; r: number }
+
+/**
+ * One solid of the part as the sheet draws it before it is built: an outline in a plane, extruded along the third
+ * axis from `from` to `to`. In 'xy' the points are (x, y) and it extrudes along Z; in 'xz' (x, z) along Y; in 'yz'
+ * (y, z) along X. Holes are outlines inside it.
+ */
+export interface PilotSheetSolid {
+  plane: 'xy' | 'xz' | 'yz'
+  points: [number, number][]
+  holes?: [number, number][][]
+  from: number
+  to: number
 }
 
 /** The sizes a part is built from, for the person to confirm or edit before mimir builds it. */
@@ -239,6 +262,8 @@ export interface PilotSheet {
   /** The views the part shows in while the sheet is up, first is the main one. */
   views: ('front' | 'top' | 'side' | 'iso')[]
   dims: PilotDim[]
+  /** The part drawn at the sheet's own sizes, for the drawing and its callouts. */
+  part?: PilotSheetSolid[]
 }
 
 /** A sheet row tied to the step it sets, so editing the row after the build edits that step's main number. */
@@ -251,7 +276,7 @@ export interface PilotSheetBind {
   offset?: number
 }
 
-/** The person's answer to a sheet: every value as confirmed, and the keys they changed. */
+/** The person's answer to a sheet: every value as confirmed, and the keys they changed. Not confirmed when they canceled it. */
 export interface PilotSheetAnswer {
   confirmed: boolean
   values: Record<string, number>
@@ -368,8 +393,8 @@ export interface Pilot {
   run(sessionId: string, message: string, opts?: { signal?: AbortSignal; context?: PilotContext; attachments?: PilotAttachment[] }): AsyncIterable<PilotEvent>
   /** Answers a choice card. Runtimes without questions leave it out. */
   answer?(askId: string, choiceId: string): Promise<void>
-  /** Answers a dimension sheet: the values as the person left them. Runtimes without sheets leave it out. */
-  answerSheet?(sheetId: string, values: Record<string, number>): Promise<void>
+  /** Answers a dimension sheet: the values as the person left them, or null when they canceled it. Runtimes without sheets leave it out. */
+  answerSheet?(sheetId: string, values: Record<string, number> | null): Promise<void>
   /**
    * Live settings evaluation. Emits a `settings_diff` right away from
    * deterministic code (no model call), then an optional short narration.

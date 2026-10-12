@@ -61,6 +61,15 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-choice` | A choice card in the conversation; `data-picked` holds the picked answer's id once there is one |
 | `mimir-sheet-record` | A dimension sheet as it stays in the conversation: each size with its source, guesses marked (`data-guess`), each row `data-dim` with its key |
 | `mimir-sheet-confirm` | Build with these sizes, on a sheet still waiting; it confirms the sheet as shown |
+| `mimir-sheet-open` | On a sheet's record in the tab: Check sizes while it waits, Edit sizes once its rows drive the built steps |
+| `mimir-sheet-drawing` | The drawing that covers the view while a sheet waits: front, right, top and iso, with callouts |
+| `mimir-sheet-callout` | A numbered callout on the drawing (`data-key` is its row); clicking it picks the row |
+| `mimir-sheet-panel` | The sizes panel docked on the view's right (`data-mode` confirm or drive) |
+| `mimir-sheet-row` | One size in the panel (`data-key`, `data-guess` while an unchanged guess, `data-on` while edited) |
+| `mimir-sheet-hint` | The panel's two-line hint: the edited row's note and range, or a step edit's result |
+| `mimir-sheet-build` | Build: confirms the sheet with the panel's values |
+| `mimir-sheet-cancel` | Cancel: answers the sheet as not confirmed, so nothing builds |
+| `mimir-sheet-close` | Done: puts the panel away after the build |
 | `mimir-ravens` | The battle ravens watermark behind the conversation; `data-shown` while no model answers in the tab |
 | `mimir-split` | Holds the chat's resize edge (`role="separator"`), 340 px to half the window |
 | `mimir-caption` | The pill at the view's top left that names the view, such as Top, XY |
