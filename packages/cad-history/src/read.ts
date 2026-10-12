@@ -3,13 +3,13 @@
 // Reads the CAD history parts of a project (docs/cad-history.md, "Storage"), written by
 // file.ts. Untrusted: a bad step or mesh drops that object's history, never the project.
 import { BIN_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
-import { followField, type Follow, type History, type HistoryMesh, type Step, type StepParams } from './model'
+import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
 const MAX_TRIANGLES = 20_000_000
 
-/** The meshes of a binary part with their names and slots from the JSON. Null when the part does not read. */
-export function decodeMeshes(bytes: Uint8Array | undefined, info: readonly { name: string; slot: number }[]): HistoryMesh[] | null {
+/** The meshes of a binary part with their names, slots and paint from the JSON. Null when the part does not read. */
+export function decodeMeshes(bytes: Uint8Array | undefined, info: readonly { name: string; slot: number; paint?: PaintTexts }[]): HistoryMesh[] | null {
   if (!bytes || bytes.byteLength < 12) return null
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   if (dv.getUint32(0, true) !== MAGIC || dv.getUint32(4, true) !== BIN_VERSION || dv.getUint32(8, true) !== info.length) return null
@@ -30,7 +30,9 @@ export function decodeMeshes(bytes: Uint8Array | undefined, info: readonly { nam
       indices[i] = v
     }
     if (!positions.every(Number.isFinite)) return null
-    out.push({ name: meta.name, slot: meta.slot, positions, indices })
+    // Paint on a triangle the mesh does not have drops the mesh, as a bad index does.
+    if (meta.paint && Object.values(meta.paint).some((layer) => Object.keys(layer ?? {}).some((k) => Number(k) >= nt))) return null
+    out.push({ name: meta.name, slot: meta.slot, positions, indices, ...(meta.paint ? { paint: meta.paint } : {}) })
   }
   return out
 }
@@ -78,6 +80,49 @@ function patternOk(v: unknown): boolean {
   }
 }
 
+const PAINT_LAYERS = ['color', 'seam', 'support', 'fuzzy']
+const SIDES = ['bottom', 'top', 'front', 'back', 'left', 'right']
+const stateOk = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 255
+
+/** Paint by layer: known layers, triangle indices as keys, texts of hex digits. */
+function paintOk(v: unknown): v is PaintTexts {
+  if (!obj(v)) return false
+  return Object.entries(v).every(
+    ([layer, texts]) =>
+      PAINT_LAYERS.includes(layer) &&
+      obj(texts) &&
+      Object.keys(texts).length <= MAX_TRIANGLES &&
+      Object.entries(texts).every(([k, t]) => /^\d+$/.test(k) && typeof t === 'string' && t.length <= 4096 && /^[0-9a-fA-F]+$/.test(t)),
+  )
+}
+
+/** A paint step's target: its kind and the values that kind needs. */
+function targetOk(t: unknown): boolean {
+  if (!obj(t)) return false
+  const angle = t['angleDeg'] === undefined || isNum(t['angleDeg'])
+  switch (t['kind']) {
+    case 'part':
+      return true
+    case 'direction': {
+      const d = t['direction']
+      const pick = t['pick']
+      const pickOk = pick === undefined || pick === 'all' || pick === 'largest' || (obj(pick) && vec3(pick['nearest']))
+      return (vec3(d) || (typeof d === 'string' && SIDES.includes(d))) && angle && pickOk
+    }
+    case 'height': {
+      const n = (k: string) => t[k] === undefined || isNum(t[k])
+      const set = ['below', 'above', 'from', 'to'].filter((k) => t[k] !== undefined).sort().join(',')
+      return n('below') && n('above') && n('from') && n('to') && ['below', 'above', 'from,to'].includes(set)
+    }
+    case 'seed':
+      return vec3(t['point']) && keyOk(t['faceKey']) && angle && (t['mode'] === undefined || t['mode'] === 'smart' || t['mode'] === 'bucket')
+    case 'replace':
+      return stateOk(t['from'])
+    default:
+      return false
+  }
+}
+
 function paramsOk(p: Record<string, unknown>): boolean {
   switch (p['op']) {
     case 'face.push':
@@ -106,6 +151,8 @@ function paramsOk(p: Record<string, unknown>): boolean {
       return obj(p['hole']) && vec3(p['hole']['entry']) && vec3(p['hole']['axis']) && isNum(p['hole']['diameterMm']) && isNum(p['hole']['depthMm']) && typeof p['hole']['through'] === 'boolean' && obj(p['spec']) && isNum(p['spec']['diameterMm']) && typeof p['label'] === 'string'
     case 'shell':
       return Array.isArray(p['open']) && p['open'].length <= 64 && p['open'].every((o: unknown) => obj(o) && vec3(o['at']) && vec3(o['normal']) && keyOk(o['key'])) && isNum(p['wallMm'])
+    case 'paint':
+      return typeof p['layer'] === 'string' && PAINT_LAYERS.includes(p['layer']) && stateOk(p['state']) && targetOk(p['target']) && (p['maxDepth'] === undefined || (Number.isInteger(p['maxDepth']) && (p['maxDepth'] as number) >= 0 && (p['maxDepth'] as number) <= 10))
     case 'thread.apply':
       return obj(p['thread']) && vec3(p['thread']['start']) && vec3(p['thread']['axis']) && isNum(p['thread']['diameterMm']) && isNum(p['thread']['lengthMm']) && typeof p['thread']['internal'] === 'boolean' && typeof p['thread']['openEnd'] === 'boolean' && obj(p['spec']) && typeof p['spec']['size'] === 'string' && isNum(p['spec']['clearanceMm']) && typeof p['label'] === 'string'
     default:
@@ -115,9 +162,13 @@ function paramsOk(p: Record<string, unknown>): boolean {
 
 function readStored(v: unknown, files: ReadonlyMap<string, Uint8Array>): HistoryMesh[] | null {
   if (!obj(v) || typeof v['file'] !== 'string' || !v['file'].startsWith('Metadata/slicerx_history/') || !Array.isArray(v['parts'])) return null
-  const info = v['parts'].map((x) => (obj(x) && typeof x['name'] === 'string' && isNum(x['slot']) ? { name: x['name'], slot: x['slot'] } : null))
+  const info = v['parts'].map((x) =>
+    obj(x) && typeof x['name'] === 'string' && isNum(x['slot']) && (x['paint'] === undefined || paintOk(x['paint']))
+      ? { name: x['name'], slot: x['slot'], ...(x['paint'] !== undefined ? { paint: x['paint'] as PaintTexts } : {}) }
+      : null,
+  )
   if (info.some((x) => x === null)) return null
-  return decodeMeshes(files.get(v['file']), info as { name: string; slot: number }[])
+  return decodeMeshes(files.get(v['file']), info as { name: string; slot: number; paint?: PaintTexts }[])
 }
 
 function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint8Array>): History | null {

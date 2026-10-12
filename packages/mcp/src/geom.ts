@@ -432,7 +432,26 @@ export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }
     },
   })
 
-  return [cut, split, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract, render] as PilotTool<never>[]
+  const paintRegions = defineTool({
+    name: 'geom.paint_regions',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Read paint back: for one paint layer of a model (its per-triangle paint texts, as a 3MF stores them), each painted state with its area in mm2, the triangles holding it and its connected regions with their areas and bounds (largest first, at most 20 listed). For color paint, state n is filament slot n. Use it to check paint before slicing. Nothing is changed.',
+    input: z.object({
+      model: modelArg,
+      paint: z.record(z.string().regex(/^\d+$/), z.string().max(4096)).describe('Paint texts by triangle index, one layer (color, seam, support or fuzzy skin)'),
+    }),
+    async run(i) {
+      const out = (await call('paint.regions', { mesh: await mesh(i.model), paint: i.paint })) as { states?: { state: number; areaMm2: number }[]; badPaint?: number }
+      const states = out.states ?? []
+      const text = states.length ? states.map((s) => `state ${s.state} ${s.areaMm2} mm2`).join(', ') : 'nothing painted'
+      return { summary: `Paint of ${basename(i.model)}: ${text}${out.badPaint ? `; ${out.badPaint} texts did not read` : ''}`, output: out }
+    },
+  })
+
+  return [cut, split, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract, render, paintRegions] as PilotTool<never>[]
 }
 
 /** A cutter as a subtract step keeps it: a box, or a cylinder with its origin, axis, diameter and height. */

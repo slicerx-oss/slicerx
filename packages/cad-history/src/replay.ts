@@ -6,7 +6,7 @@
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, MovedFace } from './types'
-import { bakeMesh, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, type History, type HistoryMesh, type ReplayResult, type Step, type StepStatus } from './model'
+import { bakeMesh, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, type History, type HistoryMesh, type PaintTexts, type ReplayResult, type Step, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 
@@ -34,16 +34,25 @@ interface Flat {
   indices: number[]
   /** The engine's faces with their keys, carried from step to step as the tools carry them. */
   faces?: Faces
+  /** The part's paint; a step that changes its triangles drops it. */
+  paint?: PaintTexts
 }
 
 /** Positions rounded to f32, as the app keeps them (Float32Array). */
 const asStored = (p: ArrayLike<number>): number[] => Array.from(p, Math.fround)
 
-const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: m.faces } : {}) })
+const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: m.faces } : {}), ...(m.paint ? { paint: m.paint } : {}) })
 
-/** The part with a step's result mesh, its faces with it. */
-const next = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }): Flat => {
-  const { faces: _old, ...rest } = part
+/** What a step that changed a painted part's triangles notes. */
+export const PAINT_DROPPED = 'This step changed the part, so its paint was cleared.'
+
+/**
+ * The part with a step's result mesh, its faces with it. Its paint goes: the triangles it named are not there any
+ * more. `dropped` is told when there was paint, for the step's note.
+ */
+const next = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }, dropped?: () => void): Flat => {
+  const { faces: _old, paint, ...rest } = part
+  if (paint && dropped) dropped()
   return { ...rest, positions: m.positions, indices: m.indices, ...(m.faces ? { faces: m.faces } : {}) }
 }
 
@@ -125,7 +134,7 @@ function numbersDigest(nums: ArrayLike<number>): string {
 function meshDigest(p: HistoryMesh): string {
   let d = digests.get(p)
   if (d === undefined) {
-    d = `${p.name}|${p.slot}|${numbersDigest(p.positions)}|${numbersDigest(p.indices)}`
+    d = `${p.name}|${p.slot}|${numbersDigest(p.positions)}|${numbersDigest(p.indices)}${p.paint ? `|${hash('', JSON.stringify(p.paint))}` : ''}`
     digests.set(p, d)
   }
   return d
@@ -175,7 +184,15 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]
   const out = parts.slice()
   const item = (f: Flat) => ({ mesh: meshOf(f), transform: s.transform })
-  const local = (m: { positions: number[]; indices: number[] }, like: Pick<Flat, 'name' | 'slot'>): Flat => flat(bakeMesh({ ...like, ...m }, invert(s.transform)))
+  const dropped = () => {
+    found.notes[s.id] = PAINT_DROPPED
+  }
+  // A result in world space, back in the part's frame. Only the name and slot carry over: paint goes, as in next().
+  const local = (m: { positions: number[]; indices: number[] }, like: Pick<Flat, 'name' | 'slot' | 'paint'>): Flat => {
+    if (like.paint) dropped()
+    return flat(bakeMesh({ name: like.name, slot: like.slot, ...m }, invert(s.transform)))
+  }
+  const keep = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }) => next(part, m, dropped)
   const newBody = (p.op === 'shape.extrude' && (p.spec.operation ?? 'new') === 'new') || (p.op === 'sketch.revolve' && (p.operation ?? 'new') === 'new')
   if (p.op === 'parts.add') return [...out, ...p.parts.map(flat)]
   if (newBody) {
@@ -201,7 +218,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         if (key && key !== p.faceKey) found.keys[s.id] = { faceKey: key }
         const r = (await call('face.push', { mesh: item(part), triangle, at: byKey ? byKey.at : p.at, distanceMm: p.distanceMm })) as { mesh: Flat; moved: MovedFace }
         moved[s.id] = r.moved
-        out[i] = next(part, r.mesh)
+        out[i] = keep(part, r.mesh)
         // No face is left where it moved to: it went through the part, and the edges on it with it.
         const l = Math.hypot(...p.normal) || 1
         const cap: [number, number, number] = [p.at[0] + (p.normal[0] / l) * p.distanceMm, p.at[1] + (p.normal[1] / l) * p.distanceMm, p.at[2] + (p.normal[2] / l) * p.distanceMm]
@@ -213,7 +230,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
         const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean } }
         if (!r.report.touches) throw new Broken('The shape no longer reaches the part.')
-        out[i] = next(part, r.mesh)
+        out[i] = keep(part, r.mesh)
         break
       }
       case 'subtract': {
@@ -229,12 +246,12 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       case 'simplify': {
         const options = p.op === 'hollow' ? { wallMm: p.wallMm } : p.op === 'simplify' ? { targetRatio: p.targetRatio } : {}
         const r = (await call(p.op, { mesh: meshOf(part), options })) as { mesh: Flat }
-        out[i] = next(part, r.mesh)
+        out[i] = keep(part, r.mesh)
         break
       }
       case 'array.merged': {
         const r = (await call('array', { mesh: item(part), spec: p.spec, merge: true, options: {} })) as { mesh: Flat }
-        out[i] = next(part, r.mesh)
+        out[i] = keep(part, r.mesh)
         break
       }
       case 'hole.apply': {
@@ -246,7 +263,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
           const why = (err instanceof Error ? err.message : String(err)).replace(/^hole: /, '')
           throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
         }
-        out[i] = next(part, r.mesh)
+        out[i] = keep(part, r.mesh)
         break
       }
       case 'shell': {
@@ -260,7 +277,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         }
         const keys = r.report.openKeys ?? []
         if (keys.some((k, j) => k && k !== p.open[j]?.key)) found.keys[s.id] = { openKeys: keys }
-        out[i] = next(part, r.mesh)
+        out[i] = keep(part, r.mesh)
         break
       }
       case 'thread.apply': {
@@ -272,7 +289,33 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
           const why = (err instanceof Error ? err.message : String(err)).replace(/^(thread|hole): /, '')
           throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
         }
-        out[i] = next(part, r.mesh)
+        out[i] = keep(part, r.mesh)
+        break
+      }
+      case 'paint': {
+        // The target found again on the part as it is now; a seed's face first by its key, as push steps find theirs.
+        let target = p.target
+        if (target.kind === 'seed' && target.faceKey) {
+          const byKey = findByKey(part, s.transform, target.faceKey, target.point)
+          if (byKey) target = { ...target, point: byKey.at }
+        }
+        const texts = part.paint?.[p.layer] ?? {}
+        let r: { changed: Record<string, string> }
+        try {
+          r = (await engine('paint.select', { mesh: meshOf(part), transform: s.transform, paint: texts, state: p.state, target, ...(p.maxDepth !== undefined ? { maxDepth: p.maxDepth } : {}) })) as { changed: Record<string, string> }
+        } catch (err) {
+          const why = (err instanceof Error ? err.message : String(err)).replace(/^[a-z]+: /, '')
+          throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
+        }
+        const layer: Record<number, string> = { ...texts }
+        for (const [k, v] of Object.entries(r.changed)) {
+          if (v) layer[Number(k)] = v
+          else delete layer[Number(k)]
+        }
+        const { [p.layer]: _was, ...others } = part.paint ?? {}
+        const paint: PaintTexts = Object.keys(layer).length ? { ...others, [p.layer]: layer } : others
+        const { paint: _old, ...rest } = part
+        out[i] = Object.keys(paint).length ? { ...rest, paint } : rest
         break
       }
       case 'edge.fillet':
@@ -294,7 +337,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         })
         if (changed) found.keys[s.id] = { edgeKeys: keys }
         if (r.notes?.length) found.notes[s.id] = r.notes.map((n) => n.charAt(0).toUpperCase() + n.slice(1)).join('. ') + '.'
-        out[i] = next(part, r.mesh)
+        out[i] = keep(part, r.mesh)
         break
       }
     }

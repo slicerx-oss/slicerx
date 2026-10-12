@@ -36,6 +36,8 @@ export function stepIcon(p: StepParams): IconName {
       return 'hole-fit'
     case 'thread.apply':
       return 'thread-bolt'
+    case 'paint':
+      return p.layer === 'color' ? 'color-painting' : p.layer === 'seam' ? 'seam-painting' : p.layer === 'support' ? 'support-painting' : 'paint'
   }
 }
 
