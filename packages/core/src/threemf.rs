@@ -212,8 +212,23 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
         return load_plate_objects_legacy(bytes, name);
     }
     let scale = project.unit_scale;
+    // custom G-code and keys a file may never set stay out of object and part settings, named once each
+    let never = |k: &str| k.contains("gcode") || crate::preflight::is_never_imported(k);
+    let mut dropped: Vec<String> = Vec::new();
+    for o in &project.objects {
+        for (k, _) in o
+            .settings
+            .iter()
+            .chain(o.parts.iter().flat_map(|p| p.settings.iter()))
+        {
+            if never(k) && !dropped.contains(k) {
+                dropped.push(k.clone());
+            }
+        }
+    }
     let to_map = |list: &[(String, String)]| -> serde_json::Map<String, serde_json::Value> {
         list.iter()
+            .filter(|(k, _)| !never(k))
             .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
             .collect()
     };
@@ -341,6 +356,17 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
                 part_settings.push((p.name.clone(), settings));
             }
         }
+        for k in &dropped {
+            notes.push(format!(
+                "{k} in the project's object or part settings is not used (custom G-code and scripts come from the printer settings)"
+            ));
+        }
+        // the object's own settings travel with its mesh, for a slice of it alone (`with_lone_settings`)
+        let settings = if object.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::Object(object)
+        };
         let own = if o.name.is_empty() {
             name.to_owned()
         } else {
@@ -352,6 +378,7 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             volumes,
             part_settings,
             notes,
+            settings,
         });
     }
     if plates.is_empty() {
@@ -397,6 +424,13 @@ fn geom_part(p: &sx_geom::format::Part, item: &Transform, slot: u8, name: String
             paint_texts.push((layer, *k, code.clone()));
         }
     }
+    // decoded paint is collected through a flatten, which leaves room it never uses; a big painted part keeps none
+    let mut paint = paint;
+    let (mut seam_paint, mut fuzzy_paint, mut support_paint) = (seam_paint, fuzzy_paint, support_paint);
+    for v in [&mut paint, &mut seam_paint, &mut fuzzy_paint, &mut support_paint] {
+        v.shrink_to_fit();
+    }
+    paint_texts.shrink_to_fit();
     MeshPart {
         name,
         slot,
