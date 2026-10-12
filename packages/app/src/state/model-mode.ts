@@ -98,10 +98,12 @@ export function useShownOrigin(): { origin: Vec3; frame: 'grid' | 'bed' } {
 }
 
 /** Commands Model leaves out of the command bar (they still run from their shortcuts on a host that slices). */
-export const SLICE_ONLY_COMMANDS: ReadonlySet<string> = new Set(['slice', 'slice-cancel', 'export-gcode', 'gcode-lines'])
+export const SLICE_ONLY_COMMANDS: ReadonlySet<string> = new Set(['slice', 'slice-cancel', 'export-gcode', 'export-gcode-3mf', 'export-all-plates', 'gcode-lines'])
 
 /** Whether the command bar lists a command in the mode shown. */
 export function listedInMode(id: string, mode: ModelMode): boolean {
   if (!slicing && id === 'mode-slice') return false
+  // the plate workspace's own Go to Slice would stay in Model; Go to Slice (mode-slice) is the one listed there
+  if (id === 'open-prepare' && mode !== 'slice' && editionHasCad()) return false
   return mode === 'slice' || !SLICE_ONLY_COMMANDS.has(id)
 }
