@@ -19,7 +19,7 @@ export default (d: ServerToolDeps) =>
       source: z.enum(['slicerx', 'knowledge', 'intent', 'stock']).optional().describe("slicerx: SlicerX printer profiles and process presets; knowledge: material and printer entries of the knowledge base; intent: Easy goals; stock: the makers' filament presets"),
       vendor: z.string().optional().describe('Vendor name, case-insensitive, such as "Bambu Lab" or "Prusa"'),
       query: z.string().optional().describe('Substring of the profile name or id'),
-      limit: z.number().int().min(1).max(200).default(50),
+      limit: z.number().int().min(1).max(200).default(20),
       offset: z.number().int().min(0).default(0),
     }),
     async run(args) {
