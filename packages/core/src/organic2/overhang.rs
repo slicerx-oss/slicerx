@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! What needs holding up on each layer (spec section 2): the angle overhang, sharp tails (thin features
+//! What needs holding up on each layer: the angle overhang, sharp tails (thin features
 //! that start in the air), cantilevers, clusters with small-overhang removal, blockers, critical-only,
 //! bridge removal, enforcers, and the organic additions.
 
@@ -21,13 +21,11 @@ const CANTILEVER: f64 = 3.0;
 /// Resolution grow (mm).
 const EPS_R: f64 = 0.0125;
 /// Added to each side's bounding box size of a bottom-bridge surface before the size test against
-/// `max_bridge_length` (both sides together, mm). The spec is silent on how far the reference's surfaces
-/// reach past the gap; its output removes spans of 3 mm and less, keeps 4.5 mm and up, and goes either way
-/// at 4 mm (kept 5 times of 6) with
-/// the default 10 mm limit, while this slicer's surfaces reach about 1 mm past each side. Decided by
-/// black-box comparison (design.md, "bridge size").
+/// `max_bridge_length` (both sides together, mm). With the default 10 mm limit the reference removes spans
+/// of 3 mm and less, keeps 4.5 mm and up, and goes either way at 4 mm, while this slicer's bridge surfaces
+/// reach about 1 mm past each side.
 const BRIDGE_SIZE_MARGIN: f64 = 4.2;
-/// Over this many overhang parts on a layer the detection guard (Q6) fires.
+/// Over this many overhang parts on a layer the detection guard fires.
 const GUARD_PARTS: usize = 100;
 
 /// Detector settings beyond [`super::Settings`].
@@ -74,7 +72,7 @@ impl Default for Detect {
     }
 }
 
-/// Extrudable area (spec 2.2): the slices without the parts narrower than a line.
+/// Extrudable area: the slices without the parts narrower than a line.
 fn extrudable(slices: &Shapes, w: f64) -> Shapes {
     if slices.is_empty() {
         return Vec::new();
@@ -101,7 +99,7 @@ struct Tail {
     height: f64,
 }
 
-/// What the per-layer pass finds (spec 2.3 to 2.5).
+/// What the per-layer pass finds.
 #[derive(Default)]
 struct Pass {
     parts: Vec<Shapes>,
@@ -186,7 +184,7 @@ fn pass(
     out
 }
 
-/// One vertical cluster of overhang parts (spec 2.7).
+/// One vertical cluster of overhang parts.
 struct Cluster {
     /// Parts by layer.
     parts: std::collections::BTreeMap<usize, Vec<Shapes>>,
@@ -196,7 +194,7 @@ struct Cluster {
     cantilever: bool,
 }
 
-/// What bridge removal reads of one region of a layer (spec 2.8 and E1).
+/// What bridge removal reads of one region of a layer.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RegionIn {
     /// Every wall path as extruded (outer and inner walls, no gap fill), as open polylines.
@@ -208,7 +206,7 @@ pub(crate) struct RegionIn {
     pub(crate) bridge_spacing: f64,
 }
 
-/// Approximate region inputs from the slices (E1's fallback): the outer wall's center line and each
+/// Approximate region inputs from the slices: the outer wall's center line and each
 /// inner wall's, and the bottom areas over the layer below without the expansion.
 fn approximate(d: &Detect, slices: &Shapes, below: &Shapes) -> RegionIn {
     let mut walls = Vec::new();
@@ -235,7 +233,7 @@ fn approximate(d: &Detect, slices: &Shapes, below: &Shapes) -> RegionIn {
     }
 }
 
-/// Bridges on a layer (spec 2.8 and E1): straight wall pieces whose ends, extended by a line, land on the
+/// Bridges on a layer: straight wall pieces whose ends, extended by a line, land on the
 /// layer below and whose span is within the limit, as bands; and bottom-bridge surfaces under the limit
 /// in X and Y, whole.
 fn bridges(d: &Detect, regions: &[RegionIn], below: &Shapes, w: f64) -> Shapes {

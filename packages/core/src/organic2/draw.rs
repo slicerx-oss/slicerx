@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Drawing the trees (spec 7.1 to 7.6): branch centers are smoothed and pushed out of the model, the
+//! Drawing the trees: branch centers are smoothed and pushed out of the model, the
 //! trees are split into branches, each branch becomes a closed tube mesh, and the tubes are sliced at the
 //! middle of every layer.
 
@@ -153,7 +153,7 @@ impl EdgeGrid {
 /// How far (mm) past the widest branch around the nodes the nudge looks for model edges.
 const NEAR_MARGIN: f64 = 10.0;
 
-/// Smooths the centers and pushes them out of the model (spec 7.2).
+/// Smooths the centers and pushes them out of the model.
 #[allow(clippy::too_many_lines, reason = "one iteration loop")]
 pub(crate) fn smooth(p: &Params, v: &Volumes<'_>, hs: &Heights<'_>, layers: &mut [Vec<Node>]) {
     let ids: Vec<Id> = layers
@@ -370,7 +370,7 @@ pub(crate) struct Branch {
     pub(crate) has_tip: bool,
 }
 
-/// Splits the trees into branches between bifurcations (spec 7.3).
+/// Splits the trees into branches between bifurcations.
 pub(crate) fn branches(layers: &[Vec<Node>]) -> Vec<Branch> {
     let mut out = Vec::new();
     let mut starts: Vec<(Id, bool)> = Vec::new();
@@ -623,7 +623,7 @@ fn perpendicular(axis: V3, hint: V3) -> V3 {
     }
 }
 
-/// The tube mesh of a branch (spec 7.4), and the lowest and highest Z of its caps.
+/// The tube mesh of a branch, and the lowest and highest Z of its caps.
 pub(crate) fn tube(
     p: &Params,
     hs: &Heights<'_>,
@@ -716,7 +716,7 @@ pub(crate) struct Slices {
     pub(crate) areas: Vec<Shapes>,
 }
 
-/// Slices a branch tube at the middle of every layer it spans (spec 7.5).
+/// Slices a branch tube at the middle of every layer it spans.
 pub(crate) fn slice_branch(
     p: &Params,
     v: &Volumes<'_>,

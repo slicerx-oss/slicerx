@@ -6,30 +6,30 @@
 use crate::fm::Fm as _;
 use crate::geom::SCALE;
 
-/// Behaviors of the reference slicer that come from bugs (spec 1.5). Each flag off does what the
+/// Behaviors of the reference slicer that come from bugs. Each flag off does what the
 /// reference meant; on reproduces the reference's output for parity runs. Parity mode turns them all on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::struct_excessive_bools, reason = "one switch per behavior")]
 pub(crate) struct Quirks {
-    /// Q1: push a colliding branch center by the square of the nudge distance instead of the distance.
+    /// Push a colliding branch center by the square of the nudge distance instead of the distance.
     pub(crate) nudge_squared: bool,
-    /// Q2: lay the lines roof tips are sampled from at a fixed -45 degrees instead of turning them by
+    /// Lay the lines roof tips are sampled from at a fixed -45 degrees instead of turning them by
     /// 45 degrees either side of the interface angle from layer to layer.
     pub(crate) roof_angle_fixed: bool,
-    /// Q3: let branches plan past the bed edge (they are clipped to the bed at the end) instead of
+    /// Let branches plan past the bed edge (they are clipped to the bed at the end) instead of
     /// treating the bed edge as a wall.
     pub(crate) ignore_bed_edge: bool,
-    /// Q4: merge branches on every layer instead of at the cadence with backoff. On by default until the
+    /// Merge branches on every layer instead of at the cadence with backoff. On by default until the
     /// cadence is shown not to make trees worse.
     pub(crate) merge_every_layer: bool,
-    /// Q5: an overhang cluster keeps one part per layer, so a second part on the same layer is lost.
+    /// An overhang cluster keeps one part per layer, so a second part on the same layer is lost.
     pub(crate) one_part_per_cluster_layer: bool,
-    /// Q6: a layer with over 100 overhang parts turns off tail growth and small-overhang removal.
+    /// A layer with over 100 overhang parts turns off tail growth and small-overhang removal.
     pub(crate) detection_guard: bool,
-    /// Q7: the foot speed bonus is given when the recommended radius below is smaller than the next
+    /// The foot speed bonus is given when the recommended radius below is smaller than the next
     /// radius (as the reference writes it) instead of larger. On by default until its decision test.
     pub(crate) foot_bonus_inverted: bool,
-    /// Q8: placeable areas of a full-gap query shrink by the extra XY gap twice. On by default until its
+    /// Placeable areas of a full-gap query shrink by the extra XY gap twice. On by default until its
     /// decision test.
     pub(crate) placeable_double_gap: bool,
     /// Parity mode only: sharp-tail heights are summed in single precision, so a sum meant to be a
@@ -130,7 +130,7 @@ pub(crate) struct Settings {
     pub(crate) top_rate: f64,
     pub(crate) branch_distance: f64,
     /// Neighboring sampling lines are joined along the part's edge when the way round is at most this
-    /// long (mm), as the normal infill joins its lines; tip spacing then holds across lines (spec 4.8).
+    /// long (mm), as the normal infill joins its lines; tip spacing then holds across lines.
     pub(crate) line_join: f64,
     pub(crate) xy_distance: f64,
     /// The Z gaps as used (already rounded to whole layers, or 0 with a zero gap interface).
@@ -203,7 +203,7 @@ const GRID_FACTOR: f64 = 1.5;
 /// The first cached radius past the tip radius.
 const GRID_FIRST: f64 = 1.5;
 
-/// The values derived from [`Settings`] (spec section 1.2), all in millimeters unless named otherwise.
+/// The values derived from [`Settings`], all in millimeters unless named otherwise.
 #[derive(Debug, Clone)]
 pub(crate) struct Params {
     pub(crate) s: Settings,
@@ -317,7 +317,7 @@ impl Params {
         p
     }
 
-    /// The radius at depth `x` below the tip with `f` bed-widening steps (spec 1.3).
+    /// The radius at depth `x` below the tip with `f` bed-widening steps.
     #[allow(clippy::cast_precision_loss, reason = "a small layer count")]
     pub(crate) fn radius(&self, x: f64, f: f64) -> f64 {
         let t = self.tip_layers as f64;
@@ -354,7 +354,7 @@ impl Params {
         }
     }
 
-    /// The cached radii up to `max` (spec 1.4): 0, the tip radius, even steps up to 1.5 (or one step of
+    /// The cached radii up to `max`: 0, the tip radius, even steps up to 1.5 (or one step of
     /// 0.5 when the tip is already close to it), then a factor of 1.5 at a time.
     fn make_grid(&self, max: f64) -> Vec<f64> {
         let mut g = vec![0.0];
@@ -409,7 +409,7 @@ impl Params {
         }
     }
 
-    /// The tip connect length: how far apart tips go along sampled lines (spec 4.1).
+    /// The tip connect length: how far apart tips go along sampled lines.
     pub(crate) fn connect_length(&self) -> f64 {
         let rate = self.s.top_rate.max(1e-3);
         self.w * 100.0 / rate + (2.0 * self.r_tip - self.w).max(0.0)

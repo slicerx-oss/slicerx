@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! What the model leaves free for a branch of a given radius on each layer (spec section 3):
+//! What the model leaves free for a branch of a given radius on each layer:
 //! collision, hole-free collision, placeable areas, avoidance (where a branch can no longer reach the bed
 //! or a flat model top within the movement limits) and the wall limit. Every region is cached per
 //! layer and per cached radius; the avoidance columns are built bottom-up, one radius per job.
@@ -123,7 +123,7 @@ impl<'a> Volumes<'a> {
         f64::from(k) / crate::geom::SCALE
     }
 
-    /// Collision C(r, L): where a branch center of radius `r` must not be on `layer` (spec 3.2).
+    /// Collision C(r, L): where a branch center of radius `r` must not be on `layer`.
     pub(crate) fn collision(&self, r: f64, layer: usize, min_gap: bool) -> Arc<Shapes> {
         self.collision_k(self.key(r, min_gap), layer)
     }
@@ -177,7 +177,7 @@ impl<'a> Volumes<'a> {
     }
 
     /// Hole-free collision H(r, L) by cache radius: the collision at the grow-until radius pulled back to
-    /// radius `k`, so holes a grown branch could not leave are closed (spec 3.3). Plain collision at larger
+    /// radius `k`, so holes a grown branch could not leave are closed. Plain collision at larger
     /// radii.
     fn hole_free_k(&self, k: i32, layer: usize) -> Arc<Shapes> {
         if k >= self.hole_limit() {
@@ -197,13 +197,13 @@ impl<'a> Volumes<'a> {
         }
     }
 
-    /// The radius holes are filled at (spec 3.3 and E3): the full-gap cache radius of the grow-until
+    /// The radius holes are filled at: the full-gap cache radius of the grow-until
     /// radius, that is the grid radius at or above `r_u` + `delta_xy`.
     fn hole_free_base(&self) -> i32 {
         self.key(self.p.r_until, false)
     }
 
-    /// How far the top surfaces shrink for cache radius `k` (spec 3.4, flag Q8). A full-gap key already
+    /// How far the top surfaces shrink for cache radius `k`. A full-gap key already
     /// holds the extra XY gap; the reference adds it again.
     fn placeable_shrink(&self, k: i32) -> f64 {
         let base = Self::mm(k) + self.p.gap_min;
@@ -214,7 +214,7 @@ impl<'a> Volumes<'a> {
         }
     }
 
-    /// The top surfaces a branch can stand on, before the radius is taken off (spec 3.4).
+    /// The top surfaces a branch can stand on, before the radius is taken off.
     fn place_zero(&self, layer: usize) -> Arc<Shapes> {
         let make = || {
             let p = self.p;
@@ -264,7 +264,7 @@ impl<'a> Volumes<'a> {
     }
 
     /// Avoidance V(r, L): where a branch of radius `r` on `layer` can no longer reach the bed (or with
-    /// `to_model` a flat model top) moving at the speed of `kind` (spec 3.5).
+    /// `to_model` a flat model top) moving at the speed of `kind`.
     pub(crate) fn avoidance(
         &self,
         r: f64,
@@ -346,7 +346,7 @@ impl<'a> Volumes<'a> {
         out
     }
 
-    /// The wall limit W(r, L): a printed wall a reach area must not cross in one step (spec 3.6).
+    /// The wall limit W(r, L): a printed wall a reach area must not cross in one step.
     pub(crate) fn wall(&self, r: f64, layer: usize, min_gap: bool) -> Arc<Shapes> {
         let k = self.key(r, true);
         let map_key = (k, min_gap);

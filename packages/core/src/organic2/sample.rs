@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Where tips go along an overhang: fill lines laid over the overhang (spec 4.8), and points spaced
-//! along those lines (spec 4.9).
+//! Where tips go along an overhang: fill lines laid over the overhang, and points spaced
+//! along those lines.
 
 use super::ops::{self, P};
 use super::params::Params;
@@ -26,7 +26,7 @@ pub(crate) fn lines(p: &Params, area: &Shapes, kind: Lines, center: [f64; 2]) ->
     let (pitch, angle) = match kind {
         Lines::Base { distance } => (spacing + distance.max(0.0), p.s.support_angle),
         Lines::Roof { layer } => {
-            // Q2: the reference always lays them at -45 degrees; meant was 45 degrees either side of the
+            // The reference always lays them at -45 degrees; meant was 45 degrees either side of the
             // interface angle, turning from layer to layer.
             let angle = if p.s.quirks.roof_angle_fixed {
                 -45.0
@@ -124,7 +124,7 @@ fn at_length(pl: &[P], len: f64) -> Option<P> {
 }
 
 /// Points along a polyline about `spacing` mm apart, at least `min_count` of them where the spacing can
-/// shrink to fit (spec 4.9). A closed polyline starts at one end of its longest chord.
+/// shrink to fit. A closed polyline starts at one end of its longest chord.
 pub(crate) fn resample(line: &[P], closed: bool, spacing: f64, min_count: usize) -> Vec<P> {
     let Some(&first) = line.first() else {
         return Vec::new();
