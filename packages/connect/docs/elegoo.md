@@ -62,6 +62,10 @@ Status mapping. The spec's `PrintInfo.Status` codes (6 paused, 8 stopped, 9 comp
 
 Scanning broadcasts `M99999` to UDP 3000 and parses the JSON replies. An IP address typed in setup gets the same `M99999` sent to it alone, so the printer is confirmed, with its name, model and firmware, before the WebSocket is tried.
 
+### History
+
+The device page's history reads the printer's own task list: Cmd 320 lists the task ids, and Cmd 321 with `Id` (a list) gives the details of the newest 50. `TaskStatus` 1 is completed, 2 ended with an error (the detail names `ErrorStatusReason` when it is not 0) and 3 was stopped; 0, any other state such as a task still running, is left out. `BeginTime` and `EndTime` are read as seconds since the epoch (milliseconds when larger than 1e11) and give the duration. Filament use is not in the details. The fake answers both commands from its history (`elegoo_history_reads_the_printers_task_list`).
+
 ### Events and rate
 
 Pushed by the printer. Status events fire when anything other than the timestamp changes.

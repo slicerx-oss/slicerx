@@ -99,6 +99,14 @@ export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remaini
         respond(sock, cmd, rid, { Ack: 0 })
         return void sock.write(frame(attributesMessage(m, extra)))
       }
+      // The task history: Cmd 320 lists task ids, oldest first, and Cmd 321 the details of the ids asked for. TaskStatus
+      // 1 completed, 2 ended with an error, 3 stopped; times in seconds since the epoch.
+      if (cmd === 320) return respond(sock, cmd, rid, { Ack: 0, HistoryData: m.history.map((_, i) => `task-${m.history.length - 1 - i}`).reverse() })
+      if (cmd === 321) {
+        const ids = Array.isArray(args.Id) ? (args.Id as unknown[]).map(String) : []
+        const tasks = m.history.map((h, i) => ({ TaskId: `task-${m.history.length - 1 - i}`, TaskName: h.filename, TaskStatus: h.status === 'completed' ? 1 : h.status === 'cancelled' ? 3 : 2, ErrorStatusReason: 0, BeginTime: h.start_time, EndTime: h.start_time + h.total_duration }))
+        return respond(sock, cmd, rid, { Ack: 0, HistoryDetailList: tasks.filter((t) => ids.includes(t.TaskId)) })
+      }
       if (cmd === 258) return respond(sock, cmd, rid, { Ack: 0, FileList: [...m.files.values()].map((f) => ({ name: `/local/${f.name}`, usedSize: f.size, totalSize: 0, storageType: 0, type: 1 })) })
       // Each state change below pushes a status report after this answer.
       if (cmd === 128) m.start(String(args.Filename).replace(/^\/local\//, ''))
