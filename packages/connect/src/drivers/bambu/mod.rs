@@ -792,7 +792,8 @@ struct Shared {
     /// Prints seen ending while connected, newest first. The LAN protocol keeps no history of its
     /// own; the last job stays in the report until the next starts.
     history: Mutex<Vec<crate::types::PrintRecord>>,
-    /// The printer's answers to commands (`print` objects other than `push_status`), newest last.
+    /// The printer's answers to commands (`print` objects other than `push_status`, and `system`
+    /// objects), newest last.
     replies: Mutex<std::collections::VecDeque<Value>>,
     /// The model the printer named in its `get_version` answer.
     model: Mutex<Option<String>>,
@@ -934,6 +935,19 @@ impl Shared {
             }
             if let Some(f) = firmware_from_version(info) {
                 *self.firmware.lock().unwrap_or_else(PoisonError::into_inner) = Some(f);
+            }
+            return;
+        }
+        // `system` commands (`ledctrl`) are answered in a `system` object.
+        if let Some(system) = v
+            .get("system")
+            .and_then(Value::as_object)
+            .filter(|o| o.contains_key("sequence_id") && o.contains_key("command"))
+        {
+            let mut r = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
+            r.push_back(Value::Object(system.clone()));
+            while r.len() > REPLIES_MAX {
+                r.pop_front();
             }
             return;
         }
@@ -1845,6 +1859,39 @@ impl BambuSession {
         }
     }
 
+    /// Sends a command that changes nothing about the job (`print_speed`, `gcode_line`,
+    /// `skip_objects`, `ledctrl`) and reads the printer's answer: a `result` of "fail" comes back as
+    /// [`Error::Refused`] with the printer's reason, as pause and resume do. With no answer in
+    /// [`COMMAND_ANSWER_WAIT`] the command stands as sent. `group` is the object the command goes in
+    /// (`print` or `system`).
+    async fn answered(&self, group: &str, body: Value) -> Result<()> {
+        let field = |k: &str| {
+            body.get(group)
+                .and_then(|b| b.get(k))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned()
+        };
+        let (seq, command) = (field("sequence_id"), field("command"));
+        self.command(body).await?;
+        let end = tokio::time::Instant::now() + COMMAND_ANSWER_WAIT;
+        loop {
+            if let Some(v) = self.answer(&seq, &command) {
+                return match project_refusal(&v) {
+                    Some(reason) => Err(Error::Refused {
+                        printer: self.id().to_owned(),
+                        reason: self.with_developer_hint(reason),
+                    }),
+                    None => Ok(()),
+                };
+            }
+            if tokio::time::Instant::now() >= end {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     /// The printer's answer to the command sent as `seq`, when it has come.
     fn answer(&self, seq: &str, command: &str) -> Option<Value> {
         let r = self.shared.replies.lock().unwrap_or_else(PoisonError::into_inner);
@@ -2046,6 +2093,11 @@ const SLOT_ANSWER_WAIT: Duration = Duration::from_secs(5);
 /// How long pause, resume, stop and a plain G-code start wait for the printer's answer or for the
 /// report to show the change, whichever comes first.
 const CONTROL_ANSWER_WAIT: Duration = Duration::from_secs(3);
+
+/// How long speed, fan, temperature, light, skip and G-code line commands wait for the printer's
+/// answer before standing as sent. Shorter than [`CONTROL_ANSWER_WAIT`]: no report shows these
+/// settling, and a printer that does not answer them would hold every change this long.
+const COMMAND_ANSWER_WAIT: Duration = Duration::from_millis(1500);
 
 /// Where a slot id from [`parse_slots`] sits in Bambu Studio's terms: `ams_id`, `slot_id` and
 /// `tray_id` of `ams_filament_setting` (DeviceManager.cpp, `command_ams_filament_settings`). A
@@ -2546,7 +2598,7 @@ impl PrinterSession for BambuSession {
     }
 
     async fn adjust(&self, change: &Adjustment, token: &ApprovalToken) -> Result<()> {
-        // Bambu Studio's own commands (DeviceManager.cpp, DevFan.cpp): `M106 P<fan> S<0-255>` with
+        // The commands Bambu Studio sends for these: `M106 P<fan> S<0-255>` with
         // fan 1 part, 2 auxiliary, 3 chamber; `M104` and `M140` through `gcode_line`; and the
         // `print_speed` command with level 1 silent (50 %), 2 standard (100 %), 3 sport (124 %) and
         // 4 ludicrous (166 %).
@@ -2583,17 +2635,19 @@ impl PrinterSession for BambuSession {
             &params::adjust(self.id(), change),
         )?;
         self.require_control()?;
-        self.command(body).await
+        self.answered("print", body).await
     }
 
     async fn set_light(&self, on: bool, token: &ApprovalToken) -> Result<()> {
         self.gate
             .check(token, Action::Adjust, self.id(), &params::light(self.id(), on))?;
         self.require_control()?;
-        // Bambu Studio's DevLamp::CtrlSetChamberLight: `ledctrl` for `chamber_light` and
+        // Bambu Studio switches the light with `ledctrl` for `chamber_light` and
         // `chamber_light2` (the H2 printers' second light), with the same timings.
         for node in ["chamber_light", "chamber_light2"] {
-            self.command(json!({ "system": {
+            self.answered(
+                "system",
+                json!({ "system": {
                 "sequence_id": self.next_seq(),
                 "command": "ledctrl",
                 "led_node": node,
@@ -2602,7 +2656,8 @@ impl PrinterSession for BambuSession {
                 "led_off_time": 500,
                 "loop_times": 1,
                 "interval_time": 1000,
-            } }))
+            } }),
+            )
             .await?;
         }
         Ok(())
@@ -2780,7 +2835,7 @@ impl PrinterSession for BambuSession {
             &params::gcode(self.id(), &crate::skip_object_line(id)),
         )?;
         self.require_control()?;
-        self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "skip_objects", "obj_list": [n] } })).await
+        self.answered("print", json!({ "print": { "sequence_id": self.next_seq(), "command": "skip_objects", "obj_list": [n] } })).await
     }
 
     async fn send_gcode(&self, line: &str, token: &ApprovalToken) -> Result<()> {
@@ -2789,7 +2844,7 @@ impl PrinterSession for BambuSession {
         self.gate
             .check(token, Action::Gcode, self.id(), &params::gcode(self.id(), line))?;
         self.require_control()?;
-        self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "gcode_line", "param": format!("{line}\n") } })).await
+        self.answered("print", json!({ "print": { "sequence_id": self.next_seq(), "command": "gcode_line", "param": format!("{line}\n") } })).await
     }
 }
 
