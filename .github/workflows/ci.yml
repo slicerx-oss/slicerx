@@ -85,8 +85,12 @@ jobs:
     # a duplicate run (the concurrency comment above) skips this, and every job after it
     if: ${{ !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       node: ${{ steps.f.outputs.node }}
+      queued: ${{ steps.q.outputs.queued }}
       rust: ${{ steps.f.outputs.rust }}
       pgtap: ${{ steps.f.outputs.pgtap }}
       e2e: ${{ steps.f.outputs.e2e }}
@@ -137,10 +141,29 @@ jobs:
           # packages/brep (or this file); the merge queue and main always do, from the cache when nothing changed.
           if [ "$GITHUB_EVENT_NAME" != pull_request ] || printf '%s\n' "$changed" | grep -qE '^(packages/brep/|\.github/workflows/ci\.yml$)'; then brep=true; else brep=false; fi
           echo "brep=$brep" >> "$GITHUB_OUTPUT"
+      # A push to main whose commit already passed the merge queue: the queue merges by rebase, so the pushed commit is
+      # the exact tree a merge_group run of this workflow tested and passed. That push skips the Linux jobs the queue
+      # ran on it (web, wasm, licenses, rust on ubuntu-latest) and runs what only a push runs: rust on macOS and
+      # Windows, devkit, and the jobs no queue run has. A skipped check counts as green for releases
+      # (scripts/ci/require-green.sh). Any other push (an earlier commit of a group, or one made outside the queue), or
+      # a lookup that fails, runs everything.
+      - id: q
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs="repos/$GITHUB_REPOSITORY/actions/runs?event=merge_group&status=success&head_sha=$GITHUB_SHA"
+          n=$(gh api "$runs" --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length' 2>/dev/null) || n=0
+          if [ "${n:-0}" -gt 0 ] 2>/dev/null; then
+            echo "queued=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Tested in the merge queue::${GITHUB_SHA:0:8} passed a merge_group run; its Linux jobs skip"
+          else
+            echo "queued=false" >> "$GITHUB_OUTPUT"
+          fi
 
   web:
     needs: detect
-    if: needs.detect.outputs.node == 'true'
+    if: needs.detect.outputs.node == 'true' && needs.detect.outputs.queued != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -179,7 +202,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
-      DUP: ${{ needs.detect.result == 'skipped' }}
+      # also on Linux after a push the merge queue already tested (detect's queued): it reports passed in seconds
+      DUP: >-
+        ${{ needs.detect.result == 'skipped' || (needs.detect.outputs.queued == 'true' && matrix.os == 'ubuntu-latest') }}
     steps:
       - if: env.DUP != 'true'
         uses: actions/checkout@v4
@@ -389,7 +414,7 @@ jobs:
   # bundle's size gate (apps/web/scripts/bundle-size.mjs runs at the end of its build).
   wasm:
     needs: detect
-    if: needs.detect.outputs.rust == 'true'
+    if: needs.detect.outputs.rust == 'true' && needs.detect.outputs.queued != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -979,6 +1004,7 @@ jobs:
 
   licenses:
     needs: detect
+    if: needs.detect.outputs.queued != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
