@@ -14,6 +14,9 @@ type Lines = { from: Vec3; to: Vec3 }[]
 /** The edge under a click, as lines to draw, or null when there is no edge to pick there. */
 export type EdgeAt = (objectId: string, partIndex: number, triangle: number, at: Vec3) => Promise<Lines | null>
 
+/** Whether the face under a click is round (a hole's or a peg's wall), from the engine. */
+export type FaceRound = (objectId: string, partIndex: number, triangle: number, at: Vec3) => Promise<boolean>
+
 const near = (a: Vec3, b: Vec3) => a.every((v, k) => Math.abs(v - b[k]!) < 1e-4)
 
 /** Same face or edge: the same patch is hard to know without the engine, so the same triangle, or ends that match. */
@@ -37,7 +40,7 @@ export function addPick(cur: readonly SubPick[], pick: SubPick, mode: { shift?: 
  * Handles a Model click with faces or edges in the filter. True when it did (the click picked or cleared a face or
  * an edge); false leaves it to the ordinary object selection.
  */
-export async function pickSub(e: PickEvent, edgeAt: EdgeAt): Promise<boolean> {
+export async function pickSub(e: PickEvent, edgeAt: EdgeAt, faceRound?: FaceRound): Promise<boolean> {
   const filter = get().pickFilter
   const faces = filter.includes('face')
   const edges = filter.includes('edge')
@@ -53,10 +56,21 @@ export async function pickSub(e: PickEvent, edgeAt: EdgeAt): Promise<boolean> {
   else {
     const lines = await edgeAt(e.objectId, e.partIndex, e.triangle, e.point).catch(() => null)
     if (!lines) return true
-    pick = { kind: 'edge', ...base, lines }
+    // a circle comes back as many short lines, a straight edge as one
+    pick = { kind: 'edge', ...base, lines, ...(lines.length > 1 ? { round: true } : {}) }
   }
   const objectId = e.objectId
   set((s) => ({ subPicks: addPick(s.subPicks, pick, e), selection: objectId, selectedIds: [objectId], towerSelected: false }))
+  // A face learns whether it is round once the engine answers; the next slot then offers Hole and Thread.
+  if (pick.kind === 'face' && faceRound) {
+    const picked = pick
+    void faceRound(base.objectId, base.partIndex, base.triangle, base.point).then(
+      (round) => {
+        if (round) set((s) => ({ subPicks: s.subPicks.map((p) => (p === picked ? { ...p, round: true } : p)) }))
+      },
+      () => undefined,
+    )
+  }
   return true
 }
 
