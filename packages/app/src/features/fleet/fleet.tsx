@@ -5,7 +5,7 @@ import { noteViewClosing } from '../../camera/closing'
 import { openResume } from '../../plate/resume-state'
 import { tempText } from '../../lib/temp'
 import { isDue, removeFromQueue, startable } from '../../queue/queue'
-import { lazy, Suspense, useEffect, useId, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { Fleet } from '@slicerx/contracts'
 import { Button, Chip, Dialog, Field, Icon, Input, LinkButton, Menu, MenuAnchor, MenuHeading, MenuItem, Pill, Seg, tipAttrs } from '@slicerx/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -47,9 +47,19 @@ function useNow(ms: number): number {
   return now
 }
 
+/** `value` as it was when `hold` turned on, until it turns off again. */
+function useHeld<T>(value: T, hold: boolean): T {
+  const last = useRef(value)
+  if (!hold) last.current = value
+  return last.current
+}
+
 export function Fleet() {
   const fleet = useFleet()
-  const rows = fleet.data ?? []
+  const reconnecting = useApp((s) => s.bridgeStatus.state === 'reconnecting')
+  // While the bridge reconnects the wall shows the rows it had when the connection dropped: a refetch on the dead
+  // connection would turn every printer offline and change what the cards hold, and so their size.
+  const rows = useHeld(fleet.data ?? [], reconnecting)
   const now = useNow(30_000)
   const refresh = useApp((s) => s.fleetRefresh)
   const refetch = fleet.refetch
@@ -57,7 +67,6 @@ export function Fleet() {
     if (refresh) void refetch()
   }, [refresh, refetch])
   const view = useApp((s) => s.printersView)
-  const reconnecting = useApp((s) => s.bridgeStatus.state === 'reconnecting')
   const bays = useApp((s) => s.bays)
   const printerBays = useApp((s) => s.printerBays)
   const groups = useGroups()
@@ -268,6 +277,8 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
           <Pill state={away ? 'run' : pill.tone}>{away ? 'Reconnecting' : pill.label}</Pill>
         </span>
         {left ? <span className="wall-float wall-left">{left}</span> : null}
+        {/* Over the camera, which keeps its size, so the card's own lines stay as they were. */}
+        {away ? <span className="wall-float wall-seen">Last seen {lastSeen(st.updatedAt) ?? 'before the connection dropped'}</span> : null}
         {progress !== null ? (
           <div className="wall-bar" data-tone={kind === 'need' ? 'warn' : undefined} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)} aria-label={`${r.name} progress`}>
             <i style={{ transform: `scaleX(${progress})` }} />
@@ -284,7 +295,7 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
           <TileMenu r={r} groups={groups} disabled={away} onView={onView} />
         </div>
         <p className="wall-line" id={lineId}>
-          {away ? `Last seen ${lastSeen(st.updatedAt) ?? 'before the connection dropped'}: ${statusLine(r, now)}` : statusLine(r, now)}
+          {statusLine(r, now)}
         </p>
         {heat.length || slots.length ? (
           <div className="wall-meta">
