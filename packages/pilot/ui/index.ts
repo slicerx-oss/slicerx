@@ -32,7 +32,7 @@ export { AttachmentChip, ATTACH_LIMITS, ATTACH_ACCEPT, attachProblem, readAttach
 export type { ApprovalCardProps } from './approval-card'
 export { Summary } from './summary'
 export type { SummaryProps } from './summary'
-export { Citations } from './citations'
+export { Citations, safeUrl } from './citations'
 export { Spinner } from './spinner'
 export { usePilotRun } from './use-pilot-run'
 export type { PilotRun, ReplaySpeed } from './use-pilot-run'
