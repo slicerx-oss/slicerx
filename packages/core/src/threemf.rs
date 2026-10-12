@@ -227,7 +227,9 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
     }
     let to_map = |list: &[(String, String)]| -> serde_json::Map<String, serde_json::Value> {
         if prusa {
-            return crate::prusa::overrides(list);
+            let mut out = crate::prusa::overrides(list);
+            out.retain(|k, _| !never(k));
+            return out;
         }
         list.iter()
             .filter(|(k, _)| !never(k))
