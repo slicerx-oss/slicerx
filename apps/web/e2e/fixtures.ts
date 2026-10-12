@@ -7,7 +7,8 @@
 // with the slicer loaded, "plate" once the first plate has loaded, "viewport" once the 3D view is up too. Nothing waits on a fixed time, so a slow
 // machine (software WebGL, many pages starting at once) only takes longer and a fast one does not wait.
 import { execFileSync, execSync } from 'node:child_process'
-import { expect, test as base, type Locator, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
+import { test as base } from './browser-launch'
 
 /** How long a cold start may take before a spec gives up, on a loaded machine with software graphics. */
 export const COLD_START_MS = 120_000
