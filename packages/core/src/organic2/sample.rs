@@ -40,8 +40,16 @@ pub(crate) fn lines(p: &Params, area: &Shapes, kind: Lines, center: [f64; 2]) ->
     };
     let mut out = Vec::new();
     for island in ops::islands(area) {
-        let ls: Vec<Vec<Point>> =
-            crate::patterns::support_lines(&island, p.w, pitch.max(p.w * 0.5), angle, false, 0.0, center);
+        // Joined like the normal infill, so a walk over one joined line spaces tips across rows too.
+        let ls: Vec<Vec<Point>> = crate::patterns::support_lines(
+            &island,
+            p.w,
+            pitch.max(p.w * 0.5),
+            angle,
+            false,
+            p.s.line_join.max(0.0),
+            center,
+        );
         out.extend(
             ls.into_iter()
                 .filter(|l| l.len() >= 2)
