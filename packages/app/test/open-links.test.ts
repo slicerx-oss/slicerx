@@ -117,7 +117,7 @@ describe('the pages the desktop app opens', () => {
       'features/store/creator-sheet.tsx': 2,
       'features/store/account.tsx': 2,
       'bugs/report-dialog.tsx': 1,
-      'state/actions.ts': 1,
+      'state/send-actions.ts': 1,
       'updates/dialog.tsx': 5,
       'lib/links.ts': 3,
       'first-run/printer-step.tsx': 1,
