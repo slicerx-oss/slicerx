@@ -52,7 +52,9 @@ fn looser(a: Option<Setting>, b: Option<Setting>) -> Option<Setting> {
 
 /// Tries to merge `a` and `b` (candidates for layer `layer`); the merged node when they meet.
 fn try_merge(p: &Params, v: &Volumes<'_>, a: &Node, b: &Node, layer: usize) -> Option<Node> {
-    if a.flat != b.flat || a.min_gap != b.min_gap {
+    // Gap modes may differ (the merged node keeps the minimum gap if either has it): the reference
+    // merges such pairs, and keeping them apart left parallel branches that never joined.
+    if a.flat != b.flat {
         return None;
     }
     let (small, big) = if coll_r(p, a) <= coll_r(p, b) {
@@ -393,5 +395,10 @@ mod tests {
         assert!(try_merge(&p, &v, &a, &far, 4).is_none());
         let m = m.unwrap_or_else(|| a.clone());
         assert!(!area_of(&m).is_empty());
+        // A node in minimum-gap mode merges with one that is not, and keeps the minimum gap.
+        let mut g = mk(100.6);
+        g.min_gap = true;
+        let m = try_merge(&p, &v, &a, &g, 4);
+        assert!(m.as_ref().is_some_and(|m| m.min_gap));
     }
 }

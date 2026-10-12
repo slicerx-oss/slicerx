@@ -124,7 +124,23 @@ impl Trace {
                 let bed = layer.iter().filter(|n| n.to_bed).count();
                 let flat = layer.iter().filter(|n| n.flat && !n.to_bed).count();
                 let gap = layer.iter().filter(|n| n.min_gap).count();
-                eprintln!("organic2 layer {l} nodes {} bed {bed} flat-only {flat} min-gap {gap}", layer.len());
+                let lost = layer.iter().filter(|n| n.lost || n.very_lost).count();
+                eprintln!(
+                    "organic2 layer {l} nodes {} bed {bed} flat-only {flat} min-gap {gap} lost {lost}",
+                    layer.len()
+                );
+                if std::env::var_os("SX_ORGANIC2_GAPNODES").is_some() {
+                    for n in layer.iter().filter(|n| n.min_gap) {
+                        eprintln!(
+                            "organic2 gapnode {l} at {:.2} {:.2} d {} bed {} last {:?}",
+                            f64::from(n.hint.x) / crate::geom::SCALE,
+                            f64::from(n.hint.y) / crate::geom::SCALE,
+                            n.d,
+                            n.to_bed,
+                            n.last
+                        );
+                    }
+                }
             }
             return;
         }
