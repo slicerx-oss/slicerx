@@ -31,6 +31,7 @@ import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
+import { hostSlices, setHostSlices, stayInModel } from './state/model-mode'
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
@@ -78,6 +79,8 @@ const PilotDock = lazy(() => import('./features/pilot/dock').then((m) => ({ defa
 export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo }: { host: Host; features?: readonly AppFeature[]; theme?: Theme; edition?: EditionConfig; logo?: ReactNode }) {
   // Text outside React (toasts, errors, menus) names the app through appName(); set before anything renders.
   setCurrentEdition(edition)
+  // A host that cannot slice (the CAD-only browser build) keeps the app in Model; set before anything renders.
+  setHostSlices(host.capabilities.slicing !== false)
   const brandLogo = useMemo(() => logo ?? editionLogo(edition), [logo, edition])
   const scheme = useApp((s) => s.scheme)
   const themeIds = useApp((s) => s.themeIds)
@@ -151,6 +154,8 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
 
 function Shell() {
   const host = useHost()
+  // Anything that asks for Slice (a key, a link, a saved pref) lands back in Model when the host cannot slice.
+  useEffect(() => (hostSlices() ? undefined : stayInModel()), [])
   useAskForPrinter()
   // Background slicing after edits (Settings > Auto slice).
   useEffect(() => startAutoSlice(host), [host])
