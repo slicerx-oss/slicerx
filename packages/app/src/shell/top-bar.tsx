@@ -16,7 +16,8 @@ import { ModeSelector } from '../first-run/mode-selector'
 import { useFleet } from '../lib/queries'
 import { openSettings, set, setWorkspace, useApp } from '../state/store'
 import { ModeTabs } from './mode-tab'
-import { useCadShown } from '../state/model-mode'
+import { hostSlices, useCadShown } from '../state/model-mode'
+import { OpenInAppButton } from './open-in-app'
 import './top-bar.css'
 
 /** The narrowing steps, in order: search as an icon, tab labels gone, Vault and Printers in More, Model and Slice labels gone. */
@@ -87,7 +88,9 @@ export function TopBar() {
   // With modeling tools the first tab is the Design | Slice pair; without, a plain Slice tab.
   // A phone shows a plain Slice tab: modeling waits for the desktop.
   const cad = useCadShown()
-  const shown = useMemo(() => (cad ? tabs.filter((w) => w.id !== 'prepare') : tabs), [cad, tabs])
+  // A host that cannot slice (the CAD-only browser build) shows Model and nothing else.
+  const slices = hostSlices()
+  const shown = useMemo(() => (!slices ? [] : cad ? tabs.filter((w) => w.id !== 'prepare') : tabs), [slices, cad, tabs])
   const projectFile = useApp((s) => s.projectFile)
   const nameRef = useRef<HTMLDivElement>(null)
   const step = useFitStep(nameRef, `${projectFile?.name ?? ''}|${shown.map((t) => t.label).join(',')}`)
@@ -104,6 +107,7 @@ export function TopBar() {
       right={
         <>
           {layout.modeSelector === 'top-right' ? <ModeSelector layout={layout} id="mode-top" /> : null}
+          {slices ? null : <OpenInAppButton />}
           <SearchButton placeholder="Search" onClick={() => set({ commandOpen: true })} shortcut={formatShortcut(palette)} />
           {assistant ? (
             <Button variant="ghost" size="sm" className="mimir-btn" aria-pressed={dockOpen} tip="pilot.ask" onClick={toggleDock}>
