@@ -57,6 +57,11 @@ export function TranscriptList({ transcript, onApprove, onDeny, onRetry, empty }
         return <PermLine permission={b.permission} mode={b.mode} message={b.message} />
       case 'approval':
         return <ApprovalCard request={b.request} resolution={b.resolution} actionable={!replay && !b.replay} onApprove={onApprove} onDeny={onDeny} />
+      case 'choice': {
+        // the phone shows the question and the pick; answering stays on the desktop
+        const picked = b.choices.find((c) => c.id === b.picked)
+        return <Say text={picked ? `${b.question} **${picked.label}**` : b.question} streaming={false} />
+      }
       case 'summary':
         return <Summary title={b.title} rows={b.rows} stopped={b.stopped} ms={b.ms} />
       case 'citations':
