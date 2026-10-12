@@ -60,6 +60,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
 pub use advert::MdnsConfig;
+pub use app_link::AppLinkWaits;
 pub use broker_gate::BrokerGate;
 pub use identity::{HELLO_CONTEXT, hub_fingerprint, read_hub_key};
 pub use inbox::{InboxConfig, TOKEN_SECRET as INBOX_TOKEN_SECRET};
@@ -127,6 +128,9 @@ pub struct LinkConfig {
     /// The ports a Bambu Lab printer is asked its own name on, at its own address only: 2021 and
     /// 1990 on real printers. Tests point it at a mock's.
     pub name_ports: Vec<u16>,
+    /// How long the app link waits for the person's answer, and how long a client whose question
+    /// went unanswered waits before asking again. Tests shorten them.
+    pub app_link_waits: AppLinkWaits,
 }
 
 /// Secret store entry for the app code when [`LinkConfig::code_in_secrets`] is set.
@@ -153,6 +157,7 @@ impl Default for LinkConfig {
             lan_bind: None,
             discovery_bind: None,
             name_ports: sx_connect::drivers::bambu::SSDP_PORTS.to_vec(),
+            app_link_waits: AppLinkWaits::default(),
         }
     }
 }
@@ -423,6 +428,7 @@ pub async fn serve_with_approvals(
         eprintln!("sx-link: the phone listener did not restart: {e}");
     }
     state.remote.set_rtc_bind(cfg.rtc_bind);
+    state.app_link.set_waits(cfg.app_link_waits);
     remote::resume(&state);
     let kept = state.clone();
     let watcher = tokio::spawn(hub_rpc::watch(state.clone()));
