@@ -89,6 +89,18 @@ describe('app link methods', () => {
     expect(await runCall('app.info', {})).toMatchObject({ objects: 1, methods: APP_LINK_METHODS })
   })
 
+  it('list the bed with the plate, a delta by its diameter', async () => {
+    const was = get().bed
+    try {
+      set({ bed: { widthMm: 300, depthMm: 300, heightMm: 410, round: true } })
+      expect(((await runCall('plate.list', {})) as { bed: unknown }).bed).toEqual({ shape: 'round', diameterMm: 300, heightMm: 410, centerMm: [150, 150] })
+      set({ bed: { widthMm: 256, depthMm: 256, heightMm: 256 } })
+      expect(((await runCall('plate.list', {})) as { bed: unknown }).bed).toEqual({ shape: 'rectangle', widthMm: 256, depthMm: 256, heightMm: 256 })
+    } finally {
+      set({ bed: was })
+    }
+  })
+
   it('refuse a name they do not have, including object keys', async () => {
     for (const m of ['print.local', '__proto__', 'constructor', 'toString']) {
       const e = await runCall(m, {}).catch((x: unknown) => x)
