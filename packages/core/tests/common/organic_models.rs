@@ -492,3 +492,101 @@ pub fn support_moves(gcode: &str) -> Vec<(f32, Vec<(bool, [f32; 2], [f32; 2])>)>
     }
     layers
 }
+
+/// A 3MF of a mesh as one object, every part merged and moved by `at`, with each triangle's paint text
+/// as the attribute Bambu Studio and Orca read (`paint_color`, `paint_seam`, `paint_supports`,
+/// `paint_fuzzy_skin`), so the reference binary sees the paint an STL drops.
+pub fn threemf(m: &Mesh, at: [f32; 2]) -> Vec<u8> {
+    use std::fmt::Write as _;
+    const ATTR: [&str; 4] = ["paint_color", "paint_seam", "paint_supports", "paint_fuzzy_skin"];
+    let (mut vx, mut tx, mut base) = (String::new(), String::new(), 0u32);
+    for p in &m.parts {
+        for q in &p.positions {
+            let _ = write!(
+                vx,
+                r#"<vertex x="{}" y="{}" z="{}"/>"#,
+                q[0] + at[0],
+                q[1] + at[1],
+                q[2]
+            );
+        }
+        for (i, t) in p.triangles.iter().enumerate() {
+            let _ = write!(
+                tx,
+                r#"<triangle v1="{}" v2="{}" v3="{}""#,
+                t[0] + base,
+                t[1] + base,
+                t[2] + base
+            );
+            for (layer, tri, text) in &p.paint_texts {
+                if *tri as usize == i {
+                    let _ = write!(tx, r#" {}="{text}""#, ATTR[usize::from(*layer)]);
+                }
+            }
+            tx.push_str("/>");
+        }
+        base += p.positions.len() as u32;
+    }
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices>{vx}</vertices><triangles>{tx}</triangles></mesh></object></resources><build><item objectid="1"/></build></model>"#
+    );
+    let types = r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>"#;
+    let rels = r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>"#;
+    stored_zip(&[
+        ("[Content_Types].xml", types.as_bytes()),
+        ("_rels/.rels", rels.as_bytes()),
+        ("3D/3dmodel.model", model.as_bytes()),
+    ])
+}
+
+/// A stored (uncompressed) ZIP of the given entries.
+fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let (mut out, mut central) = (Vec::new(), Vec::new());
+    for (name, data) in entries {
+        let offset = out.len() as u32;
+        let crc = crc32(data);
+        for (dst, sig) in [(&mut out, 0x0403_4b50u32), (&mut central, 0x0201_4b50u32)] {
+            dst.extend_from_slice(&sig.to_le_bytes());
+            if sig == 0x0201_4b50 {
+                dst.extend_from_slice(&20u16.to_le_bytes());
+            }
+            dst.extend_from_slice(&[20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            dst.extend_from_slice(&crc.to_le_bytes());
+            dst.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            dst.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            dst.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            dst.extend_from_slice(&0u16.to_le_bytes());
+            if sig == 0x0201_4b50 {
+                dst.extend_from_slice(&[0; 10]);
+                dst.extend_from_slice(&offset.to_le_bytes());
+            }
+            dst.extend_from_slice(name.as_bytes());
+        }
+        out.extend_from_slice(data);
+    }
+    let at = out.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    out.extend_from_slice(&at.to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
+    out
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut c = 0xffff_ffffu32;
+    for &b in data {
+        c ^= u32::from(b);
+        for _ in 0..8 {
+            c = if c & 1 == 1 {
+                0xedb8_8320 ^ (c >> 1)
+            } else {
+                c >> 1
+            };
+        }
+    }
+    !c
+}

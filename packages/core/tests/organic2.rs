@@ -275,8 +275,8 @@ fn tall_tower_is_held_up() {
     assert!(inside_bed(&moves));
 }
 
-/// Writes the models as STL with their settings, for the runs against the reference binary. Set
-/// `ORGANIC2_MODELS_DIR`.
+/// Writes the models as STL with their settings, and the painted one as a 3MF too, for the runs against the
+/// reference binary. Set `ORGANIC2_MODELS_DIR`.
 #[test]
 #[ignore = "writes files for parity runs"]
 fn write_models() {
@@ -288,7 +288,33 @@ fn write_models() {
     for m in models::all() {
         let base = format!("{:02}-{}", m.id, m.name);
         std::fs::write(dir.join(format!("{base}.stl")), models::stl(&m.mesh, m.at)).expect("stl");
+        // A painted model also goes out as a 3MF, which keeps the paint.
+        if m.mesh.parts.iter().any(|p| !p.paint_texts.is_empty()) {
+            std::fs::write(dir.join(format!("{base}.3mf")), models::threemf(&m.mesh, m.at)).expect("3mf");
+        }
         let cfg = serde_json::to_string_pretty(&m.config).expect("json");
         std::fs::write(dir.join(format!("{base}.json")), cfg).expect("json");
     }
+}
+
+/// The painted model's 3MF loads back with the same support paint the model carries: enforced on the
+/// column's face, blocked under the right arm, as the reference binary will read it.
+#[test]
+fn painted_3mf_keeps_its_support_paint() {
+    let m = models::painted();
+    let back = Mesh::load(&models::threemf(&m, [0.0, 0.0]), "12-painted.3mf").expect("loads");
+    let states = |mesh: &Mesh| {
+        let mut s: Vec<(u8, [[i32; 3]; 3])> = mesh
+            .parts
+            .iter()
+            .flat_map(|p| &p.support_paint)
+            .map(|f| (f.state, f.v.map(|v| v.map(|x| (x * 1000.0).round() as i32))))
+            .collect();
+        s.sort_unstable();
+        s
+    };
+    let (want, got) = (states(&m), states(&back));
+    assert_eq!(want.iter().filter(|f| f.0 == 1).count(), 2);
+    assert_eq!(want.iter().filter(|f| f.0 == 2).count(), 2);
+    assert_eq!(got, want);
 }
