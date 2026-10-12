@@ -58,7 +58,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const ref = useRef<HTMLElement>(null)
   const attachments = useAttachments()
   // The battle ravens stand behind the conversation until a model answers here.
-  const ravens = useMimirLink() !== 'model'
+  const link = useMimirLink()
+  const ravens = link !== 'model'
   const pilot = useMemo(() => tabMimir(), [])
   const [sessionId, setSessionId] = useState(newSessionId)
   const run = usePilotRun(pilot, sessionId)
@@ -113,9 +114,11 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           {name}
         </span>
         {/* Shown while the stub answers, so nobody mistakes it for a model. */}
+        {link === 'scripted' ? (
         <span className="mimir-chat-scripted sx-mono" {...tipAttrs({ title: 'Scripted replies', body: `${ASSISTANT_NAME} plays scripted turns here until a model is connected to this tab. The tools it calls are real.` })}>
           Scripted replies
         </span>
+        ) : null}
         <Button size="sm" variant="ghost" icon="plus" aria-label="New conversation" tip="pilot.newChat" onClick={() => setSessionId(newSessionId())} />
       </header>
       <div className="mimir-stage">
