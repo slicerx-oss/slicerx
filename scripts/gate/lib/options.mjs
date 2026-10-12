@@ -21,7 +21,7 @@ export const HELP = `node scripts/gate/run.mjs --app <bridge build> [options]
 
   --app <path>          The bridge test build (default target/agent-bridge/release/slicerx[.exe]; a .app works)
   --platform <name>     windows, macos or linux (default: this machine's)
-  --account <address>   The @qa.slicerx.app account for c and d (and the signed-in half of b)
+  --account <address>   The @qa.slicerx.app account for c, d and e (and the signed-in half of b)
   --out <dir>           Where the report, screenshots and results.json go (default: a new temp folder)
   --only <list>         Scenarios to run, for example a,b,e (default: all, a b c d e w)
   --skip <list>         Scenarios to leave out
@@ -79,6 +79,9 @@ export function options(argv) {
   const account = values.account?.trim().toLowerCase()
   if (account && !QA_ACCOUNT.test(account)) throw new Error(`${account} is not a release-gate account; the gate signs in only with @qa.slicerx.app addresses`)
   if (!account && (run.includes('c') || run.includes('d'))) throw new Error('scenarios c and d need --account <name>@qa.slicerx.app (or --skip c,d)')
+  // The starters download signed in: anonymous downloads share one limit per network, and another gate on the same
+  // network can have used it up (the 0.2.5 Windows gate's e ran out right after the Linux one's).
+  if (!account && run.includes('e')) throw new Error('scenario e downloads the starters signed in and needs --account <name>@qa.slicerx.app (or --skip e)')
   const minutes = (v, def, name) => {
     if (v === undefined) return def
     const n = Number(v)
