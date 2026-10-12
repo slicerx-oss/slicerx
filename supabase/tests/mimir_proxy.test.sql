@@ -9,7 +9,7 @@
 -- `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(84);
+select plan(86);
 
 create temp table t (k text primary key, v text) on commit drop;
 grant all on t to anon, authenticated, service_role, mimir_session_reader;
@@ -191,10 +191,23 @@ update public.mimir_limits set net_in_flight = 1 where edition = 'slicerx';
 select public.mimir_reserve((select v from t where k = 'v1'), '2001:db8:9:1::1', 'claude-haiku-5-5', 0, 2, 0);
 select throws_ok(format($$ select public.mimir_reserve(%L, '2001:db8:9:2::1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'v2')), 'P0001',
   'too many calls at once from this network', 'a /48 has a limit of calls at once across its /64s');
-update public.mimir_limits set net_in_flight = 24, net_daily_micros = 1 where edition = 'slicerx';
-select throws_ok(format($$ select public.mimir_reserve(%L, '2001:db8:9:2::1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'v2')), 'P0001',
+-- room for 1 more micro-dollar, and a call worth 2
+update public.mimir_limits set net_in_flight = 24, net_daily_micros = 1 + (select sum(coalesce(cost_micros, reserved_micros)) from public.mimir_calls
+  where net_hash = (select c.net_hash from public.mimir_calls c join public.mimir_installs i on i.id = c.install_id
+    where i.token_hash = public.mimir_token_hash((select v from t where k = 'v1')) limit 1)) where edition = 'slicerx';
+select throws_ok(format($$ select public.mimir_reserve(%L, '2001:db8:9:2::1', 'claude-haiku-5-5', 0, 4, 0) $$, (select v from t where k = 'v2')), 'P0001',
   'daily limit for this network reached', 'a /48 has a daily cap across its /64s');
-update public.mimir_limits set net_daily_micros = 6000000;
+-- a /48 already at its day's spend is refused before the lock, with a hint that asks for no exact count
+update public.mimir_limits set net_daily_micros = (select sum(coalesce(cost_micros, reserved_micros)) from public.mimir_calls
+  where net_hash = (select c.net_hash from public.mimir_calls c join public.mimir_installs i on i.id = c.install_id
+    where i.token_hash = public.mimir_token_hash((select v from t where k = 'v1')) limit 1)) where edition = 'slicerx';
+select throws_ok(format($$ select public.mimir_reserve(%L, '2001:db8:9:2::1', 'claude-haiku-5-5', 0, 0, 0) $$, (select v from t where k = 'v2')), 'P0001',
+  'this network has used its daily limit', 'a /48 at its cap is refused even for a call that costs nothing');
+-- and one already holding its calls at once
+update public.mimir_limits set net_daily_micros = 6000000, net_in_flight = 1 where edition = 'slicerx';
+select throws_ok(format($$ select public.mimir_reserve(%L, '2001:db8:9:2::1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'v2')), 'P0001',
+  'too many calls at once from this network', 'a /48 at its calls at once is refused before the lock');
+update public.mimir_limits set net_daily_micros = 6000000, net_in_flight = 24;
 
 -- Past half of the edition's cap, an install's cap shrinks with what the edition has left.
 select is(public.mimir_install_cap((select l from public.mimir_limits l where edition = 'slicerx'), 0), 500000::bigint, 'full install cap early in the day');

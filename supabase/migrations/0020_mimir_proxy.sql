@@ -370,6 +370,19 @@ begin
       where ip_hash = v_ip and created_at > now() - interval '1 minute') >= v_lim.ip_per_minute then
     raise exception 'too many requests from this address' using errcode = 'P0001', hint = 'ip_rate';
   end if;
+  -- A /48 already at its calls at once or its day's spend is refused here, before the lock
+  -- and with a hint that sends no exact count, since none could fit; the checks under the
+  -- lock below are the exact ones.
+  if v_net is not null then
+    if (select count(*) from public.mimir_calls where net_hash = v_net and settled_at is null
+        and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.net_in_flight then
+      raise exception 'too many calls at once from this network' using errcode = 'P0001', hint = 'net_busy';
+    end if;
+    if (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) from public.mimir_calls
+        where net_hash = v_net and day = v_day) >= v_lim.net_daily_micros then
+      raise exception 'this network has used its daily limit' using errcode = 'P0001', hint = 'net_full';
+    end if;
+  end if;
   -- One reservation at a time, so two calls cannot both slip under a cap (the IP cap spans
   -- editions, so the lock does too).
   perform pg_advisory_xact_lock(hashtext('public.mimir_reserve'));
@@ -385,7 +398,7 @@ begin
   end if;
   if v_net is not null and (select count(*) from public.mimir_calls where net_hash = v_net and settled_at is null
       and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.net_in_flight then
-    raise exception 'too many calls at once from this network' using errcode = 'P0001', hint = 'ip_busy';
+    raise exception 'too many calls at once from this network' using errcode = 'P0001', hint = 'net_busy';
   end if;
   if (select count(*) from public.mimir_calls where edition = v_inst.edition and settled_at is null
       and created_at > now() - make_interval(secs => v_lim.call_open_seconds)) >= v_lim.edition_in_flight then
@@ -408,7 +421,7 @@ begin
   end if;
   if v_net is not null and (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) from public.mimir_calls
       where net_hash = v_net and day = v_day) + p_max_micros > v_lim.net_daily_micros then
-    raise exception 'daily limit for this network reached' using errcode = 'P0001', hint = 'ip_daily';
+    raise exception 'daily limit for this network reached' using errcode = 'P0001', hint = 'net_daily';
   end if;
   if v_edition_used + p_max_micros > v_lim.edition_daily_micros then
     raise exception 'daily limit for this edition reached' using errcode = 'P0001', hint = 'edition_daily';
