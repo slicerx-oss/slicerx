@@ -5,12 +5,14 @@
 // (temperatures, filament load and unload, a G-code line). They are written
 // as mimir tools so the same permission gate and approval tokens apply.
 import { readFileSync } from 'node:fs'
+import { extname } from 'node:path'
 import type { ApprovalToken, PrinterHost } from '@slicerx/contracts'
 import { defineTool, type PilotTool, type ToolContext } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DataStore } from './data'
 import { resolveModel, type PathPolicy } from './models'
 import type { ProfileCatalog } from './profiles'
+import { readStlPositions, splitBodies } from './mesh'
 import { McpProject } from './project'
 import { FILAMENT_TYPES, MAX_FILAMENTS } from './filaments'
 import { validateConfig } from './settings'
@@ -126,22 +128,46 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const add = defineTool({
     name: 'project.add_model',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: 'Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. New objects go on plate 1.',
+    description:
+      'Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. New objects go on plate 1. A file that holds several separate bodies loads as one object by default; bodies "parts" keeps them as one object with a part per body, "objects" loads an object per body. The answer lists each new object with its part count.',
     input: z.object({
       model: z.string().min(1).describe('Absolute path or http(s) URL of an STL file, or a built-in test model such as sample:cube-20'),
       copies: z.number().int().min(1).max(200).default(1),
+      bodies: z.enum(['auto', 'parts', 'objects']).default('auto').describe('A file of several separate bodies: auto (one object, as before), parts (one object, a part per body) or objects (an object per body)'),
     }),
     async run(i) {
       const project = need()
       const path = await resolveModel(deps.policy, i.model)
       const bytes = readFileSync(path)
       const name = path.split(/[\\/]/).pop() ?? 'model.stl'
-      const handle = await deps.slicer.loadModel(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, name)
-      const obj = project.addMesh(handle.id, name, handle.bboxMm, handle.triangles, i.copies)
-      return { summary: `Added ${name} (${handle.bboxMm.join(' x ')} mm) x${i.copies}`, output: { object: { id: obj.id, name, bbox_mm: handle.bboxMm, triangles: handle.triangles }, project: project.describe() } }
+      const bodies = i.bodies === 'auto' || extname(name).toLowerCase() !== '.stl' ? [] : splitBodies(readStlPositions(bytes))
+      const stem = name.replace(/\.[^.]+$/, '')
+      const added: { id: string; name: string; parts: number; bbox_mm: [number, number, number]; triangles: number }[] = []
+      if (bodies.length > 1 && i.bodies === 'objects') {
+        for (const [k, body] of bodies.entries()) {
+          const piece = `${stem} ${k + 1}`
+          const handle = await deps.slicer.loadParts(piece, [{ name: piece, slot: 1, positions: body, indices: Uint32Array.from({ length: body.length / 3 }, (_, v) => v) }])
+          const obj = project.addMesh(handle.id, piece, handle.bboxMm, handle.triangles, i.copies)
+          added.push({ id: obj.id, name: piece, parts: 1, bbox_mm: handle.bboxMm, triangles: handle.triangles })
+        }
+      } else {
+        const handle =
+          bodies.length > 1
+            ? await deps.slicer.loadParts(name, bodies.map((body, k) => ({ name: `${stem} part ${k + 1}`, slot: 1, positions: body, indices: Uint32Array.from({ length: body.length / 3 }, (_, v) => v) })))
+            : await deps.slicer.loadModel(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, name)
+        const parts = bodies.length > 1 ? bodies.length : 1
+        const obj = project.addMesh(handle.id, name, handle.bboxMm, handle.triangles, i.copies, parts)
+        added.push({ id: obj.id, name, parts, bbox_mm: handle.bboxMm, triangles: handle.triangles })
+      }
+      const first = added[0]!
+      const what = added.length > 1 ? `${added.length} objects` : first.parts > 1 ? `one object of ${first.parts} parts` : `${first.bbox_mm.join(' x ')} mm`
+      return {
+        summary: `Added ${name} (${what}) x${i.copies}`,
+        output: { object: { id: first.id, name: first.name, bbox_mm: first.bbox_mm, triangles: first.triangles, parts: first.parts }, objects: added, object_count: added.length, part_count: added.reduce((n, o) => n + o.parts, 0), project: project.describe() },
+      }
     },
   })
 

@@ -10,6 +10,7 @@ import { editionHasCad, useEdition } from '../edition'
 import { formatShortcut } from '../lib/keys'
 import { AccentGroup, AccessibilityGroup, SetRow, TextGroup } from '../shell/appearance-settings'
 import { AUTO_SLICE_DETAIL, AUTO_SLICE_MODES, autoSliceFields, autoSliceMode } from '../state/auto-slice-mode'
+import { MULTI_BODY_DETAIL, MULTI_BODY_MODES } from '../state/multi-body'
 import { ThemeSettingsSection } from '../shell/theme-settings'
 import { get, set, useApp } from '../state/store'
 import { openSetup, resumeSetup, useLookChoice } from './look'
@@ -118,6 +119,7 @@ export function LookSettingsSection() {
 export function SlicingSettingsSection() {
   const cad = useApp((s) => s.cadTools)
   const mode = useApp(autoSliceMode)
+  const bodies = useApp((s) => s.multiBodyImport)
   const modeling = editionHasCad(useEdition())
   return (
     <section className="set-sec" aria-labelledby="slicing-h">
@@ -126,6 +128,9 @@ export function SlicingSettingsSection() {
         <h4>Slicing</h4>
         <SetRow id="set-autoslice" icon="slice" label="Auto slice" detail={AUTO_SLICE_DETAIL}>
           <Seg label="Auto slice" size="sm" value={mode} onChange={(v) => set(autoSliceFields(v))} options={AUTO_SLICE_MODES.map((m) => ({ value: m.value, label: m.label, title: m.title, testId: `set-autoslice-${m.value}` }))} />
+        </SetRow>
+        <SetRow id="set-multibody" icon="split" label="Files with several bodies" detail={MULTI_BODY_DETAIL}>
+          <Seg label="Files with several bodies" size="sm" value={bodies} onChange={(v) => set({ multiBodyImport: v })} options={MULTI_BODY_MODES.map((m) => ({ value: m.value, label: m.label, title: m.title, testId: `set-multibody-${m.value}` }))} />
         </SetRow>
       </div>
       <ElectricityFields />

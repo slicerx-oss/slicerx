@@ -98,3 +98,74 @@ export function writeBinaryStl(pos: Float32Array): Buffer {
   }
   return buf
 }
+
+/**
+ * The separate bodies of a triangle soup: triangles that share a corner (welded to 1 micrometer) form a shell, and a
+ * shell facing inward (a cavity) joins the smallest outward shell whose box holds it. Largest body first. One body
+ * comes back as the input.
+ */
+export function splitBodies(pos: Float32Array): Float32Array[] {
+  const count = Math.floor(pos.length / 9)
+  const corner = new Map<string, number>()
+  const parent: number[] = []
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]!]!
+      x = parent[x]!
+    }
+    return x
+  }
+  const node = (i: number): number => {
+    const key = `${Math.round((pos[i] ?? 0) * 1000)},${Math.round((pos[i + 1] ?? 0) * 1000)},${Math.round((pos[i + 2] ?? 0) * 1000)}`
+    let id = corner.get(key)
+    if (id === undefined) {
+      id = parent.length
+      parent.push(id)
+      corner.set(key, id)
+    }
+    return id
+  }
+  const triRoot: number[] = []
+  for (let t = 0; t < count; t++) {
+    const a = node(t * 9)
+    const b = node(t * 9 + 3)
+    const c = node(t * 9 + 6)
+    const ra = find(a)
+    parent[find(b)] = ra
+    parent[find(c)] = ra
+  }
+  for (let t = 0; t < count; t++) triRoot.push(find(node(t * 9)))
+  const shells = new Map<number, number[]>()
+  triRoot.forEach((r, t) => {
+    const s = shells.get(r)
+    if (s) s.push(t)
+    else shells.set(r, [t])
+  })
+  if (shells.size < 2) return [pos]
+  const soup = (tris: number[]): Float32Array => {
+    const out = new Float32Array(tris.length * 9)
+    tris.forEach((t, k) => out.set(pos.subarray(t * 9, t * 9 + 9), k * 9))
+    return out
+  }
+  const list = [...shells.values()].map((tris) => {
+    const p = soup(tris)
+    const s = meshStats(p)
+    let v = 0
+    for (let o = 0; o + 8 < p.length; o += 9) {
+      const [ax, ay, az, bx, by, bz, cx, cy, cz] = [p[o]!, p[o + 1]!, p[o + 2]!, p[o + 3]!, p[o + 4]!, p[o + 5]!, p[o + 6]!, p[o + 7]!, p[o + 8]!]
+      v += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)) / 6
+    }
+    const min = s.minMm
+    const max: [number, number, number] = [min[0] + s.bboxMm[0], min[1] + s.bboxMm[1], min[2] + s.bboxMm[2]]
+    return { tris, volume: v, min, max }
+  })
+  const holds = (o: (typeof list)[number], i: (typeof list)[number]) => [0, 1, 2].every((k) => o.min[k]! <= i.min[k]! + 1e-6 && i.max[k]! <= o.max[k]! + 1e-6)
+  const bodies = list.filter((s) => s.volume >= 0).map((s) => ({ ...s, tris: [...s.tris] }))
+  for (const cavity of list.filter((s) => s.volume < 0)) {
+    const holder = bodies.filter((b) => holds(b, cavity)).sort((a, b) => a.volume - b.volume)[0]
+    if (holder) holder.tris.push(...cavity.tris)
+    else bodies.push({ ...cavity, tris: [...cavity.tris] })
+  }
+  if (bodies.length < 2) return [pos]
+  return bodies.sort((a, b) => b.tris.length - a.tris.length).map((b) => soup(b.tris))
+}
