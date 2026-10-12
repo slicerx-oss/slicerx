@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Organic tree supports on the clean-room engine (`organic_support_engine: "cleanroom"`), checked on
+//! Organic tree supports on the v2 engine (`organic_support_engine: "v2"`), checked on
 //! the generated test models: the engine stays off by default, support is made where it should be and
 //! nowhere it should not, each compatibility flag works both ways, and contact loops still print.
 
@@ -77,7 +77,7 @@ fn legacy_engine_stays_the_default() {
     let b = slice_mesh(models::t_bar(), m.at, legacy);
     assert_eq!(a.gcode, b.gcode, "no key and \"legacy\" give the same output");
     let (c, moves) = run(1, json!({}), "");
-    assert_ne!(a.gcode, c.gcode, "the clean-room engine is a different engine");
+    assert_ne!(a.gcode, c.gcode, "the v2 engine is a different engine");
     assert!(!moves.is_empty());
 }
 
@@ -135,7 +135,7 @@ fn mushroom_gets_roof_layers_under_the_cap() {
 
 /// Model 4 with 6 mm branches (`r_u` 3): the 6 mm hole is narrower than 2 `r_u` + 2 `G_xy`, and under the shelf
 /// it is the only way to the bed. Tips over it are "bed" (not safe) and go down it at their small collision
-/// radius, clipped to the hole (spec E7); every support line still keeps the gap from the hole's walls.
+/// radius, clipped to the hole; every support line still keeps the gap from the hole's walls.
 #[test]
 fn hole_that_is_the_only_bed_path_is_used_with_clearance() {
     let (_, moves) = run(
@@ -211,7 +211,7 @@ fn branches_rest_on_the_block_unless_bed_only() {
 }
 
 #[test]
-fn contact_loops_print_on_the_cleanroom_path() {
+fn contact_loops_print_on_the_v2_path() {
     let iface_len = |moves: &Moves| -> f32 {
         moves
             .iter()

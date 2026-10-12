@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Growing branches down one layer at a time (spec 5.1): each node tries growth settings from the most
+//! Growing branches down one layer at a time: each node tries growth settings from the most
 //! to the least preferred until one leaves an area from which the bed, or a flat model top, can still
 //! be reached.
 
@@ -50,7 +50,7 @@ fn speeds(p: &Params, n: &Node, layer: usize) -> Speeds {
     }
 }
 
-/// The foot speed bonus applies (spec 5.1, flag Q7): meant for a foot that will widen, so the recommended
+/// The foot speed bonus applies: meant for a foot that will widen, so the recommended
 /// radius below is larger than the next radius; the reference tests the opposite.
 fn foot_bonus(p: &Params, recommended: f64, next: f64) -> bool {
     if p.s.quirks.foot_bonus_inverted {
@@ -71,7 +71,7 @@ fn setting(kind: Kind, speed: Speed, grow: bool, moves: bool) -> Setting {
     }
 }
 
-/// The growth settings to try, in order (spec 5.1).
+/// The growth settings to try, in order.
 fn settings(p: &Params, v: &Volumes<'_>, n: &Node, layer: usize, merge_layer: bool) -> Vec<Setting> {
     use Kind::{Fast, FastSafe, Slow as KSlow};
     let child_d = n.d + 1;
@@ -263,9 +263,8 @@ pub(crate) fn grow(
         let mut f = n.f;
         let mut r = p.collision_radius(e, f);
         let mut c = check(p, v, &grown, r, below, s, merge_layer, n.to_bed, n.flat);
-        // The radius depth advances one layer when a growing setting is still valid at the next radius
-        // (spec silent; decided by black-box comparison of trunk widening, see design.md). The catch-up
-        // below bounds e by the drawn radius from before this step.
+        // The radius depth advances one layer when a growing setting is still valid at the next radius.
+        // The catch-up below bounds e by the drawn radius from before this step.
         if s.grow && !c.area().is_empty() && e + 1.0 < f64::from(n.d + 1) + 1e-9 {
             let r1 = p.collision_radius(e + 1.0, f);
             let t = check(p, v, &grown, r1, below, s, merge_layer, n.to_bed, n.flat);
@@ -364,7 +363,7 @@ pub(crate) fn grow(
     Grown::Failed
 }
 
-/// Which growth steps merge (spec 5.2, flag Q4). With the flag on, every step merges. Off, a step merges
+/// Which growth steps merge. With the flag on, every step merges. Off, a step merges
 /// when its layer is fresh (it held nodes of its own before the step above saved its children there) or
 /// when the interval since the last merge has passed; the interval grows by one, up to a cap, after each
 /// merge that removed no node.

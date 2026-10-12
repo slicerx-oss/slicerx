@@ -15,7 +15,7 @@ pub(crate) enum Speed {
     Fast,
 }
 
-/// One way of growing a node one layer down (spec 5.1).
+/// One way of growing a node one layer down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(clippy::struct_excessive_bools, reason = "the fields of a growth setting")]
 pub(crate) struct Setting {
@@ -29,7 +29,7 @@ pub(crate) struct Setting {
     pub(crate) moves: bool,
 }
 
-/// The class a tip point gets from where its branch can go (spec 4.6), best first.
+/// The class a tip point gets from where its branch can go, best first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Class {
     BedSafe,
@@ -72,7 +72,7 @@ pub(crate) struct Node {
     pub(crate) target: P,
     /// Where the center would like to be.
     pub(crate) hint: P,
-    /// The chosen center (bottom-up, spec 6).
+    /// The chosen center (picked bottom-up).
     pub(crate) center: Option<P>,
     pub(crate) to_bed: bool,
     pub(crate) flat: bool,

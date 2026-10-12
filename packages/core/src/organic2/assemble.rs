@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! From branch slices to support layers (spec 7.6 and 7.7): branch feet and bottom contacts, roofs
+//! From branch slices to support layers: branch feet and bottom contacts, roofs
 //! recovered at branch tops, then per layer the union of everything, cleaned up and split by kind.
 
 use super::draw::{Branch, Slices};
@@ -143,7 +143,7 @@ pub(crate) fn finish_branch(
     out
 }
 
-/// Provisional (spec 7.7): concave notches narrower than a support line are closed with a round grow by
+/// Concave notches narrower than a support line are closed with a round grow by
 /// half a line and back, standing in for cutting corners sharper than 135 degrees.
 fn close_notches(s: &Shapes, w: f64) -> Shapes {
     if s.is_empty() {
@@ -152,7 +152,7 @@ fn close_notches(s: &Shapes, w: f64) -> Shapes {
     ops::grow_round(&ops::grow_round(s, w / 2.0), -w / 2.0)
 }
 
-/// Builds every support layer from the branch outputs and tip roofs (spec 7.7).
+/// Builds every support layer from the branch outputs and tip roofs.
 pub(crate) fn layers(
     p: &Params,
     v: &Volumes<'_>,

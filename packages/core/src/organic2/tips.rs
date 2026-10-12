@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Tip generation (spec section 4): where under each overhang a branch starts, and which overhang parts
+//! Tip generation: where under each overhang a branch starts, and which overhang parts
 //! become roofs instead.
 
 use super::node::{Class, Node, Recovery};
@@ -28,7 +28,7 @@ struct Ctx<'a, 'b> {
 }
 
 impl Ctx<'_, '_> {
-    /// Where a tip must not go on `layer` (spec 4.2).
+    /// Where a tip must not go on `layer`.
     fn forbidden(&self, layer: usize) -> Shapes {
         let r = self.p.r_tip;
         let base = if self.p.model_rest {
@@ -43,7 +43,7 @@ impl Ctx<'_, '_> {
         !ops::contains(region, pt)
     }
 
-    /// The class of a point (spec 4.6); None when no branch can start there.
+    /// The class of a point; None when no branch can start there.
     fn classify(&self, pt: P, layer: usize) -> Option<Class> {
         let (r, g, v) = (self.p.r_tip, self.min_gap, self.v);
         if Self::outside(&v.avoidance(r, layer, Kind::FastSafe, false, g), pt) {
@@ -67,7 +67,7 @@ impl Ctx<'_, '_> {
         None
     }
 
-    /// A point of `class` can still go one layer further down from `layer` (spec 4.7).
+    /// A point of `class` can still go one layer further down from `layer`.
     fn valid_below(&self, pt: P, class: Class, layer: usize) -> bool {
         let Some(below) = layer.checked_sub(1) else {
             return false;
@@ -122,7 +122,7 @@ fn half_step(p: &Params) -> f64 {
     }
 }
 
-/// The overhang parts a tip can reach, pulled away from walls they hug (spec 4.3).
+/// The overhang parts a tip can reach, pulled away from walls they hug.
 fn regular_area(c: &Ctx<'_, '_>, overhang: &Shapes, forbidden: &Shapes, layer: usize) -> Shapes {
     let p = c.p;
     let mut reg = ops::diff(overhang, forbidden);
@@ -167,7 +167,7 @@ fn layer_tips(c: &Ctx<'_, '_>, overhang: &Shapes, layer: usize) -> Tips {
     out
 }
 
-/// Samples one overhang part into tips, walking roof layers down first for a large roof (spec 4.5).
+/// Samples one overhang part into tips, walking roof layers down first for a large roof.
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -279,14 +279,14 @@ fn sample_part(c: &Ctx<'_, '_>, part: &Shapes, large: bool, layer: usize, out: &
     insert(c, &lines, at, placed, out);
 }
 
-/// Tips close together in a line, half the tip radius apart, so they form the roof themselves (spec 4.5
-/// and E5): a large roof part where the roof walk placed no roof layer.
+/// Tips close together in a line, half the tip radius apart, so they form the roof themselves: a large
+/// roof part where the roof walk placed no roof layer.
 fn continuous_tips(large: bool, placed: usize) -> bool {
     large && placed == 0
 }
 
 /// Inserts tips along classified lines at `layer`, keeping some as roof circles while the roof below
-/// the overhang still has layers to go (spec 4.10).
+/// the overhang still has layers to go.
 fn insert(c: &Ctx<'_, '_>, lines: &[Vec<(P, Class)>], layer: usize, roof_above: usize, out: &mut Tips) {
     let p = c.p;
     let n_roof = p.s.top_layers as usize;
@@ -411,7 +411,7 @@ pub(crate) fn generate(
     out
 }
 
-/// Removes tips on the first tree layer that lie inside the expanded raft (spec 4.11).
+/// Removes tips on the first tree layer that lie inside the expanded raft.
 pub(crate) fn drop_inside_raft(p: &Params, tips: &mut Tips, raft_contact: &Shapes) {
     if p.s.raft_layers == 0 || p.s.raft_expansion <= 0.0 || raft_contact.is_empty() {
         return;
