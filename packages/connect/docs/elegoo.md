@@ -60,6 +60,8 @@ Upload is `POST /uploadFile/upload`, one megabyte per request, form fields `Chec
 
 Status mapping. The spec's `PrintInfo.Status` codes (6 paused, 8 stopped, 9 complete) differ from what a Centauri Carbon was seen sending (5 pausing, 8 preparing, 9 starting, 10 paused, 13 printing, 20 resuming). `CurrentStatus` settles it: while it holds 1 (printing), 5, 6 and 10 are paused, 1, 8 and 9 preparing, anything else printing; once it is idle, the sub status keeps its last value, so 9 is finished and 8 is idle with "The print was stopped". `CurrentStatus` 2, 3 and 4 read as idle with "Receiving a file", "Calibrating" or "Running a self check". A nonzero `PrintInfo.ErrorNumber` outside an active print is an error with its reason. Without `CurrentStatus`, the Centauri Carbon codes apply alone. The camera reads as available unless the attributes say `CameraStatus` 0.
 
+The attributes' `XYZsize` (`"256x256x256"`, mm) becomes the hardware's build volume; anything other than three positive sizes is left out.
+
 Scanning broadcasts `M99999` to UDP 3000 and parses the JSON replies. An IP address typed in setup gets the same `M99999` sent to it alone, so the printer is confirmed, with its name, model and firmware, before the WebSocket is tried.
 
 ### Events and rate

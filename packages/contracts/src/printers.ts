@@ -371,7 +371,7 @@ export interface PrinterHardware {
   developerMode?: boolean
   /** Bambu Lab: whether a micro SD card is in. An X1 needs one to start a print over the network. */
   sdCard?: boolean
-  /** The printable volume, X, Y and Z in mm, from the printer's own travel limits (Klipper). */
+  /** The printable volume, X, Y and Z in mm, from the printer's own travel limits (Klipper) or the size it reports (Elegoo SDCP). */
   buildVolumeMm?: [number, number, number]
   /** The diameter of a round bed in mm (delta printers). */
   bedDiameterMm?: number
