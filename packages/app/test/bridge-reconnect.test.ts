@@ -57,7 +57,7 @@ afterEach(async () => {
   await vi.dynamicImportSettled()
 })
 
-const idle = (): PrinterStatus => ({ printerId: 'p1', state: 'idle', nozzles: [], slots: [], cameraAvailable: false })
+const idle = (): PrinterStatus => ({ printerId: 'p1', state: 'idle', nozzles: [], slots: [], cameraAvailable: false, updatedAt: new Date(0).toISOString() }) as PrinterStatus
 
 describe('a dropped bridge connection', () => {
   it('reconnects on the desktop, and a printer call after that succeeds', async () => {
@@ -79,8 +79,8 @@ describe('a dropped bridge connection', () => {
     const epoch = get().linkEpoch
     made[0]!.dropNow()
     expect(get().bridgeStatus.state).toBe('reconnecting')
-    // The dead connection's printers leave the host at once.
-    expect(h.printers).toBeUndefined()
+    // Until it is back, printer calls fail as closed; no other printers stand in for the bridge's.
+    await expect(h.printers!.status('p1')).rejects.toMatchObject({ code: 'closed' })
     await vi.waitFor(() => expect(get().bridgeStatus.state).toBe('on'), { timeout: 2000 })
     expect(made).toHaveLength(2)
     expect(get().linkEpoch).toBeGreaterThan(epoch)
@@ -121,6 +121,9 @@ describe('a dropped bridge connection', () => {
     made[0]!.dropNow()
     disconnectBridge(h)
     expect(get().bridgeStatus.state).toBe('off')
+    // What the host had before the bridge is back.
+    expect(h.printers).toBeUndefined()
+    expect(h.capabilities.printers).toBe('sim')
     await new Promise((r) => setTimeout(r, 80))
     expect(get().bridgeStatus.state).toBe('off')
   })
