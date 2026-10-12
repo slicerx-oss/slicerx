@@ -15,6 +15,8 @@ mod brand;
 mod chatgpt;
 mod closing;
 mod crash;
+#[cfg(target_os = "linux")]
+mod display;
 mod files;
 #[cfg(feature = "connect")]
 mod firewall;
@@ -49,6 +51,9 @@ fn main() {
     // The edition's name and link scheme, from the config this build was made with; the menu and links read it.
     let context = tauri::generate_context!();
     brand::init(context.config());
+    // Linux: a launch that cannot reach a display hands over to a running app or says why, before the toolkit panics.
+    #[cfg(target_os = "linux")]
+    display::preflight(&context.config().identifier, &brand::get().name);
     // A test build (debug, or with the agent bridge) has the feed's config but never uses it (updates::TEST_BUILD).
     let updates_on = updates::checks(updates::configured(context.config()), updates::TEST_BUILD);
     let builder = tauri::Builder::default();

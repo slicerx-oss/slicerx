@@ -76,6 +76,10 @@ block2 = { version = "=0.6.2", optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", optional = true }
 cairo-rs = { version = "=0.18.5", optional = true }
+# Starts the toolkit before the window system does, and hands a launch without a display to a running app over the
+# session bus (src/display.rs). The same versions tao and the single-instance plugin use.
+gtk = "=0.18.2"
+zbus = "=5.19.0"
 
 [dev-dependencies]
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "sync", "net", "io-util"] }
