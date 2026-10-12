@@ -12,6 +12,7 @@ import { LookSettingsSection, SlicingSettingsSection } from '../first-run/look-s
 import { usePhoneAccess, usePhoneState, type PhoneAccess } from '../lib/phone'
 import { PairDialog } from '../features/phone/pair-dialog'
 import { PendingRemovals, RemoteRows } from '../features/phone/remote-rows'
+import { hostSlices } from '../state/model-mode'
 import { set, useApp } from '../state/store'
 import { Loading } from './loading'
 
@@ -35,20 +36,22 @@ export function SettingsDialog() {
   const { settings } = useFeatures()
   const edition = useEdition()
   const [picked, setPicked] = useState<string | null>(null)
-  const hasBridge = bridgeConnector() !== null
+  // the CAD-only browser build has no printers, presets or slicing to set
+  const slices = hostSlices()
+  const hasBridge = slices && bridgeConnector() !== null
   const sections: { id: string; label: string; icon: IconName }[] = [
     ...settings.map((s) => ({ id: s.id, label: s.label, icon: s.icon })),
-    ...(edition.features.phonePairing ? [{ id: PHONE_ID, label: 'Phone access', icon: 'phone' as IconName }] : []),
+    ...(edition.features.phonePairing && slices ? [{ id: PHONE_ID, label: 'Phone access', icon: 'phone' as IconName }] : []),
     ...(hasBridge
       ? [
           { id: BRIDGE_ID, label: 'Printer bridge', icon: 'connect-lan' as IconName },
           { id: APPS_ID, label: 'Connected apps', icon: 'plugin' as IconName },
         ]
       : []),
-    { id: PRESETS_ID, label: 'Presets', icon: 'save' },
+    ...(slices ? [{ id: PRESETS_ID, label: 'Presets', icon: 'save' as IconName }] : []),
     { id: CONTROLS_ID, label: 'Controls', icon: 'keyboard' },
     { id: LOOK_ID, label: 'Look and feel', icon: 'sliders' },
-    { id: SLICING_ID, label: 'Slicing and modeling', icon: 'slice' },
+    slices ? { id: SLICING_ID, label: 'Slicing and modeling', icon: 'slice' } : { id: SLICING_ID, label: 'Modeling', icon: 'shapes' },
     ...(settings.some((s) => s.id === PILOT_ID) ? [] : [{ id: PILOT_ID, label: ASSISTANT_NAME, icon: 'mimir' as IconName }]),
   ]
   const id = [want, picked].find((x) => x && sections.some((s) => s.id === x)) ?? sections[0]?.id
