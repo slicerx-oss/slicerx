@@ -5620,6 +5620,7 @@ dependencies = [
  "libm",
  "manifold-rust",
  "miniz_oxide 0.9.1",
+ "png 0.18.1",
  "rustc-hash",
  "serde",
  "serde_json",
@@ -5627,6 +5628,7 @@ dependencies = [
  "sx-i-overlay",
  "thiserror 2.0.21",
  "ttf-parser",
+ "zune-jpeg",
 ]
 
 [[package]]

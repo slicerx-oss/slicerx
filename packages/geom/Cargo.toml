@@ -41,6 +41,10 @@ manifold-rust = { version = "=0.15.0", default-features = false }
 miniz_oxide = "=0.9.1"
 # inflating 3MF model parts: zlib-rs reads a big project in about half the time of miniz_oxide
 flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"], optional = true }
+# decoding 3MF textures for paint (src/texture.rs); both pure Rust and already in the lockfile.
+# png: MIT OR Apache-2.0. zune-jpeg: MIT OR Apache-2.0 OR Zlib.
+png = { version = "=0.18.1", optional = true }
+zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"], optional = true }
 # A fast hasher for the mesh code's lookup maps (src/mesh.rs, repair.rs, import/): SipHash costs several times as much
 # per key, most of all in WebAssembly. Already in the lockfile through other crates; Apache-2.0 OR MIT.
 rustc-hash = "=2.1.3"
@@ -55,7 +59,7 @@ thiserror = "=2.0.21"
 # offer (docs/cad-engine.md, section 2). Booleans, arrays, measure, cut, split, repair, import, orient, emboss,
 # simplify, fit check and print rescue are always there.
 [features]
-default = ["cad", "holes", "threads", "shell", "text", "svg", "nest", "calib", "hollow", "formats"]
+default = ["cad", "holes", "threads", "shell", "text", "svg", "nest", "calib", "hollow", "formats", "textures"]
 # The modeling tools: the face shape tool, free sketch, push and pull, fillet and chamfer, kept dimensions, and the
 # faces that make them work (found on meshes without them, and sent in the JSON).
 cad = ["text", "svg"]
@@ -77,3 +81,5 @@ calib = []
 hollow = []
 # 3MF projects read whole: parts and their types, paint, plates and settings.
 formats = ["dep:flate2"]
+# 3MF textures decoded (PNG and JPEG) and sampled for paint.
+textures = ["formats", "dep:png", "dep:zune-jpeg"]
