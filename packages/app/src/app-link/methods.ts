@@ -5,13 +5,16 @@
 // test checks the two lists match. Nothing here prints, queues, approves, signs in or changes settings.
 import { appName } from '../edition'
 import { bounds } from '../plate/transform'
-import { get } from '../state/store'
+import { get, pickColorMode, set, setCamera, showSliced, showsLayers, type CameraView, type ColorMode } from '../state/store'
 
 export type LinkClass = 'read' | 'edit'
 
 export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'app.info': 'read',
   'plate.list': 'read',
+  // The slice preview only changes what the window shows, never the project.
+  'preview.get': 'read',
+  'preview.set': 'read',
 }
 
 /** A refusal with a code the hub passes on (invalid_input, not_found, not_ready, refused, busy). */
@@ -27,6 +30,70 @@ export class LinkError extends Error {
 const round = (v: number): number => Math.round(v * 1000) / 1000
 
 type Handler = (args: Record<string, unknown>) => unknown
+
+const CAMERAS: readonly CameraView[] = ['iso', 'top', 'front', 'fit']
+const COLORS: readonly ColorMode[] = ['feature', 'tool', 'speed', 'flow', 'layerTime']
+
+/** What the slice preview shows: the layers drawn, the colors and the camera. */
+function previewState() {
+  const s = get()
+  const p = s.preview
+  return {
+    sliced: p !== null,
+    toolpaths: showsLayers(s),
+    camera: s.camera,
+    ...(p
+      ? {
+          layers: p.layerCount,
+          range: [s.layerLo, s.layerHi],
+          oneLayer: s.layerLo === s.layerHi,
+          topZMm: round(p.layerZ[s.layerHi - 1] ?? 0),
+          colorMode: s.colorMode,
+        }
+      : {}),
+  }
+}
+
+const layerArg = (v: unknown, n: number, key: string): number => {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > n) throw new LinkError('invalid_input', `${key} is a layer from 1 to ${n}`)
+  return v
+}
+
+/** Moves the preview: `layer` (the top handle), `range` [bottom, top], `oneLayer`, `colorMode`, `camera`. Moving the layers shows the toolpaths. */
+function setPreview(args: Record<string, unknown>) {
+  const s = get()
+  if (args['camera'] !== undefined && !CAMERAS.includes(args['camera'] as CameraView)) throw new LinkError('invalid_input', `camera is one of ${CAMERAS.join(', ')}`)
+  if (args['colorMode'] !== undefined && !COLORS.includes(args['colorMode'] as ColorMode)) throw new LinkError('invalid_input', `colorMode is one of ${COLORS.join(', ')}`)
+  if (args['oneLayer'] !== undefined && typeof args['oneLayer'] !== 'boolean') throw new LinkError('invalid_input', 'oneLayer is true or false')
+  const layered = ['layer', 'range', 'oneLayer', 'colorMode'].some((k) => args[k] !== undefined)
+  let lo = s.layerLo
+  let hi = s.layerHi
+  if (layered) {
+    const p = s.preview
+    if (!p) throw new LinkError('not_ready', 'there is no slice to preview; slice the plate first')
+    const n = p.layerCount
+    if (args['range'] !== undefined) {
+      const r = args['range']
+      if (!Array.isArray(r) || r.length !== 2) throw new LinkError('invalid_input', 'range is [bottom, top]')
+      lo = layerArg(r[0], n, 'range bottom')
+      hi = layerArg(r[1], n, 'range top')
+      if (lo > hi) throw new LinkError('invalid_input', 'the range bottom is above its top')
+    }
+    if (args['layer'] !== undefined) {
+      hi = layerArg(args['layer'], n, 'layer')
+      lo = Math.min(lo, hi)
+    }
+    if (args['oneLayer'] !== undefined) lo = args['oneLayer'] ? hi : 1
+  }
+  // Everything is checked before anything moves, so a refused call changes nothing.
+  if (args['camera'] !== undefined) setCamera(args['camera'] as CameraView)
+  if (layered) {
+    if (args['colorMode'] !== undefined) pickColorMode(args['colorMode'] as ColorMode)
+    showSliced()
+    set({ layerLo: lo, layerHi: hi, moveCut: 1, toolChange: null })
+  }
+  return previewState()
+}
 
 const HANDLERS: Record<keyof typeof APP_LINK_METHODS, Handler> = {
   'app.info': () => {
@@ -46,6 +113,8 @@ const HANDLERS: Record<keyof typeof APP_LINK_METHODS, Handler> = {
       }
     }),
   }),
+  'preview.get': () => previewState(),
+  'preview.set': (args) => setPreview(args),
 }
 
 /** Runs one call the hub handed over. The hub already checked the method and the client's grant. */
