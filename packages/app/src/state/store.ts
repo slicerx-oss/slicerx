@@ -41,7 +41,7 @@ import { normalizeEasy } from '../lib/easy-values'
 import { freshVary } from '../lib/sleipnir-default'
 import { GENERIC_BED } from '../adapters/generic-bed'
 import { loadUserThemes } from '../theme/load'
-import { DEFAULT_APPEARANCE, DEFAULT_PLAYBACK_SPEED, hasStoredPrefs, loadPrefs, savePrefs, type Appearance, type HandPrinter, type PrinterBay, type Prefs } from './prefs'
+import { DEFAULT_APPEARANCE, DEFAULT_PLAYBACK_SPEED, hasStoredPrefs, loadPrefs, MULTI_BODY_DEFAULT, savePrefs, type Appearance, type HandPrinter, type MultiBodyPref, type PrinterBay, type Prefs } from './prefs'
 import type { DryMark } from '../filament/dry-marks'
 
 
@@ -335,6 +335,10 @@ export interface AppState {
   autoSlice: boolean
   /** With autoSlice on: slice in the background only when the slice is expected to be quick (Auto), or always. state/auto-slice-mode.ts */
   autoSliceBySize: boolean
+  /** A model file with several separate bodies: ask, or always one object with parts, or always separate objects. */
+  multiBodyImport: MultiBodyPref
+  /** The question for a file of several bodies, while it is open. Not saved. */
+  multiBodyPrompt: { name: string; bodies: number } | null
   /** Auto slice held a big plate's slice: it waits for Slice, with a note. Not saved. */
   sliceHeld: boolean
   cadTools: boolean
@@ -675,6 +679,8 @@ export const appStore = createStore<AppState>()(() => ({
   tooltips: prefs.tooltips ?? { enabled: true, media: true },
   autoSlice: prefs.autoSlice ?? !noAutoSliceDefault(),
   autoSliceBySize: prefs.autoSliceBySize ?? !alwaysAutoSliceDefault(),
+  multiBodyImport: prefs.multiBodyImport ?? MULTI_BODY_DEFAULT,
+  multiBodyPrompt: null,
   sliceHeld: false,
   cadTools: prefs.cadTools ?? true,
   electricity: prefs.electricity ?? DEFAULT_ELECTRICITY,
@@ -783,7 +789,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -813,6 +819,7 @@ appStore.subscribe((s, prev) => {
       tooltips: s.tooltips,
       autoSlice: s.autoSlice,
       autoSliceBySize: s.autoSliceBySize,
+      multiBodyImport: s.multiBodyImport,
       cadTools: s.cadTools,
       electricity: s.electricity,
       printerNozzles: s.printerNozzles,

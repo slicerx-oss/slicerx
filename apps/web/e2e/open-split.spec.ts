@@ -41,7 +41,8 @@ test('a model split into two bodies keeps its pieces in place: nothing moves aft
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.debug', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' } }))
+    // separate objects, as the engine groups bodies that do not touch, so the open does not stop to ask
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' }, multiBodyImport: 'objects' }))
   })
   await page.goto('./')
   await plateReady(page)

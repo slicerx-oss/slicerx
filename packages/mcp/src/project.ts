@@ -16,6 +16,8 @@ interface Entry {
   meshId?: string
   /** Rotation in degrees about X, then Y, then Z, applied before the object is placed. */
   rotate?: [number, number, number]
+  /** Parts the object was loaded with: the bodies of a file kept as one object (1 for a plain model). */
+  parts?: number
 }
 
 export interface ProjectSettings {
@@ -62,10 +64,10 @@ export class McpProject implements PilotProject {
   }
 
   /** Adds a loaded mesh as an object. New objects go on plate 1. */
-  addMesh(meshId: string, name: string, bboxMm: [number, number, number], triangles: number, copies: number): ProjectObject {
+  addMesh(meshId: string, name: string, bboxMm: [number, number, number], triangles: number, copies: number, parts = 1): ProjectObject {
     const id = `obj-${this.nextId++}`
     const obj: ProjectObject = { id, name, bboxMm, triangles, mesh: async () => this.host.parts(meshId) }
-    this.entries.set(id, { obj, meshId })
+    this.entries.set(id, { obj, meshId, parts })
     let first = this.layout.find((p) => p.index === 1)
     if (!first) {
       first = { index: 1, items: [] }
@@ -238,7 +240,7 @@ export class McpProject implements PilotProject {
       name: this.name,
       settings: this.settings,
       machine: this.machine() ?? null,
-      objects: this.objects().map((o) => ({ id: o.id, name: o.name, bbox_mm: o.bboxMm, triangles: o.triangles ?? null, has_mesh: Boolean(this.entries.get(o.id)?.meshId) })),
+      objects: this.objects().map((o) => ({ id: o.id, name: o.name, bbox_mm: o.bboxMm, triangles: o.triangles ?? null, has_mesh: Boolean(this.entries.get(o.id)?.meshId), parts: this.entries.get(o.id)?.parts ?? 1 })),
       plates: this.plates(),
       overrides: this.projectOverrides,
     }

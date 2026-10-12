@@ -19,6 +19,7 @@ import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { brandAccent, objectPalette } from '../edition'
 import type { OpenScope } from '../project/unsaved'
 import { markOpenStage } from '../lib/open-mark'
+import { bodyCount, multiBodyChoice, regroup } from './multi-body'
 
 export type AutoFormat = 'stl' | 'obj' | 'amf' | 'step'
 type MeshFormat = Exclude<AutoFormat, 'step'>
@@ -245,7 +246,11 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
   // The model already on the plate from its quick draw keeps its place (and any move made while it loaded): the engine's
   // objects are in the file's own coordinates, as it was, unless the engine changed the unit.
   const shown = quick && !result.unit.autoApply ? get().plate.find((p) => p.id === quick.id)?.transform : undefined
-  const made = entriesFromImport(result, bed, shown)
+  const grouped = entriesFromImport(result, bed, shown)
+  // A file of several separate bodies the engine split: one object with a part per body, or an object per body, as the
+  // person answers or the setting says. A file of one body, or of objects of its own (an AMF, a STEP), never asks.
+  const choice = grouped.length > 0 && grouped.every((m) => m.perShell) ? await multiBodyChoice(result.name || name, bodyCount(grouped)) : null
+  const made = choice ? regroup(grouped, choice, result.name || name) : grouped
   if (!quick) markOpenStage('parse', { parsedIn: 'worker' })
   const here = quick ? get().plate.find((p) => p.id === quick.id) : undefined
   // The engine changed nothing (no repair, one body, millimeters): the object on the plate is already its result.
@@ -275,7 +280,9 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
   // shown first that stayed as it was keeps a slice of it, started while the open ran.
   if (!same || entries.length > 1) markStale()
   const ids = entries.map((e) => e.id)
-  const notes = [...stepNotes, ...result.summary]
+  // A chosen grouping says what it made in place of the engine's own split note.
+  const summary = choice ? [...result.summary.filter((n) => !/^Split into \d+ objects\.$/.test(n)), choice === 'parts' ? `Loaded as one object with ${bodyCount(made)} parts.` : `Split into ${made.length} objects.`] : result.summary
+  const notes = [...stepNotes, ...summary]
   for (const w of result.warnings) if (!notes.includes(w)) notes.push(w)
   const u = result.unit
   // The repair details open from the toast when there is no unit undo to offer in its place.

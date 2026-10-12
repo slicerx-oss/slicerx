@@ -103,6 +103,7 @@ export function appState(s: AppState): Record<string, unknown> {
     slicing: sliceSummary(s),
     setupOpen: s.setup !== null,
     unsavedPrompt: s.unsavedPrompt?.what ?? null,
+    multiBodyPrompt: s.multiBodyPrompt,
     // Where the time of the last file open went (lib/open-timing.ts), or null before the first open.
     lastOpen: openTiming(),
     // How long the 3D view took to its first frame, or null before it.

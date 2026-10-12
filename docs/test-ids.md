@@ -32,6 +32,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `frame-close` | The close button of a full window frame (creator page editor, upload) |
 | `unsaved-dialog` | Save changes first? |
 | `unsaved-save`, `unsaved-discard`, `unsaved-cancel` | Its Save project, Don't save and Cancel buttons |
+| `multi-body-dialog` | Load as one object with parts? (a model file of several separate bodies) |
+| `multi-body-parts`, `multi-body-objects`, `multi-body-remember` | Its one object, separate objects and Remember my choice controls |
 | `projects-dialog` | Restore unsaved work? at startup, or Recent projects (the title says which) |
 | `recover-work` | The unsaved work it offers back: name, objects and time |
 | `recover-restore` | Restore it |
@@ -76,6 +78,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `setup-mode-<mode>` | The settings mode in setup's slicer step: `setup-mode-simple`, `setup-mode-advanced`, `setup-mode-expert` |
 | `setup-autoslice-<mode>` | Auto slice in setup's slicer step: `setup-autoslice-auto`, `setup-autoslice-always`, `setup-autoslice-off` |
 | `set-autoslice-<mode>` | Auto slice in Settings, Slicing and modeling: `set-autoslice-auto`, `set-autoslice-always`, `set-autoslice-off` |
+| `set-multibody-<mode>` | Files with several bodies in Settings, Slicing and modeling: `set-multibody-ask`, `set-multibody-parts`, `set-multibody-objects` |
 | `theme-<family>` | A theme card in setup's theme step and in Settings, Look and feel: `theme-subban`, `theme-dracula` and so on |
 
 ## Slice: sidebar
