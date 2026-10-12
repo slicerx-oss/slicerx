@@ -687,8 +687,9 @@ pub fn request_config_report(
     let mut report = ConfigReport::default();
     // With the report asked for, a value the engine cannot use leaves only its own setting at the default and is
     // listed. Without it the config is refused whole, naming the key, as hosts that drop a refused key and slice
-    // again (the app, with the profile's value back) expect.
-    let listed = strict || req.options.config_report.unwrap_or(false);
+    // again (the app, with the profile's value back) expect. The browser build never lists (its host leaves both
+    // options off), so the report's code stays out of the WebAssembly module and its size budget.
+    let listed = cfg!(not(target_arch = "wasm32")) && (strict || req.options.config_report.unwrap_or(false));
     if !req.config.is_null() {
         if listed {
             report.invalid = config.apply_value_lenient(&req.config)?;
