@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { invert, stepName, type HistoryMesh, type SolidSpec, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, invert, multiply, stepName, type HistoryMesh, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import { designArg, designSummary, type Design, type Designs } from './design'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
@@ -229,23 +229,34 @@ export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }
 
   const array = defineTool({
     name: 'geom.array',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), merged into one body. With "design" it adds a step; with a model it writes the merged STL.',
-    input: z.object({ model: modelOpt, design: designArg.optional(), part: partArg, spec: arraySpec }),
+      'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. With "design" it adds a step (separate copies become new parts); with a model it writes the merged STL, or returns each copy\'s transform.',
+    input: z.object({ model: modelOpt, design: designArg.optional(), part: partArg, spec: arraySpec, merge: z.boolean().default(true).describe('false: separate copies instead of one body') }),
     async run(i) {
       designOrModel(i)
       const spec = JSON.parse(JSON.stringify(i.spec)) as Extract<StepParams, { op: 'array.merged' }>['spec']
       const copies = spec.kind === 'linear' ? spec.count * (spec.count2 ?? 1) : spec.count
       if (i.design) {
         const [ds, d] = designOf(i.design)
-        await ds.add(d, i.part ?? -1, { op: 'array.merged', spec })
-        return added(d, `Arrayed ${copies} copies`)
+        if (i.merge) {
+          await ds.add(d, i.part ?? -1, { op: 'array.merged', spec })
+          return added(d, `Arrayed ${copies} copies`)
+        }
+        // Separate copies are new parts, placed where the engine puts each copy; the first is the part itself.
+        const part = i.part ?? 0
+        const src = d.parts[part]
+        if (!src) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+        const r = (await ds.deps.engine('array', { mesh: ds.item(d, part), spec })) as { transforms: number[][] }
+        const back = invert(d.transform)
+        const parts = r.transforms.slice(1).map((t, k) => ({ ...bakeMesh({ name: `${src.name} ${k + 2}`, slot: src.slot, positions: Array.from(src.positions), indices: Array.from(src.indices) }, multiply(back, t)) }))
+        await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate` })
+        return added(d, `Arrayed ${copies} separate copies`)
       }
-      const out = await call('array', { mesh: await meshOut(i.model!), spec, merge: true })
-      return { summary: `Arrayed ${copies} copies`, output: out }
+      const out = await call('array', { mesh: await meshOut(i.model!), spec, merge: i.merge })
+      return { summary: `Arrayed ${copies} copies${i.merge ? '' : ', as transforms'}`, output: out }
     },
   })
 
