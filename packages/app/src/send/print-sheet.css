@@ -85,3 +85,11 @@
   .ps-go { width: 100%; }
   .ps-go .ps-go-main { flex: 1; }
 }
+/* While a refusal shows, the sheet is anchored to the top and its body scrolls, so the title and the footer stay put
+   and opening the Developer Mode steps grows it downward without moving anything above them. */
+.print-sheet.ps-anchored[open] { margin-top: var(--gutter); margin-bottom: auto; display: flex; flex-direction: column; }
+.print-sheet.ps-anchored .sx-dialog-h, .print-sheet.ps-anchored .sx-dialog-foot { flex: none; }
+.print-sheet.ps-anchored .sx-dialog-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.ps-devmode-toggle { justify-self: start; margin-left: -8px; }
+.ps-devmode-toggle[aria-expanded="true"] .sx-ic { transform: rotate(180deg); }
+.ps-devmode-steps > [data-testid="developer-mode-steps-list"] { margin-top: 8px; }
