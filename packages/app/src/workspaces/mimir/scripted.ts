@@ -25,6 +25,18 @@ function lastUser(messages: readonly LlmMessage[]): string {
 /** What mimir says to a message no script matches. */
 const UNKNOWN: ScriptStep[] = [{ text: 'Scripted replies know three parts for now: a thermostat backplate, a box with a lid and a phone stand. Ask for one of them.' }]
 
+const CANCELED: ScriptStep[] = [{ text: 'Nothing is built. Tell me which sizes are off and I will put up a new sheet.' }]
+
+/** True for the tool reply of a sheet the person canceled. */
+function canceledSheet(m: LlmMessage | undefined): boolean {
+  if (m?.role !== 'tool') return false
+  try {
+    return (JSON.parse(m.content) as { result?: { confirmed?: unknown } }).result?.confirmed === false
+  } catch {
+    return false
+  }
+}
+
 /**
  * A client that starts the matching script on each new message and plays it to the end, one step per request, the
  * way a model answers over several tool rounds.
@@ -36,7 +48,9 @@ export function scriptRouter(scripts: readonly MimirScript[], opts: { delayMs?: 
     provider: 'scripted',
     async *stream(req, signal) {
       // A new message starts its script; the tool rounds that follow it continue the same one.
-      if (current === null || req.messages.at(-1)?.role === 'user') {
+      // A sheet the person canceled ends the script: nothing builds from sizes nobody confirmed.
+      if (current !== null && canceledSheet(req.messages.at(-1))) current = createScriptedClient(CANCELED, { delayMs: opts.delayMs ?? 0 })
+      else if (current === null || req.messages.at(-1)?.role === 'user') {
         const script = scripts.find((s) => s.match.test(lastUser(req.messages)))
         current = createScriptedClient(script?.steps ?? UNKNOWN, { delayMs: opts.delayMs ?? 0, callDelayMs: opts.callDelayMs ?? 0 })
         runs++

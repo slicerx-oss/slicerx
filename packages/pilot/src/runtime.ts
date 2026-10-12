@@ -153,9 +153,10 @@ function randomId(): string {
 
 /**
  * The person's answer to a sheet: each value they gave, kept inside its row's bounds, else the sheet's own; and the
- * keys they changed. A value for a key the sheet does not have is dropped.
+ * keys they changed. A value for a key the sheet does not have is dropped. Null is a cancel: nothing is confirmed.
  */
-export function answerOf(sheet: PilotSheet, given: Record<string, number>): PilotSheetAnswer {
+export function answerOf(sheet: PilotSheet, given: Record<string, number> | null): PilotSheetAnswer {
+  if (given === null) return { confirmed: false, values: Object.fromEntries(sheet.dims.map((d) => [d.key, d.value])), changed: [] }
   const values: Record<string, number> = {}
   const changed: string[] = []
   for (const d of sheet.dims) {
@@ -183,7 +184,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Questions waiting for the person's pick, by ask id.
   const asks = new Map<string, (choiceId: string) => void>()
   // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
-  const sheets = new Map<string, (values: Record<string, number>) => void>()
+  const sheets = new Map<string, (values: Record<string, number> | null) => void>()
   const lastSheet = new Map<string, PilotSheet>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
 
@@ -589,7 +590,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (!p) throw new Error(`No pending approval ${requestId}`)
       p.resolve(decision)
     },
-    async answerSheet(sheetId: string, values: Record<string, number>): Promise<void> {
+    async answerSheet(sheetId: string, values: Record<string, number> | null): Promise<void> {
       const done = sheets.get(sheetId)
       if (!done) throw new Error(`No open sheet ${sheetId}`)
       sheets.delete(sheetId)

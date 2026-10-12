@@ -11,9 +11,26 @@ const SOURCE: Record<PilotSheet['dims'][number]['source'], string> = { asked: 'y
  * A dimension sheet as it stays in the conversation: each size with its unit and where it came from, guesses marked,
  * and once answered the values used and which ones the person changed. Editing it happens on the sheet itself.
  */
-export function SheetRecord({ sheet, answer, actionable = false, onConfirm }: { sheet: PilotSheet; answer: PilotSheetAnswer | null; actionable?: boolean; onConfirm?: ((sheetId: string, values: Record<string, number>) => Promise<void>) | undefined }) {
+export function SheetRecord({
+  sheet,
+  answer,
+  bound = false,
+  actionable = false,
+  onConfirm,
+  onOpen,
+}: {
+  sheet: PilotSheet
+  answer: PilotSheetAnswer | null
+  /** Its rows drive the built design's steps. */
+  bound?: boolean
+  actionable?: boolean
+  onConfirm?: ((sheetId: string, values: Record<string, number>) => Promise<void>) | undefined
+  onOpen?: ((sheetId: string) => void) | undefined
+}) {
   const [sent, setSent] = useState(false)
-  const canConfirm = actionable && !answer && onConfirm !== undefined
+  const canConfirm = actionable && !answer && onConfirm !== undefined && onOpen === undefined
+  const canOpen = actionable && onOpen !== undefined && (!answer || (answer.confirmed && bound))
+  const status = !answer ? 'Waiting for you to confirm' : !answer.confirmed ? 'Canceled, nothing built' : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
   return (
     <div className="lookup-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record">
       <div className="lookup-rec-t">
@@ -22,10 +39,10 @@ export function SheetRecord({ sheet, answer, actionable = false, onConfirm }: { 
       </div>
       <dl className="lookup-rec-f">
         {sheet.dims.map((d) => {
-          const used = answer?.values[d.key] ?? d.value
+          const used = answer?.confirmed ? (answer.values[d.key] ?? d.value) : d.value
           const href = d.source === 'lookup' ? safeUrl(d.sourceUrl) : null
           return (
-            <div key={d.key} data-dim={d.key} data-guess={d.source === 'guess' && !answer ? '' : undefined}>
+            <div key={d.key} data-dim={d.key} data-guess={d.source === 'guess' && !answer?.confirmed ? '' : undefined}>
               <dt>{d.label}</dt>
               <dd>
                 {used} {d.unit === 'deg' ? '°' : d.unit}{' '}
@@ -50,7 +67,14 @@ export function SheetRecord({ sheet, answer, actionable = false, onConfirm }: { 
           Build with these sizes
         </Button>
       ) : (
-        <span className="lookup-rec-s">{answer ? (answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown') : 'Waiting for you to confirm'}</span>
+        <span className="sheet-rec-foot">
+          <span className="lookup-rec-s">{status}</span>
+          {canOpen ? (
+            <Button size="sm" variant="ghost" data-testid="mimir-sheet-open" onClick={() => onOpen(sheet.id)}>
+              {answer ? 'Edit sizes' : 'Check sizes'}
+            </Button>
+          ) : null}
+        </span>
       )}
     </div>
   )

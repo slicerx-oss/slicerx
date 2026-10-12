@@ -3,7 +3,7 @@
 // pilot.ask, pilot.sheet and lookup.show: a question with fixed answers that waits for the person's pick, a sheet of
 // the sizes a part is built from that waits for the person to confirm or edit them, and a record shown as a card with
 // its source. None changes anything; they are how mimir checks with the person and shows what it found.
-import type { PilotDim, PilotSheetBind } from '@slicerx/contracts'
+import type { PilotDim, PilotSheetBind, PilotSheetSolid } from '@slicerx/contracts'
 import { z } from 'zod'
 import { defineTool, type PilotTool } from '../tool'
 
@@ -48,6 +48,20 @@ export function lookupTool(): PilotTool<never> {
   }) as PilotTool<never>
 }
 
+const mm = z.number().min(-10_000).max(10_000)
+const vec = z.tuple([mm, mm, mm])
+const at = z
+  .union([z.object({ a: vec, b: vec, off: vec }), z.object({ c: vec, from: vec, to: vec, r: z.number().min(0.1).max(10_000) })])
+  .describe('Where the size sits on the drawing, in the part\'s own mm (Z up): a straight size from a to b drawn moved out by off, or an angle at c from direction from to direction to with an arc r out')
+const outline = z.array(z.tuple([mm, mm])).min(3).max(200)
+const solid = z.object({
+  plane: z.enum(['xy', 'xz', 'yz']).describe('xy: points are (x, y), extruded along Z; xz: (x, z) along Y; yz: (y, z) along X'),
+  points: outline,
+  holes: z.array(outline).max(20).optional(),
+  from: mm,
+  to: mm,
+})
+
 const dim = z.object({
   key: z.string().regex(/^[a-z][a-z0-9_]{0,39}$/),
   label: z.string().min(1).max(60),
@@ -59,6 +73,7 @@ const dim = z.object({
   sourceTitle: z.string().min(1).max(80).optional(),
   sourceUrl: z.url({ protocol: /^https?$/ }).optional(),
   note: z.string().max(160).optional(),
+  at: at.optional(),
 })
 
 export function sheetTool(): PilotTool<never> {
@@ -68,12 +83,13 @@ export function sheetTool(): PilotTool<never> {
     source: 'command',
     permission: 'read',
     description:
-      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed. A sheet with one row asks for one number.',
+      'Before building a part, show the person every size it is built from (width, length, height, wall, holes, clearance and so on) and wait for them to confirm or edit. Give each its best value, unit and source: asked, lookup (with the page), photo, or guess. Use it whenever a size matters and you are not sure of it. Returns the values to build with and which ones the person changed, or that they canceled (then build nothing and ask what to change). A sheet with one row asks for one number. Give the part as extruded outlines and where each row sits on it (at), so the sheet draws it with numbered callouts.',
     input: z
       .object({
         title: z.string().min(2).max(60),
         views: z.array(z.enum(['front', 'top', 'side', 'iso'])).min(1).max(4).default(['iso']),
         dims: z.array(dim).min(1).max(30),
+        part: z.array(solid).min(1).max(40).optional(),
       })
       .refine((i) => new Set(i.dims.map((d) => d.key)).size === i.dims.length, 'each dimension needs its own key')
       .refine((i) => i.dims.every((d) => (d.min === undefined || d.value >= d.min) && (d.max === undefined || d.value <= d.max)), 'a value is outside its own min and max')
@@ -81,7 +97,8 @@ export function sheetTool(): PilotTool<never> {
     args: (i) => `"${i.title}", ${i.dims.length} sizes`,
     async run(i, ctx) {
       if (!ctx.sheet) return { ok: false, summary: 'Nobody here can confirm a sheet' }
-      const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[] })
+      const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[], ...(i.part ? { part: i.part as PilotSheetSolid[] } : {}) })
+      if (!answer.confirmed) return { ok: false, summary: 'Canceled; build nothing until the sizes are confirmed', output: answer }
       const n = answer.changed.length
       return { summary: n ? `Confirmed, ${n} size${n === 1 ? '' : 's'} changed` : 'Confirmed as shown', output: answer }
     },
