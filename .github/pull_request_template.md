@@ -11,6 +11,7 @@
 <!-- If people using SlicerX will notice this: one plain line for the release notes, and add the user-facing label.
      If it fixes a reported bug, add a line: Reported-in: <link to the Discord thread or issue>
      If people must update for it (a hotfix or security fix), add the urgent label and a line: Urgent: <why>
+     If it changes what editions or integrations build against (edition config, MCP tools or results, CLI options, build steps), add the integrators label and a line: Integrators: <what they change>
      Leave this section empty for changes nobody will notice. -->
 
 ## How it was tested
