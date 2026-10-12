@@ -782,10 +782,13 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       if (!vp?.setInsets) return
       const box = (r: DOMRect) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom })
       if (!layers) {
-        // mimir's lookup cards take a band along the bottom: the part is framed above it.
+        // mimir's lookup cards take a band along the bottom: the part is framed above it. Its sizes panel takes the
+        // right side, so the part is framed beside it.
         const band = root.querySelector<HTMLElement>('.mimir-lookups')
         const bottom = band ? Math.max(0, stage.getBoundingClientRect().bottom - band.getBoundingClientRect().top + OVERLAY_GAP) : 0
-        return vp.setInsets({ left: 0, right: 0, top: 0, bottom })
+        const side = root.querySelector<HTMLElement>('.mimir-sheet-panel')
+        const right = side ? Math.max(0, stage.getBoundingClientRect().right - side.getBoundingClientRect().left + OVERLAY_GAP) : 0
+        return vp.setInsets({ left: 0, right, top: 0, bottom })
       }
       const rects = [...root.querySelectorAll<HTMLElement>('.sx-overlay')].filter((e) => e.offsetParent !== null).map((e) => box(e.getBoundingClientRect()))
       vp.setInsets(overlayInsets(box(stage.getBoundingClientRect()), rects))

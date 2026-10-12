@@ -73,6 +73,56 @@ const rect = (c: [number, number], w: number, h: number): { points: [number, num
   ],
 })
 
+/** A rectangle's corners, centered on `c`, for a sheet's drawing. */
+const box2 = (c: [number, number], w: number, h: number): [number, number][] => rect(c, w, h).points
+
+/** A circle as a 32-sided outline, for a hole in a sheet's drawing. */
+const circle2 = (c: [number, number], d: number): [number, number][] => Array.from({ length: 32 }, (_, k) => [c[0] + (d / 2) * Math.cos((k * Math.PI) / 16), c[1] + (d / 2) * Math.sin((k * Math.PI) / 16)] as [number, number])
+
+type V3 = [number, number, number]
+/** A straight size on a sheet's drawing, from a to b, drawn moved out by off. */
+const span = (a: V3, b: V3, off: V3) => ({ at: { a, b, off } })
+
+/** The backplate as its sheet draws it: the plate with its center hole and screw holes, on the bed. */
+export function backplatePart(v: Record<string, number>) {
+  const [w, h, t, c, d, gap] = [v['plate_width']!, v['plate_height']!, v['thickness']!, v['center_hole']!, v['screw_hole']!, v['screw_spacing']!]
+  return {
+    part: [{ plane: 'xy', points: box2([0, 0], w, h), holes: [circle2([0, 0], c), circle2([0, -gap / 2], d), circle2([0, gap / 2], d)], from: 0, to: t }],
+    at: {
+      plate_width: span([-w / 2, -h / 2, 0], [w / 2, -h / 2, 0], [0, -12, 0]),
+      plate_height: span([w / 2, -h / 2, 0], [w / 2, h / 2, 0], [12, 0, 0]),
+      thickness: span([-w / 2, -h / 2, 0], [-w / 2, -h / 2, t], [0, -12, 0]),
+      center_hole: span([-c / 2, 0, t], [c / 2, 0, t], [0, 0, 0]),
+      screw_hole: span([-d / 2, gap / 2, t], [d / 2, gap / 2, t], [0, 0, 0]),
+      screw_spacing: span([0, -gap / 2, t], [0, gap / 2, t], [-w / 4, 0, 0]),
+    } as Record<string, { at: unknown }>,
+  }
+}
+
+/** The box and its lid as their sheet draws them, side by side as they print. */
+export function boxPart(v: Record<string, number>) {
+  const [w, d, h, wall, fit, lip] = [v['width']!, v['depth']!, v['height']!, v['wall']!, v['lid_fit']!, v['lip']!]
+  const bx = -(w / 2 + 5)
+  const lx = w / 2 + 5
+  const iw = w - 2 * (wall + fit)
+  const id = d - 2 * (wall + fit)
+  return {
+    part: [
+      { plane: 'xy', points: box2([bx, 0], w, d), from: 0, to: wall },
+      { plane: 'xy', points: box2([bx, 0], w, d), holes: [box2([bx, 0], w - 2 * wall, d - 2 * wall)], from: wall, to: h },
+      { plane: 'xy', points: box2([lx, 0], w, d), from: 0, to: wall },
+      { plane: 'xy', points: box2([lx, 0], iw, id), from: wall, to: wall + lip },
+    ],
+    at: {
+      width: span([bx - w / 2, -d / 2, 0], [bx + w / 2, -d / 2, 0], [0, 0, -12]),
+      depth: span([bx - w / 2, -d / 2, 0], [bx - w / 2, d / 2, 0], [-12, 0, 0]),
+      height: span([bx - w / 2, -d / 2, 0], [bx - w / 2, -d / 2, h], [-12, 0, 0]),
+      wall: span([bx + w / 2 - wall, d / 2, h], [bx + w / 2, d / 2, h], [0, 12, 0]),
+      lip: span([lx + iw / 2, -id / 2, wall], [lx + iw / 2, -id / 2, wall + lip], [w / 2 - iw / 2 + 12, 0, 0]),
+    } as Record<string, { at: unknown }>,
+  }
+}
+
 /** A placeholder source: scripted lookups are examples, never real pages. */
 const EXAMPLE_SOURCE = { title: 'Example spec sheet (scripted)', url: 'https://example.com/thermostat-specs' }
 
@@ -97,14 +147,17 @@ const backplate: ScriptStep[] = [
         args: {
           title: 'Backplate sizes',
           views: ['top', 'side'],
-          dims: [
-            row('plate_width', 'Plate width', 150.4, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 60, max: 250 }),
-            row('plate_height', 'Plate height', 110.4, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 60, max: 250 }),
-            row('thickness', 'Thickness', 3, 'guess', { min: 1.6, max: 10 }),
-            row('center_hole', 'Center hole', 30, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 5, max: 60 }),
-            row('screw_hole', 'Screw holes', 4.5, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 2, max: 8 }),
-            row('screw_spacing', 'Screw spacing', 60, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 20, max: 100 }),
-          ],
+          ...drawn(
+            [
+              row('plate_width', 'Plate width', 150.4, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 60, max: 250 }),
+              row('plate_height', 'Plate height', 110.4, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 60, max: 250 }),
+              row('thickness', 'Thickness', 3, 'guess', { min: 1.6, max: 10 }),
+              row('center_hole', 'Center hole', 30, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 5, max: 60 }),
+              row('screw_hole', 'Screw holes', 4.5, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 2, max: 8 }),
+              row('screw_spacing', 'Screw spacing', 60, 'lookup', { sourceTitle: EXAMPLE_SOURCE.title, sourceUrl: EXAMPLE_SOURCE.url, min: 20, max: 100 }),
+            ],
+            backplatePart,
+          ),
         },
       },
     ],
@@ -144,14 +197,17 @@ const box: ScriptStep[] = [
         args: {
           title: 'Box with lid sizes',
           views: ['iso', 'front'],
-          dims: [
-            row('width', 'Width', 80, 'guess', { min: 20, max: 250 }),
-            row('depth', 'Depth', 60, 'guess', { min: 20, max: 250 }),
-            row('height', 'Height', 40, 'guess', { min: 10, max: 200 }),
-            row('wall', 'Wall', 2, 'guess', { min: 1.2, max: 5 }),
-            row('lid_fit', 'Lid gap each side', 0.2, 'guess', { min: 0.05, max: 0.6, note: 'smaller is tighter' }),
-            row('lip', 'Lid lip depth', 3, 'guess', { min: 1, max: 10 }),
-          ],
+          ...drawn(
+            [
+              row('width', 'Width', 80, 'guess', { min: 20, max: 250 }),
+              row('depth', 'Depth', 60, 'guess', { min: 20, max: 250 }),
+              row('height', 'Height', 40, 'guess', { min: 10, max: 200 }),
+              row('wall', 'Wall', 2, 'guess', { min: 1.2, max: 5 }),
+              row('lid_fit', 'Lid gap each side', 0.2, 'guess', { min: 0.05, max: 0.6, note: 'smaller is tighter' }),
+              row('lip', 'Lid lip depth', 3, 'guess', { min: 1, max: 10 }),
+            ],
+            boxPart,
+          ),
         },
       },
     ],
@@ -214,6 +270,35 @@ export function standProfile(v: Record<string, number>): [number, number][] {
   return [[x0, 0], [depth / 2, 0], [depth / 2, wall], r(b), r(t2), r(t1), r(a), [lipEnd, wall], [lipEnd, lipH], [x0, lipH]]
 }
 
+/** The stand as its sheet draws it: the side profile extruded the stand's width, standing on the bed. */
+export function standPart(v: Record<string, number>) {
+  const profile = standProfile(v)
+  const [w, depth, lipH] = [v['stand_width']!, v['base_depth']!, v['lip_height']!]
+  const x0 = -depth / 2
+  const lipEnd = x0 + 6
+  const [t, room] = [v['phone_thickness']!, v['case_allowance']!]
+  const foot = profile[3]!
+  const lean = (v['lean']! * Math.PI) / 180
+  const y = -w / 2
+  return {
+    part: [{ plane: 'xz', points: profile, from: -w / 2, to: w / 2 }],
+    at: {
+      phone_thickness: span([lipEnd, y, lipH], [lipEnd + t, y, lipH], [0, 0, 14]),
+      case_allowance: span([lipEnd + t, y, lipH], [lipEnd + t + room, y, lipH], [0, 0, 14]),
+      lean: { at: { c: [foot[0], y, foot[1]], from: [1, 0, 0], to: [Math.cos(lean), 0, Math.sin(lean)], r: 18 } },
+      stand_width: span([depth / 2, -w / 2, 0], [depth / 2, w / 2, 0], [12, 0, 0]),
+      base_depth: span([x0, y, 0], [depth / 2, y, 0], [0, 0, -12]),
+      lip_height: span([x0, y, 0], [x0, y, lipH], [-12, 0, 0]),
+    } as Record<string, { at: unknown }>,
+  }
+}
+
+/** A sheet's rows with their places on the drawing, and the part drawn at the rows' own values. */
+function drawn<D extends { key: string; value: number }>(dims: D[], make: (v: Record<string, number>) => { part: unknown[]; at: Record<string, { at: unknown }> }) {
+  const { part, at } = make(Object.fromEntries(dims.map((d) => [d.key, d.value])))
+  return { dims: dims.map((d) => ({ ...d, ...at[d.key] })), part }
+}
+
 /** The name of the tool the last step called, from the assistant's last message. */
 function lastCall(messages: readonly LlmMessage[]): string | null {
   for (let k = messages.length - 1; k >= 0; k--) {
@@ -242,15 +327,18 @@ function standSheet(phone: { w: number; t: number } | null): StepData {
         args: {
           title: 'Phone stand sizes',
           views: ['side', 'front'],
-          dims: [
-            row('phone_width', 'Phone width', phone?.w ?? 72, how, { ...src, min: 50, max: 100 }),
-            row('phone_thickness', 'Phone thickness', phone?.t ?? 8.5, how, { ...src, min: 5, max: 20 }),
-            row('case_allowance', 'Room for a case', 1.5, 'guess', { min: 0, max: 6 }),
-            { ...row('lean', 'Lean angle', 70, 'guess', { min: 55, max: 80 }), unit: 'deg' },
-            row('stand_width', 'Stand width', 70, 'guess', { min: 40, max: 120 }),
-            row('base_depth', 'Base depth', 80, 'guess', { min: 60, max: 140 }),
-            row('lip_height', 'Front lip height', 12, 'guess', { min: 8, max: 30 }),
-          ],
+          ...drawn(
+            [
+              row('phone_width', 'Phone width', phone?.w ?? 72, how, { ...src, min: 50, max: 100 }),
+              row('phone_thickness', 'Phone thickness', phone?.t ?? 8.5, how, { ...src, min: 5, max: 20 }),
+              row('case_allowance', 'Room for a case', 1.5, 'guess', { min: 0, max: 6 }),
+              { ...row('lean', 'Lean angle', 70, 'guess', { min: 55, max: 80 }), unit: 'deg' },
+              row('stand_width', 'Stand width', 70, 'guess', { min: 40, max: 120 }),
+              row('base_depth', 'Base depth', 80, 'guess', { min: 60, max: 140 }),
+              row('lip_height', 'Front lip height', 12, 'guess', { min: 8, max: 30 }),
+            ],
+            standPart,
+          ),
         },
       },
     ],

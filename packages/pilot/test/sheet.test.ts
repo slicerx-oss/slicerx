@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // pilot.sheet shows the sizes a part is built from and waits for the person: the answer keeps each value in its row's
-// bounds and says which ones changed; a bad sheet is refused before it is shown; the transcript keeps the sheet and
-// its answer.
+// bounds and says which ones changed, or that the person canceled; a bad sheet is refused before it is shown; the
+// transcript keeps the sheet and its answer, and closes one left open when the run ends.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PilotSheet, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { answerOf, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetBindTool, sheetTool, type ScriptStep } from '../src/index'
@@ -18,7 +18,7 @@ const DIMS = [
 ]
 const SHEET = { name: 'pilot.sheet', args: { title: 'Phone stand sizes', views: ['front', 'side'], dims: DIMS } }
 
-async function play(steps: ScriptStep[], answer?: (sheet: PilotSheet) => Record<string, number>) {
+async function play(steps: ScriptStep[], answer?: (sheet: PilotSheet) => Record<string, number> | null) {
   const p = pilot(steps)
   const events: PilotEvent[] = []
   for await (const e of p.run('s', 'A phone stand')) {
@@ -61,6 +61,42 @@ describe('pilot.sheet', () => {
       expect(events.some((e) => e.type === 'sheet'), JSON.stringify(dims)).toBe(false)
       expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
     }
+  })
+
+  it('carries the part and each row\'s place on its drawing', async () => {
+    const part = [{ plane: 'xz', points: [[0, 0], [80, 0], [80, 6], [0, 6]], from: -35, to: 35 }]
+    const dims = [{ ...DIMS[1], at: { a: [0, -35, 0], b: [80, -35, 0], off: [0, 0, -12] } }, { ...DIMS[2], at: { c: [20, -35, 6], from: [1, 0, 0], to: [0.34, 0, 0.94], r: 18 } }]
+    const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims, part } }] }], () => ({}))
+    expect(events.find((e) => e.type === 'sheet')).toMatchObject({ sheet: { part, dims } })
+    // a part with too few points or a place with a missing coordinate is refused
+    for (const bad of [{ dims, part: [{ ...part[0], points: [[0, 0], [1, 1]] }] }, { dims: [{ ...DIMS[1], at: { a: [0, 0], b: [1, 0, 0], off: [0, 0, 0] } }] }]) {
+      const out = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', ...bad } }] }], () => ({}))
+      expect(out.some((e) => e.type === 'sheet'), JSON.stringify(bad)).toBe(false)
+    }
+  })
+
+  it('tells the next step nothing was confirmed when the person cancels', async () => {
+    const seen: string[] = []
+    const events = await play(
+      [
+        { calls: [SHEET] },
+        (messages) => {
+          const last = messages.at(-1)
+          seen.push(last?.role === 'tool' ? last.content : '')
+          return { text: 'Nothing built.' }
+        },
+      ],
+      () => null,
+    )
+    expect(events.find((e) => e.type === 'sheet_answered')).toMatchObject({ answer: { confirmed: false, changed: [] } })
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
+    expect(JSON.parse(seen[0]!)).toMatchObject({ ok: false, result: { confirmed: false } })
+  })
+
+  it('closes a sheet nobody answered when the run ends, as not confirmed', () => {
+    const sheet = { id: 'sheet_1', title: 'Sizes', views: ['iso' as const], dims: DIMS as PilotSheet['dims'] }
+    const t = foldEvents([{ type: 'sheet', sheet }, { type: 'done', stopReason: 'canceled', ms: 5 }], startTurn(emptyTranscript(), { user: 'hi' }, 0))
+    expect(t.turns[0]!.blocks[0]).toMatchObject({ kind: 'sheet', answer: { confirmed: false, changed: [] } })
   })
 
   it('refuses an answer to a sheet nobody showed', async () => {

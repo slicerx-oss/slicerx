@@ -358,3 +358,5 @@
 .sx-pilot .lookup-rec-f dd{margin:0;color:var(--t-fg);font-variant-numeric:tabular-nums}
 .sx-pilot .lookup-rec-s{color:var(--cyan);font-size:12.5px;text-decoration:none;justify-self:start}
 .sx-pilot .lookup-rec-s:hover{text-decoration:underline}
+.sx-pilot .sheet-rec-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px}
+.sx-pilot .sheet-rec-foot .lookup-rec-s{color:var(--t-mute);text-decoration:none}

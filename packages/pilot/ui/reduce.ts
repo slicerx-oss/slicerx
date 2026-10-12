@@ -230,6 +230,10 @@ function finishRun(s: Draft, stopReason: Extract<PilotEvent, { type: 'done' }>['
     if (b.kind === 'approval' && b.resolution === null) {
       return { ...b, resolution: { decision: { kind: 'deny', reason: 'canceled' }, by: 'user', at: now } }
     }
+    // A sheet nobody answered before the run ended can no longer be: it closes as not confirmed.
+    if (b.kind === 'sheet' && b.answer === null) {
+      return { ...b, answer: { confirmed: false, values: Object.fromEntries(b.sheet.dims.map((d) => [d.key, d.value])), changed: [] } }
+    }
     return b
   })
   // "done in" on the run's summary comes from the runtime's own clock.

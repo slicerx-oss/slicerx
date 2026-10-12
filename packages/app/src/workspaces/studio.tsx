@@ -83,6 +83,7 @@ const SelectPill = lazy(() => import('./design/design-panes').then((m) => ({ def
 const MimirChat = lazy(() => import('./mimir/mimir-panes').then((m) => ({ default: m.MimirChat })))
 const MimirCaption = lazy(() => import('./mimir/mimir-panes').then((m) => ({ default: m.MimirCaption })))
 const LookupCards = lazy(() => import('./mimir/lookup-cards').then((m) => ({ default: m.LookupCards })))
+const MimirSheet = lazy(() => import('./mimir/sheet-view').then((m) => ({ default: m.MimirSheet })))
 
 // norn (edit from Preview) loads with the first click on a toolpath.
 const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default: m.NornLayer })))
@@ -295,6 +296,7 @@ export function Studio() {
         {mimir ? (
           <Suspense fallback={null}>
             <LookupCards />
+            <MimirSheet />
           </Suspense>
         ) : null}
         {cad ? (

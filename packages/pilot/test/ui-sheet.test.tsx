@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 // A sheet in the conversation: every size with its unit and where it came from, guesses marked until confirmed, a
 // looked-up size linked to its page, and once confirmed the values used and which the person changed.
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { PilotSheet } from '@slicerx/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { SheetRecord } from '../ui/index'
@@ -40,5 +40,26 @@ describe('the sheet record', () => {
     expect(row('lean').textContent).toContain('you changed it')
     expect(row('lean').hasAttribute('data-guess')).toBe(false)
     expect(screen.getByTestId('mimir-sheet-record').textContent).toContain('Confirmed with 1 change')
+  })
+
+  it('says a canceled sheet built nothing, and keeps its guesses marked', () => {
+    render(<SheetRecord sheet={SHEET} answer={{ confirmed: false, values: { phone_width: 71.5, lean: 70, stand_width: 70 }, changed: [] }} actionable onOpen={() => undefined} />)
+    expect(screen.getByTestId('mimir-sheet-record').textContent).toContain('Canceled, nothing built')
+    expect(row('lean').hasAttribute('data-guess')).toBe(true)
+    expect(screen.queryByTestId('mimir-sheet-open')).toBeNull()
+  })
+
+  it('links to the panel where one edits it: Check sizes while it waits, Edit sizes once its rows drive the steps', () => {
+    const opened: string[] = []
+    const { rerender } = render(<SheetRecord sheet={SHEET} answer={null} actionable onOpen={(id) => opened.push(id)} onConfirm={async () => undefined} />)
+    // the panel confirms; the record only links to it
+    expect(screen.queryByTestId('mimir-sheet-confirm')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Check sizes' }))
+    const done = { confirmed: true, values: { phone_width: 71.5, lean: 70, stand_width: 70 }, changed: [] }
+    rerender(<SheetRecord sheet={SHEET} answer={done} actionable onOpen={(id) => opened.push(id)} />)
+    expect(screen.queryByTestId('mimir-sheet-open')).toBeNull()
+    rerender(<SheetRecord sheet={SHEET} answer={done} bound actionable onOpen={(id) => opened.push(id)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit sizes' }))
+    expect(opened).toEqual(['sheet_1', 'sheet_1'])
   })
 })

@@ -4,7 +4,7 @@
 // read-back for clients serves, and the person's messages are kept beside it (the runtime logs only its own events).
 import type { MeshHandle, MeshPart, Pilot } from '@slicerx/contracts'
 import { designToolset } from '@slicerx/mcp/toolset'
-import { createMemorySessionStore } from '@slicerx/pilot'
+import { createMemorySessionStore, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { appDesignHost } from '../../cad/design-host'
 import { setMimirLink } from './connection'
@@ -17,6 +17,12 @@ export const mimirLogs = createMemorySessionStore()
 export const mimirMessages = new Map<string, { text: string; attachments: string[] }[]>()
 
 let pilot: Pilot | null = null
+let tools: PilotTool<never>[] = []
+
+/** The tools the tab's mimir calls, for editing a built sheet's steps the same way. */
+export function tabTools(): readonly PilotTool<never>[] {
+  return tools
+}
 
 /**
  * The tab's mimir, made on first use, with the design tools on the plate: a step it makes is the history step a
@@ -25,7 +31,8 @@ let pilot: Pilot | null = null
 export function tabMimir(loader: { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }): Pilot {
   if (!pilot) {
     const still = motionReduced()
-    pilot = scriptedMimir(SCRIPTS, mimirTools(designToolset(appDesignHost(loader))), { store: mimirLogs, delayMs: still ? 0 : 28, callDelayMs: still ? 0 : 350 })
+    tools = mimirTools(designToolset(appDesignHost(loader)))
+    pilot = scriptedMimir(SCRIPTS, tools, { store: mimirLogs, delayMs: still ? 0 : 28, callDelayMs: still ? 0 : 350 })
     // The stub answers: the chat says so, and the ravens stay behind it.
     setMimirLink('scripted')
   }
