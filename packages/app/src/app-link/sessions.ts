@@ -5,7 +5,7 @@
 // chat that keeps them registers its log here; nothing is registered until it does. Text is cut to a readable length
 // and nothing else in the app is reachable from here.
 import type { PilotEvent, SessionStore } from '@slicerx/contracts'
-import { foldEvents, startTurn, emptyTranscript, type Turn } from '@slicerx/pilot/reduce'
+import { reduceTranscript, startTurn, emptyTranscript, type Transcript, type Turn } from '@slicerx/pilot/reduce'
 import { LinkError } from './methods-error'
 
 export interface SessionSource {
@@ -58,6 +58,29 @@ function compact(turn: Turn, user: { text: string; attachments: string[] } | und
   return { ...(user ? { said: cut(user.text), ...(user.attachments.length ? { attachments: user.attachments } : {}) } : {}), steps: out }
 }
 
+/**
+ * How mimir checked sizes in a session, for the dimension bench: questions it asked (choices and sheets), lookups it
+ * showed, sheets confirmed, and how many sizes the person changed on them. Counted from the events, so kinds the chat
+ * adds later count as they come.
+ */
+function statsOf(events: readonly PilotEvent[]) {
+  let questions = 0
+  let sheets = 0
+  let lookups = 0
+  let confirmed = 0
+  let changed = 0
+  for (const e of events as readonly { type: string; answer?: { confirmed?: boolean; changed?: string[] } }[]) {
+    if (e.type === 'ask') questions++
+    else if (e.type === 'sheet') sheets++
+    else if (e.type === 'lookup') lookups++
+    else if (e.type === 'sheet_answered') {
+      if (e.answer?.confirmed) confirmed++
+      changed += e.answer?.changed?.length ?? 0
+    }
+  }
+  return { questions: questions + sheets, sheets, lookups, sheetsConfirmed: confirmed, sizesChanged: changed }
+}
+
 /** `mimir.sessions`: the conversations, newest first. */
 export async function listSessions(): Promise<unknown> {
   if (!source) return { sessions: [] }
@@ -79,8 +102,11 @@ export async function readSession(args: Record<string, unknown>): Promise<unknow
   }
   const said = source.messages?.(id) ?? []
   const turns = runs.map((run, i) => {
-    const t = foldEvents(run, startTurn(emptyTranscript(), { user: said[i]?.text ?? null }, 0)).turns.at(-1)!
+    // An event this build's transcript does not know (a log from a newer chat) is skipped, not fatal.
+    let tr: Transcript = startTurn(emptyTranscript(), { user: said[i]?.text ?? null }, 0)
+    for (const e of run) tr = reduceTranscript(tr, e, 0) ?? tr
+    const t = tr.turns.at(-1)!
     return compact(t, said[i])
   })
-  return { id, turns: turns.slice(-MAX_TURNS), ...(turns.length > MAX_TURNS ? { earlier: turns.length - MAX_TURNS } : {}) }
+  return { id, stats: statsOf(events), turns: turns.slice(-MAX_TURNS), ...(turns.length > MAX_TURNS ? { earlier: turns.length - MAX_TURNS } : {}) }
 }
