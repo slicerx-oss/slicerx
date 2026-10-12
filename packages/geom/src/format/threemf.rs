@@ -897,23 +897,21 @@ impl ModelParser {
             let mut paint: [(u8, &str); 4] = [(0, ""); 4];
             // pid, p1, p2, p3 as written
             let mut refs: [Option<&str>; 4] = [None; 4];
+            let mut has_refs = false;
             // one match per attribute: this loop runs for every attribute of every triangle
             for (key, val) in xml::attrs(t.attrs) {
-                let attr = match key {
-                    "v1" => Attr::Corner(0),
-                    "v2" => Attr::Corner(1),
-                    "v3" => Attr::Corner(2),
-                    "paint_color" => Attr::Paint(0, 2),
-                    "slic3rpe:mmu_segmentation" => Attr::Paint(0, 1),
-                    "paint_seam" => Attr::Paint(1, 2),
-                    "slic3rpe:custom_seam" => Attr::Paint(1, 1),
-                    "paint_supports" => Attr::Paint(2, 2),
-                    "slic3rpe:custom_supports" => Attr::Paint(2, 1),
-                    "paint_fuzzy_skin" => Attr::Paint(3, 2),
-                    "pid" => Attr::Prop(0),
-                    "p1" => Attr::Prop(1),
-                    "p2" => Attr::Prop(2),
-                    "p3" => Attr::Prop(3),
+                // the two-byte keys by their bytes first: corners are most of what a triangle holds
+                let attr = match key.as_bytes() {
+                    [b'v', c @ b'1'..=b'3'] => Attr::Corner(usize::from(c - b'1')),
+                    [b'p', c @ b'1'..=b'3'] => Attr::Prop(usize::from(c - b'0')),
+                    b"pid" => Attr::Prop(0),
+                    b"paint_color" => Attr::Paint(0, 2),
+                    b"slic3rpe:mmu_segmentation" => Attr::Paint(0, 1),
+                    b"paint_seam" => Attr::Paint(1, 2),
+                    b"slic3rpe:custom_seam" => Attr::Paint(1, 1),
+                    b"paint_supports" => Attr::Paint(2, 2),
+                    b"slic3rpe:custom_supports" => Attr::Paint(2, 1),
+                    b"paint_fuzzy_skin" => Attr::Paint(3, 2),
                     _ => continue,
                 };
                 match attr {
@@ -933,6 +931,7 @@ impl ModelParser {
                         }
                     }
                     Attr::Prop(i) => {
+                        has_refs = true;
                         if let Some(slot) = refs.get_mut(i) {
                             *slot = Some(val);
                         }
@@ -947,7 +946,7 @@ impl ModelParser {
                     layer.push((at, code.to_owned()));
                 }
             }
-            if refs.iter().any(Option::is_some) {
+            if has_refs {
                 match resolve_props(refs, o.props.default) {
                     Some((pid, p)) => o.props.triangles.push((at, pid, p)),
                     None => o.bad_props += 1,
