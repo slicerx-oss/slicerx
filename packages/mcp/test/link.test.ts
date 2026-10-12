@@ -24,7 +24,7 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
   let code = ''
 
   beforeAll(async () => {
-    mocks = await startMocks({ only: ['moonraker'], state: 'idle' })
+    mocks = await startMocks({ only: ['moonraker', 'prusalink'], state: 'idle' })
     proc = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     await new Promise<void>((done, fail) => {
@@ -42,6 +42,7 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     })
     const setup = await connectLink({ url, code })
     await setup.addPrinter({ id: 'bay-4', name: 'Bay 4', plugin: 'moonraker', host: '127.0.0.1', port: mocks.ports.moonraker ?? 0 }, { model: 'Voron 2.4 350' })
+    await setup.addPrinter({ id: 'bay-6', name: 'Bay 6', plugin: 'prusalink', host: '127.0.0.1', port: mocks.ports.prusalink ?? 0 }, { model: 'MK4S' })
     setup.close()
   }, 30_000)
 
@@ -62,6 +63,20 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     const tried = await h.call('slicerx_approve', { request_id: req.request_id, approve: true })
     expect(tried.isError).toBe(true)
     expect(text(tried)).toMatch(/in SlicerX or on the phone/)
+  })
+
+  it("reads a Prusa printer's speed while it prints, and the printer's own words when it stops for attention", async () => {
+    const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${mocks.control}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    type Status = { output: { state: string; message?: string; live?: { speedPercent?: number } } }
+    const read = async () => data<Status>(await h.call('slicerx_printer_status', { printerId: 'bay-6' })).output
+    await post('/set', { mock: 'prusalink', state: 'printing' })
+    await expect.poll(async () => (await read()).state, { timeout: 10_000 }).toBe('printing')
+    expect((await read()).live?.speedPercent).toBe(100)
+    await post('/fault', { mock: 'prusalink', kind: 'runout' })
+    await expect.poll(async () => (await read()).message, { timeout: 10_000 }).toBe('Filament runout')
+    await post('/fault', { mock: 'prusalink', kind: 'clear' })
+    await post('/set', { mock: 'prusalink', state: 'idle' })
   })
 
   it('leaves adding a printer to the SlicerX app, since the hub refuses it from agents', async () => {
