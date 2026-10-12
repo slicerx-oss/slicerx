@@ -874,7 +874,7 @@ fn make_part(obj: &Object, t: &Transform, slot: u8, name: String) -> MeshPart {
             }
         }
     }
-    MeshPart {
+    let mut part = MeshPart {
         name,
         slot,
         color: None,
@@ -885,7 +885,9 @@ fn make_part(obj: &Object, t: &Transform, slot: u8, name: String) -> MeshPart {
         seam_paint,
         fuzzy_paint,
         paint_texts,
-    }
+    };
+    part.shrink_to_fit();
+    part
 }
 
 impl Object {
