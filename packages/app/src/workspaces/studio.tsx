@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The plate tabs: mimir, Design and Slice share one viewport, so switching never rebuilds the scene; the panes around
 // it change with the mode. mimir and Design show the same design; mimir puts the chat beside it in place of the panes. Slice shows the slice in place (toolpaths by default), with the layer dock and the slice summary.
-import { lazy, Suspense, useEffect, useRef, type CSSProperties } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { RenderMenu, ViewMenu } from './view-menus'
 import { useLayout, useLookChoice } from '../first-run/look'
 import { registerCommands } from '../commands/registry'
@@ -15,7 +15,8 @@ import { PlateList } from './prepare/plate-list'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
 import { seedExamplePlate } from '../state/actions'
-import { get, isCadTool, railOpen, setRail, showsLayers, useApp } from '../state/store'
+import { get, isCadTool, railOpen, setRail, showsLayers, useApp, type PlateEntry } from '../state/store'
+import { bounds, sizeOf } from '../plate/transform'
 import { usePrinter } from '../lib/use-printer'
 import { useRightAttention } from '../lib/right-attention'
 import { MiddleName } from '../lib/short-name'
@@ -87,6 +88,24 @@ const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default
 // The G-code line view loads when it is first opened.
 const GcodePanel = lazy(() => import('./preview/gcode-panel').then((m) => ({ default: m.GcodePanel })))
 
+
+/** An object's size as it sits on the plate (its scale and turn included), as "x x y x z mm", or null with no mesh. */
+export function modelSizeText(entry: Pick<PlateEntry, 'parts' | 'transform'> | undefined): string | null {
+  const b = entry ? bounds(entry.parts, entry.transform) : null
+  return b ? `${sizeOf(b).map((v) => v.toFixed(1)).join(' x ')} mm` : null
+}
+
+/** The size of the selected object, or of the first one with nothing selected; it follows scaling as it happens. */
+function ModelSize() {
+  const entry = useApp((s) => s.plate.find((p) => p.id === s.selection) ?? s.plate[0])
+  const text = useMemo(() => modelSizeText(entry), [entry])
+  if (!text) return null
+  return (
+    <div className="dims sx-overlay sx-mono" aria-label="Model size">
+      {text}
+    </div>
+  )
+}
 export function Studio() {
   const host = useHost()
   const hasPreview = useApp((s) => s.preview !== null)
@@ -246,11 +265,7 @@ export function Studio() {
               {plate.length > 1 ? <span>+{plate.length - 1}</span> : null}
             </div>
           )}
-          {selected ? (
-            <div className="dims sx-overlay sx-mono" aria-label="Model size">
-              {selected.handle.bboxMm.map((v) => v.toFixed(1)).join(' x ')} mm
-            </div>
-          ) : null}
+          {selected ? <ModelSize /> : null}
         </div>
 
         {/* a phone views and prints: no plate tools */}
