@@ -14,7 +14,10 @@ drop function if exists public.mimir_reserve(text, text, text, bigint, bigint, i
 drop function if exists public.mimir_install_cap(public.mimir_limits, bigint);
 drop function if exists public.mimir_register(text, text, text);
 drop function if exists public.mimir_token_hash(text);
+drop function if exists public.mimir_net_hash(text);
 drop function if exists public.mimir_ip_hash(text);
+drop function if exists public.mimir_hmac(text);
+drop function if exists public.mimir_addr(text);
 drop function if exists public.mimir_day_start();
 drop function if exists public.mimir_day();
 drop table if exists public.mimir_refusals, public.mimir_sessions, public.mimir_calls, public.mimir_installs, public.mimir_secret,

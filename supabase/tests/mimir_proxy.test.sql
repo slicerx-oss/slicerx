@@ -3,13 +3,13 @@
 -- mimir's cloud model (pgTAP): clients cannot touch the tables or functions, installs
 -- register only with their edition's key and within the per-IP limit, reservations hold
 -- every cap (per minute, in flight, install, IP, edition, paused), an IPv6 /64 counts as one
--- address, unused installs expire, refusals count toward the rates at their worst case and
+-- address and its /48 holds wider caps, unused installs expire, refusals count toward the rates at their worst case and
 -- keep the editions apart, costs follow the prices, sessions store only settled calls
 -- within their size caps and forget, and the reader role sees only LayerMate sessions. Run with
 -- `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(74);
+select plan(84);
 
 create temp table t (k text primary key, v text) on commit drop;
 grant all on t to anon, authenticated, service_role, mimir_session_reader;
@@ -78,11 +78,20 @@ select is(public.mimir_ip_hash('2001:db8:1:2::1'), public.mimir_ip_hash('2001:db
 select isnt(public.mimir_ip_hash('2001:db8:1:2::1'), public.mimir_ip_hash('2001:db8:1:3::1'), 'the next /64 is another address');
 select is(public.mimir_ip_hash('::ffff:10.0.0.1'), public.mimir_ip_hash('10.0.0.1'), 'an IPv4-mapped address is its IPv4 address');
 select throws_ok($$ select public.mimir_ip_hash('not-an-address') $$, '22023', 'no client address', 'an unreadable address is refused');
+select is(public.mimir_net_hash('2001:db8:1:2::1'), public.mimir_net_hash('2001:db8:1:ff::1'), 'the /64s of one /48 share a network');
+select isnt(public.mimir_net_hash('2001:db8:1:2::1'), public.mimir_net_hash('2001:db8:2:2::1'), 'the next /48 is another network');
+select is(public.mimir_net_hash('10.0.0.1'), null, 'IPv4 has no wider network');
 set local role service_role;
 select throws_ok($$ select * from public.mimir_secret $$, '42501', null, 'the service role cannot read the IP salt');
 select pg_temp.reg('slicerx', '2001:db8:5:5::1'), pg_temp.reg('slicerx', '2001:db8:5:5::2'), pg_temp.reg('slicerx', '2001:db8:5:5::3');
 select throws_ok($$ select pg_temp.reg('slicerx', '2001:db8:5:5:abcd::7') $$, 'P0001', 'too many new installs from this address today',
   'new addresses in one /64 share its install limit');
+-- 2001:db8:5::/48 holds those 3; new /64s in it register up to the network's limit
+update public.mimir_limits set registers_per_net_day = 4 where edition = 'slicerx';
+select lives_ok($$ select pg_temp.reg('slicerx', '2001:db8:5:6::1') $$, 'another /64 in the /48 registers');
+select throws_ok($$ select pg_temp.reg('slicerx', '2001:db8:5:7::1') $$, 'P0001', 'too many new installs from this network today',
+  'the /48 has a limit of new installs across its /64s');
+update public.mimir_limits set registers_per_net_day = 20;
 update public.mimir_limits set registers_per_day = (select count(*) from public.mimir_installs where edition = 'layermate') where edition = 'layermate';
 select throws_ok($$ select pg_temp.reg('layermate', '10.0.0.30') $$, 'P0001', 'too many new installs for this edition today',
   'an edition has a limit of new installs a day, whatever the addresses');
@@ -90,10 +99,16 @@ update public.mimir_limits set registers_per_day = 5000;
 -- An install that never made a call goes after 7 days; one that did stays.
 insert into public.mimir_installs (edition, token_hash, created_at, created_ip_hash, last_call_at) values
   ('slicerx', 'stale-unused', now() - interval '8 days', 'x', null),
-  ('slicerx', 'stale-used', now() - interval '8 days', 'x', now() - interval '8 days');
+  ('slicerx', 'stale-used', now() - interval '8 days', 'x', now() - interval '8 days'),
+  ('slicerx', 'stale-idle', now() - interval '60 days', 'x', now() - interval '31 days'),
+  ('slicerx', 'stale-shared', now() - interval '60 days', 'x', now() - interval '31 days');
+insert into public.mimir_sessions (install_id, session_key, edition, app_version, model, transcript)
+select id, 'kept', 'slicerx', '0.2.0', 'claude-haiku-5-5', '{}' from public.mimir_installs where token_hash = 'stale-shared';
 select pg_temp.reg('slicerx', '10.0.0.31');
 select ok(not exists (select 1 from public.mimir_installs where token_hash = 'stale-unused'), 'an install never used for 7 days is removed');
-select ok(exists (select 1 from public.mimir_installs where token_hash = 'stale-used'), 'an install that made a call stays');
+select ok(exists (select 1 from public.mimir_installs where token_hash = 'stale-used'), 'an install used this month stays');
+select ok(not exists (select 1 from public.mimir_installs where token_hash = 'stale-idle'), 'an install idle for 30 days is removed');
+select ok(exists (select 1 from public.mimir_installs where token_hash = 'stale-shared'), 'unless it has shared sessions, which keep their 180 days');
 
 -- Reservations ------------------------------------------------------------------------
 select throws_ok($$ select public.mimir_reserve('not-a-token', '10.0.0.1', 'claude-haiku-5-5', 0, 2000, 0) $$, 'P0001', 'unknown install', 'an unknown token is refused');
@@ -160,7 +175,7 @@ update public.mimir_limits set install_in_flight = 3, edition_in_flight = 400;
 update public.mimir_limits set ip_in_flight = 1 where edition = 'slicerx';
 select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'a5')), 'P0001',
   'too many calls at once from this address', 'an address has a limit of calls at once');
-update public.mimir_limits set ip_in_flight = 6;
+update public.mimir_limits set ip_in_flight = 10;
 -- A call left open past the function's time limit (the runtime killed it) frees its place.
 insert into t values ('w', pg_temp.reg('slicerx', '10.0.1.1'));
 update public.mimir_limits set install_in_flight = 1 where edition = 'slicerx';
@@ -170,6 +185,16 @@ where install_id = (select id from public.mimir_installs where token_hash = publ
 select lives_ok(format($$ select public.mimir_reserve(%L, '10.0.1.1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'w')),
   'a call open past the time limit no longer holds a place');
 update public.mimir_limits set install_in_flight = 3 where edition = 'slicerx';
+-- A /48 holds calls at once and spending across its /64s.
+insert into t values ('v1', pg_temp.reg('slicerx', '2001:db8:9:1::1')), ('v2', pg_temp.reg('slicerx', '2001:db8:9:2::1'));
+update public.mimir_limits set net_in_flight = 1 where edition = 'slicerx';
+select public.mimir_reserve((select v from t where k = 'v1'), '2001:db8:9:1::1', 'claude-haiku-5-5', 0, 2, 0);
+select throws_ok(format($$ select public.mimir_reserve(%L, '2001:db8:9:2::1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'v2')), 'P0001',
+  'too many calls at once from this network', 'a /48 has a limit of calls at once across its /64s');
+update public.mimir_limits set net_in_flight = 24, net_daily_micros = 1 where edition = 'slicerx';
+select throws_ok(format($$ select public.mimir_reserve(%L, '2001:db8:9:2::1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'v2')), 'P0001',
+  'daily limit for this network reached', 'a /48 has a daily cap across its /64s');
+update public.mimir_limits set net_daily_micros = 6000000;
 
 -- Past half of the edition's cap, an install's cap shrinks with what the edition has left.
 select is(public.mimir_install_cap((select l from public.mimir_limits l where edition = 'slicerx'), 0), 500000::bigint, 'full install cap early in the day');
@@ -199,6 +224,11 @@ update public.mimir_limits set install_per_minute = 20, ip_per_minute = 2 where 
 select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.2.1', 'claude-haiku-5-5', 0, 2, 0) $$, (select v from t where k = 'w')), 'P0001',
   'too many requests from this address', 'refusals count toward the address''s rate');
 update public.mimir_limits set ip_per_minute = 60;
+-- refusals past the rate window are cleared
+insert into public.mimir_refusals (install_id, ip_hash, created_at)
+select id, 'old', now() - interval '2 minutes' from public.mimir_installs where token_hash = public.mimir_token_hash((select v from t where k = 'r'));
+select public.mimir_refused((select v from t where k = 'r'), '10.0.2.1');
+select ok(not exists (select 1 from public.mimir_refusals where ip_hash = 'old'), 'refusals past the rate window are cleared');
 
 -- Sessions, forget and the reader --------------------------------------------------------
 -- Each stored turn is a settled call of its own.
