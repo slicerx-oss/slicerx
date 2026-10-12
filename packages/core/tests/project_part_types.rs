@@ -698,3 +698,34 @@ fn objects_on_one_plate_keep_their_own_settings() {
     assert!(support_in(35.0, 85.0) > 0.0, "a prints its support");
     assert_eq!(support_in(135.0, 185.0), 0.0, "b prints none");
 }
+
+#[test]
+fn both_readers_give_an_objects_layer_height_to_a_lone_slice() {
+    let cube = || cuboid([0.0, 0.0, 0.0], [12.0, 12.0, 12.0]);
+    // a Bambu Studio or OrcaSlicer layout: the object's settings in model_settings.config, a G-code key among them
+    let bytes = project(
+        &[("normal_part", cube(), "")],
+        &format!(
+            "{}{}",
+            meta("layer_height", "0.3"),
+            meta("before_layer_change_gcode", "G4")
+        ),
+    );
+    let new = sx_core::api::load_3mf_plate_objects(&bytes, "own.3mf").unwrap();
+    let old = sx_core::api::load_3mf_plate_objects_legacy(&bytes, "own.3mf").unwrap();
+    let (mesh, legacy) = (&new[0].1[0], &old[0].1[0]);
+    assert_eq!(mesh.settings, json!({ "layer_height": "0.3" }));
+    assert_eq!(mesh.settings, legacy.settings);
+    assert_eq!(mesh.notes, legacy.notes);
+    assert!(
+        mesh.notes
+            .iter()
+            .any(|n| n.starts_with("before_layer_change_gcode"))
+    );
+    let thick = slice(&bytes, json!({ "layer_height": 0.2 })).unwrap();
+    assert!(
+        thick.report.layer_count <= 41,
+        "0.3 mm layers on a 12 mm cube: {}",
+        thick.report.layer_count
+    );
+}
