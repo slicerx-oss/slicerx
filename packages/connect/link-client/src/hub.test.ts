@@ -283,3 +283,30 @@ test('the app makes an agent key through clients.create', async () => {
   assert.deepEqual(r, { clientId: 'client-1', clientKey: 'k'.repeat(64), role: 'agent' })
   assert.deepEqual(h.sent().find((s) => s.method === 'clients.create')?.params, { name: 'ChatGPT', role: 'agent' })
 })
+
+test('a dropped connection says so once, rejects the call in flight and every later one, and a close is told apart', async () => {
+  const keys = await hubKeys()
+  // start never answers: the socket drops while it is in flight.
+  const hub = hubWith(keys, (method) => (method === 'start' ? new Promise(() => undefined) : {}))
+  const host = await connectLink({ code: 'APPS-CODE', hubKey: keys.pub, WebSocket: hub.WS })
+  const heard: { requested: boolean }[] = []
+  host.onDisconnect((info) => heard.push(info))
+  const inFlight = host.start({ printerId: 'p1', name: 'plate.gcode.3mf', sha256: 'ab' } as never, {} as never, { id: 't' } as never)
+  await new Promise((r) => setTimeout(r, 10))
+  hub.sock()!.close()
+  await assert.rejects(inFlight, (e: unknown) => e instanceof LinkError && e.code === 'closed')
+  assert.deepEqual(heard, [{ requested: false }])
+  await assert.rejects(host.list(), (e: unknown) => e instanceof LinkError && e.code === 'closed')
+  // The start went out once and was never sent again.
+  assert.equal(hub.sent().filter((s) => s.method === 'start').length, 1)
+  // A listener added after the drop still hears it.
+  const late = await new Promise<{ requested: boolean }>((r) => host.onDisconnect(r))
+  assert.deepEqual(late, { requested: false })
+
+  const other = hubWith(keys)
+  const closed = await connectLink({ code: 'APPS-CODE', hubKey: keys.pub, WebSocket: other.WS })
+  const told: { requested: boolean }[] = []
+  closed.onDisconnect((info) => told.push(info))
+  closed.close()
+  assert.deepEqual(told, [{ requested: true }])
+})
