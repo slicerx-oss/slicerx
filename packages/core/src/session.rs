@@ -8538,7 +8538,8 @@ fn ring_length_mm(ring: &[IntPoint<i32>]) -> f64 {
 /// `inner_wall_filament_id`, `sparse_infill_filament_id`, `internal_solid_filament_id`,
 /// `top_surface_filament_id` and `bottom_surface_filament_id` (0 is the region's own filament),
 /// filled in as Orca's `normalize_fdm` does: internal solid from sparse, then from top or bottom,
-/// and top and bottom from internal solid.
+/// and top and bottom from internal solid. On a Bambu Lab printer internal solid is not taken from sparse: Bambu
+/// Studio keeps it, and the surfaces with it, on the region's own filament when only sparse infill moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FeatureTools {
     outer: u8,
@@ -8617,7 +8618,10 @@ fn feature_tools_from<'v>(
 ) -> FeatureTools {
     let [outer, inner, sparse, mut solid, mut top, mut bottom] =
         FEATURE_KEYS.map(|(k, legacy)| feature_id_of(get, k, legacy));
-    if solid == 0 && sparse > 0 {
+    let bambu = get("printer_model")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|m| m.starts_with("Bambu Lab"));
+    if solid == 0 && sparse > 0 && !bambu {
         solid = sparse;
     }
     if solid == 0 && top > 0 {
@@ -9702,6 +9706,38 @@ mod tag_tests {
         assert_eq!(first.raw, cfg.raw);
         assert_ne!(settings_tag(&first), settings_tag(&cfg));
         assert_eq!(settings_tag(&cfg.clone()), settings_tag(&cfg));
+    }
+}
+
+#[cfg(test)]
+mod feature_slot_tests {
+    use super::feature_slots;
+    use serde_json::json;
+
+    /// The filaments of outer and inner wall, sparse and internal solid infill, top and bottom surface of a part on
+    /// filament 1 with these settings.
+    fn slots(cfg: &serde_json::Value) -> [u8; 6] {
+        feature_slots(|k| cfg.get(k), 1)
+    }
+
+    #[test]
+    fn on_a_bambu_printer_solid_infill_stays_on_the_parts_filament_when_only_sparse_moves() {
+        // Bambu Studio: walls on 2, sparse on 3, solid unset: solid infill and the surfaces print with filament 1.
+        let c = json!({"printer_model": "Bambu Lab H2D", "wall_filament": 2, "inner_wall_filament": 2, "sparse_infill_filament": 3});
+        assert_eq!(slots(&c), [2, 2, 3, 1, 1, 1]);
+        // Solid infill set: the surfaces follow it.
+        let c = json!({"printer_model": "Bambu Lab P1S", "sparse_infill_filament": 2, "solid_infill_filament": 3});
+        assert_eq!(slots(&c), [1, 1, 2, 3, 3, 3]);
+    }
+
+    #[test]
+    fn on_other_printers_solid_infill_follows_sparse_as_orca_fills_it() {
+        let c = json!({"printer_model": "Generic Marlin", "sparse_infill_filament_id": 2});
+        assert_eq!(slots(&c), [1, 1, 2, 2, 2, 2]);
+        assert_eq!(
+            slots(&json!({"sparse_infill_filament_id": 2})),
+            [1, 1, 2, 2, 2, 2]
+        );
     }
 }
 
