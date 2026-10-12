@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { connectLink } from '@slicerx/link-client'
-import { startMocks, type RunningMocks } from '@slicerx/mock-printers'
+import { MOCK_HA_TOKEN, startMocks, type RunningMocks } from '@slicerx/mock-printers'
 import { connect, data, text } from './helpers'
 
 // Runs only when SX_LINK_BIN names a built sx-link, with a throwaway state directory and file
@@ -24,7 +24,7 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
   let code = ''
 
   beforeAll(async () => {
-    mocks = await startMocks({ only: ['moonraker', 'prusalink'], state: 'idle' })
+    mocks = await startMocks({ only: ['moonraker', 'prusalink', 'spoolman', 'home-assistant'], state: 'idle' })
     proc = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     await new Promise<void>((done, fail) => {
@@ -43,6 +43,10 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     const setup = await connectLink({ url, code })
     await setup.addPrinter({ id: 'bay-4', name: 'Bay 4', plugin: 'moonraker', host: '127.0.0.1', port: mocks.ports.moonraker ?? 0 }, { model: 'Voron 2.4 350' })
     await setup.addPrinter({ id: 'bay-6', name: 'Bay 6', plugin: 'prusalink', host: '127.0.0.1', port: mocks.ports.prusalink ?? 0 }, { model: 'MK4S' })
+    // The connected apps, added the way Settings, Connected apps adds them: the key into the bridge's secret store, then the address.
+    await setup.configureService('spoolman', `http://127.0.0.1:${mocks.ports.spoolman ?? 0}`)
+    await setup.setSecret('connected-apps/home-assistant', MOCK_HA_TOKEN)
+    await setup.configureService('home-assistant', `http://127.0.0.1:${mocks.ports['home-assistant'] ?? 0}`, 'connected-apps/home-assistant')
     setup.close()
   }, 30_000)
 
@@ -151,6 +155,26 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     expect(g.isError).toBe(true)
     expect(text(g)).toMatch(/partner app may ask only to print, pause or cancel/)
     await app.clients.revoke(clientId)
+    app.close()
+  })
+
+  it('Home Assistant: an agent asks to switch a plug, and the hub switches it once a person approves in SlicerX', async () => {
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    const state = async (id: string) => data<{ output: { entityId: string; state: string }[] }>(await h.call('slicerx_home_assistant_list_entities', { domain: 'switch' })).output.find((e) => e.entityId === id)?.state
+    expect(await state('switch.bay_2_power')).toBe('on')
+    const req = data<{ status: string; request_id: string }>(await h.call('slicerx_home_assistant_call_service', { domain: 'switch', service: 'turn_off', entityId: 'switch.bay_2_power' }))
+    expect(req.status).toBe('needs_person')
+    // The agent cannot answer it, and nothing has changed yet.
+    expect((await h.call('slicerx_approve', { request_id: req.request_id, approve: true })).isError).toBe(true)
+    expect(await state('switch.bay_2_power')).toBe('on')
+    // The person approves in the app; the hub runs the call with the token, which the agent never sees.
+    const app = await connectLink({ url, code })
+    const card = (await app.approvals.pending()).find((r) => r.id === req.request_id) as { work?: { kind: string; pluginId?: string; input?: unknown } } | undefined
+    expect(card?.work).toMatchObject({ kind: 'plugin', pluginId: 'home-assistant', input: { entityId: 'switch.bay_2_power' } })
+    await app.approvals.grant(req.request_id)
+    await expect.poll(() => state('switch.bay_2_power'), { timeout: 5000 }).toBe('off')
+    // The approval was used: granting the same card again is refused, and nothing runs twice.
+    await expect(app.approvals.grant(req.request_id)).rejects.toThrow()
     app.close()
   })
 
