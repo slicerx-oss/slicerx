@@ -3651,31 +3651,42 @@ impl SliceSession {
         (!pieces.is_empty()).then(|| perimeters::union_all(&pieces.iter().collect::<Vec<_>>()))
     }
 
-    /// The painted support regions of one kind on every layer: painted pieces that face down, taken
-    /// where each layer's slab cuts them and looked at from above.
+    /// The painted support regions of one kind on every layer: painted pieces that face down, each
+    /// given to the first layer cut above it, where the layer's outline first reaches over it (the
+    /// overhang the support planners look at), and looked at from above. Kept only where that
+    /// layer's own slab held it, an underside lying in the upper half of the layer below was dropped,
+    /// and the support it asked for was never printed.
     fn painted_support_layers(&self, state: u8) -> Vec<Shapes> {
         let n = self.plan.count() as usize;
+        let planes = &self.plan.slice_z;
         let mut pieces: Vec<Vec<Shapes>> = vec![Vec::new(); n];
-        for (tri, s) in self.painted_supports.iter().filter(|(_, s)| *s == state) {
+        for (tri, _) in self.painted_supports.iter().filter(|(_, s)| *s == state) {
             let (a, b, c) = (tri[0], tri[1], tri[2]);
             let nz = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
             if nz >= 0.0 {
                 continue;
             }
-            let _ = s;
             let zs = [a[2], b[2], c[2]];
             let (lo, hi) = (
                 zs.iter().copied().fold(f64::MAX, f64::min),
                 zs.iter().copied().fold(f64::MIN, f64::max),
             );
-            let first = self.plan.first_at_or_above(lo - 1e-9).min(n);
+            // A point on a cutting plane counts as above it, as the slicer cuts the mesh: the layer cut
+            // there still has the outline below it.
+            let first = planes
+                .partition_point(|&p| crate::layers::on_or_above(lo, p))
+                .min(n);
             for l in first..n {
-                let top = self.plan.top(u32::try_from(l).unwrap_or(u32::MAX));
-                let bottom = top - self.plan.thickness(u32::try_from(l).unwrap_or(u32::MAX));
-                if bottom > hi {
+                let below = l
+                    .checked_sub(1)
+                    .and_then(|k| planes.get(k))
+                    .copied()
+                    .unwrap_or(f64::MIN);
+                if crate::layers::on_or_above(below, hi) && l > first {
                     break;
                 }
-                let poly = clip_to_slab(tri, bottom.min(hi), top.max(lo));
+                let Some(&plane) = planes.get(l) else { break };
+                let poly = clip_to_slab(tri, below, plane);
                 if poly.len() >= 3 {
                     let mut ring: Vec<IntPoint<i32>> =
                         poly.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect();

@@ -129,3 +129,113 @@ fn a_plate_without_enforcers_still_warns() {
     )));
     assert!(warns_none(&two_boxes(false, by_layer(), json!({}))));
 }
+
+/// The faces of a box from `lo` to `hi`, outward, numbered from `base`.
+fn box_faces(lo: [f32; 3], hi: [f32; 3], base: u32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    let positions = (0..8u32)
+        .map(|i| {
+            [
+                if i & 1 == 0 { lo[0] } else { hi[0] },
+                if i & 2 == 0 { lo[1] } else { hi[1] },
+                if i & 4 == 0 { lo[2] } else { hi[2] },
+            ]
+        })
+        .collect();
+    let faces = [
+        [0, 2, 1],
+        [1, 2, 3],
+        [4, 5, 6],
+        [5, 7, 6],
+        [0, 1, 4],
+        [1, 5, 4],
+        [2, 6, 3],
+        [3, 6, 7],
+        [0, 4, 2],
+        [2, 4, 6],
+        [1, 3, 5],
+        [3, 7, 5],
+    ];
+    (
+        positions,
+        faces.iter().map(|t: &[u32; 3]| t.map(|i| i + base)).collect(),
+    )
+}
+
+/// A table: a 10 mm leg 12 mm tall under a 40 by 10 mm top 3 mm thick, its underside painted as a support enforcer.
+fn painted_table() -> api::MeshPart {
+    let (mut positions, mut triangles) = box_faces([-5.0, -5.0, 0.0], [5.0, 5.0, 12.0], 0);
+    let (p, t) = box_faces([-20.0, -5.0, 12.0], [20.0, 5.0, 15.0], 8);
+    positions.extend(p);
+    triangles.extend(t);
+    let under = |v: [[f32; 2]; 3]| sx_core::paint::PaintFacet {
+        v: v.map(|[x, y]| [x, y, 12.0]),
+        state: 1,
+    };
+    api::MeshPart {
+        name: "table".into(),
+        slot: 1,
+        color: None,
+        positions,
+        triangles,
+        paint: Vec::new(),
+        support_paint: vec![
+            under([[-20.0, -5.0], [-20.0, 5.0], [20.0, -5.0]]),
+            under([[20.0, -5.0], [-20.0, 5.0], [20.0, 5.0]]),
+        ],
+        seam_paint: Vec::new(),
+        fuzzy_paint: Vec::new(),
+        paint_texts: Vec::new(),
+    }
+}
+
+/// Support extrusions in the G-code of the painted table sliced with `layers` over manual supports of `kind`.
+fn table_support(kind: &str, layers: Value) -> usize {
+    let mesh = Arc::new(Mesh {
+        name: "table".into(),
+        parts: vec![painted_table()],
+        ..Mesh::default()
+    });
+    let mut cfg = json!({
+        "brim_width": 0,
+        "skirt_loops": 0,
+        "enable_support": "1",
+        "support_type": kind,
+        "initial_layer_print_height": 0.2,
+    });
+    cfg.as_object_mut()
+        .unwrap()
+        .extend(layers.as_object().unwrap().clone());
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "t", "name": "table", "mesh": "table", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 128,128,0,1]},
+        ]},
+        "config": cfg,
+    }))
+    .unwrap();
+    let run = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    assert!(!warns_none(&run), "painted enforcers count as enforcers");
+    let text = String::from_utf8_lossy(&run.gcode);
+    text.lines()
+        .filter(|l| *l == ";TYPE:Support" || *l == "; FEATURE: Support")
+        .count()
+}
+
+#[test]
+fn a_painted_underside_prints_support_wherever_the_layers_fall() {
+    // 0.2 mm layers end at the underside (12 mm); 0.15 and 0.16 mm ones cut it in a layer's upper half, below
+    // which the layer's outline is still only the leg; smart layers place it wherever the plan puts them.
+    for kind in ["tree(manual)", "normal(manual)"] {
+        for layers in [
+            json!({"layer_height": 0.2}),
+            json!({"layer_height": 0.15}),
+            json!({"layer_height": 0.16}),
+            json!({"layer_height": 0.28}),
+            json!({"layer_height": 0.2, "smart_layer": "quality"}),
+        ] {
+            assert!(
+                table_support(kind, layers.clone()) > 0,
+                "{kind} with {layers} prints support under the painted underside"
+            );
+        }
+    }
+}
