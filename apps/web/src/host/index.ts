@@ -10,6 +10,8 @@ import { createWebFiles } from './files'
 declare const __SX_VERSION__: string
 declare const __SX_COMMIT__: string
 declare const __SX_E2E__: boolean
+/** False in a browser build without the slicing engine (SLICERX_WEB_SLICING=0): the CAD-only studio. */
+declare const __SX_WEB_SLICING__: boolean
 declare const __SX_FEATURE_PILOT__: boolean
 declare const __SX_FEATURE_CONNECT__: boolean
 
@@ -75,7 +77,13 @@ export interface HostOverrides {
 /** The browser host. The desktop build calls it with its native slicer and files. */
 export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
   const edition = editionFromBuild()
-  const sl = over.slicer ? { host: over.slicer, wasm: false } : await slicer()
+  // Without the engine (a CAD-only build) the slicer and its WebAssembly module are left out of the bundle, and a host
+  // that only keeps meshes answers the app.
+  const sl = over.slicer
+    ? { host: over.slicer, wasm: false }
+    : __SX_WEB_SLICING__
+      ? await slicer()
+      : { host: (await import('./meshes')).createMeshHost(), wasm: false }
   const host: Host = {
     kind: over.kind ?? 'web',
     capabilities: {
