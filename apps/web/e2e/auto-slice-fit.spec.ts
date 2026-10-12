@@ -57,10 +57,16 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
     return (s.status === 'running' && s.startedAt !== since.startedAt) || (await slices()) > since.slices
   }
   const before = { startedAt: (await state()).startedAt, slices: await slices() }
+  // One listener for the whole test: the plate's first slice can finish and draw while Ctrl+O is pressed, so the
+  // chooser may come late. A chooser no listener takes stays open, and the browser then shows no other, so a
+  // short-lived wait per press could miss the first chooser and block every later one.
+  let chosen = 0
+  page.on('filechooser', (c) => {
+    if (chosen++ === 0) void c.setFiles({ name: 'tube.3mf', mimeType: 'model/3mf', buffer: file })
+  })
   await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'tube.3mf', mimeType: 'model/3mf', buffer: file })
+    if (chosen === 0) await page.keyboard.press('ControlOrMeta+o')
+    await expect.poll(() => chosen, { timeout: 10_000 }).toBeGreaterThan(0)
   }).toPass({ timeout: 60_000 })
   await expect.poll(async () => { const s = await state(); return !s.loading && s.names.includes('Tube') }, { timeout: 120_000 }).toBe(true)
   // Well inside the fit check's longest wait (FIT_WAIT_MS, 15 s): the check ran and said it was done.
