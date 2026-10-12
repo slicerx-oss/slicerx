@@ -11,6 +11,7 @@ import { Button, Icon, RavenMark, ResizeEdge, tipAttrs } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { setLookups } from './lookups'
 import { stepWords } from './step-words'
+import { followSteps, useStepCaption, viewStep } from './view-step'
 import { newSessionId, noteMessage, tabMimir } from './session'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
@@ -64,6 +65,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const { reset, transcript } = run
   useEffect(() => reset(), [sessionId, reset])
   useEffect(() => setLookups(lookupsIn(transcript)), [transcript])
+  useEffect(() => followSteps(transcript), [transcript])
+  useEffect(() => () => viewStep.setState({ caption: null }), [])
   const handlers = useMemo<ApprovalHandlers>(() => ({ onApprove: NO_APPROVAL, onCancel: NO_APPROVAL, onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve() }), [pilot])
   // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
   const body = useRef<HTMLDivElement>(null)
@@ -200,9 +203,10 @@ export function MimirCaption() {
     const off = cameraBus()?.cad?.on('camera', (e: { preset: Preset | null }) => setPreset(e.preset))
     return () => off?.()
   }, [])
+  const step = useStepCaption()
   return (
     <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
-      {captionFor(preset)}
+      {step ?? captionFor(preset)}
     </div>
   )
 }

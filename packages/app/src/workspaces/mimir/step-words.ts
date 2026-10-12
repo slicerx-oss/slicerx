@@ -4,7 +4,15 @@
 // tooltip. Questions and lookups have no row: their cards say it.
 import type { StepWords } from '@slicerx/pilot/ui'
 
-const WORDS: Record<string, { doing: string; done: string } | null> = {
+/** A step's words, and optionally the caption the view shows while it runs and the view the camera turns to after. */
+export interface Words {
+  doing: string
+  done: string
+  caption?: string
+  camera?: 'top' | 'iso' | 'front'
+}
+
+const WORDS: Record<string, Words | null> = {
   'pilot.ask': null,
   'lookup.show': null,
 }
@@ -19,6 +27,10 @@ export const stepWords: StepWords = (row) => {
 }
 
 /** Adds the words for more tools (the design tools register theirs). */
-export function addStepWords(more: Record<string, { doing: string; done: string }>): void {
+export function wordsFor(tool: string): Words | null | undefined {
+  return WORDS[tool]
+}
+
+export function addStepWords(more: Record<string, Words>): void {
   Object.assign(WORDS, more)
 }
