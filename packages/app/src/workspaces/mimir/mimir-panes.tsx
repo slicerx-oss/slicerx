@@ -69,16 +69,12 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const name = designName(useApp((s) => s.projectFile))
   const ref = useRef<HTMLElement>(null)
   const attachments = useAttachments()
-  // The battle ravens stand behind the conversation until a model answers here.
   const link = useMimirLink()
-  // They fade out once the conversation starts, so no piece of the ring shows between its cards.
-  const ravensOn = link !== 'model'
   const host = useHost()
   const pilot = useMemo(() => tabMimir(host.slicer), [host])
   const [sessionId, setSessionId] = useState(newSessionId)
   const run = usePilotRun(pilot, sessionId)
   const { reset, transcript } = run
-  const ravens = ravensOn && transcript.turns.length === 0
   useEffect(() => reset(), [sessionId, reset])
   useEffect(() => setLookups(lookupsIn(transcript)), [transcript])
   useEffect(() => setShownSheet(lastSheet(transcript)), [transcript])
@@ -147,7 +143,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         <Button size="sm" variant="ghost" icon="plus" aria-label="New conversation" tip="pilot.newChat" onClick={() => setSessionId(newSessionId())} />
       </header>
       <div className="mimir-stage">
-        <div className="mimir-ravens" data-testid="mimir-ravens" data-shown={ravens || undefined} aria-hidden="true">
+        {/* The battle ravens: a faint, still watermark behind the whole conversation. */}
+        <div className="mimir-ravens" data-testid="mimir-ravens" aria-hidden="true">
           <RavenMark />
         </div>
         <div

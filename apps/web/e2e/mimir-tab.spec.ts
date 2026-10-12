@@ -135,11 +135,20 @@ test.describe('the mimir tab', () => {
     await page.screenshot({ path: test.info().outputPath('mimir-attach-dark.png') })
   })
 
-  test('the battle ravens stand still behind the chat, centered and out of the way, until a model answers', async ({ page }) => {
+  test('the battle ravens stand still and faint behind the chat, centered and out of the way', async ({ page }) => {
     await open(page)
     await openEmpty(page)
     const ravens = page.getByTestId('mimir-ravens')
-    await expect(ravens).toHaveAttribute('data-shown', 'true')
+    await expect(ravens).toBeVisible()
+    // one color at about 4%, so it reads as texture
+    const alpha = await ravens.evaluate((e) => {
+      const c = document.createElement('canvas').getContext('2d')!
+      c.fillStyle = getComputedStyle(e).color
+      c.fillRect(0, 0, 1, 1)
+      return c.getImageData(0, 0, 1, 1).data[3]! / 255
+    })
+    expect(alpha).toBeGreaterThan(0.02)
+    expect(alpha).toBeLessThan(0.07)
     await expect(ravens).toHaveAttribute('aria-hidden', 'true')
     expect(await ravens.evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none')
     // still: nothing in it animates
@@ -182,8 +191,8 @@ test.describe('the mimir tab', () => {
     const chips = choice.getByRole('button')
     const before = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
     await choice.getByRole('button', { name: 'Yes, that one' }).click()
-    // the ravens fade once the conversation starts, and the bubble has no prompt glyph
-    await expect(page.getByTestId('mimir-ravens')).not.toHaveAttribute('data-shown')
+    // the ravens stay behind the conversation once it starts, and the bubble has no prompt glyph
+    await expect(page.getByTestId('mimir-ravens')).toBeVisible()
     await expect(page.locator('.mimir-chat .bubble .pg')).toBeHidden()
     await expect(choice).toHaveAttribute('data-picked', 'same')
     const after = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
