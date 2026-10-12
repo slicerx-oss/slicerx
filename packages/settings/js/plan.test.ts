@@ -75,6 +75,11 @@ describe('planSettings: nozzle and printer switches', () => {
     expect(get(plan, 'printable_height')).toBeDefined()
     expect(get(plan, 'gcode_flavor')?.after).toBe('marlin2')
   })
+  it('leaves a round bed to the printer profile: no rectangle for the FLSUN V400', () => {
+    const plan = planSettings(x1c('pla'), { printer: 'flsun_v400', nozzleDiameter: 0.4, filament: 'pla' }, base())
+    expect(get(plan, 'printable_area')).toBeUndefined()
+    expect(get(plan, 'printable_height')?.after).toBe(410)
+  })
   it('warns about a nozzle that is too small or soft for the material', () => {
     const cf = planSettings(x1c('pla'), { printer: 'prusa_mk4s', nozzleDiameter: 0.2, filament: 'pa_cf' })
     expect(cf.warnings.join(' ')).toMatch(/at least|hardened/)

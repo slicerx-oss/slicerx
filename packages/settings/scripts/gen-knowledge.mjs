@@ -125,7 +125,11 @@ for (const p of load('printers')) {
     vendor: p.vendor,
     firmware: p.firmware,
     extruder: p.extruder?.type,
-    build: p.build_volume_mm && { x: n(p.build_volume_mm.x), y: n(p.build_volume_mm.y), z: n(p.build_volume_mm.z), zDefault: n(p.build_volume_mm.printable_z_default), src: p.build_volume_mm.src ?? [] },
+    // A round bed (a delta) has no x and y here: the planners write printable_area as a rectangle from them, which
+    // would square the circle, so the printer's own profile keeps its ring.
+    build: p.build_volume_mm && (p.build_volume_mm.shape === 'round'
+      ? { round: true, diameter: n(p.build_volume_mm.diameter_mm), z: n(p.build_volume_mm.z), zDefault: n(p.build_volume_mm.printable_z_default), src: p.build_volume_mm.src ?? [] }
+      : { x: n(p.build_volume_mm.x), y: n(p.build_volume_mm.y), z: n(p.build_volume_mm.z), zDefault: n(p.build_volume_mm.printable_z_default), src: p.build_volume_mm.src ?? [] }),
     hotend: { maxTemp: n(hot.max_temp_c), nozzleDiameters: hot.nozzle_diameters_mm, nozzleMaterials: hot.nozzle_materials, stockNozzle: hot.stock_nozzle && { diameter: hot.stock_nozzle.diameter_mm, material: hot.stock_nozzle.material }, highFlow: hot.high_flow_option != null && hot.high_flow_option !== false, maxFlow: n(hot.max_flow_mm3s?.value), src: hot.src ?? [] },
     bed: { maxTemp: n(p.bed?.max_temp_c), src: p.bed?.src ?? [] },
     enclosure: { type: p.enclosure?.type, chamberHeating: p.enclosure?.chamber_heating, src: p.enclosure?.src ?? [] },

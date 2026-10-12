@@ -1,0 +1,23 @@
+kind: printer
+schema_version: 1
+id: flsun_v400
+name: FLSUN V400
+vendor: FLSUN
+aliases: [FLSun V400, V400]
+status: unknown
+detail_level: core_specs_only
+firmware: klipper
+kinematics: delta
+build_volume_mm: {x: 300, y: 300, z: 410, shape: round, diameter_mm: 300, confidence: medium, note: "A round bed. Orca's printable area is a ring of 72 points on a 150 mm radius centered on 0, 0, so x and y are the circle's square box, not usable area: a part fits when its whole footprint is inside the 300 mm circle.", src: ["orca:FLSun/machine/FLSun V400 0.4 nozzle.json"]}
+hotend: {nozzle_diameters_mm: [0.4], stock_nozzle: {diameter_mm: 0.4, material: hardened_steel}, confidence: low, note: "Orca bundles only the 0.4 mm nozzle profile, marked hardened steel. Maximum temperature is not in the profile.", src: ["orca:FLSun/machine/FLSun V400 0.4 nozzle.json"]}
+motion: {max_speed_mm_s: 1000, max_accel_mm_s2: 20000, confidence: low, note: "Machine limits from the FLSun common machine profile the V400 inherits; real print speeds follow the process profile.", src: ["orca:FLSun/machine/fdm_machine_common.json", "orca:FLSun/machine/FLSun V400 0.4 nozzle.json"]}
+orca_profile: "orca:FLSun/machine/FLSun V400 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @FLSun V400"
+  values: {outer_wall_speed: 120, inner_wall_speed: 200, sparse_infill_speed: 250, top_surface_speed: 200, initial_layer_speed: 50, travel_speed: 400, default_acceleration: 5000, outer_wall_acceleration: 4000, inner_wall_acceleration: 5000, travel_acceleration: 5000, initial_layer_acceleration: 1000}
+  confidence: medium
+  src: ["orca:FLSun/process/0.20mm Standard @FLSun V400.json"]
+pilot_notes:
+  - "Delta printer with a round 300 mm bed centered on 0, 0. Pack copies inside the circle, not its square box: the corners of the box are off the bed."
+  - "Klipper G-code flavor. Check the printer's own start macro names before editing machine_start_gcode."
+src: ["orca:FLSun/machine/FLSun V400 0.4 nozzle.json", "orca:FLSun/machine/fdm_machine_common.json", "orca:FLSun/process/0.20mm Standard @FLSun V400.json"]

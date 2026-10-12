@@ -8,6 +8,8 @@ export interface BuildVolume {
   x: number
   y: number
   z: number
+  /** A round bed (a delta): x and y are the circle's square box, and parts must fit inside the circle. */
+  round?: boolean
   source?: string
 }
 
@@ -26,7 +28,7 @@ export function buildVolume(kb: KnowledgeBase, printer: string): BuildVolume | n
   const doc = kb.get('printer', printer) ?? kb.search(printer, { kinds: ['printer'], limit: 1 })[0]?.doc
   const bv = doc?.data['build_volume_mm'] as Record<string, unknown> | undefined
   if (doc && bv && typeof bv['x'] === 'number' && typeof bv['y'] === 'number' && typeof bv['z'] === 'number') {
-    return { x: bv['x'], y: bv['y'], z: bv['z'], source: doc.id }
+    return { x: bv['x'], y: bv['y'], z: bv['z'], ...(bv['shape'] === 'round' ? { round: true } : {}), source: doc.id }
   }
   return FALLBACK[printer.toLowerCase().replace(/^bambu( lab)?\s+/, '')] ?? null
 }
