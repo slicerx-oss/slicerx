@@ -5,6 +5,7 @@
 // with its button or Escape, and closing one never moves the other sideways (each keeps its slot). While a card shows,
 // the camera frames the part above the band (viewport-host reads the band as a bottom inset).
 import type { PilotLookup } from '@slicerx/contracts'
+import { safeUrl } from '@slicerx/pilot/ui'
 import { Button, Icon } from '@slicerx/ui'
 import { useRef } from 'react'
 import { closeLookup, lookupStore, MAX_CARDS, shownLookups, useLookups } from './lookups'
@@ -76,9 +77,13 @@ export function LookupCards() {
               </div>
             ))}
           </dl>
-          <a className="mimir-lookup-s" href={l.source.url} target="_blank" rel="noreferrer noopener">
-            {l.source.title}
-          </a>
+          {safeUrl(l.source.url) ? (
+            <a className="mimir-lookup-s" href={safeUrl(l.source.url)!} target="_blank" rel="noreferrer noopener">
+              {l.source.title}
+            </a>
+          ) : (
+            <span className="mimir-lookup-s">{l.source.title}</span>
+          )}
         </article>
       ))}
       {folded > 0 ? (
