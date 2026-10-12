@@ -6,7 +6,7 @@
 use super::xml::{self, Tag};
 use super::zip::Zip;
 use crate::error::{Error, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const MAX_DEPTH: u32 = 16;
 /// one unit per object visited plus its vertices and triangles, for every copy placed
@@ -119,7 +119,7 @@ impl Textures {
 /// the property references of a part's triangles (`pid` and `p1` to `p3`): into a texture group, or into a color
 /// group or base materials, which are kept as references and not read here
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PartUv {
+pub struct PartProps {
     /// the model part whose resources the ids name
     pub model: String,
     /// the object's own `pid` and `pindex`, which a triangle without its own takes on all three corners
@@ -129,7 +129,7 @@ pub struct PartUv {
     pub triangles: Vec<(u32, u32, [u32; 3])>,
 }
 
-impl PartUv {
+impl PartProps {
     pub fn is_empty(&self) -> bool {
         self.default.is_none() && self.triangles.is_empty()
     }
@@ -161,8 +161,8 @@ pub struct Part {
     pub positions: Vec<[f32; 3]>,
     pub triangles: Vec<[u32; 3]>,
     pub paint: Paint,
-    /// texture coordinates and other property references, by triangle; empty on an untextured part
-    pub uv: PartUv,
+    /// property references by triangle: texture coordinates, color groups, base materials; empty when it has none
+    pub props: PartProps,
     pub settings: Vec<(String, String)>,
     /// component transforms from the object down to this mesh, outermost first
     pub chain: Vec<Transform>,
@@ -234,7 +234,7 @@ pub struct Project {
     /// a model part declares a document type, which a 3mf never needs
     pub doctype: bool,
     pub files: Files,
-    /// the materials extension's textures; a part's [`PartUv`] indexes them
+    /// the materials extension's textures; a part's [`PartProps`] indexes them
     pub textures: Textures,
     pub entries: Vec<String>,
     pub notes: Vec<String>,
@@ -378,8 +378,9 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
         }
     }
     let mut objects = objects_of(&build, placed, &mut models, &root, &meta, &mut notes);
+    let named = Named::of(&textures, &refs);
     for part in objects.iter_mut().flat_map(|o| o.parts.iter_mut()) {
-        settle_uv(part, &textures, refs.get(&part.uv.model), &mut notes);
+        settle_props(part, &named, &mut notes);
     }
     Ok(Project {
         objects,
@@ -395,32 +396,63 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
     })
 }
 
+/// what a part's property references may name, per model part: each texture group's coordinate count, and the
+/// other property resources that are kept
+#[derive(Default)]
+struct Named {
+    groups: HashMap<(String, u32), usize>,
+    other: HashSet<(String, u32)>,
+}
+
+impl Named {
+    fn of(textures: &Textures, refs: &HashMap<String, (Vec<u32>, Vec<u32>)>) -> Self {
+        let groups = textures
+            .groups
+            .iter()
+            .map(|g| ((g.model.clone(), g.id), g.uvs.len()))
+            .collect();
+        let other = refs
+            .iter()
+            .flat_map(|(model, (dropped, other))| {
+                other
+                    .iter()
+                    .filter(|id| !dropped.contains(id))
+                    .map(|&id| (model.clone(), id))
+            })
+            .collect();
+        Self { groups, other }
+    }
+}
+
 /// a part's property references that name a dropped resource, no resource, or a coordinate past their texture
 /// group are left out, with one note per part
-fn settle_uv(
-    part: &mut Part,
-    textures: &Textures,
-    refs: Option<&(Vec<u32>, Vec<u32>)>,
-    notes: &mut Vec<String>,
-) {
-    if part.uv.is_empty() {
+fn settle_props(part: &mut Part, named: &Named, notes: &mut Vec<String>) {
+    if part.props.is_empty() {
         return;
     }
-    let model = part.uv.model.as_str();
-    let ok = |pid: u32, p: &[u32]| match textures.group(model, pid) {
-        Some(g) => p.iter().all(|&i| (i as usize) < g.uvs.len()),
-        None => refs.is_some_and(|(dropped, other)| other.contains(&pid) && !dropped.contains(&pid)),
+    // one lookup per property group the part names, not per triangle
+    let mut seen: HashMap<u32, Option<usize>> = HashMap::new();
+    let model = part.props.model.clone();
+    let mut len = |pid: u32| {
+        *seen.entry(pid).or_insert_with(|| {
+            let key = (model.clone(), pid);
+            match named.groups.get(&key) {
+                Some(&n) => Some(n),
+                None => named.other.contains(&key).then_some(usize::MAX),
+            }
+        })
     };
+    let mut ok = |pid: u32, p: &[u32]| len(pid).is_some_and(|n| p.iter().all(|&i| (i as usize) < n));
     let mut left = 0usize;
-    if let Some((pid, i)) = part.uv.default
+    if let Some((pid, i)) = part.props.default
         && !ok(pid, &[i])
     {
-        part.uv.default = None;
+        part.props.default = None;
         left += 1;
     }
-    let before = part.uv.triangles.len();
-    part.uv.triangles.retain(|&(_, pid, p)| ok(pid, &p));
-    left += before - part.uv.triangles.len();
+    let before = part.props.triangles.len();
+    part.props.triangles.retain(|&(_, pid, p)| ok(pid, &p));
+    left += before - part.props.triangles.len();
     if left > 0 {
         notes.push(format!(
             "{}: {left} property references name a resource that is missing, left out, or too short; left out",
@@ -484,7 +516,7 @@ fn objects_of(
                     part.range = Some((first, last));
                     part.chain.clone_from(&leaf.chain);
                     part.transformed = leaf.transformed;
-                    part.uv.model.clone_from(&leaf.path);
+                    part.props.model.clone_from(&leaf.path);
                     info.fill(&mut part, notes);
                     parts.push(part);
                 }
@@ -494,7 +526,7 @@ fn objects_of(
             part.id = leaf.id;
             part.chain = leaf.chain;
             part.transformed = leaf.transformed;
-            part.uv.model = leaf.path;
+            part.props.model = leaf.path;
             if let Some(info) = own.and_then(|o| o.parts.get(&leaf.id)) {
                 info.fill(&mut part, notes);
             }
@@ -545,9 +577,9 @@ struct MeshObject {
     triangles: Vec<[u32; 3]>,
     paint: Paint,
     /// property references; `model` is filled in when the object becomes a part
-    uv: PartUv,
+    props: PartProps,
     /// triangles whose property references did not read, dropped with one note
-    bad_uv: usize,
+    bad_props: usize,
     /// (object id, model path, transform); an empty path is this model
     components: Vec<(u32, String, Transform, bool)>,
     metadata: Vec<(String, String)>,
@@ -561,7 +593,7 @@ impl MeshObject {
             positions: std::mem::take(&mut self.positions),
             triangles: std::mem::take(&mut self.triangles),
             paint: std::mem::take(&mut self.paint),
-            uv: std::mem::take(&mut self.uv),
+            props: std::mem::take(&mut self.props),
             ..Part::default()
         }
     }
@@ -573,7 +605,7 @@ impl MeshObject {
             positions: self.positions.clone(),
             triangles: self.triangles.clone(),
             paint: self.paint.clone(),
-            uv: self.uv.clone(),
+            props: self.props.clone(),
             ..Part::default()
         }
     }
@@ -604,11 +636,11 @@ impl MeshObject {
                 *k -= first;
             }
         }
-        let uv = PartUv {
+        let props = PartProps {
             model: String::new(),
-            default: self.uv.default,
+            default: self.props.default,
             triangles: self
-                .uv
+                .props
                 .triangles
                 .iter()
                 .filter(|t| (first..=last).contains(&t.0))
@@ -621,7 +653,7 @@ impl MeshObject {
             positions,
             triangles,
             paint,
-            uv,
+            props,
             ..Part::default()
         }
     }
@@ -798,6 +830,17 @@ struct ModelParser {
     group: Option<(TextureGroup, bool)>,
 }
 
+/// what a triangle's attribute is
+#[derive(Clone, Copy)]
+enum Attr {
+    /// `v1` to `v3`
+    Corner(usize),
+    /// a paint layer and the rank of the name that wrote it
+    Paint(usize, u8),
+    /// `pid`, then `p1` to `p3`
+    Prop(usize),
+}
+
 /// a property index or id as the file writes it; `None` when absent, `Err` when it does not read
 fn prop(v: Option<&str>) -> std::result::Result<Option<u32>, ()> {
     v.map(|v| xml::u32_of(v).ok_or(())).transpose()
@@ -853,42 +896,47 @@ impl ModelParser {
             // paint by layer, the first name of each pair preferred
             let mut paint: [(u8, &str); 4] = [(0, ""); 4];
             // pid, p1, p2, p3 as written
-            let mut props: [Option<&str>; 4] = [None; 4];
+            let mut refs: [Option<&str>; 4] = [None; 4];
+            // one match per attribute: this loop runs for every attribute of every triangle
             for (key, val) in xml::attrs(t.attrs) {
-                let at = match key {
-                    "pid" => Some(0),
-                    "p1" => Some(1),
-                    "p2" => Some(2),
-                    "p3" => Some(3),
-                    _ => None,
-                };
-                if let Some(slot) = at.and_then(|i| props.get_mut(i)) {
-                    *slot = Some(val);
-                    continue;
-                }
-                let (slot, layer, rank) = match key {
-                    "v1" => (Some(0), 0, 0),
-                    "v2" => (Some(1), 0, 0),
-                    "v3" => (Some(2), 0, 0),
-                    "paint_color" => (None, 0, 2),
-                    "slic3rpe:mmu_segmentation" => (None, 0, 1),
-                    "paint_seam" => (None, 1, 2),
-                    "slic3rpe:custom_seam" => (None, 1, 1),
-                    "paint_supports" => (None, 2, 2),
-                    "slic3rpe:custom_supports" => (None, 2, 1),
-                    "paint_fuzzy_skin" => (None, 3, 2),
+                let attr = match key {
+                    "v1" => Attr::Corner(0),
+                    "v2" => Attr::Corner(1),
+                    "v3" => Attr::Corner(2),
+                    "paint_color" => Attr::Paint(0, 2),
+                    "slic3rpe:mmu_segmentation" => Attr::Paint(0, 1),
+                    "paint_seam" => Attr::Paint(1, 2),
+                    "slic3rpe:custom_seam" => Attr::Paint(1, 1),
+                    "paint_supports" => Attr::Paint(2, 2),
+                    "slic3rpe:custom_supports" => Attr::Paint(2, 1),
+                    "paint_fuzzy_skin" => Attr::Paint(3, 2),
+                    "pid" => Attr::Prop(0),
+                    "p1" => Attr::Prop(1),
+                    "p2" => Attr::Prop(2),
+                    "p3" => Attr::Prop(3),
                     _ => continue,
                 };
-                if let Some(s) = slot {
-                    let i = xml::u32_of(val).ok_or_else(|| Refused("triangle", *id, k, val.to_owned()))?;
-                    if let Some(c) = v.get_mut(s) {
-                        *c = Some(i);
+                match attr {
+                    Attr::Corner(s) => {
+                        let i =
+                            xml::u32_of(val).ok_or_else(|| Refused("triangle", *id, k, val.to_owned()))?;
+                        if let Some(c) = v.get_mut(s) {
+                            *c = Some(i);
+                        }
                     }
-                } else if let Some(p) = paint.get_mut(layer)
-                    && !val.is_empty()
-                    && rank > p.0
-                {
-                    *p = (rank, val);
+                    Attr::Paint(layer, rank) => {
+                        if let Some(p) = paint.get_mut(layer)
+                            && !val.is_empty()
+                            && rank > p.0
+                        {
+                            *p = (rank, val);
+                        }
+                    }
+                    Attr::Prop(i) => {
+                        if let Some(slot) = refs.get_mut(i) {
+                            *slot = Some(val);
+                        }
+                    }
                 }
             }
             let corner = |c: Option<u32>| c.ok_or_else(|| Refused("triangle", *id, k, String::new()));
@@ -899,10 +947,10 @@ impl ModelParser {
                     layer.push((at, code.to_owned()));
                 }
             }
-            if props.iter().any(Option::is_some) {
-                match resolve_props(props, o.uv.default) {
-                    Some((pid, p)) => o.uv.triangles.push((at, pid, p)),
-                    None => o.bad_uv += 1,
+            if refs.iter().any(Option::is_some) {
+                match resolve_props(refs, o.props.default) {
+                    Some((pid, p)) => o.props.triangles.push((at, pid, p)),
+                    None => o.bad_props += 1,
                 }
             }
             o.triangles.push(tri);
@@ -949,7 +997,7 @@ impl ModelParser {
             };
             match (prop(t.attr("pid")), prop(t.attr("pindex"))) {
                 (Ok(None), Ok(None)) => {}
-                (Ok(Some(pid)), Ok(Some(pindex))) => o.uv.default = Some((pid, pindex)),
+                (Ok(Some(pid)), Ok(Some(pindex))) => o.props.default = Some((pid, pindex)),
                 _ => self.model.notes.push(format!(
                     "object {id}: its pid or pindex does not read; its default property left out"
                 )),
@@ -967,10 +1015,10 @@ impl ModelParser {
             {
                 return Err(Refused("index", id, k, n.to_string()));
             }
-            if o.bad_uv > 0 {
+            if o.bad_props > 0 {
                 self.model.notes.push(format!(
                     "object {id}: {} triangles name properties that do not read; left out",
-                    o.bad_uv
+                    o.bad_props
                 ));
             }
             self.model.objects.insert(id, o);

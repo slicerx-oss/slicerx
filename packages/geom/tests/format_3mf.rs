@@ -7,7 +7,7 @@
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
-use sx_geom::format::{Layout, PartKind, PartUv, Project, Textures, read_3mf};
+use sx_geom::format::{Layout, PartKind, PartProps, Project, Textures, read_3mf};
 
 fn file(rel: &str) -> Vec<u8> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
@@ -355,19 +355,19 @@ fn texture_coordinates_and_references_from_the_materials_extension() {
     assert_eq!(group.uvs[7], [0.75, 0.75]);
     let part = &p.objects[0].parts[0];
     assert_eq!(
-        part.uv,
-        PartUv {
+        part.props,
+        PartProps {
             model: ROOT.to_owned(),
             default: Some((2, 7)),
             triangles: vec![(0, 2, [0, 2, 1]), (1, 2, [1, 2, 3]), (2, 2, [4, 4, 4])],
         }
     );
-    assert_eq!(part.uv.of(1), Some((2, [1, 2, 3])));
-    assert_eq!(part.uv.of(11), Some((2, [7, 7, 7])));
+    assert_eq!(part.props.of(1), Some((2, [1, 2, 3])));
+    assert_eq!(part.props.of(11), Some((2, [7, 7, 7])));
     // an untextured project has none
     let plain = read("tests/corpus/subtypes.3mf");
     assert!(plain.textures.is_empty());
-    assert!(plain.objects[0].parts.iter().all(|p| p.uv.is_empty()));
+    assert!(plain.objects[0].parts.iter().all(|p| p.props.is_empty()));
 }
 
 /// the materials resources and triangles of a one-part project, as a model part: test-only, to read back
@@ -399,7 +399,7 @@ fn write_textured(p: &Project) -> String {
         res += "</m:texture2dgroup>";
     }
     let default = part
-        .uv
+        .props
         .default
         .map(|(pid, i)| format!(r#" pid="{pid}" pindex="{i}""#))
         .unwrap_or_default();
@@ -411,7 +411,7 @@ fn write_textured(p: &Project) -> String {
     for (k, [a, b, c]) in part.triangles.iter().enumerate() {
         let own = u32::try_from(k)
             .ok()
-            .and_then(|k| part.uv.triangles.iter().find(|t| t.0 == k))
+            .and_then(|k| part.props.triangles.iter().find(|t| t.0 == k))
             .map(|(_, pid, [p1, p2, p3])| format!(r#" pid="{pid}" p1="{p1}" p2="{p2}" p3="{p3}""#))
             .unwrap_or_default();
         let _ = write!(res, r#"<triangle v1="{a}" v2="{b}" v3="{c}"{own}/>"#);
@@ -441,7 +441,7 @@ fn textures_round_trip() {
     assert!(again.notes.is_empty(), "{:?}", again.notes);
     assert_eq!(again.textures, first.textures);
     let (a, b) = (&again.objects[0].parts[0], &first.objects[0].parts[0]);
-    assert_eq!(a.uv, b.uv);
+    assert_eq!(a.props, b.props);
     assert_eq!(a.positions, b.positions);
     assert_eq!(a.triangles, b.triangles);
     for (t, u) in again.textures.images.iter().zip(&first.textures.images) {
@@ -458,9 +458,9 @@ fn a_part_by_triangle_range_renumbers_its_texture_references() {
     let p = read_3mf(&cube_with(|m| m, &[("Metadata/Slic3r_PE_model.config", config)])).expect("reads");
     let parts = &p.objects[0].parts;
     assert_eq!(parts.len(), 2);
-    assert_eq!(parts[0].uv.triangles, [(0, 2, [0, 2, 1]), (1, 2, [1, 2, 3])]);
-    assert_eq!(parts[1].uv.triangles, [(0, 2, [4, 4, 4])]);
-    assert_eq!(parts[1].uv.default, Some((2, 7)));
+    assert_eq!(parts[0].props.triangles, [(0, 2, [0, 2, 1]), (1, 2, [1, 2, 3])]);
+    assert_eq!(parts[1].props.triangles, [(0, 2, [4, 4, 4])]);
+    assert_eq!(parts[1].props.default, Some((2, 7)));
 }
 
 #[test]
@@ -472,7 +472,7 @@ fn texture_data_that_does_not_read_is_left_out_with_a_note() {
     let all: Vec<(&str, &[u8])> = entries.iter().map(|(n, b)| (n.as_str(), b.as_slice())).collect();
     let p = read_3mf(&zip_of(&all)).expect("still reads");
     assert_eq!(p.textures, Textures::default());
-    assert!(p.objects[0].parts[0].uv.is_empty());
+    assert!(p.objects[0].parts[0].props.is_empty());
     assert!(notes(&p).contains("which the archive lacks"), "{}", notes(&p));
     assert_eq!(p.objects[0].parts[0].triangles.len(), 12);
     // a coordinate that does not read drops its group
@@ -493,8 +493,8 @@ fn texture_data_that_does_not_read_is_left_out_with_a_note() {
         &[],
     ))
     .expect("still reads");
-    assert_eq!(p.objects[0].parts[0].uv.triangles, [(0, 2, [0, 2, 1])]);
-    assert_eq!(p.objects[0].parts[0].uv.default, Some((2, 7)));
+    assert_eq!(p.objects[0].parts[0].props.triangles, [(0, 2, [0, 2, 1])]);
+    assert_eq!(p.objects[0].parts[0].props.default, Some((2, 7)));
     assert!(
         notes(&p).contains("1 triangles name properties that do not read"),
         "{}",
@@ -514,7 +514,7 @@ fn texture_data_that_does_not_read_is_left_out_with_a_note() {
     ))
     .expect("reads");
     assert!(p.notes.is_empty(), "{:?}", p.notes);
-    assert_eq!(p.objects[0].parts[0].uv.of(2), Some((5, [0, 0, 0])));
+    assert_eq!(p.objects[0].parts[0].props.of(2), Some((5, [0, 0, 0])));
 }
 
 #[test]
@@ -532,11 +532,11 @@ fn json_operation_gives_texture_coordinates_as_buffers() {
         (group["id"].as_u64(), group["count"].as_u64()),
         (Some(2), Some(8))
     );
-    let uv = &v["objects"][0]["parts"][0]["uv"];
-    assert_eq!(uv["default"], serde_json::json!([2, 7]));
+    let props = &v["objects"][0]["parts"][0]["props"];
+    assert_eq!(props["default"], serde_json::json!([2, 7]));
     let buffers = sx_geom::json::take_out_files();
     let at = |x: &serde_json::Value| usize::try_from(x["rawBytes"].as_u64().expect("buffer")).expect("index");
-    let refs = buffers[at(&uv["refs"])].to_bytes();
+    let refs = buffers[at(&props["refs"])].to_bytes();
     // a count, then five u32 per triangle that names its own
     assert_eq!(refs.len(), 4 + 3 * 20);
     assert_eq!(refs[..4], 3u32.to_le_bytes());

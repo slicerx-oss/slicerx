@@ -8,6 +8,6 @@ mod xml;
 mod zip;
 
 pub use threemf::{
-    Layout, Object, Paint, Part, PartKind, PartUv, Plate, Project, Texture2d, TextureGroup, Textures,
+    Layout, Object, Paint, Part, PartKind, PartProps, Plate, Project, Texture2d, TextureGroup, Textures,
     read_3mf, read_entry,
 };
