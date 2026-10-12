@@ -129,6 +129,7 @@ pub mod ironing;
 pub mod jpeg;
 mod layers;
 mod lightning;
+mod lightning2;
 #[doc(hidden)]
 pub mod mesh;
 mod monotonic;
