@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-126 tools.
+139 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -19,6 +19,14 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_create_fleet` | Create a fleet | fleets | read, ungated | Create a named group of printers. |
 | `slicerx_cut` |  |  | slice | Make a model fit a printer: compare scaling it down with splitting it (mode "compare" only reports), or split it (mode "split"). |
 | `slicerx_delete_fleet` | Delete a fleet | fleets | read, ungated | Delete a fleet. |
+| `slicerx_design_edit_step` |  |  | slice | Edit one step of a design and replay the steps after it, as editing a step in SlicerX's history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. |
+| `slicerx_design_list` |  |  | read | The designs open on this server, with their parts, sizes and step counts. |
+| `slicerx_design_new` |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
+| `slicerx_design_open` |  |  | read | Open the objects of any 3MF project (SlicerX, Bambu Studio, Orca) as designs, one per object. |
+| `slicerx_design_redo` |  |  | slice | Put back the step slicerx_design_undo last removed. |
+| `slicerx_design_save` |  |  | slice | Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in SlicerX with every step editable (other slicers open the parts). |
+| `slicerx_design_steps` |  |  | read | The steps of a design in order: each one's index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), its main number, and whether it went through, broke (with the reason) or is suppressed. |
+| `slicerx_design_undo` |  |  | slice | Remove the last step of a design and replay it, back to how it was before that step. |
 | `slicerx_diagnose` |  |  | read | Explain a failed or odd print on one of your printers: reads its status and message, matches the symptom against the troubleshooting guides and ranks causes with checks and fixes. |
 | `slicerx_emboss` |  |  | slice | Emboss (raised) or deboss (recessed) text on a face of a part. |
 | `slicerx_energy_estimate` |  |  | read | Estimate electricity use and cost for sliced plates or a given print time: kWh and cost per plate from print time and heat-up. |
@@ -29,28 +37,32 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_fit_check` |  |  | read | Check whether a designed gap will fuse, bind, press fit or slide at the layer height, line width and material, and suggest the gap to model instead. |
 | `slicerx_fleet_overview` |  |  | read | Status of every printer in one call: state, current job with progress and time left, loaded filament per slot with what is left, and printer messages. |
 | `slicerx_gcode_inspect` |  |  | read | Explain what a G-code file will do: layers, temperatures, typical and peak print speed, volumetric flow (checked against the filament limit), retraction count and length, fan, and time by feature from ;TYPE: or FEATURE comments. |
-| `slicerx_geom_boolean` |  |  | slice | Union, subtract or intersect closed models: union joins "model" and every model in "with", subtract removes them from "model", intersect keeps what they share. |
+| `slicerx_geom_array` |  |  | slice | Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), like the Array tool: merged into one body, or with merge false as separate copies. |
+| `slicerx_geom_boolean` |  |  | slice | Union, subtract or intersect closed bodies. |
 | `slicerx_geom_build` |  |  | slice | Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. |
 | `slicerx_geom_calibration_model` |  |  | slice | Generate a calibration print: temperature tower, flow pads, pressure advance, retraction, max volumetric speed, tolerance plate, shrinkage L, or the feature piece (a small print with a bridge, an overhang, a thin wall, a hole and text). |
 | `slicerx_geom_chamfer` |  |  | slice | Bevel straight edges where two flat faces meet, set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). |
-| `slicerx_geom_cut` |  |  | slice | Cut a model with a plane into a lower and an upper part with flat caps, optionally with pin, dowel or dovetail connectors. |
-| `slicerx_geom_edge_pick` |  |  | read | Pick an edge for a fillet or chamfer: give a point on a flat face near the edge (or on the edge) and that face's normal. |
+| `slicerx_geom_cut` |  |  | slice | Cut a model or a design part with a plane into a lower and an upper piece with flat caps. |
+| `slicerx_geom_edge_pick` |  |  | read | Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face's normal. |
 | `slicerx_geom_emboss` |  |  | slice | Raise (emboss) or cut in (deboss) text on a face of the model. |
-| `slicerx_geom_extrude` |  |  | slice | Sketch and extrude: a shape (rectangle, circle, slot, polygon, text, a free sketch of lines and arcs, or SVG artwork) on the bed, any plane or a picked face, extruded as a new body, joined to a target model, or cut from it. |
-| `slicerx_geom_face_pick` |  |  | read | Pick a flat face of a model: returns its sketch frame (origin, normal, u, v in mm), its outline in that frame, area and bounds. |
-| `slicerx_geom_faces` |  |  | read | List the flat faces of a model, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center. |
+| `slicerx_geom_extrude` |  |  | slice | Sketch and extrude: a shape (rectangle, circle, slot, polygon, text, a free sketch of lines and arcs, or SVG artwork) on the bed, any plane or a picked face, extruded as a new body, joined to a target, or cut from it. |
+| `slicerx_geom_face_pick` |  |  | read | Pick a flat face of a model or a design: returns its sketch frame (origin, normal, u, v in mm), its outline in that frame, area and bounds. |
+| `slicerx_geom_faces` |  |  | read | List the flat faces of a model or a design, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center; for a design also its part, its face key and the step that made it. |
 | `slicerx_geom_fillet` |  |  | slice | Round straight edges where two flat faces meet, with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. |
 | `slicerx_geom_hollow` |  |  | slice | Hollow a solid model to a shell of a given wall thickness, with optional drain holes so resin or trapped material can leave. |
+| `slicerx_geom_info` |  |  | read | Check a model: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. |
 | `slicerx_geom_layers_plan` |  |  | read | Plan variable layer heights (sleipnir) for a model: thinner layers where the shape needs detail, thicker where it does not, within the nozzle-based limits. |
+| `slicerx_geom_measure` |  |  | read | Measure a model as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. |
+| `slicerx_geom_mirror` |  |  | slice | Mirror a design part through a plane, as a step: with copy (the default, like a mirror modifier) the mirror image is joined to the part, so a half becomes a whole; without it the part is flipped. |
 | `slicerx_geom_orient` |  |  | read | Rank candidate print orientations by overhang area, support volume, bed contact and height, best first, or score one orientation given as the direction that points down. |
 | `slicerx_geom_paint_regions` |  |  | read | Read paint back: for one paint layer of a model (its per-triangle paint texts, as a 3MF stores them), each painted state with its area in mm2, the triangles holding it and its connected regions with their areas and bounds (largest first, at most 20 listed). |
-| `slicerx_geom_push_pull` |  |  | slice | Push or pull a flat face of a model along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. |
+| `slicerx_geom_push_pull` |  |  | slice | Push or pull a flat face of a model or a design along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. |
 | `slicerx_geom_render` |  |  | read | Draw a model to check it: a small orthographic picture (384 px on the long side unless size says otherwise) from a fixed view, the model in its filament color and painted pieces in theirs. |
 | `slicerx_geom_repair` |  |  | slice | Repair a mesh: weld vertices, fix winding and normals, and close small holes. |
 | `slicerx_geom_resume_plan` |  |  | read | Plan resuming a failed print: from the height of the part left on the bed, or the layer the printer stopped at, find the first layer to print again and the remaining part of the model. |
 | `slicerx_geom_revolve` |  |  | slice | Revolve a sketch profile around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. |
 | `slicerx_geom_sketch_check` |  |  | read | Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. |
-| `slicerx_geom_split` |  |  | slice | Split a model that is too big for the printer into parts that each fit the build volume, with the fewest cuts, optionally with connectors. |
+| `slicerx_geom_split` |  |  | slice | Split a model or a design part that is too big for the printer into pieces that each fit the build volume, with the fewest cuts. |
 | `slicerx_geom_subtract` |  |  | slice | Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. |
 | `slicerx_get_policy` | Permission policy | core | read, ungated | Show the permission policy the user set for this server: Allow, Ask first or Off for each action class, and per-printer exceptions. |
 | `slicerx_get_profile` | Get a profile | settings | read, ungated | Return the settings a profile sets, with OrcaSlicer inherits chains resolved. |
@@ -89,6 +101,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_printer_discover` |  |  | read | Lists printers found on the local network or over USB. |
 | `slicerx_printer_filament` |  |  | start | Load or unload filament: M701 or M702 on Marlin and Prusa firmware, the LOAD_FILAMENT or UNLOAD_FILAMENT macros on Klipper. |
 | `slicerx_printer_gcode` |  |  | start | Send one G-code line to a printer console, such as "G28" or "M106 S128". |
+| `slicerx_printer_history` |  |  | read | Past prints of one printer, newest first, as the printer itself keeps them: file name, result (completed, canceled or failed), start and end time, duration and filament used. |
 | `slicerx_printer_list` |  |  | read | List printers with their state, loaded filament, temperatures and machine cost. |
 | `slicerx_printer_match` |  |  | read | Rank the printers that can print a model in a material right now: fit in the build volume, hotend temperature, nozzle hardness for abrasive filament, enclosure need, material already loaded, wait time and machine cost. |
 | `slicerx_printer_pause` |  |  | start | Pause the running print on a printer. |
@@ -104,7 +117,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_open` |  |  | read | Start a new project for mimir skills to work on (replaces the current one). |
 | `slicerx_project_set_overrides` |  |  | slice | Set OrcaSlicer settings for the open project, such as the config_patch from slicerx_plan_settings. |
 | `slicerx_project_show` |  |  | read | Show the open project: printer, filament, objects, plates and setting overrides. |
-| `slicerx_region_modifiers` |  |  | slice | Plan region settings for a goal such as strong screw holes without slowing the whole part: which region, which setting keys and values, and why. |
+| `slicerx_region_modifiers` |  |  | slice | Settings for a goal only where it matters, such as strong screw holes without slowing the whole part. |
 | `slicerx_remove_from_fleet` | Remove a printer from a fleet | fleets | read, ungated | Remove a printer from a fleet. |
 | `slicerx_rename_fleet` | Rename a fleet | fleets | read, ungated | Rename a fleet. |
 | `slicerx_resume_from_layer` |  |  | read | Plan a restart after a failed print with the part still on the bed. |
