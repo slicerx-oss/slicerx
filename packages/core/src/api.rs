@@ -63,6 +63,13 @@ pub fn load_3mf_plates(bytes: &[u8], file_name: &str) -> Result<Vec<(u32, Mesh)>
 }
 
 /// Every plate of a 3MF project with each build item as a mesh of its own, named after its object.
+/// The memory available to the slices of this process, bytes, as the host reads it (`None`: unknown). Give it before the
+/// first slice; without it the engine reads the system's own figure where it can (Linux, macOS). The guards that keep a
+/// big slice within a share of it read it ([`crate::paint`]'s painted-layer grids).
+pub fn set_available_memory(bytes: Option<u64>) {
+    crate::memory::set_available(bytes);
+}
+
 pub fn load_3mf_plate_objects(bytes: &[u8], file_name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
     crate::threemf::load_plate_objects(bytes, file_name)
 }
