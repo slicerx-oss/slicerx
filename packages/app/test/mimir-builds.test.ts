@@ -12,7 +12,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost } from '../src/cad/design-host'
 import { get, set } from '../src/state/store'
 import { mimirTools, scriptedMimir } from '../src/workspaces/mimir/scripted'
-import { SCRIPTS } from '../src/workspaces/mimir/scripts'
+import { SCRIPTS, standProfile } from '../src/workspaces/mimir/scripts'
+import { editRow } from '../src/workspaces/mimir/sheet-drive'
 import { stepWords } from '../src/workspaces/mimir/step-words'
 import { useGeomEngine } from './geom-engine'
 
@@ -36,14 +37,21 @@ function volume(parts: readonly Pick<HistoryMesh, 'positions' | 'indices'>[]): n
 /** The shoelace area of a closed polygon. */
 const area = (pts: readonly [number, number][]): number => Math.abs(pts.reduce((s, [x, y], i) => s + x * pts[(i + 1) % pts.length]![1] - pts[(i + 1) % pts.length]![0] * y, 0)) / 2
 
-async function build(message: string): Promise<PilotEvent[]> {
+async function build(message: string, opts: { pick?: string; sizes?: Record<string, number> } = {}): Promise<PilotEvent[]> {
   const p = scriptedMimir(SCRIPTS, mimirTools(designToolset(appDesignHost(loader))))
   const events: PilotEvent[] = []
   for await (const e of p.run('s', message)) {
     events.push(e)
-    if (e.type === 'ask') void p.answer!(e.askId, 'same')
+    if (e.type === 'ask') void p.answer!(e.askId, opts.pick ?? e.choices[0]!.id)
+    if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, opts.sizes ?? {})
   }
   return events
+}
+
+const sheetOf = (events: PilotEvent[]) => events.find((e) => e.type === 'sheet')?.sheet
+const boundOf = (events: PilotEvent[]) => {
+  const b = events.find((e) => e.type === 'sheet_bound')
+  return b?.type === 'sheet_bound' ? { design: b.design, binds: b.binds } : null
 }
 
 const failed = (events: PilotEvent[]) => events.filter((e) => e.type === 'tool_result' && !e.ok)
@@ -72,13 +80,42 @@ describe('scripted mimir builds', () => {
     expect(volume([e!.parts[1]!])).toBeCloseTo(80 * 60 * 2 + 75.6 * 55.6 * 3, -1)
   })
 
-  it('extrudes the phone stand from its side profile, 70 mm wide', async () => {
-    const events = await build('make me a phone stand')
+  it('asks which phone, shows its size, and builds the stand from the confirmed sheet', async () => {
+    const events = await build('make me a phone stand', { pick: 'iphone', sizes: { case_allowance: 3 } })
     expect(failed(events)).toEqual([])
+    expect(events.find((e) => e.type === 'ask')).toMatchObject({ title: 'Which phone' })
+    expect(events.find((e) => e.type === 'lookup')).toMatchObject({ lookup: { title: 'iPhone 15 size' } })
+    const sheet = sheetOf(events)!
+    expect(sheet.dims.find((d) => d.key === 'phone_width')).toMatchObject({ value: 71.6, source: 'lookup', sourceUrl: expect.stringMatching(/^https:\/\/example\.com\//) })
+    expect(sheet.dims.filter((d) => d.source === 'guess').map((d) => d.key)).toContain('case_allowance')
     const [e] = get().plate
     expect(e?.history?.steps).toHaveLength(1)
-    const profile: [number, number][] = [[-40, 0], [40, 0], [40, 6], [0.4, 6], [27, 79.1], [21.4, 81.2], [-6, 6], [-34, 6], [-34, 16], [-40, 16]]
-    expect(volume(e!.parts)).toBeCloseTo(area(profile) * 70, -1)
+    const v = Object.fromEntries(sheet.dims.map((d) => [d.key, d.value]))
+    expect(volume(e!.parts)).toBeCloseTo(area(standProfile({ ...v, case_allowance: 3 })) * 70, -1)
+  })
+
+  it('takes every size as a guess for a phone it does not know', async () => {
+    const events = await build('a stand for my phone', { pick: 'other' })
+    expect(events.some((e) => e.type === 'lookup')).toBe(false)
+    expect(sheetOf(events)!.dims.every((d) => d.source === 'guess')).toBe(true)
+    expect(failed(events)).toEqual([])
+  })
+
+  it('edits the design from a bound row, and says when a row only shapes the sketch', async () => {
+    const events = await build('make me a phone stand')
+    const bound = boundOf(events)!
+    expect(bound.binds).toEqual([{ key: 'stand_width', step: 1, scale: 0.5 }])
+    const tools = designToolset(appDesignHost(loader))
+    const before = volume(get().plate[0]!.parts)
+    expect(await editRow(tools, bound, 'stand_width', 90)).toMatchObject({ ok: true })
+    expect(volume(get().plate[0]!.parts)).toBeCloseTo((before * 90) / 70, -1)
+    expect(await editRow(tools, bound, 'lean', 60)).toMatchObject({ ok: false, reason: 'unbound' })
+  })
+
+  it('builds the box at the sizes the person gave', async () => {
+    const events = await build('a box with a lid', { sizes: { height: 50 } })
+    expect(failed(events)).toEqual([])
+    expect(volume([get().plate[0]!.parts[0]!])).toBeCloseTo(80 * 60 * 50 - 76 * 56 * 48, -1)
   })
 
   it('says what each extrude did in plain words', () => {
