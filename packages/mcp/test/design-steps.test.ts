@@ -90,6 +90,18 @@ describe('steps that change parts', () => {
     expect(data<{ output: Summary }>(lower).output.parts[0]?.sizeMm[2]).toBeCloseTo(1, 3)
   }, 60_000)
 
+  it('arrays a part as separate copies, like the Array tool with merge off', async () => {
+    const h = await connect({ geomEngine: engine })
+    const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'Feet' })).output.design
+    await h.call('slicerx_geom_extrude', { design: d, shape: { type: 'rectangle', widthMm: 10, heightMm: 10 }, distance_mm: 5, name: 'Foot' })
+    const r = await h.call('slicerx_geom_array', { design: d, part: 0, spec: { kind: 'linear', count: 3, step: [15, 0, 0] }, merge: false })
+    expect(r.isError, text(r)).toBeFalsy()
+    const out = data<{ output: Summary }>(r).output
+    expect(out.parts.map((p) => p.name)).toEqual(['Foot', 'Foot 2', 'Foot 3'])
+    expect(out.parts[2]?.minMm[0]).toBeCloseTo(25, 3)
+    expect(out.volumeMm3).toBeCloseTo(3 * 500, 1)
+  }, 60_000)
+
   it('refuses what a design step cannot do yet, and says so', async () => {
     const h = await connect({ geomEngine: engine })
     const d = data<{ output: Summary }>(await h.call('slicerx_design_new', { name: 'X' })).output.design
