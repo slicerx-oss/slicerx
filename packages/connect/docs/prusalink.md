@@ -28,7 +28,7 @@ TCP 80 (or 443 if you enabled https and set the printer to use it).
 | "a USB drive ... not found" | The printer lists no writable storage. Insert a USB drive. |
 | "is busy: the file is printing ..." | You sent a file with the name of the one printing, or the drive is busy. Wait for the print or rename the file. |
 | "is busy: a print is running ..." | A print is already running. |
-| Status says paused with "Printer needs attention" | The printer is waiting for you, for example a filament change. Resume from the printer. |
+| Status says paused with "Printer needs attention" or the printer's own reason (such as "Filament runout") | The printer is waiting for you, for example a filament change. Resume from the printer. |
 | No layer numbers | PrusaLink does not report them. Progress and time left are shown instead. |
 | No G-code console | PrusaLink has no endpoint for it. |
 
@@ -42,7 +42,7 @@ Printer config: `host`, optional `port`, `credentialRef` for the password, optio
 
 `GET /api/v1/info` and `GET /api/version` on connect (serial, nozzle diameter, MMU, firmware), `GET /api/v1/status` and `GET /api/v1/job` per poll (the job endpoint answers 204 when idle). Each upload reads `GET /api/v1/storage` and uses the first available, writable storage, USB first, then `local`, then an SD card; with none it asks for a USB drive, and a printer without the endpoint gets `usb`. Upload is `PUT /api/v1/files/{storage}/{name}` with `Overwrite: ?1` and `Print-After-Upload: ?0`. Start is `POST /api/v1/files/{storage}/{name}`. A 409 on either says the printer is busy, in words for the action. Pause and resume are `PUT /api/v1/job/{id}/pause|resume` and cancel is `DELETE /api/v1/job/{id}`, using the job id from the status. Camera frames come from `/api/v1/cameras/{id}/snap`.
 
-State mapping: `PRINTING` to printing, `PAUSED` to paused, `ATTENTION` to paused with a message, `BUSY` to preparing, `FINISHED`, `ERROR`, `STOPPED` to idle with "The print was stopped", `IDLE` and `READY` to idle.
+State mapping: `PRINTING` to printing, `PAUSED` to paused, `ATTENTION` to paused with a message, `BUSY` to preparing, `FINISHED`, `ERROR`, `STOPPED` to idle with "The print was stopped", `IDLE` and `READY` to idle. When the status carries the printer's own reason (`printer.status_printer` with `ok` false, such as a filament runout), a paused or failed printer shows that instead of the general words. The live part of the status has the print speed in percent (`printer.speed`) and, while a job runs, the height printing now (`printer.axis_z`). The fans report RPM (`fan_hotend`, `fan_print`), which do not convert to percent without the fan's top speed, so they are left out.
 
 The spec has no model field. The model is read only when `/api/version` names one in `original` or `text` (unconfirmed on hardware). An MMU3 is listed with five slots when `mmu` is true; an XL's toolheads are not reported, so they come from the catalog model.
 
