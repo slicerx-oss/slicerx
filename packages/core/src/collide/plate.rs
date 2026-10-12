@@ -378,6 +378,21 @@ fn seg_dist(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> f64 {
 /// the fill's own lines and joins, laid out by the neighbor rules, and the paths a join connects do not count. Owners are not asked: objects that share a
 /// footprint cannot be told apart by place. Returns how many were dropped.
 pub(crate) fn drop_crossing_joins(out: &mut SliceOutput) -> usize {
+    // Each layer's joins are checked against its own paths alone, so the layers are checked side by side.
+    let keeps = crate::par::map(&out.layers, crossing_keep);
+    let mut dropped = 0;
+    for (l, keep) in out.layers.iter_mut().zip(keeps) {
+        let Some(keep) = keep else { continue };
+        let before = l.paths.len();
+        let mut it = keep.iter();
+        l.paths.retain(|_| it.next().copied().unwrap_or(true));
+        dropped += before - l.paths.len();
+    }
+    dropped
+}
+
+/// Which of a layer's paths [`drop_crossing_joins`] keeps, or `None` when the layer has no joins.
+fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
     let surface = |f: Feature| {
         matches!(
             f,
@@ -385,82 +400,75 @@ pub(crate) fn drop_crossing_joins(out: &mut SliceOutput) -> usize {
         )
     };
     let same = |p: [f64; 2], q: [f64; 2]| (p[0] - q[0]).abs() < 1e-3 && (p[1] - q[1]).abs() < 1e-3;
-    let mut dropped = 0;
-    for l in &mut out.layers {
-        if l.joins.is_empty() {
-            continue;
-        }
-        let joins: std::collections::HashSet<(Point, Point)> =
-            l.joins.iter().flat_map(|&[a, b]| [(a, b), (b, a)]).collect();
-        // Every segment of the layer, with the path it belongs to, by 1 mm cell of the bed.
-        let segs: Vec<(usize, [f64; 2], [f64; 2])> = l
-            .paths
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| p.feature != Feature::Custom)
-            .flat_map(|(i, p)| {
-                l.path_points(p)
-                    .windows(2)
-                    .filter_map(move |w| match w {
-                        [a, b] => Some((i, mm(*a), mm(*b))),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        #[allow(clippy::cast_possible_truncation, reason = "1 mm cells of the bed")]
-        let cell = |v: f64| v.floor() as i32;
-        let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
-        for (k, &(_, c, d)) in segs.iter().enumerate() {
-            for x in cell(c[0].min(d[0]) - JOIN_CLEAR_MM)..=cell(c[0].max(d[0]) + JOIN_CLEAR_MM) {
-                for y in cell(c[1].min(d[1]) - JOIN_CLEAR_MM)..=cell(c[1].max(d[1]) + JOIN_CLEAR_MM) {
-                    grid.entry((x, y)).or_default().push(k);
-                }
+    if l.joins.is_empty() {
+        return None;
+    }
+    let joins: std::collections::HashSet<(Point, Point)> =
+        l.joins.iter().flat_map(|&[a, b]| [(a, b), (b, a)]).collect();
+    // Every segment of the layer, with the path it belongs to, by 1 mm cell of the bed.
+    let segs: Vec<(usize, [f64; 2], [f64; 2])> = l
+        .paths
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.feature != Feature::Custom)
+        .flat_map(|(i, p)| {
+            l.path_points(p)
+                .windows(2)
+                .filter_map(move |w| match w {
+                    [a, b] => Some((i, mm(*a), mm(*b))),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    #[allow(clippy::cast_possible_truncation, reason = "1 mm cells of the bed")]
+    let cell = |v: f64| v.floor() as i32;
+    let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+    for (k, &(_, c, d)) in segs.iter().enumerate() {
+        for x in cell(c[0].min(d[0]) - JOIN_CLEAR_MM)..=cell(c[0].max(d[0]) + JOIN_CLEAR_MM) {
+            for y in cell(c[1].min(d[1]) - JOIN_CLEAR_MM)..=cell(c[1].max(d[1]) + JOIN_CLEAR_MM) {
+                grid.entry((x, y)).or_default().push(k);
             }
         }
-        let keep: Vec<bool> = l
-            .paths
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-                if !surface(p.feature) {
-                    return true;
-                }
-                let [pa, pb] = l.path_points(p) else { return true };
-                if !joins.contains(&(*pa, *pb)) {
-                    return true;
-                }
-                let (a, b) = (mm(*pa), mm(*pb));
-                let mut near: Vec<usize> = Vec::new();
-                for x in cell(a[0].min(b[0]))..=cell(a[0].max(b[0])) {
-                    for y in cell(a[1].min(b[1]))..=cell(a[1].max(b[1])) {
-                        if let Some(ks) = grid.get(&(x, y)) {
-                            near.extend_from_slice(ks);
-                        }
+    }
+    let keep: Vec<bool> = l
+        .paths
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            if !surface(p.feature) {
+                return true;
+            }
+            let [pa, pb] = l.path_points(p) else { return true };
+            if !joins.contains(&(*pa, *pb)) {
+                return true;
+            }
+            let (a, b) = (mm(*pa), mm(*pb));
+            let mut near: Vec<usize> = Vec::new();
+            for x in cell(a[0].min(b[0]))..=cell(a[0].max(b[0])) {
+                for y in cell(a[1].min(b[1]))..=cell(a[1].max(b[1])) {
+                    if let Some(ks) = grid.get(&(x, y)) {
+                        near.extend_from_slice(ks);
                     }
                 }
-                // The fill's own lines and joins (two-point paths of the same surface, tool and width) are laid out by
-                // the neighbor rules and may end right beside a turn; everything else counts.
-                let own = |o: &crate::output::PathInfo| {
-                    o.feature == p.feature
-                        && o.tool == p.tool
-                        && o.end - o.start == 2
-                        && (o.width_mm - p.width_mm).abs() < 1e-4
-                };
-                !near.into_iter().filter_map(|k| segs.get(k)).any(|&(j, c, d)| {
-                    j != i
-                        && !l.paths.get(j).is_some_and(own)
-                        && !(same(c, a) || same(c, b) || same(d, a) || same(d, b))
-                        && seg_dist(a, b, c, d) < JOIN_CLEAR_MM
-                })
+            }
+            // The fill's own lines and joins (two-point paths of the same surface, tool and width) are laid out by
+            // the neighbor rules and may end right beside a turn; everything else counts.
+            let own = |o: &crate::output::PathInfo| {
+                o.feature == p.feature
+                    && o.tool == p.tool
+                    && o.end - o.start == 2
+                    && (o.width_mm - p.width_mm).abs() < 1e-4
+            };
+            !near.into_iter().filter_map(|k| segs.get(k)).any(|&(j, c, d)| {
+                j != i
+                    && !l.paths.get(j).is_some_and(own)
+                    && !(same(c, a) || same(c, b) || same(d, a) || same(d, b))
+                    && seg_dist(a, b, c, d) < JOIN_CLEAR_MM
             })
-            .collect();
-        let before = l.paths.len();
-        let mut it = keep.iter();
-        l.paths.retain(|_| it.next().copied().unwrap_or(true));
-        dropped += before - l.paths.len();
-    }
-    dropped
+        })
+        .collect();
+    Some(keep)
 }
 
 /// A layer's extrusion segments with their owners; skirts and custom paths own nothing and are left out.
