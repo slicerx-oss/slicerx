@@ -58,6 +58,16 @@
 .ps-tip-btn:hover, .ps-tip-btn[aria-describedby~="sx-tip"] { color: var(--accent); }
 .ps-tip-btn:focus-visible { border-radius: 3px; }
 
+/* A Bambu Lab printer that needs Developer Mode: why, then Bambu Connect, then the Developer Mode steps in full. */
+.ps-devmode { display: grid; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
+.ps-devmode-why { margin: 0; font-size: var(--fs-md); line-height: 1.5; color: var(--fg); }
+.ps-devmode-acts { display: grid; justify-items: start; gap: 6px; }
+.ps-devmode-steps { padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.ps-devmode-head { margin: 0 0 6px; font-weight: var(--fw-semibold); font-size: var(--fs-md); color: var(--fg); }
+.ps-devmode-steps ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: var(--fs-sm); line-height: 1.5; color: var(--fg); }
+.ps-devmode-note { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--dim); }
+.ps-devmode-steps .ps-devmode-note { margin-top: 8px; }
+
 .ps-note { margin: 12px 0 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--dim); }
 
 /* Footer: Cancel at the left, the confirm button with its menu at the right. */

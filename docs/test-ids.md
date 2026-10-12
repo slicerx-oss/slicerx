@@ -337,6 +337,16 @@ Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the
 | `app-link-read` | Allow read only |
 | `app-link-deny` | Deny |
 
+## Print sheet
+
+The bridge refuses everything inside the Print sheet; these ids are for reading it and for the e2e specs.
+
+| Test id | Control |
+| --- | --- |
+| `developer-mode-needed` | The box shown after a Bambu Lab printer sent status but took no print (`needs_developer_mode`): why, and the two ways past it |
+| `danger-bambu-connect-send` | Send with Bambu Connect in that box (Save file for Bambu Connect on Linux and the web): hands the same plate to Bambu Connect |
+| `developer-mode-steps-list` | The LAN Only Mode and Developer Mode steps for the printer's model in that box, with what LAN Only Mode changes |
+
 ## Exceptions to the danger- rule
 
 These ids carry one of the rule's words but name no destructive act, so they keep their names and the bridge may use

@@ -193,3 +193,49 @@ describe('Print sheet options', () => {
     }
   })
 })
+
+// A Bambu Lab A1 mini on Authorization Control firmware without Developer Mode: status comes through, the send does
+// not, and the sheet comes back with the two ways past it.
+describe('Print sheet after a Developer Mode refusal', () => {
+  const refused = (resolve: PrintSheetAsk['resolve'] = () => {}) =>
+    ask({
+      printer: { id: 'a1m', name: 'Mini', vendor: 'Bambu Lab', model: 'Bambu Lab A1 mini', plugin: 'bambu-lan', filamentSystem: 'ams' } as PrintSheetAsk['printer'],
+      bambuConnect: 'open',
+      refusal: { reason: 'It sends status, but the file upload failed (FTPS upload timed out).', plainSha256: 'ffff', last: { options: {}, start: true, name: 'benchy.gcode.3mf' }, developerMode: true },
+      resolve,
+    })
+
+  it('says why and shows Bambu Connect and the A1 steps in full, not plain G-code', () => {
+    const el = open(refused())
+    const box = el.querySelector('[data-testid="developer-mode-needed"]')
+    expect(box?.textContent).toContain("Mini sends its status but didn't take the print")
+    expect(el.querySelector('[data-testid="danger-bambu-connect-send"]')?.textContent).toBe('Send with Bambu Connect')
+    const buttons = [...el.querySelectorAll('button')].map((b) => b.textContent)
+    expect(buttons).not.toContain('Send as plain G-code')
+    expect(buttons).not.toContain('Open in Bambu Connect')
+    // Nothing to open: the steps are there from the start, after the Bambu Connect button.
+    const list = el.querySelector('[data-testid="developer-mode-steps-list"]')
+    expect(list?.textContent).toContain('swipe to page 3')
+    expect(list?.textContent).toContain('Developer Mode (firmware 01.05.00.00 and later)')
+    expect(list?.textContent).not.toContain('WLAN, then LAN Only Mode')
+    expect(list?.textContent).toContain('Bambu Handy')
+    expect(box?.querySelector('[aria-expanded]')).toBeNull()
+  })
+
+  it('sends the same plate through Bambu Connect on one click', () => {
+    const resolve = vi.fn()
+    const el = open(refused(resolve))
+    flushSync(() => el.querySelector<HTMLButtonElement>('[data-testid="danger-bambu-connect-send"]')!.click())
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ bambuConnect: true, start: true }))
+  })
+})
+
+describe('needs_developer_mode errors', () => {
+  it('reads the reason after the printer name', async () => {
+    const { developerModeReason, refusalReason } = await import('../src/state/actions')
+    const e = Object.assign(new Error('printer a1m takes no prints from other apps: It sends status, but it did not answer the print start.'), { code: 'needs_developer_mode' })
+    expect(developerModeReason(e)).toBe('It sends status, but it did not answer the print start.')
+    expect(refusalReason(e)).toBeNull()
+    expect(developerModeReason(Object.assign(new Error('x'), { code: 'refused' }))).toBeNull()
+  })
+})
