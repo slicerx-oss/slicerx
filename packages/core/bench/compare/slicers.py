@@ -251,8 +251,15 @@ class Bambu:
         out = os.path.abspath(os.path.join(work, "bambu-seed-out"))
         os.makedirs(out, exist_ok=True)
         base_path = os.path.join(out, "defaults.json")
-        r = subprocess.run([self.path, "--export-settings", base_path, "--outputdir", out, "--debug", "2", os.path.abspath(seed)], capture_output=True, text=True)
-        m = re.search(r"Current BambuStudio Version (\S+)", r.stdout + r.stderr)
+        # It now and then hangs on exit after writing the settings, so it gets a time limit and the file is read
+        # whether it exited or not.
+        try:
+            r = subprocess.run([self.path, "--export-settings", base_path, "--outputdir", out, "--debug", "2", os.path.abspath(seed)],
+                               capture_output=True, text=True, timeout=120)
+            said = r.stdout + r.stderr
+        except subprocess.TimeoutExpired as e:
+            said = "".join(x.decode(errors="replace") if isinstance(x, bytes) else (x or "") for x in (e.stdout, e.stderr))
+        m = re.search(r"Current BambuStudio Version (\S+)", said)
         self.version = m.group(1) if m else "unknown"
         with open(base_path) as f:
             return json.load(f)
