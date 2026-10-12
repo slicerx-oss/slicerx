@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { centerSelected, dropSelectedToBed, fillBed, instanceCount, mirrorSelected, scaleSelectedToSize, setInstanceCount, setTrs } from '../../plate/edit'
 import { plateScrub } from '../../plate/scrub'
 import { bounds, decompose, sizeOf, type Vec3 } from '../../plate/transform'
-import { hostSlices, useShownOrigin } from '../../state/model-mode'
+import { useShownOrigin } from '../../state/model-mode'
 import { selectedIds, useApp } from '../../state/store'
 
 const AXES = ['X', 'Y', 'Z'] as const
@@ -33,7 +33,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
   // Model counts from the grid center and leaves copies to Slice; the stored transform is the same either way
   const { origin, frame } = useShownOrigin()
   const model = frame === 'grid'
-  const ground = hostSlices() ? 'bed' : 'ground'
+  const ground = model ? 'ground' : 'bed'
   if (!entry) return null
   const t = decompose(entry.transform)
   const shown = t.position.map((v, i) => v - (origin[i] ?? 0)) as Vec3
@@ -107,7 +107,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
           Drop to {ground}
         </Button>
         <Button size="sm" variant="ghost" icon="fit" onClick={() => centerSelected()}>
-          Center
+          {model ? 'Center on grid' : 'Center'}
         </Button>
         </> : null}
         {more ? <span className="tf-mirror" role="group" aria-label="Mirror">

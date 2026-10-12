@@ -107,3 +107,14 @@ export function listedInMode(id: string, mode: ModelMode): boolean {
   if (id === 'open-prepare' && mode !== 'slice' && editionHasCad()) return false
   return mode === 'slice' || !SLICE_ONLY_COMMANDS.has(id)
 }
+
+/** Model's own words for commands that say bed in Slice. */
+const MODEL_TITLES: Readonly<Record<string, string>> = {
+  'center-object': 'Center the selected object on the grid',
+  'drop-to-bed': 'Drop the selected object to the ground',
+}
+
+/** A command's title in the mode shown: grid and ground in Model, bed in Slice. */
+export function titleInMode(id: string, title: string, mode: ModelMode): string {
+  return (mode !== 'slice' && MODEL_TITLES[id]) || title
+}

@@ -12,9 +12,8 @@ import { setModelMode, useApp, type PlateEntry } from '../../state/store'
 
 export function ObjectMenu({ at, onClose, entry, onRename }: { at: MenuPoint | null; onClose: () => void; entry: PlateEntry; onRename: () => void }) {
   const count = useApp((s) => s.selectedIds.length)
-  // whether to print it is set in Slice; a host that cannot slice has a ground, not a bed
+  // whether to print it is set in Slice; Model has a ground and a grid, not a bed
   const slices = hostSlices()
-  const ground = slices ? 'bed' : 'ground'
   const run = (fn: () => void) => () => {
     onClose()
     fn()
@@ -40,10 +39,10 @@ export function ObjectMenu({ at, onClose, entry, onRename }: { at: MenuPoint | n
         Duplicate
       </MenuItem>
       <MenuItem icon="fit" data-testid="model-ctx-center" onClick={cmd('center-object')}>
-        Center on the {ground}
+        Center on grid
       </MenuItem>
       <MenuItem icon="arrow-down" data-testid="model-ctx-drop" onClick={cmd('drop-to-bed')}>
-        Drop to the {ground}
+        Drop to ground
       </MenuItem>
       {slices ? (
         <MenuItem icon="slice" data-testid="model-ctx-slice" onClick={run(() => setModelMode('slice'))}>
