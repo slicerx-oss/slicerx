@@ -3,7 +3,7 @@
 // First-party printer tools over PrinterHost. Every call with a side effect
 // carries the approval token for its exact action, target and parameters; the
 // host verifies it and refuses otherwise.
-import { followsSlotMap, slotMapLine, type Cell, type JobFile, type PrinterHost, type PrinterStatus, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
+import { developerModeRemedies, followsSlotMap, NEEDS_DEVELOPER_MODE, slotMapLine, type Cell, type JobFile, type PrinterHost, type PrinterStatus, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { ASSISTANT_NAME } from '../name'
 import { fmtDuration, fmtGrams, type ToolShared } from '../shared'
@@ -36,7 +36,20 @@ function statusRows(s: PrinterStatus): [string, Cell][] {
   if (s.bed) temps.push(`bed ${Math.round(s.bed.current)} C`)
   if (temps.length) rows.push(['temps', temps.join(', ')])
   if (s.slots.length) rows.push(['filament', s.slots.map((x) => `${x.id} ${x.material ?? '?'}${x.color ? ` ${x.color}` : ''}${x.remainingPct !== undefined ? ` ${x.remainingPct}%` : ''}`).join('; ')])
+  if (s.live?.needsDeveloperMode) rows.push(['printing', { text: 'needs Developer Mode or Bambu Connect', tone: 'warn' }])
   return rows
+}
+
+/**
+ * A Bambu Lab printer that takes no print from other apps (`needs_developer_mode`): what to tell the user and the two
+ * remedies, for a tool result. Null for any other error.
+ */
+export function developerModeAnswer(e: unknown, printerName: string, model: string | undefined): { tellTheUser: string; remedies: ReturnType<typeof developerModeRemedies> } | null {
+  if ((e as { code?: unknown } | null)?.code !== NEEDS_DEVELOPER_MODE) return null
+  return {
+    tellTheUser: `${printerName} sends its status but did not take the print. Bambu Lab printers do that while Developer Mode is off. Turn on LAN Only Mode and Developer Mode on the printer, or send the plate with Bambu Connect.`,
+    remedies: developerModeRemedies(model),
+  }
 }
 
 /** The params each host call hashes, per the ApprovalAction docs in contracts. */
@@ -188,7 +201,10 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     args: (i) => i.printerId,
     async run(i, ctx) {
       const s = await ctx.host.printers.status(i.printerId)
-      return { summary: `${i.printerId} ${s.state}${s.jobName ? `, ${s.jobName}` : ''}`, output: s, display: [{ kind: 'kv', rows: statusRows(s) }], untrusted: true }
+      // A Bambu Lab printer that takes no print from here says how to fix it, so a client can tell the user before a send.
+      const model = s.live?.needsDeveloperMode ? (await ctx.host.printers.list().catch(() => [])).find((p) => p.id === i.printerId)?.model : undefined
+      const output = s.live?.needsDeveloperMode ? { ...s, remedies: developerModeRemedies(model) } : s
+      return { summary: `${i.printerId} ${s.state}${s.jobName ? `, ${s.jobName}` : ''}${s.live?.needsDeveloperMode ? ', needs Developer Mode or Bambu Connect to print' : ''}`, output, display: [{ kind: 'kv', rows: statusRows(s) }], untrusted: true }
     },
   })
 
@@ -267,11 +283,25 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
       const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
       const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, file.name)
       ctx.progress(`uploading ${file.name}`, 0.2)
-      const remote = await ctx.host.printers.upload(i.printerId, file, ctx.token)
+      // Upload and start both turn the print away the same way on a Bambu Lab printer without Developer Mode.
+      const refused = (e: unknown) => {
+        const a = developerModeAnswer(e, info?.name ?? i.printerId, info?.model)
+        return a ? { ok: false, summary: a.tellTheUser, output: { ok: false, error: NEEDS_DEVELOPER_MODE, ...a, retry: false } } : null
+      }
+      let remote
+      try {
+        remote = await ctx.host.printers.upload(i.printerId, file, ctx.token)
+      } catch (e) {
+        const out = refused(e)
+        if (out) return out
+        throw e
+      }
       ctx.progress('starting', 0.8)
       try {
         await ctx.host.printers.start(remote, opts, ctx.token)
       } catch (e) {
+        const out = refused(e)
+        if (out) return out
         // The hub starts an assistant's print only from a file it uploaded and checked itself. Say so in
         // plain words; retrying the same start cannot succeed.
         if ((e as { code?: unknown } | null)?.code !== 'unverified_file') throw e
