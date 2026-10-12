@@ -146,3 +146,47 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     expect(data<{ status: string }>(r).status).toBe('denied')
   })
 })
+
+// A client's printer scan through the hub finds a Prusa printer: the hub's PrusaLink scan reads the neighbour table,
+// which a test build (sx-link with `test-hooks`) takes from SX_TEST_NEIGHBORS, here the PrusaLink fake's address.
+describe.skipIf(!bin || !existsSync(bin))('a printer scan through sx-link', () => {
+  let proc: ChildProcessByStdio<null, Readable, Readable>
+  let mocks: RunningMocks
+  let url = ''
+  let code = ''
+  const scanDir = bin && existsSync(bin) ? mkdtempSync(join(tmpdir(), 'sx-link-scan-')) : ''
+
+  beforeAll(async () => {
+    mocks = await startMocks({ only: ['prusalink'], state: 'idle' })
+    const env = { ...process.env, SX_TEST_NEIGHBORS: `127.0.0.1:${mocks.ports.prusalink ?? 0}` }
+    proc = spawn(bin, ['--port', '0', '--state-dir', scanDir, '--secrets', 'file', '--no-mdns', '--loopback'], { stdio: ['ignore', 'pipe', 'pipe'], env })
+    let out = ''
+    await new Promise<void>((done, fail) => {
+      proc.stdout.on('data', (d: Buffer) => {
+        out += d.toString()
+        const u = /ws:\/\/127\.0\.0\.1:\d+/.exec(out)
+        const c = /pairing code: ([A-Z0-9]{4}-[A-Z0-9]{4})/.exec(out)
+        if (u && c) {
+          url = u[0]
+          code = c[1] ?? ''
+          done()
+        }
+      })
+      proc.once('exit', () => fail(new Error('sx-link exited early')))
+    })
+  }, 30_000)
+
+  afterAll(async () => {
+    proc?.kill()
+    if (scanDir) rmSync(scanDir, { recursive: true, force: true })
+    await mocks?.stop()
+  })
+
+  it('lists the Prusa printer the neighbour table points at, with its address', async () => {
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    const found = data<{ output: { family: string; address: string | null; name: string }[] }>(await h.call('slicerx_printer_discover', { timeoutMs: 3000 }))
+    const prusa = found.output.find((f) => f.family === 'prusalink')
+    expect(prusa, JSON.stringify(found.output)).toBeDefined()
+    expect(prusa?.address).toContain('127.0.0.1')
+  })
+})

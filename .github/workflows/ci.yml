@@ -404,7 +404,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: sx-link
-      - run: cargo build -p sx-link
+      # with the drivers' test hooks (sx-connect's `test-hooks`): the MCP suite hands the hub's PrusaLink scan a
+      # neighbour list. Only this test build has them; the engine release builds sx-link without.
+      - run: cargo build -p sx-link --features test-hooks
         env:
           CARGO_PROFILE_DEV_DEBUG: '0'
       - uses: actions/upload-artifact@v4
