@@ -94,6 +94,9 @@ export const summaryShape = {
   gcode_sha256: z.string().optional(),
   gcode_3mf_path: z.string().optional(),
   preview_path: z.string().optional(),
+  /** The bridges over air by layer (first 100): strand angle in degrees from +X, and the same-layer areas holding them. */
+  bridges: z.array(z.object({ layer: z.number(), angle_deg: z.number(), anchors: z.number(), area_mm2: z.number() })).optional(),
+  bridge_count: z.number().optional(),
   applied: z.array(z.string()),
   /** How the project's own printer G-code was used (project_settings). */
   project_gcode: z.array(z.object({ key: z.string(), slot: z.number().optional(), use: z.enum(['project', 'profile']), message: z.string() })).optional(),
@@ -231,6 +234,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   const lines = [
     `${result.model.name}${result.plate ? `, plate ${result.plate}` : ''}: ${result.layer_count} layers, ${result.time_text}, ${result.filament_g} g (${(result.filament_mm / 1000).toFixed(2)} m) [engine ${result.engine}]`,
     ...(result.filaments.length > 1 ? [`Filaments: ${result.filaments.map((f) => `slot ${f.slot} ${f.filament_g} g`).join(', ')}`] : []),
+    ...(result.bridges?.length ? [`Bridges over air: ${result.bridge_count ?? result.bridges.length}, ${result.bridges.filter((b) => b.anchors === 0).length} held by walls only`] : []),
     ...(applied.length ? [`Profiles: ${applied.join(', ')}`] : []),
     ...(result.gcode_path ? [`G-code: ${result.gcode_path}`] : []),
     ...(result.gcode_3mf_path ? [`G-code 3MF: ${result.gcode_3mf_path}`] : []),

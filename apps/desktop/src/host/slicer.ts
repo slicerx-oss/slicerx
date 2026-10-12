@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // SlicerHost over the native `slice` commands. Geometry and results cross as
 // raw bytes; only the small request and info objects are JSON.
-import type { Collision, CollisionFix, GcodeExport, MeshHandle, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import type { BridgeInfo, Collision, CollisionFix, GcodeExport, MeshHandle, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
 import { encodeParts, sliceClock } from '@slicerx/slicer'
 import { Channel, invoke } from '@tauri-apps/api/core'
 
@@ -54,6 +54,7 @@ interface SliceInfo {
   filamentMap?: { extruders: number[]; nozzles: number[]; auto: boolean }
   collisions?: Collision[]
   collisionFixes?: CollisionFix[]
+  bridges?: BridgeInfo[]
 }
 
 function parseSliceInfo(v: unknown): SliceInfo {
@@ -75,6 +76,7 @@ function parseSliceInfo(v: unknown): SliceInfo {
     ...(isRec(v['filamentMap']) ? { filamentMap: { extruders: nums((v['filamentMap'] as Rec)['extruders']), nozzles: nums((v['filamentMap'] as Rec)['nozzles']), auto: (v['filamentMap'] as Rec)['auto'] === true } } : {}),
     // The engine's own report of collisions and fixes, passed through as it wrote them.
     ...(Array.isArray(v['collisions']) && v['collisions'].length ? { collisions: v['collisions'] as Collision[], collisionFixes: Array.isArray(v['collisionFixes']) ? (v['collisionFixes'] as CollisionFix[]) : [] } : {}),
+    ...(Array.isArray(v['bridges']) && v['bridges'].length ? { bridges: v['bridges'] as BridgeInfo[] } : {}),
   }
 }
 
@@ -176,6 +178,7 @@ export function createTauriSlicer(): SlicerHost {
         ...(info.fileName ? { fileName: info.fileName } : {}),
         ...(info.filamentMap ? { filamentMap: info.filamentMap } : {}),
         ...(info.collisions ? { collisions: info.collisions, collisionFixes: info.collisionFixes ?? [] } : {}),
+        ...(info.bridges ? { bridges: info.bridges } : {}),
       }
     },
     getPreview: (id) => invoke<ArrayBuffer>('get_preview', { id: Number(id) }),

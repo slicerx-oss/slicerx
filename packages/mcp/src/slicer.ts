@@ -52,6 +52,13 @@ export interface SliceSummary {
   /** A Bambu Lab style .gcode.3mf holding the plate's G-code, when one was asked for. */
   gcode_3mf_path?: string
   preview_path?: string
+  /**
+   * The bridges over air, by layer (first 100): the way the strands run, degrees from +X (0 to 180), and how many
+   * areas of the same layer hold them (walls do not count, so 0 means held by walls only). sx engine only.
+   */
+  bridges?: { layer: number; angle_deg: number; anchors: number; area_mm2: number }[]
+  /** How many bridges over air the plate has, when `bridges` lists only the first 100. */
+  bridge_count?: number
   warnings: string[]
   note?: string
 }
