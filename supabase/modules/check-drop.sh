@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 The SlicerX contributors
-# Drops every removable module (cloud, store, sxlock, bug reports) inside a transaction
+# Drops every removable module (cloud, store, sxlock, bug reports, mimir proxy) inside a transaction
 # on the local stack, checks that auth, profiles and API tokens still work,
 # then rolls back.
 set -eu
@@ -14,6 +14,7 @@ db=${SUPABASE_DB_CONTAINER:-supabase_db_slicerx}
   cat "$here/drop_store.sql"
   cat "$here/drop_sxlock.sql"
   cat "$here/drop_bug_reports.sql"
+  cat "$here/drop_mimir_proxy.sql"
   cat <<'SQL'
 do $$
 declare

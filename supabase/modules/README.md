@@ -7,11 +7,14 @@ psql "$DB_URL" -f drop_cloud.sql
 psql "$DB_URL" -f drop_store.sql
 psql "$DB_URL" -f drop_sxlock.sql
 psql "$DB_URL" -f drop_bug_reports.sql
+psql "$DB_URL" -f drop_mimir_proxy.sql
 ```
 
 `drop_sxlock.sql` removes locked projects: the account keys go, so every `.sxlock` file made on that database stops opening.
 
 `drop_bug_reports.sql` removes the crash and bug reports table, `submit_bug_report` and the `bug-reports` bucket (only when empty).
+
+`drop_mimir_proxy.sql` removes mimir's cloud model caps, usage and shared sessions. The `mimir_session_reader` role stays (roles are cluster wide) with no access left.
 
 `drop_store.sql` removes the `uploads-quarantine` and `listing-files` buckets only when they are empty. Delete stored files through the Storage API before dropping the store.
 
