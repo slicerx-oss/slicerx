@@ -41,10 +41,23 @@ pub(crate) struct Grant {
     pub granted_at_ms: u64,
 }
 
-/// How long the person has to answer the question in the app.
-const ASK_TIMEOUT: Duration = Duration::from_secs(120);
-/// After a question nobody answered, the same client waits this long before it can ask again.
-const ASK_COOLDOWN: Duration = Duration::from_secs(300);
+/// How long the app link waits on the person.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppLinkWaits {
+    /// How long the person has to answer the question in the app (120 s).
+    pub ask: Duration,
+    /// After a question nobody answered, the same client waits this long before it can ask again (5 minutes).
+    pub cooldown: Duration,
+}
+
+impl Default for AppLinkWaits {
+    fn default() -> Self {
+        Self {
+            ask: Duration::from_secs(120),
+            cooldown: Duration::from_mins(5),
+        }
+    }
+}
 /// How long a call waits for the app, unless it asks for longer (`timeoutMs`, at most `MAX_CALL`).
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CALL: Duration = Duration::from_secs(120);
@@ -69,6 +82,7 @@ pub(crate) struct Link {
     denied: StdMutex<HashSet<String>>,
     /// Clients whose last question went unanswered, and when.
     unanswered: StdMutex<HashMap<String, Instant>>,
+    waits: StdMutex<AppLinkWaits>,
 }
 
 impl Link {
@@ -95,6 +109,14 @@ impl Link {
         lock(&self.denied).remove(client);
         lock(&self.unanswered).remove(client);
         lock(&self.asks).retain(|_, (_, (c, _))| c != client);
+    }
+
+    pub(crate) fn set_waits(&self, w: AppLinkWaits) {
+        *lock(&self.waits) = w;
+    }
+
+    fn waits(&self) -> AppLinkWaits {
+        *lock(&self.waits)
     }
 
     fn id(&self) -> u64 {
@@ -201,7 +223,7 @@ pub(crate) async fn agent_call(
 }
 
 /// Asks the person about a client. One question at a time on the whole hub, and a client whose
-/// question went unanswered waits `ASK_COOLDOWN` before asking again.
+/// question went unanswered waits out the cooldown (`AppLinkWaits`) before asking again.
 async fn ask(b: &Bridge, host: u64, client: &str, name: &str, created_ms: u64) -> Rpc<Rights> {
     let link = &b.app_link;
     if lock(&link.denied).contains(client) {
@@ -212,7 +234,7 @@ async fn ask(b: &Bridge, host: u64, client: &str, name: &str, created_ms: u64) -
     }
     if lock(&link.unanswered)
         .get(client)
-        .is_some_and(|t| t.elapsed() < ASK_COOLDOWN)
+        .is_some_and(|t| t.elapsed() < link.waits().cooldown)
     {
         return Err(RpcError::new(
             "not_answered",
@@ -239,7 +261,7 @@ async fn ask(b: &Bridge, host: u64, client: &str, name: &str, created_ms: u64) -
         json!({ "askId": id, "clientId": client, "name": name, "createdAt": iso(created_ms) }),
         host,
     );
-    let answer = tokio::time::timeout(ASK_TIMEOUT, rx).await;
+    let answer = tokio::time::timeout(link.waits().ask, rx).await;
     lock(&link.asks).remove(&id);
     // The app takes the question down however it ended.
     b.hub.emit_to("appLink.askEnded", json!({ "askId": id }), host);
