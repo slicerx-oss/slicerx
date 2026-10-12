@@ -88,3 +88,21 @@ describe('the opening view', () => {
     })
   }
 })
+
+describe('the side views', () => {
+  it.each([
+    ['front', [0, 0, 1]],
+    ['back', [0, 0, -1]],
+    ['left', [-1, 0, 0]],
+    ['right', [1, 0, 0]],
+  ] as const)('%s looks level along its axis, at the content', (kind, axis) => {
+    const { rig } = setup(1600, 900, NO_INSETS)
+    const box = new Box3(new Vector3(-20, 0, -20), new Vector3(20, 60, 20))
+    const pose = rig.presetPose(kind, box, 256)
+    const dir = pose.pos.clone().sub(pose.target).normalize()
+    expect(dir.x).toBeCloseTo(axis[0], 6)
+    expect(dir.y).toBeCloseTo(0, 6)
+    expect(dir.z).toBeCloseTo(axis[2], 6)
+    expect(pose.target.y).toBeCloseTo(30, 6)
+  })
+})
