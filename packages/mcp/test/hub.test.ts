@@ -181,7 +181,7 @@ describe('person-only work through a scripted hub', () => {
   it('says what a Bambu Lab printer without Developer Mode needs, with both remedies', async () => {
     const a1 = { id: 'bay-4', name: 'Bay 4', vendor: 'Bambu Lab', model: 'Bambu Lab A1 mini', plugin: 'bambu-lan', nozzleCount: 1 }
     const a1Status = { ...status, live: { needsDeveloperMode: true } }
-    const message = 'printer bay-4 takes no prints from other apps: It sends status, but the file upload failed (FTPS upload timed out).'
+    const message = 'printer bay-4 may need Developer Mode to take prints from this app: It sends status, but the file upload failed (FTPS upload timed out).'
     const hub = scriptedHub({ ok: false, code: 'needs_developer_mode', message }, true, { printer: a1, status: a1Status })
     const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
     await h.call('slicerx_printer_gcode', { printerId: 'bay-4', line: 'G28' })
@@ -204,5 +204,22 @@ describe('person-only work through a scripted hub', () => {
     expect(body).toContain('"needsDeveloperMode":true')
     expect(body).toContain('Send with Bambu Connect')
     expect(text(st)).toMatch(/needs Developer Mode or Bambu Connect/)
+    // The text said it was a guess, so the client reads sure: false.
+    expect(p.pending[0]).toMatchObject({ sure: false })
+  })
+
+  // The printer's card had no room: the client reads the code and the one remedy back, never Developer Mode.
+  it('says when a printer has no room for the file, with the remedy', async () => {
+    const message = "printer bay-4 has no room for the file: its storage is full (FTP 452 after STOR). Free space on the printer's SD card."
+    const hub = scriptedHub({ ok: false, code: 'printer_storage_full', message })
+    const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+    await h.call('slicerx_printer_gcode', { printerId: 'bay-4', line: 'G28' })
+    await settle()
+    type Remedy = { id: string; title: string; steps: string[] }
+    const p = data<{ pending: { status: string; code?: string; message?: string; remedies?: Remedy[]; sure?: boolean }[] }>(await h.call('slicerx_pending_approvals'))
+    expect(p.pending[0]).toMatchObject({ status: 'failed', code: 'printer_storage_full', message })
+    expect(p.pending[0]?.sure).toBeUndefined()
+    expect(p.pending[0]?.remedies?.map((r) => r.id)).toEqual(['free_storage'])
+    expect(p.pending[0]?.remedies?.[0]?.steps.join(' ')).toMatch(/Delete old print files/)
   })
 })
