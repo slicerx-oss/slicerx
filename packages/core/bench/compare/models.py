@@ -239,6 +239,15 @@ def mushroom():
     return _finish(_box(0, 40, 0, 20, 0, 3) + _box(15, 25, 0, 20, 3, 13) + _box(0, 40, 0, 20, 13, 15))
 
 
+def first_layer_test(height=0.2):
+    """One layer: a 40 mm square in the middle and a 30 mm square 70 mm out at each corner, as the first layer test
+    starter has them."""
+    t = _box(-20, 20, -20, 20, 0, height)
+    for x, y in ((-70, -70), (70, -70), (70, 70), (-70, 70)):
+        t += _box(x - 15, x + 15, y - 15, y + 15, 0, height)
+    return _finish(t)
+
+
 def thin_plate(thickness=1.0):
     """A 30 x 1 mm plate, 6 mm tall: two walls leave a gap in the middle."""
     return _finish(_box(0, 30, 0, thickness, 0, 6))
@@ -355,7 +364,7 @@ for _t in (30, 50, 60, 80):
     register(f"flare{_t}", lambda t=_t: flare(10.0, float(t), 10.0))
 register("flare43", flare)
 for _name, _fn in (("wedge", wedge), ("eccentric-ring", eccentric_ring), ("crossed-bars", crossed_bars), ("block", block), ("table", table), ("mushroom", mushroom), ("thin-plate", thin_plate), ("flare", flare), ("toadstool", toadstool), ("counterbore", counterbore),
-                     ("leaning-slabs", leaning_slabs), ("stacked", stacked)):
+                     ("leaning-slabs", leaning_slabs), ("stacked", stacked), ("first-layer-test", first_layer_test)):
     register(_name, _fn)
 
 

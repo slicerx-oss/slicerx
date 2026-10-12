@@ -46,6 +46,17 @@ python3 paint_parity.py --sx path/to/sx --orca path/to/OrcaSlicer --bambu path/t
 
 It exits 1 when a filament's total is more than `--tol` (5 percent, 20 mm floor) from Orca's or its placement agrees with Orca's on less than `--overlap` (0.9) of the cells. The painted keychain this was first run on (a MakerWorld project, not kept here): Orca 2129, 150, 97 and 482 mm for its four filaments, SlicerX 2337, 69, 74 and 360, Bambu Studio 2302, 154, 99 and 324; placement agreeing with Orca 0.91, 0.45, 0.73 and 0.76 for SlicerX, 0.92, 0.93, 0.98 and 0.64 for Bambu Studio.
 
+## First layer footprint
+
+`footprint_parity.py` slices models with both slicers on the matched settings of `parity.py` (elephant foot compensation 0.2 mm unless `--set` says otherwise) and measures the outer wall loops of layers 1 and 2 side by side: per side of the part, how far SlicerX's loop lies from Orca's, and how far each slicer's layer 2 reaches past its layer 1, as a distance and an area. It exits 1 when a side differs by more than `--tol` (0.02 mm).
+
+```
+python3 footprint_parity.py --sx path/to/sx --orca path/to/OrcaSlicer
+python3 footprint_parity.py --models x-reference --set elefant_foot_compensation=0.3 --set elefant_foot_compensation_layers=3
+```
+
+Orca is told not to arrange (`--arrange 0`) in every comparison that slices a generated model: the models are written on the bed center, and Orca's own arrangement may turn a part, which mirrors anything asymmetric (the X plate turned 180 degrees, the leaning slabs 90).
+
 ## Limits
 
 - Bambu Studio and OrcaSlicer have a fixed startup cost that dominates the smallest models (tens of milliseconds before slicing begins). That is part of using them from a script and is reported as measured, with the phase split next to it.

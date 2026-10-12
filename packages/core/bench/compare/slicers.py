@@ -163,7 +163,9 @@ class Orca:
         shutil.rmtree(d, ignore_errors=True)
         os.makedirs(d)
         stl = os.path.join(self.work, "models", f"{model}.stl")
-        return Job(self._cmd(stl, d, ["--debug", "1"]), os.path.join(d, "plate_1.gcode"))
+        # The models are written on the bed center already. Orca's own arrangement may turn a part (the X plate
+        # by 180 degrees, the leaning slabs by 90), which puts every asymmetry on the other side from ours.
+        return Job(self._cmd(stl, d, ["--debug", "1", "--arrange", "0"]), os.path.join(d, "plate_1.gcode"))
 
 
 class Bambu:
