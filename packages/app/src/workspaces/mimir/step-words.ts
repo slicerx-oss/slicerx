@@ -15,15 +15,30 @@ export interface Words {
 const WORDS: Record<string, Words | null> = {
   'pilot.ask': null,
   'lookup.show': null,
+  'design.new': { doing: 'Starting the design', done: 'Started the design' },
+  'geom.extrude': { doing: 'Extruding the sketch', done: 'Extruded the sketch', caption: 'Extrude, Z', camera: 'iso' },
+  'geom.revolve': { doing: 'Revolving the profile', done: 'Revolved the profile', caption: 'Revolve', camera: 'iso' },
+  'geom.push_pull': { doing: 'Pushing the face', done: 'Pushed the face', caption: 'Push/pull' },
+  'geom.fillet': { doing: 'Rounding the edges', done: 'Rounded the edges', caption: 'Fillet' },
+  'geom.chamfer': { doing: 'Beveling the edges', done: 'Beveled the edges', caption: 'Chamfer' },
+  'geom.boolean': { doing: 'Combining the bodies', done: 'Combined the bodies' },
+  'geom.measure': { doing: 'Measuring', done: 'Measured' },
+  'geom.info': { doing: 'Checking the part', done: 'Checked the part' },
+  'design.undo': { doing: 'Undoing the last step', done: 'Undid the last step' },
 }
 
 const GENERIC = { doing: 'Working on the design', done: 'Design step done' }
+
+// an extrude that cuts or joins says so; its summary starts with the verb ("Cut: step 2, Extrude")
+const EXTRUDED: Record<string, string> = { Cut: 'Cut into the part', Joined: 'Added to the part' }
 
 export const stepWords: StepWords = (row) => {
   const w = WORDS[row.tool]
   if (w === null) return null
   const base = w ?? GENERIC
-  return row.state === 'bad' ? { ...base, done: row.summary ?? 'That step failed' } : base
+  if (row.state === 'bad') return { ...base, done: row.summary ?? 'That step failed' }
+  const verb = row.tool === 'geom.extrude' ? row.summary?.split(':')[0] : undefined
+  return verb && EXTRUDED[verb] ? { ...base, done: EXTRUDED[verb] } : base
 }
 
 /** Adds the words for more tools (the design tools register theirs). */

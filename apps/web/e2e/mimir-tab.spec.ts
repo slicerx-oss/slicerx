@@ -222,6 +222,29 @@ test.describe('the mimir tab', () => {
     await expect(card).toHaveCount(0)
   })
 
+  test('scripted mimir builds on the plate: each step lands in the history Model shows, and undo takes it back', async ({ page }) => {
+    await open(page)
+    await openEmpty(page)
+    const composer = page.getByTestId('mimir-composer')
+    await composer.getByRole('textbox').fill('Can you make a box with a lid?')
+    await composer.getByRole('button', { name: 'Send' }).click()
+    const plate = () => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: { name: string; parts: { name: string }[]; history?: { steps: unknown[] } }[] } } }).__sx.getState().plate.map((e) => ({ name: e.name, parts: e.parts.map((p) => p.name), steps: e.history?.steps.length ?? 0 })))
+    await expect.poll(plate, { timeout: 30_000 }).toEqual([{ name: 'Box with lid', parts: ['Box', 'Lid'], steps: 4 }])
+    // no step failed on the way
+    await expect(page.getByTestId('mimir-transcript')).toContainText('Done: the box and its lid')
+    await expect(page.getByTestId('mimir-transcript').locator('.trow .st .bad')).toHaveCount(0)
+    // the view shows the parts after the extrudes: off the top view
+    await expect.poll(() => page.evaluate(() => {
+      const p = (window as unknown as { __vp: Vp }).__vp.camera.position
+      return Math.abs(p.y) / Math.hypot(p.x, p.y, p.z)
+    })).toBeGreaterThan(0.2)
+    await page.screenshot({ path: test.info().outputPath('mimir-box-dark.png') })
+    // Model shows the same object with its steps, and undo takes the last one back
+    await page.getByTestId('tab-model').click()
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect.poll(plate).toEqual([{ name: 'Box with lid', parts: ['Box', 'Lid'], steps: 3 }])
+  })
+
   for (const scheme of ['dark', 'light'] as const) {
     test(`screenshot, empty, ${scheme}`, async ({ page }, info) => {
       await open(page, scheme)

@@ -23,7 +23,7 @@ function lastUser(messages: readonly LlmMessage[]): string {
 }
 
 /** What mimir says to a message no script matches. */
-const UNKNOWN: ScriptStep[] = [{ text: 'Scripted replies know one part for now: a backplate for a wall thermostat. Ask for that one.' }]
+const UNKNOWN: ScriptStep[] = [{ text: 'Scripted replies know three parts for now: a thermostat backplate, a box with a lid and a phone stand. Ask for one of them.' }]
 
 /**
  * A client that starts the matching script on each new message and plays it to the end, one step per request, the
