@@ -6,7 +6,7 @@
 // keeps both workspaces usable.
 import { fitLines, keepFits, subscribeFits } from '../plate/fit-state'
 import type { PreviewBuffers } from '@slicerx/contracts'
-import type { RenderMode, ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
+import type { PlateTool, RenderMode, ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
 import { onThemeChange } from '@slicerx/ui/theme'
 import { useEffect, useRef, useState } from 'react'
 import { brandAccent, useEdition } from '../edition'
@@ -20,7 +20,7 @@ import { commitTransforms, layOnPickedFace } from '../plate/edit'
 import { openViewMenu } from '../plate/view-menu'
 import { openViewRing, ringTarget, setLayFace } from '../plate/view-ring'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
-import { probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
+import { probeHandler, setCameraBus, toolStore, type CadView, type Tool } from '../plate/tools'
 import { pickSub, type EdgeAt } from '../plate/sub-pick'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
@@ -158,6 +158,17 @@ function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
     })),
     ],
   }
+}
+
+/**
+ * The viewport tool for the app's tool. Scale shows the viewport's handles (x, y, z and the uniform corners), as move
+ * and rotate show theirs. A phone views and prints, so it only selects; the brim tool without the viewport's brim mode
+ * is a plain selection.
+ */
+export function viewportTool(tool: Tool, phone: boolean, brimMode: boolean): PlateTool {
+  if (phone) return 'select'
+  if (tool === 'brim' && !brimMode) return 'select'
+  return tool
 }
 
 /** Objects and their meshes; a change here rebuilds the scene, a transform alone does not. */
@@ -638,14 +649,13 @@ export function ViewportHost({ layers }: { layers: boolean }) {
           if (cutStore.getState().plane?.objectId === e.objectId) toggleConnector(e.point)
         }))
       }
-      // Tools: the viewport has move, rotate and lay on face; scale works through the numeric fields.
+      // Tools: the viewport has handles for move, rotate and scale, and lay on face; the numeric fields work too.
       const applyTool = () => {
         // A phone views and prints: a tap selects and a drag turns the view, and nothing on the plate moves.
         const phone = isPhoneLayout()
         const t = phone ? 'select' : toolStore.getState().tool
         vp.setMovable?.(!phone)
-        // The brim tool needs the viewport's own `brim` mode; without it the tool is a plain selection.
-        vp.setTool?.(t === 'scale' || (t === 'brim' && !brimVp.setBrimEars) ? 'select' : (t as Parameters<NonNullable<typeof vp.setTool>>[0]))
+        vp.setTool?.(viewportTool(t, phone, !!brimVp.setBrimEars))
         vp.setRotateSpace?.(toolStore.getState().rotateSpace)
         vp.setMoveHandles?.(t === 'move' && toolStore.getState().moveArrows)
         brimVp.setBrimHoverRadius?.(t === 'brim' ? headDiameter() / 2 : null)
