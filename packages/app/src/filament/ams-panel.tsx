@@ -21,6 +21,7 @@ import { SetupNotes } from './setup-plan'
 import { MAX_SLOTS, resetSlots, setSlot, swapPlateSlots, type ResolvedSlot } from './slots'
 import { resolveConfig } from '../adapters/config'
 import { currentMap, hasRack, mapExtruders, masterExtruder, nozzleName, pickedMap, setNozzleAuto, setSlotNozzle } from './nozzle-map'
+import { spoolLeft } from './left'
 
 const Dialogs = lazy(() => import('./dialogs').then((m) => ({ default: () => (
   <>
@@ -122,10 +123,10 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   const links = useApp((s) => s.spoolLinks)
   const done = shownSlice(useApp((s) => s.slice))
   const line = estimateLine(done)
-  /** What is left on the slot's spool: grams from Spoolman, else the printer's percentage. */
+  /** What is left on the slot's spool: grams from Spoolman, else the printer's exact grams, else its percentage. */
   const left = (s: ResolvedSlot): string | null => {
     const sp = spoolFor(s.index, spools, links, printerSlots[s.index - 1]?.spoolmanId)
-    return sp ? `${Math.round(sp.remainingG)} g left` : s.remainingPct !== undefined ? `${s.remainingPct}% left` : null
+    return sp ? `${Math.round(sp.remainingG)} g left` : spoolLeft(s)
   }
   const showUnused = useApp((s) => s.showUnusedSlots)
   const [menuOpen, setMenuOpen] = useState(false)

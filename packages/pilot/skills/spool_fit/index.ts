@@ -60,7 +60,7 @@ export interface FitResult extends Verdict {
   needG: number
   needSource: string
   availG: number | null
-  availSource: 'spoolman' | 'estimated' | 'unknown' | 'none'
+  availSource: 'spoolman' | 'printer' | 'estimated' | 'unknown' | 'none'
   layerCount: number | null
   swapAfterLayer: number | null
   backups: { slot: string; grams: number | null; enough: boolean }[]
@@ -163,7 +163,7 @@ export function createSpoolFit(shared: ToolShared) {
       const rows: [string, Cell][] = [
         ['printer', `${r.printerName}${r.slot ? `, slot ${r.slot}` : ''}, ${r.material}`],
         ['needs', `${fmtGrams(r.needG)} (${r.needSource}), ${fmtGrams(r.needWithMarginG)} with margin`],
-        ['on the spool', r.availG === null ? { text: 'unknown', tone: 'dim' } : `${fmtGrams(r.availG)} (${r.availSource === 'spoolman' ? 'Spoolman' : 'estimated from percent'})`],
+        ['on the spool', r.availG === null ? { text: 'unknown', tone: 'dim' } : `${fmtGrams(r.availG)} (${r.availSource === 'spoolman' ? 'Spoolman' : r.availSource === 'printer' ? 'the printer' : 'estimated from percent'})`],
         ['result', r.availG === null ? { text: 'unknown', tone: 'dim' } : { text: r.status === 'pass' ? 'enough' : r.status === 'warn' ? 'enough but under the margin' : 'not enough', tone: TONE[r.status] }],
       ]
       if (r.backups.length) rows.push(['same material', r.backups.map((b) => `${b.slot} ${b.grams === null ? '?' : `${Math.round(b.grams)} g`}`).join(', ')])

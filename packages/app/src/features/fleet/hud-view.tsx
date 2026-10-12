@@ -27,6 +27,7 @@ import {
   type Gauge, type SpeedLimits,
 } from './hud'
 import { adjustHub, setLight, setSpeed } from './hud-actions'
+import { spoolLeft } from '../../filament/left'
 import './hud.css'
 
 const SlotDialog = lazy(() => import('../../filament/dialogs').then((m) => ({ default: m.SlotDialog })))
@@ -390,7 +391,7 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
                         <span>{slotName(s)}</span>
                         {s.id === activeSlot ? <small>Printing now</small> : null}
                       </span>
-                      {s.material && s.remainingPct !== undefined ? <span className="ph-num">{Math.round(s.remainingPct)}% left</span> : null}
+                      {s.material && spoolLeft(s) ? <span className="ph-num">{spoolLeft(s)}</span> : null}
                     </li>
                   ))}
                 </ul>
