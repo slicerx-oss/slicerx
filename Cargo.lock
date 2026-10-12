@@ -5235,6 +5235,7 @@ dependencies = [
  "chacha20poly1305 0.11.0",
  "futures",
  "getrandom 0.4.3",
+ "gtk",
  "keyring",
  "libc",
  "objc2",
@@ -5260,6 +5261,7 @@ dependencies = [
  "webkit2gtk",
  "webview2-com",
  "windows",
+ "zbus",
  "zip",
 ]
 
