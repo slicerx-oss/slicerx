@@ -57,8 +57,12 @@ env:
 # its own (its run id): a pull request opened with labels gets one labeled event per label, sometimes two, all in the
 # same second, and in a shared group each newer one cancelled the one waiting before it. Those cancelled checks could be
 # the newest of their name, so the pull request stayed blocked with every real check passed.
+# Each push to main has a group of its own (its commit): in one shared group a newer push replaced the run waiting
+# before it, so while the queue merged every few minutes most commits on main had no finished push run, and a release
+# from one of them found the checks only a push runs (rust on macOS and Windows) missing. The push jobs no release
+# needs (desktop-bridge, heavy-lock) still give way to a newer push, through a job group of their own.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}${{ (github.event.action == 'labeled' || (github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci'))) && format('-label-{0}', github.run_id) || '' }}
+  group: ci-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}${{ (github.event.action == 'labeled' || (github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci'))) && format('-label-{0}', github.run_id) || '' }}
   # Only a pull request's superseded runs are cancelled. A merge queue entry's run is never cut short: the queue rebuilds
   # the same commit on the same ref when an entry is requeued, and a cancelled run's checks there failed the new entry.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -323,6 +327,9 @@ jobs:
     needs: detect
     # not a required check; the queue runs only what main requires
     if: needs.detect.outputs.rust == 'true' && github.event_name != 'merge_group'
+    # on main, a newer push's job replaces one still waiting (the concurrency comment at the top)
+    concurrency:
+      group: ${{ github.event_name == 'push' && format('ci-push-desktop-bridge-{0}', matrix.os) || format('ci-desktop-bridge-{0}-{1}', github.run_id, matrix.os) }}
     strategy:
       fail-fast: false
       matrix:
@@ -806,6 +813,9 @@ jobs:
   heavy-lock:
     # nothing to do in a duplicate run (the concurrency comment at the top); a skipped job counts as passed
     if: ${{ github.event_name != 'merge_group' && !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
+    # on main, a newer push's job replaces one still waiting (the concurrency comment at the top)
+    concurrency:
+      group: ${{ github.event_name == 'push' && 'ci-push-heavy-lock' || format('ci-heavy-lock-{0}', github.run_id) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
