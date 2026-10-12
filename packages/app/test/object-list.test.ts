@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { MeshHandle } from '@slicerx/contracts'
 import { effectiveSlot, resolveSlots, slotOverridesFor, swapPlateSlots, usedSlots } from '../src/filament/slots'
 import { createHistory } from '../src/plate/history'
-import { renameObject, searchObjects, setPartSlot, togglePrintable } from '../src/plate/object-list'
+import { onRenameRequest, renameObject, requestRename, searchObjects, setPartSlot, togglePrintable } from '../src/plate/object-list'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
 
 const handle = (id: string, slots: number[]): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: slots.map((slot, i) => ({ name: `p${i}`, slot, triangles: 4 })) })
@@ -21,6 +21,18 @@ describe('object list edits', () => {
     expect(renameObject('nope', 'x')).toBe(false)
     expect(renameObject('a', 'x'.repeat(300))).toBe(true)
     expect(get().plate[0]!.name).toHaveLength(100)
+  })
+
+  it('asks only the named object to start its rename, until it stops listening', () => {
+    const started: string[] = []
+    const stopA = onRenameRequest('a', () => started.push('a'))
+    const stopB = onRenameRequest('b', () => started.push('b'))
+    requestRename('a')
+    expect(started).toEqual(['a'])
+    stopA()
+    requestRename('a')
+    expect(started).toEqual(['a'])
+    stopB()
   })
 
   it('toggles printable for the selection in one undo step', () => {
@@ -130,5 +142,21 @@ describe('object search', () => {
     expect(searchObjects(get().plate, 'negative volume')).toEqual([{ id: 'a', self: false, parts: [], volumes: ['v1'] }])
     expect(searchObjects(get().plate, 'hole')).toEqual([{ id: 'a', self: false, parts: [], volumes: ['v1'] }])
     expect(searchObjects(get().plate, 'zzz')).toEqual([])
+  })
+})
+
+describe('the object-rename command', () => {
+  it('asks the selected object to start its rename, and is off with nothing selected', async () => {
+    const { plateCommands } = await import('../src/plate/commands')
+    const cmd = plateCommands(() => 'slicerx' as never).find((c) => c.id === 'object-rename')
+    expect(cmd?.title).toBe('Rename the selected object')
+    const started: string[] = []
+    const stop = onRenameRequest('a', () => started.push('a'))
+    expect(cmd?.enabled?.()).toBe(true)
+    void cmd?.run()
+    expect(started).toEqual(['a'])
+    stop()
+    set({ selection: null, selectedIds: [] })
+    expect(cmd?.enabled?.()).toBe(false)
   })
 })
