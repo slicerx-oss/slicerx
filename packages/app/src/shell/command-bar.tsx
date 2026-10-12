@@ -16,7 +16,7 @@ import { allPlates, switchPlate } from '../plate/plates'
 import { isMac } from '../lib/keys'
 import { useFeatures, type ActiveWorkspace } from '../features'
 import { orderWorkspaces, useLayout } from '../first-run/look'
-import { listedInMode, useModelMode } from '../state/model-mode'
+import { listedInMode, titleInMode, useModelMode } from '../state/model-mode'
 import { get, pilotState, pushRecent, set, setWorkspace, toast, useApp } from '../state/store'
 
 /** The pilot feature registers this command; it takes the typed text as input. */
@@ -79,7 +79,13 @@ export function CommandBar() {
   const workspace = useApp((s) => s.workspace)
   // Model leaves the slicing commands out of the list; their shortcuts still run them
   const mode = useModelMode()
-  const all = useMemo(() => registered.filter((c) => listedInMode(c.id, workspace === 'prepare' ? mode : 'slice')), [registered, mode, workspace])
+  const all = useMemo(() => {
+    const shown = workspace === 'prepare' ? mode : 'slice'
+    return registered.filter((c) => listedInMode(c.id, shown)).map((c) => {
+      const title = titleInMode(c.id, c.title, shown)
+      return title === c.title ? c : { ...c, title }
+    })
+  }, [registered, mode, workspace])
   const [query, setQuery] = useState('')
   const { workspaces: available, ids } = useFeatures()
   const layout = useLayout()
