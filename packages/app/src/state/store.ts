@@ -121,6 +121,8 @@ export interface SubPick {
   point: [number, number, number]
   /** An edge as lines in bed coordinates, for drawing it: one for a straight edge, a ring for a round one. */
   lines?: { from: [number, number, number]; to: [number, number, number] }[]
+  /** A round face (a hole's or a peg's wall) or a circular edge: the next slot offers Hole and Thread for it. */
+  round?: boolean
 }
 
 export interface HistoryEdit {

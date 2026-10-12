@@ -9,7 +9,8 @@ import { fullEngine, resetFullEngine, warmFullEngine } from '../src/geom/full-en
 import { engineModules } from '../src/geom/modules'
 import { get, set } from '../src/state/store'
 import { openTool } from '../src/workspaces/design/open-tool'
-import { availableTools, nextTools, opensDesign, SHELF_GROUPS, shelfGroup, SHELF_TOOLS } from '../src/workspaces/design/shelf-tools'
+import { availableTools, nextSlot, nextTools, opensDesign, pickWords, SHELF_GROUPS, shelfGroup, SHELF_TOOLS } from '../src/workspaces/design/shelf-tools'
+import { nextPick } from '../src/workspaces/design/shelf'
 
 const NO_CAD = { ...NEUTRAL, features: { ...NEUTRAL.features, cad: false } }
 const names = (group: (typeof SHELF_GROUPS)[number]['id'], modeling = true, drawing = true) =>
@@ -48,6 +49,30 @@ describe('the shelf', () => {
     expect(ids(null)).toEqual([])
     // Without the modeling tools an object still gets Cut and Array.
     expect(nextTools(availableTools({ modeling: false, drawing: true }), 'object').map((t) => t.id)).toEqual(['cut', 'array'])
+  })
+
+  it('counts the pick and turns off the tools that cannot take that many, with the reason', () => {
+    const tools = availableTools({ modeling: true, drawing: true })
+    const slot = (kind: 'face' | 'edge' | 'round' | 'object', count: number) => nextSlot(tools, { kind, count }).map((e) => `${e.chamfer ? 'chamfer' : e.tool.id}${e.off ? ' off' : ''}`)
+    expect(slot('face', 1)).toEqual(['push', 'sketch', 'shell'])
+    expect(slot('face', 2)).toEqual(['push off', 'sketch off', 'shell'])
+    expect(nextSlot(tools, { kind: 'face', count: 2 })[0]?.off).toBe('Push and pull takes one face at a time.')
+    expect(slot('edge', 3)).toEqual(['fillet', 'chamfer'])
+    expect(slot('round', 1)).toEqual(['holefit', 'thread'])
+    expect(slot('object', 2)).toEqual(['cut off', 'array', 'holefit off'])
+    expect(nextSlot(tools, null)).toEqual([])
+    expect(pickWords({ kind: 'face', count: 1 })).toBe('1 face')
+    expect(pickWords({ kind: 'edge', count: 3 })).toBe('3 edges')
+    expect(pickWords({ kind: 'round', count: 2 })).toBe('2 round faces')
+  })
+
+  it('reads the pick from the faces and edges first, round only when every one is, then the objects', () => {
+    const face = (round?: boolean) => ({ kind: 'face' as const, objectId: 'o', partIndex: 0, triangle: 1, point: [0, 0, 0] as [number, number, number], ...(round ? { round } : {}) })
+    expect(nextPick({ subPicks: [face(), face()], selection: 'o', selectedIds: ['o'] })).toEqual({ kind: 'face', count: 2 })
+    expect(nextPick({ subPicks: [face(true)], selection: 'o', selectedIds: ['o'] })).toEqual({ kind: 'round', count: 1 })
+    expect(nextPick({ subPicks: [face(true), face()], selection: 'o', selectedIds: ['o'] })).toEqual({ kind: 'face', count: 2 })
+    expect(nextPick({ subPicks: [], selection: 'o', selectedIds: ['o', 'p'] })).toEqual({ kind: 'object', count: 2 })
+    expect(nextPick({ subPicks: [], selection: null, selectedIds: [] })).toBeNull()
   })
 
   it('gives every tool its own icon', () => {

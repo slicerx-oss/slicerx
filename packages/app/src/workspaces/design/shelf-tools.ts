@@ -78,6 +78,49 @@ export function nextTools(tools: readonly ShelfTool[], pick: PickKind | null): S
   return tools.filter((t) => t.accepts?.includes(pick)).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)).slice(0, 3)
 }
 
+/** What is picked for the next slot: its kind, and how many. */
+export interface NextPick {
+  kind: PickKind
+  count: number
+}
+
+/** One place in the next slot: a tool, Chamfer as the fillet tool's other shape, and why it is off for this pick. */
+export interface NextEntry {
+  tool: ShelfTool
+  chamfer?: true
+  off?: string
+}
+
+/** Tools that take only so many of a pick, with the reason the slot shows when there are more. */
+const PICK_LIMITS: Readonly<Record<string, Partial<Record<PickKind, { max: number; why: string }>>>> = {
+  push: { face: { max: 1, why: 'Push and pull takes one face at a time.' } },
+  sketch: { face: { max: 1, why: 'A sketch goes on one face.' } },
+  cut: { object: { max: 1, why: 'Cut one object at a time.' } },
+  holefit: { round: { max: 1, why: 'Pick one hole at a time.' }, object: { max: 1, why: 'Pick one object.' } },
+  thread: { round: { max: 1, why: 'Pick one hole or peg at a time.' } },
+}
+
+/**
+ * The next slot for a pick: its tools in order, each off with a reason when it cannot take that many. Edges also get
+ * Chamfer, the fillet tool's other shape. Nothing for no pick.
+ */
+export function nextSlot(tools: readonly ShelfTool[], pick: NextPick | null): NextEntry[] {
+  if (!pick || pick.count < 1) return []
+  const out: NextEntry[] = nextTools(tools, pick.kind).map((tool) => {
+    const limit = PICK_LIMITS[tool.id]?.[pick.kind]
+    return limit && pick.count > limit.max ? { tool, off: limit.why } : { tool }
+  })
+  const fillet = out.find((e) => e.tool.id === 'fillet')
+  if (pick.kind === 'edge' && fillet) out.push({ tool: fillet.tool, chamfer: true })
+  return out
+}
+
+/** The words for a pick in the slot's chip: "1 face", "3 edges", "1 round face" (a hole's or a peg's wall). */
+export function pickWords(pick: NextPick): string {
+  const noun = { object: ['object', 'objects'], face: ['face', 'faces'], edge: ['edge', 'edges'], round: ['round face', 'round faces'] }[pick.kind]
+  return `${pick.count} ${pick.count === 1 ? noun[0] : noun[1]}`
+}
+
 /** The next slot's order for each pick (the plan's): face push, sketch, shell; object cut, array, hole. */
 const NEXT_ORDER: Record<PickKind, readonly string[]> = {
   face: ['push', 'sketch', 'shell'],

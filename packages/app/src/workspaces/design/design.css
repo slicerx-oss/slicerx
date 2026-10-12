@@ -62,12 +62,20 @@
 .shelf-icon > span { display: none; }
 .shelf-next { position: relative; display: flex; align-items: center; gap: 2px; padding: 0 4px; margin-left: 12px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--accent) 7%, transparent); flex: none; animation: shelf-next-in 120ms linear; }
 @keyframes shelf-next-in { from { opacity: 0; } to { opacity: 1; } }
+/* What is picked, at the slot's start: "1 face", "3 edges"; a tool that cannot take that many is off, with the reason in its tip. */
+.shelf-pick { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; margin-right: 2px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--cyan) 55%, transparent); color: var(--fg); font: var(--fw-medium) var(--fs-xs) var(--f-body); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.shelf-pick b { font-weight: var(--fw-semibold); }
+.shelf-next .shelf-tool[aria-disabled="true"] { color: var(--dim); cursor: default; }
+.shelf-next .shelf-tool[aria-disabled="true"] .sx-ic { color: var(--dim); }
 .shelf-end { margin-left: auto; display: flex; align-items: center; gap: 2px; padding-left: 10px; flex: none; }
 .shelf-sep { width: 1px; height: 20px; margin: 0 6px; background: var(--line-soft); }
 /* The next slot keeps its labels only where the whole shelf has room for them. */
 @media (max-width: 1599px) {
   .shelf-next .shelf-tool > span { display: none; }
   .shelf-next .shelf-tool { padding: 0 7px; }
+  /* the chip keeps its count, as a badge on the slot's corner that takes no room; the words are in its tip */
+  .shelf-pick > span { display: none; }
+  .shelf-pick { position: absolute; top: -7px; left: -7px; z-index: 1; height: 16px; min-width: 16px; justify-content: center; padding: 0 4px; margin: 0; background: var(--ink-1); font-size: var(--fs-xs); line-height: 1; }
 }
 @media (max-width: 1100px) {
   .shelf-tool > span { display: none; }
