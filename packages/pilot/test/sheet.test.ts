@@ -5,11 +5,11 @@
 // its answer.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PilotSheet, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { answerOf, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetTool, type ScriptStep } from '../src/index'
+import { answerOf, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetBindTool, sheetTool, type ScriptStep } from '../src/index'
 import { foldEvents, emptyTranscript, startTurn } from '../ui/reduce'
 
 const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
-const pilot = (steps: ScriptStep[]) => createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool()] })
+const pilot = (steps: ScriptStep[]) => createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool(), sheetBindTool()] })
 
 const DIMS = [
   { key: 'phone_width', label: 'Phone width', value: 71.5, unit: 'mm', source: 'lookup', sourceTitle: 'apple.com', sourceUrl: 'https://www.apple.com/iphone/compare/' },
@@ -83,5 +83,18 @@ describe('pilot.sheet', () => {
     const answer = answerOf(sheet, { case_allowance: 2 })
     const t = foldEvents([{ type: 'sheet', sheet }, { type: 'sheet_answered', sheetId: 'sheet_1', answer }], startTurn(emptyTranscript(), { user: 'hi' }, 0))
     expect(t.turns[0]!.blocks[0]).toMatchObject({ kind: 'sheet', sheet: { id: 'sheet_1' }, answer: { changed: ['case_allowance'] } })
+  })
+
+  it('ties rows to steps after the build, keeping only the sheet\'s own keys', async () => {
+    const bind = { name: 'pilot.sheet_bind', args: { design: 'obj_1', binds: [{ key: 'case_allowance', step: 2 }, { key: 'nope', step: 3 }] } }
+    const events = await play([{ calls: [SHEET] }, { calls: [bind] }, { text: 'Done.' }], () => ({}))
+    const sheetId = events.find((e) => e.type === 'sheet')?.type === 'sheet' ? (events.find((e) => e.type === 'sheet') as { sheet: { id: string } }).sheet.id : ''
+    expect(events.find((e) => e.type === 'sheet_bound')).toEqual({ type: 'sheet_bound', sheetId, design: 'obj_1', binds: [{ key: 'case_allowance', step: 2 }] })
+  })
+
+  it('binds nothing in a conversation that showed no sheet', async () => {
+    const events = await play([{ calls: [{ name: 'pilot.sheet_bind', args: { design: 'obj_1', binds: [{ key: 'a', step: 1 }] } }] }])
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
+    expect(events.some((e) => e.type === 'sheet_bound')).toBe(false)
   })
 })

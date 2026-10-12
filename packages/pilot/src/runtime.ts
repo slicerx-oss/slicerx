@@ -8,6 +8,7 @@ import type {
   ApprovalRequest,
   PilotSheet,
   PilotSheetAnswer,
+  PilotSheetBind,
   ApprovalToken,
   Citation,
   CommandSpec,
@@ -181,8 +182,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const pending = new Map<string, Pending>()
   // Questions waiting for the person's pick, by ask id.
   const asks = new Map<string, (choiceId: string) => void>()
-  // Dimension sheets waiting for the person, by sheet id.
+  // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
   const sheets = new Map<string, (values: Record<string, number>) => void>()
+  const lastSheet = new Map<string, PilotSheet>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
 
   const tools = new Map<string, AnyTool>()
@@ -405,8 +407,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           resolve(answer)
         })
         signal.addEventListener('abort', onAbort, { once: true })
+        lastSheet.set(sessionId, sheet)
         emit({ type: 'sheet', sheet })
       })
+    ctx.bindSheet = (design, binds) => {
+      const sheet = lastSheet.get(sessionId)
+      if (!sheet) return false
+      const keys = new Set(sheet.dims.map((d) => d.key))
+      emit({ type: 'sheet_bound', sheetId: sheet.id, design, binds: binds.filter((b) => keys.has(b.key)) })
+      return true
+    }
 
     let gated: Gated
     try {

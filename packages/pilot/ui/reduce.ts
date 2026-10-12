@@ -13,6 +13,7 @@ import type {
   PilotLookup,
   PilotSheet,
   PilotSheetAnswer,
+  PilotSheetBind,
   PluginLoad,
   SettingsDiff,
   ToolDisplay,
@@ -52,7 +53,7 @@ export type Block =
   | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean }
   | { kind: 'lookup'; id: string; lookup: PilotLookup }
   | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean }
-  | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean }
+  | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
   | { kind: 'error'; id: string; message: string; retryable: boolean }
@@ -343,6 +344,8 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
     }
     case 'sheet_answered':
       return mapBlocks(s, (b) => (b.kind === 'sheet' && b.sheet.id === event.sheetId && b.answer === null ? { ...b, answer: event.answer } : b))
+    case 'sheet_bound':
+      return mapBlocks(s, (b) => (b.kind === 'sheet' && b.sheet.id === event.sheetId ? { ...b, bound: { design: event.design, binds: event.binds } } : b))
     case 'ask_answered':
       return mapBlocks(s, (b) => (b.kind === 'choice' && b.askId === event.askId && b.picked === null ? { ...b, picked: event.choiceId } : b))
     case 'approval_resolved':

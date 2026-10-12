@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { PilotSheet, PilotSheetAnswer } from '@slicerx/contracts'
-import { Icon } from '@slicerx/ui'
+import { Button, Icon } from '@slicerx/ui'
+import { useState } from 'react'
 import { safeUrl } from './citations'
 
 const SOURCE: Record<PilotSheet['dims'][number]['source'], string> = { asked: 'you said', lookup: 'looked up', photo: 'from your photo', guess: 'guess' }
@@ -10,7 +11,9 @@ const SOURCE: Record<PilotSheet['dims'][number]['source'], string> = { asked: 'y
  * A dimension sheet as it stays in the conversation: each size with its unit and where it came from, guesses marked,
  * and once answered the values used and which ones the person changed. Editing it happens on the sheet itself.
  */
-export function SheetRecord({ sheet, answer }: { sheet: PilotSheet; answer: PilotSheetAnswer | null }) {
+export function SheetRecord({ sheet, answer, actionable = false, onConfirm }: { sheet: PilotSheet; answer: PilotSheetAnswer | null; actionable?: boolean; onConfirm?: ((sheetId: string, values: Record<string, number>) => Promise<void>) | undefined }) {
+  const [sent, setSent] = useState(false)
+  const canConfirm = actionable && !answer && onConfirm !== undefined
   return (
     <div className="lookup-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record">
       <div className="lookup-rec-t">
@@ -34,7 +37,21 @@ export function SheetRecord({ sheet, answer }: { sheet: PilotSheet; answer: Pilo
           )
         })}
       </dl>
-      <span className="lookup-rec-s">{answer ? (answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown') : 'Waiting for you to confirm'}</span>
+      {canConfirm ? (
+        <Button
+          size="sm"
+          disabled={sent}
+          data-testid="mimir-sheet-confirm"
+          onClick={() => {
+            setSent(true)
+            void onConfirm(sheet.id, Object.fromEntries(sheet.dims.map((d) => [d.key, d.value]))).catch(() => setSent(false))
+          }}
+        >
+          Build with these sizes
+        </Button>
+      ) : (
+        <span className="lookup-rec-s">{answer ? (answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown') : 'Waiting for you to confirm'}</span>
+      )}
     </div>
   )
 }
