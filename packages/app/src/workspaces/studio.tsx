@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The plate tab: Design and Slice share one viewport, so switching never rebuilds the scene; the panes around it
-// change with the mode. Slice shows the slice in place (toolpaths by default), with the layer dock and the slice summary.
+// The plate tabs: mimir, Design and Slice share one viewport, so switching never rebuilds the scene; the panes around
+// it change with the mode. mimir and Design show the same design; mimir puts the chat beside it in place of the panes. Slice shows the slice in place (toolpaths by default), with the layer dock and the slice summary.
 import { lazy, Suspense, useEffect, useRef, type CSSProperties } from 'react'
 import { RenderMenu, ViewMenu } from './view-menus'
 import { useLayout, useLookChoice } from '../first-run/look'
@@ -78,6 +78,9 @@ const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ de
 const Shelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Shelf })))
 const DesignTimeline = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignTimeline })))
 const SelectPill = lazy(() => import('./design/design-panes').then((m) => ({ default: m.SelectPill })))
+// mimir's chat and view caption load the first time its tab opens.
+const MimirChat = lazy(() => import('./mimir/mimir-panes').then((m) => ({ default: m.MimirChat })))
+const MimirCaption = lazy(() => import('./mimir/mimir-panes').then((m) => ({ default: m.MimirCaption })))
 
 // norn (edit from Preview) loads with the first click on a toolpath.
 const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default: m.NornLayer })))
@@ -103,11 +106,14 @@ export function Studio() {
   const modelMode = useModelMode()
   useBoundValues(true)
   const design = modelMode === 'design'
+  const mimir = modelMode === 'mimir'
+  // Either one shows the design rather than the plate set up for printing.
+  const cad = design || mimir
   // Slice shows the sliced toolpaths in place of the models (the default look); the layer dock, legend and color menu come with them.
   // Painting, brim ears and lay on face work on the solid models, so the layers step aside while one is on.
   const plateTool = useTool()
   const surfaceTool = plateTool === 'paint' || plateTool === 'brim' || plateTool === 'face'
-  const layers = useApp((s) => showsLayers(s)) && !design && !surfaceTool
+  const layers = useApp((s) => showsLayers(s)) && !cad && !surfaceTool
   // Whether the slice on screen is the plate as it is now: tests and styles read it from the studio.
   const sliceState = useApp((s) => (s.slice.status === 'done' ? (s.slice.stale ? 'stale' : 'current') : s.slice.status))
   const slicesDone = useApp((s) => s.slicesDone)
@@ -119,7 +125,7 @@ export function Studio() {
   // Cut, Paint, Brim ears and the modeling tools open in the Objects card: with the objects in the right pane, opening a
   // tool opens the pane, which starts shut.
   const objectTool = useApp((s) => s.objectTool)
-  const toolOpen = !design && (plateTool === 'paint' || plateTool === 'brim' || objectTool === 'cut' || isCadTool(objectTool))
+  const toolOpen = !cad && (plateTool === 'paint' || plateTool === 'brim' || objectTool === 'cut' || isCadTool(objectTool))
   useEffect(() => {
     if (toolOpen && objectsRight && !railOpen(get().rails, 'preview', other, true)) setRail('preview', other, true)
   }, [toolOpen, objectsRight, other])
@@ -136,10 +142,10 @@ export function Studio() {
   // Painting, brim ears and lay on face are print setup: they close when Design opens.
   // The full geometry engine starts loading on the way into Design, so its first tool does not wait.
   useEffect(() => {
-    if (!design) return
+    if (!cad) return
     if (['paint', 'brim', 'face'].includes(toolStore.getState().tool)) setTool('move')
     warmFullEngine()
-  }, [design])
+  }, [cad])
 
   // Finished slices no view or plate holds any more are let go in the slicer.
   useEffect(() => startSliceRelease(host.slicer), [host])
@@ -176,13 +182,17 @@ export function Studio() {
   const selected = plate[0]
 
   return (
-    <div className="studio" data-mode="prepare" data-layers={layers || undefined} data-slice={sliceState} data-slices={slicesDone} data-model-mode={design ? 'design' : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
+    <div className="studio" data-mode="prepare" data-layers={layers || undefined} data-slice={sliceState} data-slices={slicesDone} data-model-mode={cad ? modelMode : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
       {design ? (
         <Suspense fallback={<div className="shelf" aria-hidden="true" />}>
           <Shelf />
         </Suspense>
       ) : null}
-      {design ? (
+      {mimir ? (
+        <Suspense fallback={<div className="mimir-chat" aria-hidden="true" />}>
+          <MimirChat />
+        </Suspense>
+      ) : design ? (
         <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280} tab={{ panel: 'model-tree', shutFully: true }}>
           <Suspense fallback={<Loading />}>
             <DesignLeft />
@@ -200,12 +210,17 @@ export function Studio() {
           <OpeningPicture />
         </Suspense>
         <SliceProgress />
-        {design ? null : <ViewSelectionMenu />}
-        {design || !hasPreview ? null : <SliceLookSwitch />}
-        {design || phone ? null : <ParkedChip />}
+        {cad ? null : <ViewSelectionMenu />}
+        {cad || !hasPreview ? null : <SliceLookSwitch />}
+        {cad || phone ? null : <ParkedChip />}
         <div className="hud hud-top">
           <div className="hud-col">
             <div className="hud-row">
+              {mimir ? (
+                <Suspense fallback={null}>
+                  <MimirCaption />
+                </Suspense>
+              ) : null}
               <RenderMenu />
               {design ? (
                 <Suspense fallback={null}>
@@ -223,8 +238,8 @@ export function Studio() {
         </div>
 
         <div className="hud hud-bl">
-          {design || layout.plateList === 'sidebar' ? null : <PlateList layout={layout} />}
-          {design ? null : (
+          {cad || layout.plateList === 'sidebar' ? null : <PlateList layout={layout} />}
+          {cad ? null : (
             <div className="platechip sx-overlay">
               <b>{plateName}</b>
               <span className="platechip-name" {...(selected ? tipAttrs({ title: selected.name }) : {})}>{selected ? <MiddleName name={selected.name} /> : plateLoading ? 'Loading' : 'Empty'}</span>
@@ -239,10 +254,10 @@ export function Studio() {
         </div>
 
         {/* a phone views and prints: no plate tools */}
-        {design || phone ? null : <PlateToolbar layout={layout} />}
+        {cad || phone ? null : <PlateToolbar layout={layout} />}
         {layers ? <LayerDock /> : null}
         {/* After the playback bar: on a phone it sits under it, so opening the bar moves nothing above it. */}
-        {!design && !sliceInSidebar ? (
+        {!cad && !sliceInSidebar ? (
           <div className="slice-float sx-overlay">
             <SliceBlock label={layout.primaryAction.label} compact />
           </div>
@@ -257,12 +272,12 @@ export function Studio() {
             <NornLayer />
           </Suspense>
         ) : null}
-        {design ? (
+        {cad ? (
           <Suspense fallback={null}>
             <DesignTimeline />
           </Suspense>
         ) : null}
-        {design ? null : (
+        {cad ? null : (
           <>
             <LayerStrip />
             <ZoneLegend layers={layers} />
@@ -270,7 +285,7 @@ export function Studio() {
         )}
       </section>
 
-      {design ? (
+      {mimir ? null : design ? (
         <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={312} tab={{ panel: 'model-inspector', shutFully: true }}>
           <Suspense fallback={<Loading />}>
             <DesignRight />

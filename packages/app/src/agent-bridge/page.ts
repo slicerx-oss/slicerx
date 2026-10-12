@@ -18,6 +18,7 @@ import type { Capture, LogKind } from './capture'
 import { BridgeError, click, elements, fill, pressKey, testids, waitFor } from './dom'
 import { loadFaces } from './fonts'
 import { autoSliceMode } from '../state/auto-slice-mode'
+import { cadShown } from '../state/model-mode'
 
 export { BridgeError } from './dom'
 
@@ -69,6 +70,8 @@ export function appState(s: AppState): Record<string, unknown> {
   const warnings = s.slice.status === 'done' && !s.slice.stale ? s.slice.result.warnings : []
   return {
     tab: s.workspace,
+    // The plate tabs' mode (mimir, design or slice), as the tab bar shows it.
+    ...(s.workspace === 'prepare' ? { mode: cadShown() ? s.modelMode : 'slice' } : {}),
     plate: {
       loading: s.plateLoading,
       active: s.activePlate,

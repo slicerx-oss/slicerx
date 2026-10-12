@@ -1,0 +1,114 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// The mimir tab: first in the bar, the chat on the left at 420 px and the design's view filling the rest, on the ground
+// grid seen from the top while nothing is on the plate. The chat's edge resizes it between 340 px and half the window,
+// and the width is kept. Screenshots in both themes go to the test output for review.
+import { type Page } from '@playwright/test'
+import { expect, test, viewportReady } from './fixtures'
+
+type Sx = { setState(p: unknown): void; getState(): { modelMode: string; plate: unknown[]; paneSizes: Record<string, number> } }
+type Vp = { camera: { position: { x: number; y: number; z: number } } }
+
+async function open(page: Page, scheme: 'light' | 'dark' = 'dark', prefs: Record<string, unknown> = {}): Promise<void> {
+  await page.addInitScript(
+    ([scheme, prefs]) => {
+      if (sessionStorage.getItem('sx-e2e')) return
+      sessionStorage.setItem('sx-e2e', '1')
+      localStorage.setItem('slicerx.debug', '1')
+      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, scheme, themeFollowsSystem: false, ...prefs }))
+    },
+    [scheme, prefs] as const,
+  )
+  await page.goto('./')
+  await viewportReady(page)
+}
+
+/** Clears the plate, then opens the mimir tab: the empty state. */
+async function openEmpty(page: Page): Promise<void> {
+  await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
+  await page.getByTestId('tab-mimir').click()
+  await expect(page.getByTestId('mimir-chat')).toBeVisible()
+}
+
+test.describe('the mimir tab', () => {
+  test.skip(({ isMobile }) => isMobile, 'Desktop only: phones have no modeling tabs')
+
+  test('comes first, holds the chat at 420 px beside the view, and opens on the top view of the grid', async ({ page }) => {
+    await open(page)
+    const tabs = page.locator('.sx-tab[data-mode]')
+    await expect(tabs).toHaveText(['mimir', 'Model', 'Slice'])
+    await openEmpty(page)
+    await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
+    await expect(page.locator('.studio[data-model-mode="mimir"]')).toBeVisible()
+    const chat = (await page.getByTestId('mimir-chat').boundingBox())!
+    const view = (await page.locator('.studio > .vp').boundingBox())!
+    const studio = (await page.locator('.studio').boundingBox())!
+    expect(chat.width).toBeCloseTo(420, 0)
+    expect(chat.x).toBeCloseTo(studio.x, 0)
+    // the view takes the rest of the width
+    expect(view.x).toBeCloseTo(chat.x + chat.width, 0)
+    expect(view.x + view.width).toBeCloseTo(studio.x + studio.width, 0)
+    // composer pinned at the chat's bottom
+    const composer = (await page.getByTestId('mimir-composer').boundingBox())!
+    expect(chat.y + chat.height - (composer.y + composer.height)).toBeLessThan(24)
+    // the top view: the camera looks straight down at the ground grid
+    await expect(page.getByTestId('mimir-caption')).toHaveText('Top, XY')
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const p = (window as unknown as { __vp: Vp }).__vp.camera.position
+          return Math.abs(p.y) / Math.hypot(p.x, p.y, p.z)
+        }),
+      )
+      .toBeGreaterThan(0.95)
+    // no Slice or Model panes here; Model's timeline is
+    await expect(page.locator('.studio > .pane')).toHaveCount(0)
+    await expect(page.locator('.plate-tools')).toHaveCount(0)
+  })
+
+  test('shares the design with Model: the same plate either side of a switch', async ({ page }) => {
+    await open(page)
+    const before = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.length)
+    await page.getByTestId('tab-mimir').click()
+    await page.getByTestId('tab-model').click()
+    await expect(page.getByTestId('model-tree')).toBeVisible()
+    await page.getByTestId('tab-mimir').click()
+    await expect(page.locator('.studio[data-model-mode="mimir"]')).toBeVisible()
+    expect(await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.length)).toBe(before)
+  })
+
+  test('the chat edge resizes between 340 px and half the window, and the width is kept', async ({ page }) => {
+    await open(page)
+    await openEmpty(page)
+    const edge = page.getByTestId('mimir-split').getByRole('separator')
+    const chat = page.getByTestId('mimir-chat')
+    const drag = async (dx: number) => {
+      const b = (await edge.boundingBox())!
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2, { steps: 8 })
+      await page.mouse.up()
+    }
+    await drag(80)
+    expect((await chat.boundingBox())!.width).toBeCloseTo(500, -1)
+    await drag(2000)
+    expect((await chat.boundingBox())!.width).toBeCloseTo(720, 0)
+    await drag(-2000)
+    expect((await chat.boundingBox())!.width).toBeCloseTo(340, 0)
+    await drag(100)
+    const kept = Math.round((await chat.boundingBox())!.width)
+    await page.reload()
+    await viewportReady(page)
+    await page.getByTestId('tab-mimir').click()
+    await expect.poll(async () => Math.round((await chat.boundingBox())!.width)).toBe(kept)
+  })
+
+  for (const scheme of ['dark', 'light'] as const) {
+    test(`screenshot, empty, ${scheme}`, async ({ page }, info) => {
+      await open(page, scheme)
+      await openEmpty(page)
+      await page.waitForTimeout(800)
+      await page.screenshot({ path: info.outputPath(`mimir-empty-${scheme}.png`) })
+    })
+  }
+})

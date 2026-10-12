@@ -25,7 +25,7 @@ import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
 import { appStore, selectedIds, set, shownSlice, toast, toggledSelection, useApp, type AppState } from '../state/store'
-import { cadShown } from '../state/model-mode'
+import { cadShown, showsDesign } from '../state/model-mode'
 import { isPhoneLayout, onPhoneLayout } from '../lib/phone-layout'
 import { modelReveal, type RevealMemory } from './model-reveal'
 import { webgl2Available, watchFor, withRetries } from './context-retry'
@@ -55,7 +55,7 @@ const prefersReducedMotion = (): boolean => typeof matchMedia === 'function' && 
 
 /** The render mode for the state: Model's CAD look, or the look picked for Slice. */
 export function modelLook(s: Pick<AppState, 'workspace' | 'modelMode' | 'look'>): RenderMode {
-  if (s.workspace === 'prepare' && s.modelMode === 'design') return s.look === 'xray' ? 'xray' : 'cad'
+  if (showsDesign(s)) return s.look === 'xray' ? 'xray' : 'cad'
   return s.look
 }
 
@@ -121,7 +121,7 @@ const PAINT_LAYERS = ['color', 'seam', 'support', 'fuzzy'] as const
 const VOLUME_COLOR = { negative: '#ff5555', support_blocker: '#ffb86c', support_enforcer: '#50fa7b', modifier: '#8be9fd' } as const
 
 /** Design models parts on a plain ground: no prime tower, which is print setup. */
-const designing = (s: AppState): boolean => s.workspace === 'prepare' && s.modelMode === 'design' && cadShown()
+const designing = (s: AppState): boolean => showsDesign(s) && cadShown()
 
 /**
  * A volume's positions in its object's space, baked once per part and placement: the viewport keeps an object built
@@ -481,7 +481,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       loadAreas(appStore.getState().printerId)
       offs.push(appStore.subscribe((s) => loadAreas(s.printerId)))
       // Model's box select: on with no tool open; the box picks objects, the first one primary.
-      const boxOn = (st: AppState) => vp.setBoxSelect?.(st.workspace === 'prepare' && st.modelMode === 'design' && st.objectTool === null)
+      const boxOn = (st: AppState) => vp.setBoxSelect?.(showsDesign(st) && st.objectTool === null)
       boxOn(appStore.getState())
       offs.push(appStore.subscribe((st, prev) => {
         if (st.workspace !== prev.workspace || st.modelMode !== prev.modelMode || st.objectTool !== prev.objectTool) boxOn(st)
@@ -507,7 +507,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (toolStore.getState().tool === 'probe') return void probeHandler()?.(e)
         // Model with Faces or Edges in the pick filter: the click picks a face or an edge (plate/sub-pick.ts).
         const st = appStore.getState()
-        if (st.workspace === 'prepare' && st.modelMode === 'design' && st.pickFilter.some((k) => k !== 'object')) {
+        if (showsDesign(st) && st.pickFilter.some((k) => k !== 'object')) {
           void pickSub(e, edgeAt).then((done) => {
             if (!done) selectObject(e)
           })
@@ -527,7 +527,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       // the edge filter shows the edge a click would pick.
       let hoverLines: { from: [number, number, number]; to: [number, number, number] }[] = []
       const showPicks = (s: AppState) => {
-        const inModel = s.workspace === 'prepare' && s.modelMode === 'design'
+        const inModel = showsDesign(s)
         const free = inModel && s.objectTool === null
         vp.setSelectedFaces?.(inModel ? s.subPicks.filter((p) => p.kind === 'face') : [])
         vp.setPickFaces?.(free && s.pickFilter.includes('face'))

@@ -224,10 +224,10 @@ export interface PendingApproval {
 
 export interface AppState {
   workspace: Workspace
-  /** The first tab's mode: Design (modeling) or Slice (the plate). Session only; it starts from `modelModeDefault`. */
+  /** The plate tabs' mode: mimir (modeling by chat), Design (modeling) or Slice (the plate). Session only; it starts from `modelModeDefault`. */
   modelMode: ModelMode
   /** The mode the first tab opens in on launch (Settings > Look and feel, first run). Changing it never moves the open session. */
-  modelModeDefault: ModelMode
+  modelModeDefault: 'slice' | 'design'
   /** How Slice shows the slice: solid models, layer lines on them, or the toolpaths in their place (the default). */
   sliceLook: SliceLook
   /** Expanded (true) or collapsed to an icon rail (false), per workspace and side. */
@@ -919,7 +919,8 @@ export function showSliced(): void {
   if (s.workspace !== 'prepare' || s.modelMode !== 'slice' || s.sliceLook !== 'toolpaths') set({ workspace: 'prepare', modelMode: 'slice', sliceLook: 'toolpaths' })
 }
 
-export type ModelMode = 'slice' | 'design'
+/** mimir and Design both show the design; Slice shows the plate set up for printing. */
+export type ModelMode = 'slice' | 'design' | 'mimir'
 
 /** Opens the first tab in a mode, from any tab, in one step. */
 export function setModelMode(mode: ModelMode): void {

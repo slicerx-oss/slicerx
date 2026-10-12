@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The first two tabs: Model and Slice. Both are workspace `prepare` underneath, in its two modes, so links, hand-offs
-// and anything that opens `prepare` behave as before; the open mode's tab is the current page, and on another tab
-// neither is. Editions without modeling tools show a plain Slice tab instead (top-bar.tsx).
+// The first three tabs: mimir, Model and Slice, in the order of the work. All are workspace `prepare` underneath, in
+// its three modes, so links, hand-offs and anything that opens `prepare` behave as before, and mimir and Model share
+// one design and one view. The open mode's tab is the current page, and on another tab none is. Editions without
+// modeling tools show a plain Slice tab instead (top-bar.tsx).
 import { Icon } from '@slicerx/ui'
 import { useRef } from 'react'
 import { useFullEngine, warmFullEngine } from '../geom/full-engine'
 import { useModelMode } from '../state/model-mode'
 import { setModelMode, useApp, type ModelMode } from '../state/store'
+import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 
-const MODES: readonly { mode: ModelMode; label: string; icon: 'model' | 'slice'; tab: string; tip: string }[] = [
+const MODES: readonly { mode: ModelMode; label: string; icon: 'mimir' | 'model' | 'slice'; tab: string; tip: string }[] = [
+  { mode: 'mimir', label: ASSISTANT_NAME, icon: 'mimir', tab: 'mimir', tip: 'mode.mimir' },
   { mode: 'design', label: 'Model', icon: 'model', tab: 'model', tip: 'mode.model' },
   // Slice keeps the workspace's id (and test id, tab-prepare), so links and tests that open `prepare` land on the plate.
   { mode: 'slice', label: 'Slice', icon: 'slice', tab: 'prepare', tip: 'mode.slice' },

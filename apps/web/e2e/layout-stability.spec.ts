@@ -221,6 +221,31 @@ test.describe('controls never move when pressed', () => {
     expect(moved).toEqual([])
   })
 
+  test('the mimir tab', async ({ page, isMobile }, info) => {
+    test.skip(isMobile, 'Phones have no modeling tabs')
+    await open(page, { settingsMode: 'advanced' })
+    // Pressing the tab moves nothing in the bar: the tabs, the project name and the buttons on the right.
+    const boxes = () => page.locator('.sx-appbar').locator('.sx-tab, .sx-projname, .sx-btn').evaluateAll((els) => els.map((e) => {
+      const r = e.getBoundingClientRect()
+      return { x: r.x, y: r.y, w: r.width, h: r.height }
+    }))
+    const before = await boxes()
+    await page.getByTestId('tab-mimir').click()
+    await expect(page.getByTestId('mimir-chat')).toBeVisible()
+    await page.waitForTimeout(350)
+    const after = await boxes()
+    expect(after.length).toBe(before.length)
+    const moved: Moved[] = []
+    after.forEach((a, i) => {
+      const b = before[i]!
+      const d = { dx: a.x - b.x, dy: a.y - b.y, dw: a.w - b.w, dh: a.h - b.h }
+      if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control: 'tab-mimir', what: `top bar item ${i}`, ...d })
+    })
+    moved.push(...(await probe(page, 'mimir chat', page.getByTestId('mimir-chat'))))
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
   test('Settings, every section', async ({ page }, info) => {
     test.slow()
     await open(page, { settingsMode: 'advanced' })
