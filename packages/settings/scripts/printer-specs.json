@@ -61,6 +61,18 @@
     "https://bambulab.com/en/h2c"
    ]
   },
+  "bambu-h2d-pro": {
+   "flavor": "marlin",
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/BBL/machine/Bambu%20Lab%20H2D%20Pro.json"
+   ]
+  },
+  "bambu-x2d": {
+   "flavor": "marlin",
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/BBL/machine/Bambu%20Lab%20X2D.json"
+   ]
+  },
   "bambu-h2s": {
    "flavor": "marlin",
    "sources": [

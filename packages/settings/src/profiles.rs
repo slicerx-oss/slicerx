@@ -496,7 +496,7 @@ pub fn process_speed_source(printer: &str, tier: &str) -> Option<&'static str> {
 }
 
 /// Printers whose Fine tier carries the tuned quality values (from the shared P2S and H2C profiles).
-const FINE_FAMILY: [&str; 5] = ["bambu-p2s", "bambu-h2c", "bambu-h2d", "bambu-h2s", "bambu-x2d"];
+const FINE_FAMILY: [&str; 6] = ["bambu-p2s", "bambu-h2c", "bambu-h2d", "bambu-h2d-pro", "bambu-h2s", "bambu-x2d"];
 
 /// The quality values the Fine tier adds on the P2S and H2C family, between Bambu's High Quality preset and the
 /// shared profiles: outer wall 50 on the standard hotend, moderate overhang speeds, a smoother support
