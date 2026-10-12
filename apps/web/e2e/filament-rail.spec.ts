@@ -130,7 +130,7 @@ const UNCONNECTED = { handPrinters: [{ id: 'e2e-desk-a1', name: 'Desk A1', profi
 for (const settingsMode of ['simple', 'expert'] as const) {
   test(`Add filament shows in ${settingsMode === 'simple' ? 'Simple' : 'Expert'}, opens the new filament, and moves nothing`, async ({ page }) => {
     await open(page, { ...UNCONNECTED, settingsMode })
-    await expect(foot(page)).toContainText('Click a filament to change its color or material.')
+    await expect(foot(page)).toContainText('Click a filament to change it.')
     const add = page.getByTestId('slice-filament-add')
     await expect(add).toHaveText('Add filament')
     const count = await page.getByTestId('slice-filament-slot').count()
@@ -151,7 +151,7 @@ for (const settingsMode of ['simple', 'expert'] as const) {
 test("with the printer's slots, the rail says where they come from, has no add, and resets to the printer", async ({ page }) => {
   await open(page)
   await expect(foot(page)).toHaveAttribute('data-from', 'printer')
-  await expect(foot(page)).toContainText(/^Filled in from the printer('s \w+)?\. Click a slot to change its color or material for this project\. To add a filament, load it on the printer\.$/)
+  await expect(foot(page)).toContainText(/^From the printer('s \w+)?\. Click a slot to change it\.$/)
   await expect(page.getByTestId('slice-filament-add')).toHaveCount(0)
   await expect(page.getByTestId('slice-filament-foot-reset')).toHaveCount(0)
   // A slot changed here offers the way back, in place.

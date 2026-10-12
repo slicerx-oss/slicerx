@@ -211,17 +211,18 @@ export interface RailFootProps {
 }
 
 /**
- * The line under the rail. With no printer filling the slots in: what a click on a ring does, and Add filament. With
- * the printer's slots: where they come from, how to change one for this project, that a new filament is loaded on the
- * printer, and Reset to printer once a slot was changed here. The rail above it never changes height, so adding a
+ * The line under the rail, kept to one line so Simple fits at 1440 x 900. With no printer filling the slots in: what a
+ * click on a ring does, and Add filament. With the printer's slots: where they come from and that a click changes one,
+ * with the rest (for this project only, load a new filament on the printer) in its tip, and Reset to printer once a
+ * slot was changed here. The rail above it never changes height, so adding a
  * filament never moves this line.
  */
 export function RailFoot({ count, fromPrinter, system, edited }: RailFootProps) {
   if (fromPrinter) {
     return (
       <div className="rail-foot" data-testid="slice-filament-foot" data-from="printer">
-        <p className="rail-foot-text">
-          Filled in from {unitWords(system)}. Click a slot to change its color or material for this project. To add a filament, load it on the printer.
+        <p className="rail-foot-text" {...tipAttrs({ title: `Filled in from ${unitWords(system)}`, body: 'A change here is for this project only. To add a filament, load it on the printer.' })}>
+          From {unitWords(system)}. Click a slot to change it.
           {edited ? (
             <>
               {' '}
@@ -237,7 +238,7 @@ export function RailFoot({ count, fromPrinter, system, edited }: RailFootProps) 
   const full = count >= MAX_SLOTS
   return (
     <div className="rail-foot" data-testid="slice-filament-foot">
-      <p className="rail-foot-text">Click a filament to change its color or material.</p>
+      <p className="rail-foot-text">Click a filament to change it.</p>
       <Button
         size="sm"
         icon="plus"
