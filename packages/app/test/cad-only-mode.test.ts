@@ -4,7 +4,7 @@
 // and its Open in SlicerX link names the downloaded design by hash and file name only.
 import { afterEach, describe, expect, it } from 'vitest'
 import { cadShown, hostSlices, modelMode, setHostSlices, stayInModel, toggleModelMode } from '../src/state/model-mode'
-import { openLink } from '../src/shell/open-in-app'
+import { appLink } from '../src/shell/open-in-app'
 import { get, set } from '../src/state/store'
 
 describe('the CAD-only build', () => {
@@ -34,6 +34,6 @@ describe('the CAD-only build', () => {
   })
 
   it('links to the downloaded design by its hash and name', () => {
-    expect(openLink('slicerx', 'ab'.repeat(32), 'My clip.sx3mf')).toBe(`slicerx://open?download=${'ab'.repeat(32)}&name=My%20clip.sx3mf`)
+    expect(appLink('slicerx', 'ab'.repeat(32), 'My clip.sx3mf')).toBe(`slicerx://open?download=${'ab'.repeat(32)}&name=My%20clip.sx3mf`)
   })
 })
