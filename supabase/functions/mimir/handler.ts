@@ -86,8 +86,10 @@ const CAP_MESSAGES: Record<string, [number, string]> = {
 }
 // refusals that an exact token count can turn around
 const DAILY_CAPS = new Set(['install_daily', 'ip_daily', 'edition_daily'])
-// refusals that count toward the per-minute rates, so a refused client cannot retry for free
-const COUNTED = new Set([...DAILY_CAPS, 'install_rate', 'ip_rate', 'install_busy', 'ip_busy', 'edition_busy'])
+// refusals that count toward the per-minute rates, so a refused client cannot retry for free.
+// Rate refusals are not counted: they come only while the window is already full, and
+// counting them would grow the log at the flood's own rate.
+const COUNTED = new Set([...DAILY_CAPS, 'install_busy', 'ip_busy', 'edition_busy'])
 
 // Each install's conversations cache apart from every other install's: a mark after the
 // shared tools and system prompt, so neither a cache hit's speed nor the cost /quota shows
