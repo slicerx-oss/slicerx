@@ -13,7 +13,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost } from '@slicerx/cad-history'
 import { modelArg, vec3, type GeomCall } from './args'
-import { designArg, designSummary, faceAt, item, partAt, type Design } from './design-tools'
+import { designArg, designSummary, faceAt, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 
 type V3 = [number, number, number]
@@ -620,15 +620,58 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const shell = defineTool({
+    name: 'geom.shell',
+    version: '1.1.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. With "design" it adds a shell step (the open faces kept by their keys, so the step follows them through edits); with a model it writes the new STL and reports the walls.',
+    input: z.object({
+      model: modelOrDesign,
+      design: designArg.optional(),
+      part: partArg,
+      open: z.array(z.object({ at: vec3.describe('A point on the face, mm'), normal: vec3.describe('Its outward normal') })).max(64).default([]).describe('Faces to leave open, such as the top of a box'),
+      wall_mm: z.number().min(0.2).max(100),
+    }),
+    async run(i) {
+      oneOf(i)
+      if (i.design) {
+        const d = designOf(i.design)
+        const picks = i.open.map((f) => faceAt(d, f.at as V3, f.normal as V3))
+        const part = i.part ?? picks[0]?.part ?? 0
+        if (picks.some((p) => p.part !== part)) throw new ToolInputError('open: every open face must be on the part being shelled')
+        await designs().add(d, part, { op: 'shell', open: i.open.map((f, k) => ({ at: f.at as V3, normal: f.normal as V3, ...(picks[k]?.key ? { key: picks[k]!.key } : {}) })), wallMm: i.wall_mm })
+        return stepOut(d, 'Shelled')
+      }
+      const out = await call('shell', { mesh: { stlPath: await path(i.model!) }, open: i.open, wallMm: i.wall_mm })
+      return { summary: `Shelled to ${i.wall_mm} mm walls${i.open.length ? `, ${i.open.length} face${i.open.length === 1 ? '' : 's'} open` : ''}`, output: lean(out) }
+    },
+  })
+
+  const stepArg = z.union([z.number().int().min(1), z.string().min(1)]).optional().describe('With a design: read it as it was right after this step (an index from 1, a step id or its name, such as "Fillet 1.5 mm"); default the latest')
+
   const info = defineTool({
     name: 'geom.info',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: 'Check a model: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has.',
-    input: z.object({ model: modelArg }),
+    description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step.',
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), step: stepArg }),
     async run(i) {
-      const out = await call('info', { mesh: { stlPath: await path(i.model) } })
+      oneOf(i)
+      if (i.design) {
+        const d = designOf(i.design)
+        const parts = await partsAt(designs(), d, i.step)
+        const out = []
+        for (const [k, p] of parts.entries()) {
+          const w = bakeMesh(p, d.transform)
+          out.push({ part: k, name: p.name, slot: p.slot, ...(await engine('info', { mesh: { positions: Array.from(w.positions), indices: Array.from(w.indices) } })) })
+        }
+        const closed = out.every((p) => (p as { watertight?: unknown }).watertight === true)
+        return { summary: `${out.length} part${out.length === 1 ? '' : 's'}, ${closed ? 'closed' : 'not closed'}`, output: { design: d.id, ...(i.step !== undefined ? { step: i.step } : {}), parts: out } }
+      }
+      const out = await call('info', { mesh: { stlPath: await path(i.model!) } })
       return { summary: `${out['watertight'] === true ? 'Closed' : 'Not closed'}, ${Math.round(Number(out['volumeMm3'] ?? 0))} mm3, ${String(out['components'] ?? '?')} shell(s)`, output: out }
     },
   })
@@ -653,33 +696,30 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'read',
     description:
-      'Measure a model as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. Pick a face by a point on it and its outward normal, as slicerx_geom_faces lists them; snap_mm snaps the pick to an edge or a corner that close, to measure from an edge.',
-    input: z.object({ model: modelArg, a: faceRef, b: faceRef.optional(), snap_mm: z.number().min(0).max(5).default(0).describe('Snap to an edge or corner within this distance, mm') }),
+      'Measure a model or a design as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. Pick a face by a point on it and its outward normal, as slicerx_geom_faces lists them; snap_mm snaps the pick to an edge or a corner that close, to measure from an edge.',
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), step: stepArg, a: faceRef, b: faceRef.optional(), snap_mm: z.number().min(0).max(5).default(0).describe('Snap to an edge or corner within this distance, mm') }),
     async run(i) {
-      const stlPath = await path(i.model)
-      const feature = async (f: z.infer<typeof faceRef>): Promise<unknown> => (await call('measure.feature', { mesh: { stlPath }, pick: await pick(stlPath, f), snapMm: i.snap_mm }))['feature']
+      oneOf(i)
+      let feature: (f: z.infer<typeof faceRef>) => Promise<unknown>
+      let measureCall: (req: Record<string, unknown>) => Promise<Record<string, unknown>>
+      if (i.design) {
+        const d = designOf(i.design)
+        const parts = await partsAt(designs(), d, i.step)
+        feature = async (f) => {
+          if (!f.at) throw new ToolInputError('a, b: give "at" (a point on the face) and its "normal"')
+          const hit = faceAt(d, f.at as V3, f.normal as V3 | undefined, parts)
+          return (await engine('measure.feature', { mesh: item(d, hit.part, parts), pick: { triangle: hit.triangle, at: f.at }, snapMm: i.snap_mm }))['feature']
+        }
+        measureCall = (req) => engine('measure', req)
+      } else {
+        const stlPath = await path(i.model!)
+        feature = async (f) => (await call('measure.feature', { mesh: { stlPath }, pick: await pick(stlPath, f), snapMm: i.snap_mm }))['feature']
+        measureCall = (req) => call('measure', req)
+      }
       const a = await feature(i.a)
       const b = i.b ? await feature(i.b) : undefined
-      const m = await call('measure', { a, ...(b !== undefined ? { b } : {}) })
+      const m = await measureCall({ a, ...(b !== undefined ? { b } : {}) })
       return { summary: `Measured: ${words(m)}`, output: { measurement: m, a: lean(a), ...(b !== undefined ? { b: lean(b) } : {}) } }
-    },
-  })
-
-  const shell = defineTool({
-    name: 'geom.shell',
-    version: '1.0.0',
-    source: 'command',
-    permission: 'slice',
-    description:
-      'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. Writes the new STL and reports the walls.',
-    input: z.object({
-      model: modelArg,
-      open: z.array(z.object({ at: vec3.describe('A point on the face, mm'), normal: vec3.describe('Its outward normal') })).max(64).default([]).describe('Faces to leave open, such as the top of a box'),
-      wall_mm: z.number().min(0.2).max(100),
-    }),
-    async run(i) {
-      const out = await call('shell', { mesh: { stlPath: await path(i.model) }, open: i.open, wallMm: i.wall_mm })
-      return { summary: `Shelled to ${i.wall_mm} mm walls${i.open.length ? `, ${i.open.length} face${i.open.length === 1 ? '' : 's'} open` : ''}`, output: lean(out) }
     },
   })
 
