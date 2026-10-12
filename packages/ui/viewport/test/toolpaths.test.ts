@@ -32,6 +32,21 @@ describe('Toolpaths ranges', () => {
     expect(drawn(t)).toEqual({ visible: true, count: 4, offset: 3 })
   })
 
+  it('knows when the layer slider or the move cut shows less than the whole print', () => {
+    const t = new Toolpaths()
+    expect(t.narrowed()).toBe(false)
+    t.set(preview)
+    expect(t.narrowed()).toBe(false)
+    t.setRange(0, 1, null)
+    expect(t.narrowed()).toBe(true)
+    t.setRange(1, 2, null)
+    expect(t.narrowed()).toBe(true)
+    t.setRange(0, 2, 3)
+    expect(t.narrowed()).toBe(true)
+    t.setRange(0, 2, null)
+    expect(t.narrowed()).toBe(false)
+  })
+
   it('clamps out-of-range layers and hides an empty range', () => {
     const t = new Toolpaths()
     t.set(preview)
