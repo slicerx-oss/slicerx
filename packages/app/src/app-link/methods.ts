@@ -7,6 +7,8 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { appName } from '../edition'
 import { bounds } from '../plate/transform'
+import { LinkError } from './methods-error'
+import { listSessions, readSession } from './sessions'
 import { toolStore } from '../plate/tools'
 import { get, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
 
@@ -35,17 +37,12 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.boolean': 'edit',
   'geom.fillet': 'edit',
   'geom.chamfer': 'edit',
+  // mimir's conversations in this window: what was said and what mimir did.
+  'mimir.sessions': 'read',
+  'mimir.session': 'read',
 }
 
-/** A refusal with a code the hub passes on (invalid_input, not_found, not_ready, refused, busy). */
-export class LinkError extends Error {
-  constructor(
-    readonly code: 'invalid_input' | 'not_found' | 'not_ready' | 'refused' | 'busy',
-    message: string,
-  ) {
-    super(message)
-  }
-}
+export { LinkError } from './methods-error'
 
 const round = (v: number): number => Math.round(v * 1000) / 1000
 
@@ -145,6 +142,8 @@ const HANDLERS: Record<string, Handler> = {
   }),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
+  'mimir.sessions': () => listSessions(),
+  'mimir.session': (args) => readSession(args),
 }
 
 /** The design tools, once the link has a loader to put bodies on the plate. */

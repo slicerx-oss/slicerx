@@ -128,6 +128,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("geom.boolean", LinkClass::Edit),
     ("geom.fillet", LinkClass::Edit),
     ("geom.chamfer", LinkClass::Edit),
+    // mimir's conversations in the window, read back: what was said and what mimir did.
+    ("mimir.sessions", LinkClass::Read),
+    ("mimir.session", LinkClass::Read),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -324,6 +327,8 @@ mod tests {
             ("geom.boolean", LinkClass::Edit),
             ("geom.fillet", LinkClass::Edit),
             ("geom.chamfer", LinkClass::Edit),
+            ("mimir.sessions", LinkClass::Read),
+            ("mimir.session", LinkClass::Read),
         ];
         assert_eq!(APP_LINK_METHODS, pinned);
         for (m, _) in APP_LINK_METHODS {
