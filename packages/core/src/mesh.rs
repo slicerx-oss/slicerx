@@ -31,6 +31,18 @@ pub struct MeshPart {
 }
 
 impl MeshPart {
+    /// Gives back the room its lists grew into while they were filled. Decoded paint is collected without a
+    /// size known ahead, so a painted part can hold about twice its paint; a part lives through the whole slice.
+    pub(crate) fn shrink_to_fit(&mut self) {
+        self.positions.shrink_to_fit();
+        self.triangles.shrink_to_fit();
+        self.paint.shrink_to_fit();
+        self.support_paint.shrink_to_fit();
+        self.seam_paint.shrink_to_fit();
+        self.fuzzy_paint.shrink_to_fit();
+        self.paint_texts.shrink_to_fit();
+    }
+
     /// Every layer of decoded paint has the paint texts it was decoded from ([`Mesh::content_hash`] reads the texts).
     fn paint_has_texts(&self) -> bool {
         let has = |layer: u8| self.paint_texts.iter().any(|t| t.0 == layer);
