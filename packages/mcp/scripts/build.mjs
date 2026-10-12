@@ -74,6 +74,7 @@ for (const [from, to] of [
   [join(pkg, 'README.md'), 'mcp.md'],
   [join(repo, 'docs', 'integrators', 'AGENTS.md'), 'integrators/AGENTS.md'],
   [join(repo, 'docs', 'integrators', 'quickstart.md'), 'integrators/quickstart.md'],
+  [join(repo, 'docs', 'integrators', 'updates.md'), 'integrators/updates.md'],
 ]) {
   if (!existsSync(from)) continue
   mkdirSync(dirname(join(docs, to)), { recursive: true })
