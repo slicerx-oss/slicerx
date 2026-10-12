@@ -182,6 +182,9 @@ test.describe('the mimir tab', () => {
     const chips = choice.getByRole('button')
     const before = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
     await choice.getByRole('button', { name: 'Yes, that one' }).click()
+    // the ravens fade once the conversation starts, and the bubble has no prompt glyph
+    await expect(page.getByTestId('mimir-ravens')).not.toHaveAttribute('data-shown')
+    await expect(page.locator('.mimir-chat .bubble .pg')).toBeHidden()
     await expect(choice).toHaveAttribute('data-picked', 'same')
     const after = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
     after.forEach((a, i) => {

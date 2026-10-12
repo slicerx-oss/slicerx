@@ -10,6 +10,8 @@
 .mimir-chat-mark { display: inline-flex; color: var(--purple); }
 .mimir-chat-head h2 { margin: 0; font: var(--fw-medium) var(--fs-md) var(--f-display); letter-spacing: 0.01em; color: var(--fg); }
 .mimir-chat-scripted { flex: none; padding: 2px 8px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--muted); font-size: 11px; }
+/* the prompt glyph is the terminal's; the chat's bubble is plain */
+.mimir-chat .bubble .pg { display: none; }
 .mimir-turns { display: flex; flex-direction: column; gap: var(--s-4); }
 .mimir-chat-design { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--muted); font-size: var(--fs-sm); }
 .mimir-transcript { min-height: 0; overflow: auto; padding: var(--s-4) var(--s-3); }
