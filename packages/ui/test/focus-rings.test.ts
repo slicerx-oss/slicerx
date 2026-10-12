@@ -24,7 +24,7 @@ const files = [...cssFiles('packages/ui/src'), ...cssFiles('packages/app/src'), 
 const all = files.flatMap(rules)
 
 // inputs whose wrapper draws the ring, so the input itself shows none
-const WRAPPED = ['.sx-scrub-input', '.tf-input', 'input.bare', '.sx-palette-input', '.sx-pilot .in-row input']
+const WRAPPED = ['.sx-scrub-input', '.tf-input', 'input.bare', '.sx-palette-input', '.sx-pilot .in-row input', '.sx-pilot .composer-text']
 
 describe('focus rings', () => {
   it('tokens.css defines the ring once', () => {

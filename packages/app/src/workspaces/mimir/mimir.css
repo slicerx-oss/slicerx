@@ -2,6 +2,8 @@
 /* Copyright (C) 2026 The SlicerX contributors */
 /* The mimir tab: the chat column on the left, the design's view on the right. The composer and the caption float, so
    they are lifted (.sx-overlay); everything inside the transcript is flat. */
+/* the pilot styles' own grid and terminal colors give way to the column's */
+.mimir-chat.sx-pilot { --t-bg: var(--ink-1); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); grid-template-columns: minmax(0, 1fr); }
 .mimir-chat { position: relative; order: 0; flex: none; width: var(--w-chat, 420px); min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-1); border-right: 1px solid var(--line-soft); }
 .mimir-chat-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
 .mimir-chat-mark { display: inline-flex; color: var(--purple); }
@@ -11,11 +13,9 @@
 .mimir-empty { display: flex; flex-direction: column; align-items: center; gap: var(--s-3); margin: 18vh auto 0; max-width: 300px; text-align: center; color: var(--muted); }
 .mimir-empty .sx-ic { color: var(--purple); }
 .mimir-empty p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
-.mimir-composer { display: flex; align-items: center; gap: 6px; margin: 0 var(--s-3) var(--s-3); padding: 6px 6px 6px 12px; border-radius: var(--r-md); }
-.mimir-composer input { flex: 1; min-width: 0; height: 32px; border: 0; background: none; color: var(--fg); font: inherit; }
-.mimir-composer input::placeholder { color: var(--dim); }
-.mimir-composer:focus-within { border-color: var(--line); }
+.mimir-chat-foot { padding: 0 var(--s-3) var(--s-3); }
 .mimir-split { position: absolute; top: 0; bottom: 0; right: 0; width: 0; }
 .mimir-chat[data-resizing] { user-select: none; }
+.mimir-chat[data-drop]::after { content: ""; position: absolute; inset: 6px; border: 1px dashed var(--purple); border-radius: var(--r-md); background: color-mix(in srgb, var(--purple) 6%, transparent); pointer-events: none; }
 .studio[data-model-mode="mimir"] > .vp { order: 1; }
 .mimir-caption { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--fg); white-space: nowrap; }
