@@ -103,8 +103,13 @@ pub(crate) enum LinkClass {
 /// whether it reads or edits. The hub refuses any other name. None of them prints, queues, starts
 /// or sends a job, answers a card, signs in, buys, deletes, or changes printers, the network or
 /// settings: those stay with a person. Adding one here needs its entry in the test below.
-pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] =
-    &[("app.info", LinkClass::Read), ("plate.list", LinkClass::Read)];
+pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
+    ("app.info", LinkClass::Read),
+    ("plate.list", LinkClass::Read),
+    // mimir's conversations in the window, read back: what was said and what mimir did.
+    ("mimir.sessions", LinkClass::Read),
+    ("mimir.session", LinkClass::Read),
+];
 
 /// The class of an app link method, or None when the link has no such method.
 pub(crate) fn link_class(method: &str) -> Option<LinkClass> {
@@ -279,7 +284,12 @@ mod tests {
     #[test]
     fn the_app_link_has_exactly_its_pinned_methods_and_none_a_person_keeps() {
         // A new method lands here on purpose, with its class, after a review of what it can do.
-        let pinned: &[(&str, LinkClass)] = &[("app.info", LinkClass::Read), ("plate.list", LinkClass::Read)];
+        let pinned: &[(&str, LinkClass)] = &[
+            ("app.info", LinkClass::Read),
+            ("plate.list", LinkClass::Read),
+            ("mimir.sessions", LinkClass::Read),
+            ("mimir.session", LinkClass::Read),
+        ];
         assert_eq!(APP_LINK_METHODS, pinned);
         for (m, _) in APP_LINK_METHODS {
             assert!(!APP_ONLY.contains(m), "{m}");
