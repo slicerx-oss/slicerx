@@ -59,11 +59,13 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const attachments = useAttachments()
   // The battle ravens stand behind the conversation until a model answers here.
   const link = useMimirLink()
-  const ravens = link !== 'model'
+  // They fade out once the conversation starts, so no piece of the ring shows between its cards.
+  const ravensOn = link !== 'model'
   const pilot = useMemo(() => tabMimir(), [])
   const [sessionId, setSessionId] = useState(newSessionId)
   const run = usePilotRun(pilot, sessionId)
   const { reset, transcript } = run
+  const ravens = ravensOn && transcript.turns.length === 0
   useEffect(() => reset(), [sessionId, reset])
   useEffect(() => setLookups(lookupsIn(transcript)), [transcript])
   useEffect(() => followSteps(transcript), [transcript])
