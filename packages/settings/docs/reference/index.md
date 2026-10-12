@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 746 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 748 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -9,7 +9,7 @@ How to read the fields is in the [guide](../guide.md).
 Print settings: layers, walls, infill, speeds, supports, adhesion.
 
 - [Adhesion: skirt, brim and raft](process-adhesion.md): 27 settings
-- [Advanced extrusion](process-advanced.md): 27 settings
+- [Advanced extrusion](process-advanced.md): 29 settings
 - [G-code](process-gcode.md): 8 settings
 - [Acceleration, jerk and machine limits](process-motion.md): 21 settings
 - [Multi material](process-multimaterial.md): 42 settings
@@ -82,6 +82,7 @@ Alphabetical, each linking to its group file.
 - `bed_texture_area`: Bed texture area, [printer/machine](printer-machine.md#bed_texture_area)
 - `before_layer_change_gcode`: Before layer change gcode, [printer/gcode](printer-gcode.md#before_layer_change_gcode)
 - `best_object_pos`: Best object pos, [printer/machine](printer-machine.md#best_object_pos)
+- `bottom_color_penetration_layers`: Painted color depth over bottoms, [process/advanced](process-advanced.md#bottom_color_penetration_layers)
 - `bottom_layer_direction`: Bottom layer direction, [process/strength](process-strength.md#bottom_layer_direction)
 - `bottom_shell_layers`: Bottom shell layers, [process/strength](process-strength.md#bottom_shell_layers)
 - `bottom_shell_thickness`: Bottom shell thickness, [process/strength](process-strength.md#bottom_shell_thickness)
@@ -708,6 +709,7 @@ Alphabetical, each linking to its group file.
 - `toolchange_park_position`: Tool change position, [printer/machine](printer-machine.md#toolchange_park_position)
 - `toolchange_temperature_drop`: Temperature drop allowed at a tool change, [printer/multimaterial](printer-multimaterial.md#toolchange_temperature_drop)
 - `top_bottom_infill_wall_overlap`: Top and bottom infill to wall overlap, [process/strength](process-strength.md#top_bottom_infill_wall_overlap)
+- `top_color_penetration_layers`: Painted color depth under tops, [process/advanced](process-advanced.md#top_color_penetration_layers)
 - `top_layer_direction`: Top layer direction, [process/strength](process-strength.md#top_layer_direction)
 - `top_shell_layers`: Top shell layers, [process/strength](process-strength.md#top_shell_layers)
 - `top_shell_thickness`: Top shell thickness, [process/strength](process-strength.md#top_shell_thickness)

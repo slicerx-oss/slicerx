@@ -950,6 +950,38 @@
    "showWhen": "multicolor"
   },
   {
+   "key": "top_color_penetration_layers",
+   "section": "process",
+   "type": "int",
+   "label": "Painted color depth under tops",
+   "unit": "layers",
+   "min": 0,
+   "max": 1000,
+   "mode": "expert",
+   "default": 0,
+   "group": "advanced",
+   "invalidates": "contours",
+   "help": "How many layers a painted top surface colors, counting down from the top. 0 follows the top shell layers. A Bambu Studio setting, read from its projects.",
+   "intent": "multicolor",
+   "showWhen": "multicolor"
+  },
+  {
+   "key": "bottom_color_penetration_layers",
+   "section": "process",
+   "type": "int",
+   "label": "Painted color depth over bottoms",
+   "unit": "layers",
+   "min": 0,
+   "max": 1000,
+   "mode": "expert",
+   "default": 0,
+   "group": "advanced",
+   "invalidates": "contours",
+   "help": "How many layers a painted bottom surface colors, counting up from the bottom. 0 follows the bottom shell layers. A Bambu Studio setting, read from its projects.",
+   "intent": "multicolor",
+   "showWhen": "multicolor"
+  },
+  {
    "key": "outer_wall_flow_ratio",
    "section": "process",
    "type": "float",
