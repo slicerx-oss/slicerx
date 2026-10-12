@@ -45,8 +45,8 @@ export const PRINTERS = {
       await hub.admin.addPrinter({ id: this.id, name: this.name, plugin: 'prusalink', host: local, port: hub.ports['prusalink'], credentialRef: 'coreone-pass', pollMs: 200 }, { vendor: this.vendor, model: this.model })
     },
     camera: true,
-    // PrusaLink reports a runout as ATTENTION; the connector words it.
-    runout: 'Printer needs attention',
+    // PrusaLink reports a runout as ATTENTION with the printer's own reason, which the card shows.
+    runout: 'Filament runout',
     door: null,
   },
   elegoo: {
