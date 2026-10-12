@@ -57,7 +57,7 @@ export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; di
     }
     const p = req.path
     if (p === '/api/version') return { json: { api: '2.0.0', server: '2.1.2', text: 'PrusaLink', hostname: 'mock', firmware: '6.2.4+mock', nozzle_diameter: 0.4 } }
-    if (p === '/api/v1/info') return { json: { name: m.fx.model, hostname: 'mock', serial: 'CZPXMOCK0001', nozzle_diameter: 0.4, mmu: false } }
+    if (p === '/api/v1/info') return { json: { name: m.fx.model, hostname: 'prusa-mock', serial: 'CZPXMOCK0001', nozzle_diameter: 0.4, mmu: false } }
     if (p === '/api/v1/storage') {
       const usb = { name: 'USB', type: 'USB', path: '/usb', available: extra.storage === 'usb', read_only: false }
       const local = { name: 'Local', type: 'LOCAL', path: '/local', available: extra.storage === 'local', read_only: false }
