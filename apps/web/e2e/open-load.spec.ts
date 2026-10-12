@@ -3,8 +3,8 @@
 // Opening a big project keeps the page answering and builds each model once. A Bambu Studio P1S project with a mesh of
 // a few hundred thousand triangles is opened on another printer, so the open switches printer, bed and settings. Nothing here is a wall time (a shared runner can be slow by any factor): the checks are relative or
 // counts. The project's meshes are read in the project worker, so while that runs the page answers: its longest stall
-// stays a small part of the read. And the 3D view builds each object once; the printer switch, the bed change and the
-// settings that follow keep what was built.
+// stays a small part of the meshes' read. And the 3D view builds each object once; the printer switch, the bed change
+// and the settings that follow keep what was built.
 import { expect, type Page } from '@playwright/test'
 import { plateReady, test } from './fixtures'
 import { zip } from './project-zip'
@@ -92,16 +92,20 @@ test('a big project opens with the page answering and each model built once', as
   const run = await page.evaluate(() => {
     const ms = Object.fromEntries(performance.getEntriesByType('measure').filter((e) => e.name.startsWith('sx:open:')).map((e) => [e.name.slice(8), e.startTime + e.duration]))
     const w = window as unknown as { __stalls: [number, number][]; __vp?: Vp; __sx?: Sx }
-    return { ms, stalls: w.__stalls, builds: w.__vp?.stats().objectBuilds ?? -1, objects: w.__sx?.getState().plate.length ?? -1 }
+    const parsedIn = (performance.getEntriesByName('sx:open:parse')[0] as PerformanceMeasure | undefined)?.detail?.parsedIn as string | undefined
+    return { ms, parsedIn, stalls: w.__stalls, builds: w.__vp?.stats().objectBuilds ?? -1, objects: w.__sx?.getState().plate.length ?? -1 }
   })
   // Every stage of the open was timed, in order.
   const stages = ['read', 'unzip', 'parse', 'printer', 'engine', 'objects', 'settings', 'done']
   for (const s of [...stages, 'drawn']) expect(run.ms[s], `stage ${s}`).toBeDefined()
   const ends = stages.map((s) => run.ms[s]!)
   expect(ends).toEqual([...ends].sort((a, b) => a - b))
-  // The meshes are read in the worker: while that runs, the page's longest stall stays a small part of the read, as
-  // it would not if they were read on the main thread.
-  const [from, to] = [run.ms['read']!, run.ms['parse']!]
+  // The meshes are read in the worker: while that runs (from the archive inflated to the meshes as typed arrays), the
+  // page's longest stall stays a small part of it, as it would not if they were read on the main thread. Before that,
+  // from the file's bytes to the archive inflated, the page itself starts the open (the plate loading, the panes that
+  // follow the settings), and on a slow shared runner that alone took 400 ms; it is not the meshes' read.
+  expect(run.parsedIn).toBe('worker')
+  const [from, to] = [run.ms['unzip']!, run.ms['parse']!]
   const worst = Math.max(0, ...run.stalls.map(([a, b]) => Math.min(b, to) - Math.max(a, from)))
   expect(worst, `worst stall ${Math.round(worst)} ms while the meshes were read (${Math.round(to - from)} ms)`).toBeLessThan(Math.max((to - from) * 0.5, 200))
   // The view built the example plate's model, then each of the project's two objects once, however often the printer,
