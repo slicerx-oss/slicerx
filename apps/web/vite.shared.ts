@@ -50,6 +50,8 @@ export async function sharedConfig(appDir: string, port: number, editionFile?: s
       __SX_COMMIT__: JSON.stringify(buildCommit(root, command === 'serve', env)),
       // Only the end-to-end test build sets this (apps/web/playwright.config.ts).
       __SX_E2E__: JSON.stringify(env['SLICERX_E2E'] === '1'),
+      // The dev server and test builds (end-to-end, agent bridge); release builds are neither.
+      __SX_DEV_BUILD__: JSON.stringify(command === 'serve' || env['SLICERX_E2E'] === '1' || env['SLICERX_AGENT_BRIDGE'] === '1'),
       // SLICERX_WEB_SLICING=0 builds the browser app without the slicing engine (the CAD-only studio).
       __SX_WEB_SLICING__: JSON.stringify(env['SLICERX_WEB_SLICING'] !== '0'),
       // The printer hub port of an end-to-end run (SX_TEST_HUB_PORT); empty, so sx-link's default, in any other build.

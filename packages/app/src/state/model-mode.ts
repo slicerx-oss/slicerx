@@ -5,7 +5,7 @@
 // desktop. The saved mode is kept for when the same person opens a wider screen.
 import { editionHasCad, useEdition } from '../edition'
 import { isPhoneLayout, usePhoneLayout } from '../lib/phone-layout'
-import { get, setModelMode, useApp, type ModelMode } from './store'
+import { get, setModelMode, useApp, type ModelMode, type SettingsMode } from './store'
 
 /** True when the modeling tools show: the edition has them and the screen isn't a phone. */
 export function useCadShown(): boolean {
@@ -18,13 +18,22 @@ export function cadShown(): boolean {
   return editionHasCad() && !isPhoneLayout()
 }
 
+/** The mimir tab is still being built: a release build shows it in developer mode, dev and test builds always. */
+export function mimirShown(s: { devBuild: boolean; settingsMode: SettingsMode }): boolean {
+  return s.devBuild || s.settingsMode === 'developer'
+}
+
+/** The mode with mimir hidden reads as Model, the other design mode. */
+const shownMode = (s: { modelMode: ModelMode; devBuild: boolean; settingsMode: SettingsMode }): ModelMode =>
+  s.modelMode === 'mimir' && !mimirShown(s) ? 'design' : s.modelMode
+
 export function useModelMode(): ModelMode {
-  const mode = useApp((s) => s.modelMode)
+  const mode = useApp(shownMode)
   return useCadShown() ? mode : 'slice'
 }
 
 export function modelMode(): ModelMode {
-  return cadShown() ? get().modelMode : 'slice'
+  return cadShown() ? shownMode(get()) : 'slice'
 }
 
 /** mimir and Model both show the design: the CAD look, the ground grid, the picks and the timeline. */

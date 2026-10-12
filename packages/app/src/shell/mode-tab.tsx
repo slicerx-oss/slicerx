@@ -3,11 +3,11 @@
 // The first three tabs: mimir, Model and Slice, in the order of the work. All are workspace `prepare` underneath, in
 // its three modes, so links, hand-offs and anything that opens `prepare` behave as before, and mimir and Model share
 // one design and one view. The open mode's tab is the current page, and on another tab none is. Editions without
-// modeling tools show a plain Slice tab instead (top-bar.tsx).
+// modeling tools show a plain Slice tab instead (top-bar.tsx). Release builds show mimir in developer mode only.
 import { Icon } from '@slicerx/ui'
 import { useRef } from 'react'
 import { useFullEngine, warmFullEngine } from '../geom/full-engine'
-import { useModelMode } from '../state/model-mode'
+import { mimirShown, useModelMode } from '../state/model-mode'
 import { setModelMode, useApp, type ModelMode } from '../state/store'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 
@@ -25,7 +25,8 @@ export function ModeTabs() {
   const rest = useRef<ReturnType<typeof setTimeout>>(undefined)
   // A tool left open in Model: an orange dot on its tab; the tip and the description say which.
   const parked = useApp((s) => (s.parked?.tool ? (s.parked.label ?? 'A tool') : null))
-  return MODES.map((m) => {
+  const mimir = useApp(mimirShown)
+  return (mimir ? MODES : MODES.slice(1)).map((m) => {
     const model = m.mode === 'design'
     return (
       <button
