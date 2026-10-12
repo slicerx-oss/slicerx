@@ -62,6 +62,12 @@ export function TranscriptList({ transcript, onApprove, onDeny, onRetry, empty }
         const picked = b.choices.find((c) => c.id === b.picked)
         return <Say text={picked ? `${b.question} **${picked.label}**` : b.question} streaming={false} />
       }
+      case 'sheet': {
+        // the phone shows the sizes and where each came from; confirming stays on the desktop
+        const s = b.sheet
+        const rows = s.dims.map((d) => `${d.label}: ${b.answer?.values[d.key] ?? d.value} ${d.unit === 'deg' ? '°' : d.unit}${d.source === 'guess' && !b.answer ? ' (guess)' : ''}`)
+        return <Say text={[`**${s.title}**`, ...rows, b.answer ? 'Confirmed' : 'Waiting to be confirmed on the computer'].join('\n')} streaming={false} />
+      }
       case 'lookup': {
         const l = b.lookup
         return <Say text={[`**${l.title}**`, ...l.fields.map(([k, v]) => `${k}: ${v}`), `Source: ${l.source.title}`].join('\n')} streaming={false} />

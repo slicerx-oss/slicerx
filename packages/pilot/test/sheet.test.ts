@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// pilot.sheet shows the sizes a part is built from and waits for the person: the answer keeps each value in its row's
+// bounds and says which ones changed; a bad sheet is refused before it is shown; the transcript keeps the sheet and
+// its answer.
+import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PilotSheet, type PrinterHost } from '@slicerx/contracts'
+import { describe, expect, it } from 'vitest'
+import { answerOf, createPilot, createScriptedClient, DEFAULT_CONFIG, sheetTool, type ScriptStep } from '../src/index'
+import { foldEvents, emptyTranscript, startTurn } from '../ui/reduce'
+
+const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport }
+const pilot = (steps: ScriptStep[]) => createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool()] })
+
+const DIMS = [
+  { key: 'phone_width', label: 'Phone width', value: 71.5, unit: 'mm', source: 'lookup', sourceTitle: 'apple.com', sourceUrl: 'https://www.apple.com/iphone/compare/' },
+  { key: 'case_allowance', label: 'Case allowance', value: 1.5, unit: 'mm', min: 0, max: 5, source: 'guess' },
+  { key: 'lean', label: 'Lean angle', value: 70, unit: 'deg', min: 45, max: 85, source: 'guess' },
+]
+const SHEET = { name: 'pilot.sheet', args: { title: 'Phone stand sizes', views: ['front', 'side'], dims: DIMS } }
+
+async function play(steps: ScriptStep[], answer?: (sheet: PilotSheet) => Record<string, number>) {
+  const p = pilot(steps)
+  const events: PilotEvent[] = []
+  for await (const e of p.run('s', 'A phone stand')) {
+    events.push(e)
+    if (e.type === 'sheet' && answer) void p.answerSheet!(e.sheet.id, answer(e.sheet))
+  }
+  return events
+}
+
+describe('pilot.sheet', () => {
+  it('waits for the person and gives the next step the values to build with', async () => {
+    const seen: string[] = []
+    const events = await play(
+      [
+        { calls: [SHEET] },
+        (messages) => {
+          const last = messages.at(-1)
+          seen.push(last?.role === 'tool' ? last.content : '')
+          return { text: 'Building it.' }
+        },
+      ],
+      // The person widens the case allowance, sends a lean outside its bounds, and a key the sheet does not have.
+      () => ({ case_allowance: 3, lean: 95, extra: 1 }),
+    )
+    const shown = events.find((e) => e.type === 'sheet')
+    expect(shown).toMatchObject({ sheet: { title: 'Phone stand sizes', views: ['front', 'side'], dims: DIMS } })
+    const answer = { confirmed: true, values: { phone_width: 71.5, case_allowance: 3, lean: 70 }, changed: ['case_allowance'] }
+    expect(events.find((e) => e.type === 'sheet_answered')).toMatchObject({ answer })
+    expect(JSON.parse(seen[0]!)).toMatchObject({ ok: true, result: answer })
+  })
+
+  it('refuses a sheet with a repeated key, a lookup without its page, or a value outside its own bounds', async () => {
+    for (const dims of [
+      [DIMS[1], DIMS[1]],
+      [{ ...DIMS[0], sourceUrl: undefined }],
+      [{ ...DIMS[1], value: 9 }],
+      [{ ...DIMS[0], sourceUrl: 'javascript:alert(1)' }],
+    ]) {
+      const events = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims } }] }], () => ({}))
+      expect(events.some((e) => e.type === 'sheet'), JSON.stringify(dims)).toBe(false)
+      expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
+    }
+  })
+
+  it('refuses an answer to a sheet nobody showed', async () => {
+    await expect(pilot([]).answerSheet!('sheet_nope', {})).rejects.toThrow(/No open sheet/)
+  })
+
+  it('stops waiting when the run is canceled', async () => {
+    const ac = new AbortController()
+    const p = pilot([{ calls: [SHEET] }])
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', 'A phone stand', { signal: ac.signal })) {
+      events.push(e)
+      if (e.type === 'sheet') ac.abort()
+    }
+    expect(events.some((e) => e.type === 'sheet_answered')).toBe(false)
+  })
+
+  it('keeps its answer in the transcript', () => {
+    const sheet = { id: 'sheet_1', title: 'Sizes', views: ['iso' as const], dims: DIMS as PilotSheet['dims'] }
+    const answer = answerOf(sheet, { case_allowance: 2 })
+    const t = foldEvents([{ type: 'sheet', sheet }, { type: 'sheet_answered', sheetId: 'sheet_1', answer }], startTurn(emptyTranscript(), { user: 'hi' }, 0))
+    expect(t.turns[0]!.blocks[0]).toMatchObject({ kind: 'sheet', sheet: { id: 'sheet_1' }, answer: { changed: ['case_allowance'] } })
+  })
+})

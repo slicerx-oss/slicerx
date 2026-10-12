@@ -5,6 +5,7 @@ import type { ApprovalRequest } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
 import { ChoiceCard } from './choice-card'
 import { LookupRecord } from './lookup-record'
+import { SheetRecord } from './sheet-record'
 import { Citations } from './citations'
 import { Diff } from './diff'
 import { ErrorLine, PermLine, PlanList, PluginsLoading } from './notes'
@@ -53,6 +54,8 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
       )
     case 'lookup':
       return <LookupRecord lookup={block.lookup} />
+    case 'sheet':
+      return <SheetRecord sheet={block.sheet} answer={block.answer} />
     case 'choice':
       return <ChoiceCard askId={block.askId} title={block.title} question={block.question} choices={block.choices} picked={block.picked} actionable={!block.replay} onChoose={approvals.onChoose} />
     case 'summary':

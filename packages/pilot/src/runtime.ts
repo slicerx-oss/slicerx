@@ -6,6 +6,8 @@ import type {
   ApprovalDecision,
   ApprovalHost,
   ApprovalRequest,
+  PilotSheet,
+  PilotSheetAnswer,
   ApprovalToken,
   Citation,
   CommandSpec,
@@ -148,6 +150,22 @@ function randomId(): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * The person's answer to a sheet: each value they gave, kept inside its row's bounds, else the sheet's own; and the
+ * keys they changed. A value for a key the sheet does not have is dropped.
+ */
+export function answerOf(sheet: PilotSheet, given: Record<string, number>): PilotSheetAnswer {
+  const values: Record<string, number> = {}
+  const changed: string[] = []
+  for (const d of sheet.dims) {
+    const v = given[d.key]
+    const ok = typeof v === 'number' && Number.isFinite(v) && (d.min === undefined || v >= d.min) && (d.max === undefined || v <= d.max)
+    values[d.key] = ok ? v : d.value
+    if (ok && v !== d.value) changed.push(d.key)
+  }
+  return { confirmed: true, values, changed }
+}
+
 export function createPilot(opts: CreatePilotOptions): Pilot & {
   /** Every tool including internal ones, for the inspector and evals. */
   registry(): AnyTool[]
@@ -163,6 +181,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const pending = new Map<string, Pending>()
   // Questions waiting for the person's pick, by ask id.
   const asks = new Map<string, (choiceId: string) => void>()
+  // Dimension sheets waiting for the person, by sheet id.
+  const sheets = new Map<string, (values: Record<string, number>) => void>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
 
   const tools = new Map<string, AnyTool>()
@@ -371,6 +391,22 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         signal.addEventListener('abort', onAbort, { once: true })
         emit({ type: 'ask', askId, title: q.title, question: q.question, choices: q.choices })
       })
+    ctx.sheet = (draft) =>
+      new Promise((resolve, reject) => {
+        const sheet = { ...draft, id: `sheet_${newId()}` }
+        const onAbort = (): void => {
+          sheets.delete(sheet.id)
+          reject(new Error('Run canceled.'))
+        }
+        sheets.set(sheet.id, (given) => {
+          signal.removeEventListener('abort', onAbort)
+          const answer = answerOf(sheet, given)
+          emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
+          resolve(answer)
+        })
+        signal.addEventListener('abort', onAbort, { once: true })
+        emit({ type: 'sheet', sheet })
+      })
 
     let gated: Gated
     try {
@@ -542,6 +578,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const p = pending.get(requestId)
       if (!p) throw new Error(`No pending approval ${requestId}`)
       p.resolve(decision)
+    },
+    async answerSheet(sheetId: string, values: Record<string, number>): Promise<void> {
+      const done = sheets.get(sheetId)
+      if (!done) throw new Error(`No open sheet ${sheetId}`)
+      sheets.delete(sheetId)
+      done(values)
     },
     async answer(askId: string, choiceId: string): Promise<void> {
       const done = asks.get(askId)
