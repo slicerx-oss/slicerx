@@ -417,6 +417,54 @@ async fn bambu_refused_pause_says_why() {
     assert_eq!(mocks.state().await["bambu"]["state"], "paused");
 }
 
+// Speed, light and a G-code line read the printer's answer too: refused, each fails with `refused` and the printer's
+// reason and changes nothing; accepted, it goes through.
+#[tokio::test]
+async fn bambu_refused_speed_light_and_gcode_say_why() {
+    use serde_json::json;
+    use sx_connect::{Action, Adjustment, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    mocks.set_state("bambu", "printing").await;
+    let session = BambuConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    let fast = Adjustment::Speed { percent: 124 };
+    let refused = |r: Result<(), sx_connect::Error>, what: &str| match r {
+        Err(e) => {
+            assert_eq!(e.code(), ErrorCode::Refused, "{what}: {e}");
+            assert!(e.to_string().contains("the printer is busy"), "{what}: {e}");
+        }
+        Ok(()) => panic!("a refused {what} must fail"),
+    };
+    mocks
+        .control("/bambu", json!({ "refuseControl": "the printer is busy" }))
+        .await;
+    let t = gate.mint(Action::Adjust, "bay-1", &params::adjust("bay-1", &fast));
+    refused(session.adjust(&fast, &t).await, "speed");
+    let t = gate.mint(Action::Adjust, "bay-1", &params::light("bay-1", false));
+    refused(session.set_light(false, &t).await, "light");
+    let t = gate.mint(Action::Gcode, "bay-1", &params::gcode("bay-1", "M105"));
+    refused(session.send_gcode("M105", &t).await, "G-code line");
+    let log = mocks.state().await["log"].to_string();
+    assert!(!log.contains("print_speed 3"), "{log}");
+    assert!(!log.contains("ledctrl chamber_light off"), "{log}");
+
+    mocks.control("/bambu", json!({ "refuseControl": null })).await;
+    let t = gate.mint(Action::Adjust, "bay-1", &params::adjust("bay-1", &fast));
+    session.adjust(&fast, &t).await.unwrap();
+    let t = gate.mint(Action::Adjust, "bay-1", &params::light("bay-1", false));
+    session.set_light(false, &t).await.unwrap();
+    let log = mocks.state().await["log"].to_string();
+    assert!(log.contains("print_speed 3"), "{log}");
+    assert!(log.contains("ledctrl chamber_light off"), "{log}");
+}
+
 // A plain G-code start (`gcode_file`) reads the printer's answer as a project start does: a
 // refusal fails with `refused` and the reason and the printer stays idle; accepted, it prints.
 #[tokio::test]

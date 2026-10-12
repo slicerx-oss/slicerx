@@ -24,7 +24,7 @@ export interface BambuExtra {
   lastJob?: string
   /** When set, the next starts (`project_file` and plain `gcode_file`) are refused with this reason (`POST /bambu {refuse}`). */
   refuse?: string
-  /** When set, `pause`, `resume` and `stop` are answered `result: fail` with this reason and change nothing (`POST /bambu {refuseControl}`). */
+  /** When set, `pause`, `resume`, `stop`, `print_speed`, `gcode_line`, `skip_objects` and `ledctrl` are answered `result: fail` with this reason and change nothing (`POST /bambu {refuseControl}`). */
   refuseControl?: string
   /** The model code `get_version` and the SSDP answer report (`N2S` A1, `N1` A1 mini, `O1D` H2D; default `BL-P001`, X1 Carbon). An H2D reports the two nozzles, AMS units and external spools of `fixtures/bambu-h2d-pushall.json`. */
   model?: string
@@ -272,14 +272,20 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
         return
       }
       if (msg.system?.command === 'ledctrl') {
+        // Answered in a `system` object, refused as the print commands are.
+        const refused = extra.refuseControl
+        const answer = Buffer.from(JSON.stringify({ system: { command: 'ledctrl', sequence_id: msg.system.sequence_id, led_node: msg.system.led_node, result: refused ? 'fail' : 'success', reason: refused ?? 'success' } }))
+        for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, answer))
+        if (refused) { log.push(`ledctrl refused ${refused}`); return }
         log.push(`ledctrl ${String(msg.system.led_node)} ${String(msg.system.led_mode)}`)
         if (msg.system.led_node === 'chamber_light') extra.light = msg.system.led_mode !== 'off'
         return broadcast()
       }
       const pr = msg.print
       if (!pr) return
-      // The printer answers pause, resume and stop on the report topic with `result` and `reason`.
-      if (pr.command === 'pause' || pr.command === 'resume' || pr.command === 'stop') {
+      // The printer answers pause, resume, stop and the other job commands on the report topic with `result` and
+      // `reason`.
+      if (['pause', 'resume', 'stop', 'print_speed', 'gcode_line', 'skip_objects'].includes(String(pr.command))) {
         const refused = extra.refuseControl
         const body = Buffer.from(JSON.stringify({ print: { command: pr.command, sequence_id: pr.sequence_id, param: '', result: refused ? 'fail' : 'success', reason: refused ?? 'success' } }))
         for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, body))

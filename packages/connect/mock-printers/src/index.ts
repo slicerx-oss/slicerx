@@ -234,7 +234,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // sending frames with their connections left open. `printerType` puts a `printer_type` in its reports; `storage`
     // (`none`, `normal`, `abnormal`, `readonly`) is the SD card it reports, and `emmc: true` says it prints without one.
     // `developerMode: false` makes it a printer with Developer Mode off: status only, every command and upload refused
-    // (null: no `fun` flags in its reports, as before). `refuseControl` makes it answer pause, resume and stop with
+    // (null: no `fun` flags in its reports, as before). `refuseControl` makes it answer pause, resume, stop, speed, G-code lines, skips and the light with
     // `result: fail` and that reason, changing nothing (null: accepts them again). `cameraFrame: 'hand'` makes its JPEG camera show a hand reaching
     // in (null: the placeholder again); `cameraFrameFile` sends that JPEG file instead, a photo for a capture (null: off).
     if (req.path === '/bambu' && req.method === 'POST') {
