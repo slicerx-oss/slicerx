@@ -818,6 +818,8 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   await new Promise<void>((resolve, reject) => {
     ws.addEventListener('open', () => resolve(), { once: true })
     ws.addEventListener('error', () => reject(new LinkError('unreachable', 'Cannot reach sx-link. Is it running?')), { once: true })
+    // A socket closed before it opened, with no error first (a proxy that drops it), is unreachable too, not a wait forever.
+    ws.addEventListener('close', () => reject(new LinkError('unreachable', 'Cannot reach sx-link. Is it running?')), { once: true })
   })
 
   let nextId = 1

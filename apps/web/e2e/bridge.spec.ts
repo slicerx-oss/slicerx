@@ -614,6 +614,9 @@ test('a send whose connection drops part way is never sent again, and says what 
     ws.onClose(() => server.close())
   })
   try {
+    // An earlier send leaves Voron printing; this one starts from an idle printer.
+    await ctl('/set', { mock: 'moonraker', state: 'idle' })
+    await expect.poll(async () => (await hub.admin.status('voron')).state, { timeout: 20_000 }).toBe('idle')
     await connectApp(page)
     const slices1 = await sliceCount(page)
     await page.getByRole('button', { name: 'Slice plate' }).click()
