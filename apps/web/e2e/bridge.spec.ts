@@ -6,7 +6,7 @@
 // its reason and the plain G-code offer) and the camera guard. The flows every brand shares run per brand in
 // prusa-bridge, elegoo-bridge and snapmaker-bridge (e2e/bridge-brands.ts); Bambu Lab is checked on real printers.
 // The harness and its hub lock are in e2e/bridge-hub.ts.
-import { type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -337,23 +337,24 @@ test.describe(BAMBU, () => {
     }
   })
 
-  // Authorization Control firmware without Developer Mode and with no flag that says so (a Discord report from an
-  // A1 mini): status and the light work, the upload is turned away. Runs before the Developer Mode test, whose
-  // reports leave the flag on in the hub's reading.
+  // Authorization Control firmware without Developer Mode and with no flag or reply that says so (a Discord report
+  // from an A1 mini): status and the light work, the upload is turned away. The sheet says Developer Mode may be the
+  // cause. Runs before the Developer Mode test, whose reports leave the flag on in the hub's reading.
   test('A1 on Authorization Control without Developer Mode: the sheet shows the steps and Bambu Connect', async ({ page }) => {
     test.slow()
     await idleAgain('a1')
-    await ctl('/bambu', { authorizationControl: true })
+    await ctl('/bambu', { authorizationControl: 'silent' })
     try {
       const sheet = await sheetFor(page, 'A1')
       await start(sheet)
       const again = page.locator('dialog.print-sheet[open]')
       const box = again.getByTestId('developer-mode-needed')
-      await expect(box).toContainText("A1 sends its status but didn't take the print", { timeout: 60_000 })
+      await expect(box).toContainText("A1 sends its status but didn't take the print. That may be Developer Mode being off.", { timeout: 60_000 })
       await expect(again.getByRole('button', { name: 'Send as plain G-code' })).toHaveCount(0)
-      // Read back: the hub's status says it too.
-      expect((await hub.admin.status('a1')).live?.needsDeveloperMode).toBe(true)
+      // Read back: a guess is never written into the hub's status, which keeps to what the printer said.
+      expect((await hub.admin.status('a1')).live?.needsDeveloperMode).toBeUndefined()
       expect((await hub.admin.status('a1')).state).toBe('idle')
+      await sheetShots(page, box, 'developer-mode-may')
       await expect(box.getByTestId('developer-mode-steps-list')).toContainText('swipe to page 3')
       // The browser has no file path to hand to Bambu Connect, so it saves the file.
       await page.evaluate(() => delete (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker)
@@ -362,7 +363,52 @@ test.describe(BAMBU, () => {
       expect((await download).suggestedFilename()).toMatch(/\.gcode\.3mf$/)
       expect(await mockLog()).toMatch(/dropped STOR/)
     } finally {
-      await ctl('/bambu', { authorizationControl: false })
+      await ctl('/bambu', { authorizationControl: null })
+      await idleAgain('a1')
+    }
+  })
+
+  // The same firmware answering the start with the unsigned-command refusal (`mqtt message verify failed`): the
+  // printer said it, so the sheet says it plainly and the hub's status carries it for clients to read back.
+  test('A1 refusing the start as unsigned: the sheet says Developer Mode is off, and the status says so', async ({ page }) => {
+    test.slow()
+    await idleAgain('a1')
+    await ctl('/bambu', { authorizationControl: 'verify' })
+    try {
+      const sheet = await sheetFor(page, 'A1')
+      await start(sheet)
+      const again = page.locator('dialog.print-sheet[open]')
+      const box = again.getByTestId('developer-mode-needed')
+      await expect(box).toContainText('A1 sends its status but turned the print away. Bambu Lab printers do that while Developer Mode is off.', { timeout: 60_000 })
+      await expect(box).not.toContainText('may be')
+      await expect(again.getByRole('button', { name: 'Send as plain G-code' })).toHaveCount(0)
+      expect(await mockLog()).toMatch(/unsigned project_file/)
+      await expect.poll(async () => (await hub.admin.status('a1')).live?.needsDeveloperMode, { timeout: 10_000 }).toBe(true)
+      await sheetShots(page, box, 'developer-mode-sure')
+    } finally {
+      await ctl('/bambu', { authorizationControl: null })
+      await idleAgain('a1')
+    }
+  })
+
+  // A full card answers the upload with FTP 452: the sheet says to free space, never Developer Mode.
+  test('A1 with a full card: the sheet says there is no room and how to free space', async ({ page }) => {
+    test.slow()
+    await idleAgain('a1')
+    await ctl('/bambu', { storageFull: true })
+    try {
+      const sheet = await sheetFor(page, 'A1')
+      await start(sheet)
+      const again = page.locator('dialog.print-sheet[open]')
+      const box = again.getByTestId('storage-full-needed')
+      await expect(box).toContainText('A1 has no room for the file: its storage is full.', { timeout: 60_000 })
+      await expect(box).toContainText('Delete old print files on the printer')
+      await expect(again.getByTestId('developer-mode-needed')).toHaveCount(0)
+      await expect(again.getByRole('button', { name: 'Send as plain G-code' })).toHaveCount(0)
+      expect(await mockLog()).toMatch(/full STOR/)
+      await sheetShots(page, box, 'storage-full')
+    } finally {
+      await ctl('/bambu', { storageFull: false })
       await idleAgain('a1')
     }
   })
@@ -582,3 +628,31 @@ test.describe(BAMBU, () => {
     }
   })
 })
+
+/**
+ * Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default). The open Print sheet with
+ * `box` in view, at 1440 and 390 px wide, dark and light; the viewport and theme are put back after.
+ */
+async function sheetShots(page: Page, box: Locator, name: string): Promise<void> {
+  if (!process.env['SX_SHOTS']) return
+  const dir = process.env['SX_SHOTS_DIR'] ?? test.info().outputPath('shots')
+  const before = page.viewportSize()
+  type Sx = { __sx: { getState(): { scheme: string; themeFollowsSystem: boolean }; setState(p: unknown): void } }
+  const theme = await page.evaluate(() => {
+    const st = (window as unknown as Sx).__sx.getState()
+    return { scheme: st.scheme, themeFollowsSystem: st.themeFollowsSystem }
+  })
+  const setScheme = (scheme: string) => page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
+  for (const [width, height] of [[1440, 900], [390, 844]] as const) {
+    await page.setViewportSize({ width, height })
+    for (const scheme of ['dark', 'light'] as const) {
+      await setScheme(scheme)
+      await box.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+      await page.mouse.move(0, 0)
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: `${dir}/print-sheet-${name}-${scheme}-${width}.png` })
+    }
+  }
+  if (before) await page.setViewportSize(before)
+  await page.evaluate((t) => (window as unknown as Sx).__sx.setState(t), theme)
+}

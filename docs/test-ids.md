@@ -342,6 +342,7 @@ The bridge refuses everything inside the Print sheet; these ids are for reading 
 | `developer-mode-needed` | The box shown after a Bambu Lab printer sent status but took no print (`needs_developer_mode`): why, and the two ways past it |
 | `danger-bambu-connect-send` | Send with Bambu Connect in that box (Save file for Bambu Connect on Linux and the web): hands the same plate to Bambu Connect |
 | `developer-mode-steps-list` | The LAN Only Mode and Developer Mode steps for the printer's model in that box, with what LAN Only Mode changes |
+| `storage-full-needed` | The box shown after the printer's storage had no room for the file (`printer_storage_full`): why, and the steps to free space |
 
 ## Exceptions to the danger- rule
 
