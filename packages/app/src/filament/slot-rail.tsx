@@ -4,12 +4,14 @@
 // an arc from the last slice. Hovering or focusing a ring picks its filament out in the viewport; a click edits the
 // slot, Alt-click selects every object on it. A slot set to something the printer does not hold carries a corner dot.
 // Under the rail, a line says what a click does and how to add a filament, or, when the printer fills the slots in, why
-// there is no add here and how to change one.
+// there is no add here and how to change one. A setup note (dry the filament, a nozzle that won't take it) takes that
+// line's place, so the panel never changes height when the note arrives.
 import { Button, LinkButton, Menu, MenuItem, SwatchRing, tipAttrs } from '@slicerx/ui'
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { selectByFilament } from '../plate/selection'
 import { get, set, shownSlice, toast, useApp } from '../state/store'
 import { colorName, railGroups, slotMismatch, slotUsage, type SlotMismatch } from './rail'
+import { SetupNoteLine, useSetupNotes } from './setup-plan'
 import { MAX_SLOTS, resetSlots, setSlot, type ResolvedSlot } from './slots'
 import './slot-rail.css'
 
@@ -218,27 +220,30 @@ export interface RailFootProps {
  * filament never moves this line.
  */
 export function RailFoot({ count, fromPrinter, system, edited }: RailFootProps) {
+  const notes = useSetupNotes()
   if (fromPrinter) {
+    const reset = edited ? (
+      <LinkButton data-testid="slice-filament-foot-reset" onClick={() => resetSlots()}>
+        Reset to printer
+      </LinkButton>
+    ) : null
     return (
       <div className="rail-foot" data-testid="slice-filament-foot" data-from="printer">
-        <p className="rail-foot-text" {...tipAttrs({ title: `Filled in from ${unitWords(system)}`, body: 'A change here is for this project only. To add a filament, load it on the printer.' })}>
-          From {unitWords(system)}. Click a slot to change it.
-          {edited ? (
-            <>
-              {' '}
-              <LinkButton data-testid="slice-filament-foot-reset" onClick={() => resetSlots()}>
-                Reset to printer
-              </LinkButton>
-            </>
-          ) : null}
-        </p>
+        {notes ? (
+          <SetupNoteLine notes={notes} after={reset} />
+        ) : (
+          <p className="rail-foot-text" {...tipAttrs({ title: `Filled in from ${unitWords(system)}`, body: 'A change here is for this project only. To add a filament, load it on the printer.' })}>
+            <span className="rail-foot-line">From {unitWords(system)}. Click a slot to change it.</span>
+            {reset}
+          </p>
+        )}
       </div>
     )
   }
   const full = count >= MAX_SLOTS
   return (
     <div className="rail-foot" data-testid="slice-filament-foot">
-      <p className="rail-foot-text">Click a filament to change it.</p>
+      {notes ? <SetupNoteLine notes={notes} /> : <p className="rail-foot-text"><span className="rail-foot-line">Click a filament to change it.</span></p>}
       <Button
         size="sm"
         icon="plus"

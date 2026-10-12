@@ -34,6 +34,10 @@
 .fil-menu .sx-btn .sx-ic path { stroke-width: 3px; }
 /* The line under the rail: what a click does and Add filament, or where the printer's slots come from. */
 .rail-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 10px; margin-top: 6px; }
-.rail-foot-text { flex: 1 1 180px; min-width: 0; margin: 0; font-size: var(--fs-sm); line-height: 1.4; color: var(--muted); }
+.rail-foot-text { flex: 1 1 180px; display: flex; align-items: baseline; gap: 6px; min-width: 0; margin: 0; font-size: var(--fs-sm); line-height: 1.4; color: var(--muted); }
+/* One line, whatever it says: a long hint or note ends in an ellipsis and reads in full in its tip. */
+.rail-foot-line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-foot-text .sx-linkbtn { flex: none; }
+.rail-foot .setup-notes { display: flex; margin: 0; }
 .rail-foot .sx-btn { flex: none; }
 .rail-foot-text .sx-linkbtn { font-size: inherit; }
