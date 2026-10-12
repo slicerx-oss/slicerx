@@ -2,16 +2,22 @@
 -- Copyright (C) 2026 The SlicerX contributors
 -- mimir's cloud model: the mimir edge function (supabase/functions/mimir) sends an
 -- install's chat to the model provider with the project's own key, and holds every
--- install to daily spend caps. Nobody signs in. An install registers once and gets a
--- token; each model call reserves its worst-case cost against the install's, the
--- IP's and the edition's caps for the Melbourne day, and settles the real cost when
--- the reply ends. Installs that share their sessions (on by default, with an off
+-- install to daily spend caps. Nobody signs in. An install registers once, with its
+-- edition's registration key from the build, and gets a token; each model call reserves
+-- its worst-case cost against the install's, the IP's and the edition's caps for the
+-- Melbourne day, and settles the real cost when the reply ends. Installs that share their sessions (on by default, with an off
 -- switch in the app) have the conversation stored here for 180 days.
 --
 -- Clients never touch any of it: only the service role (the edge function) calls
 -- these functions. The mimir_session_reader role reads sessions of one edition
 -- (layermate), for the edition's owner; turning it on is a deployment step:
 -- alter role mimir_session_reader with login password '<secret>'.
+--
+-- Registration keys are deployment steps too. An edition with no key registers nothing.
+-- Set one: update public.mimir_limits set register_key_hash = public.mimir_token_hash('<key>')
+--   where edition = 'slicerx';
+-- Rotate: move the current hash to register_key_prev_hash, set the new one, ship builds
+-- with the new key, then clear register_key_prev_hash once the old builds are gone.
 
 -- Caps per edition, in micro-dollars per Melbourne day.
 create table public.mimir_limits (
@@ -21,15 +27,26 @@ create table public.mimir_limits (
   install_daily_micros bigint not null default 500000 check (install_daily_micros >= 0),
   ip_daily_micros bigint not null default 2000000 check (ip_daily_micros >= 0),
   install_per_minute integer not null default 20 check (install_per_minute between 1 and 600),
-  registers_per_ip_day integer not null default 3 check (registers_per_ip_day between 1 and 1000)
+  registers_per_ip_day integer not null default 3 check (registers_per_ip_day between 1 and 1000),
+  -- calls not yet settled, per install and per edition
+  install_in_flight integer not null default 3 check (install_in_flight between 1 and 100),
+  edition_in_flight integer not null default 50 check (edition_in_flight between 1 and 10000),
+  -- shared session bytes an install may write per Melbourne day
+  install_store_daily_bytes bigint not null default 8388608 check (install_store_daily_bytes >= 0),
+  -- sha256 of the edition's registration key, and of the previous key while it rotates out
+  register_key_hash text check (register_key_hash ~ '^[0-9a-f]{64}$'),
+  register_key_prev_hash text check (register_key_prev_hash ~ '^[0-9a-f]{64}$')
 );
 insert into public.mimir_limits (edition, edition_daily_micros) values
   ('slicerx', 20000000),
   ('layermate', 5000000);
 
 -- Model prices in micro-dollars: per million tokens, and per web search. Prompts over
--- long_above input tokens bill at the long rates. Cache writes cost 1.25x input and
--- cache reads 0.1x (5-minute cache).
+-- long_above input tokens (cache reads and writes included) bill at the long rates. Cache
+-- writes cost 1.25x input and cache reads 0.1x; the proxy only sends the 5-minute cache.
+-- Haiku 5.5 as published on 2026-10-12: $0.10 and $0.50 per million up to 100K prompt
+-- tokens, $0.50 and $2.50 above, web search $10 per 1,000
+-- (https://platform.claude.com/docs/en/about-claude/pricing).
 create table public.mimir_prices (
   model text primary key check (char_length(model) between 1 and 80),
   input_mtok bigint not null check (input_mtok >= 0),
@@ -73,12 +90,15 @@ create table public.mimir_calls (
   cache_read_tokens bigint,
   output_tokens bigint,
   web_searches integer,
-  settled_at timestamptz
+  settled_at timestamptz,
+  -- bytes of shared session this call stored, once it stored one
+  stored_bytes integer check (stored_bytes >= 0)
 );
 create index mimir_calls_install_day_idx on public.mimir_calls (install_id, day);
 create index mimir_calls_ip_day_idx on public.mimir_calls (ip_hash, day);
 create index mimir_calls_edition_day_idx on public.mimir_calls (edition, day);
 create index mimir_calls_created_idx on public.mimir_calls (created_at);
+create index mimir_calls_open_idx on public.mimir_calls (edition, created_at) where settled_at is null;
 
 -- Shared sessions: the latest request and reply of a conversation (each turn
 -- carries the whole history, so the last one is complete).
@@ -90,7 +110,7 @@ create table public.mimir_sessions (
   model text not null check (char_length(model) between 1 and 80),
   turns integer not null default 1 check (turns >= 1),
   cost_micros bigint not null default 0 check (cost_micros >= 0),
-  transcript jsonb not null check (octet_length(transcript::text) <= 4194304),
+  transcript jsonb not null check (octet_length(transcript::text) <= 262144),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (install_id, session_key)
@@ -114,13 +134,17 @@ language sql stable set search_path = '' as $$
   select (now() at time zone 'Australia/Melbourne')::date;
 $$;
 
--- HMAC of the IP and the Melbourne day, so counts cannot be linked across days.
--- No IP shares one bucket.
+-- HMAC of the IP and the Melbourne day, so counts cannot be linked across days. A call
+-- without an address is refused rather than counted in a shared bucket.
 create function public.mimir_ip_hash(p_ip text) returns text
-language sql stable security definer set search_path = '' as $$
-  select encode(extensions.hmac(
-    convert_to(coalesce(nullif(btrim(p_ip), ''), 'unknown') || '|' || public.mimir_day()::text, 'UTF8'),
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if nullif(btrim(coalesce(p_ip, '')), '') is null then
+    raise exception 'no client address' using errcode = '22023', hint = 'no_ip';
+  end if;
+  return encode(extensions.hmac(convert_to(btrim(p_ip) || '|' || public.mimir_day()::text, 'UTF8'),
     (select salt from public.mimir_secret), 'sha256'), 'hex');
+end;
 $$;
 
 create function public.mimir_token_hash(p_token text) returns text
@@ -128,8 +152,9 @@ language sql immutable set search_path = '' as $$
   select encode(extensions.digest(convert_to(coalesce(p_token, ''), 'UTF8'), 'sha256'), 'hex');
 $$;
 
--- A new install for p_edition. Returns its id and token; only the token's hash is kept.
-create function public.mimir_register(p_edition text, p_ip text)
+-- A new install for p_edition, from a build holding the edition's registration key
+-- p_key. Returns its id and token; only the token's hash is kept.
+create function public.mimir_register(p_edition text, p_ip text, p_key text)
 returns table (install_id uuid, token text)
 language plpgsql volatile security definer set search_path = '' as $$
 declare
@@ -141,6 +166,10 @@ begin
   select * into v_lim from public.mimir_limits where edition = p_edition;
   if not found then
     raise exception 'unknown edition' using errcode = '22023', hint = 'invalid';
+  end if;
+  if v_lim.register_key_hash is null
+    or public.mimir_token_hash(p_key) not in (v_lim.register_key_hash, coalesce(v_lim.register_key_prev_hash, '')) then
+    raise exception 'wrong registration key' using errcode = 'P0001', hint = 'register_key';
   end if;
   if not v_lim.enabled then
     raise exception 'mimir is paused' using errcode = 'P0001', hint = 'paused';
@@ -181,10 +210,23 @@ begin
 end;
 $$;
 
--- Reserves the worst case of one call (p_input prompt tokens at the uncached rate,
--- p_output reply tokens and p_searches web searches at p_model's prices) for the
--- install holding p_token, from p_ip, against every cap. Raises with a hint naming
--- the cap that was hit.
+-- An install's cap for today: the full cap until the edition has used half of its own,
+-- then shrinking in step with what the edition has left, so heavy installs slow down
+-- first and the edition is not used up at once.
+create function public.mimir_install_cap(p_lim public.mimir_limits, p_edition_used bigint) returns bigint
+language sql immutable set search_path = '' as $$
+  select case
+    when p_lim.edition_daily_micros = 0 then 0
+    when p_edition_used * 2 <= p_lim.edition_daily_micros then p_lim.install_daily_micros
+    else greatest(0, p_lim.install_daily_micros * 2 * (p_lim.edition_daily_micros - p_edition_used)
+      / p_lim.edition_daily_micros)
+  end::bigint;
+$$;
+
+-- Reserves the worst case of one call (p_input prompt tokens, all priced as cache writes,
+-- p_output reply tokens and p_searches web searches at p_model's prices) for the install
+-- holding p_token, from p_ip, against every cap. Raises with a hint naming the cap that
+-- was hit.
 create function public.mimir_reserve(p_token text, p_ip text, p_model text, p_input bigint, p_output bigint,
   p_searches integer) returns uuid
 language plpgsql volatile security definer set search_path = '' as $$
@@ -194,12 +236,14 @@ declare
   v_day date := public.mimir_day();
   v_ip text := public.mimir_ip_hash(p_ip);
   v_id uuid;
+  v_edition_used bigint;
+  v_install_used bigint;
   p_max_micros bigint;
 begin
   if p_input is null or p_input < 0 or p_output is null or p_output < 0 or p_searches is null or p_searches < 0 then
     raise exception 'bad reservation' using errcode = '22023', hint = 'invalid';
   end if;
-  p_max_micros := public.mimir_cost(p_model, p_input, 0, 0, p_output, p_searches);
+  p_max_micros := public.mimir_cost(p_model, 0, p_input, 0, p_output, p_searches);
   select * into v_inst from public.mimir_installs where token_hash = public.mimir_token_hash(p_token);
   if not found then
     raise exception 'unknown install' using errcode = 'P0001', hint = 'unknown_install';
@@ -208,22 +252,39 @@ begin
   if not v_lim.enabled then
     raise exception 'mimir is paused' using errcode = 'P0001', hint = 'paused';
   end if;
-  -- One reservation per edition at a time, so two calls cannot both slip under a cap.
-  perform pg_advisory_xact_lock(hashtext('public.mimir_reserve:' || v_inst.edition));
+  -- One reservation at a time, so two calls cannot both slip under a cap (the IP cap spans
+  -- editions, so the lock does too).
+  perform pg_advisory_xact_lock(hashtext('public.mimir_reserve'));
   if (select count(*) from public.mimir_calls
       where install_id = v_inst.id and created_at > now() - interval '1 minute') >= v_lim.install_per_minute then
     raise exception 'too many requests' using errcode = 'P0001', hint = 'install_rate';
   end if;
-  if (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) from public.mimir_calls
-      where install_id = v_inst.id and day = v_day) + p_max_micros > v_lim.install_daily_micros then
+  -- A call that never settled stops counting as in flight after 15 minutes; its
+  -- reservation still counts against the caps.
+  if (select count(*) from public.mimir_calls where install_id = v_inst.id and settled_at is null
+      and created_at > now() - interval '15 minutes') >= v_lim.install_in_flight then
+    raise exception 'too many calls at once' using errcode = 'P0001', hint = 'install_busy';
+  end if;
+  if (select count(*) from public.mimir_calls where edition = v_inst.edition and settled_at is null
+      and created_at > now() - interval '15 minutes') >= v_lim.edition_in_flight then
+    raise exception 'too many calls at once for this edition' using errcode = 'P0001', hint = 'edition_busy';
+  end if;
+  select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) into v_edition_used from public.mimir_calls
+  where edition = v_inst.edition and day = v_day;
+  select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) into v_install_used from public.mimir_calls
+  where install_id = v_inst.id and day = v_day;
+  if v_install_used + p_max_micros > v_lim.install_daily_micros then
     raise exception 'daily limit for this install reached' using errcode = 'P0001', hint = 'install_daily';
+  end if;
+  -- under its own cap but over the shrunken one: the edition's budget is what ran out
+  if v_install_used + p_max_micros > public.mimir_install_cap(v_lim, v_edition_used) then
+    raise exception 'daily limit for this edition reached' using errcode = 'P0001', hint = 'edition_daily';
   end if;
   if (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) from public.mimir_calls
       where ip_hash = v_ip and day = v_day) + p_max_micros > v_lim.ip_daily_micros then
     raise exception 'daily limit for this address reached' using errcode = 'P0001', hint = 'ip_daily';
   end if;
-  if (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) from public.mimir_calls
-      where edition = v_inst.edition and day = v_day) + p_max_micros > v_lim.edition_daily_micros then
+  if v_edition_used + p_max_micros > v_lim.edition_daily_micros then
     raise exception 'daily limit for this edition reached' using errcode = 'P0001', hint = 'edition_daily';
   end if;
   insert into public.mimir_calls (day, edition, install_id, ip_hash, reserved_micros)
@@ -255,23 +316,35 @@ begin
 end;
 $$;
 
--- Stores a shared session's latest turn for the install that made p_call.
+-- Stores a shared session's latest turn for the install that made p_call, once the call
+-- has settled and only once per call. Returns false, storing nothing, when the turn is
+-- over 256 KB or the install has written its bytes for the day.
 create function public.mimir_store_session(p_call uuid, p_session_key text, p_app_version text, p_model text,
-  p_transcript jsonb) returns void
+  p_transcript jsonb) returns boolean
 language plpgsql volatile security definer set search_path = '' as $$
 declare
   v_call public.mimir_calls;
+  v_lim public.mimir_limits;
+  v_bytes integer := octet_length(p_transcript::text);
 begin
-  select * into v_call from public.mimir_calls where id = p_call;
-  if not found then
-    raise exception 'unknown call' using errcode = '22023', hint = 'invalid';
+  select * into v_call from public.mimir_calls where id = p_call for update;
+  if not found or v_call.settled_at is null or v_call.stored_bytes is not null then
+    raise exception 'unknown, open or stored call' using errcode = '22023', hint = 'invalid';
   end if;
+  select * into v_lim from public.mimir_limits where edition = v_call.edition;
+  if v_bytes > 262144 or (select coalesce(sum(stored_bytes), 0) from public.mimir_calls
+      where install_id = v_call.install_id and day = v_call.day) + v_bytes > v_lim.install_store_daily_bytes then
+    update public.mimir_calls set stored_bytes = 0 where id = p_call;
+    return false;
+  end if;
+  update public.mimir_calls set stored_bytes = v_bytes where id = p_call;
   insert into public.mimir_sessions as s (install_id, session_key, edition, app_version, model, cost_micros, transcript)
   values (v_call.install_id, p_session_key, v_call.edition, p_app_version, p_model,
     coalesce(v_call.cost_micros, 0), p_transcript)
   on conflict (install_id, session_key) do update set
     app_version = excluded.app_version, model = excluded.model, turns = s.turns + 1,
     cost_micros = s.cost_micros + excluded.cost_micros, transcript = excluded.transcript, updated_at = now();
+  return true;
 end;
 $$;
 
@@ -302,31 +375,34 @@ declare
   v_lim public.mimir_limits;
   v_day date := public.mimir_day();
   v_ip text := public.mimir_ip_hash(p_ip);
+  v_edition_used bigint;
 begin
   select * into v_inst from public.mimir_installs where token_hash = public.mimir_token_hash(p_token);
   if not found then
     raise exception 'unknown install' using errcode = 'P0001', hint = 'unknown_install';
   end if;
   select * into v_lim from public.mimir_limits where mimir_limits.edition = v_inst.edition;
+  select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) into v_edition_used from public.mimir_calls
+  where mimir_calls.edition = v_inst.edition and mimir_calls.day = v_day;
   return query select v_inst.edition, v_day,
     (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0)::bigint from public.mimir_calls
       where install_id = v_inst.id and mimir_calls.day = v_day),
-    v_lim.install_daily_micros,
+    public.mimir_install_cap(v_lim, v_edition_used),
     (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0)::bigint from public.mimir_calls
       where ip_hash = v_ip and mimir_calls.day = v_day),
     v_lim.ip_daily_micros,
-    v_lim.enabled and (select coalesce(sum(coalesce(cost_micros, reserved_micros)), 0) from public.mimir_calls
-      where mimir_calls.edition = v_inst.edition and mimir_calls.day = v_day) < v_lim.edition_daily_micros;
+    v_lim.enabled and v_edition_used < v_lim.edition_daily_micros;
 end;
 $$;
 
 revoke execute on function public.mimir_day(), public.mimir_ip_hash(text), public.mimir_token_hash(text),
-  public.mimir_register(text, text), public.mimir_reserve(text, text, text, bigint, bigint, integer),
+  public.mimir_install_cap(public.mimir_limits, bigint),
+  public.mimir_register(text, text, text), public.mimir_reserve(text, text, text, bigint, bigint, integer),
   public.mimir_cost(text, bigint, bigint, bigint, bigint, integer),
   public.mimir_settle(uuid, text, bigint, bigint, bigint, bigint, integer),
   public.mimir_store_session(uuid, text, text, text, jsonb), public.mimir_forget(text),
   public.mimir_quota(text, text) from public, anon, authenticated;
-grant execute on function public.mimir_register(text, text), public.mimir_reserve(text, text, text, bigint, bigint, integer),
+grant execute on function public.mimir_register(text, text, text), public.mimir_reserve(text, text, text, bigint, bigint, integer),
   public.mimir_settle(uuid, text, bigint, bigint, bigint, bigint, integer),
   public.mimir_store_session(uuid, text, text, text, jsonb), public.mimir_forget(text),
   public.mimir_quota(text, text) to service_role;

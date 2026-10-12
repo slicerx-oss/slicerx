@@ -10,7 +10,8 @@ drop function if exists public.mimir_store_session(uuid, text, text, text, jsonb
 drop function if exists public.mimir_settle(uuid, text, bigint, bigint, bigint, bigint, integer);
 drop function if exists public.mimir_cost(text, bigint, bigint, bigint, bigint, integer);
 drop function if exists public.mimir_reserve(text, text, text, bigint, bigint, integer);
-drop function if exists public.mimir_register(text, text);
+drop function if exists public.mimir_install_cap(public.mimir_limits, bigint);
+drop function if exists public.mimir_register(text, text, text);
 drop function if exists public.mimir_token_hash(text);
 drop function if exists public.mimir_ip_hash(text);
 drop function if exists public.mimir_day();
