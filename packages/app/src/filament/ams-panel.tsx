@@ -9,16 +9,15 @@ import { Swatch } from '../parts'
 import { activeMeta } from '../plate/plates'
 import { useHost } from '../host'
 import { spoolFor, useSpools } from '../inventory/spools'
-import { effectiveMode, useLayout } from '../first-run/look'
 import { estimateLine } from '../lib/estimate-line'
-import { SlotRail, SlotRailEmpty, SlotRailSkeleton } from './slot-rail'
+import { RailFoot, SlotRail, SlotRailEmpty, SlotRailSkeleton } from './slot-rail'
 import { slotLabel } from './rail'
 import { useFold } from '../shell/fold'
 import { set, shownSlice, useApp } from '../state/store'
 import { nozzleText, tuneState } from '../calibration/tuned'
 import { useResolvedSlots } from './use-slots'
 import { SetupNotes } from './setup-plan'
-import { MAX_SLOTS, resetSlots, setSlot, swapPlateSlots, type ResolvedSlot } from './slots'
+import { resetSlots, swapPlateSlots, type ResolvedSlot } from './slots'
 import { resolveConfig } from '../adapters/config'
 import { currentMap, hasRack, mapExtruders, masterExtruder, nozzleName, pickedMap, setNozzleAuto, setSlotNozzle } from './nozzle-map'
 
@@ -114,8 +113,6 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   const used = slots.filter((s) => s.used).length
   const fromPrinter = printerSlots.length > 0
   const edited = Object.keys(slotSetup).length > 0
-  const mode = effectiveMode(useApp((s) => s.settingsMode), useLayout())
-  const advanced = mode !== 'simple'
   const [open, setOpen] = useFold('filament')
   const host = useHost()
   const spools = useSpools(host)
@@ -131,8 +128,9 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   const [menuOpen, setMenuOpen] = useState(false)
   // Swap colors opens from the menu, so the rail keeps its one row.
   const [swapOpen, setSwapOpen] = useState(false)
-  // The rail shows the slots in use; "Show unused slots" in the menu adds the rest. Nothing in use yet: every slot.
-  const shown = showUnused || used === 0 ? slots : slots.filter((s) => s.used)
+  // The rail shows the slots in use and the ones set here (a filament just added shows before anything prints with it);
+  // "Show unused slots" in the menu adds the rest. Nothing in use yet: every slot.
+  const shown = showUnused || used === 0 ? slots : slots.filter((s) => s.used || s.source === 'user')
   // The printer has a filament unit but has not reported its slots yet.
   const loading = (system === 'ams' || system === 'mmu') && !fromPrinter && !edited
   // After a slice: "148 g, 4 changes" (changes only on a multi-color plate).
@@ -194,7 +192,12 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
       }
       data-section="filament"
     >
-      {loading ? <SlotRailSkeleton /> : slots.length === 0 ? <SlotRailEmpty /> : <SlotRail slots={shown} left={left} badge={tuneBadge} {...(advanced && !fromPrinter && slots.length < MAX_SLOTS ? { onAdd: () => setSlot(slots.length + 1, {}) } : {})} />}
+      {loading ? <SlotRailSkeleton /> : slots.length === 0 ? <SlotRailEmpty /> : (
+        <>
+          <SlotRail slots={shown} left={left} badge={tuneBadge} />
+          <RailFoot count={slots.length} fromPrinter={fromPrinter} system={system} edited={edited} />
+        </>
+      )}
       <NozzleRows slots={slots} />
       <SetupNotes />
       <Suspense fallback={null}>{dialogOpen ? <Dialogs /> : null}</Suspense>
