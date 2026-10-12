@@ -3491,6 +3491,41 @@ fn lightning_infill_uses_far_less_material_than_a_pattern_over_the_whole_area() 
 }
 
 #[test]
+fn the_second_lightning_planner_holds_the_top_and_repeats_itself() {
+    let run = |extra: serde_json::Value| {
+        let mesh = Arc::new(one_box([-20.0, 20.0], [-20.0, 20.0], [0.0, 20.0]));
+        let mut config =
+            json!({"sparse_infill_pattern": "lightning", "sparse_infill_density": 15, "brim_width": 0});
+        for (k, v) in extra.as_object().unwrap() {
+            config[k] = v.clone();
+        }
+        let req: SliceRequest =
+            serde_json::from_value(json!({"plate": {"objects": [{"mesh": "b"}]}, "config": config})).unwrap();
+        let r = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+        assert_valid(&r);
+        r
+    };
+    let sparse = |r: &SliceRun| {
+        features_by_layer(&text(r))
+            .into_iter()
+            .filter(|m| m.1 == "Sparse infill")
+            .map(|m| m.0)
+            .collect::<Vec<f64>>()
+    };
+    let rect = run(json!({"sparse_infill_pattern": "rectilinear"}));
+    let v2 = run(json!({"lightning_engine": "v2"}));
+    let zs = sparse(&v2);
+    assert!(!zs.is_empty());
+    assert!(v2.report.stats.filament_mm[0] < rect.report.stats.filament_mm[0] * 0.85);
+    let layers = layer_zs(&text(&v2));
+    let top = zs.iter().copied().fold(0.0, f64::max);
+    assert!(top > layers[layers.len() - 1] - 1.3, "{top}");
+    assert_eq!(text(&v2), text(&run(json!({"lightning_engine": "v2"}))));
+    let parity = run(json!({"lightning_engine": "v2", "lightning_parity": true}));
+    assert!(!sparse(&parity).is_empty());
+}
+
+#[test]
 fn adaptive_cubic_infill_is_denser_near_the_surface_than_in_the_middle() {
     let mesh = Arc::new(one_box([-30.0, 30.0], [-30.0, 30.0], [0.0, 30.0]));
     let req: SliceRequest = serde_json::from_value(json!({
