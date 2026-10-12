@@ -116,6 +116,7 @@
 .sx-pilot .st .sx-ic{width:15px;height:15px;color:var(--green)}
 .sx-pilot .st .sx-ic.bad{color:var(--red)}
 .sx-pilot .tname{font:500 13.5px var(--f-mono);color:var(--t-fg);white-space:nowrap}
+.sx-pilot .tname.plain{font:500 14px var(--f-body)}
 .sx-pilot .kw{margin-right:.8ch;font-weight:500}
 .sx-pilot .kw.skill{color:var(--purple)} .sx-pilot .kw.plugin{color:var(--cyan)}
 .sx-pilot .kw.kb{color:var(--yellow)} .sx-pilot .kw.settings{color:var(--orange)}
@@ -346,3 +347,14 @@
 /* the box draws the field's ring */
 .sx-pilot .composer:has(.composer-text:focus-visible){border-color:var(--accent);box-shadow:var(--shadow-float),var(--focus-field)}
 .sx-pilot .composer-note{padding:0 6px;font-size:12.5px;color:var(--orange)}
+
+/* a lookup as it stays in the conversation: flat, title, rows, source */
+.sx-pilot .lookup-rec{display:flex;flex-direction:column;gap:6px;padding:10px 14px;border:1px solid var(--line-soft);border-radius:10px;background:var(--ink-2);font-size:13.5px}
+.sx-pilot .lookup-rec-t{display:flex;align-items:center;gap:6px;color:var(--t-mute);font-size:12.5px}
+.sx-pilot .lookup-rec-t .sx-ic{width:14px;height:14px}
+.sx-pilot .lookup-rec-f{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:0}
+.sx-pilot .lookup-rec-f>div{display:contents}
+.sx-pilot .lookup-rec-f dt{color:var(--t-sub)}
+.sx-pilot .lookup-rec-f dd{margin:0;color:var(--t-fg);font-variant-numeric:tabular-nums}
+.sx-pilot .lookup-rec-s{color:var(--cyan);font-size:12.5px;text-decoration:none;justify-self:start}
+.sx-pilot .lookup-rec-s:hover{text-decoration:underline}

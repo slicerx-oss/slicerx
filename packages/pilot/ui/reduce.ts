@@ -10,6 +10,7 @@ import type {
   PilotAttachment,
   PilotChoice,
   PilotEvent,
+  PilotLookup,
   PluginLoad,
   SettingsDiff,
   ToolDisplay,
@@ -47,6 +48,7 @@ export type Block =
   | { kind: 'diff'; id: string; diff: SettingsDiff }
   | { kind: 'perm'; id: string; permission: PermissionClass; mode: 'allow' | 'off'; message: string }
   | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean }
+  | { kind: 'lookup'; id: string; lookup: PilotLookup }
   | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
@@ -330,6 +332,8 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       const replay = lastTurn(s)?.replay ?? false
       return append(settleStreams(s), (id) => ({ kind: 'choice', id, askId: event.askId, title: event.title, question: event.question, choices: event.choices, picked: null, replay }), true)
     }
+    case 'lookup':
+      return append(settleStreams(s), (id) => ({ kind: 'lookup', id, lookup: event.lookup }), false)
     case 'ask_answered':
       return mapBlocks(s, (b) => (b.kind === 'choice' && b.askId === event.askId && b.picked === null ? { ...b, picked: event.choiceId } : b))
     case 'approval_resolved':

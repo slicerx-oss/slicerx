@@ -31,7 +31,7 @@ import { isPhoneLayout, onPhoneLayout } from '../lib/phone-layout'
 import { modelReveal, type RevealMemory } from './model-reveal'
 import { webgl2Available, watchFor, withRetries } from './context-retry'
 import { createFallbackViewport } from './fallback'
-import { overlayInsets } from './overlay-insets'
+import { OVERLAY_GAP, overlayInsets } from './overlay-insets'
 import { shellGpu } from './shell-gpu'
 import { viewportTheme } from './scene-theme'
 import { commitStroke } from '../plate/paint'
@@ -772,6 +772,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
   }, [host, attempt])
 
   // With the toolpaths showing, the legend, the layer strip and the playback bar cover parts of the view: the viewport frames the plate's content in the free area.
+  // In mimir, its lookup cards do the same along the bottom.
   useEffect(() => {
     const stage = stageRef.current
     const root = stage?.parentElement
@@ -779,8 +780,13 @@ export function ViewportHost({ layers }: { layers: boolean }) {
     const send = () => {
       const vp = vpRef.current
       if (!vp?.setInsets) return
-      if (!layers) return vp.setInsets({ left: 0, right: 0, top: 0, bottom: 0 })
       const box = (r: DOMRect) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom })
+      if (!layers) {
+        // mimir's lookup cards take a band along the bottom: the part is framed above it.
+        const band = root.querySelector<HTMLElement>('.mimir-lookups')
+        const bottom = band ? Math.max(0, stage.getBoundingClientRect().bottom - band.getBoundingClientRect().top + OVERLAY_GAP) : 0
+        return vp.setInsets({ left: 0, right: 0, top: 0, bottom })
+      }
       const rects = [...root.querySelectorAll<HTMLElement>('.sx-overlay')].filter((e) => e.offsetParent !== null).map((e) => box(e.getBoundingClientRect()))
       vp.setInsets(overlayInsets(box(stage.getBoundingClientRect()), rects))
     }

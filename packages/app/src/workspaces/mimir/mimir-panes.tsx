@@ -4,10 +4,14 @@
 // opens. The view is the one Model uses, on the same design and history; this file adds the chat column and the
 // caption that names the view.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Composer, useAttachments } from '@slicerx/pilot/ui'
+import { Composer, TranscriptView, useAttachments, usePilotRun, type ApprovalHandlers, type Transcript } from '@slicerx/pilot/ui'
+import type { PilotLookup } from '@slicerx/contracts'
 import '@slicerx/pilot/ui/pilot.css'
-import { Icon, RavenMark, ResizeEdge, tipAttrs } from '@slicerx/ui'
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { Button, Icon, RavenMark, ResizeEdge, tipAttrs } from '@slicerx/ui'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
+import { setLookups } from './lookups'
+import { stepWords } from './step-words'
+import { newSessionId, noteMessage, tabMimir } from './session'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
 import { get, setCamera, useApp } from '../../state/store'
@@ -37,7 +41,15 @@ export function designName(file: { name: string } | null): string {
   return file ? file.name.replace(/\.sx3mf$/i, '') : 'Untitled'
 }
 
-export function MimirChat() {
+/** Every lookup in the conversation, oldest first. */
+export function lookupsIn(t: Transcript): PilotLookup[] {
+  return t.turns.flatMap((turn) => turn.blocks.flatMap((b) => (b.kind === 'lookup' ? [b.lookup] : [])))
+}
+
+// Approvals never come up in the tab: its tools change nothing outside the design.
+const NO_APPROVAL = async (): Promise<void> => undefined
+
+export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const max = chatMax(useWindowWidth())
   const [width, setWidth] = usePaneSize('mimir-chat', CHAT_WIDTH.start, { min: CHAT_WIDTH.min, max })
   const [resizing, setResizing] = useState(false)
@@ -46,12 +58,27 @@ export function MimirChat() {
   const attachments = useAttachments()
   // The battle ravens stand behind the conversation until a model answers here.
   const ravens = useMimirLink() !== 'model'
+  const pilot = useMemo(() => tabMimir(), [])
+  const [sessionId, setSessionId] = useState(newSessionId)
+  const run = usePilotRun(pilot, sessionId)
+  const { reset, transcript } = run
+  useEffect(() => reset(), [sessionId, reset])
+  useEffect(() => setLookups(lookupsIn(transcript)), [transcript])
+  const handlers = useMemo<ApprovalHandlers>(() => ({ onApprove: NO_APPROVAL, onCancel: NO_APPROVAL, onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve() }), [pilot])
+  // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
+  const body = useRef<HTMLDivElement>(null)
+  const stick = useRef(true)
+  useLayoutEffect(() => {
+    const el = body.current
+    if (el && stick.current) el.scrollTop = el.scrollHeight
+  }, [transcript])
   // A file dragged anywhere over the chat can be dropped onto the message.
   const [dropping, setDropping] = useState(false)
   const files = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
   return (
     <aside
       ref={ref}
+      hidden={hidden}
       className="mimir-chat sx-pilot"
       data-testid="mimir-chat"
       data-resizing={resizing || undefined}
@@ -82,20 +109,51 @@ export function MimirChat() {
         <span className="mimir-chat-design" {...tipAttrs({ title: name })}>
           {name}
         </span>
+        {/* Shown while the stub answers, so nobody mistakes it for a model. */}
+        <span className="mimir-chat-scripted sx-mono" {...tipAttrs({ title: 'Scripted replies', body: `${ASSISTANT_NAME} plays scripted turns here until a model is connected to this tab. The tools it calls are real.` })}>
+          Scripted replies
+        </span>
+        <Button size="sm" variant="ghost" icon="plus" aria-label="New conversation" tip="pilot.newChat" onClick={() => setSessionId(newSessionId())} />
       </header>
       <div className="mimir-stage">
         <div className="mimir-ravens" data-testid="mimir-ravens" data-shown={ravens || undefined} aria-hidden="true">
           <RavenMark />
         </div>
-        <div className="mimir-transcript" data-testid="mimir-transcript" role="log" aria-label="Conversation" tabIndex={0}>
-          <div className="mimir-empty">
-            <p>Describe a part, or drop a photo of what it fits. {ASSISTANT_NAME} models it here, and every step lands in the timeline, where you can edit or undo it.</p>
-          </div>
+        <div
+          ref={body}
+          className="mimir-transcript"
+          data-testid="mimir-transcript"
+          role="log"
+          aria-label="Conversation"
+          aria-busy={run.running || undefined}
+          tabIndex={0}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+          }}
+        >
+          {transcript.turns.length === 0 ? (
+            <div className="mimir-empty">
+              <p>Describe a part, or drop a photo of what it fits. {ASSISTANT_NAME} models it here, and every step lands in the timeline, where you can edit or undo it.</p>
+            </div>
+          ) : (
+            <div className="mimir-turns">
+              <TranscriptView transcript={transcript} showThinking={false} approvals={handlers} words={stepWords} />
+            </div>
+          )}
         </div>
       </div>
       <div className="mimir-chat-foot">
-        {/* Replies come with the scripted builds; until then the message can be written and carry images. */}
-        <Composer attachments={attachments} onSend={() => undefined} sendOff />
+        <Composer
+          attachments={attachments}
+          running={run.running}
+          onStop={run.cancel}
+          onSend={(text, files) => {
+            stick.current = true
+            noteMessage(sessionId, text, files)
+            run.run(text, { attachments: files })
+          }}
+        />
       </div>
       <div className="mimir-split" data-testid="mimir-split">
         <ResizeEdge

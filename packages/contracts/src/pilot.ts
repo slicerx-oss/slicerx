@@ -204,6 +204,15 @@ export interface PilotAttachment {
   url: string
 }
 
+/** Something looked up for the person (a part's published size, a spec sheet), shown as a card with its source. */
+export interface PilotLookup {
+  id: string
+  title: string
+  /** Label and value rows, such as ["Trim plate", "150.4 x 110.4 mm"]. */
+  fields: [string, string][]
+  source: { title: string; url: string }
+}
+
 /** One answer on a choice card. */
 export interface PilotChoice {
   id: string
@@ -237,6 +246,7 @@ export type PilotEvent =
   /** A question for the person with fixed answers; the run waits until one is picked. */
   | { type: 'ask'; askId: string; title: string; question: string; choices: PilotChoice[] }
   | { type: 'ask_answered'; askId: string; choiceId: string }
+  | { type: 'lookup'; lookup: PilotLookup }
   | { type: 'approval_resolved'; requestId: string; decision: ApprovalDecision; by: 'user' | 'policy' | 'expiry'; via?: 'card' | 'phone' }
   | { type: 'summary'; title: string; rows: [string, string][]; stopped: boolean }
   | { type: 'usage'; inputTokens: number; outputTokens: number }

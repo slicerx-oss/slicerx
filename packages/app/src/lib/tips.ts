@@ -79,6 +79,7 @@ export const TIPS = {
   'account.open': f('Account', 'Open your account settings.'),
   'volume.copy': f('Copy part', 'Copy this part, then paste it into another object.'),
   'pilot.ask': f(`Ask ${ASSISTANT_NAME}`, 'Ask a question about your print.', 'Mod+/'),
+  'pilot.newChat': f('New conversation', 'Start over with an empty chat; the design and its history stay as they are.'),
   'pilot.attach': f('Attach an image', 'Add photos of what the part must fit, up to 4 images of 10 MB each.'),
   'pilot.expand': f(`Expand ${ASSISTANT_NAME}`, 'Open the panel.'),
   'pilot.collapse': f(`Collapse ${ASSISTANT_NAME}`, 'Shrink the panel to a button.'),
