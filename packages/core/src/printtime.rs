@@ -579,7 +579,12 @@ fn at(list: &[f64], i: usize, fallback: f64) -> f64 {
 /// so Bambu's start G-code line `M221 S` (Bambu: push the soft endstop state) becomes zero flow for
 /// the rest of the print in Orca's estimate, which drops the E jerk limit; the printer keeps its flow.
 fn value(words: &[&str], key: u8) -> Option<f64> {
-    words.iter().find_map(|w| {
+    value_of(words.iter().copied(), key)
+}
+
+/// [`value`] over the words as they come.
+fn value_of<'a>(mut words: impl Iterator<Item = &'a str>, key: u8) -> Option<f64> {
+    words.find_map(|w| {
         let b = w.as_bytes();
         let first = *b.first()?;
         if !first.eq_ignore_ascii_case(&key) {
@@ -587,6 +592,32 @@ fn value(words: &[&str], key: u8) -> Option<f64> {
         }
         w.get(1..)?.parse::<f64>().ok()
     })
+}
+
+/// Lines read ahead at a time by [`estimate`].
+const BLOCK: usize = 16_384;
+
+/// A plain move's X, Y, Z, E and F, as [`Reader::line`] and [`Reader::g1`] read them.
+type Move = [Option<f64>; 5];
+
+/// The words of a `G0` or `G1` line, read ahead of the reader (they depend on the line alone); `None` for any other
+/// line, which the reader reads itself.
+fn plain_move(line: &[u8]) -> Option<Move> {
+    let text = std::str::from_utf8(line).ok()?.trim_start();
+    if text.starts_with(';') {
+        return None;
+    }
+    let code = text.split(';').next().unwrap_or("");
+    let mut it = code.split_ascii_whitespace();
+    let cmd = it.next()?;
+    if !cmd.eq_ignore_ascii_case("G0") && !cmd.eq_ignore_ascii_case("G1") {
+        return None;
+    }
+    let mut out = [None; 5];
+    for (v, k) in out.iter_mut().zip(*b"XYZEF") {
+        *v = value_of(it.clone(), k);
+    }
+    Some(out)
 }
 
 fn has(words: &[&str], key: u8) -> bool {
@@ -894,6 +925,16 @@ impl Reader {
             *t = self.axis_target(i, value(words, k));
         }
         self.move_to(target, value(words, b'F'));
+    }
+
+    /// [`Self::line`] for a `G0` or `G1` line read ahead ([`plain_move`]).
+    fn plain(&mut self, m: &Move) {
+        self.start = self.end;
+        let mut target = [0.0; 4];
+        for (i, (t, v)) in target.iter_mut().zip(m).enumerate() {
+            *t = self.axis_target(i, *v);
+        }
+        self.move_to(target, m[4]);
     }
 
     /// `process_G2_G3`: an arc in the segments the firmware cuts it into.
@@ -1436,12 +1477,36 @@ pub fn estimate(gcode: &[u8], cfg: &PrintConfig, per_line: bool) -> Estimate {
         0
     };
     let mut r = Reader::new(cfg, per_line.then_some(line_count));
-    for (i, line) in gcode.split(|&b| b == b'\n').enumerate() {
-        r.line = i;
-        match std::str::from_utf8(line) {
-            Ok(s) => r.line(s),
-            Err(_) => r.line(&String::from_utf8_lossy(line)),
-        }
+    // The moves' words are read a block ahead on other threads while the reader works through the block before, in
+    // order: the times add up as they do line by line.
+    let lines: Vec<&[u8]> = gcode.split(|&b| b == b'\n').collect();
+    let blocks: Vec<&[&[u8]]> = lines.chunks(BLOCK).collect();
+    let read = |k: usize| -> Vec<Option<Move>> {
+        blocks
+            .get(k)
+            .map_or_else(Vec::new, |b| crate::par::map_fine(b, |l| plain_move(l)))
+    };
+    let mut ahead = read(0);
+    for k in 0..blocks.len() {
+        let block = blocks.get(k).copied().unwrap_or(&[]);
+        let moves = std::mem::take(&mut ahead);
+        let base = k * BLOCK;
+        let ((), next) = crate::par::join(
+            || {
+                for (j, (line, m)) in block.iter().zip(&moves).enumerate() {
+                    r.line = base + j;
+                    match m {
+                        Some(m) => r.plain(m),
+                        None => match std::str::from_utf8(line) {
+                            Ok(s) => r.line(s),
+                            Err(_) => r.line(&String::from_utf8_lossy(line)),
+                        },
+                    }
+                }
+            },
+            || read(k + 1),
+        );
+        ahead = next;
     }
     r.m.calculate(0, 0.0, Kind::Noop, true);
     let mut segments = std::mem::take(&mut r.m.segments);
