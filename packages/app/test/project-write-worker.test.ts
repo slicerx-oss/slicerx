@@ -80,13 +80,73 @@ describe('the project file written in the worker', () => {
     expect(inWorker.length).toBe(onPage.length)
     expect(Buffer.from(inWorker).equals(Buffer.from(onPage))).toBe(true)
     // The meshes went over handed over, not copied a second time: copies of the page's, so the page's own still work.
-    const sent = handed.at(-1)!
+    // One message per part and one for its few painted triangles, then the rest of the project.
+    expect(handed.map((t) => t.length)).toEqual([2, 0, 2, 0, 0])
+    const sent = handed.flat()
     expect(sent.length).toBe(4)
     const own = objects.flatMap((o) => o.parts.flatMap((p) => [p.positions.buffer, p.indices.buffer]))
     for (const b of sent) expect(own).not.toContain(b)
     for (const b of sent) expect((b as ArrayBuffer).byteLength).toBe(0)
     expect(objects[0]!.parts[0]!.positions.length).toBe(6002 * 3)
     expect(objects[0]!.parts[0]!.indices[3]).toBe(2)
+  })
+
+  it('lets the page run between the parts it hands over', async () => {
+    const { writeProjectInWorker } = await import('../src/export/project-worker-client')
+    const objects = [entry('a', 400), entry('b', 400), entry('c', 400)]
+    const input: ProjectInput = { plates: plates(objects), bed, settings: {}, application: 'SlicerX' }
+    // What the page did meanwhile, by how many messages had gone to the worker by then.
+    const ran: number[] = []
+    let live = true
+    const tick = (): void => {
+      ran.push(handed.length)
+      if (live) setTimeout(tick, 0)
+    }
+    setTimeout(tick, 0)
+    const bytes = await writeProjectInWorker(input)
+    live = false
+    expect(Buffer.from(bytes).equals(Buffer.from(await writeProjectCompressed(input)))).toBe(true)
+    // The page ran before the first piece went, between every two pieces, and before the rest of the project went.
+    expect(handed.length).toBe(7)
+    for (let n = 0; n < 7; n++) expect(ran).toContain(n)
+  })
+
+  it('sends a big paint job in pieces, and the file is the same bytes the page writes', async () => {
+    const { PAINT_CHUNK, writeProjectInWorker } = await import('../src/export/project-worker-client')
+    const n = 2 * PAINT_CHUNK + 500
+    const a = entry('a', n + 10)
+    const support: Record<number, string> = {}
+    const color: Record<number, string> = {}
+    for (let t = 0; t < n; t++) support[t] = t % 3 ? '4' : '8'
+    for (let t = 0; t < 40; t += 3) color[t] = '8'
+    const painted: PlateEntry = { ...a, paint: { 0: { color, support } } }
+    const input: ProjectInput = { plates: plates([painted, entry('b', 20)]), bed, settings: {}, application: 'SlicerX' }
+    const onPage = await writeProjectCompressed(input)
+    const inWorker = await writeProjectInWorker(input)
+    expect(Buffer.from(inWorker).equals(Buffer.from(onPage))).toBe(true)
+    // Part, color, three pieces of support; part, color; the rest.
+    expect(handed.length).toBe(1 + 1 + 3 + 1 + 1 + 1)
+    // The page's own paint is untouched.
+    expect(Object.keys(painted.paint![0]!.support!).length).toBe(n)
+  })
+
+  it('is written on the page when the worker stops partway', async () => {
+    setSnapshotStore(memorySnapshots())
+    set({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'plate-1', plateLoading: false })
+    startDirtyTracking()
+    markClean()
+    // The worker fails as the first part reaches it.
+    const post = ThreadWorker.prototype.postMessage
+    vi.spyOn(ThreadWorker.prototype, 'postMessage').mockImplementationOnce(function (this: ThreadWorker) {
+      queueMicrotask(() => this.onerror?.({ message: 'gone' } as ErrorEvent))
+    })
+    set({ plate: [entry('a', 200), entry('b', 200)] })
+    expect(await autosaveNow()).toBe(true)
+    vi.mocked(ThreadWorker.prototype.postMessage).mockRestore()
+    expect(ThreadWorker.prototype.postMessage).toBe(post)
+    const snap = await findRecovery()
+    const model = new TextDecoder().decode((await unzipEntries(snap!.data)).get('3D/3dmodel.model'))
+    expect(model.match(/<triangle /g)?.length).toBe(400)
   })
 
   it('writes an autosave that opens back with the same mesh', async () => {
@@ -96,8 +156,8 @@ describe('the project file written in the worker', () => {
     markClean()
     set({ plate: [entry('a', 3000)] })
     expect(await autosaveNow()).toBe(true)
-    // The write went to the worker.
-    expect(handed.length).toBe(1)
+    // The write went to the worker: the part, its paint, then the rest.
+    expect(handed.length).toBe(3)
     const snap = await findRecovery()
     expect(snap?.objects).toBe(1)
     const model = new TextDecoder().decode((await unzipEntries(snap!.data)).get('3D/3dmodel.model'))
@@ -115,7 +175,8 @@ describe('the project file written in the worker', () => {
     })
     set({ plate: [entry('a', 100)] })
     expect(await autosaveNow()).toBe(true)
-    expect(handed.length).toBe(0)
+    // No mesh went over; at most a note to drop the write.
+    expect(handed.flat()).toEqual([])
     expect((await findRecovery())?.objects).toBe(1)
   })
 })
