@@ -469,56 +469,89 @@ fn distance(g: &Grid, mask: &[bool]) -> Vec<f32> {
     d
 }
 
-/// The grid bytes the painted layers being cut side by side may hold at once ([`LayerPaint::voronoi`]): each layer
-/// holds a mask and a distance grid per color, a depth limit and a field, about 5 bytes per cell and color and 16 more.
-/// A plate whose layers fit never waits; a big painted plate cut on many threads keeps to it instead of holding every
-/// thread's grids at once (Charizard held about 11 layers' grids, 460 MB; at this budget its heap peak is set by the
-/// G-code stage instead, for about 5 percent more time).
-const GRID_BUDGET: usize = 384 << 20;
+/// The grid bytes the painted layers being cut side by side may hold before the guard steps in
+/// ([`LayerPaint::voronoi`]): each layer holds a mask and a distance grid per color, a depth limit and a field, about 5
+/// bytes per cell and color and 16 more. Below this nothing is ever checked or waited for.
+const GRID_FLOOR: usize = 384 << 20;
 
-/// What the layers being cut hold of [`GRID_BUDGET`].
-struct GridBudget {
+/// The share of the machine's available memory the grids may take once they pass [`GRID_FLOOR`]. A big painted plate
+/// cut on many threads holds every thread's grids at once (Charizard: about 11 layers, 460 MB); on a machine with that
+/// much to spare it runs at full speed, and on a short one the layers wait for each other instead.
+const GRID_SHARE: f64 = 0.25;
+
+/// The grid bytes the layers may hold at once: the larger of [`GRID_FLOOR`] and [`GRID_SHARE`] of the available memory,
+/// worked out the first time the grids pass the floor. No cap when the available memory cannot be read.
+/// `SX_GRID_BUDGET_MB` sets it outright, for tests and low-memory checks.
+fn grid_cap() -> usize {
+    static CAP: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *crate::par::Init::once(&CAP, || {
+        if let Some(mb) = std::env::var("SX_GRID_BUDGET_MB")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+        {
+            return mb.saturating_mul(1 << 20);
+        }
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::cast_precision_loss,
+            reason = "a share of a byte count"
+        )]
+        crate::memory::available().map_or(usize::MAX, |a| GRID_FLOOR.max((a as f64 * GRID_SHARE) as usize))
+    })
+}
+
+/// What the layers being cut hold of [`grid_cap`], and the most they held at once (for the tests).
+pub(crate) struct GridBudget {
     held: std::sync::Mutex<usize>,
     freed: std::sync::Condvar,
+    most: std::sync::atomic::AtomicUsize,
 }
 
 static GRIDS: GridBudget = GridBudget {
     held: std::sync::Mutex::new(0),
     freed: std::sync::Condvar::new(),
+    most: std::sync::atomic::AtomicUsize::new(0),
 };
 
-/// A layer's share of [`GRID_BUDGET`], given back when it is dropped.
-struct Held(usize);
+/// A layer's share of a grid budget, given back when it is dropped.
+pub(crate) struct Held(&'static GridBudget, usize);
 
 impl GridBudget {
-    /// Waits until `bytes` fit in the budget beside what the other layers hold, and holds them. A layer that holds
-    /// nothing else and does not fit alone still runs once no other layer holds any: the budget only spaces layers out.
-    /// Nothing that holds a share waits on other jobs, so a wait always ends.
-    fn hold(bytes: usize) -> Held {
-        let mut held = GRIDS
+    /// Holds `bytes` for a layer's grids. Under [`GRID_FLOOR`] in all it holds them at once; past it, it waits until
+    /// they fit in [`grid_cap`] beside what the other layers hold. A layer that holds nothing else and does not fit alone
+    /// still runs once no other layer holds any: the cap only spaces layers out. Nothing that holds a share waits on
+    /// other jobs, so a wait always ends.
+    fn hold(&'static self, bytes: usize, cap: impl Fn() -> usize) -> Held {
+        let mut held = self
             .held
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        while *held > 0 && held.saturating_add(bytes) > GRID_BUDGET {
-            held = GRIDS
-                .freed
-                .wait(held)
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if held.saturating_add(bytes) > GRID_FLOOR {
+            let cap = cap();
+            while *held > 0 && held.saturating_add(bytes) > cap {
+                held = self
+                    .freed
+                    .wait(held)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
         }
         *held += bytes;
-        Held(bytes)
+        self.most.fetch_max(*held, std::sync::atomic::Ordering::Relaxed);
+        Held(self, bytes)
     }
 }
 
 impl Drop for Held {
     fn drop(&mut self) {
-        let mut held = GRIDS
+        let mut held = self
+            .0
             .held
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *held = held.saturating_sub(self.0);
+        *held = held.saturating_sub(self.1);
         drop(held);
-        GRIDS.freed.notify_all();
+        self.0.freed.notify_all();
     }
 }
 
@@ -1057,7 +1090,7 @@ impl LayerPaint<'_> {
         ]);
         // The grids below are megabytes each on a big layer, and the layers are cut side by side: past the budget, a
         // layer waits for others to finish theirs (the bytes are the same, only when it runs changes).
-        let _held = GridBudget::hold(g.len() * (5 * (walls.len() + 1) + 16));
+        let _held = GRIDS.hold(g.len() * (5 * (walls.len() + 1) + 16), grid_cap);
         // Sources: painted walls per color, and the rest of the outline for the part's own color.
         let mut sources: BTreeMap<u8, Vec<bool>> = BTreeMap::new();
         let mut painted = vec![false; g.len()];
@@ -1191,6 +1224,32 @@ mod tests {
         reason = "test points are small and exact"
     )]
     use super::*;
+
+    #[test]
+    fn the_grid_budget_spaces_layers_out_past_its_cap() {
+        static B: GridBudget = GridBudget {
+            held: std::sync::Mutex::new(0),
+            freed: std::sync::Condvar::new(),
+            most: std::sync::atomic::AtomicUsize::new(0),
+        };
+        // A cap just past the floor: three layers of a third of the floor each fit, a fourth waits.
+        let cap = GRID_FLOOR + 1;
+        let third = GRID_FLOOR / 3;
+        std::thread::scope(|s| {
+            for _ in 0..12 {
+                s.spawn(|| {
+                    let _h = B.hold(third, || cap);
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                });
+            }
+        });
+        let most = B.most.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(most <= cap, "{most} > {cap}");
+        assert!(most >= 2 * third, "{most}");
+        assert_eq!(*B.held.lock().unwrap(), 0);
+        // One layer over the cap alone still runs.
+        drop(B.hold(2 * cap, || cap));
+    }
 
     const TRI: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [20.0, 0.0, 0.0], [20.0, 20.0, 0.0]];
 

@@ -55,6 +55,7 @@ mod copies;
 mod counterbore;
 mod equalizer;
 mod fm;
+mod memory;
 mod owners;
 mod smallflow;
 mod zoneroute;
