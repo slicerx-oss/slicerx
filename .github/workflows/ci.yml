@@ -13,12 +13,13 @@ on:
     types: [opened, synchronize, reopened, labeled]
   # the merge queue tests each queued pull request on top of main before it lands
   merge_group:
-  # by hand (write access): the integration test parts on a branch, with core and crates on the self-hosted Linux
-  # runners as the merge queue runs them, to try a change to that path before it is queued
+  # by hand (write access): the integration test parts on a branch, with core (and crates, unless RUST_CRATES_ON_PC is
+  # false) on the self-hosted Linux runners as the merge queue runs them, to try a change to that path before it is
+  # queued
   workflow_dispatch:
     inputs:
       rust_tests_on_pc:
-        description: Run the rust test parts, core and crates on the self-hosted Linux runners
+        description: Run the rust test parts on the self-hosted Linux runners as the merge queue does (core, and crates unless RUST_CRATES_ON_PC is false)
         type: boolean
         default: true
 
@@ -208,8 +209,11 @@ jobs:
     # hosted job limit to the e2e shards. Each part has a runner of its own (labels sx-pc-core and sx-pc-crates), so
     # each build directory only ever builds one part. A pull request always runs them hosted. Setting the repository
     # variable RUST_TESTS_ON_PC to false sends them back to hosted runners at once; RUST_CRATES_ON_PC set to false sends
-    # only the crates part there, so its three groups build side by side while core keeps the PC's warm build.
-    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (matrix.part == 'core' || (matrix.part == 'crates' && (github.event_name == 'workflow_dispatch' || vars.RUST_CRATES_ON_PC != 'false')))) && fromJSON(format('["self-hosted","sx-pc-{0}"]', matrix.part)) || 'ubuntu-latest' }}
+    # only the crates part there, so its three groups build side by side while core keeps the PC's warm build. With
+    # crates hosted, core takes either self-hosted runner (label sx-pc), so two groups' core parts run at once; each
+    # runner keeps its own build directory ($HOME/target/<runner name>), so both stay warm on core alone. A run by hand
+    # follows RUST_CRATES_ON_PC too, so it tries exactly what the merge queue runs.
+    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (matrix.part == 'core' || (matrix.part == 'crates' && vars.RUST_CRATES_ON_PC != 'false'))) && ((matrix.part == 'core' && vars.RUST_CRATES_ON_PC == 'false') && fromJSON('["self-hosted","sx-pc"]') || fromJSON(format('["self-hosted","sx-pc-{0}"]', matrix.part))) || 'ubuntu-latest' }}
     timeout-minutes: 45
     permissions:
       contents: read
