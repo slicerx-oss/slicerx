@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AUTOSAVE_ID, MAX_RECENT, SNAPSHOT_VERSION, findRecovery, listRecent, memorySnapshots, projectSaved, recordRecent, setSnapshotStore, startAutosave, autosaveNow, snapshotStore } from '../src/project/autosave'
+import { AUTOSAVE_ID, MAX_RECENT, SNAPSHOT_VERSION, findRecovery, nothingToLose, listRecent, memorySnapshots, projectSaved, recordRecent, setSnapshotStore, startAutosave, autosaveNow, snapshotStore } from '../src/project/autosave'
 import { markClean, startDirtyTracking } from '../src/project/unsaved'
 import { get, set } from '../src/state/store'
 
@@ -119,6 +119,20 @@ describe('autosave and recent projects', () => {
     expect((await findRecovery())?.objects).toBe(2)
     await snapshotStore().put({ id: AUTOSAVE_ID, name: 'bracket.sx3mf', savedAt: 1, objects: 1, data: new Uint8Array([1]) })
     expect((await findRecovery())?.name).toBe('bracket.sx3mf')
+  })
+
+  it('offers an autosave back over the untouched start example, but never over work', () => {
+    // the example can land before the autosave is read; that must not decide whether the offer shows
+    expect(nothingToLose()).toBe(true)
+    const example = { ...(entry('x') as object), name: 'Layered X' } as never
+    set({ plate: [example] })
+    markClean()
+    expect(nothingToLose()).toBe(true)
+    set({ plate: [example, entry('b')] })
+    expect(nothingToLose()).toBe(false)
+    set({ plate: [{ ...(entry('y') as object), name: 'Bracket' } as never] })
+    markClean()
+    expect(nothingToLose()).toBe(false)
   })
 
   it('writes nothing for a project with no change since it was opened or saved', async () => {

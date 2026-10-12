@@ -180,6 +180,18 @@ export function startAutosave(delayMs = AUTOSAVE_DELAY_MS, maxWaitMs = AUTOSAVE_
   }
 }
 
+/**
+ * Whether offering an autosave back would lose nothing on the plate: it is empty, or it holds only the example the
+ * session started with, untouched. The example can land before the autosave is read (a slow disk, a busy machine),
+ * and the offer must not hang on which comes first.
+ */
+export function nothingToLose(s: Pick<AppState, 'plate' | 'plates' | 'activePlate'> = get()): boolean {
+  const objects = allPlates(s).flatMap((p) => p.objects)
+  if (objects.length === 0) return true
+  const example = demoModel(DEFAULT_MODEL)?.name
+  return objects.length === 1 && example !== undefined && objects[0]?.name === example && !isDirty()
+}
+
 /** The autosave left from an earlier session, when there is work in it. An old one of the example plate is dropped. */
 export async function findRecovery(): Promise<Snapshot | null> {
   const rows = await snapshotStore().list().catch(() => [] as Snapshot[])
