@@ -92,7 +92,7 @@ pub fn end(id: u32) {
 
 #[cfg(test)]
 mod tests {
-    use super::poly::{self, Region, Ring};
+    use super::poly::{self, Bbox, Region, Ring};
     use super::*;
     use crate::fm::Fm as _;
     use crate::poly2d::Polygon;
@@ -136,7 +136,32 @@ mod tests {
         NestBed {
             width_mm: w,
             depth_mm: d,
+            round: false,
         }
+    }
+
+    fn round_bed(diameter: f64) -> NestBed {
+        NestBed {
+            width_mm: diameter,
+            depth_mm: diameter,
+            round: true,
+        }
+    }
+
+    /// the farthest point of each placed outline from the middle of a round bed, mm
+    fn reach_from_middle(items: &[NestItem], out: &NestResult, diameter: f64) -> Vec<f64> {
+        let c = diameter / 2.0;
+        out.placements
+            .iter()
+            .map(|p| {
+                placed(items, p)
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .map(|q| (q[0] - c).m_hypot(q[1] - c))
+                    .fold(0.0, f64::max)
+            })
+            .collect()
     }
 
     fn opts(gap: f64) -> NestOptions {
@@ -484,5 +509,86 @@ mod tests {
         end(p.session);
         assert_eq!(p.result, all);
         assert!(step(p.session, 1).is_err());
+    }
+
+    #[test]
+    fn a_round_bed_keeps_every_part_inside_its_circle() {
+        // 40 x 30 blocks on a 300 mm delta bed: its 300 mm box has room in the corners that the circle does not
+        let items: Vec<NestItem> = (0..30)
+            .map(|i| item(&format!("r{i}"), vec![rect(0.0, 0.0, 40.0, 30.0)]))
+            .collect();
+        let gap = 5.0;
+        let problem = |bed: NestBed| NestProblem {
+            bed,
+            items: items.clone(),
+            fixed: vec![],
+            zones: vec![],
+            options: NestOptions {
+                center: false,
+                ..opts(gap)
+            },
+        };
+        let square = nest(problem(bed(300.0, 300.0))).unwrap();
+        assert!(
+            reach_from_middle(&items, &square, 300.0)
+                .iter()
+                .any(|r| *r > 150.0)
+        );
+        let out = nest(problem(round_bed(300.0))).unwrap();
+        assert!(!out.placements.is_empty());
+        for r in reach_from_middle(&items, &out, 300.0) {
+            assert!(r <= 150.0 - gap + 1e-3, "a part reaches {r} mm from the middle");
+        }
+        let left: u32 = out.left_over.iter().map(|l| l.copies).sum();
+        assert_eq!(out.placements.len() + left as usize, 30);
+        assert!(out.stats.utilization > 0.0 && out.stats.utilization <= 1.0);
+    }
+
+    #[test]
+    fn a_part_too_wide_for_the_circle_is_too_large_though_its_box_fits() {
+        // a 220 mm square fits the 300 mm box but its 311 mm diagonal does not fit the circle
+        let items = vec![item("big", vec![rect(0.0, 0.0, 220.0, 220.0)])];
+        let mk = |bed: NestBed| NestProblem {
+            bed,
+            items: items.clone(),
+            fixed: vec![],
+            zones: vec![],
+            options: NestOptions {
+                rotate: false,
+                ..opts(2.0)
+            },
+        };
+        assert_eq!(nest(mk(bed(300.0, 300.0))).unwrap().placements.len(), 1);
+        let out = nest(mk(round_bed(300.0))).unwrap();
+        assert!(out.placements.is_empty());
+        assert_eq!(out.too_large.len(), 1);
+    }
+
+    #[test]
+    fn a_layout_on_a_round_bed_is_centered_inside_the_circle() {
+        let items: Vec<NestItem> = (0..3)
+            .map(|i| item(&format!("c{i}"), vec![rect(0.0, 0.0, 60.0, 60.0)]))
+            .collect();
+        let out = nest(NestProblem {
+            bed: round_bed(250.0),
+            items: items.clone(),
+            fixed: vec![],
+            zones: vec![],
+            options: opts(4.0),
+        })
+        .unwrap();
+        assert_eq!(out.placements.len(), 3);
+        let all = out
+            .placements
+            .iter()
+            .map(|p| poly::bbox(&placed(&items, p)))
+            .fold(Bbox::EMPTY, |a, b| a.merge(&b));
+        assert!(
+            (all.center()[0] - 125.0).abs() < 1.0 && (all.center()[1] - 125.0).abs() < 1.0,
+            "{all:?}"
+        );
+        for r in reach_from_middle(&items, &out, 250.0) {
+            assert!(r <= 125.0 - 4.0 + 1e-3, "a part reaches {r} mm from the middle");
+        }
     }
 }

@@ -7,6 +7,7 @@
 
 use super::poly::{self, Bbox, Pt, Region, Ring};
 use crate::error::{Error, Result};
+use crate::fm::Fm as _;
 use crate::poly2d::Polygon;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -15,6 +16,8 @@ use std::rc::Rc;
 /// millidegrees in a degree; turns are kept as whole millidegrees so they compare exactly
 const MDEG: i64 = 1000;
 const FULL: i64 = 360 * MDEG;
+/// sides of the polygon a round bed is taken as: inscribed, so it loses at most 0.05 mm on a 300 mm bed
+const ROUND_SIDES: usize = 128;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +67,9 @@ pub struct NestZone {
 pub struct NestBed {
     pub width_mm: f64,
     pub depth_mm: f64,
+    /// a round bed (a delta): the circle of diameter min(width, depth) in the middle of the box
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub round: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -625,7 +631,66 @@ impl Nester {
         let sh = &self.shapes[s];
         sh.turns.iter().any(|t| {
             let b = sh.bounds[t];
-            b.w() + 2.0 * edge <= self.bed.width_mm + 1e-6 && b.h() + 2.0 * edge <= self.bed.depth_mm + 1e-6
+            let boxed = b.w() + 2.0 * edge <= self.bed.width_mm + 1e-6
+                && b.h() + 2.0 * edge <= self.bed.depth_mm + 1e-6;
+            let fit = Bbox {
+                min: [edge - b.min[0], edge - b.min[1]],
+                max: [
+                    self.bed.width_mm - edge - b.max[0],
+                    self.bed.depth_mm - edge - b.max[1],
+                ],
+            };
+            boxed && (!self.bed.round || self.round_fit(s, *t, edge, fit).is_some())
+        })
+    }
+
+    /// the middle and radius of a round bed
+    fn circle(&self) -> Option<(Pt, f64)> {
+        self.bed.round.then(|| {
+            (
+                [self.bed.width_mm / 2.0, self.bed.depth_mm / 2.0],
+                self.bed.width_mm.min(self.bed.depth_mm) / 2.0,
+            )
+        })
+    }
+
+    /// where the part's origin may go on a round bed: inside `fit`, with every point of its hull `edge` inside
+    /// the circle. the circle is taken as the regular polygon inscribed in it; each side bounds the origin by
+    /// one half plane, set by how far the hull reaches toward that side, so the region is convex and never
+    /// lets a part past the circle
+    fn round_fit(&self, s: usize, turn: i64, edge: f64, fit: Bbox) -> Option<Ring> {
+        let (c, r) = self.circle()?;
+        let apothem = (r - edge) * (std::f64::consts::PI / ROUND_SIDES as f64).m_cos();
+        if apothem <= 0.0 {
+            return None;
+        }
+        let hull = poly::rotate_ring(&self.shapes[s].hull, poly::turn(turn as f64 / MDEG as f64));
+        let mut ring = poly2_rect(fit);
+        for k in 0..ROUND_SIDES {
+            let (sin, cos) = ((k as f64 + 0.5) * std::f64::consts::TAU / ROUND_SIDES as f64).m_sin_cos();
+            let u = [cos, sin];
+            let reach = hull
+                .iter()
+                .map(|p| u[0] * p[0] + u[1] * p[1])
+                .fold(f64::NEG_INFINITY, f64::max);
+            ring = clip_half(&ring, u, u[0] * c[0] + u[1] * c[1] - reach + apothem);
+            if ring.len() < 3 {
+                return None;
+            }
+        }
+        Some(ring)
+    }
+
+    /// true when every placed part, moved by `shift`, keeps its edge room inside the circle of a round bed
+    fn inside_circle(&self, layout: &Layout, shift: Pt, c: Pt, r: f64) -> bool {
+        layout.puts.iter().flatten().all(|p| {
+            let sh = &self.shapes[p.shape];
+            let sc = poly::turn(p.turn as f64 / MDEG as f64);
+            let lim = r - sh.edge + 1e-6;
+            sh.hull.iter().all(|q| {
+                let v = poly::rotate_pt(*q, sc);
+                (v[0] + p.pos[0] + shift[0] - c[0]).m_hypot(v[1] + p.pos[1] + shift[1] - c[1]) <= lim
+            })
         })
     }
 
@@ -863,6 +928,12 @@ impl Nester {
         hull_pts: &[Pt],
     ) -> Option<(f64, Pt)> {
         let fit = self.inner_fit(b, turn)?;
+        let area = if self.bed.round {
+            self.round_fit(b, turn, self.shapes[b].edge, fit)?
+        } else {
+            poly2_rect(fit)
+        };
+        let reach = poly::ring_bbox(&area);
         let mut bl = unions.remove(&(b, turn)).unwrap_or_default();
         if !bl.zones || bl.folded < obstacles.len() {
             let mut rings: Vec<Ring> = bl.region.iter().flatten().cloned().collect();
@@ -879,9 +950,9 @@ impl Nester {
             self.work += rings.iter().map(Vec::len).sum::<usize>() as f64;
             bl.region = poly::union_rings(&rings);
         }
-        let rect: Region = vec![vec![poly2_rect(fit)]];
+        let rect: Region = vec![vec![area]];
         let u = &bl.region;
-        let free = if u.is_empty() || !poly::bbox(u).overlaps(&fit) {
+        let free = if u.is_empty() || !poly::bbox(u).overlaps(&reach) {
             rect
         } else {
             poly::difference(&rect, u)
@@ -1050,10 +1121,26 @@ impl Nester {
             self.bed.width_mm / 2.0 - env.center()[0],
             self.bed.depth_mm / 2.0 - env.center()[1],
         ];
-        let shift = [
+        let mut shift = [
             want[0].clamp(lo[0].min(0.0), hi[0].max(0.0)),
             want[1].clamp(lo[1].min(0.0), hi[1].max(0.0)),
         ];
+        if let Some((c, r)) = self.circle()
+            && !self.inside_circle(layout, shift, c, r)
+        {
+            // on a round bed the box is not enough: go as far toward the middle as the circle allows. the parts
+            // fit where they are, and each stays in the circle along a straight move, so the room is one stretch
+            let (mut ok, mut over) = (0.0, 1.0);
+            for _ in 0..40 {
+                let t = f64::midpoint(ok, over);
+                if self.inside_circle(layout, [shift[0] * t, shift[1] * t], c, r) {
+                    ok = t;
+                } else {
+                    over = t;
+                }
+            }
+            shift = [shift[0] * ok, shift[1] * ok];
+        }
         if shift[0].abs() < 1e-9 && shift[1].abs() < 1e-9 {
             return [0.0, 0.0];
         }
@@ -1146,11 +1233,34 @@ impl Nester {
                 passes: u32::try_from(self.next).unwrap_or(u32::MAX),
                 best_pass: best.pass,
                 work: self.work,
-                utilization: best.area / (self.bed.width_mm * self.bed.depth_mm),
+                utilization: best.area
+                    / self
+                        .circle()
+                        .map_or(self.bed.width_mm * self.bed.depth_mm, |(_, r)| {
+                            std::f64::consts::PI * r * r
+                        }),
                 area_mm2: best.area,
             },
         }
     }
+}
+
+/// the part of a convex counterclockwise ring where `u . p <= lim`
+fn clip_half(ring: &[Pt], u: Pt, lim: f64) -> Ring {
+    let side = |p: Pt| u[0] * p[0] + u[1] * p[1] - lim;
+    let mut out = Vec::with_capacity(ring.len() + 1);
+    for (i, a) in ring.iter().enumerate() {
+        let b = ring[(i + 1) % ring.len()];
+        let (sa, sb) = (side(*a), side(b));
+        if sa <= 0.0 {
+            out.push(*a);
+        }
+        if (sa <= 0.0) != (sb <= 0.0) {
+            let t = sa / (sa - sb);
+            out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+    }
+    out
 }
 
 fn poly2_rect(b: Bbox) -> Ring {
