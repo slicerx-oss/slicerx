@@ -10,6 +10,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Test builds only (sx-connect's `test-hooks`): the hub's scan takes its neighbour table from `SX_TEST_NEIGHBORS`.
+test-hooks = ["sx-connect/test-hooks"]
+
 [dependencies]
 base64 = "=0.23.1"
 # The pairing session's AEAD (XChaCha20-Poly1305) and key exchange (X25519), as in packages/pair.

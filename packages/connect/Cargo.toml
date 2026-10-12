@@ -10,6 +10,12 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Test builds only: lets a test hand the drivers what the computer would otherwise report (`SX_TEST_NEIGHBORS`, the
+# neighbour table a PrusaLink scan reads). Never in a release: apps/desktop/release/check-agent-bridge.mjs fails a
+# binary that carries the variable's name.
+test-hooks = []
+
 [dependencies]
 # AES-128-CBC for the credentials an Anycubic printer hands out in LAN Mode.
 aes = "=0.9.3"
