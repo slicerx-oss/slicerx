@@ -4,7 +4,7 @@
 export { createPilot, type CreatePilotOptions, type PilotHost } from './runtime'
 export { ASSISTANT_NAME } from './name'
 export { HUGINN, MODEL_AUTOMATIC, MODEL_AUTOMATIC_LABEL, modelFor, MUNINN, tierForPrompt, type Tier } from './models'
-export { defineSkill, defineTool, toolSpec, type AgentWork, type ApprovalPlan, type PilotTool, type ToolContext, type ToolHost, type ToolOutput } from './tool'
+export { defineSkill, defineTool, toolSpec, type AgentWork, type ApprovalPlan, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset } from './tool'
 export { decide, normalizePolicy, policyMayGrant } from './gate'
 export { createApprovalBroker, TOKEN_TTL_MS, type ApprovalBroker } from './permit/broker'
 export { createKnowledgeBase, EMPTY_KB_INDEX, type KbIndex, type KnowledgeBase } from './kb/kb'

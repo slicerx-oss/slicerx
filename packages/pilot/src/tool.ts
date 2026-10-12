@@ -70,7 +70,16 @@ export interface ToolOutput {
   citations?: Citation[]
   diff?: SettingsDiff
   report?: { title: string; rows: [string, string][] }
+  /** For a host that shows text (MCP): this exact text instead of one made from summary and output. */
+  text?: string
+  /** For a host with structured replies (MCP): this exact object instead of `{ ok, summary, output }`. */
+  structured?: Record<string, unknown>
+  /** A reply the host returns as it is: a call that resolves another call's approval answers with that call's reply. */
+  passthrough?: unknown
 }
+
+/** The sets tools load in (docs: agent tools architecture). A client starts with core and loads the others it needs. */
+export type Toolset = 'core' | 'cad' | 'mesh' | 'settings' | 'project' | 'printers' | 'fleets' | 'kb' | 'calibration' | 'cloud' | 'theme' | 'local_ai' | 'skills'
 
 export interface PlannedAction {
   action: SideEffectAction
@@ -103,6 +112,21 @@ export interface PilotTool<I = unknown> {
   source: ToolSource
   permission: PermissionClass
   input: z.ZodType<I>
+  /** A short name for people, such as "Slice a model file". */
+  title?: string
+  /** Other words makers use for it (bevel for chamfer), for finding it. */
+  aliases?: string[]
+  /** The set it loads with. */
+  toolset?: Toolset
+  /** The shape of `structured` replies, published as the MCP output schema. */
+  outputShape?: z.ZodRawShape
+  /** MCP hints when the permission class does not say it, such as a read tool that writes files to the output folder. */
+  hints?: { readOnly?: boolean; destructive?: boolean; idempotent?: boolean; openWorld?: boolean }
+  /**
+   * Runs without the permission gate and the action log: lookups that change nothing outside the output folder,
+   * and calls about the server itself (approvals, the policy, the log). A tool marked so must be read class.
+   */
+  ungated?: boolean
   /** When the class depends on the input, such as settings.apply to a saved profile. */
   permissionFor?(input: I): PermissionClass
   /** Printer the call targets, for per-printer policy overrides. */
@@ -126,6 +150,7 @@ export interface PilotTool<I = unknown> {
 
 export function defineTool<I>(tool: PilotTool<I>): PilotTool<I> {
   if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/.test(tool.name)) throw new Error(`Bad tool name ${tool.name}`)
+  if (tool.ungated && tool.permission !== 'read') throw new Error(`${tool.name}: only a read tool can run without the gate`)
   return tool
 }
 
