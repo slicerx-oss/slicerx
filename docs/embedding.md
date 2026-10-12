@@ -63,7 +63,7 @@ sx slice --request request.json --out-dir out/      # or --request - to read std
 sx schema request                                   # JSON Schema of the request; `sx schema result` for the result
 ```
 
-A file slice takes OrcaSlicer keys in `config.json`, such as `{ "layer_height": 0.2, "wall_loops": 3, "gcode_flavor": "klipper" }`, and prints a one-line summary. For a 3MF project, `--plate N` picks the plate. The examples use `x-mark.stl`, the SlicerX reference model in `packages/core/bench/models` (Apache-2.0, with a two-color `x-mark-2color.3mf`).
+A file slice takes OrcaSlicer keys in `config.json`, such as `{ "layer_height": 0.2, "wall_loops": 3, "gcode_flavor": "klipper" }`, and prints a one-line summary. For a 3MF project, `--plate N` picks the plate. A Bambu Studio or OrcaSlicer project slices with its own settings (`Metadata/project_settings.config`, and each object's own), except SlicerX's engine choices the project did not change (`packages/settings/engine-choices.json`: aegis walls and the precise outer wall), as the app and the MCP server open it; `--config` goes over them and `--no-project-settings` leaves them out. What the settings set that the engine does not use goes to stderr as one block, and the result's `configReport` (request slices) has the whole list; `--strict` refuses the slice instead (exit code 3). The examples use `x-mark.stl`, the SlicerX reference model in `packages/core/bench/models` (Apache-2.0, with a two-color `x-mark-2color.3mf`).
 
 A request slice reads a `SliceRequest`:
 

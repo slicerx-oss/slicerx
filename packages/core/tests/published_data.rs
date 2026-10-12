@@ -25,6 +25,10 @@ fn data_copies_match_the_settings_schema() {
             include_str!(concat!(env!("OUT_DIR"), "/defaults.json")),
         ),
         (
+            "engine-choices.json",
+            include_str!(concat!(env!("OUT_DIR"), "/engine-choices.json")),
+        ),
+        (
             "head-shapes.json",
             include_str!(concat!(env!("OUT_DIR"), "/head-shapes.json")),
         ),

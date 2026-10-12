@@ -569,3 +569,151 @@ fn settings_the_engine_does_not_use_are_listed_and_strict_refuses() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A stored ZIP of the given entries.
+fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    fn crc32(data: &[u8]) -> u32 {
+        let mut c = 0xffff_ffffu32;
+        for &b in data {
+            c ^= u32::from(b);
+            for _ in 0..8 {
+                c = if c & 1 == 1 {
+                    0xedb8_8320 ^ (c >> 1)
+                } else {
+                    c >> 1
+                };
+            }
+        }
+        !c
+    }
+    let len = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for (name, data) in entries {
+        let offset = len(out.len());
+        let crc = crc32(data);
+        for (dst, sig) in [(&mut out, 0x0403_4b50u32), (&mut central, 0x0201_4b50u32)] {
+            dst.extend_from_slice(&sig.to_le_bytes());
+            if sig == 0x0201_4b50 {
+                dst.extend_from_slice(&20u16.to_le_bytes());
+            }
+            dst.extend_from_slice(&[20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            dst.extend_from_slice(&crc.to_le_bytes());
+            dst.extend_from_slice(&len(data.len()).to_le_bytes());
+            dst.extend_from_slice(&len(data.len()).to_le_bytes());
+            dst.extend_from_slice(&u16::try_from(name.len()).unwrap_or(0).to_le_bytes());
+            dst.extend_from_slice(&0u16.to_le_bytes());
+            if sig == 0x0201_4b50 {
+                dst.extend_from_slice(&[0; 10]);
+                dst.extend_from_slice(&offset.to_le_bytes());
+            }
+            dst.extend_from_slice(name.as_bytes());
+        }
+        out.extend_from_slice(data);
+    }
+    let at = len(out.len());
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    let n = u16::try_from(entries.len()).unwrap_or(0).to_le_bytes();
+    out.extend_from_slice(&n);
+    out.extend_from_slice(&n);
+    out.extend_from_slice(&len(central.len()).to_le_bytes());
+    out.extend_from_slice(&at.to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
+    out
+}
+
+/// A 20 x 20 x 10 mm box as a 3MF, with `settings` as its `Metadata/project_settings.config` when given.
+fn box_3mf(settings: Option<&serde_json::Value>) -> Vec<u8> {
+    let model = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-01.10.02.73</metadata><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#;
+    let text = settings.map(ToString::to_string);
+    let mut entries: Vec<(&str, &[u8])> = vec![("3D/3dmodel.model", model.as_bytes())];
+    if let Some(t) = &text {
+        entries.push(("Metadata/project_settings.config", t.as_bytes()));
+    }
+    zip(&entries)
+}
+
+/// The layer count `sx slice` reports on stderr ("N layers, ...").
+fn layers(stderr: &[u8]) -> u32 {
+    let text = String::from_utf8_lossy(stderr);
+    text.lines()
+        .find_map(|l| l.split_once(" layers, ").and_then(|(n, _)| n.trim().parse().ok()))
+        .unwrap_or_else(|| panic!("no layer count in {text}"))
+}
+
+#[test]
+fn a_project_slices_with_its_own_settings() {
+    let dir = std::env::temp_dir().join(format!("sx-cli-project-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // As Bambu Studio writes them: strings, one entry per filament, and the keys the person changed listed apart.
+    let settings = serde_json::json!({
+        "printer_settings_id": "Bambu Lab X1 Carbon 0.4 nozzle",
+        "layer_height": "0.3",
+        "initial_layer_print_height": "0.3",
+        "wall_loops": "3",
+        "wall_generator": "classic",
+        "brim_type": "no_brim",
+        "skirt_loops": "0",
+        "different_settings_to_system": ["layer_height;brim_type", "", ""]
+    });
+    let project = dir.join("project.3mf");
+    std::fs::write(&project, box_3mf(Some(&settings))).unwrap();
+    let plain = dir.join("plain.3mf");
+    std::fs::write(&plain, box_3mf(None)).unwrap();
+    let slice = |model: &std::path::Path, extra: &[&str]| {
+        let out = sx()
+            .arg("slice")
+            .arg(model)
+            .args(["-o", "-"])
+            .args(extra)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        out
+    };
+    // The project's own 0.3 mm layers, and SlicerX's walls kept over the classic ones it inherited.
+    let own = slice(&project, &[]);
+    assert_eq!(layers(&own.stderr), 33);
+    let err = String::from_utf8_lossy(&own.stderr);
+    assert!(err.contains("Kept SlicerX's aegis walls"), "{err}");
+    assert!(
+        err.contains("sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"),
+        "{err}"
+    );
+    // --config goes over the project.
+    let cfg = dir.join("cfg.json");
+    std::fs::write(&cfg, r#"{"layer_height":0.2,"initial_layer_print_height":0.2}"#).unwrap();
+    assert_eq!(
+        layers(&slice(&project, &["--config", cfg.to_str().unwrap()]).stderr),
+        50
+    );
+    // --no-project-settings and a 3MF without settings slice with the defaults, as before.
+    let defaults = layers(&slice(&project, &["--no-project-settings"]).stderr);
+    let bare = slice(&plain, &[]);
+    assert_eq!(layers(&bare.stderr), defaults);
+    let bare_err = String::from_utf8_lossy(&bare.stderr);
+    assert!(!bare_err.contains("settings not used"), "{bare_err}");
+    assert!(
+        bare_err.contains("sx: walls: classic walls, the engine's default"),
+        "{bare_err}"
+    );
+    // The project's own choice when it lists the generator as changed, and --config over either.
+    let mut chosen = settings.clone();
+    chosen["different_settings_to_system"] = serde_json::json!(["layer_height;wall_generator", "", ""]);
+    let chosen_path = dir.join("chosen.3mf");
+    std::fs::write(&chosen_path, box_3mf(Some(&chosen))).unwrap();
+    let err = String::from_utf8_lossy(&slice(&chosen_path, &[]).stderr).into_owned();
+    assert!(
+        err.contains("sx: walls: classic walls, the project's own choice"),
+        "{err}"
+    );
+    assert!(!err.contains("Kept SlicerX's aegis walls"), "{err}");
+    let arachne = dir.join("arachne.json");
+    std::fs::write(&arachne, r#"{"wall_generator":"arachne"}"#).unwrap();
+    let err = String::from_utf8_lossy(&slice(&project, &["--config", arachne.to_str().unwrap()]).stderr)
+        .into_owned();
+    assert!(err.contains("sx: walls: arachne walls, set by --config"), "{err}");
+    let _ = std::fs::remove_dir_all(dir);
+}

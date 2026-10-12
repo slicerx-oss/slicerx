@@ -514,6 +514,18 @@ fn parse_brim_ears(text: &str) -> Vec<(u32, Vec<[f32; 4]>)> {
         .collect()
 }
 
+/// The app that wrote a 3MF (its main model's `Application` metadata, such as `BambuStudio-01.10.02.73`).
+pub(crate) fn application(bytes: &[u8]) -> Option<String> {
+    let zip = Zip::open(bytes).ok()?;
+    let model = zip.read("3D/3dmodel.model").ok()?;
+    let text = std::str::from_utf8(model.get(..model.len().min(64 * 1024))?).ok()?;
+    let at = text.find("name=\"Application\"")?;
+    let rest = text.get(at..)?;
+    let start = rest.find('>')? + 1;
+    let end = rest.get(start..)?.find('<')?;
+    Some(rest.get(start..start + end)?.trim().to_owned()).filter(|a| !a.is_empty())
+}
+
 /// Reads the settings entries of a 3MF project without touching the geometry.
 /// Entries the file does not have are `None`; a plain 3MF returns all `None`.
 /// Fails when the bytes are not a ZIP archive or `project_settings.config` is

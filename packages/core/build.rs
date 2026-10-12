@@ -42,8 +42,17 @@ fn main() {
             write(&out.join(file), keys.join("\n").as_bytes());
         }
         copy(&settings.join("defaults.json"), &out.join("defaults.json"));
+        copy(
+            &settings.join("engine-choices.json"),
+            &out.join("engine-choices.json"),
+        );
     } else {
-        for file in ["percent_keys.txt", "int_keys.txt", "defaults.json"] {
+        for file in [
+            "percent_keys.txt",
+            "int_keys.txt",
+            "defaults.json",
+            "engine-choices.json",
+        ] {
             copy(&here.join("data").join(file), &out.join(file));
         }
     }
