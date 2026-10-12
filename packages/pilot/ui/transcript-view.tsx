@@ -3,6 +3,7 @@
 import { Fragment, memo } from 'react'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
+import { ChoiceCard } from './choice-card'
 import { Citations } from './citations'
 import { Diff } from './diff'
 import { ErrorLine, PermLine, PlanList, PluginsLoading } from './notes'
@@ -17,6 +18,8 @@ export interface ApprovalHandlers {
   onApprove: (request: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
   onCancel: (request: ApprovalRequest) => Promise<void>
   onEditPlan?: ((request: ApprovalRequest) => void) | undefined
+  /** Answers a choice card; without it the cards cannot be answered. */
+  onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
 }
 
 // Unchanged blocks keep their identity in the reducer, so a streaming delta repaints only its own block.
@@ -47,6 +50,8 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals }: { 
           onEditPlan={approvals.onEditPlan}
         />
       )
+    case 'choice':
+      return <ChoiceCard askId={block.askId} title={block.title} question={block.question} choices={block.choices} picked={block.picked} actionable={!block.replay} onChoose={approvals.onChoose} />
     case 'summary':
       return <Summary title={block.title} rows={block.rows} stopped={block.stopped} ms={block.ms} />
     case 'citations':
@@ -62,7 +67,7 @@ export function TranscriptView({ transcript, showThinking, approvals }: { transc
     <>
       {transcript.turns.map((t) => (
         <Fragment key={t.id}>
-          {t.user !== null ? <Bubble text={t.user} where={t.where} /> : null}
+          {t.user !== null ? <Bubble text={t.user} where={t.where} attachments={t.attachments} /> : null}
           <PilotTurn>
             {t.blocks.map((b) => (
               <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} />

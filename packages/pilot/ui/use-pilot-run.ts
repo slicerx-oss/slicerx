@@ -4,7 +4,7 @@
 // Runs mimir and folds its events into a transcript. Deltas are buffered and painted at most
 // once per animation frame, so a fast token stream costs one React render per frame.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Pilot, PilotContext, PilotEvent, PilotMachine } from '@slicerx/contracts'
+import type { Pilot, PilotAttachment, PilotContext, PilotEvent, PilotMachine } from '@slicerx/contracts'
 import { emptyTranscript, reduceTranscript, setReplaying, startTurn, type Transcript } from './reduce'
 import { motionReduced } from '@slicerx/ui'
 
@@ -20,7 +20,7 @@ export interface PilotRun {
   paused: boolean
   /** Every event shown so far, for the Replay button. */
   log: () => readonly PilotEvent[]
-  run: (message: string, opts?: { where?: string }) => void
+  run: (message: string, opts?: { where?: string; attachments?: PilotAttachment[] }) => void
   switchMachine: (from: PilotMachine, to: PilotMachine, label?: string) => void
   cancel: () => void
   setPaused: (paused: boolean) => void
@@ -53,6 +53,7 @@ function replayDelay(e: PilotEvent): number {
     case 'tool_progress':
       return 90
     case 'approval_resolved':
+    case 'ask_answered':
       return 1400
     case 'usage':
     case 'thinking_done':
@@ -179,13 +180,13 @@ export function usePilotRun(pilot: Pilot, sessionId: string, opts: { context?: P
   )
 
   const begin = useCallback(
-    (user: string | null, where: string | null): { signal: AbortSignal; my: number } => {
+    (user: string | null, where: string | null, attachments: PilotAttachment[] = []): { signal: AbortSignal; my: number } => {
       stopReplay()
       if (controller.current) cancelRun()
       const my = ++gen.current
       const ac = new AbortController()
       controller.current = ac
-      commit((s) => startTurn(setReplaying(s, false), { user, where }, Date.now()))
+      commit((s) => startTurn(setReplaying(s, false), { user, where, attachments }, Date.now()))
       setReplayingState(false)
       setRunning(true)
       return { signal: ac.signal, my }
@@ -194,10 +195,11 @@ export function usePilotRun(pilot: Pilot, sessionId: string, opts: { context?: P
   )
 
   const run = useCallback(
-    (message: string, o: { where?: string } = {}) => {
-      const { signal, my } = begin(message, o.where ?? null)
+    (message: string, o: { where?: string; attachments?: PilotAttachment[] } = {}) => {
+      const attachments = o.attachments ?? []
+      const { signal, my } = begin(message, o.where ?? null, attachments)
       const ctx = contextRef.current
-      const iter = pilot.run(sessionId, message, ctx === undefined ? { signal } : { signal, context: ctx })
+      const iter = pilot.run(sessionId, message, { signal, ...(ctx === undefined ? {} : { context: ctx }), ...(attachments.length ? { attachments } : {}) })
       void consume(iter, my)
     },
     [begin, consume, pilot, sessionId],
