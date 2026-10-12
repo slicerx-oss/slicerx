@@ -1107,48 +1107,10 @@ fn paint_select_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     }))
 }
 
-/// The `image` target of `paint.select`: `{ "kind": "image", "from": { "path" | "base64", "object": 0, "part": 0 },
-/// "colors": ["#rrggbb", ...] (the project's filament colors when left out), "map": [{ "color": "#rrggbb", "slot": n }], "maxDeltaE": 0.15, "unmatched": "leave" |
-/// "nearest" }`. The part `from` names (a 3MF with the materials extension's textures, the same mesh as `mesh`)
-/// is painted from its texture: each textured triangle takes the filament (slot n is `colors[n - 1]`) nearest its
-/// texture's color in `OKLab`, split where the color changes, down to `maxDepth` levels.
+/// The filaments of an image target: `colors` (or the project's own), `map`, `maxDeltaE` and `unmatched`.
 #[cfg(feature = "textures")]
-fn paint_image(
-    m: &TriMesh,
-    paint: &std::collections::BTreeMap<u32, String>,
-    target: &Value,
-    req: &Value,
-    files: FileLoader<'_>,
-) -> Result<Value> {
-    use crate::texture::{self, Palette, Unmatched};
-    let from = target
-        .get("from")
-        .ok_or_else(|| Error::invalid("from", "missing"))?;
-    let bytes = if let Some(p) = from.get("path").and_then(Value::as_str) {
-        files(p)?
-    } else if let Some(b) = from.get("base64").and_then(Value::as_str) {
-        base64_decode(b).ok_or_else(|| Error::invalid("from", "bad base64"))?
-    } else {
-        return Err(Error::invalid("from", "a path or base64 of the 3MF"));
-    };
-    let object: usize = field_or(from, "object", 0)?;
-    let part: usize = field_or(from, "part", 0)?;
-    let project = crate::format::read_3mf(&bytes)?;
-    let p = project
-        .objects
-        .get(object)
-        .and_then(|o| o.parts.get(part))
-        .ok_or_else(|| Error::invalid("from", format!("the file has no object {object} part {part}")))?;
-    if p.triangles.len() != m.triangles.len() {
-        return Err(Error::invalid(
-            "from",
-            format!(
-                "that part has {} triangles and the mesh {}; give the same part as mesh",
-                p.triangles.len(),
-                m.triangles.len()
-            ),
-        ));
-    }
+fn image_palette(target: &Value, project: &crate::format::Project) -> Result<crate::texture::Palette> {
+    use crate::texture::{Palette, Unmatched};
     // The filaments: given, or the project's own colors.
     let colors: Vec<String> = match field_or::<Option<Vec<String>>>(target, "colors", None)? {
         Some(c) => c,
@@ -1196,7 +1158,52 @@ fn paint_image(
             ));
         }
     };
-    let palette = Palette::new(&colors, &map, field_or(target, "maxDeltaE", 0.15)?, unmatched)?;
+    Palette::new(&colors, &map, field_or(target, "maxDeltaE", 0.15)?, unmatched)
+}
+
+/// The `image` target of `paint.select`: `{ "kind": "image", "from": { "path" | "base64", "object": 0, "part": 0 },
+/// "colors": ["#rrggbb", ...] (the project's filament colors when left out), "map": [{ "color": "#rrggbb", "slot": n }], "maxDeltaE": 0.15, "unmatched": "leave" |
+/// "nearest" }`. The part `from` names (a 3MF with the materials extension's textures, the same mesh as `mesh`)
+/// is painted from its texture: each textured triangle takes the filament (slot n is `colors[n - 1]`) nearest its
+/// texture's color in `OKLab`, split where the color changes, down to `maxDepth` levels.
+#[cfg(feature = "textures")]
+fn paint_image(
+    m: &TriMesh,
+    paint: &std::collections::BTreeMap<u32, String>,
+    target: &Value,
+    req: &Value,
+    files: FileLoader<'_>,
+) -> Result<Value> {
+    use crate::texture;
+    let from = target
+        .get("from")
+        .ok_or_else(|| Error::invalid("from", "missing"))?;
+    let bytes = if let Some(p) = from.get("path").and_then(Value::as_str) {
+        files(p)?
+    } else if let Some(b) = from.get("base64").and_then(Value::as_str) {
+        base64_decode(b).ok_or_else(|| Error::invalid("from", "bad base64"))?
+    } else {
+        return Err(Error::invalid("from", "a path or base64 of the 3MF"));
+    };
+    let object: usize = field_or(from, "object", 0)?;
+    let part: usize = field_or(from, "part", 0)?;
+    let project = crate::format::read_3mf(&bytes)?;
+    let p = project
+        .objects
+        .get(object)
+        .and_then(|o| o.parts.get(part))
+        .ok_or_else(|| Error::invalid("from", format!("the file has no object {object} part {part}")))?;
+    if p.triangles.len() != m.triangles.len() {
+        return Err(Error::invalid(
+            "from",
+            format!(
+                "that part has {} triangles and the mesh {}; give the same part as mesh",
+                p.triangles.len(),
+                m.triangles.len()
+            ),
+        ));
+    }
+    let palette = image_palette(target, &project)?;
     let depth: u32 = field_or(req, "maxDepth", paint_ops::DEFAULT_DEPTH)?;
     let images = texture::images(&project.textures, &p.props.model, &bytes)?;
     let cover = texture::cover_part(
