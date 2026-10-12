@@ -108,10 +108,20 @@ function paramsOk(p: Record<string, unknown>): boolean {
       return Array.isArray(p['open']) && p['open'].length <= 64 && p['open'].every((o: unknown) => obj(o) && vec3(o['at']) && vec3(o['normal']) && keyOk(o['key'])) && isNum(p['wallMm'])
     case 'thread.apply':
       return obj(p['thread']) && vec3(p['thread']['start']) && vec3(p['thread']['axis']) && isNum(p['thread']['diameterMm']) && isNum(p['thread']['lengthMm']) && typeof p['thread']['internal'] === 'boolean' && typeof p['thread']['openEnd'] === 'boolean' && obj(p['spec']) && typeof p['spec']['size'] === 'string' && isNum(p['spec']['clearanceMm']) && typeof p['label'] === 'string'
+    case 'boolean':
+      return ['union', 'difference', 'intersection'].includes(p['kind'] as string) && Array.isArray(p['with']) && p['with'].length > 0 && p['with'].length <= 64 && p['with'].every((k) => Number.isInteger(k) && (k as number) >= 0)
+    case 'plane.cut':
+      return planeOk(p['plane']) && ['both', 'below', 'above'].includes(p['keep'] as string)
+    case 'split':
+      return vec3(p['buildVolumeMm']) && (p['buildVolumeMm'] as number[]).every((n) => n > 0) && (p['marginMm'] === undefined || isNum(p['marginMm']))
+    case 'mirror':
+      return planeOk(p['plane']) && typeof p['copy'] === 'boolean'
     default:
       return false
   }
 }
+
+const planeOk = (v: unknown) => obj(v) && vec3(v['point']) && vec3(v['normal']) && (v['normal'] as number[]).some((n) => n !== 0)
 
 function readStored(v: unknown, files: ReadonlyMap<string, Uint8Array>): HistoryMesh[] | null {
   if (!obj(v) || typeof v['file'] !== 'string' || !v['file'].startsWith('Metadata/slicerx_history/') || !Array.isArray(v['parts'])) return null

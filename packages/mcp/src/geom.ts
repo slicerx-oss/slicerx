@@ -132,37 +132,120 @@ export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }
     return stlOnly(path)
   }
 
+  /** A plane as the tools take it, as a point and a normal. */
+  const planeOf = (pl: z.infer<typeof plane>): { point: V3; normal: V3 } => {
+    if ('axis' in pl) {
+      const k = { x: 0, y: 1, z: 2 }[pl.axis]
+      const point: V3 = [0, 0, 0]
+      const normal: V3 = [0, 0, 0]
+      point[k] = pl.at
+      normal[k] = 1
+      return { point, normal }
+    }
+    if (Math.hypot(...pl.normal) < 1e-9) throw new ToolInputError('plane: the normal must not be zero')
+    return { point: pl.point, normal: pl.normal }
+  }
+
   const cut = defineTool({
     name: 'geom.cut',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
-    description: 'Cut a model with a plane into a lower and an upper part with flat caps, optionally with pin, dowel or dovetail connectors. Writes two STL files and returns their paths.',
-    input: z.object({ model: modelArg, plane, connector: connector.optional() }),
+    description:
+      'Cut a model or a design part with a plane into a lower and an upper piece with flat caps. With "design" it adds a step: keep both (the upper piece becomes a new part after it), or only the one below or above the plane. With a model it can add pin, dowel or dovetail connectors and writes two STL files.',
+    input: z.object({
+      model: modelOpt,
+      design: designArg.optional(),
+      part: z.number().int().min(0).optional().describe('With a design: the part to cut, from 0 (default 0)'),
+      keep: z.enum(['both', 'below', 'above']).default('both').describe('With a design: which pieces to keep'),
+      plane,
+      connector: connector.optional(),
+    }),
     async run(i) {
-      const out = await call('cut', { mesh: await meshOut(i.model), plane: i.plane, options: i.connector ? { connector: i.connector } : {} })
+      designOrModel(i)
+      if (i.design) {
+        if (i.connector) throw new ToolInputError('connector: a design cut has no connectors yet; cut the saved STL, or leave connector out', 'not_supported')
+        const [ds, d] = designOf(i.design)
+        await ds.add(d, i.part ?? 0, { op: 'plane.cut', plane: planeOf(i.plane), keep: i.keep })
+        return added(d, 'Cut')
+      }
+      const out = await call('cut', { mesh: await meshOut(i.model!), plane: i.plane, options: i.connector ? { connector: i.connector } : {} })
       return { summary: 'Cut the model into two parts', output: out }
     },
   })
 
   const split = defineTool({
     name: 'geom.split',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
-    description: 'Split a model that is too big for the printer into parts that each fit the build volume, with the fewest cuts, optionally with connectors. Writes one STL per part.',
+    description:
+      'Split a model or a design part that is too big for the printer into pieces that each fit the build volume, with the fewest cuts. With "design" it adds a step and the pieces become parts; with a model it can turn pieces on the bed and add connectors, and writes one STL per piece.',
     input: z.object({
-      model: modelArg,
+      model: modelOpt,
+      design: designArg.optional(),
+      part: z.number().int().min(0).optional().describe('With a design: the part to split, from 0 (default 0)'),
       build_volume_mm: vec3.describe('Printable width, depth and height in mm'),
       margin_mm: z.number().min(0).max(50).optional(),
       allow_rotate_z: z.boolean().optional().describe('Parts may turn 90 degrees on the bed to fit'),
       connector: connector.optional(),
     }),
     async run(i) {
-      const { model, ...options } = i
-      const out = await call('split', { mesh: await meshOut(model), options })
+      designOrModel(i)
+      const { model, design, part, ...options } = i
+      if (design) {
+        if (options.connector || options.allow_rotate_z) throw new ToolInputError('A design split takes the build volume and margin only; leave connector and allow_rotate_z out', 'not_supported')
+        const [ds, d] = designOf(design)
+        await ds.add(d, part ?? 0, { op: 'split', buildVolumeMm: options.build_volume_mm, ...(options.margin_mm !== undefined ? { marginMm: options.margin_mm } : {}) })
+        return added(d, 'Split')
+      }
+      const out = await call('split', { mesh: await meshOut(model!), options })
       const parts = Array.isArray(out['parts']) ? out['parts'].length : 0
       return { summary: `Split the model into ${parts} part${parts === 1 ? '' : 's'}`, output: out }
+    },
+  })
+
+  const mirror = defineTool({
+    name: 'geom.mirror',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Mirror a design part through a plane, as a step: with copy (the default, like a mirror modifier) the mirror image is joined to the part, so a half becomes a whole; without it the part is flipped. Plane as {"axis":"x","at":0} or {"point":[x,y,z],"normal":[x,y,z]}.',
+    input: z.object({ design: designArg, part: z.number().int().min(0).optional().describe('The part to mirror, from 0 (default 0)'), plane, copy: z.boolean().default(true) }),
+    async run(i) {
+      const [ds, d] = designOf(i.design)
+      await ds.add(d, i.part ?? 0, { op: 'mirror', plane: planeOf(i.plane), copy: i.copy })
+      return added(d, 'Mirrored')
+    },
+  })
+
+  const arraySpec = z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('linear'), count: z.number().int().min(2).max(500), step: vec3.describe('Offset between neighbors, mm'), count2: z.number().int().min(1).max(500).optional(), step2: vec3.optional().describe('Offset between rows, mm') }),
+      z.object({ kind: z.literal('circular'), count: z.number().int().min(2).max(500), center: vec3, axis: vec3.optional().describe('Default +Z'), angleDeg: z.number().min(1).max(360).optional().describe('Total angle; default 360'), rotateCopies: z.boolean().optional().describe('Turn each copy with the circle; default true') }),
+    ])
+    .describe('{"kind":"linear","count":4,"step":[25,0,0]} for a row (count2 and step2 make a grid), or {"kind":"circular","count":6,"center":[0,0,0]} around an axis')
+
+  const array = defineTool({
+    name: 'geom.array',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Repeat a model or a design part in a row, a grid or around a circle (a pattern or array), merged into one body. With "design" it adds a step; with a model it writes the merged STL.',
+    input: z.object({ model: modelOpt, design: designArg.optional(), part: partArg, spec: arraySpec }),
+    async run(i) {
+      designOrModel(i)
+      const spec = JSON.parse(JSON.stringify(i.spec)) as Extract<StepParams, { op: 'array.merged' }>['spec']
+      const copies = spec.kind === 'linear' ? spec.count * (spec.count2 ?? 1) : spec.count
+      if (i.design) {
+        const [ds, d] = designOf(i.design)
+        await ds.add(d, i.part ?? -1, { op: 'array.merged', spec })
+        return added(d, `Arrayed ${copies} copies`)
+      }
+      const out = await call('array', { mesh: await meshOut(i.model!), spec, merge: true })
+      return { summary: `Arrayed ${copies} copies`, output: out }
     },
   })
 
@@ -451,7 +534,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }
     },
   })
 
-  return [cut, split, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract, render, paintRegions] as PilotTool<never>[]
+  return [cut, split, mirror, array, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract, render, paintRegions] as PilotTool<never>[]
 }
 
 /** A cutter as a subtract step keeps it: a box, or a cylinder with its origin, axis, diameter and height. */
