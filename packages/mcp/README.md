@@ -16,7 +16,7 @@ Reading is always allowed. The permission class of the other tools decides what 
 | `slicerx_plan_settings` | Settings to change for a filament, printer, nozzle and intent, each with before, after, a reason and sources, plus a `config_patch`. | read |
 | `slicerx_explain_setting`, `slicerx_find_settings`, `slicerx_validate_config` | Look up, search and check the 700 or so OrcaSlicer settings. | read |
 | `slicerx_knowledge_lookup` | Filament, printer, troubleshooting and workflow entries with sources. | read |
-| `slicerx_project_open`, `slicerx_project_add_model`, `slicerx_project_show` | Start a project with a printer and filament, add STL models with copies, show it. | read |
+| `slicerx_project_open`, `slicerx_project_add_model`, `slicerx_project_show` | Start a project with a printer and filament, add STL models with copies (a file of several bodies as one object, one object with parts, or an object per body), show it. | read |
 | `slicerx_project_set_overrides` | Change settings for the project (never a saved profile). | slice |
 | `slicerx_project_add_filament`, `slicerx_project_set_filament` | Add a filament after the last one, or change one's material type or color, as on the app's filament rail. Both answer with the project; `slicerx_project_show` lists its `filaments` (number, type, color, and whether a client set it). The slice gets them as `filament_type` and `filament_colour`. | slice |
 | `slicerx_orient`, `slicerx_arrange`, `slicerx_cut`, `slicerx_slice` | mimir skills on the project: best rotation, pack plates, split to fit, slice every plate. | slice |

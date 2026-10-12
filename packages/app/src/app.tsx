@@ -29,6 +29,7 @@ import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice 
 import { useAskForPrinter } from './first-run/ask-printer'
 import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
+import { enableMultiBodyPrompt } from './state/multi-body'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
 import { updaterRegistered } from './updates/hold'
@@ -45,6 +46,7 @@ import './styles/app.css'
 
 const CalibrationDialog = lazy(() => import('./calibration/dialog').then((m) => ({ default: m.CalibrationDialog })))
 const UnsavedDialog = lazy(() => import('./project/unsaved-dialog').then((m) => ({ default: m.UnsavedDialog })))
+const MultiBodyDialog = lazy(() => import('./plate/multi-body-dialog').then((m) => ({ default: m.MultiBodyDialog })))
 const ProjectGcodeDialog = lazy(() => import('./project/gcode-dialog').then((m) => ({ default: m.ProjectGcodeDialog })))
 const ProjectOpenDialog = lazy(() => import('./project/open-dialog').then((m) => ({ default: m.ProjectOpenDialog })))
 const ProjectsDialog = lazy(() => import('./project/projects-dialog').then((m) => ({ default: m.ProjectsDialog })))
@@ -185,6 +187,9 @@ function Shell() {
   }, [])
   const projectsOpen = useApp((s) => s.projectsDialog !== null)
   const unsavedOpen = useApp((s) => s.unsavedPrompt !== null)
+  const multiBodyOpen = useApp((s) => s.multiBodyPrompt !== null)
+  // A model file of several bodies asks how to load them while the app shows.
+  useEffect(() => enableMultiBodyPrompt(), [])
   const projectGcodeOpen = useApp((s) => s.projectGcode?.asking === true)
   const projectOpenAsk = useApp((s) => s.projectOpenAsk !== null)
   const settingsOpen = useApp((s) => s.settingsOpen)
@@ -316,6 +321,11 @@ function Shell() {
       {unsavedOpen ? (
         <Suspense fallback={null}>
           <UnsavedDialog />
+        </Suspense>
+      ) : null}
+      {multiBodyOpen ? (
+        <Suspense fallback={null}>
+          <MultiBodyDialog />
         </Suspense>
       ) : null}
       {projectGcodeOpen ? (

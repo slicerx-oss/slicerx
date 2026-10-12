@@ -974,3 +974,6 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
   .dock-opts .sx-seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .dock[data-phone] .dock-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
 }
+
+/* The multi-body question: the remember box sits at the start of the footer, the answers at the end. */
+.multi-body-remember { margin-right: auto; display: inline-flex; white-space: nowrap; align-items: center; gap: 6px; font-size: calc(12px * var(--text-scale)); color: var(--muted); }
