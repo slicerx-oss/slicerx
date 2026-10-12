@@ -6,6 +6,7 @@
 // browser build) is the other way round: always in Model, on any screen.
 import { editionHasCad, useEdition } from '../edition'
 import { isPhoneLayout, usePhoneLayout } from '../lib/phone-layout'
+import { modelOrigin, type Vec3 } from '../plate/transform'
 import { appStore, get, set, setModelMode, useApp, type ModelMode } from './store'
 
 /** Whether the host can slice; set once from its capabilities when the app starts (app.tsx). */
@@ -72,4 +73,20 @@ export function toggleModelMode(): void {
 /** Where the side panes keep their open state and widths: Design remembers its own, apart from Slice. */
 export function railKey(workspace: string, mode: ModelMode): string {
   return workspace === 'prepare' && mode === 'design' ? 'prepare-design' : workspace
+}
+
+/** Where the shown positions count from: the grid center in Model, the bed's front left corner in Slice. Display only. */
+export function useShownOrigin(): { origin: Vec3; frame: 'grid' | 'bed' } {
+  const model = useModelMode() === 'design'
+  const bed = useApp((s) => s.bed)
+  return model ? { origin: modelOrigin(bed), frame: 'grid' } : { origin: [0, 0, 0], frame: 'bed' }
+}
+
+/** Commands Model leaves out of the command bar (they still run from their shortcuts on a host that slices). */
+export const SLICE_ONLY_COMMANDS: ReadonlySet<string> = new Set(['slice', 'slice-cancel', 'export-gcode', 'gcode-lines'])
+
+/** Whether the command bar lists a command in the mode shown. */
+export function listedInMode(id: string, mode: ModelMode): boolean {
+  if (!slicing && id === 'mode-slice') return false
+  return mode === 'slice' || !SLICE_ONLY_COMMANDS.has(id)
 }

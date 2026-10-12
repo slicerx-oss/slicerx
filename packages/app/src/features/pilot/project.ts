@@ -10,7 +10,7 @@ import { arrange } from '../../plate/arrange'
 import { getArrangeOptions, sourceOf } from '../../plate/edit'
 import { inStep } from '../../plate/history'
 import { allPlates, projectBase } from '../../plate/plates'
-import { bounds, centerOnBed, decompose, dropToBed, identity, sizeOf, withTrs, type Mat4, type Vec3 } from '../../plate/transform'
+import { bounds, centerOnBed, decompose, dropToBed, identity, modelOrigin, sizeOf, withTrs, type Mat4, type Vec3 } from '../../plate/transform'
 import { GCODE_TEXT_KEYS, plateObjects, plateSliceConfig, trustOptions } from '../../state/actions'
 import { get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta } from '../../state/store'
 
@@ -40,7 +40,10 @@ function rotated(e: PlateEntry, rotate: Vec3): Mat4 {
 
 function toObject(e: PlateEntry): ProjectObject {
   const triangles = e.parts.reduce((n, p) => n + p.indices.length / 3, 0)
-  return { id: e.id, name: e.name, bboxMm: sizeMm(e), triangles, mesh: async (): Promise<MeshPart[]> => e.parts }
+  const bedMm = decompose(e.transform).position.map((v) => Math.round(v * 100) / 100) as Vec3
+  const o = modelOrigin(get().bed)
+  const gridMm = bedMm.map((v, i) => Math.round((v - (o[i] ?? 0)) * 100) / 100) as Vec3
+  return { id: e.id, name: e.name, bboxMm: sizeMm(e), triangles, positionMm: { gridMm, bedMm }, mesh: async (): Promise<MeshPart[]> => e.parts }
 }
 
 /** Where an object lives: the plate and its entries. */
