@@ -41,6 +41,9 @@ const MAX_PAIR_ATTEMPTS: u32 = 5;
 const GLOBAL_FAILURES: u32 = 10;
 const LOCKOUT: Duration = Duration::from_secs(60);
 
+/// Agents the agent code may remember at once.
+const MAX_REMEMBERED_AGENTS: usize = 32;
+
 pub(crate) struct Bridge {
     gate: Arc<dyn ApprovalGate>,
     secrets: Arc<dyn SecretStore>,
@@ -48,7 +51,7 @@ pub(crate) struct Bridge {
     agent_code: PairingCode,
     watch_code: PairingCode,
     identity: crate::identity::HubIdentity,
-    extra_origins: Vec<String>,
+    pub(crate) extra_origins: Vec<String>,
     port: u16,
     connectors: Vec<Box<dyn PrinterConnector>>,
     pub(crate) printers: Mutex<HashMap<String, Registered>>,
@@ -482,6 +485,25 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
                 } else {
                     roles::narrowed(role, params.get("role").and_then(Value::as_str))
                 };
+                // Each remembered agent can ask the person through the app link, so the agent code
+                // remembers only so many; the person revokes old ones in Settings.
+                if by_code.is_some()
+                    && role == Role::Agent
+                    && params.get("remember").and_then(Value::as_bool) == Some(true)
+                    && bridge.hub.agent_clients() >= MAX_REMEMBERED_AGENTS
+                {
+                    let _ = tx.send(reply(
+                        &id,
+                        Err(RpcError::new(
+                            "too_many",
+                            format!(
+                                "this bridge already remembers {MAX_REMEMBERED_AGENTS} agents; revoke one in {} Settings, Printer bridge, Devices",
+                                crate::app_name()
+                            ),
+                        )),
+                    ));
+                    continue;
+                }
                 conn.paired = true;
                 conn.role = role;
                 if let Some((client_id, _, _)) = &by_key {
