@@ -880,6 +880,24 @@ impl PrinterSession for ElegooSession {
         Ok(parse_file_list(&body))
     }
 
+    /// The printer's task history: Cmd 320 lists the task ids, Cmd 321 gives the details of the
+    /// newest 50.
+    async fn history(&self) -> Result<Vec<crate::types::PrintRecord>> {
+        let mut ids: Vec<Value> = self
+            .command(320, json!({}))
+            .await?
+            .get("HistoryData")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let newest = ids.split_off(ids.len().saturating_sub(HISTORY_LIMIT));
+        let body = self.command(321, json!({ "Id": newest })).await?;
+        Ok(parse_history(&body))
+    }
+
     /// SDCP has no G-code console.
     async fn send_gcode(&self, _line: &str, _token: &ApprovalToken) -> Result<()> {
         Err(Error::not_supported("elegoo", "the G-code console"))
@@ -902,6 +920,55 @@ pub(crate) fn elegoo_hardware(a: &Value) -> PrinterHardware {
         extruders: vec![ExtruderInfo::default()],
         ..PrinterHardware::default()
     }
+}
+
+/// How many tasks the history asks the details of.
+const HISTORY_LIMIT: usize = 50;
+
+/// The finished tasks in a Cmd 321 reply, newest first. `TaskStatus` 1 is completed, 2 ended with
+/// an error (its `ErrorStatusReason` code in the detail when not 0) and 3 was stopped; 0 (any other
+/// state, such as a task still running) is left out. `BeginTime` and `EndTime` are seconds since the
+/// epoch, or milliseconds when larger than 1e11.
+pub(crate) fn parse_history(body: &Value) -> Vec<crate::types::PrintRecord> {
+    let mut out: Vec<crate::types::PrintRecord> = body
+        .get("HistoryDetailList")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            let path = t.get("TaskName").and_then(Value::as_str)?.trim();
+            let name = path.rsplit('/').next().unwrap_or(path);
+            let reason = t.get("ErrorStatusReason").and_then(Value::as_i64).unwrap_or(0);
+            let (outcome, detail) = match t.get("TaskStatus").and_then(Value::as_i64)? {
+                1 => ("completed", None),
+                2 => ("failed", (reason != 0).then(|| format!("error code {reason}"))),
+                3 => ("canceled", None),
+                _ => return None,
+            };
+            let time = |k: &str| {
+                t.get(k)
+                    .and_then(Value::as_f64)
+                    .filter(|v| v.is_finite() && *v > 0.0)
+                    // Milliseconds, which some firmware may send, are well past any date in seconds.
+                    .map(|v| if v > 1e11 { v / 1000.0 } else { v })
+            };
+            let (begin, end) = (time("BeginTime"), time("EndTime"));
+            Some(crate::types::PrintRecord {
+                name: (!name.is_empty()).then(|| name.to_owned())?,
+                outcome: outcome.to_owned(),
+                detail,
+                started_at: begin,
+                duration_s: begin.zip(end).map(|(b, e)| e - b).filter(|d| *d >= 0.0),
+                filament_mm: None,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.started_at
+            .unwrap_or(0.0)
+            .total_cmp(&a.started_at.unwrap_or(0.0))
+    });
+    out
 }
 
 /// The files (`type` 1) in a Cmd 258 reply.
@@ -1024,6 +1091,34 @@ mod tests {
         let v = json!({ "success": false, "messages": [{ "field": "common_field", "message": -2 }] });
         assert!(chunk_error(&v).contains("offset does not match"));
         assert_eq!(chunk_error(&json!({ "success": false })), "upload chunk refused");
+    }
+
+    #[test]
+    fn history_keeps_finished_tasks_newest_first() {
+        let body = json!({ "Ack": 0, "HistoryDetailList": [
+            { "TaskName": "/local/old.gcode", "TaskStatus": 1, "BeginTime": 1000, "EndTime": 4600 },
+            { "TaskName": "jam.gcode", "TaskStatus": 2, "ErrorStatusReason": 7, "BeginTime": 5000, "EndTime": 5300 },
+            { "TaskName": "stop.gcode", "TaskStatus": 3, "BeginTime": 6000 },
+            { "TaskName": "now.gcode", "TaskStatus": 0, "BeginTime": 7000 },
+            { "TaskStatus": 1 }
+        ]});
+        let h = parse_history(&body);
+        assert_eq!(
+            h.iter()
+                .map(|r| (r.name.as_str(), r.outcome.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("stop.gcode", "canceled"),
+                ("jam.gcode", "failed"),
+                ("old.gcode", "completed")
+            ]
+        );
+        assert_eq!(h[1].detail.as_deref(), Some("error code 7"));
+        assert_eq!(h[2].duration_s, Some(3600.0));
+        assert_eq!((h[0].started_at, h[0].duration_s), (Some(6000.0), None));
+        let ms = json!({ "HistoryDetailList": [{ "TaskName": "a.gcode", "TaskStatus": 1, "BeginTime": 1_700_000_000_000_u64, "EndTime": 1_700_000_060_000_u64 }] });
+        assert_eq!(parse_history(&ms)[0].duration_s, Some(60.0));
+        assert!(parse_history(&json!({ "Ack": 0 })).is_empty());
     }
 
     #[test]

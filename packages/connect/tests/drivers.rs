@@ -180,6 +180,52 @@ async fn two_bambu_sessions_stay_online_through_h2d_partial_reports() {
     assert!(!log.iter().any(|l| l.starts_with("mqtt takeover")), "{log:?}");
 }
 
+// An Elegoo printer's own task history: finished tasks newest first, with a stopped print on top.
+#[tokio::test]
+async fn elegoo_history_reads_the_printers_task_list() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("elegoo", &[]).await;
+    let cfg = config("bay-6", "elegoo", mocks.port("elegoo"));
+    let s = ElegooConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    let h = s.history().await.unwrap();
+    assert_eq!(h.len(), 1, "{h:?}");
+    assert_eq!(
+        (h[0].name.as_str(), h[0].outcome.as_str(), h[0].duration_s),
+        ("earlier.gcode", "completed", Some(5400.0))
+    );
+    let f = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        sx_connect::Action::Upload,
+        "bay-6",
+        &sx_connect::params::upload("bay-6", &f.name, &f.sha256),
+    );
+    let rf = s.upload(f, &t).await.unwrap();
+    let opts = StartOptions::default();
+    let t = gate.mint(
+        sx_connect::Action::Start,
+        "bay-6",
+        &sx_connect::params::start("bay-6", &rf, &opts),
+    );
+    s.start(&rf, opts, &t).await.unwrap();
+    common::wait_state(s.as_ref(), sx_connect::PrinterState::Printing).await;
+    let t = gate.mint(
+        sx_connect::Action::Cancel,
+        "bay-6",
+        &sx_connect::params::printer("bay-6"),
+    );
+    s.cancel(&t).await.unwrap();
+    let h = s.history().await.unwrap();
+    assert_eq!(
+        h.iter()
+            .map(|r| (r.name.as_str(), r.outcome.as_str()))
+            .collect::<Vec<_>>(),
+        [("cube.gcode", "canceled"), ("earlier.gcode", "completed")]
+    );
+}
+
 // A caller that gives up while the session is opening (the bridge's watcher times out after 10
 // seconds) leaves no connection behind to sign in and reconnect on its own.
 #[tokio::test]
