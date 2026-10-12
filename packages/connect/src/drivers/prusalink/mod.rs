@@ -22,8 +22,8 @@ use crate::manifest::{PluginManifest, manifest};
 use crate::poll::poll_events;
 use crate::types::{
     Capabilities, Capability, DiscoveredPrinter, ExtruderInfo, FilamentUnit, Image, JobFile, PrinterConfig,
-    PrinterEvent, PrinterHardware, PrinterState, PrinterStatus, RemoteFile, Secrets, StartOptions, Temp,
-    now_iso, secs,
+    PrinterEvent, PrinterHardware, PrinterLive, PrinterState, PrinterStatus, RemoteFile, Secrets,
+    StartOptions, Temp, now_iso, secs,
 };
 use crate::{PrinterConnector, PrinterSession};
 
@@ -511,6 +511,16 @@ impl Inner {
 
 pub(crate) fn parse_status(id: &str, status: &Value, job: Option<&Value>, camera: bool) -> PrinterStatus {
     let raw = str_at(status, &["printer", "state"]).unwrap_or("IDLE");
+    // The printer's own reason when something is wrong (`status_printer` with `ok` false, a runout and the
+    // like); it wins over the general words below.
+    let reason = status
+        .get("printer")
+        .and_then(|p| p.get("status_printer"))
+        .filter(|s| s.get("ok").and_then(Value::as_bool) == Some(false))
+        .and_then(|s| str_at(s, &["message"]))
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_owned);
     let (state, message) = match raw {
         "STOPPED" => (PrinterState::Idle, Some("The print was stopped".to_owned())),
         "PRINTING" => (PrinterState::Printing, None),
@@ -529,6 +539,29 @@ pub(crate) fn parse_status(id: &str, status: &Value, job: Option<&Value>, camera
         })
     };
     let active = matches!(state, PrinterState::Printing | PrinterState::Paused);
+    let message = reason
+        .filter(|_| matches!(state, PrinterState::Paused | PrinterState::Error))
+        .or(message);
+    // `speed` is the print speed in percent of the sliced speeds; `axis_z` the head's height, which is the layer
+    // printing now while a job runs.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a percent"
+    )]
+    let speed_percent = f64_at(status, &["printer", "speed"])
+        .filter(|s| s.is_finite() && *s > 0.0)
+        .map(|s| s.round().min(1000.0) as u16);
+    let layer_z_mm = f64_at(status, &["printer", "axis_z"])
+        .filter(|_| active)
+        .map(|z| (z * 100.0).round() / 100.0);
+    let live = (speed_percent.is_some() || layer_z_mm.is_some()).then(|| {
+        Box::new(PrinterLive {
+            speed_percent,
+            layer_z_mm,
+            ..PrinterLive::default()
+        })
+    });
     let progress = f64_at(status, &["job", "progress"]).map(|p| p / 100.0);
     let file =
         job.and_then(|j| str_at(j, &["file", "display_name"]).or_else(|| str_at(j, &["file", "name"])));
@@ -547,7 +580,7 @@ pub(crate) fn parse_status(id: &str, status: &Value, job: Option<&Value>, camera
         camera_available: camera,
         message,
         updated_at: now_iso(),
-        live: None,
+        live,
     }
 }
 
@@ -799,6 +832,33 @@ mod tests {
             Some(StorageChoice::Nothing)
         );
         assert_eq!(pick_storage(&json!({ "other": 1 })), None);
+    }
+
+    #[test]
+    fn a_job_reads_its_speed_and_height_and_the_printers_own_reason() {
+        let st = json!({ "printer": { "state": "PRINTING", "speed": 120, "axis_z": 4.204 }, "job": { "progress": 50 } });
+        let s = parse_status("p", &st, None, false);
+        let live = s.live.expect("live");
+        assert_eq!((live.speed_percent, live.layer_z_mm), (Some(120), Some(4.2)));
+        // Idle: no height (the head is parked), the speed still read.
+        let idle = parse_status(
+            "p",
+            &json!({ "printer": { "state": "IDLE", "speed": 100, "axis_z": 10 } }),
+            None,
+            false,
+        );
+        assert_eq!(idle.live.and_then(|l| l.layer_z_mm), None);
+        let att = json!({ "printer": { "state": "ATTENTION", "status_printer": { "ok": false, "message": "Filament runout" } } });
+        assert_eq!(
+            parse_status("p", &att, None, false).message.as_deref(),
+            Some("Filament runout")
+        );
+        let fine =
+            json!({ "printer": { "state": "ATTENTION", "status_printer": { "ok": true, "message": "" } } });
+        assert_eq!(
+            parse_status("p", &fine, None, false).message.as_deref(),
+            Some("Printer needs attention")
+        );
     }
 
     #[test]

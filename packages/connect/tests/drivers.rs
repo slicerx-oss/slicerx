@@ -12,7 +12,7 @@ use sx_connect::drivers::{
     AnycubicConnector, BambuConnector, CrealityConnector, DuetConnector, ElegooConnector, MoonrakerConnector,
     OctoPrintConnector, PrusaLinkConnector, SnapmakerConnector, UltiMakerConnector,
 };
-use sx_connect::{ErrorCode, JobKind, MemoryGate, PrinterConnector, StartOptions};
+use sx_connect::{ErrorCode, JobKind, MemoryGate, PrinterConnector, PrinterState, StartOptions};
 
 async fn http_case(
     connector: &dyn PrinterConnector,
@@ -1345,6 +1345,47 @@ async fn prusalink_key_fallback_storage_and_busy() {
     let none = s.upload(f, &t).await.err().unwrap();
     assert_eq!(none.code(), ErrorCode::NotFound);
     assert!(none.to_string().contains("USB drive"), "{none}");
+}
+
+// A running PrusaLink job reports its speed and the height printing now, and a runout's own words reach the status
+// (the fake's `status_printer`), not the general "needs attention".
+#[tokio::test]
+async fn prusalink_status_carries_speed_height_and_the_printers_reason() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("prusalink", &[]).await;
+    let cfg = config("bay-3", "prusalink", mocks.port("prusalink"));
+    let s = PrusaLinkConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    let f = job_file("a.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        sx_connect::Action::Upload,
+        "bay-3",
+        &sx_connect::params::upload("bay-3", &f.name, &f.sha256),
+    );
+    let r = s.upload(f, &t).await.unwrap();
+    let opts = StartOptions::default();
+    let t = gate.mint(
+        sx_connect::Action::Start,
+        "bay-3",
+        &sx_connect::params::start("bay-3", &r, &opts),
+    );
+    s.start(&r, opts, &t).await.unwrap();
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Printing);
+    let live = st.live.expect("a live part while printing");
+    assert_eq!(live.speed_percent, Some(100));
+    assert!(live.layer_z_mm.is_some(), "{live:?}");
+    mocks
+        .control(
+            "/fault",
+            serde_json::json!({ "mock": "prusalink", "kind": "runout" }),
+        )
+        .await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Paused);
+    assert_eq!(st.message.as_deref(), Some("Filament runout"));
 }
 
 // A typed address is confirmed with `GET /api/version`, open or behind a Digest login. OctoPrint
