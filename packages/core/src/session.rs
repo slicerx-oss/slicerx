@@ -5373,6 +5373,7 @@ impl SliceSession {
             angle: s.angle,
             wall_count: s.tree_settings.wall_count,
             hollow: matches!(pattern.as_str(), "default" | "hollow" | "none"),
+            join: cfg.anchor_max_mm(),
             center,
         }
     }
