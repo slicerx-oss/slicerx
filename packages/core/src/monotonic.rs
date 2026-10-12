@@ -8,7 +8,7 @@
 //! overlaps only it. A region is printed as one zigzag, each turn joined to the next line along
 //! the edge of the surface when the turn is short. Regions are ordered so every region is printed
 //! after all regions on its left, taking the nearest start next, and a region continues into a
-//! right neighbor without lifting when the gap is short. This matches how OrcaSlicer prints monotonic
+//! right neighbor without lifting when the gap is short. This matches how Orca prints monotonic
 //! surfaces; the order of the regions is chosen greedily.
 
 use crate::edge::Edge;
@@ -158,7 +158,7 @@ pub(crate) fn polylines_with(
 }
 
 /// Monotonic polylines over the lines of a surface pulled in by half a spacing (`spans`, where the turns
-/// happen and lines are neighbors when the wall joins their ends, as OrcaSlicer links them) and pulled in by
+/// happen and lines are neighbors when the wall joins their ends, as Orca links them) and pulled in by
 /// 0.05 spacing (`outer`, where the
 /// two ends of each path reach).
 pub(crate) fn polylines_outer(
@@ -722,7 +722,7 @@ pub(crate) fn orca_point(dir: crate::infill::Dir, s: i64, t: i64) -> Point {
     }
 }
 
-/// Polylines for rectilinear fills, swept the way OrcaSlicer prints them. From the
+/// Polylines for rectilinear fills, swept the way Orca prints them. From the
 /// leftmost unused line, go up to its end, turn along the wall onto the neighboring line (the shorter turn
 /// when both are possible, the previous line's on a tie), go back down it, and so on until no turn is
 /// possible; a line that meets a notch in the wall goes on past it. Then start again at the leftmost unused

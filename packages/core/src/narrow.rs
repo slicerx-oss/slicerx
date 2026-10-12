@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Narrow internal solid infill. OrcaSlicer splits an internal solid surface into the part where full
+//! Narrow internal solid infill. Orca splits an internal solid surface into the part where full
 //! scanlines fit and the narrow rest, the bands a sloped wall leaves. The narrow rest is not filled with
 //! lines: it gets concentric beads from the variable-width wall generator, so a band a line and a half
 //! wide gets one or two beads that follow it.
 //!
-//! The split follows OrcaSlicer's and PrusaSlicer's anti-vibration rule: scanline
+//! The split follows Orca's and Prusa's anti-vibration rule: scanline
 //! sections longer than one spacing are kept, chains of short ones are dropped, and the area the kept
 //! sections cover is the normal infill.
 //!
@@ -57,7 +57,7 @@ fn overlapping(a: (i64, i64), b: (i64, i64)) -> bool {
         || (a.0 <= b.1 && b.1 <= a.1)
 }
 
-/// Drops chains of short sections, as OrcaSlicer's narrow solid infill does. Sections are per scanline,
+/// Drops chains of short sections, as Orca's narrow solid infill does. Sections are per scanline,
 /// `(t0, t1)`, in line order.
 fn filter_vibrating(sections: &[Vec<(i64, i64)>]) -> Vec<Vec<(i64, i64)>> {
     let limit = max_line();
@@ -271,7 +271,7 @@ fn union_shapes(s: &Shapes) -> Shapes {
 }
 
 /// Normal and narrow parts of an internal solid region whose pattern is made of straight lines along `dir`
-/// at `spacing` (in `s` units, `spacing_mm` in mm), as OrcaSlicer splits them.
+/// at `spacing` (in `s` units, `spacing_mm` in mm), as Orca splits them.
 pub(crate) fn split_lines(region: &Shapes, dir: Dir, spacing: i64, spacing_mm: f64) -> (Shapes, Shapes) {
     if region.is_empty() {
         return (Vec::new(), Vec::new());
@@ -571,7 +571,7 @@ fn loop_clipping(cfg: &crate::config::PrintConfig) -> f64 {
     .max(0.0)
 }
 
-/// The beads of one band in the order OrcaSlicer prints them: a closed bead starts
+/// The beads of one band in the order Orca prints them: a closed bead starts
 /// at its point nearest the origin, every bead loses `clip` mm at its end (so a loop does not print over its
 /// own start), and the beads are chained by their start points.
 fn order_band(lines: Vec<crate::arachne::WallLine>, clip: f64) -> Vec<crate::arachne::WallLine> {
