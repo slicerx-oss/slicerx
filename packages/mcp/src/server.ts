@@ -38,7 +38,8 @@ export interface ServerContext {
 }
 
 function ok(data: object, text?: string): CallToolResult {
-  let body = text ?? JSON.stringify(data, null, 2)
+  // The text copy is for clients that read only text (the MCP spec asks for it); compact, since every space is paid for.
+  let body = text ?? JSON.stringify(data)
   if (body.length > CHARACTER_LIMIT) body = `${body.slice(0, CHARACTER_LIMIT)}\n[truncated at ${CHARACTER_LIMIT} characters; narrow the request]`
   return { content: [{ type: 'text', text: body }], structuredContent: data as Record<string, unknown> }
 }
