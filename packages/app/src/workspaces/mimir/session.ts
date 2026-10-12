@@ -5,6 +5,7 @@
 import type { Pilot } from '@slicerx/contracts'
 import { createMemorySessionStore } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
+import { setMimirLink } from './connection'
 import { mimirTools, scriptedMimir } from './scripted'
 import { SCRIPTS } from './scripts'
 
@@ -20,6 +21,8 @@ export function tabMimir(): Pilot {
   if (!pilot) {
     const still = motionReduced()
     pilot = scriptedMimir(SCRIPTS, mimirTools(), { store: mimirLogs, delayMs: still ? 0 : 28, callDelayMs: still ? 0 : 350 })
+    // The stub answers: the chat says so, and the ravens stay behind it.
+    setMimirLink('scripted')
   }
   return pilot
 }
