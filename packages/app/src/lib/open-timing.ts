@@ -61,7 +61,8 @@ export function openStage(stage: OpenStage, extra?: { parsedIn?: OpenTiming['par
   c.ms[stage] = Math.round(now - c.t0)
   if (extra?.parsedIn) c.parsedIn = extra.parsedIn
   try {
-    perf()?.measure(`sx:open:${stage}`, { start: c.t0, end: now })
+    // The parse stage says where the meshes were read, so a trace (and the browser test) can tell.
+    perf()?.measure(`sx:open:${stage}`, { start: c.t0, end: now, ...(extra?.parsedIn ? { detail: { parsedIn: extra.parsedIn } } : {}) })
   } catch {
     // A page without user timing still keeps the numbers.
   }
