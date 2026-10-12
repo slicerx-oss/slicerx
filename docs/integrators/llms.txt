@@ -11,6 +11,7 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 - [../integrating.md](../integrating.md): the long guide to building your own edition, with a worked example
 - [partner-app-key.md](partner-app-key.md): reaching the user's printers through SlicerX's bridge with a partner app key the user makes and revokes
 - [engine-path.md](engine-path.md): Path B with the sx engine instead of the MCP server for slicing: Prepare tools in the viewport, the plate as a slice request, settings, exit codes and the preview
+- [whats-new-0.1.5.md](whats-new-0.1.5.md): what engine 0.1.5 brings for integrators, each item marked on main or pending
 - [quickstart.md](quickstart.md): the reference for the server options, tools, settings layers, result fields, progress, token scopes and error codes
 
 ## Packages

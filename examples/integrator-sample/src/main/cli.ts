@@ -18,7 +18,7 @@ const work = join(out, 'private')
 const sxBin = process.env['SLICERX_SX_BIN'] || kitSx(join(root, '.kit'))
 if (!sxBin) {
   console.error(
-    'No sx engine. Pack the kit with --engine (node ../../scripts/pack-integrator-kit.mjs .kit --engine engine-v0.1.3), ' +
+    'No sx engine. Pack the kit with --engine (node ../../scripts/pack-integrator-kit.mjs .kit --engine engine-v0.1.4), ' +
       'or set SLICERX_SX_BIN to an sx you built (cargo build -p sx-cli --release builds target/release/sx).',
   )
   process.exit(2)
