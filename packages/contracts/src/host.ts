@@ -68,6 +68,8 @@ export interface BuildInfo {
   sourceUrl: string
   /** A build made for the end-to-end tests (SLICERX_E2E=1 at build time): first-run screens stay out of the way. */
   e2e?: boolean
+  /** A dev server or test build: features still being built show without developer mode, so the specs cover them. */
+  dev?: boolean
 }
 
 /**

@@ -230,6 +230,8 @@ export interface AppState {
   modelMode: ModelMode
   /** The mode the first tab opens in on launch (Settings > Look and feel, first run). Changing it never moves the open session. */
   modelModeDefault: 'slice' | 'design'
+  /** A dev or test build (host.build.dev), set once at mount. Session only. */
+  devBuild: boolean
   /** How Slice shows the slice: solid models, layer lines on them, or the toolpaths in their place (the default). */
   sliceLook: SliceLook
   /** Expanded (true) or collapsed to an icon rail (false), per workspace and side. */
@@ -614,6 +616,7 @@ export const appStore = createStore<AppState>()(() => ({
   workspace: prefs.workspace,
   modelMode: prefs.modelModeDefault ?? 'slice',
   modelModeDefault: prefs.modelModeDefault ?? 'slice',
+  devBuild: false,
   sliceLook: prefs.sliceLook ?? 'toolpaths',
   rails: prefs.rails,
   commandOpen: false,
