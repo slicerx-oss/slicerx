@@ -62,6 +62,10 @@ export function TranscriptList({ transcript, onApprove, onDeny, onRetry, empty }
         const picked = b.choices.find((c) => c.id === b.picked)
         return <Say text={picked ? `${b.question} **${picked.label}**` : b.question} streaming={false} />
       }
+      case 'lookup': {
+        const l = b.lookup
+        return <Say text={[`**${l.title}**`, ...l.fields.map(([k, v]) => `${k}: ${v}`), `Source: ${l.source.title}`].join('\n')} streaming={false} />
+      }
       case 'summary':
         return <Summary title={b.title} rows={b.rows} stopped={b.stopped} ms={b.ms} />
       case 'citations':
