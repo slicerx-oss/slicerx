@@ -97,7 +97,7 @@ export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
       webgpu: typeof navigator !== 'undefined' && 'gpu' in navigator,
       threads: over.threads ?? Math.max(1, Math.min(11, (navigator.hardwareConcurrency || 4) - 1)),
       secureStorage: false,
-      ...(over.slicer || __SX_WEB_SLICING__ ? {} : { slicing: false }),
+      ...(over.slicer || __SX_E2E_NATIVE_URL__ || __SX_WEB_SLICING__ ? {} : { slicing: false }),
     },
     build: {
       version: __SX_VERSION__,
