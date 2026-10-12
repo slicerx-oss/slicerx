@@ -10,3 +10,5 @@
 .sx-tab-more { display: flex; height: 100%; }
 .sx-tab-more > .sx-tab .tab-dot { position: absolute; top: 14px; right: 5px; margin: 0; }
 .sx-tab-more .sx-menu-item .tab-dot { margin-left: 8px; }
+/* On the mimir tab its chat is on screen: the dock button keeps its place but hides. */
+.mimir-btn[data-hidden] { visibility: hidden; }

@@ -193,6 +193,23 @@ export interface PluginLoad {
 // ---------------------------------------------------------------------------
 // Events
 
+/** A file the person adds to their message, such as a photo of the thing a part must fit. It stays on this machine. */
+export interface PilotAttachment {
+  id: string
+  name: string
+  /** Media type, such as image/png. */
+  type: string
+  bytes: number
+  /** A data URL of the file, for the chip's thumbnail. */
+  url: string
+}
+
+/** One answer on a choice card. */
+export interface PilotChoice {
+  id: string
+  label: string
+}
+
 export type PilotEvent =
   | { type: 'start'; runId: string; sessionId: string; provider: string; model: string; at: string }
   | { type: 'plugins'; plugins: PluginLoad[] }
@@ -217,6 +234,9 @@ export type PilotEvent =
   | { type: 'citations'; items: Citation[] }
   | { type: 'permission_note'; permission: PermissionClass; mode: 'allow' | 'off'; tool: string; message: string }
   | { type: 'approval_request'; request: ApprovalRequest }
+  /** A question for the person with fixed answers; the run waits until one is picked. */
+  | { type: 'ask'; askId: string; title: string; question: string; choices: PilotChoice[] }
+  | { type: 'ask_answered'; askId: string; choiceId: string }
   | { type: 'approval_resolved'; requestId: string; decision: ApprovalDecision; by: 'user' | 'policy' | 'expiry'; via?: 'card' | 'phone' }
   | { type: 'summary'; title: string; rows: [string, string][]; stopped: boolean }
   | { type: 'usage'; inputTokens: number; outputTokens: number }
@@ -285,7 +305,9 @@ export interface SessionStore {
 
 export interface Pilot {
   tools(): ToolSpec[]
-  run(sessionId: string, message: string, opts?: { signal?: AbortSignal; context?: PilotContext }): AsyncIterable<PilotEvent>
+  run(sessionId: string, message: string, opts?: { signal?: AbortSignal; context?: PilotContext; attachments?: PilotAttachment[] }): AsyncIterable<PilotEvent>
+  /** Answers a choice card. Runtimes without questions leave it out. */
+  answer?(askId: string, choiceId: string): Promise<void>
   /**
    * Live settings evaluation. Emits a `settings_diff` right away from
    * deterministic code (no model call), then an optional short narration.

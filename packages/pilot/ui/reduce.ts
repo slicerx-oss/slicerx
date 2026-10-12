@@ -7,6 +7,8 @@ import type {
   ApprovalRequest,
   Citation,
   PermissionClass,
+  PilotAttachment,
+  PilotChoice,
   PilotEvent,
   PluginLoad,
   SettingsDiff,
@@ -45,6 +47,7 @@ export type Block =
   | { kind: 'diff'; id: string; diff: SettingsDiff }
   | { kind: 'perm'; id: string; permission: PermissionClass; mode: 'allow' | 'off'; message: string }
   | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean }
+  | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
   | { kind: 'error'; id: string; message: string; retryable: boolean }
@@ -57,6 +60,8 @@ export interface Turn {
   user: string | null
   /** Where the message was sent from, shown above the bubble. */
   where: string | null
+  /** Files the person added to the message. */
+  attachments: PilotAttachment[]
   blocks: Block[]
   /** Blocks came from a saved log, so approvals in it are not actionable. */
   replay: boolean
@@ -98,9 +103,9 @@ export function setReplaying(state: Transcript, replaying: boolean): Transcript 
 }
 
 /** Opens a new turn: the person's bubble (when there is a message) and an empty mimir reply under it. */
-export function startTurn(state: Transcript, opts: { user?: string | null; where?: string | null }, now: number): Transcript {
+export function startTurn(state: Transcript, opts: { user?: string | null; where?: string | null; attachments?: PilotAttachment[] }, now: number): Transcript {
   const seq = state.seq + 1
-  const turn: Turn = { id: `t${seq}`, user: opts.user ?? null, where: opts.where ?? null, blocks: [], replay: state.replaying }
+  const turn: Turn = { id: `t${seq}`, user: opts.user ?? null, where: opts.where ?? null, attachments: opts.attachments ?? [], blocks: [], replay: state.replaying }
   return { ...state, seq, turns: [...state.turns, turn], status: 'running', meter: EMPTY_METER, clockStart: now }
 }
 
@@ -321,6 +326,12 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       const replay = lastTurn(s)?.replay ?? false
       return append(settleStreams(s), (id) => ({ kind: 'approval', id, request: event.request, resolution: null, replay }), true)
     }
+    case 'ask': {
+      const replay = lastTurn(s)?.replay ?? false
+      return append(settleStreams(s), (id) => ({ kind: 'choice', id, askId: event.askId, title: event.title, question: event.question, choices: event.choices, picked: null, replay }), true)
+    }
+    case 'ask_answered':
+      return mapBlocks(s, (b) => (b.kind === 'choice' && b.askId === event.askId && b.picked === null ? { ...b, picked: event.choiceId } : b))
     case 'approval_resolved':
       // Policy approvals have no card; their permission note already says so.
       return mapBlocks(s, (b) =>

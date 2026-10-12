@@ -16,7 +16,7 @@ import { ModeSelector } from '../first-run/mode-selector'
 import { useFleet } from '../lib/queries'
 import { openSettings, set, setWorkspace, useApp } from '../state/store'
 import { ModeTabs } from './mode-tab'
-import { useCadShown } from '../state/model-mode'
+import { useCadShown, useInMimir } from '../state/model-mode'
 import './top-bar.css'
 
 /** The narrowing steps, in order: search as an icon, tab labels gone, Vault and Printers in More, Model and Slice labels gone. */
@@ -78,6 +78,8 @@ export function TopBar() {
   const fleet = useFleet()
   const assistant = useHasFeature('pilot')
   const dockOpen = useDockOpen()
+  // On the mimir tab the chat is already on screen: the button hides but keeps its place, so nothing in the bar moves.
+  const inMimir = useInMimir()
   const watch = watchOf(fleet.data ?? [])
   const online = fleet.data?.filter((p) => p.status.state !== 'offline').length ?? 0
   const failing = fleet.data?.some((p) => p.status.state === 'error') ?? false
@@ -106,7 +108,7 @@ export function TopBar() {
           {layout.modeSelector === 'top-right' ? <ModeSelector layout={layout} id="mode-top" /> : null}
           <SearchButton placeholder="Search" onClick={() => set({ commandOpen: true })} shortcut={formatShortcut(palette)} />
           {assistant ? (
-            <Button variant="ghost" size="sm" className="mimir-btn" aria-pressed={dockOpen} tip="pilot.ask" onClick={toggleDock}>
+            <Button variant="ghost" size="sm" className="mimir-btn" aria-pressed={dockOpen} tip="pilot.ask" onClick={toggleDock} {...(inMimir ? { 'data-hidden': '', 'aria-hidden': true, tabIndex: -1 } : {})}>
               <Icon name="mimir" size={16} />
               {ASSISTANT_NAME}
               {watch.names.length ? <span className="mimir-watch" data-attention={watch.attention ? true : undefined} role="img" aria-label={watch.attention ? `Look at ${watch.names.join(', ')}` : `Watching ${watch.names.join(', ')}`} /> : null}
