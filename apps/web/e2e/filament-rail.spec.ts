@@ -165,6 +165,41 @@ test("with the printer's slots, the rail says where they come from, has no add, 
 
 // Screenshots of the rail for review, Simple and Expert with no printer and with the printer's slots, light and dark:
 // SX_SHOTS=1, saved to SX_SHOTS_DIR.
+// Dark gray on the dark theme, white on the light one: colors close to the panel get a contrast edge, others do not.
+const NEAR = { 1: { type: 'PLA', brand: '', color: '#282a36' }, 2: { type: 'PLA', brand: '', color: '#f8f8f2' }, 3: { type: 'PLA', brand: '', color: '#ff5555' }, 4: { type: 'PLA', brand: '', color: '#1a1a1a' } }
+const edged = (page: Page, n: number) => slot(page, n).locator('.sx-swatch-ring')
+
+test('a filament color close to the panel gets a contrast edge, in both themes', async ({ page }) => {
+  await open(page, { ...UNCONNECTED })
+  await sx(page, { slotSetup: NEAR, showUnusedSlots: true, scheme: 'dark', themeFollowsSystem: false })
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', /dark/)
+  await expect(edged(page, 1)).toHaveAttribute('data-edge', 'true')
+  await expect(edged(page, 4)).toHaveAttribute('data-edge', 'true')
+  await expect(edged(page, 2)).not.toHaveAttribute('data-edge', /./)
+  await expect(edged(page, 3)).not.toHaveAttribute('data-edge', /./)
+  await sx(page, { scheme: 'light' })
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', /light/)
+  await expect(edged(page, 2)).toHaveAttribute('data-edge', 'true')
+  await expect(edged(page, 1)).not.toHaveAttribute('data-edge', /./)
+  await expect(edged(page, 3)).not.toHaveAttribute('data-edge', /./)
+})
+
+test('shots: colors close to the panel, with their edge, light and dark', async ({ page }, info) => {
+  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  const width = page.viewportSize()?.width ?? 0
+  await open(page, { ...UNCONNECTED })
+  const block = page.locator('[data-section="filament"]')
+  for (const scheme of ['dark', 'light'] as const) {
+    await sx(page, { slotSetup: NEAR, showUnusedSlots: true, scheme, themeFollowsSystem: false, hoverSlot: null })
+    await expect(page.locator('html')).toHaveAttribute('data-sx-theme', new RegExp(scheme))
+    await block.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(500)
+    await block.screenshot({ path: `${dir}/rail-near-panel-${scheme}-${width}.png` })
+  }
+})
+
 const shotCases = [
   { name: 'simple-no-printer', prefs: { ...UNCONNECTED, settingsMode: 'simple' } },
   { name: 'expert-no-printer', prefs: { ...UNCONNECTED, settingsMode: 'expert' } },
