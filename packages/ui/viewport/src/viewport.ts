@@ -927,6 +927,8 @@ class ViewportImpl implements Viewport {
 
   /** The model under the pointer, for the toolpath look: solid the moment the pointer is over it, toolpaths again when it leaves. */
   private hoverSolid(id: string | null): void {
+    // A lowered layer slider means someone is reading the toolpaths: the model under the pointer stays toolpaths.
+    if (this.toolpaths.narrowed()) id = null
     if (!this.toolpathLook.on || id === this.solidId) return
     this.solidId = id
     this.applyToolpathLook()
@@ -3644,6 +3646,7 @@ class ViewportImpl implements Viewport {
   setLayerRange(lo: number, hi: number): void {
     this.toolpaths.setRange(lo, hi, this.toolpaths.moveCut)
     this.ghost?.setRange(lo, hi, null)
+    if (this.solidId !== null && this.toolpaths.narrowed()) this.hoverSolid(null)
     this.scrubbed = true
     this.shadowDirty = true
     this.invalidate()
@@ -3651,6 +3654,7 @@ class ViewportImpl implements Viewport {
 
   setMoveCut(moves: number | null): void {
     this.toolpaths.setRange(this.toolpaths.lo, this.toolpaths.hi, moves)
+    if (this.solidId !== null && this.toolpaths.narrowed()) this.hoverSolid(null)
     this.scrubbed = true
     this.shadowDirty = true
     this.invalidate()
