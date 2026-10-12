@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-144 tools.
+145 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -61,6 +61,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_geom_repair` |  |  | slice | Repair a mesh: weld vertices, fix winding and normals, and close small holes. |
 | `slicerx_geom_resume_plan` |  |  | read | Plan resuming a failed print: from the height of the part left on the bed, or the layer the printer stopped at, find the first layer to print again and the remaining part of the model. |
 | `slicerx_geom_revolve` |  |  | slice | Revolve a sketch profile around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. |
+| `slicerx_geom_shell` |  |  | slice | Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). |
 | `slicerx_geom_sketch_check` |  |  | read | Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. |
 | `slicerx_geom_split` |  |  | slice | Split a model or a design part that is too big for the printer into pieces that each fit the build volume, with the fewest cuts. |
 | `slicerx_geom_subtract` |  |  | slice | Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. |
