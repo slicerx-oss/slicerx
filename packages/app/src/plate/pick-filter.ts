@@ -27,9 +27,9 @@ export function nextFilter(cur: readonly PickKind[], kind: PickKind, mode: 'only
   return on.length ? PICK_KINDS.filter((k) => on.includes(k)) : [kind]
 }
 
-/** The keys work in Model's view only, and rest while a sketch is open (it picks its own lines and points). */
+/** The keys work in Model's and mimir's view only, and rest while a sketch is open (it picks its own lines and points). */
 export function pickKeysOn(s: { workspace: string; modelMode: string; objectTool: string | null }): boolean {
-  return s.workspace === 'prepare' && s.modelMode === 'design' && s.objectTool !== 'sketch'
+  return s.workspace === 'prepare' && (s.modelMode === 'design' || s.modelMode === 'mimir') && s.objectTool !== 'sketch'
 }
 
 /** The kind and mode a key event asks for, or null. */
