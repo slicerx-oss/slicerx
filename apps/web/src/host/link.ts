@@ -75,6 +75,7 @@ export function wrapLink(link: LinkHost, relay?: string | null, opts: { appLink?
             host: () => link.appLink.host(),
             onCall: (cb) => link.appLink.onCall(cb),
             onAsk: (cb) => link.appLink.onAsk(cb),
+            onAskEnded: (cb) => link.appLink.onAskEnded(cb),
             reply: (id, out) => link.appLink.reply(id, out),
             answer: (id, d) => link.appLink.answer(id, d),
             grants: () => link.appLink.grants(),

@@ -49,6 +49,16 @@ async fn connect(link: &Link) -> Ws {
         .0
 }
 
+/// A connection from a page with this Origin, as the desktop app's window or the browser build opens one.
+async fn connect_from(link: &Link, origin: &str) -> Ws {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+    let mut req = format!("ws://127.0.0.1:{}/", link.addr().port())
+        .into_client_request()
+        .unwrap();
+    req.headers_mut().insert("origin", origin.parse().unwrap());
+    connect_async(req).await.unwrap().0
+}
+
 async fn call(ws: &mut Ws, id: u64, method: &str, params: Value) -> Value {
     ws.send(Message::text(
         json!({ "id": id, "method": method, "params": params }).to_string(),
@@ -99,7 +109,11 @@ async fn no_event(ws: &mut Ws, name: &str) {
 
 /// The app's connection, paired with the app code.
 async fn app(link: &Link) -> Ws {
-    let mut ws = connect(link).await;
+    app_from(link, "tauri://localhost").await
+}
+
+async fn app_from(link: &Link, origin: &str) -> Ws {
+    let mut ws = connect_from(link, origin).await;
     let pp = pairing::proof_params(&mut ws, CODE, json!({})).await;
     let r = call(&mut ws, 1, "pair", pp).await;
     assert_eq!(r["result"]["role"], "app", "{r}");
@@ -418,4 +432,97 @@ async fn a_partner_app_stays_off_the_open_project() {
     let r = call(&mut partner, 2, "app.call", json!({ "method": "app.info" })).await;
     assert_eq!(code(&r), "forbidden", "{r}");
     no_event(&mut a, "appLink.ask").await;
+}
+
+#[tokio::test]
+async fn only_the_desktop_window_hosts_the_link() {
+    let link = hub().await;
+    let mut web = app_from(&link, "https://slicerx.app").await;
+    call(&mut web, 2, "settings.set", json!({ "appLink": true })).await;
+    let r = call(&mut web, 3, "appLink.host", json!({})).await;
+    assert_eq!(code(&r), "forbidden", "{r}");
+    let mut bare = connect(&link).await;
+    let pp = pairing::proof_params(&mut bare, CODE, json!({})).await;
+    call(&mut bare, 1, "pair", pp).await;
+    let r = call(&mut bare, 2, "appLink.host", json!({})).await;
+    assert_eq!(code(&r), "forbidden", "{r}");
+    let (mut agent, _, _) = remembered_agent(&link, "Claude Code").await;
+    let r = call(&mut agent, 2, "app.call", json!({ "method": "app.info" })).await;
+    assert_eq!(code(&r), "app_closed", "{r}");
+    let mut desktop = app(&link).await;
+    let r = call(&mut desktop, 2, "appLink.host", json!({})).await;
+    assert_eq!(r["result"]["on"], true, "{r}");
+}
+
+#[tokio::test]
+async fn big_args_one_question_at_a_time_and_off_while_asking() {
+    let link = hub().await;
+    let mut a = app(&link).await;
+    call(&mut a, 2, "settings.set", json!({ "appLink": true })).await;
+    call(&mut a, 3, "appLink.host", json!({})).await;
+    let (mut first, _, _) = remembered_agent(&link, "First").await;
+    let big = "x".repeat(70 * 1024);
+    let r = call(
+        &mut first,
+        2,
+        "app.call",
+        json!({ "method": "app.info", "args": { "pad": big } }),
+    )
+    .await;
+    assert_eq!(code(&r), "bad_request", "{r}");
+    no_event(&mut a, "appLink.ask").await;
+
+    let pending = spawn_call(first, "app.info", json!({}));
+    let ask = event(&mut a, "appLink.ask").await;
+    assert!(
+        ask["createdAt"].as_str().is_some_and(|t| t.starts_with("20")),
+        "{ask}"
+    );
+    // A second agent waits for the first question to end.
+    let (mut second, _, _) = remembered_agent(&link, "Second").await;
+    let r = call(&mut second, 2, "app.call", json!({ "method": "app.info" })).await;
+    assert_eq!(code(&r), "pending", "{r}");
+    // Off while the question is up: the call ends off, and a late Allow finds nothing.
+    call(&mut a, 4, "settings.set", json!({ "appLink": false })).await;
+    let (_, r) = pending.await.unwrap();
+    assert_eq!(code(&r), "app_link_off", "{r}");
+    let r = call(
+        &mut a,
+        5,
+        "appLink.answer",
+        json!({ "askId": ask["askId"], "decision": "allow" }),
+    )
+    .await;
+    assert_eq!(code(&r), "not_found", "{r}");
+    let grants = call(&mut a, 6, "appLink.grants", json!({})).await;
+    assert!(
+        grants["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|g| g["rights"].is_null()),
+        "{grants}"
+    );
+}
+
+#[tokio::test]
+async fn the_app_hears_when_a_question_ends() {
+    let link = hub().await;
+    let mut a = app(&link).await;
+    call(&mut a, 2, "settings.set", json!({ "appLink": true })).await;
+    call(&mut a, 3, "appLink.host", json!({})).await;
+    let (agent, _, _) = remembered_agent(&link, "Claude Code").await;
+    let pending = spawn_call(agent, "app.info", json!({}));
+    let ask = event(&mut a, "appLink.ask").await;
+    call(
+        &mut a,
+        4,
+        "appLink.answer",
+        json!({ "askId": ask["askId"], "decision": "deny" }),
+    )
+    .await;
+    let ended = event(&mut a, "appLink.askEnded").await;
+    assert_eq!(ended["askId"], ask["askId"]);
+    let (_, r) = pending.await.unwrap();
+    assert_eq!(code(&r), "denied", "{r}");
 }

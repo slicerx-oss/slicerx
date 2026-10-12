@@ -518,7 +518,10 @@ export interface AppLinkCall {
 export interface AppLinkAsk {
   askId: number
   clientId: string
+  /** The name the agent gave itself when it was connected: show it as its claim, not as fact. */
   name: string
+  /** When the person connected it. */
+  createdAt: string
 }
 
 /** A remembered agent and what the person allowed it on the open project (null: not asked yet). */
@@ -629,6 +632,8 @@ export interface LinkHost extends PrinterHost {
     host(): Promise<{ on: boolean }>
     onCall(cb: (c: AppLinkCall) => void): () => void
     onAsk(cb: (a: AppLinkAsk) => void): () => void
+    /** A question ended on the hub (answered, timed out, the link turned off or the client revoked). */
+    onAskEnded(cb: (askId: number) => void): () => void
     reply(callId: number, out: { ok: true; value: unknown } | { ok: false; code: string; message: string }): Promise<void>
     answer(askId: number, decision: AppLinkDecision): Promise<void>
     grants(): Promise<AppLinkGrant[]>
@@ -874,6 +879,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   const revokedListeners = new Set<(pairingId: string) => void>()
   const linkCallListeners = new Set<(c: AppLinkCall) => void>()
   const linkAskListeners = new Set<(a: AppLinkAsk) => void>()
+  const linkAskEndedListeners = new Set<(askId: number) => void>()
   const findingListeners = new Set<(f: { printerId: string; kind: string; confidence: number; note?: string; at: string }) => void>()
   const guardListeners = new Set<(t: GuardTrip) => void>()
   const alertListeners = new Set<(a: HubAlert) => void>()
@@ -958,6 +964,11 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     }
     if (msg.event === 'appLink.ask' && msg.data) {
       for (const cb of linkAskListeners) cb(msg.data as unknown as AppLinkAsk)
+      return
+    }
+    if (msg.event === 'appLink.askEnded' && msg.data) {
+      const id = (msg.data as { askId?: unknown }).askId
+      if (typeof id === 'number') for (const cb of linkAskEndedListeners) cb(id)
       return
     }
     if (msg.event === 'remote.pairing.revoked') {
@@ -1221,6 +1232,10 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       onAsk: (cb) => {
         linkAskListeners.add(cb)
         return () => void linkAskListeners.delete(cb)
+      },
+      onAskEnded: (cb) => {
+        linkAskEndedListeners.add(cb)
+        return () => void linkAskEndedListeners.delete(cb)
       },
       reply: async (callId, out) => void (await call('appLink.reply', { callId, ...out })),
       answer: async (askId, decision) => void (await call('appLink.answer', { askId, decision })),

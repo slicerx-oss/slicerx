@@ -53,7 +53,8 @@ export interface BridgeAppLink {
   setOn(on: boolean): Promise<boolean>
   host(): Promise<{ on: boolean }>
   onCall(cb: (c: { callId: number; method: string; args: Record<string, unknown>; client: { id: string; name: string } }) => void): () => void
-  onAsk(cb: (a: { askId: number; clientId: string; name: string }) => void): () => void
+  onAsk(cb: (a: { askId: number; clientId: string; name: string; createdAt: string }) => void): () => void
+  onAskEnded(cb: (askId: number) => void): () => void
   reply(callId: number, out: { ok: true; value: unknown } | { ok: false; code: string; message: string }): Promise<void>
   answer(askId: number, decision: 'allow' | 'read' | 'deny'): Promise<void>
   grants(): Promise<{ clientId: string; name: string; rights: 'read' | 'edit' | null; grantedAt: string | null; denied: boolean }[]>
