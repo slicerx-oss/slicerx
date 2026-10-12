@@ -24,7 +24,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./agents": "./src/agents.ts",
-    "./cli": "./dist/cli.js"
+    "./cli": "./dist/cli.js",
+    "./toolset": "./src/toolset.ts"
   },
   "files": [
     "dist",

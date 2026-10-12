@@ -16,6 +16,11 @@ import { designArg, designSummary, faceAt, item, type Design } from './design'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
 import { looksZipped, refuseVaultFile } from './vault'
+import { modelArg, vec3, type GeomCall } from './args'
+import type { CadFiles } from './cad'
+import { readStlPositions } from './mesh'
+
+export { modelArg, vec3, type GeomCall }
 
 /** Finds sx-geom: an explicit path, SLICERX_SX_GEOM_BIN, next to the sx binary, then PATH. */
 export function findSxGeom(explicit?: string, sxPath?: string): string | undefined {
@@ -46,8 +51,6 @@ function runGeom(bin: string, op: string, request: unknown, outDir: string | und
   })
 }
 
-export const vec3 = z.tuple([z.number(), z.number(), z.number()])
-export const modelArg = z.string().min(1).describe('Absolute path to an STL file, an http(s) URL, or a built-in model such as sample:x-mark or sample:cube-20')
 const plane = z
   .union([
     z.object({ axis: z.enum(['x', 'y', 'z']), at: z.number().describe('Position along the axis, mm') }),
@@ -81,7 +84,6 @@ export interface GeomToolDeps {
 
 let counter = 0
 
-export type GeomCall = (op: string, request: Record<string, unknown>) => Promise<Record<string, unknown>>
 
 /** Runs one operation. Returned meshes are STL files under <out>/geom/<run>/, given as stlPath. */
 export function geomCaller(deps: GeomToolDeps): GeomCall {
@@ -92,6 +94,11 @@ export function geomCaller(deps: GeomToolDeps): GeomCall {
     mkdirSync(dir, { recursive: true })
     return (await runGeom(deps.bin, op, camelKeys(request), dir, timeout)) as Record<string, unknown>
   }
+}
+
+/** The CAD tools' files on this server: the sx-geom program on STL files, model paths from the policy. */
+export function cadFiles(deps: GeomToolDeps): CadFiles {
+  return { engine: Boolean(deps.bin), call: geomCaller(deps), path: (model) => resolveModel(deps.policy, model), stl: (stlPath) => readStlPositions(readFileSync(stlPath)) }
 }
 
 /** The engine as a history replay calls it: JSON in, meshes back as numbers (with their faces), no files. */
