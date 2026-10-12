@@ -140,6 +140,11 @@ void main() {
 }
 `
 
+// A mark that cuts the selection outline: blue in the mask, which the grade reads as "no outline here".
+const CUT_FS = /* glsl */ `
+void main() { gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0); }
+`
+
 const GRADE_FS = /* glsl */ `
 uniform sampler2D tColor;
 uniform sampler2D tAO;
@@ -221,14 +226,15 @@ void main() {
   if (silOn > 0.5) lin = mix(lin, silColor, silhouette(tuv) * 0.95);
   if (outlineOn > 0.5) {
     float cov = texture2D(tMask, tuv).r;
-    float mx = 0.0, vis = 0.0;
+    float mx = 0.0, vis = 0.0, cut = texture2D(tMask, tuv).b;
     for (int i = 0; i < 8; i++) {
       float an = float(i) * 0.7853982;
       vec2 d = vec2(cos(an), sin(an)) * texel * edgePx;
-      vec2 m = max(texture2D(tMask, tuv + d).rg, texture2D(tMask, tuv + d * 0.5).rg);
-      mx = max(mx, m.r); vis = max(vis, m.g);
+      vec3 m = max(texture2D(tMask, tuv + d).rgb, texture2D(tMask, tuv + d * 0.5).rgb);
+      mx = max(mx, m.r); vis = max(vis, m.g); cut = max(cut, m.b);
     }
-    float e = smoothstep(0.05, 0.55, mx - cov);
+    // a picked face's outline takes over the selection outline along its edges
+    float e = smoothstep(0.05, 0.55, mx - cov) * (1.0 - cut);
     lin = mix(lin, vis > 0.5 ? edgeVis : edgeHid, e);
   }
   vec3 o = toSRGB(lin);
@@ -257,6 +263,8 @@ export interface FrameOptions {
   outline: readonly Object3D[]
   /** Marks drawn over the composed frame, above the selection outline: hidden in the scene pass, then drawn without a depth buffer. */
   overlay?: readonly Object3D[]
+  /** Marks under `overlay` whose meshes carry `userData.cutsOutline` hide the selection outline where they lie. */
+  outlineCut?: readonly Object3D[]
   /** Called before the overlay draws, with the scene's depth, for marks that test against it themselves. */
   overlayDepth?: (depth: Texture | null, size: Vector2) => void
   /** Model's CAD look: a near-black silhouette where solid models meet what is behind them. */
@@ -278,6 +286,7 @@ export class Pipeline {
   private readonly aoMat: ShaderMaterial
   private readonly blurMat: ShaderMaterial
   private readonly maskMat: ShaderMaterial
+  private readonly cutMat: ShaderMaterial
   private readonly gradeMat: ShaderMaterial
   private readonly fxaaMat: ShaderMaterial
   private readonly quad = new FullScreenQuad()
@@ -363,6 +372,7 @@ export class Pipeline {
       blendSrc: OneFactor,
       blendDst: OneFactor,
     })
+    this.cutMat = new ShaderMaterial({ vertexShader: MASK_VS, fragmentShader: CUT_FS, depthTest: false, depthWrite: false, blending: CustomBlending, blendEquation: MaxEquation, blendSrc: OneFactor, blendDst: OneFactor })
     const [tr, tg, tb] = srgb01(SCENE.bgTop)
     const [br, bgc, bb] = srgb01(SCENE.bgBottom)
     const [gr, gg, gb] = srgb01(SCENE.bgGlow)
@@ -515,7 +525,7 @@ export class Pipeline {
     if (g.exposure) g.exposure.value = this.exposure
 
     const outline = opts.outline.length > 0
-    if (outline) this.renderMask(opts.outline, camera)
+    if (outline) this.renderMask(opts.outline, camera, opts.outlineCut ?? [])
     if (g.outlineOn) g.outlineOn.value = outline ? 1 : 0
 
     if (this.fxaa) {
@@ -546,7 +556,7 @@ export class Pipeline {
     this.quad.render(this.renderer)
   }
 
-  private renderMask(objects: readonly Object3D[], camera: Camera): void {
+  private renderMask(objects: readonly Object3D[], camera: Camera, cuts: readonly Object3D[]): void {
     const r = this.renderer
     r.setRenderTarget(this.mask)
     r.setClearColor(0x000000, 0)
@@ -570,6 +580,21 @@ export class Pipeline {
     const prevAuto = r.shadowMap.autoUpdate
     r.shadowMap.autoUpdate = false
     for (const root of objects) r.render(root, camera)
+    for (const root of cuts) {
+      if (!root.visible) continue
+      root.traverse((o) => {
+        if (o === root) return
+        if ((o as Mesh).isMesh && o.visible && o.userData.cutsOutline) {
+          const m = o as Mesh
+          swapped.push({ mesh: m, mat: m.material })
+          m.material = this.cutMat
+        } else if (o.visible) {
+          hidden.push(o)
+          o.visible = false
+        }
+      })
+      r.render(root, camera)
+    }
     r.shadowMap.autoUpdate = prevAuto
     for (const s of swapped) s.mesh.material = s.mat
     for (const h of hidden) h.visible = true
