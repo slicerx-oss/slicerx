@@ -10,6 +10,7 @@ import type {
   PilotLookup,
   PilotSheet,
   PilotSheetAnswer,
+  PilotSheetBind,
   PrinterHost,
   SettingsDiff,
   SettingValue,
@@ -62,6 +63,8 @@ export interface ToolContext {
   ask?(question: { title: string; question: string; choices: PilotChoice[] }): Promise<string>
   /** Shows a dimension sheet and waits for the person to confirm or edit it; absent where nobody can answer. */
   sheet?(sheet: Omit<PilotSheet, 'id'>): Promise<PilotSheetAnswer>
+  /** Ties the last sheet's rows to the steps they set; false when this run showed no sheet. */
+  bindSheet?(design: string, binds: PilotSheetBind[]): boolean
 }
 
 export interface ToolOutput {
