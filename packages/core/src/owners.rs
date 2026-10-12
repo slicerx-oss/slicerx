@@ -207,7 +207,7 @@ pub(crate) fn assign(
         for (k, w) in pts.windows(2).enumerate() {
             let [a, b] = w else { continue };
             let (za, zb) = (z_of(range.start + k), z_of(range.start + k + 1));
-            for (q, t, next) in crossings(*a, *b, &owner_at) {
+            for (q, t, next) in crossings(*a, *b, &owner_at, here) {
                 let lerp = |x: Option<f32>, y: Option<f32>| match (x, y) {
                     #[allow(
                         clippy::cast_possible_truncation,
@@ -266,7 +266,12 @@ pub(crate) fn assign(
 }
 
 /// Where the owner changes along `a`-`b`: each crossing point, its share of the segment and the owner after it.
-fn crossings(a: Point, b: Point, owner_at: &dyn Fn(Point) -> u16) -> Vec<(Point, f64, u16)> {
+fn crossings(
+    a: Point,
+    b: Point,
+    owner_at: &dyn Fn(Point) -> u16,
+    here: &[ObjectSlice],
+) -> Vec<(Point, f64, u16)> {
     let at = |t: f64| {
         #[allow(
             clippy::cast_possible_truncation,
@@ -289,6 +294,10 @@ fn crossings(a: Point, b: Point, owner_at: &dyn Fn(Point) -> u16) -> Vec<(Point,
         reason = "a step count"
     )]
     let steps = (len / 0.1).ceil().clamp(1.0, 100_000.0) as u32;
+    // A long segment that no outline comes near keeps one owner along every sample: it is not sampled.
+    if steps > STEADY_STEPS && steady(here, a, b) {
+        return Vec::new();
+    }
     let mut out = Vec::new();
     let mut prev = (0.0f64, owner_at(a));
     for k in 1..=steps {
@@ -314,6 +323,74 @@ fn crossings(a: Point, b: Point, owner_at: &dyn Fn(Point) -> u16) -> Vec<(Point,
         prev = (t, o);
     }
     out
+}
+
+/// Segments of more samples than this are first checked with [`steady`]; shorter ones cost less to sample.
+const STEADY_STEPS: u32 = 4;
+/// How near (internal units) an outline or an object's box may come to a segment that [`steady`] passes. A sample is
+/// the segment's point rounded to whole units, at most about 0.71 units off it, so with every edge farther than this
+/// no sample lies across an edge from the segment.
+const STEADY_UNITS: i32 = 2;
+
+/// True when every sample of `a`-`b` that [`crossings`] would take has the owner of `a`: no object's box edge comes
+/// within [`STEADY_UNITS`] of the segment, and no ring edge of an object whose box it is in does.
+fn steady(here: &[ObjectSlice], a: Point, b: Point) -> bool {
+    let m = STEADY_UNITS;
+    let (x0, y0) = (a.x.min(b.x).saturating_sub(m), a.y.min(b.y).saturating_sub(m));
+    let (x1, y1) = (a.x.max(b.x).saturating_add(m), a.y.max(b.y).saturating_add(m));
+    let near2 = f64::from(m) * f64::from(m);
+    for s in here {
+        let [bx0, by0, bx1, by1] = s.bounds;
+        if bx1 < x0 || bx0 > x1 || by1 < y0 || by0 > y1 {
+            continue;
+        }
+        if !(bx0 <= x0 && by0 <= y0 && bx1 >= x1 && by1 >= y1) {
+            return false;
+        }
+        for ring in s.shapes.iter().flatten() {
+            let n = ring.len();
+            for e in 0..n {
+                let (Some(&p), Some(&q)) = (ring.get(e), ring.get((e + 1) % n)) else {
+                    continue;
+                };
+                if p.x.max(q.x) < x0 || p.x.min(q.x) > x1 || p.y.max(q.y) < y0 || p.y.min(q.y) > y1 {
+                    continue;
+                }
+                let xy = |x: i32, y: i32| (f64::from(x), f64::from(y));
+                if seg_seg_dist2(xy(a.x, a.y), xy(b.x, b.y), xy(p.x, p.y), xy(q.x, q.y)) <= near2 {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// The squared distance between segments `a`-`b` and `p`-`q`, internal units.
+fn seg_seg_dist2(a: (f64, f64), b: (f64, f64), p: (f64, f64), q: (f64, f64)) -> f64 {
+    let cross =
+        |o: (f64, f64), u: (f64, f64), v: (f64, f64)| (u.0 - o.0) * (v.1 - o.1) - (u.1 - o.1) * (v.0 - o.0);
+    let (d1, d2, d3, d4) = (cross(p, q, a), cross(p, q, b), cross(a, b, p), cross(a, b, q));
+    if ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0))
+        && ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0))
+    {
+        return 0.0;
+    }
+    let point_seg = |c: (f64, f64), u: (f64, f64), v: (f64, f64)| {
+        let (dx, dy) = (v.0 - u.0, v.1 - u.1);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 == 0.0 {
+            0.0
+        } else {
+            (((c.0 - u.0) * dx + (c.1 - u.1) * dy) / len2).clamp(0.0, 1.0)
+        };
+        let (ex, ey) = (u.0 + dx * t - c.0, u.1 + dy * t - c.1);
+        ex * ex + ey * ey
+    };
+    point_seg(a, p, q)
+        .min(point_seg(b, p, q))
+        .min(point_seg(p, a, b))
+        .min(point_seg(q, a, b))
 }
 
 /// A brim's object: the one its loop goes round, or none when it goes round several (`combine_brims`).
@@ -484,6 +561,65 @@ mod tests {
         );
         assert_eq!(l.path_points(&l.paths[1]).first().copied(), Some(cut));
         assert!((length(&l) - before).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_segment_within_two_units_of_an_outline_is_still_sampled() {
+        let here = vec![square(0, 0.0, 0.0, 10.0, 10.0)];
+        let edge = crate::geom::mm(10.0);
+        let owner_at = |p: Point| holder(&here, p).unwrap_or(OBJECT_NONE);
+        // Ends one unit past the right edge: not steady, so it is sampled.
+        let (a, b) = (
+            Point::from_mm(1.0, 5.0),
+            Point::new(edge + 1, crate::geom::mm(5.0)),
+        );
+        assert!(!steady(&here, a, b));
+        // One that crosses the edge is sampled and cut where it leaves the object.
+        let (a, b) = (Point::from_mm(1.0, 5.0), Point::from_mm(15.0, 5.0));
+        assert!(!steady(&here, a, b));
+        assert_eq!(crossings(a, b, &owner_at, &here).len(), 1);
+        // Runs along the top edge two units inside it: not steady either, though it never leaves the object.
+        let top = crate::geom::mm(10.0) - 2;
+        let (a, b) = (
+            Point::new(crate::geom::mm(1.0), top),
+            Point::new(crate::geom::mm(9.0), top),
+        );
+        assert!(!steady(&here, a, b));
+        assert!(crossings(a, b, &owner_at, &here).is_empty());
+        // Well inside: steady.
+        assert!(steady(&here, Point::from_mm(1.0, 5.0), Point::from_mm(9.0, 5.0)));
+    }
+
+    #[test]
+    fn a_steady_segment_keeps_its_owner_at_every_sample() {
+        let here = vec![
+            square(0, 0.0, 0.0, 10.0, 10.0),
+            square(1, 10.0, 0.0, 20.0, 10.0),
+            square(2, 3.0, 3.0, 6.0, 6.0),
+        ];
+        let owner_at = |p: Point| holder(&here, p).unwrap_or(OBJECT_NONE);
+        let mut checked = 0;
+        for i in 0..40 {
+            for j in 0..40 {
+                let (x0, y0) = (-1.0 + 0.55 * f64::from(i), -1.0 + 0.3 * f64::from(j));
+                let (a, b) = (Point::from_mm(x0, y0), Point::from_mm(x0 + 3.7, y0 + 1.3));
+                if !steady(&here, a, b) {
+                    continue;
+                }
+                checked += 1;
+                let first = owner_at(a);
+                for k in 0..=200 {
+                    let t = f64::from(k) / 200.0;
+                    #[allow(clippy::cast_possible_truncation, reason = "a point between two")]
+                    let q = Point::new(
+                        (f64::from(a.x) + f64::from(b.x - a.x) * t).round() as i32,
+                        (f64::from(a.y) + f64::from(b.y - a.y) * t).round() as i32,
+                    );
+                    assert_eq!(owner_at(q), first, "{a:?} {b:?} at {t}");
+                }
+            }
+        }
+        assert!(checked > 100, "{checked}");
     }
 
     #[test]
