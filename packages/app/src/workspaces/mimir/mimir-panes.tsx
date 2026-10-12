@@ -4,8 +4,10 @@
 // opens. The view is the one Model uses, on the same design and history; this file adds the chat column and the
 // caption that names the view.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Button, Icon, ResizeEdge, tipAttrs } from '@slicerx/ui'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Composer, useAttachments } from '@slicerx/pilot/ui'
+import '@slicerx/pilot/ui/pilot.css'
+import { Icon, ResizeEdge, tipAttrs } from '@slicerx/ui'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
 import { get, setCamera, useApp } from '../../state/store'
@@ -40,8 +42,35 @@ export function MimirChat() {
   const [resizing, setResizing] = useState(false)
   const name = designName(useApp((s) => s.projectFile))
   const ref = useRef<HTMLElement>(null)
+  const attachments = useAttachments()
+  // A file dragged anywhere over the chat can be dropped onto the message.
+  const [dropping, setDropping] = useState(false)
+  const files = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
   return (
-    <aside ref={ref} className="mimir-chat" data-testid="mimir-chat" data-resizing={resizing || undefined} aria-label={ASSISTANT_NAME} style={{ '--w-chat': `${width}px` } as CSSProperties}>
+    <aside
+      ref={ref}
+      className="mimir-chat sx-pilot"
+      data-testid="mimir-chat"
+      data-resizing={resizing || undefined}
+      data-drop={dropping || undefined}
+      aria-label={ASSISTANT_NAME}
+      style={{ '--w-chat': `${width}px` } as CSSProperties}
+      onDragOver={(e) => {
+        if (!files(e)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setDropping(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false)
+      }}
+      onDrop={(e) => {
+        if (!files(e)) return
+        e.preventDefault()
+        setDropping(false)
+        void attachments.add(Array.from(e.dataTransfer.files))
+      }}
+    >
       <header className="mimir-chat-head">
         <span className="mimir-chat-mark" aria-hidden="true">
           <Icon name="mimir" size={18} />
@@ -57,13 +86,10 @@ export function MimirChat() {
           <p>Describe a part, or drop a photo of what it fits. {ASSISTANT_NAME} models it here, and every step lands in the timeline, where you can edit or undo it.</p>
         </div>
       </div>
-      <form className="mimir-composer sx-overlay" data-testid="mimir-composer" aria-label={`Ask ${ASSISTANT_NAME}`} onSubmit={(e) => e.preventDefault()}>
-        <label htmlFor="mimir-ask" className="sr-only">
-          Ask {ASSISTANT_NAME}
-        </label>
-        <input id="mimir-ask" type="text" placeholder={`Ask ${ASSISTANT_NAME}`} disabled spellCheck={false} />
-        <Button size="sm" variant="ghost" icon="send" type="submit" aria-label="Send" disabled />
-      </form>
+      <div className="mimir-chat-foot">
+        {/* Replies come with the scripted builds; until then the message can be written and carry images. */}
+        <Composer attachments={attachments} onSend={() => undefined} sendOff />
+      </div>
       <div className="mimir-split" data-testid="mimir-split">
         <ResizeEdge
           pane="left"

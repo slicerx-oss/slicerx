@@ -50,9 +50,12 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 | Test id | Control |
 | --- | --- |
-| `mimir-chat` | The chat column on the left of the mimir tab |
+| `mimir-chat` | The chat column on the left of the mimir tab; a dropped image joins the message |
 | `mimir-transcript` | The conversation in the chat |
 | `mimir-composer` | The message box pinned at the foot of the chat |
+| `mimir-attach` | The composer's attach button, which opens the image picker |
+| `mimir-attachment` | An image on the message or on a sent turn; its remove button is named Remove and the file name |
+| `mimir-choice` | A choice card in the conversation; `data-picked` holds the picked answer's id once there is one |
 | `mimir-split` | Holds the chat's resize edge (`role="separator"`), 340 px to half the window |
 | `mimir-caption` | The pill at the view's top left that names the view, such as Top, XY |
 

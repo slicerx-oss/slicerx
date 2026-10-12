@@ -32,6 +32,12 @@ export function showsDesign(s: { workspace: string; modelMode: ModelMode }): boo
   return s.workspace === 'prepare' && (s.modelMode === 'design' || s.modelMode === 'mimir')
 }
 
+/** True while the mimir tab is open: its chat stands in for the docked one. */
+export function useInMimir(): boolean {
+  const open = useApp((s) => s.workspace === 'prepare')
+  return useModelMode() === 'mimir' && open
+}
+
 /** Ctrl+E (Cmd+E): the other mode, shown on the first tab from whichever tab is open. Does nothing without modeling tools. */
 export function toggleModelMode(): void {
   if (cadShown()) setModelMode(get().modelMode === 'design' ? 'slice' : 'design')

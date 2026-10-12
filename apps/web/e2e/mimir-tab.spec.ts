@@ -26,8 +26,14 @@ async function open(page: Page, scheme: 'light' | 'dark' = 'dark', prefs: Record
 /** Clears the plate, then opens the mimir tab: the empty state. */
 async function openEmpty(page: Page): Promise<void> {
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
+  // the view lets go of the old plate first, so its refit can't land after the tab turns the camera
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __vp: { objects: Map<string, unknown> } }).__vp.objects.size)).toBe(0)
   await page.getByTestId('tab-mimir').click()
   await expect(page.getByTestId('mimir-chat')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => {
+    const p = (window as unknown as { __vp: Vp }).__vp.camera.position
+    return Math.abs(p.y) / Math.hypot(p.x, p.y, p.z)
+  })).toBeGreaterThan(0.95)
 }
 
 test.describe('the mimir tab', () => {
@@ -101,6 +107,47 @@ test.describe('the mimir tab', () => {
     await viewportReady(page)
     await page.getByTestId('tab-mimir').click()
     await expect.poll(async () => Math.round((await chat.boundingBox())!.width)).toBe(kept)
+  })
+
+  test('an image dropped or attached rides on the message; the attach button and the composer stay put', async ({ page }) => {
+    await open(page)
+    await openEmpty(page)
+    const attach = page.getByTestId('mimir-attach')
+    const before = (await attach.boundingBox())!
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+    await page.getByTestId('mimir-composer').locator('input[type="file"]').setInputFiles({ name: 'thermostat.png', mimeType: 'image/png', buffer: png })
+    await expect(page.getByTestId('mimir-attachment')).toHaveText('thermostat.png')
+    const after = (await attach.boundingBox())!
+    expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(0.5)
+    // a file dropped on the chat joins it
+    const drop = await page.evaluateHandle((b64) => {
+      const dt = new DataTransfer()
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+      dt.items.add(new File([bytes], 'wall.png', { type: 'image/png' }))
+      return dt
+    }, png.toString('base64'))
+    await page.getByTestId('mimir-transcript').dispatchEvent('dragover', { dataTransfer: drop })
+    await page.getByTestId('mimir-transcript').dispatchEvent('drop', { dataTransfer: drop })
+    await expect(page.getByTestId('mimir-attachment')).toHaveCount(2)
+    await page.getByRole('button', { name: 'Remove thermostat.png' }).click()
+    await expect(page.getByTestId('mimir-attachment')).toHaveText('wall.png')
+    await page.screenshot({ path: test.info().outputPath('mimir-attach-dark.png') })
+  })
+
+  test('the docked chat stands aside on the mimir tab; its button keeps its place', async ({ page }) => {
+    await open(page)
+    const btn = page.locator('.mimir-btn')
+    test.skip((await btn.count()) === 0, 'This build has no mimir dock')
+    await btn.click()
+    await expect(page.locator('.mimir-dock')).toBeVisible()
+    const box = (await btn.boundingBox())!
+    await page.getByTestId('tab-mimir').click()
+    await expect(page.locator('.mimir-dock')).toHaveCount(0)
+    await expect(btn).toBeHidden()
+    expect((await btn.boundingBox()) ?? box).toEqual(box)
+    await page.getByTestId('tab-model').click()
+    await expect(page.locator('.mimir-dock')).toBeVisible()
   })
 
   for (const scheme of ['dark', 'light'] as const) {
