@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! The output file name: the profile's `filename_format` rendered with Orca's placeholders (Orca's
-//! `Print::output_filename`, `PrintBase::output_filename` and `PrintStatistics::config`). The numbers
+//! The output file name: the profile's `filename_format` rendered with Orca's placeholders, as Orca
+//! names the file. The numbers
 //! come from the finished file's footer, so a native run and a WASM run of shards name it alike.
 //!
 //! Unlike Orca, characters no file system takes (`/ \ : * ? " < > |` and control characters) become `_`,
@@ -95,7 +95,7 @@ fn totals(gcode: &[u8], filaments: usize) -> Totals {
     t
 }
 
-/// Orca's `short_time`: whole minutes once a print takes an hour (seconds from 30 round up), else minutes
+/// A short time as Orca writes it in file names: whole minutes once a print takes an hour (seconds from 30 round up), else minutes
 /// and seconds.
 fn short_time(total_s: f64) -> String {
     #[allow(

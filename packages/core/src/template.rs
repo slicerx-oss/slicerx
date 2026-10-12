@@ -12,7 +12,7 @@
 //! - `{if cond}...{elsif cond}...{else}...{endif}` picks text.
 //! - `{ local x = 1; x = x + 2; if a then b = 1; endif; x }` runs a small
 //!   script; every expression statement inserts its value, in order, and
-//!   assignments insert nothing (Orca's and PrusaSlicer's `macros` rule).
+//!   assignments insert nothing (as in Orca and Prusa).
 //! - `[name]` inserts a variable's value (a list gives its first entry, or the
 //!   entry of the current extruder).
 //!
@@ -130,7 +130,7 @@ impl Context<'_> {
     }
 }
 
-/// Variables Orca's G-code writer sets as integers (`ConfigOptionInt` and `ConfigOptionInts` in `GCode.cpp`).
+/// Variables Orca's G-code writer sets as integers.
 const INT_VARS: &[&str] = &[
     "bed_mesh_probe_count",
     "bed_temperature",
@@ -254,7 +254,7 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
                 i += 1;
             }
             let t: String = cs.get(start..i).unwrap_or(&[]).iter().collect();
-            // a literal without a point is an integer (orca's `int_` before `strict_double`)
+            // a literal without a point is an integer (as Orca reads it)
             match t.parse::<i64>() {
                 Ok(i) if !t.contains('.') => out.push(Tok::Int(i)),
                 _ => out.push(Tok::Num(t.parse().map_err(|_| format!("bad number {t}"))?)),

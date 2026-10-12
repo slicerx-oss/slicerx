@@ -362,7 +362,7 @@ pub fn parse_specs(list: &[String], default_format: &str) -> (Vec<Spec>, Vec<Str
     (ok, skipped)
 }
 
-/// The G-code text for one thumbnail as Orca writes it (`GCodeThumbnails::export_thumbnails_to_file`): the image
+/// The G-code text for one thumbnail as Orca writes it: the image
 /// as base64 in rows of 78 characters between `; THUMBNAIL_BLOCK_START` and `; THUMBNAIL_BLOCK_END`, each row
 /// a comment, and `; thumbnail begin WxH SIZE` (SIZE the base64 length) before them; `BTT_TFT` is its own thing,
 /// see [`btt_block`].

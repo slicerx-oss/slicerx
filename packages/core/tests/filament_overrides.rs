@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! A filament's own retraction settings (`filament_retraction_length` and the rest of Orca's
-//! `filament_extruder_override_keys`) replace the printer's for that filament only, and an unset one
+//! A filament's own retraction settings (`filament_retraction_length` and the rest of the per-filament
+//! overrides) replace the printer's for that filament only, and an unset one
 //! leaves the printer's value. The config is built the way the app builds it: the settings schema's
 //! defaults, then the Prusa MK4S's shipped process, filament and printer settings.
 

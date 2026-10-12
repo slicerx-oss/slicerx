@@ -425,7 +425,7 @@ fn h2d() -> Value {
 #[test]
 fn a_brim_stays_inside_its_extruders_reach_as_orca_clips_it() {
     // One filament near the H2D's left edge goes to the right extruder, which reaches x 25 to 350; its 15 mm
-    // brim reached x 15 and the slice was blocked. Orca's Brim.cpp cuts each object's brim to the reach of the
+    // brim reached x 15 and the slice was blocked. Orca cuts each object's brim to the reach of the
     // extruder that prints it.
     let mut c = h2d();
     c["brim_type"] = json!("outer_only");

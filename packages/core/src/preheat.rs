@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Preheating idle tools before a tool change, as Orca's G-code processor does it after the file
-//! is written (`GCodeProcessor` post-processing with `ExportLines::insert_lines`): with ooze
+//! Preheating idle tools before a tool change, as Orca does it after the file
+//! is written: with ooze
 //! prevention on a printer whose tools have their own nozzles, each tool change looks back
 //! `preheat_time` seconds of printing (in `preheat_steps` steps), puts an `M104` for the new tool
 //! there, and drops the standby cooldowns of that tool inside the window. The look back stops at
@@ -12,7 +12,7 @@
 
 use crate::config::PrintConfig;
 
-/// True when the settings ask for preheating (Orca: `backtrace_enabled`).
+/// True when the settings ask for preheating.
 /// The print's filament count is checked in [`apply`], from the tools the file selects.
 pub(crate) fn wanted(cfg: &PrintConfig) -> bool {
     crate::tower::flag(cfg, "ooze_prevention")
@@ -20,7 +20,7 @@ pub(crate) fn wanted(cfg: &PrintConfig) -> bool {
         && !crate::tower::flag_or(cfg, "single_extruder_multi_material", true)
 }
 
-/// The command word of a G-code line, as Orca's `extract_cmd` reads it.
+/// The command word of a G-code line, as Orca reads it.
 fn command(line: &str) -> &str {
     line.split(';')
         .next()

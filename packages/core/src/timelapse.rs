@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Where a layer's timelapse and wrapping detection G-code go (Orca's `GCode::process_layer`:
-//! `insert_timelapse_gcode` and `insert_wrapping_detection_gcode`).
+//! Where a layer's timelapse and wrapping detection G-code go, as Orca places them.
 //!
 //! - Other printers: `time_lapse_gcode` right after the layer change, before `layer_change_gcode`.
 //! - Bambu Lab printers: at the start of the layer, except the "traditional" timelapse of a bed slinger
