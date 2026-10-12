@@ -190,6 +190,12 @@ test.describe('the mimir tab', () => {
     })
     const card = page.getByTestId('mimir-lookup-card')
     await expect(card).toContainText('150.4 x 110.4 mm')
+    // both rows it shows fit inside the card
+    const rows = await card.locator('dd').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom))
+    const cardBottom = await card.evaluate((e) => e.getBoundingClientRect().bottom)
+    expect(rows).toHaveLength(2)
+    for (const b of rows) expect(b).toBeLessThanOrEqual(cardBottom)
+    await expect(card.getByRole('link')).toBeInViewport()
     await expect(card.getByRole('link')).toHaveAttribute('href', /^https:\/\/example\.com\//)
     // the card sits at the view's bottom, left aligned with the caption, at most 96 px tall
     const c = (await card.boundingBox())!

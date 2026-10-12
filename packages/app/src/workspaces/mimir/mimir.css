@@ -33,14 +33,15 @@
 /* Lookup cards: a band at the view's bottom left, above the timeline's edge tab. Lifted (they float over the view). */
 .mimir-lookups { position: absolute; left: 12px; bottom: 28px; z-index: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 276px)) auto; grid-template-rows: 96px; align-items: end; gap: 8px; max-width: calc(100% - 24px); pointer-events: none; }
 .mimir-lookups > * { pointer-events: auto; }
-.mimir-lookup { display: grid; grid-template-rows: auto 1fr auto; gap: 4px; grid-row: 1; height: 96px; min-width: 0; padding: 8px 6px 8px 12px; border-radius: var(--r-md); outline-offset: 2px; animation: mimir-rise 200ms var(--ease) both; }
+.mimir-lookup { display: grid; grid-template-rows: 24px auto 16px; align-content: space-between; gap: 2px; grid-row: 1; height: 96px; min-width: 0; padding: 6px 6px 7px 12px; border-radius: var(--r-md); outline-offset: 2px; animation: mimir-rise 200ms var(--ease) both; }
+.mimir-lookup-h .sx-btn { width: 24px; height: 24px; }
 .mimir-lookup-h { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
 .mimir-lookup-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: var(--fw-medium); }
-.mimir-lookup-f { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0 10px; align-content: start; overflow: hidden; font-size: var(--fs-sm); }
+.mimir-lookup-f { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0 10px; align-content: start; overflow: hidden; font-size: var(--fs-sm); line-height: 17px; }
 .mimir-lookup-f > div { display: contents; }
 .mimir-lookup-f dt { color: var(--muted); white-space: nowrap; }
 .mimir-lookup-f dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mimir-lookup-s { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cyan); font-size: var(--fs-sm); text-decoration: none; }
+.mimir-lookup-s { line-height: 16px; justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--cyan); font-size: var(--fs-sm); text-decoration: none; }
 .mimir-lookup-s:hover { text-decoration: underline; }
 .mimir-lookup-more { grid-row: 1; height: 32px; padding: 0 12px; border-radius: 999px; color: var(--fg); font: inherit; font-size: var(--fs-sm); cursor: pointer; }
 @keyframes mimir-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
