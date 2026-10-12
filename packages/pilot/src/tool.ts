@@ -8,6 +8,8 @@ import type {
   PilotChoice,
   PilotContext,
   PilotLookup,
+  PilotSheet,
+  PilotSheetAnswer,
   PrinterHost,
   SettingsDiff,
   SettingValue,
@@ -58,6 +60,8 @@ export interface ToolContext {
   progress(line: string, fraction?: number): void
   /** Asks the person a question with fixed answers and waits for the pick; absent where nobody can answer. */
   ask?(question: { title: string; question: string; choices: PilotChoice[] }): Promise<string>
+  /** Shows a dimension sheet and waits for the person to confirm or edit it; absent where nobody can answer. */
+  sheet?(sheet: Omit<PilotSheet, 'id'>): Promise<PilotSheetAnswer>
 }
 
 export interface ToolOutput {
