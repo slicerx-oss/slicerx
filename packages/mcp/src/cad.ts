@@ -556,5 +556,50 @@ export function cadTools(deps: GeomToolDeps & { designs?: Designs | undefined })
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, extrude, revolve, push, boolean, fillet, chamfer] as PilotTool<never>[]
+  const info = defineTool({
+    name: 'geom.info',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: 'Check a model: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has.',
+    input: z.object({ model: modelArg }),
+    async run(i) {
+      const out = await call('info', { mesh: { stlPath: await path(i.model) } })
+      return { summary: `${out['watertight'] === true ? 'Closed' : 'Not closed'}, ${Math.round(Number(out['volumeMm3'] ?? 0))} mm3, ${String(out['components'] ?? '?')} shell(s)`, output: out }
+    },
+  })
+
+  /** A measurement in a few words, the way a maker reads it. */
+  const words = (m: Record<string, unknown>): string => {
+    const n = (k: string): string | null => (typeof m[k] === 'number' ? String(Math.round((m[k] as number) * 1000) / 1000) : null)
+    const parts = [
+      n('diameterMm') !== null ? `diameter ${n('diameterMm')} mm` : n('radiusMm') !== null ? `radius ${n('radiusMm')} mm` : null,
+      n('distanceMm') !== null ? `distance ${n('distanceMm')} mm` : null,
+      n('centerDistanceMm') !== null ? `center distance ${n('centerDistanceMm')} mm` : null,
+      n('lengthMm') !== null ? `length ${n('lengthMm')} mm` : null,
+      n('angleDeg') !== null ? `angle ${n('angleDeg')} degrees` : null,
+      n('areaMm2') !== null ? `area ${n('areaMm2')} mm2` : null,
+    ].filter((x): x is string => x !== null)
+    return parts.length ? parts.join(', ') : 'nothing to measure there'
+  }
+
+  const measure = defineTool({
+    name: 'geom.measure',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Measure a model as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. Pick a face by a point on it and its outward normal, as slicerx_geom_faces lists them; snap_mm snaps the pick to an edge or a corner that close, to measure from an edge.',
+    input: z.object({ model: modelArg, a: faceRef, b: faceRef.optional(), snap_mm: z.number().min(0).max(5).default(0).describe('Snap to an edge or corner within this distance, mm') }),
+    async run(i) {
+      const stlPath = await path(i.model)
+      const feature = async (f: z.infer<typeof faceRef>): Promise<unknown> => (await call('measure.feature', { mesh: { stlPath }, pick: await pick(stlPath, f), snapMm: i.snap_mm }))['feature']
+      const a = await feature(i.a)
+      const b = i.b ? await feature(i.b) : undefined
+      const m = await call('measure', { a, ...(b !== undefined ? { b } : {}) })
+      return { summary: `Measured: ${words(m)}`, output: { measurement: m, a: lean(a), ...(b !== undefined ? { b: lean(b) } : {}) } }
+    },
+  })
+
+  return [faces, facePick, edgePick, sketchCheck, extrude, revolve, push, boolean, fillet, chamfer, info, measure] as PilotTool<never>[]
 }
