@@ -17,7 +17,7 @@ Subfolders:
 
 | Plugin | Status | Notes |
 | --- | --- | --- |
-| Bambu Lab LAN (`bambu-lan`) | real protocol | MQTT over TLS, FTPS upload, AMS slots and mapping, camera on port 6000, SSDP search and announcements, hardware readout (nozzles per extruder, AMS units, firmware). X1, P1, A1 and H2D message shapes; discovery checked on a real H2D. |
+| Bambu Lab LAN (`bambu-lan`) | real protocol | MQTT over TLS, FTPS upload, AMS slots and mapping, camera (JPEG on port 6000 for A1 and P1, H.264 over RTSPS on 322 for X1, X1E, P2S and H2), TLS 1.2 on every port, SSDP search and announcements, hardware readout (nozzles per extruder, AMS units, firmware). X1, P1, A1 and H2D message shapes; discovery checked on a real H2D. |
 | BamBuddy (`bambuddy`) | real protocol | REST to a BamBuddy on the LAN. The printer id in BamBuddy is the link, including a printer BamBuddy reaches through a bridge. Library upload, queue start, AMS read and slot write. No scan. |
 | Moonraker (`moonraker`) | real protocol | HTTP API, polled events. |
 | PrusaLink (`prusalink`) | real protocol | `/api/v1`, HTTP digest login as `maker`, `X-Api-Key` on firmware that takes one. |
@@ -28,7 +28,7 @@ Subfolders:
 | Snapmaker (`snapmaker`) | real protocol, two of them | Moonraker for the U1, and the Luban HTTP API with touchscreen pairing for 2.0 machines (A150, A250, A350), found by a UDP 20054 broadcast. The J1 and Artisan (SACP) are found but not connected. |
 | Anycubic (`anycubic`) | real protocol, experimental | LAN Mode: signed handshake on 18910, AES-128-CBC credentials, MQTT over TLS on 9883, with the client certificate only when the login alone is refused. Status, ACE slots, upload over `gcode_upload`, start, pause, resume, stop. Community sources only. |
 | UltiMaker (`ultimaker`) | real protocol, experimental | Cura's local API: `_ultimaker._tcp` discovery, the cluster API for jobs, print cores and materials, the printer API for temperatures; optional touchscreen pairing for Digest. |
-| Live camera | streams | See `docs/camera.md`. JPEG and MJPEG on most printers, H.264 over RTSPS on Bambu Lab X1 and H2, generic RTSP. Nothing has seen a real camera. |
+| Live camera | streams | See `docs/camera.md`. JPEG and MJPEG on most printers, H.264 over RTSPS on Bambu Lab X1, X1E, P2S and H2, generic RTSP. Nothing has seen a real camera. |
 | Spoolman (`spoolman`) | real protocol | Service plugin. |
 | Home Assistant (`home-assistant`) | real protocol | Service plugin, allow-list of domains. |
 
