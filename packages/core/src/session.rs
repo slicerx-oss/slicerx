@@ -8537,7 +8537,7 @@ fn ring_length_mm(ring: &[IntPoint<i32>]) -> f64 {
 /// The filament of each feature of a region on `slot`: Orca's `outer_wall_filament_id`,
 /// `inner_wall_filament_id`, `sparse_infill_filament_id`, `internal_solid_filament_id`,
 /// `top_surface_filament_id` and `bottom_surface_filament_id` (0 is the region's own filament),
-/// filled in as OrcaSlicer fills them in: internal solid from sparse, then from top or bottom,
+/// filled in as `OrcaSlicer` fills them in: internal solid from sparse, then from top or bottom,
 /// and top and bottom from internal solid. On a Bambu Lab printer internal solid is not taken from sparse: Bambu
 /// Studio keeps it, and the surfaces with it, on the region's own filament when only sparse infill moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
