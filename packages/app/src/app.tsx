@@ -174,7 +174,7 @@ function Shell() {
       if (gone) return
       stop = m.startAutosave()
       void m.findRecovery().then((r) => {
-        if (r && !gone && get().plates.every((p) => p.objects.length === 0) && get().plate.length === 0) set({ projectsDialog: 'recover' })
+        if (r && !gone && m.nothingToLose()) set({ projectsDialog: 'recover' })
       })
     })
     return () => {
