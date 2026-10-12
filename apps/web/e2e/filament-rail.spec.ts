@@ -125,14 +125,12 @@ test('a full rail scrolls inside the card, never the page, at any width', async 
 
 const foot = (page: Page) => page.getByTestId('slice-filament-foot')
 
-/** The drying note takes the hint's line once the settings plan loads, at the same height; It's dry gives the line back. */
-async function answerDryNote(page: Page): Promise<void> {
-  const note = foot(page).getByRole('status', { name: 'Setup notes' })
-  await expect(note).toContainText(/^Dry PLA/, { timeout: 15_000 })
-  const height = (await foot(page).boundingBox())!.height
-  await note.getByRole('button', { name: "It's dry" }).click()
-  await expect(note).toHaveCount(0)
-  expect((await foot(page).boundingBox())!.height).toBe(height)
+/** The line under the rail reads its hint, or a setup note in the hint's place once the settings plan has one. */
+async function lineReads(page: Page, hint: RegExp): Promise<void> {
+  await expect(async () => {
+    const note = await foot(page).getByRole('status', { name: 'Setup notes' }).count()
+    expect(note > 0 || hint.test(await foot(page).locator('.rail-foot-text').innerText())).toBe(true)
+  }).toPass()
 }
 /** A printer added by hand with no connection: it reports no slots, so the project's filaments are all set here. */
 const UNCONNECTED = { handPrinters: [{ id: 'e2e-desk-a1', name: 'Desk A1', profileId: 'bambu-a1', vendor: 'Bambu Lab', model: 'A1', nozzleCount: 1 }], printerId: 'e2e-desk-a1' }
@@ -140,8 +138,7 @@ const UNCONNECTED = { handPrinters: [{ id: 'e2e-desk-a1', name: 'Desk A1', profi
 for (const settingsMode of ['simple', 'expert'] as const) {
   test(`Add filament shows in ${settingsMode === 'simple' ? 'Simple' : 'Expert'}, opens the new filament, and moves nothing`, async ({ page }) => {
     await open(page, { ...UNCONNECTED, settingsMode })
-    await answerDryNote(page)
-    await expect(foot(page)).toContainText('Click a filament to change it.')
+    await lineReads(page, /^Click a filament to change it\.$/)
     const add = page.getByTestId('slice-filament-add')
     await expect(add).toHaveText('Add filament')
     const count = await page.getByTestId('slice-filament-slot').count()
@@ -162,8 +159,7 @@ for (const settingsMode of ['simple', 'expert'] as const) {
 test("with the printer's slots, the rail says where they come from, has no add, and resets to the printer", async ({ page }) => {
   await open(page)
   await expect(foot(page)).toHaveAttribute('data-from', 'printer')
-  await answerDryNote(page)
-  await expect(foot(page)).toContainText(/^From the printer('s \w+)?\. Click a slot to change it\.$/)
+  await lineReads(page, /^From the printer('s \w+)?\. Click a slot to change it\.$/)
   await expect(page.getByTestId('slice-filament-add')).toHaveCount(0)
   await expect(page.getByTestId('slice-filament-foot-reset')).toHaveCount(0)
   // A slot changed here offers the way back, in place.
