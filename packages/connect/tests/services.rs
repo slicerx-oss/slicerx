@@ -139,6 +139,37 @@ async fn home_assistant_lists_and_calls_allowed_services_only() {
             .any(|l| l == "ha switch.turn_off switch.bay_5_power")
     );
 
+    // An approval binds to the exact input. One for bay 5 switches nothing else: tried on bay 1 it
+    // is refused and spent. A fresh one for bay 5 works once.
+    let bay5 = json!({ "domain": "switch", "service": "turn_on", "entityId": "switch.bay_5_power" });
+    let mint5 = || {
+        gate.mint(
+            Action::PluginCall,
+            "home-assistant",
+            &params::plugin("home-assistant", "call_service", &bay5),
+        )
+    };
+    let t = mint5();
+    let bay1 = json!({ "domain": "switch", "service": "turn_off", "entityId": "switch.bay_1_power" });
+    expect_code(
+        p.call("home-assistant.call_service", bay1, Some(&t)).await,
+        ErrorCode::ApprovalInvalid,
+    );
+    expect_code(
+        p.call("home-assistant.call_service", bay5.clone(), Some(&t))
+            .await,
+        ErrorCode::ApprovalInvalid,
+    );
+    let t = mint5();
+    p.call("home-assistant.call_service", bay5.clone(), Some(&t))
+        .await
+        .unwrap();
+    expect_code(
+        p.call("home-assistant.call_service", bay5.clone(), Some(&t))
+            .await,
+        ErrorCode::ApprovalInvalid,
+    );
+
     // Locks and scripts are outside the allow-list even with a token.
     let lock = json!({ "domain": "lock", "service": "unlock", "entityId": "lock.front_door" });
     let t = gate.mint(

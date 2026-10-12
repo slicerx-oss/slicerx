@@ -12,8 +12,13 @@ import { appName } from '../edition'
 
 /** The hub's own summary of the work it holds for a card, when the bridge sends one. */
 export interface VerifiedWork {
-  kind: 'print' | 'resume' | 'gcode' | 'adjust' | 'pause' | 'cancel'
+  kind: 'print' | 'resume' | 'gcode' | 'adjust' | 'pause' | 'cancel' | 'plugin'
+  /** Empty for a connected app's tool, which targets no printer. */
   printerId: string
+  /** A connected app's tool: the app, the tool's bare name and its input, as the hub will run them. */
+  pluginId?: string
+  tool?: string
+  input?: Record<string, unknown>
   file?: { name: string; sizeBytes?: number; sha256?: string }
   opts?: Record<string, unknown>
   line?: string
@@ -103,12 +108,30 @@ const WORK_ACTIONS: Record<VerifiedWork['kind'], string[]> = {
   adjust: ['printer.adjust'],
   pause: ['printer.pause'],
   cancel: ['printer.cancel'],
+  plugin: ['plugin.call'],
 }
 
-/** True when the hub's work is exactly what the card's actions say, on the same printer. */
+/** True when the hub's work is exactly what the card's actions say, on the same printer (or connected app). */
 const workMatches = (card: HubCard, w: VerifiedWork): boolean => {
   const want = WORK_ACTIONS[w.kind]
-  return Boolean(want) && want.length === card.actions.length && card.actions.every((a, i) => a.action === want[i] && a.target === w.printerId)
+  const target = w.kind === 'plugin' ? w.pluginId : w.printerId
+  return Boolean(want) && Boolean(target) && want.length === card.actions.length && card.actions.every((a, i) => a.action === want[i] && a.target === target)
+}
+
+const HA_VERBS: Record<string, string> = { turn_on: 'Turn on', turn_off: 'Turn off', toggle: 'Toggle', press: 'Press' }
+const HA_DOMAINS = new Set(['switch', 'light', 'fan', 'input_boolean', 'button'])
+
+/**
+ * A connected app's tool in plain words, from the hub's checked work: "Turn off switch.bay_2_power in Home Assistant".
+ * `null` for anything this app does not know how to word, which then gets no Approve.
+ */
+export function describePlugin(w: VerifiedWork | undefined): string | null {
+  if (!w || w.kind !== 'plugin' || w.pluginId !== 'home-assistant' || w.tool !== 'call_service') return null
+  const { domain, service, entityId } = (w.input ?? {}) as Record<string, unknown>
+  if (typeof domain !== 'string' || typeof service !== 'string' || typeof entityId !== 'string') return null
+  const verb = HA_VERBS[service]
+  if (!verb || !HA_DOMAINS.has(domain) || entityId.length > 120 || !/^[a-z0-9_]+\.[a-z0-9_]+$/.test(entityId) || !entityId.startsWith(`${domain}.`)) return null
+  return `${verb} ${entityId} in Home Assistant`
 }
 
 const ACTION_WORDS: Record<string, string> = {
@@ -137,11 +160,14 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   const printer = printerId ? printerName(printerId) : null
   const on = printer ? ` on ${printer}` : ''
   const startsPrint = has('printer.start')
+  const plugin = has('plugin.call') && card.work && workMatches(card, card.work) ? describePlugin(card.work) : null
   // A partner app's card names the partner, by the name only the hub sets, and says nothing about AI.
   const partner = card.origin === 'mcp' && card.partner ? oneLine(card.partner).slice(0, 60) : ''
   const asker = card.origin === 'phone' ? 'a paired phone' : partner || 'an AI agent'
   const who = card.origin === 'phone' ? 'the phone' : partner || 'the agent'
-  const title = startsPrint
+  const title = plugin
+    ? `${plugin}?`
+    : startsPrint
     ? `Start a print${on}?`
     : has('printer.pause')
       ? `Pause the print${on}?`
@@ -171,6 +197,11 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   if (w?.line !== undefined) {
     if (plainGcodeLine(w.line)) lines.push(`G-code: ${w.line}`)
     else blocked = 'The G-code is not one short line, so it cannot be shown in full. Deny this request.'
+  }
+  if (has('plugin.call')) {
+    // A connected app's change shows as exactly what the hub will run; one this app cannot word gets no Approve.
+    if (plugin) lines.push(`Change: ${plugin}`)
+    else blocked ??= `${appName()} cannot show this request in plain words. Deny this request.`
   }
   if (has('printer.adjust')) {
     // The change is what the hub runs; a card that cannot word it gets no Approve.
