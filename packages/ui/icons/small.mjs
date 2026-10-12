@@ -34,6 +34,7 @@ export const SMALL_ICONS = {
   'roll-to-here': '<path d="M10.5 2v12"/><path d="M2 8h5.5M5.25 5.75 7.5 8l-2.25 2.25"/><path d="M13.5 5v.01M13.5 8v.01M13.5 11v.01"/>',
   // Model's tool icons, drawn for 16px (the shelf and menus show the 24px art at 20)
   'fillet-edge': '<path d="M3.25 2.25v5.5a6 6 0 0 0 6 6h4.5"/><path d="M3.25 11v2.75H6"/>',
+  'chamfer-edge': '<path d="M3.25 2.25v6l5.5 5.5h5"/><path d="M3.25 11v2.75H6"/>',
   'hole-fit': '<ellipse cx="8" cy="5.5" rx="5.75" ry="2.5"/><path d="M2.25 5.5v5c0 1.4 2.6 2.5 5.75 2.5s5.75-1.1 5.75-2.5v-5"/><ellipse cx="8" cy="5.5" rx="2.5" ry="1"/>',
   'thread-bolt': '<path d="M4.75 2.25h6.5v2.5h-6.5z"/><path d="M6 4.75v9h4v-9"/><path d="M6 8l4-1M6 11l4-1"/>',
   'shell-open': '<path d="M2.75 3.75v8a1.5 1.5 0 0 0 1.5 1.5h7.5a1.5 1.5 0 0 0 1.5-1.5v-8"/><path d="M5.25 3.75v7h5.5v-7"/><path d="M2.75 3.75h2.5M10.75 3.75h2.5"/>',

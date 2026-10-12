@@ -36,7 +36,7 @@ import {
 } from 'three'
 import type { DragAction } from './controls'
 import { boxDir, boxPicks } from './box-select'
-import { EdgeMarks, type MarkLine } from './edge-marks'
+import { EdgeMarks, patchOutline, type MarkLine } from './edge-marks'
 import { facePatch } from './faces'
 import { Painter, type PaintHit } from './painter'
 import { ScaleGizmo } from './gizmo'
@@ -181,6 +181,9 @@ export function createViewport(canvas: HTMLCanvasElement, opts: ViewportOptions 
   return new ViewportImpl(canvas, opts)
 }
 
+/** A touch held still this long, ms, within this many pixels, opens the menu a right click would. */
+const LONG_PRESS_MS = 500
+const LONG_PRESS_SLOP_PX = 8
 /** Side length of moving frames, as a share of the still frame, that a high density screen starts with (0.7 is half the pixels). */
 const MOTION_START_HIDPI = 0.7
 
@@ -746,6 +749,7 @@ class ViewportImpl implements Viewport {
     const first = this.frames === 0
     const compile0 = first ? [this.compileClock.ms, this.compileClock.programs] : null
     this.edgeMarks.refresh((p) => this.mmPerPx(p))
+    if (this.edgeMarks.march(t0, !reducedMotion(), (p) => this.mmPerPx(p))) this.invalidate()
     this.probe?.begin()
     this.renderer.info.reset()
     const bed = this.stage.bed
@@ -1348,7 +1352,8 @@ class ViewportImpl implements Viewport {
     if (this.edgeMarks.set(picked, hover, (p) => this.mmPerPx(p))) this.invalidate()
   }
 
-  /** The faces picked in Model, each the patch around a triangle, drawn in the selection color until changed. */
+  /** The faces picked in Model, each the patch around a triangle: a light fill and its outline in the pick color, so the
+   *  face keeps its shading and anything on it stays readable. */
   setSelectedFaces(faces: readonly { objectId: string; partIndex: number; triangle: number }[]): void {
     for (const o of this.pickedFaces) {
       o.removeFromParent()
@@ -1356,6 +1361,9 @@ class ViewportImpl implements Viewport {
       ;(o.material as MeshBasicMaterial).dispose()
     }
     this.pickedFaces = []
+    const outline: MarkLine[] = []
+    this.stage.objectsRoot.updateMatrixWorld()
+    const toRoot = this.stage.objectsRoot.matrixWorld.clone().invert()
     for (const f of faces) {
       const entry = this.objects.get(f.objectId)
       const mesh = entry?.parts[f.partIndex]?.mesh
@@ -1363,10 +1371,16 @@ class ViewportImpl implements Viewport {
       if (!mesh || !src) continue
       const patch = facePatch(src.positions, src.indices, f.triangle)
       if (!patch) continue
-      const o = this.faceMesh(src, patch.triangles, 0.7, this.pickColor)
+      const o = this.faceMesh(src, patch.triangles, 0.14, this.pickColor)
       mesh.add(o)
       this.pickedFaces.push(o)
+      // the outline in the objects root's frame, where the edge marks draw
+      const m = toRoot.clone().multiply(mesh.matrixWorld)
+      const v = new Vector3()
+      const put = (p: [number, number, number]): [number, number, number] => (v.set(...p).applyMatrix4(m), [v.x, v.y, v.z])
+      for (const l of patchOutline(src.positions, src.indices, patch.triangles)) outline.push({ from: put(l.from), to: put(l.to) })
     }
+    this.edgeMarks.setOutline(outline, (p) => this.mmPerPx(p))
     this.invalidate()
   }
 
@@ -2554,6 +2568,13 @@ class ViewportImpl implements Viewport {
     }
   }
 
+  /** The face around a triangle as lay on face takes it, for a face picked in Model; null when there is none. */
+  facePickAt(objectId: string, partIndex: number, triangle: number): FacePick | null {
+    const entry = this.objects.get(objectId)
+    if (!entry) return null
+    return this.faceFromHit({ entry, part: partIndex, face: triangle, point: new Vector3(), dir: new Vector3() })?.pick ?? null
+  }
+
   /** Highlights the face patch under the cursor (tool `face`). Null clears it. */
   private hoverFace(p: PickHit | null): void {
     const f = p ? this.faceFromHit(p) : null
@@ -2831,6 +2852,12 @@ class ViewportImpl implements Viewport {
     const plane = new Plane(new Vector3(0, 1, 0), 0)
     const hit = new Vector3()
     let down: { x: number; y: number } | null = null
+    // A touch held still this long asks for the menu, as a right click does; it is cleared by a move or a second finger.
+    let press: { x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null
+    const stopPress = (): void => {
+      if (press) clearTimeout(press.timer)
+      press = null
+    }
     const setRay = (e: { clientX: number; clientY: number }): void => {
       const r = el.getBoundingClientRect()
       ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, (-(e.clientY - r.top) / r.height) * 2 + 1)
@@ -2855,6 +2882,11 @@ class ViewportImpl implements Viewport {
       return entry ? { entry, part: (h.object.userData.partIndex as number) ?? 0, point: h.point, face: h.faceIndex ?? -1, dir: ray.ray.direction.clone() } : null
     }
     this.pickFn = pick
+    /** The menu event for a point: what is under it, as a pick reports it. */
+    const contextAt = (e: { clientX: number; clientY: number }): ViewportEvents['contextpick'] => {
+      const p = pick(e)
+      return { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, triangle: p && p.face >= 0 ? p.face : null, point: p ? this.worldToBed(p.point) : null, screen: [e.clientX, e.clientY] }
+    }
     const bedHit = (e: PointerEvent): [number, number] | null => {
       setRay(e)
       if (!ray.ray.intersectPlane(plane, hit)) return null
@@ -2928,6 +2960,20 @@ class ViewportImpl implements Viewport {
       const action = this.routeDrag(e, () => p0?.point ?? null)
       down = { x: e.clientX, y: e.clientY }
       if (this.mode !== 'prepare') return
+      stopPress()
+      if (e.pointerType === 'touch' && e.isPrimary && this.tool !== 'paint' && this.tool !== 'brim' && !this.sketchOn()) {
+        const at = { clientX: e.clientX, clientY: e.clientY }
+        press = {
+          x: e.clientX,
+          y: e.clientY,
+          timer: setTimeout(() => {
+            press = null
+            // the finger's lift is not a tap now
+            down = null
+            this.emit('contextpick', contextAt(at))
+          }, LONG_PRESS_MS),
+        }
+      } else if (e.pointerType === 'touch') stopPress()
       if (this.tool === 'brim') {
         if (e.button === 2) {
           // A right click on an ear removes it; anywhere else the button keeps its camera job.
@@ -3056,6 +3102,7 @@ class ViewportImpl implements Viewport {
       e.stopPropagation()
     }
     const onMove = (e: PointerEvent): void => {
+      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > LONG_PRESS_SLOP_PX) stopPress()
       if (this.boxDrag) {
         const bx = this.boxDrag
         if (Math.hypot(e.clientX - bx.x0, e.clientY - bx.y0) >= 4) bx.moved = true
@@ -3181,6 +3228,7 @@ class ViewportImpl implements Viewport {
       this.invalidate()
     }
     const onUp = (e: PointerEvent): void => {
+      stopPress()
       if (this.boxDrag) {
         const bx = this.boxDrag
         this.boxDrag = null
@@ -3270,7 +3318,7 @@ class ViewportImpl implements Viewport {
       }
       // A right click that stayed put asks for a menu; paint erases with that button and brim removes ears with it.
       if (moved < 5 && e.button === 2 && this.mode === 'prepare' && this.tool !== 'paint' && this.tool !== 'brim') {
-        this.emit('contextpick', { objectId: pick(e)?.entry.id ?? null, screen: [e.clientX, e.clientY] })
+        this.emit('contextpick', contextAt(e))
         return
       }
       if (moved >= 5 || e.button !== 0) return
@@ -3312,6 +3360,7 @@ class ViewportImpl implements Viewport {
       } else this.selectIds(p ? [p.entry.id] : [])
     }
     const onCancel = (): void => {
+      stopPress()
       this.brimDrag = null
       this.hideBrimRect()
       this.scaleEnd(true)
@@ -3346,6 +3395,13 @@ class ViewportImpl implements Viewport {
       this.routeWheel(e)
     }
     const onKey = (e: KeyboardEvent): void => {
+      // Shift+F10 or the menu key: the keyboard's right click, for what is selected, at the middle of the view
+      if (this.mode === 'prepare' && (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey))) {
+        e.preventDefault()
+        const r = el.getBoundingClientRect()
+        this.emit('contextpick', { objectId: null, partIndex: null, triangle: null, point: null, screen: [r.left + r.width / 2, r.top + r.height / 2], key: true })
+        return
+      }
       if (e.key === 'Escape') this.selectIds([])
       if (e.code === 'Space') {
         this.spaceDown = true

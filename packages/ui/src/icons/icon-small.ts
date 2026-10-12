@@ -13,6 +13,7 @@ export const SMALL_ICON_PATHS: Partial<Record<IconName, string>> = {
   "box-select": "<path d=\"M1.75 4V1.75H4M7.5 1.75h2.25V4M1.75 6.5v2.25H4M7.5 8.75h2.25V6.5\"/><path d=\"M10.25 9.25l4 1.75-1.75.75-.75 1.75z\"/>",
   "box-shape": "<path d=\"M8 3.5l5.25 2.5v4.75L8 13.25l-5.25-2.5V6z\"/><path d=\"M2.75 6 8 8.5 13.25 6M8 8.5v4.75\"/>",
   "calibration": "<path d=\"M6.5 2.5l4.25 2.4v4.8L6.5 12.1 2.25 9.7V4.9z\"/><path d=\"M2.25 4.9l4.25 2.4 4.25-2.4M6.5 7.3v4.8\"/><path d=\"M9.75 12.5l1.5 1.5 3-3\"/>",
+  "chamfer-edge": "<path d=\"M3.25 2.25v6l5.5 5.5h5\"/><path d=\"M3.25 11v2.75H6\"/>",
   "check": "<path d=\"M3.25 8.25l3 3 6.5-6.5\"/>",
   "chevron-down": "<path d=\"M4.25 6.25L8 10l3.75-3.75\"/>",
   "chevron-right": "<path d=\"M6.25 4.25L10 8l-3.75 3.75\"/>",

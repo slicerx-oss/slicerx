@@ -18,6 +18,7 @@ import { objectWarnings } from '../plate/object-list'
 import { loadExtruderAreas, nozzleZones } from '../plate/nozzle-zones'
 import { commitTransforms, layOnPickedFace } from '../plate/edit'
 import { openViewMenu } from '../plate/view-menu'
+import { openViewRing, ringTarget, setLayFace } from '../plate/view-ring'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
 import { probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
 import { pickSub, type EdgeAt } from '../plate/sub-pick'
@@ -75,6 +76,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setBoxSelect?: Viewport['setBoxSelect']
   /** Model's picked faces and the face filter's hover. */
   setSelectedFaces?: Viewport['setSelectedFaces']
+  facePickAt?: Viewport['facePickAt']
   setPickFaces?: Viewport['setPickFaces']
   setPickEdges?: Viewport['setPickEdges']
   setPickedEdges?: Viewport['setPickedEdges']
@@ -515,6 +517,39 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         }
         selectObject(e)
       }))
+      // Model: a right click, a touch held still or the menu key opens the ring for what is under it (workspaces/design/
+      // view-ring.tsx): with Faces or Edges in the pick filter the face or edge, picked first unless it already is;
+      // else the object, selected first; else empty space. The menu key opens it for what is picked.
+      offs.push(vp.on('contextpick', (e) => {
+        const st = appStore.getState()
+        if (isPhoneLayout() || st.workspace !== 'prepare' || st.modelMode !== 'design' || st.objectTool !== null) return
+        const at = { x: e.screen[0], y: e.screen[1] }
+        if (e.key) return openViewRing(at, ringTarget(st))
+        if (!e.objectId || e.objectId === TOWER_ID) {
+          if (st.subPicks.length) set({ subPicks: [] })
+          return openViewRing(at, { kind: 'empty' })
+        }
+        const objectId = e.objectId
+        if (st.pickFilter.some((k) => k !== 'object') && e.partIndex !== null && e.triangle !== null && e.point) {
+          const already = st.subPicks.some((p) => p.objectId === objectId && p.partIndex === e.partIndex && p.triangle === e.triangle)
+          const ready = already ? Promise.resolve(true) : pickSub({ objectId, partIndex: e.partIndex, triangle: e.triangle, point: e.point, bed: null }, edgeAt)
+          void ready.then((done) => {
+            const now = appStore.getState()
+            openViewRing(at, done && now.subPicks.length ? ringTarget(now) : { kind: 'object', objectId })
+          })
+          return
+        }
+        if (!selectedIds(st).includes(objectId)) selectObject(e)
+        if (st.subPicks.length) set({ subPicks: [] })
+        openViewRing(at, { kind: 'object', objectId })
+      }))
+      // Lay on bed from the ring: the last picked face of the object, as lay on face takes it.
+      setLayFace((objectId) => {
+        const face = appStore.getState().subPicks.filter((p) => p.kind === 'face' && p.objectId === objectId).at(-1)
+        const pick = face ? vp.facePickAt?.(face.objectId, face.partIndex, face.triangle) : null
+        return pick ? layOnPickedFace(pick) : false
+      })
+      offs.push(() => setLayFace(null))
       // A right click on an object in Slice opens the selection's menu there; outside the selection it selects first.
       offs.push(vp.on('contextpick', (e) => {
         const st = appStore.getState()
