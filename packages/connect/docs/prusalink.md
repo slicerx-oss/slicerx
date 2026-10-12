@@ -12,7 +12,7 @@ Connects to Prusa printers that run PrusaLink: MK4S, MK4, MK3.9, MINI+, XL and C
 
 ### In SlicerX
 
-1. Add a printer and choose PrusaLink, then enter the IP address. SlicerX asks that address for its PrusaLink version (`GET /api/version`) to confirm the printer before you sign in. Prusa printers are not known to announce themselves on the network, so a scan may not find them.
+1. Add a printer and choose PrusaLink, then enter the IP address. SlicerX asks that address for its PrusaLink version (`GET /api/version`) to confirm the printer before you sign in. Prusa printers are not known to announce themselves on the network. A scan looks for Prusa's MAC prefix (10:9C:70) in the computer's neighbour table and confirms each such address the same way, so it finds a printer the computer has talked to lately (for example after opening its address in a browser or pinging it); otherwise enter the address.
 2. Enter the password. Leave the user name empty unless you changed it; SlicerX uses `maker`. Older firmware that shows an API key instead takes it in the same field. SlicerX stores it in your keychain. The port is 80.
 
 ### Network and firewall
