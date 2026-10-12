@@ -67,6 +67,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | Test id | Control |
 | --- | --- |
 | `printers-add` | Add printer (or Add one by hand) in Printers: setup on the hand-made form |
+| `bridge-reconnecting` | The note on Printers while a dropped printer bridge connection reconnects |
 | `setup` | The setup window; `data-step` is welcome, look, printer, mimir and so on |
 | `setup-skip-all` | Skip, use defaults |
 | `setup-back`, `setup-skip`, `setup-secondary`, `setup-next` | The footer: Back, Skip, the second action, and the main one (Next, Save printer, Open the plate) |
