@@ -10,9 +10,9 @@ import { fromLinkResult, registerPrinterSetup, type AppSetupHost, type FoundPrin
 import { createRemoteAccess, pairSource, setPairSource, setRemoteAccess, type BridgeRemote } from '../features/phone/remote'
 import { pairSourceFor, pairStorage, phoneAccessFor } from '../features/phone/wire'
 import { getPhoneAccess, setPhoneAccess } from '../lib/phone'
-import { get, set, toast } from '../state/store'
+import { appStore, get, set, toast } from '../state/store'
 import { promoteHandPrinters, withHandPrinters } from '../lib/hand-printers'
-import { bridgeConnector, forgetConnector } from './connector'
+import { bridgeConnector, forgetConnector, reconnects } from './connector'
 
 /** What a connected bridge gives the app. */
 export interface ConnectedBridge {
@@ -43,6 +43,8 @@ export interface ConnectedBridge {
   clients?: BridgeClients
   /** The app link's app side (app-link/host.ts): the desktop app only, never the browser build. */
   appLink?: BridgeAppLink
+  /** Runs once when the connection ends: `requested` after close(), false when it dropped. Absent on an older client. */
+  onDisconnect?(cb: (info: { requested: boolean }) => void): () => void
   close(): void
 }
 
@@ -161,18 +163,18 @@ function watchCards(bridge: ConnectedBridge): void {
 let connecting: Promise<boolean> | null = null
 
 /** Connects the bridge and puts its printers in the host. Resolves true when connected. A call while one runs waits for it. */
-export function connectBridge(host: Host, code?: string): Promise<boolean> {
-  connecting ??= connect(host, code).finally(() => {
+export function connectBridge(host: Host, code?: string, again = false): Promise<boolean> {
+  connecting ??= connect(host, code, again).finally(() => {
     connecting = null
   })
   return connecting
 }
 
-async function connect(host: Host, code?: string): Promise<boolean> {
+async function connect(host: Host, code?: string, again = false): Promise<boolean> {
   const connector = bridgeConnector()
   if (!connector) return false
   if (live) return true
-  set({ bridgeStatus: { state: 'connecting' } })
+  if (!again) set({ bridgeStatus: { state: 'connecting' } })
   try {
     const bridge = await connector.connect(code)
     live = { bridge, before: { printers: host.printers, approvals: host.approvals, secrets: host.secrets } as Pick<Host, 'printers' | 'approvals' | 'secrets'>, caps: { printers: host.capabilities.printers, secureStorage: host.capabilities.secureStorage } }
@@ -216,20 +218,92 @@ async function connect(host: Host, code?: string): Promise<boolean> {
       }
       setRemoteAccess(createRemoteAccess({ remote: bridge.remote, source: pairSource(), relayUrl: bridge.relayUrl ?? null, forget }))
     }
+    // A connection that drops (the hub stopped, the page was suspended) comes back on its own; one closed on purpose does not.
+    stopWatchClose =
+      bridge.onDisconnect?.(({ requested }) => {
+        if (!requested) lost(host, bridge)
+      }) ?? null
     set((s) => ({ bridgeStatus: { state: 'on', ...(bridge.hubKey ? { hubKey: bridge.hubKey } : {}) }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
-    toast('Connected to the printer bridge', 'ok')
+    toast(again ? 'Reconnected to the printer bridge' : 'Connected to the printer bridge', 'ok')
     return true
   } catch (e) {
+    if (again) return false
     const presentedKey = (e as { presentedKey?: unknown } | null)?.presentedKey
     set({ bridgeStatus: { state: 'error', message: explain(e), ...(typeof presentedKey === 'string' ? { presentedKey } : {}) } })
     return false
   }
 }
 
+let stopWatchClose: (() => void) | null = null
+/** Bumped by every connect, disconnect and loss, so a reconnect loop that is no longer wanted stops. */
+let generation = 0
+
+/** Waits between reconnect tries; the last repeats. Tests set them shorter. */
+export const RECONNECT_DELAYS_MS: number[] = [500, 1000, 2000, 4000, 8000, 15000]
+
+/** The live connection dropped: its printers leave the host until it is back. It reconnects on its own when it can. */
+function lost(host: Host, bridge: ConnectedBridge): void {
+  if (live?.bridge !== bridge) return
+  teardown(host)
+  const mine = ++generation
+  if (!reconnects(bridgeConnector())) {
+    set((s) => ({ bridgeStatus: { state: 'error', message: 'The connection to the printer bridge closed. Connect again.' }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
+    return
+  }
+  set((s) => ({ bridgeStatus: { state: 'reconnecting', attempt: 1 }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
+  void (async () => {
+    for (let attempt = 1; ; attempt++) {
+      const wait = RECONNECT_DELAYS_MS[Math.min(attempt - 1, RECONNECT_DELAYS_MS.length - 1)] ?? 15000
+      await new Promise((r) => setTimeout(r, wait))
+      if (mine !== generation || live || !reconnects(bridgeConnector())) return
+      set({ bridgeStatus: { state: 'reconnecting', attempt } })
+      const ok = await connectBridge(host, undefined, true)
+      if (ok) return
+      if (mine !== generation) return
+    }
+  })()
+}
+
+/**
+ * Waits up to `ms` for the bridge to be connected again, as after a dropped connection. True when it is; false when
+ * it is off, failed, or still away at the end.
+ */
+export function bridgeBack(ms: number): Promise<boolean> {
+  const now = get().bridgeStatus.state
+  if (now === 'on') return Promise.resolve(true)
+  if (now !== 'reconnecting' && now !== 'connecting') return Promise.resolve(false)
+  return new Promise((resolve) => {
+    let off: () => void = () => undefined
+    const done = (v: boolean) => {
+      clearTimeout(timer)
+      off()
+      resolve(v)
+    }
+    const timer = setTimeout(() => done(get().bridgeStatus.state === 'on'), ms)
+    off = appStore.subscribe((s) => {
+      if (s.bridgeStatus.state === 'on') done(true)
+      else if (s.bridgeStatus.state === 'off' || s.bridgeStatus.state === 'error') done(false)
+    })
+  })
+}
+
 export function disconnectBridge(host: Host): void {
-  if (!live) return
-  const { bridge, before, caps } = live
+  generation++
+  if (!live) {
+    if (get().bridgeStatus.state === 'reconnecting') set({ bridgeStatus: { state: 'off' } })
+    return
+  }
+  const bridge = teardown(host)
+  bridge.close()
+  set((s) => ({ bridgeStatus: { state: 'off' }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
+}
+
+/** Takes the live bridge's printers and services out of the host and stops what watched them. Returns that bridge. */
+function teardown(host: Host): ConnectedBridge {
+  const { bridge, before, caps } = live!
   live = null
+  stopWatchClose?.()
+  stopWatchClose = null
   host.capabilities.printers = caps.printers
   host.capabilities.secureStorage = caps.secureStorage
   host.secrets = before.secrets
@@ -244,13 +318,12 @@ export function disconnectBridge(host: Host): void {
   setRemoteAccess(null)
   setPairSource(null)
   setPhoneAccess(null)
-  bridge.close()
   if (before.printers) host.printers = before.printers
   else delete host.printers
   registerPrinterSetup(null)
   if (before.approvals) host.approvals = before.approvals
   else delete host.approvals
-  set((s) => ({ bridgeStatus: { state: 'off' }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
+  return bridge
 }
 
 /** For tests: forget the live connection without closing anything. */
@@ -259,6 +332,9 @@ export function resetBridge(): void {
   stopCards = null
   stopFinished?.()
   stopFinished = null
+  stopWatchClose?.()
+  stopWatchClose = null
+  generation++
   live = null
   forgetConnector()
   connecting = null
