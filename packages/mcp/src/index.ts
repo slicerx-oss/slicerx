@@ -20,8 +20,8 @@ import { createStubSlicer, type SlicerBackend } from './slicer'
 import { createNodeSlicerHost } from './slicerhost'
 import { cadTools } from './cad'
 import { cloudTools, type CloudOptions } from './cloud'
-import { Designs, designTools } from './design'
-import { geomEngine, geomTools, findSxGeom } from './geom'
+import { Designs, designFiles, designTools } from './design'
+import { cadFiles, geomEngine, geomTools, findSxGeom } from './geom'
 import { createMcpSetupHost } from './setup'
 import { createSxSlicer, findSx } from './sx'
 import { sxlockTools, type SxlockOptions } from './sxlock'
@@ -151,7 +151,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project })
   const geomCall = opts.geomEngine ?? (geomBin ? geomEngine(geomBin) : undefined)
   const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
-  const geom = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ bin: geomBin, policy, designs }), ...(designs ? designTools(designs, policy) : [])] : []
+  const geom = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs }), ...(designs ? designTools(designs, designFiles(policy)) : [])] : []
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
