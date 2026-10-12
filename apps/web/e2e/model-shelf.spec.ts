@@ -67,9 +67,18 @@ test.describe('Model shelf next slot for faces and edges', () => {
     await pick(page, await facePick(page, id, [0, 0, 1]))
     await expect(page.getByTestId('model-shelf-next-count')).toHaveAttribute('aria-label', '1 face')
     expect(await tools()).toEqual(['push', 'sketch', 'shell'])
+    const chipOne = (await page.getByTestId('model-shelf-next-count').boundingBox())!
     await pick(page, { ...(await facePick(page, id, [1, 0, 0])), shift: true })
     await expect(page.getByTestId('model-shelf-next-count')).toHaveAttribute('aria-label', '2 faces')
     expect(await tools()).toEqual(['push off', 'sketch off', 'shell'])
+    // at 1440 px the count is a chip inside the slot, not a badge on its border, and a new count keeps its footprint
+    const chip = (await page.getByTestId('model-shelf-next-count').boundingBox())!
+    const slot = (await next.boundingBox())!
+    expect(chip.x).toBeGreaterThanOrEqual(slot.x)
+    expect(chip.y).toBeGreaterThanOrEqual(slot.y)
+    expect(chip.x + chip.width).toBeLessThanOrEqual(slot.x + slot.width)
+    expect(chip.y + chip.height).toBeLessThanOrEqual(slot.y + slot.height)
+    expect(chip).toEqual(chipOne)
     // the chip fits: the shelf still does not scroll at 1440 px
     expect(await page.getByTestId('model-shelf').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0)
     // edges get Fillet and Chamfer

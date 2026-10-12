@@ -274,7 +274,6 @@ class ViewportImpl implements Viewport {
   private summaryFor: PreviewBuffers | null = null
   private theme: ResolvedTheme = resolveTheme()
   private faceColor: string = SCENE.selection
-  private pickColor: string = SCENE.liveLayer
   private perspFov = 30
   private aoLevel = 1
   private tool: PlateTool = 'select'
@@ -782,7 +781,7 @@ class ViewportImpl implements Viewport {
     const ao = this.aoOn && aoMix > 0 && this.display !== 'wireframe' && !(this.mode === 'prepare' && this.renderMode === 'xray')
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
-    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
+    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, overlay: [this.edgeMarks.overlay], overlayDepth: (d, size) => this.edgeMarks.setSceneDepth(d, size, this.camera), silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
     // the new decor holds its programs now, so what it replaced can go without them being compiled again
     this.stage.releaseRetired()
     if (this.swapNext) {
@@ -1352,8 +1351,8 @@ class ViewportImpl implements Viewport {
     if (this.edgeMarks.set(picked, hover, (p) => this.mmPerPx(p))) this.invalidate()
   }
 
-  /** The faces picked in Model, each the patch around a triangle: a light fill and its outline in the pick color, so the
-   *  face keeps its shading and anything on it stays readable. */
+  /** The faces picked in Model, each the patch around a triangle: a light accent fill and its outline in the pick color,
+   *  drawn over the selection outline, so the face keeps its shading and anything on it stays readable. */
   setSelectedFaces(faces: readonly { objectId: string; partIndex: number; triangle: number }[]): void {
     for (const o of this.pickedFaces) {
       o.removeFromParent()
@@ -1371,7 +1370,8 @@ class ViewportImpl implements Viewport {
       if (!mesh || !src) continue
       const patch = facePatch(src.positions, src.indices, f.triangle)
       if (!patch) continue
-      const o = this.faceMesh(src, patch.triangles, 0.14, this.pickColor)
+      // the accent at about a fifth: plain on the light and the dark studio, and the face's shading still reads through
+      const o = this.faceMesh(src, patch.triangles, 0.22, this.faceColor)
       mesh.add(o)
       this.pickedFaces.push(o)
       // the outline in the objects root's frame, where the edge marks draw
@@ -2724,8 +2724,7 @@ class ViewportImpl implements Viewport {
     this.pipeline.setSceneColors(t.scene)
     this.pipeline.setSilhouetteColor(cadLook(t.scene.bgTop).edge)
     this.faceColor = t.scene.selection
-    // Picked faces stand apart from the selected object's own tint, which is the selection color.
-    this.pickColor = t.scene.liveLayer
+    // Picked edges and face outlines take the pick color, apart from the accent of the selection outline they sit on.
     this.edgeMarks.setColor(t.scene.liveLayer)
     this.guides.setColor(t.scene.selection)
     this.brim.setColors(t.scene)

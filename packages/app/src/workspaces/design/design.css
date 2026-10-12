@@ -72,10 +72,13 @@
 /* The next slot keeps its labels only where the whole shelf has room for them. */
 @media (max-width: 1599px) {
   .shelf-next .shelf-tool > span { display: none; }
-  .shelf-next .shelf-tool { padding: 0 7px; }
-  /* the chip keeps its count, as a badge on the slot's corner that takes no room; the words are in its tip */
+  .shelf-next .shelf-tool { padding: 0 6px; }
+  /* room for the count chip at the slot's start, so the shelf still fits at 1440 px */
+  .shelf-next { margin-left: 6px; }
+  .shelf-end { padding-left: 4px; }
+  /* the chip keeps its count, inside the slot, in a fixed footprint whatever the count; the words are in its tip */
   .shelf-pick > span { display: none; }
-  .shelf-pick { position: absolute; top: -7px; left: -7px; z-index: 1; height: 16px; min-width: 16px; justify-content: center; padding: 0 4px; margin: 0; background: var(--ink-1); font-size: var(--fs-xs); line-height: 1; }
+  .shelf-pick { box-sizing: border-box; flex: none; width: 22px; height: 20px; justify-content: center; padding: 0; margin-right: 0; overflow: hidden; letter-spacing: -0.02em; }
 }
 @media (max-width: 1100px) {
   .shelf-tool > span { display: none; }
