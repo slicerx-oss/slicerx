@@ -10,6 +10,7 @@ import { createWebFiles } from './files'
 declare const __SX_VERSION__: string
 declare const __SX_COMMIT__: string
 declare const __SX_E2E__: boolean
+declare const __SX_DEV_BUILD__: boolean
 /** False in a browser build without the slicing engine (SLICERX_WEB_SLICING=0): the CAD-only studio. */
 declare const __SX_WEB_SLICING__: boolean
 /** The native test slicer's address in the end-to-end test build (SLICERX_E2E_NATIVE_URL); empty in every other build. */
@@ -104,6 +105,7 @@ export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
       // The edition names where its source lives; `{commit}` pins this exact build.
       sourceUrl: sourceUrl(edition, __SX_COMMIT__) ?? SLICERX_SOURCE,
       ...(__SX_E2E__ ? { e2e: true } : {}),
+      ...(__SX_DEV_BUILD__ ? { dev: true } : {}),
     },
     slicer: resolvingAuto(sl.host),
     files: over.files ?? createWebFiles(),

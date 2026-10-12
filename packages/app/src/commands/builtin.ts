@@ -14,7 +14,7 @@ import { printBlock } from '../plate/heimdall'
 import { helpLinks, openLink } from '../lib/links'
 import { newProject } from '../project/new'
 import { appName, currentEdition, editionHasCad } from '../edition'
-import { modelMode, railKey } from '../state/model-mode'
+import { mimirShown, modelMode, railKey } from '../state/model-mode'
 import { bugReportsOff } from '../bugs/where'
 import { updaterRegistered } from '../updates/hold'
 import { toggleEdge } from '../shell/edge-keys'
@@ -63,7 +63,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   if (editionHasCad()) {
     const inMode = (m: ModelMode) => () => get().workspace === 'prepare' && get().modelMode === m
     out.push(
-      { id: 'mode-mimir', title: `Go to ${ASSISTANT_NAME}`, section: 'navigate', keywords: ['chat', 'cad', 'describe', 'agent'], enabled: () => !inMode('mimir')(), tool: { permission: 'read' }, run: () => setModelMode('mimir') },
+      { id: 'mode-mimir', title: `Go to ${ASSISTANT_NAME}`, section: 'navigate', keywords: ['chat', 'cad', 'describe', 'agent'], enabled: () => mimirShown(get()) && !inMode('mimir')(), tool: { permission: 'read' }, run: () => setModelMode('mimir') },
       { id: 'mode-design', title: 'Go to Model', section: 'navigate', keywords: ['design', 'cad', 'sketch'], enabled: () => !inMode('design')(), tool: { permission: 'read' }, run: () => setModelMode('design') },
       { id: 'mode-slice', title: 'Go to Slice', section: 'navigate', keywords: ['plate', 'prepare'], enabled: () => !inMode('slice')(), tool: { permission: 'read' }, run: () => setModelMode('slice') },
     )

@@ -19,7 +19,7 @@ import { captionFor, chatMax, designName } from '../src/workspaces/mimir/mimir-p
 
 const NO_CAD = { ...NEUTRAL, features: { ...NEUTRAL.features, cad: false } }
 
-beforeEach(() => set({ workspace: 'prepare', modelMode: 'slice', modelModeDefault: 'slice' }))
+beforeEach(() => set({ workspace: 'prepare', modelMode: 'slice', modelModeDefault: 'slice', devBuild: true, settingsMode: 'simple' }))
 afterEach(() => {
   setCurrentEdition(NEUTRAL)
   document.body.innerHTML = ''
@@ -83,6 +83,28 @@ describe('the mimir tab', () => {
     set({ modelMode: 'mimir' })
     expect(modelMode()).toBe('slice')
     expect(builtinCommands({} as Host, []).map((c) => c.id)).not.toContain('mode-mimir')
+  })
+})
+
+describe('in a release build', () => {
+  beforeEach(() => set({ devBuild: false }))
+
+  it('hides until developer mode, leaving Model first', () => {
+    const el = render()
+    const ids = () => [...el.querySelectorAll('.sx-tab')].map((b) => b.getAttribute('data-testid'))
+    expect(ids()).toEqual(['tab-model', 'tab-prepare'])
+    flushSync(() => set({ settingsMode: 'developer' }))
+    expect(ids()).toEqual(['tab-mimir', 'tab-model', 'tab-prepare'])
+  })
+
+  it('reads as Model while hidden, and agents cannot open it', () => {
+    set({ modelMode: 'mimir' })
+    expect(modelMode()).toBe('design')
+    const go = builtinCommands({} as Host, []).find((c) => c.id === 'mode-mimir')!
+    set({ modelMode: 'slice' })
+    expect(go.enabled?.()).toBe(false)
+    set({ settingsMode: 'developer' })
+    expect(go.enabled?.()).toBe(true)
   })
 })
 

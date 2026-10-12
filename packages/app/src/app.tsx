@@ -104,6 +104,8 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
   const featureSet = useMemo(() => resolveFeatures(host, pilotEnabled ? features : features.filter((f) => f.id !== 'pilot')), [host, features, pilotEnabled])
   // A pre-alpha build asks for the agreement before anything else, and catches crashes from the first frame.
   useState(() => {
+    // before the first frame, so the tab bar never shifts as it loads
+    if (host.build.dev) set({ devBuild: true })
     if (needsAgreement(edition, host, get().agreement)) set({ agreementOpen: true })
     // A release that changed onboarding opens setup again: all of it, prefilled, before beta; only the new steps after.
     const rerun = get().setup ? null : onboardingRerun(edition.release.stage, get().firstRun)
