@@ -22,6 +22,8 @@ describe('tool list', () => {
         'slicerx_project_open',
         'slicerx_project_add_model',
         'slicerx_project_set_overrides',
+        'slicerx_project_add_filament',
+        'slicerx_project_set_filament',
         'slicerx_printer_list',
         'slicerx_printer_status',
         'slicerx_printer_history',

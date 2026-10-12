@@ -18,6 +18,7 @@ Reading is always allowed. The permission class of the other tools decides what 
 | `slicerx_knowledge_lookup` | Filament, printer, troubleshooting and workflow entries with sources. | read |
 | `slicerx_project_open`, `slicerx_project_add_model`, `slicerx_project_show` | Start a project with a printer and filament, add STL models with copies, show it. | read |
 | `slicerx_project_set_overrides` | Change settings for the project (never a saved profile). | slice |
+| `slicerx_project_add_filament`, `slicerx_project_set_filament` | Add a filament after the last one, or change one's material type or color, as on the app's filament rail. Both answer with the project; `slicerx_project_show` lists its `filaments` (number, type, color, and whether a client set it). The slice gets them as `filament_type` and `filament_colour`. | slice |
 | `slicerx_orient`, `slicerx_arrange`, `slicerx_cut`, `slicerx_slice` | mimir skills on the project: best rotation, pack plates, split to fit, slice every plate. | slice |
 | `slicerx_geom_cut`, `slicerx_geom_split`, `slicerx_geom_repair`, `slicerx_geom_hollow`, `slicerx_geom_emboss`, `slicerx_geom_calibration_model`, `slicerx_geom_build`, `slicerx_geom_subtract` | Mesh tools from sx-geom, each taking a model path, URL or `sample:` name and writing new STL files under the output folder: cut with a plane and optional pin, dowel or dovetail connectors, split to fit a build volume, repair holes and normals, hollow with a wall thickness, emboss or deboss text, generate calibration prints (temperature tower, flow, pressure advance, retraction, max volumetric speed, tolerance, shrinkage, feature piece) with the settings to apply, build a model from boxes, cylinders and prisms, and drill holes and countersinks in an existing model. Present only when `sx-geom` is found. | slice |
 | `slicerx_geom_faces`, `slicerx_geom_face_pick`, `slicerx_geom_edge_pick`, `slicerx_geom_sketch_check`, `slicerx_geom_info`, `slicerx_geom_measure` | CAD lookups: list a model's flat faces (a point on each, its normal, the axis it faces, its area), pick a face for its sketch frame and outline, pick an edge for a fillet or chamfer (with the largest radius that fits, its tangent chain and the loop around the face), check sketch loops before extruding, check a model's bounds, volume and whether it is closed, and measure a hole's diameter or the distance and angle between two picks. Reports only. | read |
@@ -221,6 +222,16 @@ No config ever holds a secret. Each agent gets its own hub credential, kept in t
 3. Run or show `installSteps(client, input)[0]`.
 
 The browser build has no keychain, so it cannot hold a per-agent credential. There the panel shows the steps and sends the person to the desktop app to finish.
+
+### From a shell
+
+`slicerx-mcp call` runs tools without a client, in order and in one process, so a project the first calls build is there for the next. It prints one JSON line per call (`tool`, `ok`, `text`, `output`) and stops with exit code 1 at the first call that fails. Tool names may leave out the `slicerx_` prefix; the JSON after a name is its arguments.
+
+```sh
+slicerx-mcp --engine stub call project_open '{"printer":"bambu_p1s","filament":"pla"}' \
+  project_add_filament '{"type":"PETG","color":"#ff5500"}' \
+  project_set_filament '{"slot":1,"color":"#000000"}' project_show
+```
 
 ## Options
 

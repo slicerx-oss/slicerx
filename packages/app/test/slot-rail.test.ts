@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The filament rail's words: a slot in plain words, the line under the rail, and why a slot carries the mismatch dot.
+// Add filament: a new slot after the last one, opened for the person to pick its material and color.
 import { describe, expect, it } from 'vitest'
-import { mismatchText, slotLine, slotWords } from '../src/filament/slot-rail'
+import { addSlot, mismatchText, slotLine, slotWords, unitWords } from '../src/filament/slot-rail'
+import { MAX_SLOTS, resolved } from '../src/filament/slots'
+import { get, set } from '../src/state/store'
 
 describe('filament rail words', () => {
   it('names a slot by type, family and plain color', () => {
@@ -21,5 +24,29 @@ describe('filament rail words', () => {
 
   it('says what the printer holds and what the project uses', () => {
     expect(mismatchText({ slot: 2, type: 'PLA', color: '#000000', printerType: 'PETG', printerColor: '#ffffff' })).toBe('The printer has PETG White in slot 2. The project uses PLA Black.')
+  })
+})
+
+describe('adding a filament from the rail', () => {
+  it('adds the next slot with the defaults and opens it', () => {
+    set({ slotSetup: {}, printerSlots: [], slotDialog: null })
+    const before = resolved().length
+    addSlot(before + 1)
+    expect(resolved()).toHaveLength(before + 1)
+    expect(get().slotSetup[before + 1]).toMatchObject({ type: 'PLA' })
+    expect(get().slotDialog).toBe(before + 1)
+  })
+
+  it('never goes past the most a project holds', () => {
+    set({ slotSetup: {}, slotDialog: null })
+    addSlot(MAX_SLOTS + 1)
+    expect(get().slotSetup[MAX_SLOTS + 1]).toBeUndefined()
+    expect(get().slotDialog).toBeNull()
+  })
+
+  it("names the printer's filament unit that fills the slots in", () => {
+    expect(unitWords('ams')).toBe("the printer's AMS")
+    expect(unitWords('mmu')).toBe("the printer's MMU")
+    expect(unitWords(undefined)).toBe('the printer')
   })
 })
