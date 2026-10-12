@@ -182,7 +182,7 @@ export function reportFor(m: MockMachine, x: BambuExtra = { skipped: [], printEr
 
 interface Handles { mqtt: Server; ftp: Server; camera: Server; rtsps: RunningRtsp; ssdp: UdpSocket }
 
-export async function startBambu(m: MockMachine, log: string[]): Promise<{ handles: Handles; ports: { mqtt: number; ftp: number; camera: number; rtsps: number; ssdp: number }; serial: string; accessCode: string; extra: BambuExtra }> {
+export async function startBambu(m: MockMachine, log: string[]): Promise<{ handles: Handles; ports: { mqtt: number; ftp: number; camera: number; rtsps: number; ssdp: number }; serial: string; accessCode: string; extra: BambuExtra; dropMqtt: () => void }> {
   const tls = throwawayCert(MOCK_SERIAL)
   const listen = async (srv: Server) => { await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r)); return (srv.address() as AddressInfo).port }
 
@@ -256,7 +256,10 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
   setInterval(() => broadcast(), 200).unref()
   const handleRequest = (msg: Record<string, Record<string, unknown>>) => {
     try {
-      if (msg.pushing?.command === 'pushall') return broadcast(true)
+      if (msg.pushing?.command === 'pushall') {
+        log.push('pushall')
+        return broadcast(true)
+      }
       if (msg.info?.command === 'get_version') {
         const body = Buffer.from(JSON.stringify(versionFor(extra)))
         for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, body))
@@ -482,5 +485,10 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
   await new Promise<void>((r) => ssdp.bind(0, '127.0.0.1', r))
 
   const ports = { mqtt: await listen(mqtt), ftp: await listen(ftp), camera: await listen(camera), rtsps: rtsps.port, ssdp: ssdp.address().port }
-  return { handles: { mqtt, ftp, camera, rtsps, ssdp }, ports, serial: MOCK_SERIAL, accessCode: MOCK_ACCESS_CODE, extra }
+  // Closes every MQTT connection, as a link that drops does; clients reconnect on their own.
+  const dropMqtt = () => {
+    log.push('mqtt dropped')
+    for (const s of clients.values()) s.destroy()
+  }
+  return { handles: { mqtt, ftp, camera, rtsps, ssdp }, ports, serial: MOCK_SERIAL, accessCode: MOCK_ACCESS_CODE, extra, dropMqtt }
 }

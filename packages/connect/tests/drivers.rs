@@ -511,6 +511,60 @@ async fn bambu_refused_speed_light_and_gcode_say_why() {
     assert!(log.contains("ledctrl chamber_light off"), "{log}");
 }
 
+// A link that drops right after connecting reconnects without asking for a full report (`pushall`) again before the
+// session's limit is up, keeps the state it has, and asks once the limit has passed.
+#[tokio::test]
+async fn bambu_reconnects_ask_for_a_full_report_at_most_once_per_limit() {
+    use serde_json::{Value, json};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    mocks.set_state("bambu", "printing").await;
+    let limit = Duration::from_secs(8);
+    let session = BambuConnector::new(gate)
+        .with_pushall_every(limit)
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let count = |log: &Value, what: &str| {
+        log.as_array()
+            .map_or(0, |l| l.iter().filter(|x| x.as_str() == Some(what)).count())
+    };
+    // The fake's shared log (`mqtt connect`, `pushall`, `mqtt dropped`).
+    let log = || async { mocks.state().await["log"].clone() };
+    assert_eq!(count(&log().await, "pushall"), 1);
+    // Two drops in a row, each followed by a reconnect.
+    for n in 2..=3 {
+        mocks.control("/bambu", json!({ "dropMqtt": true })).await;
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while count(&log().await, "mqtt connect") < n {
+            assert!(std::time::Instant::now() < until, "no reconnect: {}", log().await);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+    if started.elapsed() < limit {
+        assert_eq!(count(&log().await, "pushall"), 1, "{}", log().await);
+    }
+    assert_eq!(
+        session.status().await.unwrap().state,
+        sx_connect::PrinterState::Printing
+    );
+    // Once the limit is up, the reconnect's full report is asked for.
+    let until = started + limit + Duration::from_secs(10);
+    while count(&log().await, "pushall") < 2 {
+        assert!(
+            std::time::Instant::now() < until,
+            "no owed pushall: {}",
+            log().await
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
 // A plain G-code start (`gcode_file`) reads the printer's answer as a project start does: a
 // refusal fails with `refused` and the reason and the printer stays idle; accepted, it prints.
 #[tokio::test]
