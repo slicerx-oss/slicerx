@@ -19,6 +19,7 @@ import slicers
 import settings
 import probe_color
 from gcode import is_layer_mark, plain
+import measure
 
 
 def leaf(state):
@@ -98,7 +99,7 @@ def map_for(code, filaments, d, orca_path, tri=6):
         os.remove(os.path.join(od, f))
     cmd = orca._cmd(m3, od, ["--debug", "1", "--arrange", "0"])
     cmd[cmd.index("--load-filaments") + 1] = ";".join(files)
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     g = os.path.join(od, "plate_1.gcode")
     if not os.path.exists(g):
         raise RuntimeError(f"no gcode {r.returncode} {(r.stdout + r.stderr)[-300:]}")

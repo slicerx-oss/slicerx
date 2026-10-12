@@ -75,7 +75,7 @@ def execute(job, keep_err=False):
     err = open(job.stdout + ".err", "w") if (job.stdout and keep_err) else subprocess.DEVNULL
     try:
         launch = time.time()
-        r = measure.run(job.cmd, stdout=out, stderr=err)
+        r = measure.run(job.cmd, stdout=out, stderr=err, timeout=measure.REF_TIMEOUT)
     finally:
         if job.stdout:
             out.close()

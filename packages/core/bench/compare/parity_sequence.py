@@ -22,6 +22,7 @@ import parity
 import settings
 import slicers
 from gcode import is_layer_mark, plain
+import measure
 
 OBJECTS = [("tall", 90.0, 128.0, 20.0), ("short", 170.0, 128.0, 6.0)]
 
@@ -140,7 +141,7 @@ def per_object_settings(a, sx, orca_path):
     rp = os.path.join(d, "request.json")
     json.dump({"schemaVersion": 1, "meshes": meshes, "plate": {"objects": plate}, "config": cfg, "options": {"flavor": "marlin2"}}, open(rp, "w"))
     out = os.path.join(d, "sx")
-    subprocess.run([sx, "slice", "--request", rp, "--out-dir", out], capture_output=True, check=True)
+    subprocess.run([sx, "slice", "--request", rp, "--out-dir", out], capture_output=True, check=True, timeout=measure.REF_TIMEOUT)
     orca = parity.ParityOrca(orca_path, parity.ORCA_ONLY)
     m3 = os.path.join(d, "models", "two.3mf")
     write_3mf(m3, objs, {"right": own})
@@ -149,7 +150,7 @@ def per_object_settings(a, sx, orca_path):
     os.makedirs(od, exist_ok=True)
     for f in os.listdir(od):
         os.remove(os.path.join(od, f))
-    r = subprocess.run(orca._cmd(m3, od, ["--debug", "1", "--arrange", "0"]), capture_output=True, text=True)
+    r = subprocess.run(orca._cmd(m3, od, ["--debug", "1", "--arrange", "0"]), capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     og = os.path.join(od, "plate_1.gcode")
     if not os.path.exists(og):
         print("Orca produced no G-code:", (r.stdout + r.stderr)[-600:])
@@ -198,7 +199,7 @@ def main():
     rp = os.path.join(d, "request.json")
     json.dump(req, open(rp, "w"))
     out = os.path.join(d, "sx")
-    subprocess.run([sx, "slice", "--request", rp, "--out-dir", out], capture_output=True, check=True)
+    subprocess.run([sx, "slice", "--request", rp, "--out-dir", out], capture_output=True, check=True, timeout=measure.REF_TIMEOUT)
     sxg = os.path.join(out, "slice.gcode")
     orca = parity.ParityOrca(orca_path, {**parity.ORCA_ONLY, "print_sequence": "by object", **dict(t.split("=", 1) for t in a.orca_set)})
     m3 = os.path.join(d, "models", "two.3mf")
@@ -210,7 +211,7 @@ def main():
         json.dump(mach, open(orca.files["machine"], "w"))
     od = os.path.join(d, "orca")
     os.makedirs(od, exist_ok=True)
-    r = subprocess.run(orca._cmd(m3, od, ["--debug", "1", "--arrange", "0"]), capture_output=True, text=True)
+    r = subprocess.run(orca._cmd(m3, od, ["--debug", "1", "--arrange", "0"]), capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
     og = os.path.join(od, "plate_1.gcode")
     if not os.path.exists(og):
         print("Orca produced no G-code:", (r.stdout + r.stderr)[-600:])

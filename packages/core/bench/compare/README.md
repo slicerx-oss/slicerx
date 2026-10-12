@@ -13,6 +13,8 @@ Results go to `compare-results.json` and `compare-results.md` in the current fol
 
 Build `sx` first with `cargo build -p sx-cli --profile bench-release` (or `--release`); the harness looks in `target/` and on `PATH`, or take `--sx` or `SX_BIN`. Bambu Studio and OrcaSlicer are found in their default install folders, or take `--bambu`, `--orca` (`BAMBU_BIN`, `ORCA_BIN`). On Linux and Windows installs where the Bambu Studio profile folder is not next to the executable, pass `--bambu-profiles .../profiles/BBL`.
 
+Every slicer run, ours and the reference slicers', stops after 600 seconds (set `SX_REF_TIMEOUT` to change it). A reference slicer's command line can hang without exiting, and a hung run otherwise stays alive after the script ends.
+
 ## What is measured
 
 - End to end: process start to G-code on disk, wall clock. Warm-up run first, then the timed runs interleaved (one run of each slicer in turn) so background load lands on all of them.

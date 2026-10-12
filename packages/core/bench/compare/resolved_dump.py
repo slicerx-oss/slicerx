@@ -16,6 +16,7 @@ import models as model_lib
 import parity
 import profile_parity as pp
 import slicers
+import measure
 
 
 def _find(vendor, kind, name):
@@ -236,7 +237,7 @@ def main():
         json.dump(fil, open(orca.files["filament"], "w"))
         out = os.path.join(w, "orca")
         os.makedirs(out, exist_ok=True)
-        r = subprocess.run(orca._cmd(stl, out, ["--debug", "1", "--arrange", "0"]), capture_output=True, text=True)
+        r = subprocess.run(orca._cmd(stl, out, ["--debug", "1", "--arrange", "0"]), capture_output=True, text=True, timeout=measure.REF_TIMEOUT)
         og = os.path.join(out, "plate_1.gcode")
         if not os.path.exists(og):
             print(key, "Orca produced no G-code:", (r.stdout + r.stderr)[-400:])

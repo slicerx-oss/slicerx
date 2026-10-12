@@ -22,6 +22,7 @@ import sys
 import models as model_lib
 import settings
 from gcode import is_layer_mark
+import measure
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIMITS = {
@@ -36,6 +37,7 @@ LIMITS = {
 
 
 def run(cmd, **kw):
+    kw.setdefault("timeout", measure.REF_TIMEOUT)
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
