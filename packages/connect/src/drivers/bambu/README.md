@@ -19,7 +19,7 @@ Plugin id `bambu-lan`. LAN mode with the printer's access code. X1, P1, P2S, A1 
 ## Sources
 
 - Doridian/OpenBambuAPI: https://github.com/Doridian/OpenBambuAPI (`mqtt.md`, `ftp.md`, `video.md`)
-- Bambu Studio: `DeviceManager.cpp` (`printer_type`, `home_flag`, `aux`, `fun2`), `DevConfigUtil.h` (`_parse_printer_type`), `DevStorage.cpp`, `SelectMachine.cpp` (the LAN send checks)
+- Bambu Studio's behaviour with the same printers: how it reads `printer_type`, `home_flag`, `aux` and `fun2`, and the checks before a LAN send
 - ha-bambulab: `pybambu/const.py` (`LEGACY_SDCARD_PRINTERS`)
 - Community reports for H2D temperature packing and model codes (see comments in `mod.rs`).
 

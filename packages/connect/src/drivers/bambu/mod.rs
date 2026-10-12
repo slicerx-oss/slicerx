@@ -405,7 +405,7 @@ fn model_name(code: &str) -> Option<String> {
 }
 
 /// The model a report's `printer_type` names, when it is a code SlicerX knows. Old X1 firmware
-/// sends `3DPrinter-X1` and `3DPrinter-X1-Carbon`, which Bambu Studio's `_parse_printer_type`
+/// sends `3DPrinter-X1` and `3DPrinter-X1-Carbon`, which Bambu Studio
 /// reads as BL-P002 and BL-P001.
 pub(crate) fn model_from_report(p: &Value) -> Option<String> {
     let code = p.get("printer_type").and_then(Value::as_str)?.trim();
@@ -439,7 +439,7 @@ pub(crate) fn model_from_version(info: &Value) -> Option<String> {
 }
 
 /// The firmware version from a `get_version` answer: the `ota` module's `sw_ver`, as Bambu Studio
-/// shows it (DeviceManager `get_ota_version`).
+/// shows it.
 pub(crate) fn firmware_from_version(info: &Value) -> Option<String> {
     info.get("module")
         .and_then(Value::as_array)?
@@ -455,7 +455,7 @@ pub(crate) fn firmware_from_version(info: &Value) -> Option<String> {
 /// A nozzle's material and whether it is a high flow one. X1, P1 and A1 printers send names
 /// (`hardened_steel`); H2 printers send codes such as `HS01`, whose second letter is the flow (H and
 /// E high flow) and last two digits the material (00 stainless steel, 01 hardened steel, 05 tungsten
-/// carbide), as Bambu Studio's DevNozzleSystem reads them.
+/// carbide), as Bambu Studio reads them.
 fn nozzle_kind(code: &str) -> (Option<&'static str>, Option<bool>) {
     let named = match code {
         "hardened_steel" => Some("hardened-steel"),
@@ -555,8 +555,8 @@ fn extruders_from(p: &Value, nozzle: Option<&Value>) -> Vec<crate::types::Extrud
 
 /// The filament units in a report, with their slots as `parse_slots` names them. The unit type and
 /// the nozzle it feeds are bits of the hex `info` string on newer firmware (bits 0 to 3 the type: 1
-/// AMS, 2 AMS lite, 3 AMS 2 Pro, 4 AMS HT; bits 8 to 11 the nozzle, as in Bambu Studio's
-/// DevFilaSystem). Older firmware sends no `info`: units 128 and up are AMS HT, the rest AMS, or AMS
+/// AMS, 2 AMS lite, 3 AMS 2 Pro, 4 AMS HT; bits 8 to 11 the nozzle, as Bambu Studio
+/// reads them). Older firmware sends no `info`: units 128 and up are AMS HT, the rest AMS, or AMS
 /// lite on the A1 and A1 mini.
 fn units_from(
     p: &Value,
@@ -699,7 +699,7 @@ fn hex_bits(text: &str, start: u32, count: u32) -> Option<u64> {
     Some((v >> start) & ((1 << count) - 1))
 }
 
-/// The SD card as a report gives it, read the way Bambu Studio's DevStorage does.
+/// The SD card as a report gives it, read the way Bambu Studio reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SdCard {
     Missing,
@@ -742,7 +742,7 @@ pub(crate) fn sd_card(p: &Value) -> Option<SdCard> {
 
 /// Why a file cannot go to the printer now, from its storage: a printer in LAN mode keeps a sent
 /// file on the SD card, unless it says it prints from internal storage (`fun2` bit 0). Bambu Studio
-/// stops a LAN send the same way (SelectMachine, `PrintStatusLanModeNoSdcard`).
+/// stops a LAN send the same way.
 pub(crate) fn storage_problem(p: &Value) -> Option<&'static str> {
     let internal = p
         .get("fun2")
@@ -872,7 +872,7 @@ fn client_id() -> String {
     )
 }
 
-/// Merges a report into the state the way Bambu Studio restores one (`json_diff::diff2all`): objects
+/// Merges a report into the state the way Bambu Studio restores one: objects
 /// key by key at every depth, anything else replaced. Reports that carry only what changed leave out
 /// keys inside objects too (`ipcam` with `ipcam_record` alone), and those keep their last value.
 fn merge_report(into: &mut serde_json::Map<String, Value>, from: &serde_json::Map<String, Value>) {
@@ -1143,7 +1143,7 @@ pub(crate) fn parse_status(id: &str, p: &Value) -> PrinterStatus {
     }
 }
 
-/// Bambu Studio's speed levels (`spd_lvl`, DevDefs.h): silent, standard, sport and ludicrous.
+/// Bambu Studio's speed levels (`spd_lvl`): silent, standard, sport and ludicrous.
 const SPEED_LEVELS: [u16; 4] = [50, 100, 124, 166];
 
 /// The printer's speed level as a percent, for `print_speed`'s level the other way round.
@@ -1171,7 +1171,7 @@ fn slot_id_of(ams: u64, slot: u64, slots: &[String]) -> Option<String> {
 }
 
 /// The fans in percent: `fan_gear` packs three 0 to 255 speeds, else each fan is a gear of 0 to 15
-/// sent as text, shown in steps of 10 percent (Bambu Studio's DevFan).
+/// sent as text, shown in steps of 10 percent, as Bambu Studio shows them.
 fn fans_of(p: &Value) -> Option<Fans> {
     let gear = |k: &str| -> Option<u8> {
         let v = p.get(k)?;
@@ -1199,8 +1199,8 @@ fn fans_of(p: &Value) -> Option<Fans> {
 
 /// Fans, speed level, chamber light, the slot feeding now and which nozzle each unit feeds. The
 /// light is `lights_report`'s `chamber_light`. The slot feeding now is the current extruder's
-/// `snow` on H2 printers (state bits 4 to 7 pick the extruder), else `ams.tray_now`
-/// (DevExtruderSystem).
+/// `snow` on H2 printers (state bits 4 to 7 pick the extruder), else `ams.tray_now`, as
+/// Bambu Studio reads it.
 fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
     let fans = fans_of(p);
     let light = p
@@ -1310,7 +1310,7 @@ fn wiki_code(hi: u64, lo: u64) -> String {
     format!("{:04X}_{:04X}", hi & 0xffff, lo & 0xffff)
 }
 
-/// The `hms` list of a report as issues. Bambu Studio's reading (DevHMS.cpp): the attribute holds
+/// The `hms` list of a report as issues. As Bambu Studio reads it: the attribute holds
 /// module (top byte), module number, part and a reserved byte; the code's top half is the severity.
 /// The text names the part and how serious it is and points at the code, since the full message
 /// catalog is Bambu's and is served from their cloud.
@@ -1782,7 +1782,7 @@ impl BambuSession {
     }
 
     /// Waits for the printer's answer to a `project_file` start: its reply (`result` "success" or
-    /// "fail", read the way Bambu Studio reads it in `DeviceManager.cpp`), or the job showing as
+    /// "fail", read the way Bambu Studio reads it), or the job showing as
     /// prepared or printing, or a new `print_error` with the job failed. A refusal comes back as
     /// [`Error::Refused`] with the printer's reason in plain words, so the person decides what to do
     /// next; nothing is retried or changed here. With no answer at all the start stands as sent and
@@ -1989,7 +1989,7 @@ pub(crate) enum CameraRoute {
     Off,
 }
 
-/// The camera route from a report, read as Bambu Studio reads it (DeviceManager.cpp, `liveview_local`):
+/// The camera route from a report, read as Bambu Studio reads it:
 /// `ipcam.liveview.local`, then `ipcam.rtsp_url`, which wins when both are there. `disable` there
 /// means LAN Only Liveview is off.
 pub(crate) fn camera_route(p: &Value) -> CameraRoute {
@@ -2030,7 +2030,7 @@ async fn read_camera_frame<R: AsyncReadExt + Unpin>(tls: &mut R) -> Option<Vec<u
 
 /// Builds the `project_file` command for a `.gcode.3mf` uploaded over FTPS.
 ///
-/// Defaults follow what Bambu Studio sends (`SelectMachine.cpp`, `set_print_config`): bed leveling
+/// Defaults follow what Bambu Studio sends: bed leveling
 /// on, flow calibration off (Studio sends the boolean `value == "on"`, so its Auto mode is false),
 /// vibration compensation off (Studio passes a literal `false`), first layer inspection on (a literal
 /// `true`; printers without the hardware ignore it) and bed type `auto`. Studio turns timelapse on
@@ -2100,7 +2100,7 @@ const CONTROL_ANSWER_WAIT: Duration = Duration::from_secs(3);
 const COMMAND_ANSWER_WAIT: Duration = Duration::from_millis(1500);
 
 /// Where a slot id from [`parse_slots`] sits in Bambu Studio's terms: `ams_id`, `slot_id` and
-/// `tray_id` of `ams_filament_setting` (DeviceManager.cpp, `command_ams_filament_settings`). A
+/// `tray_id` of `ams_filament_setting`, as Bambu Studio sends them. A
 /// regular AMS is units 0 to 3 (A to D), an AMS HT unit 128 and up (E on); the external spool is
 /// `ams_id` 255, slot 0, and Studio sends it with `tray_id` 254.
 fn slot_address(id: &str) -> Option<(u16, u16, u16)> {
@@ -2193,8 +2193,7 @@ const SECOND_EXTERNAL_TRAY: i64 = 255;
 const UNMAPPED: i64 = 255;
 
 /// `ams_mapping`, `ams_mapping2` and `use_ams` as Bambu Studio and Orca 2.4.2 build them
-/// (`SelectMachineDialog::get_ams_mapping_result` and the `task_use_ams` choice before the print
-/// job): one entry per filament, indexed by the 0 based filament index. In `ams_mapping` an AMS
+/// for a print job: one entry per filament, indexed by the 0 based filament index. In `ams_mapping` an AMS
 /// tray is its global index (unit times four plus slot, 0 to 15) and anything else, the external
 /// spool included, is -1. `ams_mapping2` names every filament as `{ams_id, slot_id}`: the AMS unit
 /// and slot, 254 and 0 for the external spool, 255 and 255 for none. `use_ams` is true when any
@@ -2791,7 +2790,7 @@ impl PrinterSession for BambuSession {
         Ok(h)
     }
 
-    /// `home_flag` bits 0 to 2 are X, Y and Z homed (Bambu Studio, DevAxis). The LAN reports no head
+    /// `home_flag` bits 0 to 2 are X, Y and Z homed, as Bambu Studio reads them. The LAN reports no head
     /// position, so the hub only lets Z move up.
     async fn motion(&self) -> Result<crate::types::Motion> {
         let v = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
