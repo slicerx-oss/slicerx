@@ -629,5 +629,23 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, extrude, revolve, push, boolean, fillet, chamfer, info, measure] as PilotTool<never>[]
+  const shell = defineTool({
+    name: 'geom.shell',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. Writes the new STL and reports the walls.',
+    input: z.object({
+      model: modelArg,
+      open: z.array(z.object({ at: vec3.describe('A point on the face, mm'), normal: vec3.describe('Its outward normal') })).max(64).default([]).describe('Faces to leave open, such as the top of a box'),
+      wall_mm: z.number().min(0.2).max(100),
+    }),
+    async run(i) {
+      const out = await call('shell', { mesh: { stlPath: await path(i.model) }, open: i.open, wallMm: i.wall_mm })
+      return { summary: `Shelled to ${i.wall_mm} mm walls${i.open.length ? `, ${i.open.length} face${i.open.length === 1 ? '' : 's'} open` : ''}`, output: lean(out) }
+    },
+  })
+
+  return [faces, facePick, edgePick, sketchCheck, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell] as PilotTool<never>[]
 }
