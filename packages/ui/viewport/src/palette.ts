@@ -17,14 +17,14 @@ export interface FeatureStyle {
  * toolpath never reads as a status.
  */
 export const FEATURE_COLORS: readonly FeatureStyle[] = [
-  { id: FEATURE.outerWall, label: 'Outer wall', color: '#f0b429' },
-  { id: FEATURE.innerWall, label: 'Inner wall', color: '#bd93f9' },
-  { id: FEATURE.overhangWall, label: 'Overhang wall', color: '#4f7cff' },
-  { id: FEATURE.topSurface, label: 'Top surface', color: '#ff8a3d' },
-  { id: FEATURE.bottomSurface, label: 'Bottom surface', color: '#8e9bd4' },
-  { id: FEATURE.internalSolid, label: 'Internal solid infill', color: '#9c5a3c' },
-  { id: FEATURE.sparseInfill, label: 'Sparse infill', color: '#d6c48a' },
-  { id: FEATURE.bridge, label: 'Bridge', color: '#5aa9e6' },
+  { id: FEATURE.outerWall, label: 'Outer wall', color: '#ff8a1f' },
+  { id: FEATURE.innerWall, label: 'Inner wall', color: '#ffd84d' },
+  { id: FEATURE.overhangWall, label: 'Overhang wall', color: '#3d5bff' },
+  { id: FEATURE.topSurface, label: 'Top surface', color: '#e8461e' },
+  { id: FEATURE.bottomSurface, label: 'Bottom surface', color: '#a59cff' },
+  { id: FEATURE.internalSolid, label: 'Internal solid infill', color: '#9b59e0' },
+  { id: FEATURE.sparseInfill, label: 'Sparse infill', color: '#2f8fe0' },
+  { id: FEATURE.bridge, label: 'Bridge', color: '#5a4fd6' },
   { id: FEATURE.support, label: 'Support', color: '#50fa7b' },
   { id: FEATURE.supportInterface, label: 'Support interface', color: '#2f9e5a' },
   { id: FEATURE.brimSkirt, label: 'Brim and skirt', color: '#9ad14b' },
