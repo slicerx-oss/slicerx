@@ -303,13 +303,9 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
       const last = d.history.steps[d.history.steps.length - 1]
       if (!last) throw new ToolInputError('The design has no steps to undo.')
       d.history = { ...d.history, steps: d.history.steps.slice(0, -1) }
-      if (d.history.steps.length) await designs.replay(d)
-      else {
-        d.parts = d.history.base
-        d.status = []
-        d.madeBy = {}
-      }
       d.redo.push(last)
+      // Every host replays, even to no steps: the app's takes the body off the plate then.
+      await designs.replay(d)
       return { summary: `Removed ${stepName(last)}`, output: designSummary(d) }
     },
   })
