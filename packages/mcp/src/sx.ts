@@ -22,7 +22,10 @@ export function sxFailure(code: number | null, why: string): ToolInputError {
   if (/no plate \d+/.test(why)) return new ToolInputError(`sx exited with code ${code}: ${why}`, 'no_such_plate')
   if (/safety preflight/.test(why)) {
     if (/outside the printable area/.test(why)) {
-      return new ToolInputError(`sx exited with code ${code}: ${why}. In a project, slicerx_arrange places the objects on the bed.`, 'preflight_blocked', { reason: 'outside_bed', fix: 'slicerx_arrange' })
+      // The count covers the layers the engine checked before it refused, which the message names.
+      const range = /\bin layers? (\d+)(?: to (\d+))?/.exec(why)
+      const layers = range ? { layers: [Number(range[1]), Number(range[2] ?? range[1])] } : {}
+      return new ToolInputError(`sx exited with code ${code}: ${why}. In a project, slicerx_arrange places the objects on the bed.`, 'preflight_blocked', { reason: 'outside_bed', fix: 'slicerx_arrange', ...layers })
     }
     return new ToolInputError(`sx exited with code ${code}: ${why}`, 'preflight_blocked')
   }

@@ -20,6 +20,11 @@ fn half_depth() -> f64 {
 
 /// The refusal for a 250 x 210 mm bed (the MK4's) with a skirt 2 mm out, for cubes named and centered as given.
 fn refusal(objects: &[(&str, f64, f64)]) -> String {
+    refusal_in_shards(objects, 1)
+}
+
+/// [`refusal`], with the plate sliced in `shards` ranges of layers.
+fn refusal_in_shards(objects: &[(&str, f64, f64)], shards: u32) -> String {
     let objects: Vec<Value> = objects
         .iter()
         .enumerate()
@@ -34,7 +39,7 @@ fn refusal(objects: &[(&str, f64, f64)]) -> String {
             "printable_area": ["0x0", "250x0", "250x210", "0x210"],
             "skirt_loops": 1, "skirt_distance": 2, "skirt_height": 1, "brim_width": 0,
         },
-        "options": {"flavor": "marlin2"},
+        "options": {"flavor": "marlin2", "shards": shards},
     }))
     .unwrap();
     let m = cube();
@@ -76,4 +81,51 @@ fn a_cube_wholly_off_the_bed_suggests_arranging_too() {
     let msg = refusal(&[("lost", 400.0, 100.0)]);
     assert!(msg.contains("wholly outside the printable area"), "{msg}");
     assert!(msg.contains("arrange the plate"), "{msg}");
+}
+
+/// The message up to the count (the first point and its object), and the count with the layers it covers.
+fn split(msg: &str) -> (&str, u64, u32, u32) {
+    let (head, tail) = msg.split_once("), ").unwrap();
+    let mut words = tail.split_whitespace();
+    let n = words.next().unwrap().parse().unwrap();
+    let rest: Vec<&str> = words.collect();
+    let (lo, hi) = match rest.as_slice() {
+        ["points" | "point", "in", "layers", lo, "to", hi, ..] => {
+            (lo.parse().unwrap(), hi.trim_end_matches(';').parse().unwrap())
+        }
+        ["points" | "point", "in", "layer", one, ..] => {
+            let one = one.trim_end_matches(';').parse().unwrap();
+            (one, one)
+        }
+        _ => panic!("no layer range in {msg}"),
+    };
+    (head, n, lo, hi)
+}
+
+#[test]
+fn the_count_names_the_layers_it_covers_whatever_the_shards() {
+    // A cube whose back wall crosses the edge on every layer: a sliced plate is refused at the first shard of
+    // layers that fails, so the count depends on the shards. The first point and its object do not.
+    let y = 210.0 - half_depth() + 3.0;
+    let plate = [("over", 120.0, y)];
+    let one = refusal_in_shards(&plate, 1);
+    let four = refusal_in_shards(&plate, 4);
+    let (head1, n1, lo1, hi1) = split(&one);
+    let (head4, n4, lo4, hi4) = split(&four);
+    assert_eq!(head1, head4, "{one}\n{four}");
+    assert!(
+        head1.contains("from layer 1 (") && head1.contains("\"over\""),
+        "{one}"
+    );
+    assert_eq!((lo1, lo4), (1, 1));
+    assert!(hi4 < hi1, "{one}\n{four}");
+    assert!(n4 < n1, "{one}\n{four}");
+    assert!(
+        one.ends_with("move \"over\" onto the bed or arrange the plate"),
+        "{one}"
+    );
+    assert!(
+        four.ends_with("move \"over\" onto the bed or arrange the plate"),
+        "{four}"
+    );
 }

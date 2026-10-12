@@ -485,12 +485,24 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                 ),
             }
         };
+        // A sliced plate is checked one shard of layers at a time and refused at the first shard that fails, so the
+        // count covers the layers checked, never the whole plate.
+        let (lo, hi) = checked_layers(out);
+        let range = if lo == hi {
+            format!("in layer {lo}")
+        } else {
+            format!("in layers {lo} to {hi}")
+        };
+        let points = if outside.n == 1 {
+            "1 point".to_owned()
+        } else {
+            format!("{} points", outside.n)
+        };
         let mut i = Issue::new(
             "outside_bed",
             Severity::Error,
             format!(
-                "{} toolpath points lie outside the printable area, first at layer {} (X{:.1} Y{:.1}, {whose}); {fix}",
-                outside.n,
+                "toolpaths lie outside the printable area from layer {} (X{:.1} Y{:.1}, {whose}), {points} {range}; {fix}",
                 outside.layer + 1,
                 outside.x,
                 outside.y,
@@ -548,6 +560,13 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
         issues.push(i);
     }
     issues
+}
+
+/// The first and last layer of `out` (1-based), the layers a check of it covers.
+fn checked_layers(out: &SliceOutput) -> (u32, u32) {
+    let first = out.layers.first().map_or(0, |l| l.index);
+    let last = out.layers.last().map_or(first, |l| l.index);
+    (first + 1, last + 1)
 }
 
 /// The plate object a path prints, when it belongs to one (not the skirt, a shared brim or the prime tower).
@@ -1078,7 +1097,7 @@ mod tests {
         assert!(
             issues[0]
                 .message
-                .ends_with("(X190.0 Y190.0, outer wall); move the objects onto the bed or arrange the plate"),
+                .ends_with("(X190.0 Y190.0, outer wall), 1 point in layer 1; move the objects onto the bed or arrange the plate"),
             "{}",
             issues[0].message
         );
