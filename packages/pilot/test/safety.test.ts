@@ -109,6 +109,25 @@ describe('printer side effects', () => {
     expect(result?.output).toMatchObject({ error: 'unverified_file', retry: false })
   })
 
+  it('an upload a Bambu Lab printer turns away for Developer Mode comes back with both remedies, not retried', async () => {
+    const env = createEvalEnv({ client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-2', plate: 1 } }] }, { text: 'done' }]), machine: MACHINE, objects: [CLIP] })
+    // What sx-connect returns for an A1 mini on Authorization Control firmware without Developer Mode.
+    env.sim.upload = async () => {
+      throw Object.assign(new Error('printer bay-2 takes no prints from other apps: It sends status, but the file upload failed (FTPS upload timed out).'), { code: 'needs_developer_mode' })
+    }
+    const events: PilotEvent[] = []
+    for await (const ev of env.pilot.run('t', 'test', { context: { machine: MACHINE } })) {
+      events.push(ev)
+      if (ev.type === 'approval_request') await env.pilot.resolveApproval(ev.request.id, { kind: 'approve', bedClear: true })
+    }
+    const result = events.find((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result' && !e.ok)
+    expect(result?.summary).toMatch(/did not take the print.*Developer Mode.*Bambu Connect/)
+    const out = result?.output as { error: string; retry: boolean; remedies: { id: string }[] }
+    expect(out).toMatchObject({ error: 'needs_developer_mode', retry: false })
+    expect(out.remedies.map((r) => r.id)).toEqual(['developer_mode', 'bambu_connect'])
+    expect(env.audit.sideEffects.filter((s) => s.ok && s.method === 'start')).toEqual([])
+  })
+
   it('a slot map the printer would not follow is refused before any card', async () => {
     const env = createEvalEnv({ client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-2', plate: 1, slotMap: { '0': 'A3' } } }] }, { text: 'done' }]), machine: MACHINE, objects: [CLIP] })
     const events: PilotEvent[] = []

@@ -167,6 +167,11 @@ export interface PrinterLive {
    * off. It prints through Bambu Connect then. Absent when it takes commands or does not say.
    */
   monitorOnly?: boolean
+  /**
+   * True while a Bambu Lab printer needs LAN Only Mode and Developer Mode (or Bambu Connect) to take a print from this
+   * app: its report says Developer Mode is off, or it refused or ignored a send while its status kept coming.
+   */
+  needsDeveloperMode?: boolean
 }
 
 export type PrinterEvent =
@@ -421,6 +426,11 @@ export type PrinterErrorCode =
   | 'protocol'
   /** The printer answered the start with a refusal; the message carries its reason. */
   | 'refused'
+  /**
+   * A Bambu Lab printer sends status but takes no print from other apps (Authorization Control without Developer
+   * Mode). The remedies are LAN Only Mode plus Developer Mode, or Bambu Connect (developerModeRemedies).
+   */
+  | 'needs_developer_mode'
   /** No access code is stored on this computer for the printer (the keychain kept it only for a session). */
   | 'credential_missing'
 

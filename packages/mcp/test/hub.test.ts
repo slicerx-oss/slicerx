@@ -67,7 +67,7 @@ async function signedHello(keys: CryptoKeyPair, clientNonce: string) {
 
 const CODES = { app: 'APPS-CODE', agent: 'AGNT-CODE', watch: 'WTCH-CODE' }
 
-function scriptedHub(outcome: { ok: boolean; message?: string }, proves = true) {
+function scriptedHub(outcome: { ok: boolean; code?: string; message?: string }, proves = true, fleet: { printer: Record<string, unknown>; status: Record<string, unknown> } = { printer, status }) {
   let socket: FakeSocket | undefined
   const keys = crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']) as Promise<CryptoKeyPair>
   let hello: Awaited<ReturnType<typeof signedHello>> | undefined
@@ -97,9 +97,9 @@ function scriptedHub(outcome: { ok: boolean; message?: string }, proves = true) 
           case 'plugins':
             return []
           case 'list':
-            return [printer]
+            return [fleet.printer]
           case 'status':
-            return status
+            return fleet.status
           case 'approvals.register': {
             const req = params['request'] as { id: string }
             // A person approves in the app a moment later; the hub runs the work and reports.
@@ -174,5 +174,35 @@ describe('person-only work through a scripted hub', () => {
     await settle()
     const p = data<{ pending: { status: string; message?: string }[] }>(await h.call('slicerx_pending_approvals'))
     expect(p.pending[0]).toMatchObject({ status: 'failed', message: 'Bay 4 went offline' })
+  })
+
+  // A Bambu Lab A1 mini on Authorization Control firmware without Developer Mode: status comes through, the send does
+  // not. The client reads the code and both remedies back, from the run and from the printer's status.
+  it('says what a Bambu Lab printer without Developer Mode needs, with both remedies', async () => {
+    const a1 = { id: 'bay-4', name: 'Bay 4', vendor: 'Bambu Lab', model: 'Bambu Lab A1 mini', plugin: 'bambu-lan', nozzleCount: 1 }
+    const a1Status = { ...status, live: { needsDeveloperMode: true } }
+    const message = 'printer bay-4 takes no prints from other apps: It sends status, but the file upload failed (FTPS upload timed out).'
+    const hub = scriptedHub({ ok: false, code: 'needs_developer_mode', message }, true, { printer: a1, status: a1Status })
+    const h = await connect({ printers: 'link', linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+    await h.call('slicerx_printer_gcode', { printerId: 'bay-4', line: 'G28' })
+    await settle()
+    type Remedy = { id: string; title: string; steps: string[]; note: string }
+    const p = data<{ pending: { status: string; code?: string; message?: string; remedies?: Remedy[] }[] }>(await h.call('slicerx_pending_approvals'))
+    expect(p.pending[0]).toMatchObject({ status: 'failed', code: 'needs_developer_mode', message })
+    const remedies = p.pending[0]?.remedies ?? []
+    expect(remedies.map((r) => r.id)).toEqual(['developer_mode', 'bambu_connect'])
+    // The A series' own menu path, from Bambu Lab's wiki, and nothing for the other families.
+    expect(remedies[0]?.steps.join(' ')).toMatch(/swipe to page 3/)
+    expect(remedies[0]?.steps.join(' ')).not.toMatch(/WLAN, then LAN Only Mode/)
+    expect(remedies[0]?.note).toMatch(/Bambu Handy/)
+    expect(remedies[1]?.title).toBe('Send with Bambu Connect')
+
+    // Read back: the printer's status says it before the next send.
+    const st = await h.call('slicerx_printer_status', { printerId: 'bay-4' })
+    expect(st.isError).toBeFalsy()
+    const body = JSON.stringify(data(st))
+    expect(body).toContain('"needsDeveloperMode":true')
+    expect(body).toContain('Send with Bambu Connect')
+    expect(text(st)).toMatch(/needs Developer Mode or Bambu Connect/)
   })
 })
