@@ -5,7 +5,8 @@
 // undo takes them back, bad input and unknown designs are refused, and no reply carries a mesh. Runs against the
 // geometry engine (live wasm when built, recorded replies otherwise).
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { replaying } from '../src/cad/history/ops'
 import { LinkError, runCall, useDesignHost } from '../src/app-link/methods'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
@@ -41,6 +42,26 @@ describe('design tools over the app link', () => {
     // Reading is fine meanwhile.
     expect(await runCall('design.steps', { design })).toBeTruthy()
     set({ historyEdit: null })
+  })
+
+  it('wait for the person: busy while that object replays', async () => {
+    const started = (await runCall('design.new', { name: 'Slow' })) as { output: { design: string } }
+    const design = started.output.design
+    await runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 3 })
+    // A loader that waits keeps the next step's replay running.
+    let finish = () => undefined as void
+    await useDesignHost({ loadParts: (name: string) => new Promise<MeshHandle>((r) => (finish = () => r(handle(name)))) })
+    try {
+      const hole = { design, operation: 'cut', frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 4 }, distance_mm: 3 }
+      const second = runCall('geom.extrude', hole)
+      await vi.waitFor(() => expect(replaying(design)).toBe(true))
+      expect(await code(runCall('geom.extrude', hole))).toBe('busy')
+      finish()
+      await second
+      expect(replaying(design)).toBe(false)
+    } finally {
+      await useDesignHost(loader)
+    }
   })
 
   it('refuse bad input and a design that is not there', async () => {
