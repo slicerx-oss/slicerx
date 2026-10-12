@@ -14,7 +14,9 @@ use std::collections::{HashMap, HashSet};
 /// edges whose faces meet at more than this many degrees are feature edges
 pub const SHARP_DEG: f64 = 30.0;
 /// triangles within this many degrees of the seed count as one flat face
-const FLAT_DEG: f64 = 0.5;
+const FLAT_DEG: f64 = 0.1;
+/// a facet joins a cylinder when its normal is radial to within this share of the seed's turn
+const CYL_TURN: f64 = 0.25;
 const MAX_REGION: usize = 200_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -183,7 +185,8 @@ impl<'a> Topology<'a> {
         let p0 = self.corners(seed)[0];
         let cos = FLAT_DEG.to_radians().m_cos();
         let size = self.mesh.bounds().map_or(1.0, |b| b.diagonal());
-        let tol = (size * 1e-6).max(1e-6).max(size * 1e-4);
+        // coplanar only: same normal and on the seed's plane, so a tangent fillet strip stays out
+        let tol = (size * 1e-5).max(1e-6);
         self.grow(seed, |_, n, _, _| {
             vec3::dot(self.normals[n as usize], n0) > cos
                 && self
@@ -532,6 +535,110 @@ impl Topology<'_> {
         Feature::Edge { a: p, b: q }
     }
 
+    /// the two ends of a flat facet seen down `frame`'s normal (the facet is a line there)
+    fn profile(&self, facet: &[u32], frame: &Frame) -> Option<(V2, V2)> {
+        let pts: Vec<V2> = facet
+            .iter()
+            .flat_map(|&t| self.corners(t))
+            .map(|p| frame.project(p))
+            .collect();
+        let d2 = |a: V2, b: V2| (a[0] - b[0]).m_powi(2) + (a[1] - b[1]).m_powi(2);
+        let far = |from: V2| {
+            pts.iter()
+                .copied()
+                .max_by(|&x, &y| d2(from, x).total_cmp(&d2(from, y)))
+        };
+        let a = far(*pts.first()?)?;
+        Some((a, far(a)?))
+    }
+
+    /// the facets around flat facet `f0` that lie on the one cylinder through it and its neighbour `f1`
+    fn grow_cylinder(&self, f0: &[u32], f1: &[u32]) -> Option<Vec<u32>> {
+        let (n0, n1) = (self.normals[f0[0] as usize], self.normals[f1[0] as usize]);
+        let turn = vec3::dot(n0, n1).clamp(-1.0, 1.0).m_acos();
+        if turn < 1e-6 {
+            return None;
+        }
+        let axis = vec3::normalize(vec3::cross(n0, n1))?;
+        let frame = Frame::from_normal([0.0; 3], axis, None)?;
+        let (a0, b0) = self.profile(f0, &frame)?;
+        let (a1, b1) = self.profile(f1, &frame)?;
+        // three corners fix the circle; every further facet must sit on it
+        let (c, r, _) = fit_circle_2d(&[a0, b0, a1, b1])?;
+        let tol = turn * CYL_TURN;
+        let fits = |f: &[u32]| {
+            let n = self.normals[f[0] as usize];
+            if vec3::dot(n, axis).abs() > tol.m_sin() {
+                return false;
+            }
+            let Some((p, q)) = self.profile(f, &frame) else {
+                return false;
+            };
+            let off = |x: V2| ((x[0] - c[0]).m_hypot(x[1] - c[1]) - r).abs();
+            if off(p) > 0.02 * r || off(q) > 0.02 * r {
+                return false;
+            }
+            // a facet of the round faces straight out from the axis at its middle
+            let m = [f64::midpoint(p[0], q[0]) - c[0], f64::midpoint(p[1], q[1]) - c[1]];
+            let n2 = frame.project(n);
+            let (lm, ln) = (m[0].m_hypot(m[1]), n2[0].m_hypot(n2[1]));
+            lm > 0.0 && ln > 0.0 && ((m[0] * n2[0] + m[1] * n2[1]) / (lm * ln)).abs() >= tol.m_cos()
+        };
+        let mut seen: HashSet<u32> = f0.iter().chain(f1).copied().collect();
+        let mut region: Vec<u32> = seen.iter().copied().collect();
+        let mut stack = vec![f0.to_vec(), f1.to_vec()];
+        let mut facets = 2;
+        while let Some(f) = stack.pop() {
+            if region.len() >= MAX_REGION {
+                break;
+            }
+            for (a, b) in self.region_boundary(&f) {
+                if self.is_sharp(a, b) {
+                    continue;
+                }
+                for &n in self.edge_faces(a, b) {
+                    if seen.contains(&n) {
+                        continue;
+                    }
+                    let g = self.flat_region(n);
+                    seen.extend(g.iter().copied());
+                    if fits(&g) {
+                        region.extend(g.iter().copied());
+                        facets += 1;
+                        stack.push(g);
+                    }
+                }
+            }
+        }
+        // two facets fit any circle, so a round needs a third to show its radius
+        (facets >= 3).then_some(region)
+    }
+
+    /// the cylinder region through flat facet `flat`: tried with each smooth neighbour, the largest wins
+    fn cylinder_region(&self, flat: &[u32]) -> Option<Vec<u32>> {
+        let inside: HashSet<u32> = flat.iter().copied().collect();
+        let mut tried = HashSet::new();
+        let mut best: Option<Vec<u32>> = None;
+        for (a, b) in self.region_boundary(flat) {
+            if self.is_sharp(a, b) {
+                continue;
+            }
+            for &n in self.edge_faces(a, b) {
+                if inside.contains(&n) || tried.contains(&n) {
+                    continue;
+                }
+                let f1 = self.flat_region(n);
+                tried.extend(f1.iter().copied());
+                if let Some(r) = self.grow_cylinder(flat, &f1)
+                    && best.as_ref().is_none_or(|b| r.len() > b.len())
+                {
+                    best = Some(r);
+                }
+            }
+        }
+        best
+    }
+
     fn face_feature(&self, t: u32, at: V3) -> Feature {
         let flat = self.flat_region(t);
         let boundary = self.region_boundary(&flat);
@@ -545,8 +652,10 @@ impl Topology<'_> {
         if smooth == 0 {
             return plane();
         }
-        let region = self.grow(t, |_, _, a, b| !self.is_sharp(a, b));
-        if let Some((origin, axis, radius)) = fit_cylinder(self.mesh, &region, 0.02) {
+        // a round grows only over facets on its own axis and radius, never into a tangent flat face
+        if let Some(region) = self.cylinder_region(&flat)
+            && let Some((origin, axis, radius)) = fit_cylinder(self.mesh, &region, 0.02)
+        {
             return Feature::Cylinder {
                 point: vec3::add(origin, vec3::scale(axis, vec3::dot(vec3::sub(at, origin), axis))),
                 axis,
@@ -554,13 +663,14 @@ impl Topology<'_> {
                 triangles: region,
             };
         }
-        if flat.len() > 2 {
+        // a face with a sharp edge is a flat face even where a round meets it
+        if flat.len() > 2 || boundary.len() > smooth {
             return plane();
         }
         Feature::Surface {
             at,
             normal: self.normals[t as usize],
-            triangles: region,
+            triangles: self.grow(t, |_, _, a, b| !self.is_sharp(a, b)),
         }
     }
 
@@ -952,6 +1062,98 @@ mod tests {
         .unwrap();
         let d = measure(&c, Some(&e));
         assert!((d.distance_mm.unwrap() - 30.0).abs() < 0.01, "{d:?}");
+    }
+
+    /// a 90 x 120 x 4 plate with a 1.5 mm round on one long top edge
+    fn plate_with_fillet() -> TriMesh {
+        let m = build::box_mesh([0.0; 3], [90.0, 120.0, 4.0]);
+        let at = [89.9, 60.0, 4.0];
+        let pick = crate::edge::pick_edge(&m, tri_at(&m, at, [0.0, 0.0, 1.0]), at).unwrap();
+        let round = crate::edge::Profile::Fillet {
+            radius: 1.5,
+            tolerance: crate::edge::DEFAULT_TOLERANCE_MM,
+        };
+        crate::edge::apply(&m, &[pick.edge], round, &BooleanOptions::default())
+            .unwrap()
+            .mesh
+    }
+
+    #[test]
+    fn flat_face_stops_at_a_tangent_fillet() {
+        let m = plate_with_fillet();
+        let at = [40.0, 60.0, 4.0];
+        let top = resolve(
+            &m,
+            Pick {
+                triangle: tri_at(&m, at, [0.0, 0.0, 1.0]),
+                at,
+            },
+            0.5,
+        )
+        .unwrap();
+        let Feature::Plane { normal, area_mm2, .. } = top else {
+            panic!("{top:?}")
+        };
+        // the top ends where the round starts, 1.5 mm in from the edge
+        assert!(
+            normal[2] > 0.999 && (area_mm2 - 88.5 * 120.0).abs() < 1e-3,
+            "{area_mm2}"
+        );
+        let at = [40.0, 60.0, 0.0];
+        let bottom = resolve(
+            &m,
+            Pick {
+                triangle: tri_at(&m, at, [0.0, 0.0, -1.0]),
+                at,
+            },
+            0.5,
+        )
+        .unwrap();
+        let d = measure(&top, Some(&bottom));
+        assert!((d.distance_mm.unwrap() - 4.0).abs() < 1e-6, "{d:?}");
+        assert_eq!(d.parallel, Some(true));
+        // the round itself, picked halfway round its arc
+        let (s, c) = (45f64.to_radians().m_sin(), 45f64.to_radians().m_cos());
+        let at = [88.5 + 1.5 * s, 60.0, 2.5 + 1.5 * c];
+        let wall = m
+            .triangles
+            .iter()
+            .enumerate()
+            .filter(|&(_, &t)| {
+                let n = vec3::normalize(m.normal(t)).unwrap();
+                n[0] > 0.3 && n[2] > 0.3
+            })
+            .min_by(|x, y| {
+                let d = |t: [u32; 3]| {
+                    let [a, b, c] = m.corners(t);
+                    vec3::len(vec3::sub(
+                        vec3::scale(vec3::add(vec3::add(a, b), c), 1.0 / 3.0),
+                        at,
+                    ))
+                };
+                d(*x.1).total_cmp(&d(*y.1))
+            })
+            .map(|(i, _)| u32::try_from(i).unwrap())
+            .unwrap();
+        let f = resolve(&m, Pick { triangle: wall, at }, 0.0).unwrap();
+        let Feature::Cylinder {
+            radius,
+            axis,
+            triangles,
+            ..
+        } = f
+        else {
+            panic!("{f:?}")
+        };
+        assert!(
+            (radius - 1.5).abs() < 0.01 && axis[1].abs() > 0.999,
+            "{radius} {axis:?}"
+        );
+        // the round's triangles only: none from the top or the side
+        assert!(triangles.iter().all(|&t| {
+            let n = vec3::normalize(m.normal(m.triangles[t as usize])).unwrap();
+            n[2] < 0.999 && n[0] < 0.999
+        }));
     }
 
     #[test]
