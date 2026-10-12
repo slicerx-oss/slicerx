@@ -83,20 +83,28 @@ export function wrapLink(link: LinkHost, relay?: string | null, opts: { appLink?
           } satisfies NonNullable<ConnectedBridge['appLink']>,
         }
       : {}),
+    // The app reconnects a connection that dropped.
+    ...(typeof (link as { onDisconnect?: unknown }).onDisconnect === 'function' ? { onDisconnect: (cb: (info: { requested: boolean }) => void) => link.onDisconnect(cb) } : {}),
     close: () => link.close(),
   }
 }
 
 /** Browser: the person runs sx-link and types its code. */
 export function browserBridge(url?: string, relay?: string | null): BridgeConnector {
+  // The code accepted in this session, so a connection that drops reconnects without asking. Never stored.
+  let accepted: string | undefined
   return {
     automatic: false,
     ...(url ? { url } : {}),
     async connect(code) {
-      if (!code) throw new Error('Enter the pairing code sx-link printed.')
+      const use = code ?? accepted
+      if (!use) throw new Error('Enter the pairing code sx-link printed.')
       // The first pairing pins the hub's key for this address; later connects pass it and refuse a hub that cannot sign.
-      return wrapLink(await connectPinned(connectLink, { code, ...(url ? { url } : {}) }), relay)
+      const bridge = wrapLink(await connectPinned(connectLink, { code: use, ...(url ? { url } : {}) }), relay)
+      accepted = use
+      return bridge
     },
+    canReconnect: () => accepted !== undefined,
   }
 }
 

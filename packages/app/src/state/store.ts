@@ -496,7 +496,8 @@ export interface AppState {
   settingsTab: SettingIntent
   /** The printer bridge (sx-link) connection, and a counter that changes whenever the host's printers do. */
   /** `hubKey`: the key of the connected hub. `presentedKey`: after a hub mismatch, the key the program on the port proved. */
-  bridgeStatus: { state: 'off' | 'connecting' | 'on' | 'error'; message?: string; hubKey?: string; presentedKey?: string }
+  /** `reconnecting`: a desktop bridge whose connection dropped, coming back on its own (`attempt` counts from 1). */
+  bridgeStatus: { state: 'off' | 'connecting' | 'on' | 'error' | 'reconnecting'; message?: string; hubKey?: string; presentedKey?: string; attempt?: number }
   linkEpoch: number
   /** Connected apps the hub has (Settings, Connected apps): address and whether a key is stored, never the key. */
   connectedApps: { id: string; baseUrl: string; hasSecret: boolean }[]

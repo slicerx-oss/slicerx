@@ -12,6 +12,13 @@ export interface BridgeConnector {
   url?: string
   /** Connects. `code` is the pairing code for a bridge the person started. */
   connect(code?: string): Promise<ConnectedBridge>
+  /** True when `connect()` with no code can connect again (a code accepted earlier in this session). */
+  canReconnect?(): boolean
+}
+
+/** True when a dropped connection can come back without the person: the desktop's own bridge, or a code this session used. */
+export function reconnects(c: BridgeConnector | null): boolean {
+  return Boolean(c && (c.automatic || c.canReconnect?.()))
 }
 
 let connector: BridgeConnector | null = null
