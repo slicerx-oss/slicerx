@@ -71,6 +71,8 @@ test('a file of three bodies asks, and One object loads one object with three pa
   const dialog = page.getByTestId('multi-body-dialog')
   await expect(dialog).toBeVisible({ timeout: 60_000 })
   await expect(dialog).toContainText('holds 3 separate bodies')
+  // Nothing goes on the plate before the answer.
+  expect((await state(page)).objects).toBe(0)
   await page.getByTestId('multi-body-parts').click()
   await settled(page)
   expect(await state(page)).toMatchObject({ objects: 1, parts: [3], pref: 'ask' })
@@ -99,6 +101,24 @@ test('Separate objects with Remember my choice sets the setting, and the next fi
   await settled(page)
   await expect(dialog).toHaveCount(0)
 })
+
+for (const how of ['the close button', 'Escape'] as const) {
+  test(`closing the question with ${how} loads the automatic grouping and remembers nothing`, async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Desktop open')
+    const seen = await start(page)
+    await open(page, seen, cubes('three-cubes.stl', 3))
+    const dialog = page.getByTestId('multi-body-dialog')
+    await expect(dialog).toBeVisible({ timeout: 60_000 })
+    // Even with the box ticked, closing is not an answer to remember.
+    await page.getByTestId('multi-body-remember').check()
+    if (how === 'Escape') await page.keyboard.press('Escape')
+    else await dialog.getByTestId('dialog-close').click()
+    await settled(page)
+    // Cubes apart are separate objects in the automatic grouping.
+    expect(await state(page)).toMatchObject({ objects: 3, parts: [1, 1, 1], pref: 'ask' })
+    await expect(dialog).toHaveCount(0)
+  })
+}
 
 test('a file of one body never asks', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop open')

@@ -19,7 +19,7 @@ import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { brandAccent, objectPalette } from '../edition'
 import type { OpenScope } from '../project/unsaved'
 import { markOpenStage } from '../lib/open-mark'
-import { bodyCount, multiBodyChoice, regroup } from './multi-body'
+import { bodyCount, multiBodyChoice, regroup, severalShells, willAsk } from './multi-body'
 
 export type AutoFormat = 'stl' | 'obj' | 'amf' | 'step'
 type MeshFormat = Exclude<AutoFormat, 'step'>
@@ -177,6 +177,8 @@ async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn:
     if (!mesh || mesh.indices.length === 0) return null
     onRead(mesh)
     markOpenStage('parse', { parsedIn: onPage ? 'page' : 'worker' })
+    // A file of several bodies that will ask how to load them waits for the answer: nothing goes on the plate first.
+    if (willAsk() && severalShells(mesh.indices, mesh.positions.length / 3)) return null
     const part: MeshPart = { name, slot: 1, positions: mesh.positions, indices: mesh.indices }
     const handle = await host.slicer.loadParts(name, [part])
     markOpenStage('engine')

@@ -3,7 +3,7 @@
 // A file of several bodies: regrouped into one object with parts or an object per body, the question asked only while
 // the app shows and only for more than one body, and a remembered answer becoming the setting.
 import { afterEach, describe, expect, it } from 'vitest'
-import { answerMultiBody, bodyCount, enableMultiBodyPrompt, multiBodyChoice, regroup, type BodyEntry } from '../src/state/multi-body'
+import { answerMultiBody, bodyCount, enableMultiBodyPrompt, multiBodyChoice, regroup, severalShells, type BodyEntry } from '../src/state/multi-body'
 import { get, set } from '../src/state/store'
 
 const entry = (name: string, parts: string[]): BodyEntry => ({ name, parts: parts.map((p) => ({ name: p })), colors: parts.map(() => '#ffffff'), transform: [1], perShell: true })
@@ -67,5 +67,13 @@ describe('the question', () => {
     answerMultiBody('objects')
     expect(await asked).toBe('objects')
     expect(get().multiBodyImport).toBe('ask')
+  })
+})
+
+describe('severalShells', () => {
+  it('tells one connected shell from two', () => {
+    // two triangles sharing an edge, then two triangles apart
+    expect(severalShells([0, 1, 2, 1, 3, 2], 4)).toBe(false)
+    expect(severalShells([0, 1, 2, 3, 4, 5], 6)).toBe(true)
   })
 })
