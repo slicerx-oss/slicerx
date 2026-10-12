@@ -16,7 +16,7 @@ import { useHost } from '../../host'
 import { addPrimitive } from '../../plate/edit'
 import { toggleLock, togglePrintable } from '../../plate/object-list'
 import { requestRename } from '../../plate/rename-request'
-import { closeViewRing as close, layPickedFace, ringList as showList, viewRing, type RingKind, type RingTarget } from '../../plate/view-ring'
+import { closeViewRing as close, layPickedFace, ringList as showList, selectEdgeLoop, viewRing, type RingKind, type RingTarget } from '../../plate/view-ring'
 import { openModelFiles } from '../../state/actions'
 import { setModelMode, toast, useApp, type AppState } from '../../state/store'
 import { SHAPES } from '../prepare/object-actions'
@@ -55,6 +55,7 @@ export const RING_VERBS: Readonly<Record<RingKind, readonly RingVerb[]>> = {
   edge: [
     { id: 'fillet', label: 'Fillet', icon: 'fillet-edge', agent: 'slicerx_geom_fillet', modeling: true },
     { id: 'chamfer', label: 'Chamfer', icon: 'chamfer-edge', agent: 'slicerx_geom_chamfer', modeling: true },
+    { id: 'loop', label: 'Edge loop', icon: 'select-edge', agent: 'slicerx_geom_edge_pick', modeling: true },
     { id: 'measure', label: 'Measure', icon: 'measure', agent: 'gap 2: measure' },
   ],
   empty: [
@@ -100,6 +101,7 @@ export function ViewRing() {
       startFillet('chamfer')
       openTool('fillet')
     },
+    loop: () => void selectEdgeLoop().then((ok) => ok || toast('No edge loop runs through that edge.', 'error'), fail),
     // the ring closes before a verb runs, so the list opens again at the ring's point
     shape: () => viewRing.setState({ at, list: true }),
     model: () => void openModelFiles(host).catch(fail),
