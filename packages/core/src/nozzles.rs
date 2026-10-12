@@ -82,6 +82,20 @@ fn nozzle_counts(cfg: &PrintConfig, extruders: usize) -> Vec<usize> {
         .collect()
 }
 
+/// How many filaments the project has: the longest of its per-filament lists that name filaments
+/// (`filament_colour`, `filament_settings_id`, `filament_type`), at least 1. The map lists every one of them,
+/// the ones the plate never prints with too, as Bambu Studio writes it.
+pub fn project_filaments(cfg: &PrintConfig) -> u8 {
+    ["filament_colour", "filament_settings_id", "filament_type"]
+        .iter()
+        .filter_map(|k| match cfg.raw.get(*k) {
+            Some(serde_json::Value::Array(a)) => Some(a.len()),
+            _ => None,
+        })
+        .max()
+        .map_or(1, |n| u8::try_from(n.clamp(1, 64)).unwrap_or(64))
+}
+
 /// The master extruder, 0-based (`master_extruder_id`, 1-based in the profile).
 fn master(cfg: &PrintConfig, extruders: usize) -> usize {
     #[allow(
@@ -742,6 +756,19 @@ mod tests {
         };
         assert_eq!(m.extruder, vec![0, 0, 1]);
         assert!(!m.auto);
+    }
+
+    #[test]
+    fn the_project_has_as_many_filaments_as_its_longest_filament_list() {
+        let mut c = h2d(&[]);
+        assert_eq!(project_filaments(&c), 1);
+        c.raw.insert(
+            "filament_colour".into(),
+            serde_json::json!(["#ff0000", "#00ff00", "#0000ff"]),
+        );
+        c.raw
+            .insert("filament_type".into(), serde_json::json!(["PLA", "PLA"]));
+        assert_eq!(project_filaments(&c), 3);
     }
 
     #[test]
