@@ -11,6 +11,7 @@ import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, LinkButton } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useHasFeature } from '../../features'
+import { useInMimir } from '../../state/model-mode'
 import { matchShortcut } from '../../lib/keys'
 import { useFleet } from '../../lib/queries'
 import { openSettings, pilotState, set, useApp } from '../../state/store'
@@ -187,6 +188,8 @@ export function PilotDock() {
   const open = useDockOpen()
   const connected = useApp((s) => pilotState(s) === 'on')
   const watching = useWatching()
+  // The mimir tab has the chat in the page; the dock stands aside there and comes back on the other tabs.
+  const inMimir = useInMimir()
   useEffect(() => {
     if (!on) return
     const onKey = (e: KeyboardEvent) => {
@@ -199,9 +202,9 @@ export function PilotDock() {
     return () => window.removeEventListener('keydown', onKey)
   }, [on])
   useEffect(() => {
-    document.querySelector('.app')?.setAttribute('data-mimir', on && open ? 'open' : 'closed')
-  }, [on, open])
-  if (!on || !open) return null
+    document.querySelector('.app')?.setAttribute('data-mimir', on && open && !inMimir ? 'open' : 'closed')
+  }, [on, open, inMimir])
+  if (!on || !open || inMimir) return null
   return (
     <aside className="mimir-dock sx-pilot sx-pilot-dock" aria-label={ASSISTANT_NAME}>
       <header className="mimir-head">
