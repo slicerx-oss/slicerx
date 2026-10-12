@@ -30,4 +30,6 @@ export interface DesignHost {
   add(d: Design, part: number, params: StepParams, label?: string): Promise<Step>
   /** Replays the design as `d.history` says, after a tool edited, removed or put back steps. */
   replay(d: Design): Promise<void>
+  /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
+  call(op: string, request: unknown): Promise<unknown>
 }
