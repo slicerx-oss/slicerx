@@ -140,6 +140,7 @@ mod narrow;
 mod noise;
 pub mod nozzles;
 mod organic;
+mod organic2;
 pub mod outname;
 mod output;
 mod overhang;

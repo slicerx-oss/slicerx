@@ -346,12 +346,21 @@ pub(crate) fn layer_paths(
     }
     if !trees.is_empty() && layer.kind != Kind::First {
         let w = use_cfg.support_width();
-        work.support.extend(crate::treepaths::branch_walls(
-            trees,
-            w,
-            rounded(cfg.layer_height),
-            0.25 * 25.0 * std::f64::consts::PI,
-        ));
+        if crate::organic2::selected(cfg) {
+            work.support.extend(crate::organic2::paths::raft_walls(
+                trees,
+                w,
+                rounded(cfg.layer_height),
+                cfg.support.tree_settings.wall_count,
+            ));
+        } else {
+            work.support.extend(crate::treepaths::branch_walls(
+                trees,
+                w,
+                rounded(cfg.layer_height),
+                0.25 * 25.0 * std::f64::consts::PI,
+            ));
+        }
     }
     work.support.extend(pad);
     work.skirt = skirt;
