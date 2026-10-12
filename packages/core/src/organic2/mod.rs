@@ -161,7 +161,7 @@ pub(crate) fn plan(inp: &Input<'_>) -> Plan {
     let Some(top) = highest.checked_sub(p.z_top).filter(|&t| t > 0) else {
         return empty_plan();
     };
-    let v = volumes::Volumes::new(&p, outlines, blockers, inp.bed, top + 1);
+    let v = volumes::Volumes::new(&p, &outlines, blockers, inp.bed, top + 1);
     #[allow(clippy::cast_precision_loss, reason = "a layer count")]
     let max_r = p.radius(top as f64, 0.0) + p.recommended_min_radius(0);
     let radii: Vec<f64> = p

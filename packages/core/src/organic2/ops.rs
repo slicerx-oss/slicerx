@@ -130,10 +130,8 @@ pub(crate) fn ring_length(r: &[P], closed: bool) -> f64 {
             _ => 0.0,
         })
         .sum();
-    if closed {
-        if let (Some(a), Some(b)) = (r.last(), r.first()) {
-            len += dist(*a, *b);
-        }
+    if closed && let (Some(a), Some(b)) = (r.last(), r.first()) {
+        len += dist(*a, *b);
     }
     len
 }
@@ -275,7 +273,7 @@ pub(crate) fn safe_grow(area: &Shapes, dist: f64, obstacle: &Shapes, step: f64, 
     }
     // Round grows add points at every corner, so an area grown layer after layer gains points without
     // end; the result is simplified to the same 0.015 mm whatever the step count.
-    if n % 10 != 0 {
+    if !n.is_multiple_of(10) {
         cur = simplify(&cur, 0.015);
     }
     cur
@@ -364,7 +362,7 @@ mod tests {
     #[test]
     fn sides_for_chord_error() {
         assert!(circle_sides(1.0) >= 18);
-        assert!(circle_sides(0.01) == 8);
+        assert_eq!(circle_sides(0.01), 8);
         let c = round_circle(P::new(0, 0), 2.0);
         // 26 sides: the polygon is about 1 percent under the circle.
         assert!((area(&c) - std::f64::consts::PI * 4.0).abs() < 0.2);

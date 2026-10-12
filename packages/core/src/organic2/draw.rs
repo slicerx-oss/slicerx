@@ -10,6 +10,7 @@ use super::params::Params;
 use super::volumes::Volumes;
 use crate::fm::Fm as _;
 use crate::geom::{Point, SCALE};
+use crate::par::Init as _;
 use crate::perimeters::{self, Shapes};
 
 type V3 = [f64; 3];
@@ -79,10 +80,13 @@ fn node(layers: &[Vec<Node>], id: Id) -> Option<&Node> {
     layers.get(id.0).and_then(|v| v.get(id.1))
 }
 
+/// One edge of a collision outline, as its two end points.
+type Edge = ([f64; 2], [f64; 2]);
+
 /// Edges of the collision area of one layer, bucketed on a grid for nearest-edge queries.
 struct EdgeGrid {
     cell: f64,
-    buckets: std::collections::HashMap<(i64, i64), Vec<([f64; 2], [f64; 2])>>,
+    buckets: std::collections::HashMap<(i64, i64), Vec<Edge>>,
 }
 
 impl EdgeGrid {
@@ -193,12 +197,11 @@ pub(crate) fn smooth(p: &Params, v: &Volumes<'_>, hs: &Heights<'_>, layers: &mut
     // Z of the root below each node (children come before parents in `ids`, layer by layer).
     let mut root_z = z.clone();
     for i in 0..ids.len() {
-        if let Some(Some(c)) = child.get(i) {
-            if let Some(&rz) = root_z.get(*c) {
-                if let Some(slot) = root_z.get_mut(i) {
-                    *slot = rz;
-                }
-            }
+        if let Some(Some(c)) = child.get(i)
+            && let Some(&rz) = root_z.get(*c)
+            && let Some(slot) = root_z.get_mut(i)
+        {
+            *slot = rz;
         }
     }
     // Z of the lowest tip above each node.
@@ -209,10 +212,10 @@ pub(crate) fn smooth(p: &Params, v: &Volumes<'_>, hs: &Heights<'_>, layers: &mut
                 .filter_map(|&q| tip_z.get(q).copied())
                 .fold(f64::INFINITY, f64::min)
         });
-        if let Some(m) = m.filter(|m| m.is_finite()) {
-            if let Some(slot) = tip_z.get_mut(i) {
-                *slot = m;
-            }
+        if let Some(m) = m.filter(|m| m.is_finite())
+            && let Some(slot) = tip_z.get_mut(i)
+        {
+            *slot = m;
         }
     }
     let span: Vec<(usize, usize)> = (0..ids.len())
@@ -231,7 +234,7 @@ pub(crate) fn smooth(p: &Params, v: &Volumes<'_>, hs: &Heights<'_>, layers: &mut
     let grid = |l: usize| -> Option<&EdgeGrid> {
         grids
             .get(l)
-            .map(|g| g.get_or_init(|| EdgeGrid::new(&v.collision(0.0, l, true))))
+            .map(|g| g.once(|| EdgeGrid::new(&v.collision(0.0, l, true))))
     };
     let m_slow = p.m_slow;
     for _ in 0..100 {
@@ -288,7 +291,7 @@ pub(crate) fn smooth(p: &Params, v: &Volumes<'_>, hs: &Heights<'_>, layers: &mut
             let mut hit = 0.0;
             if let Some((q, depth)) = deepest.filter(|&(_, d)| d > 0.0) {
                 hit = depth;
-                let n = (depth + 0.1).max(0.0).min(0.5);
+                let n = (depth + 0.1).clamp(0.0, 0.5);
                 let push = if p.s.quirks.nudge_squared { n * n } else { n };
                 let dir = [old[0] - q[0], old[1] - q[1]];
                 let l = dir[0].m_hypot(dir[1]);
@@ -337,10 +340,10 @@ pub(crate) fn smooth(p: &Params, v: &Volumes<'_>, hs: &Heights<'_>, layers: &mut
         }
     }
     for (i, &(l, k)) in ids.iter().enumerate() {
-        if let (Some(n), Some(&c)) = (layers.get_mut(l).and_then(|v| v.get_mut(k)), pos.get(i)) {
-            if n.center.is_some() {
-                n.center = Some(to_p2(c));
-            }
+        if let (Some(n), Some(&c)) = (layers.get_mut(l).and_then(|v| v.get_mut(k)), pos.get(i))
+            && n.center.is_some()
+        {
+            n.center = Some(to_p2(c));
         }
     }
 }
@@ -697,7 +700,7 @@ pub(crate) fn slice_branch(
     let bed = v.bed().clone();
     let mut areas: Vec<Shapes> = Vec::new();
     for l in bottom..=top {
-        let z = 0.5 * (hs.bottom(l) + hs.top(l));
+        let z = f64::midpoint(hs.bottom(l), hs.top(l));
         let loops = mesh.slice(z);
         let s = perimeters::shapes_from_loops_mode(&loops, 125, perimeters::Slicing::CloseHoles, 0);
         let c = ops::grow(&v.collision(0.0, l, true), 0.001);

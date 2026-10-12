@@ -5,6 +5,7 @@
 //! nowhere it should not, each compatibility flag works both ways, and contact loops still print.
 
 #![allow(clippy::needless_pass_by_value, clippy::cast_possible_truncation)]
+#![allow(clippy::disallowed_methods, reason = "test measurements of G-code; no output depends on them")]
 
 mod common;
 
@@ -129,7 +130,7 @@ fn mushroom_gets_roof_layers_under_the_cap() {
     }
 }
 
-/// Model 4 with 6 mm branches (r_u 3): the 6 mm hole is narrower than 2 r_u + 2 G_xy, and under the shelf
+/// Model 4 with 6 mm branches (`r_u` 3): the 6 mm hole is narrower than 2 `r_u` + 2 `G_xy`, and under the shelf
 /// it is the only way to the bed. Tips over it are "bed" (not safe) and go down it at their small collision
 /// radius, clipped to the hole (spec E7); every support line still keeps the gap from the hole's walls.
 #[test]
@@ -156,7 +157,7 @@ fn hole_that_is_the_only_bed_path_is_used_with_clearance() {
     }
 }
 
-/// A narrow hole (2 mm, under 2 r_u + 2 G_xy = 2.7) in a small box under a high shelf that reaches well past
+/// A narrow hole (2 mm, under 2 `r_u` + 2 `G_xy` = 2.7) in a small box under a high shelf that reaches well past
 /// it: tips over the hole can reach the bed around the box, so no branch enters the hole.
 #[test]
 fn narrow_hole_with_a_way_around_is_not_entered() {

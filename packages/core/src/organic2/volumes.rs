@@ -8,6 +8,7 @@
 use super::ops;
 use super::params::{Params, u};
 use crate::fm::Fm as _;
+use crate::par::Init as _;
 use crate::perimeters::Shapes;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -24,6 +25,8 @@ pub(crate) enum Kind {
 }
 
 type Column = Arc<Vec<OnceLock<Arc<Shapes>>>>;
+/// One avoidance table: a layer column worked out whole, bottom-up.
+type AvoidTable = Arc<OnceLock<Vec<Arc<Shapes>>>>;
 
 /// The model volumes of one support plan.
 pub(crate) struct Volumes<'a> {
@@ -42,7 +45,7 @@ pub(crate) struct Volumes<'a> {
     hole_free: Mutex<HashMap<i32, Column>>,
     place0: Vec<OnceLock<Arc<Shapes>>>,
     placeable: Mutex<HashMap<i32, Column>>,
-    avoid: Mutex<HashMap<(i32, Kind, bool), Arc<OnceLock<Vec<Arc<Shapes>>>>>>,
+    avoid: Mutex<HashMap<(i32, Kind, bool), AvoidTable>>,
     wall: Mutex<HashMap<(i32, bool), Column>>,
 }
 
@@ -61,7 +64,7 @@ fn cell(map: &Mutex<HashMap<i32, Column>>, key: i32, n: usize) -> Column {
 impl<'a> Volumes<'a> {
     pub(crate) fn new(
         p: &'a Params,
-        outlines: Vec<Shapes>,
+        outlines: &[Shapes],
         blockers: Vec<Shapes>,
         bed_rect: [f64; 4],
         count: usize,
@@ -130,8 +133,7 @@ impl<'a> Volumes<'a> {
         let Some(slot) = col.get(layer) else {
             return Arc::new(self.collision_raw(k, layer));
         };
-        slot.get_or_init(|| Arc::new(self.collision_raw(k, layer)))
-            .clone()
+        slot.once(|| Arc::new(self.collision_raw(k, layer))).clone()
     }
 
     #[allow(clippy::cast_precision_loss, reason = "a small layer count")]
@@ -190,13 +192,13 @@ impl<'a> Volumes<'a> {
             Arc::new(ops::simplify(&ops::grow_round(&c, -back), self.p.s.resolution))
         };
         match col.get(layer) {
-            Some(slot) => slot.get_or_init(make).clone(),
+            Some(slot) => slot.once(make).clone(),
             None => make(),
         }
     }
 
     /// The radius holes are filled at (spec 3.3 and E3): the full-gap cache radius of the grow-until
-    /// radius, that is the grid radius at or above r_u + delta_xy.
+    /// radius, that is the grid radius at or above `r_u` + `delta_xy`.
     fn hole_free_base(&self) -> i32 {
         self.key(self.p.r_until, false)
     }
@@ -236,7 +238,7 @@ impl<'a> Volumes<'a> {
             Arc::new(ops::diff(&ops::grow(top, p.gap_min), &cover))
         };
         match self.place0.get(layer) {
-            Some(slot) => slot.get_or_init(make).clone(),
+            Some(slot) => slot.once(make).clone(),
             None => make(),
         }
     }
@@ -256,7 +258,7 @@ impl<'a> Volumes<'a> {
             Arc::new(ops::grow(&z, -self.placeable_shrink(k)))
         };
         match col.get(layer) {
-            Some(slot) => slot.get_or_init(make).clone(),
+            Some(slot) => slot.once(make).clone(),
             None => make(),
         }
     }
@@ -297,7 +299,7 @@ impl<'a> Volumes<'a> {
                 .or_insert_with(|| Arc::new(OnceLock::new()))
                 .clone()
         };
-        slot.get_or_init(|| self.avoid_raw(k, kind, to_model));
+        slot.once(|| self.avoid_raw(k, kind, to_model));
         slot
     }
 
@@ -320,10 +322,10 @@ impl<'a> Volumes<'a> {
         let mut out: Vec<Arc<Shapes>> = Vec::with_capacity(self.count);
         let mut prev: Arc<Shapes> = Arc::new(Vec::new());
         for layer in 0..self.count {
-            let obstacle = if kind != Kind::Fast {
-                self.hole_free_k(k, layer)
-            } else {
+            let obstacle = if kind == Kind::Fast {
                 self.collision_k(k, layer)
+            } else {
+                self.hole_free_k(k, layer)
             };
             let mut cur: Shapes = if layer == 0 {
                 (*self.collision_k(k, 0)).clone()
@@ -364,7 +366,7 @@ impl<'a> Volumes<'a> {
             Arc::new(ops::inter(&here, &below))
         };
         match col.get(layer) {
-            Some(slot) => slot.get_or_init(make).clone(),
+            Some(slot) => slot.once(make).clone(),
             None => make(),
         }
     }
@@ -420,7 +422,7 @@ mod tests {
     #[test]
     fn collision_keeps_the_gap() {
         let p = params();
-        let v = Volumes::new(&p, column_outlines(20), Vec::new(), [0.0, 0.0, 200.0, 200.0], 20);
+        let v = Volumes::new(&p, &column_outlines(20), Vec::new(), [0.0, 0.0, 200.0, 200.0], 20);
         let c = v.collision(0.0, 5, true);
         // The gap is the minimum XY gap around the column.
         assert!(ops::contains(&c, P::new(u(105.0 + p.gap_min - 0.01), u(100.0))));
@@ -437,7 +439,7 @@ mod tests {
         for o in outl.iter_mut().skip(10) {
             *o = ops::rect([90.0, 90.0, 110.0, 110.0]);
         }
-        let v = Volumes::new(&p, outl, Vec::new(), [0.0, 0.0, 200.0, 200.0], 20);
+        let v = Volumes::new(&p, &outl, Vec::new(), [0.0, 0.0, 200.0, 200.0], 20);
         let a = v.avoidance(p.r_tip, 9, Kind::Fast, false, true);
         assert!(ops::contains(&a, P::new(u(100.0), u(100.0))));
         assert!(!ops::contains(&a, P::new(u(130.0), u(100.0))));
@@ -449,13 +451,13 @@ mod tests {
     #[test]
     fn bed_border_is_a_wall_unless_ignored() {
         let mut p = params();
-        let v = Volumes::new(&p, column_outlines(5), Vec::new(), [0.0, 0.0, 200.0, 200.0], 5);
+        let v = Volumes::new(&p, &column_outlines(5), Vec::new(), [0.0, 0.0, 200.0, 200.0], 5);
         assert!(ops::contains(
             &v.collision(1.0, 2, true),
             P::new(u(199.5), u(100.0))
         ));
         p.s.quirks.ignore_bed_edge = true;
-        let v = Volumes::new(&p, column_outlines(5), Vec::new(), [0.0, 0.0, 200.0, 200.0], 5);
+        let v = Volumes::new(&p, &column_outlines(5), Vec::new(), [0.0, 0.0, 200.0, 200.0], 5);
         assert!(!ops::contains(
             &v.collision(1.0, 2, true),
             P::new(u(199.5), u(100.0))

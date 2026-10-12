@@ -4,6 +4,15 @@
 //! into the 13 shapes the organic support tests and the parity runs use. Every model is centered on the
 //! origin in X and Y with its lowest point at Z 0; the tests place it with a transform.
 #![allow(dead_code, clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "test geometry and G-code parsing: no output depends on last-bit rounding here"
+)]
+#![allow(clippy::many_single_char_names, reason = "vector math on triangle corners")]
+#![allow(
+    clippy::float_cmp,
+    reason = "a G-code move with no XY change parses to the same values"
+)]
 
 use serde_json::{Value, json};
 use std::f32::consts::TAU;
@@ -421,10 +430,13 @@ pub fn stl(m: &Mesh, at: [f32; 2]) -> Vec<u8> {
     out
 }
 
+/// One layer's support segments: `(interface, start, end)`.
+pub type SupportSegs = Vec<(bool, [f32; 2], [f32; 2])>;
+
 /// Support extrusions of a G-code file: per layer (print Z), the segments of `;TYPE:Support` and
 /// `;TYPE:Support interface` moves, as `(interface, [x0, y0], [x1, y1])`.
-pub fn support_moves(gcode: &str) -> Vec<(f32, Vec<(bool, [f32; 2], [f32; 2])>)> {
-    let mut layers: Vec<(f32, Vec<(bool, [f32; 2], [f32; 2])>)> = Vec::new();
+pub fn support_moves(gcode: &str) -> Vec<(f32, SupportSegs)> {
+    let mut layers: Vec<(f32, SupportSegs)> = Vec::new();
     let mut kind: Option<bool> = None;
     let mut pos = [0.0f32; 2];
     let mut z = 0.0f32;
@@ -478,14 +490,15 @@ pub fn support_moves(gcode: &str) -> Vec<(f32, Vec<(bool, [f32; 2], [f32; 2])>)>
             }
             None => false,
         };
-        if extrudes && next != pos {
-            if let Some(iface) = kind {
-                if layers.last().is_none_or(|(lz, _)| (lz - z).abs() > 1e-4) {
-                    layers.push((z, Vec::new()));
-                }
-                if let Some((_, segs)) = layers.last_mut() {
-                    segs.push((iface, pos, next));
-                }
+        if extrudes
+            && next != pos
+            && let Some(iface) = kind
+        {
+            if layers.last().is_none_or(|(lz, _)| (lz - z).abs() > 1e-4) {
+                layers.push((z, Vec::new()));
+            }
+            if let Some((_, segs)) = layers.last_mut() {
+                segs.push((iface, pos, next));
             }
         }
         pos = next;
