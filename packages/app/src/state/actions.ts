@@ -579,6 +579,17 @@ export function refusalReason(e: unknown): string | null {
   return (at >= 0 ? m.slice(at + 'refused the print: '.length) : m).trim() || 'The printer gave no reason.'
 }
 
+/**
+ * The printer's reason when an error says a Bambu Lab printer takes no print from other apps until Developer Mode is
+ * on (`needs_developer_mode`), else null.
+ */
+export function developerModeReason(e: unknown): string | null {
+  if (!e || typeof e !== 'object' || (e as { code?: unknown }).code !== 'needs_developer_mode') return null
+  const m = e instanceof Error ? e.message : String((e as { message?: unknown }).message ?? '')
+  const at = m.indexOf('takes no prints from other apps: ')
+  return (at >= 0 ? m.slice(at + 'takes no prints from other apps: '.length) : m).trim() || 'The printer gave no reason.'
+}
+
 /** The send and printer flow loads on first use, so the startup shell stays small (send-actions.ts). */
 const sendActions = () => import('./send-actions')
 

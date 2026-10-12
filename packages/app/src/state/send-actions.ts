@@ -18,7 +18,7 @@ import { get, set, toast, type AppState, type PlateEntry } from './store'
 import { appName } from '../edition'
 import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/bambu-connect'
 import { openLink } from '../lib/links'
-import { askApproval, buildApproval, jobFileName, jobName, plateSliceConfig, refusalReason, STALE_SLICE } from './actions'
+import { askApproval, buildApproval, developerModeReason, jobFileName, jobName, plateSliceConfig, refusalReason, STALE_SLICE } from './actions'
 
 /** "Desk hook" becomes "desk-hook_plate-1.gcode". */
 /** What a printer that does not follow a slot map does with a plain G-code file: each filament from the slot of its number. */
@@ -189,16 +189,18 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     const outcome = await sendPicked(picked)
     if (outcome === 'done') return
     // The printer refused the .gcode.3mf. The sheet opens again with its reason in plain words. Sending the same
-    // plate as plain G-code is the person's own choice there, never a fallback taken here.
+    // plate as plain G-code is the person's own choice there, never a fallback taken here. A Bambu Lab printer that
+    // needs Developer Mode gets the two ways past it instead (Developer Mode steps, Bambu Connect).
     const reason = outcome.refused
     const last = picked
+    const developerMode = outcome.developerMode === true
     picked = await new Promise<SendChoice | null>((resolve) =>
-      set({ printSheet: { ...sheetAsk(), refusal: { reason, plainSha256: plainSha, last }, resolve } }),
+      set({ printSheet: { ...sheetAsk(), refusal: { reason, plainSha256: plainSha, last, ...(developerMode ? { developerMode } : {}) }, resolve } }),
     )
   }
 
   /** Sends one choice from the sheet. 'done' when it went (or failed in a way the toast already said), else the printer's refusal. */
-  async function sendPicked(picked: SendChoice): Promise<'done' | { refused: string }> {
+  async function sendPicked(picked: SendChoice): Promise<'done' | { refused: string; developerMode?: true }> {
     if (picked.bambuConnect) return viaBambuConnect(picked)
     let opts: SendOptions = picked.options
     if (specs.length) set((cur) => ({ sendChoices: { ...cur.sendChoices, [printer.id]: Object.fromEntries(specs.map((sp) => [sp.id, Boolean(picked.options[sp.id])])) } }))
@@ -282,6 +284,10 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
       }
       return 'done'
     } catch (e) {
+      // Status comes through but the printer takes no print from here: whatever was sent, the sheet says why and
+      // offers Developer Mode or Bambu Connect.
+      const dev = developerModeReason(e)
+      if (dev !== null && connectHow) return { refused: dev, developerMode: true }
       const refused = refusalReason(e)
       if (refused !== null && !plain && start) return { refused }
       toast(e instanceof Error ? e.message : `Could not reach ${printer.name}`, 'error')
