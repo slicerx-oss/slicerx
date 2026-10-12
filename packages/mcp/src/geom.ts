@@ -11,7 +11,8 @@ import { basename, dirname, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { bakeMesh, invert, multiply, stepName, type HistoryMesh, type SolidSpec, type StepParams } from '@slicerx/cad-history'
-import { designArg, designSummary, type Design, type Designs } from './design'
+import type { DesignHost } from '@slicerx/cad-history'
+import { designArg, designSummary, faceAt, item, type Design } from './design'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
 import { looksZipped, refuseVaultFile } from './vault'
@@ -106,9 +107,9 @@ const designOrModel = (i: { model?: string | undefined; design?: string | undefi
 
 const partArg = z.number().int().min(0).optional().describe('With a design: the part to work on, from 0; absent: every part')
 
-export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }): PilotTool<never>[] {
+export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefined }): PilotTool<never>[] {
   const call = geomCaller(deps)
-  const designOf = (id: string): [Designs, Design] => {
+  const designOf = (id: string): [DesignHost, Design] => {
     if (!deps.designs) throw new ToolInputError('Designs need the sx-geom engine, which this server did not find.', 'not_supported')
     return [deps.designs, deps.designs.get(id)]
   }
@@ -249,7 +250,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }
         const part = i.part ?? 0
         const src = d.parts[part]
         if (!src) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
-        const r = (await ds.deps.engine('array', { mesh: ds.item(d, part), spec })) as { transforms: number[][] }
+        const r = (await ds.call('array', { mesh: item(d, part), spec })) as { transforms: number[][] }
         const back = invert(d.transform)
         const parts = r.transforms.slice(1).map((t, k) => ({ ...bakeMesh({ name: `${src.name} ${k + 2}`, slot: src.slot, positions: Array.from(src.positions), indices: Array.from(src.indices) }, multiply(back, t)) }))
         await ds.add(d, -1, { op: 'parts.add', parts, label: `Array of ${copies}, separate` })
@@ -359,7 +360,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }
       const { model, design, ...spec } = i
       if (design) {
         const [ds, d] = designOf(design)
-        const f = ds.faceAt(d, i.point, i.normal)
+        const f = faceAt(d, i.point, i.normal)
         const n = f.normal
         // Text reads upright: up along +Z, or along +Y on a face that looks up or down.
         const up: V3 = i.up ?? (Math.abs(n[2]) > 0.9 ? [0, 1, 0] : [0, 0, 1])
@@ -455,7 +456,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }
     async run(i) {
       if (i.design) {
         const [ds, d] = designOf(i.design)
-        const r = (await ds.deps.engine('build', { solids: i.solids, ...(i.subtract ? { subtract: i.subtract } : {}) })) as { mesh: { positions: number[]; indices: number[] } }
+        const r = (await ds.call('build', { solids: i.solids, ...(i.subtract ? { subtract: i.subtract } : {}) })) as { mesh: { positions: number[]; indices: number[] } }
         // The mesh goes in the design's own frame, as the history keeps a part.
         const inv = invert(d.transform)
         const part: HistoryMesh = { name: i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices }
