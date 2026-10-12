@@ -1114,6 +1114,41 @@ async fn elegoo_reads_attributes_files_and_free_storage() {
     assert!(e.to_string().contains("free"), "{e}");
 }
 
+// The live view of an Elegoo printer: the print speed and the light always, and the height printing
+// now while a job runs.
+#[tokio::test]
+async fn elegoo_live_view_reads_speed_light_and_height() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("elegoo", &[]).await;
+    let cfg = config("bay-6", "elegoo", mocks.port("elegoo"));
+    let s = ElegooConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    let live = s.status().await.unwrap().live.unwrap();
+    assert_eq!(live.speed_percent, Some(100));
+    assert_eq!(live.light, Some(true));
+    assert_eq!(live.layer_z_mm, None, "nothing prints yet");
+    let f = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        sx_connect::Action::Upload,
+        "bay-6",
+        &sx_connect::params::upload("bay-6", &f.name, &f.sha256),
+    );
+    let rf = s.upload(f, &t).await.unwrap();
+    let opts = StartOptions::default();
+    let t = gate.mint(
+        sx_connect::Action::Start,
+        "bay-6",
+        &sx_connect::params::start("bay-6", &rf, &opts),
+    );
+    s.start(&rf, opts, &t).await.unwrap();
+    common::wait_state(s.as_ref(), sx_connect::PrinterState::Printing).await;
+    let live = s.status().await.unwrap().live.unwrap();
+    assert!(live.layer_z_mm.is_some(), "{live:?}");
+    assert_eq!(live.speed_percent, Some(100));
+}
+
 // One secret field: a printer that answers 401 with no Digest challenge takes it as an API key.
 // Uploads go to the storage the printer lists as writable, a printer without one says a USB drive
 // is needed, and a 409 says the printer is busy.

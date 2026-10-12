@@ -23,8 +23,8 @@ use crate::http;
 use crate::manifest::{PluginManifest, manifest};
 use crate::types::{
     Capabilities, Capability, DiscoveredPrinter, ExtruderInfo, Image, JobFile, PrinterConfig, PrinterEvent,
-    PrinterHardware, PrinterState, PrinterStatus, RemoteFile, Secrets, StartOptions, StoredFile, Temp, hex,
-    now_iso,
+    PrinterHardware, PrinterLive, PrinterState, PrinterStatus, RemoteFile, Secrets, StartOptions, StoredFile,
+    Temp, hex, now_iso,
 };
 use crate::wslink::{OnLink, OnText, WsLink, WsLinkSpec};
 use crate::{PrinterConnector, PrinterSession};
@@ -351,6 +351,42 @@ fn print_error_words(n: i64) -> Option<&'static str> {
     }
 }
 
+/// The live part of an SDCP status: the print speed in percent (`PrintInfo.PrintSpeedPct`), the light
+/// (`LightStatus.SecondLight`, true or 1 when on) and, while a job runs, the height printing now (the Z
+/// of `CurrenCoord`, "x,y,z", the name spelled as the printer spells it). The fans
+/// (`CurrentFanSpeed`) are left out until their unit is known.
+fn parse_live(s: &Value, info: &Value, active: bool) -> Option<Box<PrinterLive>> {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a percent"
+    )]
+    let speed_percent = info
+        .get("PrintSpeedPct")
+        .and_then(Value::as_f64)
+        .filter(|p| p.is_finite() && *p > 0.0)
+        .map(|p| p.round().min(1000.0) as u16);
+    let light = s
+        .get("LightStatus")
+        .and_then(|l| l.get("SecondLight"))
+        .and_then(|v| v.as_bool().or_else(|| v.as_i64().map(|n| n != 0)));
+    let layer_z_mm = s
+        .get("CurrenCoord")
+        .and_then(Value::as_str)
+        .and_then(|c| c.split(',').nth(2))
+        .and_then(|z| z.trim().parse::<f64>().ok())
+        .filter(|z| z.is_finite() && active)
+        .map(|z| (z * 100.0).round() / 100.0);
+    (speed_percent.is_some() || light.is_some() || layer_z_mm.is_some()).then(|| {
+        Box::new(PrinterLive {
+            speed_percent,
+            light,
+            layer_z_mm,
+            ..PrinterLive::default()
+        })
+    })
+}
+
 /// Maps the merged SDCP `Status` object to the normalized status.
 ///
 /// `PrintInfo.Status` codes conflict between the SDCP spec (6 paused, 8 stopped, 9 complete, 10
@@ -426,6 +462,7 @@ pub(crate) fn parse_status(id: &str, s: &Value, camera: bool) -> PrinterStatus {
         .get("Filename")
         .and_then(Value::as_str)
         .filter(|n| !n.is_empty());
+    let live = parse_live(s, &info, active);
     // Ticks are seconds on the Centauri Carbon; SDCP leaves the unit open.
     let left = match (uint("TotalTicks"), uint("CurrentTicks")) {
         (Some(t), Some(c)) if t >= c => Some(t - c),
@@ -458,7 +495,7 @@ pub(crate) fn parse_status(id: &str, s: &Value, camera: bool) -> PrinterStatus {
         camera_available: camera,
         message,
         updated_at: now_iso(),
-        live: None,
+        live,
     }
 }
 
@@ -976,6 +1013,31 @@ mod tests {
         assert_eq!(
             parse_status("x", &json!({ "PrintInfo": { "Status": 10 } }), true).state,
             PrinterState::Paused
+        );
+    }
+
+    #[test]
+    fn reads_speed_light_and_height_into_the_live_view() {
+        let s = json!({
+            "CurrentStatus": [1], "CurrenCoord": "120.50,80.00,12.345", "LightStatus": { "SecondLight": 1 },
+            "PrintInfo": { "Status": 13, "PrintSpeedPct": 160 }
+        });
+        let live = parse_status("bay-6", &s, false).live.unwrap();
+        assert_eq!(live.speed_percent, Some(160));
+        assert_eq!(live.light, Some(true));
+        assert_eq!(live.layer_z_mm, Some(12.35));
+        assert_eq!(live.fans, None, "the fan unit is not known yet");
+        // Idle: no height printing now; the light reads as a bool too.
+        let idle = json!({
+            "CurrentStatus": [0], "CurrenCoord": "0,0,10", "LightStatus": { "SecondLight": false },
+            "PrintInfo": { "Status": 0 }
+        });
+        let live = parse_status("bay-6", &idle, false).live.unwrap();
+        assert_eq!((live.light, live.layer_z_mm), (Some(false), None));
+        assert!(
+            parse_status("x", &json!({ "PrintInfo": { "Status": 0 } }), false)
+                .live
+                .is_none()
         );
     }
 
