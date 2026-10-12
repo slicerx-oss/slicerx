@@ -337,6 +337,36 @@ test.describe(BAMBU, () => {
     }
   })
 
+  // Authorization Control firmware without Developer Mode and with no flag that says so (a Discord report from an
+  // A1 mini): status and the light work, the upload is turned away. Runs before the Developer Mode test, whose
+  // reports leave the flag on in the hub's reading.
+  test('A1 on Authorization Control without Developer Mode: the sheet shows the steps and Bambu Connect', async ({ page }) => {
+    test.slow()
+    await idleAgain('a1')
+    await ctl('/bambu', { authorizationControl: true })
+    try {
+      const sheet = await sheetFor(page, 'A1')
+      await start(sheet)
+      const again = page.locator('dialog.print-sheet[open]')
+      const box = again.getByTestId('developer-mode-needed')
+      await expect(box).toContainText("A1 sends its status but didn't take the print", { timeout: 60_000 })
+      await expect(again.getByRole('button', { name: 'Send as plain G-code' })).toHaveCount(0)
+      // Read back: the hub's status says it too.
+      expect((await hub.admin.status('a1')).live?.needsDeveloperMode).toBe(true)
+      expect((await hub.admin.status('a1')).state).toBe('idle')
+      await expect(box.getByTestId('developer-mode-steps-list')).toContainText('swipe to page 3')
+      // The browser has no file path to hand to Bambu Connect, so it saves the file.
+      await page.evaluate(() => delete (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker)
+      const download = page.waitForEvent('download')
+      await box.getByTestId('danger-bambu-connect-send').click()
+      expect((await download).suggestedFilename()).toMatch(/\.gcode\.3mf$/)
+      expect(await mockLog()).toMatch(/dropped STOR/)
+    } finally {
+      await ctl('/bambu', { authorizationControl: false })
+      await idleAgain('a1')
+    }
+  })
+
   test('A1 with Developer Mode off: status keeps coming, and Print saves the file for Bambu Connect', async ({ page }) => {
     test.slow()
     await idleAgain('a1')
