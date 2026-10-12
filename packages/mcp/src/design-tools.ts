@@ -183,6 +183,9 @@ function stepIndex(d: Design, step: number | string): number {
   return i
 }
 
+/** The largest main number a step takes when edited, as its tool takes it (the rest stop at 10000). */
+const EDIT_MAX: Partial<Record<string, number>> = { 'edge.fillet': 1000, 'edge.chamfer': 1000, hollow: 50, shell: 50 }
+
 /** The design tools on a host; `files` reads the models design.new starts from and the 3MF files design.open and design.save use. */
 export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<never>[] {
   const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
@@ -260,7 +263,7 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     input: z.object({
       design: designArg,
       step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id'),
-      value: z.number().optional().describe('The new main number'),
+      value: z.number().min(-10_000).max(10_000).optional().describe('The new main number'),
       suppressed: z.boolean().optional(),
       label: z.string().max(120).optional().describe('A name for the step; empty for the one made from its numbers'),
     }),
@@ -270,6 +273,8 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
       const s = d.history.steps[k]!
       let next: Step = s
       if (i.value !== undefined) {
+        const most = EDIT_MAX[s.params.op]
+        if (most !== undefined && Math.abs(i.value) > most) throw new ToolInputError(`value: at most ${most} for this step, as its tool takes`)
         const p = withNumber(s.params, i.value)
         if (typeof p === 'string') throw new ToolInputError(`value: ${p}`)
         next = { ...next, params: p }

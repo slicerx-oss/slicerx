@@ -25,8 +25,6 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.boolean',
   'geom.fillet',
   'geom.chamfer',
-  'geom.info',
-  'geom.measure',
 ])
 
 /** The agent side of the app link (link-client `appLink.call`). */
@@ -34,8 +32,12 @@ export interface AppLinkCaller {
   call<T = unknown>(method: string, args?: Record<string, unknown>): Promise<T>
 }
 
-/** Answers that mean the app is not there to take the call: run here instead. */
-const NOT_THERE = new Set(['app_link_off', 'app_closed'])
+/**
+ * Answers that mean the app link is not this server's to use: the link is off, the app is closed, the hub does not
+ * take this client on the link (a partner key, or one paired by code alone), or the hub is older than the link. The
+ * call runs on the server's own designs instead.
+ */
+const NOT_THERE = new Set(['app_link_off', 'app_closed', 'forbidden', 'unauthorized', 'bad_request'])
 /** Codes the app may answer with that the server's error codes have. */
 const PASSED: Record<string, ErrorCode> = { invalid_input: 'invalid_input', not_found: 'not_found', read_only: 'not_supported', denied: 'not_supported', refused: 'not_supported' }
 
