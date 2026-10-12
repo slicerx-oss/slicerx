@@ -28,7 +28,7 @@ import { plateSequence } from '../plate/plate-sequence'
 import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
 import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
-import { beginOpen, confirmDiscard, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
+import { beginOpen, confirmDiscard, isDirty, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { markOpenEnded, markOpenStage, markOpenStarted } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { isExportOnly } from '../lib/hand-printers'
@@ -58,6 +58,8 @@ function centered(bedW: number, bedD: number): number[] {
 // was put out at the start.
 let opened = 0
 let seeded = false
+// The plate entry of that example, once it is on the plate.
+let seededId: string | null = null
 
 async function addDecoded(host: Host, model: DecodedModel, opts: { replace: boolean; thumb?: string; keep?: () => boolean; scope?: OpenScope | undefined }): Promise<PlateEntry | null> {
   const handle = await host.slicer.loadParts(model.name, model.parts)
@@ -80,11 +82,11 @@ async function addDecoded(host: Host, model: DecodedModel, opts: { replace: bool
 }
 
 /** Puts one of the built-in example models on the plate. */
-export async function loadDemoModel(host: Host, slug: string, opts: { replace?: boolean; keep?: () => boolean } = {}): Promise<void> {
+export async function loadDemoModel(host: Host, slug: string, opts: { replace?: boolean; keep?: () => boolean } = {}): Promise<PlateEntry | null> {
   const demo = demoModel(slug)
   if (!demo) {
     toast(`No example model called ${slug}`, 'error')
-    return
+    return null
   }
   // Picked by hand, it is an opened design; the start of session example passes `keep`.
   if (!opts.keep) opened++
@@ -97,26 +99,37 @@ export async function loadDemoModel(host: Host, slug: string, opts: { replace?: 
       set({ slice: { status: 'idle' }, preview: null, projectFile: null })
       markClean()
     }
+    return added
   } catch (e) {
     toast(e instanceof Error ? e.message : 'Could not load the model', 'error')
+    return null
   } finally {
     set({ plateLoading: false, sliceDuringOpen: false })
   }
 }
 
 /** The example plate. */
-export function loadDefaultPlate(host: Host): Promise<void> {
-  return loadDemoModel(host, DEFAULT_MODEL, { replace: true })
+export async function loadDefaultPlate(host: Host): Promise<void> {
+  await loadDemoModel(host, DEFAULT_MODEL, { replace: true })
 }
 
 /**
  * The example a fresh session starts with: once, never after a design was opened, and dropped if a design opens while
  * it loads. A plate the person emptied stays empty.
  */
-export function seedExamplePlate(host: Host): Promise<void> {
-  if (seeded || opened > 0) return Promise.resolve()
+export async function seedExamplePlate(host: Host): Promise<void> {
+  if (seeded || opened > 0) return
   seeded = true
-  return loadDemoModel(host, DEFAULT_MODEL, { replace: true, keep: () => opened === 0 })
+  seededId = (await loadDemoModel(host, DEFAULT_MODEL, { replace: true, keep: () => opened === 0 }))?.id ?? null
+}
+
+/**
+ * The plates hold nothing but the example the session started with, as it was put out: no one's work, so unsaved work
+ * from an earlier session is still offered back, whichever of the two the start finished first.
+ */
+export function onlyStartExample(): boolean {
+  const s = get()
+  return seededId !== null && opened === 0 && !isDirty() && s.plate.length === 1 && s.plate[0]?.id === seededId && s.plates.every((p) => p.objects.length === 0)
 }
 
 /** Open (the default) starts a new project with the files; `fresh: false` is Add model, onto the plate as it is. */

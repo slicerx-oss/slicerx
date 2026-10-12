@@ -27,7 +27,7 @@ import { ApprovalDialog, Status, ToastBridge } from './shell/overlays'
 import { TopBar } from './shell/top-bar'
 import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice } from './first-run/look'
 import { useAskForPrinter } from './first-run/ask-printer'
-import { addFileRefs } from './state/actions'
+import { addFileRefs, onlyStartExample } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
@@ -174,7 +174,10 @@ function Shell() {
       if (gone) return
       stop = m.startAutosave()
       void m.findRecovery().then((r) => {
-        if (r && !gone && get().plates.every((p) => p.objects.length === 0) && get().plate.length === 0) set({ projectsDialog: 'recover' })
+        if (!r || gone) return
+        // An empty plate, or the start's example plate when it landed first: restoring replaces it.
+        const empty = get().plates.every((p) => p.objects.length === 0) && get().plate.length === 0
+        if (empty || onlyStartExample()) set({ projectsDialog: 'recover' })
       })
     })
     return () => {

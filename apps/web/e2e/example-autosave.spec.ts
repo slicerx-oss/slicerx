@@ -85,4 +85,19 @@ test.describe('the example plate and the autosave', () => {
     await page.reload()
     await expect.poll(() => restoreShown(page), { timeout: 30_000 }).toBe(true)
   })
+
+  test('unsaved work is offered even when the example plate is on the plate before the autosave is read', async ({ page }) => {
+    test.slow()
+    await watchRestore(page)
+    await openStudio(page)
+    await putOldAutosave(page, 'bracket.sx3mf')
+    // The autosave's code arrives late, so the start's example plate lands first: a slow machine's order.
+    await page.route('**/static/autosave-*.js', async (route) => {
+      await new Promise((r) => setTimeout(r, 4000))
+      await route.continue()
+    })
+    await page.reload()
+    await plateReady(page)
+    await expect.poll(() => restoreShown(page), { timeout: 30_000 }).toBe(true)
+  })
 })
