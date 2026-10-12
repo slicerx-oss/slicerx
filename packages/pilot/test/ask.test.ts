@@ -63,8 +63,8 @@ describe('lookup.show', () => {
     expect(lookup).toMatchObject({ lookup: { title: 'Reference found', fields: [['Trim plate', '150.4 x 110.4 mm']], source: { url: 'https://example.com/specs' } } })
   })
 
-  it('refuses a source that is not a link', async () => {
-    const p = pilot([{ calls: [{ name: 'lookup.show', args: { title: 'Reference', fields: [['a', 'b']], source: { title: 'x', url: 'not a url' } } }] }])
+  it.each(['not a url', 'javascript:alert(1)', 'file:///etc/hosts'])('refuses a source that is not a web link: %s', async (url) => {
+    const p = pilot([{ calls: [{ name: 'lookup.show', args: { title: 'Reference', fields: [['a', 'b']], source: { title: 'x', url } } }] }])
     const events: PilotEvent[] = []
     for await (const e of p.run('s', 'Hello')) events.push(e)
     expect(events.some((e) => e.type === 'lookup')).toBe(false)

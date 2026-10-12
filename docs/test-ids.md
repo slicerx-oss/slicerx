@@ -59,6 +59,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-ravens` | The battle ravens watermark behind the conversation; `data-shown` while no model answers in the tab |
 | `mimir-split` | Holds the chat's resize edge (`role="separator"`), 340 px to half the window |
 | `mimir-caption` | The pill at the view's top left that names the view, such as Top, XY |
+| `mimir-lookup-card` | A card over the view with what mimir looked up: two rows and the source; Escape closes it |
+| `mimir-lookup-close` | The close button on a lookup card |
 
 ## Setup (first run and Printers > Add)
 
