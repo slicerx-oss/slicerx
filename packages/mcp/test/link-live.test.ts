@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A printer's live view read the way a client reads it: slicerx_printer_status through the real
-// sx-link binary and the Elegoo mock printer. Skipped when sx-link is not built.
+// sx-link binary and the Elegoo and Snapmaker 2.0 mock printers. Skipped when sx-link is not built.
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -24,7 +24,7 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
   let code = ''
 
   beforeAll(async () => {
-    mocks = await startMocks({ only: ['elegoo'], state: 'idle' })
+    mocks = await startMocks({ only: ['elegoo', 'snapmaker-luban'], state: 'idle' })
     proc = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', '--loopback'], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     await new Promise<void>((done, fail) => {
@@ -42,6 +42,10 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
     })
     const setup = await connectLink({ url, code })
     await setup.addPrinter({ id: 'bay-7', name: 'Bay 7', plugin: 'elegoo', host: '127.0.0.1', port: mocks.ports.elegoo ?? 0 }, { model: 'Centauri Carbon' })
+    // The Snapmaker connector is experimental; pairing waits for the mock's confirmation (two status polls).
+    await setup.settings.set({ experimentalConnectors: true })
+    await setup.addPrinter({ id: 'bay-8', name: 'Bay 8', plugin: 'snapmaker', host: '127.0.0.1', port: mocks.ports['snapmaker-luban'] ?? 0, protocol: 'luban', credentialRef: 'printer/bay-8/token', pollMs: 100 }, { model: 'A350' })
+    await setup.authorizePrinter('bay-8', 30)
     setup.close()
   }, 30_000)
 
@@ -63,5 +67,18 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
     await expect.poll(async () => (await read()).state, { timeout: 10_000 }).toBe('printing')
     expect(typeof (await read()).live?.layerZMm).toBe('number')
     await post('/set', { mock: 'elegoo', state: 'idle' })
+  })
+
+  it("reads a Snapmaker 2.0 machine's height printing now while it prints", async () => {
+    const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${mocks.control}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    type Status = { output: { state: string; live?: { layerZMm?: number } } }
+    const read = async () => data<Status>(await h.call('slicerx_printer_status', { printerId: 'bay-8' })).output
+    await expect.poll(async () => (await read()).state, { timeout: 10_000 }).toBe('idle')
+    expect((await read()).live).toBeUndefined()
+    await post('/set', { mock: 'snapmaker-luban', state: 'printing' })
+    await expect.poll(async () => (await read()).state, { timeout: 10_000 }).toBe('printing')
+    expect(typeof (await read()).live?.layerZMm).toBe('number')
+    await post('/set', { mock: 'snapmaker-luban', state: 'idle' })
   })
 })
