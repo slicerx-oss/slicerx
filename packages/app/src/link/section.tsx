@@ -108,7 +108,7 @@ export function BridgeSection() {
     toast(forgetHub(connector.url) ? 'Forgot the bridge. Pair again with the code sx-link prints.' : 'No bridge was remembered.', 'info')
   }
   const on = status.state === 'on'
-  const busy = status.state === 'connecting'
+  const busy = status.state === 'connecting' || status.state === 'reconnecting'
   return (
     <section className="set-sec" aria-labelledby="bridge-h">
       <h3 id="bridge-h">Printer bridge</h3>
@@ -118,7 +118,7 @@ export function BridgeSection() {
           : 'A small program called sx-link runs on this computer and talks to your printers. Start it, then type the pairing code it prints. It only listens on this computer.'}
       </p>
       <p>
-        <Pill state={on ? 'ok' : status.state === 'error' ? 'bad' : busy ? 'run' : 'off'}>{on ? 'Connected' : busy ? 'Connecting' : status.state === 'error' ? 'Not connected' : 'Off'}</Pill>
+        <Pill state={on ? 'ok' : status.state === 'error' ? 'bad' : busy ? 'run' : 'off'}>{on ? 'Connected' : status.state === 'reconnecting' ? 'Reconnecting' : busy ? 'Connecting' : status.state === 'error' ? 'Not connected' : 'Off'}</Pill>
       </p>
       {status.state === 'error' ? (
         <p className="app-err" role="alert">

@@ -761,6 +761,11 @@ export interface LinkHost extends PrinterHost {
   hubKey?: string
   /** True when this client paired with a partner app key: it reads and asks, and a person approves every card it raises. */
   partner?: boolean
+  /**
+   * Runs once when this connection ends, for any reason: `requested` is true after `close()`, false when the socket
+   * dropped (the hub stopped, the page was suspended, the network went away). Returns an unsubscribe function.
+   */
+  onDisconnect(cb: (info: { requested: boolean }) => void): () => void
   close(): void
 }
 
@@ -821,6 +826,9 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   const inboxListeners = new Set<(d: InboxDelivery) => void>()
   const frameListeners = new Set<(conn: string, frame: string) => void>()
   const closedListeners = new Set<(conn: string) => void>()
+  const disconnectListeners = new Set<(info: { requested: boolean }) => void>()
+  let requestedClose = false
+  let disconnected = false
   const bedListeners = new Set<(b: BedInfo) => void>()
   const queueListeners = new Set<(i: QueueItem | { id: string; removed: true }) => void>()
   const watchFrameListeners = new Set<(d: Record<string, unknown>) => void>()
@@ -941,6 +949,9 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     const err = new LinkError('closed', 'The sx-link connection closed')
     for (const p of pending.values()) p.reject(err)
     pending.clear()
+    disconnected = true
+    for (const cb of [...disconnectListeners]) cb({ requested: requestedClose })
+    disconnectListeners.clear()
   })
 
   const call = <T>(method: string, params: Record<string, unknown> = {}): Promise<T> =>
@@ -1264,7 +1275,19 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     ...(clientKey ? { clientKey } : {}),
     ...(hubKey ? { hubKey } : {}),
     ...(partner ? { partner } : {}),
-    close: () => ws.close(),
+    onDisconnect: (cb) => {
+      // A connection that already ended answers at once, so a listener added late still hears it.
+      if (disconnected) {
+        queueMicrotask(() => cb({ requested: requestedClose }))
+        return () => undefined
+      }
+      disconnectListeners.add(cb)
+      return () => void disconnectListeners.delete(cb)
+    },
+    close: () => {
+      requestedClose = true
+      ws.close()
+    },
   }
   return host
 }

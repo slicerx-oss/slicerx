@@ -832,6 +832,13 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
       }
       return 'done'
     } catch (e) {
+      // The bridge connection dropped part way: the upload or start may have reached the printer, so nothing is sent
+      // again. The printer is asked what it is doing once the bridge is back, and that is what the toast says.
+      const dropped = await import('../link/dropped-send')
+      if (dropped.isDroppedConnection(e)) {
+        toast(await dropped.droppedSendNote(host, printer.id, printer.name, file.name), 'warn')
+        return 'done'
+      }
       const refused = refusalReason(e)
       if (refused !== null && !plain && start) return { refused }
       toast(e instanceof Error ? e.message : `Could not reach ${printer.name}`, 'error')

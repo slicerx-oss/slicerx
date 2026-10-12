@@ -6,7 +6,7 @@
 // its reason and the plain G-code offer) and the camera guard. The flows every brand shares run per brand in
 // prusa-bridge, elegoo-bridge and snapmaker-bridge (e2e/bridge-brands.ts); Bambu Lab is checked on real printers.
 // The harness and its hub lock are in e2e/bridge-hub.ts.
-import { type Page } from '@playwright/test'
+import { type Page, type WebSocketRoute } from '@playwright/test'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -566,4 +566,69 @@ test.describe(BAMBU, () => {
       await ctl('/bambu', { developerMode: null, cameraFrame: null })
     }
   })
+})
+
+test('a dropped bridge connection comes back on its own, and the printers answer again', async ({ page }) => {
+  // Every connection the page opens to the hub goes through here, so the test can drop one as a suspended page would.
+  const routes: WebSocketRoute[] = []
+  await page.routeWebSocket(HUB_ROUTE, (ws) => {
+    const server = ws.connectToServer()
+    routes.push(ws)
+    ws.onMessage((m) => server.send(m))
+    ws.onClose(() => server.close())
+  })
+  await connectApp(page)
+  await page.getByRole('button', { name: 'Printers', exact: true }).first().click()
+  await expect(page.getByText('Voron').first()).toBeVisible()
+  const before = routes.length
+  await routes.at(-1)!.close()
+  // It reconnects with the code this session used, without asking again.
+  await expect.poll(() => routes.length, { timeout: 30_000 }).toBeGreaterThan(before)
+  await sawToast(page, /Reconnected to the printer bridge/, { timeout: 30_000 })
+  await expect(page.getByTestId('bridge-reconnecting')).toHaveCount(0)
+  await expect(page.getByText('Voron').first()).toBeVisible()
+})
+
+test('a send whose connection drops part way is never sent again, and says what the printer reports', async ({ page }) => {
+  test.slow()
+  const starts: string[] = []
+  const routes: WebSocketRoute[] = []
+  await page.routeWebSocket(HUB_ROUTE, (ws) => {
+    const server = ws.connectToServer()
+    routes.push(ws)
+    ws.onMessage((m) => {
+      server.send(m)
+      if (typeof m !== 'string') return
+      let method: unknown
+      try {
+        method = (JSON.parse(m) as { method?: unknown }).method
+      } catch {
+        return
+      }
+      // The start reaches the hub, then the connection drops before its answer comes back.
+      if (method === 'print.local' || method === 'start') {
+        starts.push(method)
+        void ws.close()
+      }
+    })
+    ws.onClose(() => server.close())
+  })
+  try {
+    await connectApp(page)
+    const slices1 = await sliceCount(page)
+    await page.getByRole('button', { name: 'Slice plate' }).click()
+    await expect(sliced(page, slices1)).toBeVisible({ timeout: 90_000 })
+    await page.keyboard.press('ControlOrMeta+k')
+    await page.keyboard.type('Print the plate on Voron')
+    await page.locator('.sx-palette-item', { hasText: 'Print the plate on Voron' }).first().click()
+    const sheet = page.locator('dialog.print-sheet[open]')
+    await expect(sheet.locator('.ps-file[data-checked]')).toBeVisible()
+    await sheet.getByRole('button', { name: /^Bed is clear, start/ }).click()
+    await sawToast(page, /was not sent again/, { timeout: 60_000 })
+    expect(starts, 'the start went to the hub once').toHaveLength(1)
+    // The bridge came back, and the note named what the printer said rather than guessing.
+    await sawToast(page, /Voron is printing|The printer reports/, { timeout: 5_000 })
+  } finally {
+    await ctl('/set', { mock: 'moonraker', state: 'idle' }).catch(() => undefined)
+  }
 })
