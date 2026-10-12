@@ -4,7 +4,8 @@
 // example plate within a moment and stays drawn while the first background slice runs. Every composited frame is
 // checked (e2e/frames.ts): the plate must show within a few seconds of the view coming up and never go empty again.
 import { fileURLToPath } from 'node:url'
-import { expect, test } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from './browser-launch'
 import { cellsIn, GL_SLOW, recordFrames, spread } from './frames'
 
 test('the plate is drawn right after setup is skipped on a fresh install', { tag: ['@gpu', '@gpu-timing'] }, async ({ page, isMobile }) => {
