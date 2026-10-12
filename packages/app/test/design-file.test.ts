@@ -46,7 +46,7 @@ describe('a design saved over MCP', () => {
   it('keeps each part\'s paint per triangle, as Bambu Studio and OrcaSlicer write it', async () => {
     const base = { ...box('Base', 1, [0, 0, 0], [20, 10, 3]), paint: { color: { 0: '8', 1: '8' }, seam: { 4: '4' } } }
     const button = { ...box('Button', 1, [8, 3, 3], [12, 7, 5]), paint: { color: { 2: '0C' } } }
-    const d: Design = { id: 'd2', name: 'Painted', history: { version: 1, base: [base, button], steps: [] }, transform: [...IDENTITY], parts: [base, button], status: [], madeBy: {}, written: 0 }
+    const d: Design = { id: 'd2', name: 'Painted', history: { version: 1, base: [base, button], steps: [] }, transform: [...IDENTITY], parts: [base, button], status: [], madeBy: {}, written: 0, redo: [] }
     const bytes = design3mf(d)
     const p = await readProject(new Uint8Array(bytes), { widthMm: 256, depthMm: 256 })
     const o = p.plates.flatMap((pl) => pl.objects)[0]!
