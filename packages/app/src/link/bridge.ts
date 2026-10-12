@@ -177,7 +177,11 @@ async function connect(host: Host, code?: string, again = false): Promise<boolea
   if (!again) set({ bridgeStatus: { state: 'connecting' } })
   try {
     const bridge = await connector.connect(code)
-    live = { bridge, before: { printers: host.printers, approvals: host.approvals, secrets: host.secrets } as Pick<Host, 'printers' | 'approvals' | 'secrets'>, caps: { printers: host.capabilities.printers, secureStorage: host.capabilities.secureStorage } }
+    // After a dropped connection the host holds the dead connection's printers; what it had before that is kept.
+    const before = again && kept ? kept.before : ({ printers: host.printers, approvals: host.approvals, secrets: host.secrets } as Pick<Host, 'printers' | 'approvals' | 'secrets'>)
+    const caps = again && kept ? kept.caps : { printers: host.capabilities.printers, secureStorage: host.capabilities.secureStorage }
+    kept = null
+    live = { bridge, before, caps }
     host.capabilities.printers = 'link'
     if (bridge.secrets) {
       host.secrets = bridge.secrets
@@ -235,6 +239,8 @@ async function connect(host: Host, code?: string, again = false): Promise<boolea
 }
 
 let stopWatchClose: (() => void) | null = null
+/** What the host had before the bridge, kept while a dropped connection reconnects. */
+let kept: { before: Pick<Host, 'printers' | 'approvals' | 'secrets'>; caps: Pick<Host['capabilities'], 'printers' | 'secureStorage'> } | null = null
 /** Bumped by every connect, disconnect and loss, so a reconnect loop that is no longer wanted stops. */
 let generation = 0
 
@@ -244,9 +250,16 @@ export const RECONNECT_DELAYS_MS: number[] = [500, 1000, 2000, 4000, 8000, 15000
 /** The live connection dropped: its printers leave the host until it is back. It reconnects on its own when it can. */
 function lost(host: Host, bridge: ConnectedBridge): void {
   if (live?.bridge !== bridge) return
+  const { before, caps } = live
   teardown(host)
   const mine = ++generation
-  if (!reconnects(bridgeConnector())) {
+  if (reconnects(bridgeConnector())) {
+    // Until it is back the dropped connection's printers stay in the host: calls fail as closed, and no other
+    // printers (the demo's) stand in for them. What the host had before the bridge comes back on a disconnect.
+    kept = { before, caps }
+    host.printers = bridge.printers
+    host.capabilities.printers = 'link'
+  } else {
     set((s) => ({ bridgeStatus: { state: 'error', message: 'The connection to the printer bridge closed. Connect again.' }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
     return
   }
@@ -290,7 +303,13 @@ export function bridgeBack(ms: number): Promise<boolean> {
 export function disconnectBridge(host: Host): void {
   generation++
   if (!live) {
-    if (get().bridgeStatus.state === 'reconnecting') set({ bridgeStatus: { state: 'off' } })
+    if (kept) {
+      if (kept.before.printers) host.printers = kept.before.printers
+      else delete host.printers
+      host.capabilities.printers = kept.caps.printers
+      kept = null
+    }
+    if (get().bridgeStatus.state === 'reconnecting') set((s) => ({ bridgeStatus: { state: 'off' }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
     return
   }
   const bridge = teardown(host)
@@ -335,6 +354,7 @@ export function resetBridge(): void {
   stopWatchClose?.()
   stopWatchClose = null
   generation++
+  kept = null
   live = null
   forgetConnector()
   connecting = null

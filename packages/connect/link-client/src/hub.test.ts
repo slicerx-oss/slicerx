@@ -310,3 +310,25 @@ test('a dropped connection says so once, rejects the call in flight and every la
   closed.close()
   assert.deepEqual(told, [{ requested: true }])
 })
+
+test('a socket that closes before it opens is unreachable, not a wait forever', async () => {
+  const WS = class extends FakeSocket {
+    constructor() {
+      super(() => ({}))
+      this.readyState = 0
+    }
+    override fire(type: string, e: unknown) {
+      // Never opens: a proxy drops it, and the close comes with no error first.
+      if (type === 'open') return void this.close()
+      super.fire(type, e)
+    }
+  }
+  const r = await Promise.race([
+    connectLink({ code: 'APPS-CODE', WebSocket: WS as unknown as typeof WebSocket }).then(
+      () => 'connected',
+      (e: unknown) => (e instanceof LinkError ? e.code : 'other'),
+    ),
+    new Promise((r) => setTimeout(() => r('hung'), 1000)),
+  ])
+  assert.equal(r, 'unreachable')
+})
