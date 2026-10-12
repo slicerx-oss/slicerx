@@ -729,3 +729,21 @@ fn both_readers_give_an_objects_layer_height_to_a_lone_slice() {
         thick.report.layer_count
     );
 }
+
+#[test]
+fn a_prusaslicer_objects_layer_height_reaches_a_lone_slice() {
+    // the fixture's 20 mm cube asks for 0.15 mm layers in Slic3r_PE_model.config; PrusaSlicer 2.9.6 prints 133
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let bytes = std::fs::read(root.join("packages/settings/fixtures/preset-files/prusaslicer-2.9.6.3mf"))
+        .expect("the fixture");
+    let plates = sx_core::api::load_3mf_plate_objects(&bytes, "prusaslicer-2.9.6.3mf").unwrap();
+    let mesh = &plates[0].1[0];
+    assert_eq!(mesh.settings["layer_height"], json!("0.15"));
+    assert_eq!(mesh.settings["wall_loops"], json!("4"));
+    let run = slice(
+        &bytes,
+        json!({ "layer_height": 0.2, "initial_layer_print_height": 0.2 }),
+    )
+    .unwrap();
+    assert_eq!(run.report.layer_count, 133);
+}
