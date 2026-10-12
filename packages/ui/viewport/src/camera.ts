@@ -142,7 +142,8 @@ export class CameraRig {
       dir = new Vector3(0, kind === 'top' ? 1 : -1, 0.0008).normalize()
       d = distFor(bedSize * 0.74)
     } else {
-      const side = kind === 'back' ? [0, 0.16, -1] : kind === 'left' ? [-1, 0.16, 0] : kind === 'right' ? [1, 0.16, 0] : [0, 0.16, 1]
+      // Level with the plate, as the other slicers' side views are: in orthographic the bed is an edge, not a strip.
+      const side = kind === 'back' ? [0, 0, -1] : kind === 'left' ? [-1, 0, 0] : kind === 'right' ? [1, 0, 0] : [0, 0, 1]
       target = new Vector3(0, Math.max(20, sphere.center.y), 0)
       dir = new Vector3(side[0], side[1], side[2]).normalize()
       d = distFor(bedSize * 0.62)
