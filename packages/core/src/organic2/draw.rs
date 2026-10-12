@@ -497,12 +497,38 @@ impl Mesh {
         }
     }
 
-    /// Cuts the mesh at height `z` into loops (internal units).
-    fn slice(&self, z: f64) -> Vec<Vec<Point>> {
+    /// Cuts the mesh at each height of `zs` (ascending) into loops (internal units). Each triangle is
+    /// handed only to the heights its Z range crosses.
+    fn slice_all(&self, zs: &[f64]) -> Vec<Vec<Vec<Point>>> {
+        let mut by_z: Vec<Vec<usize>> = vec![Vec::new(); zs.len()];
+        for (ti, t) in self.tris.iter().enumerate() {
+            let [lo, hi] = t.iter().fold([f64::INFINITY, f64::NEG_INFINITY], |[lo, hi], &i| {
+                let z = self.vert(i)[2];
+                [lo.min(z), hi.max(z)]
+            });
+            // Cut where some corner is at or above z and some below: lo < z <= hi.
+            let from = zs.partition_point(|&z| z <= lo);
+            for (k, &z) in zs.iter().enumerate().skip(from) {
+                if z > hi {
+                    break;
+                }
+                if let Some(v) = by_z.get_mut(k) {
+                    v.push(ti);
+                }
+            }
+        }
+        zs.iter()
+            .zip(&by_z)
+            .map(|(&z, tris)| self.slice_tris(z, tris))
+            .collect()
+    }
+
+    /// Cuts the triangles `tris` of the mesh at height `z` into loops (internal units).
+    fn slice_tris(&self, z: f64, tris: &[usize]) -> Vec<Vec<Point>> {
         use std::collections::HashMap;
         let key = |a: usize, b: usize| if a < b { (a, b) } else { (b, a) };
         let mut segs: Vec<((usize, usize), (usize, usize))> = Vec::new();
-        for t in &self.tris {
+        for t in tris.iter().filter_map(|&i| self.tris.get(i)) {
             let [a, b, c] = *t;
             let above = |i: usize| self.vert(i)[2] >= z;
             let mut cut: Vec<(usize, usize)> = Vec::with_capacity(2);
@@ -699,9 +725,11 @@ pub(crate) fn slice_branch(
     let top = top.min(hs.tops.len().saturating_sub(1));
     let bed = v.bed().clone();
     let mut areas: Vec<Shapes> = Vec::new();
-    for l in bottom..=top {
-        let z = f64::midpoint(hs.bottom(l), hs.top(l));
-        let loops = mesh.slice(z);
+    let zs: Vec<f64> = (bottom..=top)
+        .map(|l| f64::midpoint(hs.bottom(l), hs.top(l)))
+        .collect();
+    let cuts = mesh.slice_all(&zs);
+    for (l, loops) in (bottom..=top).zip(cuts) {
         let s = perimeters::shapes_from_loops_mode(&loops, 125, perimeters::Slicing::CloseHoles, 0);
         let c = ops::grow(&v.collision(0.0, l, true), 0.001);
         let s = ops::inter(&ops::diff(&s, &c), &bed);
