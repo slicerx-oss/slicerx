@@ -10,9 +10,17 @@
 .mimir-chat-head h2 { margin: 0; font: var(--fw-medium) var(--fs-md) var(--f-display); letter-spacing: 0.01em; color: var(--fg); }
 .mimir-chat-design { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--muted); font-size: var(--fs-sm); }
 .mimir-transcript { min-height: 0; overflow: auto; padding: var(--s-4) var(--s-3); }
-.mimir-empty { display: flex; flex-direction: column; align-items: center; gap: var(--s-3); margin: 18vh auto 0; max-width: 300px; text-align: center; color: var(--muted); }
-.mimir-empty .sx-ic { color: var(--purple); }
-.mimir-empty p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
+.mimir-stage { position: relative; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); container-type: size; --mark: min(66cqw, 400px); }
+.mimir-stage > .mimir-transcript { position: relative; z-index: 1; min-height: 0; }
+/* The battle ravens: a still, tinted watermark centered behind the conversation. It fades rather than leaving the
+   layout, so nothing moves when a model connects. */
+.mimir-ravens { position: absolute; left: 50%; top: 50%; z-index: 0; width: var(--mark); aspect-ratio: 1; transform: translate(-50%, -50%); color: light-dark(color-mix(in srgb, var(--purple) 20%, transparent), color-mix(in srgb, var(--purple) 15%, transparent)); opacity: 0; pointer-events: none; transition: opacity 400ms var(--ease); }
+.mimir-ravens[data-shown] { opacity: 1; }
+.mimir-ravens .sx-raven-mark { width: 100%; height: 100%; }
+:root[data-motion="reduced"] .mimir-ravens { transition: none; }
+/* the empty state sits in the lower half of the ring, under the ravens */
+.mimir-empty { position: absolute; left: 50%; top: calc(50% + var(--mark) * 0.03); width: calc(var(--mark) * 0.6); transform: translateX(-50%); text-align: center; color: var(--muted); }
+.mimir-empty p { margin: 0; font-size: var(--fs-sm); line-height: 1.45; }
 .mimir-chat-foot { padding: 0 var(--s-3) var(--s-3); }
 .mimir-split { position: absolute; top: 0; bottom: 0; right: 0; width: 0; }
 .mimir-chat[data-resizing] { user-select: none; }
