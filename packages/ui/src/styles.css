@@ -613,3 +613,7 @@ button { cursor: pointer; }
 @keyframes sx-ring-in { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
 :root[data-motion="reduced"] .sx-ring { animation: none; }
 :root[data-motion="reduced"] .sx-ring-wedge, :root[data-motion="reduced"] .sx-ring-hole { transition: none; }
+/* The battle ravens as a still mark: one color, thin strokes; the host sets color and opacity. */
+.sx-raven-mark { display: block; fill: none; stroke: currentColor; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.sx-raven-mark > circle:not(.sx-raven-mark-dot) { stroke-width: 0.6; }
+.sx-raven-mark .sx-raven-mark-dot, .sx-raven-mark .sx-raven-mark-eye, .sx-raven-mark .sx-raven-mark-spark { fill: currentColor; stroke: none; }
