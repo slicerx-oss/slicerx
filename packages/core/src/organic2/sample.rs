@@ -159,28 +159,25 @@ pub(crate) fn resample(line: &[P], closed: bool, spacing: f64, min_count: usize)
         let mut seg = 0usize;
         let mut t = 0.0f64;
         while let (Some(&a), Some(&b)) = (pl.get(seg), pl.get(seg + 1)) {
-            match leave_circle(a, b, t, center, radius) {
-                Some(tt) => {
-                    let cand = lerp(a, b, tt);
-                    let nearest = placed
-                        .iter()
-                        .map(|q| ops::dist(*q, cand))
-                        .fold(f64::INFINITY, f64::min);
-                    t = tt + 1e-9;
-                    if nearest + 1e-9 < s {
-                        // Too close to a point already placed: look again further on.
-                        center = fx(cand);
-                        radius = ((s - nearest) * SCALE).max(1.0);
-                    } else {
-                        placed.push(cand);
-                        center = fx(cand);
-                        radius = su;
-                    }
+            if let Some(tt) = leave_circle(a, b, t, center, radius) {
+                let cand = lerp(a, b, tt);
+                let nearest = placed
+                    .iter()
+                    .map(|q| ops::dist(*q, cand))
+                    .fold(f64::INFINITY, f64::min);
+                t = tt + 1e-9;
+                if nearest + 1e-9 < s {
+                    // Too close to a point already placed: look again further on.
+                    center = fx(cand);
+                    radius = ((s - nearest) * SCALE).max(1.0);
+                } else {
+                    placed.push(cand);
+                    center = fx(cand);
+                    radius = su;
                 }
-                None => {
-                    seg += 1;
-                    t = 0.0;
-                }
+            } else {
+                seg += 1;
+                t = 0.0;
             }
         }
         if placed.len() >= min_count || s <= 0.1 {
@@ -194,6 +191,7 @@ pub(crate) fn resample(line: &[P], closed: bool, spacing: f64, min_count: usize)
 mod tests {
     use super::super::params::u;
     use super::*;
+    use crate::fm::Fm as _;
 
     fn line(len: f64) -> Vec<P> {
         vec![P::new(0, 0), P::new(u(len), 0)]
@@ -211,7 +209,7 @@ mod tests {
                 l.last().copied().unwrap_or(P::new(0, 0)),
             );
             (f64::from(b.y - a.y))
-                .atan2(f64::from(b.x - a.x))
+                .m_atan2(f64::from(b.x - a.x))
                 .to_degrees()
                 .rem_euclid(180.0)
                 .round()

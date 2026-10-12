@@ -191,10 +191,10 @@ fn merge_all_pairs(p: &Params, v: &Volumes<'_>, set: &mut Vec<Node>, layer: usiz
                 j += 1;
             }
         }
-        if !merged {
-            i += 1;
-        } else {
+        if merged {
             i = 0;
+        } else {
+            i += 1;
         }
     }
     any
@@ -212,8 +212,8 @@ fn merge_tree(p: &Params, v: &Volumes<'_>, mut set: Vec<Node>, layer: usize) -> 
         .map(|n| {
             ops::bbox(&n.area).map_or((0, 0), |[x0, y0, x1, y1]| {
                 (
-                    (i64::from(x0) + i64::from(x1)) / 2,
-                    (i64::from(y0) + i64::from(y1)) / 2,
+                    i64::midpoint(i64::from(x0), i64::from(x1)),
+                    i64::midpoint(i64::from(y0), i64::from(y1)),
                 )
             })
         })
@@ -314,10 +314,10 @@ pub(crate) fn descend(p: &Params, v: &Volumes<'_>, layers: &mut [Vec<Node>]) {
         let (pass, cands): (Vec<Node>, Vec<Node>) = children
             .into_iter()
             .partition(|c| c.bypass || (c.bed_area.is_empty() && c.model_area.is_empty()));
-        if !pass.is_empty() {
-            if let Some(f) = fresh.get_mut(layer - 1) {
-                *f = true;
-            }
+        if !pass.is_empty()
+            && let Some(f) = fresh.get_mut(layer - 1)
+        {
+            *f = true;
         }
         let merged = if merge_layer {
             let before = cands.len();
@@ -371,7 +371,13 @@ mod tests {
             support_width: 0.4,
             ..Settings::default()
         });
-        let v = Volumes::new(&p, vec![Vec::new(); 10], Vec::new(), [0.0, 0.0, 200.0, 200.0], 10);
+        let v = Volumes::new(
+            &p,
+            &vec![Vec::new(); 10],
+            Vec::new(),
+            [0.0, 0.0, 200.0, 200.0],
+            10,
+        );
         let mk = |x: f64| {
             let mut n = Node::tip(P::new(u(x), u(100.0)), 5, Class::BedSafe, false);
             n.d = 6;
