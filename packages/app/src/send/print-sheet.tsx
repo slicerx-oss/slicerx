@@ -213,7 +213,7 @@ export function PrintSheet() {
   )
   if (!ask) return null
   return (
-    <Dialog open onClose={() => finish(null)} className="print-sheet" title={<SheetTitle ask={ask} />} footer={footer}>
+    <Dialog open onClose={() => finish(null)} className={ask.refusal ? 'print-sheet ps-anchored' : 'print-sheet'} title={<SheetTitle ask={ask} />} footer={footer}>
         <Summary ask={ask} fileName={fileName} map={mapping ? map : null} />
         {checking ? (
           <p className="ps-checking" aria-live="polite">
@@ -328,11 +328,14 @@ export function PrintSheet() {
 
 /**
  * A Bambu Lab printer that sends status but took no print: the two ways past it. Bambu Connect sends the same plate
- * now; the Developer Mode steps for the model are shown in full, so nothing opens or moves, and Start sends again
- * once they are done. `sure` is set when the printer said so; otherwise the words say Developer Mode may be the cause.
+ * now; the Developer Mode steps for the model sit behind a disclosure, closed at first so the sheet fits, and Start
+ * sends again once they are done. The sheet is anchored to the top while a refusal shows (ps-anchored), so opening
+ * the steps grows it downward and nothing above them moves. `sure` is set when the printer said so; otherwise the
+ * words say Developer Mode may be the cause.
  */
 function DeveloperModeHelp({ printer, sure, connect, disabled, onConnect }: { printer: PrinterInfo; sure: boolean; connect: 'open' | 'save' | null; disabled: boolean; onConnect: () => void }) {
   const [dev, bambu] = developerModeRemedies(printer.model)
+  const [steps, setSteps] = useState(false)
   return (
     <section className="ps-devmode" data-testid="developer-mode-needed" aria-label="Developer Mode needed">
       <p className="ps-devmode-why">
@@ -349,14 +352,21 @@ function DeveloperModeHelp({ printer, sure, connect, disabled, onConnect }: { pr
         </div>
       ) : null}
       {dev ? (
-        <div className="ps-devmode-steps" data-testid="developer-mode-steps-list">
-          <p className="ps-devmode-head">{dev.title}</p>
-          <ol>
-            {dev.steps.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ol>
-          <p className="ps-devmode-note">{dev.note}</p>
+        <div className="ps-devmode-steps">
+          <Button variant="ghost" size="sm" icon="chevron-down" className="ps-devmode-toggle" aria-expanded={steps} aria-controls="ps-devmode-steps-list" data-testid="developer-mode-steps-toggle" onClick={() => setSteps((o) => !o)}>
+            How to turn on Developer Mode
+          </Button>
+          {steps ? (
+            <div id="ps-devmode-steps-list" data-testid="developer-mode-steps-list">
+              <p className="ps-devmode-head">{dev.title}</p>
+              <ol>
+                {dev.steps.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ol>
+              <p className="ps-devmode-note">{dev.note}</p>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>

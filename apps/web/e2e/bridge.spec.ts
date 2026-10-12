@@ -333,6 +333,10 @@ test.describe(BAMBU, () => {
       // A1 again.
       await hub.admin.removePrinter('a1mini')
       await ctl('/bambu', { model: 'N2S', ams: 'lite', external: { type: 'PLA', color: '#FFFFFF' } })
+      // Both sessions read the same mock topic, so A1 took the A1 mini's get_version answer too. A reconnect asks
+      // again, and A1 reads as an A1 (256 x 256 mm bed) for the tests after this one.
+      await ctl('/bambu', { dropMqtt: true })
+      await expect.poll(async () => ((await hub.admin.status('a1')) as { model?: string }).model, { timeout: 30_000 }).toMatch(/^(Bambu Lab )?A1$/)
       await idleAgain('a1')
     }
   })
@@ -355,7 +359,22 @@ test.describe(BAMBU, () => {
       expect((await hub.admin.status('a1')).live?.needsDeveloperMode).toBeUndefined()
       expect((await hub.admin.status('a1')).state).toBe('idle')
       await sheetShots(page, box, 'developer-mode-may')
+      // Closed, the sheet fits a 1440 x 900 window with the refusal and Start in view. Opening the steps grows it
+      // downward: the title and the toggle keep their place to the pixel (static controls).
+      const toggle = box.getByTestId('developer-mode-steps-toggle')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      const dialogBox = await again.boundingBox()
+      expect(dialogBox!.y).toBeGreaterThanOrEqual(0)
+      expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(900)
+      await expect(again.getByRole('button', { name: /start/i }).first()).toBeInViewport()
+      const title = again.locator('.sx-dialog-h h2')
+      const [titleBefore, toggleBefore] = [await title.boundingBox(), await toggle.boundingBox()]
+      await toggle.click()
       await expect(box.getByTestId('developer-mode-steps-list')).toContainText('swipe to page 3')
+      expect(await title.boundingBox()).toEqual(titleBefore)
+      expect(await toggle.boundingBox()).toEqual(toggleBefore)
+      await toggle.click()
+      await expect(box.getByTestId('developer-mode-steps-list')).toHaveCount(0)
       // The browser has no file path to hand to Bambu Connect, so it saves the file.
       await page.evaluate(() => delete (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker)
       const download = page.waitForEvent('download')
