@@ -35,6 +35,14 @@ export type StepParams =
   | { op: 'hole.apply'; hole: Hole; spec: HoleSpec; label: string }
   | { op: 'thread.apply'; thread: ThreadPlace; spec: ThreadSpec; label: string }
   | { op: 'shell'; open: OpenFace[]; wallMm: number }
+  /** The part combined with others, which go: union keeps both, difference takes them away, intersection keeps what they share. */
+  | { op: 'boolean'; kind: 'union' | 'difference' | 'intersection'; with: number[] }
+  /** The part cut by a plane (world at the step's transform); both keeps the piece above as a new part after it. */
+  | { op: 'plane.cut'; plane: { point: Vec3; normal: Vec3 }; keep: 'both' | 'below' | 'above' }
+  /** The part split into pieces that each fit a build volume, the first in its place and the rest after it. */
+  | { op: 'split'; buildVolumeMm: Vec3; marginMm?: number }
+  /** The part mirrored through a plane (world at the step's transform); copy keeps it and joins the mirror image to it. */
+  | { op: 'mirror'; plane: { point: Vec3; normal: Vec3 }; copy: boolean }
 
 export type StepOp = StepParams['op']
 
@@ -543,6 +551,16 @@ export function madeName(s: Pick<Step, 'params'>): string {
     case 'hole.apply':
     case 'thread.apply':
       return p.label
+    case 'boolean': {
+      const n = `${p.with.length} part${p.with.length === 1 ? '' : 's'}`
+      return p.kind === 'union' ? `Join ${n}` : p.kind === 'difference' ? `Subtract ${n}` : `Intersect with ${n}`
+    }
+    case 'plane.cut':
+      return p.keep === 'both' ? 'Cut in two' : `Cut, keep ${p.keep}`
+    case 'split':
+      return `Split to fit ${p.buildVolumeMm.map(n2).join(' x ')} mm`
+    case 'mirror':
+      return p.copy ? 'Mirror copy' : 'Mirror'
   }
 }
 
@@ -569,6 +587,8 @@ export function mainNumber(p: StepParams): { label: string; value: number; unit:
       return { label: 'Length', value: p.spec.lengthMm ?? p.thread.lengthMm, unit: 'mm', min: 0 }
     case 'shell':
       return { label: 'Wall', value: p.wallMm, unit: 'mm', min: 0 }
+    case 'plane.cut':
+      return { label: 'Position', value: Math.round(dot(p.plane.point, unit(p.plane.normal)) * 1000) / 1000, unit: 'mm' }
     case 'subtract': {
       const s = p.solids.length === 1 ? p.solids[0]! : null
       if (s?.type === 'cylinder') return { label: 'Diameter', value: s.diameterMm, unit: 'mm', min: 0 }
@@ -604,6 +624,12 @@ export function withNumber(p: StepParams, v: number): StepParams | string {
       return v > 0 ? { ...p, spec: { ...p.spec, lengthMm: v } } : 'The length must be more than 0 mm.'
     case 'shell':
       return v > 0 ? { ...p, wallMm: v } : 'The wall must be more than 0 mm.'
+    case 'plane.cut': {
+      // The plane moves along its normal to the new position; its direction stays.
+      const n = unit(p.plane.normal)
+      const d = v - dot(p.plane.point, n)
+      return { ...p, plane: { point: [p.plane.point[0] + n[0] * d, p.plane.point[1] + n[1] * d, p.plane.point[2] + n[2] * d], normal: p.plane.normal } }
+    }
     case 'subtract': {
       const s = p.solids.length === 1 ? p.solids[0]! : null
       if (!(v > 0) || !s) return 'The size must be more than 0 mm.'
