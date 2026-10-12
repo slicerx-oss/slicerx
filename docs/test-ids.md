@@ -26,6 +26,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `tab-overflow` | More, at the end of the tabs on a narrow window, holding the tabs that no longer fit; each item is `tab-overflow-<workspace>` (`tab-overflow-printers` first) |
 | `edge-tab-<side>` | The tab on a panel's edge that shuts and reopens it: `edge-tab-left` (the left sidebar), `edge-tab-right` (the right pane), `edge-tab-bottom` (the bottom panel); `aria-expanded` says whether the panel is open, `data-attention` is set while a shut panel's tab glows for something to look at, and `data-panel` says which panel: `model-tree`, `model-inspector`, `model-timeline`, `slice-sidebar` or `slice-summary` |
 | `model-tree`, `model-inspector`, `slice-sidebar`, `slice-summary` | The body of the side pane with that edge tab: Model's tree and its tool and transform pane, Slice's printer and settings sidebar (its printer and filaments sit above it, pinned) and its right pane with the objects and the slice summary. It is gone while the pane is shut |
+| `open-in-app` | Open in SlicerX in the top bar of the CAD-only browser build: downloads the design and asks the desktop app to open it |
 | `toast` | A toast on screen; `data-tone` is ok, info, warn or error |
 | `toast-action` | The button on a toast (Undo and the like) |
 | `dialog-close` | The close button of a dialog |

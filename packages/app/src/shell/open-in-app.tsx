@@ -17,7 +17,7 @@ export const ANSWER_MS = 2500
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('')
 
 /** The link that asks the desktop app to open a project this page downloaded. */
-export function openLink(scheme: string, sha256: string, name: string): string {
+export function appLink(scheme: string, sha256: string, name: string): string {
   return `${scheme}://open?download=${sha256}&name=${encodeURIComponent(name)}`
 }
 
@@ -40,7 +40,7 @@ export async function openInApp(): Promise<boolean> {
   let answered = false
   const away = () => (answered = true)
   window.addEventListener('blur', away, { once: true })
-  window.location.assign(openLink(edition.apps.deepLinkScheme, sha, name))
+  window.location.assign(appLink(edition.apps.deepLinkScheme, sha, name))
   setTimeout(() => {
     window.removeEventListener('blur', away)
     if (answered) return

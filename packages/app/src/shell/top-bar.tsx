@@ -6,7 +6,7 @@
 // and Slice drop theirs last.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { AppBar, Button, Icon, keymapFor, Menu, MenuAnchor, MenuItem, SearchButton, Tabs, tipAttrs, type TabSpec } from '@slicerx/ui'
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { formatShortcut } from '../lib/keys'
 import { toggleDock, useDockOpen } from '../features/pilot/dock-state'
 import { watchOf } from '../features/pilot/watch'
@@ -17,8 +17,10 @@ import { useFleet } from '../lib/queries'
 import { openSettings, set, setWorkspace, useApp } from '../state/store'
 import { ModeTabs } from './mode-tab'
 import { hostSlices, useCadShown, useInMimir } from '../state/model-mode'
-import { OpenInAppButton } from './open-in-app'
 import './top-bar.css'
+
+// only the CAD-only build shows it, so the project writer stays out of the startup chunk
+const OpenInAppButton = lazy(() => import('./open-in-app').then((m) => ({ default: m.OpenInAppButton })))
 
 /** The narrowing steps, in order: search as an icon, tab labels gone, Vault and Printers in More, Model and Slice labels gone. */
 const STEPS = 4
@@ -109,7 +111,11 @@ export function TopBar() {
       right={
         <>
           {layout.modeSelector === 'top-right' ? <ModeSelector layout={layout} id="mode-top" /> : null}
-          {slices ? null : <OpenInAppButton />}
+          {slices ? null : (
+            <Suspense fallback={null}>
+              <OpenInAppButton />
+            </Suspense>
+          )}
           <SearchButton placeholder="Search" onClick={() => set({ commandOpen: true })} shortcut={formatShortcut(palette)} />
           {assistant ? (
             <Button variant="ghost" size="sm" className="mimir-btn" aria-pressed={dockOpen} tip="pilot.ask" onClick={toggleDock} {...(inMimir ? { 'data-hidden': '', 'aria-hidden': true, tabIndex: -1 } : {})}>
