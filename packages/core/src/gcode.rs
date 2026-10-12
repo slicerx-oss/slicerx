@@ -3753,16 +3753,40 @@ fn spiral_fits(rc: &PrintConfig, from: Point, ij: [f64; 2]) -> bool {
     inside
 }
 
-/// Orca's spiral lift (`GCodeWriter::_spiral_travel_to_z`): one counterclockwise turn from `from` around the
-/// point `ij` (mm) away, climbing from `z_from` to `z_to` (thousandths) at the Z feed rate. With arc fitting on
-/// it is one `G3 ... P1` arc; otherwise short moves round the circle, their count set by the profile's
-/// resolution (8 at 0.01 mm, 4 to 16).
+/// Printers whose firmware takes a spiral lift as one helical arc (`G17`, then `G3 Z.. I.. J.. P1`) even with
+/// arc fitting off. Their makers' slicer (Bambu Studio 2.8.4, as a black box, 2026-10-11) writes every spiral
+/// lift that way on these models with `enable_arc_fitting` 0, never as short moves. The H2S and H2C are left
+/// out until they are checked the same way. The list is read from `printer_model`, as the profile names it.
+const HELICAL_LIFT_PRINTERS: &[&str] = &[
+    "Bambu Lab A1",
+    "Bambu Lab A1 mini",
+    "Bambu Lab P1P",
+    "Bambu Lab P1S",
+    "Bambu Lab X1 Carbon",
+    "Bambu Lab X1E",
+    "Bambu Lab P2S",
+    "Bambu Lab H2D",
+];
+
+/// Whether a spiral lift is written as one helical arc: with arc fitting on, or on a printer known to take it.
+fn helical_lift(rc: &PrintConfig) -> bool {
+    crate::firmware::truthy(rc, "enable_arc_fitting")
+        || rc
+            .raw
+            .get("printer_model")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|m| HELICAL_LIFT_PRINTERS.contains(&m))
+}
+
+/// A spiral lift: one counterclockwise turn from `from` around the point `ij` (mm) away, climbing from `z_from`
+/// to `z_to` (thousandths) at the Z feed rate. As one `G3 ... P1` arc when [`helical_lift`] says the printer takes
+/// it; otherwise short moves round the circle, their count set by the profile's resolution (8 at 0.01 mm, 4 to 16).
 fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2], z: [i64; 2], z_feed: i64) {
     let [i, j] = ij;
     let [z_from, z_to] = z;
     // Orca's wording with `gcode_comments` (GCodeWriter::_spiral_travel_to_z).
     let comments = crate::firmware::truthy(rc, "gcode_comments");
-    if crate::firmware::truthy(rc, "enable_arc_fitting") {
+    if helical_lift(rc) {
         b.extend_from_slice(if comments {
             b"G17 ; XY plane for arc\nG3 Z"
         } else {

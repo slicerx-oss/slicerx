@@ -839,6 +839,44 @@ fn a_spiral_lift_climbs_in_one_turn_before_the_travel() {
 }
 
 #[test]
+fn a_spiral_lift_is_one_helical_arc_on_printers_that_take_it_with_arc_fitting_off() {
+    // Bambu Lab printers' own slicer writes the spiral lift as one helical arc whatever arc fitting says, on the
+    // families checked; other printers keep the short moves.
+    let mut c = base_config();
+    c["z_hop"] = json!(0.4);
+    c["retract_lift_above"] = json!(0);
+    c["z_hop_types"] = json!("Spiral Lift");
+    c["enable_arc_fitting"] = json!(false);
+    let lifts = |model: &str| {
+        let mut c = c.clone();
+        c["printer_model"] = json!(model);
+        let r = two_objects(c, json!({}));
+        validated(&r);
+        let g = text(&r);
+        let arcs = g.matches("G17\nG3 Z").count();
+        let moves = g
+            .lines()
+            .filter(|l| l.starts_with("G1 X") && l.contains(" Z") && !l.contains(" E"))
+            .count();
+        (arcs, moves, g)
+    };
+    let (arcs, moves, g) = lifts("Bambu Lab A1");
+    assert!(arcs > 5, "{arcs} spiral arcs");
+    assert!(
+        g.lines()
+            .filter(|l| l.starts_with("G3 Z"))
+            .all(|l| l.contains(" P1 "))
+    );
+    // Only the move back over the start at the lifted height is left of each turn.
+    assert!(moves <= arcs + 2, "{moves} lift moves for {arcs} arcs");
+    for model in ["Bambu Lab H2S", "Prusa MK4S"] {
+        let (arcs, moves, _) = lifts(model);
+        assert_eq!(arcs, 0, "{model}");
+        assert!(moves > 5 * 7, "{model}: {moves} short lift moves");
+    }
+}
+
+#[test]
 fn every_layer_change_lifts_like_orca() {
     // Auto Lift spirals at the layer change (Orca GCode::change_layer): the layer's first travel climbs a
     // turn to the new layer's height plus the lift, travels, and comes down.
