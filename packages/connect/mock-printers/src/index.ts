@@ -154,11 +154,13 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     ports['onvif-discovery'] = onvOpen.discoveryPort
   }
   let bambuExtra: BambuExtra | undefined
+  let bambuDropMqtt: (() => void) | undefined
   // What `POST /bambu {cameraFrame, cameraFrameFile}` set, kept apart so dropping the file brings the hand back.
   let bambuCamera: { hand: boolean; file?: string } = { hand: false }
   if (only.includes('bambu')) {
     const b = await startBambu(machine('bambu'), log)
     bambuExtra = b.extra
+    bambuDropMqtt = b.dropMqtt
     servers.push(b.handles.mqtt, b.handles.ftp, b.handles.camera, b.handles.rtsps.server, { close: (cb) => b.handles.ssdp.close(cb) })
     ports.bambu = b.ports.mqtt
     ports['bambu-ftp'] = b.ports.ftp
@@ -235,11 +237,13 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // (`none`, `normal`, `abnormal`, `readonly`) is the SD card it reports, and `emmc: true` says it prints without one.
     // `developerMode: false` makes it a printer with Developer Mode off: status only, every command and upload refused
     // (null: no `fun` flags in its reports, as before). `refuseControl` makes it answer pause, resume, stop, speed, G-code lines, skips and the light with
-    // `result: fail` and that reason, changing nothing (null: accepts them again). `cameraFrame: 'hand'` makes its JPEG camera show a hand reaching
+    // `result: fail` and that reason, changing nothing (null: accepts them again). `dropMqtt: true` closes every MQTT
+    // connection, as a link that drops (the log says `mqtt dropped`, and `pushall` for each full report asked for). `cameraFrame: 'hand'` makes its JPEG camera show a hand reaching
     // in (null: the placeholder again); `cameraFrameFile` sends that JPEG file instead, a photo for a capture (null: off).
     if (req.path === '/bambu' && req.method === 'POST') {
       if (!bambuExtra) return { status: 404 }
-      const b = req.json() as { refuse?: string | null; refuseControl?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null }
+      const b = req.json() as { refuse?: string | null; refuseControl?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null; dropMqtt?: boolean }
+      if (b.dropMqtt) bambuDropMqtt?.()
       if (b.printerType !== undefined) bambuExtra.printerType = b.printerType
       if (b.refuseControl === null) delete bambuExtra.refuseControl
       else if (b.refuseControl !== undefined) bambuExtra.refuseControl = b.refuseControl

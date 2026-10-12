@@ -47,7 +47,14 @@ pub struct BambuConnector {
     search_targets: Option<Vec<SocketAddr>>,
     /// The MQTT port a probe reads the certificate from: 8883 on real printers, the mock's in tests.
     mqtt_port: Option<u16>,
+    /// The least time between two `pushall` requests of one session ([`PUSHALL_EVERY`]; shorter in tests).
+    pushall_every: Duration,
 }
+
+/// The least time between two full reports (`pushall`) asked for in one session. The printer sends what changed on
+/// its own; P1 and A1 printers should not be asked for everything more often than every 5 minutes, and a link that
+/// drops right after connecting reconnected and asked again every 2 s.
+pub const PUSHALL_EVERY: Duration = Duration::from_secs(300);
 
 impl BambuConnector {
     pub fn new(gate: Arc<dyn ApprovalGate>) -> Self {
@@ -57,7 +64,15 @@ impl BambuConnector {
             ssdp_ports: SSDP_PORTS.to_vec(),
             search_targets: None,
             mqtt_port: None,
+            pushall_every: PUSHALL_EVERY,
         }
+    }
+
+    /// Asks for a full report at most every `every` in a session instead of [`PUSHALL_EVERY`] (tests).
+    #[must_use]
+    pub fn with_pushall_every(mut self, every: Duration) -> Self {
+        self.pushall_every = every;
+        self
     }
 
     /// Listens for printer announcements on `ip` instead of every address.
@@ -332,7 +347,7 @@ impl PrinterConnector for BambuConnector {
             .ok_or_else(|| Error::Auth {
                 printer: cfg.id.clone(),
             })?;
-        BambuSession::open(cfg.clone(), serial, code, self.gate.clone()).await
+        BambuSession::open(cfg.clone(), serial, code, self.gate.clone(), self.pushall_every).await
     }
 }
 
@@ -1621,6 +1636,65 @@ fn trace_open(cfg: &PrinterConfig, port: u16, client: &str, code: &str) {
     );
 }
 
+/// The error a dropped or refused MQTT connection stands for.
+fn connection_error(id: &str, e: ConnectionError) -> Error {
+    match e {
+        ConnectionError::ConnectionRefused(_) => Error::Auth {
+            printer: id.to_owned(),
+        },
+        // A printer that answers but whose secure connection fails is not missing.
+        ConnectionError::Tls(e) => Error::tls(id, e),
+        ConnectionError::NetworkTimeout | ConnectionError::FlushTimeout => {
+            Error::timeout(id, "the connection timed out")
+        }
+        ConnectionError::Io(e) if e.kind() == std::io::ErrorKind::TimedOut => Error::timeout(id, e),
+        other => Error::unreachable(id, other),
+    }
+}
+
+/// When a session asks for a full report (`pushall`): on its first connection, and on a reconnect only when the last
+/// one was asked for at least `every` ago. A reconnect that came sooner owes one, asked for once the time is up. The
+/// state merged from the reports so far stays, and the printer's own change reports keep it current meanwhile.
+struct FullReports {
+    every: Duration,
+    last: Option<std::time::Instant>,
+    owed: bool,
+}
+
+impl FullReports {
+    fn new(every: Duration) -> Self {
+        Self {
+            every,
+            last: None,
+            owed: false,
+        }
+    }
+
+    fn due(&self) -> bool {
+        self.last.is_none_or(|t| t.elapsed() >= self.every)
+    }
+
+    /// On a (re)connection: true when a full report is to be asked for now.
+    fn on_connect(&mut self) -> bool {
+        let now = self.due();
+        if now {
+            self.last = Some(std::time::Instant::now());
+        }
+        self.owed = !now;
+        now
+    }
+
+    /// True when a held full report is to be asked for now.
+    fn owed_now(&mut self) -> bool {
+        if self.owed && self.due() {
+            self.owed = false;
+            self.last = Some(std::time::Instant::now());
+            return true;
+        }
+        false
+    }
+}
+
 /// The connection's task, aborted when this is dropped.
 struct AbortOnDrop(tokio::task::JoinHandle<()>);
 
@@ -1636,6 +1710,7 @@ impl BambuSession {
         serial: String,
         code: String,
         gate: Arc<dyn ApprovalGate>,
+        pushall_every: Duration,
     ) -> Result<Box<dyn PrinterSession>> {
         let client = client_id();
         let port = cfg.port.unwrap_or(8883);
@@ -1660,16 +1735,31 @@ impl BambuSession {
             let (client, shared, id) = (client.clone(), shared.clone(), cfg.id.clone());
             tokio::spawn(async move {
                 let mut first = Some(first_tx);
+                let mut reports = FullReports::new(pushall_every);
+                let all = json!({ "pushing": { "sequence_id": "0", "command": "pushall", "version": 1, "push_target": 1 } })
+                    .to_string();
                 loop {
-                    match eventloop.poll().await {
+                    let event = eventloop.poll().await;
+                    // A reconnect that came too soon asks once the time is up (reports and pings keep this loop
+                    // turning).
+                    if shared.connected.load(Ordering::Relaxed) && reports.owed_now() {
+                        crate::trace(&id, "pushall (owed)");
+                        let _ = client
+                            .publish(request.clone(), QoS::AtLeastOnce, false, all.clone())
+                            .await;
+                    }
+                    match event {
                         Ok(Event::Incoming(Packet::ConnAck(_))) => {
                             crate::trace(&id, "mqtt signed in");
                             shared.connected.store(true, Ordering::Relaxed);
                             let _ = client.subscribe(report.clone(), QoS::AtMostOnce).await;
-                            let all = json!({ "pushing": { "sequence_id": "0", "command": "pushall", "version": 1, "push_target": 1 } });
-                            let _ = client
-                                .publish(request.clone(), QoS::AtLeastOnce, false, all.to_string())
-                                .await;
+                            if reports.on_connect() {
+                                let _ = client
+                                    .publish(request.clone(), QoS::AtLeastOnce, false, all.clone())
+                                    .await;
+                            } else {
+                                crate::trace(&id, "pushall held: asked less than the limit ago");
+                            }
                             // The model and firmware: the report itself does not name the model.
                             let version = json!({ "info": { "sequence_id": "0", "command": "get_version" } });
                             let _ = client
@@ -1684,18 +1774,7 @@ impl BambuSession {
                         Err(e) => {
                             crate::trace(&id, format_args!("mqtt dropped: {e:?}"));
                             let was = shared.connected.swap(false, Ordering::Relaxed);
-                            let err = match e {
-                                ConnectionError::ConnectionRefused(_) => Error::Auth { printer: id.clone() },
-                                // A printer that answers but whose secure connection fails is not missing.
-                                ConnectionError::Tls(e) => Error::tls(&id, e),
-                                ConnectionError::NetworkTimeout | ConnectionError::FlushTimeout => {
-                                    Error::timeout(&id, "the connection timed out")
-                                }
-                                ConnectionError::Io(e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                                    Error::timeout(&id, e)
-                                }
-                                other => Error::unreachable(&id, other),
-                            };
+                            let err = connection_error(&id, e);
                             if let Some(tx) = first.take() {
                                 let _ = tx.send(Err(err));
                                 return;
@@ -2850,6 +2929,20 @@ impl PrinterSession for BambuSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reconnect_asks_for_a_full_report_only_once_the_limit_is_up() {
+        let mut r = FullReports::new(Duration::from_millis(60));
+        assert!(r.on_connect(), "the first connection asks");
+        assert!(!r.on_connect(), "a reconnect right after holds it");
+        assert!(!r.owed_now(), "and owes it until the limit is up");
+        std::thread::sleep(Duration::from_millis(80));
+        assert!(r.owed_now(), "then asks once");
+        assert!(!r.owed_now());
+        std::thread::sleep(Duration::from_millis(80));
+        assert!(r.on_connect(), "a reconnect after the limit asks at once");
+        assert!(!r.owed_now());
+    }
 
     // An H2D sends a full report (`msg` 0) for pushall and otherwise only what changed (`msg` 1),
     // objects part by part. A part must not wipe the rest of its object.
