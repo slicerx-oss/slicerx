@@ -77,11 +77,18 @@ export function Fleet() {
     )
   }
   const sections = view === 'bay' ? bayGroups(rows, bays, printerBays) : [{ id: 'all', name: '', rows: wallOrder(rows), summary: '' }]
-  const tile = (r: FleetRow) => <Tile key={r.id} r={r} now={now} groups={groups.data ?? []} onView={() => setViewing(r.id)} />
+  // While the bridge reconnects every card stays where it is, dimmed, with its last known state and no controls.
+  const tile = (r: FleetRow) => <Tile key={r.id} r={r} now={now} groups={groups.data ?? []} away={reconnecting} onView={() => setViewing(r.id)} />
   return (
     <div className="page fleet">
       <header className="wall-h">
         <h1 className="sx-display">Printers</h1>
+        {/* Under the heading, in the header's own margin, so nothing on the page moves when it shows. */}
+        {reconnecting ? (
+          <p className="wall-away-note sx-small sx-muted" role="status" data-testid="bridge-reconnecting">
+            The connection to the printer bridge dropped. Reconnecting.
+          </p>
+        ) : null}
         <Seg
           label="Group printers"
           value={view}
@@ -98,13 +105,7 @@ export function Fleet() {
           Add printer
         </Button>
       </header>
-      {reconnecting ? (
-        <p className="sx-small sx-muted" role="status" data-testid="bridge-reconnecting">
-          The connection to the printer bridge dropped. Reconnecting.
-        </p>
-      ) : fleet.isError ? (
-        <p className="app-err">Printers did not answer: {fleet.error.message}</p>
-      ) : null}
+      {!reconnecting && fleet.isError ? <p className="app-err">Printers did not answer: {fleet.error.message}</p> : null}
       {tripped.length ? (
         <section className="guard-list" aria-label="Camera guard">
           {tripped.map((r) => (
@@ -239,7 +240,13 @@ function TileCamera({ r, now }: { r: FleetRow; now: number }) {
   return <CameraIdle text={text} detail={detail} />
 }
 
-function Tile({ r, now, groups, onView }: { r: FleetRow; now: number; groups: readonly Fleet[]; onView: () => void }) {
+/** When a printer was last heard, as a clock time: "12:04". */
+function lastSeen(at: string | undefined): string | null {
+  const t = at ? new Date(at) : null
+  return t && !Number.isNaN(t.getTime()) ? t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null
+}
+
+function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: number; groups: readonly Fleet[]; away?: boolean; onView: () => void }) {
   const st = r.status
   const exportOnly = isExportOnly(r)
   const kind = wallKind(r)
@@ -254,11 +261,11 @@ function Tile({ r, now, groups, onView }: { r: FleetRow; now: number; groups: re
   const active = printingSlot(st)
   const slots = st.slots.filter((x) => x.color || x.material)
   return (
-    <article className="pcard" data-kind={kind} aria-label={`${r.name}, ${pill.label}`}>
+    <article className="pcard" data-kind={kind} data-away={away || undefined} data-testid="printer-card" data-printer={r.id} inert={away || undefined} aria-label={`${r.name}, ${away ? 'reconnecting' : pill.label}`}>
       <div className="wall-cam">
         <TileCamera r={r} now={now} />
         <span className="wall-float wall-pill">
-          <Pill state={pill.tone}>{pill.label}</Pill>
+          <Pill state={away ? 'run' : pill.tone}>{away ? 'Reconnecting' : pill.label}</Pill>
         </span>
         {left ? <span className="wall-float wall-left">{left}</span> : null}
         {progress !== null ? (
@@ -274,10 +281,10 @@ function Tile({ r, now, groups, onView }: { r: FleetRow; now: number; groups: re
           </span>
           <b>{r.name}</b>
           <span className="wall-model">{r.model}</span>
-          <TileMenu r={r} groups={groups} onView={onView} />
+          <TileMenu r={r} groups={groups} disabled={away} onView={onView} />
         </div>
         <p className="wall-line" id={lineId}>
-          {statusLine(r, now)}
+          {away ? `Last seen ${lastSeen(st.updatedAt) ?? 'before the connection dropped'}: ${statusLine(r, now)}` : statusLine(r, now)}
         </p>
         {heat.length || slots.length ? (
           <div className="wall-meta">
@@ -307,12 +314,12 @@ function Tile({ r, now, groups, onView }: { r: FleetRow; now: number; groups: re
           </div>
         ) : null}
       </div>
-      {exportOnly ? null : <button type="button" className="wall-open" aria-label={r.name} aria-describedby={lineId} onClick={onView} />}
+      {exportOnly ? null : <button type="button" className="wall-open" data-testid="printer-card-open" aria-label={r.name} aria-describedby={lineId} disabled={away} onClick={onView} />}
     </article>
   )
 }
 
-function TileMenu({ r, groups, onView }: { r: FleetRow; groups: readonly Fleet[]; onView: () => void }) {
+function TileMenu({ r, groups, disabled = false, onView }: { r: FleetRow; groups: readonly Fleet[]; disabled?: boolean; onView: () => void }) {
   const host = useHost()
   const qc = useQueryClient()
   const [menu, setMenu] = useState(false)
@@ -356,8 +363,8 @@ function TileMenu({ r, groups, onView }: { r: FleetRow; groups: readonly Fleet[]
   }
   return (
     <MenuAnchor className="wall-more">
-      <Button size="sm" variant="ghost" icon="more" aria-label={`${r.name} options`} aria-expanded={menu} onClick={() => setMenu(!menu)} />
-      <Menu open={menu} onClose={() => setMenu(false)} label={`${r.name} options`} align="end">
+      <Button size="sm" variant="ghost" icon="more" data-testid="printer-card-options" aria-label={`${r.name} options`} aria-expanded={menu} disabled={disabled} onClick={() => setMenu(!menu)} />
+      <Menu open={menu && !disabled} onClose={() => setMenu(false)} label={`${r.name} options`} align="end">
         <MenuHeading>Printer</MenuHeading>
         {exportOnly ? (
           <>

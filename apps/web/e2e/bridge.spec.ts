@@ -553,10 +553,16 @@ test.describe(BAMBU, () => {
   })
 })
 
-test('a dropped bridge connection comes back on its own, and the printers answer again', async ({ page }) => {
-  // Every connection the page opens to the hub goes through here, so the test can drop one as a suspended page would.
+test('a dropped bridge connection comes back on its own; the cards stay in place, dimmed and off, until it does', async ({ page }) => {
+  // Every connection the page opens to the hub goes through here, so the test can drop one as a suspended page would,
+  // and hold the reconnect off for a while.
+  let refuse = false
   const routes: WebSocketRoute[] = []
   await page.routeWebSocket(HUB_ROUTE, (ws) => {
+    if (refuse) {
+      void ws.close()
+      return
+    }
     const server = ws.connectToServer()
     routes.push(ws)
     ws.onMessage((m) => server.send(m))
@@ -564,14 +570,48 @@ test('a dropped bridge connection comes back on its own, and the printers answer
   })
   await connectApp(page)
   await page.getByRole('button', { name: 'Printers', exact: true }).first().click()
-  await expect(page.getByText('Voron').first()).toBeVisible()
+  const card = page.getByTestId('printer-card').filter({ hasText: 'Voron' })
+  await expect(card).toBeVisible()
+  // Where everything on the page sits: the heading's row, the counts and every card.
+  const layout = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('.page.fleet .wall-h > *:not(.wall-away-note), .page.fleet .wall-counts, [data-testid="printer-card"]')].map((el) => {
+        const b = el.getBoundingClientRect()
+        return `${el.className || el.tagName}:${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}`
+      }),
+    )
+  const connected = await layout()
+  const cardsBefore = await page.getByTestId('printer-card').count()
+  // Count the cards all through the drop and the reconnect: none may leave, even for a frame.
+  await page.evaluate(() => {
+    const w = window as unknown as { __cardsMin: number }
+    w.__cardsMin = Infinity
+    const tick = () => {
+      w.__cardsMin = Math.min(w.__cardsMin, document.querySelectorAll('[data-testid="printer-card"]').length)
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
   const before = routes.length
+  refuse = true
   await routes.at(-1)!.close()
+  await expect(page.getByTestId('bridge-reconnecting')).toBeVisible()
+  await expect(card).toHaveAttribute('data-away', 'true')
+  await expect(card).toContainText('Reconnecting')
+  await expect(card).toContainText(/Last seen/)
+  // Every control on the cards is off until the bridge is back.
+  await expect(card.getByTestId('printer-card-open')).toBeDisabled()
+  await expect(card.getByTestId('printer-card-options')).toBeDisabled()
+  expect(await layout(), 'nothing moves while reconnecting').toEqual(connected)
+  refuse = false
   // It reconnects with the code this session used, without asking again.
   await expect.poll(() => routes.length, { timeout: 30_000 }).toBeGreaterThan(before)
   await sawToast(page, /Reconnected to the printer bridge/, { timeout: 30_000 })
   await expect(page.getByTestId('bridge-reconnecting')).toHaveCount(0)
-  await expect(page.getByText('Voron').first()).toBeVisible()
+  await expect(card).not.toHaveAttribute('data-away', 'true')
+  await expect(card.getByTestId('printer-card-options')).toBeEnabled()
+  expect(await layout(), 'nothing moves once reconnected').toEqual(connected)
+  expect(await page.evaluate(() => (window as unknown as { __cardsMin: number }).__cardsMin)).toBe(cardsBefore)
 })
 
 test('a send whose connection drops part way is never sent again, and says what the printer reports', async ({ page }) => {

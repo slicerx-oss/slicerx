@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalHost, Host, PrinterHost, PrinterStatus } from '@slicerx/contracts'
 import { connectBridge, disconnectBridge, RECONNECT_DELAYS_MS, resetBridge, setBridgeConnector, type ConnectedBridge } from '../src/link/bridge'
 import { droppedSendNote, isDroppedConnection } from '../src/link/dropped-send'
+import { appState } from '../src/agent-bridge/page'
 import { get } from '../src/state/store'
 
 function host(): Host {
@@ -79,6 +80,8 @@ describe('a dropped bridge connection', () => {
     const epoch = get().linkEpoch
     made[0]!.dropNow()
     expect(get().bridgeStatus.state).toBe('reconnecting')
+    // A client reading the app back sees it too: the cards' controls are off until the bridge is back.
+    expect(appState(get()).printerBridge).toEqual({ state: 'reconnecting', attempt: 1, cardsDisabled: true })
     // Until it is back, printer calls fail as closed; no other printers stand in for the bridge's.
     await expect(h.printers!.status('p1')).rejects.toMatchObject({ code: 'closed' })
     await vi.waitFor(() => expect(get().bridgeStatus.state).toBe('on'), { timeout: 2000 })

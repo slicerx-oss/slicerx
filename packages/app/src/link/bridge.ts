@@ -140,7 +140,7 @@ function explain(e: unknown): string {
 
 let stopCards: (() => void) | null = null
 let stopFinished: (() => void) | null = null
-let stopGuard: (() => void) | null = null
+let stopGuard: ((keep?: boolean) => void) | null = null
 let stopLink: (() => void) | null = null
 
 /** Cards the hub raises (an AI agent's start, a queued plate whose turn came) show in the approval dialog. Loaded with the first connection. */
@@ -251,9 +251,10 @@ export const RECONNECT_DELAYS_MS: number[] = [500, 1000, 2000, 4000, 8000, 15000
 function lost(host: Host, bridge: ConnectedBridge): void {
   if (live?.bridge !== bridge) return
   const { before, caps } = live
-  teardown(host)
+  const back = reconnects(bridgeConnector())
+  teardown(host, back)
   const mine = ++generation
-  if (reconnects(bridgeConnector())) {
+  if (back) {
     // Until it is back the dropped connection's printers stay in the host: calls fail as closed, and no other
     // printers (the demo's) stand in for them. What the host had before the bridge comes back on a disconnect.
     kept = { before, caps }
@@ -263,7 +264,8 @@ function lost(host: Host, bridge: ConnectedBridge): void {
     set((s) => ({ bridgeStatus: { state: 'error', message: 'The connection to the printer bridge closed. Connect again.' }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
     return
   }
-  set((s) => ({ bridgeStatus: { state: 'reconnecting', attempt: 1 }, linkEpoch: s.linkEpoch + 1, fleetRefresh: Date.now() }))
+  // The printer list keeps its rows (same epoch) while the bridge is away; the cards show them as last seen.
+  set({ bridgeStatus: { state: 'reconnecting', attempt: 1 } })
   void (async () => {
     for (let attempt = 1; ; attempt++) {
       const wait = RECONNECT_DELAYS_MS[Math.min(attempt - 1, RECONNECT_DELAYS_MS.length - 1)] ?? 15000
@@ -318,7 +320,7 @@ export function disconnectBridge(host: Host): void {
 }
 
 /** Takes the live bridge's printers and services out of the host and stops what watched them. Returns that bridge. */
-function teardown(host: Host): ConnectedBridge {
+function teardown(host: Host, keepOnScreen = false): ConnectedBridge {
   const { bridge, before, caps } = live!
   live = null
   stopWatchClose?.()
@@ -330,7 +332,7 @@ function teardown(host: Host): ConnectedBridge {
   stopCards = null
   stopFinished?.()
   stopFinished = null
-  stopGuard?.()
+  stopGuard?.(keepOnScreen)
   stopGuard = null
   stopLink?.()
   stopLink = null
