@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-139 tools.
+142 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -92,6 +92,9 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_orient` |  |  | slice | Find the rotation with the least support (support volume and overhang area beyond the support angle) and good bed contact for an object, and apply it when apply is true. |
 | `slicerx_orientation_search` |  |  | slice | Choose how to lay a part on the bed by slicing each candidate orientation: the six axis orientations, plus 45 degree tilts when asked. |
 | `slicerx_overnight_readiness` |  |  | read | Pre-flight for a long unattended print on one printer. |
+| `slicerx_paint_apply` |  |  | slice | Apply a paint preview as a step in the design's history (it replays, saves with slicerx_design_save and undoes with slicerx_design_undo). |
+| `slicerx_paint_preview` |  |  | read | See what painting a design would do, without changing it: the triangles and area a target paints on each part, its connected regions, and a picture framed on them (the PNG only with image: true). |
+| `slicerx_paint_regions` |  |  | read | Read a design's paint back: for one layer, each part's painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. |
 | `slicerx_pending_approvals` | Pending approvals | core | read, ungated | List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in SlicerX or on the phone, and how those went once the hub ran them. |
 | `slicerx_plan_settings` | Plan settings | settings | read, ungated | Work out which OrcaSlicer settings to change for a filament, printer, nozzle and print intent. |
 | `slicerx_print_adjust` |  |  | start | Make one change to a running print: part fan, speed factor, nozzle or bed temperature, or pause. |
