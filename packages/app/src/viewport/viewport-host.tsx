@@ -21,7 +21,7 @@ import { openViewMenu } from '../plate/view-menu'
 import { openViewRing, ringTarget, setLayFace } from '../plate/view-ring'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
 import { probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
-import { pickSub, type EdgeAt } from '../plate/sub-pick'
+import { pickSub, type EdgeAt, type FaceRound } from '../plate/sub-pick'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
@@ -276,6 +276,16 @@ const edgeAt: EdgeAt = async (objectId, partIndex, triangle, at) => {
   return edgeLines(r.edge)
 }
 
+/** Whether the face under a pick is round: the engine's feature there is a cylinder (a hole's or a peg's wall). */
+const faceRound: FaceRound = async (objectId, partIndex, triangle, at) => {
+  const e = appStore.getState().plate.find((p) => p.id === objectId)
+  const part = e?.parts[partIndex]
+  if (!e || !part) return false
+  const { featureAt } = await import('../geom/cad')
+  const f = await featureAt({ mesh: toGeom(part), transform: e.transform }, { triangle, at })
+  return f.kind === 'cylinder'
+}
+
 export function ViewportHost({ layers }: { layers: boolean }) {
   // There is one plate view now; the toolpath look (setToolpathLook) draws the slice in it.
   const mode = 'prepare' as const
@@ -510,7 +520,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         // Model with Faces or Edges in the pick filter: the click picks a face or an edge (plate/sub-pick.ts).
         const st = appStore.getState()
         if (showsDesign(st) && st.pickFilter.some((k) => k !== 'object')) {
-          void pickSub(e, edgeAt).then((done) => {
+          void pickSub(e, edgeAt, faceRound).then((done) => {
             if (!done) selectObject(e)
           })
           return
@@ -532,7 +542,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         const objectId = e.objectId
         if (st.pickFilter.some((k) => k !== 'object') && e.partIndex !== null && e.triangle !== null && e.point) {
           const already = st.subPicks.some((p) => p.objectId === objectId && p.partIndex === e.partIndex && p.triangle === e.triangle)
-          const ready = already ? Promise.resolve(true) : pickSub({ objectId, partIndex: e.partIndex, triangle: e.triangle, point: e.point, bed: null }, edgeAt)
+          const ready = already ? Promise.resolve(true) : pickSub({ objectId, partIndex: e.partIndex, triangle: e.triangle, point: e.point, bed: null }, edgeAt, faceRound)
           void ready.then((done) => {
             const now = appStore.getState()
             openViewRing(at, done && now.subPicks.length ? ringTarget(now) : { kind: 'object', objectId })
