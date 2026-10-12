@@ -586,3 +586,21 @@ button { cursor: pointer; }
 .sx-raven[data-flap] .sx-raven-wing { animation: sx-raven-flap 0.5s ease-in-out infinite; }
 @keyframes sx-raven-flap { 0%, 100% { transform: none; } 40% { transform: rotate(-32deg); } }
 :root[data-motion="reduced"] .sx-raven[data-flap] .sx-raven-wing { animation: none; }
+
+/* The ring menu at a point (radial-menu.tsx): slices round a middle that opens the full list. It floats, so nothing moves. */
+.sx-ring { position: fixed; z-index: var(--z-menu); touch-action: none; user-select: none; animation: sx-ring-in 120ms cubic-bezier(.2, .8, .2, 1) both; filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--ink-0) 70%, transparent)); }
+.sx-ring-art { position: absolute; inset: 0; overflow: visible; }
+.sx-ring-wedge, .sx-ring-hole { fill: color-mix(in srgb, var(--ink-3) 92%, transparent); stroke: var(--line); stroke-width: 1; transition: fill 80ms linear; }
+.sx-ring-wedge[data-hot], .sx-ring-hole[data-hot] { fill: color-mix(in srgb, var(--accent) 24%, var(--ink-3)); }
+.sx-ring-wedge[data-off] { fill: color-mix(in srgb, var(--ink-2) 92%, transparent); }
+.sx-ring-slot, .sx-ring-more { position: absolute; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 2px; width: 74px; padding: 2px; border: 0; background: none; color: var(--fg); font: var(--fw-medium) var(--fs-xs)/1.15 var(--f-body); text-align: center; cursor: pointer; border-radius: var(--r-sm); }
+.sx-ring-slot .sx-ic { width: 18px; height: 18px; color: var(--fg); }
+.sx-ring-slot[aria-disabled] { color: var(--dim); cursor: default; }
+.sx-ring-slot[aria-disabled] .sx-ic { color: var(--dim); }
+.sx-ring-slot:focus-visible, .sx-ring-more:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.sx-ring-more { left: 50%; top: 50%; width: 60px; }
+.sx-ring-name { max-width: 58px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-semibold); color: var(--muted); }
+.sx-ring-more-label { font: 400 var(--fs-xs)/1 var(--f-mono); color: var(--dim); }
+@keyframes sx-ring-in { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
+:root[data-motion="reduced"] .sx-ring { animation: none; }
+:root[data-motion="reduced"] .sx-ring-wedge, :root[data-motion="reduced"] .sx-ring-hole { transition: none; }
