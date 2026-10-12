@@ -5226,11 +5226,9 @@ impl SliceSession {
                     0 => cfg,
                     k => mods.get(usize::from(k) - 1).unwrap_or(cfg),
                 };
-                let bridge = if rc.thick_bridges {
-                    rc.nozzle_diameter
-                } else {
-                    rc.outer_wall_width()
-                };
+                // Thin bridges leave the wall pieces over a gap in the overhang: the reference keeps the
+                // support under them whole then (measured), so their bands have no width.
+                let bridge = if rc.thick_bridges { rc.nozzle_diameter } else { 0.0 };
                 let mut walls: Vec<Vec<IntPoint<i32>>> = Vec::new();
                 for island in &prep.islands {
                     walls.extend(island.loops.iter().map(|(_, ring)| open(ring)));

@@ -257,7 +257,9 @@ fn bridges(d: &Detect, regions: &[RegionIn], below: &Shapes, w: f64) -> Shapes {
     for region in regions {
         let half = region.bridge_width.max(region.bridge_spacing) / 2.0 + hair;
         let mut bands: Vec<Vec<crate::geom::Point>> = Vec::new();
-        for wall in &region.walls {
+        // Walls without a bridge width (thin bridges) take nothing out.
+        let walls = if half > hair { region.walls.as_slice() } else { &[] };
+        for wall in walls {
             for piece in crate::support::clip_inside(wall, &outside) {
                 let (Some(&a), Some(&b)) = (piece.first(), piece.last()) else {
                     continue;
@@ -626,6 +628,27 @@ mod tests {
         let o = detect(&p, &input(&m, &t, &none), &Detect::default());
         let at = o.get(10).cloned().unwrap_or_default();
         assert!(ops::contains(&at, P::new(u(100.5), u(100.5))));
+    }
+
+    #[test]
+    fn wall_bands_only_with_a_bridge_width() {
+        // Two posts 9 mm apart; a wall line spans the gap at y 100.
+        let below = ops::union(
+            &ops::rect([90.0, 95.0, 95.0, 105.0]),
+            &ops::rect([104.0, 95.0, 109.0, 105.0]),
+        );
+        let wall = vec![P::new(u(90.5), u(100.0)), P::new(u(108.5), u(100.0))];
+        let region = |width: f64| RegionIn {
+            walls: vec![wall.clone()],
+            bridges: Vec::new(),
+            bridge_width: width,
+            bridge_spacing: width,
+        };
+        let d = Detect::default();
+        let thick = bridges(&d, &[region(0.4)], &below, 0.42);
+        assert!(ops::contains(&thick, P::new(u(99.5), u(100.0))));
+        // Thin bridges: nothing over the gap is taken out.
+        assert!(bridges(&d, &[region(0.0)], &below, 0.42).is_empty());
     }
 
     #[test]
