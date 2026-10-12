@@ -113,6 +113,8 @@
   "gyroid_optimized": "Stronger gyroid along Z",
   "infill_combination_max_layer_height": "Combined infill maximum height",
   "default_filament_colour": "Default filament color",
-  "extruder_colour": "Extruder color"
+  "extruder_colour": "Extruder color",
+  "top_color_penetration_layers": "Painted color depth under tops",
+  "bottom_color_penetration_layers": "Painted color depth over bottoms"
  }
 }

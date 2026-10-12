@@ -1,6 +1,20 @@
 # Process: Advanced extrusion
 
-27 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+29 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+
+### `bottom_color_penetration_layers`
+
+**Painted color depth over bottoms**
+
+How many layers a painted bottom surface colors, counting up from the bottom. 0 follows the bottom shell layers. A Bambu Studio setting, read from its projects.
+
+- Type: integer
+- Unit: layers
+- Default: 0
+- Recommended range: 0 to 1000
+- Tier: Expert, multicolor, shown with two or more filaments
+- Changing it redoes: contours
+- mimir class: read (not in the catalog: never written)
 
 ### `bottom_solid_infill_flow_ratio`
 
@@ -303,6 +317,20 @@ Pairs of line length in mm and flow factor, one pair per line, shortest first. A
 - Recommended range: 0 to 2
 - Tier: Expert, quality
 - Changing it redoes: G-code only
+- mimir class: read (not in the catalog: never written)
+
+### `top_color_penetration_layers`
+
+**Painted color depth under tops**
+
+How many layers a painted top surface colors, counting down from the top. 0 follows the top shell layers. A Bambu Studio setting, read from its projects.
+
+- Type: integer
+- Unit: layers
+- Default: 0
+- Recommended range: 0 to 1000
+- Tier: Expert, multicolor, shown with two or more filaments
+- Changing it redoes: contours
 - mimir class: read (not in the catalog: never written)
 
 ### `top_solid_infill_flow_ratio`
