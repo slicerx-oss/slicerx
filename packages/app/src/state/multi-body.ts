@@ -55,6 +55,36 @@ export function enableMultiBodyPrompt(): () => void {
   }
 }
 
+/** True when a file of several bodies would ask now (the setting says Ask and the app shows the question). */
+export function willAsk(): boolean {
+  return enabled && get().multiBodyImport === 'ask'
+}
+
+/** True when a welded mesh has more than one connected shell (a cavity counts too; the import decides the bodies). */
+export function severalShells(indices: ArrayLike<number>, vertexCount: number): boolean {
+  const parent = new Int32Array(vertexCount)
+  for (let v = 0; v < vertexCount; v++) parent[v] = v
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]!]!
+      x = parent[x]!
+    }
+    return x
+  }
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    const a = find(indices[t]!)
+    parent[find(indices[t + 1]!)] = a
+    parent[find(indices[t + 2]!)] = a
+  }
+  let root = -1
+  for (let t = 0; t < indices.length; t += 3) {
+    const r = find(indices[t]!)
+    if (root === -1) root = r
+    else if (r !== root) return true
+  }
+  return false
+}
+
 /** The choice for an import of `bodies` bodies: the setting's, or the person's answer. Null keeps the engine's grouping. */
 export function multiBodyChoice(fileName: string, bodies: number): Promise<MultiBodyChoice | null> {
   if (bodies < 2) return Promise.resolve(null)
