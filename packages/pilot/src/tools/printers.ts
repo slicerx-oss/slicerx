@@ -3,7 +3,7 @@
 // First-party printer tools over PrinterHost. Every call with a side effect
 // carries the approval token for its exact action, target and parameters; the
 // host verifies it and refuses otherwise.
-import { developerModeRemedies, followsSlotMap, NEEDS_DEVELOPER_MODE, slotMapLine, type Cell, type JobFile, type PrinterHost, type PrinterStatus, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
+import { developerModeRemedies, developerModeSure, followsSlotMap, NEEDS_DEVELOPER_MODE, PRINTER_STORAGE_FULL, slotMapLine, STORAGE_FULL_REMEDY, type Cell, type JobFile, type PrinterHost, type PrinterStatus, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { ASSISTANT_NAME } from '../name'
 import { fmtDuration, fmtGrams, type ToolShared } from '../shared'
@@ -42,14 +42,25 @@ function statusRows(s: PrinterStatus): [string, Cell][] {
 
 /**
  * A Bambu Lab printer that takes no print from other apps (`needs_developer_mode`): what to tell the user and the two
- * remedies, for a tool result. Null for any other error.
+ * remedies, for a tool result. `sure` is false when that is read from an upload that failed or a start left unanswered,
+ * and the words then say "may". Null for any other error.
  */
-export function developerModeAnswer(e: unknown, printerName: string, model: string | undefined): { tellTheUser: string; remedies: ReturnType<typeof developerModeRemedies> } | null {
+export function developerModeAnswer(e: unknown, printerName: string, model: string | undefined): { tellTheUser: string; sure: boolean; remedies: ReturnType<typeof developerModeRemedies> } | null {
   if ((e as { code?: unknown } | null)?.code !== NEEDS_DEVELOPER_MODE) return null
+  const sure = developerModeSure(e instanceof Error ? e.message : String((e as { message?: unknown }).message ?? ''))
   return {
-    tellTheUser: `${printerName} sends its status but did not take the print. Bambu Lab printers do that while Developer Mode is off. Turn on LAN Only Mode and Developer Mode on the printer, or send the plate with Bambu Connect.`,
+    tellTheUser: sure
+      ? `${printerName} sends its status but turned the print away: Bambu Lab printers do that while Developer Mode is off. Turn on LAN Only Mode and Developer Mode on the printer, or send the plate with Bambu Connect.`
+      : `${printerName} sends its status but did not take the print. That may be Developer Mode being off: check the printer's screen first, then turn on LAN Only Mode and Developer Mode on the printer, or send the plate with Bambu Connect.`,
+    sure,
     remedies: developerModeRemedies(model),
   }
+}
+
+/** A printer whose storage has no room for the file (`printer_storage_full`): what to tell the user and the remedy. Null for any other error. */
+export function storageFullAnswer(e: unknown, printerName: string): { tellTheUser: string; remedies: (typeof STORAGE_FULL_REMEDY)[] } | null {
+  if ((e as { code?: unknown } | null)?.code !== PRINTER_STORAGE_FULL) return null
+  return { tellTheUser: `${printerName} has no room for the file: its storage is full. Free space on the printer's SD card, then send again.`, remedies: [STORAGE_FULL_REMEDY] }
 }
 
 /** The params each host call hashes, per the ApprovalAction docs in contracts. */
@@ -284,9 +295,12 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
       const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, file.name)
       ctx.progress(`uploading ${file.name}`, 0.2)
       // Upload and start both turn the print away the same way on a Bambu Lab printer without Developer Mode.
+      // A full card is said the same way: the person frees space, then sends again.
       const refused = (e: unknown) => {
         const a = developerModeAnswer(e, info?.name ?? i.printerId, info?.model)
-        return a ? { ok: false, summary: a.tellTheUser, output: { ok: false, error: NEEDS_DEVELOPER_MODE, ...a, retry: false } } : null
+        if (a) return { ok: false, summary: a.tellTheUser, output: { ok: false, error: NEEDS_DEVELOPER_MODE, ...a, retry: false } }
+        const full = storageFullAnswer(e, info?.name ?? i.printerId)
+        return full ? { ok: false, summary: full.tellTheUser, output: { ok: false, error: PRINTER_STORAGE_FULL, ...full, retry: false } } : null
       }
       let remote
       try {

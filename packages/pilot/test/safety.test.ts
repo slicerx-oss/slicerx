@@ -113,7 +113,7 @@ describe('printer side effects', () => {
     const env = createEvalEnv({ client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-2', plate: 1 } }] }, { text: 'done' }]), machine: MACHINE, objects: [CLIP] })
     // What sx-connect returns for an A1 mini on Authorization Control firmware without Developer Mode.
     env.sim.upload = async () => {
-      throw Object.assign(new Error('printer bay-2 takes no prints from other apps: It sends status, but the file upload failed (FTPS upload timed out).'), { code: 'needs_developer_mode' })
+      throw Object.assign(new Error('printer bay-2 may need Developer Mode to take prints from this app: It sends status, but the file upload failed (FTPS upload timed out).'), { code: 'needs_developer_mode' })
     }
     const events: PilotEvent[] = []
     for await (const ev of env.pilot.run('t', 'test', { context: { machine: MACHINE } })) {
@@ -121,10 +121,46 @@ describe('printer side effects', () => {
       if (ev.type === 'approval_request') await env.pilot.resolveApproval(ev.request.id, { kind: 'approve', bedClear: true })
     }
     const result = events.find((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result' && !e.ok)
-    expect(result?.summary).toMatch(/did not take the print.*Developer Mode.*Bambu Connect/)
-    const out = result?.output as { error: string; retry: boolean; remedies: { id: string }[] }
-    expect(out).toMatchObject({ error: 'needs_developer_mode', retry: false })
+    expect(result?.summary).toMatch(/did not take the print\. That may be Developer Mode.*Bambu Connect/)
+    const out = result?.output as { error: string; retry: boolean; sure: boolean; remedies: { id: string }[] }
+    expect(out).toMatchObject({ error: 'needs_developer_mode', retry: false, sure: false })
     expect(out.remedies.map((r) => r.id)).toEqual(['developer_mode', 'bambu_connect'])
+    expect(env.audit.sideEffects.filter((s) => s.ok && s.method === 'start')).toEqual([])
+  })
+
+  it('a start refused as unsigned says so plainly, with both remedies', async () => {
+    const env = createEvalEnv({ client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-2', plate: 1 } }] }, { text: 'done' }]), machine: MACHINE, objects: [CLIP] })
+    env.sim.start = async () => {
+      throw Object.assign(new Error('printer bay-2 takes no prints from other apps: It answered "mqtt message verify failed".'), { code: 'needs_developer_mode' })
+    }
+    const events: PilotEvent[] = []
+    for await (const ev of env.pilot.run('t', 'test', { context: { machine: MACHINE } })) {
+      events.push(ev)
+      if (ev.type === 'approval_request') await env.pilot.resolveApproval(ev.request.id, { kind: 'approve', bedClear: true })
+    }
+    const result = events.find((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result' && !e.ok)
+    expect(result?.summary).toMatch(/turned the print away: Bambu Lab printers do that while Developer Mode is off/)
+    expect(result?.summary).not.toMatch(/may be/)
+    expect(result?.output).toMatchObject({ error: 'needs_developer_mode', retry: false, sure: true })
+  })
+
+  it('an upload the printer has no room for says to free space, not Developer Mode, and is not retried', async () => {
+    const env = createEvalEnv({ client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-2', plate: 1 } }] }, { text: 'done' }]), machine: MACHINE, objects: [CLIP] })
+    // What sx-connect returns when the printer's FTP server answers STOR with 452.
+    env.sim.upload = async () => {
+      throw Object.assign(new Error("printer bay-2 has no room for the file: its storage is full (FTP 452 after STOR). Free space on the printer's SD card."), { code: 'printer_storage_full' })
+    }
+    const events: PilotEvent[] = []
+    for await (const ev of env.pilot.run('t', 'test', { context: { machine: MACHINE } })) {
+      events.push(ev)
+      if (ev.type === 'approval_request') await env.pilot.resolveApproval(ev.request.id, { kind: 'approve', bedClear: true })
+    }
+    const result = events.find((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result' && !e.ok)
+    expect(result?.summary).toMatch(/has no room for the file: its storage is full\. Free space/)
+    expect(result?.summary).not.toMatch(/Developer Mode/)
+    const out = result?.output as { error: string; retry: boolean; remedies: { id: string; steps: string[] }[] }
+    expect(out).toMatchObject({ error: 'printer_storage_full', retry: false })
+    expect(out.remedies.map((r) => r.id)).toEqual(['free_storage'])
     expect(env.audit.sideEffects.filter((s) => s.ok && s.method === 'start')).toEqual([])
   })
 

@@ -95,6 +95,14 @@ export function bambuGuide(family: BambuFamily): BambuGuide {
 /** The error code a Bambu Lab printer's refusal comes back with when it needs Developer Mode or Bambu Connect. */
 export const NEEDS_DEVELOPER_MODE = 'needs_developer_mode'
 
+/**
+ * Whether a `needs_developer_mode` error's message says the printer itself said so (its flags or its reply), rather than
+ * a guess from an upload that failed or a start left unanswered. A guess reads "may need Developer Mode".
+ */
+export function developerModeSure(message: string): boolean {
+  return !/\bmay need Developer Mode\b/.test(message)
+}
+
 /** One way past the refusal: the steps on the printer, or the hand-off to Bambu Connect. */
 export interface DeveloperModeRemedy {
   id: 'developer_mode' | 'bambu_connect'
