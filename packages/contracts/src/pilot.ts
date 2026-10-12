@@ -213,6 +213,41 @@ export interface PilotLookup {
   source: { title: string; url: string }
 }
 
+/** Where a dimension's value came from. A guess stays marked until the person confirms it. */
+export type DimSource = 'asked' | 'lookup' | 'photo' | 'guess'
+
+/** One driving dimension on a dimension sheet. */
+export interface PilotDim {
+  /** Stable within the sheet, such as phone_width. */
+  key: string
+  label: string
+  value: number
+  unit: 'mm' | 'deg' | '%'
+  min?: number
+  max?: number
+  source: DimSource
+  /** For a looked-up value: the page it came from. */
+  sourceTitle?: string
+  sourceUrl?: string
+  note?: string
+}
+
+/** The sizes a part is built from, for the person to confirm or edit before mimir builds it. */
+export interface PilotSheet {
+  id: string
+  title: string
+  /** The views the part shows in while the sheet is up, first is the main one. */
+  views: ('front' | 'top' | 'side' | 'iso')[]
+  dims: PilotDim[]
+}
+
+/** The person's answer to a sheet: every value as confirmed, and the keys they changed. */
+export interface PilotSheetAnswer {
+  confirmed: boolean
+  values: Record<string, number>
+  changed: string[]
+}
+
 /** One answer on a choice card. */
 export interface PilotChoice {
   id: string
@@ -246,6 +281,9 @@ export type PilotEvent =
   /** A question for the person with fixed answers; the run waits until one is picked. */
   | { type: 'ask'; askId: string; title: string; question: string; choices: PilotChoice[] }
   | { type: 'ask_answered'; askId: string; choiceId: string }
+  /** The sizes a part needs, for the person to confirm or edit; the run waits until they do. */
+  | { type: 'sheet'; sheet: PilotSheet }
+  | { type: 'sheet_answered'; sheetId: string; answer: PilotSheetAnswer }
   | { type: 'lookup'; lookup: PilotLookup }
   | { type: 'approval_resolved'; requestId: string; decision: ApprovalDecision; by: 'user' | 'policy' | 'expiry'; via?: 'card' | 'phone' }
   | { type: 'summary'; title: string; rows: [string, string][]; stopped: boolean }
@@ -318,6 +356,8 @@ export interface Pilot {
   run(sessionId: string, message: string, opts?: { signal?: AbortSignal; context?: PilotContext; attachments?: PilotAttachment[] }): AsyncIterable<PilotEvent>
   /** Answers a choice card. Runtimes without questions leave it out. */
   answer?(askId: string, choiceId: string): Promise<void>
+  /** Answers a dimension sheet: the values as the person left them. Runtimes without sheets leave it out. */
+  answerSheet?(sheetId: string, values: Record<string, number>): Promise<void>
   /**
    * Live settings evaluation. Emits a `settings_diff` right away from
    * deterministic code (no model call), then an optional short narration.
