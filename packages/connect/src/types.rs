@@ -410,7 +410,8 @@ pub struct PrinterHardware {
     /// Bambu Lab: whether a micro SD card is in. An X1 needs one to start a print over the network.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_card: Option<bool>,
-    /// The printable volume, X, Y and Z in mm, from the printer's own travel limits (Klipper).
+    /// The printable volume, X, Y and Z in mm, from the printer's own travel limits (Klipper) or the
+    /// size it reports (Elegoo SDCP).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build_volume_mm: Option<[f64; 3]>,
     /// The diameter of a round bed in mm (delta printers).

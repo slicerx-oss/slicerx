@@ -1085,6 +1085,7 @@ async fn elegoo_reads_attributes_files_and_free_storage() {
     assert_eq!(hw.model.as_deref(), Some("Centauri Carbon"));
     assert_eq!(hw.firmware.as_deref(), Some("V1.1.29"));
     assert_eq!(hw.serial.as_deref(), Some("000000000001d354"));
+    assert_eq!(hw.build_volume_mm, Some([256.0, 256.0, 256.0]));
     let f = job_file("cube.gcode", JobKind::Gcode);
     let t = gate.mint(
         sx_connect::Action::Upload,
