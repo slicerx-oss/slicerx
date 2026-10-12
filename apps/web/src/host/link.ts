@@ -15,7 +15,7 @@ function hasRemote(link: LinkHost): link is LinkHost & { remote: Remote } {
 }
 
 /** What the app takes from a connected bridge. */
-export function wrapLink(link: LinkHost, relay?: string | null): ConnectedBridge {
+export function wrapLink(link: LinkHost, relay?: string | null, opts: { appLink?: boolean } = {}): ConnectedBridge {
   const setup = createPrinterSetup(link)
   return {
     printers: link,
@@ -66,6 +66,22 @@ export function wrapLink(link: LinkHost, relay?: string | null): ConnectedBridge
           },
         }
       : {}),
+    // The app link: the desktop app hosts it; the browser build never does.
+    ...(opts.appLink && typeof (link as { appLink?: { host?: unknown } }).appLink?.host === 'function'
+      ? {
+          appLink: {
+            isOn: async () => (await link.settings.get()).appLink === true,
+            setOn: async (on: boolean) => (await link.settings.set({ appLink: on })).appLink === true,
+            host: () => link.appLink.host(),
+            onCall: (cb) => link.appLink.onCall(cb),
+            onAsk: (cb) => link.appLink.onAsk(cb),
+            reply: (id, out) => link.appLink.reply(id, out),
+            answer: (id, d) => link.appLink.answer(id, d),
+            grants: () => link.appLink.grants(),
+            revoke: (id) => link.appLink.revoke(id),
+          } satisfies NonNullable<ConnectedBridge['appLink']>,
+        }
+      : {}),
     close: () => link.close(),
   }
 }
@@ -89,7 +105,7 @@ export function shellBridge(start: () => Promise<{ url: string; code: string; hu
     automatic: true,
     async connect() {
       // The shell started this hub and knows its key, so the client refuses anything else on the port.
-      return wrapLink(await connectLink(shellLinkOptions(await start())), relay)
+      return wrapLink(await connectLink(shellLinkOptions(await start())), relay, { appLink: true })
     },
   }
 }

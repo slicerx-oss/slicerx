@@ -28,6 +28,8 @@ const PRESETS_ID = 'presets'
 const LOOK_ID = 'look'
 const SLICING_ID = 'slicing'
 const PILOT_ID = 'pilot'
+const AgentsSection = lazy(() => import('../app-link/section').then((m) => ({ default: m.AgentsSection })))
+const AGENTS_ID = 'agents'
 
 export function SettingsDialog() {
   const open = useApp((s) => s.settingsOpen)
@@ -36,6 +38,8 @@ export function SettingsDialog() {
   const edition = useEdition()
   const [picked, setPicked] = useState<string | null>(null)
   const hasBridge = bridgeConnector() !== null
+  // Only the desktop app hosts the app link; the browser build's bridge never offers it.
+  const hasAgents = bridgeConnector()?.automatic === true
   const sections: { id: string; label: string; icon: IconName }[] = [
     ...settings.map((s) => ({ id: s.id, label: s.label, icon: s.icon })),
     ...(edition.features.phonePairing ? [{ id: PHONE_ID, label: 'Phone access', icon: 'phone' as IconName }] : []),
@@ -45,6 +49,7 @@ export function SettingsDialog() {
           { id: APPS_ID, label: 'Connected apps', icon: 'plugin' as IconName },
         ]
       : []),
+    ...(hasAgents ? [{ id: AGENTS_ID, label: 'Agents', icon: 'mcp' as IconName }] : []),
     { id: PRESETS_ID, label: 'Presets', icon: 'save' },
     { id: CONTROLS_ID, label: 'Controls', icon: 'keyboard' },
     { id: LOOK_ID, label: 'Look and feel', icon: 'sliders' },
@@ -90,6 +95,10 @@ export function SettingsDialog() {
           ) : id === BRIDGE_ID ? (
             <Suspense fallback={<Loading />}>
               <BridgeSection />
+            </Suspense>
+          ) : id === AGENTS_ID ? (
+            <Suspense fallback={<Loading />}>
+              <AgentsSection />
             </Suspense>
           ) : id === APPS_ID ? (
             <Suspense fallback={<Loading />}>
