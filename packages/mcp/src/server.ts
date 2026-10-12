@@ -20,6 +20,7 @@ import { importReportLines, readProjectFile, sliceWalls, type WallsNote } from '
 import { listDocs, settingEntry, settingsReference } from './docs'
 import { BED_CONFIRM_NOTE, gatedCall, mcpName, resolvePending, type GateDeps, type ToolProgress } from './gate'
 import { resolveModel, ToolInputError, type ErrorCode, type PathPolicy } from './models'
+import { openInApp } from './open-in-app'
 import { describePolicy } from './policy'
 import { registerThemingTools } from './theming'
 import type { PrinterBackend } from './printers'
@@ -352,6 +353,23 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       annotations: { ...readOnly, openWorldHint: true },
     },
     (args, extra) => guard(() => runSlice(args, false, extra)),
+  )
+
+  server.registerTool(
+    'slicerx_open_in_app',
+    {
+      title: 'Open in the SlicerX app',
+      description:
+        'Open a model or project file (.sx3mf, .3mf or .stl) in the SlicerX desktop app on this computer, to slice and print it there, as the browser\'s Open in SlicerX button does. The file goes to the app registered for its type, as a double-click would. Returns the file and the command that handed it over. The app adds it to the plate; nothing is sliced or printed until a person does it.',
+      inputSchema: { file: z.string().min(1).describe('Absolute path or http(s) URL of a .sx3mf, .3mf or .stl file') },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    (args) =>
+      guard(async () => {
+        const path = await resolveModel(ctx.policy, args.file)
+        const opened = await openInApp(path)
+        return ok(opened, `Opened ${basename(path)} in the app (${opened.command}).`)
+      }),
   )
 
   server.registerTool(
