@@ -10,6 +10,8 @@ import { inTextField, matchShortcut } from '../lib/keys'
 import { toggleModelMode } from '../state/model-mode'
 import { get, set } from '../state/store'
 import { toggleEdge } from '../shell/edge-keys'
+import { onControl } from '../controls/global-keys'
+import { layerCountNow, stepLayer } from '../workspaces/preview/layer-step'
 import { PICK_KINDS, pickKeysOn } from './pick-filter'
 import { clearPicks, setPickKind } from './sub-pick'
 import { arrangePlate, centerSelected, clearSelection, dropSelectedToBed, selectAll } from './edit'
@@ -69,9 +71,34 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
     'panel.left': () => void toggleEdge('left'),
     'panel.right': () => void toggleEdge('right'),
     'panel.bottom': () => void toggleEdge('bottom'),
+    // The layer slider's keys, from anywhere in Slice. Stepping shows the toolpaths, as dragging the slider does.
+    'preview.layerUp': () => layerKey(1),
+    'preview.layerDown': () => layerKey(-1),
+    // One layer: the bottom handle joins the top one; again, it goes back to the first layer.
+    'preview.singleLayer': () =>
+      set((s) => {
+        const hi = Math.max(1, Math.min(s.layerHi, layerCountNow()))
+        return { layerLo: s.layerLo >= hi ? 1 : hi, sliceLook: 'toolpaths' }
+      }),
+    'preview.legend': () => set((s) => ({ legendHidden: !s.legendHidden })),
   }
   for (const [action, preset] of Object.entries(VIEW) as [KeyAction, NonNullable<(typeof VIEW)[KeyAction]>][]) out[action] = () => bus()?.view?.(preset, { animate: true })
   return out
+}
+
+function layerKey(by: number): void {
+  if (get().sliceLook !== 'toolpaths') set({ sliceLook: 'toolpaths' })
+  stepLayer(by)
+}
+
+/**
+ * Whether a preview key acts now: Slice with a slice to step through, and not on a focused control (a radio, a select
+ * or the layer slider itself keeps its own arrows). The layer arrows act on solid models too; the other preview keys
+ * only while the toolpaths show, so a look that shares a letter (L for supports and for one layer) keeps the tool there.
+ */
+function previewKeyOn(action: KeyAction, s: ReturnType<typeof get>, e: KeyboardEvent): boolean {
+  if (s.modelMode !== 'slice' || layerCountNow() < 1 || onControl(e.target)) return false
+  return action === 'preview.layerUp' || action === 'preview.layerDown' || s.sliceLook === 'toolpaths'
 }
 
 /** Tools whose panel or gizmo takes Esc for itself. */
@@ -127,10 +154,16 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
       if (!t?.closest('.tool-slot') && !document.querySelector('[role="menu"], [role="dialog"], .sx-popover, .pane.sheet-open')) return run(clearSelection)
     }
     const prepare = s.workspace === 'prepare'
+    // Preview keys go first while they apply, so the layer slider's key wins over a tool on the same letter.
     for (const [action, h] of Object.entries(handlers) as [KeyAction, Handler][]) {
       const key = map[action]
-      if (!key) continue
-      // Tools act on the plate, so only in Prepare; preview keys belong to the layer slider.
+      if (!key || !action.startsWith('preview.') || !previewKeyOn(action, s, e)) continue
+      if (matchShortcut(e, chord(key))) return run(h)
+    }
+    for (const [action, h] of Object.entries(handlers) as [KeyAction, Handler][]) {
+      const key = map[action]
+      if (!key || action.startsWith('preview.')) continue
+      // Tools act on the plate, so only in Prepare.
       if (!prepare && (action.startsWith('tool.') || action.startsWith('plate.'))) continue
       // A plain Tab is a view key only while the 3D view has focus; anywhere else it moves focus as usual.
       if (key === 'Tab' && !inView(e)) continue
