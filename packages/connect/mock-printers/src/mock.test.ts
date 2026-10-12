@@ -520,11 +520,11 @@ test('Bambu: Authorization Control without Developer Mode takes the FTPS login a
   const { MockMachine } = await import('./machine.ts')
   const { connect: tlsConnect } = await import('node:tls')
   const fixture = JSON.parse(readFileSync(fileURLToPath(new URL('../../fixtures/demo-fleet.json', import.meta.url)), 'utf8'))
-  const report = reportFor(new MockMachine(fixture, 'bay-1'), { skipped: [], printError: 0, authorizationControl: true }).print as { fun?: string }
+  const report = reportFor(new MockMachine(fixture, 'bay-1'), { skipped: [], printError: 0, authorizationControl: 'silent' }).print as { fun?: string }
   assert.equal(report.fun, undefined)
   const mocks = await startMocks({ only: ['bambu'] })
   try {
-    assert.equal((await post(mocks, '/bambu', { authorizationControl: true })).status, 200)
+    assert.equal((await post(mocks, '/bambu', { authorizationControl: 'silent' })).status, 200)
     const replies: string[] = []
     const closed = await new Promise<boolean>((resolve, reject) => {
       const sock = tlsConnect({ port: mocks.ports['bambu-ftp']!, host: '127.0.0.1', rejectUnauthorized: false })
@@ -545,6 +545,37 @@ test('Bambu: Authorization Control without Developer Mode takes the FTPS login a
     assert.equal(st.files.length, 0)
     const log = (await json(await fetch(`http://127.0.0.1:${mocks.control}/state`))).log as string[]
     assert.ok(log.includes('dropped STOR cube.gcode.3mf'), JSON.stringify(log))
+  } finally {
+    await mocks.stop()
+  }
+})
+
+// A full card: the FTPS login works and STOR is answered with the storage reply, so the driver can say so.
+test('Bambu: a full card answers the upload 452 and stores nothing', async () => {
+  const { MOCK_ACCESS_CODE } = await import('./bambu.ts')
+  const { connect: tlsConnect } = await import('node:tls')
+  const mocks = await startMocks({ only: ['bambu'] })
+  try {
+    assert.equal((await post(mocks, '/bambu', { storageFull: true })).status, 200)
+    const replies: string[] = []
+    await new Promise<void>((resolve, reject) => {
+      const sock = tlsConnect({ port: mocks.ports['bambu-ftp']!, host: '127.0.0.1', rejectUnauthorized: false })
+      const steps = [`USER bblp`, `PASS ${MOCK_ACCESS_CODE}`, 'PASV', 'STOR cube.gcode.3mf']
+      sock.on('error', reject)
+      sock.on('data', (d: Buffer) => {
+        for (const line of d.toString('utf8').split('\r\n').filter(Boolean)) {
+          replies.push(line)
+          const next = steps.shift()
+          if (next) sock.write(`${next}\r\n`)
+          else if (line.startsWith('452')) sock.end(resolve)
+        }
+      })
+    })
+    assert.deepEqual(replies.map((r) => r.slice(0, 3)), ['220', '331', '230', '227', '452'])
+    assert.equal((await mockState(mocks, 'bambu')).files.length, 0)
+    const log = (await json(await fetch(`http://127.0.0.1:${mocks.control}/state`))).log as string[]
+    assert.ok(log.includes('full STOR cube.gcode.3mf'), JSON.stringify(log))
+    assert.equal((await post(mocks, '/bambu', { storageFull: false })).status, 200)
   } finally {
     await mocks.stop()
   }

@@ -817,9 +817,10 @@ struct Shared {
     /// The last `device.nozzle` object (H2 printers). Kept apart because later reports send `device`
     /// without it.
     nozzle: Mutex<Option<Value>>,
-    /// Set when the printer refused or ignored a send while its status kept coming (Authorization
+    /// Set when the printer answered a command with the unsigned-command refusal (Authorization
     /// Control with Developer Mode off, when the report carries no `fun` flags that say so). Cleared
-    /// when a start goes through or the report says Developer Mode is on.
+    /// when a start goes through. A send that only failed or went unanswered does not set it: that
+    /// is a guess, said as one in the error, and the status keeps to what the printer said.
     refused_send: AtomicBool,
 }
 
@@ -924,8 +925,7 @@ impl Shared {
         st
     }
 
-    /// Records that the printer refused or ignored a send while its status kept coming, and says so
-    /// in the status.
+    /// Records that the printer refused a command as unsigned, and says so in the status.
     fn note_refused_send(&self) {
         if !self.refused_send.swap(true, Ordering::Relaxed) {
             self.publish_changes();
@@ -1889,17 +1889,18 @@ impl BambuSession {
         v.get("print_error").and_then(Value::as_u64).unwrap_or(0)
     }
 
-    /// Waits for the printer's answer to a `project_file` start: its reply (`result` "success" or
-    /// "fail", read the way Bambu Studio reads it), or the job showing as
-    /// prepared or printing, or a new `print_error` with the job failed. A refusal comes back as
-    /// [`Error::Refused`] with the printer's reason in plain words, so the person decides what to do
-    /// next; nothing is retried or changed here. With no answer at all, see [`Self::unanswered_start`].
-    async fn await_project_start(&self, seq: &str, error_before: u64) -> Result<()> {
+    /// Waits for the printer's answer to a start (`command` is `project_file` or `gcode_file`): its
+    /// reply (`result` "success" or "fail", read the way Bambu Studio reads it), or the job showing
+    /// as prepared or printing, or a new `print_error` with the job failed. A refusal comes back as
+    /// [`Error::Refused`] with the printer's reason in plain words (or [`Error::NeedsDeveloperMode`]
+    /// for the unsigned-command refusal), so the person decides what to do next; nothing is retried
+    /// or changed here. With no answer at all, see [`Self::unanswered_start`].
+    async fn await_start(&self, seq: &str, command: &str, error_before: u64) -> Result<()> {
         let end = tokio::time::Instant::now() + PROJECT_ANSWER_WAIT;
         loop {
-            if let Some(v) = self.answer(seq, "project_file") {
-                if let Some(reason) = project_refusal(&v) {
-                    return Err(self.refusal(reason));
+            if let Some(v) = self.answer(seq, command) {
+                if let Some(e) = self.reply_error(&v) {
+                    return Err(e);
                 }
                 self.shared.note_send_taken();
                 return Ok(());
@@ -1928,7 +1929,7 @@ impl BambuSession {
         }
     }
 
-    /// Sends `pause`, `resume`, `stop` or a plain G-code start (`gcode_file`) with `param` and waits
+    /// Sends `pause`, `resume` or `stop` with `param` and waits
     /// for the printer's answer on the report topic, as a project start does: a `result` of "fail"
     /// comes back as [`Error::Refused`] with the printer's reason, so a refused command never reads as
     /// done. The report showing a state in `done` also settles it, and with neither in
@@ -1940,10 +1941,7 @@ impl BambuSession {
         let end = tokio::time::Instant::now() + CONTROL_ANSWER_WAIT;
         loop {
             if let Some(v) = self.answer(&seq, command) {
-                return match project_refusal(&v) {
-                    Some(reason) => Err(self.refusal(reason)),
-                    None => Ok(()),
-                };
+                return self.reply_error(&v).map_or(Ok(()), Err);
             }
             let state = {
                 let v = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -1977,10 +1975,7 @@ impl BambuSession {
         let end = tokio::time::Instant::now() + COMMAND_ANSWER_WAIT;
         loop {
             if let Some(v) = self.answer(&seq, &command) {
-                return match project_refusal(&v) {
-                    Some(reason) => Err(self.refusal(reason)),
-                    None => Ok(()),
-                };
+                return self.reply_error(&v).map_or(Ok(()), Err);
             }
             if tokio::time::Instant::now() >= end {
                 return Ok(());
@@ -2016,6 +2011,7 @@ impl BambuSession {
         Err(Error::NeedsDeveloperMode {
             printer: self.id().to_owned(),
             reason: MONITOR_ONLY.to_owned(),
+            sure: true,
         })
     }
 
@@ -2027,10 +2023,30 @@ impl BambuSession {
         refusal_for(self.id(), reason, &state)
     }
 
-    /// A project start the printer did not answer in [`PROJECT_ANSWER_WAIT`] while the job did not
-    /// change. With the status still coming and no report that Developer Mode is on, that is how a
-    /// start refused by Authorization Control can look (the firmware drops the command without a
-    /// reply), so the person hears it and gets the two remedies. Otherwise the start stands as sent.
+    /// The error a command's reply `v` stands for, or `None` when it is no refusal. The
+    /// unsigned-command refusal (see [`unsigned_refusal`]) is the printer saying it takes no
+    /// commands from other apps, so it is [`Error::NeedsDeveloperMode`] and the status learns it.
+    fn reply_error(&self, v: &Value) -> Option<Error> {
+        let reason = project_refusal(v)?;
+        if unsigned_refusal(v) {
+            self.shared.note_refused_send();
+            return Some(Error::NeedsDeveloperMode {
+                printer: self.id().to_owned(),
+                reason: format!(
+                    "It answered \"{}\". {UNSIGNED_REFUSED}",
+                    reason.trim_end_matches('.')
+                ),
+                sure: true,
+            });
+        }
+        Some(self.refusal(reason))
+    }
+
+    /// A start the printer did not answer in [`PROJECT_ANSWER_WAIT`] while the job did not change.
+    /// The fallback for firmware that drops a refused command without the unsigned-command reply:
+    /// with the status still coming and no report that Developer Mode is on, the person hears that
+    /// Developer Mode may be the cause (`sure` false) and gets the two remedies. The status is not
+    /// changed, since the printer said nothing. Otherwise the start stands as sent.
     fn unanswered_start(&self) -> Result<()> {
         let dev = {
             let state = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -2039,27 +2055,22 @@ impl BambuSession {
         if !self.shared.connected.load(Ordering::Relaxed) || dev == Some(true) {
             return Ok(());
         }
-        self.shared.note_refused_send();
         Err(Error::NeedsDeveloperMode {
             printer: self.id().to_owned(),
             reason: START_UNANSWERED.to_owned(),
+            sure: false,
         })
     }
 
-    /// An FTPS upload that failed while MQTT stayed up. Returns the error as it came, or
-    /// [`Error::NeedsDeveloperMode`] when it reads as Authorization Control turning the file away.
+    /// An FTPS upload that failed. Returns the error as it came (a full card stays
+    /// [`Error::StorageFull`]), or [`Error::NeedsDeveloperMode`] with "may" words when it can be
+    /// Authorization Control turning the file away (see [`upload_refusal`]).
     fn upload_failure(&self, e: Error) -> Error {
         let dev = {
             let state = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
             developer_mode(&state)
         };
-        match upload_refusal(self.id(), e, self.shared.connected.load(Ordering::Relaxed), dev) {
-            Ok(refused) => {
-                self.shared.note_refused_send();
-                refused
-            }
-            Err(e) => e,
-        }
+        upload_refusal(self.id(), e, self.shared.connected.load(Ordering::Relaxed), dev)
     }
 
     fn next_seq(&self) -> String {
@@ -2312,11 +2323,29 @@ fn refusal_for(id: &str, reason: String, p: &Value) -> Error {
     Error::NeedsDeveloperMode {
         printer: id.to_owned(),
         reason: format!("{}. {MONITOR_ONLY}", reason.trim_end_matches('.')),
+        sure: true,
     }
 }
 
+/// The `err_code` values Bambu Lab firmware answers a `print` command with when it wants a signed
+/// command and got none (0x0502_4007) or a malformed one (0x0502_4009), with `result` "failed" and
+/// `reason` "mqtt message verify failed". From OpenBambuAPI's cloud-x509-auth.md (auth requirements
+/// per command class), which says they were seen in captured traffic.
+const UNSIGNED_CODES: [u64; 2] = [0x0502_4007, 0x0502_4009];
+
+/// Whether a command's reply `v` is the firmware turning away an unsigned command: one of
+/// [`UNSIGNED_CODES`] as `err_code`, or the reason "mqtt message verify failed".
+fn unsigned_refusal(v: &Value) -> bool {
+    let code = v.get("err_code").and_then(Value::as_u64);
+    code.is_some_and(|c| UNSIGNED_CODES.contains(&c))
+        || v.get("reason")
+            .and_then(Value::as_str)
+            .is_some_and(|r| r.trim().eq_ignore_ascii_case("mqtt message verify failed"))
+}
+
 /// Whether the status should say the printer needs Developer Mode: its report `p` says it is off,
-/// or a send was refused or ignored (`refused`) and the report does not say it is on.
+/// or it answered a command with the unsigned-command refusal (`refused`) and the report does not
+/// say Developer Mode is on.
 fn needs_developer_mode(p: &Value, refused: bool) -> bool {
     match developer_mode(p) {
         Some(false) => true,
@@ -2325,30 +2354,35 @@ fn needs_developer_mode(p: &Value, refused: bool) -> bool {
     }
 }
 
-/// Reads a failed FTPS upload for printer `id`. With MQTT up (`mqtt_up`) and no report that
-/// Developer Mode is on (`dev`), a connection that times out, drops or is refused is what
-/// Authorization Control looks like from here (Developer Mode is what opens FTP to other apps,
-/// per Bambu Lab), so it comes back as `Ok` with [`Error::NeedsDeveloperMode`]. Anything
-/// else (MQTT down too, a wrong access code, a full card) comes back unchanged as `Err`.
-fn upload_refusal(id: &str, e: Error, mqtt_up: bool, dev: Option<bool>) -> std::result::Result<Error, Error> {
+/// Reads a failed FTPS upload for printer `id`. The printer gives no reply that names
+/// Authorization Control here, so this is a guess: with MQTT up (`mqtt_up`) and no report that
+/// Developer Mode is on (`dev`), a connection that times out, drops or is refused without an FTP
+/// reply can be the firmware turning the file away, and it comes back as
+/// [`Error::NeedsDeveloperMode`] with `sure` false. Anything else (MQTT down too, a wrong access
+/// code, a storage reply that says the card is full, any other FTP reply) comes back unchanged.
+fn upload_refusal(id: &str, e: Error, mqtt_up: bool, dev: Option<bool>) -> Error {
     let detail = match &e {
         Error::Unreachable { detail, .. } | Error::Timeout { detail, .. } => detail.clone(),
-        _ => return Err(e),
+        _ => return e,
     };
     if !mqtt_up || dev == Some(true) {
-        return Err(e);
+        return e;
     }
-    Ok(Error::NeedsDeveloperMode {
+    Error::NeedsDeveloperMode {
         printer: id.to_owned(),
         reason: format!("It sends status, but the file upload failed ({detail}). {UPLOAD_REFUSED}"),
-    })
+        sure: false,
+    }
 }
 
-/// The likely cause of an upload that failed while status kept coming, and the two ways to print.
-const UPLOAD_REFUSED: &str = "The likely cause is Developer Mode being off: with Bambu Lab's Authorization Control firmware, a printer takes no files or prints from other apps until LAN Only Mode and Developer Mode are on. Turn both on, or print through Bambu Connect.";
+/// What an upload that failed while status kept coming may mean, and the two ways to print.
+const UPLOAD_REFUSED: &str = "The cause may be Developer Mode being off: with Bambu Lab's Authorization Control firmware, a printer takes no prints from other apps until LAN Only Mode and Developer Mode are on. If both are already on, check the printer's network and try again. Otherwise turn both on, or print through Bambu Connect.";
 
-/// What a start that got no answer, while status kept coming, most likely means.
-const START_UNANSWERED: &str = "It sends status, but it did not answer the print start. With Bambu Lab's Authorization Control firmware that is what a refused start can look like while Developer Mode is off. Check the printer's screen first: if the print started after all, there is nothing to do. Otherwise turn on LAN Only Mode and Developer Mode, or print through Bambu Connect.";
+/// What a start that got no answer, while status kept coming, may mean.
+const START_UNANSWERED: &str = "It sends status, but it did not answer the print start. That may be Bambu Lab's Authorization Control turning the start away while Developer Mode is off. Check the printer's screen first: if the print started after all, there is nothing to do. Otherwise turn on LAN Only Mode and Developer Mode, or print through Bambu Connect.";
+
+/// What the unsigned-command refusal means, and the two ways to print.
+const UNSIGNED_REFUSED: &str = "That is Bambu Lab's Authorization Control turning away a command from another app: the printer takes prints and commands only from Bambu Lab's apps while Developer Mode is off. Turn on LAN Only Mode and Developer Mode, or print through Bambu Connect.";
 
 /// Why a printer with Developer Mode off takes no command from SlicerX, and the two ways to print.
 const MONITOR_ONLY: &str = "Developer Mode is off on the printer, so it sends status but takes no commands from other apps. Print through Bambu Connect, or turn on Developer Mode in its LAN Only settings to print directly.";
@@ -2642,17 +2676,19 @@ impl PrinterSession for BambuSession {
             "start a job",
             &[PrinterState::Idle, PrinterState::Finished, PrinterState::Error],
         )?;
-        if !is_3mf {
-            let path = format!("/sdcard/{}", file.path);
-            return self
-                .control("gcode_file", &path, &["PREPARE", "SLICING", "RUNNING"])
-                .await;
-        }
         let seq = self.next_seq();
-        let body = project_file_command(&seq, file, &opts, self.reported_model().as_deref());
         let error_before = self.print_error();
+        if !is_3mf {
+            // A plain G-code start is read the same way as a project start: its reply, the job
+            // changing, or no answer at all.
+            let path = format!("/sdcard/{}", file.path);
+            self.command(json!({ "print": { "sequence_id": seq, "command": "gcode_file", "param": path } }))
+                .await?;
+            return self.await_start(&seq, "gcode_file", error_before).await;
+        }
+        let body = project_file_command(&seq, file, &opts, self.reported_model().as_deref());
         self.command(body).await?;
-        self.await_project_start(&seq, error_before).await
+        self.await_start(&seq, "project_file", error_before).await
     }
 
     async fn pause(&self, token: &ApprovalToken) -> Result<()> {
@@ -2833,7 +2869,8 @@ impl PrinterSession for BambuSession {
     async fn set_light(&self, on: bool, token: &ApprovalToken) -> Result<()> {
         self.gate
             .check(token, Action::Adjust, self.id(), &params::light(self.id(), on))?;
-        self.require_control()?;
+        // No Developer Mode check: Bambu Lab's Authorization Control notes (January 16, 2025) keep
+        // LED control open to other apps. A printer that refuses it anyway says so in its reply.
         // Bambu Studio switches the light with `ledctrl` for `chamber_light` and
         // `chamber_light2` (the H2 printers' second light), with the same timings.
         for node in ["chamber_light", "chamber_light2"] {
@@ -2891,6 +2928,9 @@ impl PrinterSession for BambuSession {
         let end = tokio::time::Instant::now() + SLOT_ANSWER_WAIT;
         while tokio::time::Instant::now() < end {
             if let Some(v) = self.answer(&seq, "ams_filament_setting") {
+                if unsigned_refusal(&v) {
+                    return self.reply_error(&v).map_or(Ok(()), Err);
+                }
                 return match v.get("result").and_then(Value::as_str) {
                     Some(r) if r.eq_ignore_ascii_case("fail") => Err(Error::Refused {
                         printer: self.id().to_owned(),
@@ -3376,9 +3416,19 @@ mod tests {
     fn an_upload_that_fails_while_status_flows_needs_developer_mode() {
         use super::upload_refusal;
         let timed_out = || crate::Error::unreachable("p", "FTPS upload timed out");
-        let e = upload_refusal("p", timed_out(), true, None).unwrap();
+        let e = upload_refusal("p", timed_out(), true, None);
         assert_eq!(e.code(), crate::ErrorCode::NeedsDeveloperMode);
+        assert!(
+            matches!(e, crate::Error::NeedsDeveloperMode { sure: false, .. }),
+            "{e:?}"
+        );
         let text = e.to_string();
+        // A guess, said as one.
+        assert!(text.contains("may need Developer Mode"), "{text}");
+        assert!(
+            text.contains("The cause may be Developer Mode being off"),
+            "{text}"
+        );
         assert!(text.contains("(FTPS upload timed out)"), "{text}");
         assert!(text.contains("LAN Only Mode and Developer Mode"), "{text}");
         assert!(text.contains("Bambu Connect"), "{text}");
@@ -3386,25 +3436,69 @@ mod tests {
             printer: "p".into(),
             detail: "FTP control connection closed".into(),
         };
-        assert!(upload_refusal("p", dropped, true, Some(false)).is_ok());
+        assert_eq!(
+            upload_refusal("p", dropped, true, Some(false)).code(),
+            crate::ErrorCode::NeedsDeveloperMode
+        );
         // MQTT down too: the printer is just unreachable.
         assert_eq!(
-            upload_refusal("p", timed_out(), false, None).unwrap_err().code(),
+            upload_refusal("p", timed_out(), false, None).code(),
             crate::ErrorCode::Unreachable
         );
         // Developer Mode on: the cause is something else, so the error stays as it came.
         assert_eq!(
-            upload_refusal("p", timed_out(), true, Some(true))
-                .unwrap_err()
-                .code(),
+            upload_refusal("p", timed_out(), true, Some(true)).code(),
             crate::ErrorCode::Unreachable
         );
         // A wrong access code is not a refusal.
         let auth = crate::Error::Auth { printer: "p".into() };
         assert_eq!(
-            upload_refusal("p", auth, true, None).unwrap_err().code(),
+            upload_refusal("p", auth, true, None).code(),
             crate::ErrorCode::Auth
         );
+        // A full card says so in its FTP reply and is never read as Developer Mode.
+        let full = crate::Error::StorageFull {
+            printer: "p".into(),
+            reason: "its storage is full (FTP 452 after STOR).".into(),
+        };
+        assert_eq!(
+            upload_refusal("p", full, true, None).code(),
+            crate::ErrorCode::StorageFull
+        );
+        // Any other FTP reply is the printer answering, not turning the file away unheard.
+        let other = crate::Error::protocol("p", "FTP 550 after STOR");
+        assert_eq!(
+            upload_refusal("p", other, true, None).code(),
+            crate::ErrorCode::Protocol
+        );
+    }
+
+    // OpenBambuAPI cloud-x509-auth.md: a `print` command without a signature is answered with
+    // `result` "failed", `reason` "mqtt message verify failed" and `err_code` 0x05024007 (or
+    // 0x05024009 for a malformed signature).
+    #[test]
+    fn the_unsigned_command_reply_is_read_as_the_firmware_refusal() {
+        use super::{project_refusal, unsigned_refusal};
+        let unsigned = json!({ "command": "project_file", "result": "failed", "reason": "mqtt message verify failed", "err_code": 84_033_543_u64 });
+        assert!(unsigned_refusal(&unsigned));
+        assert_eq!(
+            project_refusal(&unsigned).as_deref(),
+            Some("mqtt message verify failed")
+        );
+        assert!(unsigned_refusal(
+            &json!({ "result": "failed", "err_code": 0x0502_4009_u64 })
+        ));
+        assert!(unsigned_refusal(
+            &json!({ "result": "fail", "reason": "MQTT message verify failed" })
+        ));
+        // Other refusals stay the printer's own reason.
+        assert!(!unsigned_refusal(
+            &json!({ "result": "fail", "reason": "MD5 verify failed" })
+        ));
+        assert!(!unsigned_refusal(
+            &json!({ "result": "fail", "err_code": 0x0300_4006_u64 })
+        ));
+        assert!(!unsigned_refusal(&json!({ "result": "success" })));
     }
 
     #[test]

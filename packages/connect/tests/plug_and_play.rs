@@ -105,7 +105,8 @@ async fn bambu_without_an_sd_card_says_so_before_uploading() {
 }
 
 // Developer Mode off: the printer still connects with the access code and sends status, the session
-// is monitor-only, and every command is refused before anything goes to the printer.
+// is monitor-only, and every print command is refused before anything goes to the printer. The
+// light still goes out: Bambu Lab's Authorization Control notes keep LED control open.
 #[tokio::test]
 async fn bambu_without_developer_mode_connects_monitor_only() {
     let (mocks, gate, s) = bambu(serde_json::json!({ "model": "N2S", "developerMode": false })).await;
@@ -139,6 +140,9 @@ async fn bambu_without_developer_mode_connects_monitor_only() {
     assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), Some(true));
     let t = gate.mint(Action::Pause, "bay-1", &params::printer("bay-1"));
     expect_code(s.pause(&t).await, ErrorCode::NeedsDeveloperMode);
+    let t = gate.mint(Action::Adjust, "bay-1", &params::light("bay-1", false));
+    s.set_light(false, &t).await.unwrap();
+    mocks.wait_log("ledctrl chamber_light off").await;
     let state = mocks.state().await;
     assert!(state["bambu"]["files"].as_array().unwrap().is_empty());
     let log = state["log"].as_array().unwrap();
@@ -154,12 +158,14 @@ async fn bambu_without_developer_mode_connects_monitor_only() {
     assert!(s.capabilities().contains(&Capability::Start));
 }
 
-// Authorization Control without Developer Mode, with no `fun` flags to say so (a Discord report from
-// an A1 mini): status and the light work, the upload is turned away and a start goes unanswered.
-// Both come back as `needs_developer_mode`, and the status then says so for clients to read back.
+// Authorization Control without Developer Mode, with no `fun` flags to say so and no reply that names
+// it (a Discord report from an A1 mini): status and the light work, the upload is turned away and a
+// start goes unanswered. Both come back as `needs_developer_mode` with "may" words, since the
+// printer said nothing, and the status stays as the printer reported it.
 #[tokio::test]
 async fn bambu_on_authorization_control_without_developer_mode_says_what_to_do() {
-    let (mocks, gate, s) = bambu(serde_json::json!({ "model": "N1", "authorizationControl": true })).await;
+    let (mocks, gate, s) =
+        bambu(serde_json::json!({ "model": "N1", "authorizationControl": "silent" })).await;
     let st = s.status().await.unwrap();
     assert_eq!(st.state, PrinterState::Idle);
     assert_eq!(st.live.as_ref().and_then(|l| l.monitor_only), None);
@@ -181,11 +187,13 @@ async fn bambu_on_authorization_control_without_developer_mode_says_what_to_do()
         words.contains("Developer Mode") && words.contains("Bambu Connect"),
         "{words}"
     );
+    let shown = r.as_ref().err().map(ToString::to_string).unwrap_or_default();
+    assert!(shown.contains("may need Developer Mode"), "{shown}");
     expect_code(r, ErrorCode::NeedsDeveloperMode);
     mocks.wait_log("dropped STOR cube.gcode.3mf").await;
     let st = s.status().await.unwrap();
     assert_eq!(st.state, PrinterState::Idle);
-    assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), Some(true));
+    assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), None);
 
     // The start goes out and gets no answer while the reports keep coming.
     let rf = sx_connect::RemoteFile {
@@ -197,10 +205,9 @@ async fn bambu_on_authorization_control_without_developer_mode_says_what_to_do()
     let opts = StartOptions::default();
     let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
     let r = s.start(&rf, opts, &t).await;
-    assert!(
-        format!("{r:?}").contains("did not answer the print start"),
-        "{r:?}"
-    );
+    let words = format!("{r:?}");
+    assert!(words.contains("did not answer the print start"), "{words}");
+    assert!(words.contains("That may be"), "{words}");
     expect_code(r, ErrorCode::NeedsDeveloperMode);
     mocks.wait_log("ignored project_file").await;
     assert!(
@@ -209,6 +216,64 @@ async fn bambu_on_authorization_control_without_developer_mode_says_what_to_do()
             .unwrap()
             .is_empty()
     );
+}
+
+// Authorization Control without Developer Mode, said in the reply: the upload goes through, and a
+// project start and a plain G-code start are both answered with the unsigned-command refusal
+// (OpenBambuAPI cloud-x509-auth.md). That is a sure `needs_developer_mode`, and the status says so.
+#[tokio::test]
+async fn bambu_reads_the_unsigned_command_reply_as_needing_developer_mode() {
+    let (mocks, gate, s) =
+        bambu(serde_json::json!({ "model": "N1", "authorizationControl": "verify" })).await;
+    let t = gate.mint(Action::Adjust, "bay-1", &params::light("bay-1", true));
+    s.set_light(true, &t).await.unwrap();
+    mocks.wait_log("ledctrl chamber_light on").await;
+    for (name, kind, command) in [
+        ("cube.gcode.3mf", JobKind::Gcode3mf, "project_file"),
+        ("cube.gcode", JobKind::Gcode, "gcode_file"),
+    ] {
+        let file = job_file(name, kind);
+        let t = gate.mint(
+            Action::Upload,
+            "bay-1",
+            &params::upload("bay-1", &file.name, &file.sha256),
+        );
+        let rf = s.upload(file, &t).await.unwrap();
+        let opts = StartOptions::default();
+        let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+        let r = s.start(&rf, opts, &t).await;
+        let words = format!("{:?}", r.as_ref().err());
+        assert!(words.contains("mqtt message verify failed"), "{words}");
+        assert!(words.contains("sure: true"), "{words}");
+        assert!(words.contains("Bambu Connect"), "{words}");
+        expect_code(r, ErrorCode::NeedsDeveloperMode);
+        mocks.wait_log(&format!("unsigned {command}")).await;
+    }
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Idle);
+    assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), Some(true));
+}
+
+// A full card answers the upload with FTP 452: `printer_storage_full` with what to do, never
+// `needs_developer_mode`, and the status keeps to what the printer reported.
+#[tokio::test]
+async fn bambu_says_when_the_card_is_full() {
+    let (mocks, gate, s) = bambu(serde_json::json!({ "model": "N1", "storageFull": true })).await;
+    let file = job_file("cube.gcode.3mf", JobKind::Gcode3mf);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-1",
+        &params::upload("bay-1", &file.name, &file.sha256),
+    );
+    let r = s.upload(file, &t).await;
+    let words = r.as_ref().err().map(ToString::to_string).unwrap_or_default();
+    assert!(words.contains("has no room for the file"), "{words}");
+    assert!(words.contains("FTP 452 after STOR"), "{words}");
+    assert!(words.contains("Free space on the printer's SD card"), "{words}");
+    expect_code(r, ErrorCode::StorageFull);
+    mocks.wait_log("full STOR cube.gcode.3mf").await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), None);
 }
 
 /// A Moonraker session to the fake, after `/moonraker` made it `variant` (a QIDI printer, a U1).
