@@ -130,7 +130,8 @@ async function run(req: Request, hooks: NestRun = {}): Promise<NestReply> {
   const fixed = await Promise.all(req.fixed.map((e) => itemOf(e, margins)))
   const zones = [...avoidAreas(), ...margins.keepOut].map((r) => ({ polygons: [rectOutline(r)] }))
   const problem = {
-    bed: { widthMm: req.bed.widthMm, depthMm: req.bed.depthMm },
+    // A round bed (a delta) keeps every outline inside its circle, not the circle's box.
+    bed: { widthMm: req.bed.widthMm, depthMm: req.bed.depthMm, ...(req.bed.round ? { round: true } : {}) },
     items,
     fixed: fixed.map(({ copies: _c, ...f }) => f),
     zones,

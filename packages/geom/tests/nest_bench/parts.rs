@@ -507,6 +507,7 @@ pub fn problem(p: &Plate, gap: f64, step: f64, passes: u32) -> NestProblem {
         bed: NestBed {
             width_mm: BED_MM,
             depth_mm: BED_MM,
+            round: false,
         },
         items,
         fixed: vec![],

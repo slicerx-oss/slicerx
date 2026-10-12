@@ -196,3 +196,21 @@ describe('arrange and fill the bed in the app', () => {
     expect(plate.slice(1).every((p) => p.instanceOf === 's')).toBe(true)
   })
 })
+
+describe('true shape nesting on a round bed', () => {
+  it('on a round bed every outline stays inside the circle, not just its square box', async () => {
+    // The FLSUN V400's 300 mm circle. Thirty 40 x 30 blocks fill the box's corners, which are off the bed.
+    const bed = { widthMm: 300, depthMm: 300, heightMm: 400, round: true }
+    const items = Array.from({ length: 30 }, (_, i) => nestEntry(`b${i}`, boxes([[0, 0, 40, 30]]), at(0, 0)))
+    const r = await nestArrange(items, [], bed, { gapMm: 5, rotate: true, margins: NO_MARGINS })
+    expect(Object.keys(r.transforms).length).toBeGreaterThan(0)
+    for (const e of items) {
+      const t = r.transforms[e.id]
+      if (!t) continue
+      for (const b of placedBoxes(e.parts[0] as MeshPart, t)) {
+        const far = Math.max(...[[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1]].map(([x, y]) => Math.hypot(x! - 150, y! - 150)))
+        expect(far).toBeLessThanOrEqual(150 - 5 + 1e-3)
+      }
+    }
+  })
+})
