@@ -64,6 +64,30 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     expect(text(tried)).toMatch(/in SlicerX or on the phone/)
   })
 
+  it("reads a printer's own print history through the hub, newest first, without touching the printer", async () => {
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    const tool = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_printer_history')
+    expect(tool?.annotations?.readOnlyHint).toBe(true)
+    // What the printer was asked to change, from the mock's control server.
+    const changes = async () => ((await (await fetch(`http://127.0.0.1:${mocks.control}/state`)).json()) as { moonraker: { state: string; log: string[] } }).moonraker
+    const before = await changes()
+    const r = await h.call('slicerx_printer_history', { printerId: 'bay-4', limit: 5 })
+    expect(r.isError, text(r)).toBeFalsy()
+    const out = data<{ output: { printerId: string; total: number; jobs: { name: string; result: string; started_at: string | null; ended_at: string | null; duration_s: number | null; filament_mm?: number }[] } }>(r).output
+    expect(out.printerId).toBe('bay-4')
+    expect(out.jobs[0]).toEqual({
+      name: 'earlier.gcode',
+      result: 'completed',
+      started_at: new Date(1_700_000_000_000).toISOString(),
+      ended_at: new Date((1_700_000_000 + 5400) * 1000).toISOString(),
+      duration_s: 5400,
+      filament_mm: 4200,
+    })
+    expect(out.jobs.length).toBeLessThanOrEqual(5)
+    expect(await changes()).toEqual(before)
+    await expect(h.call('slicerx_printer_history', { printerId: 'bay-4', limit: 0 }).then((x) => x.isError)).resolves.toBe(true)
+  })
+
   it('leaves adding a printer to the SlicerX app, since the hub refuses it from agents', async () => {
     const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
     const hits = data<{ output: { id: string }[] }>(await h.call('slicerx_printer_profile_search', { query: 'voron 2.4' }))

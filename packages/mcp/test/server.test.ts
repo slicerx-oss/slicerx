@@ -24,6 +24,7 @@ describe('tool list', () => {
         'slicerx_project_set_overrides',
         'slicerx_printer_list',
         'slicerx_printer_status',
+        'slicerx_printer_history',
         'slicerx_printer_set_temperature',
         'slicerx_printer_filament',
         'slicerx_printer_gcode',
@@ -43,10 +44,20 @@ describe('tool list', () => {
     expect(tool?.description).toMatch(/Permission class: start/)
   })
 
+  it('lists printer history as read only, and says where it comes from on simulated printers', async () => {
+    const h = await connect()
+    const tool = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_printer_history')
+    expect(tool?.annotations?.readOnlyHint).toBe(true)
+    expect(tool?.annotations?.destructiveHint).toBe(false)
+    const r = await h.call('slicerx_printer_history', { printerId: 'bay-1' })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toMatch(/through sx-link/)
+  })
+
   it('drops printer tools with printers off', async () => {
     const { client } = await connect({ printers: 'off' })
     const names = (await client.listTools()).tools.map((t) => t.name)
-    const printerTools = ['slicerx_printer_list', 'slicerx_printer_queue', 'slicerx_printer_pause', 'slicerx_printer_gcode', 'slicerx_printer_snapshot', 'slicerx_list_fleets']
+    const printerTools = ['slicerx_printer_list', 'slicerx_printer_history', 'slicerx_printer_queue', 'slicerx_printer_pause', 'slicerx_printer_gcode', 'slicerx_printer_snapshot', 'slicerx_list_fleets']
     expect(names.filter((n) => printerTools.includes(n))).toEqual([])
   })
 
