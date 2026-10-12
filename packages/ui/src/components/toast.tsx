@@ -3,6 +3,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FocusEvent, type HTMLAttributes, type ReactNode } from 'react'
 import { Icon } from '../icons/icon'
+import { Button } from './button'
 import type { IconName } from '../icons/icon-paths'
 
 export type ToastTone = 'plain' | 'ok' | 'info' | 'warn' | 'error'
@@ -139,9 +140,9 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
             {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
             <span>{t.message}</span>
             {t.action ? (
-              <button type="button" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
+              <Button size="sm" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
                 {t.action.label}
-              </button>
+              </Button>
             ) : null}
           </ToastItem>
         ))}
