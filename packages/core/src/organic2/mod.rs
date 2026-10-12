@@ -110,6 +110,27 @@ impl Trace {
         eprintln!("organic2 {name}");
     }
 
+    /// Depth, radius depth, widening and drawn radius of the nodes on the lowest layers, with
+    /// `SX_ORGANIC2_TRACE=roots`.
+    #[allow(clippy::print_stderr, reason = "a trace asked for by environment variable")]
+    fn roots(&self, p: &params::Params, nodes: &[Vec<node::Node>]) {
+        if !self.on || std::env::var("SX_ORGANIC2_TRACE").ok().as_deref() != Some("roots") {
+            return;
+        }
+        for (l, layer) in nodes.iter().enumerate().take(20) {
+            for n in layer {
+                eprintln!(
+                    "organic2 root layer {l} d {} e {:.2} f {:.2} drawn {:.3} rec {:.3}",
+                    n.d,
+                    n.e,
+                    n.f,
+                    p.drawn_radius(f64::from(n.d), n.e, n.f),
+                    p.recommended_min_radius(l)
+                );
+            }
+        }
+    }
+
     /// Tip positions by print Z, with `SX_ORGANIC2_TRACE=tips`.
     #[allow(clippy::print_stderr, reason = "a trace asked for by environment variable")]
     fn tips_by_layer(&self, tips: &[(usize, node::Node)], tops: &[f64]) {
@@ -200,6 +221,7 @@ pub(crate) fn plan(inp: &Input<'_>) -> Plan {
         }
     }
     merge::descend(&p, &v, &mut nodes);
+    trace.roots(&p, &nodes);
     trace.stage("growth");
     centers::choose(&p, &v, &mut nodes);
     let hs = draw::Heights { tops: &tops };

@@ -243,7 +243,8 @@ pub(crate) fn layer_paths(
         // The flange: a sheath and dense lines across the base angle.
         let sheath = ops::grow(&l.base, -w / 2.0);
         support.extend(loops(&sheath, 0.15 * inp.first_spacing));
-        let inside = ops::grow(&l.base, -w);
+        // The lines come in half a line more (inside the fill), so they meet the sheath.
+        let inside = ops::grow(&l.base, -w / 2.0);
         support.extend(lines(
             &inside,
             &Fill {
@@ -274,7 +275,8 @@ pub(crate) fn layer_paths(
         ));
     }
     let mut interface = Vec::new();
-    let across = inp.angle + 90.0;
+    // Roof lines lie on a diagonal of the interface direction, the other diagonal on the next roof layer.
+    let across = inp.angle + 90.0 + if l.roof_ordinal % 2 == 1 { -45.0 } else { 45.0 };
     let dense = ops::union_many(&[&l.top_contact, &l.interface, &l.base_interface]);
     interface.extend(lines(
         &dense,
@@ -381,5 +383,40 @@ mod tests {
         let total = length(&walls);
         let lap = std::f64::consts::TAU * 1.8 - 0.06;
         assert!(total > lap + 2.4 && total < lap + 3.0, "{total} vs {lap}");
+    }
+
+    #[test]
+    fn roof_lines_turn_between_diagonals() {
+        let i = inp(0);
+        let dir = |ordinal: usize| {
+            let l = Layer {
+                interface: ops::rect([90.0, 90.0, 110.0, 110.0]),
+                roof_ordinal: ordinal,
+                ..Layer::default()
+            };
+            let (_, iface) = layer_paths(&l, false, 10.0, &i);
+            let line = iface
+                .iter()
+                .flat_map(|pl| pl.windows(2))
+                .max_by(|a, b| {
+                    let len = |w: &[Point]| match w {
+                        [p, q] => p.dist_mm(*q),
+                        _ => 0.0,
+                    };
+                    len(a).total_cmp(&len(b))
+                })
+                .map(<[Point]>::to_vec)
+                .unwrap_or_default();
+            let [p, q] = line.as_slice() else {
+                return f64::NAN;
+            };
+            (q.y_mm() - p.y_mm())
+                .m_atan2(q.x_mm() - p.x_mm())
+                .to_degrees()
+                .rem_euclid(180.0)
+                .round()
+        };
+        assert!((dir(1) - 45.0).abs() < 1.0, "{}", dir(1));
+        assert!((dir(2) - 135.0).abs() < 1.0, "{}", dir(2));
     }
 }
