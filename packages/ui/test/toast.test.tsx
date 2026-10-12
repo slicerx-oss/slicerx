@@ -3,6 +3,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A toast's time starts on its first frame, not when it is posted, and lasts as long as its text takes to read. Any
 // toast waits while it is hovered or focused and runs on with the time it had left.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -171,5 +173,20 @@ describe('toasts on screen', () => {
     act(() => host.querySelector<HTMLButtonElement>('[data-testid=toast-action]')!.click())
     expect(run).toHaveBeenCalledOnce()
     expect(shown()).toBe(0)
+  })
+})
+
+describe('toasts and the view under them', () => {
+  const css = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8')
+  const rule = (selector: string) => css.split('\n').find((l) => l.startsWith(`${selector} {`)) ?? ''
+
+  it('lets a press through the stack and through a toast, so the 3D view under one still takes it', () => {
+    expect(rule('.sx-toasts')).toContain('pointer-events: none')
+    expect(rule('.sx-toast')).toContain('pointer-events: none')
+    expect(rule('.sx-toast')).not.toContain('pointer-events: auto')
+  })
+
+  it('keeps a toast own buttons and links pressable', () => {
+    expect(rule('.sx-toast button, .sx-toast a')).toContain('pointer-events: auto')
   })
 })
