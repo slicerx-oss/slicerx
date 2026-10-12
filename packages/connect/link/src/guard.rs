@@ -255,7 +255,7 @@ async fn stop(b: &Arc<Bridge>, printer: &str, kind: &str) -> (&'static str, bool
     }
     match crate::watch::auto_pause(b, printer, kind).await {
         Ok(()) => ("paused", false),
-        Err(e) if e.code == "refused" => ("alert", true),
+        Err(e) if e.code == "refused" || e.code == "needs_developer_mode" => ("alert", true),
         Err(_) => ("alert", false),
     }
 }
