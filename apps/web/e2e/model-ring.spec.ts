@@ -73,9 +73,10 @@ test.describe('Model ring menu', () => {
     await page.keyboard.press('Alt+3')
     await contextAt(page, top)
     await expect(ring(page)).toHaveAttribute('data-target', 'edge')
-    expect(await slots(page)).toEqual(['model-ring-fillet', 'model-ring-chamfer', 'model-ring-measure'])
-    await page.keyboard.press('Escape')
-    await expect(ring(page)).toHaveCount(0)
+    expect(await slots(page)).toEqual(['model-ring-fillet', 'model-ring-chamfer', 'model-ring-loop', 'model-ring-measure'])
+    // Edge loop picks every edge around the face: the box's top has four
+    await page.getByTestId('model-ring-loop').click()
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { subPicks: { kind: string }[] } } }).__sx.getState().subPicks.filter((p) => p.kind === 'edge').length)).toBe(4)
 
     // empty space
     await page.keyboard.press('Alt+1')

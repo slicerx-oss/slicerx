@@ -18,7 +18,7 @@ import { objectWarnings } from '../plate/object-list'
 import { loadExtruderAreas, nozzleZones } from '../plate/nozzle-zones'
 import { commitTransforms, layOnPickedFace } from '../plate/edit'
 import { openViewMenu } from '../plate/view-menu'
-import { openViewRing, ringTarget, setLayFace } from '../plate/view-ring'
+import { openViewRing, ringTarget, setEdgeLoop, setLayFace } from '../plate/view-ring'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
 import { probeHandler, setCameraBus, toolStore, type CadView, type Tool } from '../plate/tools'
 import { pickSub, type EdgeAt, type FaceRound } from '../plate/sub-pick'
@@ -571,6 +571,24 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         return pick ? layOnPickedFace(pick) : false
       })
       offs.push(() => setLayFace(null))
+      // Edge loop from the ring: every edge around the face the last picked edge bounds, as the engine's edge pick
+      // returns them (the same loop slicerx_geom_edge_pick gives an agent).
+      setEdgeLoop(async () => {
+        const last = appStore.getState().subPicks.filter((p) => p.kind === 'edge').at(-1)
+        const e = last ? appStore.getState().plate.find((p) => p.id === last.objectId) : undefined
+        const part = last ? e?.parts[last.partIndex] : undefined
+        if (!last || !e || !part) return false
+        const [{ pickEdge }, { edgeLines }] = await Promise.all([import('../geom/cad'), import('../cad/edges')])
+        const r = await pickEdge({ mesh: toGeom(part), transform: e.transform }, { triangle: last.triangle, at: last.point })
+        if (r.loop.length < 2) return false
+        const picks = r.loop.map((l) => {
+          const lines = edgeLines(l.edge)
+          return { kind: 'edge' as const, objectId: last.objectId, partIndex: last.partIndex, triangle: last.triangle, point: l.edge.a, lines, ...(lines.length > 1 ? { round: true } : {}) }
+        })
+        set({ subPicks: picks })
+        return true
+      })
+      offs.push(() => setEdgeLoop(null))
       // A right click on an object in Slice opens the selection's menu there; outside the selection it selects first.
       offs.push(vp.on('contextpick', (e) => {
         const st = appStore.getState()
