@@ -9,8 +9,9 @@ import { arrange, ARRANGE_DEFAULTS, fillCount, type ArrangeOptions, type Arrange
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { quietly } from './history'
 import { selectedEntry } from './select'
-import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, scaleToSize, setScale, withTrs, type Mat4, type Trs, type Vec3 } from './transform'
+import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, modelOrigin, scaleToSize, setScale, withTrs, type Box, type Mat4, type Trs, type Vec3 } from './transform'
 import { brandAccent, objectPalette } from '../edition'
+import { cadShown, modelMode } from '../state/model-mode'
 
 // selection lives in ./select (light, loads with the shell); these names stay importable from here
 export { clearSelection, selectAll, selectedEntry, selectObject, type SelectMode } from './select'
@@ -353,6 +354,25 @@ export async function mergeSelected(host: Loader): Promise<boolean> {
   return true
 }
 
+/**
+ * Where Model puts a new shape (its center in X and Y): beside the selection on +X, clear of every other object, or
+ * at the grid origin when nothing is selected. Slice arranges new objects on the bed instead.
+ */
+export function modelPlace(size: Vec3, origin: Vec3, selected: Box | null, others: readonly Box[], gapMm = 5): [number, number] {
+  if (!selected) return [origin[0], origin[1]]
+  const hx = size[0] / 2
+  const hy = size[1] / 2
+  const y = (selected.min[1] + selected.max[1]) / 2
+  let x = selected.max[0] + gapMm + hx
+  // step past whatever is in the way, left to right; each step clears one object, so this ends
+  for (let n = 0; n <= others.length; n++) {
+    const hit = others.find((b) => x - hx < b.max[0] + gapMm && x + hx > b.min[0] - gapMm && y - hy < b.max[1] + gapMm && y + hy > b.min[1] - gapMm)
+    if (!hit) break
+    x = hit.max[0] + gapMm + hx
+  }
+  return [x, y]
+}
+
 /** Adds a primitive: as a new object in free space, or as a part of the selected object. */
 export async function addPrimitive(host: Loader, shape: PrimitiveShape, as: 'object' | 'part', sizeMm = 20): Promise<string | null> {
   const mesh = primitive(shape, sizeMm)
@@ -377,6 +397,18 @@ export async function addPrimitive(host: Loader, shape: PrimitiveShape, as: 'obj
   }
   const handle = await host.loadParts(mesh.name, [mesh])
   const entry: PlateEntry = { id: newObjectId(), name: mesh.name, handle, parts: [mesh], colors: [brandAccent()], transform: compose({ position: [bed.widthMm / 2, bed.depthMm / 2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
+  if (cadShown() && modelMode() !== 'slice') {
+    const own = bounds([mesh], identity())
+    const size: Vec3 = own ? [own.max[0] - own.min[0], own.max[1] - own.min[1], 0] : [sizeMm, sizeMm, 0]
+    const sel = selectedEntry()
+    const boxOf = (e: PlateEntry) => bounds(e.parts, e.transform)
+    const others = get().plate.flatMap((e) => (e.id === sel?.id ? [] : [boxOf(e)])).filter((b): b is Box => b !== null)
+    const [x, y] = modelPlace(size, modelOrigin(bed), sel ? boxOf(sel) : null, others)
+    const placed = { ...entry, transform: compose({ position: [x, y, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
+    set({ plate: [...get().plate, placed], selection: placed.id, selectedIds: [placed.id] })
+    markStale()
+    return placed.id
+  }
   const r = arrange([entry], get().plate, bed, placeOptions())
   const placed = r.transforms[entry.id] ? { ...entry, transform: r.transforms[entry.id]! } : entry
   const tooLarge = tooLargeNotice(r, [entry])
