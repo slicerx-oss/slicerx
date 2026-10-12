@@ -87,6 +87,9 @@ const CONTACT_DEPTH_VS = /* glsl */ `
 varying float vH;
 void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vH = w.y; gl_Position = projectionMatrix * viewMatrix * w; }`
 
+/** How far the ground grid (Model and mimir, with the bed hidden) reaches, in bed half sizes, before it has faded out. */
+const GROUND_REACH = 1.8
+
 const PLATE_OUTLINE_FS = /* glsl */ `
 uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform float subtle; uniform vec3 grid; uniform vec2 hb; uniform float rnd; uniform vec3 reveal; varying vec2 vP;
 float lines(vec2 p, float s){ vec2 q = p / s; vec2 w = fwidth(q); vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4)); return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.3, 0.7, max(w.x, w.y))); }
@@ -123,9 +126,11 @@ void main(){
   float br = rnd > 0.5 ? 0.0 : max(bx, by);
   vec2 r = abs(vP) / hb;
   float edgeR = rnd > 0.5 ? length(vP) / hb.x : max(r.x, r.y);
-  // ground: no outline or corner marks, the grid runs to the quad's edge and fades out there. On the bed the grid
-  // keeps most of its strength to the far edge, so the whole plate reads from the default camera.
-  float fade = mix(1.0 - 0.3 * smoothstep(0.7, 1.0, edgeR), 1.0 - smoothstep(0.35, 1.0, edgeR), ground);
+  // ground: no outline or corner marks, the grid reaches well past the bed (GROUND_REACH times its half size), round,
+  // and fades softly at its edge, so an empty view reads as a workspace. On the bed the grid keeps most of its strength
+  // to the far edge, so the whole plate reads from the default camera.
+  float groundR = length(vP / (hb * ${GROUND_REACH.toFixed(2)}));
+  float fade = mix(1.0 - 0.3 * smoothstep(0.7, 1.0, edgeR), 1.0 - smoothstep(0.55, 1.0, groundR), ground);
   float inside = mix(1.0 - smoothstep(-0.4, 0.0, d), 1.0, ground);
   // 10 mm minor lines and brighter 50 mm major lines. On a plate surface the grid is a fainter guide over the sheet.
   float gl = (lines(vP + hb, 10.0) * 0.16 + lines(vP + hb, 50.0) * 0.4) * fade * inside * (1.0 - 0.7 * surface) * row;
@@ -572,7 +577,8 @@ export class Stage {
       this.decor.add(surf)
       this.disposables.push(surfGeo, surfMat, grain)
     }
-    const geo = new PlaneGeometry(bed.widthMm + pad * 2, bed.depthMm + pad * 2)
+    // big enough for the ground's grid; on the bed everything past the outline is clear
+    const geo = new PlaneGeometry(Math.max(bed.widthMm + pad * 2, bed.widthMm * GROUND_REACH * 2), Math.max(bed.depthMm + pad * 2, bed.depthMm * GROUND_REACH * 2))
     const quad = new Mesh(geo, mat)
     // Plane xy is bed xz: lie it flat with +y up.
     quad.rotation.x = -Math.PI / 2

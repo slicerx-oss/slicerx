@@ -596,3 +596,7 @@ button { cursor: pointer; }
 .sx-rune-ring[data-reverse] { animation-direction: reverse; }
 @keyframes sx-rune-spin { to { transform: rotate(360deg); } }
 :root[data-motion="reduced"] .sx-rune-ring { animation: none; }
+/* The battle ravens as a still mark: one color, thin strokes; the host sets color and opacity. */
+.sx-raven-mark { display: block; fill: none; stroke: currentColor; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
+.sx-raven-mark > circle:not(.sx-raven-mark-dot) { stroke-width: 0.6; }
+.sx-raven-mark .sx-raven-mark-dot, .sx-raven-mark .sx-raven-mark-eye, .sx-raven-mark .sx-raven-mark-spark { fill: currentColor; stroke: none; }
