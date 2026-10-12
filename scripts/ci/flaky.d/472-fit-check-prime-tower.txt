@@ -1,1 +1,0 @@
-moving an object does not rebuild the scene, with a prime tower on the plate | web-plan | 2026-10-12 | 2026-10-13 | https://github.com/slicerx-oss/slicerx/issues/472 | passed only on its retry on the GPU lane and took #788 out of the merge queue; cause under investigation (e2e/fit-check.spec.ts)
