@@ -33,6 +33,11 @@ export function hasProfileLayer(): boolean {
   return profile !== null
 }
 
+/** The profile layer in use, as a value that changes whenever setProfileLayer replaces it (null for none): a cache key. */
+export function profileLayerToken(): object | null {
+  return profile
+}
+
 /**
  * SlicerX's own defaults on top of a maker's process preset. The vendor presets carry the vendor's wall generator
  * (arachne on MK4S and K1, classic on Bambu Lab), so without this the stock presets would never use aegis. The vendor
