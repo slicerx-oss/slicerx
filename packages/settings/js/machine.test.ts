@@ -30,7 +30,7 @@ const table = (): Record<string, string> => ({
 
 describe('machine settings', () => {
   it('covers the models Orca has a profile for and records what was checked', () => {
-    expect(Object.keys(models)).toHaveLength(56)
+    expect(Object.keys(models)).toHaveLength(58)
     expect(MACHINE_CHECKED_COMMIT).toMatch(/^[0-9a-f]{7,}$/)
     for (const [id, e] of Object.entries(models)) {
       expect(e.orca?.checked, id).toBe(MACHINE_CHECKED_COMMIT)
@@ -93,7 +93,7 @@ describe('dual and multi nozzle printers', () => {
   it('carry an extruder printable area for every nozzle', () => {
     // The maker's nozzle list decides.
     const multi = listPrinterProfiles().filter((p) => ((printerConfig(p.id) as Record<string, unknown>)['nozzle_diameter'] as unknown[]).length > 1 && models[p.id])
-    expect(multi.map((p) => p.id)).toEqual(['bambu-h2d', 'bambu-h2c', 'prusa-xl-5-toolhead', 'snapmaker-u1', 'snapmaker-j1', 'snapmaker-artisan'])
+    expect(multi.map((p) => p.id)).toEqual(['bambu-h2d', 'bambu-h2d-pro', 'bambu-h2c', 'bambu-x2d', 'prusa-xl-5-toolhead', 'snapmaker-u1', 'snapmaker-j1', 'snapmaker-artisan'])
     for (const p of multi) {
       const cfg = printerConfig(p.id) as Record<string, unknown>
       expect((cfg['extruder_printable_area'] as unknown[]).length, p.id).toBe((cfg['nozzle_diameter'] as unknown[]).length)

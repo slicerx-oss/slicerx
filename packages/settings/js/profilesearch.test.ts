@@ -14,7 +14,7 @@ describe('searchProfiles', () => {
   })
   it('lists every model of a vendor for a vendor-only query', async () => {
     const all = await names('bambu')
-    expect(all).toHaveLength(11)
+    expect(all).toHaveLength(13)
     expect(all.every((m) => m.startsWith('Bambu Lab '))).toBe(true)
     expect((await names('voron')).length).toBe(8)
   })
@@ -31,7 +31,7 @@ describe('searchProfiles', () => {
   })
   it('finds nothing for nonsense and lists everything for an empty query', async () => {
     expect(await names('zzzzqqqq')).toEqual([])
-    expect((await searchProfiles('')).length).toBe(69)
+    expect((await searchProfiles('')).length).toBe(71)
   })
   it('uses an installed provider, and returns an empty list when it throws', async () => {
     setProfileProvider(() => [{ id: 'mine', vendor: 'Acme', model: 'Rocket 3000', nozzles: [0.4] }])

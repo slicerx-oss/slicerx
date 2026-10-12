@@ -7,6 +7,7 @@
   "bambu-a1-mini": "d276abcd",
   "bambu-h2c": "b81e1c65",
   "bambu-h2d": "40ad5122",
+  "bambu-h2d-pro": "d9ce5ca6",
   "bambu-h2s": "56bfec26",
   "bambu-p1p": "5ed15e28",
   "bambu-p1s": "760943ad",
@@ -14,6 +15,7 @@
   "bambu-x1": "688259fd",
   "bambu-x1-carbon": "830a1195",
   "bambu-x1e": "b238218e",
+  "bambu-x2d": "61b64dab",
   "creality-ender-3-octoprint": "03475277",
   "creality-ender-3-v3": "05bb8bf8",
   "creality-ender-3-v3-ke": "32fe1262",
@@ -104,6 +106,8 @@
   "gcode maker_qidi_x_smart_3": "ddb2d94f",
   "gcode maker_qidi_q2": "4f06178d",
   "gcode maker_qidi_x_max_4": "ce325185",
-  "gcodeModels": "8b9df7d5"
+  "gcode maker_bambu_h2d_pro": "e0fb481b",
+  "gcode maker_bambu_x2d": "03bfa8c5",
+  "gcodeModels": "94bf9721"
  }
 }
