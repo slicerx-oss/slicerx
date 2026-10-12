@@ -56,7 +56,7 @@ import type { PreviewBuffers } from '@slicerx/contracts'
 import { BrimEars } from './brim'
 import { GapLines, type GapLine } from './gaps'
 import { GuideLines, type Guides } from './guides'
-import { applyInsets, CameraRig, NO_INSETS, reducedMotion, type Insets } from './camera'
+import { applyInsets, CameraRig, NO_INSETS, PoseWatch, reducedMotion, type Insets } from './camera'
 import { cadLook, edgeLook, MaterialCache, setEdgeResolution, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
 import { buildObject, disposeObject, wideEdges, type AsyncPartBuild, type ObjectEntry, type PartEntry } from './model'
 import { Pipeline } from './post'
@@ -446,8 +446,11 @@ class ViewportImpl implements Viewport {
     c.target.set(0, 30, 0)
     c.update()
     this.rig = new CameraRig(this.camera, this.controls)
+    const pose = new PoseWatch()
     const onChange = (): void => {
-      // OrbitControls also updates inside its pointer handlers, so its own return value can miss motion.
+      // OrbitControls also updates inside its pointer handlers, so its own return value can miss motion. It also
+      // reports changes that move nothing (see PoseWatch), which must not keep the view in moving frames.
+      if (!pose.moved(this.camera, c.target)) return
       this.cameraMoved = true
       this.invalidate()
     }
@@ -615,7 +618,12 @@ class ViewportImpl implements Viewport {
     }
     let moving = this.rig.step(now) || this.cameraMoved
     this.cameraMoved = false
-    if (this.controls.update()) moving = true
+    // Real motion from the update comes back through the change event, which ignores changes that move nothing.
+    this.controls.update()
+    if (this.cameraMoved) {
+      moving = true
+      this.cameraMoved = false
+    }
     if (this.arrangeAnim && this.arrangeAnim(now)) moving = true
     // Scrubbing layers or moves redraws like orbiting: cheap frames while it changes, full quality once it stops.
     const camMoving = moving
