@@ -423,11 +423,53 @@ fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
         .collect();
     #[allow(clippy::cast_possible_truncation, reason = "1 mm cells of the bed")]
     let cell = |v: f64| v.floor() as i32;
+    // Only the cells a join that may go reads are filled (a bitmap over their box says which), so the grid stays
+    // small on a layer of many segments.
+    let mut cells: Vec<(i32, i32)> = Vec::new();
+    for p in &l.paths {
+        if !surface(p.feature) {
+            continue;
+        }
+        let [pa, pb] = l.path_points(p) else { continue };
+        if !joins.contains(&(*pa, *pb)) {
+            continue;
+        }
+        let (a, b) = (mm(*pa), mm(*pb));
+        for x in cell(a[0].min(b[0]))..=cell(a[0].max(b[0])) {
+            for y in cell(a[1].min(b[1]))..=cell(a[1].max(b[1])) {
+                cells.push((x, y));
+            }
+        }
+    }
+    let (x0, y0) = cells
+        .iter()
+        .fold((i32::MAX, i32::MAX), |m, c| (m.0.min(c.0), m.1.min(c.1)));
+    let (x1, y1) = cells
+        .iter()
+        .fold((i32::MIN, i32::MIN), |m, c| (m.0.max(c.0), m.1.max(c.1)));
+    if cells.is_empty() {
+        return None;
+    }
+    #[allow(clippy::cast_sign_loss, reason = "offsets inside the box")]
+    let at = |x: i32, y: i32| -> Option<usize> {
+        (x >= x0 && x <= x1 && y >= y0 && y <= y1)
+            .then(|| (y - y0) as usize * (x1 - x0 + 1) as usize + (x - x0) as usize)
+    };
+    let mut wanted = vec![false; at(x1, y1).map_or(0, |i| i + 1)];
+    for &(x, y) in &cells {
+        if let Some(w) = at(x, y).and_then(|i| wanted.get_mut(i)) {
+            *w = true;
+        }
+    }
     let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
     for (k, &(_, c, d)) in segs.iter().enumerate() {
-        for x in cell(c[0].min(d[0]) - JOIN_CLEAR_MM)..=cell(c[0].max(d[0]) + JOIN_CLEAR_MM) {
-            for y in cell(c[1].min(d[1]) - JOIN_CLEAR_MM)..=cell(c[1].max(d[1]) + JOIN_CLEAR_MM) {
-                grid.entry((x, y)).or_default().push(k);
+        for x in cell(c[0].min(d[0]) - JOIN_CLEAR_MM).max(x0)..=cell(c[0].max(d[0]) + JOIN_CLEAR_MM).min(x1) {
+            for y in
+                cell(c[1].min(d[1]) - JOIN_CLEAR_MM).max(y0)..=cell(c[1].max(d[1]) + JOIN_CLEAR_MM).min(y1)
+            {
+                if at(x, y).and_then(|i| wanted.get(i)).copied().unwrap_or(false) {
+                    grid.entry((x, y)).or_default().push(k);
+                }
             }
         }
     }
