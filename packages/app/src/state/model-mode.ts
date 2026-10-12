@@ -27,6 +27,11 @@ export function modelMode(): ModelMode {
   return cadShown() ? get().modelMode : 'slice'
 }
 
+/** mimir and Model both show the design: the CAD look, the ground grid, the picks and the timeline. */
+export function showsDesign(s: { workspace: string; modelMode: ModelMode }): boolean {
+  return s.workspace === 'prepare' && (s.modelMode === 'design' || s.modelMode === 'mimir')
+}
+
 /** Ctrl+E (Cmd+E): the other mode, shown on the first tab from whichever tab is open. Does nothing without modeling tools. */
 export function toggleModelMode(): void {
   if (cadShown()) setModelMode(get().modelMode === 'design' ? 'slice' : 'design')
