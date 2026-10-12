@@ -18,6 +18,8 @@ use i_overlay::i_float::int::point::IntPoint;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ToolWork {
     pub(crate) tool: u8,
+    /// The bridges over air this tool lays on the layer, for the slice result.
+    pub(crate) bridge_info: Vec<crate::output::BridgeInfo>,
     pub(crate) brim: Vec<Vec<IntPoint<i32>>>,
     pub(crate) skirt: Vec<Vec<IntPoint<i32>>>,
     /// Prime tower wall and purge rows, printed first: the purge follows the tool change.

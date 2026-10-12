@@ -7015,6 +7015,7 @@ impl SliceSession {
                         cls.bridges.push(crate::bridging::Bridged {
                             area: part,
                             angle: x.angle,
+                            anchors: x.anchors,
                         });
                     }
                 }
@@ -7197,6 +7198,7 @@ impl SliceSession {
                 );
                 let waves = crate::wave::Params::of(cfg);
                 for b in &cls.bridges {
+                    work.bridge_info.push(crate::output::BridgeInfo::of(b));
                     // Wave overhangs: rings growing from the material under the layer's edge.
                     if let (Some(w), Some(under)) = (waves.as_ref(), below) {
                         let seed = perimeters::intersection(shapes, under);
@@ -7672,6 +7674,7 @@ impl SliceSession {
         else {
             return out;
         };
+        out.bridges = works.iter().flat_map(|w| w.bridge_info.iter().copied()).collect();
         let Some(here) = get(layer) else { return out };
         let n = self.plan.count();
         let vase_cfg;
