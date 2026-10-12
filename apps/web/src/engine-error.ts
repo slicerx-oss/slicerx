@@ -10,7 +10,7 @@ export function showEngineError(root: HTMLElement, error: unknown): Promise<void
   const box = document.createElement('div')
   box.setAttribute('role', 'alert')
   box.dataset['testid'] = 'engine-error'
-  box.style.cssText = 'max-width:460px;margin:18vh auto 0;padding:24px;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#f8f8f2;background:#21222c;border:1px solid #44475a;border-radius:12px'
+  box.style.cssText = 'box-sizing:border-box;width:calc(100% - 32px);max-width:460px;margin:18vh auto 0;padding:24px;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#f8f8f2;background:#21222c;border:1px solid #44475a;border-radius:12px'
   const title = document.createElement('h1')
   title.textContent = 'The slicing engine could not start'
   title.style.cssText = 'font-size:18px;margin:0 0 8px'
