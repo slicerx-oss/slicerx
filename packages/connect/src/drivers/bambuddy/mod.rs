@@ -617,6 +617,7 @@ fn slot_from(id: String, tray: &Value) -> FilamentSlot {
             text(tray, "tray_color").as_deref().and_then(css_color)
         },
         remaining_pct: if empty { None } else { remain(tray) },
+        remaining_g: None,
         spoolman_id: None,
         spool_uid: if empty { None } else { spool_uid(tray) },
     }

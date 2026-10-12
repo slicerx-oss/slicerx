@@ -45,7 +45,7 @@ export function gcodeNotes(output: unknown): SheetNote[] {
  */
 export function spoolNotes(output: unknown): SheetNote[] {
   const r = rec(output)
-  if (r['status'] === 'pass' || typeof r['availG'] !== 'number' || (r['availSource'] !== 'spoolman' && r['availSource'] !== 'estimated')) return []
+  if (r['status'] === 'pass' || typeof r['availG'] !== 'number' || (r['availSource'] !== 'spoolman' && r['availSource'] !== 'printer' && r['availSource'] !== 'estimated')) return []
   const slot = typeof r['slot'] === 'string' ? r['slot'] : 'the loaded slot'
   const avail = r['availG'] as number
   const need = typeof r['needG'] === 'number' ? r['needG'] : 0
