@@ -51,70 +51,70 @@ pub(crate) fn finish_branch(
         .nodes
         .first()
         .and_then(|&(l, k)| layers.get(l).and_then(|v| v.get(k)));
-    if b.has_root {
-        if let Some(rn) = root {
-            if rn.flat {
-                if n_floor > 0 {
-                    let mut c = if p.z_bot >= 1 && start > 0 {
-                        first_slice.clone()
-                    } else {
-                        ops::inter(&first_slice, &v.placeable(0.0, start))
-                    };
-                    if c.is_empty() && start > 0 {
-                        c = first_slice.clone();
-                    }
-                    if !c.is_empty() {
-                        out.bottom.push((start, c));
-                    }
-                }
-            } else if start > 0 {
-                // A branch hanging over a slope or over air: extend it down until the model cuts it off.
-                let r_bottom = p.drawn_radius(f64::from(rn.d), rn.e, rn.f);
-                #[allow(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "a layer count"
-                )]
-                let reach = (5.0 * r_bottom / p.h).ceil().max(0.0) as usize;
-                let stop_at = if rn.very_lost {
-                    0
+    if b.has_root
+        && let Some(rn) = root
+    {
+        if rn.flat {
+            if n_floor > 0 {
+                let mut c = if p.z_bot >= 1 && start > 0 {
+                    first_slice.clone()
                 } else {
-                    start.saturating_sub(reach)
+                    ops::inter(&first_slice, &v.placeable(0.0, start))
                 };
-                let min_area = (0.2 * std::f64::consts::PI * r_bottom * r_bottom)
-                    .max(0.5 * std::f64::consts::PI * p.r_branch * p.r_branch);
-                let mut cur = ops::diff(&first_slice, &v.collision(0.0, start, false));
-                let mut extra: Vec<(usize, Shapes)> = Vec::new();
-                let mut l = start;
-                while l > stop_at {
-                    l -= 1;
-                    cur = ops::diff(&cur, &v.collision(0.0, l, false));
-                    if ops::area(&cur) < min_area {
-                        break;
-                    }
-                    extra.push((l, cur.clone()));
+                if c.is_empty() && start > 0 {
+                    c.clone_from(&first_slice);
                 }
-                if n_floor > 0 {
-                    let pick = |a: &Shapes, at: usize| {
-                        if p.z_bot >= 1 {
-                            ops::inter(a, v.bed())
-                        } else {
-                            ops::inter(a, &v.placeable(0.0, at))
-                        }
-                    };
-                    let mut c = match extra.last() {
-                        Some((at, a)) => (*at, pick(a, start)),
-                        None => (start, pick(&first_slice, start)),
-                    };
-                    if c.1.is_empty() && c.0 > 0 {
-                        c.1 = first_slice.clone();
-                    }
-                    if !c.1.is_empty() {
-                        out.bottom.push(c);
-                    }
+                if !c.is_empty() {
+                    out.bottom.push((start, c));
                 }
-                out.base.extend(extra);
             }
+        } else if start > 0 {
+            // A branch hanging over a slope or over air: extend it down until the model cuts it off.
+            let r_bottom = p.drawn_radius(f64::from(rn.d), rn.e, rn.f);
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a layer count"
+            )]
+            let reach = (5.0 * r_bottom / p.h).ceil().max(0.0) as usize;
+            let stop_at = if rn.very_lost {
+                0
+            } else {
+                start.saturating_sub(reach)
+            };
+            let min_area = (0.2 * std::f64::consts::PI * r_bottom * r_bottom)
+                .max(0.5 * std::f64::consts::PI * p.r_branch * p.r_branch);
+            let mut cur = ops::diff(&first_slice, &v.collision(0.0, start, false));
+            let mut extra: Vec<(usize, Shapes)> = Vec::new();
+            let mut l = start;
+            while l > stop_at {
+                l -= 1;
+                cur = ops::diff(&cur, &v.collision(0.0, l, false));
+                if ops::area(&cur) < min_area {
+                    break;
+                }
+                extra.push((l, cur.clone()));
+            }
+            if n_floor > 0 {
+                let pick = |a: &Shapes, at: usize| {
+                    if p.z_bot >= 1 {
+                        ops::inter(a, v.bed())
+                    } else {
+                        ops::inter(a, &v.placeable(0.0, at))
+                    }
+                };
+                let mut c = match extra.last() {
+                    Some((at, a)) => (*at, pick(a, start)),
+                    None => (start, pick(&first_slice, start)),
+                };
+                if c.1.is_empty() && c.0 > 0 {
+                    c.1.clone_from(&first_slice);
+                }
+                if !c.1.is_empty() {
+                    out.bottom.push(c);
+                }
+            }
+            out.base.extend(extra);
         }
     }
     // Branch tops that should have been roofs become roofs again.
@@ -127,12 +127,11 @@ pub(crate) fn finish_branch(
             let Some(rc) = n.recovery.filter(|r| r.count > 0) else {
                 break;
             };
-            if rc.depth <= n_roof {
-                if let Some(a) = l.checked_sub(start).and_then(|i| s.areas.get(i)) {
-                    if !a.is_empty() {
-                        out.roofs.push((l, rc.depth, a.clone()));
-                    }
-                }
+            if rc.depth <= n_roof
+                && let Some(a) = l.checked_sub(start).and_then(|i| s.areas.get(i))
+                && !a.is_empty()
+            {
+                out.roofs.push((l, rc.depth, a.clone()));
             }
         }
     }

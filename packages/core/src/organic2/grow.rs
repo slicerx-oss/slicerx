@@ -29,7 +29,7 @@ fn speeds(p: &Params, n: &Node, layer: usize) -> Speeds {
     let r_now = p.collision_radius(n.e, n.f);
     let r_next = p.radius(n.e + 1.0, n.f);
     let dr = r_next - r_now;
-    if p.quantize(r_now) == p.quantize(r_next) || r_next < p.r_until {
+    if p.same_grid(r_now, r_next) || r_next < p.r_until {
         // The radius will grow, so the wall moves less than the center.
         extra += dr;
     } else {
@@ -38,7 +38,7 @@ fn speeds(p: &Params, n: &Node, layer: usize) -> Speeds {
     let below = layer.saturating_sub(1);
     if layer < p.bed_layer && foot_bonus(p, p.recommended_min_radius(below), r_next) {
         // The foot widens toward the bed: a speed allowance.
-        if p.quantize(p.radius(n.e + 1.0, n.f + 1.0)) == p.quantize(r_next) {
+        if p.same_grid(p.radius(n.e + 1.0, n.f + 1.0), r_next) {
             extra += p.widen_bed;
         } else {
             extra_slow += p.widen_bed.min(p.m_fast - (p.m_slow + extra_slow));
@@ -160,7 +160,7 @@ fn check(
     a: &Shapes,
     r: f64,
     below: usize,
-    s: &Setting,
+    s: Setting,
     merge_layer: bool,
     mut to_bed: bool,
     mut flat: bool,
@@ -262,13 +262,13 @@ pub(crate) fn grow(
         let mut e = n.e;
         let mut f = n.f;
         let mut r = p.collision_radius(e, f);
-        let mut c = check(p, v, &grown, r, below, &s, merge_layer, n.to_bed, n.flat);
+        let mut c = check(p, v, &grown, r, below, s, merge_layer, n.to_bed, n.flat);
         // The radius depth advances one layer when a growing setting is still valid at the next radius
         // (spec silent; decided by black-box comparison of trunk widening, see design.md). The catch-up
         // below bounds e by the drawn radius from before this step.
         if s.grow && !c.area().is_empty() && e + 1.0 < f64::from(n.d + 1) + 1e-9 {
             let r1 = p.collision_radius(e + 1.0, f);
-            let t = check(p, v, &grown, r1, below, &s, merge_layer, n.to_bed, n.flat);
+            let t = check(p, v, &grown, r1, below, s, merge_layer, n.to_bed, n.flat);
             if !t.area().is_empty() {
                 e += 1.0;
                 r = r1;
@@ -285,7 +285,7 @@ pub(crate) fn grow(
                 if g > p.quantize(target) + 1e-9 {
                     break;
                 }
-                let t = check(p, v, &grown, g, below, &s, merge_layer, n.to_bed, n.flat);
+                let t = check(p, v, &grown, g, below, s, merge_layer, n.to_bed, n.flat);
                 if t.area().is_empty() {
                     break;
                 }
@@ -304,16 +304,16 @@ pub(crate) fn grow(
                 let planned = ((p.recommended_min_radius(below) - drawn_child) / widen_room).min(1.0);
                 if planned > 0.0 && c.to_bed && drawn_child >= p.r_branch && drawn_child >= p.r_until {
                     let rr = p.collision_radius(e, f + planned);
-                    let t = check(p, v, &grown, rr, below, &s, merge_layer, n.to_bed, n.flat);
+                    let t = check(p, v, &grown, rr, below, s, merge_layer, n.to_bed, n.flat);
                     if !t.area().is_empty() {
                         f += planned;
                     }
                 }
             }
             let r_new = p.collision_radius(e, f);
-            if p.quantize(r_new) != changed_from || (r_new - r).abs() > 1e-12 {
+            if (p.quantize(r_new) - changed_from).abs() > 1e-9 || (r_new - r).abs() > 1e-12 {
                 r = r_new;
-                c = check(p, v, &grown, r, below, &s, merge_layer, n.to_bed, n.flat);
+                c = check(p, v, &grown, r, below, s, merge_layer, n.to_bed, n.flat);
             }
         }
         if !big_enough(c.area()) {

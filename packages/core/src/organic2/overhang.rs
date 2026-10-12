@@ -420,31 +420,28 @@ pub(crate) fn detect(p: &Params, inp: &Input<'_>, d: &Detect) -> Vec<Shapes> {
                     })
             });
             let cant = !ps.cantilevers.is_empty() && ops::overlap(v, &ps.cantilevers);
-            match hit.and_then(|c| clusters.get_mut(c).map(|cl| (c, cl))) {
-                Some((c, cl)) => {
-                    let first_here = !cl.parts.contains_key(&k);
-                    if first_here || !p.s.quirks.one_part_per_cluster_layer {
-                        cl.parts.entry(k).or_default().push(v.clone());
-                        cl.cantilever |= cant;
-                    }
-                    cl.outline = ops::union(&cl.outline, &grown);
-                    cl.hi = cl.hi.max(k);
-                    if !open_now.contains(&c) {
-                        open_now.push(c);
-                    }
+            if let Some((c, cl)) = hit.and_then(|c| clusters.get_mut(c).map(|cl| (c, cl))) {
+                let first_here = !cl.parts.contains_key(&k);
+                if first_here || !p.s.quirks.one_part_per_cluster_layer {
+                    cl.parts.entry(k).or_default().push(v.clone());
+                    cl.cantilever |= cant;
                 }
-                None => {
-                    let mut parts = std::collections::BTreeMap::new();
-                    parts.insert(k, vec![v.clone()]);
-                    clusters.push(Cluster {
-                        parts,
-                        lo: k,
-                        hi: k,
-                        outline: v.clone(),
-                        cantilever: cant,
-                    });
-                    open_now.push(clusters.len() - 1);
+                cl.outline = ops::union(&cl.outline, &grown);
+                cl.hi = cl.hi.max(k);
+                if !open_now.contains(&c) {
+                    open_now.push(c);
                 }
+            } else {
+                let mut parts = std::collections::BTreeMap::new();
+                parts.insert(k, vec![v.clone()]);
+                clusters.push(Cluster {
+                    parts,
+                    lo: k,
+                    hi: k,
+                    outline: v.clone(),
+                    cantilever: cant,
+                });
+                open_now.push(clusters.len() - 1);
             }
         }
         open_prev = open_now;
@@ -519,12 +516,12 @@ pub(crate) fn detect(p: &Params, inp: &Input<'_>, d: &Detect) -> Vec<Shapes> {
             o = ops::diff(&o, &bridges(d, &regions, below, w));
         }
         // 2.10: enforcers.
-        if k >= 1 {
-            if let Some(force) = inp.force.get(k).filter(|f| !f.is_empty()) {
-                let new_area = ops::inter(&ops::diff(here, lower), force);
-                if !new_area.is_empty() {
-                    o = ops::union(&o, &ops::diff(&ops::grow(&new_area, 0.8), lower));
-                }
+        if k >= 1
+            && let Some(force) = inp.force.get(k).filter(|f| !f.is_empty())
+        {
+            let new_area = ops::inter(&ops::diff(here, lower), force);
+            if !new_area.is_empty() {
+                o = ops::union(&o, &ops::diff(&ops::grow(&new_area, 0.8), lower));
             }
         }
         // 2.11: tails, grown for organic trees.

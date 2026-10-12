@@ -384,6 +384,11 @@ impl Params {
         self.grid.iter().copied().find(|&g| g + 1e-9 >= r).unwrap_or(r)
     }
 
+    /// Whether two radii fall on the same point of the radius grid.
+    pub(crate) fn same_grid(&self, a: f64, b: f64) -> bool {
+        (self.quantize(a) - self.quantize(b)).abs() < 1e-9
+    }
+
     /// The cache radius of a query of radius `r`: in full-gap mode the extra XY gap is added before
     /// rounding (radius 0 then maps to the extra gap itself).
     pub(crate) fn key_radius(&self, r: f64, min_gap: bool) -> f64 {

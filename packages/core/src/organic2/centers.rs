@@ -139,12 +139,13 @@ pub(crate) fn choose(p: &Params, v: &Volumes<'_>, layers: &mut [Vec<Node>]) {
             };
             let Some(c) = center else { continue };
             for q in parents {
-                if let Some(par) = get_mut(layers, l + 1, q) {
-                    if !par.deleted && !par.reached {
-                        par.center = Some(ops::move_inside(&par.area, c));
-                        par.reached = true;
-                        par.child = Some(k);
-                    }
+                if let Some(par) = get_mut(layers, l + 1, q)
+                    && !par.deleted
+                    && !par.reached
+                {
+                    par.center = Some(ops::move_inside(&par.area, c));
+                    par.reached = true;
+                    par.child = Some(k);
                 }
             }
         }

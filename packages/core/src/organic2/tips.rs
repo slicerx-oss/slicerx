@@ -215,10 +215,11 @@ fn sample_part(c: &Ctx<'_, '_>, part: &Shapes, large: bool, layer: usize, out: &
         let no_lines =
             |k: usize, r: &Shapes| sample::lines(p, r, Lines::Roof { layer: layer - k }, c.center).is_empty();
         let n = roof_parts.len();
-        if n > 0 && roof_parts.last().is_some_and(|r| no_lines(n - 1, r)) {
-            if let Some(cut) = roof_parts.iter().enumerate().position(|(k, r)| no_lines(k, r)) {
-                roof_parts.truncate(cut);
-            }
+        if n > 0
+            && roof_parts.last().is_some_and(|r| no_lines(n - 1, r))
+            && let Some(cut) = roof_parts.iter().enumerate().position(|(k, r)| no_lines(k, r))
+        {
+            roof_parts.truncate(cut);
         }
     }
     let placed = roof_parts.len();
@@ -453,7 +454,7 @@ mod tests {
         if let Some(o) = over.get_mut(20) {
             *o = ops::rect([90.0, 90.0, 110.0, 110.0]);
         }
-        let v = Volumes::new(&p, outl, Vec::new(), [0.0, 0.0, 200.0, 200.0], n);
+        let v = Volumes::new(&p, &outl, Vec::new(), [0.0, 0.0, 200.0, 200.0], n);
         let t = generate(&p, &v, &over, 20 - p.z_top - 1, [100.0, 100.0]);
         assert!(!t.tips.is_empty());
         assert!(t.tips.iter().all(|(l, _)| *l == 20 - p.z_top - 1));
