@@ -5,7 +5,9 @@ import type {
   Citation,
   JobFile,
   PermissionClass,
+  PilotChoice,
   PilotContext,
+  PilotLookup,
   PrinterHost,
   SettingsDiff,
   SettingValue,
@@ -54,6 +56,8 @@ export interface ToolContext {
   kb: KnowledgeBase
   web?: WebLookup
   progress(line: string, fraction?: number): void
+  /** Asks the person a question with fixed answers and waits for the pick; absent where nobody can answer. */
+  ask?(question: { title: string; question: string; choices: PilotChoice[] }): Promise<string>
 }
 
 export interface ToolOutput {
@@ -76,6 +80,8 @@ export interface ToolOutput {
   structured?: Record<string, unknown>
   /** A reply the host returns as it is: a call that resolves another call's approval answers with that call's reply. */
   passthrough?: unknown
+  /** A record to show the person as a card, with its source. */
+  lookup?: Omit<PilotLookup, 'id'>
 }
 
 /** The sets tools load in (docs: agent tools architecture). A client starts with core and loads the others it needs. */
