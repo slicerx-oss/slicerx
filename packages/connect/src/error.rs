@@ -38,11 +38,21 @@ pub enum Error {
     /// The printer answered a start with a refusal. `reason` is the printer's own reason in plain words.
     #[error("printer {printer} refused the print: {reason}")]
     Refused { printer: String, reason: String },
-    /// A Bambu Lab printer sends status but takes no prints or commands from other apps: its report
-    /// says Developer Mode is off, or it refused or ignored a send while its status kept coming.
-    /// The remedies are LAN Only Mode plus Developer Mode, or printing through Bambu Connect.
-    #[error("printer {printer} takes no prints from other apps: {reason}")]
-    NeedsDeveloperMode { printer: String, reason: String },
+    /// A Bambu Lab printer sends status but takes no prints or commands from other apps. `sure` is
+    /// true when the printer said so: its report's `fun` flags say Developer Mode is off, or it
+    /// answered a command with the unsigned-command refusal. False when it is read from what the
+    /// printer did (an upload that failed or a start left unanswered while status kept coming), so
+    /// the words say "may". The remedies are LAN Only Mode plus Developer Mode, or Bambu Connect.
+    #[error("printer {printer} {}: {reason}", if *sure { "takes no prints from other apps" } else { "may need Developer Mode to take prints from this app" })]
+    NeedsDeveloperMode {
+        printer: String,
+        reason: String,
+        sure: bool,
+    },
+    /// The printer's storage (its SD card or internal storage) has no room for the file: its FTP
+    /// server answered the upload with a storage reply (452 or 552).
+    #[error("printer {printer} has no room for the file: {reason}")]
+    StorageFull { printer: String, reason: String },
     #[error("bad configuration: {0}")]
     Config(String),
     /// The printer has a camera but it does not stream. `reason` is one plain line saying what to change.
@@ -105,6 +115,9 @@ pub enum ErrorCode {
     Protocol,
     Refused,
     NeedsDeveloperMode,
+    /// The printer's storage is full; serialized as `printer_storage_full`.
+    #[serde(rename = "printer_storage_full")]
+    StorageFull,
 }
 
 impl Error {
@@ -122,6 +135,7 @@ impl Error {
             Error::Protocol { .. } | Error::Config(_) => ErrorCode::Protocol,
             Error::Refused { .. } => ErrorCode::Refused,
             Error::NeedsDeveloperMode { .. } => ErrorCode::NeedsDeveloperMode,
+            Error::StorageFull { .. } => ErrorCode::StorageFull,
         }
     }
 
