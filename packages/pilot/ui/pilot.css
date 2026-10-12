@@ -311,3 +311,38 @@
 .sx-pilot .think-h .raven-wait{margin:0 4px 0 8px}
 @keyframes sxp-raven-out{to{opacity:0}}
 @keyframes sxp-raven-in{from{opacity:0}to{opacity:1}}
+
+/* choice card: fixed answers. Each chip keeps its check slot from the start, so a pick changes no size. Flat: it sits in the transcript. */
+.sx-pilot .choice{border:1px solid var(--line-soft);border-radius:12px;background:var(--ink-2);padding:14px 18px 16px;display:flex;flex-direction:column;gap:8px}
+.sx-pilot .choice-top{display:flex;align-items:center;gap:8px;min-height:20px;font-size:12.5px;color:var(--t-mute)}
+.sx-pilot .choice-state{margin-left:auto;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.sx-pilot .choice-state .sx-ic{width:14px;height:14px}
+.sx-pilot .choice-q{color:var(--t-fg);font:600 16px/1.45 var(--f-body)}
+.sx-pilot .choice-a{display:flex;flex-wrap:wrap;gap:8px}
+.sx-pilot .choice-chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px 0 8px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);font:500 14px var(--f-body);cursor:pointer}
+.sx-pilot .choice-chip:hover:not(:disabled){border-color:var(--purple);background:color-mix(in srgb,var(--purple) 8%,transparent)}
+.sx-pilot .choice-chip:disabled{cursor:default}
+.sx-pilot .choice-chip[data-on]{border-color:var(--green);color:var(--fg);background:color-mix(in srgb,var(--green) 10%,transparent)}
+.sx-pilot .choice-chip[data-off]{opacity:.5}
+.sx-pilot .choice-check{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--green)}
+.sx-pilot .choice-check .sx-ic{width:14px;height:14px}
+.sx-pilot .choice-note{font-size:12.5px;color:var(--orange)}
+
+/* attachments: thumbnail, name, remove */
+.sx-pilot .att-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.sx-pilot .att-chip{display:inline-flex;align-items:center;gap:8px;max-width:220px;height:36px;padding:3px 6px 3px 3px;border:1px solid var(--line-soft);border-radius:8px;background:var(--ink-2);font-size:12.5px;color:var(--fg)}
+.sx-pilot .att-thumb{width:28px;height:28px;border-radius:5px;object-fit:cover;flex:none;background:var(--ink-3)}
+.sx-pilot .att-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sx-pilot .att-x{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;border:0;border-radius:5px;background:none;color:var(--muted);cursor:pointer}
+.sx-pilot .att-x:hover{background:var(--ink-3);color:var(--fg)}
+.sx-pilot .att-x .sx-ic{width:12px;height:12px}
+
+/* composer: floats at the foot of the chat, so it is lifted (.sx-overlay) */
+.sx-pilot .composer{display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:var(--r-md)}
+.sx-pilot .composer .att-row{justify-content:flex-start;padding:2px 2px 0}
+.sx-pilot .composer-row{display:flex;align-items:center;gap:4px}
+.sx-pilot .composer-text{flex:1;min-width:0;height:32px;border:0;background:none;color:var(--fg);font:inherit;font-size:14px;outline:none;padding:0 4px}
+.sx-pilot .composer-text::placeholder{color:var(--dim)}
+/* the box draws the field's ring */
+.sx-pilot .composer:has(.composer-text:focus-visible){border-color:var(--accent);box-shadow:var(--shadow-float),var(--focus-field)}
+.sx-pilot .composer-note{padding:0 6px;font-size:12.5px;color:var(--orange)}
