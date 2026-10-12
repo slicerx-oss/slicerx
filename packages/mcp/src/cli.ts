@@ -59,6 +59,8 @@ Printers
                            (agent-code, written with mode 0600), or from SLICERX_MCP_LINK_CODE.
                            A partner app passes its key in SLICERX_MCP_LINK_KEY instead.
   --link-state-dir <dir>   sx-link's state directory, when it is not the default
+  --no-app                 with --printers link: keep designs on this server, even while the app link to
+                           the open app answers (SLICERX_MCP_NO_APP=1)
 
 Permissions and records
   --policy <file>          Permission policy (default ~/.config/slicerx/mcp-policy.json if present,
@@ -99,6 +101,7 @@ async function main(): Promise<void> {
       'link-url': { type: 'string' },
       'link-code': { type: 'string' },
       'link-state-dir': { type: 'string' },
+      'no-app': { type: 'boolean' },
       policy: { type: 'string' },
       log: { type: 'string' },
       'profiles-dir': { type: 'string' },
@@ -144,6 +147,7 @@ async function main(): Promise<void> {
     linkCode: keyRef || partnerKey ? undefined : linkCodeFrom({ argvCode: values['link-code'], stateDir: values['link-state-dir'] ?? env('LINK_STATE_DIR'), envCode: env('LINK_CODE'), needed: printers === 'link' }),
     // The hub's key from its state directory is checked even when the code comes from the environment.
     linkHubKey: printers === 'link' ? (env('LINK_HUB_KEY') ?? readHubKey(values['link-state-dir'] ?? env('LINK_STATE_DIR'))) : undefined,
+    app: !(values['no-app'] ?? flag('NO_APP')),
     policyFile: values.policy ?? env('POLICY'),
     logFile: values.log ?? env('LOG'),
     profilesDir: values['profiles-dir'] ?? env('PROFILES_DIR'),

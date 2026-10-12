@@ -191,7 +191,7 @@ async function connect(host: Host, code?: string): Promise<boolean> {
     // The app link answers agents' calls on the open project once the person turns it on (Settings, Agents).
     if (bridge.appLink) {
       void import('../app-link/host').then((m) => {
-        if (live?.bridge === bridge) stopLink = m.hostAppLink(bridge.appLink!)
+        if (live?.bridge === bridge) stopLink = m.hostAppLink(bridge.appLink!, host.slicer)
       })
     }
     // The camera guard brings a tripped printer's card up on the Printers tab. It listens before the bridge counts as
