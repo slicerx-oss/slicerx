@@ -319,10 +319,20 @@ pub(crate) type Rpc<T> = Result<T, RpcError>;
 
 #[allow(clippy::too_many_lines)] // One loop: handshake, pairing, dispatch and cleanup.
 pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
+    // The page's origin, kept so only the desktop app's window can host the app link.
+    let origin = Arc::new(StdMutex::new(None::<String>));
     let check = {
         let bridge = bridge.clone();
+        let origin = origin.clone();
         #[allow(clippy::result_large_err)] // Same callback trait.
-        move |req: &Request, resp: Response| handshake_check(&bridge, req, resp)
+        move |req: &Request, resp: Response| {
+            *crate::hub::lock(&origin) = req
+                .headers()
+                .get("origin")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
+            handshake_check(&bridge, req, resp)
+        }
     };
     let mut cfg = WebSocketConfig::default();
     cfg.max_message_size = Some(MAX_MESSAGE);
@@ -363,6 +373,7 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
         queued,
         client: None,
         partner: None,
+        origin: crate::hub::lock(&origin).take(),
     };
     while let Some(Ok(msg)) = source.next().await {
         let Message::Text(text) = msg else {
@@ -577,7 +588,13 @@ fn forward_events(bridge: &Arc<Bridge>, conn: &mut Conn, tx: &mpsc::UnboundedSen
     let forward = |mut rx: broadcast::Receiver<Value>, wrap: bool| {
         let tx = tx.clone();
         tokio::spawn(async move {
-            while let Ok(mut data) = rx.recv().await {
+            loop {
+                let mut data = match rx.recv().await {
+                    Ok(d) => d,
+                    // A slow reader missed some events; it keeps the ones still to come.
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                };
                 // Events for one connection carry `to`; the others never see them.
                 match data.get("to").and_then(Value::as_u64) {
                     Some(to) if to != me => continue,
@@ -686,6 +703,8 @@ struct Conn {
     client: Option<String>,
     /// The partner app's name, when it paired with a partner key (roles.rs).
     partner: Option<String>,
+    /// The Origin header of the upgrade, when it had one.
+    origin: Option<String>,
 }
 
 fn parse_request(text: &str) -> Rpc<(Value, String, Value)> {
@@ -791,7 +810,9 @@ async fn dispatch(
             crate::app_link::agent_call(b, conn.role, conn.client.as_deref(), conn.partner.is_some(), &p)
                 .await
         }
-        m if m.starts_with("appLink.") => crate::app_link::app_call(b, conn.id, m, &p).await,
+        m if m.starts_with("appLink.") => {
+            crate::app_link::app_call(b, conn.id, conn.origin.as_deref(), m, &p).await
+        }
         m if m.starts_with("push.") => crate::push::call(b, m, &p).await,
         m if m.starts_with("remote.") => {
             crate::remote::call(b, m, &p, crate::remote::owner_of(conn.client.as_deref(), &p))

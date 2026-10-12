@@ -923,6 +923,9 @@ pub(crate) async fn settings_call(b: &Arc<Bridge>, method: &str, p: &Value) -> R
                     .as_bool()
                     .ok_or_else(|| RpcError::new("bad_request", "appLink is true or false"))?;
                 lock(&b.hub.settings).app_link = on;
+                if !on {
+                    b.app_link.turned_off();
+                }
                 b.hub
                     .audit(json!({ "origin": "local_click", "action": "settings.appLink", "on": on }));
             }
@@ -1030,6 +1033,7 @@ pub(crate) async fn clients_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rp
                 }
             });
             crate::remote::revoke_client(b, &id);
+            b.app_link.forget(&id);
             b.hub
                 .audit(json!({ "origin": "local_click", "action": "clients.revoke", "clientId": id }));
             save(b).await;
