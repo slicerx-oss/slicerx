@@ -3721,9 +3721,10 @@ fn helical_lift(rc: &PrintConfig) -> bool {
             .is_some_and(|m| HELICAL_LIFT_PRINTERS.contains(&m))
 }
 
-/// A spiral lift: one counterclockwise turn from `from` around the point `ij` (mm) away, climbing from `z_from`
-/// to `z_to` (thousandths) at the Z feed rate. As one `G3 ... P1` arc when [`helical_lift`] says the printer takes
-/// it; otherwise short moves round the circle, their count set by the profile's resolution (8 at 0.01 mm, 4 to 16).
+/// Orca's spiral lift (`GCodeWriter::_spiral_travel_to_z`): one counterclockwise turn from `from` around the
+/// point `ij` (mm) away, climbing from `z_from` to `z_to` (thousandths) at the Z feed rate. As one `G3 ... P1`
+/// arc when [`helical_lift`] says the printer takes it; otherwise short moves round the circle, their count set by
+/// the profile's resolution (8 at 0.01 mm, 4 to 16).
 fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2], z: [i64; 2], z_feed: i64) {
     let [i, j] = ij;
     let [z_from, z_to] = z;
