@@ -20,6 +20,8 @@ export interface PrinterBackend {
   readonly approvals?: ApprovalHost
   /** Link mode: person-only cards go to the hub with their work, and the hub reports how it ran. */
   readonly handOff?: PersonHandOff
+  /** Link mode: the app link, for the design tools to run on the project open in the app. */
+  readonly appLink?: import('./app-route').AppLinkCaller
 }
 
 /**
@@ -69,7 +71,8 @@ export async function createLinkPrinters(url: string, auth: { code: string } | {
   // With the hub's key from its state directory, the code goes only to a hub that proves it holds that key.
   const host = await connectLink({ url, ...auth, role: 'agent', ...(hubKey ? { hubKey } : {}), ...(ws ? { WebSocket: ws } : {}) })
   const handOff = handOffOf(host)
-  return { kind: 'link', host: guardUploads(host), approvals: host.approvals, ...(handOff ? { handOff } : {}) }
+  const appLink = typeof (host as { appLink?: { call?: unknown } }).appLink?.call === 'function' ? host.appLink : undefined
+  return { kind: 'link', host: guardUploads(host), approvals: host.approvals, ...(handOff ? { handOff } : {}), ...(appLink ? { appLink } : {}) }
 }
 
 /**

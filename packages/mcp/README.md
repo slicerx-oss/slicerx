@@ -251,6 +251,7 @@ slicerx-mcp --engine stub call project_open '{"printer":"bambu_p1s","filament":"
 | `--sx-bin <path>` | `SLICERX_MCP_SX_BIN` or `SLICERX_SX_BIN` | `sx` on `PATH` |
 | `--printers demo\|link\|off` | `SLICERX_MCP_PRINTERS` | `demo` |
 | `--link-url`, `--link-state-dir` | `SLICERX_MCP_LINK_URL`, `SLICERX_MCP_LINK_STATE_DIR`, `SLICERX_MCP_LINK_CODE`, `SLICERX_MCP_LINK_HUB_KEY`, `SLICERX_MCP_LINK_KEY` (a partner app key, read once and removed from the environment; see docs/integrators/partner-app-key.md) | `ws://127.0.0.1:47615`, the hub's default state directory, none, `hub-key.pub` from the state directory. The server checks the hub's signed hello against the key before it sends anything and pairs with a proof, never the code itself. |
+| `--no-app` | `SLICERX_MCP_NO_APP=1` | Off. With `--printers link`, the design tools (`design.*` and the `geom.*` tools given a design) run on the project open in the SlicerX app while its app link answers: the person turned it on in Settings, Agents and allowed this agent. Their steps land in the app's history and undo, and the first reply says so. When the link is off or the app is closed they run on the server's own designs. `--no-app` keeps them on the server always. Opening and saving 3MF files stay on the server. |
 | `--policy <file>` | `SLICERX_MCP_POLICY` | `~/.config/slicerx/mcp-policy.json` if present, else the defaults |
 | `--log <file>` | `SLICERX_MCP_LOG` | `<out-dir>/actions.jsonl` |
 | `--profiles-dir <dir>` | `SLICERX_MCP_PROFILES_DIR` | `~/.config/slicerx/profiles` |

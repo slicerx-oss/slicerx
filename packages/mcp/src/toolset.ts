@@ -17,6 +17,20 @@ const noFiles = (): never => {
 export const NO_DESIGN_FILES: DesignFiles = { model: async () => noFiles(), open: async () => noFiles(), save: async () => noFiles() }
 export const NO_CAD_FILES: CadFiles = { engine: false, call: async () => noFiles(), path: async () => noFiles(), stl: () => noFiles() }
 
+/** A host for a server with no geometry engine: every design call says so (the app link may still take them). */
+export const NO_ENGINE_HOST: DesignHost = {
+  get: () => noEngine(),
+  list: () => [],
+  create: async () => noEngine(),
+  add: async () => noEngine(),
+  replay: async () => noEngine(),
+  call: async () => noEngine(),
+}
+
+function noEngine(): never {
+  throw new ToolInputError('Designs need the sx-geom engine, which this server did not find, or the app link to the open app.', 'engine_unavailable')
+}
+
 /** The design tools and the CAD tools on `host`, with the files the caller has. */
 export function designToolset(host: DesignHost, files: { design?: DesignFiles; cad?: CadFiles } = {}): PilotTool<never>[] {
   return [...designTools(host, files.design ?? NO_DESIGN_FILES), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host })]
