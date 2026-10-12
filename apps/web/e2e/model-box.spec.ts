@@ -5,6 +5,7 @@
 import { type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
 import { expect, test } from './fixtures'
+import { pressable } from './canvas-press'
 
 type Vp = {
   camera: { position: { clone(): { set(x: number, y: number, z: number): { applyMatrix4(m: unknown): { project(c: unknown): { x: number; y: number } } } } } }
@@ -23,6 +24,7 @@ const screen = (page: Page, x: number, y: number, z: number) =>
 const selected = (page: Page) => page.evaluate(() => (window as unknown as { __sx: { getState(): { selectedIds: string[]; plate: { id: string; name: string }[] } } }).__sx.getState()).then((s) => s.selectedIds.length)
 
 async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
+  await pressable(page, from)
   await page.mouse.move(from.x, from.y)
   await page.keyboard.down('Shift')
   await page.mouse.down()
