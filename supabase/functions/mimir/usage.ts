@@ -31,6 +31,7 @@ function fold(u: unknown): boolean {
   delete o['cache_creation']
   return true
 }
+// text past this is dropped from a saved reply; tool calls are always kept whole, so a design replays
 const MAX_REPLY_CHARS = 200_000
 
 export class StreamTap {
@@ -130,7 +131,7 @@ export class StreamTap {
       if (d['type'] === 'text_delta' && typeof d['text'] === 'string' && this.chars < MAX_REPLY_CHARS) {
         b['text'] = String(b['text'] ?? '') + d['text']
         this.chars += d['text'].length
-      } else if (d['type'] === 'input_json_delta' && typeof d['partial_json'] === 'string' && this.chars < MAX_REPLY_CHARS) {
+      } else if (d['type'] === 'input_json_delta' && typeof d['partial_json'] === 'string') {
         this.partial.set(i, (this.partial.get(i) ?? '') + d['partial_json'])
         this.chars += d['partial_json'].length
       }

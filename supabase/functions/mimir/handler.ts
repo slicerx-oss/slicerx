@@ -6,8 +6,10 @@
 //   POST register        {edition, key}          -> {install, token}
 //   POST v1/messages     Messages API, streamed  (x-sx-install: token)
 //   GET  quota                                   (x-sx-install: token)
-//   POST forget          deletes shared sessions (x-sx-install: token)
-// Shared sessions: x-sx-share: 1 with x-sx-session and x-sx-version stores the turn.
+//   POST forget          deletes saved chats (x-sx-install: token)
+// Saved chats: a call is saved when the edition saves by default (alpha: SlicerX) or the
+// client sends x-sx-share: 1, never with x-sx-share: 0. x-sx-session and x-sx-version file it; without
+// them it goes under one key per install and Melbourne day.
 import { MAX_BODY_BYTES, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
 
@@ -27,8 +29,8 @@ const SESSION = /^[A-Za-z0-9_-]{1,64}$/
 const VERSION = /^[0-9A-Za-z.+-]{1,40}$/
 const KEY = /^[A-Za-z0-9_-]{16,128}$/
 const MAX_REGISTER_BYTES = 4096
-// a shared session's turn larger than this is not stored (the database refuses it too)
-const MAX_STORED_BYTES = 262_144
+// a saved turn larger than this is not stored (the database refuses it too)
+const MAX_STORED_BYTES = 1_048_576
 // tokens the thinking setting may add to a prompt, counted when the count went without it
 const THINKING_SLACK = 512
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -149,13 +151,24 @@ async function readBody(req: Request, max = MAX_BODY_BYTES): Promise<string | nu
   return new TextDecoder().decode(all)
 }
 
-// what a shared session keeps: the request without image data, and the reply
-export function transcript(body: Obj, reply: StreamTap['reply'], usage: StreamTap['usage']): Obj {
+// what a saved chat keeps: the request without image data, its system prompt and tool list
+// apart (saved once per distinct text, under prompt.hash), and the reply with every tool call in full
+export async function transcript(body: Obj, reply: StreamTap['reply'], usage: StreamTap['usage']): Promise<{ kept: Obj; prompt: Obj; hash: string }> {
   const req = JSON.parse(
     JSON.stringify(body, (k, v) => (k === 'data' && typeof v === 'string' ? `[image, ${v.length} base64 chars]` : v)),
   ) as Obj
   delete req['cache_control']
-  return { request: req, reply, usage }
+  const prompt = { system: req['system'] ?? null, tools: req['tools'] ?? null }
+  delete req['system']
+  delete req['tools']
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(prompt)))
+  const hash = [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  return { kept: { request: req, prompt: hash, reply, usage }, prompt, hash }
+}
+
+// the Melbourne day, as a session key for a client that sent none
+export function dayKey(now = new Date()): string {
+  return `day-${new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne' }).format(now).replaceAll('-', '')}`
 }
 
 async function messages(req: Request, env: Env): Promise<Response> {
@@ -197,9 +210,13 @@ async function messages(req: Request, env: Env): Promise<Response> {
     }
   }
 
-  const share = req.headers.get('x-sx-share') === '1'
-  const session = req.headers.get('x-sx-session') ?? ''
-  const version = req.headers.get('x-sx-version') ?? ''
+  // the client's choice; null leaves it to the edition's default
+  const shareHeader = req.headers.get('x-sx-share')
+  const share = shareHeader === '1' ? true : shareHeader === '0' ? false : null
+  const sessionHeader = req.headers.get('x-sx-session') ?? ''
+  const session = SESSION.test(sessionHeader) ? sessionHeader : dayKey()
+  const versionHeader = req.headers.get('x-sx-version') ?? ''
+  const version = VERSION.test(versionHeader) ? versionHeader : 'unknown'
   const tap = new StreamTap()
   // stored only for a call that answered in full; a failed or refused call keeps nothing. A
   // reply the client cut off settles at its whole reply allowance, since its last count
@@ -211,11 +228,12 @@ async function messages(req: Request, env: Env): Promise<Response> {
       p_call: call, p_model: MODEL, p_input: u.input, p_cache_write: u.cacheWrite, p_cache_read: u.cacheRead,
       p_output: u.output, p_searches: u.searches,
     })
-    if (answered && tap.complete && !tap.failed && share && SESSION.test(session) && VERSION.test(version)) {
-      const kept = transcript(s.body, tap.reply, u)
-      if (new TextEncoder().encode(JSON.stringify(kept)).length > MAX_STORED_BYTES) return
-      await rpc(env, 'mimir_store_session', {
-        p_call: call, p_session_key: session, p_app_version: version, p_model: MODEL, p_transcript: kept,
+    if (answered && tap.complete && !tap.failed && share !== false) {
+      const t = await transcript(s.body, tap.reply, u)
+      if (new TextEncoder().encode(JSON.stringify(t.kept)).length > MAX_STORED_BYTES) return
+      await rpc(env, 'mimir_save_chat', {
+        p_call: call, p_share: share, p_session_key: session, p_app_version: version, p_model: MODEL,
+        p_prompt_hash: t.hash, p_prompt: t.prompt, p_transcript: t.kept,
       })
     }
   }
