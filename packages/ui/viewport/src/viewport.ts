@@ -372,6 +372,9 @@ class ViewportImpl implements Viewport {
   private push: PushSpec | null = null
   private pushDrag: { started: boolean; objectId: string; partIndex: number; triangle: number; point: V3; normal: V3; d0: number; d: number; snapped: boolean; t0: number | null; mmPerPx: number; x0: number; y0: number } | null = null
   private readonly sketchLayer = new SketchLayer()
+  private readonly finished = new Group()
+  private finishedLayers: SketchLayer[] = []
+  private section: Plane | null = null
   private readonly originPlanes = new OriginPlanes()
   private planeNames: HTMLDivElement[] = []
   private planeInk = { fg: '#f8f8f2', halo: '#1e1f29' }
@@ -489,7 +492,7 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.gaps.group)
     this.stage.objectsRoot.add(this.guides.group)
     this.stage.objectsRoot.add(this.edgeMarks.group)
-    this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.originPlanes.group, this.dims.group)
+    this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.finished, this.originPlanes.group, this.dims.group)
     this.stage.envSH.then(
       (sh) => {
         if (this.disposed) return
@@ -1079,7 +1082,7 @@ class ViewportImpl implements Viewport {
 
   /** Puts the painter's clipping plane on the models' materials (nothing when it is off). */
   private applyClip(): void {
-    const plane = this.painter?.clipPlane() ?? null
+    const plane = this.section ?? this.painter?.clipPlane() ?? null
     this.renderer.localClippingEnabled = true
     const set = (m: Material | Material[]): void => {
       for (const mat of Array.isArray(m) ? m : [m]) {
@@ -2505,6 +2508,33 @@ class ViewportImpl implements Viewport {
     if (!scene) this.sketchDrag = null
     this.sketchLayer.set(scene)
     this.invalidate()
+  }
+
+  setFinishedSketches(scenes: readonly SketchScene[]): void {
+    if (!scenes.length && !this.finishedLayers.length) return
+    for (const l of this.finishedLayers) {
+      l.group.removeFromParent()
+      l.dispose()
+    }
+    this.finishedLayers = scenes.map((s) => {
+      const l = new SketchLayer()
+      l.set({ frame: s.frame, paths: s.paths, handles: [], ...(s.profiles ? { profiles: s.profiles } : {}) })
+      this.finished.add(l.group)
+      return l
+    })
+    this.invalidate()
+  }
+
+  setSection(section: { point: V3; normal: V3 } | null): void {
+    if (!section && !this.section) return
+    if (section) {
+      // three clips the side a plane's normal points away from: flip it so the side `normal` points to goes
+      const m = this.stage.bedMatrix()
+      const p = new Vector3(...section.point).applyMatrix4(m)
+      const n = new Vector3(...section.normal).transformDirection(m).negate()
+      this.section = new Plane().setFromNormalAndCoplanarPoint(n, p)
+    } else this.section = null
+    this.applyClip()
   }
 
   setSketchCursor(cursor: SketchCursor | null): void {
@@ -4041,6 +4071,7 @@ class ViewportImpl implements Viewport {
     this.pushView.dispose()
     this.edgeView.dispose()
     this.sketchLayer.dispose()
+    for (const l of this.finishedLayers) l.dispose()
     this.originPlanes.dispose()
     this.dims.dispose()
     this.gizmoLabel?.remove()
