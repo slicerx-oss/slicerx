@@ -46,14 +46,23 @@ describe('desktop slice progress', () => {
     expect(seen.at(-1)!.stage).toBe('preview')
   })
 
+  it('moves well before the first contour, while the layers and the plans are worked out', () => {
+    const at = overallProgress()
+    expect(at('layers', 0)).toBe(0)
+    // Past the bar's 4% floor once the plate's objects are cut, and most of the way by the last plan.
+    expect(at('layers', 0.2)).toBeCloseTo(0.09)
+    expect(at('layers', 0.8)).toBeCloseTo(0.36)
+    expect(at('contours', 0)).toBeCloseTo(0.45)
+  })
+
   it('never goes back, and passes over a stage the engine did not report', () => {
     const at = overallProgress()
-    expect(at('contours', 1)).toBeCloseTo(0.25)
+    expect(at('contours', 1)).toBeCloseTo(0.55)
     // Perimeters never came; paths starts where they would have ended.
-    expect(at('paths', 0)).toBeCloseTo(0.55)
-    expect(at('paths', 0.5)).toBeCloseTo(0.725)
+    expect(at('paths', 0)).toBeCloseTo(0.7)
+    expect(at('paths', 0.5)).toBeCloseTo(0.81)
     // A report that comes in late does not move the bar back.
-    expect(at('contours', 0.4)).toBeCloseTo(0.725)
+    expect(at('contours', 0.4)).toBeCloseTo(0.81)
     expect(at('preview', 1)).toBe(1)
   })
 })

@@ -1018,6 +1018,18 @@ pub fn request_config_report(
 /// Prepares the session for a request: welds the plate and plans layers,
 /// honoring `options.layerTopsMm`.
 pub fn build_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) -> Result<SliceSession> {
+    build_session_with(req, plate, config, &NoProgress)
+}
+
+/// [`build_session`] with progress: [`Stage::Layers`] at [`LAYERS_OBJECTS`] once the plate's objects are cut into
+/// layers, before the plate checks that name thin and floating features. Stops with [`Error::Cancelled`] there once
+/// `progress` asks.
+fn build_session_with(
+    req: &SliceRequest,
+    plate: &Plate,
+    config: &PrintConfig,
+    progress: &dyn Progress,
+) -> Result<SliceSession> {
     let ranges: Vec<HeightRange> = req
         .options
         .height_ranges
@@ -1042,6 +1054,10 @@ pub fn build_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) ->
     let planned: Option<Vec<f64>> = None;
     let tops = req.options.layer_tops_mm.as_deref().or(planned.as_deref());
     let mut session = SliceSession::with_options(plate, config, tops, &ranges)?;
+    if progress.cancelled() {
+        return Err(Error::Cancelled);
+    }
+    progress.report(Stage::Layers, LAYERS_OBJECTS);
     let zones = crate::collide::plate::zones(config);
     let kinds: Vec<u8> = zones.iter().map(|z| z.0).collect();
     if let Some(m) = collide_model(req, plate, config, &session, kinds.clone()) {
@@ -1314,8 +1330,8 @@ pub fn run_request(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
     run_request_with(req, meshes, &NoProgress)
 }
 
-/// [`run_request`] with progress: stage reports from slicing, then
-/// [`Stage::Gcode`] and [`Stage::Preview`] as each layer range is written.
+/// [`run_request`] with progress: [`Stage::Layers`] while the session is prepared ([`prepare_with`]), stage reports
+/// from slicing, then [`Stage::Gcode`] and [`Stage::Preview`] as each layer range is written.
 /// Fractions are per stage and per range, from 0 to 1.
 pub fn run_request_with(
     req: &SliceRequest,
@@ -1323,7 +1339,7 @@ pub fn run_request_with(
     progress: &dyn Progress,
 ) -> Result<SliceRun> {
     let timer = Timer::start();
-    let prepared = prepare(req, meshes)?;
+    let prepared = prepare_with(req, meshes, progress)?;
     run_prepared_timed(req, &prepared, progress, &timer)
 }
 
@@ -1344,14 +1360,43 @@ impl Prepared {
 
 /// Prepares `req`'s session ([`build_plate`], then [`build_session`]).
 pub fn prepare(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>) -> Result<Prepared> {
+    prepare_with(req, meshes, &NoProgress)
+}
+
+/// How far into [`Stage::Layers`] a slice is once the plate is built, once its objects are cut into layers, and once
+/// its session is ready (the plate checks for thin and floating features are done). The rest of the stage is the
+/// whole-object plans worked out before the first contour (see `SliceSession`). Roughly as the time goes on a big
+/// model.
+const LAYERS_PLATE: f32 = 0.05;
+/// See [`LAYERS_PLATE`].
+const LAYERS_OBJECTS: f32 = 0.2;
+/// See [`LAYERS_PLATE`].
+const LAYERS_SESSION: f32 = 0.5;
+
+/// [`prepare`] with progress: [`Stage::Layers`] from 0 as the plate and its session are built, so a host shows a
+/// slice moving before its first contour. Stops with [`Error::Cancelled`] between the steps once `progress` asks.
+pub fn prepare_with(
+    req: &SliceRequest,
+    meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
+    progress: &dyn Progress,
+) -> Result<Prepared> {
+    progress.report(Stage::Layers, 0.0);
     let (config, issues) = request_config_checked(req)?;
     let plate = build_plate(req, meshes)?;
+    if progress.cancelled() {
+        return Err(Error::Cancelled);
+    }
+    progress.report(Stage::Layers, LAYERS_PLATE);
     let lone_settings = match plate.objects.as_slice() {
         [o] => o.settings.clone(),
         _ => serde_json::Value::Null,
     };
     let (config, _) = with_lone_settings(config, issues, &lone_settings)?;
-    let session = build_session(req, &plate, &config)?;
+    let session = build_session_with(req, &plate, &config, progress)?;
+    if progress.cancelled() {
+        return Err(Error::Cancelled);
+    }
+    progress.report(Stage::Layers, LAYERS_SESSION);
     Ok(Prepared {
         session,
         lone_settings,
@@ -1967,6 +2012,102 @@ mod tests {
                 "{stage:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_layers_stage_moves_before_the_first_contour() {
+        struct Log(std::sync::Mutex<Vec<(Stage, f32)>>);
+        impl Progress for Log {
+            fn report(&self, stage: Stage, fraction: f32) {
+                if let Ok(mut v) = self.0.lock() {
+                    v.push((stage, fraction));
+                }
+            }
+        }
+        let mesh = cube();
+        let req: SliceRequest = serde_json::from_str(r#"{"plate":{"objects":[{"mesh":1}]}}"#).unwrap();
+        let log = Log(std::sync::Mutex::new(Vec::new()));
+        run_request_with(&req, &|_: &str| Ok(mesh.clone()), &log).unwrap();
+        let seen = log.0.into_inner().unwrap();
+        let first_contour = seen.iter().position(|(s, _)| *s == Stage::Contours).unwrap();
+        let layers: Vec<f32> = seen[..first_contour]
+            .iter()
+            .map(|(s, f)| {
+                assert_eq!(
+                    *s,
+                    Stage::Layers,
+                    "only the layers stage before the first contour"
+                );
+                *f
+            })
+            .collect();
+        // Preparing the session, then the plans: 0, the plate, its objects, the session, the plans, in that order.
+        // The seam plan's layers are cut on several threads, so their reports may come in out of order.
+        // Exactly the constants reported, so compared bit for bit.
+        let at = |f: f32| layers.iter().position(|x| x.to_bits() == f.to_bits());
+        let marks: Vec<Option<usize>> = [
+            0.0,
+            LAYERS_PLATE,
+            LAYERS_OBJECTS,
+            LAYERS_SESSION,
+            crate::session::LAYERS_PLANS,
+            crate::session::LAYERS_LATE_PLANS,
+            crate::session::LAYERS_SEAM_PLAN,
+        ]
+        .into_iter()
+        .map(at)
+        .collect();
+        assert!(marks.iter().all(Option::is_some), "{layers:?}");
+        assert!(marks.windows(2).all(|w| w[0] < w[1]), "{layers:?}");
+        assert!(layers.iter().all(|f| (0.0..1.0).contains(f)), "{layers:?}");
+        // The cube's layers are cut for the seam plan, each moving the bar.
+        let cut = layers
+            .iter()
+            .filter(|f| **f > crate::session::LAYERS_LATE_PLANS && **f < crate::session::LAYERS_SEAM_PLAN)
+            .count();
+        assert!(cut >= 10, "{layers:?}");
+        // A session prepared before reports only the plans.
+        let prepared = prepare(&req, &|_: &str| Ok(mesh.clone())).unwrap();
+        let log = Log(std::sync::Mutex::new(Vec::new()));
+        run_prepared(&req, &prepared, &log).unwrap();
+        let seen = log.0.into_inner().unwrap();
+        assert_eq!(seen.first().map(|(s, _)| *s), Some(Stage::Layers));
+        assert!(
+            seen.iter()
+                .take_while(|(s, _)| *s == Stage::Layers)
+                .all(|(_, f)| *f > LAYERS_SESSION)
+        );
+    }
+
+    #[test]
+    fn a_cancel_while_the_session_is_prepared_stops_there() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        /// Asks to stop once the plate is built.
+        struct StopAtPlate<'a>(&'a AtomicBool);
+        impl Progress for StopAtPlate<'_> {
+            fn report(&self, stage: Stage, fraction: f32) {
+                if stage == Stage::Layers && fraction > 0.0 {
+                    self.0.store(true, Ordering::Relaxed);
+                }
+            }
+        }
+        let mesh = cube();
+        let req: SliceRequest = serde_json::from_str(r#"{"plate":{"objects":[{"mesh":1}]}}"#).unwrap();
+        let flag = AtomicBool::new(false);
+        let stop = StopAtPlate(&flag);
+        let go = Cancellable {
+            progress: &stop,
+            flag: &flag,
+        };
+        assert!(matches!(
+            prepare_with(&req, &|_: &str| Ok(mesh.clone()), &go),
+            Err(Error::Cancelled)
+        ));
+        flag.store(false, Ordering::Relaxed);
+        assert!(matches!(
+            run_request_with(&req, &|_: &str| Ok(mesh.clone()), &go),
+            Err(Error::Cancelled)
+        ));
     }
 
     /// A 20 mm box, 10 mm tall, under a roof rising 2 mm to its middle: walls sleipnir prints at full height and a

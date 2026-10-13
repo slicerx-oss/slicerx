@@ -23,6 +23,15 @@ use i_overlay::i_float::int::point::IntPoint;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// How far into [`Stage::Layers`] a slice is once the interlocking, conical and polyhole plans are done, once the
+/// lightning plan is too, and once the seam plan is; the stage ends with the first contour. Before these, preparing
+/// the session took the stage to `api::LAYERS_SESSION`.
+pub(crate) const LAYERS_PLANS: f32 = 0.55;
+/// See [`LAYERS_PLANS`].
+pub(crate) const LAYERS_LATE_PLANS: f32 = 0.6;
+/// See [`LAYERS_PLANS`].
+pub(crate) const LAYERS_SEAM_PLAN: f32 = 0.8;
+
 /// The warning for manual supports on a plate with no enforcers.
 const NO_ENFORCERS: &str =
     "Manual supports print only where enforcers ask, and the plate has none, so none are printed";
@@ -3312,6 +3321,8 @@ impl SliceSession {
         self.interlocked(fam, fam0, &micros);
         self.conical(fam, fam0, &micros, config);
         self.polyholes(fam, fam0, &micros, config);
+        // The plans are the last of the layers stage: a host's bar keeps moving until the first contour.
+        progress.report(Stage::Layers, LAYERS_PLANS);
         // The support plan is read by the supports of the layers, the brim on the first layer and the raft under
         // organic trees, also with `support_type` set to painted only and nothing painted. When it is still to
         // be planned, it is planned beside the plans below, the regions of every layer and the first part of
@@ -3353,12 +3364,18 @@ impl SliceSession {
             }) {
                 self.lightning_layers(c);
             }
+            progress.report(Stage::Layers, LAYERS_LATE_PLANS);
             // A painted plate keeps the regions of every layer from the start (`whole_regions`), so this range's
             // regions do not wait for the plans below, which only read those. Then the regions shared by the
             // layer jobs (`plan_shared_preps`) are worked out beside the plans.
             let beside = first_with(combine_on).is_none() && self.keeps_whole(fam);
             let plans = || {
-                self.seam_plan(config);
+                // Ahead of the first contour, the seam plan's layers move the bar; beside the layer jobs they would
+                // only send it back.
+                self.seam_plan(config, (!beside).then_some(progress));
+                if !beside {
+                    progress.report(Stage::Layers, LAYERS_SEAM_PLAN);
+                }
                 self.curl_plan(config);
                 if let Some(c) = first_with(combine_on) {
                     self.combine_plan(c);
@@ -4113,7 +4130,11 @@ impl SliceSession {
     /// The seams of the whole object, planned once as Orca plans them: the outer wall of every layer
     /// is the slice pulled in half a line, scored and aligned over the object, with surface visibility
     /// from a raycast over the model when the mode reads it.
-    fn seam_plan(&self, cfg: &PrintConfig) -> Option<&crate::seamplan::Plan> {
+    fn seam_plan(
+        &self,
+        cfg: &PrintConfig,
+        progress: Option<&dyn Progress>,
+    ) -> Option<&crate::seamplan::Plan> {
         self.seams
             .plan(|| {
                 if crate::spiral::enabled(cfg) || self.parts.is_empty() {
@@ -4156,7 +4177,7 @@ impl SliceSession {
                 };
                 let (layers, field) = par::join(
                     || {
-                        let regions = self.whole_regions(fam, &micros);
+                        let regions = self.whole_regions_with(fam, &micros, progress);
                         par::map_range(0..n, |l| layer_in(&regions, l))
                     },
                     || {
@@ -6103,6 +6124,17 @@ impl SliceSession {
     /// [`Self::layer_regions`] of every layer with `fam`, cut once for all the whole-object plans; the slice
     /// takes them over afterwards (`take_whole`).
     fn whole_regions(&self, fam: Families, micros: &Micros) -> std::sync::Arc<Vec<LayerRegions>> {
+        self.whole_regions_with(fam, micros, None)
+    }
+
+    /// [`Self::whole_regions`], reporting [`Stage::Layers`] from [`LAYERS_LATE_PLANS`] to [`LAYERS_SEAM_PLAN`] as
+    /// the layers are cut, when there is a `progress` and they are not cut yet.
+    fn whole_regions_with(
+        &self,
+        fam: Families,
+        micros: &Micros,
+        progress: Option<&dyn Progress>,
+    ) -> std::sync::Arc<Vec<LayerRegions>> {
         if let Ok(g) = self.whole.0.lock()
             && let Some((f, r)) = g.as_ref()
             && *f == fam
@@ -6112,8 +6144,20 @@ impl SliceSession {
         // Every layer below reads the interlocking beams, which plan in parallel: planned here first, not
         // inside the layer jobs (the rule in `par`).
         self.interlocked(fam, fam, micros);
-        let all = std::sync::Arc::new(par::map_range(0..self.plan.count(), |l| {
-            self.layer_regions(l, fam, micros)
+        let n = self.plan.count();
+        let done = std::sync::atomic::AtomicUsize::new(0);
+        let all = std::sync::Arc::new(par::map_range(0..n, |l| {
+            let r = self.layer_regions(l, fam, micros);
+            if let Some(p) = progress {
+                let d = done.fetch_add(1, Ordering::Relaxed) + 1;
+                #[allow(clippy::cast_precision_loss, reason = "a progress fraction")]
+                let f = d as f32 / n as f32;
+                p.report(
+                    Stage::Layers,
+                    LAYERS_LATE_PLANS + (LAYERS_SEAM_PLAN - LAYERS_LATE_PLANS) * f,
+                );
+            }
+            r
         }));
         if let Ok(mut g) = self.whole.0.lock() {
             *g = Some((fam, std::sync::Arc::clone(&all)));
