@@ -5,13 +5,14 @@
 // Loaded on demand; the shell mounts it while `agreementOpen` is set.
 import type { EditionConfig } from '@slicerx/edition-config'
 import { crashReportsRequired, crashReportsSent, isFork, reportsUpload } from '@slicerx/edition-config'
-import { AGREEMENT_VERSION, DEFAULT_BUG_REPORTS_URL, type Host } from '@slicerx/contracts'
+import { AGREEMENT_VERSION, agreementVersion, DEFAULT_BUG_REPORTS_URL, type Host } from '@slicerx/contracts'
 import { Button, Icon, type IconName } from '@slicerx/ui'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { bugReportsUrl } from '../bugs/where'
 import { useEdition } from '../edition'
 import { EditionMark } from '../shell/edition-logo'
 import { openLink } from '../lib/links'
+import { hostSlices } from '../state/model-mode'
 import { set } from '../state/store'
 import './first-run.css'
 import './agreement.css'
@@ -23,9 +24,9 @@ export { bugReportsOff, bugReportsUrl } from '../bugs/where'
 
 export { needsAgreement } from './agreement-check'
 
-/** Records acceptance and closes the agreement. */
-export function acceptAgreement(now = new Date()): void {
-  set({ agreement: { version: AGREEMENT_VERSION, acceptedAt: now.toISOString() }, agreementOpen: false, crashReports: true })
+/** Records acceptance of the text shown (a host that cannot slice has its own) and closes the agreement. */
+export function acceptAgreement(now = new Date(), slices = hostSlices()): void {
+  set({ agreement: { version: agreementVersion(slices), acceptedAt: now.toISOString() }, agreementOpen: false, crashReports: true })
 }
 
 function Point({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
@@ -59,6 +60,8 @@ export function Agreement() {
   // A fork uploads crash reports only to its own backend (and to SlicerX when it turned bugs.upstream on); without either there are none.
   const crashes = !isFork(edition) || crashReportsSent(edition)
   const name = edition.brand.name
+  // the CAD-only browser build has no slicing and no printers, so its text is about models only
+  const slices = hostSlices()
 
   // The app behind is out of reach of focus and screen readers until this is accepted.
   useEffect(() => {
@@ -96,14 +99,22 @@ export function Agreement() {
               </div>
 
               <div className="fra-points">
-                <Point icon="bug" title="It still needs heavy testing">
-                  <p>Features are unfinished and some will break. Settings, presets and project files can change from one build to the next. Check the sliced toolpaths in Slice before you print it.</p>
-                </Point>
-                <Point icon="printer" title="Watch your printer">
-                  <p>
-                    When {name} is connected to a printer, stay with it for the first prints. Check that it moves and extrudes the way it should and that the nozzle and bed temperatures stay in range. Be ready to stop the print or switch the printer off if anything looks wrong.
-                  </p>
-                </Point>
+                {slices ? (
+                  <>
+                    <Point icon="bug" title="It still needs heavy testing">
+                      <p>Features are unfinished and some will break. Settings, presets and project files can change from one build to the next. Check the sliced toolpaths in Slice before you print it.</p>
+                    </Point>
+                    <Point icon="printer" title="Watch your printer">
+                      <p>
+                        When {name} is connected to a printer, stay with it for the first prints. Check that it moves and extrudes the way it should and that the nozzle and bed temperatures stay in range. Be ready to stop the print or switch the printer off if anything looks wrong.
+                      </p>
+                    </Point>
+                  </>
+                ) : (
+                  <Point icon="bug" title="It still needs heavy testing">
+                    <p>Features are unfinished and some will break. Project files can change from one build to the next, so export anything you want to keep as STL or OBJ as well. Check the size and shape of an export before you print it.</p>
+                  </Point>
+                )}
                 {url ? <Point icon="comment" title={discord ? 'Report bugs on Discord' : 'Report bugs'}>
                   <p>
                     {discord ? 'Post bugs in the' : 'Report bugs on the'}{' '}
@@ -128,7 +139,7 @@ export function Agreement() {
                       type="button"
                       className="fra-more"
                       data-tip-title="What a crash report contains"
-                      data-tip-body={`The error and stack trace, the last part of the app log, the app version, your operating system, your printer's model and firmware, and a random install ID. Before it leaves this computer, ${name} removes access tokens, API keys, printer access codes, serial numbers, IP addresses, email addresses and your user name in folder paths. File names can appear in the log.`}
+                      data-tip-body={`The error and stack trace, the last part of the app log, the app version, your operating system, ${slices ? "your printer's model and firmware, " : ''}and a random install ID. Before it leaves this computer, ${name} removes access tokens, API keys, ${slices ? 'printer access codes, ' : ''}serial numbers, IP addresses, email addresses and your user name in folder paths. File names can appear in the log.`}
                     >
                       What's sent?
                     </button>
@@ -138,9 +149,9 @@ export function Agreement() {
 
               <label className="fr-check fra-check">
                 <input type="checkbox" data-testid="agreement-check" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
-                I understand that this is a pre-alpha build and I'll watch my printer while it runs.
+                {slices ? "I understand that this is a pre-alpha build and I'll watch my printer while it runs." : 'I understand that this is a pre-alpha build.'}
               </label>
-              <p className="fra-foot sx-mono">Agreement version {AGREEMENT_VERSION}. Accepting saves the version and date on this computer.</p>
+              <p className="fra-foot sx-mono">Agreement version {agreementVersion(slices)}. Accepting saves the version and date on this computer.</p>
             </div>
           </div>
           <footer className="fr-foot">

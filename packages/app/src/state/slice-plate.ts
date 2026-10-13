@@ -22,6 +22,7 @@ import { markOpenStage } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
 import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
+import { hostSlices } from './model-mode'
 
 function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverrides?: Record<string, number> } {
   const o = slotOverridesFor(meta, p)
@@ -49,6 +50,8 @@ export async function plateObjects(slicer: Pick<SlicerHost, 'loadModel'>, s: App
 
 /** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */
 export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Promise<void> {
+  // a host with no engine (the CAD-only browser build) never starts a slice, from a shortcut, a command or auto slice
+  if (!hostSlices()) return
   const timed = sliceStarted(opts.auto === true)
   // The printer, filament and process layer must match the printer and quality tier before the configuration is read.
   await (await import('./profile-sync')).profileReady()
