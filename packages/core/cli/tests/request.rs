@@ -735,3 +735,34 @@ fn a_project_slices_with_its_own_settings() {
     assert!(err.contains("sx: walls: arachne walls, set by --config"), "{err}");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn a_mesh_named_by_several_objects_and_a_volume_slices_for_each() {
+    // The command line lets a mesh go once the last object or volume naming it has it, so every use must still
+    // find it: two objects and a modifier on the first all name the same cube.
+    let cube = fixture("cube.stl");
+    let at = |x: f32| serde_json::json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 128, 0, 1]);
+    let body = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": {"c": cube},
+        "plate": {"objects": [
+            {"id": "a", "mesh": "c", "transform": at(80.0), "volumes": [
+                {"name": "m", "role": "modifier", "mesh": "c", "settings": {"sparse_infill_density": 40}}
+            ]},
+            {"id": "b", "mesh": "c", "transform": at(176.0)}
+        ]},
+        "config": {"layer_height": 0.2, "brim_width": 0, "skirt_loops": 0},
+    });
+    let (status, v, err) = slice_body(&body);
+    assert!(status.success(), "{err}");
+    assert_eq!(v["gcodeSha256"].as_str().map(str::len), Some(64));
+    let one = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": {"c": fixture("cube.stl")},
+        "plate": {"objects": [{"id": "a", "mesh": "c", "transform": at(80.0)}]},
+        "config": {"layer_height": 0.2, "brim_width": 0, "skirt_loops": 0},
+    });
+    let (status, single, err) = slice_body(&one);
+    assert!(status.success(), "{err}");
+    assert_eq!(v["layerCount"], single["layerCount"]);
+}
