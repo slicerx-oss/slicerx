@@ -27,6 +27,9 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.chamfer',
 ])
 
+/** Moving, turning and scaling objects, which run on the app's shown plate when the object is not this server's. */
+export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale'])
+
 /** The agent side of the app link (link-client `appLink.call`). */
 export interface AppLinkCaller {
   call<T = unknown>(method: string, args?: Record<string, unknown>): Promise<T>
@@ -57,18 +60,31 @@ function onDesign(name: string, input: Record<string, unknown>): boolean {
   return typeof input['design'] === 'string' && input['model'] === undefined
 }
 
+export interface RouteOptions {
+  /** `--app`: these calls never run here; while the link does not answer they are refused with not_configured. */
+  required?: boolean
+  /** Whether this server's open project has the object (by id or name); such a call stays here. */
+  serverHas?: (object: string) => boolean
+}
+
+/** Whether a call goes to the app: a design, or an object this server's own project does not have. */
+function onApp(name: string, input: Record<string, unknown>, opts: RouteOptions): boolean {
+  if (!APP_PROJECT_TOOLS.has(name)) return onDesign(name, input)
+  return Boolean(opts.required) || !opts.serverHas?.(String(input['object'] ?? ''))
+}
+
 /**
- * The tools, with the design tools run in the app while the link answers. `required` (`--app`): a design call never
- * runs here; while the link does not answer it is refused with not_configured.
+ * The tools, with the design tools and the plate edits (project.move, .rotate and .scale on an object this server's
+ * project does not have) run in the app while the link answers.
  */
-export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appName: string, opts: { required?: boolean } = {}): PilotTool<never>[] {
+export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appName: string, opts: RouteOptions = {}): PilotTool<never>[] {
   let told = false
   return tools.map((t) => {
-    if (!APP_DESIGN_TOOLS.has(t.name)) return t
+    if (!APP_DESIGN_TOOLS.has(t.name) && !APP_PROJECT_TOOLS.has(t.name)) return t
     const local = t.run.bind(t)
     const run = async (input: never, ctx: Parameters<typeof t.run>[1]): Promise<ToolOutput> => {
       const args = input as unknown as Record<string, unknown>
-      if (!onDesign(t.name, args)) return local(input, ctx)
+      if (!onApp(t.name, args, opts)) return local(input, ctx)
       let out: { summary?: string; output?: unknown }
       try {
         out = await link.call<{ summary?: string; output?: unknown }>(t.name, args)
@@ -84,7 +100,7 @@ export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appNa
         throw new ToolInputError(mapped === 'busy' ? `${message} (busy in ${appName}: wait a moment and call again)` : message, mapped)
       }
       // The first reply says where designs live now, once per session.
-      const note = told || opts.required ? '' : ` Designs now live in the project open in ${appName}, with their steps in its history; start the server with --no-app to keep them here.`
+      const note = told || opts.required || APP_PROJECT_TOOLS.has(t.name) ? '' : ` Designs now live in the project open in ${appName}, with their steps in its history; start the server with --no-app to keep them here.`
       told = true
       return { summary: `${out.summary ?? t.name} (in ${appName})${note}`, output: { ...(typeof out.output === 'object' && out.output ? out.output : { result: out.output ?? null }), in: 'app' } }
     }
