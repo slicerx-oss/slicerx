@@ -170,7 +170,10 @@ test('a binary STL is drawn from its own read and built once, however soon the e
 test('a project opened at start is drawn before the toolpath shader warm-up runs', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
-  // As a project opened with the app: the open starts as soon as the plate is ready, while the 3D view is new.
+  // As a project opened with the app: the open starts while the 3D view is new, before its warm-up. A test cannot open
+  // a file that early on a fast GPU (the warm-up starts two frames after the first), so the view's warm-up waits for the
+  // first open to start (viewport-host's test hook) and the order after that is the app's own.
+  await page.addInitScript(() => localStorage.setItem('slicerx.warmupWaitsForOpen', '1'))
   await open(page)
   const file = zip({ '3D/3dmodel.model': tubeModel(125, 400), 'Metadata/project_settings.config': JSON.stringify(P1S) })
   const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
@@ -179,8 +182,7 @@ test('a project opened at start is drawn before the toolpath shader warm-up runs
   const span = (name: string) => page.evaluate((n) => performance.getEntriesByName(n).map((e) => [e.startTime, e.startTime + e.duration] as [number, number])[0] ?? null, name)
   await expect.poll(async () => (await span('sx:open:drawn')) !== null && (await span('sx:view:warm')) !== null, { timeout: 120_000 }).toBe(true)
   const [read, drawn, warm] = [(await span('sx:open:read'))!, (await span('sx:open:drawn'))!, (await span('sx:view:warm'))!]
-  // A warm-up that had started before the open is not this test's case: its compile cannot be called back.
-  test.skip(warm[0] < read[1], 'The warm-up started before the open')
+  expect(warm[0], 'the warm-up waited for the open to start').toBeGreaterThanOrEqual(read[0])
   // The compile holds every frame while it runs, so one that started during the open held the model's first frame
   // back to its own end. It waits for that frame now.
   expect(warm[0], `warm-up ${Math.round(warm[0])} to ${Math.round(warm[1])} ms, model drawn at ${Math.round(drawn[1])} ms`).toBeGreaterThanOrEqual(drawn[1])
