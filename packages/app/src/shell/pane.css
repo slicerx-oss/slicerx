@@ -11,10 +11,11 @@
 /* Content keeps its width while the pane slides, so it does not rewrap on every frame. */
 .pane.edged > .sx-rail-body { overflow-x: hidden; }
 .pane.edged .pane-body { min-width: calc(var(--w-side) - 32px); }
-/* The view's edge controls step in past the tab. */
+/* The view's edge controls step in past the tab (22 px) with room to spare, so the layer slider never crowds the
+   right pane's tab. */
 @media (min-width: 901px) {
-  .studio .plate-tools[data-placement="left-of-viewport"] { left: 26px; }
-  .studio .lstrip { right: 26px; }
+  .studio .plate-tools[data-placement="left-of-viewport"] { left: 40px; }
+  .studio .lstrip { right: 40px; }
 }
 /* Phones: a pane with an edge tab is a bottom sheet over the view, opened from its tab on the screen edge. The view
    takes the screen. A shut sheet waits below the screen, inert. An open sheet takes its content's height and keeps it

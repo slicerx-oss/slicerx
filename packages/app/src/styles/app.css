@@ -1012,7 +1012,7 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
   }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .vp-stage { position: relative; inset: auto; grid-row: 1 / 4; grid-column: 1 / -1; min-height: 0; }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .hud-top { position: relative; grid-area: top; inset: auto; margin: 12px 12px 0; }
-  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .lstrip { position: relative; grid-area: side; inset: auto; transform: none; align-self: center; margin: 8px 26px 8px 0; }
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .lstrip { position: relative; grid-area: side; inset: auto; transform: none; align-self: center; margin: 8px 30px 8px 0; }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .hud-bl { position: relative; grid-area: chips; inset: auto; margin: 0 12px 8px; }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .dock { position: relative; grid-area: dock; inset: auto; margin: 0 12px 8px; }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .slice-float { position: relative; grid-area: foot; inset: auto; width: auto; margin: 0 12px 12px; border-radius: var(--r-md); background: var(--overlay); box-shadow: var(--shadow-float); }
