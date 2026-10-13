@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
 import { pilotState, set, useApp } from '../state/store'
+import { bridgeConnector } from '../link/connector'
 import { AgentPanel } from './agent-panel'
 import { useMimirCloudHost } from './cloud'
 import { cloudReady } from './cloud-edition'
@@ -65,7 +66,8 @@ export function PilotSettingsSection() {
       <h3 id="pilot-h">{ASSISTANT_NAME}</h3>
       <p className="sx-small sx-muted">{ASSISTANT_NAME} answers questions and suggests changes you approve. It uses a model you connect; nothing is sent while it is off.</p>
       <MimirSetup place="settings" idPrefix="pcs" />
-      <AgentPanel idPrefix="pcs-ag" />
+      {/* an outside agent reaches mimir through the hub the desktop app runs; a browser has none */}
+      {bridgeConnector()?.automatic === true ? <AgentPanel idPrefix="pcs-ag" /> : null}
       <CloudShare />
       {off ? <p className="sx-small sx-muted">{ASSISTANT_NAME} is off. Connect above to turn it back on.</p> : null}
       {!off ? (

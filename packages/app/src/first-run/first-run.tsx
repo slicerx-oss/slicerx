@@ -6,7 +6,7 @@ import type { LookAndFeelChoice } from '@slicerx/contracts'
 import { Button, Dialog } from '@slicerx/ui'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
-import { cloudReady } from '../pilot-connect/cloud-edition'
+import { cloudOffered } from '../pilot-connect/cloud-edition'
 import { useHost } from '../host'
 import { useMediaQuery } from '../lib/media'
 import { isPhoneLayout } from '../lib/phone-layout'
@@ -46,8 +46,8 @@ export function FirstRun() {
   // Someone who already has a printer keeps it with one click: setup run again (or from Settings) shows it instead of the scan. Adding a printer from Settings always scans.
   const [keepPrinter, setKeepPrinter] = useState(() => opened !== 'printer' && Boolean(get().firstRun) && get().printerId !== null)
   const [flow, dispatch] = useReducer(reduceFlow, null, () => initialFlow(normalizeStep(opened, steps), choice, null, steps, get().modelModeDefault))
-  // mimir cloud, free and with nothing to paste, is picked where it runs now; anything else waits for a pick
-  const [mimir, setMimir] = useState<MimirChoice>(() => (cloudReady(edition) ? 'cloud' : 'skip'))
+  // mimir cloud, free and with nothing to paste, is picked wherever it is offered (signed out, it asks for sign-in)
+  const [mimir, setMimir] = useState<MimirChoice>(() => (cloudOffered(edition) ? 'cloud' : 'skip'))
   const mimirRef = useRef(mimir)
   mimirRef.current = mimir
   const atOpen = useRef({ look: storedLook })

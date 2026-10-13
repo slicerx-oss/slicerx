@@ -70,7 +70,7 @@ describe('first run with the mimir step', () => {
     act(() => registerMimirCloud({ ...cloudHost, needsSignIn: true }))
     expect(names()).toEqual(['Sign in to use mimir free', 'Use your own API key', 'Skip for now'])
     act(() => registerMimirCloud({ ...cloudHost, needsSignIn: false }))
-    expect(names()).toEqual(['mimir cloud, free daily', 'Use your own API key', 'Skip for now'])
+    expect(names()).toEqual(['Use mimir free', 'Use your own API key', 'Skip for now'])
     expect(screen.getByTestId('ms-cloud-note').textContent).toContain('No key to paste')
     view.unmount()
     expect(mimirOnFinish('cloud')).toEqual({ mode: 'on', provider: 'mimir-cloud' })
