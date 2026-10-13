@@ -16,6 +16,8 @@ test('a tap on a Settings tab leaves the row where it is', async ({ page, isMobi
   await page.getByTestId('open-settings').click()
   const nav = page.getByRole('navigation', { name: 'Settings sections' })
   await expect(nav).toBeVisible()
+  // at rest the far edge already fades: the row runs past it
+  await expect(nav).toHaveAttribute('data-more-end', 'true')
   // part way along, so a tab sits cut at an edge
   await nav.evaluate((n) => n.scrollTo({ left: Math.min(60, n.scrollWidth - n.clientWidth) }))
   await expect(nav).toHaveAttribute('data-more-start', 'true')
