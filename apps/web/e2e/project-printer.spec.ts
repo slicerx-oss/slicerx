@@ -6,6 +6,7 @@
 // has objects, the project asks first. The project is made here: a 20 mm cube and Bambu Studio's settings form.
 import { readFileSync } from 'node:fs'
 import { expect, type Page } from '@playwright/test'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { plateReady, sliceCount, sliced, tab, test } from './fixtures'
 import { projectZip } from './project-zip'
 
@@ -25,6 +26,7 @@ const P1S = {
 const A1_MINI = { id: 'e2e-a1-mini', name: 'Desk A1 mini', profileId: 'bambu-a1-mini', vendor: 'Bambu Lab', model: 'A1 mini', nozzleCount: 1 }
 
 async function open(page: Page): Promise<void> {
+  interceptFileDialogs(page)
   await page.addInitScript((a1) => {
     Reflect.deleteProperty(window, 'showSaveFilePicker')
     if (sessionStorage.getItem('sx-e2e')) return
@@ -52,11 +54,8 @@ async function toastWith(page: Page, has: string): Promise<string | undefined> {
 
 /** Picks the file in the dialog that `key` opens: Mod+O opens a new project, Mod+I adds to the plate. */
 async function choose(page: Page, open: () => Promise<void>, settings: Record<string, unknown>): Promise<void> {
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await open()
-    await (await chooser).setFiles({ name: 'keychain.3mf', mimeType: 'model/3mf', buffer: projectZip(settings, {}, [118, 118]) })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, open)
+  await chooser.setFiles({ name: 'keychain.3mf', mimeType: 'model/3mf', buffer: projectZip(settings, {}, [118, 118]) })
 }
 
 async function sliceAndExport(page: Page): Promise<string> {

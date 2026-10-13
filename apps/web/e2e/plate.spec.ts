@@ -4,6 +4,7 @@
 import { type Page } from '@playwright/test'
 import { addMenu, closeSheet, expect, openSheet, openTransform, panesSettled, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
 import { pressable } from './canvas-press'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 
 /**
  * The G-code the printer runs. Files for Bambu Lab printers open with the header and the full settings (hundreds
@@ -1027,6 +1028,7 @@ test('presets sync through a file you keep: save one, merge another, and read th
     Reflect.deleteProperty(window, 'showSaveFilePicker')
     Reflect.deleteProperty(window, 'showOpenFilePicker')
   })
+  interceptFileDialogs(page)
   await prepare(page)
   const fs = await import('node:fs')
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -1038,7 +1040,7 @@ test('presets sync through a file you keep: save one, merge another, and read th
   expect(saved.format).toBe('slicerx-presets')
   expect(saved.presets.map((p) => p.name)).toContain('Fast draft')
   const remote = { format: 'slicerx-presets', version: 1, exportedAt: Date.now(), presets: [{ id: 'remote-1', kind: 'filament', name: 'Remote PLA', values: { nozzle_temperature: 215 }, createdAt: 1, updatedAt: Date.now() }], deleted: [], changes: [] }
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Merge a sync file' }).click()])
+  const chooser = await expectFileDialog(page, () => page.getByRole('button', { name: 'Merge a sync file' }).click())
   await chooser.setFiles({ name: 'other.sync.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(remote)) })
   await expect(page.getByRole('status').filter({ hasText: 'Added Remote PLA' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Filament presets' })).toContainText('Remote PLA')

@@ -4,8 +4,9 @@
 // example plate within a moment and stays drawn while the first background slice runs. Every composited frame is
 // checked (e2e/frames.ts): the plate must show within a few seconds of the view coming up and never go empty again.
 import { fileURLToPath } from 'node:url'
-import { expect, type FileChooser } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { test } from './browser-launch'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { cellsIn, GL_SLOW, recordFrames, spread } from './frames'
 
 test('the plate is drawn right after setup is skipped on a fresh install', { tag: ['@gpu', '@gpu-timing'] }, async ({ page, isMobile }) => {
@@ -49,21 +50,17 @@ type Vp = { stats(): { segments: number } }
 test('a model sliced while setup is open shows its toolpaths in place after setup closes', { tag: ['@gpu', '@gpu-timing'] }, async ({ page, isMobile }, info) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
-  // Every file dialog the page opens is intercepted from the start. Playwright turns interception on with the first
-  // filechooser listener and does not wait for the browser to apply it, so a wait set up just before Enter can lose
-  // the race on a busy machine: the dialog then opens for real and the headless browser cancels it at once (the
-  // input's cancel event comes a few milliseconds after the click), and the test waited for its whole timeout (#57).
-  const seen: FileChooser[] = []
-  page.on('filechooser', (c) => seen.push(c))
+  // Every file dialog the page opens is intercepted from the start (e2e/file-dialog.ts): a wait set up just before
+  // Enter could lose the dialog on a busy machine, and the test then waited for its whole timeout.
+  interceptFileDialogs(page)
   await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible({ timeout: 120_000 })
   // With setup still open: open a model through the command bar; the background slice runs behind setup.
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('Open a model file')
-  await page.keyboard.press('Enter')
-  await expect.poll(() => seen.length, { message: 'the file dialog opened once', timeout: 30_000 }).toBe(1)
-  await seen[0]!.setFiles(fileURLToPath(new URL('../../../packages/core/bench/models/x-mark.stl', import.meta.url)))
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('Enter'), 30_000)
+  await chooser.setFiles(fileURLToPath(new URL('../../../packages/core/bench/models/x-mark.stl', import.meta.url)))
   await expect
     .poll(() => page.evaluate(() => { const s = (window as unknown as { __sx?: Sx }).__sx?.getState(); return !!s && s.plate.some((o) => /x-mark/i.test(o.name)) && s.slice.status === 'done' && !s.slice.stale && s.preview !== null }), { timeout: 120_000 })
     .toBe(true)

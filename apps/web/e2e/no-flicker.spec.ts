@@ -5,6 +5,7 @@
 // frame is checked (e2e/frames.ts). A preview waiting for its new slice is drawn dimmed, which keeps its picture.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { alike, cellsIn, diff, pops, recordFrames, spread, swaps, type Box, type Frame } from './frames'
 import { appReady, plateReady } from './fixtures'
 
@@ -112,13 +113,13 @@ test.describe('no flicker', { tag: ['@gpu', '@gpu-timing'] }, () => {
   })
 
   test('a model added and the slice after it never blank the view or pop the panels', async ({ page }, info) => {
+    interceptFileDialogs(page)
     await start(page, 'prepare')
     const view = await boxOf(page, '.vp')
     const panels = { sidebar: await boxOf(page, '.studio .pane[aria-label="Printer and settings"]') }
     const stop = await recordFrames(page)
-    const chooser = page.waitForEvent('filechooser')
-    await page.getByTestId('objects-add-model').click()
-    await (await chooser).setFiles({ name: 'cube.stl', mimeType: 'model/stl', buffer: cube() })
+    const chooser = await expectFileDialog(page, () => page.getByTestId('objects-add-model').click())
+    await chooser.setFiles({ name: 'cube.stl', mimeType: 'model/stl', buffer: cube() })
     await expect(page.locator('.obj-name')).toHaveCount(2)
     await sliced(page)
     await settle(page)

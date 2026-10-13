@@ -4,6 +4,7 @@
 // tree_support_wall_count). It opens and slices with the real engine, and a value the engine still refuses is dropped
 // with a note instead of blocking the slice. The project is made here: a 20 mm cube and Bambu Studio's settings form.
 import { expect, type Page } from '@playwright/test'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { plateReady, sliceCount, sliced, test } from './fixtures'
 import { projectZip } from './project-zip'
 
@@ -21,6 +22,7 @@ const BAMBU = {
 }
 
 async function open(page: Page): Promise<void> {
+  interceptFileDialogs(page)
   await page.addInitScript(() => {
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
@@ -33,11 +35,8 @@ async function open(page: Page): Promise<void> {
 /** Open (Mod+O) the project: a new project with the file, so its settings come along. */
 async function openProject(page: Page, settings: Record<string, unknown>): Promise<void> {
   const buffer = projectZip(settings)
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'a1-mini.3mf', mimeType: 'model/3mf', buffer })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'a1-mini.3mf', mimeType: 'model/3mf', buffer })
   await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
 }
 

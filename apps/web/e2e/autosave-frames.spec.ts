@@ -5,6 +5,7 @@
 // heightfield of about a million triangles, a tenth of them painted as support enforcers.
 import { type Page } from '@playwright/test'
 import { GL_SLOW } from './frames'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { expect, plateReady, test } from './fixtures'
 import { zip } from './project-zip'
 
@@ -60,11 +61,8 @@ interface Sx {
 async function openTerrain(page: Page): Promise<number> {
   const { model, triangles } = terrain(500)
   const buffer = zip({ '3D/3dmodel.model': model })
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'terrain.3mf', mimeType: 'model/3mf', buffer })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'terrain.3mf', mimeType: 'model/3mf', buffer })
   await expect(page.locator('.obj-name')).toHaveText(['Terrain'], { timeout: 120_000 })
   return triangles
 }
@@ -72,6 +70,7 @@ async function openTerrain(page: Page): Promise<number> {
 test('the viewport keeps drawing while a big project autosaves', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Storage and timing, not layout')
   test.slow()
+  interceptFileDialogs(page)
   await page.addInitScript(() => {
     localStorage.setItem('slicerx.debug', '1')
     if (sessionStorage.getItem('sx-e2e')) return

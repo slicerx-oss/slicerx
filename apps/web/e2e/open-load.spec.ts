@@ -6,6 +6,7 @@
 // stays a small part of the meshes' read. And the 3D view builds each object once; the printer switch, the bed change
 // and the settings that follow keep what was built.
 import { expect, type Page } from '@playwright/test'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { plateReady, test } from './fixtures'
 import { zip } from './project-zip'
 
@@ -50,6 +51,7 @@ type Vp = { stats(): { objectBuilds: number } }
 type Sx = { getState(): { plate: unknown[] } }
 
 async function open(page: Page): Promise<void> {
+  interceptFileDialogs(page)
   await page.addInitScript((a1) => {
     localStorage.setItem('slicerx.debug', '1')
     if (sessionStorage.getItem('sx-e2e')) return
@@ -79,11 +81,8 @@ test('a big project opens with the page answering and each model built once', as
     }
     setTimeout(beat, 10)
   })
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'tube.3mf', mimeType: 'model/3mf', buffer: file })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'tube.3mf', mimeType: 'model/3mf', buffer: file })
   await expect(page.locator('.obj-name')).toHaveText(['Tube', 'Ring'], { timeout: 120_000 })
   // On the person's own P1S when they have one, else as the project's printer.
   await expect(page.getByTestId('toast').filter({ hasText: /Opened (as|on) / })).toBeVisible({ timeout: 120_000 })
@@ -137,11 +136,8 @@ test('a binary STL is drawn from its own read and built once, however soon the e
   const builds = await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)
   // About 60,000 triangles.
   const file = tubeStl(75, 400)
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'tube.stl', mimeType: 'model/stl', buffer: file })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'tube.stl', mimeType: 'model/stl', buffer: file })
   // The first frame with the model may land after the open is over, when the engine's import is quick.
   await expect.poll(() => page.evaluate(() => ['done', 'drawn'].every((s) => performance.getEntriesByName(`sx:open:${s}`).length === 1)), { timeout: 120_000 }).toBe(true)
   const ms = await page.evaluate(() => Object.fromEntries(performance.getEntriesByType('measure').filter((e) => e.name.startsWith('sx:open:')).map((e) => [e.name.slice(8), e.startTime + e.duration])))
