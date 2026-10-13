@@ -32,7 +32,7 @@ Eleven kernel routines and all of `SmIntegrator.cpp` cite Numerical Recipes, who
 
 ## API
 
-`sx_brep::call(op, request_json) -> Result<String, String>`, with the operations listed in `src/lib.rs`: `box`, `cylinder`, `extrude`, `boolean`, `subtract`, `cut`, `fillet`, `chamfer`, `info`, `tessellate`, `free` and `count`. Bodies stay in the kernel, named by number, until freed. An op that changes a body makes a new one and leaves its inputs as they were. `KERNEL` says whether the build has the kernel.
+`sx_brep::call(op, request_json) -> Result<String, String>`, with the operations listed in `src/lib.rs`: `box`, `cylinder`, `primitive`, `extrude`, `boolean`, `subtract`, `cut`, `fillet`, `chamfer`, `info`, `tessellate`, `free` and `count`. Bodies stay in the kernel, named by number, until freed. An op that changes a body makes a new one and leaves its inputs as they were. `KERNEL` says whether the build has the kernel.
 
 The kernel runs on one thread: `cpp/tbb` stands in for the oneTBB headers it includes and runs its loops in order. Calls take a lock.
 

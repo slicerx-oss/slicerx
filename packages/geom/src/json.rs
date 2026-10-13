@@ -88,6 +88,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("format.read3mf", "formats"),
     ("brep.box", "brep"),
     ("brep.cylinder", "brep"),
+    ("brep.primitive", "brep"),
     ("brep.extrude", "brep"),
     ("brep.boolean", "brep"),
     ("brep.subtract", "brep"),

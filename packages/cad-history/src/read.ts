@@ -5,13 +5,13 @@
 import { productName } from '@slicerx/contracts/brand'
 import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
-import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type Step, type StepParams } from './model'
+import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
 const MAX_TRIANGLES = 20_000_000
 
 /** The meshes of a binary part with their names, slots and paint from the JSON. Null when the part does not read. */
-export function decodeMeshes(bytes: Uint8Array | undefined, info: readonly { name: string; slot: number; paint?: PaintTexts }[]): HistoryMesh[] | null {
+export function decodeMeshes(bytes: Uint8Array | undefined, info: readonly { name: string; slot: number; paint?: PaintTexts; primitive?: PrimitiveSpec }[]): HistoryMesh[] | null {
   if (!bytes || bytes.byteLength < 12) return null
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   if (dv.getUint32(0, true) !== MAGIC || dv.getUint32(4, true) !== BIN_VERSION || dv.getUint32(8, true) !== info.length) return null
@@ -34,7 +34,7 @@ export function decodeMeshes(bytes: Uint8Array | undefined, info: readonly { nam
     if (!positions.every(Number.isFinite)) return null
     // Paint on a triangle the mesh does not have drops the mesh, as a bad index does.
     if (meta.paint && Object.values(meta.paint).some((layer) => Object.keys(layer ?? {}).some((k) => Number(k) >= nt))) return null
-    out.push({ name: meta.name, slot: meta.slot, positions, indices, ...(meta.paint ? { paint: meta.paint } : {}) })
+    out.push({ name: meta.name, slot: meta.slot, positions, indices, ...(meta.paint ? { paint: meta.paint } : {}), ...(meta.primitive ? { primitive: meta.primitive } : {}) })
   }
   return out
 }
@@ -179,15 +179,37 @@ function paramsOk(p: Record<string, unknown>): boolean {
 
 const planeOk = (v: unknown) => obj(v) && vec3(v['point']) && vec3(v['normal']) && (v['normal'] as number[]).some((n) => n !== 0)
 
+/** A part's shape as Add shape made it, or undefined for one that is not a shape this reader knows (it stays a mesh). */
+function primitiveOf(v: unknown): PrimitiveSpec | undefined {
+  if (!obj(v) || !obj(v['frame'])) return undefined
+  const f = v['frame']
+  if (!isVec(3)(f['origin']) || !isVec(3)(f['u']) || !isVec(3)(f['normal'])) return undefined
+  const frame = { origin: f['origin'] as [number, number, number], u: f['u'] as [number, number, number], normal: f['normal'] as [number, number, number] }
+  // u and the normal at right angles and of unit length, as the kernel places a solid
+  const d = (a: number[], b: number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!
+  if (Math.abs(d(frame.u, frame.u) - 1) > 1e-6 || Math.abs(d(frame.normal, frame.normal) - 1) > 1e-6 || Math.abs(d(frame.u, frame.normal)) > 1e-6) return undefined
+  const pos = (k: string) => isNum(v[k]) && (v[k] as number) > 0
+  if (v['type'] === 'box' && isVec(3)(v['sizeMm']) && (v['sizeMm'] as number[]).every((x) => x > 0)) return { type: 'box', sizeMm: v['sizeMm'] as [number, number, number], frame }
+  if (v['type'] === 'cylinder' && pos('diameterMm') && pos('heightMm')) return { type: 'cylinder', diameterMm: v['diameterMm'] as number, heightMm: v['heightMm'] as number, frame }
+  if (v['type'] === 'cone' && pos('diameterMm') && pos('heightMm') && isNum(v['topDiameterMm']) && (v['topDiameterMm'] as number) >= 0) return { type: 'cone', diameterMm: v['diameterMm'] as number, topDiameterMm: v['topDiameterMm'] as number, heightMm: v['heightMm'] as number, frame }
+  if (v['type'] === 'sphere' && pos('diameterMm')) return { type: 'sphere', diameterMm: v['diameterMm'] as number, frame }
+  return undefined
+}
+
+const withPrimitive = (v: unknown): { primitive?: PrimitiveSpec } => {
+  const p = primitiveOf(v)
+  return p ? { primitive: p } : {}
+}
+
 function readStored(v: unknown, files: ReadonlyMap<string, Uint8Array>): HistoryMesh[] | null {
   if (!obj(v) || typeof v['file'] !== 'string' || !v['file'].startsWith('Metadata/slicerx_history/') || !Array.isArray(v['parts'])) return null
   const info = v['parts'].map((x) =>
     obj(x) && typeof x['name'] === 'string' && isNum(x['slot']) && (x['paint'] === undefined || paintOk(x['paint']))
-      ? { name: x['name'], slot: x['slot'], ...(x['paint'] !== undefined ? { paint: x['paint'] as PaintTexts } : {}) }
+      ? { name: x['name'], slot: x['slot'], ...(x['paint'] !== undefined ? { paint: x['paint'] as PaintTexts } : {}), ...withPrimitive(x['primitive']) }
       : null,
   )
   if (info.some((x) => x === null)) return null
-  return decodeMeshes(files.get(v['file']), info as { name: string; slot: number; paint?: PaintTexts }[])
+  return decodeMeshes(files.get(v['file']), info as { name: string; slot: number; paint?: PaintTexts; primitive?: PrimitiveSpec }[])
 }
 
 function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint8Array>): History | null {
