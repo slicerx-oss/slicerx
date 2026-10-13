@@ -165,6 +165,11 @@ impl<K: std::hash::Hash + Eq + Clone, V: Clone> Memo<K, V> {
         }
     }
 
+    /// Whether the entry for `key` is worked out already (not while a job is working it out).
+    pub(crate) fn has(&self, key: &K) -> bool {
+        matches!(self.lock().get(key), Some(Some(_)))
+    }
+
     /// The entry for `key` once it is there, or the claim to work it out. Kept out of `get_or`, which is copied
     /// for every caller's work, so the browser module carries one copy of this per map.
     #[inline(never)]
