@@ -170,6 +170,8 @@ test('on a phone, the plate chip names the plate only, whatever the object is ca
   })
   await page.goto('./')
   await expect(page.getByTestId('plate-chip')).toBeVisible({ timeout: 120_000 })
+  // The starter is on the plate before its name changes.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: unknown[] } } }).__sx.getState().plate.length), { timeout: 120_000 }).toBeGreaterThan(0)
   await page.evaluate(() => {
     const sx = (window as unknown as { __sx: { getState(): { plate: { name: string }[] }; setState(p: unknown): void } }).__sx
     const [o, ...rest] = sx.getState().plate
