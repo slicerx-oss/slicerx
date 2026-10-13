@@ -45,7 +45,7 @@ async function pressStill(target: Locator, others: Locator[]): Promise<void> {
 test.describe('mimir cloud', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop only: phones have no modeling tabs')
 
-  test('in the dock, the notice spans the dock instead of a narrow column', async ({ page }) => {
+  test('in the dock, the header and the notice span the dock', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.addInitScript(() => {
       localStorage.setItem('slicerx.debug', '1')
@@ -63,6 +63,8 @@ test.describe('mimir cloud', () => {
     // below the dock's header, nearly its full width, and no taller than the dock
     expect(box!.width).toBeGreaterThan(dock!.width * 0.8)
     expect(box!.y + box!.height).toBeLessThanOrEqual(dock!.y + dock!.height)
+    // the header spans it too: the dock is one column, not the chat page's three
+    expect((await page.locator('.mimir-dock > .mimir-head').boundingBox())!.width).toBeGreaterThan(dock!.width - 2)
     await expect(page.locator('.mimir-dock').getByTestId('mimir-notice-ok')).toBeInViewport()
     await page.locator('.mimir-dock').screenshot({ path: test.info().outputPath('mimir-dock-notice.png') })
   })
