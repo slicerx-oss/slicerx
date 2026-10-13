@@ -20,6 +20,7 @@ import { watchOf, type Watch } from './watch'
 import { usePilot } from './use-pilot'
 import { ChatGptCard } from '../../pilot-connect/chatgpt-card'
 import { Loading } from '../../shell/loading'
+import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import './dock.css'
 
 const MODE_WORD: Record<PermissionMode, string> = { allow: 'Allow', ask: 'Ask first', off: 'Off' }
@@ -190,6 +191,7 @@ export function PilotDock() {
   const watching = useWatching()
   // The mimir tab has the chat in the page; the dock stands aside there and comes back on the other tabs.
   const inMimir = useInMimir()
+  const notice = useCloudNoticeDue()
   useEffect(() => {
     if (!on) return
     const onKey = (e: KeyboardEvent) => {
@@ -216,7 +218,7 @@ export function PilotDock() {
         <span className="mimir-sp" />
         <Button variant="ghost" size="sm" icon="close" aria-label={`Close ${ASSISTANT_NAME}`} tip="pilot.close" onClick={closeDock} />
       </header>
-      {connected ? <DockBody /> : <ConnectStep />}
+      {connected ? notice ? <CloudNotice /> : <DockBody /> : <ConnectStep />}
     </aside>
   )
 }

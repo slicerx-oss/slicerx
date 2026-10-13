@@ -46,6 +46,8 @@ export interface Prefs {
   settingsMode?: 'simple' | 'advanced' | 'expert' | 'developer' | undefined
   crashReports?: boolean | undefined
   mimirShare?: boolean | undefined
+  /** The mimir cloud notice version the person read before their first chat. */
+  mimirNotice?: number | undefined
   /** Settings > Appearance > Motion; absent means the edition's default. */
   motion?: 'system' | 'full' | 'reduced' | undefined
   /** The pre-alpha agreement the person accepted, and when (ISO date). */
@@ -301,6 +303,7 @@ export function normalizePrefs(v: unknown): Prefs {
     settingsMode: or(oneOf(r['settingsMode'], ['simple', 'advanced', 'expert', 'developer'] as const), 'simple'),
     crashReports: or(bool(r['crashReports']), false),
     mimirShare: or(bool(r['mimirShare']), true),
+    ...opt('mimirNotice', num(r['mimirNotice'], 1, 1e6)),
     ...opt('motion', oneOf(r['motion'], ['system', 'full', 'reduced'] as const)),
     agreement: or(nullable(r['agreement'], (x) => (isRec(x) && num(x['version'], 1, 1e6) !== undefined && str(x['acceptedAt'], 40) ? { version: x['version'] as number, acceptedAt: x['acceptedAt'] as string } : undefined)), null),
     ...opt('installId', typeof r['installId'] === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r['installId']) ? r['installId'] : undefined),

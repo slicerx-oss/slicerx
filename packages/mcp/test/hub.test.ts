@@ -259,5 +259,29 @@ describe('--app through a scripted hub', () => {
 
   it('needs printers through sx-link', async () => {
     await expect(createContext({ engine: 'stub', policy: DEFAULT_POLICY, printers: 'demo', app: 'required' })).rejects.toThrow(/--app needs printers through sx-link/)
+
+describe('the mimir cloud share setting through a scripted hub', () => {
+  const link = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+
+  it('reads the setting from the open app, the way a client checks it', async () => {
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      if (method !== 'mimir.share') throw { code: 'bad_request', message: `unknown method ${method}` }
+      return { cloud: true, onCloud: true, share: false, noticeRead: true }
+    })
+    const h = await connect(link(hub))
+    const r = await h.call('slicerx_mimir_share')
+    expect(r.isError, text(r)).toBeFalsy()
+    expect(data<{ output: unknown }>(r).output).toEqual({ cloud: true, on_cloud: true, share: false, notice_read: true })
+    expect(text(r)).toMatch(/Sharing mimir sessions is off/)
+  })
+
+  it('says how to reach the app while the link is off, and is not offered without sx-link', async () => {
+    const h = await connect(link(scriptedHub({ ok: true })))
+    const r = await h.call('slicerx_mimir_share')
+    expect(r.isError).toBe(true)
+    expect(text(r)).toMatch(/^Error: not_configured: the app link to .+ does not answer \(app_link_off\)/)
+    const demo = await connect({ printers: 'demo' })
+    const listed = await demo.client.listTools()
+    expect(listed.tools.some((t) => t.name === 'slicerx_mimir_share')).toBe(false)
   })
 })

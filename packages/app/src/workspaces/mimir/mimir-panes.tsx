@@ -16,6 +16,7 @@ import { newSessionId, noteMessage, tabMimir, tabTools } from './session'
 import { editRow } from './sheet-drive'
 import { openSheet, setSheetActions, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
 import { useHost } from '../../host'
+import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
 import { get, setCamera, useApp } from '../../state/store'
@@ -97,6 +98,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     const el = body.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [transcript])
+  // On mimir cloud, the first chat waits for the person to read what is sent and kept.
+  const notice = useCloudNoticeDue()
   // A file dragged anywhere over the chat can be dropped onto the message.
   const [dropping, setDropping] = useState(false)
   const files = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
@@ -160,7 +163,11 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
           }}
         >
-          {transcript.turns.length === 0 ? (
+          {transcript.turns.length === 0 && notice ? (
+            <div className="mimir-notice">
+              <CloudNotice />
+            </div>
+          ) : transcript.turns.length === 0 ? (
             <div className="mimir-empty">
               <p>Describe a part, or drop a photo of what it fits. {ASSISTANT_NAME} models it here, and every step lands in the timeline, where you can edit or undo it.</p>
             </div>

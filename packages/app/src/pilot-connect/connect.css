@@ -107,3 +107,8 @@
 /* Connect your AI agent is its own section, apart from the model setup above it */
 .ag-sec { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-6); padding-top: var(--s-5); border-top: 1px solid var(--line-soft); }
 .ag-h { margin: 0; font: var(--fw-semibold) var(--fs-lg) var(--f-body); color: var(--fg); }
+
+/* mimir cloud notice, before the first chat */
+.pc-notice { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); text-align: left; color: var(--fg); }
+.pc-notice h3 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+.pc-notice p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }

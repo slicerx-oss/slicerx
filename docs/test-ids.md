@@ -343,6 +343,9 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 | --- | --- |
 | `mimir-share` | Share my mimir sessions to improve mimir (on by default) |
 | `danger-mimir-forget` | Delete my shared sessions |
+| `mimir-cloud-notice` | The notice before the first chat on mimir cloud (mimir tab and dock) |
+| `mimir-notice-share` | The notice's share switch, the same setting as `mimir-share` |
+| `mimir-notice-ok` | Start: the notice was read, and does not show again |
 
 ## Settings: Agents and the app link
 

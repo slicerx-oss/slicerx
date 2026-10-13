@@ -28,6 +28,11 @@ export interface MimirCloudHost {
 
 let host: MimirCloudHost | null = null
 const listeners = new Set<() => void>()
+// a stand-in proxy address for the test hook below, in an edition without a backend
+let testBase: string | null = null
+
+/** The test hook's stand-in proxy address, if a script set one. */
+export const cloudTestBase = (): string | null => testBase
 
 /** Called once by an app entry whose shell carries mimir cloud (the desktop app). */
 export function registerMimirCloud(h: MimirCloudHost | null): void {
@@ -47,4 +52,15 @@ export function useMimirCloudHost(): MimirCloudHost | null {
     },
     () => host,
   )
+}
+
+// Test hook: with localStorage 'slicerx.debug' set, a script can stand in for mimir cloud (window.__sxMimirCloud) in a
+// build without a backend, the way tests reach the store as window.__sx.
+if (typeof window !== 'undefined' && localStorage.getItem('slicerx.debug')) {
+  Object.assign(window, {
+    __sxMimirCloud: (h: MimirCloudHost, base: string) => {
+      testBase = base
+      registerMimirCloud(h)
+    },
+  })
 }

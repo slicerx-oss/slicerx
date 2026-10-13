@@ -23,6 +23,7 @@ import { cloudTools, type CloudOptions } from './cloud'
 import { Designs, designFiles, designTools } from './design'
 import { paintTools } from './paint'
 import { APP_DESIGN_TOOLS, routeToApp } from './app-route'
+import { mimirCloudTools } from './mimir-cloud'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
 import { cadFiles, geomEngine, geomTools, findSxGeom } from './geom'
 import { createMcpSetupHost } from './setup'
@@ -172,7 +173,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
-  const mimir = mimirQuotaTools(appLink, productName())
+  const mimir = [...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName())]
   const tools = [...registry, ...local, ...geom, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {

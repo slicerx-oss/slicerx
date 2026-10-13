@@ -394,6 +394,8 @@ export interface AppState {
   crashReports: boolean
   /** Settings > mimir: share mimir cloud sessions to improve mimir (on by default). Sent only to mimir cloud. */
   mimirShare: boolean
+  /** The mimir cloud notice version read before the first chat, or null until then. */
+  mimirNotice: number | null
   /** Settings > Appearance > Motion; null until picked, which means the edition's default. */
   motion: 'system' | 'full' | 'reduced' | null
   /** The pre-alpha agreement accepted on this install, or null. */
@@ -719,6 +721,7 @@ export const appStore = createStore<AppState>()(() => ({
   setup: firstLaunch ? { step: 'welcome' } : null,
   crashReports: prefs.crashReports ?? false,
   mimirShare: prefs.mimirShare ?? true,
+  mimirNotice: prefs.mimirNotice ?? null,
   motion: prefs.motion ?? null,
   agreement: prefs.agreement ?? null,
   agreementOpen: false,
@@ -801,7 +804,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -848,6 +851,7 @@ appStore.subscribe((s, prev) => {
       firstRun: s.firstRun as Prefs['firstRun'],
       crashReports: s.crashReports,
       mimirShare: s.mimirShare,
+      ...(s.mimirNotice ? { mimirNotice: s.mimirNotice } : {}),
       ...(s.motion ? { motion: s.motion } : {}),
       agreement: s.agreement,
       ...(s.installId ? { installId: s.installId } : {}),
