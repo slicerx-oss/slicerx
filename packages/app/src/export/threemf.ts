@@ -12,7 +12,7 @@ import { bake } from '../plate/mesh-ops'
 import { areaOrigin } from '../plate/bed-origin'
 import type { Dimension, DimensionAnchor } from '../geom/cad'
 import { plateObjectsFromGcode } from '../features/fleet/device'
-import { historyFiles } from '@slicerx/cad-history'
+import { syncTimeline, timelineFiles, type Timeline } from '@slicerx/cad-history'
 import type { PlateEntry, PlateMeta, VolumeRole } from '../state/store'
 import { md5Hex } from './md5'
 import { plateSequence } from '../plate/plate-sequence'
@@ -413,6 +413,8 @@ export interface ProjectInput {
   sx?: { modelId?: string; creatorId?: string; exportedBy: string }
   /** The project's named values (cad/values.ts), written as Metadata/slicerx_values.json. */
   namedValues?: readonly NamedValue[]
+  /** The design timeline (docs/cad-history.md); without one, the objects' histories are merged by when steps were made. */
+  timeline?: Timeline
 }
 
 const SX_NS = 'https://slicerx.app/schemas/sx3mf/2026'
@@ -605,7 +607,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
   if (brimLines.length) files.push({ name: 'Metadata/brim_ear_points.txt', data: `brim_points_format_version=0\n${brimLines.join('\n')}\n` })
   const dims = dimensionsJson(input.plates.flatMap((p) => p.objects), fileIds)
   if (dims) files.push({ name: 'Metadata/slicerx_dimensions.json', data: dims })
-  files.push(...historyFiles(input.plates.flatMap((p) => p.objects), fileIds))
+  // the timeline as the objects have it now, so the file always matches what is saved
+  files.push(...timelineFiles(syncTimeline(input.timeline ?? { bodies: [], items: [], marker: 0 }, input.plates.flatMap((p) => p.objects)), fileIds))
   const values = valuesJson(input.namedValues ?? [])
   if (values) files.push({ name: 'Metadata/slicerx_values.json', data: values })
   const marks = marksXml(input.layerMarks)

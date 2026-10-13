@@ -57,8 +57,10 @@ export function madeAt(id: string): { time: number; seq: number } | null {
 const isSketch = (p: StepParams): p is (Extrude & { shape: { type: 'sketch' } }) | Revolve => (p.op === 'shape.extrude' && p.shape.type === 'sketch') || p.op === 'sketch.revolve'
 
 /** The sketch a step drew on, and the step left naming it. */
-function split(s: Step, body: string, name: string): [SketchItem, FeatureItem] {
-  const id = `${s.id}k`
+function split(s: Step, body: string, name: string, items: readonly Item[] = []): [SketchItem, FeatureItem] {
+  // a pasted copy keeps its original's step ids, so its sketches take the next free id
+  let id = `${s.id}k`
+  for (let n = 2; items.some((i) => i.kind === 'sketch' && i.id === id); n++) id = `${s.id}k${n}`
   const p = s.params as (Extrude & { shape: { type: 'sketch'; loops: SketchLoop[]; constraints?: unknown[] } }) | (Revolve & { constraints?: unknown[] })
   const loops = p.op === 'shape.extrude' ? p.shape.loops : p.loops
   const constraints = p.op === 'shape.extrude' ? p.shape.constraints : p.constraints
@@ -109,7 +111,7 @@ export function timelineOf(objects: readonly { id: string; history: History }[])
     if (pick < 0) break
     const o = objects[pick]!
     const s = o.history.steps[at[pick]!++]!
-    if (isSketch(s.params)) items.push(...split(s, o.id, `Sketch ${++sketches}`))
+    if (isSketch(s.params)) items.push(...split(s, o.id, `Sketch ${++sketches}`, items))
     else items.push({ ...s, kind: 'feature', body: o.id })
   }
   const bodies = objects.map((o) => ({ id: o.id, base: o.history.base, ...(o.history.ended ? { ended: o.history.ended } : {}) }))
@@ -183,7 +185,7 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
         place.set(it.id, items.length - 1)
       } else if (s) {
         if (isSketch(s.params)) {
-          const [k, f] = split(s, body, '')
+          const [k, f] = split(s, body, '', [...t.items, ...items])
           const own = it.sketch !== undefined ? sketchAt.get(it.sketch) : undefined
           if (own !== undefined) {
             const old = items[own] as SketchItem
@@ -212,7 +214,7 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
       const f = items[later] as FeatureItem
       at = f.sketch !== undefined && items[later - 1]?.kind === 'sketch' && items[later - 1]!.id === f.sketch ? later - 1 : later
     }
-    const add: Item[] = isSketch(s.params) ? split(s, body, nextName(items)) : [{ ...s, kind: 'feature', body }]
+    const add: Item[] = isSketch(s.params) ? split(s, body, nextName(items), items) : [{ ...s, kind: 'feature', body }]
     items.splice(at, 0, ...add)
     for (const [id, p] of place) if (p >= at) place.set(id, p + add.length)
     place.set(s.id, at + add.length - 1)
@@ -221,4 +223,79 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
   const b: Body = { id: body, base: h.base, ...(h.ended ? { ended: h.ended } : {}) }
   const bodies = t.bodies.some((x) => x.id === body) ? t.bodies.map((x) => (x.id === body ? b : x)) : [...t.bodies, b]
   return { bodies, items, marker: atEnd ? items.length : marker }
+}
+
+/** The timeline without a body that left the plate: its features go, and so do sketches only they used. */
+export function withoutBody(t: Timeline, body: string): Timeline {
+  if (!t.bodies.some((b) => b.id === body)) return t
+  const used = new Set(t.items.flatMap((i) => (i.kind === 'feature' && i.body !== body && i.sketch !== undefined ? [i.sketch] : [])))
+  const mine = new Set(t.items.flatMap((i) => (i.kind === 'feature' && i.body === body && i.sketch !== undefined ? [i.sketch] : [])))
+  const gone = (i: Item) => (i.kind === 'feature' ? i.body === body : mine.has(i.id) && !used.has(i.id))
+  const marker = t.items.slice(0, t.marker).filter((i) => !gone(i)).length
+  return { bodies: t.bodies.filter((b) => b.id !== body), items: t.items.filter((i) => !gone(i)), marker }
+}
+
+/** An object on a plate as the timeline sees it. */
+type Obj = { id: string; history?: History | undefined; instanceOf?: string | undefined }
+
+/** The objects with a history of their own: a copy placed twice shares its source's. */
+function bodiesOf<O extends Obj>(objects: readonly O[]): O[] {
+  const ids = new Set(objects.map((o) => o.id))
+  return objects.filter((o) => o.history && !(o.instanceOf && ids.has(o.instanceOf)))
+}
+
+/**
+ * The timeline with every object's history folded in, and without bodies no object has now. With no bodies yet, the
+ * objects' histories are merged by when each step was made, as an older file opens.
+ */
+export function syncTimeline(t: Timeline, objects: readonly Obj[], seen?: WeakSet<History>): Timeline {
+  const bodies = bodiesOf(objects)
+  if (!t.bodies.length && !t.items.length && bodies.length) {
+    for (const o of bodies) seen?.add(o.history!)
+    return timelineOf(bodies.map((o) => ({ id: o.id, history: o.history! })))
+  }
+  const here = new Set(bodies.map((o) => o.id))
+  let out = t
+  for (const b of t.bodies) if (!here.has(b.id)) out = withoutBody(out, b.id)
+  for (const o of bodies) {
+    const h = o.history!
+    if (seen?.has(h) && out.bodies.some((b) => b.id === o.id)) continue
+    out = withHistory(out, o.id, h)
+    seen?.add(h)
+  }
+  return out
+}
+
+/**
+ * One timeline after another, `b` going in at `a`'s marker: a project opened onto a plate joins its design there.
+ * A sketch id `a` already has is renamed in `b`, with the features that use it.
+ */
+export function joinTimelines(a: Timeline, b: Timeline): Timeline {
+  if (!b.items.length && !b.bodies.length) return a
+  const taken = new Set(a.items.filter((i) => i.kind === 'sketch').map((i) => i.id))
+  const rename = new Map<string, string>()
+  for (const i of b.items) {
+    if (i.kind !== 'sketch' || !taken.has(i.id)) continue
+    let id = `${i.id}2`
+    for (let n = 3; taken.has(id); n++) id = `${i.id}${n}`
+    taken.add(id)
+    rename.set(i.id, id)
+  }
+  const items: Item[] = b.items.map((i) => {
+    if (i.kind === 'sketch') return rename.has(i.id) ? { ...i, id: rename.get(i.id)! } : i
+    return i.sketch !== undefined && rename.has(i.sketch) ? { ...i, sketch: rename.get(i.sketch)! } : i
+  })
+  const at = Math.min(a.marker, a.items.length)
+  return { bodies: [...a.bodies, ...b.bodies.filter((x) => !a.bodies.some((y) => y.id === x.id))], items: [...a.items.slice(0, at), ...items, ...a.items.slice(at)], marker: at + b.marker }
+}
+
+/** The timeline with its bodies renamed, say from a file's object ids to the plate's; a body with no new id goes. */
+export function withBodyIds(t: Timeline, id: (old: string) => string | undefined): Timeline {
+  let out = t
+  for (const b of t.bodies) if (id(b.id) === undefined) out = withoutBody(out, b.id)
+  return {
+    bodies: out.bodies.map((b) => ({ ...b, id: id(b.id)! })),
+    items: out.items.map((i) => (i.kind === 'feature' ? { ...i, body: id(i.body)! } : i)),
+    marker: out.marker,
+  }
 }

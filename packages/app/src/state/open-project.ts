@@ -104,6 +104,8 @@ async function addProjectShown(
       .filter((d) => d.a.object === fileId)
       .map((d) => ({ ...d, a: { ...d.a, object: idOf.get(d.a.object)! }, ...(d.b ? { b: { ...d.b, object: idOf.get(d.b.object)! } } : {}) }))
   if (project.historyNote) toast(project.historyNote, 'warn')
+  // The design timeline as it was before the open: the file's goes in at its marker once every object is placed.
+  const designBefore = get().timeline
   // Named values come with the project; a name the open project already has keeps its own value.
   if (project.namedValues.length) {
     mine(() => set((s) => ({ namedValues: [...s.namedValues, ...project.namedValues.filter((v) => !s.namedValues.some((o) => o.name === v.name))] })))
@@ -173,6 +175,11 @@ async function addProjectShown(
     if (i === 0 && sequence) mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, sequence } } : p)) })))
     const nozzleMap = plate.nozzleMap
     if (i === 0 && nozzleMap) mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, nozzleMap } } : p)) })))
+  }
+  if (project.timeline) {
+    const { joinTimelines, withBodyIds } = await import('@slicerx/cad-history')
+    const ours = withBodyIds(project.timeline, (fileId) => idOf.get(fileId))
+    mine(() => set({ timeline: joinTimelines(designBefore, ours) }))
   }
   mine(() => switchPlate(startPlate))
   // An Orca or Bambu Studio project (anything but our .sx3mf) opens with its own fixed layers, so
