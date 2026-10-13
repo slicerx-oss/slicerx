@@ -7,9 +7,9 @@
 .dtree-row[data-selected] { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
 .dtree-chev { display: grid; place-items: center; width: 22px; height: 28px; border: 0; background: none; color: var(--dim); border-radius: var(--r-sm); flex: none; }
 .dtree-chev:hover { color: var(--fg); }
-.dtree-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; border: 0; background: none; color: var(--fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); text-align: left; padding: 0 4px; border-radius: var(--r-sm); }
-.dtree-name .sx-ic { color: var(--muted); flex: none; }
-.dtree-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dtree-name, .dtree-folder-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; border: 0; background: none; color: var(--fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); text-align: left; padding: 0 4px; border-radius: var(--r-sm); }
+.dtree-name .sx-ic, .dtree-folder-name .sx-ic { color: var(--muted); flex: none; }
+.dtree-name > span, .dtree-folder-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dtree-name .dtree-state { color: var(--dim); }
 .dtree-count { font-size: var(--fs-sm); color: var(--dim); flex: none; }
 .dtree-body { margin-left: 11px; padding-left: 8px; border-left: 1px solid var(--line-soft); display: grid; gap: 2px; padding-bottom: 6px; }
@@ -101,6 +101,9 @@
 .tl-chip[data-current] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--ink-1)); }
 .tl-chip[data-current] .sx-ic { color: var(--accent); }
 .tl-chip[data-later] { opacity: 0.45; }
+/* the picked body's features, and sketches drawn apart from features */
+.tl-chip[data-own] { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.tl-chip[data-kind="sketch"] { border-style: dashed; cursor: default; }
 .tl-chip[data-made-by] { box-shadow: inset 2px 0 0 var(--accent); }
 .tl-chip[data-used-by] { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
 .tl-chip[data-state="suppressed"] .tl-name { text-decoration: line-through; color: var(--dim); }
@@ -148,3 +151,9 @@ button.select-pill-made { color: var(--muted); }
 .design-multi-row { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); font: var(--fs-sm) var(--f-body); text-align: left; }
 .design-multi-row:hover { background: var(--ink-2); }
 .design-multi-row .sx-ic { color: var(--muted); }
+/* the tree's folders: Sketches and Bodies, as in Fusion's browser */
+.dtree-folder { list-style: none; }
+.dtree-folder-name { font-weight: var(--fw-medium); color: var(--muted); }
+.dtree-folder-name:hover { color: var(--fg); }
+.dtree-folder-list { margin: 0 0 0 11px; padding-left: 8px; border-left: 1px solid var(--line-soft); }
+.dtree-part[data-later] { opacity: 0.45; }
