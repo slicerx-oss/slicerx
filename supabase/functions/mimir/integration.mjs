@@ -4,9 +4,10 @@
 // fake provider on MOCK_PORT. integration.sh starts everything and runs this.
 // Checks register with the edition's key, a streamed call settled at its real cost, the
 // share switch, quota, a cap answering 429, concurrent calls that never pass the cap, the
-// in-flight limit, the exact count when the byte estimate is too high, and forget.
+// in-flight limit, the exact count when the byte estimate is too high, two session stores
+// at once that never pass the install's daily bytes, and forget.
 import { createServer } from 'node:http'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
 
 const FN = process.env.MIMIR_FN ?? 'http://127.0.0.1:54321/functions/v1/mimir'
@@ -157,6 +158,21 @@ try {
   assert.equal(exact.status, 200, await exact.clone().text())
   await exact.text()
   assert.equal(counted.length - asked, 1, 'the exact count was asked for')
+
+  // Two stores at once for one install, room for one: each holds its transaction a second
+  // after storing, so without the install lock both would read the day's bytes as empty.
+  const inst = sql(`insert into public.mimir_installs (edition, token_hash, created_ip_hash) values ('slicerx', 'n7-' || gen_random_uuid(), 'x') returning id`).split('\n')[0]
+  const calls = sql(`insert into public.mimir_calls (day, edition, install_id, ip_hash, reserved_micros, cost_micros, settled_at)
+    select public.mimir_day(), 'slicerx', '${inst}', 'x', 0, 0, now() from generate_series(1, 2) returning id`).split('\n').slice(0, 2)
+  sql(`update public.mimir_limits set install_store_daily_bytes = 30 where edition = 'slicerx'`)
+  const store = (id, key) => new Promise((done, fail) => execFile('docker', ['exec', '-i', DB, 'psql', '-U', 'postgres', '-tA', '-c',
+    `begin; select public.mimir_store_session('${id}', '${key}', '0.2.0', 'claude-haiku-5-5', '{"pad": "xxxxxxxxxx"}'); select pg_sleep(1); commit;`],
+  { encoding: 'utf8' }, (e, out) => (e ? fail(e) : done(out))))
+  const stored = await Promise.all([store(calls[0], 'n7-a'), store(calls[1], 'n7-b')])
+  assert.deepEqual(stored.map((o) => o.split('\n').find((l) => l === 't' || l === 'f')).sort(), ['f', 't'], 'one store fits, the other is refused')
+  assert.ok(Number(sql(`select sum(stored_bytes) from public.mimir_calls where install_id = '${inst}'`)) <= 30, 'the stored bytes stay under the day\'s cap')
+  assert.equal(sql(`select count(*) from public.mimir_sessions where install_id = '${inst}'`), '1')
+  sql(`update public.mimir_limits set install_store_daily_bytes = 8388608 where edition = 'slicerx'`)
   console.log('mimir proxy integration: ok')
 } finally {
   sql(RESET)
