@@ -228,6 +228,8 @@ class ViewportImpl implements Viewport {
   private readonly rig: CameraRig
   private readonly toolpaths = new Toolpaths()
   private readonly strikes = new Strikes()
+  /** Show me's mark for a refused slice, on the plate: there are no toolpaths then, so `strikes` is hidden with them. */
+  private readonly spot = new Strikes()
   private readonly mats = new MaterialCache()
   private readonly objects = new Map<string, ObjectEntry>()
   private readonly listeners = new Map<keyof ViewportEvents, Set<Listener>>()
@@ -478,6 +480,7 @@ class ViewportImpl implements Viewport {
     this.stage.scene.add(this.gizmo.group)
     this.stage.previewRoot.add(this.toolpaths.root)
     this.toolpaths.root.add(this.strikes.root)
+    this.stage.objectsRoot.add(this.spot.root)
     this.stage.objectsRoot.add(this.brim.group)
     this.stage.objectsRoot.add(this.gaps.group)
     this.stage.objectsRoot.add(this.guides.group)
@@ -2746,6 +2749,7 @@ class ViewportImpl implements Viewport {
     this.mats.dispose()
     this.toolpaths.setTheme(t)
     this.strikes.setColors(t.scene.overhangRed, t.scene.overhangAmber)
+    this.spot.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     this.toolpaths.setGantryColor(t.scene.overhangRed)
     this.applyMaterials()
   }
@@ -3780,6 +3784,12 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
+  setSpot(mark: StrikeMark | null, area?: readonly (readonly [number, number])[] | null): void {
+    this.spot.set(mark ? [mark] : null)
+    this.spot.setArea(mark ? (area ?? null) : null, mark?.z ?? 0)
+    this.invalidate()
+  }
+
   previewRanges(): PreviewRanges {
     return this.toolpaths.ranges()
   }
@@ -3902,6 +3912,7 @@ class ViewportImpl implements Viewport {
     this.parked.clear()
     this.meshPool?.dispose()
     this.strikes.dispose()
+    this.spot.dispose()
     this.painter.dispose()
     this.gizmo.dispose()
     this.cutPreview.detach()

@@ -9,7 +9,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Collision, SliceResult } from '@slicerx/contracts'
 import { HostContext } from '../src/host'
-import { firstHit, refusalSpot, showRefusal } from '../src/plate/preflight-show'
+import { firstHit, refusalMark, refusalSpot, showRefusal } from '../src/plate/preflight-show'
 import { setCameraBus } from '../src/plate/tools'
 import { get, set } from '../src/state/store'
 import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
@@ -21,7 +21,7 @@ const roots: Root[] = []
 afterEach(() => {
   for (const r of roots.splice(0)) flushSync(() => r.unmount())
   setCameraBus(null)
-  set({ slice: before.slice, plate: before.plate, overrides: before.overrides, selection: before.selection, selectedIds: before.selectedIds, preview: before.preview, strikePick: null })
+  set({ slice: before.slice, plate: before.plate, overrides: before.overrides, selection: before.selection, selectedIds: before.selectedIds, preview: before.preview, strikePick: null, refusalSpot: null })
 })
 
 function footer(): HTMLElement {
@@ -48,7 +48,7 @@ const result = (collisions: Collision[]) => ({ id: 'r', engine: 'sx', layerCount
 describe('Show me on a refused slice', () => {
   it("reads the first spot from the engine's refusal, and none from a print over the height", () => {
     expect(refusalSpot(OFF_BED)).toEqual({ layer: 2, x: -4.2, y: 120, object: 'Layered X' })
-    expect(refusalSpot(ZONE)).toEqual({ layer: 0, x: 12.5, y: 8, object: 'Cube' })
+    expect(refusalSpot(ZONE)).toEqual({ layer: 0, x: 12.5, y: 8, object: 'Cube', excluded: true })
     expect(refusalSpot(REACH)).toEqual({ layer: 11, x: 300, y: 20.5, object: 'Cube' })
     expect(refusalSpot(TALL)).toBeNull()
     expect(refusalSpot('The slicer stopped: Box has no walls.')).toBeNull()
@@ -66,6 +66,24 @@ describe('Show me on a refused slice', () => {
     expect(get().selectedIds).toEqual(['c'])
     showRefusal(refusalSpot(REACH)!)
     expect(calls[1]).toEqual([305, 25.5, expect.closeTo(0.3 + 11 * 0.2, 5), { animate: true }])
+  })
+
+  it('marks the spot on the plate, and outlines the excluded area a refusal enters', () => {
+    setCameraBus({ focusBedPoint: () => undefined })
+    // Printable area from -5, -5; two excluded patches, the second holds the spot (machine 12.5, 8.0).
+    const area = ['-5x-5', '251x-5', '251x251', '-5x251']
+    const zones = ['100x100', '120x100', '120x120', '100x120', '10x0', '20x0', '20x10', '10x10']
+    set({ plate: [box('c', 'Cube')] as never, slice: { status: 'error', message: ZONE }, overrides: { ...get().overrides, printable_area: area, bed_exclude_area: zones } })
+    showRefusal(refusalSpot(ZONE)!)
+    const r = get().refusalSpot!
+    expect([r.x, r.y, r.z]).toEqual([17.5, 13, 0])
+    // The patch the spot lies in, on the plate (minus the printable area's corner), not the other one.
+    expect(r.area).toEqual([[15, 5], [25, 5], [25, 15], [15, 15]])
+    expect(r.slice).toBe(get().slice)
+    // A refusal that is not for an excluded area gets the spot only.
+    expect(refusalMark(refusalSpot(OFF_BED)!, { printable_area: area, bed_exclude_area: zones })).toEqual({ x: -4.2 + 5, y: 125, area: null })
+    // Nothing excluded on this printer: the spot only.
+    expect(refusalMark(refusalSpot(ZONE)!, { printable_area: area }).area).toBeNull()
   })
 
   it('puts Show me on the refusal line only when the refusal names a spot', () => {
