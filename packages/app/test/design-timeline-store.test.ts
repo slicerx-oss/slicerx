@@ -26,6 +26,7 @@ const handle = (h: string): MeshHandle => ({ id: h, hash: h, name: h, triangles:
 const entry = (oid: string, history: History): PlateEntry => ({ id: oid, name: oid, handle: handle(oid), parts: [boxMesh(10, 10, 5)], colors: ['#bd93f9'], transform: T, history })
 const box = (): History => ({ version: 1, base: [boxMesh(40, 20, 5)], steps: [step(id(0, 1), pull(5)), step(id(2000, 3), sketched())] })
 const peg = (): History => ({ version: 1, base: [boxMesh(5, 5, 5)], steps: [step(id(1000, 2), pull(2))] })
+const bare = (h: History | null) => h?.steps.map(({ sketch: _s, ...st }) => st)
 const ids = (t: Timeline) => t.items.map((i) => (i.kind === 'sketch' ? `${i.name}` : `${i.body}:${i.id}`))
 
 let stop: (() => void) | null = null
@@ -56,7 +57,10 @@ describe('design timeline in the app', () => {
     const t = syncTimeline(timelineOf([{ id: 'a', history: box() }]), [entry('a', box()), entry('c', box())])
     const sketches = t.items.filter((i) => i.kind === 'sketch').map((i) => i.id)
     expect(new Set(sketches).size).toBe(2)
-    expect(historyOf(t, 'c')!.steps).toEqual(box().steps)
+    expect(bare(historyOf(t, 'c'))).toEqual(box().steps)
+    // a copy of a view (which names its sketches) still gets its own
+    const again = syncTimeline(t, [entry('a', historyOf(t, 'a')!), entry('c', historyOf(t, 'c')!), entry('d', historyOf(t, 'a')!)])
+    expect(new Set(again.items.filter((i) => i.kind === 'sketch').map((i) => i.id)).size).toBe(3)
   })
 
   it('joins an opened design at the marker, renaming a sketch id it already has', () => {
@@ -65,7 +69,7 @@ describe('design timeline in the app', () => {
     const j = joinTimelines(a, b)
     expect(j.marker).toBe(1 + b.items.length)
     expect(new Set(j.items.filter((i) => i.kind === 'sketch').map((i) => i.id)).size).toBe(2)
-    expect(historyOf(j, 'b')!.steps).toEqual(box().steps)
+    expect(bare(historyOf(j, 'b'))).toEqual(box().steps)
   })
 
   it('saves the timeline and opens it with the rolled back steps kept', async () => {
