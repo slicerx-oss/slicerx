@@ -57,7 +57,8 @@ fn systemd_quote(s: &str) -> String {
 /// `deploy/sx-link.service`.
 pub fn systemd_user_unit(exe: &Path, state_dir: &Path) -> String {
     format!(
-        "[Unit]\nDescription=SlicerX printer hub (sx-link)\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart={} --headless --state-dir {}\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n",
+        "[Unit]\nDescription={} printer hub (sx-link)\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nExecStart={} --headless --state-dir {}\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n",
+        crate::app_name(),
         systemd_quote(&exe.display().to_string()),
         systemd_quote(&state_dir.display().to_string()),
     )

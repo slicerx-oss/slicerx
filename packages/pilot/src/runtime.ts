@@ -25,6 +25,7 @@ import type {
   ToolSpec,
 } from '@slicerx/contracts'
 import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams } from '@slicerx/contracts'
+import { productName } from '@slicerx/contracts'
 import { Channel } from './channel'
 import { ASSISTANT_NAME } from './name'
 import { decide, normalizePolicy, policyMayGrant } from './gate'
@@ -32,7 +33,7 @@ import { EMPTY_KB_INDEX, createKnowledgeBase, type KbSkill, type KnowledgeBase }
 import type { SettingsPlanner } from './planner'
 import type { PilotProject } from './project'
 import { createShared } from './shared'
-import { SYSTEM_PROMPT, contextMessage } from './prompt'
+import { contextMessage, systemPrompt as basePrompt } from './prompt'
 import { fitContext, MIMIR_CONTEXT } from './context'
 import { createTransportClient, errorText } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
@@ -238,7 +239,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   /** The base prompt plus a playbook line for every catalog skill whose tools are registered. */
   function systemPrompt(): string {
     const book = playbooks(availableSkills(kb.skills(), (n) => findTool(n) !== undefined))
-    return book ? `${SYSTEM_PROMPT}\n\n${book}` : SYSTEM_PROMPT
+    return book ? `${basePrompt()}\n\n${book}` : basePrompt()
   }
 
   function allTools(): AnyTool[] {
@@ -663,7 +664,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           const rows = diff.rows.map((r) => `${r.key}: ${r.before ?? 'unset'} -> ${r.after}${r.reason ? ` (${r.reason})` : ''}`).join('\n')
           messages.push({
             role: 'user',
-            content: `The user switched from ${from.material} on ${from.printer} with a ${from.nozzle} mm nozzle to ${to.material} on ${to.printer} with a ${to.nozzle} mm nozzle. SlicerX already applied and showed this settings diff:\n${rows}\nExplain the two or three changes that matter most in at most three sentences. Do not call tools unless something in the diff looks wrong.`,
+            content: `The user switched from ${from.material} on ${from.printer} with a ${from.nozzle} mm nozzle to ${to.material} on ${to.printer} with a ${to.nozzle} mm nozzle. ${productName()} already applied and showed this settings diff:\n${rows}\nExplain the two or three changes that matter most in at most three sentences. Do not call tools unless something in the diff looks wrong.`,
           })
           const done = await loop(sessionId, messages, { machine: to }, emit, signal, (t) => t.permission === 'read')
           emit({ ...done, ms: now() - t0 })

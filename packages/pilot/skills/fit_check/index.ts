@@ -5,6 +5,7 @@
 // to part clearance and print in place joints.
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 import type { KbDoc } from '../../src/kb/kb'
 import { defineSkill } from '../../src/tool'
 
@@ -185,7 +186,7 @@ export function createFitCheck() {
       ]
       return {
         summary: `${i.gapMm} mm ${i.feature.replaceAll('_', ' ')} gap ${r.outcome}; ${r.outcome === (i.feature === 'press' ? 'press fit' : 'slides') ? 'keep it' : `use ${r.suggestedGapMm} mm`}`,
-        output: { ...r, input: { ...input }, advice, note: "SlicerX can't measure the gap from the mesh here yet, so this uses the gap you gave." },
+        output: { ...r, input: { ...input }, advice, note: `${productName()} can't measure the gap from the mesh here yet, so this uses the gap you gave.` },
         display: [
           { kind: 'kv', rows },
           { kind: 'log', lines: advice.map((t) => ({ text: t, tone: 'run' as const })) },

@@ -682,6 +682,24 @@ fn a_project_slices_with_its_own_settings() {
         err.contains("sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"),
         "{err}"
     );
+    // A white-label edition's resolved config names the app in the notes instead.
+    let acme =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../edition-config/fixtures/acme/acme.json");
+    let branded = sx()
+        .env("SLICERX_CONFIG", &acme)
+        .arg("slice")
+        .arg(&project)
+        .args(["-o", "-"])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&branded.stderr);
+    assert!(branded.status.success(), "{err}");
+    assert!(err.contains("Kept Acme Slicer's aegis walls"), "{err}");
+    assert!(
+        err.contains("aegis walls, kept by Acme Slicer; the project used Bambu's default classic"),
+        "{err}"
+    );
+    assert!(!err.contains("SlicerX"), "{err}");
     // --config goes over the project.
     let cfg = dir.join("cfg.json");
     std::fs::write(&cfg, r#"{"layer_height":0.2,"initial_layer_print_height":0.2}"#).unwrap();

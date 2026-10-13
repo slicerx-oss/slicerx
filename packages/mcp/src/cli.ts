@@ -12,7 +12,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { createContext, createSlicerxServer, startHttp, SERVER_VERSION, type EngineMode } from './index'
+import { setProductName } from '@slicerx/contracts'
 import { cloudFromEnv } from './cloud'
+import { editionNameFromEnv } from './edition'
 import { localAiFromEnv } from './localai'
 import { sxlockFromEnv } from './sxlock'
 import { linkCodeFrom, linkKeyFrom, readHubKey, readKeychainKey } from './link-code'
@@ -68,6 +70,11 @@ Permissions and records
   --log <file>             Action log, one JSON line per call (default <out-dir>/actions.jsonl)
   --profiles-dir <dir>     Where saved profile changes go (default ~/.config/slicerx/profiles)
 
+Edition
+  SLICERX_CONFIG names a resolved edition config (edition-config resolve). Tool text,
+  results and errors then name the app by its brand.name instead of SlicerX, and the
+  sx engine this server runs reads the same file.
+
 Every option also reads an environment variable: SLICERX_MCP_<OPTION> in upper
 snake case, such as SLICERX_MCP_ALLOW_DIR (colon separated) or SLICERX_MCP_ENGINE.
 `
@@ -116,6 +123,10 @@ async function main(): Promise<void> {
   if (values.version) return void process.stdout.write(`${SERVER_VERSION}\n`)
   // Command lines are visible to every local user (ps), so a secret never goes there.
   if (values.token !== undefined) throw new Error('--token is no longer accepted, since other users can read command lines. Set SLICERX_MCP_TOKEN, or let the server write a token file (--token-file).')
+
+  // A white-label edition's name in tool text and messages, before any tool is built.
+  const name = editionNameFromEnv(process.env)
+  if (name) setProductName(name)
 
   const http = values.http ?? flag('HTTP')
   const engine = values.engine ?? env('ENGINE') ?? 'auto'

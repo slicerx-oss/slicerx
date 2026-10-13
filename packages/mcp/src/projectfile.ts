@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
 import { changedKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, selectVariants, SLICERX_KEEP_VALUES } from '@slicerx/settings'
+import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
 
@@ -86,7 +87,7 @@ export function projectWalls(raw: Record<string, unknown>, source: string | unde
   const changed = changedKeys(raw)
   if (changed && !changed.has('wall_generator')) {
     const maker = source?.startsWith('OrcaSlicer') ? "OrcaSlicer's" : source?.startsWith('BambuStudio') ? "Bambu's" : "its preset's"
-    const text = own === undefined ? `${ours} walls, kept by SlicerX; the project names none` : own === ours ? `${ours} walls, as the project has them` : `${ours} walls, kept by SlicerX; the project used ${maker} default ${own}`
+    const text = own === undefined ? `${ours} walls, kept by ${productName()}; the project names none` : own === ours ? `${ours} walls, as the project has them` : `${ours} walls, kept by ${productName()}; the project used ${maker} default ${own}`
     return { generator: ours, source: 'kept', text }
   }
   return own === undefined ? undefined : { generator: own, source: 'project', text: `${own} walls, the project's own choice` }
@@ -111,8 +112,8 @@ const REPORT_NAMES = 8
 export function importReportLines(report: ImportReport, withWalls = true): string[] {
   const named = (keys: string[]): string => keys.slice(0, REPORT_NAMES).join(', ') + (keys.length > REPORT_NAMES ? ` and ${keys.length - REPORT_NAMES} more` : '')
   const out: string[] = []
-  if (report.invalid.length) out.push(`${report.invalid.length} with a value SlicerX cannot read, kept from the preset: ${named(report.invalid.map((i) => i.key))}`)
-  if (report.unknown.length) out.push(`${report.unknown.length} SlicerX does not know, not used: ${named(report.unknown.map((u) => u.key))}`)
+  if (report.invalid.length) out.push(`${report.invalid.length} with a value ${productName()} cannot read, kept from the preset: ${named(report.invalid.map((i) => i.key))}`)
+  if (report.unknown.length) out.push(`${report.unknown.length} ${productName()} does not know, not used: ${named(report.unknown.map((u) => u.key))}`)
   if (report.other_slicer.length) out.push(`${report.other_slicer.length} only another slicer reads, not used: ${named(report.other_slicer)}`)
   if (report.retired.length) out.push(`${report.retired.length} retired, not used: ${named(report.retired)}`)
   if (report.renamed.length) out.push(`${report.renamed.length} read under a newer name: ${named(report.renamed.map((r) => `${r.from} as ${r.to}`))}`)

@@ -9,6 +9,7 @@ import { basename, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { SxlockError, openSxlock, readSxlockHeader, sealSxlock, tokenKeys, type SxlockKeys } from '@slicerx/embed/sxlock'
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 import { checkReadable, ToolInputError, type PathPolicy } from './models'
 
 export interface SxlockOptions {
@@ -51,7 +52,7 @@ export function sxlockFromEnv(env: NodeJS.ProcessEnv): SxlockOptions | undefined
 }
 
 function readSxlockKey(ref: string): string {
-  if (!/^slicerx-sxlock(-[a-z0-9-]+)?$/.test(ref)) throw new ToolInputError(`${ref} is not a SlicerX locked-project credential name`, 'invalid_input')
+  if (!/^slicerx-sxlock(-[a-z0-9-]+)?$/.test(ref)) throw new ToolInputError(`${ref} is not a locked-project credential name`, 'invalid_input')
   let out = ''
   try {
     const opts = { encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'] }
@@ -61,7 +62,7 @@ function readSxlockKey(ref: string): string {
     out = ''
   }
   const key = out.trim()
-  if (!key) throw new ToolInputError(`No API token in the keychain under ${ref} (account slicerx). Create a token with the sxlock_open or sxlock_seal scope in your SlicerX account and store it there, or set SLICERX_MCP_SXLOCK_TOKEN.`, 'auth_failed')
+  if (!key) throw new ToolInputError(`No API token in the keychain under ${ref} (account slicerx). Create a token with the sxlock_open or sxlock_seal scope in your ${productName()} account and store it there, or set SLICERX_MCP_SXLOCK_TOKEN.`, 'auth_failed')
   return key
 }
 
@@ -108,7 +109,7 @@ export function sxlockTools(deps: SxlockToolDeps): PilotTool<never>[] {
     source: 'command',
     permission: 'read',
     description:
-      'Read the header of a locked SlicerX project (.sxlock) without the network: format version, the owner account id and the key id. Nothing about the project inside is readable without opening it. Use it to tell locked files apart and to see whose they are before opening.',
+      `Read the header of a locked ${productName()} project (.sxlock) without the network: format version, the owner account id and the key id. Nothing about the project inside is readable without opening it. Use it to tell locked files apart and to see whose they are before opening.`,
     input: z.object({ file: file.describe('Absolute path to a .sxlock file') }),
     async run(i) {
       const bytes = readFile(deps.policy, i.file, ['.sxlock'])
@@ -123,7 +124,7 @@ export function sxlockTools(deps: SxlockToolDeps): PilotTool<never>[] {
     source: 'command',
     permission: 'read',
     description:
-      "Open a locked SlicerX project (.sxlock) for the account whose API token this server holds (scope sxlock_open) and write the project as an .sx3mf to the server's output folder, readable only by this user. Needs the network: the account service unlocks each file, and only for its owner. Answers that locked projects are not configured when this server has no account service.",
+      `Open a locked ${productName()} project (.sxlock) for the account whose API token this server holds (scope sxlock_open) and write the project as an .sx3mf to the server's output folder, readable only by this user. Needs the network: the account service unlocks each file, and only for its owner. Answers that locked projects are not configured when this server has no account service.`,
     input: z.object({ file: file.describe('Absolute path to a .sxlock file') }),
     async run(i) {
       const k = keys()

@@ -5,6 +5,7 @@
 // bounds are deliberately narrow: a check-in nudges a print, it does not
 // retune it.
 import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
+import { productName } from '@slicerx/contracts'
 import type { KnowledgeBase } from '../../src/kb/kb'
 
 export type Firmware = 'klipper' | 'bambu' | 'marlin'
@@ -102,7 +103,7 @@ export function planAdjustment(change: Adjustment, status: PrinterStatus, info: 
   const fw = firmwareOf(info)
   if (change.kind === 'pause') {
     if (status.state !== 'printing') refuse(`${name} is ${status.state}, not printing, so there is nothing to pause.`)
-    return { title: `Pause the print on ${name}?`, lines: ['The printer parks the head and holds temperatures. Resume it from SlicerX or the printer.'], gcode: [] }
+    return { title: `Pause the print on ${name}?`, lines: [`The printer parks the head and holds temperatures. Resume it from ${productName()} or the printer.`], gcode: [] }
   }
   if (status.state !== 'printing') refuse(`${name} is ${status.state}. Changes during a print are only made while it is printing.`)
   const mat = material ? `${material.name} loaded` : 'material unknown or mixed'

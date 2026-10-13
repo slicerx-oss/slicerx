@@ -55,7 +55,7 @@ function findDataPaths(explicit?: string): DataPaths {
   if (explicit !== undefined) {
     const root = resolve(explicit)
     for (const p of [packagedPaths(root), repoPaths(root)]) if (usable(p)) return p
-    throw new Error(`No SlicerX data in ${root}: expected knowledge/settings.yaml and the simulated printer fixture`)
+    throw new Error(`No server data in ${root}: expected knowledge/settings.yaml and the simulated printer fixture`)
   }
   // A clone wins over the package's copied data/, so running from source sees the live files.
   const start = dirname(fileURLToPath(import.meta.url))
@@ -67,7 +67,7 @@ function findDataPaths(explicit?: string): DataPaths {
       dir = dirname(dir)
     }
   }
-  throw new Error('Could not find the SlicerX data files. Pass --data-dir or set SLICERX_DATA_DIR.')
+  throw new Error("Could not find the server's data files. Pass --data-dir or set SLICERX_DATA_DIR.")
 }
 
 export type KnowledgeKind = 'filament' | 'printer' | 'accessory' | 'troubleshoot' | 'guide' | 'settings_catalog' | 'skill_catalog' | 'sources'
