@@ -21,6 +21,7 @@ const EXCEPTIONS: Record<string, string> = {
   'upload-cancel': 'closes the upload form; nothing was sent',
   'creator-cancel': 'closes the creator page editor without saving',
   'model-tool-cancel': 'closes a modeling tool; what was applied stays, nothing more is undone',
+  'mimir-sheet-cancel': 'answers the size sheet as not confirmed; nothing is built and nothing is removed',
   'update-sheet': 'the update sheet itself',
   'update-body': 'the sheet body, read for its step',
   'update-download': 'opens the download page for a package install; nothing is installed',

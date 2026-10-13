@@ -375,6 +375,7 @@ them. `packages/app/test/test-ids.test.ts` keeps this table and its own list the
 | `upload-cancel` | Closes the upload form; nothing was sent |
 | `creator-cancel` | Closes the creator page editor without saving |
 | `model-tool-cancel` | Closes a modeling tool; what was applied stays, and nothing more is undone |
+| `mimir-sheet-cancel` | Answers the size sheet as not confirmed; nothing is built and nothing is removed |
 | `update-sheet` | The update sheet itself |
 | `update-body` | The sheet body, read for its step |
 | `update-download` | Opens the download page for a package install; nothing is installed |

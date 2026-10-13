@@ -126,6 +126,7 @@ describe('the pages the desktop app opens', () => {
       'commands/builtin.ts': 1,
       'pilot-connect/local-ai-card.tsx': 1,
       'workspaces/mimir/lookup-cards.tsx': 1,
+      'workspaces/mimir/sheet-view.tsx': 1,
     }
     const src = join(__dirname, '../src')
     const found: Record<string, number> = {}
