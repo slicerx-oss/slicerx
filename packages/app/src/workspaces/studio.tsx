@@ -15,6 +15,7 @@ import { PlateList } from './prepare/plate-list'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
 import { seedExamplePlate } from '../state/actions'
+import { fixedLength, type UnitPrefs } from '../cad/units'
 import { get, isCadTool, railOpen, setRail, showsLayers, useApp, type PlateEntry } from '../state/store'
 import { bounds, sizeOf } from '../plate/transform'
 import { usePrinter } from '../lib/use-printer'
@@ -92,16 +93,22 @@ const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default
 const GcodePanel = lazy(() => import('./preview/gcode-panel').then((m) => ({ default: m.GcodePanel })))
 
 
-/** An object's size as it sits on the plate (its scale and turn included), as "x x y x z mm", or null with no mesh. */
-export function modelSizeText(entry: Pick<PlateEntry, 'parts' | 'transform'> | undefined): string | null {
+/**
+ * An object's size as it sits on the plate (its scale and turn included), as "x x y x z mm", or null with no mesh.
+ * Model gives it in the display unit at its precision.
+ */
+export function modelSizeText(entry: Pick<PlateEntry, 'parts' | 'transform'> | undefined, units?: UnitPrefs): string | null {
   const b = entry ? bounds(entry.parts, entry.transform) : null
-  return b ? `${sizeOf(b).map((v) => v.toFixed(1)).join(' x ')} mm` : null
+  if (!b) return null
+  if (units) return `${sizeOf(b).map((v) => fixedLength(v, units)).join(' x ')} ${units.length}`
+  return `${sizeOf(b).map((v) => v.toFixed(1)).join(' x ')} mm`
 }
 
 /** The size of the selected object, or of the first one with nothing selected; it follows scaling as it happens. */
-function ModelSize() {
+function ModelSize({ model }: { model: boolean }) {
   const entry = useApp((s) => s.plate.find((p) => p.id === s.selection) ?? s.plate[0])
-  const text = useMemo(() => modelSizeText(entry), [entry])
+  const units = useApp((s) => s.units)
+  const text = useMemo(() => modelSizeText(entry, model ? units : undefined), [entry, model, units])
   if (!text) return null
   return (
     <div className="dims sx-overlay sx-mono" aria-label="Model size">
@@ -272,7 +279,7 @@ export function Studio() {
               {plate.length > 1 ? <span>+{plate.length - 1}</span> : null}
             </div>
           )}
-          {selected ? <ModelSize /> : null}
+          {selected ? <ModelSize model={design} /> : null}
         </div>
 
         {/* a phone views and prints: no plate tools */}

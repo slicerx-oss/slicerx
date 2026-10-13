@@ -31,6 +31,12 @@ test('inches: a typed 1" pulls 25.4 mm and shows as 1.000 in; mm shows the same 
   await expect(panel.locator('label[for="push-dist"] .cad-num-unit')).toHaveText('in')
   await panel.locator('#push-dist').fill('1"')
   await expect(panel).toContainText('Adds 1.000 in')
+  // the folded Transform line keeps the precision's three decimals
+  await expect(page.getByTestId('model-transform-summary')).toHaveText(/^X -?\d+\.\d{3} Y -?\d+\.\d{3} Z -?\d+\.\d{3} in$/)
+  // and stays inside the panel
+  const line = await page.getByTestId('model-transform-summary').boundingBox()
+  const pane = await page.getByRole('complementary', { name: 'Tool and transform' }).boundingBox()
+  expect(line!.x + line!.width).toBeLessThanOrEqual(pane!.x + pane!.width)
   await panel.getByRole('button', { name: 'Pull out' }).click()
   await expect(panel).toHaveCount(0, { timeout: 30_000 })
 
@@ -38,6 +44,9 @@ test('inches: a typed 1" pulls 25.4 mm and shows as 1.000 in; mm shows the same 
   const mm = await page.evaluate(() => (window as unknown as Sx).__sx.getState().plate[0]!.history!.steps[0]!.params.distanceMm)
   expect(mm).toBeCloseTo(25.4, 9)
   await expect.poll(() => steps(page)).toEqual([{ name: 'Pull 1.000 in', state: 'done' }])
+  await expect(page.getByLabel('Model size')).toContainText('0.787 x 0.787 x 1.787 in')
+  // Transform's position is in inches too
+  await expect(page.getByRole('textbox', { name: 'Position X, in' })).toBeVisible()
 
   // the step opens with its distance in inches
   await page.getByRole('button', { name: 'Edit Pull 1.000 in' }).click()
