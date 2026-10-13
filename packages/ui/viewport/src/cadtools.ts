@@ -9,24 +9,32 @@ import {
   BufferGeometry,
   CanvasTexture,
   Color,
+  CustomBlending,
   DoubleSide,
   EdgesGeometry,
   Float32BufferAttribute,
   Group,
   Line,
   LineBasicMaterial,
-  LineDashedMaterial,
   LineSegments,
   Matrix4,
+  MaxEquation,
   Mesh,
   MeshBasicMaterial,
+  OneMinusSrcAlphaFactor,
   Points,
   PointsMaterial,
   ShapeUtils,
+  SrcAlphaFactor,
   Vector2,
   Sprite,
   SpriteMaterial,
 } from 'three'
+import { Line2 } from 'three/addons/lines/Line2.js'
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js'
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
 import type { V3 } from './scaling'
 
 export type V2 = [number, number]
@@ -245,6 +253,17 @@ const TONE: Record<SketchTone, { color: string; opacity: number }> = {
   construction: { color: '#ffb86c', opacity: 0.9 },
 }
 
+// the same tones on a light studio, dark enough to read on it; projected and grid lines keep theirs
+const LIGHT_TONE: Partial<Record<SketchTone, string>> = {
+  normal: '#1f6fd1',
+  defined: '#282a36',
+  fixed: '#1e9e4a',
+  selected: '#b8860b',
+  issue: '#d32f2f',
+  axis: '#d9731c',
+  construction: '#e07b12',
+}
+
 /** Room for the line being drawn: an arc preview needs the most points. */
 const CURSOR_POINTS = 256
 
@@ -253,22 +272,39 @@ const CURSOR_POINTS = 256
  * the plane and drawn through the model so it reads from any angle. `set` rebuilds the drawn sketch
  * (on a click or a point drag); `cursor` rewrites the rubber band in place.
  */
+// the post pass outlines what has full alpha as a solid, so sketch marks keep alpha just under it, and where marks
+// overlap the larger alpha wins instead of adding up
+const MARK_ALPHA = 0.98
+const KEEP_ALPHA = { blending: CustomBlending, blendSrc: SrcAlphaFactor, blendDst: OneMinusSrcAlphaFactor, blendEquationAlpha: MaxEquation, opacity: MARK_ALPHA } as const
+// sketch curves draw this many px wide, so a curve reads on any screen
+const CURVE_PX = 2
+// the drawing buffer size every sketch layer's wide lines share
+const curveRes = new Vector2(1024, 768)
+
+/** The drawing buffer size, for the sketch curves' pixel widths. */
+export function setSketchResolution(width: number, height: number): void {
+  curveRes.set(width, height)
+}
+
+// tones drawn thin: the faint grid and projected edges
+const THIN: ReadonlySet<SketchTone> = new Set(['grid', 'soft'])
+
 export class SketchLayer {
   readonly group = new Group()
-  private readonly mats = new Map<SketchTone, LineBasicMaterial>()
-  private readonly dotMat = new PointsMaterial({ color: new Color('#f8f8f2'), size: 7, sizeAttenuation: false, depthTest: false, toneMapped: false })
-  private readonly markMat = new PointsMaterial({ color: new Color('#ff5555'), size: 10, sizeAttenuation: false, depthTest: false, toneMapped: false })
-  private readonly snapMat = new PointsMaterial({ color: new Color('#f1fa8c'), size: 11, sizeAttenuation: false, depthTest: false, toneMapped: false })
-  private readonly fixMat = new PointsMaterial({ color: new Color(TONE.fixed.color), size: 9, sizeAttenuation: false, depthTest: false, toneMapped: false })
-  private readonly fillMat = new MeshBasicMaterial({ color: new Color('#8be9fd'), transparent: true, opacity: 0.12, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false })
-  private readonly dimMat = new LineBasicMaterial({ color: new Color('#f1fa8c'), transparent: true, opacity: 0.8, depthTest: false, toneMapped: false })
+  private readonly mats = new Map<SketchTone, LineBasicMaterial | LineMaterial>()
+  private readonly guideMat = new LineBasicMaterial({ color: new Color(TONE.axis.color), transparent: true, depthTest: false, toneMapped: false, ...KEEP_ALPHA })
+  private readonly dotMat = new PointsMaterial({ color: new Color('#f8f8f2'), size: 7, sizeAttenuation: false, depthTest: false, transparent: true, toneMapped: false, ...KEEP_ALPHA })
+  private readonly markMat = new PointsMaterial({ color: new Color('#ff5555'), size: 10, sizeAttenuation: false, depthTest: false, transparent: true, toneMapped: false, ...KEEP_ALPHA })
+  private readonly snapMat = new PointsMaterial({ color: new Color('#f1fa8c'), size: 11, sizeAttenuation: false, depthTest: false, transparent: true, toneMapped: false, ...KEEP_ALPHA })
+  private readonly fixMat = new PointsMaterial({ color: new Color(TONE.fixed.color), size: 9, sizeAttenuation: false, depthTest: false, transparent: true, toneMapped: false, ...KEEP_ALPHA })
+  private readonly fillMat = new MeshBasicMaterial({ color: new Color('#8be9fd'), transparent: true, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false, ...KEEP_ALPHA, opacity: 0.12 })
+  private readonly dimMat = new LineBasicMaterial({ color: new Color('#f1fa8c'), transparent: true, depthTest: false, toneMapped: false, ...KEEP_ALPHA, opacity: 0.8 })
   private drawn: (LineSegments | Points | Sprite | Mesh)[] = []
   private labels: { sprite: Sprite; aspect: number; size?: number }[] = []
   private scaledFor = ''
-  private readonly band: Line
+  private readonly band: Line2
   /** A closed shape being drawn, shaded like a profile so the whole outline reads at the cursor. */
   private bandFill: Mesh | null = null
-  private readonly bandPos = new Float32Array(CURSOR_POINTS * 3)
   private readonly snap: Points
   private readonly snapPos = new Float32Array(3)
   private readonly guide: Line
@@ -280,15 +316,19 @@ export class SketchLayer {
     this.group.matrixAutoUpdate = false
     this.group.visible = false
     for (const [tone, t] of Object.entries(TONE) as [SketchTone, { color: string; opacity: number }][]) {
-      const o = { color: new Color(t.color), transparent: true, opacity: t.opacity, depthTest: false, toneMapped: false }
+      const o = { color: new Color(t.color), transparent: true, depthTest: false, depthWrite: false, toneMapped: false, ...KEEP_ALPHA, opacity: Math.min(t.opacity, MARK_ALPHA) }
+      if (THIN.has(tone)) {
+        this.mats.set(tone, new LineBasicMaterial(o))
+        continue
+      }
       // construction lines dash in mm on the plane, as Fusion draws them
-      this.mats.set(tone, tone === 'construction' ? new LineDashedMaterial({ ...o, dashSize: 1.2, gapSize: 0.8 }) : new LineBasicMaterial(o))
+      const m = new LineMaterial({ ...o, linewidth: CURVE_PX, ...(tone === 'construction' ? { dashed: true, dashSize: 1.2, gapSize: 0.8 } : {}) })
+      m.uniforms['resolution']!.value = curveRes
+      this.mats.set(tone, m)
     }
-    const bandGeo = new BufferGeometry()
-    bandGeo.setAttribute('position', new BufferAttribute(this.bandPos, 3))
-    bandGeo.setDrawRange(0, 0)
-    // the shape being drawn takes the sketch's own curve color, so it reads as what the click will make
-    this.band = new Line(bandGeo, this.mats.get('normal'))
+    // the shape being drawn takes the sketch's own curve color and width, so it reads as what the click will make
+    this.band = new Line2(new LineGeometry(), this.mats.get('normal') as LineMaterial)
+    this.band.visible = false
     this.band.frustumCulled = false
     this.band.renderOrder = 12
     const snapGeo = new BufferGeometry()
@@ -300,7 +340,7 @@ export class SketchLayer {
     const guideGeo = new BufferGeometry()
     guideGeo.setAttribute('position', new BufferAttribute(this.guidePos, 3))
     guideGeo.setDrawRange(0, 0)
-    this.guide = new Line(guideGeo, this.mats.get('axis'))
+    this.guide = new Line(guideGeo, this.guideMat)
     this.guide.frustumCulled = false
     this.guide.renderOrder = 11
     for (const o of [this.band, this.snap, this.guide]) o.raycast = () => {}
@@ -348,10 +388,16 @@ export class SketchLayer {
     order.forEach((tone, k) => {
       const pos = byTone.get(tone)
       if (!pos?.length) return
-      const geo = new BufferGeometry()
-      geo.setAttribute('position', new Float32BufferAttribute(pos, 3))
-      const seg = new LineSegments(geo, this.mats.get(tone))
-      if (tone === 'construction') seg.computeLineDistances()
+      const mat = this.mats.get(tone)!
+      let seg: LineSegments | LineSegments2
+      if (mat instanceof LineMaterial) {
+        seg = new LineSegments2(new LineSegmentsGeometry().setPositions(pos), mat)
+        if (tone === 'construction') seg.computeLineDistances()
+      } else {
+        const geo = new BufferGeometry()
+        geo.setAttribute('position', new Float32BufferAttribute(pos, 3))
+        seg = new LineSegments(geo, mat)
+      }
       seg.renderOrder = 6 + k * 0.1
       seg.raycast = () => {}
       this.group.add(seg)
@@ -426,19 +472,23 @@ export class SketchLayer {
     for (const l of this.labels) l.sprite.scale.set(h * l.aspect * (l.size ?? 1), h * (l.size ?? 1), 1)
   }
 
-  /** The rubber band and snap marker; rewrites the fixed buffers, nothing is allocated. */
+  /** The rubber band and snap marker; the marker rewrites a fixed buffer. */
   cursor(c: SketchCursor | null): void {
     const path = c?.path ?? null
     const n = path ? Math.min(CURSOR_POINTS, path.length) : 0
-    for (let i = 0; i < n; i++) {
-      const p = path![i]!
-      this.bandPos[3 * i] = p[0]
-      this.bandPos[3 * i + 1] = p[1]
-      this.bandPos[3 * i + 2] = 0.03
+    this.band.visible = n >= 2
+    if (n >= 2) {
+      const pos = new Float32Array(n * 3)
+      for (let i = 0; i < n; i++) {
+        const p = path![i]!
+        pos[3 * i] = p[0]
+        pos[3 * i + 1] = p[1]
+        pos[3 * i + 2] = 0.03
+      }
+      // a fresh geometry each move: the wide line's buffers are sized to their points
+      this.band.geometry.dispose()
+      this.band.geometry = new LineGeometry().setPositions(pos)
     }
-    const bg = this.band.geometry
-    bg.setDrawRange(0, n >= 2 ? n : 0)
-    ;(bg.getAttribute('position') as BufferAttribute).needsUpdate = true
     this.bandFill?.geometry.dispose()
     this.bandFill?.removeFromParent()
     this.bandFill = null
@@ -499,10 +549,23 @@ export class SketchLayer {
     this.mats.get('soft')?.color.set(hex)
   }
 
+  /** Darker curves, points and snap marker on a light studio, so they read on it. */
+  setLight(light: boolean): void {
+    for (const [tone, t] of Object.entries(TONE) as [SketchTone, { color: string }][]) {
+      if (tone === 'soft') continue
+      this.mats.get(tone)?.color.set(light ? (LIGHT_TONE[tone] ?? t.color) : t.color)
+    }
+    this.guideMat.color.set(light ? LIGHT_TONE.axis! : TONE.axis.color)
+    this.dotMat.color.set(light ? '#282a36' : '#f8f8f2')
+    this.snapMat.color.set(light ? LIGHT_TONE.selected! : '#f1fa8c')
+    this.fixMat.color.set(light ? LIGHT_TONE.fixed! : TONE.fixed.color)
+  }
+
   dispose(): void {
     this.set(null)
     for (const o of [this.band, this.snap, this.guide]) o.geometry.dispose()
     for (const m of this.mats.values()) m.dispose()
+    this.guideMat.dispose()
     this.dotMat.dispose()
     this.fillMat.dispose()
     this.markMat.dispose()
@@ -677,7 +740,7 @@ function makeGlyph(kind: SketchGlyphKind): Sprite | null {
   c.lineWidth = 3
   c.lineCap = 'round'
   GLYPHS[kind](c)
-  const sprite = new Sprite(new SpriteMaterial({ map: new CanvasTexture(cv), depthTest: false, sizeAttenuation: false, transparent: true, toneMapped: false }))
+  const sprite = new Sprite(new SpriteMaterial({ map: new CanvasTexture(cv), depthTest: false, sizeAttenuation: false, transparent: true, toneMapped: false, ...KEEP_ALPHA }))
   sprite.renderOrder = 15
   sprite.raycast = () => {}
   sprite.userData['glyph'] = kind
@@ -704,7 +767,7 @@ function makeLabel(text: string): { sprite: Sprite; aspect: number } | null {
   ctx.textBaseline = 'middle'
   ctx.fillText(text, px * 0.3, px / 2 + 1)
   const tex = new CanvasTexture(c)
-  const sprite = new Sprite(new SpriteMaterial({ map: tex, depthTest: false, sizeAttenuation: false, transparent: true, toneMapped: false }))
+  const sprite = new Sprite(new SpriteMaterial({ map: tex, depthTest: false, sizeAttenuation: false, transparent: true, toneMapped: false, ...KEEP_ALPHA }))
   sprite.renderOrder = 15
   sprite.raycast = () => {}
   return { sprite, aspect: w / px }
