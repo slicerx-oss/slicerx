@@ -30,6 +30,7 @@ import { createSxSlicer, findSx } from './sx'
 import { sxlockTools, type SxlockOptions } from './sxlock'
 import { localTools, type ProjectRef } from './tools'
 import { localAiTools, type LocalAiOptions } from './localai'
+import { mimirQuotaTools } from './mimir-quota'
 
 export { createSlicerxServer, SERVER_NAME, SERVER_VERSION, serverTools, type ServerContext } from './server'
 export { startHttp, type HttpOptions } from './http'
@@ -168,7 +169,8 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
-  const tools = [...registry, ...local, ...geom, ...cloud, ...locked, ...localAi, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const mimir = mimirQuotaTools(appLink, productName())
+  const tools = [...registry, ...local, ...geom, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,
