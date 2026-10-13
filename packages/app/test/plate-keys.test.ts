@@ -73,7 +73,7 @@ describe('the layer slider keys in Slice', () => {
   afterEach(() => {
     off()
     off = () => undefined
-    set({ preview: null, layerHi: 0, layerLo: 1, legendHidden: false })
+    set({ preview: null, layerHi: 0, layerLo: 1, legendHidden: false, layerJump: false })
   })
   const press = (key: string, at: EventTarget = window, shiftKey = false) => {
     const e = new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true })
@@ -135,6 +135,19 @@ describe('the layer slider keys in Slice', () => {
     set({ layerLo: 1, sliceLook: 'solid' })
     press('l')
     expect(get().layerLo).toBe(1)
+  })
+
+  it('opens the jump to a layer field with its key, on toolpaths and on solid models', () => {
+    bind('bambu-studio')
+    expect(press('G', window, true).defaultPrevented).toBe(true)
+    expect(get().layerJump).toBe(true)
+    set({ layerJump: false, sliceLook: 'solid' })
+    press('G', window, true)
+    expect(get().layerJump).toBe(true)
+    expect(get().sliceLook).toBe('toolpaths')
+    set({ layerJump: false, preview: null })
+    press('G', window, true)
+    expect(get().layerJump).toBe(false)
   })
 
   it('hides and shows the legend with its key', () => {

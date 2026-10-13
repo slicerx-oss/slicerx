@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { currentSegment, indexLines, layerOfSegment } from '../src/workspaces/preview/gcode-lines'
 import { parseGcodePreview } from '../src/workspaces/preview/gcode-parse'
-import { layerKeyStep, stepLayer } from '../src/workspaces/preview/layer-step'
+import { layerFromInput, layerKeyStep, stepLayer } from '../src/workspaces/preview/layer-step'
 import { get, set } from '../src/state/store'
 
 const LAYERS = 304
@@ -57,5 +57,30 @@ describe('layer keys on an A1 file', () => {
       stepLayer(down)
       expect(get().layerHi, `press down to ${k}`).toBe(k)
     }
+  })
+})
+
+describe('the jump to a layer field', () => {
+  const z = new Float32Array([0.2, 0.4, 0.6, 0.8, 1.0])
+
+  it('takes a layer number, clamped to the stack', () => {
+    expect(layerFromInput('3', z)).toBe(3)
+    expect(layerFromInput(' 3 ', z)).toBe(3)
+    expect(layerFromInput('0', z)).toBe(1)
+    expect(layerFromInput('99', z)).toBe(5)
+  })
+
+  it('takes a height in mm for the first layer at or above it', () => {
+    expect(layerFromInput('0.6 mm', z)).toBe(3)
+    expect(layerFromInput('0.5mm', z)).toBe(3)
+    expect(layerFromInput('z0.4', z)).toBe(2)
+    expect(layerFromInput('Z 0,8', z)).toBe(4)
+    expect(layerFromInput('7 mm', z)).toBe(5)
+    expect(layerFromInput('0 mm', z)).toBe(1)
+  })
+
+  it('refuses anything else, and an empty stack', () => {
+    for (const t of ['', 'soon', '3.5', '-2', 'mm', '1e2']) expect(layerFromInput(t, z)).toBeNull()
+    expect(layerFromInput('2', new Float32Array())).toBeNull()
   })
 })

@@ -81,6 +81,8 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
         return { layerLo: s.layerLo >= hi ? 1 : hi, sliceLook: 'toolpaths' }
       }),
     'preview.legend': () => set((s) => ({ legendHidden: !s.legendHidden })),
+    // Opens the layer field in the playback bar: a layer number, or a height in mm.
+    'preview.jumpToLayer': () => set({ layerJump: true, sliceLook: 'toolpaths' }),
   }
   for (const [action, preset] of Object.entries(VIEW) as [KeyAction, NonNullable<(typeof VIEW)[KeyAction]>][]) out[action] = () => bus()?.view?.(preset, { animate: true })
   return out
@@ -100,12 +102,12 @@ function layerKey(by: number): void {
 
 /**
  * Whether a preview key acts now: Slice with a slice to step through, and not on a focused control (a radio, a select
- * or the layer slider itself keeps its own arrows). The layer arrows act on solid models too; the other preview keys
+ * or the layer slider itself keeps its own arrows). The layer arrows and the jump act on solid models too; the other preview keys
  * only while the toolpaths show, so a look that shares a letter (L for supports and for one layer) keeps the tool there.
  */
 function previewKeyOn(action: KeyAction, s: ReturnType<typeof get>, e: KeyboardEvent): boolean {
   if (s.modelMode !== 'slice' || layerCountNow() < 1 || onControl(e.target) || ownsArrows(e.target)) return false
-  return action === 'preview.layerUp' || action === 'preview.layerDown' || s.sliceLook === 'toolpaths'
+  return action === 'preview.layerUp' || action === 'preview.layerDown' || action === 'preview.jumpToLayer' || s.sliceLook === 'toolpaths'
 }
 
 /** Tools whose panel or gizmo takes Esc for itself. */

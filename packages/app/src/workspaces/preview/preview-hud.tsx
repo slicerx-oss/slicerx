@@ -10,6 +10,7 @@ import { lengthLabel, previewStats } from '../../lib/preview-stats'
 import { resolveSlots } from '../../filament/slots'
 import { Swatch } from '../../parts'
 import { ColorBy } from '../view-menus'
+import { LayerJump } from './layer-jump'
 import { LayerTrack } from './layer-track'
 import { layerKeyStep, stepLayer } from './layer-step'
 import { usePaneSize } from '../../shell/pane'
@@ -126,6 +127,7 @@ export function LayerDock() {
   const preview = useApp((s) => s.preview)
   const layerHi = useApp((s) => s.layerHi)
   const moveCut = useApp((s) => s.moveCut)
+  const layerJump = useApp((s) => s.layerJump)
   const advanced = useApp((s) => s.settingsMode !== 'simple')
   const gcodeOn = useGcodeView((s) => s.panel)
   const showToolhead = useApp((s) => s.showToolhead)
@@ -337,11 +339,9 @@ export function LayerDock() {
         {compact ? null : opts}
         <span className="dock-read sx-mono sx-dim">
           {/* During a purge its grams take the layer's place (the layer slider shows both), so the line keeps its length. */}
-          {purge ? null : (
+          {purge && !layerJump ? null : (
             <>
-              <span>
-                Layer <b>{top}</b> of {n}
-              </span>
+              <LayerJump top={top} n={n} layerZ={preview.layerZ} onJump={(k) => (setPlaying(false), stepLayer(0, k))} />
               <span className="hide-sm">
                 Z <b>{z.toFixed(2)}</b> mm
               </span>

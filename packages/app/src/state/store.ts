@@ -296,6 +296,8 @@ export interface AppState {
   layerHi: number
   /** The person hid the toolpath legend with its key. */
   legendHidden: boolean
+  /** The jump to a layer field is open in the playback bar (the look's jump key, or a click on the layer number). */
+  layerJump: boolean
   /** First drawn layer, 1 based (the bottom handle of the layer slider). */
   layerLo: number
   /** 0 to 1: how much of the top visible layer is drawn. */
@@ -667,6 +669,7 @@ export const appStore = createStore<AppState>()(() => ({
   colorModeAuto: null,
   layerHi: 0,
   legendHidden: false,
+  layerJump: false,
   layerLo: 1,
   moveCut: 1,
   toolChange: null,

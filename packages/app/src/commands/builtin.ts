@@ -133,6 +133,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   out.push(
     { id: 'preview-first-layer', title: 'Show the first layer only', section: 'view', keywords: ['layer 1', 'adhesion'], workspace: 'prepare', enabled: sliced, run: () => { showSliced(); set({ layerHi: 1 }) } },
     { id: 'preview-all-layers', title: 'Show all layers', section: 'view', keywords: ['layers', 'full'], workspace: 'prepare', enabled: sliced, run: () => { showSliced(); set((s) => ({ layerHi: s.preview?.layerCount ?? 0 })) } },
+    { id: 'preview-jump-layer', title: 'Jump to a layer', section: 'view', keywords: ['layer', 'go to', 'height', 'z'], workspace: 'prepare', enabled: sliced, run: () => { showSliced(); set({ layerJump: true, sliceLook: 'toolpaths' }) } },
   )
 
   out.push(

@@ -443,4 +443,5 @@ Ids that tests read for their text:
 | `brim-ear-count` | The number of painted brim ears |
 | `cut-conn-tol-source` | Where the cut connector tolerance comes from |
 | `pv-change`, `pv-purge` | Preview: the tool change and the purge at the playhead |
+| `pv-layer-jump` | Preview: the jump to a layer field over the layer number |
 | `ph-placeholder` | The phone view's placeholder |
