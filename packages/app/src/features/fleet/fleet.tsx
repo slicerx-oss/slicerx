@@ -120,7 +120,9 @@ export function Fleet() {
       </header>
       {bridgeError ? (
         <div className="wall-bridge-err" role="alert" data-testid="bridge-error">
-          <p className="app-err">{bridgeError}</p>
+          <p className="pc-result bad">
+            <Icon name="alert" size={16} /> {bridgeError}
+          </p>
           <Button size="sm" onClick={() => void import('../../link/bridge').then((m) => m.connectBridge(host))}>
             Try again
           </Button>

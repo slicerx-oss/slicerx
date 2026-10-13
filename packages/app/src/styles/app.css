@@ -379,6 +379,10 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .swatch.sm { width: 12px; height: 12px; }
 .mt14 { margin-top: 14px; }
 .app-err { color: var(--red); font-size: var(--fs-sm); margin: 8px 0 0; }
+/* A connection's result in one line with its icon: mimir's providers, and the printer bridge on Printers. */
+.pc-result { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--fs-md); }
+.pc-result.ok { color: var(--green); }
+.pc-result.bad { color: var(--red); }
 /* Tiers: Advanced groups by intent, Expert adds "more" per group. */
 /* Fit check notes under an object: one line per kind of problem, aligned with the name, full row width. */
 .obj-notes { list-style: none; margin: 0 0 6px; padding: 0 8px 0 52px; display: grid; gap: 8px; }
