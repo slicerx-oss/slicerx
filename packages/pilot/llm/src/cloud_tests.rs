@@ -12,6 +12,8 @@ use super::chatgpt::SecretStore;
 use super::cloud::{self, MimirCloud};
 use super::*;
 
+const REGISTER_KEY: &str = "slicerx-test-key-0123";
+
 #[derive(Default)]
 struct MemStore(Mutex<HashMap<(String, String), String>>);
 
@@ -87,6 +89,14 @@ fn route(p: &mut Proxy, seen: &Seen) -> (u16, String) {
         let v: serde_json::Value = serde_json::from_str(&seen.body).unwrap_or_default();
         if v["edition"] != "slicerx" {
             return fail(400, "invalid_request_error", "Unknown edition.", "");
+        }
+        if v["key"] != REGISTER_KEY {
+            return fail(
+                403,
+                "permission_error",
+                "This build of the app cannot register with mimir.",
+                "register_key",
+            );
         }
         p.issued += 1;
         let token = format!("{:064x}", p.issued);
@@ -203,7 +213,7 @@ async fn serve(proxy: Arc<Mutex<Proxy>>) -> String {
 async fn setup() -> (Arc<Mutex<Proxy>>, MimirCloud) {
     let proxy = Arc::new(Mutex::new(Proxy::default()));
     let base = serve(proxy.clone()).await;
-    (proxy, MimirCloud::new(&base, "slicerx").unwrap())
+    (proxy, MimirCloud::new(&base, "slicerx", REGISTER_KEY).unwrap())
 }
 
 fn messages(cloud: &MimirCloud) -> LlmHttpRequest {
@@ -241,6 +251,10 @@ async fn registers_on_first_use_and_sends_the_token_as_its_own_header() {
         assert_eq!(p.seen.len(), 2);
         assert!(p.seen[0].first.starts_with("POST /functions/v1/mimir/register "));
         assert_eq!(p.seen[0].install, None);
+        // the edition's build key rides in the register body, never in a header
+        let reg: serde_json::Value = serde_json::from_str(&p.seen[0].body).unwrap();
+        assert_eq!(reg["key"], REGISTER_KEY);
+        assert!(!p.seen[0].headers.values().any(|v| v.contains(REGISTER_KEY)));
         let call = &p.seen[1];
         assert!(call.first.starts_with("POST /functions/v1/mimir/v1/messages "));
         assert_eq!(call.install.as_deref(), Some(token.as_str()));
