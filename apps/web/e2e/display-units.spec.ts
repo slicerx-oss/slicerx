@@ -18,7 +18,7 @@ test('inches: a typed 1" pulls 25.4 mm and shows as 1.000 in; mm shows the same 
   await dialog.getByRole('button', { name: /Slicing and modeling|Modeling/ }).first().click()
   await dialog.getByTestId('set-units-in').click()
   await expect.poll(() => page.evaluate(() => (window as unknown as Sx).__sx.getState().units.length)).toBe('in')
-  await expect(dialog.getByTestId('set-precision-d3')).toHaveAttribute('aria-checked', 'true')
+  await expect(dialog.getByTestId('set-precision-pick')).toHaveValue('d3')
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
 

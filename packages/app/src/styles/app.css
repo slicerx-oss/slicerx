@@ -809,6 +809,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .set-group { display: grid; gap: 6px; }
 .set-group h4 { margin: 8px 0 0; font: var(--fw-semibold) calc(12px * var(--text-scale)) var(--f-body); color: var(--dim); }
 .set-group .set-actions { margin: 0; display: flex; gap: 8px; flex-wrap: wrap; }
+/* one width for mm and inch choices, so switching the unit moves nothing */
+.sx-select.set-precision { width: 96px; }
 
 /* A scroll cue under a long side panel: a fade over the bottom edge while there is more below. It is painted
    over the content, not a mask, since a mask on the scroller stops the glass of a menu inside it from blurring. */
