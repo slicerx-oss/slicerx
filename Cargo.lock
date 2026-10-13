@@ -5500,6 +5500,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sx-brep"
+version = "0.1.4"
+dependencies = [
+ "cc",
+ "serde_json",
+]
+
+[[package]]
 name = "sx-cli"
 version = "0.1.4"
 dependencies = [
