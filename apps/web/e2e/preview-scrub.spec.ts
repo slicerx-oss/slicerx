@@ -42,6 +42,31 @@ test('the layer slider moves the top drawn layer', async ({ page, isMobile }) =>
   await expect.poll(async () => (await drawn(page)).to).toBe(full.to)
 })
 
+test('the jump key and the layer number go to a typed layer or height', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop layout')
+  await sliced(page)
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await page.keyboard.press('Shift+G')
+  const field = page.getByTestId('pv-layer-jump')
+  await expect(field).toBeFocused()
+  await field.fill('3')
+  await field.press('Enter')
+  await expect(field).toBeHidden()
+  await expect.poll(async () => (await drawn(page)).hi).toBe(2)
+  // a height picks the first layer at or above it; a word is refused and the field stays
+  await page.getByRole('button', { name: /^Layer 3 of \d+\. Jump to a layer$/ }).click()
+  await field.fill('soon')
+  await field.press('Enter')
+  await expect(field).toHaveAttribute('aria-invalid', 'true')
+  await field.fill('0.01 mm')
+  await field.press('Enter')
+  await expect.poll(async () => (await drawn(page)).hi).toBe(0)
+  await page.keyboard.press('Shift+G')
+  await field.press('Escape')
+  await expect(field).toBeHidden()
+  await expect.poll(async () => (await drawn(page)).hi).toBe(0)
+})
+
 test('the move slider cuts the top layer and shows the nozzle there', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop layout')
   await sliced(page)

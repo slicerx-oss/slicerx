@@ -25,3 +25,22 @@ export function stepLayer(by: number, to?: number): number {
 export function layerKeyStep(key: string): number {
   return ({ ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 } as Record<string, number>)[key] ?? 0
 }
+
+/**
+ * The layer a typed jump names: a layer number, or a height ("12.4 mm", "z12.4") for the first layer whose top is at or
+ * above it. Clamped to the stack; null when the text names neither.
+ */
+export function layerFromInput(text: string, layerZ: ArrayLike<number>): number | null {
+  const n = layerZ.length
+  if (n < 1) return null
+  const t = text.trim().toLowerCase().replace(',', '.')
+  const height = /^z\s*(-?[\d.]+)\s*(mm)?$/.exec(t) ?? /^(-?[\d.]+)\s*mm$/.exec(t)
+  if (height) {
+    const z = Number(height[1])
+    if (!Number.isFinite(z)) return null
+    for (let k = 0; k < n; k++) if (layerZ[k]! >= z - 1e-4) return k + 1
+    return n
+  }
+  if (!/^\d+$/.test(t)) return null
+  return Math.max(1, Math.min(n, Number(t)))
+}
