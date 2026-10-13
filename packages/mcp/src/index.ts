@@ -24,6 +24,7 @@ import { Designs, designFiles, designTools } from './design'
 import { paintTools } from './paint'
 import { APP_DESIGN_TOOLS, routeToApp } from './app-route'
 import { mimirCloudTools } from './mimir-cloud'
+import { appSheetTools } from './app-sheet'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
 import { cadFiles, geomEngine, geomTools, findSxGeom } from './geom'
 import { createMcpSetupHost } from './setup'
@@ -177,7 +178,9 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
   const mimir = [...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName())]
-  const tools = [...registry, ...route(local), ...geom, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  // A client's dimension sheets go to the person through the open app, while the link is in use.
+  const sheets = appLink ? appSheetTools(appLink, productName()) : []
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,
