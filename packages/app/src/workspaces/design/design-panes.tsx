@@ -48,6 +48,7 @@ export function DesignRight() {
   // While a tool is open, Transform folds to its position line so the tool keeps the room; it opens on request.
   const [transformOpen, setTransformOpen] = useState(false)
   useEffect(() => setTransformOpen(false), [objectTool])
+  const line = useTransformText()
   return (
     <>
       {isCadTool(objectTool) ? (
@@ -63,7 +64,7 @@ export function DesignRight() {
       {many ? (
         <MultiSelection />
       ) : toolOpen && selected ? (
-        <Block id="model-transform" title="Transform" aside={<TransformLine />} expanded={transformOpen} onExpandedChange={setTransformOpen} data-section="transform">
+        <Block id="model-transform" title="Transform" aside={<TransformLine />} tip={line ? { title: 'Position', body: line.text } : undefined} expanded={transformOpen} onExpandedChange={setTransformOpen} data-section="transform">
           <ObjectTransform />
         </Block>
       ) : (
@@ -78,7 +79,8 @@ export function DesignRight() {
 const fmt = (n: number) => String(Math.round(n * 10) / 10)
 
 /** The selected object's position on one line, for Transform folded under a tool. */
-function TransformLine() {
+/** The selection's position as one line, in the display unit for Model and mm for Slice. */
+function useTransformText(): { text: string; frame: string } | null {
   const entry = useApp((s) => s.plate.find((p) => p.id === s.selection))
   const { origin, frame } = useShownOrigin()
   const units = useApp((s) => s.units)
@@ -87,11 +89,16 @@ function TransformLine() {
   // Model shows the display unit at its precision; Slice keeps mm
   const model = frame === 'grid'
   const f = (v: number | undefined) => (model ? fixedLength(v ?? 0, units) : fmt(v ?? 0))
-  const text = `X ${f(p[0])} Y ${f(p[1])} Z ${f(p[2])} ${model ? units.length : 'mm'}`
-  // a long line ends in an ellipsis inside the panel; the tooltip has all of it
+  return { text: `X ${f(p[0])} Y ${f(p[1])} Z ${f(p[2])} ${model ? units.length : 'mm'}`, frame }
+}
+
+function TransformLine() {
+  const line = useTransformText()
+  if (!line) return null
+  // a long line ends in an ellipsis inside the panel; the toggle's tooltip has all of it
   return (
-    <span className="sx-small sx-muted design-tf-line" data-testid="model-transform-summary" data-frame={frame} {...tipAttrs({ title: 'Position', body: text })}>
-      {text}
+    <span className="sx-small sx-muted design-tf-line" data-testid="model-transform-summary" data-frame={line.frame}>
+      {line.text}
     </span>
   )
 }

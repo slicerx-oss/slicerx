@@ -4,6 +4,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Icon } from '../icons/icon'
 import type { IconName } from '../icons/icon-names'
+import { tipAttrs, type TipSpec } from './tooltip'
 
 export interface PanelProps extends HTMLAttributes<HTMLDivElement> {
   /** Which side carries the hairline: a left panel has it on the right. */
@@ -31,11 +32,13 @@ export interface BlockProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   id?: string
   /** An icon before the title, for sections that stand as their own panel. */
   icon?: IconName
+  /** Tooltip on the disclosure button; the aside lets clicks through, so its full text goes here. */
+  tip?: TipSpec
   children?: ReactNode
 }
 
 /** One hairline-bounded section of a Panel, with an optional title row and disclosure. */
-export function Block({ title, aside, expanded, onExpandedChange, id, icon, className, children, ...rest }: BlockProps) {
+export function Block({ title, aside, expanded, onExpandedChange, id, icon, tip, className, children, ...rest }: BlockProps) {
   const collapsible = expanded !== undefined
   const hidden = collapsible && !expanded
   const regionId = id ? `${id}-body` : undefined
@@ -44,7 +47,7 @@ export function Block({ title, aside, expanded, onExpandedChange, id, icon, clas
       {title !== undefined || aside !== undefined ? (
         <div className="sx-block-h">
           {collapsible ? (
-            <button type="button" id={id} className="sx-block-toggle" aria-expanded={expanded} aria-controls={regionId} onClick={() => onExpandedChange?.(!expanded)}>
+            <button type="button" id={id} className="sx-block-toggle" aria-expanded={expanded} aria-controls={regionId} onClick={() => onExpandedChange?.(!expanded)} {...tipAttrs(tip)}>
               <Icon name="chevron-down" />
               <h3>
                 {icon ? <Icon name={icon} className="sx-block-icon" /> : null}
