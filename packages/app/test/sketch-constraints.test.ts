@@ -4,7 +4,7 @@
 // colors a solve gives each curve, constraints kept in the project file, and old sketches loading as free geometry.
 import { describe, expect, it } from 'vitest'
 import { historyFiles, parseHistories, type History, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
-import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, toSolver } from '../src/cad/sketch-constraints'
+import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver } from '../src/cad/sketch-constraints'
 import { fromLoops, rectangle, type Entity } from '../src/cad/sketch-model'
 import { boxMesh } from '../src/plate/mesh-ops'
 
@@ -165,5 +165,20 @@ describe('constraints in the project file', () => {
     const { solver } = toSolver(sketch, (shape?.type === 'sketch' ? shape.constraints : undefined) ?? [])
     expect(solver.constraints).toEqual([])
     expect(solver.points).toHaveLength(3)
+  })
+
+  it('draws a dimension for each driving value and a mark on each fixed point', () => {
+    const circle: Entity = { kind: 'circle', center: [0, 0], diameterMm: 8 }
+    const m = sketchMarks([circle, ...square()], [
+      { type: 'fix', point: { e: 0, at: 'center' } },
+      { type: 'diameter', circle: { e: 0, seg: 0 }, value: 8 },
+      { type: 'length', line: { e: 1, seg: 1 }, value: 12 },
+      { type: 'horizontal', line: { e: 1, seg: 0 } },
+    ])
+    expect(m.fixed).toEqual([[0, 0]])
+    expect(m.dims.map((d) => d.label)).toEqual(['\u23008', '12'])
+    expect(Math.hypot(m.dims[0]!.to[0] - m.dims[0]!.from[0], m.dims[0]!.to[1] - m.dims[0]!.from[1])).toBeCloseTo(8)
+    // the diameter's value sits past the rim, clear of the fixed center
+    expect(Math.hypot(...m.dims[0]!.at!)).toBeGreaterThan(4)
   })
 })
