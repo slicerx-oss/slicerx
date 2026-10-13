@@ -170,7 +170,7 @@
 
 .sx-pilot .pp-err{display:flex;align-items:flex-start;gap:8px;font-size:14.5px;color:var(--red)}
 .sx-pilot .pp-err .sx-ic{width:16px;height:16px;margin-top:.2em}
-.sx-pilot .pp-err-link{padding:0;border:0;background:none;font:inherit;color:var(--fg);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.sx-pilot .pp-err-link{padding:0;border:0;background:none;font:inherit;color:var(--t-fg);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 
 .sx-pilot .appr{border:1px solid color-mix(in srgb,var(--purple) 45%,var(--line-soft));border-radius:12px;background:color-mix(in srgb,var(--purple) 6%,var(--t-bg));overflow:hidden;position:relative}
 .sx-pilot .appr-top{display:flex;align-items:center;gap:8px;padding:14px 18px 0;font-size:12.5px;color:var(--t-mute);flex-wrap:wrap}
