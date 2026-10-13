@@ -4,7 +4,7 @@
 // the desktop app and the evals share one index without a YAML parser at
 // runtime. Run after knowledge/ changes: pnpm --filter @slicerx/pilot kb:build
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 import type { KbDoc, KbIndex, KbKind, KbPrefix, KbSetting, KbSkill, KbSource } from '../src/kb/kb'
@@ -63,7 +63,8 @@ let skills: KbSkill[] = []
 const problems: string[] = []
 
 for (const file of walk(root)) {
-  const rel = relative(root, file)
+  // '/' on every system, so kb.json is the same whichever one builds it
+  const rel = relative(root, file).split(sep).join('/')
   let data: unknown
   try {
     data = parse(readFileSync(file, 'utf8'))
