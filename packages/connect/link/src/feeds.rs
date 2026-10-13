@@ -18,7 +18,15 @@
 //! every [`STILL_EVERY`] and are the last key frame in between. A viewer's feed whose camera drops the connection,
 //! or stops, tries again after 5 s, 10 s, then every 15 s for as long as a viewer reads it, and
 //! tells its readers through [`FeedStatus`].
+//!
+//! One PLAY the camera closes is routine, and a prompt retry usually gets in. A run of them is not:
+//! on the H2D, after three closes in a row nearly every quick retry was closed too, and only a quiet
+//! gap brought the camera back. So from the second close in a row the printer's camera is held for
+//! [`HOLDS`] (growing, the last repeated) before anything opens it again: live views, probes and
+//! stills alike. A still in that time gets the last key frame, or the busy error; a viewer's feed
+//! waits it out and says the camera is busy. The first PLAY that plays ends the hold.
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, PoisonError};
 use std::time::Duration;
@@ -49,6 +57,14 @@ pub(crate) const BACKOFF: [Duration; 3] = [
     Duration::from_secs(5),
     Duration::from_secs(10),
     Duration::from_secs(15),
+];
+/// How long the camera is left alone after its 2nd, 3rd, 4th, and each later PLAY in a row that it
+/// closed. The last, just past the 65 s after which live555 ends a session nobody tore down, repeats.
+pub(crate) const HOLDS: [Duration; 4] = [
+    Duration::from_secs(15),
+    Duration::from_secs(30),
+    Duration::from_secs(60),
+    Duration::from_secs(70),
 ];
 /// Frames a slow reader may fall behind before it skips to the next key frame.
 const BACKLOG: usize = 64;
@@ -116,6 +132,8 @@ pub(crate) enum FeedStatus {
         attempt: u32,
         in_ms: u64,
         reason: String,
+        /// The camera closed several PLAYs in a row and is left alone until the next try.
+        busy: bool,
     },
     /// The camera will not open by waiting (a refused login, liveview off); the feed ends.
     Failed { reason: String },
@@ -128,6 +146,10 @@ struct Sessions {
     refused: u64,
     /// The last 10 minutes of tries: when, and whether refused.
     recent: std::collections::VecDeque<(Instant, bool)>,
+    /// PLAYs in a row the camera closed, since the last one that played.
+    closes_in_a_row: u32,
+    /// No new session before this, after [`HOLDS`] closes in a row.
+    held_until: Option<Instant>,
 }
 
 /// What a still gets while the camera rests between sessions.
@@ -170,6 +192,8 @@ pub(crate) struct Feeds {
     still_opened: StdMutex<HashMap<String, Instant>>,
     /// Per printer: the camera sessions it opened and refused.
     sessions: StdMutex<HashMap<String, Sessions>>,
+    /// The holds after closes in a row, when not [`HOLDS`] (tests shorten them).
+    holds: StdMutex<Option<Vec<Duration>>>,
     next: StdMutex<u64>,
 }
 
@@ -245,9 +269,11 @@ impl Feeds {
         lock(&self.still_opened).insert(printer.to_owned(), Instant::now());
     }
 
-    /// Counts one try to open the printer's camera, refused or not, and says how it stands: all
-    /// tries and refusals since the bridge started, and those of the last 10 minutes.
+    /// Counts one try to open the printer's camera, refused (the camera closed it at PLAY) or not,
+    /// and says how it stands: all tries and refusals since the bridge started, those of the last
+    /// 10 minutes, and any hold the refusals in a row started. A session that opened ends the hold.
     pub(crate) fn count_open(&self, printer: &str, refused: bool) -> String {
+        let holds = self.holds();
         let mut all = lock(&self.sessions);
         let s = all.entry(printer.to_owned()).or_default();
         s.tries += 1;
@@ -257,12 +283,63 @@ impl Feeds {
             s.recent.pop_front();
         }
         let recent_refused = s.recent.iter().filter(|(_, r)| *r).count();
-        format!(
+        let mut out = format!(
             "{} of {} camera sessions refused, {recent_refused} of {} in the last 10 min",
             s.refused,
             s.tries,
             s.recent.len()
-        )
+        );
+        if !refused {
+            s.closes_in_a_row = 0;
+            s.held_until = None;
+            return out;
+        }
+        s.closes_in_a_row += 1;
+        let step = usize::try_from(s.closes_in_a_row.saturating_sub(2)).unwrap_or(usize::MAX);
+        if s.closes_in_a_row >= 2
+            && let Some(hold) = holds.get(step).or(holds.last()).copied()
+        {
+            s.held_until = Some(Instant::now() + hold);
+            let _ = write!(
+                out,
+                "; {} in a row, the camera is left alone for {} s",
+                s.closes_in_a_row,
+                hold.as_secs()
+            );
+        }
+        out
+    }
+
+    /// How long the printer's camera is still held after closing PLAYs in a row, if it is.
+    pub(crate) fn held(&self, printer: &str) -> Option<Duration> {
+        let until = lock(&self.sessions).get(printer)?.held_until?;
+        until
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
+    }
+
+    /// Replaces [`HOLDS`]; empty keeps them (tests shorten them).
+    pub(crate) fn set_holds(&self, holds: Vec<Duration>) {
+        *lock(&self.holds) = (!holds.is_empty()).then_some(holds);
+    }
+
+    fn holds(&self) -> Vec<Duration> {
+        lock(&self.holds).clone().unwrap_or_else(|| HOLDS.to_vec())
+    }
+
+    /// The printer's last key frame: its feed's, else that of the feed that closed last.
+    pub(crate) fn last_key(&self, printer: &str) -> Option<CameraFrame> {
+        let live = lock(&self.live).get(printer).and_then(|f| lock(&f.gop).key());
+        live.or_else(|| lock(&self.closed).get(printer)?.1.clone())
+    }
+
+    /// The wait before a viewer's feed tries again: `backoff`, or the rest of the camera's hold
+    /// when that is longer; and whether the camera is held.
+    fn retry_wait(&self, printer: &str, backoff: Duration) -> (Duration, bool) {
+        match self.held(printer) {
+            Some(h) => (h.max(backoff), true),
+            None => (backoff, false),
+        }
     }
 
     /// The lock to hold while opening the printer's source.
@@ -297,11 +374,15 @@ impl Feeds {
         let lingers = Arc::new(AtomicBool::new(viewer));
         // A viewer's feed that did not open starts out retrying, so its first reader hears so.
         let initial = match &first {
-            Err(e) if viewer => FeedStatus::Retrying {
-                attempt: 1,
-                in_ms: u64::try_from(BACKOFF[0].as_millis()).unwrap_or(u64::MAX),
-                reason: e.message.clone(),
-            },
+            Err(e) if viewer => {
+                let (wait, busy) = self.retry_wait(printer, BACKOFF[0]);
+                FeedStatus::Retrying {
+                    attempt: 1,
+                    in_ms: u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
+                    reason: if busy { BUSY.to_owned() } else { e.message.clone() },
+                    busy,
+                }
+            }
             _ => FeedStatus::Live,
         };
         let (status_tx, status) = watch::channel(initial);
@@ -412,25 +493,29 @@ impl Pump {
             if !self.viewed.load(Ordering::Relaxed) {
                 break reason;
             }
-            let wait = BACKOFF
+            let backoff = BACKOFF
                 .get(usize::try_from(attempt).unwrap_or(usize::MAX))
                 .or(BACKOFF.last())
                 .copied()
                 .unwrap_or(Duration::from_secs(15));
+            // A camera held after closing PLAYs in a row is left alone for the rest of the hold.
+            let (wait, busy) = self.feeds.retry_wait(&self.printer, backoff);
             attempt += 1;
             let in_ms = u64::try_from(wait.as_millis()).unwrap_or(u64::MAX);
             sx_connect::trace(
                 &self.printer,
                 format_args!(
-                    "camera feed: {reason}; try {} in {} s",
+                    "camera feed: {reason}; try {} in {} s{}",
                     attempt + 1,
-                    wait.as_secs()
+                    wait.as_secs(),
+                    if busy { " (the camera is held)" } else { "" }
                 ),
             );
             self.tell(FeedStatus::Retrying {
                 attempt,
                 in_ms,
-                reason: reason.clone(),
+                reason: if busy { BUSY.to_owned() } else { reason.clone() },
+                busy,
             });
             if !self.wait(wait).await {
                 break "no one watching".to_owned();
@@ -562,6 +647,23 @@ impl Pump {
         }
         true
     }
+}
+
+/// The reason a viewer's feed gives while the camera is held; `retryInMs` says when it tries again.
+pub(crate) const BUSY: &str = "The camera is busy.";
+
+/// What a still or other one-off reader gets while the camera is held, with the `timeout` code: the
+/// camera is fine, and trying again after the wait is the remedy.
+pub(crate) fn busy_error(left: Duration) -> RpcError {
+    RpcError::new(
+        "timeout",
+        format!("The camera is busy. Try again in {} s.", whole_secs(left)),
+    )
+}
+
+/// Seconds rounded up, at least 1, so a wait is never shown as 0 s.
+fn whole_secs(d: Duration) -> u64 {
+    u64::try_from(d.as_millis().div_ceil(1000).max(1)).unwrap_or(u64::MAX)
 }
 
 /// A reader: `replay` first (the frames since the last key frame, or that key frame alone), then
@@ -858,7 +960,8 @@ mod tests {
             FeedStatus::Retrying {
                 attempt: 1,
                 in_ms: 5000,
-                reason: "dropped at PLAY".into()
+                reason: "dropped at PLAY".into(),
+                busy: false,
             }
         );
         let f = view.next().await.unwrap();
@@ -935,6 +1038,126 @@ mod tests {
         assert_eq!(f.data, [9], "the new session's key frame");
         assert!(*lock(&dropped));
         assert_eq!(tries.load(Ordering::Relaxed), 1);
+    }
+
+    // One close at PLAY is routine and holds nothing. From the second in a row the camera is held,
+    // longer each time up to the cap, and the first session that opens ends it.
+    #[tokio::test(start_paused = true)]
+    async fn closes_in_a_row_hold_the_camera_longer_each_time_until_one_opens() {
+        let feeds = Feeds::default();
+        feeds.count_open("p", true);
+        assert!(feeds.held("p").is_none(), "a single close is tried again at once");
+        let mut holds = Vec::new();
+        for _ in 0..5 {
+            let tally = feeds.count_open("p", true);
+            assert!(
+                tally.contains("in a row, the camera is left alone for"),
+                "{tally}"
+            );
+            holds.push(feeds.held("p").unwrap().as_secs());
+        }
+        assert_eq!(holds, [15, 30, 60, 70, 70]);
+        assert!(feeds.held("q").is_none(), "per printer");
+        tokio::time::sleep(Duration::from_secs(71)).await;
+        assert!(feeds.held("p").is_none(), "the hold runs out");
+        // A session that opens resets the run: the next close is a single one again.
+        feeds.count_open("p", true);
+        assert_eq!(feeds.held("p").unwrap().as_secs(), 70, "still in a run");
+        feeds.count_open("p", false);
+        assert!(feeds.held("p").is_none(), "an open ends the hold at once");
+        feeds.count_open("p", true);
+        assert!(feeds.held("p").is_none());
+        feeds.count_open("p", true);
+        assert_eq!(feeds.held("p").unwrap().as_secs(), 15);
+        // The wait a still is told rounds up and is never 0 s.
+        assert_eq!(
+            busy_error(Duration::from_millis(14_200)).message,
+            "The camera is busy. Try again in 15 s."
+        );
+        assert_eq!(
+            busy_error(Duration::from_millis(3)).message,
+            "The camera is busy. Try again in 1 s."
+        );
+        assert_eq!(busy_error(Duration::from_secs(1)).code, "timeout");
+    }
+
+    /// Opens as `open_camera_source` does, against a camera that closes every PLAY until `opens`:
+    /// refused while held (no session), else one try counted.
+    fn closing_camera(feeds: Arc<Feeds>, tries: Arc<StdMutex<Vec<u64>>>, opens: Arc<AtomicBool>) -> Opener {
+        let started = Instant::now();
+        Arc::new(move || {
+            let (feeds, tries, opens) = (feeds.clone(), tries.clone(), opens.clone());
+            Box::pin(async move {
+                if let Some(left) = feeds.held("p") {
+                    return Err(busy_error(left));
+                }
+                lock(&tries).push(started.elapsed().as_secs());
+                let ok = opens.load(Ordering::Relaxed);
+                feeds.count_open("p", !ok);
+                if ok {
+                    Ok(source(vec![frame(true, 5)], Arc::new(StdMutex::new(false))))
+                } else {
+                    Err(RpcError::new(
+                        "timeout",
+                        "the camera closed the connection at PLAY",
+                    ))
+                }
+            })
+        })
+    }
+
+    // The H2D: after a few closes in a row, quick tries kept it closing. A viewer's feed now leaves
+    // the camera alone for the growing hold, says it is busy, and opens once the camera takes it.
+    #[tokio::test(start_paused = true)]
+    async fn a_viewer_feed_leaves_a_camera_that_keeps_closing_alone() {
+        let feeds = Arc::new(Feeds::default());
+        let tries = Arc::new(StdMutex::new(Vec::new()));
+        let opens = Arc::new(AtomicBool::new(false));
+        let reopen = closing_camera(feeds.clone(), tries.clone(), opens.clone());
+        let first = reopen().await;
+        let mut view = feeds.start("p", first, true, reopen);
+        let mut status = feeds.status("p").unwrap();
+        let mut seen = vec![status.borrow().clone()];
+        let watch = tokio::spawn(async move {
+            while status.changed().await.is_ok() {
+                seen.push(status.borrow().clone());
+            }
+            seen
+        });
+        tokio::time::sleep(Duration::from_secs(185)).await;
+        // Tries at 0 and 5 s (a single close is tried again soon), then 15, 30 and 60 s apart,
+        // 70 s after that: 6 in 3 minutes, where the plain backoff would have made 13.
+        assert_eq!(*lock(&tries), [0, 5, 20, 50, 110, 180]);
+        opens.store(true, Ordering::Relaxed);
+        let f = view.next().await.unwrap();
+        assert_eq!(f.data, [5]);
+        assert_eq!(lock(&tries).last().copied(), Some(250), "after the 70 s hold");
+        assert!(feeds.held("p").is_none(), "the open ended the hold");
+        drop(view);
+        tokio::time::sleep(LINGER * 2).await;
+        let seen = watch.await.unwrap();
+        let retrying: Vec<(u64, bool, String)> = seen
+            .iter()
+            .filter_map(|s| match s {
+                FeedStatus::Retrying {
+                    in_ms, busy, reason, ..
+                } => Some((in_ms / 1000, *busy, reason.clone())),
+                _ => None,
+            })
+            .collect();
+        let busy = |s: u64| (s, true, BUSY.to_owned());
+        assert_eq!(
+            retrying,
+            [
+                (5, false, "the camera closed the connection at PLAY".to_owned()),
+                busy(15),
+                busy(30),
+                busy(60),
+                busy(70),
+                busy(70),
+            ]
+        );
+        assert_eq!(seen.last(), Some(&FeedStatus::Live));
     }
 
     // A still's feed does not retry, and a viewer that leaves stops the retries.

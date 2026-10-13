@@ -225,6 +225,8 @@ export interface CameraStatus {
   attempt?: number
   retryInMs?: number
   reason?: string
+  /** `retrying` only: the camera closed several connections in a row, so the bridge leaves it alone until the next try. */
+  busy?: boolean
 }
 
 /** What the bridge is doing for one stream, about once a second. */

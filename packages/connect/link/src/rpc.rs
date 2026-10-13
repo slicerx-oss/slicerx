@@ -2103,8 +2103,9 @@ async fn test_printer(b: &Bridge, p: &Value) -> Rpc<Value> {
 /// connector's. Every reader of one printer shares one connection (`feeds.rs`): a running feed is
 /// joined, else one is opened, one opener at a time. A still while the camera rests after its last
 /// session gets that session's last key frame. A viewer whose camera dropped the connection gets a
-/// feed that keeps trying; anything else that fails to open is the error. `purpose` says in the
-/// connection log who asked (a probe, a live view, a still).
+/// feed that keeps trying; anything else that fails to open is the error. While the camera is held
+/// after closing PLAYs in a row, nothing opens it: a still gets the last key frame, or the busy
+/// error. `purpose` says in the connection log who asked (a probe, a live view, a still).
 pub(crate) async fn camera_source(
     b: &Arc<Bridge>,
     id: &str,
@@ -2120,6 +2121,27 @@ pub(crate) async fn camera_source(
     };
     // A still lets go at its first key frame and keeps no feed open after it; anything else does.
     let viewer = purpose != "still";
+    // A held camera has no session playing; a feed of it is only waiting to try again.
+    if !viewer && let Some(left) = b.feeds.held(id) {
+        if let Some(f) = b.feeds.last_key(id) {
+            sx_connect::trace(
+                id,
+                format_args!(
+                    "camera source for still: the camera is held for {} s more; the last key frame",
+                    left.as_secs()
+                ),
+            );
+            return Ok(futures::stream::iter([f]).boxed());
+        }
+        sx_connect::trace(
+            id,
+            format_args!(
+                "camera source for still: the camera is held for {} s more; no frame to give",
+                left.as_secs()
+            ),
+        );
+        return Err(crate::feeds::busy_error(left));
+    }
     if let Some(s) = b.feeds.subscribe(id, viewer) {
         return shared(s);
     }
@@ -2187,6 +2209,17 @@ pub(crate) async fn camera_source(
 }
 
 async fn open_camera_source(b: &Arc<Bridge>, id: &str) -> Rpc<sx_connect::camera::FrameStream> {
+    // After closing PLAYs in a row the camera gets a quiet gap: quick tries keep it refusing.
+    if let Some(left) = b.feeds.held(id) {
+        sx_connect::trace(
+            id,
+            format_args!(
+                "camera session not opened: the camera is held for {} s more",
+                left.as_secs()
+            ),
+        );
+        return Err(crate::feeds::busy_error(left));
+    }
     let config = b
         .printers
         .lock()

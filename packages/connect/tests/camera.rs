@@ -320,6 +320,71 @@ async fn a_dropped_play_is_a_timeout_worth_trying_again() {
     take(&mut s, 2).await;
 }
 
+/// The camera's PLAY and TEARDOWN lines from the fakes' log.
+async fn play_lines(mocks: &Mocks) -> Vec<String> {
+    mocks.state().await["log"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l.as_str().map(str::to_owned))
+        .filter(|l| l.starts_with("rtsp PLAY") || l.starts_with("rtsp TEARDOWN"))
+        .collect()
+}
+
+// A camera that refuses PLAY with a status keeps the connection open. The session SETUP made is
+// ended with TEARDOWN there and then, so the camera does not hold a session nobody uses until it
+// times out. One that closed the connection at PLAY gets no new connection only to end it.
+#[tokio::test]
+async fn a_refused_play_ends_its_session_with_teardown() {
+    let mocks = Mocks::start("bambu", &[]).await;
+    mocks
+        .control("/bambu", serde_json::json!({ "model": "O1D", "refusePlays": 1 }))
+        .await;
+    let session = bambu_session(&mocks, &bambu_config(&mocks)).await;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(session.stream().await.is_err(), "PLAY is refused");
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        lines = play_lines(&mocks).await;
+        if lines.len() >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(
+        lines,
+        [
+            "rtsp PLAY refused: 453",
+            "rtsp TEARDOWN ok: the session never played"
+        ]
+    );
+    // The next open waits for that TEARDOWN, then plays.
+    let mut s = session.stream().await.unwrap().expect("the next one starts");
+    take(&mut s, 2).await;
+    drop(s);
+
+    // Closed at PLAY: nothing more is sent to the camera.
+    mocks
+        .control("/bambu", serde_json::json!({ "dropPlays": 1 }))
+        .await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let Err(e) = session.stream().await else {
+        panic!("the PLAY is dropped")
+    };
+    assert_eq!(e.code(), sx_connect::ErrorCode::Timeout);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        play_lines(&mocks).await,
+        [
+            "rtsp PLAY refused: 453",
+            "rtsp TEARDOWN ok: the session never played",
+            "rtsp PLAY ok",
+            "rtsp TEARDOWN ok",
+            "rtsp PLAY dropped"
+        ]
+    );
+}
+
 #[tokio::test]
 async fn a_generic_rtsp_camera_streams_with_a_basic_login_kept_out_of_the_url() {
     let mocks = Mocks::start("rtsp-camera", &[]).await;
