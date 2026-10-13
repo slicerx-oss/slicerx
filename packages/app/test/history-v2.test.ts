@@ -121,12 +121,12 @@ describe('the history file, version 2', () => {
     const j = JSON.parse(new TextDecoder().decode(v2.get('Metadata/slicerx_history.json')!))
     v1.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify({ ...j, version: 1 })))
     expect(parseHistories(v1, new Set(['1'])).get('1')!.steps).toHaveLength(2)
-    const v3 = new Map(v2)
-    v3.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify({ ...j, version: 3 })))
-    expect(parseHistories(v3, new Set(['1'])).size).toBe(0)
-    expect(historyNewer(v3)).toMatch(/saved by a newer SlicerX.*open without their history/)
+    const v4 = new Map(v2)
+    v4.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify({ ...j, version: 4 })))
+    expect(parseHistories(v4, new Set(['1'])).size).toBe(0)
+    expect(historyNewer(v4)).toMatch(/saved by a newer SlicerX.*open without their history/)
     // A newer file is historyNewer's to explain, not a damaged one.
-    expect(historyLost(v3, new Set(['1']), parseHistories(v3, new Set(['1'])))).toBeNull()
+    expect(historyLost(v4, new Set(['1']), parseHistories(v4, new Set(['1'])))).toBeNull()
   })
 
   it('says when saved history does not read, instead of opening the objects without it silently', () => {
