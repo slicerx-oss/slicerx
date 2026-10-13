@@ -163,8 +163,25 @@ export function ToolFooter({ verb, onApply, disabled = false, busy = false, repe
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  // the panel fades out above the footer while there is more of it below
+  const [more, setMore] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    const scroller = el?.closest('.sx-rail-body')
+    if (!el || !scroller) return
+    const check = () => setMore(scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1)
+    check()
+    scroller.addEventListener('scroll', check, { passive: true })
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(check)
+    ro?.observe(scroller)
+    if (scroller.firstElementChild) ro?.observe(scroller.firstElementChild)
+    return () => {
+      scroller.removeEventListener('scroll', check)
+      ro?.disconnect()
+    }
+  }, [])
   return (
-    <div ref={ref} className="cad-actions cad-footer">
+    <div ref={ref} className="cad-actions cad-footer" {...(more ? { 'data-more': '' } : {})}>
       {extra}
       <Button variant="ghost" data-testid="model-tool-cancel" onClick={close} disabled={working} tip={{ title: 'Close the tool', key: 'Esc' }}>
         Cancel
