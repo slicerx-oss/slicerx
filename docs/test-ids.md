@@ -190,8 +190,9 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | --- | --- |
 | `project-open-dialog` | Open this project? (another slicer's project added to a plate that has objects) |
 | `project-open-as-project`, `project-open-geometry-only` | Its Open as project and Import geometry only |
-| `project-gcode-dialog` | Check this project's G-code (an .sx3mf with its own printer G-code) |
+| `project-gcode-dialog` | This project's G-code doesn't match your printer (an .sx3mf with its own printer G-code) |
 | `project-gcode-use-project`, `project-gcode-use-profile` | Its two choices |
+| `project-gcode-differences` | Its Show differences section, folded until clicked |
 
 ## Vault
 
