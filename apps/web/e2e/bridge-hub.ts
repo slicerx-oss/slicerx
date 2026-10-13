@@ -4,25 +4,18 @@
 // app paired with it. Runs only when SX_LINK_BIN names a built sx-link (cargo build -p sx-link); otherwise skipped.
 // CI builds it and sets SX_LINK_REQUIRE=1, and there a missing binary fails the tests instead.
 //
-// The hub listens on the run's hub port: SX_TEST_HUB_PORT (apps/web/playwright.config.ts), which the test build of the
-// app pairs with, or sx-link's 47615. Two runs on one machine pass different ports. Within a run the port is one, so two
-// bridge files must never run at once: each file holds HUB_LOCK while its hub runs. A worker that waits for it gives up
-// after HUB_LOCK_WAIT_MS with a message that names the holder.
+// Each bridge file runs its own hub on a free loopback port: sx-link starts with --port 0, binds 127.0.0.1 and prints the
+// port it got, and every page of the file connects there (the e2e build reads it from window.__sxTestHubPort, which
+// beforeEach sets). So bridge files run in parallel, beside another run, the release gate or a running sx-link.
 import { type Locator, type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import type { MockName } from '../../../packages/connect/mock-printers/src/index.ts'
-
-export const HUB_PORT = Number(process.env['SX_TEST_HUB_PORT'] || 47615)
-/** The hub's address in a page's WebSocket routes. */
-export const HUB_ROUTE = new RegExp(`127\\.0\\.0\\.1:${HUB_PORT}(?!\\d)`)
-const HUB_LOCK = join(tmpdir(), `sx-e2e-hub-${HUB_PORT}.lock`)
-const HUB_LOCK_WAIT_MS = 10 * 60_000
 
 const bin = process.env['SX_LINK_BIN']
 const required = process.env['SX_LINK_REQUIRE'] === '1'
@@ -39,53 +32,15 @@ export interface Admin {
   clients: { create(name: string, role: 'agent' | 'watch', opts?: { partner?: boolean }): Promise<{ clientKey?: string }> }
 }
 
-/** What a running bridge file has: the pairing code, the hub's address, the mocks' ports and control port. */
-export const hub = { code: '', linkUrl: '', controlPort: 0, ports: {} as Record<string, number>, stateDir: '', admin: undefined as unknown as Admin }
-
-/** Takes the hub port's lock for this worker, clearing one whose holder has died. */
-async function takeHubLock(): Promise<void> {
-  const owner = join(HUB_LOCK, 'pid')
-  const until = Date.now() + HUB_LOCK_WAIT_MS
-  for (;;) {
-    try {
-      mkdirSync(HUB_LOCK)
-      writeFileSync(owner, String(process.pid))
-      return
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
-    }
-    let holder = 0
-    try {
-      holder = Number(readFileSync(owner, 'utf8'))
-    } catch {
-      // the holder is between its mkdir and its pid file; look again
-    }
-    if (holder && !alive(holder)) rmSync(HUB_LOCK, { recursive: true, force: true })
-    else if (Date.now() > until) throw new Error(`waited ${HUB_LOCK_WAIT_MS / 60_000} minutes for the bridge hub port ${HUB_PORT}: ${HUB_LOCK} is held by process ${holder || 'unknown'}`)
-    else await new Promise((r) => setTimeout(r, 500))
-  }
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
-
-function dropHubLock(): void {
-  try {
-    if (Number(readFileSync(join(HUB_LOCK, 'pid'), 'utf8')) === process.pid) rmSync(HUB_LOCK, { recursive: true, force: true })
-  } catch {
-    // not ours, or gone already
-  }
-}
+/**
+ * What a running bridge file has: the pairing code, the hub's address and port, the hub's address in a page's WebSocket
+ * routes, the mocks' ports and control port.
+ */
+export const hub = { code: '', linkUrl: '', port: 0, route: /^$/, controlPort: 0, ports: {} as Record<string, number>, stateDir: '', admin: undefined as unknown as Admin }
 
 /**
  * Sets up a bridge file: serial tests at desktop width, the mocks in `mocks` started once for the file (idle, every
- * printer with a camera), a hub on HUB_PORT, and `setup` to add the file's printers. Call at the top of the file.
+ * printer with a camera), a hub on a free loopback port, and `setup` to add the file's printers. Call at the top of the file.
  */
 export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>): void {
   let proc: ChildProcessByStdio<null, Readable, Readable> | undefined
@@ -95,11 +50,9 @@ export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>)
   test.skip(({ isMobile }) => isMobile, 'The bridge flow runs at desktop width')
 
   test.beforeAll(async ({}, testInfo) => {
-    // The phone project skips every test here; it must not start a second bridge on the same port as the desktop one.
+    // The phone project skips every test here; it starts no hub.
     if (testInfo.project.use.isMobile) return
     if (!bin || !existsSync(bin)) throw new Error(`There is no sx-link at ${bin || '(SX_LINK_BIN is not set)'}: build it (cargo build -p sx-link) and name it in SX_LINK_BIN`)
-    testInfo.setTimeout(testInfo.timeout + HUB_LOCK_WAIT_MS)
-    await takeHubLock()
     const { startMocks } = await import('../../../packages/connect/mock-printers/src/index.ts')
     const { connectLink } = await import('../../../packages/connect/link-client/src/index.ts')
     const running = await startMocks({ only: mocks, state: 'idle', camera: true })
@@ -108,7 +61,7 @@ export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>)
     hub.ports = running.ports
     // A throwaway state directory with file secrets: the test never touches the real hub or the keychain.
     hub.stateDir = mkdtempSync(join(tmpdir(), 'sx-link-e2e-'))
-    proc = spawn(bin, ['--port', String(HUB_PORT), '--state-dir', hub.stateDir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
+    proc = spawn(bin, ['--port', '0', '--state-dir', hub.stateDir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     hub.linkUrl = await new Promise<string>((resolve, reject) => {
       proc!.stdout.on('data', (d: Buffer) => {
@@ -117,6 +70,8 @@ export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>)
         const c = /pairing code: ([A-Z0-9]{4}-[A-Z0-9]{4})/.exec(out)
         if (u && c) {
           hub.code = c[1] ?? ''
+          hub.port = Number(u[0].slice(u[0].lastIndexOf(':') + 1))
+          hub.route = new RegExp(`127\\.0\\.0\\.1:${hub.port}(?!\\d)`)
           resolve(u[0])
         }
       })
@@ -140,12 +95,13 @@ export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>)
     }
     if (hub.stateDir) rmSync(hub.stateDir, { recursive: true, force: true })
     await stopMocks?.()
-    dropHubLock()
   })
 
   // Every toast's text as it is drawn, gone or not: a note is on screen for a few seconds, and a busy runner can take
   // longer than that between the click that posts it and the first look (the Printers tab mounting under it, say).
   test.beforeEach(async ({ page }) => {
+    // The e2e build pairs with this port instead of the one it was built with (apps/web/src/main.tsx).
+    await page.addInitScript((port) => Object.assign(window, { __sxTestHubPort: port }), hub.port)
     await page.addInitScript(() => {
       const seen: string[] = []
       const drawn = new WeakSet<Element>()
