@@ -52,3 +52,14 @@ describe('slicerx-mcp call design_timeline and design_roll', () => {
     expect(e?.stdout).toMatch(/turn on the app link/)
   }, 30_000)
 })
+
+describe('slicerx-mcp call design_sketch', () => {
+  const bin = process.env['SLICERX_SX_GEOM_BIN']
+  it.skipIf(!bin)('says a finished sketch needs the app', async () => {
+    const env = { SLICERX_SX_GEOM_BIN: bin ?? '' }
+    const e = await cli(['--no-app', 'call', 'design_sketch', '{"loops":[{"type":"circle","center":[0,0],"diameterMm":10}]}'], env)
+    expect(e?.code).toBe(1)
+    expect(e?.stdout).toMatch(/turn on the app link/)
+  }, 30_000)
+})
+

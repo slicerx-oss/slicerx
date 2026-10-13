@@ -17,6 +17,7 @@ export const APP_DESIGN_TOOLS = new Set([
   'design.redo',
   'design.timeline',
   'design.roll',
+  'design.sketch',
   'geom.faces',
   'geom.face_pick',
   'geom.edge_pick',
