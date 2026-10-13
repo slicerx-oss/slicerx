@@ -289,6 +289,59 @@ describe('the mimir cloud share setting through a scripted hub', () => {
   })
 })
 
+describe('mimir cloud status through a scripted hub', () => {
+  const link = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+  const quota = { edition: 'slicerx', day: '2026-10-13', installUsed: 120_000, installCap: 500_000, ipUsed: 120_000, ipCap: 2_000_000, editionOpen: true }
+
+  it('reads the status from the open app in a stable shape, with nothing secret in it', async () => {
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      if (method !== 'mimir.status') throw { code: 'bad_request', message: `unknown method ${method}` }
+      // anything else the app might add stays out of what the client gets
+      return { cloud: true, enabled: true, needsSignIn: false, signedIn: true, quota: { ...quota, token: 'install-token' }, quotaError: null, key: 'sk-never' }
+    })
+    const h = await connect(link(hub))
+    const r = await h.call('slicerx_mimir_cloud_status')
+    expect(r.isError, text(r)).toBeFalsy()
+    const out = data<{ output: unknown }>(r).output
+    expect(out).toEqual({
+      cloud: true,
+      enabled: true,
+      signed_in: true,
+      needs_sign_in: false,
+      quota: { day: '2026-10-13', edition: 'slicerx', open: true, install: { used_usd: 0.12, cap_usd: 0.5, left_usd: 0.38 }, network: { used_usd: 0.12, cap_usd: 2 }, resets: 'midnight, Australia/Melbourne' },
+      quota_error: null,
+    })
+    expect(JSON.stringify(r)).not.toMatch(/install-token|sk-never/)
+    expect(text(r)).toMatch(/mimir runs on mimir cloud\. \$0\.38 of \$0\.50/)
+  })
+
+  it('reads a build without the cloud, and one that waits for a sign-in', async () => {
+    const answers = [
+      { cloud: false, enabled: false, needsSignIn: false, signedIn: null, quota: null, quotaError: null },
+      { cloud: true, enabled: false, needsSignIn: true, signedIn: false, quota: null, quotaError: null },
+    ]
+    const hub = scriptedHub({ ok: true }, true, undefined, () => answers.shift())
+    const h = await connect(link(hub))
+    const none = await h.call('slicerx_mimir_cloud_status')
+    expect(data<{ output: unknown }>(none).output).toEqual({ cloud: false, enabled: false, signed_in: null, needs_sign_in: false, quota: null, quota_error: null })
+    expect(text(none)).toMatch(/has no mimir cloud in this build/)
+    const waits = await h.call('slicerx_mimir_cloud_status')
+    expect(data<{ output: unknown }>(waits).output).toMatchObject({ cloud: true, enabled: false, signed_in: false, needs_sign_in: true })
+    expect(text(waits)).toMatch(/waits for the person to sign in/)
+  })
+
+  it('says how to reach the app while the link is off, or without sx-link', async () => {
+    const h = await connect(link(scriptedHub({ ok: true })))
+    const r = await h.call('slicerx_mimir_cloud_status')
+    expect(r.isError).toBe(true)
+    expect(text(r)).toMatch(/^Error: not_configured: the app link to .+ does not answer \(app_link_off\)/)
+    const demo = await connect({ printers: 'demo' })
+    const off = await demo.call('slicerx_mimir_cloud_status')
+    expect(off.isError).toBe(true)
+    expect(text(off)).toMatch(/--printers link/)
+  })
+})
+
 describe('a dimension sheet through a scripted hub', () => {
   const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
 

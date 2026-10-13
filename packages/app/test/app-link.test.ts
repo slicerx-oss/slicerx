@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { answerAsk, hostAppLink, linkAsks } from '../src/app-link/host'
-import { APP_LINK_METHODS, LinkError, runCall } from '../src/app-link/methods'
+import { APP_LINK_METHODS, LinkError, runCall, useLinkSession } from '../src/app-link/methods'
 import { AppLinkPrompt, ARM_MS } from '../src/app-link/prompt'
 import { AgentsSection } from '../src/app-link/section'
 import type { BridgeAppLink } from '../src/link/bridge'
@@ -150,6 +150,47 @@ describe('the mimir cloud share setting over the link', () => {
       expect(await runCall('mimir.share', {})).toMatchObject({ cloud: true, onCloud: false })
       expect(APP_LINK_METHODS['mimir.share']).toBe('read')
     } finally {
+      registerMimirCloud(null)
+      setCurrentEdition(before)
+      set(was)
+    }
+  })
+})
+
+describe('mimir cloud status over the link', () => {
+  const CLOUD = { ...NEUTRAL, ai: { ...NEUTRAL.ai, keySource: 'cloud' as const }, backend: { ...NEUTRAL.backend, supabase: { url: 'https://abcdefghijklmnop.supabase.co', anonKey: 'public-anon-key-from-the-supabase-dashboard' } } }
+  const quota = { edition: 'slicerx', day: '2026-10-13', installUsed: 120_000, installCap: 500_000, ipUsed: 120_000, ipCap: 2_000_000, editionOpen: true }
+
+  it('says what a client needs: offered, in use, signed in, and today\'s use, never the report or a token', async () => {
+    const before = currentEdition()
+    const was = { pilot: get().pilot }
+    const read = vi.fn(async () => ({ ...quota, v2: { token: 'never-shown' } }))
+    try {
+      set({ pilot: null })
+      expect(await runCall('mimir.status', {})).toEqual({ cloud: false, enabled: false, needsSignIn: false, signedIn: null, quota: null, quotaError: null })
+      setCurrentEdition(CLOUD)
+      registerMimirCloud({ quota: read, forget: async () => 0, register: async () => undefined })
+      useLinkSession(async () => true)
+      const on = await runCall('mimir.status', {})
+      expect(on).toEqual({ cloud: true, enabled: true, needsSignIn: false, signedIn: true, quota, quotaError: null })
+      expect(JSON.stringify(on)).not.toContain('never-shown')
+      // the person's own model: no quota read, so no install is registered for it
+      read.mockClear()
+      set({ pilot: { mode: 'on', provider: 'openai' } })
+      expect(await runCall('mimir.status', {})).toMatchObject({ cloud: true, enabled: false, quota: null })
+      expect(read).not.toHaveBeenCalled()
+      // the browser's cloud waits for a sign-in
+      set({ pilot: null })
+      useLinkSession(async () => false)
+      registerMimirCloud({ needsSignIn: true, quota: read, forget: async () => 0, register: async () => undefined })
+      expect(await runCall('mimir.status', {})).toMatchObject({ cloud: true, enabled: false, needsSignIn: true, signedIn: false, quota: null })
+      expect(read).not.toHaveBeenCalled()
+      // a failed read says why, in plain words, and the rest still reads
+      registerMimirCloud({ quota: async () => { throw Object.assign(new Error('mimir cloud did not answer'), { code: 'offline' }) }, forget: async () => 0, register: async () => undefined })
+      expect(await runCall('mimir.status', {})).toMatchObject({ enabled: true, quota: null, quotaError: { code: 'offline', message: 'mimir cloud did not answer' } })
+      expect(APP_LINK_METHODS['mimir.status']).toBe('read')
+    } finally {
+      useLinkSession(null)
       registerMimirCloud(null)
       setCurrentEdition(before)
       set(was)
