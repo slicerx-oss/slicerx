@@ -18,7 +18,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { basename, join } from 'node:path'
 import { createInterface } from 'node:readline/promises'
-import { connectLink } from '../../../link-client/src/index.ts'
+import { connectLink, hubUrlFromEnv } from '../../../link-client/src/index.ts'
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith('--') ? [...acc, [a.slice(2), all[i + 1]?.startsWith('--') ? 'true' : (all[i + 1] ?? 'true')]] : acc), []),
@@ -117,7 +117,8 @@ async function waitState(host, want, ms = 120_000) {
   }
 }
 
-const host = await connectLink({ url: args.url ?? 'ws://127.0.0.1:47615', code: appCode(), hubKey: hubKey() })
+// Without --url, the hub a test or dev run names in SX_TEST_HUB_PORT, else sx-link's default.
+const host = await connectLink({ url: args.url ?? hubUrlFromEnv(process.env), code: appCode(), hubKey: hubKey() })
 report.hubKey = host.hubKey ?? null
 
 if (steps.has('read')) {

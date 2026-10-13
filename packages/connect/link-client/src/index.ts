@@ -829,8 +829,23 @@ export interface ServiceEntry {
   hasSecret: boolean
 }
 
+/** sx-link's address on this computer when nothing names another: its default port on 127.0.0.1. */
+export const DEFAULT_HUB_URL = 'ws://127.0.0.1:47615'
+
+/**
+ * The hub address a tool on this computer uses when it is given none: the loopback port a test or dev run names in
+ * `SX_TEST_HUB_PORT` (a whole number from 1024 to 65535), else {@link DEFAULT_HUB_URL}. The desktop app's test and dev
+ * builds, sx-link and sx-watch read the same variable, so one setting moves the hub and every client together. Pass
+ * the environment explicitly (`process.env` in Node); a browser has none and keeps the default.
+ */
+export function hubUrlFromEnv(env: Readonly<Record<string, string | undefined>> | undefined): string {
+  const raw = env?.['SX_TEST_HUB_PORT']?.trim() ?? ''
+  const port = /^\d+$/.test(raw) ? Number(raw) : NaN
+  return Number.isInteger(port) && port >= 1024 && port <= 65535 ? `ws://127.0.0.1:${port}` : DEFAULT_HUB_URL
+}
+
 export interface ConnectOptions {
-  /** Default `ws://127.0.0.1:47615`. */
+  /** Default {@link DEFAULT_HUB_URL}. */
   url?: string
   /**
    * The app code `sx-link` printed (`sx-link code`), or for the MCP server and other tools the agent
@@ -867,7 +882,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   // proved the pinned key. Without a pin any program on the port could sign its own hello and keep it.
   if (opts.clientKey && !opts.code && !opts.hubKey) throw new LinkError('hub_identity', 'A saved client key is sent only to a hub whose key is pinned (hubKey). Nothing was sent.')
   const WS = opts.WebSocket ?? globalThis.WebSocket
-  const ws = new WS(opts.url ?? 'ws://127.0.0.1:47615')
+  const ws = new WS(opts.url ?? DEFAULT_HUB_URL)
   await new Promise<void>((resolve, reject) => {
     ws.addEventListener('open', () => resolve(), { once: true })
     ws.addEventListener('error', () => reject(new LinkError('unreachable', 'Cannot reach sx-link. Is it running?')), { once: true })
@@ -1034,7 +1049,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     })
 
   // Who answers on this port? With a pinned key, nothing secret goes out until the hub proves it.
-  const url = new URL(opts.url ?? 'ws://127.0.0.1:47615')
+  const url = new URL(opts.url ?? DEFAULT_HUB_URL)
   const port = Number(url.port || (url.protocol === 'wss:' ? 443 : 80))
   let hello: HubHello
   try {

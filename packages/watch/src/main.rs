@@ -11,7 +11,8 @@
 //! pinned. The model is looked for beside this binary (or `--model`, `SX_WATCH_MODEL`); without
 //! it the watch runs the stub, which reports nothing. `--huginn` (or `SX_WATCH_HUGINN`) lists
 //! the printers whose suspected failures huginn confirms on the ChatGPT plan saved in the
-//! keychain; it is off unless given.
+//! keychain; it is off unless given. Without `--url`, a test or dev run's `SX_TEST_HUB_PORT` (1024 or above) names
+//! the hub's loopback port, as it does for sx-link and the app.
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -58,6 +59,18 @@ fn read_secret(path: &std::path::Path) -> Result<String, String> {
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// The hub's address: `--url` when given, else the loopback port a test or dev run names in `SX_TEST_HUB_PORT` (a port
+/// from 1024 up), else sx-link's default port.
+fn hub_url(flag: Option<String>, setting: Option<&str>) -> String {
+    flag.unwrap_or_else(|| {
+        let port = setting
+            .and_then(|v| v.trim().parse::<u16>().ok())
+            .filter(|p| *p >= 1024)
+            .unwrap_or(47615);
+        format!("ws://127.0.0.1:{port}")
+    })
+}
+
 fn options() -> Result<Options, String> {
     let args: Vec<String> = std::env::args().collect();
     let arg = |name: &str| {
@@ -69,7 +82,7 @@ fn options() -> Result<Options, String> {
     if args.iter().any(|a| a == "--code") {
         return Err("--code is not accepted, since other users can read command lines. Set SX_WATCH_CODE or keep the hub's watch-code file.".into());
     }
-    let url = arg("--url").unwrap_or_else(|| "ws://127.0.0.1:47615".into());
+    let url = hub_url(arg("--url"), std::env::var("SX_TEST_HUB_PORT").ok().as_deref());
     let dir = arg("--state-dir")
         .map(PathBuf::from)
         .or_else(default_state_dir)
@@ -189,5 +202,22 @@ async fn watch<D: Detector>(opts: &Options, mut session: Session<D>, confirm: Op
         }
         tokio::time::sleep(wait).await;
         wait = (wait * 2).min(Duration::from_secs(60));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hub_url;
+
+    #[test]
+    fn url_wins_then_the_run_port_then_the_default() {
+        assert_eq!(hub_url(None, None), "ws://127.0.0.1:47615");
+        assert_eq!(hub_url(None, Some("48015")), "ws://127.0.0.1:48015");
+        assert_eq!(hub_url(None, Some("80")), "ws://127.0.0.1:47615");
+        assert_eq!(hub_url(None, Some("x")), "ws://127.0.0.1:47615");
+        assert_eq!(
+            hub_url(Some("ws://127.0.0.1:47700".into()), Some("48015")),
+            "ws://127.0.0.1:47700"
+        );
     }
 }
