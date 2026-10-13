@@ -120,12 +120,18 @@ pub(crate) async fn start_bridge(
     let cfg = gate_watch_pause(cfg, std::env::var("SX_GATE_WATCH_PAUSE").ok().as_deref());
     match serve_with_approvals(cfg, Arc::new(BrokerGate(broker.clone())), secrets, Some(broker)).await {
         Ok(link) => Ok(link),
-        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => Err(format!(
-            "Port {port} is in use by another program, so the printer bridge did not start. If sx-link is already running, {} can use it; otherwise close the program holding the port.",
-            crate::brand::get().name
-        )),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => Err(port_in_use(port)),
         Err(e) => Err(format!("The printer bridge did not start: {e}")),
     }
+}
+
+/// What the person reads when another program holds the hub's port: shown on the Printers page and in Settings. The app
+/// never uses a hub it did not start (see `start_bridge`), so it asks for that program to be closed.
+#[cfg(feature = "connect")]
+pub(crate) fn port_in_use(port: u16) -> String {
+    format!(
+        "Port {port} is in use by another program, so the printer bridge did not start. Close that program, such as an sx-link left running, then try again."
+    )
 }
 
 /// The release gate's watch pause timings for a bridge test build: `SX_GATE_WATCH_PAUSE` as
@@ -227,7 +233,7 @@ mod tests {
                 .await
                 .err()
                 .unwrap();
-            assert!(err.contains("in use"), "{err}");
+            assert_eq!(err, super::port_in_use(port));
             drop(squatter);
             match start_bridge(port, Arc::new(sx_connect::MemorySecrets::new()), None).await {
                 Ok(link) => {
@@ -238,6 +244,19 @@ mod tests {
                 Err(e) => panic!("{e}"),
             }
         }
+    }
+
+    /// The app never connects to a hub it did not start, so the message must not say it can use one; it names the port
+    /// and what to do, in two short sentences.
+    #[test]
+    fn a_taken_port_says_what_to_do_in_plain_words() {
+        let text = super::port_in_use(47615);
+        assert_eq!(
+            text,
+            "Port 47615 is in use by another program, so the printer bridge did not start. Close that program, such as an sx-link left running, then try again."
+        );
+        assert!(!text.contains("can use it"), "{text}");
+        assert_eq!(text.matches(". ").count() + 1, 2, "{text}");
     }
 
     /// The page connects to the URL `link_start` returns, so the webview's CSP must allow it. Without
