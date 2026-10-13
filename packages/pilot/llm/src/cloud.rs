@@ -29,17 +29,29 @@ const PROVIDER: &str = "mimir-cloud";
 /// How long register, quota and forget wait.
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Where the proxy lives and the edition it registers for.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Where the proxy lives, the edition it registers for and the edition's registration key.
+#[derive(Clone, PartialEq, Eq)]
 pub struct MimirCloud {
     origin: Url,
     edition: String,
+    register_key: String,
+}
+
+impl std::fmt::Debug for MimirCloud {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MimirCloud")
+            .field("origin", &self.origin.as_str())
+            .field("edition", &self.edition)
+            .finish_non_exhaustive()
+    }
 }
 
 impl MimirCloud {
     /// The proxy on `base_url` (the edition's `backend.supabase.url`; only its origin is used)
-    /// for `edition`. https only; debug builds also take `http://127.0.0.1` for a local stack.
-    pub fn new(base_url: &str, edition: &str) -> Result<Self> {
+    /// for `edition`, registering with the edition's build `register_key` (16 to 128 letters,
+    /// digits, `-` or `_`; the proxy keeps only its hash). https only; debug builds also take
+    /// `http://127.0.0.1` for a local stack.
+    pub fn new(base_url: &str, edition: &str, register_key: &str) -> Result<Self> {
         let bad = || Error::InvalidUrl {
             provider: PROVIDER.to_owned(),
         };
@@ -53,13 +65,14 @@ impl MimirCloud {
                 host: host.to_owned(),
             });
         }
-        if !edition_ok(edition) {
+        if !edition_ok(edition) || !register_key_ok(register_key) {
             return Err(bad());
         }
         let origin = Url::parse(&url.origin().ascii_serialization()).map_err(|_| bad())?;
         Ok(Self {
             origin,
             edition: edition.to_owned(),
+            register_key: register_key.to_owned(),
         })
     }
 
@@ -106,12 +119,19 @@ fn edition_ok(id: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+fn register_key_ok(key: &str) -> bool {
+    (16..=128).contains(&key.len())
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
 static CLOUD: OnceLock<MimirCloud> = OnceLock::new();
 
 /// Sets the proxy for this process, once, at startup. Setting the same again is fine; a
 /// different one is refused, so nothing later can move the token to another host.
-pub fn set_mimir_cloud(base_url: &str, edition: &str) -> Result<()> {
-    let cloud = MimirCloud::new(base_url, edition)?;
+pub fn set_mimir_cloud(base_url: &str, edition: &str, register_key: &str) -> Result<()> {
+    let cloud = MimirCloud::new(base_url, edition, register_key)?;
     let set = CLOUD.get_or_init(|| cloud.clone());
     if *set == cloud {
         Ok(())
@@ -165,7 +185,7 @@ pub async fn register(store: &dyn SecretStore, cloud: &MimirCloud) -> Result<()>
 }
 
 async fn register_now(store: &dyn SecretStore, cloud: &MimirCloud) -> Result<ApiKey> {
-    let body = serde_json::json!({ "edition": cloud.edition }).to_string();
+    let body = serde_json::json!({ "edition": cloud.edition, "key": cloud.register_key }).to_string();
     let send = client()?
         .post(cloud.route("/register")?)
         .header(CONTENT_TYPE, "application/json")

@@ -181,6 +181,8 @@ if ($Release) {
     $sign = [pscustomobject]@{ cmd = 'powershell.exe'; args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'windows-sign.ps1'), '-File', '%1') }
     $conf.bundle.windows | Add-Member signCommand $sign -Force
     [IO.File]::WriteAllText((Join-Path $repo "$gen/edition.signed.conf.json"), ($conf | ConvertTo-Json -Depth 30), (New-Object Text.UTF8Encoding($false)))
+    # The edition's mimir cloud registration key comes from the environment; without it the app has no mimir cloud.
+    if (-not $env:SX_MIMIR_REGISTER_KEY) { Write-Warning 'no SX_MIMIR_REGISTER_KEY, so this build has no mimir cloud' }
     Push-Location apps/desktop
     try { Run 'signed build' { pnpm tauri build --config src-tauri/gen/edition.signed.conf.json --target $triple --bundles 'nsis,msi' } } finally { Pop-Location }
     $target = Join-Path $repo "target\$triple\release"

@@ -120,6 +120,8 @@ pub(crate) fn check_headers(headers: &BTreeMap<String, String>) -> Result<Header
 mod tests {
     use super::*;
 
+    const REGISTER_KEY: &str = "slicerx-test-key-0123";
+
     #[test]
     fn url_allowlist() {
         let cases = [
@@ -213,7 +215,7 @@ mod tests {
 
     #[test]
     fn mimir_cloud_allows_only_its_endpoint() {
-        let cloud = MimirCloud::new("https://abcdefghijklmnop.supabase.co", "slicerx").unwrap();
+        let cloud = MimirCloud::new("https://abcdefghijklmnop.supabase.co", "slicerx", REGISTER_KEY).unwrap();
         let cases = [
             (
                 "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages",
@@ -309,25 +311,32 @@ mod tests {
 
     #[test]
     fn mimir_cloud_host_must_be_https() {
-        assert!(MimirCloud::new("https://x.supabase.co/rest/v1", "slicerx").is_ok());
+        assert!(MimirCloud::new("https://x.supabase.co/rest/v1", "slicerx", REGISTER_KEY).is_ok());
         assert_eq!(
-            MimirCloud::new("https://x.supabase.co/anything", "slicerx")
+            MimirCloud::new("https://x.supabase.co/anything", "slicerx", REGISTER_KEY)
                 .unwrap()
                 .messages_url(),
             "https://x.supabase.co/functions/v1/mimir/v1/messages"
         );
-        assert!(MimirCloud::new("http://x.supabase.co", "slicerx").is_err());
-        assert!(MimirCloud::new("https://u:p@x.supabase.co", "slicerx").is_err());
-        assert!(MimirCloud::new("not a url", "slicerx").is_err());
-        assert!(MimirCloud::new("https://x.supabase.co", "Bad Edition").is_err());
-        assert!(MimirCloud::new("https://x.supabase.co", "").is_err());
+        assert!(MimirCloud::new("http://x.supabase.co", "slicerx", REGISTER_KEY).is_err());
+        assert!(MimirCloud::new("https://u:p@x.supabase.co", "slicerx", REGISTER_KEY).is_err());
+        assert!(MimirCloud::new("not a url", "slicerx", REGISTER_KEY).is_err());
+        assert!(MimirCloud::new("https://x.supabase.co", "Bad Edition", REGISTER_KEY).is_err());
+        assert!(MimirCloud::new("https://x.supabase.co", "", REGISTER_KEY).is_err());
+        // the build's registration key has the proxy's shape, or the cloud is off
+        assert!(MimirCloud::new("https://x.supabase.co", "slicerx", "short").is_err());
+        assert!(MimirCloud::new("https://x.supabase.co", "slicerx", "has a space in it ok").is_err());
+        assert!(MimirCloud::new("https://x.supabase.co", "slicerx", &"k".repeat(129)).is_err());
+        // and never shows in a debug print
+        let c = MimirCloud::new("https://x.supabase.co", "slicerx", REGISTER_KEY).unwrap();
+        assert!(!format!("{c:?}").contains(REGISTER_KEY));
         // a local stack in debug builds (tests are one), never another http host
         assert_eq!(
-            MimirCloud::new("http://127.0.0.1:54321", "slicerx").is_ok(),
+            MimirCloud::new("http://127.0.0.1:54321", "slicerx", REGISTER_KEY).is_ok(),
             cfg!(debug_assertions)
         );
-        assert!(MimirCloud::new("http://localhost:54321", "slicerx").is_err());
-        assert!(MimirCloud::new("http://192.168.1.2:54321", "slicerx").is_err());
+        assert!(MimirCloud::new("http://localhost:54321", "slicerx", REGISTER_KEY).is_err());
+        assert!(MimirCloud::new("http://192.168.1.2:54321", "slicerx", REGISTER_KEY).is_err());
     }
 
     #[test]

@@ -108,16 +108,26 @@ pub async fn llm_billing() -> Option<&'static str> {
     .unwrap_or(None)
 }
 
+/// The edition's registration key for mimir cloud, from the build's `SX_MIMIR_REGISTER_KEY`
+/// (a release secret per edition; the proxy keeps only its hash). A build without one has no
+/// mimir cloud.
+const REGISTER_KEY: Option<&str> = option_env!("SX_MIMIR_REGISTER_KEY");
+
 /// The edition's mimir cloud, from the `mimir-cloud` entry the edition overlay writes into the
 /// Tauri config (`{url, edition}`, packages/edition-config tauriConfig). Set once at startup, so
-/// the webview can never move the install token to another host. No entry: not available.
+/// the webview can never move the install token to another host. No entry or no registration
+/// key: not available.
 pub fn init_cloud(config: &tauri::Config) {
     let Some(c) = config.plugins.0.get("mimir-cloud") else {
         return;
     };
+    let Some(key) = REGISTER_KEY else {
+        eprintln!("mimir cloud is off: this build has no registration key");
+        return;
+    };
     let url = c.get("url").and_then(|v| v.as_str()).unwrap_or_default();
     let edition = c.get("edition").and_then(|v| v.as_str()).unwrap_or_default();
-    if let Err(e) = sx_llm::set_mimir_cloud(url, edition) {
+    if let Err(e) = sx_llm::set_mimir_cloud(url, edition, key) {
         eprintln!("mimir cloud is off: {e}");
     }
 }

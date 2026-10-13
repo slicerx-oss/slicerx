@@ -11,6 +11,7 @@ name: desktop-release
 #   macOS:   APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
 #            APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
 #   Windows: WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD
+# mimir cloud: SX_MIMIR_REGISTER_KEY, the edition's registration key; without it the app has no mimir cloud.
 # No updater artifacts or TAURI_SIGNING_PRIVATE_KEY here: update bundles are signed on the release Mac
 # (apps/desktop/release/updates.md).
 
@@ -194,6 +195,7 @@ jobs:
         id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SX_MIMIR_REGISTER_KEY: ${{ secrets.SX_MIMIR_REGISTER_KEY }}
         with:
           projectPath: apps/desktop
           tagName: v${{ needs.version.outputs.version }}
