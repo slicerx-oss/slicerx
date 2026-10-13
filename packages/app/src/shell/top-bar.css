@@ -12,3 +12,5 @@
 .sx-tab-more .sx-menu-item .tab-dot { margin-left: 8px; }
 /* On the mimir tab its chat is on screen: the dock button keeps its place but hides. */
 .mimir-btn[data-hidden] { visibility: hidden; }
+/* a phone-width bar has no room for the name; the icon and its tip stay */
+@media (max-width: 480px) { .mimir-btn-label { display: none; } }

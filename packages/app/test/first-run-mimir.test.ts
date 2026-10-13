@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { Host } from '@slicerx/contracts'
 import { EditionContext, NEUTRAL } from '../src/edition'
 import { HostContext } from '../src/host'
-import { MimirStep, mimirChoices, type MimirChoice } from '../src/first-run/mimir-step'
+import { MimirStep, mimirChoices, mimirOnFinish, type MimirChoice } from '../src/first-run/mimir-step'
+import { registerMimirCloud } from '../src/pilot-connect/cloud'
 import { BASE_STEPS, contractStep, initialFlow, normalizeStep, progress, reduceFlow, stepLabel, type FlowEvent, type FlowState } from '../src/first-run/model'
 import { registerLocalAi, type LocalNet } from '../src/pilot-connect/local-ai'
 import { localAiJob, resetLocalAi } from '../src/pilot-connect/local-ai-job'
@@ -21,6 +22,7 @@ const sse = (...events: unknown[]): string => [...events.map((e) => `data: ${JSO
 
 afterEach(() => {
   cleanup()
+  registerMimirCloud(null)
   registerLocalAi(null)
   resetLocalAi()
   set({ pilot: null, toast: null })
@@ -52,6 +54,34 @@ describe('first run with the mimir step', () => {
     const ids = (o: ReturnType<typeof mimirChoices>) => o.map((c) => c.id)
     expect(ids(mimirChoices({ signIn: true, localAi: true }))).toEqual(['chatgpt', 'key', 'local', 'skip'])
     expect(ids(mimirChoices({ signIn: false, localAi: false }))).toEqual(['key', 'skip'])
+    expect(ids(mimirChoices({ cloud: 'ready', signIn: true, localAi: true }))).toEqual(['cloud', 'chatgpt', 'key', 'local', 'skip'])
+    expect(ids(mimirChoices({ cloud: 'sign-in', signIn: false, localAi: false, skip: false }))).toEqual(['cloud', 'key'])
+  })
+
+  it('puts mimir cloud first where the edition has it and the shell carries it, and connects it on finish', () => {
+    const cloudEdition = { ...NEUTRAL, ai: { ...NEUTRAL.ai, keySource: 'cloud' as const }, backend: { ...NEUTRAL.backend, supabase: { url: 'https://abcdefghijklmnop.supabase.co', anonKey: 'public-anon-key-from-the-supabase-dashboard' } } }
+    const step = () => inHost(createElement(EditionContext.Provider, { value: cloudEdition }, createElement(MimirStep, { choice: 'cloud', onChoose: () => undefined })))
+    const names = () => screen.getAllByRole('radio').map((r) => r.querySelector('.ms-card-name')?.textContent)
+    // no shell host yet (the browser build today): no cloud choice
+    const view = render(step())
+    expect(names()).toEqual(['Use your own API key', 'Skip for now'])
+    const cloudHost = { quota: async () => { throw new Error('unused') }, forget: async () => 0, register: async () => undefined }
+    // the browser's host while signed out: the cloud is offered as a sign-in
+    act(() => registerMimirCloud({ ...cloudHost, needsSignIn: true }))
+    expect(names()).toEqual(['Sign in to use mimir free', 'Use your own API key', 'Skip for now'])
+    act(() => registerMimirCloud({ ...cloudHost, needsSignIn: false }))
+    expect(names()).toEqual(['mimir cloud, free daily', 'Use your own API key', 'Skip for now'])
+    expect(screen.getByTestId('ms-cloud-note').textContent).toContain('No key to paste')
+    view.unmount()
+    expect(mimirOnFinish('cloud')).toEqual({ mode: 'on', provider: 'mimir-cloud' })
+    for (const c of ['key', 'chatgpt', 'local', 'skip'] as const) expect(mimirOnFinish(c)).toBeNull()
+  })
+
+  it('offers a local model only where the shell can run one', () => {
+    render(inHost(createElement(MimirStep, { choice: 'skip', onChoose: () => undefined })))
+    expect(screen.queryByRole('radio', { name: /Run a local model/ })).toBeNull()
+    act(() => registerLocalAi(() => ({ hardware: async () => ({ gpu: null, ramMb: 16384, cores: 8, source: 'desktop' }), net: { get: async () => null, post: () => (async function* () {})() } })))
+    expect(screen.getByRole('radio', { name: /Run a local model/ })).toBeTruthy()
   })
 
   it('a local model keeps downloading after setup closes, then mimir switches with a toast', async () => {

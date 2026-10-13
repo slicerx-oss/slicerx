@@ -19,6 +19,7 @@ import { closeDock, toggleDock, useDockOpen } from './dock-state'
 import { watchOf, type Watch } from './watch'
 import { usePilot } from './use-pilot'
 import { ChatGptCard } from '../../pilot-connect/chatgpt-card'
+import { MimirSetup } from '../../pilot-connect/mimir-setup'
 import { Loading } from '../../shell/loading'
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import './dock.css'
@@ -155,8 +156,7 @@ function DockRun(p: {
 }
 
 /**
- * Before a model is connected the panel is the connect step from Settings > mimir: ChatGPT sign-in
- * first, an API key as the fallback. Nothing here builds a Pilot or calls a model; a question
+ * Before a model is connected the panel is the shared mimir setup, the same as in Settings > mimir and first-run. Nothing here builds a Pilot or calls a model; a question
  * handed over from Cmd+K waits in the store and runs once the connection is made.
  */
 function ConnectStep() {
@@ -166,7 +166,7 @@ function ConnectStep() {
       <p className="sx-small sx-muted">
         {waiting ? `Connect a model and ${ASSISTANT_NAME} answers "${waiting}".` : `Connect a model and ${ASSISTANT_NAME} answers questions about your prints and suggests changes you approve.`} Nothing is sent until you connect.
       </p>
-      <ChatGptCard idPrefix="mimir-cg" />
+      <MimirSetup place="panel" idPrefix="mimir-ms" />
       <p className="sx-small sx-muted">
         Do not want {ASSISTANT_NAME}?{' '}
         <LinkButton

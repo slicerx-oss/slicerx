@@ -2,7 +2,7 @@
 /* Copyright (C) 2026 The SlicerX contributors */
 /* Connect mimir */
 .pc { display: flex; flex-direction: column; gap: var(--s-4); }
-.pc-providers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
+.pc-providers { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: var(--s-2); }
 .pc-provider { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); color: var(--fg); text-align: left; cursor: pointer; font: var(--fs-md) var(--f-body); }
 .pc-provider[data-on] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--ink-1)); }
 .pc-provider b { display: block; margin-bottom: 2px; }
@@ -112,3 +112,22 @@
 .pc-notice { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); text-align: left; color: var(--fg); }
 .pc-notice h3 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 .pc-notice p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--muted); }
+
+/* The shared mimir setup (mimir-setup.tsx): one radiogroup of flat cards, then the picked card's panel. */
+.ms { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.ms-cards { display: flex; flex-direction: column; gap: var(--s-2); }
+.ms-card { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4) var(--s-3) var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); cursor: pointer; transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.ms-card:hover { border-color: var(--line); background: var(--ink-2); }
+.ms-card[data-on] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--ink-1)); }
+.ms-card:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.ms-card-ic { flex: none; width: 36px; height: 36px; display: grid; place-items: center; color: var(--muted); }
+.ms-card[data-on] .ms-card-ic { color: var(--accent); }
+.ms-card-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.ms-card-name { font-weight: var(--fw-semibold); font-size: var(--fs-body); color: var(--fg); }
+.ms-card-sum { color: var(--muted); font-size: var(--fs-md); }
+.ms-radio { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--dim); }
+.ms-card[data-on] > .ms-radio { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px); }
+.ms-detail:empty { display: none; }
+.ms-signin { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-2); }
+.ms[data-place='panel'] .ms-card { padding: var(--s-2) var(--s-3); }
+.ms[data-place='panel'] .ms-card-ic { width: 28px; height: 28px; }
