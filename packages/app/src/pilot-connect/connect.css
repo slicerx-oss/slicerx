@@ -131,3 +131,8 @@
 .ms-signin { display: flex; flex-direction: column; gap: var(--s-2); }
 .ms[data-place='panel'] .ms-card { padding: var(--s-2) var(--s-3); }
 .ms[data-place='panel'] .ms-card-ic { width: 28px; height: 28px; }
+/* delete saved chats: its three states share one cell, so the row never changes height */
+.pc-forget { display: grid; margin-top: var(--s-2); }
+.pc-forget > * { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: 0; visibility: hidden; }
+.pc-forget [role='alertdialog'] > span { flex-basis: 100%; }
+.pc-forget > [data-on] { visibility: visible; }
