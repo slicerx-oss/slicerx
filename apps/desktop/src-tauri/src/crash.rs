@@ -16,6 +16,10 @@ static DIR: OnceLock<PathBuf> = OnceLock::new();
 static PAGE_LOADS: AtomicU32 = AtomicU32::new(0);
 static SEQ: AtomicU32 = AtomicU32::new(0);
 static HOOK: Once = Once::new();
+/// This run's app version, set in main from the app's config, and its commit, from the page's build (`crash_take`).
+/// Write-once, so the panic hook reads them without a lock.
+static VERSION: OnceLock<String> = OnceLock::new();
+static COMMIT: OnceLock<String> = OnceLock::new();
 
 const PREFIX: &str = "crash-";
 /// Keeps a runaway panic loop from filling the disk.
@@ -33,6 +37,12 @@ pub struct NativeCrash {
     pub stack: String,
     /// ms since the epoch.
     pub at: u64,
+    /// The app version and commit that crashed, which may not be the ones that send the report (an update in between).
+    /// Empty when unknown: a file from an older version, or a panic before they were set.
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub commit: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -68,6 +78,20 @@ pub fn set_dir(app: &AppHandle) {
     }
 }
 
+/// Sets the app version reports are stamped with. Called once in main, right after the config is read.
+pub fn set_version(version: &str) {
+    let _ = VERSION.set(version.chars().take(40).collect());
+}
+
+/// Sets the commit reports are stamped with: the page's build commit, a git hash or `dev`. Anything else is ignored.
+fn set_commit(commit: &str) {
+    let ok = commit == "dev"
+        || ((7..=40).contains(&commit.len()) && commit.chars().all(|c| c.is_ascii_hexdigit()));
+    if ok {
+        let _ = COMMIT.set(commit.to_string());
+    }
+}
+
 /// Writes one report file. Never panics: it runs inside the panic hook.
 pub fn write_report(dir: &Path, source: &str, title: &str, stack: &str) -> Option<PathBuf> {
     std::fs::create_dir_all(dir).ok()?;
@@ -86,6 +110,8 @@ pub fn write_report(dir: &Path, source: &str, title: &str, stack: &str) -> Optio
         title: title.chars().take(200).collect(),
         stack: stack.chars().take(50_000).collect(),
         at,
+        version: VERSION.get().cloned().unwrap_or_default(),
+        commit: COMMIT.get().cloned().unwrap_or_default(),
     };
     let path = dir.join(format!(
         "{PREFIX}{at}-{}-{}.json",
@@ -267,9 +293,13 @@ fn os_name() -> String {
     std::env::consts::OS.into()
 }
 
-/// The reports waiting, the page load count (raised when `page_load` is true) and the OS.
+/// The reports waiting, the page load count (raised when `page_load` is true) and the OS. `commit` is the page's build
+/// commit, which reports written after this are stamped with.
 #[tauri::command]
-pub fn crash_take(page_load: bool) -> Taken {
+pub fn crash_take(page_load: bool, commit: Option<String>) -> Taken {
+    if let Some(c) = commit {
+        set_commit(&c);
+    }
     let page_loads = if page_load {
         PAGE_LOADS.fetch_add(1, Ordering::SeqCst) + 1
     } else {
@@ -405,10 +435,33 @@ mod tests {
 
     #[test]
     fn counts_page_loads_only_when_asked() {
-        let before = crash_take(false).page_loads;
-        let after = crash_take(true).page_loads;
+        let before = crash_take(false, None).page_loads;
+        let after = crash_take(true, None).page_loads;
         assert_eq!(after, before + 1);
-        assert_eq!(crash_take(false).page_loads, after);
+        assert_eq!(crash_take(false, None).page_loads, after);
+    }
+
+    #[test]
+    fn stamps_each_report_with_the_version_and_commit_that_crashed() {
+        let d = temp("stamp");
+        set_version("0.2.6");
+        let _ = crash_take(false, Some("not a commit".into()));
+        let _ = crash_take(false, Some("0f15b63a91c2".into()));
+        write_report(&d, "panic", "Rust panic: boom", "").unwrap();
+        let got = read_reports(std::slice::from_ref(&d));
+        assert_eq!(
+            (got[0].version.as_str(), got[0].commit.as_str()),
+            ("0.2.6", "0f15b63a91c2")
+        );
+        // A file written by a version without the fields still reads, with them empty.
+        std::fs::write(
+            d.join("crash-1-1-1.json"),
+            r#"{"source":"panic","title":"t","stack":"","at":1}"#,
+        )
+        .unwrap();
+        let old = read_reports(std::slice::from_ref(&d));
+        assert_eq!((old[0].version.as_str(), old[0].commit.as_str()), ("", ""));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
