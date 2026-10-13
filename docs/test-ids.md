@@ -85,6 +85,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | --- | --- |
 | `printers-add` | Add printer (or Add one by hand) in Printers: setup on the hand-made form |
 | `bridge-reconnecting` | The note on Printers while a dropped printer bridge connection reconnects |
+| `bridge-error` | The note on Printers when the app's own printer bridge did not start (its port is taken), with Try again |
 | `printer-card` | A printer's card on Printers (`data-printer` is its id; `data-away` while the bridge reconnects) |
 | `printer-card-open`, `printer-card-options` | A card's open area and its options button; both are off while the bridge reconnects |
 | `setup` | The setup window; `data-step` is welcome, look, printer, mimir and so on |
