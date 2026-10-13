@@ -81,6 +81,13 @@ test.describe('See usage on a mimir cloud refusal', () => {
     await expect(dialog.getByRole('heading', { name: 'Usage' })).toBeInViewport({ ratio: 1 })
     await expect(page.getByTestId('mu-today-left')).toHaveText('0%')
     await expect(page.getByTestId('mu-today-out')).toBeInViewport({ ratio: 1 })
+    // only the section's own pane scrolls: the nav stays put, with Account shown as the current section
+    const account = dialog.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Account' })
+    await expect(account).toHaveAttribute('aria-current', 'true')
+    await expect(account).toBeInViewport({ ratio: 1 })
+    const nav = await dialog.getByRole('navigation', { name: 'Settings sections' }).boundingBox()
+    const body = await dialog.locator('.sx-dialog-body').first().boundingBox()
+    expect(nav!.y).toBeGreaterThanOrEqual(body!.y - 1)
     await page.screenshot({ path: test.info().outputPath('mimir-see-usage-account.png') })
   })
 

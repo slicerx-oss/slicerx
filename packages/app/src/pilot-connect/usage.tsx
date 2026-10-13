@@ -80,6 +80,13 @@ function Line({ text, className = '', testId }: { text: string | null; className
   )
 }
 
+/** Scrolls the nearest scrolling ancestor, and only that one, so the section starts at its top. */
+function toTop(el: HTMLElement): void {
+  let box = el.parentElement
+  while (box && !(box.scrollHeight > box.clientHeight && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement
+  if (box) box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top
+}
+
 export function MimirUsageSection() {
   const on = useOnFreeMimir()
   const loaded = useUsage()
@@ -90,7 +97,7 @@ export function MimirUsageSection() {
   useEffect(() => {
     const el = ref.current
     if (!shown || !el || !takeUsageFocus()) return
-    const pin = () => el.scrollIntoView?.({ block: 'start' })
+    const pin = () => toTop(el)
     pin()
     const box = el.parentElement
     if (!box || typeof ResizeObserver === 'undefined') return

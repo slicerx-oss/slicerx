@@ -526,6 +526,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .settings-dialog .sx-dialog-body { flex: 1 0 auto; }
 .settings { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; min-height: 320px; }
 .settings-nav { display: grid; align-content: start; gap: 2px; }
+/* The nav and the section scroll together in the dialog's body, so the nav stays at the top while a long section scrolls. */
+@media (min-width: 701px) { .settings-nav { position: sticky; top: 0; align-self: start; } }
 .settings-nav button { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--muted); font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); cursor: pointer; text-align: left; }
 .settings-nav button:hover { color: var(--fg); }
 .settings-nav button[aria-current=true] { background: var(--ink-3); color: var(--fg); }
