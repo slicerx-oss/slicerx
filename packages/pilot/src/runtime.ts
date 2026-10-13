@@ -41,7 +41,7 @@ import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, typ
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
 import { planToDiff } from './tools/settings'
-import { HUGINN, modelFor, MUNINN, MUNINN_TOOLS, tierForPrompt, type Tier } from './models'
+import { HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tierForPrompt, type Tier } from './models'
 
 export interface PilotHost extends ToolHost {
   llm: LlmTransport
@@ -461,8 +461,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let usageIn = 0
     let usageOut = 0
     let stopped = false
-    // huginn unless the request asks for deep thinking; reaching a muninn tool moves the run up.
+    // huginn unless the request asks for deep thinking; reaching a muninn tool moves the run up, and so does failing
+    // on huginn's model (Auto on a key). A move to another model is shown in the chat.
     let tier: Tier = startTier
+    let why: 'request' | 'tool' | 'struggle' = 'request'
+    let shown = modelFor(opts.config, HUGINN)
+    let fails = 0
+    const watch = (e: PilotEvent) => {
+      if (e.type === 'tool_result' && !e.ok) fails++
+      emit(e)
+    }
     for (let step = 0; step < opts.config.maxSteps; step++) {
       if (signal.aborted) {
         stopReason = 'canceled'
@@ -478,8 +486,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let raw: unknown[] | undefined
       let thinkingStart: number | null = null
       let failed: string | null = null
+      const model = modelFor(opts.config, tier)
+      if (model !== shown) {
+        emit({ type: 'model_switch', model, label: modelLabel(model), reason: why })
+        shown = model
+      }
       const req = {
-        model: modelFor(opts.config, tier),
+        model,
         messages: [...sent],
         tools: toolDefs,
         toolChoice: stopped ? ('none' as const) : ('auto' as const),
@@ -558,8 +571,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           stopped = true
           continue
         }
-        if (MUNINN_TOOLS.has(call.name)) tier = MUNINN
-        const res = await execute(call, sessionId, context, emit, signal, citations)
+        const deep = MUNINN_TOOLS.has(call.name) || (opts.config.deepDesign === true && /^(design|geom)\./.test(call.name))
+        if (deep && tier !== MUNINN) {
+          tier = MUNINN
+          why = 'tool'
+        }
+        const res = await execute(call, sessionId, context, watch, signal, citations)
+        if (tier !== MUNINN && fails >= STRUGGLE_FAILS) {
+          tier = MUNINN
+          why = 'struggle'
+        }
         if (res.images) dropOldImages(messages, MAX_IMAGES_IN_HISTORY - res.images.length)
         messages.push({ role: 'tool', callId: call.id, content: res.message, ...(res.images ? { images: res.images } : {}) })
         if (res.stop) stopped = true

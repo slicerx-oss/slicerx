@@ -166,6 +166,7 @@
 .sx-pilot .perm-ln{font-size:14.5px}
 .sx-pilot .perm-ln.ok{color:color-mix(in srgb,var(--green) 75%,var(--t-fg))}
 .sx-pilot .perm-ln.warn{color:var(--orange)}
+.sx-pilot .model-ln{font-size:13.5px;color:var(--t-mute)}
 
 .sx-pilot .pp-err{display:flex;align-items:flex-start;gap:8px;font-size:14.5px;color:var(--red)}
 .sx-pilot .pp-err .sx-ic{width:16px;height:16px;margin-top:.2em}

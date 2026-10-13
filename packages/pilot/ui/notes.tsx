@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// One line blocks: the permission note, errors, the plan and the plugins loading line.
+// One line blocks: the permission note, Auto's model switch, errors, the plan and the plugins loading line.
 import type { PluginLoad } from '@slicerx/contracts'
 import { Icon } from '@slicerx/ui'
 import { Spinner } from './spinner'
@@ -8,6 +8,11 @@ import { Spinner } from './spinner'
 /** What the Permissions setting decided for a step mimir did not ask about. */
 export function PermLine({ mode, message }: { mode: 'allow' | 'off'; message: string }) {
   return <div className={mode === 'allow' ? 'perm-ln ok' : 'perm-ln warn'}>{message}</div>
+}
+
+/** Auto moved the run to another model; one short line, so the person knows what it costs. */
+export function ModelLine({ label, reason }: { label: string; reason: 'request' | 'tool' | 'struggle' }) {
+  return <div className="model-ln" data-testid="mimir-model-switch">{reason === 'request' ? `Using ${label} for this one.` : `Switched to ${label} for the harder part.`}</div>
 }
 
 export function ErrorLine({ message }: { message: string }) {
