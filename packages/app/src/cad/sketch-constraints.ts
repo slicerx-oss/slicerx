@@ -187,10 +187,17 @@ export function curveStates(sketch: readonly Entity[], constraints: readonly Ske
 /** The palette's line for a solve: fully defined, the freedom left, or what went wrong. */
 export function dofText(solved: Pick<Solved, 'status' | 'dof'> | null): string {
   if (!solved) return ''
-  if (solved.status === 'conflict') return 'Some constraints conflict'
+  if (solved.status === 'conflict') return 'Over-constrained: some constraints conflict'
+  if (solved.status === 'redundant') return 'Over-constrained: a constraint repeats another'
   if (solved.status === 'failed') return 'The constraints could not be met'
-  if (solved.dof === 0) return 'Fully defined'
+  if (solved.dof === 0) return 'Fully constrained'
   return `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
+}
+
+/** How the status line reads: done when fully constrained, warn when over-constrained or unsolved. */
+export function dofTone(solved: Pick<Solved, 'status' | 'dof'>): 'done' | 'warn' | 'open' {
+  if (solved.status !== 'ok') return 'warn'
+  return solved.dof === 0 ? 'done' : 'open'
 }
 
 /**
