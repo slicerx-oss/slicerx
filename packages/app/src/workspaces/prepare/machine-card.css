@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (C) 2026 The SlicerX contributors */
-/* The machine card: one row of three boxes, about 60 px tall. The printer box takes the room; the nozzle box shows
-   "Nozzle", the size and the type; the plate box shows the plate type's icon. */
+/* The machine card: the printer box across the top, about 60 px tall, and under it the nozzle and the plate side by
+   side in two equal boxes, each with its icon, a small label and its value in words. */
 .machine-card { container-type: inline-size; }
-.machine-card .mc-row { display: grid; grid-template-columns: minmax(0, 1fr) 78px 56px; gap: 6px; align-items: stretch; min-width: 0; }
+.machine-card .mc-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "printer printer" "nozzle plate"; gap: 6px; align-items: stretch; min-width: 0; }
+.machine-card .mc-printer { grid-area: printer; }
+.machine-card .mc-nozzle { grid-area: nozzle; }
+.machine-card .mc-plate { grid-area: plate; }
 .mc-printer, .mc-nozzle, .mc-plate { display: flex; min-width: 0; }
 .mc-box { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; height: 60px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-0); color: var(--fg); cursor: pointer; text-align: left; }
 .mc-box:hover, .mc-box[aria-expanded="true"] { background: var(--ink-3); border-color: var(--line); }
@@ -16,16 +19,20 @@
 .mc-name .mc-model { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--muted); }
 .mc-status { flex: none; font-size: var(--fs-xs); }
 .mc-caret { flex: none; color: var(--muted); }
-.mc-nbox { flex-direction: column; justify-content: center; gap: 1px; padding: 0 14px 0 6px; align-items: flex-start; }
-.mc-nhead { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--muted); }
-.mc-nsize { font: var(--fw-semibold) var(--fs-lg) var(--f-body); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.mc-nbox, .mc-bbox { height: 48px; gap: 10px; padding: 0 26px 0 12px; }
+.mc-icon { flex: none; color: var(--muted); }
+.mc-btext { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.mc-blabel { font-size: var(--fs-xs); color: var(--muted); line-height: 1.2; }
+.mc-bvalue { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; font: var(--fw-semibold) var(--fs-md) var(--f-body); line-height: 1.25; }
+.mc-nsize { flex: none; font-variant-numeric: tabular-nums; }
 .mc-nsize small { font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--muted); }
-.mc-ntype { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--muted); }
-.mc-nbox .mc-caret, .mc-bbox .mc-caret { position: absolute; right: 4px; top: 50%; margin-top: -6px; }
-.mc-bbox { justify-content: center; padding-right: 10px; color: var(--fg); }
+.mc-ntype { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--fw-regular) var(--fs-xs) var(--f-body); color: var(--muted); }
+.mc-plabel { display: block; overflow: hidden; text-overflow: ellipsis; }
+.mc-nbox .mc-caret, .mc-bbox .mc-caret { position: absolute; right: 10px; top: 50%; margin-top: -6px; }
 
 /* Skeleton while the printer profile loads, so nothing moves when the nozzle box arrives. */
 .mc-skel { display: block; background: var(--ink-3); border-color: transparent; cursor: default; }
+.mc-nozzle .mc-skel { height: 48px; }
 
 /* Popovers: a list of options with a check on the current one. */
 .mc-pop { min-width: 220px; padding: 4px; }

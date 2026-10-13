@@ -225,15 +225,17 @@ export function MachineCard() {
               {...tipAttrs({ title: `Nozzle, ${nozzle} mm${nozzleType ? `, ${(NOZZLE_TYPE[nozzleType] ?? nozzleType).toLowerCase()}` : ''}`, body: fixedNozzle ? 'The printer reports this nozzle.' : 'The size picks the presets that match it.' })}
               onClick={() => setPop(pop === 'nozzle' ? null : 'nozzle')}
             >
-              <span className="mc-nhead">
-                <Icon name="nozzle" size={14} />
-                Nozzle
+              <Icon name="nozzle" size={18} className="mc-icon" />
+              <span className="mc-btext">
+                <span className="mc-blabel">Nozzle</span>
+                <span className="mc-bvalue">
+                  <span className="mc-nsize">
+                    {nozzle}
+                    <small> mm</small>
+                  </span>
+                  {nozzleWord ? <span className="mc-ntype">{nozzleWord}</span> : null}
+                </span>
               </span>
-              <span className="mc-nsize">
-                {nozzle}
-                <small> mm</small>
-              </span>
-              {nozzleWord ? <span className="mc-ntype">{nozzleWord}</span> : null}
               <Icon name="chevron-down" size={12} className="mc-caret" />
             </button>
           )}
@@ -287,8 +289,11 @@ export function MachineCard() {
             {...tipAttrs({ title: plate.label, body: 'Set per plate. Change it here or in plate settings.' })}
             onClick={() => setPop(pop === 'plate' ? null : 'plate')}
           >
-            <Icon name={BED_ICON[plate.value]} size={28} />
-            <span className="sr-only">{plate.label}</span>
+            <Icon name={BED_ICON[plate.value]} size={22} className="mc-icon" />
+            <span className="mc-btext">
+              <span className="mc-blabel">Plate</span>
+              <span className="mc-bvalue mc-plabel" data-testid="slice-machine-plate-label">{plate.label}</span>
+            </span>
             <Icon name="chevron-down" size={12} className="mc-caret" />
           </button>
             <Popover open={pop === 'plate'} onClose={() => setPop(null)} label="Plate type" align="end" className="mc-pop">
