@@ -500,6 +500,46 @@ export class McpProject implements PilotProject {
     addItem(target, e.obj.id, Math.max(1, copies))
   }
 
+  /** Gives an object a new name; its id stays. */
+  rename(objectId: string, name: string): string {
+    const e = this.entries.get(objectId) ?? [...this.entries.values()].find((x) => x.obj.name === objectId)
+    if (!e) throw new ToolInputError(`No object ${objectId}. slicerx_project_show lists them.`)
+    const clean = name.trim()
+    if (!clean) throw new ToolInputError('The new name is empty.')
+    if (/^obj-\d+$/.test(clean)) throw new ToolInputError(`${clean} reads as an object id; pick another name.`)
+    e.obj = { ...e.obj, name: clean }
+    return e.obj.id
+  }
+
+  /**
+   * Copies an object as new objects of their own, as Duplicate does in the app: the same mesh, rotation, scale,
+   * settings and volumes, on the same plates, in the automatic rows. Height ranges for the object cover the copies.
+   */
+  duplicate(objectId: string, count: number): string[] {
+    const e = this.entry(objectId)
+    const ids: string[] = []
+    for (let k = 0; k < count; k++) {
+      const id = `obj-${this.nextId++}`
+      const copy: Entry = { obj: { ...e.obj, id }, meshId: e.meshId }
+      if (e.parts !== undefined) copy.parts = e.parts
+      if (e.rotate) copy.rotate = [...e.rotate]
+      if (e.scale) copy.scale = [...e.scale]
+      if (e.settings) copy.settings = { ...e.settings }
+      if (e.volumes) copy.volumes = e.volumes.map((v) => ({ ...v, id: `vol-${this.nextVolume++}`, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
+      this.entries.set(id, copy)
+      for (const p of this.layout) if (p.items.some((i) => i.objectId === e.obj.id)) p.items.push({ objectId: id, copies: 1 })
+      ids.push(id)
+    }
+    this.ranges = this.ranges.map((r) => (r.objects?.includes(e.obj.id) ? { ...r, objects: [...r.objects, ...ids] } : r))
+    return ids
+  }
+
+  /** An object's id, rotation and scale, for turning a face of its mesh as modeled. */
+  pose(objectId: string): { id: string; rotate: [number, number, number]; scale: [number, number, number] } {
+    const e = this.entry(objectId)
+    return { id: e.obj.id, rotate: e.rotate ?? [0, 0, 0], scale: e.scale ?? [1, 1, 1] }
+  }
+
   /** Takes an object out of the project. */
   removeObject(objectId: string): void {
     const e = this.entry(objectId)

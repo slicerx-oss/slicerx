@@ -5,7 +5,8 @@
 // (the viewport reports all three as `contextpick`). The verbs run the same commands and tools as the shelf and the
 // command bar. Delete stays in More: a flick that lands one slice over must never remove a part.
 //
-// Agents do the same through MCP. Each verb names its tool, or the cad-mcp gap that still lacks one.
+// Agents do the same through MCP: each verb names its tool. Drop to bed names slicerx_project_move, since every
+// object a client places already sits on the bed.
 import { ContextMenu, MenuItems, RadialMenu, type MenuEntry, type RingItem } from '@slicerx/ui'
 import { useStore } from 'zustand'
 import { startFillet } from '../../cad/start-hint'
@@ -22,12 +23,12 @@ import { SHAPES } from '../prepare/object-actions'
 import { openTool } from './open-tool'
 import type { ToolId } from './shelf-tools'
 
-/** One verb of a ring, and how an agent does the same: an MCP tool, or the cad-mcp gap that has none yet. */
+/** One verb of a ring, and the MCP tool an agent does the same with. */
 export interface RingVerb {
   id: string
   label: string
   icon: RingItem['icon']
-  /** `slicerx_*` tool, `gap N: what`, or `view` for a change of view an agent has no need of. */
+  /** A `slicerx_*` tool, or `view` for a change of view an agent has no need of. */
   agent: string
   /** Needs the modeling tools (the edition's CAD and the full engine). */
   modeling?: boolean
@@ -37,24 +38,24 @@ export interface RingVerb {
 export const RING_VERBS: Readonly<Record<RingKind, readonly RingVerb[]>> = {
   object: [
     { id: 'cut', label: 'Cut', icon: 'cut', agent: 'slicerx_geom_cut' },
-    { id: 'array', label: 'Array', icon: 'array-linear', agent: 'gap 6: pattern' },
-    { id: 'duplicate', label: 'Duplicate', icon: 'duplicate', agent: 'gap 4: duplicate one object' },
-    { id: 'drop', label: 'Drop to bed', icon: 'arrow-down', agent: 'gap 4: place one object' },
-    { id: 'rename', label: 'Rename', icon: 'rename', agent: 'gap 4: object rename' },
+    { id: 'array', label: 'Array', icon: 'array-linear', agent: 'slicerx_geom_array' },
+    { id: 'duplicate', label: 'Duplicate', icon: 'duplicate', agent: 'slicerx_project_duplicate' },
+    { id: 'drop', label: 'Drop to bed', icon: 'arrow-down', agent: 'slicerx_project_move' },
+    { id: 'rename', label: 'Rename', icon: 'rename', agent: 'slicerx_project_rename' },
     { id: 'lock', label: 'Lock', icon: 'lock', agent: 'view' },
   ],
   face: [
     { id: 'push', label: 'Push and pull', icon: 'push-pull', agent: 'slicerx_geom_push_pull', modeling: true },
     { id: 'sketch', label: 'Sketch here', icon: 'sketch', agent: 'slicerx_geom_extrude', modeling: true },
-    { id: 'shell', label: 'Shell', icon: 'shell-open', agent: 'gap 6: shell', modeling: true },
-    { id: 'lay', label: 'Lay on bed', icon: 'lay-flat', agent: 'gap 4: place one object' },
+    { id: 'shell', label: 'Shell', icon: 'shell-open', agent: 'slicerx_geom_shell', modeling: true },
+    { id: 'lay', label: 'Lay on bed', icon: 'lay-flat', agent: 'slicerx_project_lay_on_face' },
     { id: 'text', label: 'Text', icon: 'text', agent: 'slicerx_geom_emboss', modeling: true },
-    { id: 'measure', label: 'Measure', icon: 'measure', agent: 'gap 2: measure' },
+    { id: 'measure', label: 'Measure', icon: 'measure', agent: 'slicerx_geom_measure' },
   ],
   edge: [
     { id: 'fillet', label: 'Fillet', icon: 'fillet-edge', agent: 'slicerx_geom_fillet', modeling: true },
     { id: 'chamfer', label: 'Chamfer', icon: 'chamfer-edge', agent: 'slicerx_geom_chamfer', modeling: true },
-    { id: 'measure', label: 'Measure', icon: 'measure', agent: 'gap 2: measure' },
+    { id: 'measure', label: 'Measure', icon: 'measure', agent: 'slicerx_geom_measure' },
   ],
   empty: [
     { id: 'shape', label: 'Add shape', icon: 'box-shape', agent: 'slicerx_geom_build' },
