@@ -233,6 +233,7 @@ fn main() {
             localai::local_ai_get,
             #[cfg(feature = "pilot")]
             agents::mcp_server_path,
+            #[cfg(feature = "pilot")]
             agents::mcp_edition_file,
             #[cfg(feature = "pilot")]
             agents::agent_key_store,
