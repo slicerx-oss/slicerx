@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, mainNumber, stepName, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, mainNumber, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -333,6 +333,33 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     },
   })
 
+  const timeline = defineTool({
+    name: 'design.timeline',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: `The design timeline: every sketch and feature across the designs in the order made, the way ${productName()}'s Model timeline shows them, with the marker (how many items are live; the end when nothing is rolled back). Each feature names its design (body) and, for an extrude or revolve of a sketch, the sketch's id.`,
+    input: z.object({}),
+    async run() {
+      // in the app the project's own timeline answers (the app link); here it is the designs' steps by when made
+      const t = timelineOf(designs.list().map((d) => ({ id: d.id, history: d.history })))
+      const out = timelineSummary(t)
+      return { summary: `${plural(out.items.length, 'item')}, at the end`, output: { ...out, rolledBack: false } }
+    },
+  })
+
+  const roll = defineTool({
+    name: 'design.roll',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: `Move the timeline marker, rolling the whole design back to how it was after that many items (0 is before everything; leave marker out for the end), as dragging the marker in ${productName()} does. Bodies made after the marker leave the plate, and slicing uses what shows. Works on the project open in ${productName()}, through the app link.`,
+    input: z.object({ marker: z.number().int().min(0).max(100_000).optional().describe('How many timeline items stay live; leave out for the end') }),
+    async run() {
+      throw new ToolInputError(`Rolling the design back works on the project open in ${productName()}: turn on the app link there, then try again.`)
+    },
+  })
+
   const save = defineTool({
     name: 'design.save',
     version: '1.0.0',
@@ -348,5 +375,5 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     },
   })
 
-  return [create, open, list, steps, edit, undo, redo, save] as PilotTool<never>[]
+  return [create, open, list, steps, edit, undo, redo, timeline, roll, save] as PilotTool<never>[]
 }
