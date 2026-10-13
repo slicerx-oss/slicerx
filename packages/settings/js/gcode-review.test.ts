@@ -41,6 +41,49 @@ describe('stock G-code', () => {
     // The text SlicerX ships is one of them.
     expect(stock.models['bambu-a1']!['machine_start_gcode']).toContain(gcodeFingerprint(start))
   })
+  it('has the start G-code of every printer model whose profile carries the maker template', async () => {
+    const stock = (await import('../profiles/stock-gcode.json')).default as unknown as { models: Record<string, Record<string, string[]>> }
+    const machines = (await import('../../profiles/machine.json')).default as unknown as { models: Record<string, { orca?: unknown }> }
+    const gcode = (await import('../../profiles/gcode.json')).default as unknown as { models: Record<string, string> }
+    const makers = Object.keys(machines.models).filter((id) => machines.models[id]!.orca && (gcode.models[id] ?? '').startsWith('maker_'))
+    expect(makers).toContain('elegoo-centauri-carbon')
+    expect(makers.filter((id) => !(stock.models[id]?.['machine_start_gcode']?.length))).toEqual([])
+  })
+})
+
+describe('stock G-code of an Elegoo printer', () => {
+  const cc = printerConfig('elegoo-centauri-carbon') as unknown as Record<string, string>
+  const neptune = printerConfig('elegoo-neptune-4') as unknown as Record<string, string>
+  const ccStart = cc['machine_start_gcode']!
+
+  it('is in the table for each Elegoo model, the text SlicerX ships among it', async () => {
+    const stock = (await import('../profiles/stock-gcode.json')).default as unknown as { models: Record<string, Record<string, string[]>> }
+    for (const [id, config] of [['elegoo-centauri-carbon', cc], ['elegoo-neptune-4', neptune]] as const)
+      for (const key of ['machine_start_gcode', 'machine_end_gcode']) expect(stock.models[id]![key], `${id} ${key}`).toContain(gcodeFingerprint(config[key]!))
+  })
+
+  it('is kept without asking on its own printer', () => {
+    const r = reviewProjectGcode({ project: { machine_start_gcode: ccStart.replace(/\n/g, '\r\n'), machine_end_gcode: cc['machine_end_gcode'] }, profile: cc, model: 'elegoo-centauri-carbon' })
+    expect(r.changes).toEqual([])
+    expect(r.kept.map((k) => k.message)).toEqual(['matches the stock Elegoo Centauri Carbon start G-code', 'matches the stock Elegoo Centauri Carbon end G-code'])
+  })
+
+  it('asks when the Centauri Carbon start G-code was changed, with the added M500 flagged', () => {
+    const edited = `${ccStart}\nM500 ; keep my offsets`
+    const r = reviewProjectGcode({ project: { machine_start_gcode: edited }, profile: cc, model: 'elegoo-centauri-carbon' })
+    expect(r.kept).toEqual([])
+    expect(r.changes).toHaveLength(1)
+    expect(r.changes[0]).toMatchObject({ key: 'machine_start_gcode', added: 1, removed: 0, approvable: true })
+    expect(r.changes[0]!.flags.map((f) => f.code)).toEqual(['eeprom_write'])
+  })
+
+  it("asks when the Centauri Carbon's stock start G-code is sliced for a Neptune 4", () => {
+    expect(isStockGcode('elegoo-centauri-carbon', 'machine_start_gcode', ccStart)).toBe(true)
+    expect(isStockGcode('elegoo-neptune-4', 'machine_start_gcode', ccStart)).toBe(false)
+    const r = reviewProjectGcode({ project: { machine_start_gcode: ccStart }, profile: neptune, model: 'elegoo-neptune-4' })
+    expect(r.kept).toEqual([])
+    expect(r.changes.map((c) => c.key)).toEqual(['machine_start_gcode'])
+  })
 })
 
 describe('the fingerprint the native CLI matches', () => {

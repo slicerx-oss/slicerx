@@ -123,6 +123,51 @@ describe('a project with its own printer G-code', () => {
   })
 })
 
+const cc = printerConfig('elegoo-centauri-carbon') as unknown as Record<string, string>
+
+/** An OrcaSlicer style Elegoo Centauri Carbon project with the given start G-code and the stock end G-code. */
+function ccProject(dir: string, name: string, start: string): string {
+  const path = join(dir, name)
+  writeFileSync(
+    path,
+    writeZip([
+      { name: '3D/3dmodel.model', data: MODEL },
+      {
+        name: 'Metadata/project_settings.config',
+        data: JSON.stringify({ printer_settings_id: 'Elegoo Centauri Carbon 0.4 nozzle', printer_model: 'Elegoo Centauri Carbon', filament_type: ['PLA'], machine_start_gcode: start.replace(/\n/g, '\r\n'), machine_end_gcode: cc['machine_end_gcode'] }),
+      },
+    ]),
+  )
+  return path
+}
+
+describe('an Elegoo Centauri Carbon project with its own printer G-code', () => {
+  it('keeps the stock start and end G-code and says so', async () => {
+    const h = await connect()
+    const read = readProjectFile(ccProject(h.dir, 'stock-cc.3mf', cc['machine_start_gcode']!))
+    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'stock-cc.3mf', config: read.config, model: 'elegoo-centauri-carbon' } })
+    expect(r.gcodeKept.map((k) => [k.key, k.match, k.message])).toEqual([
+      ['machine_start_gcode', 'stock', 'matches the stock Elegoo Centauri Carbon start G-code'],
+      ['machine_end_gcode', 'stock', 'matches the stock Elegoo Centauri Carbon end G-code'],
+    ])
+    expect(r.trustedGcode).toBe(true)
+  })
+
+  it('refuses a changed start G-code with the diff, compared with the Centauri Carbon', async () => {
+    const h = await connect()
+    const edited = `${cc['machine_start_gcode']!}\nM500 ; keep my offsets`
+    const r = await h.call('slicerx_slice_file', { model: ccProject(h.dir, 'edited-cc.3mf', edited), project_settings: true })
+    const e = data<Err>(r).error
+    expect(e.code).toBe('project_gcode_review')
+    expect(e.details?.summary).toBe("edited-cc.3mf's printer G-code doesn't match the Elegoo Centauri Carbon profile's.")
+    expect(e.details?.printer).toBe('elegoo-centauri-carbon')
+    const c = e.details!.changes[0]!
+    expect(c).toMatchObject({ key: 'machine_start_gcode', added: 1, approvable: true })
+    expect(c.flags.map((f) => f.code)).toEqual(['eeprom_write'])
+    expect(e.details!.changes.map((x) => x.key)).toEqual(['machine_start_gcode'])
+  })
+})
+
 describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
   it('slices the stock A1 project with no question, the stock start in the G-code', async () => {
     const h = await connect({ engine: 'sx', sxBin })
