@@ -8,6 +8,7 @@ import { Button, Field, Icon, Input, LinkButton, Select, SwitchRow } from '@slic
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
+import { hostSlices } from '../state/model-mode'
 import { chatGptFor, useChatGpt } from './chatgpt'
 import { useMimirCloudHost } from './cloud'
 import { cloudReady } from './cloud-edition'
@@ -35,6 +36,10 @@ function remoteHost(address: string): string | null {
 }
 
 const OTHER = '\u0000other'
+
+/** What a question to the model carries: a build that slices sends the printer setup, the CAD-only one the design. */
+export const sentToModel = (): string => (hostSlices() ? 'your questions and the printer setup you entered' : "your questions and the design you're working on")
+const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** The saved model, with nothing saved read as Auto. */
 const savedModel = (model: string | undefined): string => model?.trim() || AUTO_MODEL
@@ -303,9 +308,9 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, o
           <p className="pc-privacy">
             {provider === 'local'
               ? remote
-                ? `Your questions and printer setup go only to the server at ${remote}.`
-                : 'Nothing leaves this computer: your questions and the printer setup you entered go only to the local model.'
-              : `What leaves ${host.capabilities.secureStorage ? 'this computer' : 'the browser'}: your questions and the printer setup you entered, sent to ${info.label} only. Access codes and printer keys are never sent.`}
+                ? `${capital(sentToModel())} go only to the server at ${remote}.`
+                : `Nothing leaves this computer: ${sentToModel()} go only to the local model.`
+              : `What leaves ${host.capabilities.secureStorage ? 'this computer' : 'the browser'}: ${sentToModel()}, sent to ${info.label} only.${hostSlices() ? ' Access codes and printer keys are never sent.' : ''}`}
           </p>
           <div className="pc-act">
             <Button variant="primary" icon="link" onClick={() => void connect()} disabled={busy}>
