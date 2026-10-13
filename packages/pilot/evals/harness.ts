@@ -273,6 +273,8 @@ export interface EvalEnvOptions {
   hosts?: (env: { broker: ApprovalVerifier; audit: Audit }) => EvalHosts
   /** Stored camera frames (PNG, base64) the printers' snapshot returns, by printer id. */
   frames?: Record<string, string>
+  /** The hub's device page reads (`issues`, `history`) the printers answer, for tools that read them. */
+  device?: Record<string, (printerId: string) => Promise<unknown>>
   /** Extra config, such as the huginn and muninn models. */
   config?: Partial<PilotConfig>
 }
@@ -296,7 +298,7 @@ export function createEvalEnv(opts: EvalEnvOptions) {
   const sim = createFleetSim(opts.fleet ? opts.fleet(fixture) : fixture, { clock: now, approvals: broker })
   const audited = auditedPrinters(sim, audit)
   const frames = opts.frames
-  const printers: PrinterHost = frames
+  const withFrames: PrinterHost = frames
     ? {
         ...audited,
         snapshot: async (id) => {
@@ -305,6 +307,7 @@ export function createEvalEnv(opts: EvalEnvOptions) {
         },
       }
     : audited
+  const printers: PrinterHost = opts.device ? ({ ...withFrames, device: opts.device } as PrinterHost) : withFrames
   const project = createEvalProject('eval', opts.machine, opts.objects, kb)
   const slicer = createEvalSlicer(() => project)
   const policy = opts.policy ?? DEFAULT_POLICY
