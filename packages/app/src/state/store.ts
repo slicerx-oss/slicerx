@@ -464,6 +464,8 @@ export interface AppState {
   slotDialog: number | null
   /** The filament slot hovered or focused in the Slice sidebar's rail (and the legend): the viewport picks it out. Not saved. */
   hoverSlot: number | null
+  /** The body whose timeline item is hovered: the tree picks it out. Not saved. */
+  hoverBody: string | null
   /** The filament rail lists the slots nothing on the plate uses too. Not saved. */
   showUnusedSlots: boolean
   flushOpen: boolean
@@ -776,6 +778,7 @@ export const appStore = createStore<AppState>()(() => ({
   slotMatch: {},
   slotDialog: null,
   hoverSlot: null,
+  hoverBody: null,
   showUnusedSlots: false,
   flushOpen: false,
   calibrationOpen: false,
