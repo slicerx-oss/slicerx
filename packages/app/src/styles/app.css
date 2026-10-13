@@ -230,6 +230,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .dock-check:hover { color: var(--fg); }
 .dock-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .dock-read { margin-left: auto; display: flex; gap: 16px; }
+/* The layer number is a button that opens the jump field over itself; the field sits on top, so the line keeps its place. */
+.dock-jump-at { position: relative; display: inline-block; }
+.dock-jump-num { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: var(--fw-bold); text-align: right; cursor: text; border-radius: 2px; }
+.dock-jump-num:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+.dock-jump-field { position: absolute; left: -4px; top: 50%; transform: translateY(-50%); z-index: 1; width: 9ch; padding: 1px 4px; border: 0; border-radius: 4px; outline: 1px solid var(--accent); background: var(--ink-1); color: var(--fg); font: inherit; text-align: left; box-shadow: var(--focus-field), var(--shadow-pop); }
+.dock-jump-field[aria-invalid=true] { outline-color: var(--red); }
 .sx-range.thin::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(90deg, var(--muted) var(--p), var(--ink-4) var(--p)); }
 .sx-range.thin::-webkit-slider-thumb { width: 13px; height: 13px; margin-top: -5.5px; }
 .play[aria-disabled=true] { opacity: 0.4; cursor: default; }
