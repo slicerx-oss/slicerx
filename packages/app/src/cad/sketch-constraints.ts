@@ -223,6 +223,27 @@ export function afterLoopChange(constraints: readonly SketchConstraint[], e: num
   return out
 }
 
+/** Constraints after chain `e` (of `n` segments) was turned round, so its points and segments count from the other end. */
+export function afterReverse(constraints: readonly SketchConstraint[], e: number, n: number): SketchConstraint[] {
+  const flip = (r: unknown): unknown => {
+    if (!r || typeof r !== 'object' || (r as { e?: number }).e !== e) return r
+    const x = r as SketchPointRef | SketchCurveRef
+    if ('at' in x) {
+      if (x.at === 'start') return { e, at: 'to', seg: n - 1 }
+      if (x.at === 'to') return x.seg === n - 1 ? { e, at: 'start' } : { e, at: 'to', seg: n - 2 - x.seg }
+      if (x.at === 'arcCenter') return { e, at: 'arcCenter', seg: n - 1 - x.seg }
+      return x
+    }
+    return { e, seg: n - 1 - x.seg }
+  }
+  return constraints.map((c) => {
+    const next = Object.fromEntries(Object.entries(c).map(([k, v]) => [k, flip(v)])) as SketchConstraint
+    // a line turned round points the other way, so an angle to or from it turns by half a turn
+    if (c.type === 'angle' && (c.a.e === e) !== (c.b.e === e)) return { ...next, value: (c.value + 180) % 360 } as SketchConstraint
+    return next
+  })
+}
+
 /** Where a point reference is in the sketch now, or null (an arc center is not drawn with a mark). */
 function pointOf(sketch: readonly Entity[], r: SketchPointRef): V2 | null {
   const e = sketch[r.e]
@@ -246,10 +267,10 @@ const mmText = (v: number): string => `${Number(v.toFixed(2))}`
 
 /**
  * What the sketch draws for its constraints: a dimension for each driving value (diameter across the circle,
- * radius from the center, a line's length along it, a distance between its points) and a mark on each fixed point.
- * `length` writes a value in the display unit.
+ * radius from the center, a line's length along it, a distance between its points), a mark on each fixed point,
+ * and a glyph for each constraint without a value.
  */
-export function sketchMarks(sketch: readonly Entity[], constraints: readonly SketchConstraint[], length: (mm: number) => string = mmText): { dims: SketchDim[]; fixed: V2[] } {
+export function sketchMarks(sketch: readonly Entity[], constraints: readonly SketchConstraint[]): { dims: SketchDim[]; fixed: V2[]; glyphs: SketchGlyph[] } {
   const dims: SketchDim[] = []
   const fixed: V2[] = []
   // circles' dimensions go across at 45 degrees, clear of the axes
@@ -278,5 +299,98 @@ export function sketchMarks(sketch: readonly Entity[], constraints: readonly Ske
       if (a && b) dims.push({ from: a, to: b, label: length(c.value) })
     }
   }
-  return { dims, fixed }
+  return { dims, fixed, glyphs: glyphsOf(sketch, constraints) }
+}
+
+/** A constraint's mark beside the geometry; `slot` sets marks at one spot side by side. */
+export interface SketchGlyph {
+  at: V2
+  kind: GlyphKind
+  slot: number
+}
+
+export type GlyphKind = 'coincident' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'tangent' | 'equal' | 'midpoint' | 'concentric' | 'collinear' | 'symmetric'
+
+// a point, arc centers too
+function anyPointOf(sketch: readonly Entity[], r: SketchPointRef): V2 | null {
+  if (r.at !== 'arcCenter') return pointOf(sketch, r)
+  const e = sketch[r.e]
+  const s = e?.kind === 'chain' ? e.segs[r.seg] : undefined
+  return e?.kind === 'chain' && s?.kind === 'arc' ? (arcThrough(segStartOf(e, r.seg), s.through, s.to)?.center ?? null) : null
+}
+
+// the middle of a curve, where its own marks go
+function middleOf(sketch: readonly Entity[], r: SketchCurveRef): V2 | null {
+  const e = sketch[r.e]
+  if (!e) return null
+  if (e.kind === 'circle') return [e.center[0], e.center[1] + e.diameterMm / 2]
+  const s = e.segs[r.seg]
+  if (!s) return null
+  if (s.kind === 'arc') return s.through
+  const a = segStartOf(e, r.seg)
+  return [(a[0] + s.to[0]) / 2, (a[1] + s.to[1]) / 2]
+}
+
+// the ends of a curve, to find where two curves meet
+function endsOf(sketch: readonly Entity[], r: SketchCurveRef): V2[] {
+  const e = sketch[r.e]
+  if (e?.kind !== 'chain' || !e.segs[r.seg]) return []
+  return [segStartOf(e, r.seg), e.segs[r.seg]!.to]
+}
+
+/** The marks for constraints without a value: a dot on a held point, a bar on a level line, a right angle at a square corner. */
+export function glyphsOf(sketch: readonly Entity[], constraints: readonly SketchConstraint[]): SketchGlyph[] {
+  const out: Omit<SketchGlyph, 'slot'>[] = []
+  const put = (at: V2 | null, kind: GlyphKind) => at && out.push({ at, kind })
+  for (const c of constraints) {
+    switch (c.type) {
+      case 'coincident':
+        put(anyPointOf(sketch, c.a), 'coincident')
+        break
+      case 'onLine':
+      case 'onCircle':
+        put(anyPointOf(sketch, c.point), 'coincident')
+        break
+      case 'midpoint':
+        put(anyPointOf(sketch, c.point), 'midpoint')
+        break
+      case 'horizontal':
+      case 'vertical':
+        put(middleOf(sketch, c.line), c.type)
+        break
+      case 'symmetric':
+        put(middleOf(sketch, c.line), 'symmetric')
+        break
+      case 'concentric': {
+        const e = sketch[c.a.e]
+        put(e?.kind === 'circle' ? e.center : anyPointOf(sketch, { e: c.a.e, at: 'arcCenter', seg: c.a.seg }), 'concentric')
+        break
+      }
+      case 'perpendicular':
+      case 'tangent': {
+        // at the corner the two share, else on each
+        const b = endsOf(sketch, c.b)
+        const shared = endsOf(sketch, c.a).find((p) => b.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6))
+        if (shared) put(shared, c.type)
+        else {
+          put(middleOf(sketch, c.a), c.type)
+          put(middleOf(sketch, c.b), c.type)
+        }
+        break
+      }
+      case 'parallel':
+      case 'equal':
+      case 'collinear':
+        put(middleOf(sketch, c.a), c.type)
+        put(middleOf(sketch, c.b), c.type)
+        break
+    }
+  }
+  const taken = new Map<string, number>()
+  return out.map((g) => {
+    const k = `${g.at[0].toFixed(3)},${g.at[1].toFixed(3)}`
+    const slot = taken.get(k) ?? 0
+    taken.set(k, slot + 1)
+    return { ...g, slot }
+  })
 }

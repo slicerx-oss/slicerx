@@ -217,7 +217,13 @@ export interface SketchScene {
   fixed?: readonly V2[]
   /** Closed loops, shaded faintly so a closed profile reads at a glance. */
   profiles?: readonly (readonly V2[])[]
+  /** Constraint marks beside the geometry; `slot` sets marks at one spot side by side. */
+  glyphs?: readonly { at: V2; kind: SketchGlyphKind; slot: number }[]
+  /** In a drawing tool, a point a press can drag from (the open end of the line being drawn); the drag goes out as handle -1. */
+  dragFrom?: V2
 }
+
+export type SketchGlyphKind = 'coincident' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'tangent' | 'equal' | 'midpoint' | 'concentric' | 'collinear' | 'symmetric'
 
 /** The line being drawn (a polyline from the last point to the cursor), the snapped cursor and an alignment guide. */
 export interface SketchCursor {
@@ -257,7 +263,7 @@ export class SketchLayer {
   private readonly fillMat = new MeshBasicMaterial({ color: new Color('#8be9fd'), transparent: true, opacity: 0.12, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false })
   private readonly dimMat = new LineBasicMaterial({ color: new Color('#f1fa8c'), transparent: true, opacity: 0.8, depthTest: false, toneMapped: false })
   private drawn: (LineSegments | Points | Sprite | Mesh)[] = []
-  private labels: { sprite: Sprite; aspect: number }[] = []
+  private labels: { sprite: Sprite; aspect: number; size?: number }[] = []
   private scaledFor = ''
   private readonly band: Line
   /** A closed shape being drawn, shaded like a profile so the whole outline reads at the cursor. */
@@ -399,6 +405,16 @@ export class SketchLayer {
         this.labels.push(label)
       }
     }
+    for (const g of scene.glyphs ?? []) {
+      const sprite = makeGlyph(g.kind)
+      if (!sprite) continue
+      // up and to the right of the spot, side by side when several share it
+      sprite.center.set(-0.25 - g.slot * 1.15, -0.25)
+      sprite.position.set(g.at[0], g.at[1], lift)
+      this.group.add(sprite)
+      this.drawn.push(sprite)
+      this.labels.push({ sprite, aspect: 1, size: 0.8 })
+    }
   }
 
   /** Keeps dimension values LABEL_PX tall on screen, as the dimension layer does. */
@@ -407,7 +423,7 @@ export class SketchLayer {
     if (key === this.scaledFor || this.labels.length === 0) return
     this.scaledFor = key
     const h = (LABEL_PX / Math.max(1, heightPx)) * 2 * Math.tan((fovDeg * Math.PI) / 360)
-    for (const l of this.labels) l.sprite.scale.set(h * l.aspect, h, 1)
+    for (const l of this.labels) l.sprite.scale.set(h * l.aspect * (l.size ?? 1), h * (l.size ?? 1), 1)
   }
 
   /** The rubber band and snap marker; rewrites the fixed buffers, nothing is allocated. */
@@ -454,6 +470,12 @@ export class SketchLayer {
     if (gd) this.guidePos.set([gd[0][0], gd[0][1], 0.025, gd[1][0], gd[1][1], 0.025])
     this.guide.geometry.setDrawRange(0, gd ? 2 : 0)
     ;(this.guide.geometry.getAttribute('position') as BufferAttribute).needsUpdate = true
+  }
+
+  /** Whether a press at a plane point is on the drawing tool's drag point. */
+  dragFromAt(at: V2, tolMm: number): boolean {
+    const p = this.scene?.dragFrom
+    return !!p && Math.hypot(p[0] - at[0], p[1] - at[1]) <= tolMm
   }
 
   /** The handle within `tolMm` of a plane point, nearest first, or -1. */
@@ -581,6 +603,86 @@ export class DimensionLayer {
     this.dot.dispose()
     this.group.removeFromParent()
   }
+}
+
+// each glyph drawn on a 40 px tile, as the plan's table has them
+const GLYPHS: Record<SketchGlyphKind, (c: CanvasRenderingContext2D) => void> = {
+  coincident: (c) => disc(c, 20, 20, 6),
+  horizontal: (c) => lines(c, [[10, 20, 30, 20]]),
+  vertical: (c) => lines(c, [[20, 10, 20, 30]]),
+  parallel: (c) => lines(c, [[11, 29, 19, 11], [21, 29, 29, 11]]),
+  perpendicular: (c) => lines(c, [[10, 29, 30, 29], [20, 29, 20, 10]]),
+  tangent: (c) => {
+    lines(c, [[8, 31, 32, 31]])
+    ring(c, 20, 21, 9)
+  },
+  equal: (c) => lines(c, [[11, 16, 29, 16], [11, 25, 29, 25]]),
+  midpoint: (c) => {
+    lines(c, [[8, 29, 32, 29]])
+    c.beginPath()
+    c.moveTo(20, 11)
+    c.lineTo(28, 25)
+    c.lineTo(12, 25)
+    c.closePath()
+    c.fill()
+  },
+  concentric: (c) => {
+    ring(c, 20, 20, 5)
+    ring(c, 20, 20, 11)
+  },
+  collinear: (c) => {
+    c.setLineDash([5, 4])
+    lines(c, [[7, 20, 33, 20]])
+    c.setLineDash([])
+  },
+  symmetric: (c) => {
+    lines(c, [[13, 10, 13, 30], [27, 10, 27, 30]])
+    c.setLineDash([3, 3])
+    lines(c, [[20, 8, 20, 32]])
+    c.setLineDash([])
+  },
+}
+
+function lines(c: CanvasRenderingContext2D, ls: readonly (readonly [number, number, number, number])[]): void {
+  c.beginPath()
+  for (const [a, b, x, y] of ls) {
+    c.moveTo(a, b)
+    c.lineTo(x, y)
+  }
+  c.stroke()
+}
+
+function ring(c: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  c.beginPath()
+  c.arc(x, y, r, 0, Math.PI * 2)
+  c.stroke()
+}
+
+function disc(c: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  c.beginPath()
+  c.arc(x, y, r, 0, Math.PI * 2)
+  c.fill()
+}
+
+function makeGlyph(kind: SketchGlyphKind): Sprite | null {
+  if (typeof document === 'undefined') return null
+  const cv = document.createElement('canvas')
+  cv.width = cv.height = 40
+  const c = cv.getContext('2d')
+  if (!c) return null
+  c.fillStyle = 'rgba(30, 31, 41, 0.9)'
+  c.beginPath()
+  c.roundRect?.(0, 0, 40, 40, 8)
+  c.fill()
+  c.strokeStyle = c.fillStyle = '#f8f8f2'
+  c.lineWidth = 3
+  c.lineCap = 'round'
+  GLYPHS[kind](c)
+  const sprite = new Sprite(new SpriteMaterial({ map: new CanvasTexture(cv), depthTest: false, sizeAttenuation: false, transparent: true, toneMapped: false }))
+  sprite.renderOrder = 15
+  sprite.raycast = () => {}
+  sprite.userData['glyph'] = kind
+  return sprite
 }
 
 function makeLabel(text: string): { sprite: Sprite; aspect: number } | null {

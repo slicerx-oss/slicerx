@@ -10,7 +10,7 @@
 // here snaps, moves the rubber band in its fixed buffer and writes one text node; it renders no
 // React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
-import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
+import { afterLoopChange, afterReverse, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch, type SegOption } from '@slicerx/ui'
@@ -62,7 +62,12 @@ import {
   pickedText,
   profileRings,
   toggleConstruction,
+  dist,
+  dragArc,
+  dragArcPreview,
+  lineArcFrom,
 } from './sketch-model'
+import { inferred, reversedChain, type Landing } from './sketch-infer'
 
 interface Plane {
   frame: FaceFrame
@@ -79,7 +84,7 @@ interface Plane {
 /** What each tool wants clicked, in order. */
 const HINTS: Record<DrawTool, string> = {
   select: 'Click a line to pick it, drag a point to move it. Delete removes it, X makes it construction.',
-  line: 'Click point after point. Click the first point to close, right click to stop.',
+  line: 'Click point after point, or drag from the end for a tangent arc. Click the first point to close, right click to stop.',
   rect: 'Click two opposite corners.',
   rect3: 'Click the two ends of one edge, then out to the width.',
   rectCenter: 'Click the center, then a corner.',
@@ -344,8 +349,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const sidesN = Math.max(3, Math.min(64, Math.round(Number(sides)) || 6))
 
   // What the hover path reads without a render.
-  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number] })
-  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, sides: sidesN }
+  // landed: the clicks of the shape being drawn and what each snapped to, for the constraints it leaves
+  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[] })
+  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN }
 
   // Snap targets on the plane: the picked face's outline, and edges of bodies lying in the plane.
   useEffect(() => {
@@ -410,6 +416,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   // The drawn sketch to the view: on edits, never per cursor move.
   const marks = useMemo(() => sketchMarks(sketch, constraints), [sketch, constraints])
+  const arcFrom = useMemo(() => lineArcFrom(sketch, draft), [sketch, draft])
   useEffect(() => {
     if (!view) return
     const paths: SketchScene['paths'][number][] = engineSnaps.edges.map((e) => ({ points: [e.a, e.b], tone: 'soft' as SketchTone }))
@@ -427,13 +434,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       // points hide when Show points is off, but a picked sketch keeps its handles to drag
       handles: featureOnly ? [] : draft.tool === 'select' ? hs.points : pal.points ? [...hs.points, ...draft.points] : draft.points,
       dragHandles: draft.tool === 'select' && !featureOnly,
+      ...(arcFrom && !featureOnly ? { dragFrom: arcFrom } : {}),
       ...(pal.grid && !featureOnly ? { grid: { stepMm: Number(pal.step) * 10, min: plane.min, max: plane.max } } : {}),
       marks: issues.flatMap((i) => (i.at ? [i.at] : [])),
       ...(pal.dimensions ? { dims: marks.dims } : {}),
-      ...(pal.constraints ? { fixed: marks.fixed } : {}),
+      ...(pal.constraints ? { fixed: marks.fixed, glyphs: marks.glyphs } : {}),
       ...(pal.profiles ? { profiles: profileRings(sketch) } : {}),
     })
-  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly])
+  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom])
 
   // Section cuts away the model in front of the sketch plane while the sketch is open.
   useEffect(() => {
@@ -444,6 +452,32 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   useEffect(() => () => view?.setSketch(null), [view])
 
   const targets = (skip?: Parameters<typeof sketchTargets>[1]): SnapTargets[] => [live.current.engineSnaps, sketchTargets(live.current.sketch, skip)]
+
+  // a drawing tool's step: the new sketch and draft, and the constraints it leaves unless Ctrl or Cmd was held
+  const apply = (r: { sketch: Entity[]; draft: Draft }, at: Landing, quiet: boolean): void => {
+    const l = live.current
+    const landed = [...l.landed, quiet ? { at: at.at, kind: null } : at]
+    // a chain turned round to go on from its start keeps its constraints on the same points
+    const turned = reversedChain(l.sketch, r.sketch)
+    const was = l.sketch[turned]
+    let cons = turned >= 0 && was?.kind === 'chain' ? afterReverse(l.constraints, turned, was.segs.length) : l.constraints
+    if (!quiet) {
+      const more = inferred(l.sketch, r.sketch, landed, cons)
+      if (more.length) cons = [...cons, ...more]
+    }
+    const grew = JSON.stringify(r.sketch) !== JSON.stringify(l.sketch)
+    // the next click can come before the next render
+    l.landed = !r.draft.points.length ? [] : grew ? [landed[landed.length - 1]!] : landed
+    l.sketch = r.sketch
+    l.draft = r.draft
+    if (cons !== l.constraints) {
+      l.constraints = cons
+      setConstraints(cons)
+    }
+    setSketch(r.sketch)
+    setDraft(r.draft)
+    setField(null)
+  }
 
   // Events from the view.
   useEffect(() => {
@@ -468,13 +502,19 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           setSelected(hitTest(l.sketch, ev.at, tol))
           return
         }
-        const r = click(l.sketch, l.draft, s.at, { sides: l.sides })
-        // the next click can come before the next render
-        l.sketch = r.sketch
-        l.draft = r.draft
-        setSketch(r.sketch)
-        setDraft(r.draft)
-        setField(null)
+        apply(click(l.sketch, l.draft, s.at, { sides: l.sides }), { at: s.at, kind: ev.alt ? null : s.kind }, !!ev.ctrl)
+        return
+      }
+      // a drag off the line's open end draws a tangent arc, placed on release
+      if ((ev.kind === 'drag' || ev.kind === 'release') && ev.handle === -1) {
+        const from = lineArcFrom(l.sketch, l.draft)
+        if (!from) return
+        const s = ev.alt ? { at: ev.at, kind: null } : snap(ev.at, targets(), { gridMm: l.gridMm, tolMm: tol })
+        l.cursor = s.at
+        if (ev.kind === 'drag') return view.setSketchCursor({ path: dragArcPreview(l.sketch, l.draft, s.at), at: s.at })
+        view.setSketchCursor(null)
+        // a press that never left the end draws nothing
+        if (dist(s.at, from) >= tol) apply(dragArc(l.sketch, l.draft, s.at), { at: s.at, kind: ev.alt ? null : s.kind }, !!ev.ctrl)
         return
       }
       if (ev.kind === 'context') {
