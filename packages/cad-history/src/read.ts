@@ -3,7 +3,7 @@
 // Reads the CAD history parts of a project (docs/cad-history.md, "Storage"), written by
 // file.ts. Untrusted: a bad step or mesh drops that object's history, never the project.
 import { productName } from '@slicerx/contracts/brand'
-import { BIN_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
+import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
 import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
@@ -210,6 +210,58 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
   return { version: 1, base, steps, ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}) }
 }
 
+const MAX_ITEMS = 4000
+
+/**
+ * A version 3 file's bodies as version 2 objects: each body with the live features on it, in timeline order, their
+ * sketches put back in (design.ts, featureParams). The steps are then read as any others. Null when it does not read.
+ */
+function designObjects(j: Record<string, unknown>): Record<string, unknown>[] | null {
+  const items = j['items']
+  const marker = j['marker']
+  if (!Array.isArray(j['bodies']) || !Array.isArray(items) || items.length > MAX_ITEMS || !Number.isInteger(marker) || (marker as number) < 0) return null
+  const sketches = new Map<string, Record<string, unknown>>()
+  const steps = new Map<string, unknown[]>()
+  // a feature whose sketch is gone drops its body's history, not the others
+  const bad = new Set<string>()
+  for (const it of items.slice(0, marker as number)) {
+    if (!obj(it)) return null
+    if (it['kind'] === 'sketch') {
+      if (typeof it['id'] !== 'string' || !Array.isArray(it['loops']) || !frameOk(it['frame']) || (it['constraints'] !== undefined && !Array.isArray(it['constraints']))) return null
+      sketches.set(it['id'], it)
+      continue
+    }
+    if (it['kind'] !== 'feature' || typeof it['body'] !== 'string' || !obj(it['params'])) return null
+    const { kind: _k, body, sketch, ...step } = it
+    let params = it['params']
+    if (sketch !== undefined) {
+      const k = typeof sketch === 'string' ? sketches.get(sketch) : undefined
+      if (!k) {
+        bad.add(body as string)
+        continue
+      }
+      const loops = k['loops']
+      const frame = k['frame'] === undefined ? {} : { frame: k['frame'] }
+      const cons = k['constraints'] === undefined ? {} : { constraints: k['constraints'] }
+      if (params['op'] === 'shape.extrude') params = { ...params, ...frame, shape: { type: 'sketch', loops, ...cons } }
+      else if (params['op'] === 'sketch.revolve') params = { ...params, ...frame, ...cons, loops }
+      else return null
+    }
+    const list = steps.get(body as string) ?? []
+    list.push({ ...step, params })
+    steps.set(body as string, list)
+  }
+  return j['bodies'].map((b) => (obj(b) && typeof b['object'] === 'string' ? { ...b, steps: bad.has(b['object']) ? null : (steps.get(b['object']) ?? []) } : {}))
+}
+
+/** The stored objects of a file version this reads, or null. */
+function storedObjects(j: unknown): unknown[] | null {
+  if (!obj(j)) return null
+  if (j['version'] === DESIGN_FILE_VERSION) return designObjects(j)
+  if ((j['version'] !== 1 && j['version'] !== HISTORY_FILE_VERSION) || !Array.isArray(j['objects'])) return null
+  return j['objects']
+}
+
 /** Histories by 3MF object id. A newer version, a missing object or a part that does not read leaves that history out. */
 export function parseHistories(files: ReadonlyMap<string, Uint8Array>, objectIds: ReadonlySet<string>): Map<string, History> {
   const out = new Map<string, History>()
@@ -221,8 +273,9 @@ export function parseHistories(files: ReadonlyMap<string, Uint8Array>, objectIds
   } catch {
     return out
   }
-  if (!obj(j) || (j['version'] !== 1 && j['version'] !== HISTORY_FILE_VERSION) || !Array.isArray(j['objects'])) return out
-  for (const o of j['objects']) {
+  const objects = storedObjects(j)
+  if (!objects) return out
+  for (const o of objects) {
     if (!obj(o) || typeof o['object'] !== 'string' || !objectIds.has(o['object']) || out.has(o['object'])) continue
     try {
       const h = readHistory(o, files)
@@ -251,9 +304,10 @@ export function historyLost(files: ReadonlyMap<string, Uint8Array>, objectIds: R
     return whole
   }
   if (!obj(j)) return whole
-  if (typeof j['version'] === 'number' && j['version'] > HISTORY_FILE_VERSION) return null
-  if ((j['version'] !== 1 && j['version'] !== HISTORY_FILE_VERSION) || !Array.isArray(j['objects'])) return whole
-  const lost = j['objects'].filter((o) => obj(o) && typeof o['object'] === 'string' && objectIds.has(o['object']) && !read.has(o['object'])).length
+  if (typeof j['version'] === 'number' && j['version'] > DESIGN_FILE_VERSION) return null
+  const objects = storedObjects(j)
+  if (!objects) return whole
+  const lost = objects.filter((o) => obj(o) && typeof o['object'] === 'string' && objectIds.has(o['object']) && !read.has(o['object'])).length
   if (lost === 0) return null
   return lost === 1 ? 'The CAD history of 1 object could not be read, so it opens without it.' : `The CAD history of ${lost} objects could not be read, so they open without it.`
 }
@@ -267,7 +321,7 @@ export function historyNewer(files: ReadonlyMap<string, Uint8Array>): string | n
   if (!bytes) return null
   try {
     const v = (JSON.parse(new TextDecoder().decode(bytes)) as { version?: unknown }).version
-    if (typeof v === 'number' && v > HISTORY_FILE_VERSION) {
+    if (typeof v === 'number' && v > DESIGN_FILE_VERSION) {
       return `This project's CAD history was saved by a newer ${productName()} (history version ${v}). Its objects open without their history; update ${productName()} to edit it.`
     }
   } catch {
