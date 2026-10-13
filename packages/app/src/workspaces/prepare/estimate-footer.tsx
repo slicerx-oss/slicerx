@@ -15,9 +15,11 @@ import { useWaited } from '../../lib/waited'
 import { printBlock } from '../../plate/heimdall'
 import { firstHit, refusalSpot, showRefusal, showSpot } from '../../plate/preflight-show'
 import { sequenceProblem } from '../../plate/sequence-check'
+import { rolledBackNote } from '../../plate/timeline'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../../state/actions'
 import { get, showSliced, shownSlice, toast, useApp } from '../../state/store'
 import { sliceFraction } from '../slice-progress'
+import { RolledBack } from './rolled-back'
 import { Loading } from '../../shell/loading'
 import './estimate-footer.css'
 
@@ -58,6 +60,8 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   const longSlice = useWaited(running)
   // Slice, Print and the export-only printer's Export wait while a model is still loading; the menu stays usable.
   const loading = useApp((s) => s.plateLoading)
+  // The timeline rolled back: Print and Export say what they use, as the notice under them does.
+  const rolled = useApp(rolledBackNote)
 
   // Why the main action waits, as its tooltip.
   const reason = plate.length === 0 ? 'Add a model to the plate.' : loading ? 'The model is still loading.' : unsafe !== null ? unsafe : heads !== null && !done ? heads : !fresh ? (auto ? 'The slice is updating.' : 'Slice the plate first.') : undefined
@@ -83,11 +87,11 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       {done && !done.stale ? 'Slice again' : label}
     </Button>
   ) : exportOnly ? (
-    <SplitButton variant="primary" size="lg" full icon="sd-card" data-testid="slice-estimate-export-gcode" disabled={!fresh || loading} {...(reason ? { tip: { title: 'Export G-code', reason } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => void exportGcode(host)}>
+    <SplitButton variant="primary" size="lg" full icon="sd-card" data-testid="slice-estimate-export-gcode" disabled={!fresh || loading} {...(reason ? { tip: { title: 'Export G-code', reason } } : rolled ? { tip: { title: 'Export G-code', body: rolled } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => void exportGcode(host)}>
       Export G-code
     </SplitButton>
   ) : (
-    <SplitButton variant="primary" size="lg" full icon="send-to-printer" data-testid="danger-slice-print" aria-label={target ? `Print on ${target.name}` : 'Print'} disabled={!fresh || loading} {...(reason ? { tip: { title: target ? `Print on ${target.name}` : 'Print', reason } } : target ? { tip: { title: `Print on ${target.name}` } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
+    <SplitButton variant="primary" size="lg" full icon="send-to-printer" data-testid="danger-slice-print" aria-label={target ? `Print on ${target.name}` : 'Print'} disabled={!fresh || loading} {...(reason ? { tip: { title: target ? `Print on ${target.name}` : 'Print', reason } } : target || rolled ? { tip: { title: target ? `Print on ${target.name}` : 'Print', ...(rolled ? { body: rolled } : {}) } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
       {target ? (
         <span className="btn-name">
           Print on <MiddleName name={shortPrinterName(target.name)} />
@@ -121,6 +125,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   )
   const problems = (
     <>
+      <RolledBack />
       {unsafe !== null ? (
         <p className="app-err" role="alert">
           {unsafe}

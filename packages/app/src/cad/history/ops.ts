@@ -34,7 +34,7 @@ export async function runReplay(req: ReplayRequest, signal?: AbortSignal): Promi
   })
 }
 
-const toPart = (m: HistoryMesh): MeshPart => ({ name: m.name, slot: m.slot, positions: m.positions instanceof Float32Array ? m.positions : new Float32Array(m.positions), indices: m.indices instanceof Uint32Array ? m.indices : new Uint32Array(m.indices) })
+export const toPart = (m: HistoryMesh): MeshPart => ({ name: m.name, slot: m.slot, positions: m.positions instanceof Float32Array ? m.positions : new Float32Array(m.positions), indices: m.indices instanceof Uint32Array ? m.indices : new Uint32Array(m.indices) })
 
 /** The steps with each one's broken message from a replay, kept so the list shows it after a reload. */
 export function withStatus(steps: readonly Step[], status: readonly StepStatus[], found: ReplayResult['found'] = {}): Step[] {
