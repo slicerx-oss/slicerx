@@ -7,6 +7,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 ### Added
 
 - The slice report's `featureFilaments`: for each plate object, the filament slots each feature (`outerWall`, `sparseInfill`, `support` and the rest, `Feature::key`) printed with, read from the sliced paths. `Feature::ALL` lists the features.
+- `prepare_with`: `prepare` with progress. Preparing a session reports `Stage::Layers` as the plate, its objects and the session are ready, and stops on a cancel, and a run reports the stage on through the whole-object plans, so a host's bar moves before the first contour. `run_request_with` reports it too.
 
 ## [0.1.5] - 2026-10-13
 

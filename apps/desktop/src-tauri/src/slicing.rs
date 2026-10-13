@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use sx_core::api::{
-    Cancellable, Prepared, Progress, SliceRequest, Stage, prepare, run_prepared, session_key,
+    Cancellable, Prepared, Progress, SliceRequest, Stage, prepare_with, run_prepared, session_key,
 };
 use sx_core::{Error, Mesh};
 use tauri::State;
@@ -259,13 +259,15 @@ fn run_slice_kept(
         Some(p)
     });
     let fresh = hit.is_none();
-    let prepared = match hit {
-        Some(p) => p,
-        None => Arc::new(prepare(req, &lookup).map_err(|e| e.to_string())?),
-    };
     let progress = Cancellable {
         progress,
         flag: cancel,
+    };
+    // A new session reports its own progress (the layers stage) and stops on a cancel, so a big plate's bar moves
+    // and Cancel works before the first contour.
+    let prepared = match hit {
+        Some(p) => p,
+        None => Arc::new(prepare_with(req, &lookup, &progress).map_err(|e| e.to_string())?),
     };
     let run = run_prepared(req, &prepared, &progress).map_err(|e| e.to_string())?;
     if let (true, Some(k)) = (fresh, key) {

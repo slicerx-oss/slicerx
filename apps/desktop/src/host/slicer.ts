@@ -103,18 +103,19 @@ let nextJob = 1
 
 /**
  * Where each engine stage sits in the whole slice, from and to, roughly as the time goes on a big model: cutting the
- * layers, working out each layer's walls and surfaces, the paths, then the G-code and the preview. A stage the engine
- * does not report is passed over; the bar never goes back.
+ * layers and the whole-object plans worked out before the first contour (often over half the time), working out each
+ * layer's walls and surfaces, the paths, then the G-code and the preview. A stage the engine does not report is passed
+ * over; the bar never goes back.
  */
 const STAGE_SPAN: Partial<Record<SliceStage, [number, number]>> = {
-  layers: [0, 0.02],
-  contours: [0.02, 0.25],
-  perimeters: [0.25, 0.55],
-  surfaces: [0.25, 0.55],
-  infill: [0.25, 0.55],
-  paths: [0.55, 0.9],
-  gcode: [0.9, 0.97],
-  preview: [0.97, 1],
+  layers: [0, 0.45],
+  contours: [0.45, 0.55],
+  perimeters: [0.55, 0.7],
+  surfaces: [0.55, 0.7],
+  infill: [0.55, 0.7],
+  paths: [0.7, 0.92],
+  gcode: [0.92, 0.98],
+  preview: [0.98, 1],
 }
 
 /** The engine's (stage, fraction within it) as one fraction of the whole slice that only grows. */
