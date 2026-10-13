@@ -72,12 +72,14 @@ test('Show me on a strike opens the toolpaths at its layer and centers the view 
     const w = window as unknown as { __seen: Set<string>; __sampling: boolean; __sx: Sx }
     w.__seen = new Set<string>()
     w.__sampling = true
-    // samples until the test stops it, so a slow machine can't run the window out before the jump lands
+    // samples until the test stops it, so a slow machine can't run the window out before the jump lands; the
+    // deadline only keeps a stuck test from sampling forever
+    const t0 = performance.now()
     const tick = () => {
       const v = document.querySelector('#pv-layer')?.getAttribute('aria-valuetext')
       // From the click on: the jump has picked the strike, before that the bar shows the whole print.
       if (v && w.__sx.getState().strikePick !== null) w.__seen.add(v.replace(/ of .*/, ''))
-      if (w.__sampling) requestAnimationFrame(tick)
+      if (w.__sampling && performance.now() - t0 < 15_000) requestAnimationFrame(tick)
     }
     tick()
   })
