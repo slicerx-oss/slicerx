@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! "Connect your AI agent": where the bundled MCP server is, an agent's credential in the keychain
-//! (service `slicerx-agent-<client>`, account `slicerx`, as the server reads it), running a client's
+//! (service `slicerx-agent-<client>`, with a test build's suffix (keychain.rs), account `slicerx`, as the
+//! server reads it), running a client's
 //! install command, and opening a client's install link. Nothing here returns a secret.
 
 use std::path::PathBuf;
@@ -130,6 +131,19 @@ fn server_env(
     link_url: &str,
     edition: &str,
 ) -> Result<serde_json::Value, String> {
+    server_env_as(crate::keychain::identifier(), client, hub_key, link_url, edition)
+}
+
+/// `server_env` for an app with `identifier`. The credential's item is named `slicerx-agent-<client>` in the
+/// config; an app other than the shipping one also names itself (`SLICERX_MCP_APP_IDENTIFIER`), so the server
+/// reads that app's item (keychain.rs) and never the shipping app's.
+fn server_env_as(
+    identifier: &str,
+    client: &str,
+    hub_key: &str,
+    link_url: &str,
+    edition: &str,
+) -> Result<serde_json::Value, String> {
     client_ok(client)?;
     if !valid_hub_key(hub_key) {
         return Err("bad hub key".to_owned());
@@ -137,13 +151,17 @@ fn server_env(
     if !valid_link_url(link_url) {
         return Err("the hub address must be ws://127.0.0.1:<port>".to_owned());
     }
-    Ok(serde_json::json!({
+    let mut env = serde_json::json!({
         "SLICERX_MCP_PRINTERS": "link",
         "SLICERX_MCP_LINK_URL": link_url,
         "SLICERX_MCP_LINK_HUB_KEY": hub_key,
         "SLICERX_MCP_LINK_KEY_REF": format!("slicerx-agent-{client}"),
         "SLICERX_CONFIG": edition,
-    }))
+    });
+    if identifier != crate::keychain::SHIPPING_IDENTIFIER {
+        env["SLICERX_MCP_APP_IDENTIFIER"] = identifier.into();
+    }
+    Ok(env)
 }
 
 /// The one install command each command-line client has, built here from checked values. The
@@ -263,10 +281,14 @@ pub async fn agent_bundle(app: AppHandle, hub_key: String, link_url: String) -> 
     Ok(out.to_string_lossy().into_owned())
 }
 
+/// The agent clients this app connects, each with its own credential (`AGENT_CLIENTS` in packages/mcp).
+pub const CLIENTS: [&str; 5] = ["claude-desktop", "claude-code", "cursor", "codex", "chatgpt"];
+
 fn client_ok(client: &str) -> Result<(), String> {
-    match client {
-        "claude-desktop" | "claude-code" | "cursor" | "codex" | "chatgpt" => Ok(()),
-        _ => Err("unknown agent".to_owned()),
+    if CLIENTS.contains(&client) {
+        Ok(())
+    } else {
+        Err("unknown agent".to_owned())
     }
 }
 
@@ -275,7 +297,7 @@ fn store_key(client: &str, key: &str) -> Result<(), String> {
         return Err("bad credential".to_owned());
     }
     let entry =
-        keyring::Entry::new(&format!("slicerx-agent-{client}"), "slicerx").map_err(|e| e.to_string())?;
+        keyring::Entry::new(&crate::keychain::agent_service(client), "slicerx").map_err(|e| e.to_string())?;
     entry.set_password(key.trim()).map_err(|e| e.to_string())
 }
 
@@ -305,7 +327,7 @@ pub struct AgentCredential {
 }
 
 /// Gets this agent its own hub credential (`clients.create`, role agent) and puts it in the keychain
-/// under `slicerx-agent-<client>`. The key goes from the hub to the keychain inside this process:
+/// under `slicerx-agent-<client>` (keychain.rs names it per app). The key goes from the hub to the keychain inside this process:
 /// it is never returned, logged or shown. An earlier credential for the same agent is revoked.
 #[cfg(feature = "connect")]
 #[tauri::command]
@@ -354,7 +376,9 @@ pub async fn agent_disconnect(client: String) -> Result<(), String> {
 #[tauri::command]
 pub fn agent_connected(client: String) -> Result<bool, String> {
     client_ok(&client)?;
-    match keyring::Entry::new(&format!("slicerx-agent-{client}"), "slicerx").and_then(|e| e.get_password()) {
+    match keyring::Entry::new(&crate::keychain::agent_service(&client), "slicerx")
+        .and_then(|e| e.get_password())
+    {
         Ok(_) => Ok(true),
         Err(keyring::Error::NoEntry) => Ok(false),
         Err(e) => Err(e.to_string()),
@@ -520,7 +544,7 @@ mod hub {
 #[tauri::command]
 pub fn agent_key_clear(client: String) -> Result<(), String> {
     client_ok(&client)?;
-    match keyring::Entry::new(&format!("slicerx-agent-{client}"), "slicerx")
+    match keyring::Entry::new(&crate::keychain::agent_service(&client), "slicerx")
         .and_then(|e| e.delete_credential())
     {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -628,6 +652,49 @@ mod bundle_tests {
         assert_eq!(m["server"]["mcp_config"]["env"]["SLICERX_MCP_LINK_HUB_KEY"], KEY);
         assert_eq!(m["name"], "slicerx");
         assert!(bundle_manifest(crate::brand::get(), "nope", "ws://127.0.0.1:47615").is_err());
+    }
+
+    #[test]
+    fn a_test_build_names_its_own_credential_item_and_the_shipping_app_keeps_its_config() {
+        let edition = EDITION;
+        let shipping = server_env_as(
+            "app.slicerx.desktop",
+            "cursor",
+            KEY,
+            "ws://127.0.0.1:47615",
+            edition,
+        )
+        .unwrap();
+        assert_eq!(
+            shipping,
+            serde_json::json!({
+                "SLICERX_MCP_PRINTERS": "link",
+                "SLICERX_MCP_LINK_URL": "ws://127.0.0.1:47615",
+                "SLICERX_MCP_LINK_HUB_KEY": KEY,
+                "SLICERX_MCP_LINK_KEY_REF": "slicerx-agent-cursor",
+                "SLICERX_CONFIG": edition,
+            })
+        );
+        let bridge = server_env_as(
+            "app.slicerx.desktop.agent-bridge",
+            "cursor",
+            KEY,
+            "ws://127.0.0.1:47615",
+            edition,
+        )
+        .unwrap();
+        assert_eq!(bridge["SLICERX_MCP_LINK_KEY_REF"], "slicerx-agent-cursor");
+        assert_eq!(
+            bridge["SLICERX_MCP_APP_IDENTIFIER"],
+            "app.slicerx.desktop.agent-bridge"
+        );
+        // The item the server reads from that config is the one the test build stores under.
+        assert_eq!(
+            crate::keychain::service_for("app.slicerx.desktop.agent-bridge", "slicerx-agent-cursor"),
+            "slicerx-agent-cursor.app.slicerx.desktop.agent-bridge"
+        );
+        // Without init (a test), the app is the shipping one and stores under today's name.
+        assert_eq!(crate::keychain::agent_service("cursor"), "slicerx-agent-cursor");
     }
 
     #[test]

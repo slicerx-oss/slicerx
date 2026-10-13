@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { AGENT_CLIENTS, agentKeyRef, installSteps, type InstallInput } from '../src/agents'
+import { AGENT_CLIENTS, agentKeyRef, installSteps, keychainService, serverEnv, SHIPPING_APP_IDENTIFIER, type InstallInput } from '../src/agents'
 import { readKeychainKey } from '../src/link-code'
 
 const input: InstallInput = { server: { command: 'node', args: ['/Applications/SlicerX.app/Contents/Resources/mcp/cli.js'] }, hubKey: 'HUBKEYBASE64=' }
@@ -75,5 +75,36 @@ describe('Connect your AI agent', () => {
       // The keyring crate the desktop app writes with names the account `username` in Secret Service.
       expect(calls[0]).toEqual(['secret-tool', 'lookup', 'service', 'slicerx-agent-cursor', 'username', 'slicerx'])
     }
+  })
+
+  it('reads a test build\'s own credential item and never the shipping app\'s', () => {
+    const shipping = AGENT_CLIENTS.map((c) => agentKeyRef(c.id))
+    // The shipping app, and a config without an identifier, keep exactly today's names.
+    expect(shipping).toEqual(['slicerx-agent-claude-desktop', 'slicerx-agent-claude-code', 'slicerx-agent-cursor', 'slicerx-agent-codex', 'slicerx-agent-chatgpt'])
+    for (const ref of shipping) {
+      expect(keychainService(ref)).toBe(ref)
+      expect(keychainService(ref, SHIPPING_APP_IDENTIFIER)).toBe(ref)
+    }
+    expect(keychainService('slicerx-mimir-cloud-token', 'app.slicerx.desktop')).toBe('slicerx-mimir-cloud-token')
+    for (const id of ['app.slicerx.desktop.agent-bridge', 'app.slicerx.desktop.dev', 'app.slicerx.desktop2', 'app.layermate.desktop', 'com.example.demo']) {
+      for (const ref of [...shipping, 'slicerx-printers', 'slicerx-pair', 'slicerx-mimir-cloud-token', 'slicerx-chatgpt']) {
+        const name = keychainService(ref, id)
+        expect(shipping).not.toContain(name)
+        expect(name).toBe(`${ref}.${id}`)
+      }
+    }
+    // The config a test build writes names the item as always, plus the app; the shipping app's config is unchanged.
+    expect(serverEnv('cursor', { ...input, appIdentifier: 'app.slicerx.desktop.agent-bridge' })).toMatchObject({ SLICERX_MCP_LINK_KEY_REF: 'slicerx-agent-cursor', SLICERX_MCP_APP_IDENTIFIER: 'app.slicerx.desktop.agent-bridge' })
+    expect(serverEnv('cursor', { ...input, appIdentifier: SHIPPING_APP_IDENTIFIER })).toEqual(serverEnv('cursor', input))
+    expect(serverEnv('cursor', input)).not.toHaveProperty('SLICERX_MCP_APP_IDENTIFIER')
+    // The server asks the store for <ref>.<identifier>.
+    const calls: string[][] = []
+    const run = (cmd: string, args: string[]) => (calls.push([cmd, ...args]), 'key-123\n')
+    if (process.platform === 'darwin' || process.platform === 'linux') {
+      expect(readKeychainKey('slicerx-agent-cursor', run, 'app.slicerx.desktop.agent-bridge')).toBe('key-123')
+      readKeychainKey('slicerx-agent-cursor', run, SHIPPING_APP_IDENTIFIER)
+      expect(calls.map((c) => c.find((a) => a.startsWith('slicerx-agent-')))).toEqual(['slicerx-agent-cursor.app.slicerx.desktop.agent-bridge', 'slicerx-agent-cursor'])
+    }
+    expect(() => readKeychainKey('slicerx-agent-cursor', run, 'bad id; rm')).toThrow(/not an app identifier/)
   })
 })

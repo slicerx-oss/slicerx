@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! The pairing host's document (its identity and every paired phone's device key). It is sealed with
-//! ChaCha20-Poly1305 under a random key kept in the system keychain (service `slicerx-pair`), and the
+//! ChaCha20-Poly1305 under a random key kept in the system keychain (service `slicerx-pair`, see keychain.rs), and the
 //! sealed bytes live in the app data folder. A copied data folder opens nothing without the keychain.
 
 use chacha20poly1305::aead::{Aead, KeyInit};
@@ -12,7 +12,8 @@ use tauri::{AppHandle, Manager};
 const NONCE: usize = 12;
 
 fn key() -> Result<[u8; 32], String> {
-    let entry = keyring::Entry::new("slicerx-pair", "slicerx").map_err(|e| e.to_string())?;
+    let entry = keyring::Entry::new(&crate::keychain::service(crate::keychain::PAIR), "slicerx")
+        .map_err(|e| e.to_string())?;
     match entry.get_password() {
         Ok(hex) => decode(&hex).ok_or_else(|| "the pairing key in the keychain is damaged".to_owned()),
         Err(keyring::Error::NoEntry) => {

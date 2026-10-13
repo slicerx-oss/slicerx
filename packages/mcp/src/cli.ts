@@ -73,6 +73,10 @@ Printers
                            The hub's agent code is read from its state directory
                            (agent-code, written with mode 0600), or from SLICERX_MCP_LINK_CODE.
                            A partner app passes its key in SLICERX_MCP_LINK_KEY instead.
+                           A client set up by the app reads its own credential from the keychain item
+                           SLICERX_MCP_LINK_KEY_REF names; a test build of the app (any identifier but
+                           app.slicerx.desktop) also sets SLICERX_MCP_APP_IDENTIFIER, and the item is
+                           <ref>.<identifier>, never the installed app's.
   --link-state-dir <dir>   sx-link's state directory, when it is not the default
   --no-app                 with --printers link: keep designs on this server, even while the app link to
                            the open app answers (SLICERX_MCP_NO_APP=1)
@@ -187,7 +191,7 @@ async function main(): Promise<void> {
     linkUrl: values['link-url'] ?? env('LINK_URL') ?? hubUrlFromEnv(process.env),
     // A client set up from the "Connect your AI agent" panel names its own credential in the keychain;
     // a partner app hands over the key it keeps itself.
-    ...(printers === 'link' && keyRef ? { linkClientKey: readKeychainKey(keyRef) } : printers === 'link' && partnerKey ? { linkClientKey: linkKeyFrom(partnerKey) } : {}),
+    ...(printers === 'link' && keyRef ? { linkClientKey: readKeychainKey(keyRef, undefined, env('APP_IDENTIFIER') || undefined) } : printers === 'link' && partnerKey ? { linkClientKey: linkKeyFrom(partnerKey) } : {}),
     linkCode: keyRef || partnerKey ? undefined : linkCodeFrom({ argvCode: values['link-code'], stateDir: values['link-state-dir'] ?? env('LINK_STATE_DIR'), envCode: env('LINK_CODE'), needed: printers === 'link' }),
     // The hub's key from its state directory is checked even when the code comes from the environment.
     linkHubKey: printers === 'link' ? (env('LINK_HUB_KEY') ?? readHubKey(values['link-state-dir'] ?? env('LINK_STATE_DIR'))) : undefined,

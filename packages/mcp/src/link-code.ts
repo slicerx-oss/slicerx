@@ -8,6 +8,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { productName } from '@slicerx/contracts'
+import { keychainService } from './agents'
 
 /** sx-link's default state directory, as `default_state_dir` in packages/connect/link/src/lib.rs. */
 export function hubStateDir(): string | undefined {
@@ -54,9 +55,13 @@ export function linkCodeFrom(o: { argvCode: string | undefined; stateDir: string
  * A client's own hub credential from the OS keychain, by the item name its config gives
  * (`SLICERX_MCP_LINK_KEY_REF`, account `slicerx`). The "Connect your AI agent" panel stores it
  * there, so no client's config file ever holds a secret. macOS and Linux (Secret Service).
+ * `identifier` is the app that stored it (`SLICERX_MCP_APP_IDENTIFIER`): a test build of the
+ * desktop app keeps its items under names of its own (`keychainService`), never the shipping app's.
  */
-export function readKeychainKey(ref: string, run: (cmd: string, args: string[]) => string = (c, a) => execFileSync(c, a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })): string {
+export function readKeychainKey(ref: string, run: (cmd: string, args: string[]) => string = (c, a) => execFileSync(c, a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }), identifier?: string): string {
   if (!/^slicerx-agent-[a-z-]+$/.test(ref)) throw new Error(`${ref} is not an agent credential name`)
+  if (identifier !== undefined && !/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(identifier)) throw new Error(`${identifier} is not an app identifier`)
+  ref = keychainService(ref, identifier)
   let out = ''
   try {
     if (process.platform === 'darwin') out = run('security', ['find-generic-password', '-s', ref, '-a', 'slicerx', '-w'])

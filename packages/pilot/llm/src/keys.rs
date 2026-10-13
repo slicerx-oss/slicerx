@@ -33,6 +33,23 @@ pub trait KeySource: Send + Sync {
     fn env(&self, name: &str) -> Option<String>;
 }
 
+/// How the app names the service it keeps `base` under, set once at start (`set_keychain_service`).
+static SERVICE_NAME: std::sync::OnceLock<fn(&str) -> String> = std::sync::OnceLock::new();
+
+/// Sets how [`SystemKeySource`] names a keychain service. The desktop app keeps its shipping names and gives a
+/// test build (any other app identifier) names of its own, so a test build never reads or replaces the installed
+/// app's items. Unset, the names in this crate are used as they are. The first call wins.
+pub fn set_keychain_service(name: fn(&str) -> String) {
+    let _ = SERVICE_NAME.set(name);
+}
+
+/// The service the OS store is asked for, for the service name `base` this crate uses.
+pub fn keychain_service(base: &str) -> String {
+    SERVICE_NAME
+        .get()
+        .map_or_else(|| base.to_owned(), |name| name(base))
+}
+
 /// The OS credential store (macOS Keychain, Windows Credential Manager, Secret Service)
 /// and the process environment. Keychain reads block, and macOS may ask the user to allow
 /// access the first time.
@@ -48,7 +65,10 @@ impl KeySource for SystemKeySource {
         if refused().lock().is_ok_and(|r| r.contains(&key)) {
             return None;
         }
-        match keyring::Entry::new(service, account).ok()?.get_password() {
+        match keyring::Entry::new(&keychain_service(service), account)
+            .ok()?
+            .get_password()
+        {
             Ok(v) => Some(v),
             Err(keyring::Error::NoEntry) => None,
             Err(_) => {

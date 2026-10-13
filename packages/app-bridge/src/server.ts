@@ -81,7 +81,7 @@ export function createAppBridgeServer(client: AppClient): McpServer {
   // Reads
   server.registerTool(
     'app_health',
-    { title: 'Is the app running', description: 'Whether a bridge build of the app is running and reachable: its name, version, process id, platform, whether its page side is up (pageReady) and the app has started (appReady), and the bridge tools it serves.', inputSchema: {}, annotations: read },
+    { title: 'Is the app running', description: 'Whether a bridge build of the app is running and reachable: its name, version, process id, platform, whether its page side is up (pageReady) and the app has started (appReady), the bridge tools it serves, and the keychain service names it keeps credentials under (keychain: its identifier and the names, which never match the installed app\'s).', inputSchema: {}, annotations: read },
     () => guard(async () => ok(await client.health())),
   )
   server.registerTool(

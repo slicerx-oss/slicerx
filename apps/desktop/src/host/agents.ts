@@ -19,7 +19,9 @@ export function createTauriAgents(): AgentInstallHost {
       if (!path) return null
       // The edition file names this edition in the server's tool text (SLICERX_CONFIG); without it, SlicerX.
       const editionFile = await invoke<string>('mcp_edition_file').catch(() => undefined)
-      return { command: 'node', args: [path], ...(editionFile ? { editionFile } : {}) }
+      // A test build keeps the agent's credential under keychain names of its own; the entry tells the server which.
+      const appIdentifier = await invoke<{ identifier: string }>('keychain_names').then((n) => n.identifier).catch(() => undefined)
+      return { command: 'node', args: [path], ...(editionFile ? { editionFile } : {}), ...(appIdentifier ? { appIdentifier } : {}) }
     },
     hub: async () => {
       const info = await invoke<{ url: string; code: string; hubKey: string }>('link_start')

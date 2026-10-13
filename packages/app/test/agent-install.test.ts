@@ -39,6 +39,14 @@ describe('connect your AI agent', () => {
     expect(JSON.stringify(r)).not.toMatch(/clientKey|[0-9a-f]{64}/)
   })
 
+  it('tells the server which app stored the credential when the app is a test build', async () => {
+    const bridge = host({ serverCommand: async () => ({ command: 'node', args: ['/x/cli.js'], appIdentifier: 'app.slicerx.desktop.agent-bridge' }) })
+    const r = await installAgent(bridge.host, 'claude-code')
+    expect(r.paste).toMatch(/SLICERX_MCP_APP_IDENTIFIER\W+app\.slicerx\.desktop\.agent-bridge/)
+    const shipping = host({ serverCommand: async () => ({ command: 'node', args: ['/x/cli.js'], appIdentifier: 'app.slicerx.desktop' }) })
+    expect((await installAgent(shipping.host, 'claude-code')).paste).not.toContain('SLICERX_MCP_APP_IDENTIFIER')
+  })
+
   it('runs nothing when the hub hands out no credential, and still shows the entry', async () => {
     const h = host({ credential: async () => ({ ok: false, reason: 'The printer bridge is not running.' }) })
     const r = await installAgent(h.host, 'cursor')
