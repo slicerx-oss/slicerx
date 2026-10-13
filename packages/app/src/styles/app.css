@@ -607,6 +607,30 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .tf-mirror-mark { color: var(--dim); margin-left: 4px; }
 .tf-mirror-label { font-size: var(--fs-sm); color: var(--muted); margin-right: 2px; }
 @media (max-width: 900px) { .plate-tools { top: 52px; } }
+/* The plate toolbar with the view switch under it, as one group at the top middle of the view, level with the corner
+   buttons. The person can drag it anywhere in the view by its grip (plate-tools-group.tsx). The bar's buttons, icons
+   and gaps are about 15% larger than elsewhere, and the switch has more room inside. */
+.vp { container: vp / inline-size; }
+.plate-tools-group { position: absolute; z-index: var(--z-hud); top: 12px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+.plate-tools-group > * { pointer-events: auto; }
+.plate-tools-group > .plate-tools, .plate-tools-group > .slice-look { position: relative; inset: auto; transform: none; }
+.plate-tools-group > .plate-tools { gap: 3px; padding: 5px; }
+.plate-tools-group > .plate-tools .sx-btn[data-size="sm"] { height: 32px; }
+.plate-tools-group > .plate-tools .sx-btn[data-icon-only][data-size="sm"] { width: 32px; }
+.plate-tools-group > .plate-tools .sx-btn[data-size="sm"] .sx-ic { width: 16px; height: 16px; }
+.plate-tools-group > .plate-tools .plate-tools-sep { height: 22px; margin: 0 5px; }
+.plate-tools-group > .slice-look { padding: 4px; }
+.plate-tools-group > .slice-look .sx-seg > button { height: 30px; padding: 0 16px; }
+/* The grip keeps its place at the bar's end and shows on hover or focus, so no button moves when it appears. */
+.plate-tools-grip { flex: none; display: grid; grid-template-columns: repeat(3, 3px); gap: 3px; place-content: center; width: 22px; height: 32px; margin-left: 2px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); cursor: grab; touch-action: none; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+.plate-tools-grip i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+.plate-tools-group:hover .plate-tools-grip, .plate-tools-grip:focus-visible, .plate-tools-group[data-dragging] .plate-tools-grip { opacity: 1; }
+.plate-tools-grip:hover { color: var(--fg); background: var(--ink-3); }
+.plate-tools-grip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.plate-tools-group[data-dragging], .plate-tools-group[data-dragging] .plate-tools-grip { cursor: grabbing; }
+.plate-tools-group[data-dragging] { user-select: none; }
+/* A narrow view has no room beside the corner buttons: the group starts under them. */
+@container vp (max-width: 600px) { .plate-tools-group:not([data-moved]) { top: 56px; } }
 .tf-row.tf-inst { grid-template-columns: 84px minmax(0, 1fr) auto; }
 .tf-stepper { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .tf-stepper .sx-scrub { flex: 0 1 56px; min-width: 36px; }
@@ -967,7 +991,8 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
 
 /* With the toolpaths showing, the color legend starts under the plate toolbar and the view switch, which sit across the
    middle of the view's top, so a wide legend (by feature type) never runs under them. */
-.studio[data-layers]:not([data-model-mode="design"]) > .vp .hud-top .legend { margin-top: 98px; }
+.studio[data-layers]:not([data-model-mode="design"]) > .vp .hud-top .legend { margin-top: 58px; }
+@container vp (max-width: 600px) { .studio[data-layers]:not([data-model-mode="design"]) > .vp .hud-top .legend { margin-top: 102px; } }
 
 /* Slice on a phone: one screen in rows, so nothing sits over anything else. The 3D view takes the top rows with its top
    controls, the layer slider down its right side and the plate chips along its foot; under it come the playback bar's

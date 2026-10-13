@@ -4,7 +4,7 @@
 // the key from the active look and feel's keymap. Placed on top or at the left per the preset.
 import type { LayoutSpec } from '@slicerx/contracts'
 import { Button } from '@slicerx/ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { resolveConfig } from '../../adapters/config'
 import { arrangePlate, dropSelectedToBed, getArrangeOptions, setArrangeOptions } from '../../plate/edit'
 import { history } from '../../plate/history'
@@ -63,7 +63,8 @@ function ArrangeOptionsButton() {
   )
 }
 
-export function PlateToolbar({ layout }: { layout: LayoutSpec }) {
+/** `grip` goes at the bar's end, in a place of its own, so showing it on hover moves no button. */
+export function PlateToolbar({ layout, grip }: { layout: LayoutSpec; grip?: ReactNode }) {
   const tool = useTool()
   const hasSel = useApp((s) => s.selection !== null)
   const count = useApp((s) => s.plate.length)
@@ -86,6 +87,7 @@ export function PlateToolbar({ layout }: { layout: LayoutSpec }) {
       <span className="plate-tools-sep" aria-hidden="true" />
       <Button variant="ghost" size="sm" icon="undo" aria-label="Undo" tip="edit.undo" disabled={undo === 0} onClick={() => history().undo()} />
       <Button variant="ghost" size="sm" icon="redo" aria-label="Redo" tip="edit.redo" disabled={redo === 0} onClick={() => history().redo()} />
+      {grip}
     </div>
   )
 }

@@ -39,6 +39,7 @@ import { setTool, toolStore, useTool } from '../plate/tools'
 import { warmFullEngine } from '../geom/full-engine'
 import { useBoundValues } from './prepare/object-tools'
 import { SliceLookSwitch } from './prepare/slice-look'
+import { PlateToolsGroup } from './prepare/plate-tools-group'
 import { ParkedChip } from './prepare/parked-chip'
 import { ViewSelectionMenu } from './prepare/selection-bar'
 import { SliceProgress } from './slice-progress'
@@ -133,6 +134,8 @@ export function Studio() {
   const compact = useCompactLayout()
   const phone = usePhoneLayout()
   const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer' && !compact
+  // The plate toolbar across the top carries the view switch under it, and the two drag as one.
+  const groupTools = layout.toolbar !== 'left-of-viewport' && !phone
   const modelMode = useModelMode()
   useBoundValues(true)
   const design = modelMode === 'design'
@@ -246,7 +249,8 @@ export function Studio() {
         </Suspense>
         <SliceProgress />
         {cad ? null : <ViewSelectionMenu />}
-        {cad || !hasPreview ? null : <SliceLookSwitch />}
+        {/* With the toolbar on top, the view switch hangs under it and moves with it (plate-tools-group.tsx). */}
+        {cad || !hasPreview || groupTools ? null : <SliceLookSwitch />}
         {cad || phone ? null : <ParkedChip />}
         <div className="hud hud-top">
           <div className="hud-col">
@@ -285,7 +289,7 @@ export function Studio() {
         </div>
 
         {/* a phone views and prints: no plate tools */}
-        {cad || phone ? null : <PlateToolbar layout={layout} />}
+        {cad || phone ? null : groupTools ? <PlateToolsGroup layout={layout} look={hasPreview ? <SliceLookSwitch /> : null} /> : <PlateToolbar layout={layout} />}
         {layers ? <LayerDock /> : null}
         {/* After the playback bar: on a phone it sits under it, so opening the bar moves nothing above it. */}
         {!cad && !sliceInSidebar ? (
