@@ -6,6 +6,8 @@ Localhost bridge for the browser build. It serves connectors and approvals over 
 sx-link [--port 47615] [--allow-origin https://staging.example] [--no-mdns] [--loopback]
 ```
 
+Without `--port`, a test or dev run's `SX_TEST_HUB_PORT` (1024 or above) sets the port, so the hub follows the same setting as the desktop app's test builds, the MCP server and sx-watch. Unset, it is 47615.
+
 ## Security
 
 - Binds `127.0.0.1` only.

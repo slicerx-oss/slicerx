@@ -20,6 +20,8 @@ pnpm --filter @slicerx/desktop tauri dev     # cargo must be on PATH
 pnpm --filter @slicerx/desktop build:app     # tauri build with the edition's product name, identifier and deep links
 ```
 
+A dev run's printer hub takes 47615 like a release, or the port in `SX_TEST_HUB_PORT` (1024 or above), so it can run beside an installed app's hub, an sx-link or an end-to-end run; sx-link, the MCP server and sx-watch read the same variable. Release builds never read it.
+
 `build:app` writes the edition's Tauri settings to `src-tauri/gen/edition.conf.json` (from `SLICERX_CONFIG`, default the SlicerX edition) and passes them to `tauri build --config`.
 
 Prerequisites: the pinned Rust toolchain, Node 24 with pnpm 10, and the platform's Tauri dependencies (Xcode command line tools on macOS, WebView2 on Windows, WebKitGTK 4.1 on Linux). Icons are generated from `icons-src/icon-1024.png` with `pnpm tauri icon icons-src/icon-1024.png -o src-tauri/icons`.

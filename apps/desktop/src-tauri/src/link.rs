@@ -71,24 +71,25 @@ pub async fn link_start(app: tauri::AppHandle, state: State<'_, Bridge>) -> Resu
     Ok(out)
 }
 
-/// The hub's port: sx-link's DEFAULT_PORT. A bridge test build takes another from `SX_TEST_HUB_PORT`, so the release
-/// gate and the end-to-end tests can run next to each other, or next to an sx-link, on one machine.
+/// The hub's port: sx-link's DEFAULT_PORT. A bridge test build, and a dev run (`tauri dev`, `cargo run`: `cfg(dev)`, a
+/// build without Tauri's custom protocol), take another from `SX_TEST_HUB_PORT`, so the release gate, the end-to-end
+/// tests and local app runs can share a machine with each other and with an sx-link. sx-link, the MCP server and
+/// sx-watch read the same variable when they are given no port or address of their own.
 #[cfg(feature = "connect")]
 fn hub_port() -> u16 {
-    #[cfg(feature = "agent-bridge")]
+    #[cfg(any(feature = "agent-bridge", dev))]
     return test_hub_port(std::env::var("SX_TEST_HUB_PORT").ok().as_deref());
-    #[cfg(not(feature = "agent-bridge"))]
+    #[cfg(not(any(feature = "agent-bridge", dev)))]
     sx_link::DEFAULT_PORT
 }
 
-/// `SX_TEST_HUB_PORT` as a port of 1024 or above; anything else is sx-link's DEFAULT_PORT. Compiled into bridge builds
-/// only; a release binary never reads the variable (apps/desktop/release/check-agent-bridge.mjs looks for its name).
-#[cfg(all(feature = "connect", feature = "agent-bridge"))]
+/// `SX_TEST_HUB_PORT` as a port of 1024 or above; anything else is sx-link's DEFAULT_PORT. Compiled into bridge and dev
+/// builds only; a release binary (built by `tauri build`, so with the custom protocol and not `dev`) never reads the
+/// variable (apps/desktop/release/check-agent-bridge.mjs looks for its name). A dev run loads its page from the dev
+/// server, where the config's CSP does not apply; a bridge build widens connect-src to any loopback port.
+#[cfg(all(feature = "connect", any(feature = "agent-bridge", dev)))]
 pub(crate) fn test_hub_port(value: Option<&str>) -> u16 {
-    value
-        .and_then(|v| v.trim().parse::<u16>().ok())
-        .filter(|p| *p >= 1024)
-        .unwrap_or(sx_link::DEFAULT_PORT)
+    sx_link::port_setting(value).unwrap_or(sx_link::DEFAULT_PORT)
 }
 
 /// Starts the hub on `port` and nowhere else. Clients connect to 47615 with no way to tell a
@@ -161,20 +162,26 @@ fn info(link: &sx_link::Link) -> LinkInfo {
     }
 }
 
-#[cfg(all(test, feature = "connect", feature = "agent-bridge"))]
-mod gate_tests {
-    use std::time::Duration;
+#[cfg(all(test, feature = "connect", any(feature = "agent-bridge", dev)))]
+mod port_tests {
+    use super::test_hub_port;
 
-    use super::{gate_watch_pause, test_hub_port};
-
+    // Cargo test builds the crate without Tauri's custom protocol, so `dev` is set and this runs in every test run.
     #[test]
-    fn a_test_build_takes_its_hub_port_from_the_environment_and_nothing_else_moves_it() {
+    fn a_test_or_dev_build_takes_its_hub_port_from_the_environment_and_nothing_else_moves_it() {
         assert_eq!(test_hub_port(Some("47715")), 47715);
         assert_eq!(test_hub_port(Some(" 50000 ")), 50000);
         for bad in [None, Some(""), Some("0"), Some("80"), Some("70000"), Some("port")] {
             assert_eq!(test_hub_port(bad), sx_link::DEFAULT_PORT, "{bad:?}");
         }
     }
+}
+
+#[cfg(all(test, feature = "connect", feature = "agent-bridge"))]
+mod gate_tests {
+    use std::time::Duration;
+
+    use super::gate_watch_pause;
 
     #[test]
     fn the_gate_shortens_the_watch_pause_steps_and_nothing_else_changes_them() {

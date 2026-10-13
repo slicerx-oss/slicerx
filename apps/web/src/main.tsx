@@ -47,7 +47,8 @@ if (__SX_FEATURE_CONNECT__) {
 if (__SX_FEATURE_CONNECT__) {
   const [{ setBridgeConnector, testHubUrl }, { browserBridge }] = await Promise.all([import('@slicerx/app'), import('./host/link')])
   // An end-to-end test build pairs with the hub port its page names (a bridge spec's own hub, e2e/bridge-hub.ts), else
-  // its run's (SX_TEST_HUB_PORT); every other build with sx-link's. __SX_E2E__ folds the page's port away elsewhere.
+  // its run's (SX_TEST_HUB_PORT); the dev server with SX_TEST_HUB_PORT when it was started with one; a release build
+  // with sx-link's. __SX_E2E__ folds the page's port away elsewhere.
   const pagePort = __SX_E2E__ ? (window as { __sxTestHubPort?: unknown }).__sxTestHubPort : undefined
   setBridgeConnector(browserBridge(testHubUrl(pagePort ?? __SX_TEST_HUB_PORT__), editionFromBuild().backend.relay))
   // Phone access keeps its identity and pairings sealed in this browser (features/phone/sealed.ts).
