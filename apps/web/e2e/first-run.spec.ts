@@ -358,3 +358,30 @@ test('shots: the settings mode question in the slicer step, light and dark', asy
     await page.screenshot({ path: `${dir}/setup-mode-${scheme}-${width}.png` })
   }
 })
+
+// The CAD-only studio (SLICERX_WEB_SLICING=0, as slicerx.app/studio is built), opened on the test build: no printer, no
+// slicer question and no open step, then the plate on Model. The made-up demo printers never show.
+test('the CAD-only studio: theme, then mimir, then the plate on Model', async ({ page, isMobile }) => {
+  await page.addInitScript(() => localStorage.setItem('slicerx.e2e.cadOnly', '1'))
+  await page.goto('./')
+  await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible()
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 1 of 2')
+  await noHorizontalScroll(page)
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  await expect(page.getByRole('heading', { name: 'Set up mimir' })).toBeVisible()
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 2')
+  // A browser cannot download or run a model, and this build carries no mimir cloud host.
+  const choices = page.getByRole('radiogroup', { name: 'How mimir gets a model' }).getByRole('radio')
+  await expect(choices).toHaveText([/Use your own API key/, /Skip for now/])
+  // Skip is one of the choices, so the footer has no Skip of its own
+  await choices.first().click()
+  await expect(page.getByTestId('setup-skip')).toHaveCount(0)
+  await expect(page.locator('.pc-provider').first()).toHaveAttribute('aria-checked', 'true')
+  await expect(page.locator('.pc-provider').first()).toContainText('Anthropic')
+  await noHorizontalScroll(page)
+  await page.locator('.fr-foot').getByRole('button', { name: 'Open the plate' }).click()
+  await expect(page.locator('.fr')).toHaveCount(0)
+  if (!isMobile) await expect(page.locator('.sx-tab[data-mode="slice"]')).toHaveCount(0)
+  await expect(page.getByText(/demo network|192\.0\.2\./)).toHaveCount(0)
+  await noHorizontalScroll(page)
+})

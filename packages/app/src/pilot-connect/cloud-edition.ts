@@ -20,7 +20,12 @@ export function cloudBase(edition: EditionConfig): string | null {
   }
 }
 
-/** True when this build can run mimir on mimir cloud: the edition has it and the shell carries it. */
-export function cloudReady(edition: EditionConfig, h: MimirCloudHost | null = mimirCloudHost()): boolean {
+/** True when this build offers mimir cloud: the edition has it and the shell carries it, signed in or not. */
+export function cloudOffered(edition: EditionConfig, h: MimirCloudHost | null = mimirCloudHost()): boolean {
   return h !== null && cloudBase(edition) !== null
+}
+
+/** True when this build can run mimir on mimir cloud now: offered, and signed in where it needs that. */
+export function cloudReady(edition: EditionConfig, h: MimirCloudHost | null = mimirCloudHost()): boolean {
+  return cloudOffered(edition, h) && h?.needsSignIn !== true
 }

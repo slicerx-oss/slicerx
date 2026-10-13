@@ -268,7 +268,9 @@ function pilot(v: unknown): Prefs['pilot'] | undefined {
   const provider = oneOf(v['provider'], ['openai', 'anthropic', 'local', 'mimir-cloud'] as const)
   const baseUrl = str(v['baseUrl'], 200)
   const model = str(v['model'], 80)
-  return { mode, ...(provider ? { provider } : {}), ...(baseUrl ? { baseUrl } : {}), ...(model ? { model } : {}) }
+  // an own-key provider saved before the model list had no model, which meant Auto
+  const own = provider && provider !== 'mimir-cloud' ? { model: model?.trim() || 'auto' } : model ? { model } : {}
+  return { mode, ...(provider ? { provider } : {}), ...(baseUrl ? { baseUrl } : {}), ...own }
 }
 
 const SEND_KEYS = ['bedLeveling', 'flowCalibration', 'vibrationCompensation', 'timelapse', 'firstLayerInspection']

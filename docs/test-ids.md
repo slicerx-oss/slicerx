@@ -28,6 +28,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `model-tree`, `model-inspector`, `slice-sidebar`, `slice-summary` | The body of the side pane with that edge tab: Model's tree and its tool and transform pane, Slice's printer and settings sidebar (its printer and filaments sit above it, pinned) and its right pane with the objects and the slice summary. It is gone while the pane is shut |
 | `open-in-app` | Open in SlicerX in the top bar of the CAD-only browser build: downloads the design and asks the desktop app to open it |
 | `toast` | A toast on screen; `data-tone` is ok, info, warn or error |
+| `open-settings` | Settings in the top bar |
+| `settings-nav-<section>` | A section in Settings' list: `settings-nav-pilot` (mimir), `settings-nav-look` and so on |
 | `toast-action` | The button on a toast (Undo and the like) |
 | `dialog-close` | The close button of a dialog |
 | `frame-close` | The close button of a full window frame (creator page editor, upload) |
@@ -349,6 +351,10 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 | `mimir-cloud-notice` | The notice before the first chat on mimir cloud (mimir tab and dock) |
 | `mimir-notice-share` | The notice's share switch, the same setting as `mimir-share` |
 | `mimir-notice-ok` | Start: the notice was read, and does not show again |
+| `ms-choice-<id>` | A card in the shared mimir setup (first-run, Settings and the mimir panel): `ms-choice-cloud`, `ms-choice-chatgpt`, `ms-choice-key`, `ms-choice-local`, `ms-choice-skip` |
+| `ms-cloud-note` | First-run's line under mimir cloud: no key, it connects when you finish |
+| `ms-cloud-signin` | The Sign in button under "Sign in to use mimir free" where mimir cloud needs a signed-in person |
+| `pc-model` | The model list under your own key or a local server: Auto first, each with a cost hint, then Other model id |
 
 ## Settings: Agents and the app link
 

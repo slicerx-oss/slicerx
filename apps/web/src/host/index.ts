@@ -77,16 +77,31 @@ export interface HostOverrides {
   llm?: LlmTransport
 }
 
+/** An end-to-end test asked for the CAD-only studio on the test build. Always false outside that build. */
+function cadOnlyTest(): boolean {
+  if (!__SX_E2E__) return false
+  try {
+    return localStorage.getItem('slicerx.e2e.cadOnly') === '1'
+  } catch {
+    return false
+  }
+}
+
 /** The browser host. The desktop build calls it with its native slicer and files. */
 export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
   const edition = editionFromBuild()
+  // The demo fleet's made-up printers (on 192.0.2.0/24) are for development, tests and an edition that asks for demo
+  // data, never for a person, who would read them as someone else's. Anywhere else the fleet starts empty.
+  const demoPrinters = !cadOnlyTest() && (__SX_DEV_BUILD__ || edition.features.demoData)
   // Without the engine (a CAD-only build) the slicer and its WebAssembly module are left out of the bundle, and a host
-  // that only keeps meshes answers the app. The end-to-end test build slices in the native engine instead.
+  // that only keeps meshes answers the app. The end-to-end test build slices in the native engine instead, unless a test
+  // opens it as the CAD-only studio (slicerx.e2e.cadOnly in localStorage).
+  const native = __SX_E2E_NATIVE_URL__ && !cadOnlyTest()
   const sl = over.slicer
     ? { host: over.slicer, wasm: false }
-    : __SX_E2E_NATIVE_URL__
+    : native
       ? { host: (await import('./native-test')).createNativeTestSlicer(__SX_E2E_NATIVE_URL__), wasm: false }
-      : __SX_WEB_SLICING__
+      : __SX_WEB_SLICING__ && !cadOnlyTest()
         ? await slicer()
         : { host: (await import('./meshes')).createMeshHost(), wasm: false }
   const host: Host = {
@@ -98,7 +113,7 @@ export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
       webgpu: typeof navigator !== 'undefined' && 'gpu' in navigator,
       threads: over.threads ?? Math.max(1, Math.min(11, (navigator.hardwareConcurrency || 4) - 1)),
       secureStorage: false,
-      ...(over.slicer || __SX_E2E_NATIVE_URL__ || __SX_WEB_SLICING__ ? {} : { slicing: false }),
+      ...(over.slicer || native || (__SX_WEB_SLICING__ && !cadOnlyTest()) ? {} : { slicing: false }),
     },
     build: {
       version: __SX_VERSION__,
@@ -120,7 +135,7 @@ export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
     host.approvals = broker
     if (__SX_FEATURE_CONNECT__) {
       const { createDemoPrinters } = await import('./printers')
-      host.printers = createDemoPrinters(broker)
+      host.printers = createDemoPrinters(broker, { demo: demoPrinters })
     }
   }
   if (__SX_FEATURE_PILOT__) host.llm = over.llm ?? noLlm
