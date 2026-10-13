@@ -38,7 +38,7 @@ The kernel runs on one thread: `cpp/tbb` stands in for the oneTBB headers it inc
 
 ## WebAssembly
 
-The browser runs the same kernel and wrapper as a wasm module in `lib/`, built by `scripts/build-wasm.sh` with a pinned Emscripten (6.0.10, `-Oz` with link-time optimization, wasm exceptions, one thread). The geometry worker loads it the first time an op needs it (`packages/app/src/geom/brep.ts`), so the app shell never carries it; `apps/web/scripts/bundle-size.mjs` fails a build that puts it in a startup chunk and holds the wasm to 1232 KB gzip. The module loads only for exact solids, which are behind a developer flag.
+The browser runs the same kernel and wrapper as a wasm module in `lib/`, built by `scripts/build-wasm.sh` with a pinned Emscripten (6.0.10, `-Oz` with link-time optimization, wasm exceptions, one thread). The geometry worker loads it the first time an op needs it (`packages/app/src/geom/brep.ts`), so the app shell never carries it; `apps/web/scripts/bundle-size.mjs` fails a build that puts it in a startup chunk and holds the wasm to 1258 KB gzip. The module loads only for exact solids, which are behind a developer flag.
 
 The build is committed so the web build needs no C++ toolchain. Rebuild it after a change to `cpp/` or the pinned kernel:
 
@@ -49,7 +49,7 @@ sh packages/brep/scripts/build-wasm.sh
 
 | File | Bytes | gzip | SHA-256 |
 | --- | --- | --- | --- |
-| `lib/sx_brep.wasm` | 3,189,003 | 1,252,403 | `f4a3d5bf2080586db1e1b3f9bb9a7e574b7832cdec39bc283f6d22fe86b5f21d` |
+| `lib/sx_brep.wasm` | 3,192,604 | 1,254,201 | `d24991d76452937f371c52a9c03d29390864000f8c2f8afbd4e80218821a8192` |
 | `lib/sx_brep.mjs` | 63,323 | | `43eac3d1350e95163fff77a3be6dc5610c4ac16350d720235e5854fd08ce09a8` |
 
 ## Licenses
