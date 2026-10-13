@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: desktop-windows
+
+# The desktop shell's whole test suite (slicerx-desktop, with and without the agent bridge) and the updater end to end
+# (apps/desktop/release/test/updater-e2e.mjs) on Windows. Pull requests and the merge queue run the desktop suite on
+# Linux and, on Windows, only the bin's bridge tests (ci.yml, desktop-bridge), so this weekly run catches what breaks
+# on Windows alone, such as a test executable that Windows refuses to start. It is not a required check and never runs
+# for pull requests or the merge queue.
+#
+# By hand: Actions > desktop-windows > Run workflow, or `gh workflow run desktop-windows.yml --ref <branch>`.
+on:
+  schedule:
+    # Mondays at 02:00 UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  desktop-windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-windows
+      # the updater end to end signs its fake bundles with the Tauri CLI
+      - run: pnpm install --frozen-lockfile --filter "@slicerx/desktop..."
+      # The shell embeds the frontend when it compiles; a placeholder page is enough to compile and test it.
+      - name: Placeholder frontend
+        shell: bash
+        run: mkdir -p apps/desktop/dist && echo '<!doctype html><title>ci</title>' > apps/desktop/dist/index.html
+      - name: Desktop tests
+        shell: bash
+        run: cargo test -p slicerx-desktop
+      - name: Desktop tests with the agent bridge
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: cargo test -p slicerx-desktop --features agent-bridge
+      # from Git's bash, which provides the sh that runs sign-updates.sh
+      - name: Updater end to end
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node apps/desktop/release/test/updater-e2e.mjs
