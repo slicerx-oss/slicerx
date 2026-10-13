@@ -18,9 +18,11 @@ export interface SketchBody {
   frame?: FaceFrame | undefined
   loops: SketchLoop[]
   constraints?: SketchConstraint[] | undefined
+  /** the body whose face it was drawn on */
+  on?: { body: string; part: number } | undefined
 }
 
-const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}) })
+const body = (s: SketchBody) => ({ ...(s.frame ? { frame: s.frame } : {}), loops: s.loops, ...(s.constraints?.length ? { constraints: s.constraints } : {}), ...(s.on ? { on: s.on } : {}) })
 
 /** Puts a finished sketch in the timeline at the marker and returns it. Undo takes it out again. */
 export function finishSketch(s: SketchBody): SketchItem {
@@ -33,6 +35,12 @@ export function finishSketch(s: SketchBody): SketchItem {
 export function sketchById(t: Timeline, id: string): SketchItem | null {
   const k = t.items.find((i) => i.kind === 'sketch' && i.id === id)
   return k?.kind === 'sketch' ? k : null
+}
+
+/** The body Join and Cut work on by default: the one the sketch sits on, else the only body. Null when it is not plain. */
+export function defaultTarget(k: SketchItem, plate: readonly Pick<PlateEntry, 'id'>[]): { objectId: string; partIndex: number } | null {
+  if (k.on && plate.some((e) => e.id === k.on!.body)) return { objectId: k.on.body, partIndex: k.on.part }
+  return plate.length === 1 ? { objectId: plate[0]!.id, partIndex: 0 } : null
 }
 
 /** The bodies with a live feature drawn on the sketch. */
