@@ -495,6 +495,93 @@ fn add_shapes_against_built_meshes() {
     );
 }
 
+/// The round sides of a slot read as on the mesh: each is a cylinder, Measure gives its radius, and a pick for a
+/// sketch face refuses it instead of taking one of its facets as a flat face.
+#[test]
+fn round_sides_read_as_cylinders() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    let slot = made(
+        "extrude",
+        json!({ "frame": frame, "polygons": [{ "outer": { "start": [-10, -5], "segments": [
+            { "to": [10, -5] }, { "to": [10, 5], "center": [10, 0], "sweepDeg": 180 },
+            { "to": [-10, 5] }, { "to": [-10, -5], "center": [-10, 0], "sweepDeg": 180 }
+        ] } }], "fromMm": 0, "toMm": 4 }),
+    );
+    let t = call("brep.tessellate", &json!({ "body": slot }));
+    let faces = t["faces"].as_array().expect("faces");
+    let exact = json!({ "mesh": { "positions": t["positions"], "indices": t["indices"], "faces": {
+        "ids": t["faceIds"], "table": faces.iter().map(|f| f["surface"].clone()).collect::<Vec<_>>() } } });
+    let on_mesh = call(
+        "shape.extrude",
+        &json!({ "frame": frame, "shape": { "type": "slot", "lengthMm": 30, "widthMm": 10 }, "placement": {}, "spec": { "distanceMm": 4 } }),
+    );
+    let flat = json!({ "mesh": on_mesh["mesh"] });
+    // the side at +x, where the round end is
+    let end = |m: &Value| {
+        let m = &m["mesh"];
+        let (p, ix) = (
+            m["positions"].as_array().unwrap(),
+            m["indices"].as_array().unwrap(),
+        );
+        let at = |t: usize, c: usize, k: usize| {
+            p[usize::try_from(ix[t * 3 + c].as_u64().unwrap()).unwrap() * 3 + k]
+                .as_f64()
+                .unwrap()
+        };
+        let t = (0..ix.len() / 3)
+            .find(|&t| {
+                (0..3).all(|c| at(t, c, 0) > 10.5)
+                    && (at(t, 0, 2) - at(t, 1, 2)).abs() + (at(t, 0, 2) - at(t, 2, 2)).abs() > 0.5
+            })
+            .expect("a triangle on the round end");
+        (
+            t,
+            (0..3)
+                .map(|k| (0..3).map(|c| at(t, c, k)).sum::<f64>() / 3.0)
+                .collect::<Vec<_>>(),
+        )
+    };
+    let rounds: Vec<&Value> = faces
+        .iter()
+        .filter(|f| f["surface"]["kind"] == "cylinder")
+        .map(|f| &f["surface"])
+        .collect();
+    assert_eq!(rounds.len(), 2, "{faces:?}");
+    for r in rounds {
+        assert!(near(r["radius"].as_f64().unwrap(), 5.0), "{r}");
+        assert!(near(r["axis"][2].as_f64().unwrap().abs(), 1.0), "{r}");
+        assert!(
+            near(r["origin"][0].as_f64().unwrap().abs(), 10.0)
+                && r["origin"][1].as_f64().unwrap().abs() < 1e-9,
+            "{r}"
+        );
+    }
+    for (name, item) in [("brep", &exact), ("mesh", &flat)] {
+        let (tri, at) = end(item);
+        let pick = sx_geom::json::call(
+            "face.pick",
+            &json!({ "mesh": item, "triangle": tri, "at": at }).to_string(),
+        );
+        assert!(
+            pick.as_ref().is_err_and(|e| e.to_string().contains("flat face")),
+            "{name}: {pick:?}"
+        );
+        let f = call(
+            "measure.feature",
+            &json!({ "mesh": item, "pick": { "triangle": tri, "at": at } }),
+        );
+        assert_eq!(f["feature"]["kind"], "cylinder", "{name}: {f}");
+        let r = f["feature"]["radius"].as_f64().unwrap();
+        assert!(
+            (r - 5.0).abs() < if name == "brep" { 1e-6 } else { 0.05 },
+            "{name}: radius {r}"
+        );
+    }
+}
+
 #[test]
 fn the_cli_runs_each_call_in_its_own_process() {
     if !sx_brep::KERNEL {
