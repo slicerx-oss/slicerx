@@ -385,3 +385,41 @@ test('the CAD-only studio: theme, then mimir, then the plate on Model', async ({
   await expect(page.getByText(/demo network|192\.0\.2\./)).toHaveCount(0)
   await noHorizontalScroll(page)
 })
+
+/** Stands in for the browser's mimir cloud host before the app renders, through the debug hook in pilot-connect/cloud.ts. */
+async function cloudHost(page: Page, needsSignIn: boolean): Promise<void> {
+  await page.addInitScript((signedOut: boolean) => {
+    localStorage.setItem('slicerx.debug', '1')
+    const h = { needsSignIn: signedOut, quota: async () => ({ used: 0, limit: 50 }), forget: async () => 0, register: async () => undefined }
+    // the hook is set while the app's modules load; take it as it lands, so the host is there before the first render
+    Object.defineProperty(window, '__sxMimirCloud', { configurable: true, set: (fn: (h: unknown, base: string) => void) => fn(h, 'https://cloud.example.invalid/functions/v1/mimir') })
+  }, needsSignIn)
+}
+
+test('mimir cloud in the browser: first and picked, and signed out it asks for sign-in before anything else', async ({ page }) => {
+  await cloudHost(page, true)
+  await page.addInitScript(() => localStorage.setItem('slicerx.e2e.cadOnly', '1'))
+  await page.goto('./')
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  await expect(page.getByRole('heading', { name: 'Set up mimir' })).toBeVisible()
+  const choices = page.getByRole('radiogroup', { name: 'How mimir gets a model' }).getByRole('radio')
+  await expect(choices).toHaveText([/Sign in to use mimir free/, /Use your own API key/, /Skip for now/])
+  await expect(choices.first()).toHaveAttribute('aria-checked', 'true')
+  // nothing claims it runs yet: no connect note, only the sign-in
+  await expect(page.getByTestId('ms-cloud-note')).toHaveCount(0)
+  await page.getByTestId('ms-cloud-signin').click()
+  await expect(page.getByTestId('signin-dialog')).toBeVisible()
+  await noHorizontalScroll(page)
+})
+
+test('mimir cloud in the browser, signed in: Use mimir free, first and picked', async ({ page }) => {
+  await cloudHost(page, false)
+  await page.addInitScript(() => localStorage.setItem('slicerx.e2e.cadOnly', '1'))
+  await page.goto('./')
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  const choices = page.getByRole('radiogroup', { name: 'How mimir gets a model' }).getByRole('radio')
+  await expect(choices).toHaveText([/Use mimir free/, /Use your own API key/, /Skip for now/])
+  await expect(choices.first()).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('ms-cloud-note')).toBeVisible()
+  await noHorizontalScroll(page)
+})
