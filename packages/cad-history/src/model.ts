@@ -6,7 +6,7 @@
 // local mesh and that transform gives the same result wherever the object has moved since. No
 // React, no store and no engine calls in here, so the geometry worker can load it too.
 import { copyCount, type Pattern } from './pattern'
-import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from './types'
+import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchConstraint, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from './types'
 
 export type { EdgeRef, Mat4 }
 
@@ -44,7 +44,7 @@ export interface HistoryMesh {
 export type StepParams =
   | { op: 'face.push'; at: Vec3; normal: Vec3; distanceMm: number; faceKey?: number }
   | { op: 'shape.extrude'; frame?: FaceFrame; shape: Shape | FreeShape; placement?: Placement; spec: ExtrudeSpec; font?: string; name?: string; pattern?: Pattern }
-  | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string }
+  | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
   | { op: 'hollow'; wallMm: number }
   | { op: 'repair' }
