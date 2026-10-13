@@ -60,8 +60,9 @@ export function SettingsDialog() {
     ...(settings.some((s) => s.id === PILOT_ID) ? [] : [{ id: PILOT_ID, label: ASSISTANT_NAME, icon: 'mimir' as IconName }]),
   ]
   const id = [want, picked].find((x) => x && sections.some((s) => s.id === x)) ?? sections[0]?.id
-  // On a phone the sections are one scrolling row: the open one is brought fully into view, and an edge with more
-  // tabs past it fades out rather than cutting a tab in half.
+  // On a phone the sections are one scrolling row. Opening Settings, or a section opened from elsewhere, brings that
+  // tab fully into view; a tap on the row never moves it. An edge with more tabs past it fades out rather than cutting
+  // a tab in half.
   const nav = useRef<HTMLElement>(null)
   const [edges, setEdges] = useState({ start: false, end: false })
   const measure = () => {
@@ -69,9 +70,10 @@ export function SettingsDialog() {
     if (n) setEdges({ start: n.scrollLeft > 1, end: n.scrollLeft + n.clientWidth < n.scrollWidth - 1 })
   }
   useLayoutEffect(() => {
-    nav.current?.querySelector('[aria-current="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    if (open) nav.current?.querySelector('[aria-current="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
     measure()
-  }, [id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, want])
   const close = () => set({ settingsOpen: false, settingsSection: null })
   const Feature = settings.find((s) => s.id === id)?.component ?? null
   return (
