@@ -193,7 +193,8 @@ export class PushPreview {
   }
 }
 
-export type SketchTone = 'normal' | 'selected' | 'issue' | 'soft' | 'axis' | 'grid'
+/** normal is free geometry; defined is fully defined by its constraints, fixed is held by Fix. */
+export type SketchTone = 'normal' | 'defined' | 'fixed' | 'selected' | 'issue' | 'soft' | 'axis' | 'grid'
 
 /** What the sketch layer shows, all in plane coordinates (mm). */
 export interface SketchScene {
@@ -218,6 +219,8 @@ export interface SketchCursor {
 
 const TONE: Record<SketchTone, { color: string; opacity: number }> = {
   normal: { color: '#8be9fd', opacity: 1 },
+  defined: { color: '#f8f8f2', opacity: 1 },
+  fixed: { color: '#50fa7b', opacity: 1 },
   selected: { color: '#f1fa8c', opacity: 1 },
   issue: { color: '#ff5555', opacity: 1 },
   soft: { color: '#bd93f9', opacity: 0.55 },
@@ -309,7 +312,7 @@ export class SketchLayer {
       if (p.closed && pts.length > 2) push(p.tone ?? 'normal', pts[pts.length - 1]!, pts[0]!)
     }
     // Draw order: grid, soft, normal, axis, selected, issue on top.
-    const order: SketchTone[] = ['grid', 'soft', 'normal', 'axis', 'selected', 'issue']
+    const order: SketchTone[] = ['grid', 'soft', 'normal', 'defined', 'fixed', 'axis', 'selected', 'issue']
     order.forEach((tone, k) => {
       const pos = byTone.get(tone)
       if (!pos?.length) return
