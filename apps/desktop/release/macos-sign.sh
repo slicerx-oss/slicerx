@@ -16,6 +16,8 @@
 #   SX_SIGN_IDENTITY  certificate name (default: the SlicerX Developer ID Application certificate)
 #   SX_NOTARY_PROFILE notarytool keychain profile (default: slicerx-notary)
 #   SX_OUT            where the finished files go (default: target/signed under the repository)
+#   SX_MIMIR_REGISTER_KEY the edition's mimir cloud registration key (default: the keychain item
+#                     slicerx-mimir-register-key); without one the app has no mimir cloud
 set -euo pipefail
 
 identity=${SX_SIGN_IDENTITY:-"Developer ID Application: SEAN LEONARD (X2928JZ7GJ)"}
@@ -42,6 +44,14 @@ cd "$repo"
 # A release never carries the agent bridge (docs/agent-bridge.md): refuse a bridge environment before building.
 node apps/desktop/release/check-agent-bridge.mjs --env --manifest apps/desktop/src-tauri/Cargo.toml
 say "build (universal, unsigned)"
+if [[ -z ${SX_MIMIR_REGISTER_KEY:-} ]]; then
+  SX_MIMIR_REGISTER_KEY=$(security find-generic-password -s slicerx-mimir-register-key -w 2>/dev/null || true)
+fi
+if [[ -n $SX_MIMIR_REGISTER_KEY ]]; then
+  export SX_MIMIR_REGISTER_KEY
+else
+  print "warning: no mimir registration key, so this build has no mimir cloud"
+fi
 pnpm install --frozen-lockfile --filter "@slicerx/desktop..." --filter "@slicerx/mcp..."
 rustup target add wasm32-unknown-unknown aarch64-apple-darwin x86_64-apple-darwin
 pnpm --filter @slicerx/slicer build:wasm
