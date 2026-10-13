@@ -479,6 +479,44 @@ fn subtract_in_the_body_frame() {
 }
 
 #[test]
+fn primitives_stand_on_their_frame() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let p = |q: Value| body("primitive", &q);
+    // a box on its side: u along y, standing along -x from x = 5
+    let frame = json!({ "origin": [5, 0, 0], "u": [0, 1, 0], "normal": [-1, 0, 0] });
+    let b = p(json!({ "type": "box", "sizeMm": [20, 10, 4], "frame": frame }));
+    close(volume(b), 800.0);
+    let bb = &info(b)["bounds"];
+    for (k, lo, hi) in [(0, 1.0, 5.0), (1, -10.0, 10.0), (2, -5.0, 5.0)] {
+        assert!(
+            (bb["min"][k].as_f64().unwrap() - lo).abs() < 1e-6
+                && (bb["max"][k].as_f64().unwrap() - hi).abs() < 1e-6,
+            "{bb}"
+        );
+    }
+    let c = p(json!({ "type": "cylinder", "diameterMm": 10, "heightMm": 20 }));
+    close(volume(c), PI * 25.0 * 20.0);
+    assert_eq!(info(c)["faceTypes"]["plane"], 2);
+    for (top, want) in [
+        (0.0, PI * 25.0 * 10.0 / 3.0),
+        (4.0, PI * 10.0 / 3.0 * (25.0 + 10.0 + 4.0)),
+    ] {
+        let k = p(json!({ "type": "cone", "diameterMm": 10, "topDiameterMm": top, "heightMm": 10 }));
+        close(volume(k), want);
+        assert_eq!(mesh_check(k).0, 0);
+    }
+    let s = p(json!({ "type": "sphere", "diameterMm": 10 }));
+    close(volume(s), 4.0 / 3.0 * PI * 125.0);
+    let bb = &info(s)["bounds"];
+    assert!(
+        (bb["min"][2].as_f64().unwrap()).abs() < 1e-6 && (bb["max"][2].as_f64().unwrap() - 10.0).abs() < 1e-6,
+        "{bb}"
+    );
+}
+
+#[test]
 fn boolean_with_nothing_left() {
     if !sx_brep::KERNEL {
         return;

@@ -6,7 +6,7 @@
 // solid, returns null and the mesh path runs it; so does a step the kernel fails, with a note. The mesh each step
 // leaves is the solid's tessellation, with the solid's faces and keys.
 import type { FaceFrame, FreeShape, Shape, Vec2, Vec3 } from './types'
-import { direction, invert, point, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams } from './model'
+import { direction, invert, point, type HistoryMesh, type Mat4, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 export type Call = (op: string, request: unknown) => Promise<unknown>
 
@@ -24,6 +24,8 @@ export interface ExactPart {
   /** With `body`, before the part is tessellated: its faces' keys. Its mesh is empty until a step or the result
    * needs it (meshed). */
   unmeshed?: number[]
+  /** The shape Add shape made the part as (HistoryMesh.primitive). */
+  primitive?: PrimitiveSpec
 }
 
 /** How a replay holds its solids: as text through each call, or (`keep`) as kernel bodies, each one `made` told. */
@@ -210,12 +212,78 @@ function localFrame(s: Step, f: FaceFrame): { origin: Vec3; u: Vec3; normal: Vec
 }
 
 /**
+ * Whether a part's triangles are still the shape Add shape made: a closed mesh whose every vertex sits on the shape
+ * (a box's corners, a cylinder's or cone's rims and axis ends, a sphere's surface) and that reaches its full size.
+ * A part that was edited, scaled or turned since stays on the mesh. Within a millionth of the part's size, as an f32
+ * position is stored, plus a hundred thousandth of the size.
+ */
+export function fits(spec: PrimitiveSpec, positions: ArrayLike<number>, indices: ArrayLike<number>): boolean {
+  const { origin: o, u, normal: n } = spec.frame
+  const v = cross(n, u)
+  const size = spec.type === 'box' ? Math.max(...spec.sizeMm) : spec.type === 'sphere' ? spec.diameterMm : Math.max(spec.diameterMm, spec.heightMm)
+  const far = Math.max(...o.map(Math.abs)) + size
+  const tol = 1e-5 * size + 1e-6 * far
+  const near = (a: number, b: number) => Math.abs(a - b) <= tol
+  if (positions.length < 12 || indices.length < 12) return false
+  const lo = [Infinity, Infinity, Infinity]
+  const hi = [-Infinity, -Infinity, -Infinity]
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    const d: Vec3 = [positions[i]! - o[0], positions[i + 1]! - o[1], positions[i + 2]! - o[2]]
+    const q = [dot(d, u), dot(d, v), dot(d, n)]
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k]!, q[k]!)
+      hi[k] = Math.max(hi[k]!, q[k]!)
+    }
+    const [x, y, z] = q as [number, number, number]
+    const rho = Math.hypot(x, y)
+    if (spec.type === 'box') {
+      const [w, dp, h] = spec.sizeMm
+      if (!(near(Math.abs(x), w / 2) && near(Math.abs(y), dp / 2) && (near(z, 0) || near(z, h)))) return false
+    } else if (spec.type === 'sphere') {
+      const r = spec.diameterMm / 2
+      if (!near(Math.hypot(x, y, z - r), r)) return false
+    } else {
+      const h = spec.heightMm
+      const top = spec.type === 'cone' ? spec.topDiameterMm / 2 : spec.diameterMm / 2
+      const rim = near(z, 0) ? spec.diameterMm / 2 : near(z, h) ? top : NaN
+      if (!(near(rho, rim) || (near(rho, 0) && (near(z, 0) || near(z, h))))) return false
+    }
+  }
+  const [ex, ey, ez] = spec.type === 'box' ? [spec.sizeMm[0] / 2, spec.sizeMm[1] / 2, spec.sizeMm[2]] : spec.type === 'sphere' ? [spec.diameterMm / 2, spec.diameterMm / 2, spec.diameterMm] : [spec.diameterMm / 2, spec.diameterMm / 2, spec.heightMm]
+  if (!(near(lo[2]!, 0) && near(hi[2]!, ez) && near(hi[0]!, ex) && near(-lo[0]!, ex) && near(hi[1]!, ey) && near(-lo[1]!, ey))) {
+    // a round rim's sides need not have a vertex on every axis; its height and widest point must still be there
+    if (spec.type === 'box' || !(near(lo[2]!, 0) && near(hi[2]!, ez))) return false
+  }
+  // closed: each edge used an even number of times, corners welded to 1 um so split vertices count once
+  const weld = new Map<string, number>()
+  const id: number[] = []
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    const key = `${Math.round(positions[i]! * 1000)},${Math.round(positions[i + 1]! * 1000)},${Math.round(positions[i + 2]! * 1000)}`
+    if (!weld.has(key)) weld.set(key, weld.size)
+    id.push(weld.get(key)!)
+  }
+  const edges = new Map<number, number>()
+  const nv = weld.size
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const a = id[indices[t + k]!]!
+      const b = id[indices[t + ((k + 1) % 3)]!]!
+      if (a === b) continue
+      const key = Math.min(a, b) * nv + Math.max(a, b)
+      edges.set(key, (edges.get(key) ?? 0) + 1)
+    }
+  }
+  for (const c of edges.values()) if (c % 2 !== 0) return false
+  return true
+}
+
+/**
  * The parts after step `s` on exact solids, or null when the mesh path should run it. Kernel failures come back as
  * null too, with `fellBack` told; an answer that is the step's real result (a plane that misses) throws ExactBroken.
  */
-export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBack: () => void, solids: Solids = { keep: false, made: () => {} }): Promise<ExactPart[] | null> {
+export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: () => void, solids: Solids = { keep: false, made: () => {} }): Promise<ExactPart[] | null> {
   const p = s.params
-  const target = parts[s.part]
+  let parts = given
   const frame = rigidFrame(s.transform)
   if (!frame) return null
   const solid = (b: ExactPart | undefined) => (b?.body !== undefined ? b.body : b?.smb ? { smb: b.smb } : null)
@@ -234,6 +302,11 @@ export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBac
     return { name: like.name, slot: like.slot, positions: [], indices: [], body: v, unmeshed: Array.isArray(keys) ? (keys as number[]) : [] }
   }
   try {
+    // the parts the step works on that Add shape made, and still fit the shape, start as the kernel's solid of it;
+    // not a sphere yet, whose triangles at the mesh's resolution take the kernel over 20 ms
+    const used = new Set([s.part, ...(p.op === 'boolean' ? p.with : [])])
+    parts = await Promise.all(parts.map(async (x, i) => (used.has(i) && x.primitive && x.primitive.type !== 'sphere' && solid(x) === null && fits(x.primitive, x.positions, x.indices) ? part(x, await call('brep.primitive', { ...x.primitive, ...kept })) : x)))
+    const target = parts[s.part]
     const out = parts.slice()
     switch (p.op) {
       case 'shape.extrude': {

@@ -6,6 +6,7 @@
 // packages/brep (cargo) and brep-module.test.ts.
 import { beforeEach, expect, it } from 'vitest'
 import { EXACT_FELL_BACK, IDENTITY, PAINT_DROPPED, clearReplayCache, replayHistory, stepSalt, type History, type Step, type StepParams } from '@slicerx/cad-history'
+import { primitive } from '../src/plate/mesh-ops'
 
 const tri = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }
 
@@ -210,6 +211,25 @@ it('intersects a part with several others, as the mesh does, and breaks the step
   const empty = async (op: string, req: unknown) => (op === 'brep.boolean' && (req as R)['op'] === 'intersection' ? { body: null } : f.call(op, req))
   const n = await replayHistory(empty, { history: history(body('a', 0), body('b', 1), body('c', 2), meet), exact: true })
   expect(n.status[3]).toEqual({ state: 'broken', message: 'Nothing is left of the part after this step.' })
+})
+
+it('starts a part Add shape made as the kernel\'s solid of that shape, while its triangles still fit it', async () => {
+  const shape = primitive('box', 20)
+  const tagged: History = { version: 1, base: [shape], steps: [hole] }
+  const e = engine()
+  const r = await replayHistory(e.call, { history: tagged, exact: true })
+  expect(r.status.map((x) => x.state)).toEqual(['done'])
+  expect(e.ops().slice(0, 3)).toEqual(['brep.primitive', 'brep.tessellate', 'brep.subtract'])
+  expect(e.sent[0]!.req).toMatchObject({ type: 'box', sizeMm: [20, 20, 20], frame: { origin: [0, 0, 0], u: [1, 0, 0], normal: [0, 0, 1] } })
+  expect(e.sent[2]!.req['body']).toEqual({ smb: 'primitive-1' })
+  // untagged, edited since, or a sphere, it stays on the mesh
+  const { primitive: _tag, ...untagged } = shape
+  for (const base of [untagged, primitive('sphere', 20), { ...shape, positions: Float32Array.from(shape.positions, (x, i) => (i === 0 ? x + 0.01 : x)) }]) {
+    clearReplayCache()
+    const f = engine()
+    await replayHistory(f.call, { history: { ...tagged, base: [base] }, exact: true })
+    expect(f.ops()).toEqual(['subtract'])
+  }
 })
 
 /** A kernel that keeps bodies by number, each with the face keys its op gave it, and records what it frees. */

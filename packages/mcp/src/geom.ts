@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { bakeMesh, invert, multiply, stepName, type HistoryMesh, type SolidSpec, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, direction, invert, multiply, point, stepName, type HistoryMesh, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
 import { productName } from '@slicerx/contracts'
 import { designArg, designSummary, faceAt, item, type Design } from './design'
@@ -467,7 +467,8 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
         const r = (await ds.call('build', { solids: i.solids, ...(i.subtract ? { subtract: i.subtract } : {}) })) as { mesh: { positions: number[]; indices: number[] } }
         // The mesh goes in the design's own frame, as the history keeps a part.
         const inv = invert(d.transform)
-        const part: HistoryMesh = { name: i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices }
+        const shape = i.subtract?.length || i.solids.length !== 1 ? undefined : primitiveOf(i.solids[0]!, inv)
+        const part: HistoryMesh = { name: i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices, ...(shape ? { primitive: shape } : {}) }
         await ds.add(d, -1, { op: 'parts.add', parts: [part], label: `Add ${part.name}` })
         return added(d, 'Built')
       }
@@ -573,6 +574,34 @@ function historySolid(s: Record<string, unknown>): SolidSpec {
     return { type: 'cylinder', origin: v3(s['origin']) ?? [0, 0, 0], axis: v3(s['axis']) ?? [0, 0, 1], diameterMm: d, heightMm: h }
   }
   throw new ToolInputError(`solids: a design's subtract step takes boxes and cylinders; a ${String(s['type'])} cut needs a model (or build it as its own part)`)
+}
+
+/**
+ * A part built from one box or cylinder, tagged with that shape in the design's frame as Add shape tags its parts, so
+ * an exact replay can build it as a true solid (the replay checks the triangles still fit it).
+ */
+function primitiveOf(s: Record<string, unknown>, inv: number[]): PrimitiveSpec | undefined {
+  const vec = (v: unknown): v is [number, number, number] => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number' && Number.isFinite(x))
+  const num = (v: unknown): v is number => typeof v === 'number' && v > 0
+  const placed = (origin: [number, number, number], u: [number, number, number], normal: [number, number, number]) => ({ origin: point(inv, origin), u: direction(inv, u), normal: direction(inv, normal) })
+  if (s['type'] === 'box' && vec(s['min']) && vec(s['max'])) {
+    const [lo, hi] = [s['min'], s['max']]
+    const size: [number, number, number] = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]
+    if (!size.every((x) => x > 0)) return undefined
+    return { type: 'box', sizeMm: size, frame: placed([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2]], [1, 0, 0], [0, 0, 1]) }
+  }
+  if (s['type'] === 'cylinder' && vec(s['origin']) && vec(s['axis']) && num(s['diameterMm']) && num(s['heightMm'])) {
+    const a = s['axis']
+    const l = Math.hypot(...a)
+    if (!(l > 0)) return undefined
+    const n: [number, number, number] = [a[0] / l, a[1] / l, a[2] / l]
+    // any direction across the axis; a cylinder is the same all round
+    const seed: [number, number, number] = Math.abs(n[2]) > 0.9 ? [1, 0, 0] : [0, 0, 1]
+    const c: [number, number, number] = [seed[1] * n[2] - seed[2] * n[1], seed[2] * n[0] - seed[0] * n[2], seed[0] * n[1] - seed[1] * n[0]]
+    const cl = Math.hypot(...c)
+    return { type: 'cylinder', diameterMm: s['diameterMm'], heightMm: s['heightMm'], frame: placed(s['origin'], [c[0] / cl, c[1] / cl, c[2] / cl], n) }
+  }
+  return undefined
 }
 
 function transformPoints(p: readonly number[], m: number[]): number[] {

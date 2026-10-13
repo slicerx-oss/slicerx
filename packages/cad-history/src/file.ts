@@ -10,7 +10,7 @@
 export const HISTORY_FILE_VERSION = 2
 export const DESIGN_FILE_VERSION = 3
 import type { Timeline } from './design'
-import type { History, HistoryMesh, PaintTexts } from './model'
+import type { History, HistoryMesh, PaintTexts, PrimitiveSpec } from './model'
 
 /** A part of the project's zip, as the app's writer takes it. */
 export interface ZipEntry {
@@ -43,7 +43,7 @@ export function encodeMeshes(meshes: readonly HistoryMesh[]): Uint8Array {
 
 interface StoredMeshes {
   file: string
-  parts: { name: string; slot: number; paint?: PaintTexts }[]
+  parts: { name: string; slot: number; paint?: PaintTexts; primitive?: PrimitiveSpec }[]
 }
 
 /** Stores mesh sets as binary parts named after the object: <id>-0.bin, <id>-1.bin and on. */
@@ -52,8 +52,9 @@ function storer(files: ZipEntry[], id: number): (meshes: readonly HistoryMesh[])
   return (meshes) => {
     const file = `Metadata/slicerx_history/${id}-${n++}.bin`
     files.push({ name: file, data: encodeMeshes(meshes) })
-    // Paint rides in the JSON with each part's name and slot; the binary meshes stay positions and indices.
-    return { file, parts: meshes.map((m) => ({ name: m.name, slot: m.slot, ...(m.paint && Object.keys(m.paint).length ? { paint: m.paint } : {}) })) }
+    // Paint and the shape a part was made as ride in the JSON with each part's name and slot; the binary meshes stay
+    // positions and indices.
+    return { file, parts: meshes.map((m) => ({ name: m.name, slot: m.slot, ...(m.paint && Object.keys(m.paint).length ? { paint: m.paint } : {}), ...(m.primitive ? { primitive: m.primitive } : {}) })) }
   }
 }
 

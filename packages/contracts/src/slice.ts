@@ -82,6 +82,17 @@ export interface MeshFaces {
  */
 export type PartPaint = Partial<Record<'color' | 'seam' | 'support' | 'fuzzy', Record<number, string>>>
 
+/**
+ * The shape Add shape made a part as, in the part's coordinates: it stands on the frame's origin, centered on the
+ * normal, a box of sizeMm along u, the normal crossed with u, and the normal. Exact replays build the part from it.
+ */
+export type PrimitiveSpec = { frame: { origin: [number, number, number]; u: [number, number, number]; normal: [number, number, number] } } & (
+  | { type: 'box'; sizeMm: [number, number, number] }
+  | { type: 'cylinder'; diameterMm: number; heightMm: number }
+  | { type: 'cone'; diameterMm: number; topDiameterMm: number; heightMm: number }
+  | { type: 'sphere'; diameterMm: number }
+)
+
 export interface MeshPart {
   name: string
   slot: number
@@ -91,6 +102,8 @@ export interface MeshPart {
   faces?: MeshFaces
   /** Painted triangles, which the engine slices with (filament color, seams, supports, fuzzy skin). */
   paint?: PartPaint
+  /** The shape the part was made as. A move that is not rigid leaves it out; a replay checks the triangles still fit it. */
+  primitive?: PrimitiveSpec
 }
 
 export interface Bed {
