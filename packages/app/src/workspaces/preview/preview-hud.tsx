@@ -4,7 +4,7 @@ import { Icon, Range, ResizeEdge, Seg, tipAttrs } from '@slicerx/ui'
 import { COLORBLIND_THEME, FEATURE_COLORS, SCENE } from '@slicerx/viewport/palette'
 import type { MarkerKind } from '@slicerx/viewport'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildTimeline, clock, fitOf, movesAt, movesOf, positionAt, sliderOf, timeAt, timeOfSlider } from '../../lib/preview-timeline'
+import { buildTimeline, clock, fitOf, movesAt, leadInStart, movesOf, positionAt, sliderOf, timeAt, timeOfSlider } from '../../lib/preview-timeline'
 import { toolChangerFor } from '../../lib/toolchanger'
 import { lengthLabel, previewStats } from '../../lib/preview-stats'
 import { resolveSlots } from '../../filament/slots'
@@ -214,10 +214,11 @@ export function LayerDock() {
 
   useEffect(() => {
     if (!strikeJump || !timeline || !preview) return
-    // Two seconds of playback at the chosen speed lead up to the strike.
+    // Two seconds of playback at the chosen speed lead up to the strike, but they never start in an earlier layer:
+    // the layer readout would read one below the strike's layer while they play.
     const lead = 2 * Math.max(0.25, speedRef.current)
     stopAt.current = strikeJump.timeS
-    seek(Math.max(timeline.lead, strikeJump.timeS - lead))
+    seek(leadInStart(timeline, preview, strikeJump.timeS, lead))
     setPlaying(true)
     // Taken: a later mount of the bar does not play it again.
     set({ strikeJump: null })

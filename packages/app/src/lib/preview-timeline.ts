@@ -208,6 +208,17 @@ export function positionAt(tl: Timeline, p: PreviewBuffers, t: number): Playback
 }
 
 /**
+ * Where a jump to print time `timeS` starts playing: `lead` seconds before it, but no earlier than the start of the
+ * layer `timeS` is in, so the layer readout never reads a layer below the one the jump lands on.
+ */
+export function leadInStart(tl: Timeline, p: PreviewBuffers, timeS: number, lead: number): number {
+  const layer = positionAt(tl, p, timeS).layerHi
+  // A hair past the previous layer's end, which positionAt still counts as that layer.
+  const layerStart = layer > 1 ? (tl.layerEnd[layer - 2] ?? 0) + 1e-3 : tl.lead
+  return Math.min(timeS, Math.max(tl.lead, layerStart, timeS - lead))
+}
+
+/**
  * The share of the Time slider's track the tool changes get together when, by their own time, they would be
  * slivers: a 35 s change in a 3 hour print would be 2 px of track, too narrow to drag through. With this the
  * track runs faster over printing and slower over changes, so a drag can play a change in slow motion; the
