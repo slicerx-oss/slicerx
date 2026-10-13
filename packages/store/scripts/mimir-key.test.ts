@@ -14,6 +14,7 @@ describe('mimir registration keys', () => {
     expect(keyUpdate(k, 'f'.repeat(64), true)).toEqual({ register_key_hash: registerKeyHash(k), register_key_prev_hash: 'f'.repeat(64) })
     expect(() => keyUpdate(k, null, true)).toThrow('nothing to rotate')
     expect(() => keyUpdate(k, registerKeyHash(k), true)).toThrow('already the current key')
+    expect(keyUpdate(`${k}\n`, null, false)).toEqual({ register_key_hash: registerKeyHash(k) })
     expect(() => keyUpdate('short', null, false)).toThrow('16 to 128')
     expect(() => keyUpdate('has a space in it here', null, false)).toThrow('16 to 128')
   })

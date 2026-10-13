@@ -16,7 +16,9 @@ export function registerKeyHash(key: string): string {
  * The mimir_limits change for a new key. A rotation keeps the current hash as the previous one, so
  * builds with the old key still register until they are gone.
  */
-export function keyUpdate(key: string, current: string | null, rotate: boolean): { register_key_hash: string; register_key_prev_hash?: string | null } {
+export function keyUpdate(raw: string, current: string | null, rotate: boolean): { register_key_hash: string; register_key_prev_hash?: string | null } {
+  // the build trims it too: a secret piped from the keychain can end in a newline
+  const key = raw.trim()
   if (!REGISTER_KEY.test(key)) throw new Error('the key must be 16 to 128 letters, digits, - or _')
   const hash = registerKeyHash(key)
   if (!rotate) return { register_key_hash: hash }
