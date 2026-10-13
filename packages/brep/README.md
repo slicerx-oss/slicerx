@@ -13,7 +13,7 @@ A first build compiles about 230 C++ files (about 450 CPU seconds, one minute on
 
 ## Our routines in the kernel
 
-Nine kernel routines cite Numerical Recipes, whose code is not under an open source license. After unpacking, `scripts/swap-routines.sh` replaces each one's body with a call to our own version in `cpp/routines.cpp`, written from the published algorithms (the file names the source for each), and turns the `smos_Pythag` macro into `hypot`:
+Eleven kernel routines and all of `SmIntegrator.cpp` cite Numerical Recipes, whose code is not under an open source license. After unpacking, `scripts/swap-routines.sh` replaces each routine's body with a call to our own version in `cpp/routines.cpp`, turns the `smos_Pythag` macro into `hypot`, and removes `SmIntegrator.cpp`, whose classes `cpp/integrator.cpp` defines instead. Ours are written from the published algorithms (each file names its sources). `fetch-smlib.sh` checks that every one is swapped out before it hands over the copy. The list is a sweep of the whole kernel, not only the routines a feature reaches:
 
 | Kernel routine | Ours |
 | --- | --- |
@@ -24,8 +24,11 @@ Nine kernel routines cite Numerical Recipes, whose code is not under an open sou
 | `M_CorneredTridiagonalSystem` | Sherman-Morrison on the tridiagonal solve |
 | `N_FuncFindMinima` | Brent's minimizer |
 | `N_SolveQuadraticEq` | the cancellation-free quadratic formula |
+| `SmMatrix::LUDecompose`, `SmMatrix::SolveWithLUMatrix` | Gaussian elimination with scaled partial pivoting |
+| `SmIntegrator` (quadrature) | Romberg and Simpson on the refined trapezoid rule, Neville interpolation |
+| `SmODEIntegrator` (ODE steps) | classical Runge-Kutta, the Cash-Karp pair, modified midpoint, Bulirsch-Stoer extrapolation |
 
-`tests/routines.rs` (with `--features routine-probe`) runs them, and kernel code that calls them (plane and line fits, matrix inverse, 3x3 eigenvectors, a mirror and a skew transform of a solid), against the values the original routines gave, at 1e-6 relative. Two exceptions: for two or more equations the original tridiagonal solvers return values that solve no system their documentation describes, so ours are checked against the system itself, and a skewed cylinder's B-spline volume is checked against the exact value, which ours is closer to.
+`tests/routines.rs` (with `--features routine-probe`) runs them, and kernel code that calls them (plane and line fits, matrix inverse, 3x3 eigenvectors, a mirror and a skew transform of a solid), against the values the original routines gave, at 1e-6 relative. LU runs through `Invert` and `SolveLinearSystem` too, on matrices that are singular or sit at the pivot limit. The fixed steps (Runge-Kutta, Cash-Karp, midpoint), the interpolation and the trapezoid sums are the same formulas as the original's and agree to 1e-12. Adaptive integration can rightly take other steps than the original, so the adaptive drivers, and the volumes and areas the kernel computes with them, are held to the exact value: within the accuracy asked for, and four times it for ODEs, whose tolerance bounds each step rather than the run. The original ODE driver ignores its start values and integrates from zero; every caller in the kernel starts from zero, so this changes no result. Two more exceptions: for two or more equations the original tridiagonal solvers return values that solve no system their documentation describes, so ours are checked against the system itself, and a skewed cylinder's B-spline volume is checked against the exact value, which ours is closer to.
 
 ## API
 

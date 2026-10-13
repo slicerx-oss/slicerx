@@ -45,7 +45,10 @@ fn matches_the_original_routines() {
     let golden: Value = serde_json::from_str(GOLDEN).expect("golden file is JSON");
     let mut bad = Vec::new();
     for (key, want) in golden.as_object().expect("an object") {
-        if key.starts_with("check.") || ORIGINAL_DIFFERS.contains(&key.as_str()) {
+        if key.starts_with("check.")
+            || key.starts_with("accuracy.")
+            || ORIGINAL_DIFFERS.contains(&key.as_str())
+        {
             continue;
         }
         let Some(got) = ours.get(key) else {
@@ -53,6 +56,14 @@ fn matches_the_original_routines() {
             continue;
         };
         let (mut got, mut want) = (numbers(got), numbers(want));
+        // a singular matrix's solution is rounding noise around a substituted pivot, and the noise differs between
+        // the x86 and arm64 builds: only the status has to agree
+        if key.starts_with("lu.rank") {
+            if got.first() != want.first() {
+                bad.push(format!("{key}: status {:?} != {:?}", got.first(), want.first()));
+            }
+            continue;
+        }
         if key == SKEWED_CYLINDER.0 {
             let (i, exact) = (SKEWED_CYLINDER.1, SKEWED_CYLINDER.2);
             let off = (got[i] - exact).abs() / exact;
@@ -63,12 +74,23 @@ fn matches_the_original_routines() {
             got.remove(i);
             want.remove(i);
         }
-        // 1e-6 relative, with a floor for values that are zero up to rounding
+        // the fixed steps and the interpolation are the same formulas as the original, so they agree to rounding;
+        // the rest to 1e-6 relative, with a floor for values that are zero up to rounding
+        let exact = [
+            "ode.rk4",
+            "ode.cashkarp",
+            "ode.midpoint.",
+            "interpolate.",
+            "trapezoid",
+        ]
+        .iter()
+        .any(|p| key.starts_with(p));
+        let (rel, floor) = if exact { (1e-12, 1e-14) } else { (1e-6, 1e-9) };
         let same = got.len() == want.len()
             && got
                 .iter()
                 .zip(&want)
-                .all(|(g, w)| (g - w).abs() <= 1e-6 * g.abs().max(w.abs()) + 1e-9);
+                .all(|(g, w)| (g - w).abs() <= rel * g.abs().max(w.abs()) + floor);
         if !same {
             bad.push(format!("{key}: {got:?} != {want:?}"));
         }
@@ -88,6 +110,28 @@ fn residuals_are_zero() {
             assert!(worst <= 1e-9, "{name}: {worst}");
         }
     }
+}
+
+// Adaptive integration may take other steps than the original and still be right, so ours is held to the exact
+// value instead: within the accuracy asked for. An ODE's tolerance bounds each step's error, and the global error
+// adds those up over the run: the worst measured is 3.35 times (ode.oscillator.9), so ODEs get 4.
+#[test]
+fn meets_the_requested_accuracy() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let ours = probe();
+    let mut bad = Vec::new();
+    for (key, v) in ours.as_object().expect("an object") {
+        if let Some(name) = key.strip_prefix("accuracy.") {
+            let worst = numbers(v).into_iter().fold(0.0, f64::max);
+            let allowed = if name.starts_with("ode.") { 4.0 } else { 1.0 };
+            if worst > allowed {
+                bad.push(format!("{name}: {worst:e} of the accuracy asked for"));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} cases miss:\n{}", bad.len(), bad.join("\n"));
 }
 
 #[test]

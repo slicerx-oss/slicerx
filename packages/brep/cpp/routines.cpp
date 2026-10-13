@@ -8,6 +8,8 @@
 //   cornered tridiagonal the Sherman-Morrison formula on the tridiagonal solve
 //   1-D minimum          Brent, Algorithms for Minimization without Derivatives (1973)
 //   quadratic            q = -(b + sgn(b) sqrt(b^2 - 4ac)) / 2, roots q/a and c/q, which avoids cancellation
+//   LU                   Gaussian elimination with scaled partial pivoting (Golub and Van Loan), then forward and
+//                        back substitution
 // Each keeps the kernel routine's contract (its documented arguments, return codes and tolerances).
 #include "StdAfx.h"
 
@@ -475,5 +477,72 @@ SmStatus sx_SmMatrix_SolveWithSVDMatrices(const SmMatrix& U, const SmTArray<doub
         for (int j = 0; j < n; j++) v[size_t(i) * n + j] = V.GetAt(i, j);
     svd_solve(m, n, u, w, v, b, out);
     for (int i = 0; i < m; i++) x[i] = i < n ? out[i] : 0.0;
+    return SM_SUCCESS;
+}
+
+// PA = LU in place, L unit lower; piv[k] is the row swapped into row k at step k. The pivot is the largest entry
+// relative to its row's largest original entry, the last one on a tie. A row below SM_EFF_ZERO is an error; a
+// pivot below it becomes +-SM_EFF_ZERO (negative unless it was positive) and the result is a warning.
+SmStatus sx_SmMatrix_LUDecompose(SmMatrix& A, ULONG* piv)
+{
+    int n = int(A.GetNumRows());
+    if (n != int(A.GetNumColumns())) return SM_ERR_INVALID_INPUT;
+    std::vector<double> a(size_t(n) * n), scale(n);
+    auto at = [&](int i, int j) -> double& { return a[size_t(i) * n + j]; };
+    for (int i = 0; i < n; i++) {
+        double big = 0;
+        for (int j = 0; j < n; j++) big = std::max(big, std::fabs(at(i, j) = A.GetAt(i, j)));
+        if (big < SM_EFF_ZERO) return SM_ERR;
+        scale[i] = 1.0 / big;
+    }
+    SmStatus status = SM_SUCCESS;
+    for (int k = 0; k < n; k++) {
+        int p = k;
+        double best = -1;
+        for (int i = k; i < n; i++) {
+            double v = scale[i] * std::fabs(at(i, k));
+            if (v >= best) best = v, p = i;
+        }
+        if (p != k) {
+            for (int j = 0; j < n; j++) std::swap(at(p, j), at(k, j));
+            std::swap(scale[p], scale[k]);
+        }
+        piv[k] = ULONG(p);
+        if (std::fabs(at(k, k)) < SM_EFF_ZERO) {
+            at(k, k) = at(k, k) > 0 ? SM_EFF_ZERO : -SM_EFF_ZERO;
+            status = SM_ERR_WARNING;
+        }
+        for (int i = k + 1; i < n; i++) {
+            double l = at(i, k) /= at(k, k);
+            for (int j = k + 1; j < n; j++) at(i, j) -= l * at(k, j);
+        }
+    }
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++) A.SetAt(i, j, at(i, j));
+    return status;
+}
+
+// x from LU x = P b; b and x may be the same array. x keeps any entries past n.
+SmStatus sx_SmMatrix_SolveWithLUMatrix(const SmMatrix& LU, const ULONG* piv, const SmTArray<double>& b,
+                                       SmTArray<double>& x)
+{
+    int n = int(LU.GetNumRows());
+    if (n != int(LU.GetNumColumns()) || int(b.GetSize()) != n) return SM_ERR_INVALID_INPUT;
+    std::vector<double> y(n);
+    for (int i = 0; i < n; i++) y[i] = b[i];
+    for (int k = 0; k < n; k++) {
+        if (piv[k] >= ULONG(n)) return SM_ERR_INVALID_INPUT;
+        std::swap(y[k], y[piv[k]]);
+    }
+    for (int i = 1; i < n; i++)
+        for (int j = 0; j < i; j++) y[i] -= LU.GetAt(i, j) * y[j];
+    for (int i = n - 1; i >= 0; i--) {
+        double d = LU.GetAt(i, i);
+        if (std::fabs(d) < SM_EFF_ZERO) return SM_ERR;
+        for (int j = i + 1; j < n; j++) y[i] -= LU.GetAt(i, j) * y[j];
+        y[i] /= d;
+    }
+    if (int(x.GetSize()) < n) x.SetSize(n);
+    for (int i = 0; i < n; i++) x[i] = y[i];
     return SM_SUCCESS;
 }

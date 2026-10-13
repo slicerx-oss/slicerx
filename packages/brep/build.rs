@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 const COMMIT: &str = "c9c5979f04cea8c38213004d4f04df0dcfb40d05";
 // written by scripts/fetch-smlib.sh once swap-routines.sh has put our routines in the source
-const READY: &str = ".ready-2";
+const READY: &str = ".ready-3";
 
 fn kernel_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("SX_SMLIB_DIR") {
@@ -92,10 +92,13 @@ fn main() {
         api_build.file("cpp/routine_probe.cpp");
     }
     api_build.compile("sx_brep");
-    // our versions of the routines swap-routines.sh takes out build with the kernel
-    build([&sm_inc, &api_inc])
-        .files(sources(&sm))
-        .file("cpp/routines.cpp")
-        .compile("smlib");
+    // our versions of the routines swap-routines.sh takes out build with the kernel; integrator.cpp replaces the
+    // kernel's SmIntegrator.cpp, which an unswapped kernel (as for recording the golden file) still has
+    let mut smlib = build([&sm_inc, &api_inc]);
+    smlib.files(sources(&sm)).file("cpp/routines.cpp");
+    if !sm.join("src/SmIntegrator.cpp").exists() {
+        smlib.file("cpp/integrator.cpp");
+    }
+    smlib.compile("smlib");
     println!("cargo:rustc-cfg=sx_brep_kernel");
 }
