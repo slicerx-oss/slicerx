@@ -19,7 +19,7 @@
 .mc-name .mc-model { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--muted); }
 .mc-status { flex: none; font-size: var(--fs-xs); }
 .mc-caret { flex: none; color: var(--muted); }
-.mc-nbox, .mc-bbox { height: 48px; gap: 10px; padding: 0 26px 0 12px; }
+.mc-nbox, .mc-bbox { height: 42px; gap: 10px; padding: 0 26px 0 12px; }
 .mc-icon { flex: none; color: var(--muted); }
 .mc-btext { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .mc-blabel { font-size: var(--fs-xs); color: var(--muted); line-height: 1.2; }
@@ -32,7 +32,7 @@
 
 /* Skeleton while the printer profile loads, so nothing moves when the nozzle box arrives. */
 .mc-skel { display: block; background: var(--ink-3); border-color: transparent; cursor: default; }
-.mc-nozzle .mc-skel { height: 48px; }
+.mc-nozzle .mc-skel { height: 42px; }
 
 /* Popovers: a list of options with a check on the current one. */
 .mc-pop { min-width: 220px; padding: 4px; }

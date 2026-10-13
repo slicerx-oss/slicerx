@@ -129,7 +129,8 @@ test('rectangle select, ear drag and Ctrl+wheel work on the plate', async ({ pag
   const diameter = async () => Number(/Head diameter\s+(\d+(?:\.\d)?) mm/.exec(await panel.innerText())?.[1])
   const size0 = await diameter()
   const canvas = await page.locator('.vp-canvas').first().boundingBox()
-  await page.mouse.move(canvas!.x + canvas!.width / 2, canvas!.y + 40)
+  // Below the plate toolbar, on bare view.
+  await page.mouse.move(canvas!.x + canvas!.width / 2, canvas!.y + 120)
   await page.keyboard.down('Control')
   await page.mouse.wheel(0, -120)
   await page.keyboard.up('Control')
