@@ -333,6 +333,8 @@ export interface SketchEvent {
   alt: boolean
   /** Ctrl, or Cmd on a Mac. */
   ctrl?: boolean
+  /** On a hover or click: the dimension value or constraint glyph under the cursor. */
+  mark?: { dim: number } | { glyph: number }
 }
 
 export interface CameraState {
