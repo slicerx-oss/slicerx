@@ -50,6 +50,50 @@ impl Feature {
             Self::InternalBridge => "Internal Bridge",
         }
     }
+
+    /// Every feature, in SXPV id order.
+    pub const ALL: [Self; 17] = [
+        Self::OuterWall,
+        Self::InnerWall,
+        Self::OverhangWall,
+        Self::TopSurface,
+        Self::BottomSurface,
+        Self::InternalSolid,
+        Self::SparseInfill,
+        Self::Bridge,
+        Self::Support,
+        Self::SupportInterface,
+        Self::Brim,
+        Self::Ironing,
+        Self::GapFill,
+        Self::PrimeTower,
+        Self::Custom,
+        Self::Skirt,
+        Self::InternalBridge,
+    ];
+
+    /// The feature's name in the `FEATURE` map of `packages/contracts/src/preview.ts`, as the slice report names it.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::OuterWall => "outerWall",
+            Self::InnerWall => "innerWall",
+            Self::OverhangWall => "overhangWall",
+            Self::TopSurface => "topSurface",
+            Self::BottomSurface => "bottomSurface",
+            Self::InternalSolid => "internalSolid",
+            Self::SparseInfill => "sparseInfill",
+            Self::Bridge => "bridge",
+            Self::Support => "support",
+            Self::SupportInterface => "supportInterface",
+            Self::Brim => "brimSkirt",
+            Self::Ironing => "ironing",
+            Self::GapFill => "gapFill",
+            Self::PrimeTower => "primeTower",
+            Self::Custom => "custom",
+            Self::Skirt => "skirt",
+            Self::InternalBridge => "internalBridge",
+        }
+    }
 }
 
 /// Pipeline stages, in order (`SLICE_STAGES` in `packages/contracts/src/slice.ts`).
