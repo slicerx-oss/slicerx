@@ -8,9 +8,6 @@
 .pc-provider b { display: block; margin-bottom: 2px; }
 .pc-provider small { color: var(--muted); font-size: var(--fs-sm); }
 .pc-act { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
-.pc-result { display: flex; align-items: center; gap: 6px; margin: 0; font-size: var(--fs-md); }
-.pc-result.ok { color: var(--green); }
-.pc-result.bad { color: var(--red); }
 @media (max-width: 720px) { .pc-providers { grid-template-columns: minmax(0, 1fr); } }
 .pc-privacy { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
 @media (max-width: 720px) { .pc-act { flex-direction: column; align-items: stretch; } }
