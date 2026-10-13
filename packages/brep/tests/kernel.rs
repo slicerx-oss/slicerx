@@ -233,6 +233,46 @@ fn free_releases_bodies() {
 }
 
 #[test]
+fn bodies_travel_as_text() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let block = cube();
+    let holed = call(
+        "subtract",
+        &json!({ "body": block, "solids": [{ "type": "cylinder", "origin": [10, 10, 0], "axis": [0, 0, 1], "diameterMm": 8, "heightMm": 20.5 }], "save": true }),
+    );
+    let text = holed["bodySmb"]
+        .as_str()
+        .expect("saved with the reply")
+        .to_owned();
+    assert_eq!(call("save", &json!({ "body": holed["body"] }))["smb"], text);
+    // a body carried in the request, as a new process would send it, comes back exact
+    let carried = json!({ "smb": text });
+    let read = call("info", &json!({ "body": carried }));
+    assert_eq!(read["manifold"], true);
+    assert_eq!(read["faces"], 7);
+    close(read["volumeMm3"].as_f64().unwrap(), 8000.0 - PI * 16.0 * 20.0);
+    // and on through more ops: cut in two, both halves saved
+    let halves = call(
+        "cut",
+        &json!({ "body": carried, "plane": { "point": [0, 0, 8], "normal": [0, 0, 1] }, "save": true }),
+    );
+    let below = json!({ "smb": halves["belowSmb"].as_str().expect("below saved") });
+    close(
+        volume(body("load", &json!({ "body": below }))),
+        (400.0 - PI * 16.0) * 8.0,
+    );
+    assert_eq!(mesh_check(body("load", &json!({ "body": below }))).0, 0);
+    // anything else is refused before the kernel reads it, a changed save too
+    let changed = text.replacen("20.5000000000000000", "20.6000000000000000", 1);
+    for bad in ["not a body", changed.as_str()] {
+        let err = sx_brep::call("info", &json!({ "body": { "smb": bad } }).to_string()).unwrap_err();
+        assert!(err.starts_with("body:"), "{err}");
+    }
+}
+
+#[test]
 fn no_kernel_says_so() {
     if sx_brep::KERNEL {
         return;
