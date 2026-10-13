@@ -6,7 +6,7 @@
 import type { Host, SettingValue } from '@slicerx/contracts'
 import { loadSettings, type SettingsApi } from '../adapters/load'
 import { exportPlateGcode } from '../calibration/gcode'
-import { slotConfig } from '../filament/slots'
+import { slotConfig } from '../filament/slot-config'
 import { currentMap, mapExtruders, masterExtruder, pickedMap } from '../filament/nozzle-map'
 import { activeMeta, allPlates, projectBase, switchPlate } from '../plate/plates'
 import { printBlock } from '../plate/heimdall'

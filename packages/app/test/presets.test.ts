@@ -188,7 +188,7 @@ describe('calibration results per spool', () => {
   })
 
   it('two slots of one material keep their own values in the slice, and a nozzle swap falls back to the profile', async () => {
-    const { slotConfig } = await import('../src/filament/slots')
+    const { slotConfig } = await import('../src/filament/slot-config')
     const part = (name: string, slot: number) => ({ id: name, name, handle: { id: name, hash: name, name, triangles: 1, bboxMm: [1, 1, 1], openEdges: 0, parts: [{ name, slot, triangles: 1 }] }, parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }) as never
     const profile = (nozzle: number) => ({ printerId: 'p1', nozzle, nozzles: [0.4, 0.6], nozzleFrom: 'choice', tier: 'x', source: 'orca', shippedGcode: false, gcodeKeys: [], limits: {} }) as never
     set({

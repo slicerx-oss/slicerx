@@ -18,7 +18,8 @@ import { get, set, toast, type AppState, type PlateEntry } from './store'
 import { appName } from '../edition'
 import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/bambu-connect'
 import { openLink } from '../lib/links'
-import { askApproval, buildApproval, developerModeReason, jobFileName, jobName, plateSliceConfig, refusalReason, STALE_SLICE, storageFullReason } from './actions'
+import { askApproval, buildApproval, developerModeReason, jobFileName, jobName, refusalReason, STALE_SLICE, storageFullReason } from './actions'
+import { plateSliceConfig } from './slice-plate'
 
 /** "Desk hook" becomes "desk-hook_plate-1.gcode". */
 /** What a printer that does not follow a slot map does with a plain G-code file: each filament from the slot of its number. */

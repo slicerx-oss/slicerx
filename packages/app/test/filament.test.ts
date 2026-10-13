@@ -3,7 +3,8 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { MeshHandle } from '@slicerx/contracts'
 import { deltaE2000, extruderCount, flushInputs, flushMatrix, flushValues, flushVolume, FLUSH_MAX, measuredFlush, minFlushFor, parseHex, printerMinFlush, loadFlushData, variantIndex } from '../src/filament/flush'
-import { flushPlan, materialType, resetSlots, slotFinish, resolveSlots, setFlushManual, setSlot, slotConfig, slotOverridesFor, swapPlateSlots } from '../src/filament/slots'
+import { materialType, resetSlots, slotFinish, resolveSlots, setFlushManual, setSlot, slotOverridesFor, swapPlateSlots } from '../src/filament/slots'
+import { flushPlan, slotConfig } from '../src/filament/slot-config'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
 
 beforeAll(() => loadFlushData())
