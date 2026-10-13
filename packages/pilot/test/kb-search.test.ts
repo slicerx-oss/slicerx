@@ -30,6 +30,7 @@ const CASES: [string, string[]][] = [
   ['how do I paint different colors onto my model', ['workflow/slicerx_paint']],
   ['best way to print threads that screw together', ['workflow/printed_threads']],
   ['how do I clean and lubricate my a1', ['printer/bambu_a1']],
+  ['small tower comes out with a rough melted top', ['workflow/small_parts_cooling', 'troubleshoot/pillowing']],
   ['paint where the seam goes', ['workflow/slicerx_paint', 'workflow/seams']],
   ['print tpu on an a1 with the ams lite', ['filament/tpu_95a', 'printer/bambu_a1', 'accessory/bambu_ams_lite']],
 ]
