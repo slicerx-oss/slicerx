@@ -117,7 +117,7 @@ test.describe('the right pane', () => {
   })
 })
 
-test('a 120-character file name stays on one line in the objects list, the plate chip and Print', async ({ page, isMobile }) => {
+test('a 120-character file name stays on one line in the objects list and Print, and the plate chip names the plate only', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop width')
   const long = `${'Very_long_model_name_from_a_marketplace_download_'.repeat(2)}with_extras_v2_final.stl`.slice(-120)
   const printer = { id: 'e2e-long', name: 'H2D 0.4 from CHAINSAW_MAN_-_POCHITA_-_KEYCHAIN_WITH_A_VERY_LONG_PROJECT_NAME', profileId: 'bambu-a1', vendor: 'Bambu Lab', model: 'A1', nozzleCount: 1 }
@@ -140,21 +140,16 @@ test('a 120-character file name stays on one line in the objects list, the plate
   const inside = async (selector: string) =>
     page.locator(selector).first().evaluate((el) => {
       const r = el.getBoundingClientRect()
-      // Inside the control around it; a chip on the view, inside the view.
-      const host = el.classList.contains('platechip') ? el.closest('.vp') : el.parentElement?.closest('button, .obj-row, .sx-block, aside')
+      const host = el.parentElement?.closest('button, .obj-row, .sx-block, aside')
       const parent = (host ?? el.parentElement!).getBoundingClientRect()
       return { oneLine: r.height < 40, fits: r.left >= parent.left - 0.5 && r.right <= parent.right + 0.5 }
     })
-  for (const sel of ['[data-testid="object-name"]', '.platechip', '[data-testid="slice-machine-printer"] .printer-name']) {
+  for (const sel of ['[data-testid="object-name"]', '[data-testid="slice-machine-printer"] .printer-name']) {
     expect(await inside(sel), sel).toEqual({ oneLine: true, fits: true })
   }
-  // The plate chip stays small, so the model size keeps its place beside it on the same row.
-  const chips = await page.evaluate(() => {
-    const a = document.querySelector('.platechip')!.getBoundingClientRect()
-    const b = document.querySelector('.hud-bl .dims')!.getBoundingClientRect()
-    return { narrow: a.width <= 320.5, sameRow: Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < 2 }
-  })
-  expect(chips).toEqual({ narrow: true, sameRow: true })
+  // The plate chip names the plate, not the object, and the view has no size chip: the scale tool has the size.
+  await expect(page.getByTestId('plate-chip')).toHaveText('Plate 1')
+  await expect(page.locator('.vp .dims')).toHaveCount(0)
   // The export-only printer's footer action and the summary's Export name the printer without its project.
   await expect(page.getByTestId('slice-machine-printer')).toContainText('H2D 0.4')
   await expect(page.getByTestId('slice-machine-printer')).not.toContainText('CHAINSAW')
@@ -165,7 +160,7 @@ test('a 120-character file name stays on one line in the objects list, the plate
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
 })
 
-test('on a phone, a long name gives way in the plate chip and the model size keeps the row', async ({ page, isMobile }) => {
+test('on a phone, the plate chip names the plate only, whatever the object is called', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Phone width')
   await page.addInitScript(() => {
     if (sessionStorage.getItem('sx-e2e')) return
@@ -174,17 +169,12 @@ test('on a phone, a long name gives way in the plate chip and the model size kee
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' } }))
   })
   await page.goto('./')
-  await expect(page.locator('.hud-bl .dims')).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByTestId('plate-chip')).toBeVisible({ timeout: 120_000 })
   await page.evaluate(() => {
     const sx = (window as unknown as { __sx: { getState(): { plate: { name: string }[] }; setState(p: unknown): void } }).__sx
     const [o, ...rest] = sx.getState().plate
     sx.setState({ plate: [{ ...o, name: `${'Very_long_model_name_from_a_marketplace_download_'.repeat(2)}v2.stl` }, ...rest] })
   })
-  const row = () =>
-    page.evaluate(() => {
-      const a = document.querySelector('.platechip')!.getBoundingClientRect()
-      const b = document.querySelector('.hud-bl .dims')!.getBoundingClientRect()
-      return { sameRow: Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < 2, inView: b.right <= innerWidth }
-    })
-  await expect.poll(row).toEqual({ sameRow: true, inView: true })
+  await expect(page.getByTestId('plate-chip')).toHaveText('Plate 1')
+  await expect.poll(() => page.getByTestId('plate-chip').evaluate((el) => el.getBoundingClientRect().right <= innerWidth)).toBe(true)
 })

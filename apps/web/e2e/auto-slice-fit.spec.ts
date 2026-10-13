@@ -40,7 +40,8 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' }, autoSliceBySize: false }))
   })
   await page.goto('./')
-  await expect(page.locator('.platechip', { hasText: 'Layered X' })).toBeVisible({ timeout: 120_000 })
+  // The starter is on the plate (the objects list is in the right pane, shut here, and the plate chip names the plate only).
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sx?: Sx }).__sx?.getState().plate.some((p) => p.name.includes('Layered X')) ?? false), { timeout: 120_000 }).toBe(true)
   await expect(page.getByTestId('edge-tab-right')).toHaveAttribute('aria-expanded', 'false')
   const state = () =>
     page.evaluate(() => {
