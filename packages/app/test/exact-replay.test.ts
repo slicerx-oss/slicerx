@@ -131,3 +131,12 @@ it('rounds edges on the kernel, in the part frame, and falls back to the mesh wh
   expect(back.exactFellBack).toEqual(['fillet-1'])
   expect(f.ops().slice(2)).toEqual(['brep.fillet', 'edge.fillet'])
 })
+
+it('chamfers on the kernel with one distance', async () => {
+  const chamfer = step('chamfer-1', { op: 'edge.chamfer', edges: [{ a: [10, -5, 0], b: [10, -5, 5], face: [1, 0, 0] }], distanceMm: 1 })
+  const e = engine()
+  await replayHistory(e.call, { history: history(box, chamfer), exact: true })
+  expect(e.ops()).toEqual(['brep.extrude', 'brep.tessellate', 'brep.chamfer', 'brep.tessellate'])
+  expect(e.sent[2]!.req['distanceMm']).toBe(1)
+  expect(e.sent[2]!.req).not.toHaveProperty('distance2Mm')
+})
