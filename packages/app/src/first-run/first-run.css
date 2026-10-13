@@ -369,10 +369,12 @@
   .fr-body { padding: var(--s-5) var(--s-4) var(--s-7); }
   .fr-title.fr-display { font-size: calc(26px * var(--text-scale)); }
   .fr-foot { padding: var(--s-2) var(--s-4) var(--s-3); }
-  .fr-foot-in { grid-template-columns: auto 1fr; grid-template-areas: "links links" "back next"; row-gap: 4px; }
+  /* Back and Skip share the top row, the main button and its hint the next; with nothing beside Back, one row */
+  .fr-foot-in { grid-template-columns: auto 1fr; grid-template-areas: "back links" "next next"; row-gap: 4px; }
+  .fr-foot-in:not(:has(.fr-foot-links)) { grid-template-areas: "back next"; }
   .fr-foot-next { justify-self: end; }
-  .fr-foot-hint { max-width: 22ch; }
-  .fr-foot-links { justify-content: space-between; }
+  .fr-foot-hint { max-width: 26ch; }
+  .fr-foot-links { justify-content: flex-end; }
   .fr-foot-links .fr-second { height: auto; padding: 2px 4px; color: var(--accent); background: none; font-weight: var(--fw-medium); }
   .fr-brands { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .frp-notes { grid-template-columns: minmax(0, 1fr); gap: var(--s-3); }
@@ -513,8 +515,6 @@ p.fr-codecard-msg, .fr-codecard-msg p { color: var(--red); }
 .fr-codecard-note { margin: 0; color: var(--muted); }
 @media (max-width: 520px) { .fr-codecard { padding: var(--s-4); } .fr .fr-codecard-go { flex: 1 1 100%; } }
 .fr-mimir { max-width: 720px; }
-.fr-mimir-detail { margin-top: var(--s-4); }
-.fr-mimir-detail:empty { display: none; }
 
 /* A connection test past 1.2 s: the ravens circle the printer, then land on it when it answers. */
 .fr-orbit-panel { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-4); margin-bottom: var(--s-3); }

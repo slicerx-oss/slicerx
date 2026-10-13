@@ -118,13 +118,13 @@ export function TopBar() {
           )}
           <SearchButton placeholder="Search" onClick={() => set({ commandOpen: true })} shortcut={formatShortcut(palette)} />
           {assistant ? (
-            <Button variant="ghost" size="sm" className="mimir-btn" aria-pressed={dockOpen} tip="pilot.ask" onClick={toggleDock} {...(inMimir ? { 'data-hidden': '', 'aria-hidden': true, tabIndex: -1 } : {})}>
+            <Button variant="ghost" size="sm" className="mimir-btn" aria-label={ASSISTANT_NAME} aria-pressed={dockOpen} tip="pilot.ask" onClick={toggleDock} {...(inMimir ? { 'data-hidden': '', 'aria-hidden': true, tabIndex: -1 } : {})}>
               <Icon name="mimir" size={16} />
-              {ASSISTANT_NAME}
+              <span className="mimir-btn-label">{ASSISTANT_NAME}</span>
               {watch.names.length ? <span className="mimir-watch" data-attention={watch.attention ? true : undefined} role="img" aria-label={watch.attention ? `Look at ${watch.names.join(', ')}` : `Watching ${watch.names.join(', ')}`} /> : null}
             </Button>
           ) : null}
-          <Button variant="ghost" size="sm" icon="settings" tip="nav.settings" aria-label="Settings" onClick={() => openSettings()} />
+          <Button variant="ghost" size="sm" icon="settings" tip="nav.settings" aria-label="Settings" data-testid="open-settings" onClick={() => openSettings()} />
         </>
       }
     >
