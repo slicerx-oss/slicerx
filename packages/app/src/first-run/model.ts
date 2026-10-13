@@ -160,6 +160,17 @@ export function contractStep(step: SetupStep, steps: readonly SetupStep[] = BASE
 }
 
 /**
+ * The record kept while setup is open, so it can resume from Settings. A run on a fresh install records the
+ * current onboarding version from its first screen: without one, quitting the app partway read at the next
+ * launch as an onboarding from before versions, and setup opened again as a changed onboarding (after alpha,
+ * without its printer step). A run over an earlier record keeps that record's version until it closes.
+ */
+export function progressRecord(s: Pick<FlowState, 'step' | 'steps' | 'look'>, prior: FirstRunState | null): FirstRunState {
+  const version = prior ? prior.version : ONBOARDING_VERSION
+  return { completedAt: prior?.completedAt ?? null, step: contractStep(s.step, s.steps), look: prior?.look ?? s.look, printerId: prior?.printerId ?? null, ...(version !== undefined ? { version } : {}) }
+}
+
+/**
  * What the flow writes when it closes. Finishing records completion and the printer. Leaving
  * writes nothing new except the look, and only when the person had picked one (it was applied
  * live and stays). Returns null for the look when nothing about it should change.
