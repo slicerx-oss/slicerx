@@ -16,6 +16,10 @@ Each folder holds the upstream license files and a SOURCE.md with the exact chan
 
 STEP files are read with occt-import-js 0.0.23 by Viktor Kovacs (LGPL-2.1), built on Open CASCADE Technology 7.6.1 by Open CASCADE SAS (LGPL-2.1 with the Open CASCADE exception 1.0). SlicerX makes use of facilities provided by the Open CASCADE Technology software. We build it from source with `packages/vendor/occt-import-js/build.sh` at pinned commits, with one small patch (each mesh says whether it is a solid), and commit the output with its SHA-256 in SOURCE.md. The WebAssembly file is a separate file that the app loads only when a STEP file is opened, so it can be rebuilt and replaced on its own. The license texts are in that folder. Each release attaches the complete source of the reader (occt-import-js and OCCT at the pinned commits, the patch and the build script), and SOURCE.md there has the full source offer.
 
+## B-rep kernel (packages/brep)
+
+Exact solids for the modeling tools come from SMLib and its C API, SM_API, by NVIDIA Corporation (Apache-2.0), from NVIDIA's usd-brep repository at commit c9c5979f04cea8c38213004d4f04df0dcfb40d05. The kernel's source is not in this repository: `packages/brep/scripts/fetch-smlib.sh` downloads that commit, checks its SHA-256 and keeps only `source/SMLib`, `source/SM_API` and the license, and the build compiles them unchanged. Our wrapper (`packages/brep/cpp`) is ours, including small stand-ins for the three oneTBB headers the kernel includes, so no oneTBB code ships. usd-brep has no NOTICE file; each kernel file keeps its NVIDIA copyright header, and the license text is in LICENSES/Apache-2.0.txt. Builds without the kernel's source ship none of it.
+
 ## Rust dependencies worth naming
 
 | Crate | License | Used for |
