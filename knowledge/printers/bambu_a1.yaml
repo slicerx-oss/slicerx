@@ -76,7 +76,7 @@ pilot_notes:
   - "Open frame bedslinger. Block ABS, ASA, PC and nylon or warn strongly. Bambu rates them not recommended here."
   - "The bed moves in Y, so tall thin parts wobble more. Keep the model footprint wide and reduce speed or acceleration on tall parts."
   - "Time-lapse on A series moves the bed and toolhead to a fixed shooting spot every layer. Smooth mode adds a prime tower. Traditional mode hides ooze in infill and needs infill on each layer."
-  - "AMS lite feeds only rigid enough filament: no TPU softer than 77D, no absorbent PVA, no third party CF or GF. Use the external spool for those. Bambu's own TPU for AMS (68D) is the exception: Bambu sells it as AMS lite compatible."
+  - "AMS lite feeds only rigid enough filament: TPU at 55D or harder (Bambu lists 77D and 55D, so its 68D TPU for AMS fits), never 95A, 85A or softer; no absorbent PVA, no third party CF or GF. Use the external spool for those."
   - "The nozzle swap is toolless. After a swap to another diameter or the high flow hotend, sync the nozzle on the screen and rerun flow dynamics."
   - "Auto flow dynamics reads force from the toolhead. A third party hotend and 0.2 mm nozzles can produce bad results."
   - "Build plate position detection can be turned off in print options if the plate is not recognized."
@@ -103,4 +103,4 @@ disagreements:
       - {claim: "10000 mm/s2", src: [bambu_store_a1]}
       - {claim: "12000 mm/s2 in the Orca machine profile", src: ["orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]}
     resolution: "Use 10000 as the hardware figure. The slicer process profile prints at 6000."
-src: [bambu_store_a1, bambu_wiki_hotend_a1, bambu_store_tpu_for_ams, "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]
+src: [bambu_store_a1, bambu_wiki_hotend_a1, bambu_store_tpu_for_ams, bambu_wiki_amslite_faq, "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]
