@@ -4,6 +4,7 @@
 // owning SlicerX account can get from the server. Format: packages/sx3mf/SPEC-sxlock.md. The app and integrators
 // use this module (@slicerx/embed/sxlock); it needs WebCrypto (browsers, Node 20 and later, Electron).
 import type { SxlockFailure, SxlockKeys, SxlockResult } from '@slicerx/contracts'
+import { productName } from '@slicerx/contracts/brand'
 
 export type { SxlockFailure, SxlockKeyRef, SxlockKeys, SxlockResult, SxlockSealed } from '@slicerx/contracts'
 
@@ -30,18 +31,32 @@ export class SxlockError extends Error {
 
 /** Plain words for each refusal, for an app to show as is. */
 export const SXLOCK_MESSAGES: Readonly<Record<SxlockErrorCode, string>> = {
-  offline: 'Locked projects open only online, since your SlicerX account unlocks them. Connect to the internet and try again.',
-  unavailable: 'Locked projects need a SlicerX account service, and this build has none.',
-  signed_out: 'Sign in to the SlicerX account that locked this project to open it.',
-  wrong_account: 'This locked project belongs to another SlicerX account.',
+  get offline() {
+    return `Locked projects open only online, since your ${productName()} account unlocks them. Connect to the internet and try again.`
+  },
+  get unavailable() {
+    return `Locked projects need a ${productName()} account service, and this build has none.`
+  },
+  get signed_out() {
+    return `Sign in to the ${productName()} account that locked this project to open it.`
+  },
+  get wrong_account() {
+    return `This locked project belongs to another ${productName()} account.`
+  },
   revoked: 'The key this project was locked with was revoked, so it can no longer be opened.',
   unknown_key: 'The key this project was locked with no longer exists, so it can no longer be opened.',
   missing_scope: 'The API token is not allowed to do this. Opening locked projects needs the sxlock_open scope, exporting them sxlock_seal.',
   rate_limited: 'Too many requests to open locked projects. Wait a minute and try again.',
-  banned: 'This SlicerX account is banned.',
+  get banned() {
+    return `This ${productName()} account is banned.`
+  },
   invalid: 'The locked project header is not valid.',
-  not_sxlock: 'This is not a locked SlicerX project.',
-  unsupported: 'This locked project was made by a newer SlicerX. Update SlicerX to open it.',
+  get not_sxlock() {
+    return `This is not a locked ${productName()} project.`
+  },
+  get unsupported() {
+    return `This locked project was made by a newer ${productName()}. Update ${productName()} to open it.`
+  },
   damaged: 'The locked project is damaged or was changed after it was exported.',
 }
 

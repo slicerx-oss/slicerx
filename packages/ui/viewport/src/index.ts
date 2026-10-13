@@ -4,6 +4,8 @@
 export { createViewport } from './viewport'
 // The SXPV reader, so a page can load a .sxpv file (from sx slice --request --out-dir) with this package alone.
 export { readPreview, type PreviewBuffers } from '@slicerx/contracts'
+// The app's name in the viewport's text (the default controls preset's label): a white-label app sets its own.
+export { productName, setProductName } from '@slicerx/contracts/brand'
 export { decodeTree, encodeTree, paintTexts, readPaintTexts, leavesOf, type PaintNode, type PaintMap } from './paint'
 export { layerCoordAt, layerHeightStats, layerThicknesses, layerTopsProblems } from './layerheights'
 export { facePatch, layOnFaceTransform, rotationBetween } from './faces'

@@ -60,7 +60,7 @@ export function cloudFromEnv(env: NodeJS.ProcessEnv, flagUrl?: string): CloudOpt
 }
 
 function readCloudKey(ref: string): string {
-  if (!/^slicerx-cloud(-[a-z0-9-]+)?$/.test(ref)) throw new ToolInputError(`${ref} is not a SlicerX cloud credential name`, 'invalid_input')
+  if (!/^slicerx-cloud(-[a-z0-9-]+)?$/.test(ref)) throw new ToolInputError(`${ref} is not a cloud credential name`, 'invalid_input')
   let out = ''
   try {
     const opts = { encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'] }
@@ -170,7 +170,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     source: 'command',
     permission: 'slice',
     description:
-      "Slice a model in the integrator's SlicerX cloud instead of on this machine: checks the account is invited and within its daily job and upload limits, uploads the STL (only if the cloud does not have it yet), queues a job with the settings (schema defaults, then each profile, then overrides) and returns the job id. Follow it with slicerx_cloud_jobs. The job names no printer, so it never starts a print. Answers that cloud slicing is not configured when this server has no cloud API.",
+      "Slice a model in the integrator's cloud instead of on this machine: checks the account is invited and within its daily job and upload limits, uploads the STL (only if the cloud does not have it yet), queues a job with the settings (schema defaults, then each profile, then overrides) and returns the job id. Follow it with slicerx_cloud_jobs. The job names no printer, so it never starts a print. Answers that cloud slicing is not configured when this server has no cloud API.",
     input: z.object({
       model: z.string().min(1).describe('Absolute path to an STL file, an http(s) URL, or a built-in test model such as sample:cube-20'),
       profiles: z.array(z.string()).max(8).default([]).describe('Profiles applied in order, by id or name from slicerx_list_profiles'),

@@ -5,6 +5,7 @@
 // host verifies it and refuses otherwise.
 import { developerModeRemedies, developerModeSure, followsSlotMap, NEEDS_DEVELOPER_MODE, PRINTER_STORAGE_FULL, slotMapLine, STORAGE_FULL_REMEDY, type Cell, type JobFile, type PrinterHost, type PrinterStatus, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '../name'
 import { fmtDuration, fmtGrams, type ToolShared } from '../shared'
 import { defineTool, type PilotTool, type ToolContext } from '../tool'
@@ -319,7 +320,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
         // The hub starts an assistant's print only from a file it uploaded and checked itself. Say so in
         // plain words; retrying the same start cannot succeed.
         if ((e as { code?: unknown } | null)?.code !== 'unverified_file') throw e
-        const say = `The print did not start. SlicerX could not check the file on ${i.printerId}, so it will not start it for ${ASSISTANT_NAME}. Upload the file through SlicerX, then start it.`
+        const say = `The print did not start. ${productName()} could not check the file on ${i.printerId}, so it will not start it for ${ASSISTANT_NAME}. Upload the file through ${productName()}, then start it.`
         return { ok: false, summary: say, output: { ok: false, error: 'unverified_file', tellTheUser: say, retry: false } }
       }
       const s = await ctx.host.printers.status(i.printerId).catch(() => null)

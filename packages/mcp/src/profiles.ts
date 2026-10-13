@@ -3,7 +3,7 @@
 // Profile catalog: SlicerX's own printer profiles and process presets (packages/settings),
 // printer and filament presets from knowledge/, and the Easy intent presets.
 import type { EasyGoal, SettingSection, SettingValue } from '@slicerx/contracts'
-import { EASY_GOALS } from '@slicerx/contracts'
+import { EASY_GOALS, productName } from '@slicerx/contracts'
 import { applyEasy, EASY_MAP, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
 import { defaultConfig, filamentLayer, layerConfig, printerLayer, sameValue } from './settings'
@@ -121,7 +121,7 @@ export class ProfileCatalog {
       if (e.kind === 'printer') out.push({ id: `printer:${e.id}`, name: e.name, section: 'printer', source: 'knowledge', ...(typeof e.data['vendor'] === 'string' ? { vendor: e.data['vendor'] } : {}) })
       if (e.kind === 'filament') out.push({ id: `filament:${e.id}`, name: e.name, section: 'filament', source: 'knowledge' })
     }
-    out.push({ id: SLICERX_DEFAULT_PROCESS, name: 'SlicerX default (Standard 0.20 mm, sleipnir, aegis walls)', section: 'process', source: 'slicerx' })
+    out.push({ id: SLICERX_DEFAULT_PROCESS, name: `${productName()} default (Standard 0.20 mm, sleipnir, aegis walls)`, section: 'process', source: 'slicerx' })
     for (const goal of Object.keys(EASY_GOALS) as EasyGoal[]) out.push({ id: `intent:${goal}`, name: `${goal[0]?.toUpperCase() ?? ''}${goal.slice(1)} (Easy goal)`, section: 'process', source: 'intent' })
     for (const p of listPrinterProfiles()) out.push({ id: `machine:${p.id}`, name: `${p.vendor} ${p.model}`, section: 'printer', source: 'slicerx', vendor: p.vendor })
     for (const t of listProcessPresets()) out.push({ id: `process:${t.id}`, name: t.label, section: 'process', source: 'slicerx' })

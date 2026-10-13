@@ -12,6 +12,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { bakeMesh, invert, multiply, stepName, type HistoryMesh, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
+import { productName } from '@slicerx/contracts'
 import { designArg, designSummary, faceAt, item, type Design } from './design'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
@@ -128,7 +129,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
   // sx-geom reads STL only; a 3MF would be read as a binary STL with nonsense counts.
   const stlOnly = (path: string): { stlPath: string } => {
     if (extname(path).toLowerCase() !== '.stl' || looksZipped(path)) {
-      throw new ToolInputError(`${basename(path)} is not an STL. The mesh tools take STL files only; to work on a 3MF, export the object as STL from SlicerX first.`, 'unsupported_format')
+      throw new ToolInputError(`${basename(path)} is not an STL. The mesh tools take STL files only; to work on a 3MF, export the object as STL from ${productName()} first.`, 'unsupported_format')
     }
     return { stlPath: path }
   }

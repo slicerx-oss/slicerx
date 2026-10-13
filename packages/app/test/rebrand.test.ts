@@ -6,6 +6,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { LOOK_OPTIONS, productName, type Host } from '@slicerx/contracts'
 import { parseEditionConfig, POWERED_BY, type EditionConfig } from '@slicerx/edition-config'
+import { SXLOCK_MESSAGES } from '@slicerx/embed/sxlock'
+import { CONTROL_PRESETS } from '@slicerx/viewport'
 import { checkHub } from '../../connect/link-client/src/index'
 import { BRANDS, CONNECTION_METHODS, PRINTER_MODELS } from '@slicerx/printer-catalog'
 import { insteadText, reasonText, reportText, SLICERX_KEEPS, sourceText, type ReportItem } from '@slicerx/settings'
@@ -130,7 +132,7 @@ describe('a white-label edition', () => {
     expect(helpLinks().docs).toBe('https://slicer.acme.example/docs')
   })
 
-  it('names itself in the printer catalog, preset import reports, hub messages and the default look', async () => {
+  it('names itself in the printer catalog, preset import reports, hub messages, the default look, the viewport, and locked projects', async () => {
     setCurrentEdition(acme)
     const strings = [
       JSON.stringify([BRANDS, CONNECTION_METHODS, PRINTER_MODELS]),
@@ -141,6 +143,9 @@ describe('a white-label edition', () => {
       reportText([{ name: 'Old PLA', section: 'filament', parent: { name: 'Bambu PLA Basic', found: false }, items: [], defaulted: 0 }]),
       ...Object.values(SLICERX_KEEPS),
       LOOK_OPTIONS.slicerx.label,
+      // the packages an integrator uses without this app: the viewport and the embed pieces
+      CONTROL_PRESETS.slicerx.label,
+      ...Object.values(SXLOCK_MESSAGES),
       engineErrorText('a.3mf: refused extension 0 0 http://example.com/ext'),
       await checkHub(() => Promise.reject(new Error('no hello')), 7311).then(
         () => '',
@@ -152,6 +157,8 @@ describe('a white-label edition', () => {
     expect(strings).toContain('Acme Slicer import report')
     expect(strings).toContain('did not prove it is the printer hub for Acme Slicer')
     expect(LOOK_OPTIONS.slicerx.label).toBe('Acme Slicer')
+    expect(CONTROL_PRESETS.slicerx.label).toBe('Acme Slicer')
+    expect(SXLOCK_MESSAGES.signed_out).toBe('Sign in to the Acme Slicer account that locked this project to open it.')
     expect(JSON.stringify(CONNECTION_METHODS)).toContain('Acme Slicer')
     // Back to SlicerX, the catalog says SlicerX again.
     setCurrentEdition(before)

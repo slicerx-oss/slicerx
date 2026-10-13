@@ -3,7 +3,7 @@
 // Settings lookups, validation and planning over the schema, knowledge/ and
 // the Easy mapping from @slicerx/settings.
 import type { EasyGoal, PrintConfig, SettingDef, SettingIssue, SettingValue } from '@slicerx/contracts'
-import { EASY_GOALS } from '@slicerx/contracts'
+import { EASY_GOALS, productName } from '@slicerx/contracts'
 import { applyEasy, coerce, easyControlFor, goalEasy, sameValue, validate } from '@slicerx/settings'
 import { normalizeId, type DataStore, type KnowledgeEntry } from './data'
 
@@ -175,7 +175,7 @@ export function validateConfig(store: DataStore, config: Record<string, unknown>
     const def = store.setting(key)
     if (!def) {
       const near = findSettings(store, key.replace(/_/g, ' ')).slice(0, 3).map((m) => m.key)
-      issues.push({ code: 'unknown_key', severity: 'warning', keys: [key], message: `${key} is not an OrcaSlicer setting SlicerX knows.${near.length ? ` Did you mean ${near.join(', ')}?` : ''}` })
+      issues.push({ code: 'unknown_key', severity: 'warning', keys: [key], message: `${key} is not an OrcaSlicer setting ${productName()} knows.${near.length ? ` Did you mean ${near.join(', ')}?` : ''}` })
       continue
     }
     const bad = rawTypeIssue(def, value)

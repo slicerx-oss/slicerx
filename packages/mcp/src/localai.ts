@@ -30,6 +30,7 @@ import {
   type LocalNet,
 } from '@slicerx/pilot/local-ai'
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 
 export interface LocalAiOptions {
   /** Leave the tools out, as an edition with features.localAi off does. */
@@ -178,7 +179,7 @@ export function localAiTools(opts: LocalAiOptions = {}): PilotTool<never>[] {
     source: 'command',
     permission: 'read',
     description:
-      'Show the local models installed in Ollama and LM Studio, with license and tool use for the ones SlicerX knows, and the model slicerx_local_ai_setup last set up and checked. Reads only 127.0.0.1 and the local state file.',
+      `Show the local models installed in Ollama and LM Studio, with license and tool use for the ones ${productName()} knows, and the model slicerx_local_ai_setup last set up and checked. Reads only 127.0.0.1 and the local state file.`,
     input: z.object({}),
     async run() {
       const runners = await detectRunners(net)
@@ -196,7 +197,7 @@ export function localAiTools(opts: LocalAiOptions = {}): PilotTool<never>[] {
           in_use: state ? { ...state, available: running } : null,
           installed,
           runners: runners.map((r) => ({ app: r.label, base_url: r.base })),
-          note: 'The SlicerX app switches mimir in Settings > mimir or after its own setup; this server records the model it set up for MCP clients.',
+          note: `The ${productName()} app switches mimir in Settings > mimir or after its own setup; this server records the model it set up for MCP clients.`,
         },
       }
     },

@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { ApprovalRequest, ApprovalToken, PermissionClass, PermissionPolicy } from '@slicerx/contracts'
-import { grantApproval, hashParams, PERMISSION_LABELS } from '@slicerx/contracts'
+import { grantApproval, hashParams, PERMISSION_LABELS, productName } from '@slicerx/contracts'
 import { buildApprovalRequest, decide, policyMayGrant, TOKEN_TTL_MS, toolMessage, type AgentWork, type ApprovalBroker, type PilotTool, type ToolContext, type ToolOutput } from '@slicerx/pilot'
 import type { ActionLog } from './actionlog'
 
@@ -66,8 +66,8 @@ const onlyStops = (req: Pick<ApprovalRequest, 'actions'>): boolean => req.action
 /** Cards the hub's broker answers: printer calls (not printer setup) and plugin calls. */
 export const forHub = (req: Pick<ApprovalRequest, 'actions'>): boolean => req.actions.some((a) => (a.action.startsWith('printer.') && a.action !== 'printer.config') || a.action === 'plugin.call')
 
-export const PERSON_ONLY_NOTE =
-  'Starting, resuming, sending G-code, changing a running print or switching power needs a person to approve it in SlicerX or on the phone. It cannot be approved through MCP. The request is registered; ask the user to approve it there.'
+export const personOnlyNote = (): string =>
+  `Starting, resuming, sending G-code, changing a running print or switching power needs a person to approve it in ${productName()} or on the phone. It cannot be approved through MCP. The request is registered; ask the user to approve it there.`
 
 /** Progress lines a long tool sends, as MCP progress notifications when the client asked for them. */
 export type ToolProgress = (line: string, fraction?: number) => void
@@ -165,8 +165,8 @@ async function execute(
  * The answer to a bed_clear argument. Nothing sent over MCP can set the hub's
  * bed record: the user confirms the plate in SlicerX or on the phone.
  */
-export const BED_CONFIRM_NOTE =
-  'The build plate can only be confirmed clear in SlicerX or on the phone, never through MCP. The printer starts only if that confirmation is already on record; otherwise ask the user to confirm the plate there and try again.'
+export const bedConfirmNote = (): string =>
+  `The build plate can only be confirmed clear in ${productName()} or on the phone, never through MCP. The printer starts only if that confirmation is already on record; otherwise ask the user to confirm the plate there and try again.`
 
 async function askUser(server: McpServer, request: ApprovalRequest): Promise<{ answer: 'approve' | 'deny' | 'unsupported' }> {
   if (!server.server.getClientCapabilities()?.elicitation) return { answer: 'unsupported' }
@@ -181,7 +181,7 @@ async function askUser(server: McpServer, request: ApprovalRequest): Promise<{ a
         requestedSchema: {
           type: 'object',
           properties: {
-            approve: { type: 'boolean', title: 'Approve', description: 'Allow SlicerX to do this once' },
+            approve: { type: 'boolean', title: 'Approve', description: `Allow ${productName()} to do this once` },
           },
           required: ['approve'],
         },
@@ -234,7 +234,7 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
     if (deps.handOff) {
       let work: AgentWork
       try {
-        if (!tool.agentWork) throw new Error(`${mcpName(tool.name)} cannot be handed to SlicerX for approval.`)
+        if (!tool.agentWork) throw new Error(`${mcpName(tool.name)} cannot be handed to ${productName()} for approval.`)
         work = await tool.agentWork(input, deps.context(undefined, signal))
         await deps.handOff.register(request, work)
       } catch (e) {
@@ -257,7 +257,7 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
     }
     deps.log.append({ ...base, decision: 'needs_person', request_id: request.id })
     const data = { status: 'needs_person', request_id: request.id, title: request.title, lines: request.lines, permission, expires_at: request.expiresAt }
-    const text = [`Needs a person: ${request.title}`, ...request.lines.map((l) => `- ${l}`), PERSON_ONLY_NOTE, `The request expires at ${request.expiresAt}.`].join('\n')
+    const text = [`Needs a person: ${request.title}`, ...request.lines.map((l) => `- ${l}`), personOnlyNote(), `The request expires at ${request.expiresAt}.`].join('\n')
     return { content: [{ type: 'text', text }], structuredContent: data }
   }
 
@@ -313,7 +313,7 @@ export async function resolvePending(deps: GateDeps, requestId: string, approve:
     // Declining stays possible; approving is for a person on a SlicerX surface.
     deps.pending.set(requestId, p)
     deps.log.append({ ...base, decision: 'refused', by: 'client' })
-    return fail(PERSON_ONLY_NOTE, { status: 'needs_person', request_id: requestId })
+    return fail(personOnlyNote(), { status: 'needs_person', request_id: requestId })
   }
   if (!approve) {
     await deps.broker.deny(requestId)

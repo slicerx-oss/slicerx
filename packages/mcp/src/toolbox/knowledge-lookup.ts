@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 import { ToolInputError } from '../models'
 import { serverTool, type ServerToolDeps } from './deps'
 
@@ -14,7 +15,7 @@ export default (d: ServerToolDeps) =>
     toolset: 'kb',
     ungated: true,
     description:
-      'Read an entry from the SlicerX print knowledge base: filaments (temperatures, drying, plates, failure modes), printers (build volume, hotend, profile baseline), accessories, troubleshooting trees (stringing, warping, layer shift and others) and workflow guides. Every value cites sources. Omit id to list the entries of a kind.',
+      `Read an entry from the ${productName()} print knowledge base: filaments (temperatures, drying, plates, failure modes), printers (build volume, hotend, profile baseline), accessories, troubleshooting trees (stringing, warping, layer shift and others) and workflow guides. Every value cites sources. Omit id to list the entries of a kind.`,
     input: z.object({
       kind: z.enum(['filament', 'printer', 'accessory', 'troubleshoot', 'guide']),
       id: z.string().optional().describe('Id, name or alias, such as "petg", "Bambu Lab P1S" or "stringing"'),

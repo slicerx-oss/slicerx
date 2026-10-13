@@ -54,7 +54,19 @@ use sx_core::{Mesh, Plate, PrintConfig, SliceOptions, SliceOutput, SliceSession,
 
 type Res<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+/// A white-label edition's name for the text sx prints, from the resolved edition config `SLICERX_CONFIG` names (the
+/// file the MCP server and the cloud service read too). Without one it says `SlicerX`.
+fn edition_name() -> Option<String> {
+    let path = std::env::var_os("SLICERX_CONFIG")?;
+    let config: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    let name = config.pointer("/brand/name")?.as_str()?.trim();
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
 fn main() -> ExitCode {
+    if let Some(name) = edition_name() {
+        sx_core::api::set_app_name(&name);
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("slice") if has(&args, "--request") => return cmd_request(&args[1..]),

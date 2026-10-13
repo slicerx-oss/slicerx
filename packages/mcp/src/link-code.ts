@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { productName } from '@slicerx/contracts'
 
 /** sx-link's default state directory, as `default_state_dir` in packages/connect/link/src/lib.rs. */
 export function hubStateDir(): string | undefined {
@@ -55,7 +56,7 @@ export function linkCodeFrom(o: { argvCode: string | undefined; stateDir: string
  * there, so no client's config file ever holds a secret. macOS and Linux (Secret Service).
  */
 export function readKeychainKey(ref: string, run: (cmd: string, args: string[]) => string = (c, a) => execFileSync(c, a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })): string {
-  if (!/^slicerx-agent-[a-z-]+$/.test(ref)) throw new Error(`${ref} is not a SlicerX agent credential name`)
+  if (!/^slicerx-agent-[a-z-]+$/.test(ref)) throw new Error(`${ref} is not an agent credential name`)
   let out = ''
   try {
     if (process.platform === 'darwin') out = run('security', ['find-generic-password', '-s', ref, '-a', 'slicerx', '-w'])
@@ -64,10 +65,10 @@ export function readKeychainKey(ref: string, run: (cmd: string, args: string[]) 
     else throw new Error('reading the keychain is not supported on this system yet')
   } catch (e) {
     if (e instanceof Error && e.message.includes('not supported')) throw e
-    throw new Error(`No hub credential in the keychain under ${ref}. Connect this app again from SlicerX (Settings, Connect your AI agent).`)
+    throw new Error(`No hub credential in the keychain under ${ref}. Connect this app again from ${productName()} (Settings, Connect your AI agent).`)
   }
   const key = out.trim()
-  if (!key) throw new Error(`The keychain item ${ref} is empty. Connect this app again from SlicerX.`)
+  if (!key) throw new Error(`The keychain item ${ref} is empty. Connect this app again from ${productName()}.`)
   return key
 }
 
@@ -77,6 +78,6 @@ export function readKeychainKey(ref: string, run: (cmd: string, args: string[]) 
  */
 export function linkKeyFrom(key: string): string {
   const k = key.trim()
-  if (!/^sxp_[0-9a-f]{64}$/.test(k)) throw new Error('SLICERX_MCP_LINK_KEY is not a SlicerX partner app key. Make one in SlicerX (Settings, Connect your AI agent, Partner app) and paste it whole.')
+  if (!/^sxp_[0-9a-f]{64}$/.test(k)) throw new Error(`SLICERX_MCP_LINK_KEY is not a ${productName()} partner app key. Make one in ${productName()} (Settings, Connect your AI agent, Partner app) and paste it whole.`)
   return k
 }

@@ -10,6 +10,7 @@ import type { Cell, LookId } from '@slicerx/contracts'
 import { LOOK_IDS, LOOK_OPTIONS } from '@slicerx/contracts'
 import { BRANDS, brandsWithModels, connectionMethod, directConnections, modelById, modelsForBrand, type ConnectionField, type ConnectionId, type PrinterModel } from '@slicerx/printer-catalog'
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 import type { SetupAddInput, SetupConnection } from '../../src/hosts'
 import { defineSkill, type ToolContext } from '../../src/tool'
 import { arr, obj, oneLine, strs } from '../d_common/index'
@@ -198,7 +199,7 @@ export function createSetupTools() {
         stage = 'connection'
         ask = {
           stage,
-          question: 'How should SlicerX reach the printer?',
+          question: `How should ${productName()} reach the printer?`,
           // A connection through a connected app (BamBuddy) is set up in Settings, Connected apps, not here.
           options: directConnections(model.connections).map((c) => {
             const m = methodOf(c)
@@ -325,13 +326,13 @@ export function createSetupTools() {
     version: '0.2.0',
     permission: 'printer_config',
     description:
-      'Tests that SlicerX can reach the printer: reaches it, signs in and reads its state. Registers nothing and changes nothing on the printer. The app asks first, and shows a secure field for the access code or key when the connection needs one. On failure the cause is unreachable, auth, timeout, protocol, not_supported or bad_request. ' +
+      `Tests that ${productName()} can reach the printer: reaches it, signs in and reads its state. Registers nothing and changes nothing on the printer. The app asks first, and shows a secure field for the access code or key when the connection needs one. On failure the cause is unreachable, auth, timeout, protocol, not_supported or bad_request. ` +
       SECRET_RULE,
     input: z.object({ connection: connection.describe('How to reach the printer') }),
     mustAsk: async () => ['Contacting a printer always asks first'],
     args: (i) => `${i.connection.family} --address ${i.connection.address}`,
     async approval(i, ctx) {
-      if (!ctx.host.setup?.testConnection) throw new Error('Testing a printer connection is done in the SlicerX app while adding the printer. This connection cannot test one.')
+      if (!ctx.host.setup?.testConnection) throw new Error(`Testing a printer connection is done in the ${productName()} app while adding the printer. This connection cannot test one.`)
       const id = `probe:${i.connection.address}`
       return {
         title: `Test the connection to ${i.connection.address}?`,
@@ -342,7 +343,7 @@ export function createSetupTools() {
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }
       const t = ctx.host.setup?.testConnection
-      if (!t) return { ok: false, summary: 'Testing a printer connection is done in the SlicerX app while adding the printer. This connection cannot test one.' }
+      if (!t) return { ok: false, summary: `Testing a printer connection is done in the ${productName()} app while adding the printer. This connection cannot test one.` }
       const r = await t(connOf(i.connection), ctx.token)
       const hint = !r.ok ? hintFor(r.cause, i.connection.family) : undefined
       const steps = r.steps.map((s) => `${s.id.replaceAll('_', ' ')}: ${s.ok === null ? 'not run' : s.ok ? 'ok' : 'failed'}`)
@@ -361,7 +362,7 @@ export function createSetupTools() {
     version: '0.2.0',
     permission: 'printer_config',
     description:
-      'Adds the printer to SlicerX with its profile, nozzle and connection. The app asks first and shows vendor, model, nozzle and address on the card, with the access code masked; the code goes to the system keychain from the app secure field, not from chat. Leave connection out to add a printer for slicing only. profileId is resolved.model.id from printer_setup. ' +
+      `Adds the printer to ${productName()} with its profile, nozzle and connection. The app asks first and shows vendor, model, nozzle and address on the card, with the access code masked; the code goes to the system keychain from the app secure field, not from chat. Leave connection out to add a printer for slicing only. profileId is resolved.model.id from printer_setup. ` +
       SECRET_RULE,
     input: z.object({
       profileId: z.string().min(1).describe('Model id from printer_setup (resolved.model.id)'),
@@ -372,7 +373,7 @@ export function createSetupTools() {
     mustAsk: async () => ['Adding a printer always asks first'],
     args: (i) => `${i.profileId} --nozzle ${i.nozzleMm}`,
     async approval(i, ctx) {
-      if (!ctx.host.setup?.addPrinter) throw new Error('Adding a printer is done in the SlicerX app (Printers, Add printer). This connection can find printers and suggest settings, but not add one.')
+      if (!ctx.host.setup?.addPrinter) throw new Error(`Adding a printer is done in the ${productName()} app (Printers, Add printer). This connection can find printers and suggest settings, but not add one.`)
       const id = `new:${i.profileId}`
       const m = modelLabel(i.profileId)
       return {
@@ -388,7 +389,7 @@ export function createSetupTools() {
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }
       const h = ctx.host.setup?.addPrinter
-      if (!h) return { ok: false, summary: 'Adding a printer is done in the SlicerX app (Printers, Add printer). This connection can find printers and suggest settings, but not add one.' }
+      if (!h) return { ok: false, summary: `Adding a printer is done in the ${productName()} app (Printers, Add printer). This connection can find printers and suggest settings, but not add one.` }
       const r = await h(addInput(i), ctx.token)
       return { summary: `Added ${oneLine(i.name ?? modelLabel(i.profileId), 40)}`, output: { printerId: r.printerId, next: 'Call printer_setup with the same answers and added true to get the first calibration suggestion, then offer it to the user.' } }
     },
@@ -416,5 +417,5 @@ function hintFor(cause: string | undefined, family: string): string {
   if (cause === 'unreachable' || cause === 'timeout') return family === 'bambu-lan' ? 'The printer did not answer. Check that it is on and on the same network. If it still does not answer, turn on LAN Only Mode on the printer, then try again.' : 'The printer did not answer. Check that it is on and on the same network as this computer.'
   if (cause === 'not_supported') return 'This printer or firmware does not support this connection. Try another connection method or set it up for slicing only.'
   if (cause === 'bad_request') return 'The address is not a local network address. Use the IP address shown on the printer.'
-  return 'The printer answered in a way SlicerX does not understand. Check the firmware version.'
+  return `The printer answered in a way ${productName()} does not understand. Check the firmware version.`
 }

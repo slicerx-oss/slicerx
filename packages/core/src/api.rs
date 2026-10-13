@@ -401,6 +401,19 @@ pub struct ConfigReport {
     pub walls: Option<WallsNote>,
 }
 
+static APP_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Sets the app's name in the notes people read (kept engine choices, wall notes): `SlicerX`, or a white-label
+/// edition's own `brand.name`. Once, at start.
+pub fn set_app_name(name: &str) {
+    let _ = APP_NAME.set(name.to_owned());
+}
+
+/// The app's name in notes: `SlicerX` unless the program that runs the engine set its own.
+pub fn app_name() -> &'static str {
+    APP_NAME.get().map_or("SlicerX", String::as_str)
+}
+
 /// One of our engine choices a project kept, and the note that says so.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KeptChoice {
@@ -500,9 +513,10 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
                 continue;
             }
             if settings.get(key).is_some_and(|v| !same_value(v, value)) {
+                // engine-choices.json says SlicerX; a white-label edition's name goes in its place
                 kept.push(KeptChoice {
                     key: key.clone(),
-                    note: note.clone(),
+                    note: note.replace("SlicerX", app_name()),
                 });
             }
             settings.insert(key.clone(), value.clone());
@@ -537,9 +551,12 @@ fn project_walls(
             _ => "its preset's",
         };
         let text = match &own {
-            None => format!("{ours} walls, kept by SlicerX; the project names none"),
+            None => format!("{ours} walls, kept by {}; the project names none", app_name()),
             Some(o) if *o == ours => format!("{ours} walls, as the project has them"),
-            Some(o) => format!("{ours} walls, kept by SlicerX; the project used {maker} default {o}"),
+            Some(o) => format!(
+                "{ours} walls, kept by {}; the project used {maker} default {o}",
+                app_name()
+            ),
         };
         return Some(WallsNote {
             generator: ours,

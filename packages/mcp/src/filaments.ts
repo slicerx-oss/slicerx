@@ -3,6 +3,7 @@
 // The project's filaments: what the plate calls filament 1, 2, 3, each a material type and a color, as the app's
 // filament rail shows them. A client adds one after the last and changes one's type or color; the slice config
 // carries them as filament_type and filament_colour.
+import { productName } from '@slicerx/contracts'
 
 /** The most filaments a project holds, as in the app. */
 export const MAX_FILAMENTS = 16
@@ -36,7 +37,7 @@ export function filamentColor(c: string): string {
 /** "petg" as "PETG"; a type the app does not offer is refused, with the list. */
 export function filamentType(t: string): string {
   const up = t.trim().toUpperCase()
-  if (!(FILAMENT_TYPES as readonly string[]).includes(up)) throw new Error(`"${t}" is not a filament type SlicerX knows. Use one of ${FILAMENT_TYPES.join(', ')}.`)
+  if (!(FILAMENT_TYPES as readonly string[]).includes(up)) throw new Error(`"${t}" is not a filament type ${productName()} knows. Use one of ${FILAMENT_TYPES.join(', ')}.`)
   return up
 }
 

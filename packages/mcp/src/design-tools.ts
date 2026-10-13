@@ -6,6 +6,7 @@
 import { bakeMesh, keyOfTriangle, mainNumber, stepName, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './errors'
 import { meshStats } from './mesh'
 import type { FilePart } from './threemf'
@@ -196,7 +197,7 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     source: 'command',
     permission: 'slice',
     description:
-      'Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. Every step lands in the design\'s editable history, the same one SlicerX keeps for a person, so slicerx_design_save writes a 3MF that opens with every step editable. Start empty (the first step makes a body) or from an STL. Units are mm, Z up, the bed at Z = 0.',
+      `Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. Every step lands in the design's editable history, the same one ${productName()} keeps for a person, so slicerx_design_save writes a 3MF that opens with every step editable. Start empty (the first step makes a body) or from an STL. Units are mm, Z up, the bed at Z = 0.`,
     input: z.object({
       name: z.string().min(1).max(120).default('Design'),
       from: z.string().min(1).optional().describe('Start from this model: an STL path, URL or sample: name. Absent: an empty design'),
@@ -214,7 +215,7 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     source: 'command',
     permission: 'read',
     description:
-      'Open the objects of any 3MF project (SlicerX, Bambu Studio, Orca) as designs, one per object. An object with a SlicerX CAD history opens with its steps replayed; any other starts from its printed parts, with their filament slots and paint, and no steps yet. Modifiers and other volumes are left out and named.',
+      `Open the objects of any 3MF project (${productName()}, Bambu Studio, Orca) as designs, one per object. An object with a ${productName()} CAD history opens with its steps replayed; any other starts from its printed parts, with their filament slots and paint, and no steps yet. Modifiers and other volumes are left out and named.`,
     input: z.object({ path: z.string().min(1).describe('Path of the .3mf file') }),
     async run(i) {
       const found = await files.open(i.path)
@@ -259,7 +260,7 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     source: 'command',
     permission: 'slice',
     description:
-      'Edit one step of a design and replay the steps after it, as editing a step in SlicerX\'s history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. Steps after it that no longer work are reported broken with the reason; edit them, or edit this one back.',
+      `Edit one step of a design and replay the steps after it, as editing a step in ${productName()}'s history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. Steps after it that no longer work are reported broken with the reason; edit them, or edit this one back.`,
     input: z.object({
       design: designArg,
       step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id'),
@@ -337,7 +338,7 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
-    description: 'Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in SlicerX with every step editable (other slicers open the parts). Also writes the parts as one STL.',
+    description: `Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in ${productName()} with every step editable (other slicers open the parts). Also writes the parts as one STL.`,
     input: z.object({ design: designArg, file_name: z.string().min(1).max(120).optional().describe('File name without folders; default the design name') }),
     async run(i) {
       const d = designs.get(i.design)

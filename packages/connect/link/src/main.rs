@@ -24,8 +24,20 @@ const USAGE: &str = "usage:
   sx-link service print|install|uninstall [--state-dir DIR]
                                                  run the hub as a login item (macOS) or a user service (Linux)";
 
+/// A white-label edition's name for the text sx-link prints, from the resolved edition config `SLICERX_CONFIG` names
+/// (the file the MCP server and the cloud service read too). Without one it says `SlicerX`.
+fn edition_name() -> Option<String> {
+    let path = std::env::var_os("SLICERX_CONFIG")?;
+    let config: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    let name = config.pointer("/brand/name")?.as_str()?.trim();
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
 #[tokio::main]
 async fn main() {
+    if let Some(name) = edition_name() {
+        sx_link::set_app_name(&name);
+    }
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("code") => {

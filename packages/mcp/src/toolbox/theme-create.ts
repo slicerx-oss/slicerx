@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createTheme, themeToCss, themeToVars, type Theme, type ThemeInput } from '@slicerx/ui/theme'
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 import { builtInNames, builtInThemes, checkTheme, themeInput } from '../theming'
 import { serverTool, type ServerToolDeps } from './deps'
 
@@ -17,7 +18,7 @@ export default (d: ServerToolDeps) =>
     toolset: 'theme',
     ungated: true,
     description: [
-      'Build a theme for an embedded SlicerX: overrides on top of a built-in base, covering colors (Subban role names: purple is the accent, pink commerce, cyan live data, green ok, orange attention, red error), the gradient, fonts, radii and the spacing unit.',
+      `Build a theme for an embedded ${productName()}: overrides on top of a built-in base, covering colors (Subban role names: purple is the accent, pink commerce, cyan live data, green ok, orange attention, red error), the gradient, fonts, radii and the spacing unit.`,
       'Returns the full theme, its CSS variables, a stylesheet scoped to a selector, and a WCAG contrast check; fix any failing pair before shipping.',
       'The gradient is for the layered X mark and at most one hero moment; controls, including the primary button, use the solid accent color.',
       'With save: true it writes <name>.json and <name>.css to the server output folder. The page applies it with applyTheme(theme) or <ThemeProvider theme={theme}>, or by loading the stylesheet.',

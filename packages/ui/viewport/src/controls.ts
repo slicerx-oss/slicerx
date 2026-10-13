@@ -4,9 +4,10 @@
 // viewport resolves every drag and wheel event through these functions, so a
 // preset's bindings can be tested without a canvas. No three.js import here.
 
-/** Mirrors LookId in @slicerx/contracts so the viewport stays independent of that package. */
+import { productName } from '@slicerx/contracts/brand'
 import { BAMBU_GIZMO, ORCA_GIZMO, PRUSA_GIZMO, withGizmoOverrides, type GizmoBindings, type GizmoOverrides } from './gizmobindings'
 
+/** Mirrors LookId in @slicerx/contracts so the viewport stays independent of that package. */
 export type ControlsPresetId = 'slicerx' | 'bambu-studio' | 'prusaslicer' | 'orcaslicer'
 export type ControlsContext = 'prepare' | 'preview'
 export type DragAction = 'rotate' | 'pan' | 'zoom' | 'none'
@@ -82,7 +83,10 @@ const CLASSIC: readonly DragBinding[] = [
 export const CONTROL_PRESETS: Readonly<Record<ControlsPresetId, ControlsMap>> = {
   slicerx: {
     id: 'slicerx',
-    label: 'SlicerX',
+    // the default preset carries the product's name, a white-label edition's own
+    get label() {
+      return productName()
+    },
     drags: [
       ...CLASSIC,
       { button: 'left', mods: { space: true }, action: 'pan' },

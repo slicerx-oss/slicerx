@@ -6,7 +6,7 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
 import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { PERMISSION_LABELS } from '@slicerx/contracts'
+import { PERMISSION_LABELS, productName } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { ORCA_COMMIT } from '@slicerx/settings'
 import type { DataStore, KnowledgeKind } from './data'
@@ -105,7 +105,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       instructions:
-        'SlicerX, the AI-ready slicer. Tools slice and estimate models, plan and check OrcaSlicer settings, run mimir skills on a project (orient, arrange, cut, slice), and read and control printers. Anything that changes a printer, a saved profile or spends money follows the permission policy the user set: it runs, asks the user first, or is refused. When a tool returns status "approval_required", show the request to the user and call slicerx_approve only with their answer. Resources hold the knowledge base, the settings reference, printer setup guides and the theming and embedding docs.',
+        `${productName()}, the AI-ready slicer. Tools slice and estimate models, plan and check OrcaSlicer settings, run mimir skills on a project (orient, arrange, cut, slice), and read and control printers. Anything that changes a printer, a saved profile or spends money follows the permission policy the user set: it runs, asks the user first, or is refused. When a tool returns status "approval_required", show the request to the user and call slicerx_approve only with their answer. Resources hold the knowledge base, the settings reference, printer setup guides and the theming and embedding docs.`,
     },
   )
   const { store } = ctx
@@ -158,7 +158,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
             .map((e) => e.id),
       },
     }),
-    { title: 'SlicerX print knowledge', description: 'Filament, printer, troubleshooting and workflow entries, as YAML with cited sources', mimeType: 'application/yaml' },
+    { title: `${productName()} print knowledge`, description: 'Filament, printer, troubleshooting and workflow entries, as YAML with cited sources', mimeType: 'application/yaml' },
     (uri, vars) => {
       const kind = String(vars['kind'])
       const id = String(vars['id'])
@@ -178,7 +178,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
   server.registerResource(
     'settings-schema',
     'slicerx://settings/schema',
-    { title: 'Settings schema', description: 'Every OrcaSlicer setting SlicerX knows: type, unit, default, limits, help and invalidated stage', mimeType: 'application/json' },
+    { title: 'Settings schema', description: `Every OrcaSlicer setting ${productName()} knows: type, unit, default, limits, help and invalidated stage`, mimeType: 'application/json' },
     (uri) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify({ orca_commit: ORCA_COMMIT, settings: store.settingsSchema() }) }] }),
   )
 
@@ -188,7 +188,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     new ResourceTemplate('slicerx://docs/{+id}', {
       list: () => ({ resources: docs.map((d) => ({ uri: `slicerx://docs/${d.id}`, name: d.title, mimeType: 'text/markdown' })) }),
     }),
-    { title: 'SlicerX guides', description: 'Install, embedding, theming, printer and Home Assistant setup, and this server', mimeType: 'text/markdown' },
+    { title: `${productName()} guides`, description: 'Install, embedding, theming, printer and Home Assistant setup, and this server', mimeType: 'text/markdown' },
     (uri, vars) => {
       const d = docs.find((x) => x.id === String(vars['id']))
       if (!d) throw new Error(`No doc ${String(vars['id'])}`)
@@ -200,7 +200,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
   server.registerResource(
     'settings-reference',
     'slicerx://settings/reference',
-    { title: 'Settings reference', description: 'Every setting SlicerX reads, with links to each group; one entry per key at slicerx://settings/reference/{key}', mimeType: 'text/markdown' },
+    { title: 'Settings reference', description: `Every setting ${productName()} reads, with links to each group; one entry per key at slicerx://settings/reference/{key}`, mimeType: 'text/markdown' },
     (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: referenceIndex ? readFileSync(referenceIndex.path, 'utf8') : settingsReference(store) }] }),
   )
 
