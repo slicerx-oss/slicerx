@@ -316,10 +316,13 @@ Deno.test('when the byte estimate hits a daily cap, the exact count gets one mor
   assertEquals(reserves.length, 2)
   assertEquals(reserves[1]!.args['p_input'], 10)
   assert(h.sent.some((x) => x.url.endsWith('/count_tokens')))
-  // other refusals are final
-  const busy = harness({ reserve: () => Response.json({ message: 'busy', hint: 'install_busy' }, { status: 400 }) })
-  assertEquals((await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), busy.env)).status, 429)
-  assert(!busy.sent.length)
+  // other refusals are final, a network that used its day before this call among them
+  for (const hint of ['install_busy', 'net_busy', 'net_full']) {
+    const busy = harness({ reserve: () => Response.json({ message: 'no', hint }, { status: 400 }) })
+    assertEquals((await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), busy.env)).status, 429, hint)
+    assert(!busy.sent.length, hint)
+    assertEquals(busy.calls.filter((c) => c.fn === 'mimir_reserve').length, 1, hint)
+  }
 })
 
 Deno.test('a refused call counts toward the rates, once per request', async () => {
