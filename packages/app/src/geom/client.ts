@@ -263,3 +263,9 @@ export function fromGeom(mesh: GeomMesh | TypedGeomMesh, name: string, slot: num
 export function askFaces(request: unknown): unknown {
   return request !== null && typeof request === 'object' && !Array.isArray(request) ? { ...request, withFaces: true } : request
 }
+
+// Test hook: with localStorage 'slicerx.debug' set (as for window.__sx), scripts reach the engine as window.__geom, to
+// run a worker job such as history.replay directly and time it.
+if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage.getItem('slicerx.debug')) {
+  Object.assign(window, { __geom: { call: (op: string, request: unknown) => geom().call(op, request) } })
+}

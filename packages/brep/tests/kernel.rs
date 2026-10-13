@@ -272,6 +272,118 @@ fn bodies_travel_as_text() {
     }
 }
 
+// the same file the web build's test reads (packages/app/test/brep-module.test.ts); SX_BREP_FIXTURE=<file>
+// writes it afresh
+#[test]
+fn reads_the_saved_fixture() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let block = cube();
+    let holed = call(
+        "subtract",
+        &json!({ "body": block, "solids": [{ "type": "cylinder", "origin": [10, 10, 0], "axis": [0, 0, 1], "diameterMm": 8, "heightMm": 20.5 }], "save": true }),
+    );
+    if let Ok(path) = std::env::var("SX_BREP_FIXTURE") {
+        std::fs::write(path, holed["bodySmb"].as_str().unwrap()).expect("write the fixture");
+    }
+    let saved = include_str!("fixtures/holed-cube.smb");
+    close(
+        volume(body("load", &json!({ "body": { "smb": saved } }))),
+        8000.0 - PI * 16.0 * 20.0,
+    );
+}
+
+/// Each face's key and surface, in face order.
+fn faces(b: &Value) -> Vec<(u64, Value)> {
+    let m = call("tessellate", &json!({ "body": b }));
+    m["faces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["key"].as_u64().expect("a key"), f["surface"].clone()))
+        .collect()
+}
+
+#[test]
+fn faces_keep_their_keys() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // no keySalt, no keys
+    assert!(faces(&json!(cube())).iter().all(|f| f.0 == 0));
+    let keyed = || {
+        body(
+            "box",
+            &json!({ "min": [0, 0, 0], "max": [20, 20, 20], "keySalt": 7 }),
+        )
+    };
+    let a = faces(&json!(keyed()));
+    let keys: Vec<u64> = a.iter().map(|f| f.0).collect();
+    assert_eq!(keys.len(), 6);
+    assert!(keys.iter().all(|&k| k > 0 && k < 1 << 52), "{keys:?}");
+    assert_eq!(keys.iter().collect::<std::collections::HashSet<_>>().len(), 6);
+    // the same step again makes the same keys
+    assert_eq!(
+        faces(&json!(keyed())).iter().map(|f| f.0).collect::<Vec<_>>(),
+        keys
+    );
+    // planes face out of the solid
+    let facing = |z: f64| {
+        a.iter()
+            .find(|f| f.1["kind"] == "plane" && f.1["normal"][2].as_f64() == Some(z))
+            .expect("a plane facing that way")
+    };
+    let top = facing(1.0);
+    close(top.1["offset"].as_f64().unwrap(), 20.0);
+    close(facing(-1.0).1["offset"].as_f64().unwrap(), 0.0);
+    // a hole keeps the box's keys and adds one for its wall, from the step that cut it
+    let holed = call(
+        "subtract",
+        &json!({ "body": keyed(), "solids": [{ "type": "cylinder", "origin": [10, 10, 0], "axis": [0, 0, 1], "diameterMm": 8, "heightMm": 20 }], "keySalt": 9, "save": true }),
+    );
+    let h = faces(&holed["body"]);
+    assert_eq!(h.len(), 7);
+    let wall: Vec<_> = h.iter().filter(|f| !keys.contains(&f.0)).collect();
+    assert_eq!(wall.len(), 1, "{h:?}");
+    assert!(wall[0].0 > 0);
+    assert_eq!(wall[0].1["kind"], "cylinder", "{h:?}");
+    close(wall[0].1["radius"].as_f64().unwrap(), 4.0);
+    close(wall[0].1["axis"][2].as_f64().unwrap().abs(), 1.0);
+    let o = &wall[0].1["origin"];
+    close(o[0].as_f64().unwrap(), 10.0);
+    close(o[1].as_f64().unwrap(), 10.0);
+    // and the keys travel with the saved text
+    let carried = json!({ "smb": holed["bodySmb"] });
+    assert_eq!(
+        faces(&carried).iter().map(|f| f.0).collect::<Vec<_>>(),
+        h.iter().map(|f| f.0).collect::<Vec<_>>()
+    );
+    let reloaded = json!(body("load", &json!({ "body": carried })));
+    assert_eq!(faces(&reloaded), h);
+}
+
+#[test]
+fn subtract_in_the_body_frame() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // the body's frame is turned a quarter about z and moved, so its (10, 10) is (90, 10) in world
+    let frame = json!({ "origin": [100, 0, 0], "u": [0, 1, 0], "normal": [0, 0, 1] });
+    let solids = json!([{ "type": "cylinder", "origin": [90, 10, 0], "axis": [0, 0, 1], "diameterMm": 8, "heightMm": 20 }]);
+    let h = body(
+        "subtract",
+        &json!({ "body": cube(), "solids": solids, "frame": frame }),
+    );
+    close(volume(h), 8000.0 - PI * 16.0 * 20.0);
+    let wall = faces(&json!(h))
+        .into_iter()
+        .find(|f| f.1["kind"] == "cylinder")
+        .expect("the hole's wall");
+    close(wall.1["origin"][0].as_f64().unwrap(), 10.0);
+    close(wall.1["origin"][1].as_f64().unwrap(), 10.0);
+}
+
 #[test]
 fn no_kernel_says_so() {
     if sx_brep::KERNEL {

@@ -130,6 +130,8 @@ export interface ReplayResult {
   found?: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
   /** The step that made each face of the result, by face key (provenance.ts); base faces are left out. */
   madeBy?: Record<number, string>
+  /** Steps the exact kernel failed on in this replay, which ran on the mesh instead (exact.ts). */
+  exactFellBack?: string[]
 }
 
 export const HISTORY_VERSION = 1
