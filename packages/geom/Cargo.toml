@@ -34,10 +34,6 @@ required-features = ["nest"]
 name = "timing"
 required-features = ["calib", "hollow"]
 
-[[test]]
-name = "brep_parity"
-required-features = ["brep"]
-
 [dependencies]
 i_overlay = { package = "sx-i-overlay", path = "../vendor/i_overlay", version = "=9.0.0" }
 libm = "=0.2.16"
