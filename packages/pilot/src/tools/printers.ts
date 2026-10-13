@@ -3,11 +3,11 @@
 // First-party printer tools over PrinterHost. Every call with a side effect
 // carries the approval token for its exact action, target and parameters; the
 // host verifies it and refuses otherwise.
-import { developerModeRemedies, developerModeSure, followsSlotMap, NEEDS_DEVELOPER_MODE, PRINTER_STORAGE_FULL, slotMapLine, STORAGE_FULL_REMEDY, type Cell, type JobFile, type PrinterHost, type PrinterStatus, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
+import { developerModeRemedies, developerModeSure, duplicateTargets, followsSlotMap, matchSlots, NEEDS_DEVELOPER_MODE, pluginHas, PRINTER_STORAGE_FULL, slotMapLine, STORAGE_FULL_REMEDY, type Cell, type JobFile, type MapFilament, type MapSlot, type PrinterHost, type PrinterInfo, type PrinterStatus, type SliceStats, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '../name'
-import { fmtDuration, fmtGrams, type ToolShared } from '../shared'
+import { fmtDuration, fmtGrams, type SlicedPlate, type ToolShared } from '../shared'
 import { defineTool, type PilotTool, type ToolContext } from '../tool'
 
 const printerId = z.string().min(1).describe('Printer id, such as "bay-2"')
@@ -79,22 +79,140 @@ async function uploadedFile(ctx: ToolContext, printerId: string, file: JobFile):
   return prepare ? prepare(printerId, file) : file
 }
 
-async function exportPlate(shared: ToolShared, ctx: ToolContext, plate: number): Promise<{ file: JobFile; timeS: number; grams: number }> {
+function slicedPlate(shared: ToolShared, ctx: ToolContext, plate: number): SlicedPlate {
   const entry = shared.slices.get(plate)
   if (!entry) throw new Error(`Plate ${plate} is not sliced yet. Run slice first.`)
   if (!ctx.host.slicer) throw new Error('No slicer on this host')
+  return entry
+}
+
+const jobStats = (entry: SlicedPlate) => ({ timeS: entry.result.stats.timeS, grams: entry.result.stats.filamentG.reduce((a, b) => a + b, 0) })
+
+async function exportPlate(shared: ToolShared, ctx: ToolContext, plate: number): Promise<{ file: JobFile; timeS: number; grams: number }> {
+  const entry = slicedPlate(shared, ctx, plate)
   if (!entry.data || !entry.gcode) {
-    const g = await ctx.host.slicer.exportGcode(entry.result.id, { kind: 'blob' })
+    const g = await ctx.host.slicer!.exportGcode(entry.result.id, { kind: 'blob' })
     if (!g.blob) throw new Error('The slicer returned no G-code')
     entry.gcode = g
     entry.data = await g.blob.arrayBuffer()
   }
   const sha256 = await sha256Hex(entry.data)
-  return {
-    file: { name: entry.gcode.fileName, kind: 'gcode', data: entry.data, sha256 },
-    timeS: entry.result.stats.timeS,
-    grams: entry.result.stats.filamentG.reduce((a, b) => a + b, 0),
+  return { file: { name: entry.gcode.fileName, kind: 'gcode', data: entry.data, sha256 }, ...jobStats(entry) }
+}
+
+/** The plate as a .gcode.3mf, for a printer that follows a slot map. Exported once per slice, like the G-code. */
+async function exportProject(shared: ToolShared, ctx: ToolContext, plate: number, printerName: string): Promise<{ file: JobFile; timeS: number; grams: number }> {
+  const entry = slicedPlate(shared, ctx, plate)
+  if (!entry.project) {
+    const slicer = ctx.host.slicer
+    if (!slicer?.exportGcode3mf) throw refusal('not_supported', `${printerName} takes a .gcode.3mf to follow its filament slots, and this SlicerX cannot make one, so nothing was sent.`)
+    const g = await slicer.exportGcode3mf(entry.result.id, { plate })
+    if (!g.blob) throw new Error('The slicer returned no .gcode.3mf')
+    entry.project = { file: g, data: await g.blob.arrayBuffer() }
   }
+  const sha256 = await sha256Hex(entry.project.data)
+  return { file: { name: entry.project.file.fileName, kind: 'gcode.3mf', data: entry.project.data, sha256 }, ...jobStats(entry) }
+}
+
+/** A refusal before any card, in one sentence a client can pass on to a person. */
+function refusal(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code })
+}
+
+/** "1", "1 and 2", "1, 2 and 3". */
+const andList = (items: readonly string[]): string => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`)
+
+const settingList = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : v === undefined || v === null || v === '' ? [] : [String(v)])
+
+/**
+ * The filaments a sliced plate prints with, by 1 based number, with the material and color its settings give each:
+ * every filament the slicer reports grams for, or filament 1 when it reports one total. `material` stands in when
+ * the settings name no filament type.
+ */
+export function plateFilaments(stats: Pick<SliceStats, 'filamentG'>, config: object | undefined, material?: string): MapFilament[] {
+  const g = stats.filamentG
+  const used = g.length > 1 ? g.flatMap((x, i) => (x > 0 ? [i + 1] : [])) : [1]
+  const keys = config as Readonly<Record<string, unknown>> | undefined
+  const types = settingList(keys?.['filament_type'])
+  const colors = settingList(keys?.['filament_colour'])
+  return (used.length ? used : [1]).map((index) => ({ index, type: types[index - 1] ?? types[0] ?? material ?? '', color: colors[index - 1] ?? colors[0] ?? '' }))
+}
+
+/**
+ * The slot map printer.queue sends when the client gives none: each filament from the loaded slot the Print sheet
+ * starts it from (a slot of the same material, the closest color first, each slot once). Keys are 1 based filament
+ * numbers. Refused when the printer has reported no slots yet (right after it connects, a P1 sends only what changed
+ * since its first full report) or when a filament has no loaded slot of its material.
+ */
+export function autoSlotMap(filaments: readonly MapFilament[], slots: readonly MapSlot[], printerName: string): Record<number, string> {
+  if (slots.length === 0) {
+    throw refusal('slots_not_reported', `${printerName} has not reported its filament slots yet, so SlicerX cannot match the plate's filaments to them: wait a few seconds and send again, or pass slotMap.`)
+  }
+  const map = matchSlots(filaments, slots)
+  const missing = filaments.filter((f) => map[f.index] === undefined)
+  if (missing.length) {
+    const what = andList(missing.map((f) => `filament ${f.index} (${f.type || 'unknown material'})`))
+    throw refusal('no_matching_slot', `${printerName} has no loaded slot of the right material for ${what}: load ${missing.length === 1 ? 'it' : 'them'} in the AMS or on the external spool and send again, or pass slotMap to pick the slots.`)
+  }
+  return map
+}
+
+/** Refuses a slot map (0 based keys) that feeds two filaments from one slot, which the printer cannot do. */
+export function refuseDuplicateSlots(map: Readonly<Record<number, string>>, printerName: string): void {
+  const slot = duplicateTargets(map)[0]
+  if (slot === undefined) return
+  const nums = Object.entries(map)
+    .filter(([, v]) => v === slot)
+    .map(([k]) => String(Number(k) + 1))
+  throw refusal('duplicate_slot', `Filaments ${andList(nums)} would ${nums.length === 2 ? 'both' : 'all'} feed from slot ${slot} on ${printerName}, which cannot work: give each filament its own slot in slotMap.`)
+}
+
+/** What printer.queue sends: the file, its start options, and where the slot map came from. */
+interface QueuePlan {
+  file: JobFile
+  timeS: number
+  grams: number
+  info: PrinterInfo | undefined
+  name: string
+  opts: StartOptions
+  /** `auto` when SlicerX matched the slots, `client` when the call named them, `none` for a printer that takes filament as the G-code says. */
+  slots: 'auto' | 'client' | 'none'
+}
+
+/**
+ * The send printer.queue makes, the same for the card, the hand-off and the run. A printer that follows a slot map
+ * (Bambu Lab) gets the plate as a .gcode.3mf, as the Print sheet sends it, with the client's slot map or, without
+ * one, the slots matched from a fresh status. Every other printer gets the plain G-code, as before. `card` is false
+ * for the run after an approval, which reuses the slots the card showed.
+ */
+async function planQueue(shared: ToolShared, ctx: ToolContext, i: { printerId: string; plate: number; slotMap?: Record<string, string> | undefined }, card: boolean): Promise<QueuePlan> {
+  const entry = slicedPlate(shared, ctx, i.plate)
+  const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
+  const name = info?.name ?? i.printerId
+  const given = i.slotMap && Object.keys(i.slotMap).length > 0 ? i.slotMap : undefined
+  if (!info?.plugin || !pluginHas(info.plugin, 'project_file')) {
+    const job = await exportPlate(shared, ctx, i.plate)
+    const file = await uploadedFile(ctx, i.printerId, job.file)
+    return { ...job, file, info, name, opts: queueOptions(given, info?.plugin, name, file.name), slots: 'none' }
+  }
+  let opts: StartOptions
+  if (given) {
+    opts = { slotMap: startSlotMap(given) }
+    refuseDuplicateSlots(opts.slotMap ?? {}, name)
+  } else {
+    let map = card ? undefined : entry.autoSlots?.get(i.printerId)
+    if (!map) {
+      const status = await ctx.host.printers.status(i.printerId).catch(() => null)
+      map = autoSlotMap(plateFilaments(entry.result.stats, entry.config, ctx.context?.machine?.material), status?.slots ?? [], name)
+      ;(entry.autoSlots ??= new Map()).set(i.printerId, map)
+    }
+    opts = { slotMap: Object.fromEntries(Object.entries(map).map(([k, v]) => [Number(k) - 1, v])) }
+  }
+  const job = await exportProject(shared, ctx, i.plate, name)
+  const file = await uploadedFile(ctx, i.printerId, job.file)
+  // The printer follows the map only for a project file; a host that renamed it to plain G-code cannot carry one.
+  if (!followsSlotMap(info.plugin, file.name)) throw refusal('not_supported', `${name} would not follow the filament slots for ${file.name}, so nothing was sent.`)
+  return { ...job, file, info, name, opts, slots: given ? 'client' : 'auto' }
 }
 
 /**
@@ -107,8 +225,11 @@ export function queueOptions(slotMap: Record<string, string> | undefined, plugin
   if (!plugin || !followsSlotMap(plugin, fileName)) {
     throw new Error(`${printerName} cannot follow a filament slot map for ${fileName}: it takes filament as the G-code says. Send it without slotMap.`)
   }
-  return { slotMap: Object.fromEntries(Object.entries(slotMap).map(([k, v]) => [Number(k), v])) }
+  return { slotMap: startSlotMap(slotMap) }
 }
+
+/** A slot map from the tool's input as start options have it: the same 0 based filament indexes, as numbers. */
+const startSlotMap = (slotMap: Record<string, string>): Record<number, string> => Object.fromEntries(Object.entries(slotMap).map(([k, v]) => [Number(k), v]))
 
 async function sha256Hex(data: ArrayBuffer): Promise<string> {
   const d = await globalThis.crypto.subtle.digest('SHA-256', data)
@@ -296,55 +417,49 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
 
   const queue = defineTool({
     name: 'printer.queue',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'plugin',
     // It uploads and then starts, so it needs start permission; a user who allows queueing has not allowed starts.
     permission: 'start',
-    description: 'Send a sliced plate to a printer and start it (upload then start). Needs the plate sliced first. The app asks the user to approve; just call it.',
+    description:
+      'Send a sliced plate to a printer and start it (upload then start). Needs the plate sliced first. The app asks the user to approve; just call it. A Bambu Lab printer gets the plate as a .gcode.3mf with each filament fed from the loaded AMS slot of its material and closest color, as the Print sheet picks them. Refused before any approval when a filament has no loaded slot of its material, when the printer has not reported its slots yet, or when two filaments would share a slot. The result names the slot map that was sent.',
     input: z.object({
       printerId,
       plate: z.number().int().min(1).describe('Plate number from slice'),
       slotMap: z
         .record(z.string().regex(/^\d{1,2}$/), z.string().min(1).max(32))
         .optional()
-        .describe('Only for a printer that follows a slot map (a Bambu Lab printer starting a .gcode.3mf; plates go as plain G-code today, so leave it out). Keys are 0 based filament indexes: {"0":"A3"} feeds filament 1 from slot A3'),
+        .describe('Only for a printer that follows a slot map (a Bambu Lab printer). Leave it out and each filament is matched to the loaded slot of its material and closest color; a map given here wins. Keys are 0 based filament indexes: {"0":"A3"} feeds filament 1 from slot A3, and "1" is the external spool'),
     }),
     printerFor: (i) => i.printerId,
     args: (i) => `${i.printerId} --send plate_${i.plate}`,
     async approval(i, ctx) {
-      const job = await exportPlate(shared, ctx, i.plate)
-      const file = await uploadedFile(ctx, i.printerId, job.file)
-      const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
-      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, file.name)
+      const plan = await planQueue(shared, ctx, i, true)
+      const slots = slotMapLine(plan.opts.slotMap)
       return {
-        title: `Send plate ${i.plate} to ${info?.name ?? i.printerId}?`,
+        title: `Send plate ${i.plate} to ${plan.name}?`,
         lines: [
-          `Plate ${i.plate} on ${info ? `${info.name} (${info.model})` : i.printerId}, ${fmtDuration(job.timeS)}, ${fmtGrams(job.grams)}`,
+          `Plate ${i.plate} on ${plan.info ? `${plan.info.name} (${plan.info.model})` : i.printerId}, ${fmtDuration(plan.timeS)}, ${fmtGrams(plan.grams)}`,
           // The slot map is part of what the person approves: it decides which filament feeds each part.
-          ...[slotMapLine(opts.slotMap)].filter((l): l is string => l !== null),
-          'Uploads the G-code and starts the print',
+          ...(slots ? [plan.slots === 'auto' ? `${slots} (matched to what is loaded)` : slots] : []),
+          plan.file.kind === 'gcode.3mf' ? 'Uploads the .gcode.3mf and starts the print' : 'Uploads the G-code and starts the print',
         ],
         printerId: i.printerId,
         actions: [
-          { action: 'printer.upload', target: i.printerId, params: hostParams.upload(i.printerId, file) },
-          { action: 'printer.start', target: i.printerId, params: hostParams.start(i.printerId, file.name, opts, file.sha256) },
+          { action: 'printer.upload', target: i.printerId, params: hostParams.upload(i.printerId, plan.file) },
+          { action: 'printer.start', target: i.printerId, params: hostParams.start(i.printerId, plan.file.name, plan.opts, plan.file.sha256) },
         ],
       }
     },
     // Over MCP only a person may approve this; the hub then uploads and starts the same file.
     async agentWork(i, ctx) {
-      const job = await exportPlate(shared, ctx, i.plate)
-      const file = await uploadedFile(ctx, i.printerId, job.file)
-      const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
-      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, file.name)
-      return { kind: 'print', printerId: i.printerId, file, opts }
+      const plan = await planQueue(shared, ctx, i, true)
+      return { kind: 'print', printerId: i.printerId, file: plan.file, opts: plan.opts }
     },
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }
-      const job = await exportPlate(shared, ctx, i.plate)
-      const file = await uploadedFile(ctx, i.printerId, job.file)
-      const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
-      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, file.name)
+      const plan = await planQueue(shared, ctx, i, false)
+      const { file, info, opts } = plan
       ctx.progress(`uploading ${file.name}`, 0.2)
       // Upload and start both turn the print away the same way on a Bambu Lab printer without Developer Mode.
       // A full card is said the same way: the person frees space, then sends again.
@@ -375,8 +490,14 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
         return { ok: false, summary: say, output: { ok: false, error: 'unverified_file', tellTheUser: say, retry: false } }
       }
       const s = await ctx.host.printers.status(i.printerId).catch(() => null)
-      const display: ToolDisplay[] = [{ kind: 'kv', rows: [['job', { text: 'accepted', tone: 'ok' }], ['file', remote.name], ...(s ? statusRows(s).slice(0, 1) : [])] }]
-      return { summary: `Plate ${i.plate} accepted on ${i.printerId}`, output: { printerId: i.printerId, file: remote.name, state: s?.state }, display }
+      const slots = slotMapLine(opts.slotMap)
+      const rows: [string, Cell][] = [['job', { text: 'accepted', tone: 'ok' }], ['file', remote.name]]
+      if (slots) rows.push(['slots', slots.replace(/^Filament slots: /, '')])
+      if (s) rows.push(...statusRows(s).slice(0, 1))
+      const display: ToolDisplay[] = [{ kind: 'kv', rows }]
+      // Read back: the slot map as it went to the printer, 0 based like the input, and where it came from.
+      const sent = opts.slotMap ? { slotMap: Object.fromEntries(Object.entries(opts.slotMap)), slotMapSource: plan.slots } : {}
+      return { summary: `Plate ${i.plate} accepted on ${i.printerId}`, output: { printerId: i.printerId, file: remote.name, state: s?.state, ...sent }, display }
     },
   })
 

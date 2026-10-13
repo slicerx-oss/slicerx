@@ -40,7 +40,7 @@ export function createSlice(shared: ToolShared) {
           { onProgress: (p) => ctx.progress(`plate ${idx} ${p.stage}`, p.fraction), signal: ctx.signal },
         )
         const secs = (performance.now() - t0) / 1000
-        shared.slices.set(idx, { plate: idx, result: res })
+        shared.slices.set(idx, { plate: idx, result: res, config })
         const g = res.stats.filamentG.reduce((a, b) => a + b, 0)
         time += res.stats.timeS
         grams += g

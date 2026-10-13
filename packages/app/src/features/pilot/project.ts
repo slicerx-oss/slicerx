@@ -320,9 +320,20 @@ export function pilotSlicer(host: Pick<Host, 'slicer'>): SlicerHost {
     const extra = same ? trust : trust.machineLimits ? { machineLimits: trust.machineLimits } : {}
     return base.slice({ ...req, options: { ...options, ...extra } }, opts)
   }
+  // printer.queue sends a Bambu Lab printer the same .gcode.3mf the Print sheet does, so the start carries the slot map.
+  const exportGcode3mf: NonNullable<SlicerHost['exportGcode3mf']> = async (sliceId, opts) => {
+    const g = await base.exportGcode(sliceId, { kind: 'blob' })
+    if (!g.blob) throw new Error('The slicer returned no G-code')
+    const [{ printGcode3mf }, { withEnding }, { sha256Hex }] = await Promise.all([import('../../export/actions'), import('../../send/options'), import('../../calibration/gcode')])
+    const bytes = await printGcode3mf(await g.blob.text(), opts?.plate)
+    const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    const blob = new Blob([data], { type: 'model/3mf' })
+    return { fileName: withEnding(g.fileName, '.gcode.3mf'), bytes: data.byteLength, sha256: await sha256Hex(data), blob }
+  }
   return new Proxy(base, {
     get(target, key) {
       if (key === 'slice') return slice
+      if (key === 'exportGcode3mf') return exportGcode3mf
       const v: unknown = Reflect.get(target, key)
       return typeof v === 'function' ? v.bind(target) : v
     },
