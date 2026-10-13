@@ -14,6 +14,9 @@ export interface NativeCrash {
   stack: string
   /** When it happened, in ms since the epoch. */
   at: number
+  /** The app version and commit that crashed; empty or absent when the shell did not know them (an older shell). */
+  version?: string
+  commit?: string
 }
 
 export interface NativeCrashes {
@@ -26,8 +29,11 @@ export interface NativeCrashes {
 
 /** The desktop shell's side of crash reporting (apps/desktop/src/host/crash.ts). */
 export interface CrashHost {
-  /** `pageLoad` is true once per page load, so the shell can count reloads. */
-  take(pageLoad: boolean): Promise<NativeCrashes>
+  /**
+   * `pageLoad` is true once per page load, so the shell can count reloads. `commit` is this page's build commit, which
+   * the shell stamps on the reports it writes from now on.
+   */
+  take(pageLoad: boolean, commit?: string): Promise<NativeCrashes>
   ack(files: string[]): Promise<void>
   /** Panics on a background thread of the shell, for the developer test command. */
   testPanic(): Promise<void>

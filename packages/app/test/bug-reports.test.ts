@@ -429,4 +429,39 @@ describe('automatic crash reports', () => {
     third.reports.registerCrashHost(null)
     third.reports.resetBugReports()
   })
+
+  it('stamp a shell crash with the version and commit that crashed, and hand the shell this page\'s commit', async () => {
+    localStorage.clear()
+    vi.resetModules()
+    const reports = await import('../src/bugs/reports')
+    const outbox = await import('../src/bugs/outbox')
+    const store = await import('../src/state/store')
+    store.set({ crashReports: true, printerId: null, workspace: 'prepare' })
+    reports.resetBugReports()
+    const asked: (string | undefined)[] = []
+    // A panic in 0.2.5; the app updated to 0.2.6 before this launch sends it. A file from an older shell has no stamp.
+    const panic = { file: 'crash-1-1-1.json', source: 'panic' as const, title: 'Rust panic: boom', stack: 'panicked at src/x.rs:1:1', at: 1, version: '0.2.5', commit: '0f15b63a91c2' }
+    const unstamped = { file: 'crash-2-1-1.json', source: 'panic' as const, title: 'Rust panic: older', stack: 'panicked at src/y.rs:1:1', at: 2 }
+    reports.registerCrashHost({
+      take: async (_pageLoad, commit) => {
+        asked.push(commit)
+        return { reports: [panic, unstamped], pageLoads: 1, os: 'macOS 15.1 (aarch64)' }
+      },
+      ack: async () => {},
+      testPanic: async () => {},
+    })
+    const host = { kind: 'desktop', build: { version: '0.2.6', commit: 'c4b5d1c1', sourceUrl: '' } } as never
+    const stop = reports.startBugReports(host, { ...neutralEdition(), release: { stage: 'pre-alpha' } })
+    await vi.waitFor(() => expect(outbox.queued()).toHaveLength(2))
+    const [stamped, older] = outbox.queued().map((q) => q.report)
+    expect(stamped).toMatchObject({ title: 'Rust panic: boom', appVersion: '0.2.5 desktop', commit: '0f15b63a91c2' })
+    expect(stamped!.body).toContain('Sent from: 0.2.6 desktop (c4b5d1c1)')
+    // Without a stamp it is the running version's, as before, and says nothing about where it was sent from.
+    expect(older).toMatchObject({ title: 'Rust panic: older', appVersion: '0.2.6 desktop', commit: 'c4b5d1c1' })
+    expect(older!.body).not.toContain('Sent from')
+    expect(asked).toEqual(['c4b5d1c1'])
+    stop()
+    reports.registerCrashHost(null)
+    reports.resetBugReports()
+  })
 })

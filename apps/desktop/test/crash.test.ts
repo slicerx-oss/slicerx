@@ -16,10 +16,13 @@ describe('the crash host', () => {
     const { createTauriCrash } = await import('../src/host/crash')
     const host = createTauriCrash()
     expect(await host.take(true)).toEqual({ reports: [], pageLoads: 1, os: 'macOS 15.1 (aarch64)' })
+    // The page's build commit goes with it, so the reports the shell writes from now on are stamped with it.
+    await host.take(false, '0f15b63a')
     await host.ack(['crash-1-2-3.json'])
     await host.testPanic()
     expect(invoked).toEqual([
       ['crash_take', { pageLoad: true }],
+      ['crash_take', { pageLoad: false, commit: '0f15b63a' }],
       ['crash_ack', { files: ['crash-1-2-3.json'] }],
       ['crash_test_panic', undefined],
     ])
