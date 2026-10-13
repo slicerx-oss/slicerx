@@ -107,11 +107,6 @@ export function MimirUsageSection() {
           </span>
           <Bar left={day} label="Left today" testId="mu-today-bar" />
           <Line text={u ? resetsIn(u.day.resetsAt) : null} className="sx-small sx-muted" testId="mu-today-reset" />
-          {out && (
-            <p className="sx-small mu-out" data-testid="mu-today-out">
-              Today's free {ASSISTANT_NAME} is used up. It comes back when the day resets.
-            </p>
-          )}
         </div>
         <div className="mu-sum-side">
           <div className="mu-row">
@@ -125,6 +120,11 @@ export function MimirUsageSection() {
             </div>
           )}
         </div>
+        {out && (
+          <p className="sx-small mu-out" data-testid="mu-today-out">
+            Today's free {ASSISTANT_NAME} is used up. It comes back when the day resets.
+          </p>
+        )}
         <Line text={u ? `Up to ${u.perMinute.limit} messages a minute.` : null} className="sx-small sx-muted mu-rate" testId="mu-rate" />
       </div>
     </section>
