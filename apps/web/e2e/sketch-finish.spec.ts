@@ -71,6 +71,10 @@ test('a sketch on XZ finishes into the timeline, then extrudes from its menu', a
   await row.click({ button: 'right' })
   await page.getByTestId('sketch-ctx-extrude').click()
   await expect(panel).toContainText('Sketch 1')
+  // a finished sketch's Extrude shows only the extrude settings: no draw tools, no Finish sketch
+  await expect(panel.getByRole('heading', { name: 'Extrude' })).toBeVisible()
+  await expect(panel.getByRole('radiogroup', { name: 'Drawing tool' })).toHaveCount(0)
+  await expect(page.getByTestId('sketch-finish')).toHaveCount(0)
   await panel.locator('#sk-dist').fill('4')
   const extrude = panel.getByRole('button', { name: 'Extrude' })
   await expect(extrude).toBeEnabled({ timeout: 15_000 })
