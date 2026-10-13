@@ -161,3 +161,10 @@ fn interlocking_beams_with_a_support_filament_do_not_hang() {
     });
     no_hang(pair, cfg, json!({}), rounds(2));
 }
+
+#[test]
+fn painted_regions_planned_beside_the_seams_do_not_hang() {
+    // A painted plate keeps every layer's regions from the start. The walls and classes of its layers of several
+    // colors are worked out beside the seam plan, each color side by side, before the layer jobs read them.
+    no_hang(common::painted_tile().parts, json!({}), json!({}), rounds(4));
+}

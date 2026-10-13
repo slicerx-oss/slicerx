@@ -130,6 +130,11 @@ impl Cache {
         self.regions.get_or((m, tag), || std::sync::Arc::new(work()))
     }
 
+    /// Whether the regions of layer `m` for the settings fingerprinted by `tag` are worked out already.
+    pub(crate) fn has_regions(&self, m: i64, tag: u64) -> bool {
+        self.regions.has(&(m, tag))
+    }
+
     /// The bridging facts of layer `m` for the settings fingerprinted by `tag`.
     pub(crate) fn facts(
         &self,
