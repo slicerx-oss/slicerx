@@ -85,6 +85,7 @@
 .mimir-callout[data-on] text { fill: var(--on-grad); }
 /* the panel: flat, docked, full height of the view */
 .mimir-sheet-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 3; width: var(--mimir-sheet-w); display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; background: var(--ink-1); border-left: 1px solid var(--line-soft); outline: none; }
+.mimir-sheet-panel:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
 .mimir-sheet-head { display: grid; gap: 4px; padding: 14px 16px 10px; }
 .mimir-sheet-head h3 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mimir-sheet-head p { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
