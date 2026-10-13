@@ -29,7 +29,7 @@ afterEach(() => vi.useRealTimers())
 
 describe('plate edits over the app link', () => {
   it('move an object by its footprint center, by name or id, and read it back', async () => {
-    const out = (await runCall('project.move', { object: 'Box', x: 50, y: 60 }, 'Claude Code')) as Read
+    const out = (await runCall('project.move', { object: 'Box', x: 50, y: 60 }, 'Print Helper')) as Read
     expect(out.objects).toEqual([expect.objectContaining({ id: 'obj_1', minMm: [45, 50, 0], sizeMm: [10, 20, 5] })])
     expect((await read('obj_1')).minMm).toEqual([45, 50, 0])
     // Its copy stays where it is.
@@ -63,12 +63,12 @@ describe('plate edits over the app link', () => {
   it('are one undo step each, and the person sees which agent did it with Undo', async () => {
     const f = fakeLink()
     const stop = hostAppLink(f.link)
-    f.call({ callId: 1, method: 'project.move', args: { object: 'Box', x: 50, y: 60 }, client: { id: 'c1', name: 'Claude Code' } })
+    f.call({ callId: 1, method: 'project.move', args: { object: 'Box', x: 50, y: 60 }, client: { id: 'c1', name: 'Print Helper' } })
     await vi.waitFor(() => expect(f.link.reply).toHaveBeenCalledWith(1, { ok: true, value: expect.objectContaining({ objects: expect.any(Array) }) }))
-    expect(get().toast).toMatchObject({ text: 'Claude Code moved Box.', action: { label: 'Undo' } })
-    f.call({ callId: 2, method: 'project.scale', args: { object: 'Box', scale: 2 }, client: { id: 'c1', name: 'Claude Code' } })
+    expect(get().toast).toMatchObject({ text: 'Print Helper moved Box.', action: { label: 'Undo' } })
+    f.call({ callId: 2, method: 'project.scale', args: { object: 'Box', scale: 2 }, client: { id: 'c1', name: 'Print Helper' } })
     await vi.waitFor(() => expect(f.link.reply).toHaveBeenCalledWith(2, expect.objectContaining({ ok: true })))
-    expect(get().toast?.text).toBe('Claude Code scaled Box.')
+    expect(get().toast?.text).toBe('Print Helper scaled Box.')
     get().toast?.action?.run()
     expect((await read('obj_1')).sizeMm).toEqual([10, 20, 5])
     expect((await read('obj_1')).minMm).toEqual([45, 50, 0])
