@@ -3,7 +3,7 @@
 // The mimir tab: first in the bar, the chat on the left at 420 px and the design's view filling the rest, on the ground
 // grid seen from the top while nothing is on the plate. The chat's edge resizes it between 340 px and half the window,
 // and the width is kept. Screenshots in both themes go to the test output for review.
-import { type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
 import { expect, test, viewportReady } from './fixtures'
 
 type Sx = { setState(p: unknown): void; getState(): { modelMode: string; plate: unknown[]; paneSizes: Record<string, number> } }
@@ -34,6 +34,19 @@ async function openEmpty(page: Page): Promise<void> {
     const p = (window as unknown as { __vp: Vp }).__vp.camera.position
     return Math.abs(p.y) / Math.hypot(p.x, p.y, p.z)
   })).toBeGreaterThan(0.95)
+}
+
+/** Waits for the card to settle clear of the timeline's edge tab and the model size pill. */
+async function clearOfBottom(page: Page, card: Locator): Promise<void> {
+  const apart = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
+    a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y
+  await expect
+    .poll(async () => {
+      const c = await card.boundingBox()
+      const others = [await page.getByTestId('edge-tab-bottom').boundingBox(), ...(await page.locator('.vp .hud-bl > *').evaluateAll((els) => els.filter((e) => (e as HTMLElement).offsetParent).map((e) => e.getBoundingClientRect().toJSON() as DOMRect)))]
+      return !!c && others.every((o) => !o || apart(c, o))
+    })
+    .toBe(true)
 }
 
 test.describe('the mimir tab', () => {
@@ -224,6 +237,7 @@ test.describe('the mimir tab', () => {
     await expect(timeline).toBeVisible()
     await expect(card).toBeVisible()
     await expect.poll(async () => (await card.boundingBox())!.y + (await card.boundingBox())!.height <= (await timeline.boundingBox())!.y).toBe(true)
+    await clearOfBottom(page, card)
     await press()
     await expect(timeline).toBeHidden()
     await expect(card).toContainText('150.4 x 110.4 mm')
@@ -240,8 +254,19 @@ test.describe('the mimir tab', () => {
     const vp = (await page.locator('.studio > .vp').boundingBox())!
     expect(Math.abs(c.x - cap.x)).toBeLessThanOrEqual(0.5)
     expect(c.height).toBeLessThanOrEqual(96.5)
-    // (it slides back down once the timeline shuts)
-    await expect.poll(async () => vp.y + vp.height - ((await card.boundingBox())!.y + (await card.boundingBox())!.height)).toBeLessThan(48)
+    // (it slides back down once the timeline shuts, and stays above the strip that opens the timeline on hover, and
+    // above the model size pill)
+    await expect.poll(async () => vp.y + vp.height - ((await card.boundingBox())!.y + (await card.boundingBox())!.height)).toBeLessThan(72)
+    await page.waitForTimeout(250)
+    const settled = (await card.boundingBox())!
+    expect(vp.y + vp.height - (settled.y + settled.height)).toBeGreaterThanOrEqual(56)
+    await clearOfBottom(page, card)
+    // pointing at the card's lower edge opens nothing and moves nothing
+    await page.mouse.move(settled.x + 40, settled.y + settled.height - 2, { steps: 4 })
+    await page.waitForTimeout(700)
+    await expect(timeline).toBeHidden()
+    expect(await card.boundingBox()).toEqual(settled)
+    await page.mouse.move(700, 300)
     await page.screenshot({ path: test.info().outputPath('mimir-lookup-dark.png') })
     // the open timeline pushes the card up instead of sitting under it: the pointer comes down onto its tab and
     // clicks, as a person does
@@ -254,6 +279,7 @@ test.describe('the mimir tab', () => {
     await expect(tab).toHaveAttribute('aria-expanded', 'true')
     await expect(timeline).toBeVisible()
     await expect.poll(async () => (await card.boundingBox())!.y + (await card.boundingBox())!.height <= (await timeline.boundingBox())!.y).toBe(true)
+    await clearOfBottom(page, card)
     // and by keyboard: Enter on the focused tab shuts it, and again opens it with the card still clear
     await page.mouse.move(700, 300)
     await tab.focus()
@@ -262,6 +288,7 @@ test.describe('the mimir tab', () => {
     await page.keyboard.press('Enter')
     await expect(timeline).toBeVisible()
     await expect.poll(async () => (await card.boundingBox())!.y + (await card.boundingBox())!.height <= (await timeline.boundingBox())!.y).toBe(true)
+    await clearOfBottom(page, card)
     await page.keyboard.press('Enter')
     await expect(timeline).toBeHidden()
     await page.getByTestId('mimir-lookup-close').click()

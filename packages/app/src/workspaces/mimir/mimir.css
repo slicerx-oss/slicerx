@@ -31,12 +31,17 @@
 .mimir-chat[data-drop]::after { content: ""; position: absolute; inset: 6px; border: 1px dashed var(--purple); border-radius: var(--r-md); background: color-mix(in srgb, var(--purple) 6%, transparent); pointer-events: none; }
 .studio[data-model-mode="mimir"] > .vp { order: 1; }
 .mimir-caption { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--fg); white-space: nowrap; }
-/* Lookup cards: a band at the view's bottom left, above the timeline's edge tab. Lifted (they float over the view). */
-.mimir-lookups { position: absolute; left: 12px; bottom: 28px; z-index: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 276px)) auto; grid-template-rows: 96px; align-items: end; gap: 8px; max-width: calc(100% - 24px); pointer-events: none; }
+/* Lookup cards: a band at the view's bottom left, lifted (they float over the view). The band keeps clear of what
+   runs along the bottom edge: the timeline's edge tab, the model size pill and the strip that opens the timeline when
+   the pointer reaches it (56 px, BAND_PX in shell/bottom-panel.tsx). Inside that strip, pointing at a card opened the
+   timeline and sent the cards up from under the pointer. --mimir-pill-room is the size pill (36 px) and a gap. */
+.vp { --mimir-pill-room: 44px; }
+.mimir-lookups { position: absolute; left: 12px; bottom: 60px; z-index: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 276px)) auto; grid-template-rows: 96px; align-items: end; gap: 8px; max-width: calc(100% - 24px); pointer-events: none; }
 .mimir-lookups > * { pointer-events: auto; }
-/* While the timeline is open, the cards sit above it, as the bottom-left pills do. */
+/* While the timeline is open, the size pill sits above it (bottom-panel.css) and the cards above the pill, so neither
+   covers the pill or the timeline's tab. */
 .vp .mimir-lookups { transition: bottom 160ms ease-out; }
-.vp[data-bpanel-open] .mimir-lookups { bottom: calc(var(--bpanel-h) + 8px); }
+.vp[data-bpanel-open] .mimir-lookups { bottom: calc(var(--bpanel-h) + 8px + var(--mimir-pill-room)); }
 .mimir-lookup { display: grid; grid-template-rows: 24px auto 16px; align-content: space-between; gap: 2px; grid-row: 1; height: 96px; min-width: 0; padding: 6px 6px 7px 12px; border-radius: var(--r-md); outline-offset: 2px; animation: mimir-rise 200ms var(--ease) both; }
 .mimir-lookup-h .sx-btn { width: 24px; height: 24px; }
 .mimir-lookup-h { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
