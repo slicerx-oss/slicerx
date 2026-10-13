@@ -38,6 +38,8 @@ use crate::sketch;
 #[cfg(feature = "cad")]
 use crate::sketch_corner;
 #[cfg(feature = "cad")]
+use crate::sketch_edit;
+#[cfg(feature = "cad")]
 use crate::sketch_solve;
 #[cfg(feature = "threads")]
 use crate::thread::{self, ThreadSpec, ThreadTarget};
@@ -191,6 +193,18 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "sketch.chamfer" => sketch_corner_op(req, false),
         #[cfg(feature = "cad")]
         "sketch.solve" => sketch_solve_op(req),
+        #[cfg(feature = "cad")]
+        "sketch.intersect" => {
+            loops(req).and_then(|l| to_value(&json!({ "hits": sketch_edit::intersections(&l)? })))
+        }
+        #[cfg(feature = "cad")]
+        "sketch.trim" => sketch_edit_op(req, "trim"),
+        #[cfg(feature = "cad")]
+        "sketch.extend" => sketch_edit_op(req, "extend"),
+        #[cfg(feature = "cad")]
+        "sketch.mirror" => sketch_edit_op(req, "mirror"),
+        #[cfg(feature = "cad")]
+        "sketch.pattern" => sketch_edit_op(req, "pattern"),
         _ => return None,
     })
 }
@@ -651,6 +665,27 @@ fn sketch_corner_op(req: &Value, fillet: bool) -> Result<Value> {
 fn sketch_solve_op(req: &Value) -> Result<Value> {
     let s: sketch_solve::Sketch = parse(req)?;
     to_value(&sketch_solve::solve(&s, field_or(req, "drag", None)?)?)
+}
+
+// trim, extend, mirror and pattern: loops in, loops out with where each came from
+#[cfg(feature = "cad")]
+fn sketch_edit_op(req: &Value, op: &str) -> Result<Value> {
+    let l = loops(req)?;
+    let out = match op {
+        "trim" => sketch_edit::trim(&l, field(req, "loop")?, field(req, "segment")?, field(req, "at")?)?,
+        "extend" => sketch_edit::extend(&l, field(req, "loop")?, field(req, "end")?)?,
+        "mirror" => {
+            let axis: Value = field(req, "axis")?;
+            sketch_edit::mirror(
+                &l,
+                &field::<Vec<usize>>(req, "pick")?,
+                field(&axis, "point")?,
+                field(&axis, "direction")?,
+            )?
+        }
+        _ => sketch_edit::pattern(&l, &field::<Vec<usize>>(req, "pick")?, parse(req)?)?,
+    };
+    to_value(&out)
 }
 
 #[cfg(all(test, feature = "cad", feature = "holes"))]
@@ -1347,5 +1382,43 @@ mod tests {
             &json!({ "points": [[0, 0]], "constraints": [{ "type": "fix", "point": 4 }] }).to_string(),
         );
         assert!(err.unwrap_err().to_string().contains("point 4"));
+    }
+
+    #[test]
+    fn sketch_edit_ops() {
+        let cross = json!([
+            { "start": [0, 0], "segments": [{ "type": "line", "to": [10, 0] }] },
+            { "start": [5, -5], "segments": [{ "type": "line", "to": [5, 5] }] }
+        ]);
+        let hits = run("sketch.intersect", &json!({ "loops": cross }));
+        assert_eq!(hits["hits"].as_array().unwrap().len(), 2);
+        let out = run(
+            "sketch.trim",
+            &json!({ "loops": cross, "loop": 0, "segment": 0, "at": [8, 0] }),
+        );
+        assert_eq!(out["from"], json!([[0], [1]]));
+        assert_eq!(out["loops"][0]["segments"][0]["to"], json!([5.0, 0.0]));
+        assert_eq!(out["removed"]["start"], json!([5.0, 0.0]));
+        let ext = json!([
+            { "start": [0, 0], "segments": [{ "type": "line", "to": [2, 0] }] },
+            { "start": [5, -5], "segments": [{ "type": "line", "to": [5, 5] }] }
+        ]);
+        let out = run("sketch.extend", &json!({ "loops": ext, "loop": 0, "end": "end" }));
+        assert_eq!(out["loops"][0]["segments"][0]["to"], json!([5.0, 0.0]));
+        let out = run(
+            "sketch.mirror",
+            &json!({ "loops": ext, "pick": [0], "axis": { "point": [0, 0], "direction": [0, 1] } }),
+        );
+        assert_eq!(out["loops"][2]["segments"][0]["to"], json!([-2.0, 0.0]));
+        let out = run(
+            "sketch.pattern",
+            &json!({ "loops": ext, "pick": [1], "kind": "line", "count": 3, "step": [1, 0] }),
+        );
+        assert_eq!(out["from"], json!([[0], [1], [1], [1]]));
+        let err = call(
+            "sketch.extend",
+            &json!({ "loops": ext, "loop": 1, "end": "start" }).to_string(),
+        );
+        assert!(err.unwrap_err().to_string().contains("nothing to extend to"));
     }
 }
