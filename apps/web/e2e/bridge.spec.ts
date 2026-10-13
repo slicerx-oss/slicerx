@@ -3,14 +3,15 @@
 // The app against a real sx-link and the mock printers, end to end: pair, list, camera, send with preflight and
 // approval on a Klipper printer, the bridge's settings, and, in the Bambu Lab describe, the Print sheet for an A1 with
 // an AMS lite and an A1 mini with only the external spool (slot choice, the .gcode.3mf start, a client's queue send
-// over MCP with its matched slots, a refused start with its reason and the plain G-code offer) and the camera guard. The flows every brand shares run per brand in
-// prusa-bridge, elegoo-bridge and snapmaker-bridge (e2e/bridge-brands.ts); Bambu Lab is checked on real printers.
+// over MCP with its matched slots, a refused start with its reason and the plain G-code offer) and the camera guard.
+// The flows every brand shares run per brand in prusa-bridge, elegoo-bridge and snapmaker-bridge
+// (e2e/bridge-brands.ts); Bambu Lab is checked on real printers.
 // The harness and its hub lock are in e2e/bridge-hub.ts.
 import { type Locator, type Page, type WebSocketRoute } from '@playwright/test'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { bridgeOn, connectApp, ctl, hub, HUB_ROUTE, logOf, mockLog, reportHand, resumeFromCard, sawToast, seed, sheetFor, start, useBridge } from './bridge-hub'
+import { bridgeOn, connectApp, ctl, hub, HUB_ROUTE, mockLog, reportHand, resumeFromCard, sawToast, seed, sheetFor, start, useBridge } from './bridge-hub'
 
 /** The describe the Bambu Lab printers belong to. addBambu refuses to run outside it. */
 const BAMBU = 'Bambu Lab'
@@ -54,9 +55,9 @@ interface McpAnswer {
 }
 
 /**
- * An MCP client on the hub, set up the way a partner app runs slicerx-mcp: the server in this process, on the hub's
- * pairing code as an agent, slicing with the same sx the app uses, and its tools called over MCP. `model` is an STL
- * the server may read.
+ * An MCP client on the hub, set up the way a partner app runs slicerx-mcp: the server from this checkout over stdio, on
+ * the hub's pairing code as an agent, slicing with the same sx the app uses, and its tools called over MCP. `model` is
+ * an STL the server may read.
  */
 async function mcpClient(): Promise<{ call(tool: string, args: Record<string, unknown>): Promise<McpAnswer>; model: string; close(): Promise<void> }> {
   const { createRequire } = await import('node:module')
@@ -64,29 +65,31 @@ async function mcpClient(): Promise<{ call(tool: string, args: Record<string, un
   const { copyFileSync, existsSync, mkdtempSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const repo = join(import.meta.dirname, '../../..')
-  // The SDK is the MCP package's dependency, so it resolves from there.
-  const sdkPath = (p: string) => pathToFileURL(createRequire(join(repo, 'packages/mcp/package.json')).resolve(p)).href
-  type McpClient = { connect(t: unknown): Promise<void>; callTool(p: { name: string; arguments: Record<string, unknown> }): Promise<unknown>; close(): Promise<void> }
-  const { Client } = (await import(sdkPath('@modelcontextprotocol/sdk/client/index.js'))) as { Client: new (info: { name: string; version: string }) => McpClient }
-  const { InMemoryTransport } = (await import(sdkPath('@modelcontextprotocol/sdk/inMemory.js'))) as { InMemoryTransport: { createLinkedPair(): [unknown, unknown] } }
-  const { createContext, createSlicerxServer } = await import('../../../packages/mcp/src/index.ts')
-  const { DEFAULT_POLICY } = await import('../../../packages/contracts/src/index.ts')
+  const mcpDir = join(repo, 'packages/mcp')
+  // The SDK and tsx are the MCP package's dependencies, so they resolve from there.
+  const from = createRequire(join(mcpDir, 'package.json'))
+  type McpClient = { connect(t: unknown): Promise<void>; callTool(p: { name: string; arguments: Record<string, unknown> }, schema?: unknown, opts?: { timeout?: number }): Promise<unknown>; close(): Promise<void> }
+  const { Client } = (await import(pathToFileURL(from.resolve('@modelcontextprotocol/sdk/client/index.js')).href)) as { Client: new (info: { name: string; version: string }) => McpClient }
+  const { StdioClientTransport } = (await import(pathToFileURL(from.resolve('@modelcontextprotocol/sdk/client/stdio.js')).href)) as { StdioClientTransport: new (p: { command: string; args: string[]; cwd: string; env?: Record<string, string>; stderr?: 'pipe' | 'inherit' | 'ignore' }) => unknown }
   const sxBin = process.env['SX_CLI_BIN'] || join(repo, 'target/release', process.platform === 'win32' ? 'sx.exe' : 'sx')
   if (!existsSync(sxBin)) throw new Error(`the client slices with the native sx (${sxBin}); set SX_CLI_BIN`)
   const dir = mkdtempSync(join(tmpdir(), 'sx-e2e-mcp-'))
   const model = join(dir, 'x-mark.stl')
   copyFileSync(join(repo, 'packages/core/bench/models/x-mark.stl'), model)
-  const ctx = await createContext({ engine: 'sx', sxBin, printers: 'link', linkUrl: hub.linkUrl, linkCode: hub.code, allowDirs: [dir], outDir: join(dir, 'out'), profilesDir: join(dir, 'profiles'), policy: DEFAULT_POLICY })
-  const server = createSlicerxServer(ctx)
-  const [a, b] = InMemoryTransport.createLinkedPair()
+  // Its own policy, so a policy file in the home folder never changes the run.
+  const policy = join(dir, 'policy.json')
+  writeFileSync(policy, JSON.stringify({ classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'ask' } }))
+  const args = [from.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'sx', '--sx-bin', sxBin, '--printers', 'link', '--link-url', hub.linkUrl, '--no-app', '--allow-dir', dir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles'), '--policy', policy]
+  // The pairing code goes in the environment, never on the command line, as the server asks.
+  const env = { ...(Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string'))), SLICERX_MCP_LINK_CODE: hub.code }
+  const transport = new StdioClientTransport({ command: process.execPath, args, cwd: mcpDir, env, stderr: 'inherit' })
   const client = new Client({ name: 'e2e-partner', version: '0.0.0' })
-  await Promise.all([server.connect(a as never), client.connect(b)])
+  await client.connect(transport)
   return {
-    call: async (tool, args) => (await client.callTool({ name: tool, arguments: args })) as McpAnswer,
+    call: async (tool, args) => (await client.callTool({ name: tool, arguments: args }, undefined, { timeout: 90_000 })) as McpAnswer,
     model,
     close: async () => {
       await client.close()
-      ;(ctx.printers?.host as { close?: () => void } | undefined)?.close?.()
       rmSync(dir, { recursive: true, force: true })
     },
   }
@@ -355,13 +358,15 @@ test.describe(BAMBU, () => {
       // Read back: the file and the slot map the hub was handed.
       expect(q.structuredContent, JSON.stringify(q.content)).toMatchObject({ status: 'needs_person', slot_map: { 0: target.id } })
       expect(String(q.structuredContent?.['file'])).toMatch(/\.gcode\.3mf$/)
-      const before = (await logOf('bambu')).filter((l) => l.startsWith('project_file {')).length
+      // The Bambu mock writes the commands it reads to the mocks' shared log; its own log has only the job.
+      const starts = async () => ((await ctl('/state'))['log'] as string[]).filter((l) => l.startsWith('project_file {'))
+      const before = (await starts()).length
       // The card in the app shows the slot the print starts from; the person approves it.
       const card = page.locator('dialog.approve-dialog[open]')
       await expect(card).toContainText(`filament 1 from slot ${target.id}`, { timeout: 30_000 })
       await card.getByRole('button', { name: 'Bed is clear, approve' }).click()
-      await expect.poll(async () => (await logOf('bambu')).filter((l) => l.startsWith('project_file {')).length, { message: 'the printer got a project_file start', timeout: 60_000 }).toBeGreaterThan(before)
-      const start = JSON.parse((await logOf('bambu')).filter((l) => l.startsWith('project_file {')).at(-1)!.slice('project_file '.length)) as { param: string; url: string; ams_mapping: number[]; use_ams: boolean }
+      await expect.poll(async () => (await starts()).length, { message: 'the printer got a project_file start', timeout: 60_000 }).toBeGreaterThan(before)
+      const start = JSON.parse((await starts()).at(-1)!.slice('project_file '.length)) as { param: string; url: string; ams_mapping: number[]; use_ams: boolean }
       expect(start.param).toBe('Metadata/plate_1.gcode')
       expect(start.url).toMatch(/\.gcode\.3mf$/)
       // AMS lite slot A<n> is tray n - 1.
