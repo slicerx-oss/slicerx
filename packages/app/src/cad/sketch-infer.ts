@@ -3,7 +3,7 @@
 // The constraints a drawing tool leaves behind, as in Fusion: a level line is horizontal, a line square to the last is
 // perpendicular, a line snapped parallel to another is parallel to it, an arc off a line's end is tangent, a
 // polygon's sides and a slot's ends are equal, and a point dropped on another curve's end point, midpoint, center or
-// edge is held there. Ctrl or Cmd on the click leaves none.
+// edge, or on the origin, is held there. Ctrl or Cmd on the click leaves none.
 import type { SketchConstraint, SketchCurveRef, SketchPointRef } from './sketch-constraints'
 import { arcThrough, chainEnd, dist, reverseChain, segStart, type Chain, type DrawTool, type Entity, type SnapKind, type Sketch, type V2 } from './sketch-model'
 
@@ -183,6 +183,7 @@ export function inferred(before: Sketch, after: Sketch, landed: readonly Landing
     if (!own) continue
     const c = landedOn(after, e, l, own.ref, ownCurve)
     if (c) out.push(c)
+    else if (l.kind === 'vertex' && same(l.at, [0, 0])) out.push({ type: 'coincident', a: own.ref, b: { e: -1, at: 'start' } })
   }
   const seen = new Set(have.map(keyOf))
   return out.filter((c) => {

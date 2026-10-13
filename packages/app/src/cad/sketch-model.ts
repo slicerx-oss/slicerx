@@ -209,9 +209,9 @@ export interface SnapTargets {
   edges: readonly { a: V2; b: V2 }[]
 }
 
-/** The sketch's own snap targets: ends and corners, line midpoints, circle and arc centers, and its lines. */
+/** The sketch's own snap targets: the origin, ends and corners, line midpoints, circle and arc centers, and its lines. */
 export function sketchTargets(sketch: Sketch, skip?: HandleRef): SnapTargets {
-  const points: { at: V2; kind: 'vertex' | 'midpoint' | 'center' }[] = []
+  const points: { at: V2; kind: 'vertex' | 'midpoint' | 'center' }[] = [{ at: [0, 0], kind: 'vertex' }]
   const edges: { a: V2; b: V2 }[] = []
   sketch.forEach((e, i) => {
     if (e.kind === 'circle') {
