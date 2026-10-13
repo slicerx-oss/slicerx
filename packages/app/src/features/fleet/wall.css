@@ -8,6 +8,9 @@
 /* A card while the bridge reconnects: the same size and place, dimmed, its controls off. */
 .pcard[data-away] { opacity: 0.55; }
 .pcard[data-away] .wall-open { cursor: default; }
+/* The app's own bridge did not start: its reason and Try again, above the wall. */
+.wall-bridge-err { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); margin: calc(-1 * var(--s-2)) 0 var(--s-5); }
+.wall-bridge-err .app-err { flex: 0 1 auto; margin: 0; }
 .wall-h h1 { flex: 1 1 240px; margin: 0; font-size: calc(26px * var(--text-scale)); }
 
 .wall-counts { list-style: none; margin: 0 0 var(--s-6); padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: var(--s-3); }

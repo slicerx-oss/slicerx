@@ -10,6 +10,7 @@ import type { Fleet } from '@slicerx/contracts'
 import { Button, Chip, Dialog, Field, Icon, Input, LinkButton, Menu, MenuAnchor, MenuHeading, MenuItem, Pill, Seg, tipAttrs } from '@slicerx/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useHost } from '../../host'
+import { bridgeConnector } from '../../link/connector'
 import { Silhouette, Swatch } from '../../parts'
 import { useFleet, usePrinters, type FleetRow } from '../../lib/queries'
 import { formatDuration, formatGrams } from '../../lib/preview-stats'
@@ -57,6 +58,9 @@ function useHeld<T>(value: T, hold: boolean): T {
 export function Fleet() {
   const fleet = useFleet()
   const reconnecting = useApp((s) => s.bridgeStatus.state === 'reconnecting')
+  // The app's own bridge did not start (desktop: another program holds its port). Said here, where printers are used.
+  const bridgeError = useApp((s) => (s.bridgeStatus.state === 'error' && bridgeConnector()?.automatic ? (s.bridgeStatus.message ?? 'The printer bridge did not start.') : null))
+  const host = useHost()
   // While the bridge reconnects the wall shows the rows it had when the connection dropped: a refetch on the dead
   // connection would turn every printer offline and change what the cards hold, and so their size.
   const rows = useHeld(fleet.data ?? [], reconnecting)
@@ -114,6 +118,14 @@ export function Fleet() {
           Add printer
         </Button>
       </header>
+      {bridgeError ? (
+        <div className="wall-bridge-err" role="alert" data-testid="bridge-error">
+          <p className="app-err">{bridgeError}</p>
+          <Button size="sm" onClick={() => void import('../../link/bridge').then((m) => m.connectBridge(host))}>
+            Try again
+          </Button>
+        </div>
+      ) : null}
       {!reconnecting && fleet.isError ? <p className="app-err">Printers did not answer: {fleet.error.message}</p> : null}
       {tripped.length ? (
         <section className="guard-list" aria-label="Camera guard">
