@@ -8,11 +8,13 @@
 //! one string.
 
 /// Opens `url` with the system's handler for its scheme.
+#[cfg(feature = "pilot")]
 pub fn open_url(url: &str) -> Result<(), String> {
     tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Opens `path` with the system's handler for its type.
+#[cfg(feature = "pilot")]
 pub fn open_path(path: &std::path::Path) -> Result<(), String> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
@@ -32,6 +34,7 @@ pub fn no_window(cmd: &mut std::process::Command) -> &mut std::process::Command 
 }
 
 /// Hands `url` to `open` when it is an https link; nothing else may reach the system's handler.
+#[cfg(feature = "pilot")]
 pub fn open_https_with(url: &str, open: impl FnOnce(&str) -> Result<(), String>) -> Result<(), String> {
     if !url.starts_with("https://") {
         return Err("only https links open in the browser".into());
@@ -41,8 +44,6 @@ pub fn open_https_with(url: &str, open: impl FnOnce(&str) -> Result<(), String>)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn nothing_in_the_shell_opens_a_link_through_cmd() {
         // Built from parts so this test does not find itself.
@@ -98,8 +99,11 @@ mod tests {
         assert!(missing.is_empty(), "no CREATE_NO_WINDOW at {missing:?}");
     }
 
+    #[cfg(feature = "pilot")]
     #[test]
     fn a_link_reaches_the_opener_as_one_string() {
+        use super::open_https_with;
+
         let mut got = Vec::new();
         let url = "https://example.com/?a=1&calc|x^y";
         open_https_with(url, |u| {
