@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Finish Sketch (cad/sketches.ts): the sketch goes in the timeline without a solid, undo takes it out, a step made
+// Finish sketch (cad/sketches.ts): the sketch goes in the timeline without a solid, undo takes it out, a step made
 // from it names it, and Model draws it until a feature uses it or the marker rolls back past it.
 import { afterEach, describe, expect, it } from 'vitest'
 import { type FaceFrame, type History, type SketchLoop, type StepParams } from '@slicerx/cad-history'
@@ -27,7 +27,7 @@ afterEach(() => {
   appStore.setState({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', timeline: { bodies: [], items: [], marker: 0 }, rollback: null, objectTool: null })
 })
 
-describe('Finish Sketch', () => {
+describe('Finish sketch', () => {
   it('puts the sketch in the timeline as Sketch N at the marker, and undo takes it out', () => {
     const undo = createHistory(appStore)
     const k = finishSketch({ frame: XZ, loops: [square()] })

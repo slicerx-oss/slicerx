@@ -13,6 +13,7 @@ import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
 import type { HeadModel } from './heads'
 import {
+  BackSide,
   DoubleSide,
   FrontSide,
   BufferAttribute,
@@ -375,6 +376,8 @@ class ViewportImpl implements Viewport {
   private readonly finished = new Group()
   private finishedLayers: SketchLayer[] = []
   private section: Plane | null = null
+  /** Back faces of each part in a flat, darker color: through the section cut they read as the solid's cap. */
+  private sectionCaps: Mesh[] = []
   private readonly originPlanes = new OriginPlanes()
   private planeNames: HTMLDivElement[] = []
   private planeInk = { fg: '#f8f8f2', halo: '#1e1f29' }
@@ -1099,7 +1102,29 @@ class ViewportImpl implements Viewport {
         set(p.edges.material)
       }
     }
+    this.syncSectionCaps()
     this.invalidate()
+  }
+
+  private syncSectionCaps(): void {
+    for (const c of this.sectionCaps) {
+      c.removeFromParent()
+      ;(c.material as Material).dispose()
+    }
+    this.sectionCaps = []
+    const plane = this.section
+    if (!plane) return
+    for (const o of this.objects.values()) {
+      if (o === this.cutPreview.entry) continue
+      for (const p of o.parts) {
+        const base = (Array.isArray(p.mesh.material) ? p.mesh.material[0] : p.mesh.material) as Material & { color?: Color }
+        const color = base?.color ? base.color.clone().multiplyScalar(0.55) : new Color(0x666666)
+        const cap = new Mesh(p.mesh.geometry, new MeshBasicMaterial({ color, side: BackSide, clippingPlanes: [plane] }))
+        cap.raycast = () => {}
+        p.mesh.add(cap)
+        this.sectionCaps.push(cap)
+      }
+    }
   }
 
   setDisplayStyle(style: DisplayStyle): void {

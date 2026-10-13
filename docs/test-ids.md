@@ -454,9 +454,9 @@ Ids that tests read for their text:
 | `model-select-made-by` | The step that made the one face picked: opens it; `data-step` is its index, or `base` for "from the original mesh" |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
 | `sketch-dof` | The sketch palette's line from the solver: "Fully defined", the degrees of freedom left, or a conflict; `data-dof` is the count |
-| `sketch-finish` | The shelf's Finish Sketch button while a sketch is open: the sketch goes in the timeline without a solid |
+| `sketch-finish` | The shelf's Finish sketch button while a sketch is open: the sketch goes in the timeline without a solid |
 | `sketch-ctx` | A finished sketch's menu, from the timeline strip or the Model tree |
-| `sketch-ctx-edit` | In a finished sketch's menu: Edit Sketch |
+| `sketch-ctx-edit` | In a finished sketch's menu: Edit sketch |
 | `sketch-ctx-extrude` | In a finished sketch's menu: Extrude, which opens the sketch tool to extrude it |
 | `sketch-ctx-revolve` | In a finished sketch's menu: Revolve |
 | `model-tree-sketches` | The Sketches folder in the Model tree: the design's sketches from the timeline, rolled back ones dimmed |
