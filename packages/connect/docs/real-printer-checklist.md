@@ -68,6 +68,7 @@ The script cannot see the printer. After each run, check these yourself:
 - Upload to the USB drive, start, pause, resume, cancel.
 - Mid-print changes answer "not supported" (PrusaLink has no G-code console). That is expected.
 - The still from the printer's camera endpoint where a camera is fitted.
+- While a file arrives (from SlicerX or the printer's web page), the status says "Receiving a file" with a percentage, and plain idle once it is in.
 
 ### Elegoo (Centauri Carbon, SDCP)
 
@@ -80,6 +81,7 @@ The script cannot see the printer. After each run, check these yourself:
 
 - A scan finds the machine (UDP 20054) and the reply names it; the J1 and Artisan say SACP is not supported.
 - An A350 left idle drops its session and comes back on its own; after a power cycle, connecting says to pair again and the touchscreen shows no stray prompt.
+- With the enclosure attached, the live view's light and exhaust fan follow the switches on the touchscreen; without it, nothing shows and the status still reads.
 
 ### Anycubic (Kobra 3, S1, LAN Mode)
 

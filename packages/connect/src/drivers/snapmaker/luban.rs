@@ -60,6 +60,9 @@ struct State {
     token_in_body: AtomicBool,
     rejections: AtomicU32,
     last_reconnect: Mutex<Option<tokio::time::Instant>>,
+    /// Set when the printer answered `/api/v1/enclosure` with 404: it has no such endpoint, so the
+    /// session stops asking.
+    no_enclosure: AtomicBool,
 }
 
 /// The `POST /api/v1/connect` reply.
@@ -112,6 +115,30 @@ impl LubanClient {
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned),
         })
+    }
+
+    /// `GET /api/v1/enclosure`, as Luban reads it every second: `isReady` (an enclosure is attached
+    /// and answering), `led` and `fan` (Luban switches each between 0 and 100). `Ok(None)` for a 404,
+    /// a printer without the endpoint. Short timeout: it only adds to the status.
+    async fn enclosure_raw(&self, token: &str, in_body: bool) -> Result<Option<Value>> {
+        let rb = self
+            .client
+            .get(format!("{}/api/v1/enclosure", self.base))
+            .timeout(Duration::from_secs(2));
+        let rb = if in_body {
+            rb.form(&[("token", token)])
+        } else {
+            rb.query(&[("token", token)])
+        };
+        let resp: Response = rb
+            .send()
+            .await
+            .map_err(|e| Error::unreachable(self.id(), e.without_url()))?;
+        if resp.status().as_u16() == 404 {
+            return Ok(None);
+        }
+        let resp = http::check(self.id(), resp)?;
+        Ok(Some(http::json(self.id(), resp).await?))
     }
 
     /// `POST /api/v1/disconnect`, which also clears a pairing prompt left on the touchscreen.
@@ -211,6 +238,7 @@ impl LubanClient {
             token_in_body: AtomicBool::new(false),
             rejections: AtomicU32::new(0),
             last_reconnect: Mutex::new(None),
+            no_enclosure: AtomicBool::new(false),
         };
         match state.status_once(&c.token).await {
             Ok(Some(_)) => {}
@@ -258,6 +286,29 @@ impl State {
             }
             r => r,
         }
+    }
+
+    /// The enclosure reply, when the printer has the endpoint. Never fails the status: any error is
+    /// read as nothing this time, and a 404 stops the asking for the session.
+    async fn enclosure(&self) -> Option<Value> {
+        if self.no_enclosure.load(Ordering::Relaxed) {
+            return None;
+        }
+        let in_body = self.token_in_body.load(Ordering::Relaxed);
+        match self.api.enclosure_raw(&self.token(), in_body).await {
+            Ok(Some(v)) => Some(v),
+            Ok(None) => {
+                self.no_enclosure.store(true, Ordering::Relaxed);
+                None
+            }
+            Err(_) => None,
+        }
+    }
+
+    /// The status and, with it, the enclosure.
+    async fn status_with_enclosure(&self) -> Result<(Value, Option<Value>)> {
+        let v = self.status_value().await?;
+        Ok((v, self.enclosure().await))
     }
 
     /// The status, with a dropped session (401, or 204 from an approved token) reconnected with the
@@ -320,8 +371,8 @@ impl Session {
     }
 
     async fn fetch_status(&self) -> Result<PrinterStatus> {
-        let v = self.state.status_value().await?;
-        Ok(parse_status(self.id(), &v, self.dual))
+        let (v, enclosure) = self.state.status_with_enclosure().await?;
+        Ok(parse_status(self.id(), &v, enclosure.as_ref(), self.dual))
     }
 
     async fn post(&self, path: &str, extra: &[(&str, &str)]) -> Result<()> {
@@ -354,8 +405,35 @@ impl Session {
     }
 }
 
-/// Maps a `GET /api/v1/status` reply to the normalized status.
-pub(crate) fn parse_status(id: &str, v: &Value, dual: bool) -> PrinterStatus {
+/// The enclosure's light and exhaust fan from a `GET /api/v1/enclosure` reply, only while `isReady`
+/// says an enclosure is attached (Luban shows its controls only then). Luban switches `led` and `fan`
+/// between 0 and 100: the light is on for any value above 0, and the fan is a percent.
+pub(crate) fn enclosure_live(e: &Value) -> (Option<bool>, Option<crate::types::Fans>) {
+    if e.get("isReady").and_then(Value::as_bool) != Some(true) {
+        return (None, None);
+    }
+    let level = |k: &str| {
+        let v = e.get(k)?;
+        v.as_f64()
+            .or_else(|| v.as_bool().map(|b| if b { 100.0 } else { 0.0 }))
+            .filter(|n| n.is_finite())
+    };
+    let light = level("led").map(|n| n > 0.0);
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "clamped to a percent"
+    )]
+    let fans = level("fan").map(|n| crate::types::Fans {
+        chamber: Some(n.clamp(0.0, 100.0).round() as u8),
+        ..crate::types::Fans::default()
+    });
+    (light, fans)
+}
+
+/// Maps a `GET /api/v1/status` reply, and the enclosure reply when there is one, to the normalized
+/// status.
+pub(crate) fn parse_status(id: &str, v: &Value, enclosure: Option<&Value>, dual: bool) -> PrinterStatus {
     let file = v
         .get("fileName")
         .and_then(Value::as_str)
@@ -411,10 +489,16 @@ pub(crate) fn parse_status(id: &str, v: &Value, dual: bool) -> PrinterStatus {
         None
     };
     // The live part: while a job runs, the head's `z` is the height printing now. The status has no
-    // speed, fan or light field.
-    let live = f64_at(v, &["z"]).filter(|z| active && z.is_finite()).map(|z| {
+    // speed, fan or light field; an enclosure gives its light and exhaust fan.
+    let layer_z_mm = f64_at(v, &["z"])
+        .filter(|z| active && z.is_finite())
+        .map(|z| (z * 100.0).round() / 100.0);
+    let (light, fans) = enclosure.map_or((None, None), enclosure_live);
+    let live = (layer_z_mm.is_some() || light.is_some() || fans.is_some()).then(|| {
         Box::new(crate::types::PrinterLive {
-            layer_z_mm: Some((z * 100.0).round() / 100.0),
+            fans,
+            light,
+            layer_z_mm,
             ..crate::types::PrinterLive::default()
         })
     });
@@ -467,8 +551,8 @@ impl PrinterSession for Session {
             Arc::new(move || {
                 let (state, id) = (state.clone(), id.clone());
                 async move {
-                    let v = state.status_value().await?;
-                    Ok(parse_status(&id, &v, dual))
+                    let (v, enclosure) = state.status_with_enclosure().await?;
+                    Ok(parse_status(&id, &v, enclosure.as_ref(), dual))
                 }
             }),
         )
@@ -632,7 +716,7 @@ mod tests {
     #[test]
     fn status_mapping() {
         let v = json!({ "status": "RUNNING", "fileName": "a.gcode", "progress": 0.25, "remainingTime": 900, "nozzleTemperature": 200.5, "nozzleTargetTemperature": 205, "heatedBedTemperature": 60, "heatedBedTargetTemperature": 60, "isEnclosureDoorOpen": true });
-        let s = parse_status("x", &v, false);
+        let s = parse_status("x", &v, None, false);
         assert_eq!(s.state, PrinterState::Printing);
         assert_eq!(s.progress, Some(0.25));
         assert_eq!(s.time_left_s, Some(900));
@@ -641,6 +725,7 @@ mod tests {
             parse_status(
                 "x",
                 &json!({ "status": "PAUSED", "fileName": "a", "progress": 50 }),
+                None,
                 false
             )
             .progress,
@@ -650,6 +735,7 @@ mod tests {
             parse_status(
                 "x",
                 &json!({ "status": "IDLE", "fileName": "a", "progress": 1 }),
+                None,
                 false
             )
             .state,
@@ -658,15 +744,17 @@ mod tests {
         let dual = parse_status(
             "x",
             &json!({ "status": "IDLE", "nozzleTemperature1": 25, "nozzleTemperature2": 26 }),
+            None,
             true,
         );
         assert_eq!(dual.nozzles.len(), 2);
-        let stopped = parse_status("x", &json!({ "status": "STOPPED" }), false);
+        let stopped = parse_status("x", &json!({ "status": "STOPPED" }), None, false);
         assert_eq!(stopped.state, PrinterState::Idle);
         assert_eq!(stopped.message.as_deref(), Some("The print was stopped"));
         let by_lines = parse_status(
             "x",
             &json!({ "status": "RUNNING", "fileName": "a", "currentLine": 250, "totalLines": 1000 }),
+            None,
             false,
         );
         assert_eq!(by_lines.progress, Some(0.25));
@@ -674,6 +762,7 @@ mod tests {
             parse_status(
                 "x",
                 &json!({ "status": status, "fileName": "a", "z": 12.345 }),
+                None,
                 false,
             )
             .live
@@ -683,6 +772,35 @@ mod tests {
             (z("RUNNING"), z("PAUSED"), z("IDLE")),
             (Some(12.35), Some(12.35), None)
         );
+    }
+
+    #[test]
+    fn an_attached_enclosure_gives_the_light_and_exhaust_fan() {
+        let idle = json!({ "status": "IDLE", "z": 10 });
+        let on = json!({ "isReady": true, "isDoorEnabled": true, "led": 100, "fan": 100 });
+        let live = parse_status("x", &idle, Some(&on), false)
+            .live
+            .expect("live while idle, from the enclosure");
+        assert_eq!(live.light, Some(true));
+        assert_eq!(live.fans.and_then(|f| f.chamber), Some(100));
+        assert_eq!(live.layer_z_mm, None, "nothing prints");
+        let off = json!({ "isReady": true, "led": 0, "fan": 0 });
+        let live = parse_status("x", &idle, Some(&off), false).live.unwrap();
+        assert_eq!(
+            (live.light, live.fans.and_then(|f| f.chamber)),
+            (Some(false), Some(0))
+        );
+        // Not attached or not answering: nothing from it, as Luban hides its controls.
+        let absent = json!({ "isReady": false, "led": 100, "fan": 100 });
+        assert!(parse_status("x", &idle, Some(&absent), false).live.is_none());
+        assert_eq!(enclosure_live(&json!({ "led": 100 })), (None, None));
+        // Booleans and values out of range.
+        let (light, fans) = enclosure_live(&json!({ "isReady": true, "led": true, "fan": 250 }));
+        assert_eq!((light, fans.and_then(|f| f.chamber)), (Some(true), Some(100)));
+        // While printing, the height comes along.
+        let run = json!({ "status": "RUNNING", "fileName": "a", "z": 1.25 });
+        let live = parse_status("x", &run, Some(&on), false).live.unwrap();
+        assert_eq!((live.layer_z_mm, live.light), (Some(1.25), Some(true)));
     }
 
     #[test]
