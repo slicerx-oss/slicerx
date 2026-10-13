@@ -10,7 +10,7 @@ export interface SegOption<V extends string> {
   value: V
   label: ReactNode
   icon?: IconName
-  /** Tooltip and accessible name when the label is only an icon. */
+  /** Tooltip and accessible name when the label is only an icon; `tip`, when given too, is the tooltip. */
   title?: string
   /** A tooltip for an option whose label already names it; the accessible name stays the label. */
   tip?: TipSpec
@@ -66,7 +66,7 @@ export function Seg<V extends string>({ label, value, onChange, options, size = 
             aria-checked={checked}
             aria-label={opt.title}
             data-testid={opt.testId}
-            {...tipAttrs(opt.title ? { title: opt.title } : opt.tip)}
+            {...tipAttrs(opt.tip ?? (opt.title ? { title: opt.title } : undefined))}
             tabIndex={checked || (!hasChecked && i === firstEnabled) ? 0 : -1}
             disabled={opt.disabled}
             onClick={() => onChange(opt.value)}
