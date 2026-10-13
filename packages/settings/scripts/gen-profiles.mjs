@@ -9,7 +9,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
-const catalog = await import(here('../../connect/catalog/src/index.ts'))
+// a file URL, not a path: import() reads a Windows path such as C:\... as a URL with the scheme c:
+const catalog = await import(new URL('../../connect/catalog/src/index.ts', import.meta.url).href)
 const specs = JSON.parse(readFileSync(here('printer-specs.json'), 'utf8')).models
 const knowledge = JSON.parse(readFileSync(here('../knowledge.json'), 'utf8')).printers
 const read = (p) => (existsSync(here(p)) ? JSON.parse(readFileSync(here(p), 'utf8')).models : {})
