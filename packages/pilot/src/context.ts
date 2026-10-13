@@ -3,8 +3,8 @@
 // Keep a conversation inside a local model's context. Ollama cuts the start of a prompt that is
 // too long, which is the system prompt, and says so only in its log. So before each request the
 // oldest earlier turns go first, then the oldest tool results of the current run shrink to a
-// stub, then the newest results are shortened in the middle. The system prompt, the current
-// request and the start and end of the newest results always stay.
+// stub, then the newest results are shortened in the middle, and stubbed only if that is still
+// not enough. The system prompt and the current request always stay.
 import type { LlmMessage, LlmToolDef } from './provider/types'
 
 /**
@@ -106,6 +106,15 @@ export function fitContext(messages: readonly LlmMessage[], tools: readonly LlmT
     const head = Math.ceil(chars * 0.6)
     kept[i] = { role: 'tool', callId: m.callId, content: `${m.content.slice(0, head)}${SHORTENED}${m.content.slice(m.content.length - (chars - head))}`, ...(m.images ? { images: m.images } : {}) }
     shortenedResults++
+  }
+
+  // 4. Still too long (a long system prompt): stub the newest results too, oldest first.
+  for (const i of results.slice(-KEEP_RESULTS)) {
+    if (fixed + total(kept) <= budget) break
+    const m = kept[i]
+    if (m?.role !== 'tool' || m.content === TRIMMED_RESULT) continue
+    kept[i] = { role: 'tool', callId: m.callId, content: TRIMMED_RESULT }
+    stubbedResults++
   }
   return { messages: [...system, ...kept], droppedTurns, stubbedResults, shortenedResults }
 }
