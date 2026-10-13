@@ -10,6 +10,21 @@ type Sx = { getState(): Record<string, unknown> & { layerHi: number; sliceLook: 
 type Vp = { getCamera(): { target: number[] } }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
 const target = (page: Page) => page.evaluate(() => (window as unknown as { __vp: Vp }).__vp.getCamera().target)
+/** What Show me drew on the plate: the strike marks (bed frame) and the outlined area's lines. */
+const spotMarks = (page: Page) =>
+  page.evaluate(() => {
+    type Node = { name: string; type: string; visible: boolean; position: { x: number; y: number }; children: Node[]; parent: Node | null }
+    const root = (window as unknown as { __vp: { stage: { objectsRoot: Node } } }).__vp.stage.objectsRoot
+    const marks: number[][] = []
+    let area = 0
+    const walk = (n: Node) => {
+      if (n.type === 'Sprite' && n.name.startsWith('strike')) marks.push([n.position.x, n.position.y])
+      if (n.name === 'strike area') area = n.children.filter((c) => c.type === 'Line').length
+      n.children.forEach(walk)
+    }
+    walk(root)
+    return { shown: root.visible, marks, area }
+  })
 const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]!) < 0.5)
 
 /** A gantry strike on layer 3 (0 based), deepest at 120, 110, 8 mm, put on the finished slice. */
@@ -51,10 +66,25 @@ test('Show me on a strike opens the toolpaths at its layer and centers the view 
   await strike(page)
   const show = page.getByTestId('slice-block-show')
   await expect(show).toHaveText('Show me')
+  // Every layer the readout shows from the click on, frame by frame: the strike's first layer ("layers 4 to 5" on
+  // the collision card) the whole way, never the layer below while the playback runs up to the strike.
+  await page.evaluate(() => {
+    const seen = new Set<string>()
+    ;(window as unknown as { __seen: Set<string> }).__seen = seen
+    const t0 = performance.now()
+    const tick = () => {
+      const v = document.querySelector('#pv-layer')?.getAttribute('aria-valuetext')
+      // From the click on: the jump has picked the strike, before that the bar shows the whole print.
+      if (v && (window as unknown as { __sx: Sx }).__sx.getState().strikePick !== null) seen.add(v.replace(/ of .*/, ''))
+      if (performance.now() - t0 < 4000) requestAnimationFrame(tick)
+    }
+    tick()
+  })
   await show.click()
   await expect.poll(async () => { const s = await state(page); return `${s.sliceLook} ${s.layerHi} ${s.strikePick}` }).toBe('toolpaths 4 0')
+  await page.waitForTimeout(3500)
+  expect(await page.evaluate(() => [...(window as unknown as { __seen: Set<string> }).__seen])).toEqual(['Layer 4'])
   // Playback runs to the strike's moment and stays on its layer.
-  await page.waitForTimeout(1000)
   expect((await state(page)).layerHi).toBe(4)
   await expect.poll(async () => near(await target(page), [120, 110, 8])).toBe(true)
 })
@@ -78,6 +108,16 @@ test("Show me on a refused slice centers the view on the spot the refusal names"
   await expect.poll(async () => near(await target(page), spot)).toBe(true)
   const s = await state(page)
   expect(s.selectedIds.map((id) => s.plate.find((p) => p.id === id)?.name)).toEqual(['Layered X'])
+  // The camera turn alone does not read as "here": the spot carries the strike mark, and the excluded area it enters
+  // is outlined. Both go when the refusal does.
+  expect(text).toMatch(/^[A-Z]/)
+  const drawn = await spotMarks(page)
+  expect(drawn.shown).toBe(true)
+  expect(drawn.marks).toHaveLength(1)
+  expect(near(drawn.marks[0]!, spot)).toBe(true)
+  expect(drawn.area).toBe(3)
+  await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ slice: { status: 'idle' } }))
+  expect(await spotMarks(page)).toMatchObject({ marks: [], area: 0 })
 })
 
 // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
@@ -90,11 +130,14 @@ test('shots: Show me on the Slice footer blocks, light and dark', async ({ page 
   const n = await sliceCount(page)
   await page.keyboard.press('ControlOrMeta+Enter')
   await expect(sliced(page, n)).toBeVisible({ timeout: 120_000 })
-  const shot = async (name: string) => {
+  const shot = async (name: string, settle = 900) => {
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(settle)
     // The test build's own notices (software WebGL, no geometry engine) would cover the view.
     await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ toast: null }))
-    await page.mouse.move(0, 0)
-    await page.waitForTimeout(900)
+    await page.waitForTimeout(300)
+    await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ toast: null }))
+    await page.waitForTimeout(100)
     await page.screenshot({ path: `${dir}/${name}-${width}.png` })
   }
   for (const scheme of ['light', 'dark'] as const) {
@@ -104,7 +147,7 @@ test('shots: Show me on the Slice footer blocks, light and dark', async ({ page 
     await page.evaluate(() => (window as unknown as { __vp: { zoomToBed?(o: unknown): void } }).__vp.zoomToBed?.({ animate: false }))
     await shot(`strike-before-${scheme}`)
     await page.getByTestId('slice-block-show').click()
-    await shot(`strike-after-${scheme}`)
+    await shot(`strike-after-${scheme}`, 3000)
   }
   await refuse(page)
   for (const scheme of ['light', 'dark'] as const) {
@@ -113,5 +156,8 @@ test('shots: Show me on the Slice footer blocks, light and dark', async ({ page 
     await shot(`refused-before-${scheme}`)
     await page.getByTestId('slice-error-show').click()
     await shot(`refused-after-${scheme}`)
+    // Close in on the spot, to judge the outline of the excluded area under the mark.
+    await page.evaluate(() => (window as unknown as { __vp: { zoomBy?(f: number, o: unknown): void } }).__vp.zoomBy?.(4, { animate: false }))
+    await shot(`refused-after-zoom-${scheme}`)
   }
 })
