@@ -26,7 +26,7 @@ export function carriesFaces(request: unknown): boolean {
 
 /** A build of the engine that did not load, and why. */
 export interface LoadError {
-  module: 'core' | 'full'
+  module: 'core' | 'full' | 'brep'
   message: string
 }
 

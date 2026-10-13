@@ -4,8 +4,9 @@
 // loads before the viewport and WASM (the entry chunk and its static imports)
 // at most 218 KB gzip, and each WASM module at most 1.0 MB gzip (the slicer engine's sx_wasm is only
 // reported). The STEP reader (OpenCASCADE, loaded only when a STEP file opens) has a budget of its own and must
-// not be reachable from the shell, and so does the full geometry engine (the modeling tools and the heavier
-// modules, loaded the first time a call needs them). It also fails when printer, filament or G-code profile data
+// not be reachable from the shell, and so do the full geometry engine (the modeling tools and the heavier
+// modules, loaded the first time a call needs them) and the B-rep kernel (exact solids, packages/brep, loaded the
+// first time a call needs one). It also fails when printer, filament or G-code profile data
 // lands in a startup chunk, and when a startup chunk names an icon that is not in the startup icon table.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -18,8 +19,10 @@ const SHELL_KB = 218
 const WASM_KB = 1056
 const STEP_WASM_KB = 3584
 const FULL_GEOM_WASM_KB = 1536
+const BREP_WASM_KB = 1152
 const isStepReader = (file) => /occt-import-js/.test(file)
 const isFullGeom = (file) => /sx_geom_wasm/.test(file)
+const isBrep = (file) => /sx_brep/.test(file)
 // The slicer engine's module (sx_wasm): the browser no longer slices, so its size is reported, never a failure
 // (owner, 2026-10-12). The geometry modules and the shell keep their budgets.
 const isSlicer = (file) => /(^|[/_-])sx_wasm[^/]*\.wasm$/.test(file) && !/sx_geom/.test(file)
@@ -88,10 +91,14 @@ for (const key of seen) {
     console.error(`bundle-size: the STEP reader is in the startup chunk ${manifest[key].file}`)
     failed = true
   }
+  if (isBrep(manifest[key].file)) {
+    console.error(`bundle-size: the B-rep kernel is in the startup chunk ${manifest[key].file}`)
+    failed = true
+  }
 }
 for (const f of files(dist).filter((f) => f.endsWith('.wasm'))) {
   const size = gz(f)
-  const budget = isStepReader(f) ? STEP_WASM_KB : isFullGeom(f) ? FULL_GEOM_WASM_KB : WASM_KB
+  const budget = isStepReader(f) ? STEP_WASM_KB : isFullGeom(f) ? FULL_GEOM_WASM_KB : isBrep(f) ? BREP_WASM_KB : WASM_KB
   if (isSlicer(f)) {
     console.log(`wasm ${f}: ${(size / 1024).toFixed(1)} KB gzip (reference ${budget} KB, report only)`)
     continue

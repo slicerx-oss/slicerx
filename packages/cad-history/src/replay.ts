@@ -9,6 +9,7 @@ import type { EdgeRef, MovedFace, Vec3 } from './types'
 import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, point, type History, type HistoryMesh, type PaintTexts, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
+import { EXACT_FELL_BACK, exactStep } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -18,6 +19,8 @@ export interface ReplayRequest {
   fonts?: Record<string, string>
   /** Also return the parts as they were before this step index (rolling the view back to edit it). */
   before?: number
+  /** Run the steps the B-rep kernel has on parts that carry an exact solid (exact.ts); a developer flag for now. */
+  exact?: boolean
 }
 
 export interface ReplayOptions {
@@ -36,6 +39,9 @@ interface Flat {
   faces?: Faces
   /** The part's paint; a step that changes its triangles drops it. */
   paint?: PaintTexts
+  /** The exact solid the triangles came from, until a step runs on the mesh. Only ever the kernel's own output from
+   * this replay: a solid from anywhere else (a file, a caller) is never read, so flat() drops it. */
+  smb?: string
 }
 
 /** Positions rounded to f32, as the app keeps them (Float32Array). */
@@ -51,7 +57,7 @@ export const PAINT_DROPPED = 'This step changed the part, so its paint was clear
  * more. `dropped` is told when there was paint, for the step's note.
  */
 const next = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }, dropped?: () => void): Flat => {
-  const { faces: _old, paint, ...rest } = part
+  const { faces: _old, paint, smb: _smb, ...rest } = part
   if (paint && dropped) dropped()
   return { ...rest, positions: m.positions, indices: m.indices, ...(m.faces ? { faces: m.faces } : {}) }
 }
@@ -160,6 +166,8 @@ function fontDigest(data: string | undefined): string {
 
 class Broken extends Error {}
 
+const meshOnly = ({ smb: _smb, ...rest }: Flat): Flat => rest
+
 const meshOf = (p: Flat) => ({ positions: p.positions, indices: p.indices, ...(p.faces ? { faces: p.faces } : {}) })
 
 /**
@@ -175,12 +183,25 @@ function keptEdges<E>(s: Step, edges: readonly E[], gone: ReadonlySet<string>): 
 interface Found {
   keys: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
   notes: Record<string, string>
+  /** Steps the exact kernel failed on this replay, which ran on the mesh. */
+  fellBack: string[]
 }
 
-async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found): Promise<Flat[]> {
+async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false): Promise<Flat[]> {
   const p = s.params
   // Every call of the step makes its faces' keys from the step's own salt, as when the tool first ran it.
   const call: EngineCall = (op, r) => engine(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
+  if (exact && (parts.some((x) => x.smb) || p.op === 'shape.extrude')) {
+    const done = await exactStep(call, s, parts, () => {
+      found.notes[s.id] = EXACT_FELL_BACK
+      found.fellBack.push(s.id)
+    })
+    if (done) {
+      const kept = new Set(done)
+      if (parts.some((x) => x.paint && !kept.has(x))) found.notes[s.id] = PAINT_DROPPED
+      return done
+    }
+  }
   const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]
   const out = parts.slice()
   const item = (f: Flat) => ({ mesh: meshOf(f), transform: s.transform })
@@ -421,12 +442,12 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
   const steps = history.steps
   const status: StepStatus[] = steps.map((s) => (s.suppressed ? { state: 'suppressed' } : { state: 'skipped' }))
   const moved: Record<string, MovedFace> = {}
-  const found: Found = { keys: {}, notes: {} }
+  const found: Found = { keys: {}, notes: {}, fellBack: [] }
   // Pushes whose face went through the part.
   let gone = new Set<string>()
   // Keys after each step; a step's key covers everything that can change its result.
   const keys: string[] = []
-  let k = meshHash(history.base)
+  let k = req.exact ? hash(meshHash(history.base), 'exact') : meshHash(history.base)
   const baseKey = k
   const effective = steps.map((s) => followed(s, steps))
   for (const s of effective) {
@@ -449,7 +470,7 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
       break
     }
   }
-  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {} } })
+  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {}, fellBack: [] } })
   const fonts = req.fonts ?? {}
   let before: Flat[] | undefined = req.before === 0 ? history.base.map(flat) : req.before !== undefined && req.before <= start && req.before > 0 ? recall(keys[req.before - 1]!) : undefined
   for (let i = 0; i < start; i++) {
@@ -466,7 +487,7 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
     }
     if (o.yieldStep) await o.yieldStep()
     try {
-      parts = await runStep(call, s, parts, fonts, moved, gone, found)
+      parts = await runStep(call, s, parts, fonts, moved, gone, found, req.exact)
       const note = found.notes[s.id]
       status[i] = note ? { state: 'done', note } : { state: 'done' }
       remember(keys[i]!, parts, { gone, moved, found })
@@ -478,7 +499,8 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
     }
   }
   const made = madeAfter(steps, keys, status, parts)
-  return { parts, status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before } : {}) }
+  // the solids stay in the cache here: the caller gets meshes, and a project or an undo step never holds one
+  return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}) }
 }
 
 /**
