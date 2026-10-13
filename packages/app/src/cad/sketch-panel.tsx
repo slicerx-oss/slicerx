@@ -25,7 +25,7 @@ import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext, sketchNext } from './history/record'
-import { finishSketch, provideFinish, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
+import { finishSketch, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
 import { flipFor, goesIntoFace } from './extrude-direction'
 import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
@@ -619,6 +619,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const finishRef = useRef(finishOnly)
   finishRef.current = finishOnly
   useEffect(() => (stepEdit || featureOnly ? undefined : provideFinish(() => void finishRef.current())), [stepEdit, featureOnly])
+  const usedId = featureOnly ? init?.from?.id : undefined
+  useEffect(() => (usedId ? provideInUse(usedId) : undefined), [usedId])
 
   const fields = fieldsFor(draft)
   const sel = selected ? sketch[selected.e] : undefined
