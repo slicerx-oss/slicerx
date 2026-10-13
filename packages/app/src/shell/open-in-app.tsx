@@ -58,13 +58,15 @@ export function OpenInAppButton() {
       size="sm"
       tip="nav.openInApp"
       data-testid="open-in-app"
+      aria-label={`Open in ${appName()}`}
       disabled={busy}
       onClick={() => {
         setBusy(true)
         void openInApp().finally(() => setBusy(false))
       }}
     >
-      Open in {appName()}
+      Open in <span className="open-in-name">{appName()}</span>
+      <span className="open-in-short">app</span>
     </Button>
   )
 }
