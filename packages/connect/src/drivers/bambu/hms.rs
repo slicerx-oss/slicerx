@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Plain words for the printer problems Bambu Lab printers report most: filament runout, AMS feed
-//! problems, a clogged nozzle, heater faults, an open door, and what first layer inspection and
-//! the AI monitor find. The codes are the printer's own (as the Bambu Lab wiki lists them); the
+//! Plain words for the printer problems Bambu Lab printers report most: filament runout, AMS, AMS
+//! lite and AMS HT feed problems, the filament cutter, a clogged nozzle, heater and fan faults, an
+//! open door, the build plate, the storage card, homing, and what first layer inspection and the
+//! AI monitor find. The codes are the printer's own (as the Bambu Lab wiki lists them); the
 //! wording is ours. Anything not here keeps the generic text and a link to the wiki page.
 //!
 //! An HMS code reads `AAAA_BBBB_CCCC_DDDD`: `AAAA` the module and its number (`07uu` is AMS unit
-//! `uu`), `BBBB` the part (`2s00` and `7s00` are slot `s` of that unit), `CCCC` the severity and
+//! `uu`, `12uu` AMS lite unit `uu`, `18uu` AMS HT unit `uu`), `BBBB` the part (`2s00` and `7s00` are slot `s` of that unit), `CCCC` the severity and
 //! `DDDD` the error. A print error reads `AAAA_EEEE` with the same module.
 
 /// The wiki page for an HMS code (`0300_0100_0001_0001`) or a print error (`0300_4006`).
@@ -14,7 +15,7 @@ pub(crate) fn wiki_url(code: &str) -> String {
     format!("https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/{code}")
 }
 
-/// AMS unit letter and slot number from `07uu` and `?s00`.
+/// AMS unit letter and slot number from `07uu` (or an AMS lite's `12uu`) and `?s00`.
 fn ams_slot(module: u16, part: u16) -> Option<(char, u16)> {
     let unit = module & 0xff;
     let slot = (part >> 8) & 0x0f;
@@ -35,6 +36,28 @@ pub(crate) fn describe_hms(module: u16, part: u16, level: u16, error: u16) -> Op
         (0x0300, 0x1A, 0x0002, 0x0002) | (0x0300, 0x09, 0x0002, 0x0001..=0x0005) => {
             "The nozzle looks clogged: the extruder is pushing much harder than normal. Heat the nozzle and clear it (a cold pull or the cleaning needle), or swap the hotend.".to_owned()
         }
+        (0x0300, 0x1A, 0x0002, 0x0001) => {
+            "The nozzle may be wrapped in filament, or the build plate is not sitting flat. Check both before going on.".to_owned()
+        }
+        (0x0C00, 0x03, 0x0002, 0x000E | 0x001C) => {
+            "The camera saw filament stuck around the nozzle. Check the nozzle and clean it before going on.".to_owned()
+        }
+        // Hotend cooling fan: stopped (fatal) or slow (serious).
+        (0x0300, 0x03 | 0x17, 0x0001, 0x0001) | (0x0300, 0x03 | 0x17, 0x0002, 0x0002) => {
+            "The hotend cooling fan is slow or stopped. Check it for debris and its cable, since a hot heatbreak can clog the nozzle.".to_owned()
+        }
+        (0x0300, 0x04, 0x0002, 0x0001) | (0x0300, 0x31, 0x0001, 0x0001) | (0x0300, 0x31, 0x0002, 0x0002) => {
+            "The part cooling fan is slow or stopped. Check it for debris and its cable.".to_owned()
+        }
+        (0x0300, 0x0D, 0x0002, 0x0003) | (0x0C00, 0x03, 0x0002, 0x000C) => {
+            "The build plate may not be placed right. Seat it flat and aligned with the bed.".to_owned()
+        }
+        (0x0C00, 0x03, 0x0002, 0x0010) => {
+            "The camera saw something on the bed. Clear the plate before printing.".to_owned()
+        }
+        (0x0500, 0x03, 0x0002, 0x000D) => {
+            "The printer cannot read its SD card. Reseat the card, or format or replace it.".to_owned()
+        }
         (0x0300, 0x96, 0x0001 | 0x0003, 0x0001) => {
             "The front door is open. Close it; for materials that need a warm chamber the print waits until it is shut.".to_owned()
         }
@@ -47,11 +70,11 @@ pub(crate) fn describe_hms(module: u16, part: u16, level: u16, error: u16) -> Op
         (0x07FF | 0x07FE, 0x20, 0x0002, 0x0001) => {
             "The external spool ran out of filament. Load a new spool, then resume.".to_owned()
         }
-        (0x0700..=0x0703, 0x20..=0x23, 0x0002 | 0x0003, 0x0001) => {
+        (0x0700..=0x0703 | 0x1200..=0x1203, 0x20..=0x23, 0x0002 | 0x0003, 0x0001) => {
             let (unit, slot) = ams_slot(module, part)?;
             format!("AMS {unit} slot {slot} ran out of filament. Load a new spool in that slot (or one with the same filament), then resume.")
         }
-        (0x0700..=0x0703, 0x20..=0x23, 0x0002, 0x0009) => {
+        (0x0700..=0x0703, 0x20..=0x23, 0x0002, 0x0009) | (0x1200..=0x1203, 0x20..=0x23, 0x0002, 0x0006) => {
             let (unit, slot) = ams_slot(module, part)?;
             format!("The filament from AMS {unit} slot {slot} would not extrude. The nozzle may be clogged or the filament tangled; check both, then retry.")
         }
@@ -91,11 +114,58 @@ pub(crate) fn describe_print_error(module: u16, error: u16) -> Option<String> {
         (0x0300, 0x806F) => {
             "The heated bed warmed up abnormally and the printer stopped heating it. Let it cool and check the bed cable before printing again."
         }
-        (0x0700..=0x0703, 0x8003 | 0x8004) => {
+        (0x0700..=0x0703 | 0x1200..=0x1203 | 0x1800..=0x1807, 0x8003 | 0x8004) => {
             "The AMS could not pull the filament back. The spool may be stuck or tangled, or the filament broke in the toolhead; free it, then retry."
         }
-        (0x0700..=0x0703, 0x8007) => {
+        (0x0700..=0x0703 | 0x1200..=0x1203 | 0x1800..=0x1807, 0x8007) => {
             "The filament would not extrude. The nozzle may be clogged; check it, then retry."
+        }
+        (0x0700..=0x0707 | 0x1200..=0x1203 | 0x1800..=0x1807, 0x8006) => {
+            "The AMS could not feed the filament into the toolhead. The filament may be tangled, the spool stuck or the tube loose; check them, then retry."
+        }
+        (0x0700..=0x0707 | 0x1200..=0x1203 | 0x12FF | 0x1800..=0x1807, 0x8010) => {
+            "The AMS feed motor is straining. The filament may be tangled or the spool stuck; free it, then retry."
+        }
+        (0x1200..=0x1203 | 0x12FF | 0x1800..=0x1807, 0x8011) => {
+            "The AMS ran out of filament. Load a new spool in the same slot, then resume."
+        }
+        (0x0700..=0x0703 | 0x07FE | 0x07FF | 0x1200..=0x1203 | 0x12FF, 0x8001) => {
+            "The filament cutter did not cut the filament. Check the cutter, then retry."
+        }
+        (0x0700..=0x0703 | 0x07FE | 0x07FF | 0x1200..=0x1203 | 0x12FF, 0x8002) => {
+            "The filament cutter is stuck. Make sure its handle is pulled out, then retry."
+        }
+        (0x0300, 0x4000 | 0x4030) => {
+            "Homing the Z axis failed. Check that nothing blocks the bed or the toolhead, then try again."
+        }
+        (0x0300, 0x4009 | 0x4032) => {
+            "Homing the X and Y axes failed. Check that nothing blocks the toolhead, then try again."
+        }
+        (0x0300, 0x4005 | 0x8010) => {
+            "The hotend cooling fan is slow or stopped. Check it for debris and its cable, since a hot heatbreak can clog the nozzle."
+        }
+        (0x0300, 0x8014) => {
+            "The nozzle may be wrapped in filament, or the build plate is not seated right. Cancel, clean the nozzle or reseat the plate, then print again."
+        }
+        (0x0300, 0x8019) | (0x0500, 0x8061 | 0x4095) => {
+            "No build plate is on the bed. Place it, then try again."
+        }
+        (0x0500, 0x8051) => {
+            "The build plate on the bed is not the one the file was sliced for. Swap the plate or slice for this one."
+        }
+        (0x0C00, 0x8009) | (0x0500, 0x808C) => {
+            "The printer could not find where the build plate sits. Align the plate with the bed, then go on."
+        }
+        (0x0300, 0x800E) | (0x0500, 0x8013) => {
+            "The print file is no longer there. Check that the storage card is still in the printer."
+        }
+        (0x0500, 0x4006 | 0x4015) => {
+            "The printer's storage is full. Delete files or format the card, then send the job again."
+        }
+        (0x0500, 0x400C) => "The printer has no SD card. Insert one, then send the job again.",
+        (0x0500, 0x4016) => "The SD card is write protected. Replace it, then send the job again.",
+        (0x0C00, 0x8005 | 0xC006) => {
+            "Purged filament may have piled up at the waste chute. Clear it before going on."
         }
         _ => return None,
     };
@@ -170,5 +240,53 @@ mod tests {
             wiki_url("0300_4006"),
             "https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/0300_4006"
         );
+    }
+
+    #[test]
+    fn ams_lite_ams_ht_plate_card_and_homing_codes_read_in_plain_words() {
+        // An A1's AMS lite reports under module 12: runouts name the slot like an AMS.
+        assert!(
+            describe_hms(0x1200, 0x2100, 0x0002, 0x0001)
+                .unwrap()
+                .starts_with("AMS A slot 2 ran out")
+        );
+        assert!(
+            describe_hms(0x1200, 0x2000, 0x0002, 0x0006)
+                .unwrap()
+                .contains("would not extrude")
+        );
+        assert!(
+            describe_hms(0x0300, 0x0300, 0x0001, 0x0001)
+                .unwrap()
+                .starts_with("The hotend cooling fan")
+        );
+        assert!(
+            describe_hms(0x0300, 0x0D00, 0x0002, 0x0003)
+                .unwrap()
+                .contains("build plate")
+        );
+        assert!(
+            describe_print_error(0x12FF, 0x8002)
+                .unwrap()
+                .contains("cutter is stuck")
+        );
+        assert!(describe_print_error(0x1800, 0x8011).unwrap().contains("ran out"));
+        assert!(
+            describe_print_error(0x0500, 0x400C)
+                .unwrap()
+                .contains("no SD card")
+        );
+        assert!(
+            describe_print_error(0x0500, 0x8051)
+                .unwrap()
+                .contains("sliced for")
+        );
+        assert!(
+            describe_print_error(0x0300, 0x4000)
+                .unwrap()
+                .starts_with("Homing the Z axis")
+        );
+        // A cutter code on a module without a cutter keeps the link.
+        assert_eq!(describe_print_error(0x1800, 0x8001), None);
     }
 }

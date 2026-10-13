@@ -919,6 +919,11 @@ impl Shared {
         }
         let v = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let mut st = parse_status(&self.cfg.id, &v);
+        let model = model_from_report(&v)
+            .or_else(|| self.model.lock().unwrap_or_else(PoisonError::into_inner).clone());
+        if model.is_some_and(|m| !shows_chamber_temperature(&m)) {
+            st.chamber = None;
+        }
         if needs_developer_mode(&v, self.refused_send.load(Ordering::Relaxed)) {
             st.live.get_or_insert_with(Box::default).needs_developer_mode = Some(true);
         }
@@ -974,6 +979,16 @@ impl Shared {
             }
             if let Some(f) = firmware_from_version(info) {
                 *self.firmware.lock().unwrap_or_else(PoisonError::into_inner) = Some(f);
+            }
+            // The model decides whether the chamber reading shows.
+            let have_report = self
+                .state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .as_object()
+                .is_some_and(|o| !o.is_empty());
+            if have_report && self.connected.load(Ordering::Relaxed) {
+                self.publish_changes();
             }
             return;
         }
@@ -1123,10 +1138,7 @@ pub(crate) fn parse_status(id: &str, p: &Value) -> PrinterStatus {
         current: c,
         target: num("bed_target_temper").unwrap_or(0.0),
     });
-    let chamber = num("chamber_temper").map(|c| Temp {
-        current: c,
-        target: 0.0,
-    });
+    let chamber = parse_chamber(p);
     let slots = parse_slots(p);
     let slot_ids: Vec<String> = slots.iter().map(|s| s.id.clone()).collect();
 
@@ -1145,6 +1157,20 @@ pub(crate) fn parse_status(id: &str, p: &Value) -> PrinterStatus {
                         format!("The printer reported error {}.", wiki_code(e >> 16, e & 0xffff))
                     })
                 })
+        })
+        .or_else(|| {
+            // With nothing wrong, a job under way says which step it is on (leveling, heating,
+            // a pause and why), as the printer's screen does.
+            p.get("stg_cur")
+                .and_then(Value::as_i64)
+                .filter(|_| {
+                    matches!(
+                        state,
+                        PrinterState::Printing | PrinterState::Paused | PrinterState::Preparing
+                    )
+                })
+                .and_then(stage_words)
+                .map(str::to_owned)
         });
     PrinterStatus {
         printer_id: id.to_owned(),
@@ -1182,6 +1208,28 @@ pub(crate) fn parse_status(id: &str, p: &Value) -> PrinterStatus {
     }
 }
 
+/// The chamber as Bambu Studio reads it: `chamber_temper` with its target in `ctt`, and on printers
+/// that heat the chamber `device.ctc.info.temp`, the current temperature in the low 16 bits and the
+/// target in the high 16, which wins when the printer sends it.
+fn parse_chamber(p: &Value) -> Option<Temp> {
+    let num = |k: &str| p.get(k).and_then(Value::as_f64);
+    p.get("device")
+        .and_then(|d| d.get("ctc"))
+        .and_then(|c| c.get("info"))
+        .and_then(|i| i.get("temp"))
+        .and_then(Value::as_u64)
+        .map(|t| Temp {
+            current: f64::from(half(t)),
+            target: f64::from(half(t >> 16)),
+        })
+        .or_else(|| {
+            num("chamber_temper").map(|c| Temp {
+                current: c,
+                target: num("ctt").unwrap_or(0.0),
+            })
+        })
+}
+
 /// Bambu Studio's speed levels (`spd_lvl`): silent, standard, sport and ludicrous.
 const SPEED_LEVELS: [u16; 4] = [50, 100, 124, 166];
 
@@ -1191,6 +1239,97 @@ pub(crate) fn speed_level_percent(level: u64) -> Option<u16> {
         .ok()
         .and_then(|l| l.checked_sub(1))
         .and_then(|i| SPEED_LEVELS.get(i).copied())
+}
+
+/// The step a job is on, from the report's `stg_cur`, in our own words. The codes are the ones
+/// Bambu Studio names; 0 is plain printing and says nothing, as do -1, 255 and codes not listed.
+pub(crate) fn stage_words(code: i64) -> Option<&'static str> {
+    Some(match code {
+        1 => "Leveling the bed",
+        2 => "Heating the bed",
+        3 => "Measuring vibration for resonance compensation",
+        4 => "Changing filament",
+        5 => "Paused by an M400 in the G-code",
+        6 => "Paused: the filament ran out",
+        7 => "Heating the nozzle",
+        8 => "Calibrating flow dynamics",
+        9 => "Scanning the bed surface",
+        10 => "Inspecting the first layer",
+        11 => "Identifying the build plate",
+        12 | 18 => "Calibrating the lidar",
+        13 => "Homing the toolhead",
+        14 => "Cleaning the nozzle tip",
+        15 => "Checking the nozzle temperature",
+        16 => "Paused from the printer or an app",
+        17 => "Paused: the front cover came off",
+        19 => "Calibrating the flow ratio",
+        20 => "Paused: the nozzle temperature is out of control",
+        21 => "Paused: the bed temperature is out of control",
+        22 => "Unloading filament",
+        23 => "Paused: the motors skipped steps",
+        24 => "Loading filament",
+        25 => "Calibrating motor noise cancellation",
+        26 => "Paused: the AMS went offline",
+        27 => "Paused: the heatbreak fan is too slow",
+        28 => "Paused: the chamber temperature is out of control",
+        29 => "Cooling the chamber",
+        30 => "Paused by a G-code line sent to the printer",
+        31 => "Playing the motor noise test",
+        32 => "Paused: filament is clumping on the nozzle",
+        33 => "Paused: the filament cutter failed",
+        34 => "Paused: the first layer has a problem",
+        35 => "Paused: the nozzle is clogged",
+        36 => "Measuring motion precision",
+        37 => "Improving motion precision",
+        38 => "Measuring motion accuracy",
+        39 => "Calibrating the nozzle offset",
+        40 => "Leveling the bed at printing temperature",
+        41 => "Checking the quick release lever",
+        42 => "Checking the door and top cover",
+        43 => "Calibrating the laser",
+        44 => "Checking the platform",
+        45 => "Checking the BirdsEye camera position",
+        46 => "Calibrating the BirdsEye camera",
+        47 => "Leveling the bed (first pass)",
+        48 => "Leveling the bed (second pass)",
+        49 => "Heating the chamber",
+        50 => "Adjusting the bed temperature",
+        51 => "Printing calibration lines",
+        52 => "Checking the material",
+        53 => "Calibrating the live view camera",
+        54 => "Waiting for the bed to reach its temperature",
+        55 => "Checking the material position",
+        56 => "Calibrating the cutting module offset",
+        57 => "Measuring the surface",
+        58 => "Warming up for the first layer",
+        59 => "Homing the blade holder",
+        60 => "Calibrating the camera offset",
+        61 => "Calibrating the blade holder position",
+        62 => "Testing hotend pick and place",
+        63 => "Waiting for the chamber temperature to settle",
+        64 => "Preparing the hotend",
+        65 => "Calibrating nozzle clump detection",
+        66 => "Cleaning the chamber air",
+        67 => "Measuring the rotary attachment",
+        68 => "Moving the toolhead over the purge chute",
+        69 => "Cooling the nozzle",
+        70 => "Moving the toolhead to the middle of the bed",
+        71 => "Running arc fitting",
+        72 => "Detecting the hotend type",
+        73 => "Checking the build plate alignment",
+        74 => "Checking the bed surface for objects",
+        75 => "Checking under the bed for objects",
+        76 => "Extruding before the print",
+        77 => "Preparing the AMS",
+        _ => return None,
+    })
+}
+
+/// Whether a model shows a chamber temperature. Bambu Studio's printer settings show none for the
+/// P1P, A1, A1 mini and A2L (no chamber) and the P1S (a chamber, but no temperature reading), so
+/// a `chamber_temper` from them is not a reading. Unknown models keep what they report.
+pub(crate) fn shows_chamber_temperature(model: &str) -> bool {
+    !matches!(model, "P1P" | "P1S" | "A1" | "A1 mini" | "A2L")
 }
 
 /// A slot id from an AMS id and a slot number as the printer gives them (`snow`, `tray_now`). The
@@ -1378,6 +1517,8 @@ pub(crate) fn parse_issues(p: &Value) -> Vec<crate::types::PrinterIssue> {
                 0x07 => "AMS",
                 0x08 => "toolhead",
                 0x0c => "camera",
+                0x12 => "AMS lite",
+                0x18 => "AMS HT",
                 _ => "printer",
             };
             let severity = match code >> 16 {
@@ -2427,10 +2568,11 @@ const UNMAPPED: i64 = 255;
 
 /// `ams_mapping`, `ams_mapping2` and `use_ams` as Bambu Studio and Orca 2.4.2 build them
 /// for a print job: one entry per filament, indexed by the 0 based filament index. In `ams_mapping` an AMS
-/// tray is its global index (unit times four plus slot, 0 to 15) and anything else, the external
-/// spool included, is -1. `ams_mapping2` names every filament as `{ams_id, slot_id}`: the AMS unit
-/// and slot, 254 and 0 for the external spool, 255 and 255 for none. `use_ams` is true when any
-/// filament comes from the AMS and false when only the external spool feeds the print.
+/// tray is its global index (unit times four plus slot, 0 to 15), an AMS HT its unit id plus the
+/// slot (128 to 135, one slot each), and anything else, the external spool included, is -1.
+/// `ams_mapping2` names every filament as `{ams_id, slot_id}`: the AMS unit and slot (an AMS HT's
+/// unit id and 0), 254 and 0 for the external spool, 255 and 255 for none. `use_ams` is true when
+/// any filament comes from an AMS or AMS HT and false when only the external spool feeds the print.
 ///
 /// Studio sizes the arrays to the project's filament count. The start options carry only the
 /// filaments the plate uses, so here the arrays end at the highest mapped filament; every
@@ -2448,6 +2590,11 @@ fn ams_mapping(opts: &StartOptions) -> (Vec<i64>, Vec<Value>, bool) {
             Some(t @ (EXTERNAL_TRAY | SECOND_EXTERNAL_TRAY)) => {
                 v0.push(-1);
                 v1.push(json!({ "ams_id": t, "slot_id": 0 }));
+            }
+            Some(tray) if tray >= FIRST_HT_TRAY => {
+                any_ams = true;
+                v0.push(tray);
+                v1.push(json!({ "ams_id": tray, "slot_id": 0 }));
             }
             Some(tray) => {
                 any_ams = true;
@@ -2475,12 +2622,16 @@ pub(crate) fn slot_map_problem(m: &std::collections::BTreeMap<u32, String>) -> O
         ));
     }
     m.values().find(|s| slot_to_tray(s).is_none()).map(|s| {
-        format!("slot {s:?} in the slot map (AMS slots are A1 to D4, the external spools are 1 and 2)")
+        format!(
+            "slot {s:?} in the slot map (AMS slots are A1 to D4, AMS HT slots E1 to L1, the external spools are 1 and 2)"
+        )
     })
 }
 
-/// "A1".."D4" to the global tray index (unit * 4 + slot). The external spools are "1" (254) and,
-/// on H2 printers, "2" (255).
+/// "A1".."D4" to the global tray index (unit * 4 + slot). An AMS HT has one slot and its letter
+/// follows the regular units ([`unit_letter`]): "E1" is unit 128, through "L1", unit 135, and its
+/// tray index is the unit id plus the slot, as Bambu Studio counts it. The external spools are "1"
+/// (254) and, on H2 printers, "2" (255).
 pub(crate) fn slot_to_tray(slot: &str) -> Option<i64> {
     match slot {
         EXTERNAL_SLOT => return Some(EXTERNAL_TRAY),
@@ -2495,10 +2646,30 @@ pub(crate) fn slot_to_tray(slot: &str) -> Option<i64> {
         return None;
     }
     let n: i64 = rest.parse().ok()?;
-    if !(1..=4).contains(&n) || !(0..=3).contains(&unit) {
-        return None;
+    match unit {
+        0..=3 if (1..=4).contains(&n) => Some(unit * 4 + (n - 1)),
+        4..=11 if n == 1 => Some(FIRST_HT_TRAY + unit - 4),
+        _ => None,
     }
-    Some(unit * 4 + (n - 1))
+}
+
+/// The tray index of the first AMS HT (unit 128, slot "E1").
+const FIRST_HT_TRAY: i64 = 128;
+
+/// A slot in the map that this printer's status does not list, when the slot only exists on some
+/// printers: the second external spool ("2", H2 printers) and AMS HT slots. Sent anyway, the
+/// printer would be told to feed from hardware it does not have.
+fn slot_not_reported<'a>(
+    m: &'a std::collections::BTreeMap<u32, String>,
+    listed: &[FilamentSlot],
+) -> Option<&'a str> {
+    m.values()
+        .map(String::as_str)
+        .filter(|s| {
+            *s == SECOND_EXTERNAL_SLOT
+                || slot_to_tray(s).is_some_and(|t| (FIRST_HT_TRAY..EXTERNAL_TRAY).contains(&t))
+        })
+        .find(|s| !listed.iter().any(|l| l.id == *s))
 }
 
 #[async_trait]
@@ -2636,22 +2807,21 @@ impl PrinterSession for BambuSession {
         if let Some(why) = opts.slot_map.as_ref().and_then(slot_map_problem) {
             return Err(Error::not_supported("bambu", &why));
         }
-        // Slot 2 is the right nozzle's external spool of an H2 printer; it names nothing on a printer
-        // whose status does not list it.
-        if opts
+        // Slot 2 is the right nozzle's external spool of an H2 printer, and E1 to L1 are AMS HT
+        // slots; each names nothing on a printer whose status does not list it.
+        if let Some(missing) = opts
             .slot_map
             .as_ref()
-            .is_some_and(|m| m.values().any(|s| s == SECOND_EXTERNAL_SLOT))
-            && !self
-                .shared
-                .snapshot()
-                .slots
-                .iter()
-                .any(|s| s.id == SECOND_EXTERNAL_SLOT)
+            .and_then(|m| slot_not_reported(m, &self.shared.snapshot().slots))
         {
+            let why = if missing == SECOND_EXTERNAL_SLOT {
+                "this printer reports no loaded second external spool"
+            } else {
+                "this printer reports no AMS HT with that slot"
+            };
             return Err(Error::not_supported(
                 "bambu",
-                "slot \"2\" in the slot map (this printer reports no loaded second external spool)",
+                &format!("slot {missing:?} in the slot map ({why})"),
             ));
         }
         let is_3mf = std::path::Path::new(&file.name)
@@ -3925,12 +4095,117 @@ mod tests {
         );
     }
 
+    // A job under way names its step from `stg_cur`; plain printing (0), no step (-1, 255) and
+    // an idle or finished printer say nothing, and a current problem comes first.
+    #[test]
+    fn a_preparing_job_names_its_step() {
+        let st = |v: Value| parse_status("p", &v).message;
+        assert_eq!(
+            st(json!({ "gcode_state": "PREPARE", "stg_cur": 1 })).as_deref(),
+            Some("Leveling the bed")
+        );
+        assert_eq!(
+            st(json!({ "gcode_state": "RUNNING", "stg_cur": 7 })).as_deref(),
+            Some("Heating the nozzle")
+        );
+        assert_eq!(
+            st(json!({ "gcode_state": "PAUSE", "stg_cur": 6 })).as_deref(),
+            Some("Paused: the filament ran out")
+        );
+        assert_eq!(st(json!({ "gcode_state": "RUNNING", "stg_cur": 0 })), None);
+        assert_eq!(st(json!({ "gcode_state": "RUNNING", "stg_cur": -1 })), None);
+        assert_eq!(st(json!({ "gcode_state": "RUNNING", "stg_cur": 255 })), None);
+        assert_eq!(st(json!({ "gcode_state": "IDLE", "stg_cur": 1 })), None);
+        assert_eq!(st(json!({ "gcode_state": "FINISH", "stg_cur": 2 })), None);
+        let runout = st(json!({ "gcode_state": "PAUSE", "stg_cur": 6,
+            "hms": [ { "attr": 0x0700_2000_u64, "code": 0x0002_0001_u64 } ] }))
+        .unwrap();
+        assert!(runout.starts_with("AMS A slot 1 ran out"), "{runout}");
+        // Every code Bambu Studio names from 1 to 77 has our words.
+        assert!((1..=77).all(|c| stage_words(c).is_some()));
+        assert_eq!(stage_words(78), None);
+    }
+
+    // The chamber target comes from `ctt`, and a heated chamber's packed `device.ctc` wins.
+    #[test]
+    fn the_chamber_reads_its_target() {
+        let c = |v: Value| parse_status("p", &v).chamber;
+        assert_eq!(
+            c(json!({ "chamber_temper": 31.0 })),
+            Some(Temp {
+                current: 31.0,
+                target: 0.0
+            })
+        );
+        assert_eq!(
+            c(json!({ "chamber_temper": 31.0, "ctt": 45 })),
+            Some(Temp {
+                current: 31.0,
+                target: 45.0
+            })
+        );
+        assert_eq!(
+            c(json!({ "chamber_temper": 31.0,
+                "device": { "ctc": { "state": 0, "info": { "temp": 0x0037_0026 } } } })),
+            Some(Temp {
+                current: 38.0,
+                target: 55.0
+            })
+        );
+        assert_eq!(c(json!({ "gcode_state": "IDLE" })), None);
+    }
+
+    // Bambu Studio shows no chamber temperature for these models, so neither does the status.
+    #[test]
+    fn models_without_a_chamber_reading_show_none() {
+        for m in ["P1P", "P1S", "A1", "A1 mini", "A2L"] {
+            assert!(!shows_chamber_temperature(m), "{m}");
+        }
+        for m in [
+            "X1",
+            "X1 Carbon",
+            "X1E",
+            "P2S",
+            "X2D",
+            "H2D",
+            "H2D Pro",
+            "H2S",
+            "H2C",
+        ] {
+            assert!(shows_chamber_temperature(m), "{m}");
+        }
+    }
+
+    // AMS lite (module 12) and AMS HT (module 18) problems name their unit kind.
+    #[test]
+    fn ams_lite_and_ams_ht_issues_name_the_unit() {
+        let issues = parse_issues(&json!({ "gcode_state": "RUNNING", "hms": [
+            { "attr": 0x1200_2300_u64, "code": 0x0002_0001_u64 },
+            { "attr": 0x1800_0100_u64, "code": 0x0003_0099_u64 } ] }));
+        assert_eq!(issues[0].module, "AMS lite");
+        assert!(
+            issues[0].text.starts_with("AMS A slot 4 ran out"),
+            "{}",
+            issues[0].text
+        );
+        assert_eq!(issues[1].module, "AMS HT");
+        assert!(
+            issues[1].text.starts_with("The AMS HT needs attention"),
+            "{}",
+            issues[1].text
+        );
+    }
+
     #[test]
     fn tray_ids() {
         assert_eq!(slot_to_tray("A1"), Some(0));
         assert_eq!(slot_to_tray("B3"), Some(6));
         assert_eq!(slot_to_tray("1"), Some(254));
-        assert_eq!(slot_to_tray("E1"), None);
+        // AMS HT units have one slot each, E1 (unit 128) to L1 (unit 135).
+        assert_eq!(slot_to_tray("E1"), Some(128));
+        assert_eq!(slot_to_tray("L1"), Some(135));
+        assert_eq!(slot_to_tray("E2"), None);
+        assert_eq!(slot_to_tray("M1"), None);
         // "1" and "2" name the external spools, and a slot is one letter and one digit.
         assert_eq!(slot_to_tray("2"), Some(255));
         assert_eq!(slot_to_tray("3"), None);
@@ -3987,6 +4262,62 @@ mod tests {
         let p = mapped(&[(0, "1"), (1, "A2")]);
         assert_eq!(p["ams_mapping"], json!([-1, 1]));
         assert_eq!(p["use_ams"], true);
+    }
+
+    // An AMS HT tray goes as its unit id in `ams_mapping` and as that unit and slot 0 in
+    // `ams_mapping2`, which is how Bambu Studio counts AMS HT trays (unit id plus slot).
+    #[test]
+    fn an_ams_ht_slot_maps_by_its_unit_id() {
+        let p = mapped(&[(0, "E1")]);
+        assert_eq!(p["ams_mapping"], json!([128]));
+        assert_eq!(p["ams_mapping2"], json!([{ "ams_id": 128, "slot_id": 0 }]));
+        assert_eq!(p["use_ams"], true);
+        assert_eq!(mapped(&[(0, "F1")])["ams_mapping"], json!([129]));
+    }
+
+    #[test]
+    fn an_ams_tray_and_an_ams_ht_slot_map_together() {
+        let p = mapped(&[(0, "B2"), (1, "E1"), (2, "1")]);
+        assert_eq!(p["ams_mapping"], json!([5, 128, -1]));
+        assert_eq!(
+            p["ams_mapping2"],
+            json!([
+                { "ams_id": 1, "slot_id": 1 },
+                { "ams_id": 128, "slot_id": 0 },
+                { "ams_id": 254, "slot_id": 0 }
+            ])
+        );
+        assert_eq!(p["use_ams"], true);
+    }
+
+    // A slot only some printers have is refused when the status does not list it: an AMS HT
+    // letter past the units the printer reports, and slot 2 without an H2's second spool.
+    #[test]
+    fn a_slot_the_printer_does_not_report_is_found_before_sending() {
+        let listed: Vec<FilamentSlot> = ["A1", "A2", "A3", "A4", "E1", "1"]
+            .iter()
+            .map(|id| FilamentSlot {
+                id: (*id).to_owned(),
+                ..FilamentSlot::default()
+            })
+            .collect();
+        let map = |pairs: &[(u32, &str)]| {
+            pairs
+                .iter()
+                .map(|(k, v)| (*k, (*v).to_owned()))
+                .collect::<BTreeMap<_, _>>()
+        };
+        assert_eq!(
+            slot_not_reported(&map(&[(0, "A1"), (1, "E1"), (2, "1")]), &listed),
+            None
+        );
+        assert_eq!(
+            slot_not_reported(&map(&[(0, "A1"), (1, "F1")]), &listed),
+            Some("F1")
+        );
+        assert_eq!(slot_not_reported(&map(&[(0, "2")]), &listed), Some("2"));
+        // Regular AMS slots keep going by the slot map check alone.
+        assert_eq!(slot_not_reported(&map(&[(0, "B1")]), &listed), None);
     }
 
     // An H2 printer's two external spools go by their `vir_slot` ids, 254 for slot 1 and 255 for
@@ -4069,7 +4400,11 @@ mod tests {
         };
         assert_eq!(slot_map_problem(&map(&[(0, "A1"), (2, "D4"), (3, "1")])), None);
         // Sent as "unmapped" before, while the card named the slot.
-        assert!(slot_map_problem(&map(&[(0, "E1")])).unwrap().contains("\"E1\""));
+        assert!(slot_map_problem(&map(&[(0, "E2")])).unwrap().contains("\"E2\""));
+        // AMS HT slots map; a letter past the eight AMS HT units is refused like any unknown slot.
+        assert_eq!(slot_map_problem(&map(&[(0, "E1"), (1, "L1")])), None);
+        let why = slot_map_problem(&map(&[(0, "A1"), (1, "M1")])).unwrap();
+        assert!(why.contains("\"M1\"") && why.contains("E1 to L1"), "{why}");
         // Sized a mapping of four billion entries before.
         assert!(
             slot_map_problem(&map(&[(u32::MAX, "A1")]))

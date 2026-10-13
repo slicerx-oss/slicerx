@@ -84,6 +84,13 @@ export interface BambuExtra {
   authorizationControl?: 'verify' | 'silent'
   /** The card has no room: STOR is answered `452` and nothing is stored. */
   storageFull?: boolean
+  /** The step a job is on (`stg_cur`, Bambu Studio's stage codes: 1 bed leveling, 2 bed heating, 6 paused on a runout); absent when unset. */
+  stage?: number
+  /**
+   * A chamber target in C. An H2D then reports its chamber in `device.ctc.info.temp` (current in the low 16 bits,
+   * target in the high 16) and other models report the target as `ctt`, as Bambu Studio reads them. Unset: neither.
+   */
+  chamberTarget?: number
 }
 
 /**
@@ -131,7 +138,9 @@ function h2dHardware(m: MockMachine, x: BambuExtra): Record<string, unknown> {
   const virt = ext
     ? (vir_slot as { id: string }[]).map((t) => (t.id === '255' ? { id: '255', tray_type: ext.type, tray_color: `${ext.color.replace('#', '').toUpperCase()}FF`, remain: -1 } : t))
     : vir_slot
-  return { device: d, ams, vir_slot: virt, nozzle_diameter, nozzle_type, fun, sdcard }
+  const chamber = m.fx.chamber
+  const ctc = x.chamberTarget !== undefined && chamber ? { ctc: { state: 0, info: { temp: (Math.round(x.chamberTarget) << 16) | Math.round(chamber.current) } } } : {}
+  return { device: { ...d, ...ctc }, ams, vir_slot: virt, nozzle_diameter, nozzle_type, fun, sdcard }
 }
 
 /** The answer to an SSDP search, laid out as a recorded H2D answer, for the printer at `host`. */
@@ -179,6 +188,8 @@ export function reportFor(m: MockMachine, x: BambuExtra = { skipped: [], printEr
       nozzle_temper: n?.current, nozzle_target_temper: n?.target,
       bed_temper: m.fx.bed?.current, bed_target_temper: m.fx.bed?.target,
       chamber_temper: m.fx.chamber?.current,
+      ...(x.chamberTarget !== undefined && x.model !== 'O1D' ? { ctt: x.chamberTarget } : {}),
+      ...(x.stage !== undefined ? { stg_cur: x.stage } : {}),
       print_error: x.printError,
       spd_lvl: x.speedLevel ?? 2,
       cooling_fan_speed: active ? '15' : '0',
