@@ -6,7 +6,7 @@
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, MovedFace, Vec3 } from './types'
-import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, point, type History, type HistoryMesh, type PaintTexts, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
+import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, point, type History, type HistoryMesh, type PaintTexts, type PrimitiveSpec, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 import { EXACT_FELL_BACK, exactStep, meshed, type Solids } from './exact'
@@ -49,12 +49,14 @@ interface Flat {
   body?: number
   /** With `body`: its faces' keys, while its mesh is not made yet. */
   unmeshed?: number[]
+  /** The shape Add shape made the part as, until a step changes it; exact replays build the part from it. */
+  primitive?: PrimitiveSpec
 }
 
 /** Positions rounded to f32, as the app keeps them (Float32Array). */
 const asStored = (p: ArrayLike<number>): number[] => Array.from(p, Math.fround)
 
-const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: m.faces } : {}), ...(m.paint ? { paint: m.paint } : {}) })
+const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: m.faces } : {}), ...(m.paint ? { paint: m.paint } : {}), ...(m.primitive ? { primitive: m.primitive } : {}) })
 
 /** What a step that changed a painted part's triangles notes. */
 export const PAINT_DROPPED = 'This step changed the part, so its paint was cleared.'
@@ -64,7 +66,7 @@ export const PAINT_DROPPED = 'This step changed the part, so its paint was clear
  * more. `dropped` is told when there was paint, for the step's note.
  */
 const next = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }, dropped?: () => void): Flat => {
-  const { faces: _old, paint, smb: _smb, body: _body, unmeshed: _keys, ...rest } = part
+  const { faces: _old, paint, smb: _smb, body: _body, unmeshed: _keys, primitive: _made, ...rest } = part
   if (paint && dropped) dropped()
   return { ...rest, positions: m.positions, indices: m.indices, ...(m.faces ? { faces: m.faces } : {}) }
 }
@@ -224,7 +226,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
   const p = s.params
   // Every call of the step makes its faces' keys from the step's own salt, as when the tool first ran it.
   const call: EngineCall = (op, r) => engine(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
-  if (exact && (parts.some((x) => x.smb || x.body !== undefined) || p.op === 'shape.extrude')) {
+  if (exact && (parts.some((x) => x.smb || x.body !== undefined || x.primitive) || p.op === 'shape.extrude')) {
     const done = await exactStep(
       call,
       s,
@@ -504,7 +506,8 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   let gone = new Set<string>()
   // Keys after each step; a step's key covers everything that can change its result.
   const keys: string[] = []
-  let k = req.exact ? hash(meshHash(history.base), 'exact') : meshHash(history.base)
+  // the shapes base parts were made as change an exact replay's parts, so they are in its key
+  let k = req.exact ? hash(meshHash(history.base), JSON.stringify(['exact', history.base.map((m) => m.primitive ?? 0)])) : meshHash(history.base)
   const baseKey = k
   const effective = steps.map((s) => followed(s, steps))
   for (const s of effective) {

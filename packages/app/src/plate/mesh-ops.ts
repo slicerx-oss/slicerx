@@ -3,7 +3,7 @@
 // Mesh edits the app does itself: split into connected pieces, merge objects into one, and the
 // basic primitives. Pure, on the contracts' MeshPart buffers (mm, Z up). Booleans (negative
 // volumes) need sx-geom and are not here.
-import type { MeshPart } from '@slicerx/contracts'
+import type { MeshPart, PrimitiveSpec } from '@slicerx/contracts'
 import { apply, identity, multiply, type Mat4, type Vec3 } from './transform'
 
 /** Groups triangles that share a vertex position (welded to 1 um) into connected pieces. */
@@ -168,7 +168,9 @@ export function bake(part: MeshPart, m: Mat4): MeshPart {
     indices = new Uint32Array(part.indices)
     for (let t = 0; t + 2 < indices.length; t += 3) [indices[t + 1], indices[t + 2]] = [indices[t + 2]!, indices[t + 1]!]
   }
-  return { ...part, positions: p, indices }
+  const { primitive: spec, ...rest } = part
+  const moved = spec ? movedPrimitive(spec, m) : null
+  return { ...rest, positions: p, indices, ...(moved ? { primitive: moved } : {}) }
 }
 
 /** Merge: the parts of every object in the first object's frame, so the first keeps its transform. */
@@ -238,15 +240,32 @@ export function sphereMesh(diameter: number, rings = 24, segments = 48): MeshPar
   return part('Sphere', p, ix)
 }
 
+/** A primitive, tagged with the shape it is so an exact replay can build it as a true solid. */
 export function primitive(shape: PrimitiveShape, sizeMm = 20): MeshPart {
+  const frame: PrimitiveSpec['frame'] = { origin: [0, 0, 0], u: [1, 0, 0], normal: [0, 0, 1] }
   switch (shape) {
     case 'box':
-      return boxMesh(sizeMm, sizeMm, sizeMm)
+      return { ...boxMesh(sizeMm, sizeMm, sizeMm), primitive: { type: 'box', sizeMm: [sizeMm, sizeMm, sizeMm], frame } }
     case 'cylinder':
-      return cylinderMesh(sizeMm, sizeMm)
+      return { ...cylinderMesh(sizeMm, sizeMm), primitive: { type: 'cylinder', diameterMm: sizeMm, heightMm: sizeMm, frame } }
     case 'cone':
-      return cylinderMesh(sizeMm, sizeMm, 48, 0)
+      return { ...cylinderMesh(sizeMm, sizeMm, 48, 0), primitive: { type: 'cone', diameterMm: sizeMm, topDiameterMm: 0, heightMm: sizeMm, frame } }
     case 'sphere':
-      return sphereMesh(sizeMm)
+      return { ...sphereMesh(sizeMm), primitive: { type: 'sphere', diameterMm: sizeMm, frame } }
   }
+}
+
+/** The shape tag moved with a part by `m`: kept through a rigid move, dropped by any other. */
+function movedPrimitive(spec: PrimitiveSpec, m: Mat4): PrimitiveSpec | null {
+  const col = (k: number): [number, number, number] => [m[k * 4] ?? 0, m[k * 4 + 1] ?? 0, m[k * 4 + 2] ?? 0]
+  const [x, y, z] = [col(0), col(1), col(2)]
+  const dot = (a: number[], b: number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!
+  const unit = (a: number[]) => Math.abs(dot(a, a) - 1) < 1e-9
+  const right = (a: number[], b: number[]) => Math.abs(dot(a, b)) < 1e-9
+  const det = dot(x, [y[1] * z[2] - y[2] * z[1], y[2] * z[0] - y[0] * z[2], y[0] * z[1] - y[1] * z[0]])
+  if (!(unit(x) && unit(y) && unit(z) && right(x, y) && right(y, z) && right(x, z) && det > 0)) return null
+  const dir = (v: [number, number, number]): [number, number, number] => [x[0] * v[0] + y[0] * v[1] + z[0] * v[2], x[1] * v[0] + y[1] * v[1] + z[1] * v[2], x[2] * v[0] + y[2] * v[1] + z[2] * v[2]]
+  const { origin: o, u, normal } = spec.frame
+  const at = dir(o)
+  return { ...spec, frame: { origin: [at[0] + (m[12] ?? 0), at[1] + (m[13] ?? 0), at[2] + (m[14] ?? 0)], u: dir(u), normal: dir(normal) } }
 }

@@ -118,6 +118,8 @@ fn check(
 /// How far a mesh with round faces may be from the exact solid: its circles are polygons within the engine's arc
 /// tolerance, under a thousandth of the volume at these sizes.
 const ARC_TOL: f64 = 2e-3;
+/// geom.build's cylinders are 32 sided, about 0.6 percent under the round one.
+const BUILD_TOL: f64 = 1e-2;
 
 fn cube() -> Value {
     made("box", json!({ "min": [0, 0, 0], "max": [20, 20, 20] }))
@@ -446,6 +448,50 @@ fn extrude_with_a_hole() {
         (600.0 - 9.0 * PI) * 4.0,
         [0.0; 3],
         [30.0, 20.0, 4.0],
+    );
+}
+
+/// Add shape parts against the solids geom.build meshes; the app's own meshes are checked in brep-module.test.ts.
+#[test]
+fn add_shapes_against_built_meshes() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let block = made(
+        "primitive",
+        json!({ "type": "box", "sizeMm": [20, 10, 5], "frame": { "origin": [10, 10, 0], "u": [1, 0, 0], "normal": [0, 0, 1] } }),
+    );
+    let built = call(
+        "build",
+        &json!({ "solids": [{ "type": "box", "min": [0, 5, 0], "max": [20, 15, 5] }] }),
+    );
+    check(
+        "add box",
+        &brep_solid(&block),
+        0.0,
+        &mesh_solid(&built["mesh"]),
+        0.0,
+        1000.0,
+        [0.0, 5.0, 0.0],
+        [20.0, 15.0, 5.0],
+    );
+    let peg = made(
+        "primitive",
+        json!({ "type": "cylinder", "diameterMm": 8, "heightMm": 12, "frame": { "origin": [0, 0, 0], "u": [0, 1, 0], "normal": [1, 0, 0] } }),
+    );
+    let built = call(
+        "build",
+        &json!({ "solids": [{ "type": "cylinder", "origin": [0, 0, 0], "axis": [1, 0, 0], "diameterMm": 8, "heightMm": 12 }] }),
+    );
+    check(
+        "add cylinder",
+        &brep_solid(&peg),
+        0.0,
+        &mesh_solid(&built["mesh"]),
+        BUILD_TOL,
+        PI * 16.0 * 12.0,
+        [0.0, -4.0, -4.0],
+        [12.0, 4.0, 4.0],
     );
 }
 

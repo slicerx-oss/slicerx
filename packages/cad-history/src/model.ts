@@ -5,10 +5,11 @@
 // they were when it ran, plus the object's transform at that moment; replaying it with the current
 // local mesh and that transform gives the same result wherever the object has moved since. No
 // React, no store and no engine calls in here, so the geometry worker can load it too.
+import type { PrimitiveSpec } from '@slicerx/contracts'
 import { copyCount, type Pattern } from './pattern'
 import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchConstraint, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from './types'
 
-export type { EdgeRef, Mat4 }
+export type { EdgeRef, Mat4, PrimitiveSpec }
 
 /** A mesh in the engine's flat form, with the part's name and filament slot. */
 /** A paint layer, as the app and a 3MF name them. */
@@ -39,6 +40,8 @@ export interface HistoryMesh {
   paint?: PaintTexts
   /** The engine's faces, with the keys steps name them by (docs/cad-history.md, "Face keys"); a replay keeps them. */
   faces?: { ids: ArrayLike<number>; table: unknown[]; keys?: number[] }
+  /** The shape Add shape made the part as; exact replays build it from this when the triangles still fit it. */
+  primitive?: PrimitiveSpec
 }
 
 export type StepParams =

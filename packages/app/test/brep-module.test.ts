@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The B-rep kernel's wasm module (packages/brep/lib) through the worker's wrapper: a hole as deep as the part comes
-// out closed with its exact volume, every triangle names its face, and errors arrive as thrown messages.
+// out closed with its exact volume, every triangle names its face, the Add shapes stand where their meshes do, and
+// errors arrive as thrown messages.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import init from '../../brep/lib/sx_brep.mjs'
 import { brepModule, type BrepModule } from '../src/geom/brep'
+import { bake, primitive } from '../src/plate/mesh-ops'
+import { compose } from '../src/plate/transform'
 
 const wasm = readFileSync(new URL('../../brep/lib/sx_brep.wasm', import.meta.url))
 let kernel: Promise<BrepModule> | null = null
@@ -44,6 +47,21 @@ function openEdges(indices: number[]): number {
 // exact to the kernel's volume integration, the same tolerance as packages/brep/tests/kernel.rs
 function close(got: number, want: number) {
   expect(Math.abs(got - want)).toBeLessThanOrEqual(1e-6 * Math.max(Math.abs(want), 1))
+}
+
+function boxOf(p: ArrayLike<number>): number[] {
+  const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity]
+  for (let i = 0; i < p.length; i += 3) for (let k = 0; k < 3; k++) [b[k], b[k + 3]] = [Math.min(b[k]!, p[i + k]!), Math.max(b[k + 3]!, p[i + k]!)]
+  return b
+}
+
+function meshVolume(x: ArrayLike<number>, ix: ArrayLike<number>): number {
+  let v = 0
+  for (let t = 0; t + 2 < ix.length; t += 3) {
+    const [a, b, c] = [ix[t]! * 3, ix[t + 1]! * 3, ix[t + 2]! * 3]
+    v += (x[a]! * (x[b + 1]! * x[c + 2]! - x[b + 2]! * x[c + 1]!) - x[a + 1]! * (x[b]! * x[c + 2]! - x[b + 2]! * x[c]!) + x[a + 2]! * (x[b]! * x[c + 1]! - x[b + 1]! * x[c]!)) / 6
+  }
+  return v
 }
 
 describe('B-rep kernel module', () => {
@@ -90,6 +108,26 @@ describe('B-rep kernel module', () => {
     close((k.call('info', { body: { smb: native } }) as Info).volumeMm3, 8000 - Math.PI * 16 * 20)
     expect(() => k.call('info', { body: { smb: holed.bodySmb.replace('20.5000000000000000', '20.6000000000000000') } })).toThrow(/^body:/)
     for (const b of [cube, holed.body]) k.call('free', { body: b })
+  })
+
+  it('builds each Add shape where its mesh stands, with the true volume', async () => {
+    const k = await brep()
+    const at = compose({ position: [128, 96, 0], rotation: [0, 0, 35], scale: [1, 1, 1] })
+    for (const s of ['box', 'cylinder', 'cone', 'sphere'] as const) {
+      const m = bake(primitive(s, 20), at)
+      const { body } = k.call('primitive', m.primitive) as Body
+      const info = k.call('info', { body }) as Info
+      expect(info.manifold, s).toBe(true)
+      close(info.volumeMm3, { box: 8000, cylinder: Math.PI * 100 * 20, cone: (Math.PI * 100 * 20) / 3, sphere: (4 / 3) * Math.PI * 1000 }[s])
+      // the mesh is the same shape in facets: the same box around it, and a little less inside
+      const t = k.call('tessellate', { body }) as Mesh
+      const [a, b] = [boxOf(t.positions), boxOf(m.positions)]
+      for (let i = 0; i < 6; i++) expect(Math.abs(a[i]! - b[i]!), `${s} bounds`).toBeLessThan(0.3)
+      const ratio = meshVolume(m.positions, m.indices) / info.volumeMm3
+      expect(ratio, s).toBeGreaterThan(0.98)
+      expect(ratio, s).toBeLessThanOrEqual(1.000001)
+      k.call('free', { body })
+    }
   })
 
   it('throws the message of a failed call', async () => {

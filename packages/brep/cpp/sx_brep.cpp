@@ -354,6 +354,34 @@ SmBrep* make_cylinder(const SmVector3d& origin, const SmVector3d& axis, double d
     return b;
 }
 
+// a shape as Add shape makes it, standing on the frame's origin and centered on its normal: a box of sizeMm (along
+// u, v, normal), a cylinder, a cone (topDiameterMm below diameterMm, 0 for a point) or a sphere
+SmBrep* make_primitive(const Value& r)
+{
+    const std::string& t = r["type"].s;
+    SmBrep* b = nullptr;
+    if (t == "box") {
+        SmVector3d s = v3(r, "sizeMm");
+        b = make_box(SmVector3d(-s.x / 2, -s.y / 2, 0), SmVector3d(s.x / 2, s.y / 2, s.z));
+    } else if (t == "cylinder" || t == "cone") {
+        double d = num(r, "diameterMm"), h = num(r, "heightMm"), top = t == "cone" ? num(r, "topDiameterMm") : d;
+        if (!(d > 0)) throw Error("diameterMm", "must be more than 0 mm");
+        if (!(h > 0)) throw Error("heightMm", "must be more than 0 mm");
+        if (!(top >= 0 && top <= d)) throw Error("topDiameterMm", "must be 0 to diameterMm");
+        if (t == "cylinder") check(SmApiCreateCylinder(SmVector3d(0, 0, 0), d / 2, h, b), "cylinder");
+        else check(SmApiCreateCone(SmVector3d(0, 0, 0), d / 2, top / 2, h, b), "cone");
+    } else if (t == "sphere") {
+        double d = num(r, "diameterMm");
+        if (!(d > 0)) throw Error("diameterMm", "must be more than 0 mm");
+        check(SmApiCreateSphere(SmVector3d(0, 0, d / 2), d / 2, b), "sphere");
+    } else {
+        throw Error("type", "must be box, cylinder, cone or sphere");
+    }
+    if (!b) throw Error("kernel", "the shape made nothing");
+    if (r.has("frame")) place(b, frame_of(r["frame"]));
+    return b;
+}
+
 // a closed loop in the frame's plane: a polygon ({"points": [[x, y], ...]}), a circle ({"center", "diameterMm"}),
 // or lines and arcs from a start ({"start", "segments": [{"to"}, or {"to", "center", "sweepDeg"} for an arc]})
 void loop_curves(const Value& l, double z, SmTArray<SmCurve*>& out)
@@ -978,6 +1006,8 @@ Value run(const std::string& op, const Value& r)
     Value out = Value::object();
     if (op == "box") {
         out.set("body", Value(keep(fresh_keys(make_box(v3(r, "min"), v3(r, "max"))))));
+    } else if (op == "primitive") {
+        out.set("body", Value(keep(fresh_keys(make_primitive(r)))));
     } else if (op == "cylinder") {
         out.set("body", Value(keep(fresh_keys(make_cylinder(v3(r, "origin"), v3(r, "axis"), num(r, "diameterMm"), num(r, "heightMm"))))));
     } else if (op == "extrude") {
