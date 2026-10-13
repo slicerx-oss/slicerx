@@ -10,7 +10,7 @@
 // here snaps, moves the rubber band in its fixed buffer and writes one text node; it renders no
 // React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
-import { afterLoopChange, curveStates, dofText, fromSolver, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
+import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent, SketchEvent, SketchScene, SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch } from '@slicerx/ui'
@@ -311,6 +311,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           return
         }
         const r = click(l.sketch, l.draft, s.at)
+        // the next click can come before the next render
+        l.sketch = r.sketch
+        l.draft = r.draft
         setSketch(r.sketch)
         setDraft(r.draft)
         setField(null)
@@ -487,6 +490,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         </span>
       </p>
       <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" /></p>
+      {solved ? (
+        <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)}>
+          {dofText(solved.solved)}
+        </p>
+      ) : null}
       <div className="cad-pair">
         <Field htmlFor="sk-grid" label="Grid snap">
           <Select id="sk-grid" value={grid} onChange={(e) => setGrid(e.target.value)}>
@@ -498,11 +506,6 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         </Field>
         <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
       </div>
-      {solved ? (
-        <p className="cad-hint" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof}>
-          {dofText(solved.solved)}
-        </p>
-      ) : null}
       {issues.length ? (
         <ul className="cad-issues" role="status">
           {issues.slice(0, 6).map((i, k) => (

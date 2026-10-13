@@ -5,6 +5,10 @@
 .cad-hint, .cad-note { margin: 0; display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-sm); color: var(--muted); }
 .cad-hint .sx-ic, .cad-note .sx-ic { flex: none; margin-top: 2px; }
 .cad-hint .sx-ic { color: var(--cyan); }
+/* The sketch's status line: how defined it is, as Fusion shows it. */
+.sketch-dof { margin: 2px 0 6px; font-size: var(--fs-sm); color: var(--dim); }
+.sketch-dof[data-tone='done'] { color: var(--green); }
+.sketch-dof[data-tone='warn'] { color: var(--orange); }
 .cad-note { color: var(--fg); }
 .cad-note .sx-ic { color: var(--orange); }
 .cad-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
