@@ -103,8 +103,7 @@ test('D dimensions a rectangle until it is fully defined, and the extrude follow
   // the top's length is already set: kept, driven, in parentheses, and the sketch stays fully defined
   await dimension([await segMid(page, 2)], [22, 26], 'Length', '30')
   await expect.poll(async () => (await scene(page))?.dims?.map((d) => d.label)).toContain('(25)')
-  await expect(panel).toContainText('this dimension is driven')
-  await expect(dof).toHaveText('Fully constrained')
+  await expect(dof).toHaveText('Fully constrained, 1 driven')
   // picked with Select, Delete takes it off
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Select' }).click()
   const driven = ((await scene(page))?.dims ?? []).findIndex((d) => d.label === '(25)')

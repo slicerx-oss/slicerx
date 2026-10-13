@@ -9,6 +9,7 @@
 .sketch-dof { margin: 2px 0 6px; font-size: var(--fs-sm); color: var(--dim); }
 .sketch-dof[data-tone='done'] { color: var(--green); }
 .sketch-dof[data-tone='warn'] { color: var(--orange); }
+.sketch-driven { color: var(--dim); }
 /* The sketch palette: Look at, grid and snap, section, and what the sketch shows. */
 .sketch-palette { display: grid; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .sketch-palette > .sx-btn { justify-self: start; }
@@ -28,6 +29,8 @@
 .cad-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-md); }
 .cad-row label { color: var(--fg); }
 .cad-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
+/* a tool's own actions stay on screen at the foot of the sidebar while the panel scrolls above them */
+.cad-footer { position: sticky; bottom: 0; z-index: 3; margin: 0 -18px -16px; padding: 10px 18px 16px; background: var(--ink-1); border-top: 1px solid var(--line-soft); }
 /* A tool's number: the body font with even figures, the unit once beside the label. */
 .cad-num { font-variant-numeric: tabular-nums; }
 .cad-num-unit { margin-left: 4px; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--dim); }
