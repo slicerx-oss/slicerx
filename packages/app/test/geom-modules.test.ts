@@ -33,6 +33,21 @@ describe('the geometry engine modules', () => {
     expect(await m.run('boolean', { a: [a], b: [] })).toBe('full:boolean')
   })
 
+  it('never walks the bytes of a file or a mesh array to look for face ids', async () => {
+    const log: string[] = []
+    const m = engineModules(fake('core', ['format.read3mf', 'repair'], log), fake('full', ['format.read3mf', 'repair'], log))
+    const entries = vi.spyOn(Object, 'entries')
+    try {
+      // A project goes to the engine as its bytes; each byte as an entry was minutes of work on a big project in WebKit.
+      expect(await m.run('format.read3mf', { data: { bytes: new Uint8Array(4096) } })).toBe('core:format.read3mf')
+      expect(await m.run('repair', { mesh: { positions: new Float32Array(9), indices: new Uint32Array(3), normals: new Float32Array(9) } })).toBe('core:repair')
+      expect(entries.mock.calls.filter(([v]) => ArrayBuffer.isView(v))).toEqual([])
+    } finally {
+      entries.mockRestore()
+    }
+    expect(log).toEqual(['load core'])
+  })
+
   it('starts on the full engine when there is no core build', async () => {
     const log: string[] = []
     const missing = async (): Promise<EngineModule> => {

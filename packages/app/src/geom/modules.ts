@@ -11,9 +11,13 @@ export interface EngineModule {
   call(op: string, request: unknown): unknown
 }
 
-/** Whether a request carries a mesh with face ids (the core build would drop them). */
+/**
+ * Whether a request carries a mesh with face ids (the core build would drop them). A typed array holds numbers only
+ * (a mesh's arrays, a project file's bytes) and is never walked: listing the entries of a 36 MB file's bytes took
+ * minutes in WebKit, and held a project's open back that long before its model could show.
+ */
 export function carriesFaces(request: unknown): boolean {
-  if (request === null || typeof request !== 'object') return false
+  if (request === null || typeof request !== 'object' || ArrayBuffer.isView(request)) return false
   if (Array.isArray(request)) return request.some(carriesFaces)
   for (const [k, v] of Object.entries(request)) {
     if (k === 'faces' && v !== null && typeof v === 'object' && 'ids' in v) return true
