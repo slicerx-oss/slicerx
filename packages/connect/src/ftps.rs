@@ -20,12 +20,58 @@ pub(crate) struct FtpsTarget<'a> {
     pub password: &'a str,
 }
 
+/// How long one step of an upload may take: connecting, a command's reply, or one chunk of the
+/// file going out. A slow link that keeps moving finishes; a stalled one fails at the step where it
+/// stalled, and the error says which.
+const STEP: Duration = Duration::from_secs(30);
+/// The printer writes the file to its card before it answers the end of the upload.
+const FINAL_REPLY: Duration = Duration::from_secs(60);
+/// The bytes written per step of the upload.
+const CHUNK: usize = 64 * 1024;
+/// A ceiling for the whole upload, so a link that trickles on for ever still ends.
+const WHOLE_UPLOAD: Duration = Duration::from_mins(30);
+
 pub(crate) async fn store(t: &FtpsTarget<'_>, name: &str, data: &[u8]) -> Result<()> {
-    // The whole exchange gets a deadline so a stalled printer cannot hang the caller.
-    let secs = 30 + u64::try_from(data.len() / 500_000).unwrap_or(0);
-    tokio::time::timeout(Duration::from_secs(secs), run(t, name, data))
+    store_with(t, name, data, STEP).await
+}
+
+/// [`store`] with the step time as a parameter, so tests can use a short one.
+async fn store_with(t: &FtpsTarget<'_>, name: &str, data: &[u8], step: Duration) -> Result<()> {
+    tokio::time::timeout(WHOLE_UPLOAD, run(t, name, data, step))
         .await
-        .map_err(|_| Error::unreachable(t.printer, "FTPS upload timed out"))?
+        .map_err(|_| {
+            Error::unreachable(
+                t.printer,
+                format!(
+                    "FTPS upload still not done after {} minutes",
+                    WHOLE_UPLOAD.as_secs() / 60
+                ),
+            )
+        })?
+}
+
+/// Runs one step of an upload with its own deadline; `what` names the step in the error.
+async fn step<T>(
+    t: &FtpsTarget<'_>,
+    limit: Duration,
+    what: impl FnOnce() -> String,
+    f: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    tokio::time::timeout(limit, f).await.map_err(|_| {
+        Error::unreachable(
+            t.printer,
+            format!(
+                "FTPS upload stalled: {} got no answer in {} s",
+                what(),
+                limit.as_secs()
+            ),
+        )
+    })?
+}
+
+/// Megabytes, one decimal, for the errors.
+fn mb(n: usize) -> String {
+    format!("{}.{} MB", n / 1_000_000, n % 1_000_000 / 100_000)
 }
 
 type Ctl = (
@@ -237,25 +283,29 @@ async fn passive<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     pasv_port(&text).ok_or_else(|| Error::protocol(t.printer, "bad PASV reply"))
 }
 
-async fn run(t: &FtpsTarget<'_>, name: &str, data: &[u8]) -> Result<()> {
+async fn run(t: &FtpsTarget<'_>, name: &str, data: &[u8], limit: Duration) -> Result<()> {
     if name.contains(['\r', '\n', '/']) || name.is_empty() {
         return Err(Error::protocol(t.printer, "unsafe file name"));
     }
-    let (mut rd, mut wr, connector, server_name) = login(t).await?;
-    let port = passive(t, &mut rd, &mut wr).await?;
+    let (mut rd, mut wr, connector, server_name) =
+        step(t, limit, || "the login".to_owned(), login(t)).await?;
+    let port = step(t, limit, || "PASV".to_owned(), passive(t, &mut rd, &mut wr)).await?;
 
     // The printer may report an unroutable address, so the data connection goes to the
     // host the control connection used.
-    let dtcp = TcpStream::connect((t.host, port))
-        .await
-        .map_err(|e| Error::unreachable(t.printer, e))?;
+    let dtcp = step(t, limit, || "the data connection".to_owned(), async {
+        TcpStream::connect((t.host, port))
+            .await
+            .map_err(|e| Error::unreachable(t.printer, e))
+    })
+    .await?;
     send(t, &mut wr, &format!("STOR {name}")).await?;
-    let mut dtls = match connector.connect(server_name, dtcp).await {
-        Ok(d) => d,
+    let mut dtls = match tokio::time::timeout(limit, connector.connect(server_name, dtcp)).await {
+        Ok(Ok(d)) => d,
         // A server that turns STOR away (a full card: 452) may drop the data connection before
         // its handshake. Its reply on the control connection says why, so that decides the error;
         // with no reply in time the printer is unreachable.
-        Err(e) => {
+        Ok(Err(e)) => {
             if let Ok(Ok(code)) = tokio::time::timeout(Duration::from_secs(5), reply(t, &mut rd)).await
                 && code != 150
                 && code != 125
@@ -264,24 +314,59 @@ async fn run(t: &FtpsTarget<'_>, name: &str, data: &[u8]) -> Result<()> {
             }
             return Err(Error::unreachable(t.printer, e));
         }
+        Err(_) => {
+            return Err(Error::unreachable(
+                t.printer,
+                format!(
+                    "FTPS upload stalled: the data connection's TLS handshake got no answer in {} s",
+                    limit.as_secs()
+                ),
+            ));
+        }
     };
-    let code = reply(t, &mut rd).await?;
+    let code = step(t, limit, || "STOR".to_owned(), reply(t, &mut rd)).await?;
     if code != 150 && code != 125 {
         return Err(stor_failure(t.printer, code, "STOR"));
     }
-    dtls.write_all(data)
-        .await
-        .map_err(|e| Error::unreachable(t.printer, e))?;
-    dtls.shutdown()
-        .await
-        .map_err(|e| Error::unreachable(t.printer, e))?;
+    // The file goes out in chunks, each with its own deadline: a slow link that keeps moving is
+    // fine, one that stops for a whole step is not.
+    let mut sent = 0;
+    for chunk in data.chunks(CHUNK) {
+        match tokio::time::timeout(limit, dtls.write_all(chunk)).await {
+            Ok(r) => r.map_err(|e| Error::unreachable(t.printer, e))?,
+            Err(_) => {
+                return Err(Error::unreachable(
+                    t.printer,
+                    format!(
+                        "FTPS upload stalled after {} of {}: no data went out for {} s",
+                        mb(sent),
+                        mb(data.len()),
+                        limit.as_secs()
+                    ),
+                ));
+            }
+        }
+        sent += chunk.len();
+    }
+    step(t, limit, || "the end of the upload".to_owned(), async {
+        dtls.shutdown()
+            .await
+            .map_err(|e| Error::unreachable(t.printer, e))
+    })
+    .await?;
     // Read what the server still sends (TLS 1.3 session tickets, its close_notify) until it closes. A
     // socket closed with unread data is reset, and on Windows the reset can reach the server before
     // the upload's end does, so it never answers 226. A server that just closes ends the read too.
     let mut rest = Vec::new();
     let _ = tokio::time::timeout(Duration::from_secs(5), dtls.read_to_end(&mut rest)).await;
     drop(dtls);
-    let code = reply(t, &mut rd).await?;
+    let code = step(
+        t,
+        FINAL_REPLY.max(limit),
+        || format!("the printer's reply after all {} went out", mb(data.len())),
+        reply(t, &mut rd),
+    )
+    .await?;
     if code != 226 {
         return Err(stor_failure(t.printer, code, "the upload"));
     }
@@ -419,5 +504,164 @@ mod tests {
             Some(2000)
         );
         assert_eq!(super::pasv_port("227 nope"), None);
+    }
+}
+
+#[cfg(test)]
+mod upload_tests {
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    use rustls::ServerConfig;
+    use rustls::pki_types::pem::PemObject;
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+    use rustls::server::{ClientHello, ResolvesServerCert};
+    use rustls::sign::CertifiedKey;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::TcpListener;
+    use tokio_rustls::TlsAcceptor;
+
+    use super::{FtpsTarget, store_with};
+
+    #[derive(Debug)]
+    struct Fixed(Arc<CertifiedKey>);
+
+    impl ResolvesServerCert for Fixed {
+        fn resolve(&self, _hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+            Some(self.0.clone())
+        }
+    }
+
+    /// The test certificate from src/tls.rs's tests, served as a printer serves its v1 certificate.
+    fn acceptor() -> TlsAcceptor {
+        let cert =
+            CertificateDer::from_pem_slice(include_bytes!("../tests/fixtures/v1-test.cert.pem")).unwrap();
+        let key = PrivateKeyDer::from_pem_slice(include_bytes!("../tests/fixtures/v1-test.key.pem")).unwrap();
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let signer = provider.key_provider.load_private_key(key).unwrap();
+        let server = ServerConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_cert_resolver(Arc::new(Fixed(Arc::new(CertifiedKey::new(vec![cert], signer)))));
+        TlsAcceptor::from(Arc::new(server))
+    }
+
+    /// How the fake printer reads the file.
+    #[derive(Clone, Copy)]
+    enum Reads {
+        /// `bytes` every `every`: a slow link that keeps moving.
+        Slowly { bytes: usize, every: Duration },
+        /// Takes `after` bytes, then reads nothing more: a stalled link.
+        StopsAfter { after: usize },
+    }
+
+    /// An implicit-TLS FTP server that takes one STOR the way `reads` says; its control port.
+    async fn printer(reads: Reads) -> u16 {
+        let ctl = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = ctl.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let acceptor = acceptor();
+            let (tcp, _) = ctl.accept().await.unwrap();
+            let tls = acceptor.accept(tcp).await.unwrap();
+            let (rd, mut wr) = tokio::io::split(tls);
+            let mut rd = BufReader::new(rd);
+            wr.write_all(b"220 fake\r\n").await.unwrap();
+            let data = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let dport = data.local_addr().unwrap().port();
+            let mut line = String::new();
+            while rd.read_line(&mut line).await.unwrap() > 0 {
+                let cmd = line.trim_end().to_owned();
+                line.clear();
+                let answer = match cmd.split(' ').next().unwrap_or("") {
+                    "USER" => "331 password".to_owned(),
+                    "PASS" => "230 in".to_owned(),
+                    "PASV" => format!(
+                        "227 Entering Passive Mode (127,0,0,1,{},{})",
+                        dport >> 8,
+                        dport & 255
+                    ),
+                    "STOR" => {
+                        let (dtcp, _) = data.accept().await.unwrap();
+                        let mut dtls = acceptor.accept(dtcp).await.unwrap();
+                        wr.write_all(b"150 send it\r\n").await.unwrap();
+                        let mut buf = vec![0_u8; 64 * 1024];
+                        let mut got = 0;
+                        match reads {
+                            Reads::Slowly { bytes, every } => loop {
+                                let n = dtls.read(&mut buf[..bytes]).await.unwrap();
+                                if n == 0 {
+                                    break;
+                                }
+                                got += n;
+                                tokio::time::sleep(every).await;
+                            },
+                            Reads::StopsAfter { after } => {
+                                while got < after {
+                                    got += dtls.read(&mut buf).await.unwrap();
+                                }
+                                // Holds the connection open and reads nothing more.
+                                tokio::time::sleep(Duration::from_secs(600)).await;
+                            }
+                        }
+                        let _ = got;
+                        "226 done".to_owned()
+                    }
+                    "QUIT" => break,
+                    _ => "200 ok".to_owned(),
+                };
+                wr.write_all(format!("{answer}\r\n").as_bytes()).await.unwrap();
+            }
+        });
+        port
+    }
+
+    fn target(port: u16) -> FtpsTarget<'static> {
+        FtpsTarget {
+            printer: "p",
+            host: "127.0.0.1",
+            port,
+            user: "bblp",
+            password: "code",
+        }
+    }
+
+    #[tokio::test]
+    async fn a_slow_upload_that_keeps_moving_finishes_past_the_step_time() {
+        // 2 MB at 64 KB per 100 ms takes about 3 s; each step is 1 s. The old whole-upload deadline
+        // failed a slow link like this one, however steadily it moved.
+        let port = printer(Reads::Slowly {
+            bytes: 64 * 1024,
+            every: Duration::from_millis(100),
+        })
+        .await;
+        let data = vec![7_u8; 2_000_000];
+        let started = Instant::now();
+        let got = store_with(&target(port), "slow.gcode.3mf", &data, Duration::from_secs(1)).await;
+        assert!(got.is_ok(), "{got:?}");
+        assert!(
+            started.elapsed() > Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stalled_upload_fails_at_its_step_and_says_how_far_it_got() {
+        let port = printer(Reads::StopsAfter { after: 1_000_000 }).await;
+        let data = vec![7_u8; 16_000_000];
+        let started = Instant::now();
+        let err = store_with(&target(port), "stall.gcode.3mf", &data, Duration::from_secs(1))
+            .await
+            .unwrap_err();
+        let text = err.to_string();
+        assert_eq!(err.code(), crate::ErrorCode::Unreachable, "{text}");
+        assert!(text.contains("FTPS upload stalled after "), "{text}");
+        assert!(text.contains("of 16.0 MB: no data went out for 1 s"), "{text}");
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "{:?}",
+            started.elapsed()
+        );
     }
 }
