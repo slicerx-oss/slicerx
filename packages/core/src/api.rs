@@ -381,6 +381,84 @@ pub struct SliceReport {
     /// What the request's config set that this slice did not use; absent when it used everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_report: Option<ConfigReport>,
+    /// The filaments each object's features printed with, one entry per plate object in plate order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub feature_filaments: Vec<FeatureFilaments>,
+}
+
+/// The filaments one object's features printed with, read from the sliced paths: what the slice resolved each
+/// feature to after the plate's, the object's, its parts' and modifiers' settings, height ranges and paint.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureFilaments {
+    /// The object's id in the request.
+    pub object: String,
+    pub name: String,
+    /// Each feature the object printed, by its name ([`Feature::key`]: `outerWall`, `sparseInfill`, `support` and
+    /// the rest), with the filament slots its paths printed with, 1-based and ascending. A feature a height range
+    /// or a modifier moves to another filament lists both.
+    pub features: BTreeMap<String, Vec<u8>>,
+}
+
+/// The filaments each object's features print with, gathered from the sliced paths range by range.
+#[derive(Default)]
+struct FeatureUse {
+    objects: Vec<(String, String)>,
+    /// Per object, per feature (its SXPV id), a bit per filament: bit `t` of word `t / 64` is slot `t + 1`.
+    used: Vec<[[u64; 4]; Feature::ALL.len()]>,
+}
+
+impl FeatureUse {
+    fn add(&mut self, out: &SliceOutput) {
+        if self.objects.is_empty() {
+            self.objects = out
+                .objects
+                .iter()
+                .map(|o| (o.id.clone(), o.name.clone()))
+                .collect();
+            self.used = vec![[[0; 4]; Feature::ALL.len()]; self.objects.len()];
+        }
+        for p in out.layers.iter().flat_map(|l| &l.paths) {
+            // Paths of no single object (skirt, prime tower, a shared brim) have an owner past the objects.
+            let Some(t) = p.tool.checked_sub(1) else {
+                continue;
+            };
+            let bits = self
+                .used
+                .get_mut(usize::from(p.owner))
+                .and_then(|o| o.get_mut(p.feature as usize))
+                .and_then(|f| f.get_mut(usize::from(t / 64)));
+            if let Some(word) = bits {
+                *word |= 1 << (t % 64);
+            }
+        }
+    }
+
+    fn report(&self) -> Vec<FeatureFilaments> {
+        self.objects
+            .iter()
+            .zip(&self.used)
+            .map(|((id, name), used)| FeatureFilaments {
+                object: id.clone(),
+                name: name.clone(),
+                features: Feature::ALL
+                    .iter()
+                    .zip(used)
+                    .filter_map(|(f, words)| {
+                        let slots: Vec<u8> = (0..=254u8)
+                            .filter(|&t| {
+                                words
+                                    .get(usize::from(t / 64))
+                                    .is_some_and(|w| w >> (t % 64) & 1 == 1)
+                            })
+                            .map(|t| t + 1)
+                            .collect();
+                        (!slots.is_empty()).then(|| (f.key().to_owned(), slots))
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
 }
 
 /// What a request's config set that the slice did not use.
@@ -1347,6 +1425,7 @@ fn run_prepared_timed(
     let resume_at = req.options.resume_from_layer.filter(|&r| r > 0).unwrap_or(0);
     let mut extras: Vec<(u32, crate::extras::LayerExtras)> = Vec::new();
     let mut hits = crate::collide::Hits::default();
+    let mut feature_use = FeatureUse::default();
     let draw = want_gcode && given.is_none() && !thumb_specs.is_empty();
     for s in 0..shards {
         if progress.cancelled() {
@@ -1359,6 +1438,7 @@ fn run_prepared_timed(
         let before = target.len();
         let mut out = slice_shard_paths(req, session, &config, lo..hi, progress)?;
         hits.merge(std::mem::take(&mut out.collisions));
+        feature_use.add(&out);
         let drawing = if draw {
             let side = thumb_specs
                 .iter()
@@ -1459,6 +1539,7 @@ fn run_prepared_timed(
     if !config_report.is_empty() || config_report.walls.is_some() {
         report.config_report = Some(config_report);
     }
+    report.feature_filaments = feature_use.report();
     if want_preview {
         let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
         run.preview = if refs.len() == 1 {
@@ -1739,6 +1820,23 @@ pub const RESULT_SCHEMA: &str = r#"{
         "extruders": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
         "nozzles": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
         "auto": { "type": "boolean" }
+      }
+    },
+    "featureFilaments": {
+      "type": "array",
+      "description": "The filaments each object's features printed with, read from the sliced paths, one entry per plate object",
+      "items": {
+        "type": "object",
+        "required": ["object", "name", "features"],
+        "properties": {
+          "object": { "type": "string", "description": "The object's id in the request" },
+          "name": { "type": "string" },
+          "features": {
+            "type": "object",
+            "description": "Each feature the object printed (outerWall, sparseInfill, support and the rest) with its filament slots, 1-based and ascending",
+            "additionalProperties": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+          }
+        }
       }
     }
   }
