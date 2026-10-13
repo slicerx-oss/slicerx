@@ -23,6 +23,8 @@ export interface PrinterBackend {
   readonly handOff?: PersonHandOff
   /** Link mode: the app link, for the design tools to run on the project open in the app. */
   readonly appLink?: import('./app-route').AppLinkCaller
+  /** Link mode: ends the connection to sx-link. An open link keeps Node running, so a one-shot run closes it when done. */
+  readonly close?: () => void
 }
 
 /**
@@ -86,7 +88,7 @@ export async function createLinkPrinters(url: string, auth: { code: string } | {
   const host = await connectLink({ url, ...auth, role: 'agent', ...(hubKey ? { hubKey } : {}), ...(ws ? { WebSocket: ws } : {}) })
   const handOff = handOffOf(host)
   const appLink = typeof (host as { appLink?: { call?: unknown } }).appLink?.call === 'function' ? host.appLink : undefined
-  return { kind: 'link', host: guardUploads(host), approvals: host.approvals, ...(handOff ? { handOff } : {}), ...(appLink ? { appLink } : {}) }
+  return { kind: 'link', host: guardUploads(host), approvals: host.approvals, ...(handOff ? { handOff } : {}), ...(appLink ? { appLink } : {}), close: () => host.close() }
 }
 
 /**

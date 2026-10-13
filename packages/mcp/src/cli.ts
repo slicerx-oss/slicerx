@@ -181,7 +181,15 @@ async function main(): Promise<void> {
   const engineLine = ctx.slicer ? `engine ${ctx.slicer.kind}` : `no engine (${ctx.slicerUnavailable ?? ''})`
   process.stderr.write(`slicerx-mcp ${SERVER_VERSION}: ${engineLine}, printers ${ctx.printers?.kind ?? 'off'}, ${ctx.tools.length} gated tools, policy ${ctx.gate.policyPath ?? 'defaults'}, log ${ctx.gate.log.path}\n`)
 
-  if (calls) return runCalls(createSlicerxServer(ctx), calls)
+  if (calls) {
+    try {
+      return await runCalls(createSlicerxServer(ctx), calls)
+    } finally {
+      // The sx-link connection is an open socket, so Node would keep running after the last call. Closing it lets the
+      // process end on its own, with the exit code runCalls set.
+      ctx.printers?.close?.()
+    }
+  }
 
   if (http) {
     const host = values.host ?? env('HOST') ?? '127.0.0.1'
