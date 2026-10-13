@@ -16,7 +16,8 @@
     "gen:types": "sh scripts/gen-types.sh",
     "supabase:config": "tsx scripts/supabase-config.ts",
     "library:seed": "tsx scripts/seed-library.ts",
-    "library:settings": "tsx scripts/apply-library-settings.ts"
+    "library:settings": "tsx scripts/apply-library-settings.ts",
+    "mimir:register-key": "tsx scripts/mimir-register-key.ts"
   },
   "dependencies": {
     "@slicerx/contracts": "workspace:*",
