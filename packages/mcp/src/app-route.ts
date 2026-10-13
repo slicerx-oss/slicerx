@@ -3,7 +3,7 @@
 // The design tools on the project open in the app: while the app link answers (the person turned it on and allowed
 // this agent), each design tool runs in the app through `app.call`, so its steps land in the plate's history and undo.
 // When the link is off or the app is closed, the tools run on this server's own designs as before. `--no-app` keeps
-// them here always.
+// them here always; `--app` keeps them in the app always, and refuses rather than fall back.
 import type { PilotTool, ToolOutput } from '@slicerx/pilot'
 import { ToolInputError, type ErrorCode } from './errors'
 
@@ -41,6 +41,13 @@ export interface AppLinkCaller {
 function notThere(code: string, message: string): boolean {
   return ['app_link_off', 'app_closed', 'forbidden', 'unauthorized'].includes(code) || (code === 'bad_request' && message.startsWith('unknown method'))
 }
+/** Why the link is not there, for `--app`, which refuses instead of falling back. */
+function whyNotThere(code: string, appName: string): string {
+  if (code === 'app_link_off') return `the app link is off: turn it on in ${appName}'s Settings, or run without --app`
+  if (code === 'app_closed') return `${appName} is not open: open it, or run without --app`
+  if (code === 'bad_request') return `this sx-link is older than the app link: update ${appName}, or run without --app`
+  return `this client is not allowed on the app link: allow it when ${appName} asks, or run without --app`
+}
 /** Codes the app may answer with that the server's error codes have. */
 const PASSED: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_found', read_only: 'not_supported', denied: 'not_supported', refused: 'not_supported', busy: 'busy', pending: 'busy', not_answered: 'busy' }
 
@@ -50,8 +57,11 @@ function onDesign(name: string, input: Record<string, unknown>): boolean {
   return typeof input['design'] === 'string' && input['model'] === undefined
 }
 
-/** The tools, with the design tools run in the app while the link answers. */
-export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appName: string): PilotTool<never>[] {
+/**
+ * The tools, with the design tools run in the app while the link answers. `required` (`--app`): a design call never
+ * runs here; while the link does not answer it is refused with not_configured.
+ */
+export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appName: string, opts: { required?: boolean } = {}): PilotTool<never>[] {
   let told = false
   return tools.map((t) => {
     if (!APP_DESIGN_TOOLS.has(t.name)) return t
@@ -65,13 +75,16 @@ export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appNa
       } catch (e) {
         const code = String((e as { code?: unknown }).code ?? '')
         const message = e instanceof Error ? e.message : String(e)
-        if (notThere(code, message)) return local(input, ctx)
+        if (notThere(code, message)) {
+          if (opts.required) throw new ToolInputError(whyNotThere(code, appName), 'not_configured', { appLink: code })
+          return local(input, ctx)
+        }
         const mapped = PASSED[code] ?? 'internal_error'
         // busy: the person is working in the app, or a question is up; the same call can go again shortly.
         throw new ToolInputError(mapped === 'busy' ? `${message} (busy in ${appName}: wait a moment and call again)` : message, mapped)
       }
       // The first reply says where designs live now, once per session.
-      const note = told ? '' : ` Designs now live in the project open in ${appName}, with their steps in its history; start the server with --no-app to keep them here.`
+      const note = told || opts.required ? '' : ` Designs now live in the project open in ${appName}, with their steps in its history; start the server with --no-app to keep them here.`
       told = true
       return { summary: `${out.summary ?? t.name} (in ${appName})${note}`, output: { ...(typeof out.output === 'object' && out.output ? out.output : { result: out.output ?? null }), in: 'app' } }
     }
