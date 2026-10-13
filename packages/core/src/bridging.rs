@@ -636,6 +636,17 @@ fn cands_of(env: &Env<'_>, l: i64, memo: &Memo) -> Arc<Vec<Shapes>> {
     result
 }
 
+/// The layers whose facts working out the bridges of layer `l` always reads: `l` and the layer below for its
+/// candidates, and the layer above for the bridges [`ensuring`] keeps a ring under. The layers further down the
+/// same bridge cluster are read only where there are candidates.
+pub(crate) fn facts_read(env: &Env<'_>, l: i64) -> Vec<i64> {
+    if l < 1 || l >= env.count {
+        return Vec::new();
+    }
+    let above = (l + 1 < env.count).then_some(l + 1);
+    std::iter::once(l).chain(above).chain([l - 1]).collect()
+}
+
 /// The nearest layer below `cur` that has candidates, when it is within one bridge height.
 fn previous_with_candidates(env: &Env<'_>, cur: i64, memo: &Memo) -> Option<i64> {
     let z = (env.print_z)(cur);

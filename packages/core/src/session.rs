@@ -3353,10 +3353,19 @@ impl SliceSession {
             }) {
                 self.lightning_layers(c);
             }
-            self.seam_plan(config);
-            self.curl_plan(config);
-            if let Some(c) = first_with(combine_on) {
-                self.combine_plan(c);
+            // A painted plate keeps the regions of every layer from the start (`whole_regions`), so this range's
+            // regions do not wait for the plans below, which only read those. Then the regions shared by the
+            // layer jobs (`plan_shared_preps`) are worked out beside the plans.
+            let beside = first_with(combine_on).is_none() && self.keeps_whole(fam);
+            let plans = || {
+                self.seam_plan(config);
+                self.curl_plan(config);
+                if let Some(c) = first_with(combine_on) {
+                    self.combine_plan(c);
+                }
+            };
+            if !beside {
+                plans();
             }
             progress.report(Stage::Contours, 0.0);
             // Layers the whole-object plans already cut with the same families are taken over, not cut again.
@@ -3387,14 +3396,31 @@ impl SliceSession {
                 .zip(cut)
                 .map(|(a, b)| a.or(b).unwrap_or_default())
                 .collect();
+            let get = |l: u32| {
+                l.checked_sub(a_lo)
+                    .and_then(|i| regions.get(i as usize))
+                    .or_else(|| beyond(l))
+            };
+            let ahead = || {
+                if !stopped() {
+                    self.plan_shared_preps(
+                        layers.clone().filter_map(object_of),
+                        &layer_cfg_of,
+                        &mod_cfgs,
+                        &get,
+                        &micros,
+                        &tags,
+                    );
+                }
+            };
+            if beside {
+                let ((), ()) = par::join_plans(plans, ahead);
+            } else {
+                ahead();
+            }
             // Without threads nothing runs beside the plan, so each layer is worked out in one go after it.
             let starts: Vec<Option<LayerStart>> =
                 if cfg!(feature = "parallel") && pending.is_some() && !stopped() {
-                    let get = |l: u32| {
-                        l.checked_sub(a_lo)
-                            .and_then(|i| regions.get(i as usize))
-                            .or_else(|| beyond(l))
-                    };
                     let start_done = std::sync::atomic::AtomicUsize::new(0);
                     let start_total = layers.len();
                     par::map_range(layers.clone(), |i| {
@@ -6111,6 +6137,17 @@ impl SliceSession {
         }
     }
 
+    /// Whether the session keeps the regions [`Self::whole_regions`] cut with `fam` for every range (a plate with
+    /// painted parts), so the whole-object plans that read them cut no layer.
+    fn keeps_whole(&self, fam: Families) -> bool {
+        self.parts.iter().any(|p| !p.paint.is_empty())
+            && self
+                .whole
+                .0
+                .lock()
+                .is_ok_and(|g| g.as_ref().is_some_and(|(f, _)| *f == fam))
+    }
+
     /// A copy of layer `layer`'s regions from [`Self::whole_regions`] when a part is painted and they were cut
     /// the way `fam` cuts: cutting a painted layer is the dearest part of a slice, and every range of layers and
     /// the first layer's plans read the layers again.
@@ -6185,8 +6222,14 @@ impl SliceSession {
             };
             let l = i64::from(layer);
             let step = |j: usize| i64::try_from(j).unwrap_or(i64::MAX / 2);
-            let above: Vec<Shapes> = (1..=fam.top_shell).map(|j| contour_at(l + step(j))).collect();
-            let below: Vec<Shapes> = (1..=fam.bottom_shell).map(|j| contour_at(l - step(j))).collect();
+            // Each outline is cut once for the session (a memo entry). Asked for together, the outlines of the layers
+            // around are cut side by side, unless this layer is itself cut inside a memo entry's work.
+            let around: Vec<i64> = (1..=fam.top_shell)
+                .map(|j| l + step(j))
+                .chain((1..=fam.bottom_shell).map(|j| l - step(j)))
+                .collect();
+            let mut above: Vec<Shapes> = par::map(&around, |&m| contour_at(m));
+            let below: Vec<Shapes> = above.split_off(fam.top_shell.min(above.len()));
             // Slot 0 marks what no paint claims; the parts' own filaments take it below.
             let facets: Vec<&crate::paint::Facets> = obj
                 .parts
@@ -6514,6 +6557,112 @@ impl SliceSession {
         }
     }
 
+    /// A layer of several regions: its regions' walls and classes go through the session's memo
+    /// ([`Self::shared_preps`]), read by the layer itself and by the bridge facts of the layers around it.
+    fn several(&self, here: &LayerRegions) -> bool {
+        self.vase.is_none() && here.regions.iter().filter(|(_, s)| !s.is_empty()).count() > 1
+    }
+
+    /// The walls, infill area and surface classes of the regions of layer `layer`, a layer of several regions
+    /// ([`Self::several`]), with the settings `cfg`, worked out once for the session.
+    fn shared_preps<'a>(
+        &self,
+        layer: u32,
+        cfg: &PrintConfig,
+        mods: &[PrintConfig],
+        get: &(dyn Fn(u32) -> Option<&'a LayerRegions> + Sync),
+        micros: &Micros,
+        tags: &Tags<'_>,
+    ) -> std::sync::Arc<Vec<Option<RegionPrep>>> {
+        self.cache.regions(i64::from(layer), tags.of(cfg), || {
+            self.several_preps(layer, cfg, mods, get, micros, tags)
+        })
+    }
+
+    /// [`Self::shared_preps`] worked out.
+    fn several_preps<'a>(
+        &self,
+        layer: u32,
+        cfg: &PrintConfig,
+        mods: &[PrintConfig],
+        get: &(dyn Fn(u32) -> Option<&'a LayerRegions> + Sync),
+        micros: &Micros,
+        tags: &Tags<'_>,
+    ) -> Vec<Option<RegionPrep>> {
+        let upper = layer
+            .checked_add(1)
+            .filter(|&u| u < self.plan.count())
+            .and_then(get)
+            .map(lower_shapes);
+        let below = layer
+            .checked_sub(1)
+            .and_then(get)
+            .map(|r| match (&r.lslices, r.regions.as_slice()) {
+                (Some(foot), _) => foot.clone(),
+                (None, [(_, only)]) => only.clone(),
+                _ => perimeters::union_all(&r.regions.iter().map(|(_, s)| s).collect::<Vec<_>>()),
+            });
+        let shell = self.shell_of(cfg);
+        self.region_preps(
+            layer,
+            cfg,
+            &shell,
+            mods,
+            get,
+            below.as_ref(),
+            upper.as_ref(),
+            micros,
+            tags,
+            None,
+        )
+    }
+
+    /// Works out the [`Self::shared_preps`] that the layers `layers` will read (each with its settings from
+    /// `cfg_of`), before the layer jobs start. Inside a layer job they are worked out under a claim on the
+    /// session's memo, where the parallel helpers run as plain loops (the rule in `par`), so the regions of a
+    /// layer would be walled one after another on one thread, and the bridge facts of the layer above wait
+    /// for them. Here no claim is held: the layers and their regions are worked out side by side, and the
+    /// memo takes the results over.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the layers, their settings and the slice's shared state"
+    )]
+    fn plan_shared_preps<'a, 'c>(
+        &self,
+        layers: impl Iterator<Item = u32>,
+        cfg_of: &dyn Fn(u32) -> &'c PrintConfig,
+        mods: &[PrintConfig],
+        get: &(dyn Fn(u32) -> Option<&'a LayerRegions> + Sync),
+        micros: &Micros,
+        tags: &Tags<'_>,
+    ) {
+        if self.vase.is_some() {
+            return;
+        }
+        let n = self.plan.count();
+        let several = |l: u32| get(l).is_some_and(|r| self.several(r));
+        let mut wanted: Vec<(u32, &'c PrintConfig)> = Vec::new();
+        for l in layers {
+            let cfg = cfg_of(l);
+            // The layer's own regions, then the facts its bridges read (`layer_start`): this layer's and the
+            // ones just below and above it, worked out with this layer's settings.
+            let bridged = l >= 1 && cfg.sparse_infill_density > 0.0 && self.shell_of(cfg).top_n > 0;
+            let reads = [Some(l), l.checked_sub(1), l.checked_add(1).filter(|&u| u < n)];
+            for m in reads.into_iter().flatten().take(if bridged { 3 } else { 1 }) {
+                if several(m) && !wanted.iter().any(|&(w, c)| w == m && tags.of(c) == tags.of(cfg)) {
+                    wanted.push((m, cfg));
+                }
+            }
+        }
+        wanted.retain(|&(m, cfg)| !self.cache.has_regions(i64::from(m), tags.of(cfg)));
+        let preps = par::map(&wanted, |&(m, cfg)| {
+            self.several_preps(m, cfg, mods, get, micros, tags)
+        });
+        for ((m, cfg), p) in wanted.into_iter().zip(preps) {
+            let _ = self.cache.regions(i64::from(m), tags.of(cfg), || p);
+        }
+    }
+
     /// The walls, infill area and surface classes of every region of `layer`, in region order (`None` for an
     /// empty region). `cfg` is the layer's settings and `base_shell` what follows from them, `below` the material
     /// of the layer below and `upper_slice` the outline of the layer above. Regions of one filament whose walls
@@ -6546,13 +6695,32 @@ impl SliceSession {
             0 => base_cfg,
             k => mods.get(usize::from(k) - 1).unwrap_or(base_cfg),
         };
-        let mut group_inner: Vec<Option<Shapes>> = vec![None; here.regions.len()];
-        let mut out = Vec::with_capacity(here.regions.len());
-        for (ri, (slot, shapes)) in here.regions.iter().enumerate() {
+        // Regions of one filament whose walls are set alike share their walls, as in Orca: a
+        // modifier that only changes the infill does not put walls along its boundary.
+        let group_of = |ri: usize| -> Vec<usize> {
+            let Some((slot, _)) = here.regions.get(ri) else {
+                return Vec::new();
+            };
+            let key = wall_key(region_config(ri));
+            (0..here.regions.len())
+                .filter(|&j| {
+                    here.regions
+                        .get(j)
+                        .is_some_and(|(sl, sh)| sl == slot && !sh.is_empty())
+                        && wall_key(region_config(j)) == key
+                })
+                .collect()
+        };
+        // One region: what it prints, and the infill area of its group's walls when it walls the group (the
+        // other regions of the group read that from `group_inner`).
+        let prep = |ri: usize, group_inner: &[Option<Shapes>]| -> (Option<RegionPrep>, Option<Shapes>) {
+            let Some((slot, shapes)) = here.regions.get(ri) else {
+                return (None, None);
+            };
             if shapes.is_empty() {
-                out.push(None);
-                continue;
+                return (None, None);
             }
+            let mut walled_group = None;
             // A region inside a modifier volume prints with the modifier's settings.
             let region_k = here.region_cfg.get(ri).copied().unwrap_or(0);
             let cfg = region_config(ri);
@@ -6605,16 +6773,7 @@ impl SliceSession {
                 ),
                 _ => (Vec::new(), Vec::new()),
             };
-            // Regions of one filament whose walls are set alike share their walls, as in Orca: a
-            // modifier that only changes the infill does not put walls along its boundary.
-            let group: Vec<usize> = (0..here.regions.len())
-                .filter(|&j| {
-                    here.regions
-                        .get(j)
-                        .is_some_and(|(sl, sh)| sl == slot && !sh.is_empty())
-                        && wall_key(region_config(j)) == wall_key(cfg)
-                })
-                .collect();
+            let group = group_of(ri);
             let (islands, inner) = match group.first() {
                 Some(&first) if group.len() > 1 => {
                     let own = if ri == first {
@@ -6632,9 +6791,7 @@ impl SliceSession {
                             top_or_bottom,
                             top_ctx.as_ref(),
                         );
-                        if let Some(c) = group_inner.get_mut(first) {
-                            *c = Some(inner.clone());
-                        }
+                        walled_group = Some(inner.clone());
                         (islands, inner)
                     } else {
                         (
@@ -6774,12 +6931,30 @@ impl SliceSession {
                         .flatten(),
                 }),
             };
-            out.push(Some(RegionPrep {
-                islands,
-                inner,
-                cls,
-                known: known.is_some(),
-            }));
+            (
+                Some(RegionPrep {
+                    islands,
+                    inner,
+                    cls,
+                    known: known.is_some(),
+                }),
+                walled_group,
+            )
+        };
+        let count = here.regions.len();
+        // Regions that share no walls are worked out side by side; a group's other regions wait for its walls.
+        if (0..count).all(|ri| group_of(ri).len() < 2) {
+            let count = u32::try_from(count).unwrap_or(u32::MAX);
+            return par::map_range(0..count, |ri| prep(ri as usize, &[]).0);
+        }
+        let mut group_inner: Vec<Option<Shapes>> = vec![None; count];
+        let mut out = Vec::with_capacity(count);
+        for ri in 0..count {
+            let (p, walled) = prep(ri, &group_inner);
+            if let (Some(w), Some(slot)) = (walled, group_inner.get_mut(ri)) {
+                *slot = Some(w);
+            }
+            out.push(p);
         }
         out
     }
@@ -6903,278 +7078,257 @@ impl SliceSession {
             }
         };
         // Internal bridges over sparse infill (bridging.rs), worked out from the layers around this one.
-        let bridges: Option<crate::bridging::LayerBridges> = if layer >= 1
-            && cfg.sparse_infill_density > 0.0
-            && base_shell.top_n > 0
-        {
-            use std::sync::Arc;
-            let cfg_tag = tags.of(cfg);
-            let facts_cache: std::cell::RefCell<
-                std::collections::HashMap<i64, Option<Arc<crate::bridging::Facts>>>,
-            > = std::cell::RefCell::new(std::collections::HashMap::new());
-            let base_slice = |m: i64| -> Option<Shapes> {
-                let l = u32::try_from(m).ok()?;
-                get(l).map(lower_shapes)
-            };
-            let base_overlap = base_shell.overlap;
-            let base_inner = |m: i64| -> Option<Shapes> {
-                let l = u32::try_from(m).ok()?;
-                self.cache.inner(m, cfg_tag, || {
-                    get(l).map(|r| {
-                        perimeters::walls_for(
-                            cfg,
-                            &slice_shapes(r),
-                            cfg.wall_loops,
-                            base_shell.w,
-                            base_overlap,
-                            self.plan.thickness(l),
-                            false,
-                        )
-                    })
-                })
-            };
-            let fam = Families::new(cfg);
-            let sparse_of = |l: u32, area: &Shapes| -> SparseLines {
-                let as_int = |p: crate::geom::Point| IntPoint::new(p.x, p.y);
-                if area.is_empty() {
-                    return (Vec::new(), Vec::new());
-                }
-                if cfg.sparse_infill_pattern.on_scanlines() {
-                    let base = if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear {
-                        0
-                    } else {
-                        l + self.raft_layers()
-                    };
-                    let frame = turned_frame(
-                        self.template_angle(cfg, "sparse_infill_rotate_template", l),
-                        Dir::for_layer(base),
-                        self.model_turn(cfg),
-                    );
-                    let turn = frame.map_or(0.0, |f| f.1);
-                    let d = match frame {
-                        Some((d, _)) => d,
-                        None if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear => {
-                            Dir::for_layer(0)
-                        }
-                        None => Dir::for_layer(l + self.raft_layers()),
-                    };
-                    let turned;
-                    let area = if turn == 0.0 {
-                        area
-                    } else {
-                        turned = crate::patterns::rotate_shapes(area, -turn);
-                        &turned
-                    };
-                    let mut ev = Vec::new();
-                    let spans = fam
-                        .sparse(d)
-                        .scan(area.iter().flat_map(|s| s.iter()).map(Vec::as_slice), &mut ev);
-                    let mut lines: Vec<[crate::geom::Point; 2]> = Vec::new();
-                    paths::span_lines(&spans, d, fam.sparse_spacing, &mut lines);
-                    if turn != 0.0 {
-                        for seg in &mut lines {
-                            if let [a, b] = crate::patterns::rotate_points(seg, turn)[..] {
-                                *seg = [a, b];
-                            }
-                        }
-                    }
-                    (
-                        lines.into_iter().map(|s| [as_int(s[0]), as_int(s[1])]).collect(),
-                        Vec::new(),
-                    )
-                } else {
-                    let z = self.plan.top(l);
-                    let polylines = self
-                        .planned_sparse(cfg, l, area)
-                        .unwrap_or_else(|| crate::patterns::sparse(&self.sparse_in(cfg, l, area, z)));
-                    (Vec::new(), polylines)
-                }
-            };
-            let facts = |l: i64| -> Option<Arc<crate::bridging::Facts>> {
-                if let Some(f) = facts_cache.borrow().get(&l) {
-                    return f.clone();
-                }
-                let f = self.cache.facts(l, cfg_tag, || {
-                    let lu = u32::try_from(l).ok()?;
-                    let here = get(lu)?;
-                    // A layer of several regions: its facts are its regions' own classes put together, as OrcaSlicer
-                    // reads each region's fill surfaces for its internal bridges.
-                    if self.vase.is_none() && here.regions.iter().filter(|(_, s)| !s.is_empty()).count() > 1 {
-                        let upper = lu
-                            .checked_add(1)
-                            .filter(|&u| u < n)
-                            .and_then(get)
-                            .map(lower_shapes);
-                        let below = lu.checked_sub(1).and_then(get).map(|r| {
-                            match (&r.lslices, r.regions.as_slice()) {
-                                (Some(foot), _) => foot.clone(),
-                                (None, [(_, only)]) => only.clone(),
-                                _ => perimeters::union_all(
-                                    &r.regions.iter().map(|(_, s)| s).collect::<Vec<_>>(),
-                                ),
-                            }
-                        });
-                        let preps = self.cache.regions(l, cfg_tag, || {
-                            let shell = self.shell_of(cfg);
-                            self.region_preps(
-                                lu,
+        let bridges: Option<crate::bridging::LayerBridges> =
+            if layer >= 1 && cfg.sparse_infill_density > 0.0 && base_shell.top_n > 0 {
+                use std::sync::Arc;
+                let cfg_tag = tags.of(cfg);
+                let facts_cache: std::cell::RefCell<
+                    std::collections::HashMap<i64, Option<Arc<crate::bridging::Facts>>>,
+                > = std::cell::RefCell::new(std::collections::HashMap::new());
+                let base_slice = |m: i64| -> Option<Shapes> {
+                    let l = u32::try_from(m).ok()?;
+                    get(l).map(lower_shapes)
+                };
+                let base_overlap = base_shell.overlap;
+                let base_inner = |m: i64| -> Option<Shapes> {
+                    let l = u32::try_from(m).ok()?;
+                    self.cache.inner(m, cfg_tag, || {
+                        get(l).map(|r| {
+                            perimeters::walls_for(
                                 cfg,
-                                &shell,
-                                mods,
-                                get,
-                                below.as_ref(),
-                                upper.as_ref(),
-                                micros,
-                                tags,
-                                None,
+                                &slice_shapes(r),
+                                cfg.wall_loops,
+                                base_shell.w,
+                                base_overlap,
+                                self.plan.thickness(l),
+                                false,
                             )
-                        });
-                        let parts: Vec<&RegionPrep> = preps.iter().flatten().collect();
-                        let all = |f: &dyn Fn(&RegionPrep) -> &Shapes| {
-                            perimeters::union_all(&parts.iter().map(|p| f(p)).collect::<Vec<_>>())
+                        })
+                    })
+                };
+                let fam = Families::new(cfg);
+                let sparse_of = |l: u32, area: &Shapes| -> SparseLines {
+                    let as_int = |p: crate::geom::Point| IntPoint::new(p.x, p.y);
+                    if area.is_empty() {
+                        return (Vec::new(), Vec::new());
+                    }
+                    if cfg.sparse_infill_pattern.on_scanlines() {
+                        let base = if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear {
+                            0
+                        } else {
+                            l + self.raft_layers()
                         };
-                        let inner = all(&|p| &p.inner);
-                        let top = all(&|p| &p.cls.top);
-                        let own_bottom = all(&|p| &p.cls.bottom);
-                        let shell = all(&|p| &p.cls.shell);
-                        let sparse = all(&|p| &p.cls.sparse);
-                        let external: Vec<crate::bridging::Bridged> =
-                            parts.iter().flat_map(|p| p.cls.bridges.iter().cloned()).collect();
-                        let bridged =
-                            perimeters::union_all(&external.iter().map(|b| &b.area).collect::<Vec<_>>());
-                        let (lines, paths) = sparse_of(lu, &sparse);
-                        return Some(crate::bridging::Facts {
+                        let frame = turned_frame(
+                            self.template_angle(cfg, "sparse_infill_rotate_template", l),
+                            Dir::for_layer(base),
+                            self.model_turn(cfg),
+                        );
+                        let turn = frame.map_or(0.0, |f| f.1);
+                        let d = match frame {
+                            Some((d, _)) => d,
+                            None if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear => {
+                                Dir::for_layer(0)
+                            }
+                            None => Dir::for_layer(l + self.raft_layers()),
+                        };
+                        let turned;
+                        let area = if turn == 0.0 {
+                            area
+                        } else {
+                            turned = crate::patterns::rotate_shapes(area, -turn);
+                            &turned
+                        };
+                        let mut ev = Vec::new();
+                        let spans = fam
+                            .sparse(d)
+                            .scan(area.iter().flat_map(|s| s.iter()).map(Vec::as_slice), &mut ev);
+                        let mut lines: Vec<[crate::geom::Point; 2]> = Vec::new();
+                        paths::span_lines(&spans, d, fam.sparse_spacing, &mut lines);
+                        if turn != 0.0 {
+                            for seg in &mut lines {
+                                if let [a, b] = crate::patterns::rotate_points(seg, turn)[..] {
+                                    *seg = [a, b];
+                                }
+                            }
+                        }
+                        (
+                            lines.into_iter().map(|s| [as_int(s[0]), as_int(s[1])]).collect(),
+                            Vec::new(),
+                        )
+                    } else {
+                        let z = self.plan.top(l);
+                        let polylines = self
+                            .planned_sparse(cfg, l, area)
+                            .unwrap_or_else(|| crate::patterns::sparse(&self.sparse_in(cfg, l, area, z)));
+                        (Vec::new(), polylines)
+                    }
+                };
+                // The facts of layer `l`, worked out once for the session.
+                let shared_facts = |l: i64| -> Option<Arc<crate::bridging::Facts>> {
+                    self.cache.facts(l, cfg_tag, || {
+                        let lu = u32::try_from(l).ok()?;
+                        let here = get(lu)?;
+                        // A layer of several regions: its facts are its regions' own classes put together, as OrcaSlicer
+                        // reads each region's fill surfaces for its internal bridges.
+                        if self.several(here) {
+                            let preps = self.shared_preps(lu, cfg, mods, get, micros, tags);
+                            let parts: Vec<&RegionPrep> = preps.iter().flatten().collect();
+                            let all = |f: &dyn Fn(&RegionPrep) -> &Shapes| {
+                                perimeters::union_all(&parts.iter().map(|p| f(p)).collect::<Vec<_>>())
+                            };
+                            let inner = all(&|p| &p.inner);
+                            let top = all(&|p| &p.cls.top);
+                            let own_bottom = all(&|p| &p.cls.bottom);
+                            let shell = all(&|p| &p.cls.shell);
+                            let sparse = all(&|p| &p.cls.sparse);
+                            let external: Vec<crate::bridging::Bridged> =
+                                parts.iter().flat_map(|p| p.cls.bridges.iter().cloned()).collect();
+                            let bridged =
+                                perimeters::union_all(&external.iter().map(|b| &b.area).collect::<Vec<_>>());
+                            let (lines, paths) = sparse_of(lu, &sparse);
+                            return Some(crate::bridging::Facts {
+                                inner,
+                                top,
+                                bottom: perimeters::union_all(&[&own_bottom, &bridged]),
+                                shell,
+                                sparse,
+                                lines,
+                                paths,
+                                external,
+                                own_bottom,
+                            });
+                        }
+                        let region = slice_shapes(here);
+                        let inner = base_inner(l)?;
+                        let cls = crate::classify::classify(&crate::classify::In {
+                            cfg,
+                            layer: lu,
+                            count: n,
+                            region: &region,
+                            inner: &inner,
+                            slice: &base_slice,
+                            inner_of: &base_inner,
+                            top_layers: base_shell.top_n,
+                            bottom_layers: base_shell.bot_n,
+                            wall_loops: cfg.wall_loops,
+                            cache: Some(&self.cache),
+                            tag: cfg_tag,
+                            whole_lower: None,
+                        });
+                        let (lines, paths) = sparse_of(lu, &cls.sparse);
+                        let bridged: Shapes = cls
+                            .bridges
+                            .iter()
+                            .fold(Shapes::new(), |acc, b| perimeters::union_all(&[&acc, &b.area]));
+                        Some(crate::bridging::Facts {
                             inner,
-                            top,
-                            bottom: perimeters::union_all(&[&own_bottom, &bridged]),
-                            shell,
-                            sparse,
+                            top: cls.top,
+                            bottom: perimeters::union_all(&[&cls.bottom, &bridged]),
+                            shell: cls.shell,
+                            sparse: cls.sparse,
                             lines,
                             paths,
-                            external,
-                            own_bottom,
-                        });
-                    }
-                    let region = slice_shapes(here);
-                    let inner = base_inner(l)?;
-                    let cls = crate::classify::classify(&crate::classify::In {
-                        cfg,
-                        layer: lu,
-                        count: n,
-                        region: &region,
-                        inner: &inner,
-                        slice: &base_slice,
-                        inner_of: &base_inner,
-                        top_layers: base_shell.top_n,
-                        bottom_layers: base_shell.bot_n,
-                        wall_loops: cfg.wall_loops,
-                        cache: Some(&self.cache),
-                        tag: cfg_tag,
-                        whole_lower: None,
-                    });
-                    let (lines, paths) = sparse_of(lu, &cls.sparse);
-                    let bridged: Shapes = cls
-                        .bridges
-                        .iter()
-                        .fold(Shapes::new(), |acc, b| perimeters::union_all(&[&acc, &b.area]));
-                    Some(crate::bridging::Facts {
-                        inner,
-                        top: cls.top,
-                        bottom: perimeters::union_all(&[&cls.bottom, &bridged]),
-                        shell: cls.shell,
-                        sparse: cls.sparse,
-                        lines,
-                        paths,
-                        external: cls.bridges,
-                        own_bottom: cls.bottom,
+                            external: cls.bridges,
+                            own_bottom: cls.bottom,
+                        })
                     })
-                });
-                facts_cache.borrow_mut().insert(l, f.clone());
-                f
-            };
-            let print_z = |l: i64| -> f64 { u32::try_from(l).map_or(0.0, |u| self.plan.top(u)) };
-            let nozzle = cfg.nozzle_diameter;
-            let ratio = crate::motion::raw_f(cfg, "bridge_flow").unwrap_or(1.0);
-            let thick = crate::tower::flag_or(cfg, "thick_internal_bridges", true);
-            let line = bridge_line_width(cfg);
-            let nominal = if thick {
-                line.unwrap_or(nozzle)
+                };
+                let facts = |l: i64| -> Option<Arc<crate::bridging::Facts>> {
+                    if let Some(f) = facts_cache.borrow().get(&l) {
+                        return f.clone();
+                    }
+                    let f = shared_facts(l);
+                    facts_cache.borrow_mut().insert(l, f.clone());
+                    f
+                };
+                let print_z = |l: i64| -> f64 { u32::try_from(l).map_or(0.0, |u| self.plan.top(u)) };
+                let nozzle = cfg.nozzle_diameter;
+                let ratio = crate::motion::raw_f(cfg, "bridge_flow").unwrap_or(1.0);
+                let thick = crate::tower::flag_or(cfg, "thick_internal_bridges", true);
+                let line = bridge_line_width(cfg);
+                let nominal = if thick {
+                    line.unwrap_or(nozzle)
+                } else {
+                    line.unwrap_or_else(|| cfg.solid_infill_width())
+                };
+                let bead = crate::overhang::bridge_bead(nominal, self.plan.thickness(layer), ratio, thick);
+                let (thick, width) = (bead.round, bead.width);
+                // `internal_bridge_density`: the strands sit 1 over the density closer than the flow's spacing.
+                let spacing = bead.spacing / bridge_density(cfg, "internal_bridge_density");
+                let filter = match cfg.raw.get("dont_filter_internal_bridges") {
+                    Some(serde_json::Value::String(s)) => s.as_str(),
+                    _ => "disabled",
+                };
+                let env = crate::bridging::Env {
+                    cache: Some((&self.cache, cfg_tag)),
+                    facts: &facts,
+                    print_z: &print_z,
+                    count: i64::from(n),
+                    solid_spacing: cfg.spacing_for(cfg.solid_infill_width()),
+                    bridge_spacing: spacing,
+                    bridge_width: width,
+                    bridge_height: if thick { width } else { cfg.layer_height },
+                    sparse_full: cfg.sparse_infill_density >= 100.0 - 1e-6,
+                    multiplier: if filter == "disabled" { 3.0 } else { 1.0 },
+                    nofilter: filter == "nofilter",
+                    angle_bias: match cfg.sparse_infill_pattern {
+                        InfillPattern::HilbertCurve => std::f64::consts::FRAC_PI_4,
+                        InfillPattern::OctagramSpiral => std::f64::consts::PI / 16.0,
+                        _ => 0.0,
+                    },
+                    custom_angle: crate::motion::raw_f(cfg, "internal_bridge_angle")
+                        .filter(|a| *a > 0.0)
+                        .map(|a| {
+                            let relative = crate::tower::flag(cfg, "relative_bridge_angle");
+                            (if relative { a } else { a + self.model_turn(cfg) }, relative)
+                        }),
+                };
+                // The bridges below read the facts of this layer and the layers next to it. Asked for from inside the
+                // bridges' own memo claims, where the parallel helpers run as plain loops (the rule in `par`), they would
+                // be worked out one after another on this thread; asked for here, outside any claim, side by side.
+                let reads = crate::bridging::facts_read(&env, i64::from(layer));
+                drop(par::map(&reads, |&l| shared_facts(l)));
+                let memo = crate::bridging::Memo::default();
+                let areas = crate::bridging::bridge_layer(&env, i64::from(layer), &memo);
+                let ensure = crate::bridging::ensuring(&env, i64::from(layer), &memo);
+                // `enable_extra_bridge_layer`: a second layer over the bridges of the layer below.
+                let extra = crate::bridging::ExtraLayer::of(cfg);
+                let mut areas = areas.as_ref().clone();
+                if extra.internal {
+                    let second = crate::bridging::second_internal(
+                        &env,
+                        i64::from(layer),
+                        &memo,
+                        cfg.solid_infill_width(),
+                        &areas,
+                    );
+                    areas.extend(second);
+                }
+                let extra_external = if extra.external {
+                    let band = cfg.outer_wall_width()
+                        + cfg.inner_wall_width() * f64::from(cfg.wall_loops.saturating_sub(1));
+                    crate::bridging::second_external(&env, i64::from(layer), band)
+                } else {
+                    Vec::new()
+                };
+                Some(crate::bridging::LayerBridges {
+                    extra_external,
+                    areas,
+                    ensure,
+                    spacing,
+                    thick,
+                    width,
+                    flow: bead.flow,
+                    reference: (
+                        mm(f64::midpoint(self.bounds[0], self.bounds[2])),
+                        mm(f64::midpoint(self.bounds[1], self.bounds[3])),
+                    ),
+                    // Worked out already: the bridges of this layer read its facts.
+                    own: facts(i64::from(layer)),
+                })
             } else {
-                line.unwrap_or_else(|| cfg.solid_infill_width())
+                None
             };
-            let bead = crate::overhang::bridge_bead(nominal, self.plan.thickness(layer), ratio, thick);
-            let (thick, width) = (bead.round, bead.width);
-            // `internal_bridge_density`: the strands sit 1 over the density closer than the flow's spacing.
-            let spacing = bead.spacing / bridge_density(cfg, "internal_bridge_density");
-            let filter = match cfg.raw.get("dont_filter_internal_bridges") {
-                Some(serde_json::Value::String(s)) => s.as_str(),
-                _ => "disabled",
-            };
-            let env = crate::bridging::Env {
-                cache: Some((&self.cache, cfg_tag)),
-                facts: &facts,
-                print_z: &print_z,
-                count: i64::from(n),
-                solid_spacing: cfg.spacing_for(cfg.solid_infill_width()),
-                bridge_spacing: spacing,
-                bridge_width: width,
-                bridge_height: if thick { width } else { cfg.layer_height },
-                sparse_full: cfg.sparse_infill_density >= 100.0 - 1e-6,
-                multiplier: if filter == "disabled" { 3.0 } else { 1.0 },
-                nofilter: filter == "nofilter",
-                angle_bias: match cfg.sparse_infill_pattern {
-                    InfillPattern::HilbertCurve => std::f64::consts::FRAC_PI_4,
-                    InfillPattern::OctagramSpiral => std::f64::consts::PI / 16.0,
-                    _ => 0.0,
-                },
-                custom_angle: crate::motion::raw_f(cfg, "internal_bridge_angle")
-                    .filter(|a| *a > 0.0)
-                    .map(|a| {
-                        let relative = crate::tower::flag(cfg, "relative_bridge_angle");
-                        (if relative { a } else { a + self.model_turn(cfg) }, relative)
-                    }),
-            };
-            let memo = crate::bridging::Memo::default();
-            let areas = crate::bridging::bridge_layer(&env, i64::from(layer), &memo);
-            let ensure = crate::bridging::ensuring(&env, i64::from(layer), &memo);
-            // `enable_extra_bridge_layer`: a second layer over the bridges of the layer below.
-            let extra = crate::bridging::ExtraLayer::of(cfg);
-            let mut areas = areas.as_ref().clone();
-            if extra.internal {
-                let second = crate::bridging::second_internal(
-                    &env,
-                    i64::from(layer),
-                    &memo,
-                    cfg.solid_infill_width(),
-                    &areas,
-                );
-                areas.extend(second);
-            }
-            let extra_external = if extra.external {
-                let band = cfg.outer_wall_width()
-                    + cfg.inner_wall_width() * f64::from(cfg.wall_loops.saturating_sub(1));
-                crate::bridging::second_external(&env, i64::from(layer), band)
-            } else {
-                Vec::new()
-            };
-            Some(crate::bridging::LayerBridges {
-                extra_external,
-                areas,
-                ensure,
-                spacing,
-                thick,
-                width,
-                flow: bead.flow,
-                reference: (
-                    mm(f64::midpoint(self.bounds[0], self.bounds[2])),
-                    mm(f64::midpoint(self.bounds[1], self.bounds[3])),
-                ),
-                // Worked out already: the bridges of this layer read its facts.
-                own: facts(i64::from(layer)),
-            })
-        } else {
-            None
-        };
         let mut solid_areas: Vec<Shapes> = Vec::new();
         let mut works: Vec<ToolWork> = Vec::with_capacity(here.regions.len());
         let mut events = Vec::new();
@@ -7206,23 +7360,8 @@ impl SliceSession {
         // The walls, infill area and surface classes of the layer's regions. Those of a layer of several regions go
         // through the session's memo.
         let own_facts = bridges.as_ref().and_then(|b| b.own.as_deref());
-        let several = self.vase.is_none() && here.regions.iter().filter(|(_, s)| !s.is_empty()).count() > 1;
-        let shared_preps = several.then(|| {
-            self.cache.regions(i64::from(layer), tags.of(cfg), || {
-                self.region_preps(
-                    layer,
-                    cfg,
-                    &base_shell,
-                    mods,
-                    get,
-                    below,
-                    upper_slice.as_ref(),
-                    micros,
-                    tags,
-                    None,
-                )
-            })
-        });
+        let several = self.several(here);
+        let shared_preps = several.then(|| self.shared_preps(layer, cfg, mods, get, micros, tags));
         let mut own_preps = if several {
             Vec::new()
         } else {
