@@ -97,6 +97,44 @@ test('the menu holds Calibrate, Flush volumes, Swap colors, Reset to printer and
   await expect(page.locator('[data-testid="slice-filament-slot"][data-used="false"]').first()).toBeVisible()
 })
 
+test('the Filament options menu sits on top of the nozzle rows under it, on a solid surface', async ({ page, isMobile }) => {
+  // A folding Filament card (advanced settings) on a two-nozzle hotend rack printer whose AMS has not reported yet: the
+  // rail is short, so the menu hangs over the nozzle switch and the hotend rack buttons.
+  await open(page, { printerId: 'bay-6', settingsMode: 'advanced' })
+  await sx(page, { printerSlots: [], slotSetup: {} })
+  const racks = page.locator('.nozzle-row select')
+  await expect(racks).toHaveCount(2)
+  await page.locator('[data-section="filament"]').evaluate((el) => el.scrollIntoView({ block: 'start' }))
+  await page.getByTestId('slice-filament-menu').click()
+  const menu = page.getByRole('menu', { name: 'Filament options' })
+  await expect(menu.getByTestId('slice-filament-calibrate')).toBeFocused()
+  const hits = await menu.evaluate((m) => {
+    const r = m.getBoundingClientRect()
+    const inside = (x: number, y: number) => x > r.left + 2 && x < r.right - 2 && y > r.top + 2 && y < r.bottom - 2
+    // every point of the menu, its padding included, belongs to the menu
+    let missed = 0
+    for (let x = r.left + 3; x < r.right - 3; x += 8) for (let y = r.top + 3; y < r.bottom - 3; y += 8) if (!m.contains(document.elementFromPoint(x, y))) missed++
+    // and where a rack button or the nozzle switch lies under it, a point there hits the menu
+    const under = Array.from(document.querySelectorAll('.nozzle-row select, .nozzle-map .sx-switch')).flatMap((el) => {
+      const b = el.getBoundingClientRect()
+      const x = Math.min(b.right - 4, r.right - 6)
+      const y = Math.min(b.top + 4, r.bottom - 6)
+      return inside(x, y) && x > b.left && y < b.bottom ? [m.contains(document.elementFromPoint(x, y))] : []
+    })
+    return { missed, under, background: getComputedStyle(m).backgroundColor }
+  })
+  expect(hits.missed).toBe(0)
+  // the short rail puts something under the menu at both widths, so the check above is not empty
+  if (!isMobile) expect(hits.under.length).toBeGreaterThan(0)
+  expect(hits.under.every(Boolean)).toBe(true)
+  // a solid surface: no alpha in the computed color
+  expect(hits.background).not.toMatch(/\/\s*0?\.\d|rgba\(.*,\s*0?\.\d+\)/)
+  // the menu still works where it overlaps a rack button
+  const unused = menu.getByRole('menuitemcheckbox', { name: 'Show unused slots' })
+  await unused.click()
+  await expect(unused).toHaveAttribute('aria-checked', 'true')
+})
+
 test('Swap colors opens from the menu and swaps the two filaments on the plate', async ({ page }) => {
   await open(page)
   await page.getByTestId('slice-filament-menu').click()
