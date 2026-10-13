@@ -12,12 +12,17 @@ export const MAX_BODY_BYTES = 2_000_000
 const MAX_MESSAGES = 400
 const MAX_TOOLS = 128
 const MAX_BREAKPOINTS = 4
-// a rough upper bound for one image, in tokens
-const IMAGE_TOKENS = 2000
+// the most one image can cost on Haiku 5.5's vision tier, in tokens
+const IMAGE_TOKENS = 4784
+// what the provider adds for tool use, in tokens, rounded up
+const TOOL_OVERHEAD = 1000
+// what one web search can add to the prompt, in tokens, rounded up
+const SEARCH_RESULT_TOKENS = 30_000
+const CONTEXT_TOKENS = 1_000_000
 
 type Obj = Record<string, unknown>
 export type Shaped =
-  | { ok: true; body: Obj; inputEstimate: number; maxOutput: number; maxSearches: number }
+  | { ok: true; body: Obj; promptEstimate: number; maxOutput: number; maxSearches: number }
   | { ok: false; error: string }
 
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -31,6 +36,15 @@ const refuse = (msg: string): never => {
 // a cache point the client set, kept only in its plain 5-minute form
 function cachePoint(b: Obj, out: Obj): void {
   if (b['cache_control'] !== undefined) out['cache_control'] = { ...EPHEMERAL }
+}
+
+function withoutCachePoints(v: unknown): unknown {
+  if (Array.isArray(v)) v.forEach(withoutCachePoints)
+  else if (isObj(v)) {
+    delete v['cache_control']
+    for (const k of Object.keys(v)) withoutCachePoints(v[k])
+  }
+  return v
 }
 
 function textBlock(b: Obj): Obj {
@@ -80,9 +94,12 @@ function block(b: unknown, role: string): Obj {
     if (typeof b['id'] !== 'string' || typeof b['name'] !== 'string' || !isObj(b['input'])) refuse('bad tool use')
     return { type: 'tool_use', id: b['id'], name: b['name'], input: b['input'] }
   }
-  // replayed history from earlier turns, passed back unchanged as the API requires
+  // replayed history from earlier turns, passed back unchanged as the API requires, except
+  // that cache points anywhere in it go back to the plain 5-minute form
   if (role === 'assistant' && (t === 'thinking' || t === 'redacted_thinking' || t === 'server_tool_use' || t === 'web_search_tool_result')) {
-    return structuredClone(b)
+    const out = withoutCachePoints(structuredClone(b)) as Obj
+    cachePoint(b, out)
+    return out
   }
   return refuse(`content of type ${String(t)} is not allowed`)
 }
@@ -114,9 +131,12 @@ function tools(raw: unknown): { list: Obj[]; searches: number } {
     if (!isObj(t)) return refuse('bad tool')
     if (typeof t['type'] === 'string' && t['type'] !== 'custom') {
       if (!t['type'].startsWith('web_search_')) return refuse(`tool ${t['type']} is not allowed`)
+      // every web search tool counts toward the one limit
       const asked = typeof t['max_uses'] === 'number' && t['max_uses'] > 0 ? Math.floor(t['max_uses']) : MAX_SEARCHES
-      searches = Math.min(asked, MAX_SEARCHES)
-      return { type: 'web_search_20250305', name: 'web_search', max_uses: searches }
+      const uses = Math.min(asked, MAX_SEARCHES - searches)
+      if (uses < 1) return refuse(`at most ${MAX_SEARCHES} web searches a call`)
+      searches += uses
+      return { type: 'web_search_20250305', name: 'web_search', max_uses: uses }
     }
     if (typeof t['name'] !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(t['name'])) return refuse('bad tool name')
     if (!isObj(t['input_schema'])) return refuse('a tool needs an input schema')
@@ -171,17 +191,32 @@ function placeCache(body: Obj): void {
   if (n < MAX_BREAKPOINTS) body['cache_control'] = { ...EPHEMERAL }
 }
 
-// prompt tokens, over-estimated: a token for every 3 bytes of text, images at a fixed bound
+function isImage(v: unknown): v is { source: Obj } {
+  return isObj(v) && v['type'] === 'image' && isObj(v['source']) && typeof v['source']['data'] === 'string'
+}
+
+// prompt tokens, never under: a token for every byte of the request, and each image at the
+// most an image can cost (only image blocks count as images)
 function estimate(body: Obj): number {
   let images = 0
-  const text = JSON.stringify(body, (k, v) => {
-    if (k === 'data' && typeof v === 'string') {
+  const text = JSON.stringify(body, (_k, v) => {
+    if (isImage(v)) {
       images++
-      return ''
+      return { type: 'image' }
     }
     return v
   })
-  return Math.ceil(new TextEncoder().encode(text).length / 3) + images * IMAGE_TOKENS
+  return new TextEncoder().encode(text).length + images * IMAGE_TOKENS + TOOL_OVERHEAD
+}
+
+/**
+ * The most prompt tokens a call can bill: one pass at the prompt without web search, and
+ * with it one more pass per search, each carrying the reply so far and every search's
+ * results.
+ */
+export function worstInput(prompt: number, maxOutput: number, searches: number): number {
+  if (searches === 0) return Math.min(prompt, CONTEXT_TOKENS)
+  return (searches + 1) * Math.min(prompt + maxOutput + searches * SEARCH_RESULT_TOKENS, CONTEXT_TOKENS)
 }
 
 export function shape(raw: unknown): Shaped {
@@ -202,7 +237,7 @@ export function shape(raw: unknown): Shaped {
     body['thinking'] = { type: 'adaptive' }
     body['output_config'] = { effort: 'medium' }
     placeCache(body)
-    return { ok: true, body, inputEstimate: estimate(body), maxOutput, maxSearches: t.searches }
+    return { ok: true, body, promptEstimate: estimate(body), maxOutput, maxSearches: t.searches }
   } catch (e) {
     if (e instanceof Refused) return { ok: false, error: e.message }
     throw e

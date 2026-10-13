@@ -14,7 +14,6 @@ trap 'rm -f "$env_file"; [ -n "${serve_pid:-}" ] && kill "$serve_pid" 2>/dev/nul
 cat > "$env_file" <<ENV
 ANTHROPIC_API_KEY=sk-ant-integration
 MIMIR_UPSTREAM=${MIMIR_UPSTREAM:-http://host.docker.internal:$port}
-MIMIR_CLIENT_IP_SOURCE=x-forwarded-for-first
 ENV
 supabase start -x studio,imgproxy,logflare,vector,supavisor,realtime,mailpit,postgres-meta > /dev/null
 supabase functions serve mimir --env-file "$env_file" > "${TMPDIR:-/tmp}/mimir-serve.log" 2>&1 &
