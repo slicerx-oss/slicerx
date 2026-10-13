@@ -12,6 +12,22 @@ import type { LlmAdapter, LlmEvent, LlmRequest, LlmStop } from './types'
 
 const DEFAULT_BASE = 'https://api.anthropic.com'
 const BUDGET = { low: 2048, medium: 8192, high: 16000 } as const
+const EPHEMERAL = { type: 'ephemeral' } as const
+
+/** Models that think adaptively and take `output_config.effort`; `budget_tokens` is a 400 on them. */
+export function adaptiveThinking(model: string): boolean {
+  return /^claude-(fable|mythos|opus|sonnet|haiku)-5(-|$)|^claude-(opus-4-[678]|sonnet-4-6)(-|$)/.test(model)
+}
+
+/** Models that think even when the request leaves `thinking` out. */
+function thinksByDefault(model: string): boolean {
+  return /^claude-(fable|mythos|opus|sonnet|haiku)-5(-|$)/.test(model)
+}
+
+/** Models that refuse a forced tool choice (`any` or `tool`) with a 400. */
+export function noForcedTools(model: string): boolean {
+  return /^claude-(opus-5-5|sonnet-5-5|fable-5-1|mythos-5-1)(-|$)/.test(model)
+}
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -71,22 +87,33 @@ export function createAnthropicAdapter(): LlmAdapter {
     id: 'anthropic',
     build(req: LlmRequest, opts?: { baseUrl?: string }): LlmHttpRequest {
       const { system, messages } = messageList(req)
-      const tools: unknown[] = req.tools.map((t) => ({ name: encodeToolName(t.name), description: t.description, input_schema: t.parameters }))
+      const tools: Obj[] = req.tools.map((t) => ({ name: encodeToolName(t.name), description: t.description, input_schema: t.parameters }))
+      // the tools and the system prompt are the same every turn, so they are read from the cache after the first
+      const lastTool = tools[tools.length - 1]
+      if (lastTool) lastTool['cache_control'] = { ...EPHEMERAL }
       if (req.webSearch) tools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 3 })
-      const budget = req.reasoning ? BUDGET[req.reasoning] : 0
+      const adaptive = adaptiveThinking(req.model)
+      // current models think adaptively and take an effort; older ones a token budget
+      const budget = req.reasoning && !adaptive ? BUDGET[req.reasoning] : 0
       const body: Obj = {
         model: req.model,
-        max_tokens: req.maxOutputTokens ?? (budget > 0 ? budget + 8192 : 8192),
+        max_tokens: req.maxOutputTokens ?? (budget > 0 ? budget + 8192 : req.reasoning ? 16000 : 8192),
         messages,
         stream: true,
       }
-      if (system) body['system'] = system
+      if (system) body['system'] = [{ type: 'text', text: system, cache_control: { ...EPHEMERAL } }]
       if (budget > 0) body['thinking'] = { type: 'enabled', budget_tokens: Math.min(budget, num(body['max_tokens']) - 1024) }
+      if (adaptive && req.reasoning) {
+        body['thinking'] = { type: 'adaptive' }
+        body['output_config'] = { effort: req.reasoning }
+      }
       if (tools.length > 0) {
         body['tools'] = tools
-        // Forced tool use is not allowed together with thinking.
+        // forced tool use is not allowed together with thinking, and some models refuse it outright
         const choice = req.toolChoice ?? 'auto'
-        body['tool_choice'] = choice === 'none' ? { type: 'none' } : choice === 'required' && budget === 0 ? { type: 'any' } : { type: 'auto' }
+        const thinking = budget > 0 || (adaptive && Boolean(req.reasoning)) || thinksByDefault(req.model)
+        const forced = choice === 'required' && !thinking && !noForcedTools(req.model)
+        body['tool_choice'] = choice === 'none' ? { type: 'none' } : forced ? { type: 'any' } : { type: 'auto' }
       }
       const base = (opts?.baseUrl ?? DEFAULT_BASE).replace(/\/+$/, '')
       return {
