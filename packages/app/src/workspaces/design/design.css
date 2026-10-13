@@ -61,6 +61,7 @@
 .shelf-tool:disabled .sx-ic { color: var(--dim); }
 .shelf-icon { padding: 0 7px; }
 .shelf-icon > span { display: none; }
+.shelf-finish-slot { display: flex; align-items: center; margin-left: 12px; flex: none; }
 .shelf-next { position: relative; display: flex; align-items: center; gap: 2px; padding: 0 4px; margin-left: 12px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--accent) 7%, transparent); flex: none; animation: shelf-next-in 120ms linear; }
 @keyframes shelf-next-in { from { opacity: 0; } to { opacity: 1; } }
 /* What is picked, at the slot's start: "1 face", "3 edges"; a tool that cannot take that many is off, with the reason in its tip. */

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Finished sketches stay drawn on their planes in Model, the way Fusion shows a sketch after Finish Sketch. A sketch
+// Finished sketches stay drawn on their planes in Model, the way Fusion shows a sketch after Finish sketch. A sketch
 // a live feature was made from hides, as Fusion hides a consumed sketch; rolled back sketches hide too. While the
 // sketch tool is open, the one sketch it draws is the tool's.
 import type { SketchItem, Timeline } from '@slicerx/cad-history'

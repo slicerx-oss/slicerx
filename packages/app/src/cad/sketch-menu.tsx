@@ -15,7 +15,7 @@ export function SketchMenu({ at, onClose, id, name, later }: { at: MenuPoint | n
   return (
     <ContextMenu at={at} onClose={onClose} label={name} testId="sketch-ctx" target="sketch">
       <MenuItem icon="sketch" disabled={later} {...tip} data-testid="sketch-ctx-edit" onClick={run('edit')}>
-        Edit Sketch
+        Edit sketch
       </MenuItem>
       <MenuItem icon="extrude" disabled={later} {...tip} data-testid="sketch-ctx-extrude" onClick={run('extrude')}>
         Extrude

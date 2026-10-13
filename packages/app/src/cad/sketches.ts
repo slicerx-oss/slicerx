@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Finished sketches: Finish Sketch puts the sketch in the design timeline without making a solid, the way Fusion
+// Finished sketches: Finish sketch puts the sketch in the design timeline without making a solid, the way Fusion
 // does. A finished sketch opens again from the strip or the tree to be changed, extruded or revolved; a feature
 // made from it names it by id (record.ts sketchNext), and changing the sketch replays the bodies that use it.
 import { historyOf, stepId, withSketch, type FaceFrame, type SketchConstraint, type SketchItem, type SketchLoop, type Timeline } from '@slicerx/cad-history'
@@ -85,11 +85,11 @@ export function takeSketchOpen(): SketchOpen | null {
   return r
 }
 
-// The open sketch editor's Finish Sketch, for the shelf's button and Enter.
+// The open sketch editor's Finish sketch, for the shelf's button and Enter.
 let finisher: (() => void) | null = null
 const listeners = new Set<() => void>()
 
-/** Registers the open editor's Finish Sketch; returns the unregister. */
+/** Registers the open editor's Finish sketch; returns the unregister. */
 export function provideFinish(fn: () => void): () => void {
   finisher = fn
   for (const l of listeners) l()
@@ -100,7 +100,7 @@ export function provideFinish(fn: () => void): () => void {
   }
 }
 
-/** Finish Sketch on the open editor, if one is open. */
+/** Finish sketch on the open editor, if one is open. */
 export function requestFinish(): void {
   finisher?.()
 }

@@ -194,7 +194,14 @@ export function Shelf() {
           </div>
         </div>
       ))}
-      {next.length ? (
+      {/* while sketching, Finish sketch takes the slot of the tools for what is picked; the end group stays put */}
+      {canFinish ? (
+        <div className="shelf-finish-slot">
+          <Button size="sm" variant="primary" icon="check" data-testid="sketch-finish" data-tip-title="Finish sketch" data-tip-body="Keeps the sketch in the timeline without making a solid. Enter does the same." onClick={requestFinish}>
+            Finish sketch
+          </Button>
+        </div>
+      ) : next.length ? (
         <div className="shelf-next" data-testid="model-shelf-next" data-tip-avoid=".shelf-next" aria-label={`For ${words}`} role="group">
           {pick && (pick.kind !== 'object' || pick.count > 1) ? (
             <span className="shelf-pick" data-testid="model-shelf-next-count" aria-label={words} data-tip-title={words}>
@@ -206,11 +213,6 @@ export function Shelf() {
         </div>
       ) : null}
       <div className="shelf-end">
-        {canFinish ? (
-          <Button size="sm" variant="primary" icon="check" className="shelf-finish" data-testid="sketch-finish" data-tip-title="Finish Sketch" data-tip-body="Keeps the sketch in the timeline without making a solid. Enter does the same." onClick={requestFinish}>
-            Finish Sketch
-          </Button>
-        ) : null}
         {shelfGroup(tools, 'utility').map((e) => (e.kind === 'tool' ? toolButton(e.tool, { className: 'shelf-tool shelf-icon' }) : null))}
         <span className="shelf-sep" aria-hidden="true" />
         <Button variant="ghost" size="sm" icon="undo" aria-label="Undo" tip="edit.undo" disabled={undo === 0} onClick={() => history().undo()} />

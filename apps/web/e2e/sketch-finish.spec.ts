@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Finish Sketch, as in Fusion: a sketch on the XZ plane finishes into the timeline without a solid, shows in the
+// Finish sketch, as in Fusion: a sketch on the XZ plane finishes into the timeline without a solid, shows in the
 // strip and the tree, and its menu extrudes it into a body whose feature names the sketch.
 import { type Page } from '@playwright/test'
 import { command, openStudio, pick, sketchAt, toolPanel } from './cad-helpers'
@@ -55,7 +55,7 @@ test('a sketch on XZ finishes into the timeline, then extrudes from its menu', a
   await panel.locator('#sk-section').click()
   await expect.poll(clipped).toBe(false)
 
-  // Finish Sketch: no solid, a Sketch item in the timeline, the camera where it was
+  // Finish sketch: no solid, a Sketch item in the timeline, the camera where it was
   await page.getByTestId('sketch-finish').click()
   await expect.poll(async () => (await sx(page)).tool).toBe(null)
   const done = await sx(page)
