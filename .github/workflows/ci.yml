@@ -845,13 +845,14 @@ jobs:
           if [ "$GPU_LANE" = true ]; then [ "$GPU" = success ]; fi
 
   # The database tests (pgTAP) on a throwaway local Supabase with only the services they use: the database, auth
-  # and storage. Then the module drop check, and the whole suite again on a second stack without the default
-  # grants, the way a hosted project starts (supabase/README.md).
+  # and storage. Then the module drop check, the mimir proxy's own tests and its run on the stack against a fake
+  # provider, and the whole suite again on a second stack without the default grants, the way a hosted project
+  # starts (supabase/README.md).
   pgtap:
     needs: detect
     if: needs.detect.outputs.pgtap == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
@@ -860,6 +861,12 @@ jobs:
       - run: supabase start -x studio,imgproxy,logflare,vector,edge-runtime,supavisor,realtime,mailpit,postgres-meta,postgrest
       - run: supabase test db
       - run: sh supabase/modules/check-drop.sh
+      - run: supabase stop --no-backup
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.1.4
+      - run: deno test --allow-net=jsr.io supabase/functions/mimir
+      - run: sh supabase/functions/mimir/integration.sh
       - run: supabase stop --no-backup
       - run: sh supabase/tests/no-default-grants.sh "$RUNNER_TEMP/nogrants"
         env:
