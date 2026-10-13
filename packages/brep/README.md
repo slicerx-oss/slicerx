@@ -49,7 +49,7 @@ sh packages/brep/scripts/build-wasm.sh
 
 | File | Bytes | gzip | SHA-256 |
 | --- | --- | --- | --- |
-| `lib/sx_brep.wasm` | 3,179,158 | 1,252,742 | `1e682ae5d9732f66f50ff45e25040671de2189f3ec2c262efa7d2921294511d2` |
+| `lib/sx_brep.wasm` | 3,185,264 | 1,255,573 | `0109e01607d1fa1e40d5f69d84adb659da5257eac04b3ecfdb76ba53a8408319` |
 | `lib/sx_brep.mjs` | 63,323 | | `43eac3d1350e95163fff77a3be6dc5610c4ac16350d720235e5854fd08ce09a8` |
 
 ## Licenses
