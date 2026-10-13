@@ -7,6 +7,7 @@
 import { closeSync, openSync, readFileSync, readSync } from 'node:fs'
 import { basename } from 'node:path'
 import { hasListing, MarkReadError, readVaultMarks } from '@slicerx/contracts/sx3mf-marks'
+import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
 
@@ -62,5 +63,5 @@ export function refuseVaultFile(path: string): void {
   const v = inspect(path)
   if (!v.vault) return
   if (v.unreadable) throw new ToolInputError(`${basename(path)} could not be checked for a Vault listing: ${v.unreadable}`, 'invalid_model')
-  throw new ToolInputError(`${basename(path)} is a design from the Vault, which leaves SlicerX only as .sx3mf. Slicing and printing it still work.`, 'unsupported_format')
+  throw new ToolInputError(`${basename(path)} is a design from the Vault, which leaves ${productName()} only as .sx3mf. Slicing and printing it still work.`, 'unsupported_format')
 }

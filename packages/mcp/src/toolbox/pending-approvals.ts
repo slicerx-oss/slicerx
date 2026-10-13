@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { developerModeRemedies, developerModeSure, NEEDS_DEVELOPER_MODE, PRINTER_STORAGE_FULL, STORAGE_FULL_REMEDY } from '@slicerx/contracts'
+import { developerModeRemedies, developerModeSure, NEEDS_DEVELOPER_MODE, PRINTER_STORAGE_FULL, productName, STORAGE_FULL_REMEDY } from '@slicerx/contracts'
 import { z } from 'zod'
 import { mcpName } from '../gate'
 import { serverTool, type ServerToolDeps } from './deps'
@@ -14,7 +14,7 @@ export default (d: ServerToolDeps) =>
     permission: 'read',
     toolset: 'core',
     ungated: true,
-    description: 'List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in SlicerX or on the phone, and how those went once the hub ran them. A failed one carries the hub\'s error code; `needs_developer_mode` (a Bambu Lab printer that takes no print from other apps; `sure` false when that is a guess from a failed upload or an unanswered start) lists the two remedies to tell the user, and `printer_storage_full` (no room on the printer\'s card) lists the one remedy.',
+    description: `List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in ${productName()} or on the phone, and how those went once the hub ran them. A failed one carries the hub's error code; \`needs_developer_mode\` (a Bambu Lab printer that takes no print from other apps; \`sure\` false when that is a guess from a failed upload or an unanswered start) lists the two remedies to tell the user, and \`printer_storage_full\` (no room on the printer's card) lists the one remedy.`,
     input: z.object({}),
     async run() {
       const entries = [...d.gate.pending.values()]

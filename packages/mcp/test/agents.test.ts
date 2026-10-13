@@ -62,7 +62,7 @@ describe('Connect your AI agent', () => {
 
   it('reads a credential only from a SlicerX agent item, and says how to fix a missing one', () => {
     expect(agentKeyRef('cursor')).toBe('slicerx-agent-cursor')
-    expect(() => readKeychainKey('login-password', () => 'x')).toThrow(/not a SlicerX agent credential/)
+    expect(() => readKeychainKey('login-password', () => 'x')).toThrow(/not an agent credential/)
     if (process.platform === 'darwin') {
       const calls: string[][] = []
       expect(readKeychainKey('slicerx-agent-cursor', (cmd, args) => (calls.push([cmd, ...args]), 'key-123\n'))).toBe('key-123')

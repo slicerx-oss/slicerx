@@ -7,6 +7,7 @@ import { basename, extname, join } from 'node:path'
 import { gcodeLabel, printerForProfile } from '@slicerx/settings'
 import type { ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
+import { productName } from '@slicerx/contracts'
 import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, type ExtraLayers, type SlotLayer } from '../config'
 import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
@@ -22,17 +23,17 @@ const overridesSchema = z
   .describe('OrcaSlicer setting keys to values, applied last. Example: {"layer_height": 0.16, "sparse_infill_density": 25, "enable_support": true}')
 
 export const sliceInput = {
-  model: z.string().min(1).describe('Absolute path to an STL, OBJ, 3MF or .sx3mf file, an http(s) URL to download one, or a built-in test model: sample:cube-20, sample:tower-20x60, sample:plate-60x40x3 or sample:x-mark (the SlicerX X mark)'),
+  model: z.string().min(1).describe('Absolute path to an STL, OBJ, 3MF or .sx3mf file, an http(s) URL to download one, or a built-in test model: sample:cube-20, sample:tower-20x60, sample:plate-60x40x3 or sample:x-mark (an X mark)'),
   plate: z.number().int().min(1).max(999).optional().describe('For a 3MF or .sx3mf project, the plate to slice (1-based, see slicerx_inspect_project). Default: the first plate.'),
   project_settings: z
     .boolean()
     .default(false)
-    .describe("Start from the 3MF or .sx3mf project's own print settings (as saved by Bambu Studio, OrcaSlicer or SlicerX), then apply profiles, profile_files and overrides on top"),
+    .describe("Start from the 3MF or .sx3mf project's own print settings (as saved by Bambu Studio, OrcaSlicer or this app), then apply profiles, profile_files and overrides on top"),
   project_gcode: z
     .enum(['review', 'profile'])
     .default('review')
     .describe(
-      "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review, a one-line details.summary to show first and the diff and flagged lines in structuredContent.error.details, for the person to see; printer_needed when no printer profile names the printer to compare with. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. Only a person can choose a project's own G-code, in SlicerX; no tool call can.",
+      "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review, a one-line details.summary to show first and the diff and flagged lines in structuredContent.error.details, for the person to see; printer_needed when no printer profile names the printer to compare with. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. Only a person can choose a project's own G-code, in the app; no tool call can.",
     ),
   paint: z
     .record(z.string().regex(/^\d+$/), z.partialRecord(z.enum(['color', 'seam', 'support', 'fuzzy']), z.record(z.string().regex(/^\d+$/), z.string().max(4096))))
@@ -43,7 +44,7 @@ export const sliceInput = {
   strict_settings: z
     .boolean()
     .default(false)
-    .describe("With project_settings: refuse with error code project_settings_unused when the project's print settings carry keys SlicerX does not know or values it cannot read, instead of slicing without them (import_report lists them either way)"),
+    .describe("With project_settings: refuse with error code project_settings_unused when the project's print settings carry keys the slicer does not know or values it cannot read, instead of slicing without them (import_report lists them either way)"),
   allow_collisions: z
     .boolean()
     .default(false)
@@ -180,7 +181,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
       importReport = read.summary.import_report
       const r = importReport
       if (args.strict_settings && (r.unknown.length || r.invalid.length)) {
-        throw new ToolInputError(`${basename(modelPath)}'s print settings carry what SlicerX cannot use (strict_settings): ${importReportLines(r).join('; ')}`, 'project_settings_unused')
+        throw new ToolInputError(`${basename(modelPath)}'s print settings carry what ${productName()} cannot use (strict_settings): ${importReportLines(r).join('; ')}`, 'project_settings_unused')
       }
     }
     if (args.plate !== undefined && !read.summary.plates.some((p) => p.index === args.plate)) {
