@@ -564,6 +564,10 @@ export interface Viewport {
   setSketchCursor(cursor: SketchCursor | null): void
   /** Create Sketch's origin planes, `sizeMm` across through `center` (bed coordinates), or null to hide them. */
   setOriginPlanes(o: { center: [number, number, number]; sizeMm: number } | null): void
+  /** Finished sketches drawn on their planes (paths only), outside the sketch tool. An empty list clears them. */
+  setFinishedSketches(scenes: readonly SketchScene[]): void
+  /** Cuts away the models on the side `normal` points to, through `point` (bed coordinates); null puts them back. */
+  setSection(section: { point: [number, number, number]; normal: [number, number, number] } | null): void
   /** Turns the camera to look straight at a plane through `point` along `normal` (bed coordinates), framing `radiusMm`. */
   lookAtPlane(point: [number, number, number], normal: [number, number, number], radiusMm: number, opts?: { animate?: boolean }): void
   /** Kept dimensions: a line and a value label each, drawn through the model. An empty list clears them. */
