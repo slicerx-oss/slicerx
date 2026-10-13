@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-brep"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+description = "Exact solids for SlicerX's modeling tools on the SMLib kernel (NVIDIA usd-brep, Apache-2.0), behind one JSON call"
+links = "sx_brep"
+
+# The kernel is C++ behind a C call, so this crate allows `unsafe` (two calls, each with a SAFETY comment).
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+undocumented_unsafe_blocks = "deny"
+
+[dependencies]
+serde_json = "=1.0.151"
+
+[build-dependencies]
+cc = { version = "=1.5.1", features = ["parallel"] }

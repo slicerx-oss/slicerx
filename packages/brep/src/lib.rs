@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+//! Exact solids for the modeling tools: the `SMLib` kernel (NVIDIA usd-brep, Apache-2.0) and our wrapper
+//! (`cpp/sx_brep.cpp`) behind one JSON call. Bodies stay in the kernel, named by number, until freed; `tessellate`
+//! turns one into the welded triangle mesh the rest of `SlicerX` uses, each triangle labeled with its face.
+//!
+//! Operations (requests and replies are JSON objects, sizes in millimeters):
+//!
+//! | op | request | reply |
+//! | --- | --- | --- |
+//! | `box` | `min`, `max` | `body` |
+//! | `cylinder` | `origin`, `axis`, `diameterMm`, `heightMm` | `body` |
+//! | `extrude` | `frame` (`origin`, `u`, `normal`), `polygons` (`outer`, `holes`: loops of `points` or `center` and `diameterMm`), `fromMm`, `toMm` | `body` |
+//! | `boolean` | `op` (`union`, `difference`, `intersection`), `a`, `b` | `body` |
+//! | `subtract` | `body`, `solids` (box or cylinder) | `body` |
+//! | `cut` | `body`, `plane` (`point`, `normal`) | `below`, `above` (a body, or null when empty) |
+//! | `info` | `body` | `manifold`, `volumeMm3`, `bounds`, `faces`, `faceTypes` |
+//! | `tessellate` | `body`, `chordMm` (0.01), `angleDeg` (15) | `positions`, `indices`, `faceIds`, `faces` (`id`, `type`) |
+//! | `free` | `body` | `freed` |
+//! | `count` | | `bodies` |
+//!
+//! Ops that change a body make a new one and leave their inputs as they were.
+
+#[cfg(sx_brep_kernel)]
+use std::ffi::c_char;
+use std::ffi::{CStr, CString};
+use std::sync::Mutex;
+
+/// Whether this build has the kernel (its source was there when it was built).
+pub const KERNEL: bool = cfg!(sx_brep_kernel);
+
+#[cfg(sx_brep_kernel)]
+unsafe extern "C" {
+    fn sx_brep_call(op: *const c_char, request: *const c_char) -> *mut c_char;
+    fn sx_brep_free(reply: *mut c_char);
+}
+
+// the kernel's bodies and context are one shared table
+static LOCK: Mutex<()> = Mutex::new(());
+
+/// Runs one operation. `Ok` holds the JSON reply; `Err` the message of a failed one.
+pub fn call(op: &str, request: &str) -> Result<String, String> {
+    let (Ok(op), Ok(request)) = (CString::new(op), CString::new(request)) else {
+        return Err("request: contains a NUL byte".into());
+    };
+    let reply = raw_call(&op, &request)?;
+    // replies sort their keys, so a failure starts with its error
+    if reply.starts_with("{\"error\":") {
+        let v: serde_json::Value =
+            serde_json::from_str(&reply).map_err(|e| format!("kernel: bad reply: {e}"))?;
+        return Err(v["error"]
+            .as_str()
+            .unwrap_or("kernel: the operation failed")
+            .to_owned());
+    }
+    Ok(reply)
+}
+
+#[cfg(sx_brep_kernel)]
+fn raw_call(op: &CStr, request: &CStr) -> Result<String, String> {
+    let _guard = LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    // SAFETY: both pointers are valid NUL-terminated strings for the call; the lock keeps it to one caller.
+    let p = unsafe { sx_brep_call(op.as_ptr(), request.as_ptr()) };
+    if p.is_null() {
+        return Err("kernel: out of memory".into());
+    }
+    // SAFETY: the wrapper returns a NUL-terminated string it allocated, freed below with its own free.
+    let reply = unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+    // SAFETY: p came from sx_brep_call and is freed once.
+    unsafe { sx_brep_free(p) };
+    Ok(reply)
+}
+
+#[cfg(not(sx_brep_kernel))]
+fn raw_call(_op: &CStr, _request: &CStr) -> Result<String, String> {
+    let _guard = LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    Err("this build has no B-rep kernel (packages/brep/scripts/fetch-smlib.sh, then build again)".into())
+}

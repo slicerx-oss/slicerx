@@ -12,6 +12,7 @@ members = [
   "packages/profiles",
   "packages/geom",
   "packages/geom/wasm",
+  "packages/brep",
   "packages/sx3mf",
   "packages/connect",
   "packages/connect/cpace",
