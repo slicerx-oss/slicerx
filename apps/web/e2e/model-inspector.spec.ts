@@ -52,4 +52,25 @@ test.describe('Model inspector', () => {
     await expect(multi).toHaveCount(0)
     await expect(page.getByTestId('model-inspector').locator('.tf')).toBeVisible()
   })
+
+  test('a position of -123.4 fits its field whole', async ({ page }) => {
+    await openStudio(page)
+    await freshBox(page)
+    await page.locator('.sx-tab[data-mode="design"]').click()
+    const fields = page.getByTestId('model-inspector').locator('.tf-row').first().locator('.sx-scrub-input')
+    for (const i of [0, 1]) {
+      await fields.nth(i).fill('-123.4')
+      await fields.nth(i).press('Enter')
+      await expect(fields.nth(i)).toHaveValue('-123.4')
+    }
+    const fit = await fields.evaluateAll((els) =>
+      (els as HTMLInputElement[]).map((el) => {
+        const cs = getComputedStyle(el)
+        const c = document.createElement('canvas').getContext('2d')!
+        c.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+        return c.measureText(el.value).width <= el.clientWidth
+      }),
+    )
+    expect(fit).toEqual([true, true, true])
+  })
 })
