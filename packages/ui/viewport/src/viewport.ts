@@ -2608,7 +2608,8 @@ class ViewportImpl implements Viewport {
     const s = this.sketchLayer.scene
     const at = s ? this.sketchAt(e) : null
     if (!s || !at) return
-    this.emit('sketch', { kind, at, ...(handle !== undefined ? { handle } : {}), mmPerPx: this.mmPerPx(fromPlane(s.frame, at)), screen: [e.clientX, e.clientY], shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey })
+    const mark = kind === 'hover' || kind === 'click' ? this.sketchLayer.markAt((p) => this.toScreen(fromPlane(s.frame, p)), [e.clientX, e.clientY]) : null
+    this.emit('sketch', { kind, at, ...(handle !== undefined ? { handle } : {}), mmPerPx: this.mmPerPx(fromPlane(s.frame, at)), screen: [e.clientX, e.clientY], shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey, ...(mark ? { mark } : {}) })
   }
 
   lookAtPlane(point: V3, normal: V3, radiusMm: number, opts: { animate?: boolean } = {}): void {
