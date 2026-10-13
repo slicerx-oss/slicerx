@@ -765,13 +765,27 @@ class ViewportImpl implements Viewport {
     if (typeof document === 'undefined' || (!names.length && !this.planeNames.length)) return
     const rect = this.canvas.getBoundingClientRect()
     const { fg, halo } = this.planeInk
+    // a name whose corner is behind the model fades out, as the brim's ears do
+    const meshes: Mesh[] = []
+    for (const o of this.objects.values()) for (const p of o.parts) meshes.push(p.mesh)
+    const cam = this.camera.getWorldPosition(new Vector3())
+    const rc = new Raycaster()
+    const seen = (pt: Vector3): boolean => {
+      if (!meshes.length) return true
+      const dir = pt.clone().sub(cam)
+      const dist = dir.length()
+      rc.set(cam, dir.normalize())
+      rc.far = dist
+      const h = rc.intersectObjects(meshes, false)[0]
+      return !h || h.distance > dist - 0.4
+    }
     const ring = ([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]] as const).map(([x, y]) => `${x * 1.5}px ${y * 1.5}px 1px ${halo}`).join(',')
     names.forEach(({ name, at }, i) => {
       let el = this.planeNames[i]
       if (!el) {
         el = document.createElement('div')
         el.className = 'vp-plane-name'
-        el.style.cssText = 'position:fixed;pointer-events:none;z-index:5;transform:translate(-50%,-50%);font:600 12px/1 system-ui,sans-serif;letter-spacing:0.02em'
+        el.style.cssText = 'position:fixed;pointer-events:none;z-index:5;transform:translate(-50%,-50%);font:600 12px/1 system-ui,sans-serif;letter-spacing:0.02em;transition:opacity 120ms'
         document.body.appendChild(el)
         this.planeNames[i] = el
       }
@@ -784,6 +798,8 @@ class ViewportImpl implements Viewport {
       el.style.left = `${x}px`
       el.style.top = `${y}px`
       el.style.display = v.z < 1 && x > rect.left && x < rect.right && y > rect.top && y < rect.bottom ? 'block' : 'none'
+      el.style.opacity = seen(at) ? '1' : '0'
+      el.dataset['plane'] = name.toLowerCase()
     })
     for (let i = names.length; i < this.planeNames.length; i++) this.planeNames[i]!.style.display = 'none'
   }
@@ -2460,9 +2476,24 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
-  /** Create Sketch's origin planes, `sizeMm` across through `center` (bed coordinates), or null to hide them. */
+  /**
+   * Create Sketch's origin planes, at least `sizeMm` across through `center` (bed coordinates), or null to hide them.
+   * They grow past the plate's models, so every plane has an edge to click and its name's corner clears them.
+   */
   setOriginPlanes(o: { center: V3; sizeMm: number } | null): void {
-    if (this.originPlanes.set(o)) this.invalidate()
+    let size = o?.sizeMm ?? 0
+    if (o) {
+      const inv = this.stage.bedMatrix().invert()
+      const box = new Box3()
+      for (const e of this.objects.values()) for (const p of e.parts) box.expandByObject(p.mesh)
+      if (!box.isEmpty()) {
+        const lo = box.min.applyMatrix4(inv)
+        const hi = box.max.applyMatrix4(inv)
+        const reach = Math.max(...[0, 1, 2].map((i) => Math.max(Math.abs(lo.getComponent(i) - o.center[i]!), Math.abs(hi.getComponent(i) - o.center[i]!))))
+        size = Math.max(size, reach * 2.3)
+      }
+    }
+    if (this.originPlanes.set(o && { ...o, sizeMm: size })) this.invalidate()
   }
 
   private sketchOn(): boolean {
@@ -2785,6 +2816,7 @@ class ViewportImpl implements Viewport {
     this.cutRings.setColor('v', t.scene.selection)
     this.sketchLayer.setAccent(t.scene.selection)
     this.planeInk = { fg: lightStudio(t.scene.bgTop) ? '#282a36' : '#f8f8f2', halo: t.scene.bgTop }
+    this.originPlanes.setLight(lightStudio(t.scene.bgTop))
     this.stage.setSceneColors(t.scene)
     setSharedSceneColors(t.scene)
     this.mats.dispose()
