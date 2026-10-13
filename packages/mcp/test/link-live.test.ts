@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A printer's live view read the way a client reads it: slicerx_printer_status through the real
-// sx-link binary and the Elegoo and Snapmaker 2.0 mock printers. Skipped when sx-link is not built.
+// sx-link binary and the Elegoo, Snapmaker 2.0 and Bambu Lab mock printers. Skipped when sx-link is not built.
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { connectLink } from '@slicerx/link-client'
-import { startMocks, type RunningMocks } from '@slicerx/mock-printers'
+import { MOCK_ACCESS_CODE, MOCK_SERIAL, startMocks, type RunningMocks } from '@slicerx/mock-printers'
 import { connect, data } from './helpers'
 
 // Runs only when SX_LINK_BIN names a built sx-link, with a throwaway state directory and file
@@ -24,7 +24,7 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
   let code = ''
 
   beforeAll(async () => {
-    mocks = await startMocks({ only: ['elegoo', 'snapmaker-luban'], state: 'idle' })
+    mocks = await startMocks({ only: ['elegoo', 'snapmaker-luban', 'bambu'], state: 'idle' })
     proc = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', '--loopback'], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     await new Promise<void>((done, fail) => {
@@ -46,6 +46,8 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
     await setup.settings.set({ experimentalConnectors: true })
     await setup.addPrinter({ id: 'bay-8', name: 'Bay 8', plugin: 'snapmaker', host: '127.0.0.1', port: mocks.ports['snapmaker-luban'] ?? 0, protocol: 'luban', credentialRef: 'printer/bay-8/token', pollMs: 100 }, { model: 'A350' })
     await setup.authorizePrinter('bay-8', 30)
+    await setup.setSecret('bay-9-code', MOCK_ACCESS_CODE)
+    await setup.addPrinter({ id: 'bay-9', name: 'Bay 9', plugin: 'bambu-lan', host: '127.0.0.1', port: mocks.ports['bambu'] ?? 0, serial: MOCK_SERIAL, credentialRef: 'bay-9-code', ftpPort: mocks.ports['bambu-ftp'] ?? 0, cameraPort: mocks.ports['bambu-camera'] ?? 0, pollMs: 200 }, { vendor: 'Bambu Lab', model: 'P1S' })
     setup.close()
   }, 30_000)
 
@@ -80,5 +82,18 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
     await expect.poll(async () => (await read()).state, { timeout: 10_000 }).toBe('printing')
     expect(typeof (await read()).live?.layerZMm).toBe('number')
     await post('/set', { mock: 'snapmaker-luban', state: 'idle' })
+  })
+
+  it("reads the exact grams left in a Bambu Lab printer's AMS slots", async () => {
+    const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${mocks.control}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    await post('/bambu', { grams: { 0: 812, 2: 95 } })
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    type Status = { output: { slots?: { id: string; remainingG?: number; remainingPct?: number }[] } }
+    const read = async () => data<Status>(await h.call('slicerx_printer_status', { printerId: 'bay-9' })).output.slots ?? []
+    await expect.poll(async () => (await read()).find((s) => s.id === 'A1')?.remainingG, { timeout: 15_000 }).toBe(812)
+    const slots = await read()
+    expect(slots.find((s) => s.id === 'A3')?.remainingG).toBe(95)
+    // A slot without an exact reading keeps only the percentage estimate.
+    expect(slots.find((s) => s.id === 'A2')?.remainingG).toBeUndefined()
   })
 })
