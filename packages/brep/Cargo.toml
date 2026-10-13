@@ -22,6 +22,10 @@ must_use_candidate = "allow"
 missing_errors_doc = "allow"
 undocumented_unsafe_blocks = "deny"
 
+[features]
+# tests/routines.rs: the kernel routines we replaced, against what the originals gave
+routine-probe = []
+
 [dependencies]
 serde_json = "=1.0.151"
 

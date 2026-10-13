@@ -437,7 +437,8 @@ jobs:
           if-no-files-found: error
 
   # sx-brep with the SMLib kernel (packages/brep): the kernel's source fetched at its pinned commit and checked against
-  # its SHA-256, then built and tested. Every other Rust job builds the crate without it.
+  # its SHA-256, our routines swapped in, then built and tested, the swapped routines against the originals' values
+  # (tests/routines.rs). Every other Rust job builds the crate without it.
   brep:
     needs: detect
     if: needs.detect.outputs.brep == 'true'
@@ -451,13 +452,13 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/slicerx/smlib
-          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh') }}
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: brep
       - run: sh packages/brep/scripts/fetch-smlib.sh
-      - run: cargo clippy -p sx-brep --release --all-targets -- -D warnings
-      - run: cargo test -p sx-brep --release
+      - run: cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings
+      - run: cargo test -p sx-brep --release --features routine-probe
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
   # so the specs test what the desktop slices, and no spec needs the WebAssembly slicer. Built once per run beside the
