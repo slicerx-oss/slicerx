@@ -12,6 +12,7 @@
   --t-mute:#8d95bd;    /* labels and folded lines */
   --t-chrome:#6a7299;  /* title bar and other frame text */
   --t-del:#ff8a8a;     /* removed lines in a settings diff */
+  --t-bubble:#262834;  /* the person's message, raised off --t-bg */
   display:grid;grid-template-columns:248px minmax(0,1fr) 296px;height:100%;min-height:0;
   color:var(--fg);font:14px/1.5 var(--f-body);
 }
@@ -74,7 +75,7 @@
 
 .sx-pilot .turn-user{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
 .sx-pilot .turn-user .where{font:500 12px var(--f-mono);color:var(--t-chrome)}
-.sx-pilot .bubble{max-width:85%;background:var(--ink-3);border:1px solid var(--line-soft);border-radius:14px 14px 4px 14px;padding:10px 16px;font:500 16px/1.5 var(--f-body);color:var(--t-fg);white-space:pre-wrap;overflow-wrap:anywhere}
+.sx-pilot .bubble{max-width:85%;background:var(--t-bubble);border:1px solid var(--line-soft);border-radius:14px 14px 4px 14px;padding:10px 16px;font:500 16px/1.5 var(--f-body);color:var(--t-fg);white-space:pre-wrap;overflow-wrap:anywhere}
 .sx-pilot .bubble .pg{font:600 14px var(--f-mono);color:var(--purple);margin-right:.55em}
 
 .sx-pilot .turn-pilot{display:flex;flex-direction:column;gap:16px}

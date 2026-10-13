@@ -1,2 +1,2 @@
 /* A client's sheet in the app link prompt: mimir's sheet record, in the dialog's colors. */
-.app-link-sheet-rec.sx-pilot { --t-bg: var(--ink-1); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); display: block; height: auto; margin-top: 12px; }
+.app-link-sheet-rec.sx-pilot { --t-bg: var(--ink-1); --t-fg: var(--fg); --t-bubble: var(--ink-3); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); display: block; height: auto; margin-top: 12px; }
