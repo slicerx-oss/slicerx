@@ -30,6 +30,7 @@ import { PreviewLeft, PreviewRight } from './preview/preview-panes'
 import { useGcodeView } from './preview/gcode-file'
 import { trackPlateSlices } from './preview/plate-slices'
 import { startMeshRelease } from '../plate/mesh-release'
+import { startTimeline } from '../plate/timeline'
 import { startSliceRelease } from './preview/slice-release'
 import { PreviewPlates } from './preview/preview-plates'
 import { railKey, useModelMode } from '../state/model-mode'
@@ -188,6 +189,7 @@ export function Studio() {
   useEffect(() => trackPlateSlices(), [])
   // Meshes nothing can bring back to a plate are let go in the slicer.
   useEffect(() => startMeshRelease(host.slicer), [host])
+  useEffect(() => startTimeline(), [])
 
   // Plate keys follow the look and feel's keymap; undo starts recording as soon as the studio opens.
   const choice = useLookChoice()

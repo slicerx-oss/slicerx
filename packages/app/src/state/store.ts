@@ -28,7 +28,7 @@ import type { UserPreset, PresetKind } from '../presets/store'
 import type { SyncChange, Tombstone } from '../presets/sync'
 import type { LayerMark } from '../plate/layer-marks'
 import type { Dimension } from '../geom/cad'
-import type { History } from '@slicerx/cad-history'
+import type { History, Timeline } from '@slicerx/cad-history'
 import type { Spool } from '../inventory/spools'
 import type { QueueItem } from '../queue/queue'
 import type { SendOptionId } from '../send/options'
@@ -495,6 +495,11 @@ export interface AppState {
   objectTool: 'cut' | 'hole' | 'hollow' | 'simplify' | CadTool | null
   /** A CAD history step being edited, or null. Not an edit itself: undo and autosave skip the rollback. */
   historyEdit: HistoryEdit | null
+  /**
+   * The design timeline: every body's steps and the sketches they use, in the order made, and the rollback marker
+   * (docs/cad-history.md). Each object's `history` is its view of it; plate/timeline.ts keeps the two in step.
+   */
+  timeline: Timeline
   /** What a click picks in Model: whole objects, faces, edges (plate/pick-filter.ts). Session only. */
   pickFilter: PickKind[]
   /** Faces and edges picked in Model before a tool opens; the tool takes them as if clicked (cad/panel-kit.tsx). */
@@ -776,6 +781,7 @@ export const appStore = createStore<AppState>()(() => ({
   jobSeq: 0,
   objectTool: null,
   historyEdit: null,
+  timeline: { bodies: [], items: [], marker: 0 },
   pickFilter: ['object'],
   subPicks: [],
   parked: null,
