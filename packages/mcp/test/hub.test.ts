@@ -277,13 +277,14 @@ describe('the mimir cloud share setting through a scripted hub', () => {
     expect(text(r)).toMatch(/Sharing mimir sessions is off/)
   })
 
-  it('says how to reach the app while the link is off, and is not offered without sx-link', async () => {
+  it('says how to reach the app while the link is off, or without sx-link', async () => {
     const h = await connect(link(scriptedHub({ ok: true })))
     const r = await h.call('slicerx_mimir_share')
     expect(r.isError).toBe(true)
     expect(text(r)).toMatch(/^Error: not_configured: the app link to .+ does not answer \(app_link_off\)/)
     const demo = await connect({ printers: 'demo' })
-    const listed = await demo.client.listTools()
-    expect(listed.tools.some((t) => t.name === 'slicerx_mimir_share')).toBe(false)
+    const off = await demo.call('slicerx_mimir_share')
+    expect(off.isError).toBe(true)
+    expect(text(off)).toMatch(/--printers link/)
   })
 })
