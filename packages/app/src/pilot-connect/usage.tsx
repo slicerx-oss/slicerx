@@ -85,9 +85,26 @@ export function MimirUsageSection() {
   const loaded = useUsage()
   const ref = useRef<HTMLElement>(null)
   const shown = on && loaded !== null
-  // opened from "See usage" in the chat: bring the section into view once it is drawn
+  // opened from "See usage" in the chat: bring the section into view once it is drawn, and keep it there while the
+  // account above it is still loading and grows, until that settles or the person scrolls
   useEffect(() => {
-    if (shown && takeUsageFocus()) ref.current?.scrollIntoView?.({ block: 'start' })
+    const el = ref.current
+    if (!shown || !el || !takeUsageFocus()) return
+    const pin = () => el.scrollIntoView?.({ block: 'start' })
+    pin()
+    const box = el.parentElement
+    if (!box || typeof ResizeObserver === 'undefined') return
+    const watch = new ResizeObserver(pin)
+    watch.observe(box)
+    const stop = () => watch.disconnect()
+    const timer = setTimeout(stop, 3000)
+    const by = ['wheel', 'touchstart', 'keydown'] as const
+    for (const e of by) window.addEventListener(e, stop, { once: true, passive: true })
+    return () => {
+      stop()
+      clearTimeout(timer)
+      for (const e of by) window.removeEventListener(e, stop)
+    }
   }, [shown])
   // no report from the proxy shows nothing rather than a section that never fills
   if (!shown) return null
