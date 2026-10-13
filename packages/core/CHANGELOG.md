@@ -4,6 +4,37 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-13
+
+### Added
+
+- MCP designs: a client's modeling lands in an editable history. Open any 3MF as designs, redo, run boolean, cut, split, mirror and array as history steps, paint a design by preview and apply, and save it with its paint per triangle. With the app open, the design tools run there over the app link and wait for the person.
+- MCP: slicerx_geom_info and slicerx_geom_measure check a model, sx-geom renders a model from the CLI and MCP, and slicerx_geom_array with merge false makes separate copies.
+- MCP: place objects and give them their own settings, volumes and height ranges. The app's checks and project operations are tools too, and a printer's past jobs come through the hub.
+- `sx slice <project.3mf>` slices with the project's own settings. 3MF projects load through sx-geom's reader, object settings included, and the sx-geom command line reads a 3MF project and the reader's mesh and paint buffers.
+- Paint in the slice request, written over the model's own.
+- Clean-room organic tree supports behind `organic_support_engine`, and a second lightning infill planner behind `lightning_engine`.
+- The settings report says which wall generator runs and why, and lists the settings a slice does not use. A bad value loses only its own setting.
+- The start G-code's extrusions are drawn with the first layer, and the start and end G-code's extrusion counts in the filament totals.
+- Profiles for the Bambu Lab H2D Pro and X2D and the Prusa Core One L.
+
+### Changed
+
+- Faster: painted layers are cut with less work and fewer grids, side by side, within a grid budget that only steps in when memory is short. Solid fill joins are checked side by side, the time estimate reads moves ahead on other threads, and a big STL is welded without holding it three times.
+- MCP: smaller replies (compact text, 20 profiles a page, plan sources on request), and printer.list is brief unless asked for detail.
+- Viewport: big models build in workers, so the plate draws at once.
+
+### Fixed
+
+- PrusaSlicer modifiers and their settings are read instead of printed.
+- On Bambu Lab printers, solid infill stays on the object's filament when only sparse infill moves. A spiral lift is one helical arc on printers that take it, with arc fitting off.
+- The H2D's filament map leaves out filaments the plate never prints with.
+- Painted support enforcers print under an underside that falls mid layer.
+- A sliver over air narrower than half a solid line is no bridge.
+- The reach, excluded-area, height and off-bed refusals count only the layers they checked, and say so.
+- Viewport: line types keep clear, distinct colors (sparse infill is a clear blue), the toolpaths stay while you inspect a lowered layer, a view parked on the zoom limit stops redrawing, and the front, back, left and right views look level.
+- MCP: a pick on a curved wall finds its face, and an oversized app link call reports its real error.
+
 ## [0.1.4] - 2026-10-11
 
 ### Added
