@@ -396,7 +396,7 @@ async function cloudHost(page: Page, needsSignIn: boolean): Promise<void> {
   }, needsSignIn)
 }
 
-test('mimir cloud in the browser: first and picked, and signed out it asks for sign-in before anything else', async ({ page }) => {
+test('mimir cloud in the browser: first and picked, and signed out it shows sign-in inline before anything else', async ({ page }) => {
   await cloudHost(page, true)
   await page.addInitScript(() => localStorage.setItem('slicerx.e2e.cadOnly', '1'))
   await page.goto('./')
@@ -407,8 +407,9 @@ test('mimir cloud in the browser: first and picked, and signed out it asks for s
   await expect(choices.first()).toHaveAttribute('aria-checked', 'true')
   // nothing claims it runs yet: no connect note, only the sign-in
   await expect(page.getByTestId('ms-cloud-note')).toHaveCount(0)
-  await page.getByTestId('ms-cloud-signin').click()
-  await expect(page.getByTestId('signin-dialog')).toBeVisible()
+  // the sign-in form sits right under the card, no dialog over the step
+  await expect(page.getByTestId('ms-cloud-signin').getByRole('textbox').first()).toBeVisible()
+  await expect(page.getByTestId('signin-dialog')).toHaveCount(0)
   await noHorizontalScroll(page)
 })
 

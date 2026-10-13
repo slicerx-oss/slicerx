@@ -353,7 +353,7 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 | `mimir-notice-ok` | Start: the notice was read, and does not show again |
 | `ms-choice-<id>` | A card in the shared mimir setup (first-run, Settings and the mimir panel): `ms-choice-cloud`, `ms-choice-chatgpt`, `ms-choice-key`, `ms-choice-local`, `ms-choice-skip` |
 | `ms-cloud-note` | First-run's line under mimir cloud: no key, it connects when you finish |
-| `ms-cloud-signin` | The Sign in button under "Sign in to use mimir free" where mimir cloud needs a signed-in person |
+| `ms-cloud-signin` | The inline sign-in form under "Sign in to use mimir free" where mimir cloud needs a signed-in person |
 | `pc-model` | The model list under your own key or a local server: Auto first, each with a cost hint, then Other model id |
 
 ## Settings: Agents and the app link
