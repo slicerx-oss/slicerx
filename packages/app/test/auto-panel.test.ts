@@ -80,6 +80,54 @@ describe('the bottom panel', () => {
     expect(p.open).toBe(true)
   })
 
+  it('a press on the tab while it is open for attention keeps it open, and the next press closes it', () => {
+    p.attention()
+    vi.advanceTimersByTime(ATTENTION_MS / 2)
+    p.toggle()
+    expect(p.open).toBe(true)
+    // neither the attention timer nor the pointer passing through the band closes it now
+    p.band(true)
+    p.band(false)
+    vi.advanceTimersByTime(ATTENTION_MS * 2)
+    expect(p.open).toBe(true)
+    p.toggle()
+    expect(p.open).toBe(false)
+    // opened from the tab, it closes on its own again once the pointer leaves
+    p.toggle()
+    p.band(true)
+    p.band(false)
+    vi.advanceTimersByTime(CLOSE_DELAY_MS)
+    expect(p.open).toBe(false)
+    // Escape lets a kept panel go
+    p.attention()
+    p.toggle()
+    p.close()
+    expect(p.open).toBe(false)
+  })
+
+  it('a press on the tab while it is open from the band, or held by the pointer, keeps it open too', () => {
+    p.band(true)
+    vi.advanceTimersByTime(OPEN_DELAY_MS)
+    p.toggle()
+    p.band(false)
+    vi.advanceTimersByTime(CLOSE_DELAY_MS * 4)
+    expect(p.open).toBe(true)
+    p.toggle()
+    expect(p.open).toBe(false)
+    // open for attention, then the pointer passes over it before the press
+    p.attention()
+    p.panel(true)
+    p.panel(false)
+    p.toggle()
+    vi.advanceTimersByTime(ATTENTION_MS * 2)
+    expect(p.open).toBe(true)
+    p.toggle()
+    // the panel key closes it whatever opened it
+    p.attention()
+    p.toggle(false)
+    expect(p.open).toBe(false)
+  })
+
   it('stays open when pinned, and Escape does not close it', () => {
     p.pin(true)
     expect(p.open).toBe(true)

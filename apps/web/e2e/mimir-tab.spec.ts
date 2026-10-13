@@ -208,6 +208,24 @@ test.describe('the mimir tab', () => {
     await page.getByTestId('mimir-sheet-build').click()
     await expect(sheet).toContainText('Confirmed as shown')
     const card = page.getByTestId('mimir-lookup-card')
+    // The build opens the timeline for a moment to show the new steps. A click on its tab then keeps it open (the
+    // person did not open it, so the click means keep it), and the next click closes it.
+    const timeline = page.locator('.bpanel-body')
+    const tab = page.getByTestId('edge-tab-bottom')
+    const press = async () => {
+      const t = (await tab.boundingBox())!
+      await page.mouse.click(t.x + t.width / 2, t.y + t.height / 2)
+      await page.mouse.move(700, 300)
+    }
+    await expect(timeline).toBeVisible()
+    await press()
+    // past the attention window and the close delay
+    await page.waitForTimeout(4800)
+    await expect(timeline).toBeVisible()
+    await expect(card).toBeVisible()
+    await expect.poll(async () => (await card.boundingBox())!.y + (await card.boundingBox())!.height <= (await timeline.boundingBox())!.y).toBe(true)
+    await press()
+    await expect(timeline).toBeHidden()
     await expect(card).toContainText('150.4 x 110.4 mm')
     // both rows it shows fit inside the card
     const rows = await card.locator('dd').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom))
@@ -222,8 +240,30 @@ test.describe('the mimir tab', () => {
     const vp = (await page.locator('.studio > .vp').boundingBox())!
     expect(Math.abs(c.x - cap.x)).toBeLessThanOrEqual(0.5)
     expect(c.height).toBeLessThanOrEqual(96.5)
-    expect(vp.y + vp.height - (c.y + c.height)).toBeLessThan(48)
+    // (it slides back down once the timeline shuts)
+    await expect.poll(async () => vp.y + vp.height - ((await card.boundingBox())!.y + (await card.boundingBox())!.height)).toBeLessThan(48)
     await page.screenshot({ path: test.info().outputPath('mimir-lookup-dark.png') })
+    // the open timeline pushes the card up instead of sitting under it: the pointer comes down onto its tab and
+    // clicks, as a person does
+    await expect(timeline).toBeHidden()
+    const t = (await tab.boundingBox())!
+    await page.mouse.move(t.x + t.width / 2, t.y - 120)
+    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 4 })
+    await page.mouse.down()
+    await page.mouse.up()
+    await expect(tab).toHaveAttribute('aria-expanded', 'true')
+    await expect(timeline).toBeVisible()
+    await expect.poll(async () => (await card.boundingBox())!.y + (await card.boundingBox())!.height <= (await timeline.boundingBox())!.y).toBe(true)
+    // and by keyboard: Enter on the focused tab shuts it, and again opens it with the card still clear
+    await page.mouse.move(700, 300)
+    await tab.focus()
+    await page.keyboard.press('Enter')
+    await expect(timeline).toBeHidden()
+    await page.keyboard.press('Enter')
+    await expect(timeline).toBeVisible()
+    await expect.poll(async () => (await card.boundingBox())!.y + (await card.boundingBox())!.height <= (await timeline.boundingBox())!.y).toBe(true)
+    await page.keyboard.press('Enter')
+    await expect(timeline).toBeHidden()
     await page.getByTestId('mimir-lookup-close').click()
     await expect(card).toHaveCount(0)
     await expect(page.getByTestId('mimir-transcript').locator('[data-lookup-id]')).toHaveCount(1)
