@@ -131,6 +131,7 @@ export function LayerDock() {
   const advanced = useApp((s) => s.settingsMode !== 'simple')
   const gcodeOn = useGcodeView((s) => s.panel)
   const showToolhead = useApp((s) => s.showToolhead)
+  const showGantry = useApp((s) => s.showGantry)
   const [playing, setPlayingState] = useState(false)
   // Ticks check this ref, so a pause lands on the next frame instead of after React commits.
   const playingRef = useRef(false)
@@ -287,8 +288,12 @@ export function LayerDock() {
         options={PLAYBACK_SPEEDS.map((v) => ({ value: String(v), label: speedLabel(v), title: v === 1 ? 'Real time: as fast as the printer moves' : v < 1 ? `${v === 0.25 ? 'Quarter' : 'Half'} of real time` : `${v} times real time` }))}
       />
       <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.' })}>
-        <input type="checkbox" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
+        <input type="checkbox" data-testid="pv-show-toolhead" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
         Show toolhead
+      </label>
+      <label className="dock-check" {...tipAttrs({ title: 'Show gantry', body: 'Draw the gantry over the toolhead at the clearance height your printer profile gives, and the carriage a docked toolhead hangs on. A layer where the gantry would hit the print shows it either way.' })}>
+        <input type="checkbox" data-testid="pv-show-gantry" checked={showGantry} onChange={(e) => set({ showGantry: e.target.checked })} />
+        Show gantry
       </label>
       <label className="dock-check" {...tipAttrs({ title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.' })}>
         <input type="checkbox" checked={followNozzle} onChange={(e) => set({ followNozzle: e.target.checked })} />
