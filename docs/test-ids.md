@@ -359,6 +359,9 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 | `app-link-allow` | Allow: read and change the open project |
 | `app-link-read` | Allow read only |
 | `app-link-deny` | Deny |
+| `app-link-sheet` | A client's dimension sheet, for the person to confirm; the agent bridge refuses its buttons |
+| `app-link-sheet-confirm` | Build with these sizes |
+| `app-link-sheet-decline` | Not now |
 
 ## Print sheet
 

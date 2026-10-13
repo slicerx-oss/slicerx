@@ -261,3 +261,28 @@ describe('--app through a scripted hub', () => {
     await expect(createContext({ engine: 'stub', policy: DEFAULT_POLICY, printers: 'demo', app: 'required' })).rejects.toThrow(/--app needs printers through sx-link/)
   })
 })
+
+describe('a dimension sheet through a scripted hub', () => {
+  const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+
+  it('goes to the person in the open app, and the client reads the answer back', async () => {
+    const calls: string[] = []
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      calls.push(method)
+      return method === 'sheet.ask' ? { sheetId: 'csheet_1', state: 'waiting' } : { sheetId: 'csheet_1', state: 'confirmed', answer: { values: { bore: 6.4 }, changed: ['bore'] } }
+    })
+    const h = await connect(opts(hub))
+    const asked = await h.call('slicerx_app_sheet_ask', { title: 'Clip sizes', dims: [{ key: 'bore', label: 'Cable bore', value: 6.2, unit: 'mm', source: 'guess' }] })
+    expect(asked.isError, text(asked)).toBeFalsy()
+    expect(text(asked)).toMatch(/waiting for the person/)
+    const got = await h.call('slicerx_app_sheet_get', { sheet_id: 'csheet_1' })
+    expect(data<{ output: unknown }>(got).output).toEqual({ sheetId: 'csheet_1', state: 'confirmed', answer: { values: { bore: 6.4 }, changed: ['bore'] } })
+    expect(calls).toEqual(['sheet.ask', 'sheet.get'])
+  })
+
+  it('is not offered without sx-link', async () => {
+    const demo = await connect({ printers: 'demo' })
+    const listed = await demo.client.listTools()
+    expect(listed.tools.some((t) => t.name.startsWith('slicerx_app_sheet'))).toBe(false)
+  })
+})
