@@ -4,7 +4,7 @@
 // methods.ts, and puts the hub's questions about new clients in front of the person (prompt.tsx).
 import { createStore, useStore } from 'zustand'
 import type { BridgeAppLink } from '../link/bridge'
-import { LinkError, runCall, useDesignHost } from './methods'
+import { LinkError, runCall, useDesignHost, useLinkSession } from './methods'
 
 export interface LinkAsk {
   askId: number
@@ -34,9 +34,10 @@ export async function answerAsk(ask: LinkAsk, decision: 'allow' | 'read' | 'deny
 }
 
 /** Hosts the link on the hub; returns how to stop. */
-export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useDesignHost>[0]): () => void {
+export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useDesignHost>[0], session?: () => Promise<boolean>): () => void {
   linkAsks.setState({ link, asks: [] })
   if (loader) void useDesignHost(loader).catch(() => undefined)
+  useLinkSession(session ?? null)
   const timers = new Set<ReturnType<typeof setTimeout>>()
   // One call at a time per agent, so no agent can keep the window busy with a stream of calls.
   const inFlight = new Set<string>()
@@ -82,6 +83,7 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
     stopAsk()
     stopEnded()
     for (const t of timers) clearTimeout(t)
+    useLinkSession(null)
     linkAsks.setState({ link: null, asks: [] })
   }
 }

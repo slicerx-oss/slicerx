@@ -9,7 +9,7 @@ import type { AppLinkCaller } from './app-route'
 import { ToolInputError } from './errors'
 
 /** The app's answer (packages/app pilot-connect/cloud.ts MimirQuota), in micro-dollars per Melbourne day. */
-interface Quota {
+export interface Quota {
   edition: string
   day: string
   installUsed: number
@@ -21,6 +21,24 @@ interface Quota {
 
 const usd = (micros: number): number => Math.round(micros / 10_000) / 100
 const OFF = ['app_link_off', 'app_closed', 'forbidden', 'unauthorized']
+
+/** The quota as clients read it, in US dollars. slicerx_mimir_quota and slicerx_mimir_cloud_status share it. */
+export function quotaOutput(q: Quota) {
+  const left = Math.max(0, q.installCap - q.installUsed)
+  return {
+    day: q.day,
+    edition: q.edition,
+    open: q.editionOpen,
+    install: { used_usd: usd(q.installUsed), cap_usd: usd(q.installCap), left_usd: usd(left) },
+    network: { used_usd: usd(q.ipUsed), cap_usd: usd(q.ipCap) },
+    resets: 'midnight, Australia/Melbourne',
+  }
+}
+
+export function quotaSummary(q: Quota): string {
+  const left = Math.max(0, q.installCap - q.installUsed)
+  return q.editionOpen ? `$${usd(left).toFixed(2)} of $${usd(q.installCap).toFixed(2)} free mimir use left today on this computer.` : 'mimir cloud is closed for today; it opens again after midnight Melbourne time.'
+}
 
 export function mimirQuotaTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const quota = defineTool({
@@ -41,18 +59,7 @@ export function mimirQuotaTools(link: AppLinkCaller | undefined, appName: string
         if (OFF.includes(code)) throw new ToolInputError(`${appName} is closed or its app link is off, so mimir's use cannot be read.`, 'not_configured')
         throw new ToolInputError(message, code === 'not_found' ? 'not_supported' : code === 'busy' ? 'busy' : 'service_error')
       }
-      const left = Math.max(0, q.installCap - q.installUsed)
-      return {
-        summary: q.editionOpen ? `$${usd(left).toFixed(2)} of $${usd(q.installCap).toFixed(2)} free mimir use left today on this computer.` : 'mimir cloud is closed for today; it opens again after midnight Melbourne time.',
-        output: {
-          day: q.day,
-          edition: q.edition,
-          open: q.editionOpen,
-          install: { used_usd: usd(q.installUsed), cap_usd: usd(q.installCap), left_usd: usd(left) },
-          network: { used_usd: usd(q.ipUsed), cap_usd: usd(q.ipCap) },
-          resets: 'midnight, Australia/Melbourne',
-        },
-      }
+      return { summary: quotaSummary(q), output: quotaOutput(q) }
     },
   })
   return [quota] as PilotTool<never>[]

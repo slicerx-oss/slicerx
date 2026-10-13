@@ -7,7 +7,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { appName, currentEdition } from '../edition'
-import { mimirCloudHost } from '../pilot-connect/cloud'
+import { mimirCloudHost, type MimirQuota } from '../pilot-connect/cloud'
 import { bounds } from '../plate/transform'
 import { LinkError } from './methods-error'
 import { listSessions, readSession } from './sessions'
@@ -56,6 +56,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.quota': 'read',
   // whether mimir cloud keeps this install's sessions (Settings > mimir), and whether the notice was read
   'mimir.share': 'read',
+  // mimir cloud at a glance: offered, in use, signed in, and today's use when in use; no key or token
+  'mimir.status': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -211,6 +213,31 @@ const HANDLERS: Record<string, Handler> = {
     const rolled = s.rollback !== null
     return { summary: rolled ? `Rolled back to ${s.timeline.marker} of ${s.timeline.items.length}` : 'At the end of the timeline', output: { marker: s.timeline.marker, end: s.timeline.items.length, rolledBack: rolled, objects: s.plate.length } }
   },
+  'mimir.status': async () => {
+    const [{ cloudOffered, cloudReady }, { pilotModel }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm')])
+    const s = get()
+    const edition = currentEdition()
+    const host = mimirCloudHost()
+    const cloud = cloudOffered(edition, host)
+    // waits for a sign-in (the browser build's cloud is for signed-in members); the desktop's needs none
+    const needsSignIn = cloud && host?.needsSignIn === true
+    const ready = cloudReady(edition, host)
+    const enabled = ready && pilotState(s) !== 'off' && pilotModel(edition, s.pilot, ready)?.provider === 'mimir-cloud'
+    const signedIn = linkSession ? await linkSession().catch(() => null) : null
+    // Today's use only while mimir runs on the cloud: reading it registers an install that has none yet, which a status
+    // read must not do for a person who turned mimir off or uses their own model.
+    let quota: Omit<MimirQuota, 'v2'> | null = null
+    let quotaError: { code: string; message: string } | null = null
+    if (enabled && host) {
+      try {
+        const { v2: _v2, ...q } = await host.quota()
+        quota = q
+      } catch (e) {
+        quotaError = { code: String((e as { code?: unknown }).code ?? 'service_error'), message: e instanceof Error ? e.message : String(e) }
+      }
+    }
+    return { cloud, enabled, needsSignIn, signedIn, quota, quotaError }
+  },
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()
@@ -223,6 +250,14 @@ const HANDLERS: Record<string, Handler> = {
       noticeRead: s.mimirNotice === CLOUD_NOTICE_VERSION,
     }
   },
+}
+
+/** Whether the person is signed in to their account, read from the edition's store; unset in a build without one. */
+let linkSession: (() => Promise<boolean>) | null = null
+
+/** Gives the link a way to read whether the person is signed in (mimir.status), or takes it away. */
+export function useLinkSession(read: (() => Promise<boolean>) | null): void {
+  linkSession = read
 }
 
 /** The design tools, once the link has a loader to put bodies on the plate. */

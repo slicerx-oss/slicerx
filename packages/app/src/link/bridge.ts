@@ -4,7 +4,7 @@
 // host's demo printers for the bridge's real ones, and its approval broker, camera streams and printer setup
 // with them. The desktop app starts its own bridge and connects by itself; the browser build asks the person
 // for the pairing code sx-link printed.
-import type { ApprovalHost, Host, PrinterHost, PrinterConnection, SecretsHost } from '@slicerx/contracts'
+import type { ApprovalHost, Host, PrinterHost, PrinterConnection, SecretsHost, StoreClient } from '@slicerx/contracts'
 import type { CameraStreams } from '../camera/stream'
 import { fromLinkResult, registerPrinterSetup, type AppSetupHost, type FoundPrinter } from '../first-run/setup-registry'
 import { createRemoteAccess, pairSource, setPairSource, setRemoteAccess, type BridgeRemote } from '../features/phone/remote'
@@ -197,7 +197,9 @@ async function connect(host: Host, code?: string, again = false): Promise<boolea
     // The app link answers agents' calls on the open project once the person turns it on (Settings, Agents).
     if (bridge.appLink) {
       void import('../app-link/host').then((m) => {
-        if (live?.bridge === bridge) stopLink = m.hostAppLink(bridge.appLink!, host.slicer)
+        // the edition's store, when it has one, tells the link whether the person is signed in (mimir.status)
+        const store = (host as Host & { store?: StoreClient }).store
+        if (live?.bridge === bridge) stopLink = m.hostAppLink(bridge.appLink!, host.slicer, store ? async () => (await store.session()) !== null : undefined)
       })
     }
     // The camera guard brings a tripped printer's card up on the Printers tab. It listens before the bridge counts as
