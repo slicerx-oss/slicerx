@@ -388,6 +388,24 @@ Deno.test('a provider failure settles at nothing and says so plainly', async () 
   assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_output'], 0)
 })
 
+Deno.test('a refused call logs the provider status and error, never the key or the prompt', async () => {
+  const logged: string[] = []
+  const was = console.error
+  console.error = (...a: unknown[]) => void logged.push(a.map(String).join(' '))
+  try {
+    const h = harness({ upstream: () => Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'tools.3.custom.input_schema: bad' } }, { status: 400 }) })
+    const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
+    assertEquals(res.status, 502)
+    await Promise.all(h.pending)
+  } finally {
+    console.error = was
+  }
+  const line = logged.find((l) => l.startsWith('mimir upstream:'))
+  assertEquals(line, 'mimir upstream: 400 invalid_request_error: tools.3.custom.input_schema: bad')
+  assert(!logged.join('\n').includes('sk-ant'), 'no key in the log')
+  assert(!logged.join('\n').includes(JSON.stringify(base().messages)), 'no prompt in the log')
+})
+
 Deno.test('register, quota and forget', async () => {
   const h = harness()
   const key = 'layermate-build-key-1'
