@@ -431,6 +431,50 @@ ULONG face_count(SmBrep* b)
     return fs.GetSize();
 }
 
+// solid pieces: regions that are neither the outside nor a void
+ULONG lumps(SmBrep* b)
+{
+    SmTArray<SmRegion*> rs;
+    b->GetRegions(rs);
+    ULONG n = 0;
+    for (ULONG i = 0; i < rs.GetSize(); ++i)
+        if (!rs[i]->IsInfiniteRegion() && !rs[i]->IsVoid()) ++n;
+    return n;
+}
+
+// marks every face of a body, so a boolean's result tells which of its faces came only from the other one
+const ULONG kOwnMark = 20103;
+
+SmBrep* mark_faces(SmBrep* b)
+{
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    SmContext& cx = *SmApiGetOrCreateContext();
+    for (ULONG i = 0; i < fs.GetSize(); ++i) fs[i]->AddAttribute(new (cx) SmLongAttribute(kOwnMark, 1, SM_AB_COPY));
+    return b;
+}
+
+// whether some face has no mark: a face on a marked one counts as marked, so a tool that only meets the body flush
+// leaves none. The marks come off.
+bool unmark_faces(SmBrep* b)
+{
+    bool fresh = false;
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    for (ULONG i = 0; i < fs.GetSize(); ++i) {
+        SmTArray<SmAttribute*> as;
+        fs[i]->GetAttributes(as);
+        bool marked = false;
+        for (ULONG k = 0; k < as.GetSize(); ++k)
+            if (as[k]->GetAttributeID() == kOwnMark) {
+                fs[i]->RemoveAttribute(as[k]);
+                marked = true;
+            }
+        fresh = fresh || !marked;
+    }
+    return fresh;
+}
+
 SmBrep* extrude(const Value& r)
 {
     Frame f = frame_of(r["frame"]);
@@ -899,7 +943,37 @@ Value run(const std::string& op, const Value& r)
     } else if (op == "cylinder") {
         out.set("body", Value(keep(fresh_keys(make_cylinder(v3(r, "origin"), v3(r, "axis"), num(r, "diameterMm"), num(r, "heightMm"))))));
     } else if (op == "extrude") {
-        out.set("body", Value(keep(fresh_keys(extrude(r)))));
+        if (!r.has("target")) {
+            out.set("body", Value(keep(fresh_keys(extrude(r)))));
+        } else {
+            // join or cut into the target. It touches when the result has a face that came only from the tool (else
+            // it missed, sat inside a join, or met the body flush), and a join didn't leave a piece standing apart.
+            const std::string& o = r["operation"].s;
+            if (o != "join" && o != "cut") throw Error("operation", "must be join or cut with a target");
+            SmBrep* a = body(r, "target");
+            ULONG l0 = lumps(a);
+            SmBrep* t = fresh_keys(extrude(r));
+            SmBrep* c = nullptr;
+            try {
+                c = mark_faces(copy_of(a));
+            } catch (...) {
+                delete t;
+                throw;
+            }
+            SmBrep* m = combine(c, t, o == "join" ? "union" : "difference");
+            if (!face_count(m)) {
+                delete m;
+                throw Error("extrude", "the cut removes the whole body");
+            }
+            bool touches = unmark_faces(m) && (o != "join" || lumps(m) <= l0);
+            out.set("touches", Value(touches));
+            // a step that misses changes nothing, so it gets no body
+            if (touches) out.set("body", Value(keep(m)));
+            else {
+                delete m;
+                out.set("body", Value());
+            }
+        }
     } else if (op == "boolean") {
         SmBrep* a = copy_of(body(r, "a"));
         SmBrep* b = nullptr;
