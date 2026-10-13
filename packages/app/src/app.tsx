@@ -163,7 +163,7 @@ function Shell() {
   useEffect(() => (hostSlices() ? undefined : stayInModel()), [])
   useAskForPrinter()
   // Background slicing after edits (Settings > Auto slice).
-  useEffect(() => startAutoSlice(host), [host])
+  useEffect(() => (hostSlices() ? startAutoSlice(host) : undefined), [host])
   // The page says when it is ready, so scripts wait on that and not on a fixed time.
   useEffect(() => startReadySignal(), [])
   // Code that failed to download (a dropped connection while the app starts) is fetched again by a reload.
