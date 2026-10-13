@@ -461,20 +461,38 @@ mod hub {
             assert!(link.agent_ids_named("Cursor (this computer)").is_empty());
         }
 
+        // Binds the port the hub's listener has just closed. The port must be the hub's own, since that is
+        // where a client that knows the hub would go. A freed port can be taken by another socket first
+        // (outgoing connections get theirs from the same range), so only "in use" is retried, until a deadline.
+        async fn squat(port: u16) -> tokio::net::TcpListener {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+                    Ok(l) => break l,
+                    Err(e)
+                        if e.kind() == std::io::ErrorKind::AddrInUse
+                            && tokio::time::Instant::now() < deadline =>
+                    {
+                        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                    }
+                    Err(e) => panic!("port {port} did not come free for the squatter: {e}"),
+                }
+            }
+        }
+
         // R2: the shell used to pair over the hub's port with the app code in clear. With the hub
         // gone and a program holding its port, making and revoking a key must send that program
         // nothing at all.
         #[tokio::test]
         async fn r2_a_squatter_on_the_hub_port_hears_nothing() {
-            let link = bridge().await;
+            let mut link = bridge().await;
             let port = link.addr().port();
             let heard = Arc::new(Mutex::new(Vec::<u8>::new()));
             let h = heard.clone();
             // The squatter takes the port the moment the hub's listener lets it go. The Link value
             // stays alive for the in-process calls; only its listener is replaced.
-            link.stop_listening();
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            let squatter = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+            link.stop_listening().await;
+            let squatter = squat(port).await;
             let listen = tokio::spawn(async move {
                 while let Ok((mut s, _)) = squatter.accept().await {
                     let mut buf = vec![0_u8; 4096];
