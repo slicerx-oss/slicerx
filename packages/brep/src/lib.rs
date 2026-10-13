@@ -12,10 +12,10 @@
 //! | `cylinder` | `origin`, `axis`, `diameterMm`, `heightMm` | `body` |
 //! | `extrude` | `frame` (`origin`, `u`, `normal`), `polygons` (`outer`, `holes`: loops of `points` or `center` and `diameterMm`), `fromMm`, `toMm` | `body` |
 //! | `boolean` | `op` (`union`, `difference`, `intersection`), `a`, `b` | `body` |
-//! | `subtract` | `body`, `solids` (box or cylinder) | `body` |
+//! | `subtract` | `body`, `solids` (box or cylinder), `frame` (the body's, with the solids in world) | `body` |
 //! | `cut` | `body`, `plane` (`point`, `normal`) | `below`, `above` (a body, or null when empty) |
 //! | `info` | `body` | `manifold`, `volumeMm3`, `bounds`, `faces`, `faceTypes` |
-//! | `tessellate` | `body`, `chordMm` (0.01), `angleDeg` (15) | `positions`, `indices`, `faceIds`, `faces` (`id`, `type`) |
+//! | `tessellate` | `body`, `chordMm` (0.01), `angleDeg` (15) | `positions`, `indices`, `faceIds`, `faces` (`id`, `type`, `surface`, `key`) |
 //! | `save` | `body` | `smb` (the body as `SMLib` text) |
 //! | `load` | `body` (`{"smb"}`) | `body` |
 //! | `free` | `body` | `freed` |
@@ -26,6 +26,11 @@
 //! adds each new body's text to the reply (`bodySmb`, `belowSmb`, `aboveSmb`). So a caller that starts a new
 //! process per call keeps its bodies as text between calls, and a project can store them. The text ends in a hash
 //! of itself; anything without a matching one is refused before the kernel reads it.
+//!
+//! A request with `keySalt` (a history step's, the same in every replay of it) gives each face of the bodies it makes
+//! a key, numbered in the order the call makes them as sx-geom numbers a step's meshes. Faces keep their keys through
+//! later ops and saves, so a replay finds the same face again. A face's `surface` is sx-geom's: a plane facing out of
+//! the solid, a cylinder, cone or sphere, or `other`.
 
 #[cfg(sx_brep_kernel)]
 use std::ffi::c_char;

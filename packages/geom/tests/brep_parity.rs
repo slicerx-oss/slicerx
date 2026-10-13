@@ -268,3 +268,75 @@ fn the_cli_runs_each_call_in_its_own_process() {
         String::from_utf8_lossy(&out.stdout)
     );
 }
+
+/// A part that leaves the exact path partway through a history (a step the kernel does not have, or one it failed)
+/// goes on as a mesh with the solid's faces and keys, so later steps still find their faces and edges by key.
+#[test]
+fn face_keys_carry_over_to_the_mesh_path() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let body = made(
+        "box",
+        json!({ "min": [0, 0, 0], "max": [20, 20, 20], "keySalt": 5 }),
+    );
+    let tess = call("brep.tessellate", &json!({ "body": body }));
+    let faces = tess["faces"].as_array().expect("faces");
+    let key_facing = |axis: usize| {
+        faces
+            .iter()
+            .find(|f| f["surface"]["kind"] == "plane" && f["surface"]["normal"][axis].as_f64() == Some(1.0))
+            .and_then(|f| f["key"].as_u64())
+            .expect("a keyed face")
+    };
+    let (top, side) = (key_facing(2), key_facing(0));
+    let part = json!({
+        "positions": tess["positions"],
+        "indices": tess["indices"],
+        "faces": {
+            "ids": tess["faceIds"],
+            "table": faces.iter().map(|f| f["surface"].clone()).collect::<Vec<_>>(),
+            "keys": faces.iter().map(|f| f["key"].clone()).collect::<Vec<_>>(),
+        },
+    });
+    // the next step runs on the mesh: a blind hole from below, cut by a mesh boolean
+    let pin = made(
+        "cylinder",
+        json!({ "origin": [10, 10, -1], "axis": [0, 0, 1], "diameterMm": 6, "heightMm": 11 }),
+    );
+    let pin = call("brep.tessellate", &json!({ "body": pin }));
+    let pin = json!({ "positions": pin["positions"], "indices": pin["indices"] });
+    let holed = call(
+        "boolean",
+        &json!({ "op": "difference", "a": [part], "b": [pin], "withFaces": true, "keySalt": 6 }),
+    );
+    let mesh = holed["mesh"].clone();
+    let keys: Vec<u64> = mesh["faces"]["keys"]
+        .as_array()
+        .expect("keys kept")
+        .iter()
+        .map(|k| k.as_u64().unwrap())
+        .collect();
+    for f in faces {
+        let k = f["key"].as_u64().unwrap();
+        assert!(keys.contains(&k), "the box face {k} lost its key");
+    }
+    // a fillet picked on the top's edge with the +x side, given where it no longer is: found by its faces' keys
+    let edge = json!([{ "a": [20, 0, 25], "b": [20, 20, 25], "face": [0, 0, 1], "keys": [top, side] }]);
+    let filleted = call(
+        "edge.fillet",
+        &json!({ "mesh": { "mesh": mesh }, "edges": edge, "radiusMm": 2 }),
+    );
+    assert_eq!(filleted["watertight"], true, "{}", filleted["report"]);
+    let before = holed["volumeMm3"].as_f64().expect("volume before");
+    let removed = before - filleted["volumeMm3"].as_f64().expect("volume");
+    // a 2 mm round along 20 mm takes (4 - pi) * 20 = 17.2 mm3
+    assert!((16.0..18.5).contains(&removed), "the fillet took {removed} mm3");
+    // and a sketch or push on the top face finds it by key: its triangles are there, under the same key
+    let ids = mesh["faces"]["ids"].as_array().unwrap();
+    let on_top = ids
+        .iter()
+        .filter(|&id| keys[usize::try_from(id.as_u64().unwrap()).unwrap()] == top)
+        .count();
+    assert!(on_top >= 2, "{on_top} triangles on the top");
+}
