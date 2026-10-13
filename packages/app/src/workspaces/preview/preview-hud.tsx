@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { Icon, Range, ResizeEdge, Seg, tipAttrs } from '@slicerx/ui'
+import { EdgeTab, Icon, keymapFor, Range, ResizeEdge, Seg, tipAttrs } from '@slicerx/ui'
 import { COLORBLIND_THEME, FEATURE_COLORS, SCENE } from '@slicerx/viewport/palette'
 import type { MarkerKind } from '@slicerx/viewport'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { buildTimeline, clock, fitOf, movesAt, leadInStart, movesOf, positionAt, sliderOf, timeAt, timeOfSlider } from '../../lib/preview-timeline'
 import { toolChangerFor } from '../../lib/toolchanger'
 import { lengthLabel, previewStats } from '../../lib/preview-stats'
@@ -14,6 +14,8 @@ import { LayerJump } from './layer-jump'
 import { LayerTrack } from './layer-track'
 import { layerKeyStep, stepLayer } from './layer-step'
 import { usePaneSize } from '../../shell/pane'
+import { registerEdge } from '../../shell/edge-keys'
+import { useLookChoice } from '../../first-run/look'
 import { useCompactLayout } from '../../lib/phone-layout'
 import { colorblindToolpaths, get, set, shownSlice, useApp } from '../../state/store'
 import { PLAYBACK_SPEEDS } from '../../state/prefs'
@@ -23,7 +25,22 @@ import { purgeReadout, usePurgeView, type PlayPurge } from './purge-view'
 import { MoveStrikes, TimeStrikes } from './strike-slots'
 
 /** Heights in px the playback bar snaps between: slim (transport only), medium and full. */
-const DOCK = { min: 56, max: 240, full: 190 } as const
+export const DOCK = { min: 56, max: 240, full: 190 } as const
+
+/**
+ * Whether the playback bar starts open, with its sliders. People start with it shut to its transport row and open it
+ * from its ^ tab; browser test runs (session flag `sx-e2e`) start with it open, and `sx-preview-drawer` set to `shut`
+ * or `open` decides it either way.
+ */
+export function drawerStartsOpen(): boolean {
+  try {
+    const v = sessionStorage.getItem('sx-preview-drawer')
+    if (v) return v === 'open'
+    return sessionStorage.getItem('sx-e2e') !== null
+  } catch {
+    return false
+  }
+}
 
 /** Label and color of a toolpath feature, in the palette the person picked. Callers subscribe to `appearance.colorVision` to redraw. */
 export function featureStyle(id: number): { label: string; color: string } {
@@ -260,13 +277,24 @@ export function LayerDock() {
   })
 
   const dockRef = useRef<HTMLDivElement>(null)
-  const [dockSize, setDockSize] = usePaneSize('preview-bottom', DOCK.full, DOCK)
+  const [startOpen] = useState(drawerStartsOpen)
+  const [dockSize, setDockSize] = usePaneSize('preview-bottom', startOpen ? DOCK.full : DOCK.min, DOCK)
   // On a phone the bar sits under the view as one row of transport and readout; the rest opens below that row.
   const compact = useCompactLayout()
   const [opened, setOpened] = useState(false)
+  const bodyId = useId()
+  const choice = useLookChoice()
+  const chord = keymapFor(choice.id, choice.overrides?.keys ?? {})['panel.bottom']
+  const shut = !compact && dockSize <= DOCK.min
+  // The ^ tab on the bar's top edge, and the bottom panel key, open the sliders and shut the bar to its transport row.
+  const toggleDrawer = () => setDockSize(shut ? DOCK.full : DOCK.min)
+  const toggleRef = useRef(toggleDrawer)
+  toggleRef.current = toggleDrawer
+  const shown = !!preview && !!timeline
+  useEffect(() => (shown && !compact ? registerEdge('bottom', () => toggleRef.current()) : undefined), [shown, compact])
   if (!preview || !timeline) return null
   // Tall shows every slider, medium the time and layer ones, and the slim bar only the transport.
-  const mode = compact ? 'full' : dockSize <= DOCK.min ? 'slim' : dockSize < 150 ? 'compact' : 'full'
+  const mode = compact ? 'full' : shut ? 'slim' : dockSize < 150 ? 'compact' : 'full'
   const z = preview.layerZ[top - 1] ?? 0
   const layerT = preview.layerTimeS[top - 1] ?? 0
   const segs = (preview.layerStart[top] ?? 0) - (preview.layerStart[top - 1] ?? 0)
@@ -313,7 +341,20 @@ export function LayerDock() {
   )
 
   return (
-    <div className="dock sx-overlay" role="group" aria-label="Layers and moves" data-mode={mode} data-phone={compact || undefined} ref={dockRef}>
+    <div className="dock sx-overlay" role="group" aria-label="Layers and moves" data-mode={mode} data-phone={compact || undefined} data-testid="preview-drawer" ref={dockRef}>
+      {compact ? null : (
+        <EdgeTab
+          side="bottom"
+          open={!shut}
+          label="Playback sliders"
+          panel="preview-drawer"
+          controls={bodyId}
+          className="dock-tab"
+          tip="The time, layer and move sliders. Drag the top edge to size them."
+          {...(chord ? { shortcut: chord } : {})}
+          onToggle={toggleDrawer}
+        />
+      )}
       {compact ? null : <ResizeEdge
         pane="bottom"
         size={dockSize}
@@ -380,7 +421,7 @@ export function LayerDock() {
       </div>
       {/* On a phone the rest opens as a panel over the foot of the view, so the bar's row and Print stay put. */}
       {compact && !opened ? null : (
-        <div className={compact ? 'dock-body sx-overlay' : 'dock-body'}>
+        <div id={bodyId} className={compact ? 'dock-body sx-overlay' : 'dock-body'}>
           {compact ? <div className="dock-opts">{opts}</div> : null}
           <div className="dock-row">
             <label htmlFor="pv-time">Time</label>
