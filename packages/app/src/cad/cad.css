@@ -80,6 +80,9 @@
 /* the body a finished sketch joins or cuts: room for a name and the chevron */
 .sketch-into { min-width: 160px; }
 /* the ways to draw a sketch tool family: the row keeps its height when the family has none */
+.sketch-hint-text { display: grid; }
+.sketch-hint-text::before { content: attr(data-sizer); visibility: hidden; grid-area: 1 / 1; }
+.sketch-hint-text > span { grid-area: 1 / 1; }
 .sketch-variants { display: flex; align-items: center; gap: 8px; min-height: var(--h-sm); }
 .sketch-variants > .sx-seg:not([data-full]) { flex: 1; }
 .sketch-sides { display: flex; align-items: center; gap: 4px; flex: none; color: var(--dim); }

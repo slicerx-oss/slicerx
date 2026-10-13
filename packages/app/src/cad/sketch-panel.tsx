@@ -101,6 +101,10 @@ const HINTS: Record<DrawTool, string> = {
   slotCenter: 'Click the center, an arc center, then out to the width.',
 }
 
+const hintText = (t: DrawTool): string => `${HINTS[t]}${t !== 'select' ? ' Type a number to give exact sizes.' : ''}`
+// the longest hint sizes the hint's box, so picking a tool moves nothing below it
+const HINT_SIZER = (Object.keys(HINTS) as DrawTool[]).map(hintText).reduce((a, b) => (b.length > a.length ? b : a))
+
 /** Fusion's keys for the sketch tools it gives one. */
 const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle' }
 
@@ -761,9 +765,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           </div>
           <p className="cad-hint" role="status">
             <Icon name="mouse-left" size={15} />{' '}
-            <span>
-              {HINTS[draft.tool]}{' '}
-              {draft.tool !== 'select' ? 'Type a number to give exact sizes.' : ''}
+            <span className="sketch-hint-text" data-sizer={HINT_SIZER}>
+              <span>{hintText(draft.tool)}</span>
             </span>
           </p>
           <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" /></p>
