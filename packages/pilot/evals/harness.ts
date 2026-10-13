@@ -246,6 +246,13 @@ export function createEvalSlicer(project: () => PilotProject | undefined): Slice
       const blob = new Blob([r.gcode], { type: 'text/plain' })
       return { fileName: `plate_${sliceId}.gcode`, bytes: blob.size, sha256: '', blob }
     },
+    // A stand-in for the .gcode.3mf a Bambu Lab printer gets: the same G-code under the project ending.
+    async exportGcode3mf(sliceId): Promise<GcodeExport> {
+      const r = results.get(sliceId)
+      if (!r) throw new Error(`Unknown slice ${sliceId}`)
+      const blob = new Blob([`; eval .gcode.3mf\n${r.gcode}`], { type: 'model/3mf' })
+      return { fileName: `plate_${sliceId}.gcode.3mf`, bytes: blob.size, sha256: '', blob }
+    },
     release(id) {
       results.delete(id)
     },
