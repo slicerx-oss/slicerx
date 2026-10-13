@@ -11,7 +11,7 @@ test('a circle drawn on a face has three degrees of freedom left', async ({ page
   const id = await freshBox(page)
   await command(page, 'Sketch on the bed or a face')
   const panel = toolPanel(page)
-  await expect(panel).toContainText('Click the bed or a flat face')
+  await expect(panel).toContainText('the bed or a flat face to sketch on')
   await pick(page, await facePick(page, id, [0, 0, 1]))
   await expect(panel).toContainText('A face of')
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()

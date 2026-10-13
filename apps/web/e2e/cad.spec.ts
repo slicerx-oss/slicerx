@@ -59,7 +59,7 @@ test('a rectangle sketched with typed sizes on the bed extrudes to a new body of
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
   await command(page, 'Sketch on the bed or a face')
   const panel = toolPanel(page)
-  await expect(panel).toContainText('Click the bed or a flat face')
+  await expect(panel).toContainText('the bed or a flat face to sketch on')
   await pick(page, { objectId: null, partIndex: null, triangle: null, point: null, bed: [100, 100] })
   await expect(panel).toContainText('The bed')
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Rectangle' }).click()
@@ -94,7 +94,7 @@ test('a circle sketched on the top face cuts a hole through the part', async ({ 
   const cy = (before.min[1] + before.max[1]) / 2
   await command(page, 'Sketch on the bed or a face')
   const panel = toolPanel(page)
-  await expect(panel).toContainText('Click the bed or a flat face')
+  await expect(panel).toContainText('the bed or a flat face to sketch on')
   await pick(page, await facePick(page, id, [0, 0, 1]))
   await expect(panel).toContainText('A face of')
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
@@ -144,7 +144,7 @@ test('a hole cut through the part gets its rim rounded', async ({ page }) => {
   const cy = (before.min[1] + before.max[1]) / 2
   await command(page, 'Sketch on the bed or a face')
   const panel = toolPanel(page)
-  await expect(panel).toContainText('Click the bed or a flat face')
+  await expect(panel).toContainText('the bed or a flat face to sketch on')
   await pick(page, await facePick(page, id, [0, 0, 1]))
   await expect(panel).toContainText('A face of')
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
@@ -187,7 +187,7 @@ test('the hole tool makes a hole fit an M3 screw', async ({ page }) => {
   const cy = (before.min[1] + before.max[1]) / 2
   await command(page, 'Sketch on the bed or a face')
   const panel = toolPanel(page)
-  await expect(panel).toContainText('Click the bed or a flat face')
+  await expect(panel).toContainText('the bed or a flat face to sketch on')
   await pick(page, await facePick(page, id, [0, 0, 1]))
   await expect(panel).toContainText('A face of')
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
@@ -232,7 +232,7 @@ test('the thread tool cuts an M8 thread in a tapped hole, from the full engine',
   const cy = (before.min[1] + before.max[1]) / 2
   await command(page, 'Sketch on the bed or a face')
   const panel = toolPanel(page)
-  await expect(panel).toContainText('Click the bed or a flat face')
+  await expect(panel).toContainText('the bed or a flat face to sketch on')
   await pick(page, await facePick(page, id, [0, 0, 1]))
   await expect(panel).toContainText('A face of')
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
