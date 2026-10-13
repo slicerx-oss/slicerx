@@ -112,3 +112,22 @@ it('reports the steps that fell back, so a developer sees them', async () => {
   const r = await replayHistory(engine(['brep.subtract']).call, { history: history(box, hole), exact: true })
   expect(r.exactFellBack).toEqual(['hole-1'])
 })
+
+it('rounds edges on the kernel, in the part frame, and falls back to the mesh when it fails', async () => {
+  const moved = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1]
+  const fillet = step('fillet-1', { op: 'edge.fillet', edges: [{ a: [15, -5, 0], b: [15, -5, 5], face: [1, 0, 0], keys: [3, 4] }], radiusMm: 1 }, moved)
+  const e = engine()
+  const r = await replayHistory(e.call, { history: history(box, fillet), exact: true })
+  expect(r.status[1]).toEqual({ state: 'done' })
+  expect(e.ops()).toEqual(['brep.extrude', 'brep.tessellate', 'brep.fillet', 'brep.tessellate'])
+  const sent = e.sent[2]!.req
+  expect(sent['body']).toEqual({ smb: 'extrude-1' })
+  expect(sent['edges']).toEqual([{ a: [10, -5, 0], b: [10, -5, 5], keys: [3, 4] }])
+  expect(sent['radiusMm']).toBe(1)
+  // the same history again would come from the replay cache
+  clearReplayCache()
+  const f = engine(['brep.fillet'])
+  const back = await replayHistory(f.call, { history: history(box, fillet), exact: true })
+  expect(back.exactFellBack).toEqual(['fillet-1'])
+  expect(f.ops().slice(2)).toEqual(['brep.fillet', 'edge.fillet'])
+})
