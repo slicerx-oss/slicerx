@@ -790,6 +790,7 @@ class ViewportImpl implements Viewport {
     if (this.tool === 'move' || this.moveArrows.visible) this.updateArrows()
     if (this.cut || this.cutGizmo.group.visible) this.updateCutGizmo()
     this.dims.fit(this.camera.fov, this.height)
+    this.sketchLayer.fit(this.camera.fov, this.height)
     const ao = this.aoOn && aoMix > 0 && this.display !== 'wireframe' && !(this.mode === 'prepare' && this.renderMode === 'xray')
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()

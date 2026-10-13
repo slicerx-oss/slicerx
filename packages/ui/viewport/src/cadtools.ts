@@ -208,6 +208,10 @@ export interface SketchScene {
   grid?: { stepMm: number; min: V2; max: V2 }
   /** Problem spots, drawn as red dots. */
   marks?: readonly V2[]
+  /** Driving dimensions: a line from `from` to `to` with the value at its middle. */
+  dims?: readonly { from: V2; to: V2; at?: V2; label: string }[]
+  /** Points held by Fix, drawn as squares. */
+  fixed?: readonly V2[]
 }
 
 /** The line being drawn (a polyline from the last point to the cursor), the snapped cursor and an alignment guide. */
@@ -242,7 +246,11 @@ export class SketchLayer {
   private readonly dotMat = new PointsMaterial({ color: new Color('#f8f8f2'), size: 7, sizeAttenuation: false, depthTest: false, toneMapped: false })
   private readonly markMat = new PointsMaterial({ color: new Color('#ff5555'), size: 10, sizeAttenuation: false, depthTest: false, toneMapped: false })
   private readonly snapMat = new PointsMaterial({ color: new Color('#f1fa8c'), size: 11, sizeAttenuation: false, depthTest: false, toneMapped: false })
-  private drawn: (LineSegments | Points)[] = []
+  private readonly fixMat = new PointsMaterial({ color: new Color(TONE.fixed.color), size: 9, sizeAttenuation: false, depthTest: false, toneMapped: false })
+  private readonly dimMat = new LineBasicMaterial({ color: new Color('#f1fa8c'), transparent: true, opacity: 0.8, depthTest: false, toneMapped: false })
+  private drawn: (LineSegments | Points | Sprite)[] = []
+  private labels: { sprite: Sprite; aspect: number }[] = []
+  private scaledFor = ''
   private readonly band: Line
   private readonly bandPos = new Float32Array(CURSOR_POINTS * 3)
   private readonly snap: Points
@@ -283,9 +291,14 @@ export class SketchLayer {
   set(scene: SketchScene | null): void {
     for (const d of this.drawn) {
       d.removeFromParent()
-      d.geometry.dispose()
+      if (d instanceof Sprite) {
+        d.material.map?.dispose()
+        d.material.dispose()
+      } else d.geometry.dispose()
     }
     this.drawn = []
+    this.labels = []
+    this.scaledFor = ''
     this.scene = scene
     this.group.visible = !!scene
     if (!scene) return this.cursor(null)
@@ -336,6 +349,34 @@ export class SketchLayer {
     }
     dots(scene.handles, this.dotMat, 8)
     dots(scene.marks, this.markMat, 9)
+    dots(scene.fixed, this.fixMat, 9)
+    if (scene.dims?.length) {
+      const geo = new BufferGeometry()
+      geo.setAttribute('position', new Float32BufferAttribute(scene.dims.flatMap((m) => [m.from[0], m.from[1], lift, m.to[0], m.to[1], lift, ...(m.at ? [m.to[0], m.to[1], lift, m.at[0], m.at[1], lift] : [])]), 3))
+      const seg = new LineSegments(geo, this.dimMat)
+      seg.renderOrder = 9
+      seg.raycast = () => {}
+      this.group.add(seg)
+      this.drawn.push(seg)
+      for (const m of scene.dims) {
+        const label = makeLabel(m.label)
+        if (!label) continue
+        const at = m.at ?? [(m.from[0] + m.to[0]) / 2, (m.from[1] + m.to[1]) / 2]
+        label.sprite.position.set(at[0], at[1], lift)
+        this.group.add(label.sprite)
+        this.drawn.push(label.sprite)
+        this.labels.push(label)
+      }
+    }
+  }
+
+  /** Keeps dimension values LABEL_PX tall on screen, as the dimension layer does. */
+  fit(fovDeg: number, heightPx: number): void {
+    const key = `${fovDeg}:${heightPx}:${this.labels.length}`
+    if (key === this.scaledFor || this.labels.length === 0) return
+    this.scaledFor = key
+    const h = (LABEL_PX / Math.max(1, heightPx)) * 2 * Math.tan((fovDeg * Math.PI) / 360)
+    for (const l of this.labels) l.sprite.scale.set(h * l.aspect, h, 1)
   }
 
   /** The rubber band and snap marker; rewrites the fixed buffers, nothing is allocated. */
