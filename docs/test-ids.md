@@ -79,6 +79,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-caption` | The pill at the view's top left that names the view, such as Top, XY |
 | `mimir-lookup-card` | A card over the view with what mimir looked up: two rows and the source; Escape closes it |
 | `mimir-lookup-close` | The close button on a lookup card |
+| `mimir-see-usage` | See usage, on a refusal for a used-up free allowance (`data-code` day_used, edition_day_used or slow_down on the line); opens Settings at Account > Usage |
 
 ## Setup (first run and Printers > Add)
 

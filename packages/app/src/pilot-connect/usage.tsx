@@ -3,13 +3,14 @@
 // Settings > Account > Usage: how much of today's free mimir is left and when it resets, use over the last 24 hours and
 // the last 7 days, and the per-minute limit. Shown only while mimir runs on mimir cloud. Loading draws everything at its final size.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEdition } from '../edition'
 import { useApp } from '../state/store'
 import { cloudReady } from './cloud-edition'
 import { useMimirCloudHost } from './cloud'
 import { pilotModel } from './llm'
 import { chartBars, leftPercent, resetsIn, type MimirUsage } from './usage-model'
+import { takeUsageFocus } from './usage-open'
 import { usageFromQuota } from './usage-quota'
 import './usage.css'
 
@@ -82,15 +83,21 @@ function Line({ text, className = '', testId }: { text: string | null; className
 export function MimirUsageSection() {
   const on = useOnFreeMimir()
   const loaded = useUsage()
+  const ref = useRef<HTMLElement>(null)
+  const shown = on && loaded !== null
+  // opened from "See usage" in the chat: bring the section into view once it is drawn
+  useEffect(() => {
+    if (shown && takeUsageFocus()) ref.current?.scrollIntoView?.({ block: 'start' })
+  }, [shown])
   // no report from the proxy shows nothing rather than a section that never fills
-  if (!on || loaded === null) return null
+  if (!shown) return null
   const u = loaded ?? null
   const day = u ? leftPercent(u.day.used) : null
   const out = day === 0
   // an older proxy sends no days; the row waits for it rather than drawing nothing
   const days = u === null || u.daily
   return (
-    <section className="set-sec mu" id="mimir-usage" aria-labelledby="mu-h" aria-busy={u === null || undefined} data-testid="mu-section">
+    <section ref={ref} className="set-sec mu" id="mimir-usage" aria-labelledby="mu-h" aria-busy={u === null || undefined} data-testid="mu-section">
       <h3 id="mu-h">Usage</h3>
       <p className="sx-small sx-muted">Free {ASSISTANT_NAME} has a daily limit.</p>
       <div className="mu-sum">
