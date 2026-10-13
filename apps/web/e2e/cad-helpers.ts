@@ -128,7 +128,7 @@ export function facePick(page: Page, objectId: string, dir: V3, near?: V3): Prom
 }
 
 /** Sends the view's pick event, as a click on that spot does. */
-export async function pick(page: Page, hit: { objectId: string | null; partIndex: number | null; triangle: number | null; point: V3 | null; bed?: [number, number] | null; shift?: boolean }): Promise<void> {
+export async function pick(page: Page, hit: { objectId: string | null; partIndex: number | null; triangle: number | null; point: V3 | null; bed?: [number, number] | null; shift?: boolean; originPlane?: 'xy' | 'xz' | 'yz' }): Promise<void> {
   await page.evaluate((h) => {
     const vp = (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp
     vp.emit('pick', { bed: h.point ? [h.point[0], h.point[1]] : null, ...h })

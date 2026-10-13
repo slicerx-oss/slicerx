@@ -12,7 +12,7 @@
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
 import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
 import { fieldsOf, PatternSection } from './pattern-fields'
-import type { PickEvent, SketchEvent, SketchScene, SketchTone } from '@slicerx/viewport'
+import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch } from '@slicerx/ui'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -20,6 +20,7 @@ import { checkSketch, offsetSketch, pickFace, sketchSnaps, solveSketch, type Fac
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
+import { useShownOrigin } from '../state/model-mode'
 import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
 import { editing, nowOf, saveEdit } from './history/ops'
@@ -65,6 +66,8 @@ interface Plane {
   /** The area worth a grid, in plane coordinates. */
   min: V2
   max: V2
+  /** Just picked: the camera turns square on to it as the sketch opens. */
+  fresh?: boolean
 }
 
 const TOOLS: { value: DrawTool; label: string }[] = [
@@ -137,6 +140,15 @@ export function SketchTool() {
   useDraftObject(plane?.target?.objectId)
   const [note, setNote] = useState<string | null>(edit && 'note' in edit ? edit.note : null)
   const bed = useApp((s) => s.bed)
+  const { origin } = useShownOrigin()
+  // Before a pick, the origin planes show at the origin, a third of the bed across.
+  const planeSize = Math.min(bed.widthMm, bed.depthMm) / 3
+  useEffect(() => {
+    const view = cameraBus()?.cad
+    if (!view || plane) return
+    view.setOriginPlanes({ center: origin, sizeMm: planeSize })
+    return () => view.setOriginPlanes(null)
+  }, [plane, origin, planeSize])
 
   const onPick = useCallback(
     (hit: PickEvent) => {
@@ -145,19 +157,23 @@ export function SketchTool() {
       const part = e?.parts[hit.partIndex ?? 0]
       if (e && part && hit.point && hit.triangle !== null) {
         void pickFace({ mesh: toGeom(part), transform: e.transform }, { triangle: hit.triangle, at: hit.point }).then(
-          (f) => setPlane({ frame: f.frame, outline: f.outline, target: { objectId: e.id, partIndex: hit.partIndex ?? 0 }, label: `A face of ${e.name}`, min: [f.min[0] - 10, f.min[1] - 10], max: [f.max[0] + 10, f.max[1] + 10] }),
+          (f) => setPlane({ frame: f.frame, outline: f.outline, target: { objectId: e.id, partIndex: hit.partIndex ?? 0 }, label: `A face of ${e.name}`, min: [f.min[0] - 10, f.min[1] - 10], max: [f.max[0] + 10, f.max[1] + 10], fresh: true }),
           (err: unknown) => setNote(pickWords(err, true)),
         )
-      } else if (hit.bed) setPlane({ frame: BED_FRAME, outline: [], label: 'The bed', min: [0, 0], max: [bed.widthMm, bed.depthMm] })
+      } else if (hit.originPlane) {
+        const frame = originFrame(hit.originPlane, origin)
+        const r = planeSize
+        setPlane({ frame, outline: [], label: `The ${hit.originPlane.toUpperCase()} plane`, min: [-r, -r], max: [r, r], fresh: true })
+      } else if (hit.bed) setPlane({ frame: BED_FRAME, outline: [], label: 'The bed', min: [0, 0], max: [bed.widthMm, bed.depthMm], fresh: true })
     },
-    [bed],
+    [bed, origin, planeSize],
   )
   useProbe(onPick, plane === null)
 
   if (!plane) {
     return (
       <Shell title="Sketch" aside="No plane yet">
-        <p className="cad-hint"><Icon name="mouse-left" size={15} /> Click the bed or a flat face to sketch on.</p>
+        <p className="cad-hint"><Icon name="mouse-left" size={15} /> Click an origin plane (XY, XZ or YZ), the bed or a flat face to sketch on.</p>
         {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
         <div className="cad-actions">
           <Button variant="ghost" onClick={close}>Cancel</Button>
@@ -391,6 +407,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const r = ext ? ext.radius * 1.4 : Math.hypot(plane.max[0] - plane.min[0], plane.max[1] - plane.min[1]) / 2
     view?.lookAtPlane(frameToBed(plane.frame, c), plane.frame.normal, r)
   }
+
+  // A plane just picked: the camera turns square on to it, as Look at the sketch does.
+  const looked = useRef(false)
+  useEffect(() => {
+    if (looked.current || !plane.fresh || init) return
+    looked.current = true
+    look()
+  })
 
   const doOffset = async () => {
     if (!selected) return
