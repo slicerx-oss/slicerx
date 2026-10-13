@@ -95,7 +95,8 @@ fn main() {
     // our versions of the routines swap-routines.sh takes out build with the kernel; integrator.cpp replaces the
     // kernel's SmIntegrator.cpp, which an unswapped kernel (as for recording the golden file) still has
     let mut smlib = build([&sm_inc, &api_inc]);
-    smlib.files(sources(&sm)).file("cpp/routines.cpp");
+    // no debug info for the kernel: in a debug build its objects pass 4 GB, past MSVC's archive limit (LNK1248)
+    smlib.debug(false).files(sources(&sm)).file("cpp/routines.cpp");
     if !sm.join("src/SmIntegrator.cpp").exists() {
         smlib.file("cpp/integrator.cpp");
     }
