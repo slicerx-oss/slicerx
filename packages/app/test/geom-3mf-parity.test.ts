@@ -6,7 +6,7 @@
 // SX_GEOM_CORE_WASM); without it the test is skipped. SX_CORPUS_PRIVATE=<dir> adds the 3MF files in a folder outside
 // the repository.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { callEngine, type GeomExports } from '../src/geom/engine-call'
 import { setGeomProvider } from '../src/geom/client'
@@ -76,7 +76,7 @@ describe.skipIf(!existsSync(wasm))('the geometry engine reads 3MF projects as th
     readProjectsWithGeom(true)
   })
   for (const file of files()) {
-    const name = file.split('/').pop()!
+    const name = basename(file)
     it(name, async () => {
       const bytes = new Uint8Array(readFileSync(file))
       readProjectsWithGeom(false)
