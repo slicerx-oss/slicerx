@@ -236,6 +236,35 @@ pub fn subtract(mesh: &TriMesh, solid: &ConvexSolid) -> Result<TriMesh> {
     intersect(mesh, &Region::complement(solid, &b))
 }
 
+/// the cutter with each face that lies flush on a body face of the same facing moved out by `by`, so the
+/// cut never runs along a body face (a flush cut leaves slivers and open edges)
+pub fn overshoot_flush(solid: &ConvexSolid, mesh: &TriMesh, by: f64) -> ConvexSolid {
+    // meshes from the app come baked to f32, so flush means within a few float steps
+    let tol =
+        weld_tolerance(mesh.bounds()).max(mesh.bounds().map_or(1e-5, |b| (b.diagonal() * 1e-6).max(1e-5)));
+    let planes = solid
+        .planes
+        .iter()
+        .map(|pl| {
+            let flush = mesh.triangles.iter().any(|&t| {
+                let c = mesh.corners(t);
+                c.iter().all(|&p| pl.distance(p).abs() <= tol)
+                    && vec3::normalize(vec3::cross(vec3::sub(c[1], c[0]), vec3::sub(c[2], c[0])))
+                        .is_some_and(|n| vec3::dot(n, pl.normal) > 1.0 - 1e-6)
+            });
+            if flush {
+                Plane {
+                    normal: pl.normal,
+                    offset: pl.offset + by,
+                }
+            } else {
+                *pl
+            }
+        })
+        .collect();
+    ConvexSolid { planes }
+}
+
 pub fn intersect(mesh: &TriMesh, region: &Region) -> Result<TriMesh> {
     mesh.validate("boolean input")?;
     let Some(bounds) = mesh.bounds() else {
@@ -807,6 +836,28 @@ fn ray_distance(o: V3, d: V3, a: V3, b: V3, c: V3) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn overshoot_moves_only_flush_faces() {
+        let cube = crate::build::box_mesh([0.0; 3], [20.0, 20.0, 20.0]);
+        let f = Frame {
+            origin: [10.0, 10.0, 0.0],
+            ..Frame::WORLD
+        };
+        let c = ConvexSolid::cylinder(&f, 4.0, 0.0, 25.0, 24).unwrap();
+        let o = overshoot_flush(&c, &cube, 0.01);
+        let moved: Vec<f64> = c
+            .planes
+            .iter()
+            .zip(&o.planes)
+            .map(|(a, b)| b.offset - a.offset)
+            .collect();
+        // only the floor (on the cube's bottom, facing down like it) moves out
+        assert_eq!(moved.iter().filter(|d| d.abs() > 0.0).count(), 1, "{moved:?}");
+        assert!(moved.iter().any(|d| (d - 0.01).abs() < 1e-12));
+        let inside = ConvexSolid::cylinder(&f, 4.0, 5.0, 15.0, 24).unwrap();
+        assert_eq!(overshoot_flush(&inside, &cube, 0.01).planes, inside.planes);
+    }
     use super::*;
     use crate::build;
 
