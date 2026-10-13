@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-157 tools.
+158 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -88,6 +88,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_material_recommend` |  |  | read | Recommend materials for a use case, best first, with reasons and cautions from the knowledge base. |
 | `slicerx_mesh_analyze` |  |  | read | Measure an object as it sits on the bed now: volume, surface area, size, whether it is watertight (open, flipped and non-manifold edges, separate shells), overhang area past the support angle, estimated support volume and bed contact area. |
 | `slicerx_mesh_repair` |  |  | slice | Repair an object mesh before slicing: merge loose vertices, remove zero-area and duplicate triangles, flip inward-facing triangles and fill holes. |
+| `slicerx_mimir_quota` |  |  | read | Read today's free mimir use in SlicerX on this computer: what this install and this network have used of their daily caps, in US dollars, and whether mimir cloud is open today. |
 | `slicerx_multicolor_assign` |  |  | slice | Plan a multicolor print: which filament each region or height band gets, the order of color changes with layer numbers for height bands, whether the printer has enough slots and can feed each material, and how to cut purge waste (flush multiplier, prime tower). |
 | `slicerx_open_in_app` | Open in the SlicerX app | core | read, ungated | Open a model or project file (.sx3mf, .3mf or .stl) in the SlicerX desktop app on this computer, to slice and print it there, as the browser's Open in SlicerX button does. |
 | `slicerx_optimize_to_target` |  |  | slice | Hit a print target by slicing many real candidates: under a time limit, under a filament or cost limit, or strongest (or fastest, lightest, cheapest) within a limit. |
