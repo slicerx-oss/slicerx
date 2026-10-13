@@ -14,7 +14,8 @@ facts:
   - {text: "Use a 0.16 mm layer height, or 0.12 mm for cleaner threads. Finer layers follow the thread's curve more closely.", src: [snapmaker_blog_threads]}
   - {text: "Prefer an ACME or trapezoidal thread to a standard V thread. The V thread's sharp 60 degree flanks print as hard overhangs.", src: [snapmaker_blog_threads]}
   - {text: "A 3 mm peg will not fit a 3 mm hole, because extruded lines come out wider than the nozzle. Give the male thread a small negative offset, and test with a small nut and bolt (M10 or M12) before a big part.", src: [snapmaker_blog_threads]}
-  - {text: "For strong threads or parts assembled again and again, use a metal heat-set insert. Prusa sets inserts with a soldering iron at the print temperature plus 10 C, and the plastic reflows around the knurled outside.", src: [snapmaker_blog_threads, prusa_store_heat_set_inserts]}
+  - {text: "For strong threads or parts assembled again and again, use a metal heat-set insert pressed in with a soldering iron.", src: [snapmaker_blog_threads]}
+  - {text: "Prusa sets the soldering iron to the print temperature of the part's filament plus 10 to 20 C, and the printed plastic melts and reflows around the insert's knurled outside.", src: [prusa_store_heat_set_inserts]}
 pilot_actions:
   - "Suggest upright orientation first, then layer height, then the thread profile."
   - "For clearance, point to the tolerance calibration (workflow tolerance) rather than one number for every printer."
