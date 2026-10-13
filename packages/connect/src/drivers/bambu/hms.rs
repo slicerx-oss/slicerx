@@ -37,14 +37,14 @@ pub(crate) fn describe_hms(module: u16, part: u16, level: u16, error: u16) -> Op
             "The nozzle looks clogged: the extruder is pushing much harder than normal. Heat the nozzle and clear it (a cold pull or the cleaning needle), or swap the hotend.".to_owned()
         }
         (0x0300, 0x1A, 0x0002, 0x0001) => {
-            "The nozzle may be wrapped in filament, or the build plate is not sitting flat. Check both before going on.".to_owned()
+            "Something is off where the nozzle meets the plate: filament built up around the nozzle, or a plate that is not lying flat. Look at both before you continue.".to_owned()
         }
         (0x0C00, 0x03, 0x0002, 0x000E | 0x001C) => {
             "The camera saw filament stuck around the nozzle. Check the nozzle and clean it before going on.".to_owned()
         }
         // Hotend cooling fan: stopped (fatal) or slow (serious).
         (0x0300, 0x03 | 0x17, 0x0001, 0x0001) | (0x0300, 0x03 | 0x17, 0x0002, 0x0002) => {
-            "The hotend cooling fan is slow or stopped. Check it for debris and its cable, since a hot heatbreak can clog the nozzle.".to_owned()
+            "The fan that cools the hotend is not reaching its speed. Clear anything caught in it and check its cable: without that airflow the heatbreak runs hot and the nozzle can clog.".to_owned()
         }
         (0x0300, 0x04, 0x0002, 0x0001) | (0x0300, 0x31, 0x0001, 0x0001) | (0x0300, 0x31, 0x0002, 0x0002) => {
             "The part cooling fan is slow or stopped. Check it for debris and its cable.".to_owned()
@@ -142,10 +142,10 @@ pub(crate) fn describe_print_error(module: u16, error: u16) -> Option<String> {
             "Homing the X and Y axes failed. Check that nothing blocks the toolhead, then try again."
         }
         (0x0300, 0x4005 | 0x8010) => {
-            "The hotend cooling fan is slow or stopped. Check it for debris and its cable, since a hot heatbreak can clog the nozzle."
+            "The fan that cools the hotend is not reaching its speed. Clear anything caught in it and check its cable: without that airflow the heatbreak runs hot and the nozzle can clog."
         }
         (0x0300, 0x8014) => {
-            "The nozzle may be wrapped in filament, or the build plate is not seated right. Cancel, clean the nozzle or reseat the plate, then print again."
+            "Filament may have built up around the nozzle, or the plate is not in its place. Cancel the print, clean the nozzle or seat the plate again, then start over."
         }
         (0x0300, 0x8019) | (0x0500, 0x8061 | 0x4095) => {
             "No build plate is on the bed. Place it, then try again."
@@ -258,7 +258,7 @@ mod tests {
         assert!(
             describe_hms(0x0300, 0x0300, 0x0001, 0x0001)
                 .unwrap()
-                .starts_with("The hotend cooling fan")
+                .starts_with("The fan that cools the hotend")
         );
         assert!(
             describe_hms(0x0300, 0x0D00, 0x0002, 0x0003)
