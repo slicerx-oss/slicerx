@@ -73,6 +73,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("edge.fillet.preview", "cad"),
     ("sketch.fillet", "cad"),
     ("sketch.chamfer", "cad"),
+    ("sketch.solve", "cad"),
     ("hole.find", "holes"),
     ("hole.apply", "holes"),
     ("thread.find", "threads"),

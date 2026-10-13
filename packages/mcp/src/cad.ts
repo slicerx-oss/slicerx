@@ -233,6 +233,20 @@ const loop = z
 
 const loops = z.array(loop).min(1).max(256)
 
+const sketchEntity = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('line'), a: z.number().int().min(0), b: z.number().int().min(0) }),
+  z.object({ type: z.literal('circle'), center: z.number().int().min(0), radius: z.number().positive().describe('Where the solve starts, mm') }),
+  z.object({ type: z.literal('arc'), center: z.number().int().min(0), start: z.number().int().min(0), end: z.number().int().min(0) }).describe('Counterclockwise from start to end'),
+])
+const SKETCH_CONSTRAINTS = [
+  'coincident', 'fix', 'horizontal', 'vertical', 'parallel', 'perpendicular', 'collinear', 'equal', 'tangent', 'midpoint', 'concentric',
+  'onLine', 'onCircle', 'symmetric', 'distance', 'horizontalDistance', 'verticalDistance', 'length', 'radius', 'diameter', 'angle', 'lineDistance',
+] as const
+const sketchConstraint = z
+  .object({ type: z.enum(SKETCH_CONSTRAINTS) })
+  .catchall(z.number())
+  .describe('Fields by type: a, b (points, or lines and circles by entity index), point, line, circle, value (mm, or degrees for angle)')
+
 const shape = z
   .discriminatedUnion('type', [
     z.object({ type: z.literal('rectangle'), widthMm: z.number().positive(), heightMm: z.number().positive(), cornerRadiusMm: z.number().min(0).optional() }),
@@ -407,11 +421,33 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. There is no constraint solver; positions are as typed.',
+    description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. Positions are as typed; slicerx_geom_sketch_solve solves constraints first.',
     input: z.object({ loops }),
     async run(i) {
       const out = deps.designs && !deps.files.engine ? await engine('sketch.check', { loops: i.loops }) : await call('sketch.check', { loops: i.loops })
       return { ok: out['ok'] === true, summary: out['ok'] === true ? `The sketch is closed, ${String(out['areaMm2'])} mm2` : `The sketch has ${Array.isArray(out['issues']) ? out['issues'].length : 0} problem(s)`, output: out }
+    },
+  })
+
+  const sketchSolve = defineTool({
+    name: 'geom.sketch_solve',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Solve a constrained 2D sketch, as the sketch tool does: points, lines, circles and arcs held by constraints (coincident, horizontal, parallel, tangent, distance, angle and the rest). Returns where every point lands, each circle and arc radius, the degrees of freedom left (0 is fully defined), which points can still move, and the constraints that conflict or repeat. Lines, circles and arcs refer to points by index; constraints refer to points and entities by index. Values are mm, angles degrees.',
+    input: z.object({
+      points: z.array(vec2).min(1).max(4096).describe('Where each point starts, mm'),
+      entities: z.array(sketchEntity).max(4096).default([]),
+      constraints: z.array(sketchConstraint).max(8192).default([]),
+      drag: z.object({ point: z.number().int().min(0), to: vec2 }).optional().describe('Pull one point toward a spot; the rest give way only as the constraints make them'),
+    }),
+    async run(i) {
+      const out = await call('sketch.solve', i)
+      const status = String(out['status'])
+      const dof = Number(out['dof'])
+      const head = status === 'conflict' || status === 'failed' ? `The sketch did not solve (${status}), constraints ${JSON.stringify(out['conflicting'])}` : dof === 0 ? 'Solved, fully defined' : `Solved, ${dof} degree${dof === 1 ? '' : 's'} of freedom left`
+      return { ok: status === 'ok' || status === 'redundant', summary: status === 'redundant' ? `${head}; constraints ${JSON.stringify(out['redundant'])} repeat others` : head, output: out }
     },
   })
 
@@ -647,5 +683,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell] as PilotTool<never>[]
 }

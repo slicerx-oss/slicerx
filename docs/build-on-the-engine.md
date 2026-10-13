@@ -31,6 +31,7 @@ Errors are one plain sentence of the form `field: what is wrong`, ready to show 
 | `face.push` | Move a flat face along its normal: out adds material, in cuts | `mesh`, `triangle`, `at`, `distanceMm` |
 | `boolean` | Union, difference or intersection of closed meshes | `op`, `a`, `b` |
 | `edge.fillet`, `edge.chamfer` | Round or bevel straight edges between flat faces | `mesh`, `edges`, `radiusMm` or `distanceMm` |
+| `sketch.solve` | Solve a constrained sketch: where each point lands, the radii, the degrees of freedom left and the constraints that conflict or repeat | `points`, `entities`, `constraints`, optional `drag` |
 | `sketch.fillet`, `sketch.chamfer` | Round or bevel sketch corners before extruding | `loops`, `corners`, `radiusMm` or `distanceMm` |
 | `dimension.anchor`, `dimension.evaluate` | Dimensions that stay on the model and follow later edits | see `docs/cad-history.md` |
 | `measure.feature`, `measure` | Distances, angles, radii and areas between picked features | `mesh`, `pick` |
