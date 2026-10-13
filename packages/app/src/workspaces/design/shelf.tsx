@@ -21,6 +21,7 @@ import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
 import { startFillet } from '../../cad/start-hint'
+import { requestFinish, useCanFinish } from '../../cad/sketches'
 import { availableTools, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
 
 const ToolDialog = lazy(() => import('../prepare/tool-dialog').then((m) => ({ default: m.ToolDialog })))
@@ -60,6 +61,7 @@ export function Shelf() {
   const engine = useFullEngine()
   const { undo, redo } = useHistoryCounts()
   const [menu, setMenu] = useState<string | null>(null)
+  const canFinish = useCanFinish()
   const tools = availableTools({ modeling, drawing })
   const run = (fn: () => Promise<unknown>) => {
     setMenu(null)
@@ -176,6 +178,11 @@ export function Shelf() {
         </div>
       ) : null}
       <div className="shelf-end">
+        {canFinish ? (
+          <Button size="sm" variant="primary" icon="check" className="shelf-finish" data-testid="sketch-finish" data-tip-title="Finish Sketch" data-tip-body="Keeps the sketch in the timeline without making a solid. Enter does the same." onClick={requestFinish}>
+            Finish Sketch
+          </Button>
+        ) : null}
         {shelfGroup(tools, 'utility').map((e) => (e.kind === 'tool' ? toolButton(e.tool, { className: 'shelf-tool shelf-icon' }) : null))}
         <span className="shelf-sep" aria-hidden="true" />
         <Button variant="ghost" size="sm" icon="undo" aria-label="Undo" tip="edit.undo" disabled={undo === 0} onClick={() => history().undo()} />

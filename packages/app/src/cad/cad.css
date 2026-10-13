@@ -9,6 +9,14 @@
 .sketch-dof { margin: 2px 0 6px; font-size: var(--fs-sm); color: var(--dim); }
 .sketch-dof[data-tone='done'] { color: var(--green); }
 .sketch-dof[data-tone='warn'] { color: var(--orange); }
+/* The sketch palette: Look at, grid and snap, section, and what the sketch shows. */
+.sketch-palette { display: grid; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+.sketch-palette > .sx-btn { justify-self: start; }
+.sketch-toggles { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); }
+.sketch-toggles label { margin-right: 8px; }
+.sketch-toggles .sx-selectwrap { width: 88px; margin-left: auto; }
+.sketch-show { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; margin: 0; padding: 0; border: 0; }
+.sketch-show legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--dim); }
 .cad-note { color: var(--fg); }
 .cad-note .sx-ic { color: var(--orange); }
 .cad-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
