@@ -151,6 +151,15 @@ describe('design timeline', () => {
     expect(next.marker).toBe(4)
   })
 
+  it('keeps the rolled back steps when a tool works at the marker', () => {
+    const t: Timeline = { ...timelineOf(plate()), marker: 3 }
+    const h = historyOf(t, 'box')!
+    const added = step(id(9000, 9), pull(2))
+    const next = withHistory(t, 'box', { ...h, steps: [...h.steps, added] })
+    expect(next.items.map((i) => i.id)).toEqual([...t.items.slice(0, 3).map((i) => i.id), added.id, ...t.items.slice(3).map((i) => i.id)])
+    expect(next.marker).toBe(4)
+  })
+
   it('rolls back to the marker: later items leave the views', () => {
     const d: Timeline = { ...timelineOf(plate()), marker: 3 }
     expect(historyOf(d, 'box')!.steps.map((s) => s.id)).toEqual([id(0, 1)])

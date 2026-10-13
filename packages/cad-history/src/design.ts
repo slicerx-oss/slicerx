@@ -164,8 +164,8 @@ function nextName(items: readonly Item[]): string {
 /**
  * The timeline after a tool changed one body's history (the tools still record per object): a step kept stays where
  * it is, a step edited in place keeps its sketch (which takes the new plane and loops), a removed step goes (its
- * sketch stays, as in Fusion). A new last step goes in at the marker, as a new feature does in Fusion; one put in
- * between goes right after the body's step before it.
+ * sketch stays, as in Fusion; one past the marker is only rolled back and stays). A new last step goes in at the
+ * marker, as a new feature does in Fusion; one put in between goes right after the body's step before it.
  */
 export function withHistory(t: Timeline, body: string, h: History): Timeline {
   const next = new Map(h.steps.map((s) => [s.id, s]))
@@ -177,7 +177,11 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
   t.items.forEach((it, i) => {
     if (it.kind === 'feature' && it.body === body) {
       const s = next.get(it.id)
-      if (s) {
+      // a step past the marker is rolled back, not removed: a tool working at the marker never sees it
+      if (!s && i >= t.marker) {
+        items.push(it)
+        place.set(it.id, items.length - 1)
+      } else if (s) {
         if (isSketch(s.params)) {
           const [k, f] = split(s, body, '')
           const own = it.sketch !== undefined ? sketchAt.get(it.sketch) : undefined
