@@ -145,7 +145,7 @@ describe('the Design tree', () => {
     flushSync(() => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true })))
     expect(get().selectedIds).toEqual(['o2'])
     const menu = document.querySelector('[data-testid="model-ctx"][data-target="object"]')!
-    expect([...menu.querySelectorAll('.sx-menu-icon')].map((b) => b.getAttribute('aria-label'))).toEqual(['Rename', 'Lock', 'Leave out of the print', 'Delete'])
+    expect([...menu.querySelectorAll('.sx-menu-icon')].map((b) => b.getAttribute('aria-label'))).toEqual(['Rename', 'Lock', 'Delete'])
     expect(menu.querySelector<HTMLButtonElement>('[data-testid="model-ctx-merge"]')!.disabled).toBe(true)
   })
 
