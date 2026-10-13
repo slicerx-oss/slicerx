@@ -34,6 +34,10 @@ required-features = ["nest"]
 name = "timing"
 required-features = ["calib", "hollow"]
 
+[[test]]
+name = "brep_parity"
+required-features = ["brep"]
+
 [dependencies]
 i_overlay = { package = "sx-i-overlay", path = "../vendor/i_overlay", version = "=9.0.0" }
 libm = "=0.2.16"
@@ -46,6 +50,8 @@ flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"]
 rustc-hash = "=2.1.3"
 # constrained delaunay triangulation with refinement, for flat faces filled again (src/remesh.rs); MIT OR Apache-2.0.
 spade = { version = "=2.15.1", default-features = false, features = ["std"] }
+# exact solids (the SMLib kernel), for the brep feature
+sx-brep = { path = "../brep", version = "=0.1.4", optional = true }
 ttf-parser = { version = "=0.25.1", default-features = false, features = ["std", "opentype-layout"], optional = true }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
@@ -77,3 +83,6 @@ calib = []
 hollow = []
 # 3MF projects read whole: parts and their types, paint, plates and settings.
 formats = ["dep:flate2"]
+# The exact solid ops of sx-brep as brep.* (box, extrude, boolean, subtract, cut, info, tessellate, save, load). Off by
+# default: it builds the SMLib kernel from C++ source.
+brep = ["dep:sx-brep"]
