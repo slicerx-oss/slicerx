@@ -36,7 +36,7 @@ export function BottomPanel({ label, memory, panel, attention = 0, children }: {
   const focusTab = () => root.current?.querySelector<HTMLButtonElement>('.sx-edge-tab')?.focus()
 
   useEffect(() => () => ctl.current?.dispose(), [])
-  useEffect(() => registerEdge('bottom', () => ctl.current?.toggle()), [])
+  useEffect(() => registerEdge('bottom', () => ctl.current?.toggle(false)), [])
   useEffect(() => ctl.current?.pin(pinned), [pinned])
   const seen = useRef(attention)
   useEffect(() => {

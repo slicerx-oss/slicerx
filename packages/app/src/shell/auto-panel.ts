@@ -4,7 +4,9 @@
 // pointer enters the band along the bottom of the view (a pass across it on the way elsewhere does not open it), at
 // once from its tab, and for attention (a new estimate, a step that broke) for 4 s. It closes 600 ms after the pointer
 // leaves both the band and the panel, and never while the pointer is over it, focus is inside it, a menu from it is
-// open or a drag in it is under way. Pinned, it stays open. Touch has no hover: a tap on the tab toggles it.
+// open or a drag in it is under way. Pinned, it stays open. Touch has no hover: a tap on the tab toggles it. A press
+// on the tab while it is open by itself (for attention, or from the band) keeps it open until the next press: the
+// person did not open it, so the press means keep it.
 
 export const OPEN_DELAY_MS = 120
 export const CLOSE_DELAY_MS = 600
@@ -26,6 +28,10 @@ export class AutoPanel {
   private closeTimer: ReturnType<typeof setTimeout> | undefined
   /** Opened for attention while it was closed: it closes again after ATTENTION_MS unless something holds it. */
   private forAttention = false
+  /** Opened from the tab (or the keys), rather than by itself. */
+  private fromTab = false
+  /** Kept open by a press on the tab while it was open by itself: held until the next press or Escape. */
+  private kept = false
 
   constructor(
     private readonly onChange: (open: boolean) => void,
@@ -38,6 +44,7 @@ export class AutoPanel {
   private set(open: boolean): void {
     if (open === this.open) return
     this.open = open
+    if (!open) this.fromTab = this.kept = false
     this.onChange(open)
   }
 
@@ -50,7 +57,7 @@ export class AutoPanel {
 
   /** Something keeps it open right now. */
   private held(): boolean {
-    return this.pinned || this.inBand || this.overPanel || this.focused || this.menu || this.dragging
+    return this.pinned || this.kept || this.inBand || this.overPanel || this.focused || this.menu || this.dragging
   }
 
   private scheduleClose(delay = CLOSE_DELAY_MS): void {
@@ -109,10 +116,18 @@ export class AutoPanel {
     if (!active && this.open) this.scheduleClose()
   }
 
-  /** The tab, clicked or tapped: opens at once, or closes when it was open. */
-  toggle(): void {
+  /**
+   * The tab, clicked or tapped: opens at once, or closes when it was open. Open by itself, it stays open instead.
+   * The panel key (Mod+J) passes keep false: it opens or closes whatever opened the panel.
+   */
+  toggle(keep = true): void {
     this.clear()
     this.forAttention = false
+    if (keep && this.open && !this.fromTab && !this.kept && !this.pinned) {
+      this.kept = true
+      return
+    }
+    this.fromTab = !this.open
     this.set(!this.open)
   }
 
