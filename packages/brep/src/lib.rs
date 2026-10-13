@@ -71,6 +71,33 @@ fn raw_call(op: &CStr, request: &CStr) -> Result<String, String> {
     Ok(reply)
 }
 
+#[cfg(all(sx_brep_kernel, feature = "routine-probe"))]
+unsafe extern "C" {
+    fn sx_brep_routine_probe() -> *mut c_char;
+}
+
+/// Runs the kernel routines `scripts/swap-routines.sh` replaced, and kernel code that calls them, on fixed inputs
+/// (`cpp/routine_probe.cpp`). The JSON maps each case to its numbers.
+#[cfg(all(sx_brep_kernel, feature = "routine-probe"))]
+pub fn routine_probe() -> Result<String, String> {
+    let _guard = LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    // SAFETY: no arguments; the lock keeps the kernel to one caller.
+    let p = unsafe { sx_brep_routine_probe() };
+    if p.is_null() {
+        return Err("kernel: out of memory".into());
+    }
+    // SAFETY: a NUL-terminated string the wrapper allocated, freed below with its own free.
+    let reply = unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+    // SAFETY: p came from the probe and is freed once.
+    unsafe { sx_brep_free(p) };
+    Ok(reply)
+}
+
+#[cfg(all(not(sx_brep_kernel), feature = "routine-probe"))]
+pub fn routine_probe() -> Result<String, String> {
+    Err("this build has no B-rep kernel".into())
+}
+
 #[cfg(not(sx_brep_kernel))]
 fn raw_call(_op: &CStr, _request: &CStr) -> Result<String, String> {
     let _guard = LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
