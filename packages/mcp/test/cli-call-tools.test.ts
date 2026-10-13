@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // `slicerx-mcp call` against the tool list, both run the way a client runs them: as their own processes. Every tool the
 // stdio server lists (tools/list) can be named to `call`, with or without its slicerx_ prefix, and `call` refuses a
-// name the server doesn't list, with exit code 1 and the reason.
+// name the server doesn't list, with exit code 1 and the reason in plain words: no "MCP error <code>:" in front, the
+// prefix the MCP SDK's own errors carry.
 //
 // The boundary: a listed tool that needs arguments only has to be reached. It is sent arguments its own input schema
 // rejects, so the server finds it by name and answers "Invalid arguments for tool <name>", and its handler never runs.
@@ -160,7 +161,7 @@ describe.concurrent('slicerx-mcp call and the tool list', () => {
       ['slicerx_printer_list', true],
       ['slicerx_no_such_tool', false],
     ])
-    expect(out[1]!.text).toMatch(/Tool slicerx_no_such_tool not found/)
+    expect(out[1]!.text).toBe('Tool slicerx_no_such_tool not found')
   }, 60_000)
 
   it('refuses a tool another setup lists but this one does not', async () => {
@@ -169,7 +170,17 @@ describe.concurrent('slicerx-mcp call and the tool list', () => {
     const [off, r] = await Promise.all([listed(dir, 'off'), call(dir, ['printer_list'], 'off')])
     expect(off.some((t) => t.name === 'slicerx_printer_list')).toBe(false)
     expect(r.code).toBe(1)
-    expect(lines(r.stdout)).toEqual([expect.objectContaining({ tool: 'slicerx_printer_list', ok: false, text: expect.stringMatching(/Tool slicerx_printer_list not found/) })])
+    expect(lines(r.stdout)).toEqual([expect.objectContaining({ tool: 'slicerx_printer_list', ok: false, text: 'Tool slicerx_printer_list not found' })])
+  }, 60_000)
+
+  it('refuses arguments the tool schema rejects in plain words, with exit code 1', async () => {
+    const r = await call(dir, ['project_open', '{"printer":5}'])
+    expect(r.code).toBe(1)
+    const [line, ...more] = lines(r.stdout)
+    expect(more).toEqual([])
+    expect(line).toMatchObject({ tool: 'slicerx_project_open', ok: false })
+    expect(line!.text.startsWith(`Input validation error: ${refusedArgs('slicerx_project_open')}: `), line!.text).toBe(true)
+    expect(r.stdout + r.stderr).not.toContain('MCP error')
   }, 60_000)
 })
 
