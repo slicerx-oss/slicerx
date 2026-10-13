@@ -21,6 +21,8 @@ import {
   MeshBasicMaterial,
   Points,
   PointsMaterial,
+  ShapeUtils,
+  Vector2,
   Sprite,
   SpriteMaterial,
 } from 'three'
@@ -212,6 +214,8 @@ export interface SketchScene {
   dims?: readonly { from: V2; to: V2; at?: V2; label: string }[]
   /** Points held by Fix, drawn as squares. */
   fixed?: readonly V2[]
+  /** Closed loops, shaded faintly so a closed profile reads at a glance. */
+  profiles?: readonly (readonly V2[])[]
 }
 
 /** The line being drawn (a polyline from the last point to the cursor), the snapped cursor and an alignment guide. */
@@ -247,8 +251,9 @@ export class SketchLayer {
   private readonly markMat = new PointsMaterial({ color: new Color('#ff5555'), size: 10, sizeAttenuation: false, depthTest: false, toneMapped: false })
   private readonly snapMat = new PointsMaterial({ color: new Color('#f1fa8c'), size: 11, sizeAttenuation: false, depthTest: false, toneMapped: false })
   private readonly fixMat = new PointsMaterial({ color: new Color(TONE.fixed.color), size: 9, sizeAttenuation: false, depthTest: false, toneMapped: false })
+  private readonly fillMat = new MeshBasicMaterial({ color: new Color('#8be9fd'), transparent: true, opacity: 0.12, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false })
   private readonly dimMat = new LineBasicMaterial({ color: new Color('#f1fa8c'), transparent: true, opacity: 0.8, depthTest: false, toneMapped: false })
-  private drawn: (LineSegments | Points | Sprite)[] = []
+  private drawn: (LineSegments | Points | Sprite | Mesh)[] = []
   private labels: { sprite: Sprite; aspect: number }[] = []
   private scaledFor = ''
   private readonly band: Line
@@ -347,6 +352,23 @@ export class SketchLayer {
       this.group.add(pts)
       this.drawn.push(pts)
     }
+    if (scene.profiles?.length) {
+      const pos: number[] = []
+      for (const ring of scene.profiles) {
+        if (ring.length < 3) continue
+        const pts = ring.map((p) => new Vector2(p[0], p[1]))
+        for (const tri of ShapeUtils.triangulateShape(pts, [])) for (const k of tri) pos.push(ring[k]![0], ring[k]![1], lift / 2)
+      }
+      if (pos.length) {
+        const geo = new BufferGeometry()
+        geo.setAttribute('position', new Float32BufferAttribute(pos, 3))
+        const fill = new Mesh(geo, this.fillMat)
+        fill.renderOrder = 5
+        fill.raycast = () => {}
+        this.group.add(fill)
+        this.drawn.push(fill)
+      }
+    }
     dots(scene.handles, this.dotMat, 8)
     dots(scene.marks, this.markMat, 9)
     dots(scene.fixed, this.fixMat, 9)
@@ -432,6 +454,7 @@ export class SketchLayer {
     for (const o of [this.band, this.snap, this.guide]) o.geometry.dispose()
     for (const m of this.mats.values()) m.dispose()
     this.dotMat.dispose()
+    this.fillMat.dispose()
     this.markMat.dispose()
     this.snapMat.dispose()
     this.group.removeFromParent()
