@@ -60,6 +60,9 @@ pub enum Error {
         /// At most 300 characters of the provider's error message, with anything shaped
         /// like a key replaced by `[redacted]`.
         message: String,
+        /// mimir cloud's stable code for the refusal (`day_used`, `paused`, ...); other providers
+        /// leave it out.
+        code: Option<String>,
     },
     /// Connecting, sending or reading the stream failed.
     #[error("LLM transport failed: {0}")]

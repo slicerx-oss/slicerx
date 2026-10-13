@@ -23,8 +23,14 @@ use tauri::ipc::Channel;
 pub enum LlmChunk {
     /// Response bytes, base64.
     Data { b64: String },
-    /// The request failed. `status` is the HTTP status, 0 when there was none.
-    Error { status: u16, message: String },
+    /// The request failed. `status` is the HTTP status, 0 when there was none; `code` is mimir
+    /// cloud's refusal code.
+    Error {
+        status: u16,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        code: Option<String>,
+    },
     /// The body ended.
     End,
 }
@@ -37,14 +43,20 @@ fn streams() -> &'static Mutex<HashMap<u32, tauri::async_runtime::JoinHandle<()>
 
 fn error_chunk(e: &sx_llm::Error) -> LlmChunk {
     match e {
-        sx_llm::Error::Http { status, message } => LlmChunk::Error {
+        sx_llm::Error::Http {
+            status,
+            message,
+            code,
+        } => LlmChunk::Error {
             status: *status,
             message: message.clone(),
+            code: code.clone(),
         },
         // Every error's text is free of keys and tokens (sx-llm redacts).
         other => LlmChunk::Error {
             status: 0,
             message: other.to_string(),
+            code: None,
         },
     }
 }
@@ -89,7 +101,7 @@ pub async fn llm_available(provider: String) -> bool {
 #[tauri::command]
 pub async fn llm_local_models(base_url: String) -> Result<String, String> {
     sx_llm::local_models(&base_url).await.map_err(|e| match e {
-        sx_llm::Error::Http { status, message } => format!("{status}: {message}"),
+        sx_llm::Error::Http { status, message, .. } => format!("{status}: {message}"),
         other => other.to_string(),
     })
 }
@@ -271,8 +283,34 @@ mod tests {
             chunks,
             vec![LlmChunk::Error {
                 status: 429,
-                message: "slow down".into()
+                message: "slow down".into(),
+                code: None,
             }]
+        );
+    }
+
+    #[test]
+    fn a_mimir_refusal_passes_its_code_to_the_webview() {
+        let e = sx_llm::Error::Http {
+            status: 429,
+            message: "Today's free mimir use is used up.".into(),
+            code: Some("day_used".into()),
+        };
+        let json = serde_json::to_value(error_chunk(&e)).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({ "kind": "error", "status": 429, "message": "Today's free mimir use is used up.", "code": "day_used" })
+        );
+        let plain = sx_llm::Error::Http {
+            status: 500,
+            message: "boom".into(),
+            code: None,
+        };
+        assert!(
+            serde_json::to_value(error_chunk(&plain))
+                .unwrap()
+                .get("code")
+                .is_none()
         );
     }
 

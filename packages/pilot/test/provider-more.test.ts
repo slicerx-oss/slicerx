@@ -93,6 +93,14 @@ describe('mimir cloud', () => {
     const other = await collect(createTransportClient(transport(new Error('429: slow down')).t, 'anthropic').stream(REQ))
     expect(other[0]).toEqual({ type: 'error', message: '429: slow down', retryable: true })
   })
+
+  it("keeps the proxy's refusal code, and only when it is a plain word", async () => {
+    const coded = (code: string): Error => Object.assign(new Error('429: Used up.'), { code })
+    const events = await collect(createTransportClient(transport(coded('day_used')).t, 'mimir-cloud', { baseUrl: BASE }).stream(REQ))
+    expect(events[0]).toEqual({ type: 'error', message: 'Used up.', retryable: false, code: 'day_used' })
+    const odd = await collect(createTransportClient(transport(coded('<b>')).t, 'mimir-cloud', { baseUrl: BASE }).stream(REQ))
+    expect(odd[0]).toEqual({ type: 'error', message: 'Used up.', retryable: false })
+  })
 })
 
 describe('Anthropic adapter', () => {

@@ -57,7 +57,8 @@ export type LlmEvent =
   | { type: 'citation'; url: string; title: string }
   | { type: 'usage'; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
   | { type: 'done'; stop: LlmStop; raw?: unknown[] }
-  | { type: 'error'; message: string; retryable: boolean }
+  /** `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). */
+  | { type: 'error'; message: string; retryable: boolean; code?: string }
 
 /** Builds one HTTP request and parses its SSE body. Never sees a key. */
 export interface LlmAdapter {
