@@ -76,6 +76,9 @@ if (__SX_FEATURE_PILOT__) {
   // Set up local AI reads the hardware and reaches Ollama and LM Studio through the shell.
   const [{ registerLocalAi }, { createTauriLocalAi }] = await Promise.all([import('@slicerx/app'), import('./host/local-ai')])
   registerLocalAi(() => createTauriLocalAi())
+  // mimir cloud, when the edition has it: the shell holds the install token.
+  const [{ registerMimirCloud }, { createTauriMimirCloud }] = await Promise.all([import('@slicerx/app'), import('./host/mimir-cloud')])
+  registerMimirCloud(createTauriMimirCloud())
 }
 
 // The desktop app starts its own bridge and connects to it.

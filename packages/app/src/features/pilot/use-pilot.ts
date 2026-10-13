@@ -34,6 +34,8 @@ export function dockPilotOptions(host: Host, parts: { printers: PrinterHost; llm
     kb,
     planner: createCombinedPlanner(kb),
     project,
+    // mimir cloud keeps the session only while the person allows it (Settings > mimir)
+    share: () => ({ on: get().mimirShare, version: host.build.version }),
   }
 }
 
@@ -54,7 +56,8 @@ export function usePilot(): Pilot | null {
     // The guides ship with the app; the demo model cites them too.
     void Promise.all([chosen ? llm.available(base0.provider).catch(() => false) : Promise.resolve(false), billing, bundledKb()]).then(([ok, paid, kb]) => {
       if (!live) return
-      const config = paid ? { ...base0, billing: paid } : base0
+      // mimir cloud is billed per token like a key: one model for every turn
+      const config = base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' as const } : paid ? { ...base0, billing: paid } : base0
       const base = dockPilotOptions(host, { printers, llm, approvals, config, kb })
       setPilot(createPilot(ok ? base : { ...base, client: createDemoClient() }))
     })

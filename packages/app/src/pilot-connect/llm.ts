@@ -3,10 +3,12 @@
 // Which transport and model config mimir uses. A host with its own transport and keychain
 // (desktop, sx-link) keeps it; the browser build uses the encrypted key store and calls the
 // provider directly. Adapters: openai (Responses API), anthropic (Messages API) and
-// openai-compatible (chat completions, for Ollama and LM Studio).
+// openai-compatible (chat completions, for Ollama and LM Studio). mimir cloud (the edition's proxy) runs the anthropic
+// adapter under its own provider id, so the host sends it only to the proxy, with the install token.
 import type { Host, LlmTransport } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { get, type PilotPref } from '../state/store'
+import { cloudBase, cloudReady, CLOUD_MODEL } from './cloud'
 import { keyStoreFor, PROVIDERS } from './keys'
 import { browserTransport } from './transport'
 
@@ -21,9 +23,16 @@ export function pilotTransport(host: Host): LlmTransport | null {
   })
 }
 
-/** The adapter and model mimir runs for the connection, or null when nothing is set up. */
-export function pilotModel(edition: EditionConfig, pref: PilotPref | null): { provider: string; model: string; baseUrl?: string } | null {
+/**
+ * The adapter and model mimir runs for the connection, or null when nothing is set up. With nothing chosen, an edition
+ * on mimir cloud uses it; a person's own key or local model wins once set. `cloud` says whether this shell carries it.
+ */
+export function pilotModel(edition: EditionConfig, pref: PilotPref | null, cloud: boolean = cloudReady(edition)): { provider: string; model: string; baseUrl?: string } | null {
+  const base = cloud ? cloudBase(edition) : null
+  const onCloud = base ? { provider: 'mimir-cloud', model: CLOUD_MODEL, baseUrl: base } : null
+  if (pref?.provider === 'cloud') return onCloud
   if (!pref?.provider) {
+    if (onCloud) return onCloud
     const ai = edition.ai
     return ai.provider === 'none' ? null : { provider: ai.provider, model: ai.model, ...(ai.baseUrl ? { baseUrl: ai.baseUrl } : {}) }
   }

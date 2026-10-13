@@ -33,7 +33,7 @@ import type { PilotProject } from './project'
 import { createShared } from './shared'
 import { SYSTEM_PROMPT, contextMessage } from './prompt'
 import { fitContext, MIMIR_CONTEXT } from './context'
-import { createTransportClient, errorText } from './provider/client'
+import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type WebLookup } from './tool'
 import { availableSkills, playbooks } from '../skills/catalog'
@@ -54,6 +54,8 @@ export interface CreatePilotOptions {
   commands?: CommandSpec[]
   /** Replaces the transport-backed client (scripted provider in replay evals and tests). */
   client?: LlmClient
+  /** For mimir cloud: whether the person shares sessions, read on every request. */
+  share?: () => CloudShare
   kb?: KnowledgeBase
   project?: () => PilotProject | undefined
   planner?: SettingsPlanner
@@ -176,7 +178,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const newId = opts.newId ?? randomId
   const kb = opts.kb ?? createKnowledgeBase(EMPTY_KB_INDEX)
   let policy = normalizePolicy(opts.policy ?? DEFAULT_POLICY)
-  const client: LlmClient = opts.client ?? createTransportClient(opts.host.llm, opts.config.provider, opts.config.baseUrl === undefined ? {} : { baseUrl: opts.config.baseUrl })
+  const client: LlmClient = opts.client ?? createTransportClient(opts.host.llm, opts.config.provider, { ...(opts.config.baseUrl === undefined ? {} : { baseUrl: opts.config.baseUrl }), ...(opts.share ? { share: opts.share } : {}) })
   const history = new Map<string, LlmMessage[]>()
   const pending = new Map<string, Pending>()
   // Questions waiting for the person's pick, by ask id.
@@ -469,6 +471,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         messages: [...sent],
         tools: toolDefs,
         toolChoice: stopped ? ('none' as const) : ('auto' as const),
+        session: sessionId,
         ...(opts.config.reasoning ? { reasoning: opts.config.reasoning } : {}),
       }
       try {

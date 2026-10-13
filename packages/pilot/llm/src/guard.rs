@@ -8,15 +8,17 @@ use std::collections::BTreeMap;
 use reqwest::Url;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
+use crate::cloud::MimirCloud;
 use crate::error::{Error, Result};
 use crate::keys::Provider;
 
 /// Headers the transport sets itself.
-const FORBIDDEN_HEADERS: [&str; 4] = [
+const FORBIDDEN_HEADERS: [&str; 5] = [
     "authorization",
     "proxy-authorization",
     "x-api-key",
     "anthropic-version",
+    "x-sx-install",
 ];
 
 /// True for the loopback names a local server answers on.
@@ -40,8 +42,20 @@ fn is_home_network(host: &str) -> bool {
 /// Parses `raw` and checks it against the provider's allowlist: `https://api.openai.com`
 /// for `openai`, `https://api.anthropic.com` for `anthropic`, and for `openai-compatible`
 /// `http://127.0.0.1`, `http://localhost`, a private IPv4 address or a `.local` name on any
-/// port. User info in the URL is always refused.
+/// port, and for `mimir-cloud` exactly the proxy's model endpoint on the host set at startup
+/// ([`crate::cloud::set_mimir_cloud`]; nothing set refuses every URL). User info in the URL is
+/// always refused.
 pub(crate) fn check_url(provider: Provider, provider_id: &str, raw: &str) -> Result<Url> {
+    check_url_in(provider, provider_id, raw, crate::cloud::mimir_cloud())
+}
+
+/// [`check_url`] with the mimir cloud host given, for tests.
+pub(crate) fn check_url_in(
+    provider: Provider,
+    provider_id: &str,
+    raw: &str,
+    cloud: Option<&MimirCloud>,
+) -> Result<Url> {
     let url = Url::parse(raw).map_err(|_| Error::InvalidUrl {
         provider: provider_id.to_owned(),
     })?;
@@ -58,6 +72,7 @@ pub(crate) fn check_url(provider: Provider, provider_id: &str, raw: &str) -> Res
             Provider::OpenAiCompatible => {
                 url.scheme() == "http" && (is_loopback(host) || is_home_network(host))
             }
+            Provider::MimirCloud => cloud.is_some_and(|c| c.allows(&url)),
         };
     if allowed {
         Ok(url)
@@ -197,6 +212,125 @@ mod tests {
     }
 
     #[test]
+    fn mimir_cloud_allows_only_its_endpoint() {
+        let cloud = MimirCloud::new("https://abcdefghijklmnop.supabase.co", "slicerx").unwrap();
+        let cases = [
+            (
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages",
+                true,
+            ),
+            (
+                "https://ABCDEFGHIJKLMNOP.supabase.co/functions/v1/mimir/v1/messages",
+                true,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co:443/functions/v1/mimir/v1/messages",
+                true,
+            ),
+            (
+                "http://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages",
+                false,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co:8443/functions/v1/mimir/v1/messages",
+                false,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/register",
+                false,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages/",
+                false,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages?x=1",
+                false,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages#x",
+                false,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co/functions/v1/other/v1/messages",
+                false,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/../mimir/v1/messages",
+                true,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/%6Dessages",
+                false,
+            ),
+            (
+                "https://u:p@abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages",
+                false,
+            ),
+            ("https://other.supabase.co/functions/v1/mimir/v1/messages", false),
+            (
+                "https://abcdefghijklmnop.supabase.co.evil.example/functions/v1/mimir/v1/messages",
+                false,
+            ),
+            (
+                "https://abcdefghijklmnop.supabase.co./functions/v1/mimir/v1/messages",
+                false,
+            ),
+            ("https://api.anthropic.com/v1/messages", false),
+        ];
+        for (url, ok) in cases {
+            assert_eq!(
+                check_url_in(Provider::MimirCloud, "mimir-cloud", url, Some(&cloud)).is_ok(),
+                ok,
+                "{url}"
+            );
+        }
+        // nothing set: not available anywhere
+        assert!(
+            check_url_in(
+                Provider::MimirCloud,
+                "mimir-cloud",
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages",
+                None
+            )
+            .is_err()
+        );
+        // the proxy never opens another provider's host
+        assert!(
+            check_url_in(
+                Provider::Anthropic,
+                "anthropic",
+                "https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages",
+                Some(&cloud)
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn mimir_cloud_host_must_be_https() {
+        assert!(MimirCloud::new("https://x.supabase.co/rest/v1", "slicerx").is_ok());
+        assert_eq!(
+            MimirCloud::new("https://x.supabase.co/anything", "slicerx")
+                .unwrap()
+                .messages_url(),
+            "https://x.supabase.co/functions/v1/mimir/v1/messages"
+        );
+        assert!(MimirCloud::new("http://x.supabase.co", "slicerx").is_err());
+        assert!(MimirCloud::new("https://u:p@x.supabase.co", "slicerx").is_err());
+        assert!(MimirCloud::new("not a url", "slicerx").is_err());
+        assert!(MimirCloud::new("https://x.supabase.co", "Bad Edition").is_err());
+        assert!(MimirCloud::new("https://x.supabase.co", "").is_err());
+        // a local stack in debug builds (tests are one), never another http host
+        assert_eq!(
+            MimirCloud::new("http://127.0.0.1:54321", "slicerx").is_ok(),
+            cfg!(debug_assertions)
+        );
+        assert!(MimirCloud::new("http://localhost:54321", "slicerx").is_err());
+        assert!(MimirCloud::new("http://192.168.1.2:54321", "slicerx").is_err());
+    }
+
+    #[test]
     fn authorization_headers_are_refused() {
         for name in [
             "authorization",
@@ -206,6 +340,8 @@ mod tests {
             "x-api-key",
             "X-API-Key",
             "Anthropic-Version",
+            "x-sx-install",
+            "X-SX-Install",
         ] {
             let headers = BTreeMap::from([(name.to_owned(), "Bearer sk-hostile".to_owned())]);
             let err = check_headers(&headers).unwrap_err();
