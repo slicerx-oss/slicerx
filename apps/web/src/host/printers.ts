@@ -23,8 +23,10 @@ async function check(verifier: ApprovalVerifier, token: ApprovalToken, action: S
   if (!r.ok) throw new Error(`Approval refused (${r.reason}). Nothing was sent to the printer.`)
 }
 
-export function createDemoPrinters(verifier: ApprovalVerifier): PrinterHost {
-  const sim = createFleetSim(demo as unknown as DemoFleet)
+/** `demo` false keeps the fleet empty: the same host with none of the made-up printers, fleets or spools. */
+export function createDemoPrinters(verifier: ApprovalVerifier, opts: { demo?: boolean } = {}): PrinterHost {
+  const fleet = demo as unknown as DemoFleet
+  const sim = createFleetSim(opts.demo === false ? { ...fleet, printers: [], fleets: [], spools: [] } : fleet)
   // Simulated time runs at wall-clock speed while the page is open.
   window.setInterval(() => sim.tick(1000), 1000)
   // Reads and local fleet grouping pass straight through; only side effects are wrapped.
