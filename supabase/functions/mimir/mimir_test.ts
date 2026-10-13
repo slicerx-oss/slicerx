@@ -323,14 +323,17 @@ Deno.test('when the byte estimate hits a daily cap, the exact count gets one mor
 })
 
 Deno.test('a refused call counts toward the rates, once per request', async () => {
-  for (const hint of ['install_daily', 'ip_busy', 'ip_rate', 'edition_busy']) {
+  for (const hint of ['install_daily', 'ip_busy', 'edition_busy']) {
     const h = harness({ reserve: () => Response.json({ message: 'no', hint }, { status: 400 }) })
     assertEquals((await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)).status, hint === 'edition_busy' ? 503 : 429)
     assertEquals(h.calls.filter((c) => c.fn === 'mimir_refused').map((c) => c.args), [{ p_token: TOKEN, p_ip: '9.9.9.9' }], hint)
   }
-  const h = harness({ reserve: () => Response.json({ message: 'unknown', hint: 'unknown_install' }, { status: 400 }) })
-  await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
-  assert(!h.calls.some((c) => c.fn === 'mimir_refused'))
+  // a rate refusal comes only while the window is full, and an unknown install has no rate
+  for (const hint of ['install_rate', 'ip_rate', 'unknown_install']) {
+    const h = harness({ reserve: () => Response.json({ message: 'no', hint }, { status: 400 }) })
+    await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
+    assert(!h.calls.some((c) => c.fn === 'mimir_refused'), hint)
+  }
 })
 
 Deno.test('each install caches apart: a mark after the shared tools and system prompt', async () => {
