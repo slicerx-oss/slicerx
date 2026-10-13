@@ -190,9 +190,9 @@ describe('constraints in the project file', () => {
       { type: 'radius', circle: { e: 0, seg: 0 }, value: 6.35 },
       { type: 'length', line: { e: 1, seg: 1 }, value: 25.4 },
     ] as const
-    const inches = sketchMarks([circle, ...square()], cons, (mm) => formatLength(mm, { ...DEFAULT_UNITS, length: 'in' }))
+    const inches = sketchMarks([circle, ...square()], cons, undefined, (mm) => formatLength(mm, { ...DEFAULT_UNITS, length: 'in' }))
     expect(inches.dims.map((d) => d.label)).toEqual(['\u23000.500', 'R0.250', '1.000'])
-    const halves = sketchMarks([circle, ...square()], cons, (mm) => formatLength(mm, { ...DEFAULT_UNITS, length: 'in', inchFraction: 16 }))
+    const halves = sketchMarks([circle, ...square()], cons, undefined, (mm) => formatLength(mm, { ...DEFAULT_UNITS, length: 'in', inchFraction: 16 }))
     expect(halves.dims.map((d) => d.label)).toEqual(['\u23001/2', 'R1/4', '1'])
   })
 })
