@@ -45,7 +45,7 @@ async function pressStill(target: Locator, others: Locator[]): Promise<void> {
 test.describe('mimir cloud', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop only: phones have no modeling tabs')
 
-  test('in the dock, the header, the notice, the chat and its composer span the dock', async ({ page }) => {
+  test('in the dock, the header, the notice, the chat and its input line span the dock', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.addInitScript(() => {
       localStorage.setItem('slicerx.debug', '1')
@@ -72,9 +72,9 @@ test.describe('mimir cloud', () => {
     const term = page.locator('.mimir-dock > .term')
     await expect(term).toBeVisible()
     expect((await term.boundingBox())!.width).toBeGreaterThan(dock!.width - 2)
-    const composer = page.locator('.mimir-dock').getByTestId('mimir-composer')
-    await expect(composer).toBeVisible()
-    expect((await composer.boundingBox())!.width).toBeGreaterThan(dock!.width * 0.85)
+    // the dock's input is the terminal's own line, not the mimir tab's composer
+    await expect(term.getByRole('textbox', { name: /^Ask / })).toBeVisible()
+    expect((await term.locator('.term-in').boundingBox())!.width).toBeGreaterThan(dock!.width * 0.85)
     await page.locator('.mimir-dock').screenshot({ path: test.info().outputPath('mimir-dock-chat.png') })
   })
 
