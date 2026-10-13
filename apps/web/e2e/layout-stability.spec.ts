@@ -246,6 +246,96 @@ test.describe('controls never move when pressed', () => {
     expect(moved).toEqual([])
   })
 
+  test('mimir lookup cards', async ({ page, isMobile }, info) => {
+    test.skip(isMobile, 'Phones have no modeling tabs')
+    test.slow()
+    await open(page, { settingsMode: 'advanced' })
+    await sx(page, { plate: [], selection: null, selectedIds: [] })
+    await page.getByTestId('tab-mimir').click()
+    const composer = page.getByTestId('mimir-composer')
+    const timeline = page.locator('.bpanel-body')
+    const cards = page.getByTestId('mimir-lookup-card')
+    // Three backplates: three lookups, so two cards show and the oldest folds into a chip.
+    const asks = ['Hey mimir, I need a wall mount for this thermostat. Can we print it?', 'another backplate for the thermostat', 'and one more backplate for the thermostat']
+    for (const [i, ask] of asks.entries()) {
+      await composer.getByRole('textbox').fill(ask)
+      await composer.getByRole('button', { name: 'Send' }).click()
+      await page.getByTestId('mimir-choice').nth(i).getByRole('button', { name: 'Yes, that one' }).click()
+      await page.getByTestId('mimir-sheet-build').click()
+      await expect(page.getByTestId('mimir-transcript').locator('[data-lookup-id]')).toHaveCount(i + 1)
+    }
+    await expect(cards).toHaveCount(2)
+    await expect(page.locator('.mimir-lookup-more')).toBeVisible()
+    // the build opened the timeline for a moment; it shuts once the pointer is away
+    await page.mouse.move(700, 300)
+    await expect(timeline).toBeHidden({ timeout: 15_000 })
+    await page.waitForTimeout(400)
+    const band = async () => (await page.locator('.mimir-lookups').boundingBox())!
+    // With two cards up the part is framed above them: its center is above the band.
+    const center = await page.evaluate(() => {
+      type V = { x: number; y: number; z: number; set(x: number, y: number, z: number): V; applyMatrix4(m: unknown): V; project(c: unknown): V; clone(): V }
+      type Mesh = { geometry: { boundingBox: { min: V; max: V } | null; computeBoundingBox(): void }; matrixWorld: unknown }
+      const w = window as unknown as { __vp: { camera: { position: V }; canvas: HTMLCanvasElement; objects: Map<string, { parts: { mesh: Mesh }[] }> }; __sx: { getState(): { selection: string | null } } }
+      const vp = w.__vp
+      const sel = w.__sx.getState().selection
+      const entry = (sel ? vp.objects.get(sel) : undefined) ?? [...vp.objects.values()].at(-1)!
+      const lo = [Infinity, Infinity, Infinity]
+      const hi = [-Infinity, -Infinity, -Infinity]
+      for (const { mesh } of entry.parts) {
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
+        const { min, max } = mesh.geometry.boundingBox!
+        for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z]) {
+          const v = vp.camera.position.clone().set(x, y, z).applyMatrix4(mesh.matrixWorld)
+          ;[v.x, v.y, v.z].forEach((c, i) => ((lo[i] = Math.min(lo[i]!, c)), (hi[i] = Math.max(hi[i]!, c))))
+        }
+      }
+      const v = vp.camera.position.clone().set((lo[0]! + hi[0]!) / 2, (lo[1]! + hi[1]!) / 2, (lo[2]! + hi[2]!) / 2).project(vp.camera)
+      const r = vp.canvas.getBoundingClientRect()
+      return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height }
+    })
+    const b = await band()
+    expect(center.y).toBeLessThan(b.y)
+    // A card closing, and the folded one rising in its place, moves nothing outside the band: the caption, the
+    // timeline's tab, the size pill, the chat and its edge stay put, and the other card keeps its slot.
+    const outside = () => page.locator('[data-testid="mimir-caption"], [data-testid="edge-tab-bottom"], .vp .hud-bl > *, [data-testid="mimir-chat"], [data-testid="mimir-split"], [data-testid="mimir-composer"]').evaluateAll((els) => els.map((e) => {
+      const r = e.getBoundingClientRect()
+      return { what: e.getAttribute('data-testid') ?? e.className, x: r.x, y: r.y, w: r.width, h: r.height }
+    }))
+    const moved: Moved[] = []
+    const compare = (control: string, a: Awaited<ReturnType<typeof outside>>, z: Awaited<ReturnType<typeof outside>>) => {
+      expect(z.length).toBe(a.length)
+      z.forEach((n, i) => {
+        const o = a[i]!
+        const d = { dx: n.x - o.x, dy: n.y - o.y, dw: n.w - o.w, dh: n.h - o.h }
+        if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control, what: o.what, ...d })
+      })
+    }
+    const kept = cards.last()
+    const keptId = await kept.getAttribute('data-lookup-id')
+    const keptBox = (await kept.boundingBox())!
+    let before = await outside()
+    // closing the left card: the folded lookup rises into its slot
+    await cards.first().getByTestId('mimir-lookup-close').click()
+    await expect(page.locator('.mimir-lookup-more')).toHaveCount(0)
+    await expect(cards).toHaveCount(2)
+    await page.waitForTimeout(400)
+    compare('close a card, the folded one rises', before, await outside())
+    const still = page.locator(`[data-testid="mimir-lookup-card"][data-lookup-id="${keptId}"]`)
+    const k = (await still.boundingBox())!
+    if (Math.max(Math.abs(k.x - keptBox.x), Math.abs(k.y - keptBox.y)) > LIMIT) moved.push({ control: 'close a card', what: 'the other card', dx: k.x - keptBox.x, dy: k.y - keptBox.y, dw: 0, dh: 0 })
+    // closing one more leaves the last where it was
+    before = await outside()
+    const lastBox = (await still.boundingBox())!
+    await cards.first().getByTestId('mimir-lookup-close').click()
+    await expect(cards).toHaveCount(1)
+    await page.waitForTimeout(400)
+    compare('close a card', before, await outside())
+    const l = (await still.boundingBox())!
+    if (Math.max(Math.abs(l.x - lastBox.x), Math.abs(l.y - lastBox.y)) > LIMIT) moved.push({ control: 'close a card', what: 'the last card', dx: l.x - lastBox.x, dy: l.y - lastBox.y, dw: 0, dh: 0 })
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
   test('Settings, every section', async ({ page }, info) => {
     test.slow()
     await open(page, { settingsMode: 'advanced' })
