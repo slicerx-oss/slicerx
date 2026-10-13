@@ -140,7 +140,7 @@ export function historyOf(d: Timeline, body: string): History | null {
     if (i.kind !== 'feature' || i.body !== body) continue
     const params = featureParams(i, sketches)
     if (!params) return null
-    const { kind: _k, body: _b, sketch: _s, ...step } = i
+    const { kind: _k, body: _b, ...step } = i
     steps.push({ ...step, params })
   }
   return { version: 1, base: b.base, steps, ...(b.ended ? { ended: b.ended } : {}) }
@@ -204,6 +204,10 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
   })
   h.steps.forEach((s, k) => {
     if (place.has(s.id)) return
+    // drawn on a sketch the timeline has (a finished sketch): the feature names it, and the sketch takes the plane and loops
+    // a pasted copy's step keeps its original's id: the copy gets a sketch of its own, not a share of the original's
+    const copy = t.items.some((i) => i.kind === 'feature' && i.id === s.id && i.body !== body)
+    const on = isSketch(s.params) && s.sketch !== undefined && !copy ? items.findIndex((i) => i.kind === 'sketch' && i.id === s.sketch) : -1
     const before = h.steps[k - 1]
     const after = before ? place.get(before.id) : undefined
     const later = h.steps.slice(k + 1).map((x) => place.get(x.id)).find((p) => p !== undefined)
@@ -214,7 +218,13 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
       const f = items[later] as FeatureItem
       at = f.sketch !== undefined && items[later - 1]?.kind === 'sketch' && items[later - 1]!.id === f.sketch ? later - 1 : later
     }
-    const add: Item[] = isSketch(s.params) ? split(s, body, nextName(items), items) : [{ ...s, kind: 'feature', body }]
+    if (on >= 0) {
+      const [k] = split(s, body, '', items)
+      const { frame: _f, constraints: _c, ...keep } = items[on] as SketchItem
+      items[on] = { ...keep, loops: k.loops, ...(k.frame ? { frame: k.frame } : {}), ...(k.constraints ? { constraints: k.constraints } : {}) }
+      if (at <= on) at = on + 1
+    }
+    const add: Item[] = on >= 0 ? [featureOf(s, body, s.sketch)] : isSketch(s.params) ? split(s, body, nextName(items), items) : [{ ...s, kind: 'feature', body }]
     items.splice(at, 0, ...add)
     for (const [id, p] of place) if (p >= at) place.set(id, p + add.length)
     place.set(s.id, at + add.length - 1)
@@ -223,6 +233,13 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
   const b: Body = { id: body, base: h.base, ...(h.ended ? { ended: h.ended } : {}) }
   const bodies = t.bodies.some((x) => x.id === body) ? t.bodies.map((x) => (x.id === body ? b : x)) : [...t.bodies, b]
   return { bodies, items, marker: atEnd ? items.length : marker }
+}
+
+/** The timeline with a finished sketch put in at the marker, named the next Sketch N; a feature can draw on it later. */
+export function withSketch(t: Timeline, sketch: Omit<SketchItem, 'kind' | 'name'>): Timeline {
+  const at = Math.min(t.marker, t.items.length)
+  const k: SketchItem = { kind: 'sketch', ...sketch, name: nextName(t.items) }
+  return { ...t, items: [...t.items.slice(0, at), k, ...t.items.slice(at)], marker: at + 1 }
 }
 
 /** The timeline without a body that left the plate: its features go, and so do sketches only they used. */
