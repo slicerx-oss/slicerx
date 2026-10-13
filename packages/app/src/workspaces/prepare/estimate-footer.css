@@ -11,6 +11,9 @@
 .est-muted { color: var(--muted); }
 .est-grow { flex: 1; min-width: 0; }
 .est-warn { flex: none; padding: 2px 8px; border: 1px solid color-mix(in srgb, var(--orange) 45%, transparent); border-radius: 999px; background: var(--orange-tint); color: var(--orange); cursor: pointer; font-size: var(--fs-xs); white-space: nowrap; }
+/* Show me on a block's line: a link to where it happens, kept whole on the line's end */
+.est-show { padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; font: var(--fw-medium) var(--fs-sm) var(--f-body); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.est-show:focus-visible { border-radius: 3px; outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .est-warn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .est-pop { width: 300px; padding: 10px 12px; }
 .est-breakdown .est-bh { margin: 0 0 4px; font: var(--fw-semibold) var(--fs-sm) var(--f-body); color: var(--muted); }
