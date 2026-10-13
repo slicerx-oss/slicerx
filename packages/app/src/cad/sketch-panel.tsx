@@ -629,8 +629,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       const over = out.redundant.includes(j) || out.conflicting.includes(j) || (out.status === 'conflict' && before !== 'conflict')
       if (over) {
         const now = measured(l.sketch, c)
+        // the status line counts it, so nothing below moves
         list[k] = { ...c, value: now === null ? v : Math.round(now * 1e6) / 1e6, driven: true } as SketchConstraint
-        setNote('The other constraints already set that size, so this dimension is driven: it shows the size and does not set it.')
       }
     } catch (e) {
       return setNote(errorText(e))
@@ -975,6 +975,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   const fields = fieldsFor(draft)
   const sel = selected ? sketch[selected.e] : undefined
+  const driven = constraints.filter((c) => isDimension(c) && c.driven).length
   return (
     <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label}>
       {featureOnly ? null : (
@@ -1000,8 +1001,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           </p>
           <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" /></p>
           {solved ? (
-            <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)}>
+            <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)} {...(driven ? { 'data-tip-title': 'Driven dimensions', 'data-tip-body': 'The other constraints already set these sizes, so they show in parentheses and change nothing.' } : {})}>
               {dofText(solved.solved)}
+              {driven ? <span className="sketch-driven">, {driven} driven</span> : null}
             </p>
           ) : null}
           <div className="sketch-palette" role="group" aria-label="Sketch palette">
