@@ -76,4 +76,7 @@ To test the whole path on a computer with Rust: `node apps/desktop/release/test/
 throwaway key in a temporary folder, signs fake bundles with `sign-updates.sh`, writes the feeds with
 `latest-json.mjs`, serves them locally, and has a 0.1.0 build find, download and verify 0.2.0 with the real updater;
 it also checks that a changed download and a feed that pairs a newer version with an older signature are refused.
-The key is deleted afterwards.
+The key is deleted afterwards. On Windows, run it from Git's bash, which provides the `sh` for `sign-updates.sh`; there
+the owner-only check reads the key file's access list, since Windows has no Unix file modes. The weekly
+`desktop-windows` workflow (`.github/workflows/desktop-windows.yml`) runs it on Windows with the whole desktop test
+suite.
