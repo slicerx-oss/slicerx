@@ -43,6 +43,7 @@ export function clearProject(): void {
     layerMarks: {},
     objectSettings: {},
     historyEdit: null,
+    timeline: { bodies: [], items: [], marker: 0 },
     parked: null,
     slice: { status: 'idle' },
     sliceHeld: false,
