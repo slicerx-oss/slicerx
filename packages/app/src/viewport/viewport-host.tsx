@@ -390,6 +390,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         const view = vp as unknown as Viewport
         if (!first && s.plateLoading && s.plate.length === 0 && prev.plate.length > 0) view.holdScene?.(true)
         else if (!first && !s.plateLoading && prev.plateLoading) view.holdScene?.(false)
+        // The toolpath shader warm-up holds every frame while it compiles, so it waits for a file being opened.
+        if (first || s.plateLoading !== prev.plateLoading) view.holdWarmup?.(s.plateLoading)
         // Fit notes and markers belong to the objects on the plate: a new project or a removed object takes its own along.
         if (s.plate !== prev.plate) keepFits(s.plate.map((p) => p.id))
         if (rebuilt) vp.setPlate(platePayload(s, shown), { keepCamera: !first && !reframesOnRebuild(prev, s) })

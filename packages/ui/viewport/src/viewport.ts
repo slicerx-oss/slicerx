@@ -531,20 +531,56 @@ class ViewportImpl implements Viewport {
     // screen. The compile shares the GPU thread with the compositor: started in the very next frame, it held that first
     // frame back, and on a software renderer (seconds of compiling) the plate showed late. So it starts two frames after,
     // and on a weak or software GPU a second later still.
-    this.firstFrame.after(() =>
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          if (this.disposed) return
-          if (this.weak) setTimeout(() => void (this.disposed || this.warmPreview()), 1000)
-          else void this.warmPreview()
-        }),
-      ),
-    )
+    // It also waits while a file opens (holdWarmup) and while a plate is set but not drawn yet: the compile holds every
+    // frame until it is done, so a project opened at launch showed its model only after the warm-up, seconds late on a
+    // software renderer.
+    this.firstFrame.after(() => this.warmSoon())
     this.constructedAt = performance.now()
     this.startup.constructMs = this.constructedAt - constructStart
     this.startup.constructPrograms = this.compileClock.programs
     this.startup.constructCompileMs = this.compileClock.ms
     markSpan('construct', constructStart, this.constructedAt)
+  }
+
+  /** The bead warm-up: not asked for yet, waiting to start, about to start, or started (once per view). */
+  private warm: 'idle' | 'due' | 'scheduled' | 'started' = 'idle'
+  private warmHeld = false
+
+  /** Something the warm-up would hold back waits: a file opening, or a plate set and not drawn yet. */
+  private warmWaits(): boolean {
+    return this.warmHeld || this.plateSet !== null || this.swapNext !== null || this.held !== null
+  }
+
+  /**
+   * Starts the warm-up two frames on (a second later still on a weak GPU). It asks again when that time comes, since an
+   * open can start in between; one that waits starts once the open lets go (holdWarmup) or its plate is drawn.
+   */
+  private warmSoon(): void {
+    if (this.warm !== 'idle' && this.warm !== 'due') return
+    if (this.disposed) return
+    this.warm = 'due'
+    if (this.warmWaits()) return
+    this.warm = 'scheduled'
+    const go = () => {
+      if (this.disposed) return
+      if (this.warmWaits()) {
+        this.warm = 'due'
+        return
+      }
+      this.warm = 'started'
+      void this.warmPreview()
+    }
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (this.weak) setTimeout(go, 1000)
+        else go()
+      }),
+    )
+  }
+
+  holdWarmup(on: boolean): void {
+    this.warmHeld = on
+    if (!on && this.warm === 'due') this.warmSoon()
   }
 
   /** Compiles the bead shaders in the background so the first real preview frame does not wait for them. */
@@ -895,6 +931,7 @@ class ViewportImpl implements Viewport {
       const p = this.plateSet
       this.plateSet = null
       this.emit('platedrawn', { buildMs: p.buildMs, drawMs: t1 - p.at, frameMs: t1 - t0, built: p.built, kept: p.kept })
+      if (this.warm === 'due') this.warmSoon()
     }
   }
 
