@@ -49,6 +49,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-track` | A slice in progress in the Estimate block: its bar and Cancel, in the big button's place |
 | `raven-slice-glide` | Muninn riding the Estimate block's slicing bar, for a slice past about 1.2 s |
 | `slice-outdated` | The note under the slice summary's Export when the plate changed after the slice shown: Export waits for a new slice |
+| `rolled-back` | The notice under Print and Export while the design timeline is rolled back, with Move to the end |
 | `raven-loading` | Huginn and Muninn over the plate while a model loads for more than about 1.2 s |
 
 ## mimir tab
