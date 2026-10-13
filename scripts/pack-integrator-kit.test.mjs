@@ -40,7 +40,8 @@ test('lays out a folder of engine archives per platform and refuses one that doe
       mkdirSync(join(top, 'bin'), { recursive: true })
       writeFileSync(join(top, 'bin', 'sx'), `sx for ${platform}\n`)
       const name = `slicerx-engine-9.9.9-${platform}.tar.gz`
-      execFileSync('tar', ['-czf', join(release, name), '-C', join(tmp, 'src', platform), `slicerx-engine-9.9.9-${platform}`])
+      // relative paths from the release folder: GNU tar on Windows reads C:\ in an archive path as a remote host
+      execFileSync('tar', ['-czf', name, '-C', join('..', 'src', platform), `slicerx-engine-9.9.9-${platform}`], { cwd: release })
       lines.push(`${createHash('sha256').update(readFileSync(join(release, name))).digest('hex')}  ${name}`)
     }
     writeFileSync(join(release, 'SHA256SUMS.txt'), `${lines.join('\n')}\n`)
