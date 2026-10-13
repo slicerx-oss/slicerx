@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The project's own printer G-code, shown before a slice uses it: what it changes against the printer profile's text,
-// each flagged line with its reason, and the person's choice. The printer profile's G-code is the default.
+// The project's own printer G-code, shown before a slice uses it: one plain line and the person's choice, with what
+// it changes against the printer profile's text (each flagged line with its reason) behind Show differences. The
+// printer profile's G-code is the default.
+import { useEffect, useState } from 'react'
 import type { GcodeChange, GcodeDiffLine, GcodeFlag } from '@slicerx/settings'
 import { printerName } from '@slicerx/settings'
-import { Button, Dialog } from '@slicerx/ui'
+import { Block, Button, Dialog } from '@slicerx/ui'
 import { answerProjectGcode } from '../state/project-gcode'
 import { useApp } from '../state/store'
 import './gcode-dialog.css'
@@ -17,13 +19,16 @@ export function ProjectGcodeDialog() {
   const printerId = useApp((s) => s.profile?.printerId)
   const open = p?.asking === true
   const approvable = p?.changes.every((c) => c.approvable) ?? false
-  const printer = printerId ? printerName(printerId) : 'printer'
+  const profile = printerId ? `the ${printerName(printerId)} profile's` : "the printer profile's"
+  // The printer's G-code is the default: focused when the dialog opens (its effect has shown the dialog by now).
+  useEffect(() => {
+    if (open) document.querySelector<HTMLButtonElement>('[data-testid="project-gcode-use-profile"]')?.focus()
+  }, [open])
   return (
     <Dialog
       open={open}
       onClose={() => answerProjectGcode(null)}
-      title="Check this project's G-code"
-      size="lg"
+      title="This project's G-code doesn't match your printer"
       className="pg"
       testId="project-gcode-dialog"
       splitFooter
@@ -33,27 +38,37 @@ export function ProjectGcodeDialog() {
             Use the project's G-code
           </Button>
           <Button variant="primary" autoFocus data-testid="project-gcode-use-profile" onClick={() => answerProjectGcode('profile')}>
-            Use the printer profile's G-code instead
+            Use the printer's G-code
           </Button>
         </>
       }
     >
-      {p ? (
-        <div className="pg-body">
-          <p className="pg-lede">
-            {p.source} has printer G-code that is not the stock text for the {printer}. It runs on the printer as it is, so check what it changes against the {printer} profile's G-code.
-          </p>
-          {approvable ? null : (
-            <p className="pg-block" role="alert">
-              Some lines do things SlicerX never sends to a printer, so only the printer profile's G-code can be used.
-            </p>
-          )}
-          {p.changes.map((c) => (
+      {/* Keyed by the question, so each time it opens the differences start folded. */}
+      {p && open ? <Body key={p.source} source={p.source} changes={p.changes} profile={profile} approvable={approvable} /> : null}
+    </Dialog>
+  )
+}
+
+function Body({ source, changes, profile, approvable }: { source: string; changes: GcodeChange[]; profile: string; approvable: boolean }) {
+  const [shown, setShown] = useState(false)
+  return (
+    <div className="pg-body">
+      <p className="pg-lede">
+        {source} has its own printer G-code, different from {profile}.
+      </p>
+      {approvable ? null : (
+        <p className="pg-block" role="alert">
+          Some of it can't be sent to a printer, so only the printer's G-code can be used.
+        </p>
+      )}
+      <Block className="pg-more" id="project-gcode-differences" title={shown ? 'Hide differences' : 'Show differences'} expanded={shown} onExpandedChange={setShown} data-testid="project-gcode-differences">
+        <div className="pg-changes">
+          {changes.map((c) => (
             <Change key={`${c.key}-${c.slot ?? ''}`} c={c} />
           ))}
         </div>
-      ) : null}
-    </Dialog>
+      </Block>
+    </div>
   )
 }
 
@@ -61,7 +76,7 @@ function Change({ c }: { c: GcodeChange }) {
   return (
     <section className="pg-change" aria-label={capital(c.label)}>
       <header className="pg-head">
-        <h3>{capital(c.label)}</h3>
+        <h4>{capital(c.label)}</h4>
         <span className="pg-count">
           {plural(c.added, 'line')} added, {c.removed} removed
         </span>
