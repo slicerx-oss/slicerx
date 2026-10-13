@@ -158,14 +158,16 @@ export function MimirSetup({ place, choice: controlled, onChoose, idPrefix = 'ms
             </p>
           ) : (
             <div className="pc-act">
-              <Button variant="primary" icon="link" onClick={() => set({ pilot: { mode: 'on', provider: 'mimir-cloud' } })}>
-                Use {ASSISTANT_NAME} free
-              </Button>
+              {/* once on the cloud, the line says so; the button is only for switching to it */}
               {onCloud ? (
                 <p className="pc-result ok" role="status">
                   <Icon name="check" size={16} /> Connected to {PROVIDERS['mimir-cloud'].label}.
                 </p>
-              ) : null}
+              ) : (
+                <Button variant="primary" icon="link" onClick={() => set({ pilot: { mode: 'on', provider: 'mimir-cloud' } })}>
+                  Use {ASSISTANT_NAME} free
+                </Button>
+              )}
             </div>
           )
         ) : null}

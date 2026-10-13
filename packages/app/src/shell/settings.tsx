@@ -3,7 +3,7 @@
 // Settings: sections that features add (Account) and the base's own (Phone access, Look and feel).
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, Dialog, Icon, Switch, type IconName } from '@slicerx/ui'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useLayoutEffect, useRef, useState } from 'react'
 import { useEdition, appName } from '../edition'
 import { useFeatures } from '../features'
 import { bridgeConnector } from '../link/connector'
@@ -60,6 +60,18 @@ export function SettingsDialog() {
     ...(settings.some((s) => s.id === PILOT_ID) ? [] : [{ id: PILOT_ID, label: ASSISTANT_NAME, icon: 'mimir' as IconName }]),
   ]
   const id = [want, picked].find((x) => x && sections.some((s) => s.id === x)) ?? sections[0]?.id
+  // On a phone the sections are one scrolling row: the open one is brought fully into view, and an edge with more
+  // tabs past it fades out rather than cutting a tab in half.
+  const nav = useRef<HTMLElement>(null)
+  const [edges, setEdges] = useState({ start: false, end: false })
+  const measure = () => {
+    const n = nav.current
+    if (n) setEdges({ start: n.scrollLeft > 1, end: n.scrollLeft + n.clientWidth < n.scrollWidth - 1 })
+  }
+  useLayoutEffect(() => {
+    nav.current?.querySelector('[aria-current="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    measure()
+  }, [id])
   const close = () => set({ settingsOpen: false, settingsSection: null })
   const Feature = settings.find((s) => s.id === id)?.component ?? null
   return (
@@ -81,7 +93,7 @@ export function SettingsDialog() {
     >
       <div className="settings">
         {sections.length > 1 ? (
-          <nav className="settings-nav" aria-label="Settings sections">
+          <nav ref={nav} className="settings-nav" aria-label="Settings sections" onScroll={measure} data-more-start={edges.start || undefined} data-more-end={edges.end || undefined}>
             {sections.map((s) => (
               <button key={s.id} type="button" data-testid={`settings-nav-${s.id}`} aria-current={id === s.id ? 'true' : undefined} onClick={() => setPicked(s.id)}>
                 <Icon name={s.icon} />

@@ -65,8 +65,8 @@ export function OpenInAppButton() {
         void openInApp().finally(() => setBusy(false))
       }}
     >
-      Open in <span className="open-in-name">{appName()}</span>
-      <span className="open-in-short">app</span>
+      <span className="open-in-name">Open in {appName()}</span>
+      <span className="open-in-short">Open in app</span>
     </Button>
   )
 }
