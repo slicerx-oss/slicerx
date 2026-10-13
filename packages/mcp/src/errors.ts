@@ -20,6 +20,7 @@ export const ERROR_CODES = [
   'slice_failed',
   'preflight_blocked',
   'project_gcode_review',
+  'printer_needed',
   'project_settings_unused',
   'sequence_clearance',
   'collision',

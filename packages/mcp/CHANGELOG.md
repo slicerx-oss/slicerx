@@ -23,6 +23,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Changed
 
+- The `project_gcode_review` message is one short line and what to do ("edited.3mf's printer G-code doesn't match the Bambu Lab A1 profile's. ..."). The per-script counts and flagged lines stay in `details`, which adds `summary` (that first line) and `printer` (the printer it was compared with), so a client can show one line and keep the rest behind a toggle.
+- A project with its own printer G-code and no printer to compare it with (no `machine:` profile, and a printer SlicerX has no profile for) is refused with the new code `printer_needed` instead of a diff against the generic machine's G-code, where nearly every line read as added. `project_gcode: "profile"` slices it as before.
 - A project object whose mesh a tool replaced (cut parts, a repaired or hollowed mesh) keeps its geometry and rotation, so it slices; before, the plate came out without it.
 - Project meshes are handed to the mesh tools with shared corners, so a closed STL measures watertight instead of showing every edge open.
 - License: the server code is Apache-2.0. The bundle inlines the AGPL-3.0-or-later stock profiles, so the package is `Apache-2.0 AND AGPL-3.0-or-later`, with the AGPL text in `dist/LICENSE-AGPL-profiles.txt`.
