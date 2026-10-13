@@ -20,7 +20,7 @@ import { onLocalAiChange, registeredLocalAi } from './local-ai-host'
 import type { EditionConfig } from '@slicerx/edition-config'
 import './connect.css'
 
-const SignInDialog = lazy(() => import('../features/store/signin').then((m) => ({ default: m.SignInDialog })))
+const SignInForm = lazy(() => import('../features/store/signin').then((m) => ({ default: m.SignInForm })))
 
 export type MimirChoice = 'cloud' | 'chatgpt' | 'key' | 'local' | 'skip'
 /** Where the setup shows: first-run (with Skip, and choices that apply on finish), Settings, or the mimir panel. */
@@ -95,7 +95,6 @@ export function MimirSetup({ place, choice: controlled, onChoose, idPrefix = 'ms
   const choice = controlled ?? own
   const choose = (c: MimirChoice) => (onChoose ? onChoose(c) : setOwn(c))
   const cards = useRef<(HTMLDivElement | null)[]>([])
-  const [signingIn, setSigningIn] = useState(false)
   const onCloud = pref?.mode === 'on' && pref.provider === 'mimir-cloud'
 
   const onKey = (e: KeyboardEvent, i: number) => {
@@ -171,16 +170,11 @@ export function MimirSetup({ place, choice: controlled, onChoose, idPrefix = 'ms
           )
         ) : null}
         {choice === 'cloud' && cloud === 'sign-in' ? (
-          <div className="ms-signin">
-            <Button variant="primary" data-testid="ms-cloud-signin" onClick={() => setSigningIn(true)}>
-              Sign in
-            </Button>
-            <p className="sx-small sx-muted">Free with an account. You come back here, and {ASSISTANT_NAME} cloud is ready to pick.</p>
-            {signingIn ? (
-              <Suspense fallback={null}>
-                <SignInDialog open onClose={() => setSigningIn(false)} />
-              </Suspense>
-            ) : null}
+          <div className="ms-signin" data-testid="ms-cloud-signin">
+            <p className="sx-small sx-muted">Sign in or make a free account with your email. {ASSISTANT_NAME} works once you are signed in, right here.</p>
+            <Suspense fallback={null}>
+              <SignInForm compact />
+            </Suspense>
           </div>
         ) : null}
         {choice === 'chatgpt' ? <ChatGptCard idPrefix={`${idPrefix}-cg`} withLocal={false} /> : null}
