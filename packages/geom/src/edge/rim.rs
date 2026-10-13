@@ -103,6 +103,7 @@ impl<'a> Ctx<'a> {
     }
 
     /// The rim between plane face `pf` and cylinder face `cf`, starting at `prefer` when it is a corner of it.
+    #[allow(clippy::too_many_lines, reason = "one pass from the faces to the rim")]
     fn rim(&self, pf: u32, cf: u32, prefer: Option<V3>) -> Option<Rim> {
         let Surface::Plane { normal, offset } = self.faces.table[pf as usize] else {
             return None;
@@ -124,7 +125,7 @@ impl<'a> Ctx<'a> {
         };
         // The sides of the rim, and one plane and one cylinder triangle beside it.
         let mut sides: Vec<(V3, V3)> = Vec::new();
-        let (mut plane_tri, mut cyl_tri) = (None, None);
+        let mut cyl_tri = None;
         let mut rim_keys = std::collections::HashSet::new();
         for (k, tris) in &self.edges {
             let [t1, t2] = tris[..] else { continue };
@@ -145,23 +146,64 @@ impl<'a> Ctx<'a> {
             let [a, b] = ends[..] else { continue };
             sides.push((a, b));
             rim_keys.insert(*k);
-            plane_tri.get_or_insert(tp);
             cyl_tri.get_or_insert(tc);
         }
-        let (plane_tri, cyl_tri) = (plane_tri?, cyl_tri?);
-        // A closed ring, every corner on the circle.
-        let mut degree: HashMap<Key3, usize> = HashMap::new();
+        let cyl_tri = cyl_tri?;
+        // A closed ring on the plane. Its corners are on the circle, or on a chord between two of them where a boolean
+        // split a facet.
+        let tol = self.tol * 10.0;
+        let mut degree: HashMap<Key3, (usize, f64)> = HashMap::new();
         for &(a, b) in &sides {
             for p in [a, b] {
-                if (vec3::len(radial(p)) - radius).abs() > self.tol * 10.0
-                    || (vec3::dot(normal, p) - offset).abs() > self.tol * 10.0
-                {
+                let r = vec3::len(radial(p));
+                if r > radius + tol || (vec3::dot(normal, p) - offset).abs() > tol {
                     return None;
                 }
-                *degree.entry(key(p)).or_default() += 1;
+                degree.entry(key(p)).or_insert((0, r)).0 += 1;
             }
         }
-        if sides.len() < 3 || degree.len() != sides.len() || degree.values().any(|&d| d != 2) {
+        // corners by angle; every other point lies on the chord between the two corners either side of it
+        let frame_u = vec3::normalize(vec3::sub(radial(sides[0].0), [0.0; 3])).unwrap_or([1.0, 0.0, 0.0]);
+        let frame_v = vec3::cross(normal, frame_u);
+        let angle = |p: V3| {
+            let d = radial(p);
+            vec3::dot(d, frame_v)
+                .m_atan2(vec3::dot(d, frame_u))
+                .rem_euclid(2.0 * PI)
+        };
+        let mut corner_at: Vec<f64> = sides
+            .iter()
+            .flat_map(|s| [s.0, s.1])
+            .filter(|p| radius - vec3::len(radial(*p)) <= tol)
+            .map(angle)
+            .collect();
+        corner_at.sort_by(f64::total_cmp);
+        corner_at.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+        let corners = corner_at.len();
+        let on_chord = |p: V3| {
+            let (phi, r) = (angle(p), vec3::len(radial(p)));
+            if radius - r <= tol {
+                return true;
+            }
+            let i = corner_at.partition_point(|&a| a < phi);
+            let lo = if i == 0 {
+                corner_at[corners - 1] - 2.0 * PI
+            } else {
+                corner_at[i - 1]
+            };
+            let hi = if i == corners {
+                corner_at[0] + 2.0 * PI
+            } else {
+                corner_at[i]
+            };
+            let half = (hi - lo) / 2.0;
+            (r - radius * half.m_cos() / (phi - lo - half).m_cos()).abs() <= tol
+        };
+        if corners < 3
+            || degree.len() != sides.len()
+            || degree.values().any(|&(d, _)| d != 2)
+            || sides.iter().any(|s| !on_chord(s.0) || !on_chord(s.1))
+        {
             return None;
         }
         let start = prefer
@@ -170,14 +212,23 @@ impl<'a> Ctx<'a> {
                 sides
                     .iter()
                     .map(|s| s.0)
+                    .filter(|p| degree.get(&key(*p)).is_some_and(|d| radius - d.1 <= tol))
                     .min_by_key(|p| key(*p))
                     .unwrap_or(center)
             });
-        let out = if vec3::len(radial(self.centroid(plane_tri))) > radius {
-            1.0
-        } else {
-            -1.0
-        };
+        // which side of the circle the flat face lies on: any of its corners off the ring says
+        let out = self
+            .faces
+            .ids
+            .iter()
+            .enumerate()
+            .filter(|&(_, &f)| f == pf)
+            .flat_map(|(t, _)| self.mesh.corners(self.mesh.triangles[t]))
+            .filter(|p| !degree.contains_key(&key(*p)))
+            .map(|p| vec3::len(radial(p)) - radius)
+            .find(|d| d.abs() > tol)
+            // a disk with every corner on the ring lies inside it
+            .map_or(-1.0, f64::signum);
         let along = vec3::dot(vec3::sub(self.centroid(cyl_tri), center), normal).signum();
         let plane_room = self.plane_room(pf, &rim_keys, center, radius, out, &radial);
         let cyl_room = self
@@ -194,7 +245,7 @@ impl<'a> Ctx<'a> {
             normal,
             radius,
             start,
-            steps: sides.len(),
+            steps: corners,
             out,
             along,
             convex: along < 0.0,

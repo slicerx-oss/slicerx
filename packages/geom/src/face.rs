@@ -9,6 +9,7 @@ use crate::array::{self, ArraySpec};
 use crate::boolean::{self, BoolOp, BooleanOptions, BooleanReport};
 use crate::build;
 use crate::error::{Error, Result};
+use crate::faces::Surface;
 use crate::fm::Fm;
 use crate::measure::Topology;
 use crate::mesh::TriMesh;
@@ -94,6 +95,22 @@ pub fn pick_face(mesh: &TriMesh, triangle: u32, at: V3) -> Result<FacePick> {
     mesh.validate("face")?;
     if triangle as usize >= mesh.triangles.len() {
         return Err(Error::invalid("triangle", "out of range"));
+    }
+    // a facet of a known round (a cylinder side, a hole wall) is part of a curved face, however flat it is
+    let found;
+    let faces = if let Some(f) = &mesh.faces {
+        f
+    } else {
+        found = crate::faces::recognize(mesh);
+        &found
+    };
+    if let Some(&id) = faces.ids.get(triangle as usize)
+        && matches!(
+            faces.table.get(id as usize),
+            Some(Surface::Cylinder { .. } | Surface::Cone { .. } | Surface::Sphere { .. })
+        )
+    {
+        return Err(Error::invalid("face", "pick a flat face"));
     }
     let topo = Topology::new(mesh);
     let region = topo.flat_region(triangle);
@@ -836,6 +853,24 @@ mod tests {
         let c = m.corners(m.triangles[t as usize]);
         let at = vec3::scale(vec3::add(vec3::add(c[0], c[1]), c[2]), 1.0 / 3.0);
         pick_face(m, t, at).unwrap()
+    }
+
+    #[test]
+    fn a_cylinder_side_is_curved_not_a_flat_facet() {
+        // as the app adds one: 48 sides, no face ids
+        let mut m = build::cylinder(&Frame::WORLD, 10.0, 0.0, 20.0, 48);
+        m.faces = None;
+        let side = m
+            .triangles
+            .iter()
+            .position(|&t| vec3::normalize(m.normal(t)).unwrap()[2].abs() < 0.01)
+            .unwrap();
+        let c = m.corners(m.triangles[side]);
+        let at = vec3::scale(vec3::add(vec3::add(c[0], c[1]), c[2]), 1.0 / 3.0);
+        let err = pick_face(&m, u32::try_from(side).unwrap(), at).unwrap_err();
+        assert!(err.to_string().contains("pick a flat face"), "{err}");
+        // its top is still a face
+        assert!((top_pick(&m).area_mm2 - PI * 100.0).abs() < 0.03 * PI * 100.0);
     }
 
     fn plate_cut(pattern: Option<&Pattern>, seed: V2) -> Result<ExtrudeResult> {
