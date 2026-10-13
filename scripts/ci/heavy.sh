@@ -17,7 +17,9 @@
 #                                              ci.env of the CI home this copy runs from ($SX_CI_HOME, or bin/..)
 #   SX_HEAVY_SLOTS=<n>                         how many holders may run at once (default: the number in <lock>.slots,
 #                                              a machine setting beside the lock, or 1 when there is none)
-#   SX_HEAVY_WAIT=<seconds>                    give up after this long (default 0: wait as long as it takes)
+#   SX_HEAVY_WAIT=<seconds>                    give up after this long (default 0: wait as long as it takes), with
+#                                              exit status 75 and without running the command; 75 is kept for
+#                                              that, so a command that exits 75 itself is reported as 1
 #   SX_HEAVY_POLL=<seconds>                    how often a waiter looks again (default 5; the tests use 1)
 #   SX_HEAVY_ORPHAN=<seconds>                  how old a lock with no holder record must be before it is cleared
 #                                              (default 60; a holder writes its record right after taking the lock)
@@ -522,3 +524,6 @@ ran=1 t_run=$SECONDS
 if [ -n "$sx_lc_all" ]; then LC_ALL=${sx_lc_all#1}; else unset LC_ALL; fi
 if [ -n "$sx_lc_collate" ]; then LC_COLLATE=${sx_lc_collate#1}; else unset LC_COLLATE; fi
 "$@"
+rc=$?
+[ "$rc" != 75 ] || { echo "heavy.sh: the command exited 75, reported as 1 (75 means heavy.sh gave up)" >&2; rc=1; }
+exit $rc
