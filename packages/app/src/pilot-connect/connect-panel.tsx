@@ -305,7 +305,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, o
               ? remote
                 ? `Your questions and printer setup go only to the server at ${remote}.`
                 : 'Nothing leaves this computer: your questions and the printer setup you entered go only to the local model.'
-              : `What leaves the browser: your questions and the printer setup you entered, sent to ${info.label} only. Access codes and printer keys are never sent.`}
+              : `What leaves ${host.capabilities.secureStorage ? 'this computer' : 'the browser'}: your questions and the printer setup you entered, sent to ${info.label} only. Access codes and printer keys are never sent.`}
           </p>
           <div className="pc-act">
             <Button variant="primary" icon="link" onClick={() => void connect()} disabled={busy}>
