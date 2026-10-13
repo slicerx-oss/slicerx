@@ -21,7 +21,7 @@ import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
 import { startFillet } from '../../cad/start-hint'
-import { requestFinish, useCanFinish } from '../../cad/sketches'
+import { requestFinish, useCanFinish, useSketchInUse } from '../../cad/sketches'
 import { availableTools, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
 
 const ToolDialog = lazy(() => import('../prepare/tool-dialog').then((m) => ({ default: m.ToolDialog })))
@@ -62,6 +62,8 @@ export function Shelf() {
   const { undo, redo } = useHistoryCounts()
   const [menu, setMenu] = useState<string | null>(null)
   const canFinish = useCanFinish()
+  // an Extrude or Revolve from a finished sketch runs in the sketch tool, but nobody is sketching
+  const pressedTool = useSketchInUse() !== null && objectTool === 'sketch' ? null : objectTool
   const tools = availableTools({ modeling, drawing })
   const run = (fn: () => Promise<unknown>) => {
     setMenu(null)
@@ -76,7 +78,7 @@ export function Shelf() {
   const groupName = (id: ShelfGroup) => SHELF_GROUPS.find((g) => g.id === id)?.label ?? ''
   const tip = (t: ShelfTool) => (t.tip ? { 'data-tip': t.tip } : { 'data-tip-title': `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}` })
   const toolButton = (t: ShelfTool, extra: { className?: string } = {}) => (
-    <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} data-tool={t.id} data-testid="model-shelf-tool" {...tip(t)} aria-label={t.label} aria-pressed={t.tool !== undefined && objectTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
+    <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} data-tool={t.id} data-testid="model-shelf-tool" {...tip(t)} aria-label={t.label} aria-pressed={t.tool !== undefined && pressedTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
       <Icon name={t.icon} />
       <span>{t.short ?? t.label}</span>
     </button>
@@ -124,7 +126,7 @@ export function Shelf() {
                 toolButton(e.tool)
               ) : (
                 <MenuAnchor key={e.menu}>
-                  <button type="button" className="shelf-tool" aria-label={MENU_LABEL[e.menu].label} aria-haspopup="menu" aria-expanded={menu === e.menu} aria-pressed={e.tools.some((t) => t.tool !== undefined && objectTool === t.tool)} onClick={() => setMenu(menu === e.menu ? null : e.menu)}>
+                  <button type="button" className="shelf-tool" aria-label={MENU_LABEL[e.menu].label} aria-haspopup="menu" aria-expanded={menu === e.menu} aria-pressed={e.tools.some((t) => t.tool !== undefined && pressedTool === t.tool)} onClick={() => setMenu(menu === e.menu ? null : e.menu)}>
                     <Icon name={MENU_LABEL[e.menu].icon} />
                     <span>{MENU_LABEL[e.menu].label}</span>
                     <Icon name="chevron-down" size={12} />

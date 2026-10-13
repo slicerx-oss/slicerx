@@ -10,7 +10,7 @@ import { featureParams, mainNumber, stepName, type FeatureItem, type SketchItem,
 import { beginEdit, cancelEdit, moveStep, toolFor } from '../../cad/history/ops'
 import { stepIcon } from '../../cad/history/step-icon'
 import { SketchMenu } from '../../cad/sketch-menu'
-import { openSketch } from '../../cad/sketches'
+import { openSketch, useSketchInUse } from '../../cad/sketches'
 import { useHost } from '../../host'
 import { useMadeBy } from './use-made-by'
 import { useBottomPanel } from '../../shell/bottom-panel'
@@ -247,6 +247,7 @@ export function Timeline() {
 function SketchChip({ k, n, later, busy }: { k: SketchItem; n: number; later: boolean; busy: boolean }) {
   const menu = useContextMenu()
   const loops = k.loops.length === 1 ? '1 loop' : `${k.loops.length} loops`
+  const used = useSketchInUse() === k.id
   return (
     <>
       <button
@@ -254,6 +255,7 @@ function SketchChip({ k, n, later, busy }: { k: SketchItem; n: number; later: bo
         className="tl-chip"
         data-kind="sketch"
         data-later={later || undefined}
+        data-current={used || undefined}
         aria-label={`${n}, ${k.name}`}
         aria-haspopup="menu"
         data-tip-title={k.name}
