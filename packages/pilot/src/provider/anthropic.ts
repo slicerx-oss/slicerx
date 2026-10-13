@@ -102,6 +102,8 @@ export function createAnthropicAdapter(): LlmAdapter {
         stream: true,
       }
       if (system) body['system'] = [{ type: 'text', text: system, cache_control: { ...EPHEMERAL } }]
+      // and the conversation so far is read from the cache on the next step of a tool loop (the provider moves this point to the last block)
+      body['cache_control'] = { ...EPHEMERAL }
       if (budget > 0) body['thinking'] = { type: 'enabled', budget_tokens: Math.min(budget, num(body['max_tokens']) - 1024) }
       if (adaptive && req.reasoning) {
         body['thinking'] = { type: 'adaptive' }
@@ -131,6 +133,8 @@ export function createAnthropicAdapter(): LlmAdapter {
       let stop: LlmStop = 'end'
       let inputTokens = 0
       let outputTokens = 0
+      let cacheReadTokens = 0
+      let cacheWriteTokens = 0
       for await (const msg of parseSse(body)) {
         let ev: unknown
         try {
@@ -146,7 +150,9 @@ export function createAnthropicAdapter(): LlmAdapter {
           case 'message_start': {
             const m = isObj(ev['message']) ? ev['message'] : {}
             const u = isObj(m['usage']) ? m['usage'] : {}
-            inputTokens = num(u['input_tokens']) + num(u['cache_creation_input_tokens']) + num(u['cache_read_input_tokens'])
+            cacheReadTokens = num(u['cache_read_input_tokens'])
+            cacheWriteTokens = num(u['cache_creation_input_tokens'])
+            inputTokens = num(u['input_tokens']) + cacheWriteTokens + cacheReadTokens
             outputTokens = num(u['output_tokens'])
             break
           }
@@ -227,7 +233,7 @@ export function createAnthropicAdapter(): LlmAdapter {
         }
       }
       if (stop === 'end' && sawCall) stop = 'tool_calls'
-      yield { type: 'usage', inputTokens, outputTokens }
+      yield { type: 'usage', inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }
       const raw = [...blocks.entries()].sort((a, b) => a[0] - b[0]).map(([, b]) => b)
       yield { type: 'done', stop, raw }
     },

@@ -131,6 +131,8 @@ describe('Anthropic adapter', () => {
     // the server tool comes after the cache point, which the proxy rebuilds without one
     expect(marked[0]?.['name']).toBe(body.tools.filter((t) => !t['type']).at(-1)?.['name'])
     expect(body.tools.at(-1)?.['type']).toBe('web_search_20250305')
+    // and the request asks for the conversation itself to be cached, so a tool loop's next step reads it back
+    expect((body as unknown as Record<string, unknown>)['cache_control']).toEqual({ type: 'ephemeral' })
     const none = JSON.parse(adapter.build({ ...REQ, tools: [], messages: [{ role: 'user', content: 'hi' }] }).body) as Record<string, unknown>
     expect(none['tools']).toBeUndefined()
     expect(none['system']).toBeUndefined()
@@ -174,7 +176,7 @@ describe('Anthropic adapter', () => {
 
   it('parses text, thinking with its signature, a tool call and usage, across odd chunking', async () => {
     const text = sse([
-      ['message_start', { type: 'message_start', message: { usage: { input_tokens: 25, output_tokens: 1 } } }],
+      ['message_start', { type: 'message_start', message: { usage: { input_tokens: 25, cache_creation_input_tokens: 300, cache_read_input_tokens: 4000, output_tokens: 1 } } }],
       ['ping', { type: 'ping' }],
       ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }],
       ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'Look up ' } }],
@@ -196,7 +198,8 @@ describe('Anthropic adapter', () => {
     expect(events.filter((e) => e.type === 'reasoning').map((e) => (e as { delta: string }).delta).join('')).toBe('Look up PETG.')
     expect(events.filter((e) => e.type === 'text').map((e) => (e as { delta: string }).delta).join('')).toBe('Checking')
     expect(events.find((e) => e.type === 'tool_call')).toEqual({ type: 'tool_call', call: { id: 'toolu_1', name: 'kb.filament', arguments: '{"material":"petg"}' } })
-    expect(events.find((e) => e.type === 'usage')).toEqual({ type: 'usage', inputTokens: 25, outputTokens: 42 })
+    // the input count includes the cache, and says how much of it was read and written
+    expect(events.find((e) => e.type === 'usage')).toEqual({ type: 'usage', inputTokens: 4325, outputTokens: 42, cacheReadTokens: 4000, cacheWriteTokens: 300 })
     const done = events.at(-1) as Extract<LlmEvent, { type: 'done' }>
     expect(done.stop).toBe('tool_calls')
     expect(done.raw).toEqual([
