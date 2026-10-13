@@ -122,6 +122,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("design.edit_step", LinkClass::Edit),
     ("design.undo", LinkClass::Edit),
     ("design.redo", LinkClass::Edit),
+    // the design timeline, and moving its marker (rolling the design back or forward)
+    ("design.timeline", LinkClass::Read),
+    ("design.roll", LinkClass::Edit),
     ("geom.faces", LinkClass::Read),
     ("geom.face_pick", LinkClass::Read),
     ("geom.edge_pick", LinkClass::Read),
@@ -328,6 +331,8 @@ mod tests {
             ("design.edit_step", LinkClass::Edit),
             ("design.undo", LinkClass::Edit),
             ("design.redo", LinkClass::Edit),
+            ("design.timeline", LinkClass::Read),
+            ("design.roll", LinkClass::Edit),
             ("geom.faces", LinkClass::Read),
             ("geom.face_pick", LinkClass::Read),
             ("geom.edge_pick", LinkClass::Read),
