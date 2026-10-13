@@ -11,10 +11,15 @@
 #include <SmApiImportExport.h>
 #include <SmApiPrimitives.h>
 #include <SmApiQueries.h>
+#include <SmAttribute.h>
+#include <SmAxis2Placement.h>
 #include <SmBrep.h>
+#include <SmCone.h>
+#include <SmCylinder.h>
 #include <SmFace.h>
 #include <SmLine.h>
 #include <SmPoly.h>
+#include <SmSphere.h>
 #include <SmSurface.h>
 #include <SmSurfTypes.h>
 #include <SmVector3d.h>
@@ -83,6 +88,67 @@ double dot(const SmVector3d& a, const SmVector3d& b) { return a.x * b.x + a.y * 
 
 void check(long st, const char* what);
 
+// --- face keys
+
+// a face's key says which step made it, the same in every replay (sx-geom's faces.rs makes mesh keys the same
+// way). Keys are 52 bits, kept in two attributes since long is 32 bits on the web; booleans carry them to the
+// faces that come from a face
+const ULONG kKeyLow = 20101, kKeyHigh = 20102;
+const unsigned long long kKeyHalf = (1ULL << 26) - 1;
+
+unsigned long long face_key(SmFace* f)
+{
+    SmTArray<SmAttribute*> as;
+    f->GetAttributes(as);
+    unsigned long long lo = 0, hi = 0;
+    for (ULONG i = 0; i < as.GetSize(); ++i) {
+        ULONG id = as[i]->GetAttributeID();
+        if (id == kKeyLow) lo = (unsigned long long)static_cast<SmLongAttribute*>(as[i])->GetValue() & kKeyHalf;
+        if (id == kKeyHigh) hi = (unsigned long long)static_cast<SmLongAttribute*>(as[i])->GetValue() & kKeyHalf;
+    }
+    return (hi << 26) | lo;
+}
+
+void set_key(SmFace* f, unsigned long long key)
+{
+    SmTArray<SmAttribute*> as;
+    f->GetAttributes(as);
+    for (ULONG i = 0; i < as.GetSize(); ++i)
+        if (as[i]->GetAttributeID() == kKeyLow || as[i]->GetAttributeID() == kKeyHigh) f->RemoveAttribute(as[i]);
+    if (!key) return;
+    SmContext& cx = *SmApiGetOrCreateContext();
+    f->AddAttribute(new (cx) SmLongAttribute(kKeyLow, long(key & kKeyHalf), SM_AB_COPY));
+    f->AddAttribute(new (cx) SmLongAttribute(kKeyHigh, long((key >> 26) & kKeyHalf), SM_AB_COPY));
+}
+
+// the request's keySalt; each body a call makes gets the next number, as each mesh a step makes does in sx-geom
+struct {
+    bool on = false;
+    unsigned long long salt = 0, next = 0;
+} keys;
+
+unsigned long long key_of(unsigned long long salt, unsigned long long ordinal, unsigned long long face)
+{
+    // splitmix64 of the three, cut to 52 bits and never 0
+    unsigned long long z = salt ^ (ordinal * 0x9e3779b97f4a7c15ULL) ^ (face * 0xbf58476d1ce4e5b9ULL);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    z ^= z >> 31;
+    z &= (1ULL << 52) - 1;
+    return z ? z : 1;
+}
+
+// keys for the faces of a body the call made, in face order; none without a keySalt
+SmBrep* fresh_keys(SmBrep* b)
+{
+    if (!keys.on) return b;
+    ++keys.next;
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    for (ULONG i = 0; i < fs.GetSize(); ++i) set_key(fs[i], key_of(keys.salt, keys.next, i));
+    return b;
+}
+
 // bodies read from a request's {"smb"} for one call, freed when it ends
 std::vector<SmBrep*> loaded;
 
@@ -108,12 +174,23 @@ std::string seal_of(const std::string& text)
     return std::string(kSeal) + hex + "\n";
 }
 
+// the kernel's text drops attributes, so the face keys follow it on a line of their own, in face order
+const char* kKeys = "//sx-brep keys";
+
 SmBrep* read_smb(const std::string& sealed, const char* k)
 {
     size_t at = sealed.rfind(kSeal);
     std::string text = at == std::string::npos ? std::string() : sealed.substr(0, at);
     if (at == std::string::npos || sealed.compare(at, std::string::npos, seal_of(text)) != 0)
         throw Error(k, "not a body sx-brep saved, or changed since");
+    std::vector<unsigned long long> face_keys;
+    size_t kat = text.rfind(kKeys);
+    if (kat != std::string::npos && (kat == 0 || text[kat - 1] == '\n')) {
+        std::istringstream line(text.substr(kat + std::strlen(kKeys)));
+        unsigned long long key;
+        while (line >> key) face_keys.push_back(key);
+        text.erase(kat);
+    }
     std::filesystem::path p = scratch_file();
     {
         std::ofstream f(p, std::ios::binary);
@@ -125,6 +202,15 @@ SmBrep* read_smb(const std::string& sealed, const char* k)
     std::error_code ignored;
     std::filesystem::remove(p, ignored);
     if (st != SM_SUCCESS || !b) throw Error(k, "not a body SMLib can read (status " + std::to_string(st) + ")");
+    if (!face_keys.empty()) {
+        SmTArray<SmFace*> fs;
+        SmApiGetFaces(b, fs);
+        if (fs.GetSize() != face_keys.size()) {
+            delete b;
+            throw Error(k, "its face keys do not match its faces");
+        }
+        for (ULONG i = 0; i < fs.GetSize(); ++i) set_key(fs[i], face_keys[i]);
+    }
     return b;
 }
 
@@ -139,6 +225,16 @@ std::string write_smb(SmBrep* b)
     std::error_code ignored;
     std::filesystem::remove(p, ignored);
     std::string text = ss.str();
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    std::string line = kKeys;
+    bool any = false;
+    for (ULONG i = 0; i < fs.GetSize(); ++i) {
+        unsigned long long key = face_key(fs[i]);
+        any = any || key;
+        line += " " + std::to_string(key);
+    }
+    if (any) text += (text.empty() || text.back() == '\n' ? "" : "\n") + line + "\n";
     return text + seal_of(text);
 }
 
@@ -433,20 +529,67 @@ Value info(SmBrep* b)
     return v;
 }
 
-// triangles for the slicer, welded, each with the number of the face it came from (its place in the face list)
+Value xyz(const SmVector3d& p)
+{
+    Value v = Value::array();
+    for (double d : {p.x, p.y, p.z}) v.push(d);
+    return v;
+}
+
+// a face's surface as sx-geom's faces.rs has it (a plane's comes from the triangles, so it faces out); null when it
+// has none of those kinds
+Value surface_of(SmSurface* s)
+{
+    Value v = Value::object();
+    if (!s) return Value();
+    SmAxis2Placement ax;
+    double rad = 0, semi = 0;
+    if (s->GetType() == SmSphere_TYPE) {
+        if (static_cast<SmSphere*>(s)->GetCanonical(ax, rad) != SM_SUCCESS) return Value();
+        v.set("kind", "sphere");
+        v.set("center", xyz(ax.GetOrigin()));
+        v.set("radius", rad);
+        return v;
+    }
+    if (s->GetType() == SmCylinder_TYPE) {
+        if (static_cast<SmCylinder*>(s)->GetCanonical(ax, rad) != SM_SUCCESS) return Value();
+    } else if (s->IsKindOf(SmCone_TYPE)) {
+        if (static_cast<SmCone*>(s)->GetCanonical(ax, rad, semi) != SM_SUCCESS) return Value();
+    } else {
+        return Value();
+    }
+    if (std::fabs(semi) < 1e-9) {
+        v.set("kind", "cylinder");
+        v.set("origin", xyz(ax.GetOrigin()));
+        v.set("axis", xyz(ax.GetZAxis()));
+        v.set("radius", rad);
+        return v;
+    }
+    SmBoolean flat = FALSE;
+    SmPoint3d apex;
+    double at = 0;
+    if (static_cast<SmCone*>(s)->GetApex(flat, apex, at) != SM_SUCCESS || flat) return Value();
+    // a positive angle widens along the axis
+    SmVector3d z = ax.GetZAxis();
+    double sign = semi > 0 ? 1 : -1;
+    v.set("kind", "cone");
+    v.set("apex", xyz(apex));
+    v.set("axis", xyz(SmVector3d(sign * z.x, sign * z.y, sign * z.z)));
+    v.set("halfAngle", std::fabs(semi) * kPi / 180);
+    return v;
+}
+
+// triangles for the slicer, welded, each with the number of the face it came from (its place in the face list);
+// each face has its type, its surface ({"kind": "other"} when none fits) and its key (0 for none)
 Value tessellate(SmBrep* b, double chord, double angle)
 {
     SmTArray<SmFace*> fs;
     SmApiGetFaces(b, fs);
     std::map<SmFace*, long> face_no;
-    Value faces = Value::array();
-    for (ULONG i = 0; i < fs.GetSize(); ++i) {
-        face_no[fs[i]] = long(i);
-        Value f = Value::object();
-        f.set("id", Value((unsigned long)i));
-        f.set("type", surface_name(fs[i]->GetSurface()));
-        faces.push(f);
-    }
+    for (ULONG i = 0; i < fs.GetSize(); ++i) face_no[fs[i]] = long(i);
+    // per face: the sum of its triangles' area vectors, and of their centers by area
+    std::vector<SmVector3d> normal(fs.GetSize(), SmVector3d(0, 0, 0)), middle(fs.GetSize(), SmVector3d(0, 0, 0));
+    std::vector<double> area(fs.GetSize(), 0);
     SmPolyBrep* pb = nullptr;
     SmTessellationParams p;
     p.dChordHeightTol = chord;
@@ -477,7 +620,11 @@ Value tessellate(SmBrep* b, double chord, double angle)
         SmTArray<SmPolyEdge*> es;
         l->GetPolyEdges(es);
         std::vector<long> v;
-        for (ULONG j = 0; j < es.GetSize(); ++j) v.push_back(vid(es[j]->GetStartPolyVertex()->GetPoint()));
+        std::vector<SmPoint3d> q;
+        for (ULONG j = 0; j < es.GetSize(); ++j) {
+            q.push_back(es[j]->GetStartPolyVertex()->GetPoint());
+            v.push_back(vid(q.back()));
+        }
         auto fit = face_no.find(pfs[i]->GetOriginalFace());
         long fid = fit == face_no.end() ? -1 : fit->second;
         for (size_t j = 1; j + 1 < v.size(); ++j) {
@@ -486,9 +633,42 @@ Value tessellate(SmBrep* b, double chord, double angle)
             idx.a.emplace_back(v[j]);
             idx.a.emplace_back(v[j + 1]);
             ids.a.emplace_back(fid);
+            if (fid < 0) continue;
+            const SmPoint3d &a = q[0], &c = q[j], &d = q[j + 1];
+            SmVector3d n = cross(SmVector3d(c.x - a.x, c.y - a.y, c.z - a.z), SmVector3d(d.x - a.x, d.y - a.y, d.z - a.z));
+            double w = std::sqrt(dot(n, n));
+            normal[fid] = SmVector3d(normal[fid].x + n.x, normal[fid].y + n.y, normal[fid].z + n.z);
+            middle[fid] = SmVector3d(middle[fid].x + w * (a.x + c.x + d.x) / 3, middle[fid].y + w * (a.y + c.y + d.y) / 3,
+                                     middle[fid].z + w * (a.z + c.z + d.z) / 3);
+            area[fid] += w;
         }
     }
     delete pb;
+    Value faces = Value::array();
+    for (ULONG i = 0; i < fs.GetSize(); ++i) {
+        Value f = Value::object();
+        f.set("id", Value((unsigned long)i));
+        std::string type = surface_name(fs[i]->GetSurface());
+        f.set("type", type);
+        Value sf = Value::object();
+        double l = std::sqrt(dot(normal[i], normal[i]));
+        if (type == "plane" && area[i] > 0 && l > 0) {
+            SmVector3d n(normal[i].x / l, normal[i].y / l, normal[i].z / l);
+            SmVector3d m(middle[i].x / area[i], middle[i].y / area[i], middle[i].z / area[i]);
+            sf.set("kind", "plane");
+            sf.set("normal", xyz(n));
+            sf.set("offset", dot(n, m));
+        } else if (type != "plane") {
+            sf = surface_of(fs[i]->GetSurface());
+        }
+        if (sf.kind != Value::Object) {
+            sf = Value::object();
+            sf.set("kind", "other");
+        }
+        f.set("surface", sf);
+        f.set("key", Value(face_key(fs[i])));
+        faces.push(f);
+    }
     pos.kind = idx.kind = ids.kind = Value::Array;
     Value out = Value::object();
     out.set("positions", pos);
@@ -504,11 +684,11 @@ Value run(const std::string& op, const Value& r)
 {
     Value out = Value::object();
     if (op == "box") {
-        out.set("body", Value(keep(make_box(v3(r, "min"), v3(r, "max")))));
+        out.set("body", Value(keep(fresh_keys(make_box(v3(r, "min"), v3(r, "max"))))));
     } else if (op == "cylinder") {
-        out.set("body", Value(keep(make_cylinder(v3(r, "origin"), v3(r, "axis"), num(r, "diameterMm"), num(r, "heightMm")))));
+        out.set("body", Value(keep(fresh_keys(make_cylinder(v3(r, "origin"), v3(r, "axis"), num(r, "diameterMm"), num(r, "heightMm"))))));
     } else if (op == "extrude") {
-        out.set("body", Value(keep(extrude(r))));
+        out.set("body", Value(keep(fresh_keys(extrude(r)))));
     } else if (op == "boolean") {
         SmBrep* a = copy_of(body(r, "a"));
         SmBrep* b = nullptr;
@@ -522,16 +702,28 @@ Value run(const std::string& op, const Value& r)
     } else if (op == "subtract") {
         const Value& ss = r["solids"];
         if (ss.kind != Value::Array || ss.a.empty()) throw Error("solids", "needs at least one solid");
+        // with a frame the body is in that frame's coordinates and the solids in world, so each solid moves into it
+        bool framed = r.has("frame");
+        Frame back;
+        if (framed) {
+            Frame f = frame_of(r["frame"]);
+            back.u = SmVector3d(f.u.x, f.v.x, f.n.x);
+            back.v = SmVector3d(f.u.y, f.v.y, f.n.y);
+            back.n = SmVector3d(f.u.z, f.v.z, f.n.z);
+            back.o = SmVector3d(-dot(f.u, f.o), -dot(f.v, f.o), -dot(f.n, f.o));
+        }
         SmBrep* a = copy_of(body(r, "body"));
         for (const auto& s : ss.a) {
             SmBrep* t = nullptr;
             try {
                 t = solid_of(s);
+                if (framed) place(t, back);
             } catch (...) {
+                delete t;
                 delete a;
                 throw;
             }
-            a = combine(a, t, "difference");
+            a = combine(a, fresh_keys(t), "difference");
         }
         out.set("body", Value(keep(a)));
     } else if (op == "cut") {
@@ -539,10 +731,10 @@ Value run(const std::string& op, const Value& r)
         const Value& pl = r["plane"];
         SmVector3d pt = v3(pl, "point"), n = unit(v3(pl, "normal"), "normal");
         // below keeps what the normal points away from, above the rest
-        SmBrep* below = combine(copy_of(b), half_space(b, pt, n), "difference");
+        SmBrep* below = combine(copy_of(b), fresh_keys(half_space(b, pt, n)), "difference");
         SmBrep* above = nullptr;
         try {
-            above = combine(copy_of(b), half_space(b, pt, SmVector3d(-n.x, -n.y, -n.z)), "difference");
+            above = combine(copy_of(b), fresh_keys(half_space(b, pt, SmVector3d(-n.x, -n.y, -n.z))), "difference");
         } catch (...) {
             delete below;
             throw;
@@ -619,6 +811,10 @@ char* sx_brep_call(const char* op, const char* request)
     } unload;
     try {
         Value r = sxj::Parser(request ? std::string(request) : std::string("{}")).parse();
+        const Value& salt = r["keySalt"];
+        keys.on = salt.kind == Value::Number && salt.n >= 0 && salt.n == std::floor(salt.n) && salt.n < 9007199254740992.0;
+        keys.salt = keys.on ? (unsigned long long)salt.n : 0;
+        keys.next = 0;
         return reply(run(op ? op : "", r));
     } catch (const Error& e) {
         Value v = Value::object();

@@ -7,7 +7,7 @@ import { goalEasy } from '../adapters/config'
 import { confirmDiscard } from '../project/unsaved'
 import { gcodeView, pickGcodeFile, setGcodePanel } from '../workspaces/preview/gcode-file'
 import { cancelSlice, clearPlate, exportGcode, loadDefaultPlate, loadDemoModel, openModelFiles, removeSelected, slicePlate } from '../state/actions'
-import { fullPlate, get, markStale, openSettings, pickColorMode, set, setCamera, setModelMode, setRail, setWorkspace, showSliced, type CameraView, type ColorMode, type ModelMode, type Goal, type PrepareLook } from '../state/store'
+import { fullPlate, get, markStale, openSettings, pickColorMode, set, setCamera, setModelMode, setRail, setWorkspace, showSliced, toast, type CameraView, type ColorMode, type ModelMode, type Goal, type PrepareLook } from '../state/store'
 import { DEMO_MODELS } from '../lib/demo-models'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { printBlock } from '../plate/heimdall'
@@ -149,6 +149,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     { id: 'help-diagnostics', title: 'Diagnostics: engine, threads and graphics', section: 'help', keywords: ['engine', 'webgl', 'workers', 'threads', 'version', 'about'], run: () => set({ aboutOpen: true }) },
     // Developer mode only: a real crash report, through the same capture path as any other.
     { id: 'dev-test-crash', title: 'Developer: trigger a test crash', section: 'help', keywords: ['crash', 'error', 'bug report', 'test'], enabled: () => get().settingsMode === 'developer', run: () => void import('../bugs/reports').then((m) => m.triggerTestCrash()) },
+    { id: 'dev-exact-solids', title: 'Developer: exact solids in history replays (on or off)', section: 'help', keywords: ['brep', 'b-rep', 'smlib', 'exact', 'solid', 'kernel'], enabled: () => get().settingsMode === 'developer', run: () => void import('../cad/history/exact-flag').then((f) => toast(f.toggleExactSolids() ? 'Exact solids are on for history replays.' : 'Exact solids are off.', 'info')) },
     { id: 'dev-test-panic', title: 'Developer: trigger a test panic in the desktop shell', section: 'help', keywords: ['crash', 'panic', 'rust', 'bug report', 'test'], enabled: () => get().settingsMode === 'developer' && host.kind === 'desktop', run: () => import('../bugs/reports').then((m) => m.triggerTestPanic()) },
     ...(updaterRegistered() ? [{ id: 'help-updates', title: 'Check for updates', section: 'help', keywords: ['update', 'upgrade', 'new version', 'release', 'download'], run: () => void import('../updates/updates').then((m) => m.checkForUpdates({ manual: true })) } satisfies CommandSpec] : []),
     { id: 'help-about', title: `About ${appName()} and its source code`, section: 'help', keywords: ['version', 'license', 'agpl', 'commit'], run: () => set({ aboutOpen: true }) },

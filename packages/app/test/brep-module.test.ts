@@ -1,0 +1,104 @@
+// @vitest-environment node
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// The B-rep kernel's wasm module (packages/brep/lib) through the worker's wrapper: a hole as deep as the part comes
+// out closed with its exact volume, every triangle names its face, and errors arrive as thrown messages.
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import init from '../../brep/lib/sx_brep.mjs'
+import { brepModule, type BrepModule } from '../src/geom/brep'
+
+const wasm = readFileSync(new URL('../../brep/lib/sx_brep.wasm', import.meta.url))
+let kernel: Promise<BrepModule> | null = null
+const brep = () => (kernel ??= init({ wasmBinary: wasm }).then(brepModule))
+
+interface Body {
+  body: number
+}
+interface Info {
+  manifold: boolean
+  volumeMm3: number
+  faces: number
+  faceTypes: Record<string, number>
+}
+interface Mesh {
+  positions: number[]
+  indices: number[]
+  faceIds: number[]
+  faces: { id: number; type: string }[]
+}
+
+function openEdges(indices: number[]): number {
+  const count = new Map<string, number>()
+  for (let t = 0; t < indices.length; t += 3) {
+    for (let k = 0; k < 3; k++) {
+      const a = indices[t + k] as number
+      const b = indices[t + ((k + 1) % 3)] as number
+      const key = a < b ? `${a},${b}` : `${b},${a}`
+      count.set(key, (count.get(key) ?? 0) + 1)
+    }
+  }
+  return [...count.values()].filter((n) => n !== 2).length
+}
+
+// exact to the kernel's volume integration, the same tolerance as packages/brep/tests/kernel.rs
+function close(got: number, want: number) {
+  expect(Math.abs(got - want)).toBeLessThanOrEqual(1e-6 * Math.max(Math.abs(want), 1))
+}
+
+describe('B-rep kernel module', () => {
+  it('cuts a hole as deep as the part into a closed solid', async () => {
+    const k = await brep()
+    const { body: cube } = k.call('box', { min: [0, 0, 0], max: [20, 20, 20] }) as Body
+    const { body } = k.call('subtract', {
+      body: cube,
+      solids: [{ type: 'cylinder', origin: [10, 10, 0], axis: [0, 0, 1], diameterMm: 8, heightMm: 20.5 }],
+    }) as Body
+    const info = k.call('info', { body }) as Info
+    expect(info.manifold).toBe(true)
+    close(info.volumeMm3, 8000 - Math.PI * 16 * 20)
+    expect(info.faces).toBe(7)
+    const mesh = k.call('tessellate', { body }) as Mesh
+    expect(mesh.indices.length / 3).toBe(mesh.faceIds.length)
+    expect(openEdges(mesh.indices)).toBe(0)
+    expect(new Set(mesh.faceIds).size).toBe(7)
+    expect(mesh.faces.filter((f) => f.type !== 'plane')).toHaveLength(1)
+    for (const b of [cube, body]) expect((k.call('free', { body: b }) as { freed: boolean }).freed).toBe(true)
+  })
+
+  it('cuts a body into two closed halves', async () => {
+    const k = await brep()
+    const { body: cube } = k.call('box', { min: [0, 0, 0], max: [20, 20, 20] }) as Body
+    const halves = k.call('cut', { body: cube, plane: { point: [0, 0, 8], normal: [0, 0, 1] } }) as { below: number; above: number }
+    close((k.call('info', { body: halves.below }) as Info).volumeMm3, 3200)
+    close((k.call('info', { body: halves.above }) as Info).volumeMm3, 4800)
+    for (const b of [cube, halves.below, halves.above]) k.call('free', { body: b })
+  })
+
+  it('carries bodies as text, the same text the native build reads', async () => {
+    const k = await brep()
+    const { body: cube } = k.call('box', { min: [0, 0, 0], max: [20, 20, 20] }) as Body
+    const holed = k.call('subtract', {
+      body: cube,
+      solids: [{ type: 'cylinder', origin: [10, 10, 0], axis: [0, 0, 1], diameterMm: 8, heightMm: 20.5 }],
+      save: true,
+    }) as Body & { bodySmb: string }
+    const carried = { smb: holed.bodySmb }
+    close((k.call('info', { body: carried }) as Info).volumeMm3, 8000 - Math.PI * 16 * 20)
+    // saved by the native build (packages/brep/tests/fixtures), read here
+    const native = readFileSync(new URL('../../brep/tests/fixtures/holed-cube.smb', import.meta.url), 'utf8')
+    close((k.call('info', { body: { smb: native } }) as Info).volumeMm3, 8000 - Math.PI * 16 * 20)
+    expect(() => k.call('info', { body: { smb: holed.bodySmb.replace('20.5000000000000000', '20.6000000000000000') } })).toThrow(/^body:/)
+    for (const b of [cube, holed.body]) k.call('free', { body: b })
+  })
+
+  it('throws the message of a failed call', async () => {
+    const k = await brep()
+    const bodies = () => (k.call('count', {}) as { bodies: number }).bodies
+    const before = bodies()
+    expect(() => k.call('box', { min: [0, 0, 0], max: [-1, 2, 2] })).toThrow(/^max:/)
+    expect(() => k.call('info', { body: 123456 })).toThrow(/^body:/)
+    expect(() => k.call('nope', {})).toThrow(/^op:/)
+    expect(bodies()).toBe(before)
+  })
+})

@@ -36,6 +36,22 @@ Eleven kernel routines and all of `SmIntegrator.cpp` cite Numerical Recipes, who
 
 The kernel runs on one thread: `cpp/tbb` stands in for the oneTBB headers it includes and runs its loops in order. Calls take a lock.
 
+## WebAssembly
+
+The browser runs the same kernel and wrapper as a wasm module in `lib/`, built by `scripts/build-wasm.sh` with a pinned Emscripten (6.0.10, `-Oz`, wasm exceptions, one thread). The geometry worker loads it the first time an op needs it (`packages/app/src/geom/brep.ts`), so the app shell never carries it; `apps/web/scripts/bundle-size.mjs` fails a build that puts it in a startup chunk and holds the wasm to 1152 KB gzip.
+
+The build is committed so the web build needs no C++ toolchain. Rebuild it after a change to `cpp/` or the pinned kernel:
+
+```sh
+sh packages/brep/scripts/fetch-smlib.sh
+sh packages/brep/scripts/build-wasm.sh
+```
+
+| File | Bytes | gzip | SHA-256 |
+| --- | --- | --- | --- |
+| `lib/sx_brep.wasm` | 2,773,082 | 1,099,995 | `12dfff27f70c56d0f906e5757d9898f50c2d5caf70c7f8e18f17062c16cd8924` |
+| `lib/sx_brep.mjs` | 62,877 | | `3e1e34fca271fac59808bcc53b104d300133e203258b8ebda880c4093f734971` |
+
 ## Licenses
 
 Our wrapper is Apache-2.0. The kernel is Apache-2.0, by NVIDIA Corporation; THIRD-PARTY.md has the details.
