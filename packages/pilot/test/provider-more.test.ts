@@ -45,7 +45,7 @@ describe('Anthropic adapter', () => {
     for (const bad of ['x-api-key', 'authorization', 'anthropic-version']) expect(names).not.toContain(bad)
     const body = JSON.parse(http.body) as Record<string, unknown>
     expect(body['stream']).toBe(true)
-    expect(body['system']).toBe('sys')
+    expect(body['system']).toEqual([{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral' } }])
     expect(body['thinking']).toEqual({ type: 'enabled', budget_tokens: 8192 })
     expect(body['max_tokens']).toBe(8192 + 8192)
     expect(JSON.stringify(body['tools'])).toContain('kb__filament')
@@ -69,6 +69,48 @@ describe('Anthropic adapter', () => {
     const plain = JSON.parse(adapter.build({ ...REQ, toolChoice: 'required' }).body) as Record<string, unknown>
     expect(plain['tool_choice']).toEqual({ type: 'any' })
     expect(plain['thinking']).toBeUndefined()
+  })
+
+  it('marks cache points on the last client tool and the system prompt', () => {
+    const body = JSON.parse(adapter.build({ ...REQ, webSearch: true }).body) as { tools: Record<string, unknown>[] }
+    const marked = body.tools.filter((t) => t['cache_control'])
+    expect(marked).toHaveLength(1)
+    // the server tool comes after the cache point, which the proxy rebuilds without one
+    expect(marked[0]?.['name']).toBe(body.tools.filter((t) => !t['type']).at(-1)?.['name'])
+    expect(body.tools.at(-1)?.['type']).toBe('web_search_20250305')
+    const none = JSON.parse(adapter.build({ ...REQ, tools: [], messages: [{ role: 'user', content: 'hi' }] }).body) as Record<string, unknown>
+    expect(none['tools']).toBeUndefined()
+    expect(none['system']).toBeUndefined()
+  })
+
+  it('uses adaptive thinking and an effort on current models, never a token budget', () => {
+    for (const model of ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-opus-4-8', 'claude-sonnet-4-6']) {
+      const body = JSON.parse(adapter.build({ ...REQ, model, reasoning: 'medium' }).body) as Record<string, unknown>
+      expect(body['thinking'], model).toEqual({ type: 'adaptive' })
+      expect(body['output_config'], model).toEqual({ effort: 'medium' })
+      expect(JSON.stringify(body), model).not.toContain('budget_tokens')
+    }
+    // older models keep the budget
+    const old = JSON.parse(adapter.build({ ...REQ, model: 'claude-haiku-4-5', reasoning: 'low' }).body) as Record<string, unknown>
+    expect(old['thinking']).toEqual({ type: 'enabled', budget_tokens: 2048 })
+    expect(old['output_config']).toBeUndefined()
+    // no reasoning asked: no thinking field, the model's own default holds
+    const plain = JSON.parse(adapter.build({ ...REQ, model: 'claude-haiku-5-5' }).body) as Record<string, unknown>
+    expect(plain['thinking']).toBeUndefined()
+    expect(plain['output_config']).toBeUndefined()
+  })
+
+  it('never forces a tool on models that refuse it or think by default', () => {
+    for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-haiku-5-5', 'claude-opus-5']) {
+      const body = JSON.parse(adapter.build({ ...REQ, model, toolChoice: 'required' }).body) as Record<string, unknown>
+      expect(body['tool_choice'], model).toEqual({ type: 'auto' })
+    }
+    for (const model of ['claude-opus-4-8', 'claude-haiku-4-5']) {
+      const body = JSON.parse(adapter.build({ ...REQ, model, toolChoice: 'required' }).body) as Record<string, unknown>
+      expect(body['tool_choice'], model).toEqual({ type: 'any' })
+    }
+    const none = JSON.parse(adapter.build({ ...REQ, model: 'claude-opus-5-5', toolChoice: 'none' }).body) as Record<string, unknown>
+    expect(none['tool_choice']).toEqual({ type: 'none' })
   })
 
   it('sends assistant raw blocks back unchanged', () => {
