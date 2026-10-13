@@ -18,6 +18,9 @@ grant mimir_session_reader to postgres with set true;
 grant usage on schema extensions to mimir_session_reader;
 
 update public.mimir_limits set register_key_hash = public.mimir_token_hash(edition || '-key');
+-- the caps these numbers were written for: $0.50 an install, $20 for SlicerX's day (0023 made them $1 and $5)
+update public.mimir_limits set install_daily_micros = 500000;
+update public.mimir_limits set edition_daily_micros = 20000000 where edition = 'slicerx';
 create function pg_temp.reg(p_edition text, p_ip text) returns text language plpgsql as $$
 declare v text;
 begin
