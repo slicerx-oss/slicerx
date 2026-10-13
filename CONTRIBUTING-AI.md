@@ -14,7 +14,7 @@ This page adds to [CONTRIBUTING.md](CONTRIBUTING.md). Everything there still app
 
 ## Say that you used it
 
-Tick the AI box in the pull request template and name the tools, for example "Claude Code for the parser, tests written by hand". Reviewers use it to decide where to look harder, and it does not count against you.
+Tick the AI box in the pull request template and name the tools, for example "AI coding tools for the parser, tests written by hand". Reviewers use it to decide where to look harder, and it does not count against you.
 
 ## How we review AI-assisted pull requests
 
