@@ -141,6 +141,27 @@ it('chamfers on the kernel with one distance', async () => {
   expect(e.sent[2]!.req).not.toHaveProperty('distance2Mm')
 })
 
+it('joins and cuts a sketch on a face into the solid, and a shape that misses breaks the step', async () => {
+  const on = (operation: 'join' | 'cut', id: string) => step(id, { ...box.params, shape: { type: 'circle', diameterMm: 4 }, spec: { distanceMm: 3, operation } } as StepParams)
+  const e = engine()
+  const sent: Record<string, unknown>[] = []
+  const into = async (op: string, req: unknown) => {
+    if (op === 'brep.extrude') sent.push(req as Record<string, unknown>)
+    return op === 'brep.extrude' && (req as { target?: unknown }).target ? { touches: true, body: 1, bodySmb: 'into' } : e.call(op, req)
+  }
+  const r = await replayHistory(into, { history: history(box, on('cut', 'pocket-1'), on('join', 'boss-1')), exact: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+  expect(e.ops().filter((o) => !o.startsWith('brep.'))).toEqual([])
+  // a cut runs into the face, a join out of it, each into the solid the step before left
+  expect(sent.map((q) => [q['operation'], q['fromMm'], q['toMm']])).toEqual([[undefined, 0, 5], ['cut', -3, 0], ['join', 0, 3]])
+  expect(sent[1]!['target']).toEqual({ smb: 'extrude-1' })
+  expect(sent[2]!['target']).toEqual({ smb: 'into' })
+  const away = async (op: string, req: unknown) => (op === 'brep.extrude' && (req as { target?: unknown }).target ? { touches: false, body: null } : e.call(op, req))
+  clearReplayCache()
+  const m = await replayHistory(away, { history: history(box, on('cut', 'pocket-1')), exact: true })
+  expect(m.status[1]).toEqual({ state: 'broken', message: 'The shape no longer reaches the part.' })
+})
+
 /** A kernel that keeps bodies by number, each with the face keys its op gave it, and records what it frees. */
 function keeper() {
   const sent: Sent[] = []

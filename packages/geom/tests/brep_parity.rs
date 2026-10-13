@@ -196,6 +196,35 @@ fn cut_in_two() {
 }
 
 #[test]
+fn extrude_into_the_top() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let body = cube();
+    let face = json!({ "origin": [10, 10, 20], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    // a 6 x 4 pocket 5 deep and a boss of the same, on the cube's top
+    for (op, want, top) in [("cut", 8000.0 - 120.0, 20.0), ("join", 8000.0 + 120.0, 25.0)] {
+        let (from, to) = if op == "cut" { (-5, 0) } else { (0, 5) };
+        let brep = made(
+            "extrude",
+            json!({ "frame": face, "polygons": [{ "outer": { "points": [[-3, -2], [3, -2], [3, 2], [-3, 2]] } }], "fromMm": from, "toMm": to, "target": body, "operation": op }),
+        );
+        let on_mesh = call(
+            "shape.extrude",
+            &json!({ "frame": face, "shape": { "type": "rectangle", "widthMm": 6, "heightMm": 4 }, "placement": {}, "spec": { "distanceMm": 5, "operation": op }, "target": mesh(&body) }),
+        );
+        check(
+            op,
+            &brep_solid(&brep),
+            Some(&mesh_solid(&on_mesh["mesh"])),
+            want,
+            [0.0; 3],
+            [20.0, 20.0, top],
+        );
+    }
+}
+
+#[test]
 fn fillet_an_edge() {
     if !sx_brep::KERNEL {
         return;

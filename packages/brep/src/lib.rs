@@ -10,7 +10,7 @@
 //! | --- | --- | --- |
 //! | `box` | `min`, `max` | `body` |
 //! | `cylinder` | `origin`, `axis`, `diameterMm`, `heightMm` | `body` |
-//! | `extrude` | `frame` (`origin`, `u`, `normal`), `polygons` (`outer`, `holes`: loops of `points` or `center` and `diameterMm`), `fromMm`, `toMm` | `body` |
+//! | `extrude` | `frame` (`origin`, `u`, `normal`), `polygons` (`outer`, `holes`: loops of `points` or `center` and `diameterMm`), `fromMm`, `toMm`; with `target` and `operation` (`join` or `cut`) it joins or cuts the target | `body`; with a target also `touches`, and no body when it misses |
 //! | `boolean` | `op` (`union`, `difference`, `intersection`), `a`, `b` | `body` |
 //! | `subtract` | `body`, `solids` (box or cylinder), `frame` (the body's, with the solids in world) | `body` |
 //! | `cut` | `body`, `plane` (`point`, `normal`) | `below`, `above` (a body, or null when empty) |
