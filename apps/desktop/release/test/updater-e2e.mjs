@@ -5,8 +5,9 @@
 // Makes a key in a temporary folder, signs fake 0.2.0 bundles with sign-updates.sh, writes the feed with
 // latest-json.mjs, serves it on 127.0.0.1 with a changed copy, a relabeled one (0.3.0 over 0.2.0's signature) and
 // one at the running version, then runs src-tauri/tests/updater.rs against them. The key is deleted afterwards. It
-// builds the desktop crate's tests, so run it where heavy builds run.
-import { execFileSync, spawn } from 'node:child_process'
+// builds the desktop crate's tests, so run it where heavy builds run. On Windows, run it from Git's bash, which
+// provides the sh that runs sign-updates.sh.
+import { execFileSync, execSync, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -20,6 +21,11 @@ const repo = resolve(desktop, '../..')
 const V = '0.2.0'
 const NAMES = [`SlicerX_${V}_universal.app.tar.gz`, `SlicerX_${V}_x64-setup.exe`, `SlicerX_${V}_x64_en-US.msi`, `SlicerX_${V}_amd64.AppImage`, `SlicerX_${V}_amd64.deb`]
 const FEEDS = ['good', 'tampered', 'relabeled', 'current']
+// pnpm, which is a .cmd file on Windows that Node starts only through a shell; elsewhere it runs directly, as before
+const pnpm = (args, options) =>
+  process.platform === 'win32'
+    ? execSync(`pnpm ${args.map((a) => `"${a}"`).join(' ')}`, options)
+    : execFileSync('pnpm', args, options)
 const NOTES = { notes: ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].map((note) => ({ note: `${note} change people will notice` })) }
 
 const tmp = mkdtempSync(join(tmpdir(), 'sx-updater-e2e-'))
@@ -29,7 +35,7 @@ try {
   // the throwaway key: no password, only its owner can read it
   mkdirSync(join(tmp, 'key'), { mode: 0o700 })
   const key = join(tmp, 'key', 'updater.key')
-  execFileSync('pnpm', ['--silent', '--dir', desktop, 'exec', 'tauri', 'signer', 'generate', '--ci', '-w', key], { stdio: ['ignore', 'ignore', 'inherit'] })
+  pnpm(['--silent', '--dir', desktop, 'exec', 'tauri', 'signer', 'generate', '--ci', '-w', key], { stdio: ['ignore', 'ignore', 'inherit'] })
   chmodSync(key, 0o600)
   const pubkey = readFileSync(`${key}.pub`, 'utf8').trim()
 

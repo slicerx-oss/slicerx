@@ -16,9 +16,24 @@ key=${SX_UPDATER_KEY:-$HOME/.config/slicerx/updater.key}
 [ -d "$dir" ] || { echo "sign-updates: no folder $dir" >&2; exit 2; }
 [ -f "$key" ] || { echo "sign-updates: no update key at $key (updates.md, Update signing)" >&2; exit 3; }
 # the key file is the owner's alone
-case $(ls -l "$key" | cut -c1-10) in
-  -rw-------|-r--------) ;;
-  *) echo "sign-updates: $key must be readable by its owner only (chmod 600)" >&2; exit 3 ;;
+case $(uname -s) in
+  MINGW* | MSYS* | CYGWIN*)
+    # Windows has no Unix file modes (Git's sh lists every file as -rw-r--r--), so its access list decides: no allow
+    # rule for Everyone (S-1-1-0), Authenticated Users (S-1-5-11) or Users (S-1-5-32-545), by SID so any language works
+    sids=$(SX_KEY_PATH=$(cygpath -w "$key" 2>/dev/null || echo "$key") powershell.exe -NoProfile -NonInteractive -Command \
+      '(Get-Acl -LiteralPath $env:SX_KEY_PATH -ErrorAction Stop).GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | Where-Object AccessControlType -eq Allow | ForEach-Object { $_.IdentityReference.Value }') ||
+      { echo "sign-updates: could not read the access list of $key" >&2; exit 3; }
+    if printf '%s\n' "$sids" | tr -d '\r' | grep -qxE 'S-1-1-0|S-1-5-11|S-1-5-32-545'; then
+      echo "sign-updates: $key must be readable by its owner only (remove Everyone, Authenticated Users and Users from its access list)" >&2
+      exit 3
+    fi
+    ;;
+  *)
+    case $(ls -l "$key" | cut -c1-10) in
+      -rw-------|-r--------) ;;
+      *) echo "sign-updates: $key must be readable by its owner only (chmod 600)" >&2; exit 3 ;;
+    esac
+    ;;
 esac
 password=
 if command -v security >/dev/null 2>&1; then
