@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Checks the browser build against its budgets: the JS that
 // loads before the viewport and WASM (the entry chunk and its static imports)
-// at most 218 KB gzip, and each WASM module at most 1.0 MB gzip (the slicer engine's sx_wasm is only
+// at most 217 KB gzip, and each WASM module at most 1.0 MB gzip (the slicer engine's sx_wasm is only
 // reported). The STEP reader (OpenCASCADE, loaded only when a STEP file opens) has a budget of its own and must
 // not be reachable from the shell, and so does the full geometry engine (the modeling tools and the heavier
 // modules, loaded the first time a call needs them). It also fails when printer, filament or G-code profile data
@@ -14,7 +14,7 @@ import { gzipSync } from 'node:zlib'
 
 const dist = join(import.meta.dirname, '..', 'dist')
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'))
-const SHELL_KB = 218
+const SHELL_KB = 217
 const WASM_KB = 1056
 const STEP_WASM_KB = 3584
 const FULL_GEOM_WASM_KB = 1536

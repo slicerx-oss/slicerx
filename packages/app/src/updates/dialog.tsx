@@ -3,7 +3,8 @@
 // The update dialog, in the gods style: huginn and muninn spar in their rune ring straight on the dialog (no tile
 // or halo behind them, a still frame under reduced motion), the purple tag, a green title, the release's top
 // highlights and a link to the full notes. Restart to update is the one click; Later closes it.
-import { Button, Dialog, RAVEN_BODY, RAVEN_WING, systemReducesMotion } from '@slicerx/ui'
+import { Button, Dialog, systemReducesMotion } from '@slicerx/ui'
+import { RAVEN_BODY, RAVEN_WING } from '@slicerx/ui/raven'
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'

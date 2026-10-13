@@ -3,7 +3,8 @@
 // What a camera view shows without a picture. While the camera connects, huginn and muninn spar inside a
 // turning ring of runes; with no picture the two ravens rest, dimmed, over one short line, the full reason
 // in its tip.
-import { Icon, prefersReducedMotion, RAVEN_BODY, RAVEN_WING, tipAttrs } from '@slicerx/ui'
+import { Icon, prefersReducedMotion, tipAttrs } from '@slicerx/ui'
+import { RAVEN_BODY, RAVEN_WING } from '@slicerx/ui/raven'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { CameraViewStatus } from './use-camera'
 import './idle.css'
