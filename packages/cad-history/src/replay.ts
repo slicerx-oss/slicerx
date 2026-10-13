@@ -9,7 +9,7 @@ import type { EdgeRef, MovedFace, Vec3 } from './types'
 import { bakeMesh, direction, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, point, type History, type HistoryMesh, type PaintTexts, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'
-import { EXACT_FELL_BACK, exactStep } from './exact'
+import { EXACT_FELL_BACK, exactStep, meshed, type Solids } from './exact'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -26,6 +26,9 @@ export interface ReplayRequest {
 export interface ReplayOptions {
   /** Called between steps; throw to stop (a newer edit arrived). */
   yieldStep?: () => Promise<void>
+  /** The engine keeps kernel bodies between calls (one process, as the worker), so exact steps pass solids by
+   * number and tessellate only when a step or the result needs the mesh. */
+  keepsBodies?: boolean
 }
 
 type Faces = NonNullable<HistoryMesh['faces']>
@@ -42,6 +45,10 @@ interface Flat {
   /** The exact solid the triangles came from, until a step runs on the mesh. Only ever the kernel's own output from
    * this replay: a solid from anywhere else (a file, a caller) is never read, so flat() drops it. */
   smb?: string
+  /** The solid as a kernel body (ReplayOptions.keepsBodies), held while a cached step has the part. */
+  body?: number
+  /** With `body`: its faces' keys, while its mesh is not made yet. */
+  unmeshed?: number[]
 }
 
 /** Positions rounded to f32, as the app keeps them (Float32Array). */
@@ -57,7 +64,7 @@ export const PAINT_DROPPED = 'This step changed the part, so its paint was clear
  * more. `dropped` is told when there was paint, for the step's note.
  */
 const next = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }, dropped?: () => void): Flat => {
-  const { faces: _old, paint, smb: _smb, ...rest } = part
+  const { faces: _old, paint, smb: _smb, body: _body, unmeshed: _keys, ...rest } = part
   if (paint && dropped) dropped()
   return { ...rest, positions: m.positions, indices: m.indices, ...(m.faces ? { faces: m.faces } : {}) }
 }
@@ -76,18 +83,40 @@ interface Learned {
 const learnedAt = new Map<string, Learned>()
 let cachedNumbers = 0
 const CACHE_NUMBERS = 24_000_000
+/** What a kept body counts for against CACHE_NUMBERS, as its mesh is not there to count. */
+const BODY_NUMBERS = 200_000
+/** Cached parts holding each kept body; one no cached step holds any more is freed after the next replay. */
+const bodyRefs = new Map<number, number>()
+const unheld = new Set<number>()
+
+const sizeOf = (parts: readonly Flat[]) => parts.reduce((n, p) => n + p.positions.length + p.indices.length + (p.unmeshed ? BODY_NUMBERS : 0), 0)
+
+function hold(parts: readonly Flat[], by: 1 | -1): void {
+  for (const p of parts) {
+    if (p.body === undefined) continue
+    const n = (bodyRefs.get(p.body) ?? 0) + by
+    if (n > 0) {
+      bodyRefs.set(p.body, n)
+      unheld.delete(p.body)
+    } else {
+      bodyRefs.delete(p.body)
+      unheld.add(p.body)
+    }
+  }
+}
 
 function remember(key: string, parts: Flat[], learned: { gone: ReadonlySet<string>; moved: Record<string, MovedFace>; found: Found }): void {
   if (cache.has(key)) return
   learnedAt.set(key, { gone: [...learned.gone], moved: { ...learned.moved }, keys: { ...learned.found.keys }, notes: { ...learned.found.notes } })
-  const size = parts.reduce((n, p) => n + p.positions.length + p.indices.length, 0)
   cache.set(key, parts)
-  cachedNumbers += size
+  hold(parts, 1)
+  cachedNumbers += sizeOf(parts)
   for (const [k, v] of cache) {
     if (cachedNumbers <= CACHE_NUMBERS) break
     cache.delete(k)
     learnedAt.delete(k)
-    cachedNumbers -= v.reduce((n, p) => n + p.positions.length + p.indices.length, 0)
+    hold(v, -1)
+    cachedNumbers -= sizeOf(v)
   }
 }
 
@@ -102,6 +131,8 @@ function recall(key: string): Flat[] | undefined {
 }
 
 export function clearReplayCache(): void {
+  for (const b of bodyRefs.keys()) unheld.add(b)
+  bodyRefs.clear()
   cache.clear()
   learnedAt.clear()
   digests = new WeakMap()
@@ -166,7 +197,9 @@ function fontDigest(data: string | undefined): string {
 
 class Broken extends Error {}
 
-const meshOnly = ({ smb: _smb, ...rest }: Flat): Flat => rest
+const meshOnly = ({ smb: _smb, body: _body, unmeshed: _keys, ...rest }: Flat): Flat => rest
+
+const meshedAll = (call: EngineCall, parts: Flat[]): Promise<Flat[]> => (parts.some((p) => p.unmeshed) ? Promise.all(parts.map((p) => meshed(call, p))) : Promise.resolve(parts))
 
 const meshOf = (p: Flat) => ({ positions: p.positions, indices: p.indices, ...(p.faces ? { faces: p.faces } : {}) })
 
@@ -187,21 +220,29 @@ interface Found {
   fellBack: string[]
 }
 
-async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false): Promise<Flat[]> {
+async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false, solids?: Solids): Promise<Flat[]> {
   const p = s.params
   // Every call of the step makes its faces' keys from the step's own salt, as when the tool first ran it.
   const call: EngineCall = (op, r) => engine(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
-  if (exact && (parts.some((x) => x.smb) || p.op === 'shape.extrude')) {
-    const done = await exactStep(call, s, parts, () => {
-      found.notes[s.id] = EXACT_FELL_BACK
-      found.fellBack.push(s.id)
-    })
+  if (exact && (parts.some((x) => x.smb || x.body !== undefined) || p.op === 'shape.extrude')) {
+    const done = await exactStep(
+      call,
+      s,
+      parts,
+      () => {
+        found.notes[s.id] = EXACT_FELL_BACK
+        found.fellBack.push(s.id)
+      },
+      solids,
+    )
     if (done) {
       const kept = new Set(done)
       if (parts.some((x) => x.paint && !kept.has(x))) found.notes[s.id] = PAINT_DROPPED
       return done
     }
   }
+  // the mesh path works on meshes: kept bodies not tessellated yet are now
+  parts = await meshedAll(engine, parts)
   const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]
   const out = parts.slice()
   const item = (f: Flat) => ({ mesh: meshOf(f), transform: s.transform })
@@ -438,6 +479,22 @@ function font(name: string, fonts: Record<string, string>): string {
 
 /** Runs the history and says, per step, what happened. */
 export async function replayHistory(call: EngineCall, req: ReplayRequest, o: ReplayOptions = {}): Promise<ReplayResult & { before?: HistoryMesh[] }> {
+  const made = new Set<number>()
+  const solids: Solids = { keep: !!(req.exact && o.keepsBodies), made: (b) => made.add(b) }
+  try {
+    return await replaySteps(call, req, o, solids)
+  } finally {
+    // bodies this replay made that no cached step holds, and ones whose last cached step went
+    for (const b of made) if (!bodyRefs.has(b)) unheld.add(b)
+    if (solids.keep) {
+      const gone = [...unheld]
+      unheld.clear()
+      for (const b of gone) await call('brep.free', { body: b }).catch(() => {})
+    }
+  }
+}
+
+async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOptions, solids: Solids): Promise<ReplayResult & { before?: HistoryMesh[] }> {
   const { history } = req
   const steps = history.steps
   const status: StepStatus[] = steps.map((s) => (s.suppressed ? { state: 'suppressed' } : { state: 'skipped' }))
@@ -487,7 +544,7 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
     }
     if (o.yieldStep) await o.yieldStep()
     try {
-      parts = await runStep(call, s, parts, fonts, moved, gone, found, req.exact)
+      parts = await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids)
       const note = found.notes[s.id]
       status[i] = note ? { state: 'done', note } : { state: 'done' }
       remember(keys[i]!, parts, { gone, moved, found })
@@ -498,6 +555,9 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
       break
     }
   }
+  // the result's meshes, made now for kept bodies
+  parts = await meshedAll(call, parts)
+  if (before) before = await meshedAll(call, before)
   const made = madeAfter(steps, keys, status, parts)
   // the solids stay in the cache here: the caller gets meshes, and a project or an undo step never holds one
   return { parts: parts.map(meshOnly), status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before: before.map(meshOnly) } : {}), ...(found.fellBack.length ? { exactFellBack: found.fellBack } : {}) }
@@ -514,7 +574,8 @@ function madeAfter(steps: readonly Step[], keys: readonly string[], status: read
   for (let i = 0; i <= last; i++) {
     const kept = cache.get(keys[i]!)
     if (!kept) return undefined
-    after.push(kept)
+    // a kept body not tessellated has its keys alone
+    after.push(kept.map((p) => (p.unmeshed ? { ...p, faces: { ids: [], table: [], keys: p.unmeshed } } : p)))
   }
   const all = madeBy(steps.slice(0, last + 1), after)
   const out: Record<number, string> = {}

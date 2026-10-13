@@ -75,6 +75,8 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
     if (op === 'history.replay') {
       // a replay with exact solids calls the kernel's ops too
       const result = await replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : engine.run(o, r)), request as ReplayRequest, {
+        // the kernel lives in this worker, so its bodies last from call to call
+        keepsBodies: true,
         yieldStep: async () => {
           await new Promise((r) => setTimeout(r, 0))
           if (canceled.has(id)) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })

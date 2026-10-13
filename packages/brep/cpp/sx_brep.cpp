@@ -909,6 +909,17 @@ Value run(const std::string& op, const Value& r)
         for (const char* k : {"body", "below", "above"})
             if (out[k].kind == Value::Number) out.set(std::string(k) + "Smb", write_smb(bodies.at(long(out[k].n))));
     }
+    // withKeys: each new body's face keys, in face order, for a caller that tessellates later
+    if (r["withKeys"].kind == Value::Bool && r["withKeys"].b) {
+        for (const char* k : {"body", "below", "above"}) {
+            if (out[k].kind != Value::Number) continue;
+            SmTArray<SmFace*> fs;
+            SmApiGetFaces(bodies.at(long(out[k].n)), fs);
+            Value ks = Value::array();
+            for (ULONG i = 0; i < fs.GetSize(); ++i) ks.push(Value(face_key(fs[i])));
+            out.set(std::string(k) + "Keys", ks);
+        }
+    }
     return out;
 }
 
