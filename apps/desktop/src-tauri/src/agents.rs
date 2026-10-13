@@ -29,11 +29,23 @@ pub fn mcp_server_path(app: AppHandle) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+/// Writes the edition file the registered server reads its name from and returns its path, for the install
+/// entries the webview builds (Cursor's link and the config entries to paste).
+#[tauri::command]
+pub fn mcp_edition_file(app: AppHandle) -> Result<String, String> {
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let path = write_edition_file(crate::brand::get(), &dir.join("mcp"))?;
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "the edition file path is not text".to_owned())
+}
+
 /// Packs Claude Desktop's extension: the manifest the webview built plus the bundled server under `server/`,
 /// as one .mcpb (a zip) in the app's cache folder. Returns its path. The manifest names `server/cli.js`; the
 /// bundled server's entry is `slicerx-mcp.mjs`, so those two names are swapped here.
 fn pack_mcpb(
     manifest: &serde_json::Value,
+    edition: &str,
     server_dir: &std::path::Path,
     out: &std::path::Path,
 ) -> Result<(), String> {
@@ -46,6 +58,9 @@ fn pack_mcpb(
     let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     zip.start_file("manifest.json", opts).map_err(|e| e.to_string())?;
     zip.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+    zip.start_file(format!("server/{EDITION_FILE}"), opts)
+        .map_err(|e| e.to_string())?;
+    zip.write_all(edition.as_bytes()).map_err(|e| e.to_string())?;
     fn walk(
         zip: &mut zip::ZipWriter<std::fs::File>,
         opts: zip::write::SimpleFileOptions,
@@ -74,6 +89,24 @@ fn pack_mcpb(
     zip.finish().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// The edition file the registered server reads its name from (`SLICERX_CONFIG`), in the app's config folder and
+/// inside Claude Desktop's extension.
+const EDITION_FILE: &str = "edition.json";
+
+/// The edition config the registered server gets: `brand.name` only, the part of a resolved edition config the
+/// server reads for the name in its tool text, results and errors. Cloud slicing and locked projects stay as before.
+fn edition_json(brand: &crate::brand::Brand) -> String {
+    serde_json::json!({ "brand": { "name": brand.name } }).to_string()
+}
+
+/// Writes [`edition_json`] to `dir` and returns its path, for the clients that run the server from the app bundle.
+fn write_edition_file(brand: &crate::brand::Brand, dir: &std::path::Path) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let path = dir.join(EDITION_FILE);
+    std::fs::write(&path, edition_json(brand)).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 /// The hub's public key as `link_start` hands it out: standard base64 of 32 bytes (44 characters).
 fn valid_hub_key(key: &str) -> bool {
     key.len() == 44
@@ -89,8 +122,14 @@ fn valid_link_url(url: &str) -> bool {
         .is_some_and(|port| port.parse::<u16>().is_ok_and(|p| p > 0) && !port.starts_with('0'))
 }
 
-/// The environment the server starts with for `client` (`serverEnv` in packages/mcp). Holds no secret.
-fn server_env(client: &str, hub_key: &str, link_url: &str) -> Result<serde_json::Value, String> {
+/// The environment the server starts with for `client` (`serverEnv` in packages/mcp). Holds no secret. `edition` is
+/// the edition file's path (`SLICERX_CONFIG`), so a white-label build's server names that edition, not SlicerX.
+fn server_env(
+    client: &str,
+    hub_key: &str,
+    link_url: &str,
+    edition: &str,
+) -> Result<serde_json::Value, String> {
     client_ok(client)?;
     if !valid_hub_key(hub_key) {
         return Err("bad hub key".to_owned());
@@ -103,6 +142,7 @@ fn server_env(client: &str, hub_key: &str, link_url: &str) -> Result<serde_json:
         "SLICERX_MCP_LINK_URL": link_url,
         "SLICERX_MCP_LINK_HUB_KEY": hub_key,
         "SLICERX_MCP_LINK_KEY_REF": format!("slicerx-agent-{client}"),
+        "SLICERX_CONFIG": edition,
     }))
 }
 
@@ -114,6 +154,7 @@ fn install_argv(
     server: &std::path::Path,
     hub_key: &str,
     link_url: &str,
+    edition: &std::path::Path,
 ) -> Result<Vec<String>, String> {
     install_argv_for(
         &crate::brand::get().server_id(),
@@ -121,6 +162,7 @@ fn install_argv(
         server,
         hub_key,
         link_url,
+        edition,
     )
 }
 
@@ -131,8 +173,10 @@ fn install_argv_for(
     server: &std::path::Path,
     hub_key: &str,
     link_url: &str,
+    edition: &std::path::Path,
 ) -> Result<Vec<String>, String> {
-    let env = server_env(client, hub_key, link_url)?;
+    let edition = edition.to_str().ok_or("the edition file path is not text")?;
+    let env = server_env(client, hub_key, link_url, edition)?;
     let server = server.to_str().ok_or("the server path is not text")?.to_owned();
     match client {
         "claude-code" => {
@@ -168,7 +212,13 @@ fn bundle_manifest(
     hub_key: &str,
     link_url: &str,
 ) -> Result<serde_json::Value, String> {
-    let env = server_env("claude-desktop", hub_key, link_url)?;
+    // The extension carries the edition file next to the server (`pack_mcpb`).
+    let env = server_env(
+        "claude-desktop",
+        hub_key,
+        link_url,
+        &format!("${{__dirname}}/server/{EDITION_FILE}"),
+    )?;
     let mut author = serde_json::json!({ "name": brand.publisher });
     if let Some(url) = &brand.homepage {
         author["url"] = url.clone().into();
@@ -196,6 +246,7 @@ pub async fn agent_bundle(app: AppHandle, hub_key: String, link_url: String) -> 
     let brand = crate::brand::get();
     let file_name = format!("{}.mcpb", brand.server_id());
     let manifest = bundle_manifest(brand, &hub_key, &link_url)?;
+    let edition = edition_json(brand);
     let checkout: Option<PathBuf> = option_env!("CARGO_MANIFEST_DIR").map(PathBuf::from);
     let server = server_in(app.path().resource_dir().ok(), checkout)
         .ok_or("The bundled MCP server is not in this build.")?;
@@ -204,7 +255,7 @@ pub async fn agent_bundle(app: AppHandle, hub_key: String, link_url: String) -> 
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let out = dir.join(file_name);
     let packed = out.clone();
-    tauri::async_runtime::spawn_blocking(move || pack_mcpb(&manifest, &server_dir, &packed))
+    tauri::async_runtime::spawn_blocking(move || pack_mcpb(&manifest, &edition, &server_dir, &packed))
         .await
         .map_err(|e| e.to_string())??;
     // Opened by the system's handler for .mcpb files, never through `cmd /C start` (launch.rs).
@@ -473,7 +524,9 @@ pub async fn agent_run(
     let server = server_in(app.path().resource_dir().ok(), checkout)
         .and_then(|p| p.canonicalize().ok())
         .ok_or("The bundled MCP server is not in this build.")?;
-    let argv = install_argv(&client, &server, &hub_key, &link_url)?;
+    client_ok(&client)?;
+    let edition = PathBuf::from(mcp_edition_file(app.clone())?);
+    let argv = install_argv(&client, &server, &hub_key, &link_url, &edition)?;
     let Some((program, args)) = argv.split_first() else {
         return Err("nothing to run".to_owned());
     };
@@ -510,11 +563,16 @@ mod bundle_tests {
     use super::*;
 
     const KEY: &str = "q83vEjRWeJCrze8SNFZ4kKvN7xI0VniQq83vEjRWeJA=";
+    const EDITION: &str = "/Users/maker/Library/Application Support/app.slicerx.desktop/mcp/edition.json";
+
+    fn ed() -> &'static std::path::Path {
+        std::path::Path::new(EDITION)
+    }
 
     #[test]
     fn m7_install_commands_are_fixed_templates_and_refuse_anything_else() {
         let server = std::path::Path::new("/Applications/SlicerX.app/Contents/Resources/mcp/slicerx-mcp.mjs");
-        let cc = install_argv("claude-code", server, KEY, "ws://127.0.0.1:47615").unwrap();
+        let cc = install_argv("claude-code", server, KEY, "ws://127.0.0.1:47615", ed()).unwrap();
         assert_eq!(cc[..4], ["claude", "mcp", "add-json", "slicerx"]);
         assert_eq!(cc[5..], ["--scope", "user"]);
         let json: serde_json::Value = serde_json::from_str(&cc[4]).unwrap();
@@ -523,7 +581,7 @@ mod bundle_tests {
             json["env"]["SLICERX_MCP_LINK_KEY_REF"],
             "slicerx-agent-claude-code"
         );
-        let cx = install_argv("codex", server, KEY, "ws://127.0.0.1:47615").unwrap();
+        let cx = install_argv("codex", server, KEY, "ws://127.0.0.1:47615", ed()).unwrap();
         assert_eq!(cx[..4], ["codex", "mcp", "add", "slicerx"]);
         assert_eq!(cx[cx.len() - 3..], ["--", "node", server.to_str().unwrap()]);
         assert!(cx.iter().all(|a| !a.contains("dangerously")));
@@ -542,12 +600,12 @@ mod bundle_tests {
             ),
         ] {
             assert!(
-                install_argv("claude-code", server, key, url).is_err(),
+                install_argv("claude-code", server, key, url, ed()).is_err(),
                 "{key} {url}"
             );
         }
-        assert!(install_argv("cursor", server, KEY, "ws://127.0.0.1:47615").is_err());
-        assert!(install_argv("sh", server, KEY, "ws://127.0.0.1:47615").is_err());
+        assert!(install_argv("cursor", server, KEY, "ws://127.0.0.1:47615", ed()).is_err());
+        assert!(install_argv("sh", server, KEY, "ws://127.0.0.1:47615", ed()).is_err());
         let m = bundle_manifest(crate::brand::get(), KEY, "ws://127.0.0.1:47615").unwrap();
         assert_eq!(m["server"]["mcp_config"]["env"]["SLICERX_MCP_LINK_HUB_KEY"], KEY);
         assert_eq!(m["name"], "slicerx");
@@ -565,10 +623,19 @@ mod bundle_tests {
             server,
             KEY,
             "ws://127.0.0.1:47615",
+            ed(),
         )
         .unwrap();
         assert_eq!(cc[..4], ["claude", "mcp", "add-json", "acmeslicer"]);
-        let cx = install_argv_for(&acme.server_id(), "codex", server, KEY, "ws://127.0.0.1:47615").unwrap();
+        let cx = install_argv_for(
+            &acme.server_id(),
+            "codex",
+            server,
+            KEY,
+            "ws://127.0.0.1:47615",
+            ed(),
+        )
+        .unwrap();
         assert_eq!(cx[3], "acmeslicer");
         let m = bundle_manifest(&acme, KEY, "ws://127.0.0.1:47615").unwrap();
         assert_eq!(m["name"], "acmeslicer");
@@ -610,6 +677,7 @@ mod bundle_tests {
         let out = tmp("out").join("slicerx.mcpb");
         pack_mcpb(
             &serde_json::json!({ "server": { "entry_point": "server/cli.js" } }),
+            &edition_json(&crate::brand::tests::acme()),
             &server,
             &out,
         )
@@ -624,5 +692,47 @@ mod bundle_tests {
         let mut text = String::new();
         std::io::Read::read_to_string(&mut zip.by_name("manifest.json").unwrap(), &mut text).unwrap();
         assert!(text.contains("server/slicerx-mcp.mjs") && !text.contains("cli.js"));
+        let mut edition = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name("server/edition.json").unwrap(), &mut edition)
+            .unwrap();
+        let edition: serde_json::Value = serde_json::from_str(&edition).unwrap();
+        assert_eq!(edition["brand"]["name"], "Acme Slicer");
+    }
+
+    #[test]
+    fn the_registered_server_reads_the_editions_name() {
+        // Every client's server gets SLICERX_CONFIG, the file the server reads brand.name from.
+        let server =
+            std::path::Path::new("/Applications/Acme Slicer.app/Contents/Resources/mcp/slicerx-mcp.mjs");
+        let acme = crate::brand::tests::acme();
+        let cc = install_argv_for(
+            "acmeslicer",
+            "claude-code",
+            server,
+            KEY,
+            "ws://127.0.0.1:47615",
+            ed(),
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&cc[4]).unwrap();
+        assert_eq!(json["env"]["SLICERX_CONFIG"], EDITION);
+        let cx = install_argv_for("acmeslicer", "codex", server, KEY, "ws://127.0.0.1:47615", ed()).unwrap();
+        assert!(cx.contains(&format!("SLICERX_CONFIG={EDITION}")), "{cx:?}");
+        let m = bundle_manifest(&acme, KEY, "ws://127.0.0.1:47615").unwrap();
+        assert_eq!(
+            m["server"]["mcp_config"]["env"]["SLICERX_CONFIG"],
+            "${__dirname}/server/edition.json"
+        );
+        // The file says the edition's name, in the shape the server reads (packages/mcp/src/edition.ts).
+        let dir = tmp("edition");
+        let path = write_edition_file(&acme, &dir).unwrap();
+        assert_eq!(path, dir.join("edition.json"));
+        let written: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(written, serde_json::json!({ "brand": { "name": "Acme Slicer" } }));
+        // SlicerX's own build writes SlicerX, so its server is unchanged.
+        assert_eq!(
+            edition_json(crate::brand::get()),
+            r#"{"brand":{"name":"SlicerX"}}"#
+        );
     }
 }

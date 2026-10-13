@@ -69,16 +69,15 @@ pub use net::{is_lan_host, origin_allowed};
 pub use pairing::PairingCode;
 pub use push::{ACCESS_TOKEN_SECRET as PUSH_ACCESS_TOKEN_SECRET, EXPO_PUSH_URL};
 
-static APP_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-
-/// Sets the app's name in the messages people read: `SlicerX`, or a white-label edition's own. Once, at start.
+/// Sets the app's name in the messages people read: `SlicerX`, or a white-label edition's own. Once, at start. The
+/// printer drivers (`sx_connect`) take the same name, so a printer shows it too.
 pub fn set_app_name(name: &str) {
-    let _ = APP_NAME.set(name.to_owned());
+    sx_connect::set_app_name(name);
 }
 
 /// The app's name in messages: `SlicerX` unless the app that runs the hub set its own.
 pub fn app_name() -> &'static str {
-    APP_NAME.get().map_or("SlicerX", String::as_str)
+    sx_connect::app_name()
 }
 
 /// Default port; `sx-link --port` overrides it.

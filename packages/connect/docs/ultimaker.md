@@ -43,13 +43,13 @@ Printer config: `host`, optional `port` (80), optional `credentialRef` holding `
 
 ### Requests
 
-`GET /api/v1/system` on connect; `GET /cluster-api/v1/printers` must answer (Cura's minimum, firmware 4.0). Status polls `GET /api/v1/printer` (status, hotend and bed temperatures, camera), `GET /api/v1/print_job` (404 when idle) and the cluster record of this printer (matched by GUID) for the print cores and materials per extruder. Start sends the held file to `POST /cluster-api/v1/print_jobs/` (multipart `owner` and `file`, plus `require_printer_name` with the printer's unique name so a group host prints it here). Pause, resume and cancel are `PUT /cluster-api/v1/print_jobs/{uuid}/action` with `{"action": "pause" | "print" | "abort"}`, as Cura sends them; a printer that wants a login for it gets `PUT /api/v1/print_job/state` with the bare JSON string and the Digest login. Camera: `http://host:8080/?action=snapshot` and `?action=stream`.
+`GET /api/v1/system` on connect; `GET /cluster-api/v1/printers` must answer (Cura's minimum, firmware 4.0). Status polls `GET /api/v1/printer` (status, hotend and bed temperatures, camera), `GET /api/v1/print_job` (404 when idle) and the cluster record of this printer (matched by GUID) for the print cores and materials per extruder. Start sends the held file to `POST /cluster-api/v1/print_jobs/` (multipart `owner`, the app's name shown with the job, and `file`, plus `require_printer_name` with the printer's unique name so a group host prints it here). Pause, resume and cancel are `PUT /cluster-api/v1/print_jobs/{uuid}/action` with `{"action": "pause" | "print" | "abort"}`, as Cura sends them; a printer that wants a login for it gets `PUT /api/v1/print_job/state` with the bare JSON string and the Digest login. Camera: `http://host:8080/?action=snapshot` and `?action=stream`.
 
 State mapping: printer `error` is an error, `booting` and `maintenance` idle with a message. Job `printing`, `resuming` and `post_print` print, `pausing` and `paused` pause, `pre_print` prepares, `wait_user_action` pauses with "Waiting for you on the printer's screen". `wait_cleanup` is finished, or idle with "The print was stopped" when `result` is `Aborted`, or an error when `Failed`, each asking to clear the build plate.
 
 ### Pairing
 
-`authorize` posts `/api/v1/auth/request` (`application` and `user` are SlicerX), then polls `/api/v1/auth/check/{id}` every second until it answers `authorized` (returns `id:key`) or `unauthorized` (login need `declined`). Jobs need no pairing; with one, `connect` checks it with `GET /api/v1/auth/verify` (Digest, MD5).
+`authorize` posts `/api/v1/auth/request` (`application` and `user` are the app's name: SlicerX, or a white-label edition's, set with `sx_connect::set_app_name`; the printer only shows them on its prompt and checks the login by `id` and `key`), then polls `/api/v1/auth/check/{id}` every second until it answers `authorized` (returns `id:key`) or `unauthorized` (login need `declined`). Jobs need no pairing; with one, `connect` checks it with `GET /api/v1/auth/verify` (Digest, MD5).
 
 ### Testing
 

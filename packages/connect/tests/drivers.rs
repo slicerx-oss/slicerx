@@ -1583,6 +1583,13 @@ async fn ultimaker_holds_the_file_until_start_and_drives_the_job() {
             .any(|f| f["sha256"] == file.sha256.as_str())
     );
     assert_eq!(s.status().await.unwrap().state, PrinterState::Printing);
+    // The pairing prompt and the job show the app's name: SlicerX here (tests/ultimaker_name.rs has an edition's).
+    let log = state["ultimaker"]["log"].to_string();
+    assert!(
+        log.contains("pair request application=SlicerX user=SlicerX"),
+        "{log}"
+    );
+    assert!(log.contains("job owner=SlicerX"), "{log}");
     s.pause(&gate.mint(Action::Pause, "bay-7", &params::printer("bay-7")))
         .await
         .unwrap();

@@ -36,6 +36,8 @@ export function agentKeyRef(client: AgentClientId): string {
 export interface InstallInput {
   /** How the client starts this server, such as `node` and the path of `cli.js` in the app. */
   server: { command: string; args: string[] }
+  /** A resolved edition config (at least `brand.name`) the server reads as SLICERX_CONFIG, so it names that edition. */
+  editionFile?: string
   /** The hub's public key (`hub-key.pub`), pinned. */
   hubKey: string
   /** sx-link's address. Default ws://127.0.0.1:47615. */
@@ -65,6 +67,7 @@ export function serverEnv(client: AgentClientId, input: InstallInput): Record<st
     SLICERX_MCP_LINK_URL: input.linkUrl ?? 'ws://127.0.0.1:47615',
     SLICERX_MCP_LINK_HUB_KEY: input.hubKey,
     SLICERX_MCP_LINK_KEY_REF: agentKeyRef(client),
+    ...(input.editionFile ? { SLICERX_CONFIG: input.editionFile } : {}),
   }
 }
 

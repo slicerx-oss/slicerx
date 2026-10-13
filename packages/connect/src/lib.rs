@@ -42,6 +42,19 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
+static APP_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Sets the app's name in what drivers show people and printers (an UltiMaker's pairing prompt and job owner):
+/// `SlicerX`, or a white-label edition's own. Once, at start. `sx_link::set_app_name` sets it too.
+pub fn set_app_name(name: &str) {
+    let _ = APP_NAME.set(name.to_owned());
+}
+
+/// The app's name in driver text: `SlicerX` unless the app set its own.
+pub fn app_name() -> &'static str {
+    APP_NAME.get().map_or("SlicerX", String::as_str)
+}
+
 pub use error::{Error, ErrorCode, LoginNeed, Result};
 pub use gate::{Action, ApprovalGate, ApprovalToken, MAX_GCODE_LINE, MemoryGate, gcode_line_problem, params};
 pub use manifest::{PermissionClass, PluginKind, PluginManifest, ToolSpec, all_manifests, manifest};

@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Fails when a hard-coded "SlicerX" appears in text people read in the packages a white-label edition ships
 // without packages/app: the MCP server and the mimir tools it serves, the embed and viewport packages, the link
-// client, the hub (sx-link) and the engine and its CLI. That text names the app with productName() (TypeScript) or app_name() (Rust), so an
+// client, the hub (sx-link), the printer drivers, mimir's ChatGPT sign-in, the CAD history reader and the engine and
+// its CLI. That text names the app with productName() (TypeScript) or app_name() (Rust), so an
 // edition's brand.name shows instead. Comments, tests and identifiers are skipped; KEPT lists what stays SlicerX.
 // Usage: node scripts/check-brand-strings.mjs   (run from the repository root)
 import { execFileSync } from 'node:child_process'
@@ -10,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-export const SCOPE = ['packages/mcp/src', 'packages/pilot/src', 'packages/pilot/skills', 'packages/embed/src', 'packages/ui/viewport/src', 'packages/connect/link-client/src', 'packages/connect/link/src', 'packages/core/src', 'packages/core/cli/src']
+export const SCOPE = ['packages/mcp/src', 'packages/pilot/src', 'packages/pilot/skills', 'packages/pilot/llm/src', 'packages/embed/src', 'packages/ui/viewport/src', 'packages/connect/link-client/src', 'packages/connect/link/src', 'packages/connect/src', 'packages/cad-history/src', 'packages/core/src', 'packages/core/cli/src']
 
 /** What stays SlicerX, by file and the text around it, and why. */
 export const KEPT = [
@@ -21,14 +22,16 @@ export const KEPT = [
   { file: /^packages\/core\/src\/bgcode\.rs$/, text: 'format!("SlicerX {}"', why: 'binary G-code producer (file format)' },
   { file: /^packages\/(mcp\/src\/link-code\.ts|connect\/link\/src\/lib\.rs)$/, text: /Application Support\/SlicerX\/hub|'SlicerX', 'hub'|join\("SlicerX"\)/, why: 'state folder paths (identifiers)' },
   { file: /^packages\/connect\/link\/src\/advert\.rs$/, text: 'format!("SlicerX-{inst}")', why: 'mDNS instance name (protocol)' },
-  { file: /^packages\/(connect\/link\/src\/lib|core\/src\/api)\.rs$/, text: 'map_or("SlicerX"', why: 'the default name' },
+  { file: /^packages\/(connect\/src\/lib|core\/src\/api|pilot\/llm\/src\/lib)\.rs$/, text: 'map_or("SlicerX"', why: 'the default name' },
+  { file: /^packages\/connect\/src\/rtsp\.rs$/, text: 'User-Agent: SlicerX', why: 'RTSP client header (protocol)' },
+  { file: /^packages\/pilot\/llm\/src\/chatgpt\.rs$/, text: '(SlicerX request shape)', why: "probe trace label for SlicerX's request format (developer text)" },
   { file: /^packages\/core\/src\/api\.rs$/, text: 'note.replace("SlicerX", app_name())', why: 'the data says SlicerX; this swaps in the name' },
   { file: /^packages\/mcp\/src\/agents\.ts$/, text: "name: 'SlicerX', author: { name: 'The SlicerX contributors'", why: "SlicerX's own app record, the default when an app names none" },
   { file: /^packages\/mcp\/src\/cli\.ts$/, text: 'SlicerX tools for MCP clients', why: 'the slicerx-mcp package help' },
   { file: /^packages\/mcp\/src\/cli\.ts$/, text: 'by its brand.name instead of SlicerX', why: 'help text about this rule' },
   { file: /^packages\/mcp\/src\/cloud\.ts$/, text: 'running the SlicerX cloud service', why: 'component name in setup text for integrators' },
   { file: /^packages\/mcp\/src\/tooldocs\.ts$/, text: "'# SlicerX MCP tools'", why: 'TOOLS.md title (repository doc)' },
-  { file: /^packages\/pilot\/skills\/(make_model\/(index|colors)|index)\.ts$/, text: /SlicerX (black|white|purple|cyan|green|orange|yellow|red|X|logo|mark)/, why: "SlicerX's brand colors and X mark, names the make_model tool takes as input" },
+  { file: /^packages\/pilot\/skills\/(make_model\/index|index)\.ts$/, text: /the SlicerX (X|mark)\b|is the SlicerX X|The SlicerX mark could not be read/, why: "SlicerX's X mark, a shape the make_model tool draws by name" },
   { file: /^packages\/embed\/src\/agreement\.tsx$/, text: /The SlicerX parts of|come from SlicerX|bugs in the SlicerX parts on the SlicerX Discord|When a SlicerX part fails|the app and SlicerX versions/, why: "the pre-alpha agreement names SlicerX's parts of the host app (credit and legal text)" },
   { file: /./, text: 'The SlicerX contributors', why: 'copyright line' },
   { file: /./, text: 'Made possible by SlicerX', why: 'the credit' },
@@ -89,7 +92,7 @@ export function scan(path, text) {
 export function files(cwd = process.cwd()) {
   return execFileSync('git', ['ls-files', '-co', '--exclude-standard', '--', ...SCOPE], { cwd, encoding: 'utf8' })
     .split('\n')
-    .filter((f) => /\.(ts|tsx|rs)$/.test(f) && !/\.test\.tsx?$|\.d\.ts$|\/tests?\//.test(f))
+    .filter((f) => /\.(ts|tsx|rs)$/.test(f) && !/\.test\.tsx?$|_tests?\.rs$|\.d\.ts$|\/tests?\//.test(f))
 }
 
 export function check(cwd = process.cwd()) {

@@ -5,7 +5,7 @@
 // cylinders, extruded text and marks (the SlicerX X, or an SVG the user gives),
 // stacked on each other, each with a color that becomes a filament slot.
 // Geometry comes from sx-geom (`build`, `subtract`, `text.polygons`, `extrude.svg`).
-import type { Cell, MeshPart, SliceResult } from '@slicerx/contracts'
+import { DEFAULT_PRODUCT_NAME, productName, type Cell, type MeshPart, type SliceResult } from '@slicerx/contracts'
 import { z } from 'zod'
 import type { ProjectExportSlot } from '../../src/hosts'
 import { defineSkill, type ToolContext } from '../../src/tool'
@@ -13,57 +13,70 @@ import { arr, oneLine } from '../d_common/index'
 import { geomRun, geomTry, needsGeometry, num, partFromGeom, rec, round, toGeomMesh, vec3 } from '../geom_common/index'
 import { partsBox } from '../orientation_search/geometry'
 import { fmtDuration, fmtGrams } from '../../src/shared'
-import { pickPreset, resolveColor, type ResolvedColor, type SlotPreset } from './colors'
+import { brandColorExamples, pickPreset, resolveColor, type ResolvedColor, type SlotPreset } from './colors'
 import { SLICERX_X_PATH, pathRings, placeRing, type Pt } from './marks'
 
-const Color = z.string().min(1).max(40).describe('A color: a brand name such as "SlicerX black" or "X pink", a plain name such as "blue", or hex such as "#ff79c6"')
 const Xy = z.tuple([z.number(), z.number()])
 const Xyz = z.tuple([z.number(), z.number(), z.number()])
-const Common = {
-  name: z.string().max(40).optional().describe('Part name'),
-  onPart: z.number().int().min(0).optional().describe('Index of an earlier part to sit on: this part starts at that part top and is centered on it'),
-  offsetMm: Xy.optional().describe('With onPart: move from the center of that part, in mm (x right, y back)'),
+
+/** The SlicerX edition's own logo is the X mark; another edition's is not. */
+const xIsTheLogo = (): boolean => productName() === DEFAULT_PRODUCT_NAME
+
+/** The tool's input, with the edition's brand color names in its descriptions. Built when the tool is. */
+function makeInput() {
+  const [black, pink] = brandColorExamples()
+  const Color = z.string().min(1).max(40).describe(`A color: a brand name such as "${black}" or "${pink}", a plain name such as "blue", or hex such as "#ff79c6"`)
+  const Common = {
+    name: z.string().max(40).optional().describe('Part name'),
+    onPart: z.number().int().min(0).optional().describe('Index of an earlier part to sit on: this part starts at that part top and is centered on it'),
+    offsetMm: Xy.optional().describe('With onPart: move from the center of that part, in mm (x right, y back)'),
+  }
+
+  const Part = z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('box'), ...Common, color: Color, sizeMm: Xyz.describe('Width, depth and height in mm'), atMm: Xyz.optional().describe('Minimum corner, without onPart. Default 0, 0, 0') }),
+    z.object({ kind: z.literal('cylinder'), ...Common, color: Color, diameterMm: z.number().positive().max(400), heightMm: z.number().positive().max(400), atMm: Xyz.optional().describe('Base center, without onPart. Default 0, 0, 0') }),
+    z.object({ kind: z.literal('text'), ...Common, color: Color, text: z.string().min(1).max(60), sizeMm: z.number().positive().max(200).describe('Letter height in mm'), heightMm: z.number().positive().max(20).describe('How far the letters stand up in mm'), atMm: Xyz.optional().describe('Text center, without onPart') }),
+    z.object({
+      kind: z.literal('mark'),
+      ...Common,
+      color: Color.optional().describe('Color of the mark. Optional when fillColors names every fill of the SVG'),
+      mark: z.enum(['slicerx-x', 'svg']).describe('slicerx-x is the SlicerX X. svg needs the svg field'),
+      svg: z.string().max(200_000).optional().describe('SVG text, when mark is svg. Untrusted: only its shapes are used'),
+      widthMm: z.number().positive().max(300),
+      heightMm: z.number().positive().max(20).describe('How far the mark stands up in mm'),
+      atMm: Xyz.optional().describe('Mark center, without onPart'),
+      fillColors: z.record(z.string(), Color).optional().describe('When the SVG has several fills: SVG fill hex, such as "#ff79c6", to the color to print it in. Fills not listed use the mark color'),
+    }),
+  ])
+  return z.object({
+    name: z.string().min(1).max(60).describe(`Model name, such as "${xIsTheLogo() ? `${productName()} logo` : 'Name tag'}"`),
+    parts: z.array(Part).min(1).max(16).describe('Parts in build order. The first sits on the bed unless atMm says otherwise'),
+    holes: z
+      .array(
+        z
+          .object({
+            part: z.number().int().min(0).describe('Index of the part in parts, 0 for the first'),
+            diameterMm: z.number().positive().max(100),
+            // Parts take x, y, z, so models often give a hole three numbers; the hole goes straight through, so z is ignored.
+            atMm: z.union([Xy, Xyz]).describe('x and y in mm from the center of that part (a z value is ignored)'),
+          })
+          .describe('A hole straight through one part'),
+      )
+      .max(8)
+      .default([]),
+    material: z.string().max(20).optional().describe('Filament material for every color, such as "PLA". Default the loaded material'),
+    slice: z.boolean().default(true).describe('Slice the plate with the current printer after adding it'),
+    export3mf: z.boolean().default(false).describe('Also write a 3MF project file. Only when the user asked for a file; the app asks where to save it'),
+  })
 }
+type Input = z.infer<ReturnType<typeof makeInput>>
+type PartIn = Input['parts'][number]
 
-const Part = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('box'), ...Common, color: Color, sizeMm: Xyz.describe('Width, depth and height in mm'), atMm: Xyz.optional().describe('Minimum corner, without onPart. Default 0, 0, 0') }),
-  z.object({ kind: z.literal('cylinder'), ...Common, color: Color, diameterMm: z.number().positive().max(400), heightMm: z.number().positive().max(400), atMm: Xyz.optional().describe('Base center, without onPart. Default 0, 0, 0') }),
-  z.object({ kind: z.literal('text'), ...Common, color: Color, text: z.string().min(1).max(60), sizeMm: z.number().positive().max(200).describe('Letter height in mm'), heightMm: z.number().positive().max(20).describe('How far the letters stand up in mm'), atMm: Xyz.optional().describe('Text center, without onPart') }),
-  z.object({
-    kind: z.literal('mark'),
-    ...Common,
-    color: Color.optional().describe('Color of the mark. Optional when fillColors names every fill of the SVG'),
-    mark: z.enum(['slicerx-x', 'svg']).describe('slicerx-x is the SlicerX X. svg needs the svg field'),
-    svg: z.string().max(200_000).optional().describe('SVG text, when mark is svg. Untrusted: only its shapes are used'),
-    widthMm: z.number().positive().max(300),
-    heightMm: z.number().positive().max(20).describe('How far the mark stands up in mm'),
-    atMm: Xyz.optional().describe('Mark center, without onPart'),
-    fillColors: z.record(z.string(), Color).optional().describe('When the SVG has several fills: SVG fill hex, such as "#ff79c6", to the color to print it in. Fills not listed use the mark color'),
-  }),
-])
-type PartIn = z.infer<typeof Part>
-
-const input = z.object({
-  name: z.string().min(1).max(60).describe('Model name, such as "SlicerX logo"'),
-  parts: z.array(Part).min(1).max(16).describe('Parts in build order. The first sits on the bed unless atMm says otherwise'),
-  holes: z
-    .array(
-      z
-        .object({
-          part: z.number().int().min(0).describe('Index of the part in parts, 0 for the first'),
-          diameterMm: z.number().positive().max(100),
-          // Parts take x, y, z, so models often give a hole three numbers; the hole goes straight through, so z is ignored.
-          atMm: z.union([Xy, Xyz]).describe('x and y in mm from the center of that part (a z value is ignored)'),
-        })
-        .describe('A hole straight through one part'),
-    )
-    .max(8)
-    .default([]),
-  material: z.string().max(20).optional().describe('Filament material for every color, such as "PLA". Default the loaded material'),
-  slice: z.boolean().default(true).describe('Slice the plate with the current printer after adding it'),
-  export3mf: z.boolean().default(false).describe('Also write a 3MF project file. Only when the user asked for a file; the app asks where to save it'),
-})
-type Input = z.infer<typeof input>
+function description(): string {
+  const [black, pink] = brandColorExamples()
+  const logo = xIsTheLogo() ? ` The ${productName()} logo is the X mark; add lettering only when asked.` : ''
+  return `Builds a multi-color model from a request and slices it. Parts are boxes, cylinders, extruded text and marks (the SlicerX X, or an SVG the user provides), each with a color: a brand name such as "${black}" or "${pink}", a plain name, or hex. Parts stack with onPart (a mark or text sits on top of a base plate). Each distinct color becomes a filament slot, with a matching filament preset. Add holes straight through a part for keychains. It adds the model to the project on a new plate, slices it with the current printer and reports time and grams per color; with export3mf it also writes a 3MF project. Units are mm, Z up. The app asks before the project changes.${logo} Example: a 60 by 30 by 2 mm ${black} box as the base plate, with the X mark, 22 mm wide and 1 mm tall, in ${pink} on top.`
+}
 
 export interface SlotPlan {
   slot: number
@@ -242,9 +255,8 @@ export function createMakeModel() {
     name: 'make_model',
     version: '0.1.0',
     permission: 'slice',
-    description:
-      'Builds a multi-color model from a request and slices it. Parts are boxes, cylinders, extruded text and marks (the SlicerX X, or an SVG the user provides), each with a color: a brand name such as "SlicerX black" or "X pink", a plain name, or hex. Parts stack with onPart (a mark or text sits on top of a base plate). Each distinct color becomes a filament slot, with a matching filament preset. Add holes straight through a part for keychains. It adds the model to the project on a new plate, slices it with the current printer and reports time and grams per color; with export3mf it also writes a 3MF project. Units are mm, Z up. The app asks before the project changes. The SlicerX logo is the X mark; add lettering only when asked. Example: a 60 by 30 by 2 mm SlicerX black box as the base plate, with the X mark, 22 mm wide and 1 mm tall, in X pink on top.',
-    input,
+    description: description(),
+    input: makeInput(),
     args: (i: Input) => `"${i.name}" --parts ${i.parts.map((p) => p.kind).join(',')}${i.export3mf ? ' --3mf' : ''}`,
     async approval(i: Input, ctx) {
       const plan = planSlots(i.parts, i.material?.toUpperCase() ?? machineMaterial(ctx), ctx.context.machine?.printer)

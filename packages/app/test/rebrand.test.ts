@@ -4,6 +4,7 @@
 // left is the Made possible by SlicerX credit; the .sx3mf and .sxlock formats keep their names.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { historyNewer } from '@slicerx/cad-history'
 import { LOOK_OPTIONS, productName, type Host } from '@slicerx/contracts'
 import { parseEditionConfig, POWERED_BY, type EditionConfig } from '@slicerx/edition-config'
 import { SXLOCK_MESSAGES } from '@slicerx/embed/sxlock'
@@ -132,7 +133,7 @@ describe('a white-label edition', () => {
     expect(helpLinks().docs).toBe('https://slicer.acme.example/docs')
   })
 
-  it('names itself in the printer catalog, preset import reports, hub messages, the default look, the viewport, and locked projects', async () => {
+  it('names itself in the printer catalog, preset import reports, hub messages, the default look, the viewport, locked projects and CAD history notes', async () => {
     setCurrentEdition(acme)
     const strings = [
       JSON.stringify([BRANDS, CONNECTION_METHODS, PRINTER_MODELS]),
@@ -147,6 +148,7 @@ describe('a white-label edition', () => {
       CONTROL_PRESETS.slicerx.label,
       ...Object.values(SXLOCK_MESSAGES),
       engineErrorText('a.3mf: refused extension 0 0 http://example.com/ext'),
+      historyNewer(new Map([['Metadata/slicerx_history.json', new TextEncoder().encode('{"version":999}')]])) ?? '',
       await checkHub(() => Promise.reject(new Error('no hello')), 7311).then(
         () => '',
         (e: Error) => e.message,
@@ -160,6 +162,8 @@ describe('a white-label edition', () => {
     expect(CONTROL_PRESETS.slicerx.label).toBe('Acme Slicer')
     expect(SXLOCK_MESSAGES.signed_out).toBe('Sign in to the Acme Slicer account that locked this project to open it.')
     expect(JSON.stringify(CONNECTION_METHODS)).toContain('Acme Slicer')
+    expect(strings).toContain('saved by a newer Acme Slicer (history version 999)')
+    expect(strings).toContain('update Acme Slicer to edit it')
     // Back to SlicerX, the catalog says SlicerX again.
     setCurrentEdition(before)
     expect(JSON.stringify(CONNECTION_METHODS)).not.toContain('Acme Slicer')
