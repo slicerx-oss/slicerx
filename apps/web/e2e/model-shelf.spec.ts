@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Model's shelf: four groups set apart by hairlines with no group labels, Measure and Values as icons by undo and
 // redo, and a next slot with the tools for the picked object that appears with the pick. Checked at the widths the
-// plan names: labels drop at 1100 px, the next slot hides at 900 px, and nothing in the bar overlaps.
+// plan names: labels drop at 1100 px, the next slot hides at 900 px, and nothing in the bar overlaps. Wherever the
+// labeled shelf does not fit (the mimir panel open beside it at 1440 px), it drops its labels too, so no tool is out of view.
 import { type Page } from '@playwright/test'
 import { command, facePick, freshBox, openStudio, pick } from './cad-helpers'
 import { expect, test } from './fixtures'
@@ -109,5 +110,34 @@ test.describe('Model shelf next slot for faces and edges', () => {
     await pick(page, side)
     await expect(page.getByTestId('model-shelf-next-count')).toHaveAttribute('aria-label', '1 round face', { timeout: 15_000 })
     expect(await page.getByTestId('model-shelf-next').getByTestId('model-shelf-next-tool').evaluateAll((els) => els.map((e) => e.getAttribute('data-next-tool')))).toEqual(['holefit', 'thread'])
+  })
+})
+
+test.describe('Model shelf beside the mimir panel', () => {
+  test.skip(({ isMobile }) => isMobile, 'Desktop widths')
+
+  test('with the mimir panel open at 1440 px, every tool stays in view, and the labels come back when it closes', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.addInitScript(() => localStorage.setItem('sx-mimir-dock', '1'))
+    await openStudio(page, { pilot: { mode: 'unset' } })
+    await page.locator('.sx-tab[data-mode="design"]').click()
+    const shelf = page.getByTestId('model-shelf')
+    const dock = page.locator('.mimir-dock')
+    await expect(dock).toBeVisible()
+    await expect(shelf).toHaveAttribute('data-fit', 'icons')
+    const fits = () => shelf.evaluate((bar) => {
+      const r = bar.getBoundingClientRect()
+      const out = [...bar.querySelectorAll<HTMLElement>('button')].filter((b) => b.offsetParent !== null).filter((b) => b.getBoundingClientRect().right > r.right + 0.5)
+      return { scrolls: bar.scrollWidth > bar.clientWidth + 1, out: out.map((b) => b.getAttribute('aria-label')) }
+    })
+    expect(await fits()).toEqual({ scrolls: false, out: [] })
+    expect((await shelf.boundingBox())!.x + (await shelf.boundingBox())!.width).toBeLessThanOrEqual((await dock.boundingBox())!.x)
+    await expect(shelf.locator('[data-tool="redo"], [aria-label="Redo"]').first()).toBeInViewport()
+    await noOverlap(page)
+    await dock.getByRole('button', { name: /close/i }).first().click()
+    await expect(dock).toHaveCount(0)
+    await expect(shelf).toHaveAttribute('data-fit', 'labels')
+    expect(await fits()).toEqual({ scrolls: false, out: [] })
+    await expect(shelf.locator('.shelf-tool > span').first()).toBeVisible()
   })
 })
