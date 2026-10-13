@@ -324,7 +324,8 @@ export type PilotEvent =
   | { type: 'lookup'; lookup: PilotLookup }
   | { type: 'approval_resolved'; requestId: string; decision: ApprovalDecision; by: 'user' | 'policy' | 'expiry'; via?: 'card' | 'phone' }
   | { type: 'summary'; title: string; rows: [string, string][]; stopped: boolean }
-  | { type: 'usage'; inputTokens: number; outputTokens: number }
+  /** inputTokens counts every prompt token; the cache fields say how many of them were read from or written to the prompt cache. */
+  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
   | { type: 'error'; message: string; retryable: boolean }
   | { type: 'done'; stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error'; ms: number }
 

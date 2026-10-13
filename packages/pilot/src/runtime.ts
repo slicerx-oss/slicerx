@@ -510,7 +510,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             case 'usage':
               usageIn += ev.inputTokens
               usageOut += ev.outputTokens
-              emit({ type: 'usage', inputTokens: ev.inputTokens, outputTokens: ev.outputTokens })
+              emit({
+                type: 'usage',
+                inputTokens: ev.inputTokens,
+                outputTokens: ev.outputTokens,
+                ...(ev.cacheReadTokens !== undefined ? { cacheReadTokens: ev.cacheReadTokens } : {}),
+                ...(ev.cacheWriteTokens !== undefined ? { cacheWriteTokens: ev.cacheWriteTokens } : {}),
+              })
               break
             case 'error':
               failed = ev.message
