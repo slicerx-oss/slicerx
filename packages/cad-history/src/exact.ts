@@ -195,7 +195,6 @@ async function loops(call: Call, shape: Shape | FreeShape, placement: { center?:
 
 /** Where a new body runs along the frame's normal, as the engine reads the spec (sx-geom face.rs). */
 function range(spec: Extract<StepParams, { op: 'shape.extrude' }>['spec']): [number, number] | null {
-  if (spec.taperDeg) return null
   const d = spec.distanceMm
   // a cut goes into the face, as in sx-geom face.rs
   const sign = (spec.operation === 'cut' ? -1 : 1) * (spec.flip ? -1 : 1) * (d < 0 ? -1 : 1)
@@ -320,7 +319,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         const polygons = await loops(call, p.shape, p.placement ?? {}, flipV)
         const z = range(p.spec)
         if (!polygons || !z) return null
-        const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...(into === null ? {} : { target: into, operation: op }), ...kept })
+        const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...(p.spec.taperDeg ? { taperDeg: p.spec.taperDeg } : {}), ...(into === null ? {} : { target: into, operation: op }), ...kept })
         if (into !== null) {
           // a join or cut that misses changes nothing; the kernel makes no body then
           if (!(r as { touches?: boolean }).touches) throw new ExactBroken('The shape no longer reaches the part.')

@@ -130,6 +130,23 @@ describe('B-rep kernel module', () => {
     }
   })
 
+  it('tapers an extrude, its leaning sides read as planes', async () => {
+    const k = await brep()
+    const t = Math.tan((10 * Math.PI) / 180)
+    const { body } = k.call('extrude', {
+      frame: { origin: [0, 0, 0], u: [1, 0, 0], normal: [0, 0, 1] },
+      polygons: [{ outer: { points: [[-10, -10], [10, -10], [10, 10], [-10, 10]] } }],
+      fromMm: 0,
+      toMm: 10,
+      taperDeg: 10,
+    }) as Body
+    close((k.call('info', { body }) as Info).volumeMm3, (8000 - (20 - 20 * t) ** 3) / (6 * t))
+    const mesh = k.call('tessellate', { body }) as Mesh
+    expect(mesh.faces.map((f) => f.type)).toEqual(Array(6).fill('plane'))
+    expect(openEdges(mesh.indices)).toBe(0)
+    k.call('free', { body })
+  })
+
   it('throws the message of a failed call', async () => {
     const k = await brep()
     const bodies = () => (k.call('count', {}) as { bodies: number }).bodies
