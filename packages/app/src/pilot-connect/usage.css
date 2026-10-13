@@ -23,6 +23,6 @@
 .mu-num { font: var(--fw-semibold) 32px/1.1 var(--f-display, var(--f-body)); font-variant-numeric: tabular-nums; }
 .mu-num[data-loading] { width: 3ch; }
 .mu-big .mu-bar { height: 12px; }
-.mu-out { margin: 0; color: var(--orange); }
+.mu-out { grid-column: 1 / -1; margin: 0; color: var(--orange); }
 .mu-sum-side { display: grid; gap: var(--s-4); }
 @media (max-width: 700px) { .mu-sum { grid-template-columns: minmax(0, 1fr); } }
