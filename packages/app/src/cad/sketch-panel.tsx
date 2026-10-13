@@ -487,7 +487,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const axis = finish === 'revolve' ? axisOf(sketch, selected) : null
 
   // The drawn sketch to the view: on edits, never per cursor move.
-  const marks = useMemo(() => sketchMarks(sketch, constraints, (c) => measured(sketch, c)), [sketch, constraints])
+  const marks = useMemo(() => sketchMarks(sketch, constraints, (c) => measured(sketch, c), (mm) => formatLength(mm, units)), [sketch, constraints, units])
   const arcFrom = useMemo(() => lineArcFrom(sketch, draft), [sketch, draft])
   useEffect(() => {
     if (!view) return
@@ -506,7 +506,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       }
     })
     // the one being placed shows with the kept ones, picked
-    const placing = dimField && dimField.index === undefined ? dimMark(sketch, dimField.c, dimField.c.value, -1) : null
+    const placing = dimField && dimField.index === undefined ? dimMark(sketch, dimField.c, dimField.c.value, -1, (mm) => formatLength(mm, units)) : null
     const editing = dimField?.index ?? pickedCon
     const dims = [...marks.dims, ...(placing ? [placing] : [])]
     const glyphs = pal.constraints ? marks.glyphs : []
@@ -528,7 +528,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       ...(pal.constraints ? { glyphs: glyphs.map((g) => (g.of === pickedCon ? { ...g, picked: true } : g)) } : {}),
       ...(pal.profiles ? { profiles: profileRings(sketch) } : {}),
     })
-  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom, marks, dimPicks, dimField, pickedCon])
+  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom, marks, dimPicks, dimField, pickedCon, units])
 
   // Section cuts away the model in front of the sketch plane while the sketch is open.
   useEffect(() => {
@@ -587,7 +587,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const l = live.current
     if (ev.kind === 'hover') {
       const c = !l.dimField && l.dimPicks.length ? dimensionFor(l.sketch, l.dimPicks, ev.at) : null
-      const m = c ? dimMark(l.sketch, c, c.value, -1) : null
+      const m = c ? dimMark(l.sketch, c, c.value, -1, (mm) => formatLength(mm, get().units)) : null
       view?.setSketchCursor(m ? { dim: m } : null)
       const u = get().units
       if (readoutRef.current) readoutRef.current.textContent = c ? `${DIM_NAMES[c.type]} ${dimValueText(c, c.value, u)} ${c.type === 'angle' ? '\u00b0' : u.length}` : ''
