@@ -544,6 +544,9 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       offs.push(vp.on('pick', (e) => {
         // A modeling tool is listening: the click is its input and the selection stays.
         if (toolStore.getState().tool === 'probe') return void probeHandler()?.(e)
+        // Painting: a click that misses the model (beside it, between its arms, or while the view still turns) keeps the
+        // object being painted, so the next stroke still paints it. A click on another object paints that one instead.
+        if (toolStore.getState().tool === 'paint' && !e.objectId) return
         // Model with Faces or Edges in the pick filter: the click picks a face or an edge (plate/sub-pick.ts).
         const st = appStore.getState()
         if (showsDesign(st) && st.pickFilter.some((k) => k !== 'object')) {

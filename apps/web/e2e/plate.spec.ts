@@ -3,7 +3,7 @@
 // Plate tools on the plate tab: numeric transform fields, scale to size, undo and redo, tool keys.
 import { type Page } from '@playwright/test'
 import { addMenu, closeSheet, expect, openSheet, openTransform, panesSettled, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
-import { pressable } from './canvas-press'
+import { pressable, steady } from './canvas-press'
 import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 
 /**
@@ -649,6 +649,8 @@ test('seam paint changes where the seam lands in the sliced G-code', { tag: '@gp
   test.slow()
   await page.addInitScript(() => {
     Reflect.deleteProperty(window, 'showSaveFilePicker')
+    // The store and the view are there as window.__sx and window.__vp with localStorage 'slicerx.debug' set.
+    localStorage.setItem('slicerx.debug', '1')
   })
   await prepare(page)
   const fs = await import('node:fs')
@@ -671,16 +673,29 @@ test('seam paint changes where the seam lands in the sliced G-code', { tag: '@gp
   await panel.getByRole('radio', { name: 'Seam' }).click()
   await panel.getByRole('radiogroup', { name: 'Brush' }).getByRole('radio', { name: 'Fill', exact: true }).click()
   // The view opens on the whole plate: bring the model to the middle of the view before painting it, once the right
-  // pane the tool opens has finished sliding.
+  // pane the tool opens has finished sliding. The zoom eases over as many frames as the page needs to draw it, so the
+  // clicks wait until the model's middle stays put on screen.
   await panesSettled(page)
   await page.keyboard.press('z')
-  await page.waitForTimeout(600)
-  const box = await page.locator('.vp-canvas').first().boundingBox()
-  if (!box) throw new Error('no canvas')
-  const cx = box.x + box.width / 2
-  const cy = box.y + box.height / 2
-  await pressable(page, { x: cx, y: cy })
-  // Bucket fill on a spread of points over the model paints whole surfaces with the seam enforcer.
+  const mid = await page.evaluate(() => {
+    const e = (window as unknown as { __sx: { getState(): { plate: { name: string; transform: number[]; parts: { positions: ArrayLike<number> }[] }[] } } }).__sx.getState().plate.find((p) => p.name === 'Layered X')!
+    const m = e.transform
+    const min = [Infinity, Infinity, Infinity]
+    const max = [-Infinity, -Infinity, -Infinity]
+    for (const part of e.parts)
+      for (let i = 0; i + 2 < part.positions.length; i += 3) {
+        const [x, y, z] = [part.positions[i]!, part.positions[i + 1]!, part.positions[i + 2]!]
+        for (let k = 0; k < 3; k++) {
+          const w = m[k]! * x + m[k + 4]! * y + m[k + 8]! * z + m[k + 12]!
+          min[k] = Math.min(min[k]!, w)
+          max[k] = Math.max(max[k]!, w)
+        }
+      }
+    return [0, 1, 2].map((k) => (min[k]! + max[k]!) / 2) as [number, number, number]
+  })
+  const { x: cx, y: cy } = await pressable(page, await steady(page, ...mid))
+  // Bucket fill on a spread of points over the model paints whole surfaces with the seam enforcer. A click between the
+  // X's arms misses it and keeps the object selected for the next one.
   for (const [dx, dy] of [[-50, 0], [50, 0], [0, -40], [0, 40], [-30, 25], [30, -25], [-70, 30], [70, -30], [0, 0]] as const) await page.mouse.click(cx + dx, cy + dy)
   await expect(panel.getByRole('button', { name: /Clear seam/ })).toBeEnabled()
   const painted = await sliceAndExport()
@@ -689,6 +704,29 @@ test('seam paint changes where the seam lands in the sliced G-code', { tag: '@gp
   // The same slice twice is the same G-code, so the difference is the paint.
   await tab(page, 'prepare').click()
   await page.getByRole('button', { name: 'Undo' }).click()
+})
+
+test('a paint click that misses the model keeps the object it paints', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Painting needs a mouse')
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await prepare(page)
+  await page.locator('.obj-name', { hasText: 'Layered X' }).click()
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  const panel = page.locator('[data-section="paint"]')
+  await expect(panel).toContainText('Layered X')
+  const selection = () => page.evaluate(() => (window as unknown as { __sx: { getState(): { selection: string | null } } }).__sx.getState().selection)
+  const before = await selection()
+  expect(before).not.toBeNull()
+  // The event the view sends for a click that hits no object: beside the model, between its arms, or on the bed.
+  await page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('pick', { objectId: null, partIndex: null, point: null, triangle: null, bed: [5, 5] }))
+  expect(await selection()).toBe(before)
+  await expect(panel).toContainText('Layered X')
+  await expect(panel).not.toContainText('Select an object')
+  // Out of the paint tool, the same click clears the selection as before.
+  await page.getByTestId('slice-tool-done').click()
+  await expect(panel).toHaveCount(0)
+  await page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('pick', { objectId: null, partIndex: null, point: null, triangle: null, bed: [5, 5] }))
+  await expect.poll(selection).toBeNull()
 })
 
 test('the object list reorders by drag and by buttons, and a locked object stays put', async ({ page, isMobile }) => {

@@ -48,6 +48,15 @@ export async function canvasCenter(page: Page): Promise<{ x: number; y: number }
 export async function aim(page: Page, x: number, y: number, z: number): Promise<{ x: number; y: number }> {
   const sliced = () => page.evaluate(() => { const s = (window as unknown as { __sx: Slicing }).__sx.getState().slice; return s.status === 'done' && !s.stale })
   await expect.poll(sliced, { timeout: 60_000 }).toBe(true)
+  return pressable(page, await steady(page, x, y, z))
+}
+
+/**
+ * Where a bed point is on screen once the camera has stopped: the same spot twice, further apart than the view's
+ * second look at its overlays (600 ms). A camera move the view eases (zoom to the selection, a view preset) takes as
+ * long as the page needs to draw it, which on a slow renderer is far longer than its nominal time.
+ */
+export async function steady(page: Page, x: number, y: number, z: number): Promise<{ x: number; y: number }> {
   let at = await screenOf(page, x, y, z)
   await expect
     .poll(async () => {
@@ -57,5 +66,5 @@ export async function aim(page: Page, x: number, y: number, z: number): Promise<
       return still
     }, { intervals: [700] })
     .toBe(true)
-  return pressable(page, at)
+  return at
 }
