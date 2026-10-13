@@ -580,3 +580,14 @@ export function straightCorners(c: Chain, seg?: number): number[] {
   const want = seg === undefined ? [...Array(n).keys()] : [seg, c.closed && seg === n - 1 ? 0 : seg + 1]
   return [...new Set(want)].filter(ok)
 }
+
+/** Closed loops of the sketch as rings, for the profile shading. */
+export function profileRings(sketch: Sketch): V2[][] {
+  return sketch.flatMap((e) => {
+    if (e.kind === 'circle') return [entityPaths(e)[0]!.points]
+    const pts = entityPaths(e).flatMap((p, i) => (i ? p.points.slice(1) : p.points))
+    const a = pts[0]
+    const b = pts[pts.length - 1]
+    return a && b && pts.length > 3 && Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-3 ? [pts.slice(0, -1)] : []
+  })
+}

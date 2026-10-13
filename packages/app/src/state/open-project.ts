@@ -14,6 +14,7 @@ import { clearProject } from '../project/new'
 import { confirmDiscard, type OpenScope } from '../project/unsaved'
 import { identity, uid } from './actions'
 import { get, markStale, set, toast, type PlateEntry, type PlateVolumeEntry } from './store'
+import { quietly } from '../plate/history'
 
 /**
  * Opens a 3MF project with its objects, parts and volumes (negative parts, support blockers and
@@ -179,7 +180,7 @@ async function addProjectShown(
   if (project.timeline) {
     const { joinTimelines, withBodyIds } = await import('@slicerx/cad-history')
     const ours = withBodyIds(project.timeline, (fileId) => idOf.get(fileId))
-    mine(() => set({ timeline: joinTimelines(designBefore, ours) }))
+    mine(() => quietly(() => set({ timeline: joinTimelines(designBefore, ours) })))
     if (ours.marker < ours.items.length) mine((await import('../cad/history/rollback')).settleRollback)
   }
   mine(() => switchPlate(startPlate))

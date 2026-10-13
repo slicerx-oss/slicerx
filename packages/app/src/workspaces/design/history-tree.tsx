@@ -8,7 +8,10 @@
 // goes into it (on a step, to its More button), Left closes it or goes back to its object, and Home and End jump.
 import { Icon, useContextMenu } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import type { SketchItem } from '@slicerx/cad-history'
 import { HistorySteps } from '../../cad/history/history-panel'
+import { SketchMenu } from '../../cad/sketch-menu'
+import { openSketch } from '../../cad/sketches'
 import { selectObject } from '../../plate/edit'
 import { MAX_NAME, onRenameRequest, renameObject } from '../../plate/object-list'
 import { get, useApp, type PlateEntry } from '../../state/store'
@@ -161,13 +164,10 @@ export function HistoryTree() {
         <li className="dtree-folder" role="treeitem" aria-level={1} aria-expanded={open['folder:sketches'] ?? true} aria-label="Sketches" data-testid="model-tree-sketches">
           {folder('folder:sketches', 'Sketches', 'sketch', sketches.length)}
           {(open['folder:sketches'] ?? true) ? (
-            <ul className="dtree-body dtree-parts" role="group" aria-label="Sketches">
+            <ul className="dtree-parts dtree-folder-list" role="group" aria-label="Sketches">
               {sketches.map(({ k, later }) => (
                 <li key={k.id} role="treeitem" aria-level={2} aria-label={k.name}>
-                  <button type="button" className="dtree-part" data-tree-row="" tabIndex={-1} data-later={later || undefined} data-tip-title={k.name} data-tip-body={later ? 'Rolled back: move the timeline marker past it to use it.' : k.loops.length === 1 ? '1 loop' : `${k.loops.length} loops`}>
-                    <Icon name="sketch" size={16} />
-                    <span className="min0">{k.name}</span>
-                  </button>
+                  <SketchRow k={k} later={later} />
                 </li>
               ))}
             </ul>
@@ -327,5 +327,32 @@ function NameField({ value, label, onDone }: { value: string; label: string; onD
         else if (e.key === 'Escape') finish(null)
       }}
     />
+  )
+}
+
+/** A finished sketch in the tree: double-click opens it, its menu extrudes or revolves it. */
+function SketchRow({ k, later }: { k: SketchItem; later: boolean }) {
+  const menu = useContextMenu()
+  const loops = k.loops.length === 1 ? '1 loop' : `${k.loops.length} loops`
+  return (
+    <>
+      <button
+        type="button"
+        className="dtree-part"
+        data-tree-row=""
+        tabIndex={-1}
+        data-later={later || undefined}
+        data-testid="model-tree-sketch"
+        aria-haspopup="menu"
+        data-tip-title={k.name}
+        data-tip-body={later ? 'Rolled back: move the timeline marker past it to use it.' : `${loops}. Double-click to edit it, right-click to extrude or revolve it.`}
+        {...menu.bind}
+        onDoubleClick={() => !later && openSketch({ id: k.id, mode: 'edit' })}
+      >
+        <Icon name="sketch" size={16} />
+        <span className="min0">{k.name}</span>
+      </button>
+      <SketchMenu at={menu.at} onClose={menu.close} id={k.id} name={k.name} later={later} />
+    </>
   )
 }

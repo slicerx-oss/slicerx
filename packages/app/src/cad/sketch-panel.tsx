@@ -24,7 +24,8 @@ import { useShownOrigin } from '../state/model-mode'
 import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
 import { editing, nowOf, saveEdit } from './history/ops'
-import { bindNext } from './history/record'
+import { bindNext, sketchNext } from './history/record'
+import { finishSketch, provideFinish, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
 import { flipFor, goesIntoFace } from './extrude-direction'
 import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
@@ -58,6 +59,7 @@ import {
   type Entity,
   type SnapTargets,
   type V2,
+  profileRings,
 } from './sketch-model'
 
 interface Plane {
@@ -80,6 +82,20 @@ const TOOLS: { value: DrawTool; label: string }[] = [
   { value: 'arc', label: 'Arc' },
 ]
 
+/** The sketch palette's toggles, kept for the session. */
+export interface SketchLook {
+  grid: boolean
+  snap: boolean
+  /** The snap step, mm; the grid draws a line every ten steps. */
+  step: string
+  section: boolean
+  profiles: boolean
+  points: boolean
+  dimensions: boolean
+  constraints: boolean
+}
+let sessionLook: SketchLook = { grid: true, snap: true, step: '1', section: false, profiles: true, points: true, dimensions: true, constraints: true }
+
 /** Pixels around the cursor that count for snaps and picks. */
 const SNAP_PX = 8
 
@@ -93,6 +109,8 @@ interface SketchInit {
   axis: { e: number; seg: number } | null
   pattern?: Pattern
   constraints: SketchConstraint[]
+  /** A finished sketch opened from the timeline, rather than a step of a body. */
+  from?: SketchOpen
 }
 
 function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; init: SketchInit } | { note: string } | null {
@@ -134,9 +152,43 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
   }
 }
 
+/** A finished sketch from the timeline as the editor's starting state. */
+function finishedEdit(open: SketchOpen, bed: { widthMm: number; depthMm: number }): { plane: Plane; init: SketchInit } | { note: string } | null {
+  const k = sketchById(get().timeline, open.id)
+  if (!k) return null
+  const sketch = fromLoops(k.loops)
+  if (!sketch) return { note: 'This sketch has segments given by length and angle, which sketch mode cannot show.' }
+  const ext = extent(sketch)
+  const r = ext ? ext.radius + 20 : 50
+  const c = ext?.center ?? [0, 0]
+  const plane: Plane = {
+    frame: k.frame ?? BED_FRAME,
+    outline: [],
+    label: k.name,
+    min: k.frame ? [c[0] - r, c[1] - r] : [0, 0],
+    max: k.frame ? [c[0] + r, c[1] + r] : [bed.widthMm, bed.depthMm],
+  }
+  return {
+    plane,
+    init: {
+      index: -1,
+      sketch,
+      finish: open.mode === 'revolve' ? 'revolve' : 'extrude',
+      fields: { distance: '5', extent: 'oneSide', distance2: '5', taper: '0', flip: false, angle: '360' },
+      operation: 'new',
+      axis: null,
+      constraints: (k.constraints ?? []) as SketchConstraint[],
+      from: open,
+    },
+  }
+}
+
 export function SketchTool() {
   const bedSize = useApp((s) => s.bed)
-  const [edit] = useState(() => sketchEdit(bedSize))
+  const [edit] = useState(() => {
+    const open = takeSketchOpen()
+    return open ? finishedEdit(open, bedSize) : sketchEdit(bedSize)
+  })
   // A plane on a part that moved in Slice moves with it.
   const [plane, setPlane] = useDraft<Plane | null>('plane', edit && 'plane' in edit ? edit.plane : null, (p, now) => (p && now ? { ...p, frame: now.frame(p.frame) } : p))
   useDraftObject(plane?.target?.objectId)
@@ -211,7 +263,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [solved, setSolved] = useState<{ solved: Solved; map: SolverMap } | null>(null)
   const [draft, setDraft] = useDraft<Draft>('draft', emptyDraft(init ? 'select' : 'line'))
   const [selected, setSelected] = useDraft<{ e: number; seg: number } | null>('selected', init?.axis ?? null)
-  const [grid, setGrid] = useDraft('grid', '1')
+  const [pal, setPalState] = useState<SketchLook>(sessionLook)
+  const setPal = (p: Partial<SketchLook>) => setPalState((l) => (sessionLook = { ...l, ...p }))
   const units = useApp((s) => s.units)
   const [check, setCheck] = useState<SketchCheck | null>(null)
   const [engineSnaps, setEngineSnaps] = useState<SnapTargets>({ points: [], edges: [] })
@@ -231,7 +284,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const readoutRef = useRef<HTMLSpanElement | null>(null)
-  const gridMm = grid === 'off' ? 0 : Number(grid)
+  const gridMm = pal.snap ? Number(pal.step) : 0
 
   // What the hover path reads without a render.
   const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, cursor: [0, 0] as V2, screen: [0, 0] as [number, number] })
@@ -299,6 +352,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const axis = finish === 'revolve' ? axisOf(sketch, selected) : null
 
   // The drawn sketch to the view: on edits, never per cursor move.
+  const marks = useMemo(() => sketchMarks(sketch, constraints), [sketch, constraints])
   useEffect(() => {
     if (!view) return
     const paths: SketchScene['paths'][number][] = engineSnaps.edges.map((e) => ({ points: [e.a, e.b], tone: 'soft' as SketchTone }))
@@ -313,13 +367,23 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     view.setSketch({
       frame: plane.frame,
       paths,
-      handles: draft.tool === 'select' ? hs.points : [...hs.points, ...draft.points],
+      // points hide when Show points is off, but a picked sketch keeps its handles to drag
+      handles: draft.tool === 'select' ? hs.points : pal.points ? [...hs.points, ...draft.points] : draft.points,
       dragHandles: draft.tool === 'select',
-      ...(gridMm > 0 ? { grid: { stepMm: gridMm * 10, min: plane.min, max: plane.max } } : {}),
+      ...(pal.grid ? { grid: { stepMm: Number(pal.step) * 10, min: plane.min, max: plane.max } } : {}),
       marks: issues.flatMap((i) => (i.at ? [i.at] : [])),
-      ...sketchMarks(sketch, constraints, (mm) => formatLength(mm, units)),
+      ...(pal.dimensions ? { dims: marks.dims } : {}),
+      ...(pal.constraints ? { fixed: marks.fixed } : {}),
+      ...(pal.profiles ? { profiles: profileRings(sketch) } : {}),
     })
-  }, [view, plane, sketch, constraints, draft, selected, issues, hs, gridMm, engineSnaps, finish, axis, states, units])
+  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states])
+
+  // Section cuts away the model in front of the sketch plane while the sketch is open.
+  useEffect(() => {
+    if (!view || !pal.section) return
+    view.setSection({ point: plane.frame.origin, normal: plane.frame.normal })
+    return () => view.setSection(null)
+  }, [view, plane, pal.section])
   useEffect(() => () => view?.setSketch(null), [view])
 
   const targets = (skip?: Parameters<typeof sketchTargets>[1]): SnapTargets[] => [live.current.engineSnaps, sketchTargets(live.current.sketch, skip)]
@@ -373,7 +437,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      // a focused tool radio or checkbox takes no text, so keys still reach the sketch
+      const typing = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
+      if (typing) return
       const l = live.current
       if (/^[0-9.\-]$/.test(e.key) && l.draft.tool !== 'select' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
@@ -392,6 +458,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           e.preventDefault()
           setDraft(emptyDraft(l.draft.tool))
           view?.setSketchCursor(null)
+        } else if (e.key === 'Enter' && l.sketch.length) {
+          e.preventDefault()
+          finishRef.current()
         }
       }
     }
@@ -484,6 +553,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     await saveEdit(host.slicer, params)
     return { message: `Changed step ${(init?.index ?? 0) + 1} and ran the steps after it.`, warn: false }
   }
+  // a step of a body opened from its history saves into its place; a finished sketch makes a new step on it
+  const stepEdit = init !== undefined && !init.from
   const ready = sketch.length > 0 && check?.ok === true && draft.points.length === 0 && issues.length === 0
   const go = async () => {
     if (!ready) return
@@ -504,16 +575,38 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (bad) throw new Error(bad)
         bindNext(distance)
         const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops, ...(constraints.length ? { constraints } : {}) }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...target, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
-        r = init ? await saveSketch(extrudeParams(input)) : await applyExtrude(host.slicer, input)
+        sketchNext(init?.from?.id ?? null)
+        r = stepEdit ? await saveSketch(extrudeParams(input)) : await applyExtrude(host.slicer, input)
       } else {
         if (!axis) throw new Error('Pick a straight line of the sketch as the axis.')
         const a = num(angle)
         if (!(a > 0 && a <= 360)) throw new Error('The angle is more than 0 and at most 360 degrees.')
         bindNext(angle)
         const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...target, name: 'Revolved body' }
-        r = init ? await saveSketch(revolveParams(input)) : await applyRevolve(host.slicer, input)
+        sketchNext(init?.from?.id ?? null)
+        r = stepEdit ? await saveSketch(revolveParams(input)) : await applyRevolve(host.slicer, input)
       }
       toast(r.message, r.warn ? 'warn' : 'ok')
+      set({ objectTool: null })
+    } catch (e) {
+      setNote(errorText(e))
+    } finally {
+      sketchNext(null)
+      setBusy(false)
+    }
+  }
+
+  // Finish Sketch: the sketch goes in the timeline as it is, no solid; the camera stays where it is.
+  const finishOnly = async () => {
+    if (busy || !sketch.length || draft.points.length) return
+    setBusy(true)
+    setNote(null)
+    try {
+      const s = { frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints }
+      if (init?.from) {
+        const r = await updateSketch(host.slicer, init.from.id, s)
+        toast(r.replayed ? `Changed ${plane.label} and rebuilt ${r.replayed === 1 ? 'the body' : `${r.replayed} bodies`} made from it.` : `Changed ${plane.label}.`, 'ok')
+      } else toast(`${finishSketch(s).name} is in the timeline. Extrude or revolve it from its menu there.`, 'ok')
       set({ objectTool: null })
     } catch (e) {
       setNote(errorText(e))
@@ -521,6 +614,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       setBusy(false)
     }
   }
+  const finishRef = useRef(finishOnly)
+  finishRef.current = finishOnly
+  useEffect(() => (stepEdit ? undefined : provideFinish(() => void finishRef.current())), [stepEdit])
 
   const fields = fieldsFor(draft)
   const sel = selected ? sketch[selected.e] : undefined
@@ -540,16 +636,32 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           {dofText(solved.solved)}
         </p>
       ) : null}
-      <div className="cad-pair">
-        <Field htmlFor="sk-grid" label="Grid snap">
-          <Select id="sk-grid" value={grid} onChange={(e) => setGrid(e.target.value)}>
-            <option value="off">Off</option>
-            {gridSteps(units, grid).map((g) => (
+      <div className="sketch-palette" role="group" aria-label="Sketch palette">
+        <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
+        <div className="sketch-toggles">
+          <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
+          <label htmlFor="sk-grid">Grid</label>
+          <Switch id="sk-snap" checked={pal.snap} onChange={(on) => setPal({ snap: on })} label="Snap" />
+          <label htmlFor="sk-snap">Snap</label>
+          <Select id="sk-step" size="sm" aria-label="Snap step" value={pal.step} onChange={(e) => setPal({ step: e.target.value })}>
+            {gridSteps(units, pal.step).map((g) => (
               <option key={g.value} value={g.value}>{g.label}</option>
             ))}
           </Select>
-        </Field>
-        <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
+        </div>
+        <div className="sketch-toggles" data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">
+          <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
+          <label htmlFor="sk-section">Section</label>
+        </div>
+        <fieldset className="sketch-show">
+          <legend>Show</legend>
+          {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
+            <span key={k} className="sketch-toggles">
+              <Switch id={`sk-show-${k}`} checked={pal[k]} onChange={(on) => setPal({ [k]: on })} label={`Show ${k}`} />
+              <label htmlFor={`sk-show-${k}`}>{k[0]!.toUpperCase() + k.slice(1)}</label>
+            </span>
+          ))}
+        </fieldset>
       </div>
       {issues.length ? (
         <ul className="cad-issues" role="status">
@@ -604,7 +716,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         <span>Result</span>
         <Seg label="Result" size="sm" value={op} onChange={setOperation} options={[{ value: 'join', label: 'Join', disabled: !plane.target }, { value: 'cut', label: 'Cut', disabled: !plane.target }, { value: 'new', label: 'New body' }]} />
       </div>
-      <p className="cad-hint"><Icon name="info" size={15} /> {init ? 'Applying changes this step; the steps after it run again.' : 'Finishing turns the sketch into a solid. The sketch stays in the object\'s history, so you can open it again there.'}</p>
+      <p className="cad-hint"><Icon name="info" size={15} /> {stepEdit ? 'Applying changes this step; the steps after it run again.' : 'Finish Sketch keeps it in the timeline without a solid. Extrude or Revolve here turns it into one.'}</p>
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
       <ToolFooter
         verb={finish === 'extrude' ? 'Extrude' : 'Revolve'}

@@ -4,11 +4,13 @@
 // timeline runs (docs/cad-history.md, "Timeline"). The marker rolls the whole design back (cad/history/rollback.ts).
 // A click on a feature picks its body, a double click opens the step's tool, and dragging a feature moves it among
 // its body's steps. Every action is an existing history operation (cad/history/ops.ts).
-import { Button, Icon } from '@slicerx/ui'
+import { Button, Icon, useContextMenu } from '@slicerx/ui'
 import { useEffect, useRef, useState } from 'react'
 import { featureParams, mainNumber, stepName, type FeatureItem, type SketchItem, type Step } from '@slicerx/cad-history'
 import { beginEdit, cancelEdit, moveStep, toolFor } from '../../cad/history/ops'
 import { stepIcon } from '../../cad/history/step-icon'
+import { SketchMenu } from '../../cad/sketch-menu'
+import { openSketch } from '../../cad/sketches'
 import { useHost } from '../../host'
 import { useMadeBy } from './use-made-by'
 import { useBottomPanel } from '../../shell/bottom-panel'
@@ -136,15 +138,9 @@ export function Timeline() {
         {chips.map((c, i) => {
           const later = i >= at
           if (c.kind === 'sketch') {
-            const k = c.item
-            const loops = k.loops.length === 1 ? '1 loop' : `${k.loops.length} loops`
             return (
-              <li key={k.id} className="tl-item">
-                <button type="button" className="tl-chip" data-kind="sketch" data-later={later || undefined} aria-label={`${i + 1}, ${k.name}`} data-tip-title={k.name} data-tip-body={later ? LATER : loops} disabled={busy}>
-                  <span className="tl-n sx-mono">{i + 1}</span>
-                  <Icon name="sketch" size={14} />
-                  <span className="tl-name">{k.name}</span>
-                </button>
+              <li key={c.item.id} className="tl-item">
+                <SketchChip k={c.item} n={i + 1} later={later} busy={busy} />
                 {i === at - 1 ? marker : null}
               </li>
             )
@@ -244,5 +240,33 @@ export function Timeline() {
         )}
       </div>
     </div>
+  )
+}
+
+/** A finished sketch in the strip: double-click opens it, its menu extrudes or revolves it. */
+function SketchChip({ k, n, later, busy }: { k: SketchItem; n: number; later: boolean; busy: boolean }) {
+  const menu = useContextMenu()
+  const loops = k.loops.length === 1 ? '1 loop' : `${k.loops.length} loops`
+  return (
+    <>
+      <button
+        type="button"
+        className="tl-chip"
+        data-kind="sketch"
+        data-later={later || undefined}
+        aria-label={`${n}, ${k.name}`}
+        aria-haspopup="menu"
+        data-tip-title={k.name}
+        data-tip-body={later ? LATER : `${loops}. Double-click to edit it, right-click to extrude or revolve it.`}
+        disabled={busy}
+        {...menu.bind}
+        onDoubleClick={() => !later && openSketch({ id: k.id, mode: 'edit' })}
+      >
+        <span className="tl-n sx-mono">{n}</span>
+        <Icon name="sketch" size={14} />
+        <span className="tl-name">{k.name}</span>
+      </button>
+      <SketchMenu at={menu.at} onClose={menu.close} id={k.id} name={k.name} later={later} />
+    </>
   )
 }
