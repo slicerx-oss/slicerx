@@ -843,6 +843,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* The playback bar shows fewer rows as it is dragged shorter. */
 .dock[data-mode="compact"] .dock-row ~ .dock-row, .dock[data-mode="slim"] .dock-row { display: none; }
 .dock[data-mode="slim"] { padding-block: 8px; }
+/* The bar's ^ tab sits on its top edge, centered, over the resize edge: it opens the sliders and shuts the bar to its
+   transport row. The bar grows upward from the foot of the view, so nothing above it moves. */
+.dock > .dock-tab { position: absolute; left: 50%; bottom: 100%; z-index: 1; transform: translateX(-50%); }
 
 /* Layer slider marks: pause, color change and custom G-code on the track. */
 .layer-track { display: flex; align-items: center; gap: 6px; min-width: 0; }
