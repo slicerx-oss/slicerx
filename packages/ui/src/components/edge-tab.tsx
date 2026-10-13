@@ -54,7 +54,7 @@ export function EdgeTab({ side, open, onToggle, label, shortcut, controls, panel
       onContextMenu={onContextMenu}
     >
       {/* chevron-right turned by CSS: it ships with the shell, so the tab draws at first paint */}
-      <Icon name="chevron-right" size={14} data-dir={edgeChevron(side, open)} />
+      <Icon name="chevron-right" size={16} data-dir={edgeChevron(side, open)} />
     </button>
   )
 }
