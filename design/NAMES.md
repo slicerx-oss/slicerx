@@ -24,6 +24,4 @@ Rejected: Bifrost; "Vary layer height"; svalinn (replaced by aegis the same day)
 
 Reserve names, unused: Leviathan (the engine, once the benchmark win is clear; Icons-Leviathan, gradient red to orange). Marks are picked when a name ships. Heimdall moved from the reserve to Preview playback on 2026-10-03; mimir's watch mode needs another name if it gets one.
 
-Brand canvas: https://claude.ai/artifact/QbPNZkvJARaAuwKJVy79KT
-
 The code-wide rename from PrintPilot to mimir is done (2026-10-01): UI, prompts, knowledge, docs and copy. Identifiers, package and crate names, stored keys and URLs keep the old spelling.
