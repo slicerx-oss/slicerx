@@ -4,7 +4,7 @@
 // opens. The view is the one Model uses, on the same design and history; this file adds the chat column and the
 // caption that names the view.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Composer, TranscriptView, useAttachments, usePilotRun, type ApprovalHandlers, type Transcript } from '@slicerx/pilot/ui'
+import { Composer, TranscriptView, UsageLinkContext, useAttachments, usePilotRun, type ApprovalHandlers, type Transcript } from '@slicerx/pilot/ui'
 import type { PilotLookup } from '@slicerx/contracts'
 import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, ResizeEdge, tipAttrs } from '@slicerx/ui'
@@ -21,6 +21,7 @@ import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
 import { get, setCamera, useApp } from '../../state/store'
+import { openUsage } from '../../pilot-connect/usage-open'
 import { useMimirLink } from './connection'
 import './mimir.css'
 
@@ -174,7 +175,9 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             </div>
           ) : (
             <div className="mimir-turns">
-              <TranscriptView transcript={transcript} showThinking={false} approvals={handlers} words={stepWords} />
+              <UsageLinkContext.Provider value={openUsage}>
+                <TranscriptView transcript={transcript} showThinking={false} approvals={handlers} words={stepWords} />
+              </UsageLinkContext.Provider>
             </div>
           )}
         </div>
