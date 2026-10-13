@@ -181,6 +181,25 @@ export function boxPositions(size: [number, number, number], center: [number, nu
   return new Float32Array(faces.flatMap((f) => f.flatMap(v)))
 }
 
+/** A closed sphere as triangles (outward), centered at `center`, with `rings` bands and `segments` sides, as the app draws one. */
+export function spherePositions(diameter: number, center: [number, number, number], rings = 24, segments = 48): Float32Array {
+  const r = diameter / 2
+  const at = (i: number, j: number): number[] => {
+    const t = (i / rings) * Math.PI
+    const a = (2 * Math.PI * (j % segments)) / segments
+    return [center[0] + r * Math.sin(t) * Math.cos(a), center[1] + r * Math.sin(t) * Math.sin(a), center[2] - r * Math.cos(t)]
+  }
+  const out: number[] = []
+  for (let i = 0; i < rings; i++) {
+    for (let j = 0; j < segments; j++) {
+      // the poles' bands have one triangle that collapses to a line; a slicer ignores it
+      out.push(...at(i, j), ...at(i, j + 1), ...at(i + 1, j))
+      out.push(...at(i, j + 1), ...at(i + 1, j + 1), ...at(i + 1, j))
+    }
+  }
+  return new Float32Array(out)
+}
+
 /** A closed upright cylinder as triangles (outward), centered at `center`, with `segments` sides. */
 export function cylinderPositions(diameter: number, height: number, center: [number, number, number], segments = 48): Float32Array {
   const r = diameter / 2
