@@ -18,6 +18,7 @@ import { editionColorsFromEnv, editionNameFromEnv } from './edition'
 import { localAiFromEnv } from './localai'
 import { sxlockFromEnv } from './sxlock'
 import { linkCodeFrom, linkKeyFrom, readHubKey, readKeychainKey } from './link-code'
+import { hubUrlFromEnv } from '@slicerx/link-client'
 
 const HELP = `slicerx-mcp ${SERVER_VERSION}: SlicerX tools for MCP clients
 
@@ -58,7 +59,7 @@ Engine
 
 Printers
   --printers demo|link|off demo: simulated printers (default); link: real printers through sx-link
-  --link-url <ws-url>      sx-link address (default ws://127.0.0.1:47615)
+  --link-url <ws-url>      sx-link address (default ws://127.0.0.1:47615, or the port in SX_TEST_HUB_PORT)
                            The hub's agent code is read from its state directory
                            (agent-code, written with mode 0600), or from SLICERX_MCP_LINK_CODE.
                            A partner app passes its key in SLICERX_MCP_LINK_KEY instead.
@@ -164,7 +165,8 @@ async function main(): Promise<void> {
     sxlock: sxlockFromEnv(process.env),
     localAi: localAiFromEnv(process.env),
     printers,
-    linkUrl: values['link-url'] ?? env('LINK_URL'),
+    // Else a test or dev run's SX_TEST_HUB_PORT (the variable the app's test builds and sx-link read), else sx-link's default.
+    linkUrl: values['link-url'] ?? env('LINK_URL') ?? hubUrlFromEnv(process.env),
     // A client set up from the "Connect your AI agent" panel names its own credential in the keychain;
     // a partner app hands over the key it keeps itself.
     ...(printers === 'link' && keyRef ? { linkClientKey: readKeychainKey(keyRef) } : printers === 'link' && partnerKey ? { linkClientKey: linkKeyFrom(partnerKey) } : {}),

@@ -15,6 +15,8 @@ use sx_permit::ApprovalBroker;
 const USAGE: &str = "usage:
   sx-link [--port 47615] [--state-dir DIR | --no-state] [--headless] [--secrets keychain|file]
           [--allow-origin ORIGIN] [--inbox-url https://cloud.example] [--no-mdns] [--loopback]
+                                                 without --port, a test or dev run's SX_TEST_HUB_PORT
+                                                 (1024 or above) sets the port, else 47615
                                                  --loopback keeps every socket on 127.0.0.1 (tests): the
                                                  phone listener, printer discovery and direct video, mDNS off
   sx-link code [--agent|--watch] [--state-dir DIR]
@@ -159,7 +161,7 @@ fn service_cmd(args: &[String]) {
 
 #[allow(clippy::too_many_lines)] // One flat argument loop and the start sequence.
 async fn run(args: Vec<String>) {
-    let mut port = DEFAULT_PORT;
+    let mut port_flag: Option<u16> = None;
     let mut extra_origins = Vec::new();
     let mut inbox_url: Option<String> = None;
     let mut mdns = MdnsConfig::default();
@@ -171,7 +173,7 @@ async fn run(args: Vec<String>) {
     while let Some(a) = it.next() {
         match a.as_str() {
             "--port" => match it.next().and_then(|v| v.parse().ok()) {
-                Some(p) => port = p,
+                Some(p) => port_flag = Some(p),
                 None => fail("--port needs a number"),
             },
             "--allow-origin" => match it.next() {
@@ -201,6 +203,7 @@ async fn run(args: Vec<String>) {
             other => fail(&format!("unknown argument {other}")),
         }
     }
+    let port = hub_port(port_flag, std::env::var("SX_TEST_HUB_PORT").ok().as_deref());
     // Headless Linux (a Pi, a NAS, Docker) has no keychain: credentials go to a private file in the
     // state directory unless --secrets keychain says otherwise.
     let use_file = match secrets_kind.as_deref() {
@@ -286,6 +289,13 @@ async fn run(args: Vec<String>) {
     wait_for_stop().await;
 }
 
+/// The port to listen on: `--port` when given (0 picks a free one), else a test or dev run's `SX_TEST_HUB_PORT`, so
+/// the hub, the app and their clients on one machine follow one setting, else `DEFAULT_PORT`.
+fn hub_port(flag: Option<u16>, setting: Option<&str>) -> u16 {
+    flag.or_else(|| sx_link::port_setting(setting))
+        .unwrap_or(DEFAULT_PORT)
+}
+
 /// Ctrl+C, or SIGTERM from launchd, systemd or Docker.
 async fn wait_for_stop() {
     #[cfg(unix)]
@@ -306,4 +316,19 @@ fn fail(msg: &str) -> ! {
     eprintln!("sx-link: {msg}");
     eprintln!("{USAGE}");
     std::process::exit(2);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DEFAULT_PORT, hub_port};
+
+    #[test]
+    fn port_wins_then_the_run_setting_then_the_default() {
+        assert_eq!(hub_port(None, None), DEFAULT_PORT);
+        assert_eq!(hub_port(None, Some("48015")), 48015);
+        assert_eq!(hub_port(Some(0), Some("48015")), 0);
+        assert_eq!(hub_port(Some(47700), Some("48015")), 47700);
+        assert_eq!(hub_port(None, Some("80")), DEFAULT_PORT);
+        assert_eq!(hub_port(None, Some("nope")), DEFAULT_PORT);
+    }
 }

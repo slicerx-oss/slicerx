@@ -83,6 +83,14 @@ pub fn app_name() -> &'static str {
 /// Default port; `sx-link --port` overrides it.
 pub const DEFAULT_PORT: u16 = 47615;
 
+/// A hub port given as text by a test or dev run (each program reads its own setting): a whole number from 1024 to
+/// 65535, spaces around it allowed. Anything else is `None`, and the caller keeps its own port.
+pub fn port_setting(value: Option<&str>) -> Option<u16> {
+    value
+        .and_then(|v| v.trim().parse::<u16>().ok())
+        .filter(|p| *p >= 1024)
+}
+
 #[derive(Debug, Clone)]
 pub struct LinkConfig {
     /// 0 picks a free port (tests).
@@ -483,5 +491,26 @@ mod tests {
         let d = LinkConfig::default();
         assert_eq!((d.lan_bind, d.discovery_bind, d.rtc_bind), (None, None, None));
         assert!(!d.mdns.disabled);
+    }
+
+    #[test]
+    fn a_port_setting_is_a_port_from_1024_up_and_nothing_else() {
+        use super::port_setting;
+        assert_eq!(port_setting(Some("48015")), Some(48015));
+        assert_eq!(port_setting(Some(" 1024 ")), Some(1024));
+        assert_eq!(port_setting(Some("65535")), Some(65535));
+        for bad in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("80"),
+            Some("1023"),
+            Some("65536"),
+            Some("-1"),
+            Some("4801x"),
+            Some("ws://127.0.0.1:48015"),
+        ] {
+            assert_eq!(port_setting(bad), None, "{bad:?}");
+        }
     }
 }
