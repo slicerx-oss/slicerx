@@ -102,3 +102,17 @@ sources:
     url: https://www.prusa3d.com/en/product/heat-set-inserts-m4-standard-50-pcs/
     retrieved: 2026-10-13
     note: "Seen through a search excerpt. Installation temperature is the printing temperature +10 C; the printed plastic melts and reflows around the knurled external surface."
+  - id: prusa_kb_modeling
+    title: "Modeling with 3D printing in mind"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/modeling-with-3d-printing-in-mind_164135
+    retrieved: 2026-10-13
+    note: "Tolerances: 'You will probably not be able to slot together two parts with zero-tolerance dimensions.' No universal value; depends on size, orientation, geometry, calibration, settings and material. 'An Original Prusa will be accurate to at least 0.2 mm'; 'An initial good measurement for movable parts is at least 0.3 mm.' No press fit figure."
+  - id: bambu_wiki_a1_maintenance
+    title: "A1 basic maintenance"
+    publisher: Bambu Lab
+    type: manufacturer_wiki
+    url: https://wiki.bambulab.com/en/a1/maintenance/basic-maintenance
+    retrieved: 2026-10-13
+    note: "All-metal rails. X and Y rails monthly: tweezers, dust-free cloth, lubricant oil; 'strictly prohibited to use lubricating grease on the X-axis linear rail'. Lead screws grease every 3 months; X and Y idler pulleys oil every 3 months; cooling fans weekly; extruder gear and nozzle every 5 spools, 2 for carbon fiber."
