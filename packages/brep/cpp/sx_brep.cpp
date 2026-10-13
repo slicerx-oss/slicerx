@@ -26,6 +26,7 @@
 #include <SmPoly.h>
 #include <SmRegion.h>
 #include <SmSphere.h>
+#include <SmSurfOfExtrusion.h>
 #include <SmSurface.h>
 #include <SmSurfTypes.h>
 #include <SmVector3d.h>
@@ -663,6 +664,23 @@ Value surface_of(SmSurface* s)
         if (static_cast<SmSphere*>(s)->GetCanonical(ax, rad) != SM_SUCCESS) return Value();
         v.set("kind", "sphere");
         v.set("center", xyz(ax.GetOrigin()));
+        v.set("radius", rad);
+        return v;
+    }
+    if (s->GetType() == SmSurfOfExtrusion_TYPE) {
+        // an arc of a sketch run straight along its axis is a piece of a cylinder; the kernel keeps it as an
+        // extrusion, as it makes cylinders only from whole circles
+        auto* e = static_cast<SmSurfOfExtrusion*>(s);
+        SmBSplineCurve* gen = e->GetGenCurve();
+        SmVector3d d = e->GetExtrusionVector();
+        double a0 = 0, a1 = 0, len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        if (!gen || len <= 0 || !gen->IsArc(16, 1e-6, ax, rad, a0, a1)) return Value();
+        SmVector3d z = ax.GetZAxis();
+        double along = (d.x * z.x + d.y * z.y + d.z * z.z) / len;
+        if (std::fabs(std::fabs(along) - 1) > 1e-9) return Value();
+        v.set("kind", "cylinder");
+        v.set("origin", xyz(ax.GetOrigin()));
+        v.set("axis", xyz(z));
         v.set("radius", rad);
         return v;
     }
