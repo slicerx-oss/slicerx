@@ -200,9 +200,9 @@ export function hitTest(sketch: Sketch, p: V2, tolMm: number): { e: number; seg:
 
 // Snaps
 
-export type SnapKind = 'vertex' | 'midpoint' | 'center' | 'horizontal' | 'vertical' | 'edge' | 'grid'
+export type SnapKind = 'vertex' | 'midpoint' | 'center' | 'horizontal' | 'vertical' | 'parallel' | 'edge' | 'grid'
 
-export const SNAP_NAMES: Record<SnapKind, string> = { vertex: 'End point', midpoint: 'Midpoint', center: 'Center', horizontal: 'Horizontal', vertical: 'Vertical', edge: 'On an edge', grid: 'Grid' }
+export const SNAP_NAMES: Record<SnapKind, string> = { vertex: 'End point', midpoint: 'Midpoint', center: 'Center', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', edge: 'On an edge', grid: 'Grid' }
 
 export interface SnapTargets {
   points: readonly { at: V2; kind: 'vertex' | 'midpoint' | 'center' }[]
@@ -240,13 +240,15 @@ export function sketchTargets(sketch: Sketch, skip?: HandleRef): SnapTargets {
 export interface SnapOptions {
   /** The point the line being drawn starts from, for horizontal and vertical. */
   anchor?: V2 | null
+  /** A line from the anchor also snaps parallel to the lines among the targets. */
+  parallel?: boolean
   /** 0 turns the grid off. */
   gridMm: number
   /** How close counts, in mm on the plane (a few pixels' worth). */
   tolMm: number
 }
 
-/** Where a cursor point lands: points first, then horizontal or vertical from the anchor, then edges, then the grid. */
+/** Where a cursor point lands: points first, then horizontal or vertical from the anchor, then edges, then parallel to a line, then the grid. */
 export function snap(p: V2, targets: readonly SnapTargets[], o: SnapOptions): { at: V2; kind: SnapKind | null; guide?: [V2, V2] } {
   let best: { at: V2; kind: SnapKind } | null = null
   let bestD = o.tolMm
@@ -283,6 +285,24 @@ export function snap(p: V2, targets: readonly SnapTargets[], o: SnapOptions): { 
     }
   }
   if (edge) return { at: pt(edge[0], edge[1]), kind: 'edge' }
+  if (a && o.parallel) {
+    // the line from the anchor turned to run along the nearest-in-angle line, judged at the cursor
+    const v: V2 = [p[0] - a[0], p[1] - a[1]]
+    let along: V2 | null = null
+    let off = o.tolMm
+    for (const t of targets) for (const e of t.edges) {
+      const l = dist(e.a, e.b)
+      if (l < 1e-9 || dist(e.a, a) < 1e-9 || dist(e.b, a) < 1e-9) continue
+      const d: V2 = [(e.b[0] - e.a[0]) / l, (e.b[1] - e.a[1]) / l]
+      const t = v[0] * d[0] + v[1] * d[1]
+      const side = Math.abs(v[0] * d[1] - v[1] * d[0])
+      if (Math.abs(t) > o.tolMm && side <= off) {
+        off = side
+        along = [a[0] + d[0] * t, a[1] + d[1] * t]
+      }
+    }
+    if (along) return { at: [round(along[0]), round(along[1])], kind: 'parallel', guide: [a, along] }
+  }
   if (o.gridMm > 0) return { at: pt(g(p[0]), g(p[1])), kind: 'grid' }
   return { at: p, kind: null }
 }

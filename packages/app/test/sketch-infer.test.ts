@@ -5,10 +5,10 @@
 import { describe, expect, it } from 'vitest'
 import { afterReverse, glyphsOf, toSolver, type SketchConstraint } from '../src/cad/sketch-constraints'
 import { inferred, reversedChain, type Landing } from '../src/cad/sketch-infer'
-import { click, dragArc, emptyDraft, lineArcFrom, type Chain, type Draft, type DrawTool, type Entity, type SnapKind, type V2 } from '../src/cad/sketch-model'
+import { click, dragArc, emptyDraft, lineArcFrom, sketchTargets, snap, type Chain, type Draft, type DrawTool, type Entity, type SnapKind, type V2 } from '../src/cad/sketch-model'
 
 /** Draws as the panel does, keeping the constraints each step infers. Points are [x, y] or [x, y, snap]. */
-function draw(tool: DrawTool, steps: ([number, number] | [number, number, SnapKind] | { drag: V2 })[], sketch: Entity[] = [], quiet = false) {
+function draw(tool: DrawTool, steps: ([number, number] | [number, number, SnapKind] | { drag: V2 })[], sketch: Entity[] = [], quiet = false, sides?: number) {
   let s: Entity[] = sketch
   let d: Draft = emptyDraft(tool)
   let cons: SketchConstraint[] = []
@@ -16,11 +16,11 @@ function draw(tool: DrawTool, steps: ([number, number] | [number, number, SnapKi
   for (const st of steps) {
     const at: V2 = 'drag' in st ? st.drag : [st[0], st[1]]
     const kind = 'drag' in st ? null : (st[2] ?? null)
-    const r = 'drag' in st ? dragArc(s, d, at) : click(s, d, at)
+    const r = 'drag' in st ? dragArc(s, d, at) : click(s, d, at, sides ? { sides } : {})
     const all = [...landed, { at, kind }]
     const turned = reversedChain(s, r.sketch)
     if (turned >= 0) cons = afterReverse(cons, turned, (s[turned] as Chain).segs.length)
-    if (!quiet) cons = [...cons, ...inferred(s, r.sketch, all, cons)]
+    if (!quiet) cons = [...cons, ...inferred(s, r.sketch, all, cons, tool)]
     const grew = JSON.stringify(r.sketch) !== JSON.stringify(s)
     landed = !r.draft.points.length ? [] : grew ? [all[all.length - 1]!] : all
     s = r.sketch
@@ -76,6 +76,30 @@ describe('inferred constraints', () => {
       { type: 'horizontal', line: { e: 0, seg: 2 } },
       { type: 'tangent', a: { e: 0, seg: 1 }, b: { e: 0, seg: 2 } },
     ])
+  })
+
+  it("a polygon's sides are equal, one pair on a square, and a slot's ends are", () => {
+    const six = draw('polygon', [[0, 0], [10, 3]])
+    expect(types(six.cons).filter((t) => t === 'equal')).toHaveLength((six.sketch[0] as Chain).segs.length - 1)
+    const four = draw('polygonEdge', [[0, 0], [10, 0], [5, 5]], [], false, 4)
+    expect(four.cons.filter((c) => c.type === 'equal')).toEqual([{ type: 'equal', a: { e: 0, seg: 0 }, b: { e: 0, seg: 1 } }])
+    const slot = draw('slot', [[0, 0], [20, 0], [10, 4]])
+    expect(slot.cons.filter((c) => c.type === 'equal')).toHaveLength(1)
+    expect(types(slot.cons).filter((t) => t === 'tangent')).toHaveLength(4)
+    // a 2-point rectangle that comes out square is not made equal
+    expect(types(draw('rect', [[0, 0], [10, 10]]).cons)).not.toContain('equal')
+  })
+
+  it('a line snapped parallel to another is parallel to it', () => {
+    const base: Entity[] = [{ kind: 'chain', start: [0, 0], segs: [{ kind: 'line', to: [10, 3] }], closed: false }]
+    // the cursor near the parallel from the anchor lands on it exactly
+    const s = snap([10.1, 8.2], [sketchTargets(base)], { anchor: [0, 5], parallel: true, gridMm: 0, tolMm: 0.5 })
+    expect(s.kind).toBe('parallel')
+    expect(Math.abs((s.at[1] - 5) * 10 - s.at[0] * 3)).toBeLessThan(1e-4)
+    const r = draw('line', [[0, 5], [s.at[0], s.at[1], 'parallel']], base)
+    expect(r.cons).toEqual([{ type: 'parallel', a: { e: 1, seg: 0 }, b: { e: 0, seg: 0 } }])
+    // without the snap, nothing
+    expect(snap([10.1, 8.2], [sketchTargets(base)], { anchor: [0, 5], gridMm: 0, tolMm: 0.5 }).kind).not.toBe('parallel')
   })
 
   it('Ctrl leaves nothing behind', () => {

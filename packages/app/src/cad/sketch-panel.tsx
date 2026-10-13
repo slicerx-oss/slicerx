@@ -533,7 +533,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const was = l.sketch[turned]
     let cons = turned >= 0 && was?.kind === 'chain' ? afterReverse(l.constraints, turned, was.segs.length) : l.constraints
     if (!quiet) {
-      const more = inferred(l.sketch, r.sketch, landed, cons)
+      const more = inferred(l.sketch, r.sketch, landed, cons, l.draft.tool)
       if (more.length) cons = [...cons, ...more]
     }
     const grew = JSON.stringify(r.sketch) !== JSON.stringify(l.sketch)
@@ -688,7 +688,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         return dimEvent(ev, tol)
       }
       if (ev.kind === 'hover' || ev.kind === 'click') {
-        const s = ev.alt ? { at: ev.at, kind: null } : snap(ev.at, targets(), { anchor: l.draft.tool === 'line' || l.draft.tool === 'arc' ? anchor : null, gridMm: l.gridMm, tolMm: tol })
+        const s = ev.alt ? { at: ev.at, kind: null } : snap(ev.at, targets(), { anchor: l.draft.tool === 'line' || l.draft.tool === 'arc' ? anchor : null, parallel: l.draft.tool === 'line', gridMm: l.gridMm, tolMm: tol })
         l.cursor = s.at
         l.screen = ev.screen
         if (ev.kind === 'hover') {
