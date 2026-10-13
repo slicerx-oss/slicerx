@@ -11,11 +11,13 @@ test('a workspace whose code failed to download comes back after one reload', as
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
   })
   let dropped = 0
-  // The first fetch of the workspace's code fails as a dropped connection does; every later one goes through.
+  // The first fetch of the workspace's code fails as a dropped connection does; every later one goes through. A reset,
+  // not a lost network: the fixtures reload a page whose network changed (NETWORK_CHANGED), and that reload would
+  // race the app's own one, the reload this test is about.
   await page.route(/\/static\/studio-[^/]+\.js$/, (route) => {
     if (dropped === 0) {
       dropped++
-      return route.abort('internetdisconnected')
+      return route.abort('connectionreset')
     }
     return route.continue()
   })
