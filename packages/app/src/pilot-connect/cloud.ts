@@ -3,11 +3,8 @@
 // mimir cloud: the edition's model proxy on its Supabase project (supabase/functions/mimir), free per day with no
 // key. The desktop app registers a host whose commands run in Rust (packages/pilot/llm cloud.rs): the install token
 // lives in the keychain and the webview never sees it. The browser build has no host, so it never offers the cloud.
-import type { EditionConfig } from '@slicerx/edition-config'
+// This module loads with the shell; the edition check is in cloud-edition.ts, loaded with the pilot.
 import { useSyncExternalStore } from 'react'
-
-/** The model mimir cloud runs; the proxy pins it whatever is sent. */
-export const CLOUD_MODEL = 'claude-haiku-5-5'
 
 /** Today's use for this install, in micro-dollars, per Melbourne day. */
 export interface MimirQuota {
@@ -50,20 +47,4 @@ export function useMimirCloudHost(): MimirCloudHost | null {
     },
     () => host,
   )
-}
-
-/** The proxy's base for the pilot's adapter, which adds /v1/messages. Null when the edition has no cloud. */
-export function cloudBase(edition: EditionConfig): string | null {
-  const url = edition.ai.keySource === 'cloud' ? edition.backend.supabase?.url : undefined
-  if (!url) return null
-  try {
-    return `${new URL(url).origin}/functions/v1/mimir`
-  } catch {
-    return null
-  }
-}
-
-/** True when this build can run mimir on mimir cloud: the edition has it and the shell carries it. */
-export function cloudReady(edition: EditionConfig, h: MimirCloudHost | null = host): boolean {
-  return h !== null && cloudBase(edition) !== null
 }

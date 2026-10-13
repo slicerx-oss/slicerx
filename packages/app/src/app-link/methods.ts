@@ -7,7 +7,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { appName, currentEdition } from '../edition'
-import { cloudReady, mimirCloudHost } from '../pilot-connect/cloud'
+import { mimirCloudHost } from '../pilot-connect/cloud'
 import { bounds } from '../plate/transform'
 import { LinkError } from './methods-error'
 import { listSessions, readSession } from './sessions'
@@ -160,7 +160,9 @@ const HANDLERS: Record<string, Handler> = {
   'preview.set': (args) => setPreview(args),
   'mimir.sessions': () => listSessions(),
   'mimir.session': (args) => readSession(args),
-  'mimir.quota': () => {
+  'mimir.quota': async () => {
+    // loaded on use: only the desktop shell carries mimir cloud
+    const { cloudReady } = await import('../pilot-connect/cloud-edition')
     const cloud = mimirCloudHost()
     if (!cloud || !cloudReady(currentEdition(), cloud)) throw new LinkError('not_found', `${appName()} has no ${ASSISTANT_NAME} cloud in this build`)
     return cloud.quota()
