@@ -37,6 +37,8 @@ test('inches: a typed 1" pulls 25.4 mm and shows as 1.000 in; mm shows the same 
   const line = await page.getByTestId('model-transform-summary').boundingBox()
   const pane = await page.getByRole('complementary', { name: 'Tool and transform' }).boundingBox()
   expect(line!.x + line!.width).toBeLessThanOrEqual(pane!.x + pane!.width)
+  // the full line is the toggle's tooltip, and the line lets clicks through to it
+  await expect(page.locator('#model-transform')).toHaveAttribute('data-tip-body', /^X -?\d+\.\d{3} Y .* in$/)
   await panel.getByRole('button', { name: 'Pull out' }).click()
   await expect(panel).toHaveCount(0, { timeout: 30_000 })
 
