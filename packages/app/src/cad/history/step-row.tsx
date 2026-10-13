@@ -75,7 +75,7 @@ export function StepRow(props: {
     } else menu.bind.onKeyDown(e)
   }
   const treeRow = props.tree
-    ? { ...menu.bind, onKeyDown: keys, tabIndex: -1, role: 'treeitem', 'aria-level': 2, 'aria-label': name, 'data-testid': 'model-tree-step', 'data-object-id': props.entry.id, 'data-index': index, 'data-state': state }
+    ? { ...menu.bind, onKeyDown: keys, tabIndex: -1, role: 'treeitem', 'aria-level': 3, 'aria-label': name, 'data-testid': 'model-tree-step', 'data-object-id': props.entry.id, 'data-index': index, 'data-state': state }
     : {}
   return (
     <li className="cad-step" data-state={state} data-editing={editing || props.viewing || undefined} data-later={props.later || undefined} data-made-by={props.madeBy || undefined} data-used-by={(!props.madeBy && props.usedBy) || undefined} aria-busy={busy || undefined} {...treeRow}>

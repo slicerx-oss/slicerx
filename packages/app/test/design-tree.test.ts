@@ -7,13 +7,14 @@ import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Host } from '@slicerx/contracts'
-import type { Step, StepParams } from '@slicerx/cad-history'
+import type { FeatureItem, SketchItem, Step, StepParams, Timeline } from '@slicerx/cad-history'
 import { stepIcon, stepSketch } from '../src/cad/history/step-icon'
 import { HostContext } from '../src/host'
 import { railKey } from '../src/state/model-mode'
 import { renameStep } from '../src/cad/history/ops'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { HistoryTree } from '../src/workspaces/design/history-tree'
+import { Timeline as TimelineStrip } from '../src/workspaces/design/timeline'
 
 const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 const step = (id: string, params: unknown): Step => ({ id, part: -1, transform: I, params: params as StepParams })
@@ -185,5 +186,48 @@ describe('the Design tree', () => {
     set({ plate: [], historyEdit: { objectId: 'o1', index: 0, original } as never })
     const el = render()
     expect(el.querySelector('.dtree-name')?.textContent).toBe('Pi enclosure')
+  })
+})
+
+describe('the design timeline in the tree and the strip', () => {
+  const sketch = (id: string, name: string): SketchItem => ({ kind: 'sketch', id, name, loops: [{ start: [0, 0], segments: [{ type: 'line', to: [1, 0] }, { type: 'line', to: [0, 0] }] }] })
+  const feature = (id: string, body: string, params: unknown, sk?: string): FeatureItem => ({ kind: 'feature', id, body, part: -1, transform: I, params: params as StepParams, ...(sk ? { sketch: sk } : {}) })
+  const timeline = (): Timeline => ({
+    bodies: [{ id: 'o1', base: [] }, { id: 'o2', base: [] }],
+    items: [sketch('ka', 'Sketch 1'), feature('a', 'o1', { op: 'shape.extrude', spec: { distanceMm: 30, operation: 'new' }, placement: {} }, 'ka'), feature('b', 'o2', { op: 'shell', open: [{}], wallMm: 2 }), sketch('kb', 'Sketch 2')],
+    marker: 2,
+  })
+  function mount(c: () => ReturnType<typeof createElement>): HTMLElement {
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    const root = createRoot(el)
+    roots.push(root)
+    flushSync(() => root.render(createElement(HostContext.Provider, { value: {} as Host }, c())))
+    return el
+  }
+  afterEach(() => set({ timeline: { bodies: [], items: [], marker: 0 } }))
+
+  it('puts the sketches and the bodies in folders, a rolled back sketch dimmed', () => {
+    set({ plate: [entry('o1', 'Pi enclosure', STEPS), entry('o2', 'Ball')], timeline: timeline() })
+    const el = mount(() => createElement(HistoryTree))
+    const folders = [...el.querySelectorAll('.dtree-folder')].map((f) => f.getAttribute('aria-label'))
+    expect(folders).toEqual(['Sketches', 'Bodies'])
+    const rows = [...el.querySelectorAll('[data-testid="model-tree-sketches"] .dtree-part')]
+    expect(rows.map((r) => r.textContent)).toEqual(['Sketch 1', 'Sketch 2'])
+    expect(rows.map((r) => r.hasAttribute('data-later'))).toEqual([false, true])
+    expect(el.querySelectorAll('[data-testid="model-tree-bodies"] .dtree-obj')).toHaveLength(2)
+  })
+
+  it('runs every body in one strip, with the marker where the design is rolled back to', () => {
+    set({ plate: [entry('o1', 'Pi enclosure'), entry('o2', 'Ball')], timeline: timeline() })
+    const el = mount(() => createElement(TimelineStrip))
+    const chips = [...el.querySelectorAll('.tl-chip')]
+    expect(chips.map((c) => c.getAttribute('data-kind'))).toEqual(['sketch', 'feature', 'feature', 'sketch'])
+    expect(chips[1]!.getAttribute('aria-label')).toMatch(/on Pi enclosure$/)
+    expect(chips[1]!.textContent).toContain('Sketch 1')
+    expect(chips.map((c) => c.hasAttribute('data-later'))).toEqual([false, false, true, true])
+    // the marker sits right after the second chip
+    expect(chips[1]!.nextElementSibling?.getAttribute('data-testid')).toBe('tl-marker')
+    expect(el.querySelector('[data-testid="tl-rolled"]')?.textContent).toBe('Rolled back to 2 of 4')
   })
 })
