@@ -5,7 +5,7 @@
 import { assert, assertEquals, assertMatch } from 'jsr:@std/assert@1.0.13'
 import { MAX_OUTPUT, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
-import { clientIp, type Env, handle } from './handler.ts'
+import { clientIp, type Env, handle, marked } from './handler.ts'
 
 type Obj = Record<string, unknown>
 const TOOL = { name: 'design_box', description: 'A box.', input_schema: { type: 'object', properties: {} } }
@@ -101,6 +101,25 @@ Deno.test('the estimate never undercounts: a token a byte, images at their most,
   assertEquals(worstInput(1000, 100, 0), 1000)
   assertEquals(worstInput(1000, 100, 2), 3 * (1000 + 100 + 2 * 30_000))
   assertEquals(worstInput(950_000, 8192, 3), 4 * 1_000_000)
+})
+
+Deno.test('an object shaped like an image outside an image block counts a token a byte', () => {
+  // the re-review's payload: 1.9 MB of text dressed as an image in a tool's input and in a tool's schema
+  const fake = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'x'.repeat(1_900_000) } }
+  const inInput = base({
+    messages: [
+      { role: 'user', content: 'a cube' },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'design_box', input: { picture: fake } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'done' }] },
+    ],
+  })
+  assert(ok(inInput).promptEstimate >= 1_900_000)
+  const inSchema = base({ tools: [{ ...TOOL, input_schema: { type: 'object', properties: {}, examples: [fake] } }] })
+  assert(ok(inSchema).promptEstimate >= 1_900_000)
+  // a real image block still counts at the image price, not its bytes
+  const real = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'QUJD'.repeat(100_000) } }
+  const est = ok({ messages: [{ role: 'user', content: [real] }] }).promptEstimate
+  assert(est >= 4784 && est < 10_000)
 })
 
 Deno.test('images must be inline, and only in user turns', () => {
@@ -265,7 +284,8 @@ Deno.test('a failed, refused or cut-short call stores no session', async () => {
     const h = harness({ upstream: () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }) })
     await (await handle(post('/v1/messages', base(), shared), h.env)).text()
     await Promise.all(h.pending)
-    assert(h.calls.some((c) => c.fn === 'mimir_settle'))
+    // an unfinished stream may have billed more than it counted: it settles at the whole allowance
+    assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_output'], MAX_OUTPUT)
     assert(!h.calls.some((c) => c.fn === 'mimir_store_session'))
   }
   const refused = harness({ upstream: () => Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'secret detail' } }, { status: 400 }) })
@@ -300,6 +320,36 @@ Deno.test('when the byte estimate hits a daily cap, the exact count gets one mor
   const busy = harness({ reserve: () => Response.json({ message: 'busy', hint: 'install_busy' }, { status: 400 }) })
   assertEquals((await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), busy.env)).status, 429)
   assert(!busy.sent.length)
+})
+
+Deno.test('a refused call counts toward the rates, once per request', async () => {
+  for (const hint of ['install_daily', 'ip_busy', 'ip_rate', 'edition_busy']) {
+    const h = harness({ reserve: () => Response.json({ message: 'no', hint }, { status: 400 }) })
+    assertEquals((await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)).status, hint === 'edition_busy' ? 503 : 429)
+    assertEquals(h.calls.filter((c) => c.fn === 'mimir_refused').map((c) => c.args), [{ p_token: TOKEN, p_ip: '9.9.9.9' }], hint)
+  }
+  const h = harness({ reserve: () => Response.json({ message: 'unknown', hint: 'unknown_install' }, { status: 400 }) })
+  await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
+  assert(!h.calls.some((c) => c.fn === 'mimir_refused'))
+})
+
+Deno.test('each install caches apart: a mark after the shared tools and system prompt', async () => {
+  const sys = { system: [{ type: 'text', text: 'You are mimir.' }], tools: [TOOL] }
+  const one = harness()
+  await (await handle(post('/v1/messages', base(sys), { 'x-sx-install': TOKEN }), one.env)).text()
+  await (await handle(post('/v1/messages', base(sys), { 'x-sx-install': TOKEN }), one.env)).text()
+  const other = harness()
+  await (await handle(post('/v1/messages', base(sys), { 'x-sx-install': 'b'.repeat(64) }), other.env)).text()
+  const system = (x: { body: Obj }) => x.body['system'] as Obj[]
+  const [a1, a2] = one.sent.map(system)
+  const b = system(other.sent[0]!)
+  assertEquals(a1!.length, 2)
+  // the shared prefix keeps its cache point; the mark comes after it, the same for one install
+  assertEquals(a1![0], { type: 'text', text: 'You are mimir.', cache_control: { type: 'ephemeral' } })
+  assertMatch(String(a1![1]!['text']), /^scope [0-9a-f]{16}$/)
+  assertEquals(a1![1], a2![1])
+  assert(a1![1]!['text'] !== b![1]!['text'])
+  assertEquals(marked({ messages: [] }, 'ab')['system'], [{ type: 'text', text: 'scope ab' }])
 })
 
 Deno.test('a cap answers 429 with its reason and never reaches the provider', async () => {

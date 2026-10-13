@@ -74,8 +74,11 @@ const CAP_MESSAGES: Record<string, [number, string]> = {
   edition_daily: [429, "mimir's daily limit is used up. It resets at midnight Melbourne time."],
   install_rate: [429, 'mimir is getting requests too quickly. Wait a minute and try again.'],
   install_busy: [429, 'mimir is still answering on this computer. Try again when it finishes.'],
+  ip_busy: [429, 'mimir is still answering on this network. Try again when it finishes.'],
+  ip_rate: [429, 'mimir is getting requests too quickly from this network. Wait a minute and try again.'],
   edition_busy: [503, 'mimir is busy. Try again in a moment.'],
   register_limit: [429, 'Too many new installs from this network today.'],
+  edition_register_limit: [429, 'mimir is taking no more new installs today. Try again tomorrow.'],
   register_key: [403, 'This build of the app cannot register with mimir.'],
   paused: [503, 'mimir is paused for now.'],
   unknown_install: [401, 'This install is not registered with mimir.'],
@@ -83,6 +86,19 @@ const CAP_MESSAGES: Record<string, [number, string]> = {
 }
 // refusals that an exact token count can turn around
 const DAILY_CAPS = new Set(['install_daily', 'ip_daily', 'edition_daily'])
+// refusals that count toward the per-minute rates, so a refused client cannot retry for free
+const COUNTED = new Set([...DAILY_CAPS, 'install_rate', 'ip_rate', 'install_busy', 'ip_busy', 'edition_busy'])
+
+// Each install's conversations cache apart from every other install's: a mark after the
+// shared tools and system prompt, so neither a cache hit's speed nor the cost /quota shows
+// can tell one install what another sent.
+async function installMark(tok: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`mimir-cache|${tok}`))
+  return [...new Uint8Array(d).slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+export function marked(body: Obj, mark: string): Obj {
+  return { ...body, system: [...((body['system'] as Obj[] | undefined) ?? []), { type: 'text', text: `scope ${mark}` }] }
+}
 
 function rpcFailure(e: unknown): Response {
   if (e instanceof RpcError && CAP_MESSAGES[e.hint]) {
@@ -154,17 +170,21 @@ async function messages(req: Request, env: Env): Promise<Response> {
       p_token: tok, p_ip: ip, p_model: MODEL, p_input: worstInput(prompt, s.maxOutput, s.maxSearches), p_output: s.maxOutput,
       p_searches: s.maxSearches,
     }) as Promise<string>
+  const refused = async (e: unknown) => {
+    if (e instanceof RpcError && COUNTED.has(e.hint)) await rpc(env, 'mimir_refused', { p_token: tok, p_ip: ip }).catch(() => {})
+    return rpcFailure(e)
+  }
   let call: string
   try {
     call = await reserve(s.promptEstimate)
   } catch (e) {
     // the byte count overstates most prompts; when it is what hit a cap, count exactly and try once more
     const exact = e instanceof RpcError && DAILY_CAPS.has(e.hint) ? await countTokens(env, s.body) : null
-    if (exact === null) return rpcFailure(e)
+    if (exact === null) return refused(e)
     try {
       call = await reserve(exact)
     } catch (e2) {
-      return rpcFailure(e2)
+      return refused(e2)
     }
   }
 
@@ -201,7 +221,7 @@ async function messages(req: Request, env: Env): Promise<Response> {
     up = await (env.fetch ?? fetch)(`${env.upstream}/v1/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': env.anthropicKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify(s.body),
+      body: JSON.stringify(marked(s.body, await installMark(tok))),
     })
   } catch {
     await later(settle(false))
@@ -224,7 +244,9 @@ async function messages(req: Request, env: Env): Promise<Response> {
     flush(ctl) {
       const rest = tap.end()
       if (rest) ctl.enqueue(enc.encode(rest))
-      later(settle(true))
+      // a stream that ended without message_stop, or with an error, may have billed more
+      // than it counted: it settles at the whole reply allowance, as a cut-off one does
+      later(settle(true, !tap.complete || tap.failed))
     },
     cancel() {
       later(settle(false, true))

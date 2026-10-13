@@ -54,6 +54,9 @@ function textBlock(b: Obj): Obj {
   return out
 }
 
+// the image blocks shape built, the only objects the estimate counts as images
+const IMAGES = new WeakSet<Obj>()
+
 function imageBlock(b: Obj): Obj {
   const src = b['source']
   // base64 only: a url source would have the provider fetch it for us
@@ -64,6 +67,7 @@ function imageBlock(b: Obj): Obj {
   if (!/^image\/(png|jpeg|gif|webp)$/.test(s['media_type'] as string)) refuse('unsupported image type')
   const out: Obj = { type: 'image', source: { type: 'base64', media_type: s['media_type'], data: s['data'] } }
   cachePoint(b, out)
+  IMAGES.add(out)
   return out
 }
 
@@ -191,16 +195,13 @@ function placeCache(body: Obj): void {
   if (n < MAX_BREAKPOINTS) body['cache_control'] = { ...EPHEMERAL }
 }
 
-function isImage(v: unknown): v is { source: Obj } {
-  return isObj(v) && v['type'] === 'image' && isObj(v['source']) && typeof v['source']['data'] === 'string'
-}
-
 // prompt tokens, never under: a token for every byte of the request, and each image at the
-// most an image can cost (only image blocks count as images)
+// most an image can cost. Only the image blocks shape built count as images: an object
+// shaped like one anywhere else (a tool's input or schema) is text, a token a byte.
 function estimate(body: Obj): number {
   let images = 0
   const text = JSON.stringify(body, (_k, v) => {
-    if (isImage(v)) {
+    if (isObj(v) && IMAGES.has(v)) {
       images++
       return { type: 'image' }
     }
