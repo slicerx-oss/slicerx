@@ -43,6 +43,16 @@ export const unitMm = (u: Pick<UnitPrefs, 'length'>) => UNIT_MM[u.length]!
  * A length in mm as the shown number, without the unit: mm trimmed to its decimals (12.5), inches to a fixed count
  * (0.500) or a fraction (1 1/2).
  */
+/** A readout's length: always the precision's decimals (or its fraction), so a column of them lines up. */
+export function fixedLength(mm: number, u: UnitPrefs): string {
+  if (!Number.isFinite(mm)) return ''
+  if (u.length === 'mm') {
+    const t = mm.toFixed(u.mmDigits)
+    return Number(t) === 0 ? (0).toFixed(u.mmDigits) : t
+  }
+  return formatLength(mm, u)
+}
+
 export function formatLength(mm: number, u: UnitPrefs): string {
   if (!Number.isFinite(mm)) return ''
   if (u.length === 'mm') return String(Number(mm.toFixed(u.mmDigits)) || 0)

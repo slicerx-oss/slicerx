@@ -12,7 +12,7 @@ import { plateScrub } from '../../plate/scrub'
 import { bounds, decompose, sizeOf, type Vec3 } from '../../plate/transform'
 import { useShownOrigin } from '../../state/model-mode'
 import { selectedIds, useApp } from '../../state/store'
-import { formatLength } from '../../cad/units'
+import { fixedLength } from '../../cad/units'
 import { useLength } from '../../cad/use-units'
 
 const AXES = ['X', 'Y', 'Z'] as const
@@ -73,7 +73,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
       </div>}
       {!more && tool !== 'rotate' && tool !== 'scale' ? (
         <p className="tf-readout" aria-label="Position">
-          {inches ? `X ${formatLength(shown[0], len.units)} Y ${formatLength(shown[1], len.units)} Z ${formatLength(shown[2], len.units)} in` : `X ${fmt(shown[0])} Y ${fmt(shown[1])} Z ${fmt(shown[2])} mm`}
+          {model ? `X ${fixedLength(shown[0], len.units)} Y ${fixedLength(shown[1], len.units)} Z ${fixedLength(shown[2], len.units)} ${len.unit}` : `X ${fmt(shown[0])} Y ${fmt(shown[1])} Z ${fmt(shown[2])} mm`}
         </p>
       ) : row('Position', 'mm', shown, (i, v) => {
         const p = [...t.position] as Vec3

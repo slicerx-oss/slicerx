@@ -3,7 +3,7 @@
 // Display units: lengths show in mm or in, data stays in mm. Typed units always work, whatever the setting; a bare
 // number takes the shown unit, and a step that follows a named value keeps its unit written in.
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_UNITS, formatLength, fraction, fromMmText, lengthText, parseLength, readUnits, toMmText, type UnitPrefs } from '../src/cad/units'
+import { DEFAULT_UNITS, fixedLength, formatLength, fraction, fromMmText, lengthText, parseLength, readUnits, toMmText, type UnitPrefs } from '../src/cad/units'
 import { evaluate, namesIn, withUnit } from '../src/cad/values'
 
 const MM: UnitPrefs = DEFAULT_UNITS
@@ -65,6 +65,14 @@ describe('typed lengths', () => {
 })
 
 describe('format and parse round trip', () => {
+  it('gives readouts the precision\'s fixed decimals, or its fraction', () => {
+    expect(fixedLength(10, MM)).toBe('10.00')
+    expect(fixedLength(-0.001, MM)).toBe('0.00')
+    expect(fixedLength(-93.9, IN)).toBe('-3.697')
+    expect(fixedLength(0, IN)).toBe('0.000')
+    expect(fixedLength(9.525, { ...IN, inchFraction: 64 })).toBe('3/8')
+  })
+
   it('shows mm trimmed to its decimals and inches fixed', () => {
     expect(formatLength(25.4, MM)).toBe('25.4')
     expect(formatLength(10, MM)).toBe('10')

@@ -18,6 +18,13 @@ describe('the model size under the view', () => {
     expect(modelSizeText({ parts, transform: tallTwice } as never)).toBe('10.0 x 20.0 x 60.0 mm')
   })
 
+  it('is in inches in Model with inches set', () => {
+    const units = { length: 'in', mmDigits: 2, inchDigits: 3, inchFraction: 0 } as const
+    expect(modelSizeText({ parts, transform: identity } as never, units)).toBe('0.394 x 0.787 x 1.181 in')
+    expect(modelSizeText({ parts, transform: identity } as never, { ...units, inchFraction: 16 })).toBe('3/8 x 13/16 x 1 3/16 in')
+    expect(modelSizeText({ parts, transform: identity } as never, { ...units, length: 'mm' })).toBe('10.00 x 20.00 x 30.00 mm')
+  })
+
   it('is nothing with no object', () => {
     expect(modelSizeText(undefined)).toBeNull()
   })
