@@ -33,6 +33,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'design.edit_step': 'edit',
   'design.undo': 'edit',
   'design.redo': 'edit',
+  // the design timeline, and moving its marker (rolling the design back or forward)
+  'design.timeline': 'read',
+  'design.roll': 'edit',
   'geom.faces': 'read',
   'geom.face_pick': 'read',
   'geom.edge_pick': 'read',
@@ -189,6 +192,31 @@ const HANDLERS: Record<string, Handler> = {
     if (!cloud || !cloudReady(currentEdition(), cloud)) throw new LinkError('not_found', `${appName()} has no ${ASSISTANT_NAME} cloud in this build`)
     return cloud.quota()
   },
+  'design.timeline': () => {
+    const s = get()
+    const t = s.timeline
+    return {
+      marker: t.marker,
+      rolledBack: s.rollback !== null,
+      bodies: t.bodies.map((b) => b.id),
+      items: t.items.map((i) =>
+        i.kind === 'sketch'
+          ? { kind: 'sketch', id: i.id, name: i.name, loops: i.loops.length }
+          : { kind: 'feature', id: i.id, body: i.body, op: i.params.op, ...(i.sketch ? { sketch: i.sketch } : {}), ...(i.label ? { label: i.label } : {}), ...(i.suppressed ? { suppressed: true } : {}) },
+      ),
+    }
+  },
+  'design.roll': async (args) => {
+    const t = get().timeline
+    const m = args['marker'] ?? t.items.length
+    if (typeof m !== 'number' || !Number.isInteger(m) || m < 0 || m > t.items.length) throw new LinkError('invalid_input', `marker: a whole number from 0 to ${t.items.length} (the end)`)
+    if (!linkLoader) throw new LinkError('not_ready', `${appName()} is still starting its design tools`)
+    if (get().historyEdit) throw new LinkError('busy', 'the person is changing a step in the app; try again when they are done')
+    const { rollTo } = await import('../cad/history/rollback')
+    await rollTo(linkLoader, m)
+    const s = get()
+    return { marker: s.timeline.marker, rolledBack: s.rollback !== null, objects: s.plate.length }
+  },
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()
@@ -205,9 +233,11 @@ const HANDLERS: Record<string, Handler> = {
 
 /** The design tools, once the link has a loader to put bodies on the plate. */
 let designTools: Map<string, PilotTool<never>> | null = null
+let linkLoader: Loader | null = null
 
 /** Gives the design tools the plate's design host. */
 export async function useDesignHost(loader: Loader): Promise<void> {
+  linkLoader = loader
   const [{ designToolset }, { appDesignHost }] = await Promise.all([import('@slicerx/mcp/toolset'), import('../cad/design-host')])
   designTools = new Map(designToolset(appDesignHost(loader)).filter((t) => Object.hasOwn(APP_LINK_METHODS, t.name)).map((t) => [t.name, t]))
 }

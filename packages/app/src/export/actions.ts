@@ -10,6 +10,7 @@ import { slotConfig } from '../filament/slot-config'
 import { currentMap, mapExtruders, masterExtruder, pickedMap } from '../filament/nozzle-map'
 import { activeMeta, allPlates, projectBase, switchPlate } from '../plate/plates'
 import { printBlock } from '../plate/heimdall'
+import { heldBodies } from '../plate/timeline'
 import { markClean } from '../project/unsaved'
 import { slicePlate } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
@@ -77,8 +78,10 @@ async function printMarks(plates: readonly PlateMeta[]): Promise<Pick<ProjectInp
 export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pick<ProjectInput, 'settings' | 'gcode'>> = {}, opts: { offPage?: boolean } = {}): Promise<Uint8Array> {
   const s = get()
   const settings = extra.settings ?? orcaSettings(await loadSettings())
+  // a project saved rolled back keeps the bodies made after the marker
+  const held = extra.gcode ? [] : heldBodies(s)
   const input: ProjectInput = {
-    plates,
+    plates: held.length ? plates.map((p) => ({ ...p, objects: [...p.objects, ...held.filter((h) => h.plate === p.id).map((h) => h.entry)] })) : plates,
     bed: s.bed,
     settings,
     objectSettings: s.objectSettings,

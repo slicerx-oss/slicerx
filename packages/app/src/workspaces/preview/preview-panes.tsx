@@ -11,6 +11,8 @@ import { useHost } from '../../host'
 import { formatCost, formatDuration, formatGrams, previewStats, timeRows } from '../../lib/preview-stats'
 import { Swatch } from '../../parts'
 import { printBlock } from '../../plate/heimdall'
+import { RolledBack } from '../prepare/rolled-back'
+import { rolledBackNote } from '../../plate/timeline'
 import { slotLabel } from '../../filament/rail'
 import { resolveSlots } from '../../filament/slots'
 import { exportGcode, recordSpoolUse } from '../../state/actions'
@@ -208,6 +210,7 @@ export function PreviewRight() {
   const links = useApp((s) => s.spoolLinks)
   // A strike in the slice, or by object objects moved too close or too tall since it: Print and Export wait.
   const unsafe = useApp(printBlock)
+  const rolled = useApp(rolledBackNote)
   const shown = shownSlice(slice)
   // The result on screen while a new slice runs is the last one: its file is not the plate's, so Print and Export wait.
   const updating = slice.status === 'running'
@@ -284,7 +287,7 @@ export function PreviewRight() {
         </dl>
         {/* The one Print is in the sidebar footer; the summary keeps the file export. */}
         <div className="app-row gap8">
-          <Button size="sm" icon="download" disabled={unsafe !== null || updating || outdated} onClick={() => void exportGcode(host)}>
+          <Button size="sm" icon="download" disabled={unsafe !== null || updating || outdated} {...(rolled ? { tip: { title: 'Export G-code', body: rolled } } : {})} onClick={() => void exportGcode(host)}>
             {printer && isExportOnly(printer) ? (
               <span className="btn-name" {...tipAttrs({ title: `Export for ${printer.name}` })}>
                 Export for <MiddleName name={shortPrinterName(printer.name)} />
@@ -294,6 +297,7 @@ export function PreviewRight() {
             )}
           </Button>
         </div>
+        <RolledBack />
         {unsafe !== null ? (
           <p className="app-err" role="alert">
             {unsafe}

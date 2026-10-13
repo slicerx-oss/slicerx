@@ -33,7 +33,7 @@ let stop: (() => void) | null = null
 afterEach(() => {
   stop?.()
   stop = null
-  appStore.setState({ plate: [], timeline: { bodies: [], items: [], marker: 0 } })
+  appStore.setState({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', timeline: { bodies: [], items: [], marker: 0 }, rollback: null })
 })
 
 describe('design timeline in the app', () => {
@@ -83,5 +83,70 @@ describe('design timeline in the app', () => {
     const [fa, fb] = p.plates[0]!.objects.map((o) => o.fileId)
     expect(p.histories.get(fa!)!.steps.map((s) => s.id)).toEqual([id(0, 1)])
     expect(p.histories.get(fb!)!.steps.map((s) => s.id)).toEqual([id(1000, 2)])
+  })
+})
+
+describe('rolling the design back', () => {
+  const ring = (): History => ({ version: 1, base: [], steps: [step(id(1000, 2), { op: 'sketch.revolve', loops: [{ type: 'circle', center: [10, 0], diameterMm: 4 }], axis: { point: [0, 0], direction: [0, 1] }, angleDeg: 360, operation: 'new', name: 'Ring' })] })
+  const plain = (): History => ({ version: 1, base: [boxMesh(10, 10, 5)], steps: [] })
+  const loader = { loadParts: () => Promise.reject(new Error('no replay expected')) }
+
+  it('hides a body made after the marker, says so, and brings it back at the end; undo puts the marker back', async () => {
+    const { rollTo } = await import('../src/cad/history/rollback')
+    const { rolledBackNote } = await import('../src/plate/timeline')
+    const undo = createHistory(appStore)
+    stop = startTimeline()
+    appStore.setState({ plate: [entry('a', plain()), entry('b', ring())], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1' })
+    expect(appStore.getState().timeline.items).toHaveLength(2)
+    await rollTo(loader, 0)
+    expect(appStore.getState().plate.map((e) => e.id)).toEqual(['a'])
+    expect(rolledBackNote()).toBe('The timeline is rolled back to step 0. Slicing uses this state.')
+    // the body stays in the timeline while it is off the plate
+    expect(appStore.getState().timeline.bodies.map((b) => b.id)).toEqual(['a', 'b'])
+    undo.undo()
+    expect(appStore.getState().plate.map((e) => e.id)).toEqual(['a', 'b'])
+    expect(appStore.getState().rollback).toBeNull()
+    undo.redo()
+    expect(appStore.getState().rollback?.at).toBe(0)
+    await rollTo(loader, 2)
+    expect(appStore.getState().plate.map((e) => e.id)).toEqual(['a', 'b'])
+    expect(appStore.getState().plate[1]!.history!.steps).toHaveLength(1)
+    expect(rolledBackNote()).toBeNull()
+    undo.dispose()
+  })
+
+  it('saves rolled back with the hidden body, and opens rolled back the same way', async () => {
+    const { rollTo, settleRollback } = await import('../src/cad/history/rollback')
+    stop = startTimeline()
+    appStore.setState({ plate: [entry('a', plain()), entry('b', ring())], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1' })
+    await rollTo(loader, 0)
+    const { heldBodies } = await import('../src/plate/timeline')
+    const s = appStore.getState()
+    const objects = [...s.plate, ...heldBodies().map((h) => h.entry)]
+    const bed = { widthMm: 256, depthMm: 256 }
+    const p = await readProject(writeProject({ plates: [{ id: 'p1', name: 'Plate 1', objects, settings: {} }], bed, settings: {}, timeline: s.timeline }), bed)
+    expect(p.plates[0]!.objects).toHaveLength(2)
+    expect(p.timeline!.marker).toBe(0)
+    // as open-project lands it: both objects, the file's timeline, then the roll back settles
+    stop()
+    stop = null
+    const [fa, fb] = p.plates[0]!.objects.map((o) => o.fileId)
+    appStore.setState({ plate: [entry('a2', p.histories.get(fa!) ?? plain()), entry('b2', ring())], rollback: null, timeline: withBodyIds(p.timeline!, (f) => (f === fa ? 'a2' : f === fb ? 'b2' : undefined)) })
+    settleRollback()
+    expect(appStore.getState().plate.map((e) => e.id)).toEqual(['a2'])
+    expect(appStore.getState().rollback?.ends.find((h) => h.entry.id === 'b2')?.entry.history?.steps).toHaveLength(1)
+  })
+})
+
+describe('the timeline over the app link', () => {
+  it('reads the timeline and checks a marker before moving it', async () => {
+    const { runCall } = await import('../src/app-link/methods')
+    stop = startTimeline()
+    appStore.setState({ plate: [entry('a', box())] })
+    const r = (await runCall('design.timeline', {})) as { marker: number; rolledBack: boolean; items: { kind: string; sketch?: string; name?: string }[] }
+    expect(r).toMatchObject({ marker: 3, rolledBack: false })
+    expect(r.items.map((i) => i.kind)).toEqual(['feature', 'sketch', 'feature'])
+    expect(r.items[2]!.sketch).toBe(`${id(2000, 3)}k`)
+    expect(((await runCall('design.roll', { marker: 9 }).catch((x: unknown) => x)) as { code: string }).code).toBe('invalid_input')
   })
 })

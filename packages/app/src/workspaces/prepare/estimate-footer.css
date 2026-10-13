@@ -27,3 +27,7 @@
 .slice-done .est-again { flex: none; }
 /* On the narrowest phones Slice again is its icon, so the estimate keeps its line. */
 @media (max-width: 400px) { .slice-done .est-again-label { display: none; } }
+
+/* the timeline rolled back: the line, then the way to the end */
+.rolled-back { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rolled-back p { margin: 0; }

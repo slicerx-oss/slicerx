@@ -136,6 +136,17 @@ export interface HistoryEdit {
   view?: boolean
 }
 
+/**
+ * The design rolled back: the timeline's marker sits before its end (cad/history/rollback.ts). Each object on a plate
+ * shows its body as it was at the marker; `ends` keeps every object as it is at the end, so moving to the end puts
+ * it back, and holds the bodies made after the marker, which are off the plates (hidden, and not sliced) until then.
+ */
+export interface Rollback {
+  /** The marker: how many timeline items are live. */
+  at: number
+  ends: { plate: string; entry: PlateEntry }[]
+}
+
 /** A modeling tool left open when Design closed, waiting to open again (cad/park.ts). Memory only. */
 export interface Parked {
   /** Null when only a step was being looked at. */
@@ -508,6 +519,8 @@ export interface AppState {
    * (docs/cad-history.md). Each object's `history` is its view of it; plate/timeline.ts keeps the two in step.
    */
   timeline: Timeline
+  /** Set while the timeline is rolled back. */
+  rollback: Rollback | null
   /** What a click picks in Model: whole objects, faces, edges (plate/pick-filter.ts). Session only. */
   pickFilter: PickKind[]
   /** Faces and edges picked in Model before a tool opens; the tool takes them as if clicked (cad/panel-kit.tsx). */
@@ -792,6 +805,7 @@ export const appStore = createStore<AppState>()(() => ({
   objectTool: null,
   historyEdit: null,
   timeline: { bodies: [], items: [], marker: 0 },
+  rollback: null,
   pickFilter: ['object'],
   subPicks: [],
   parked: null,
