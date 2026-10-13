@@ -150,8 +150,10 @@ button { cursor: pointer; }
 .sx-scrub { position: relative; display: flex; align-items: center; gap: 2px; min-width: 0; padding: 0 8px; }
 .sx-scrub[data-handle] { padding-left: 0; }
 .sx-scrub[data-boxed] { box-sizing: border-box; }
-.sx-vector-box > .sx-scrub { height: 100%; }
+.sx-vector-box > .sx-scrub { height: 100%; gap: 0; padding-right: 5px; }
 .sx-vector-box > .sx-scrub + .sx-scrub { border-left: 1px solid var(--line-soft); }
+/* three axes share the box: a narrower handle leaves room for -123.4 at desktop widths */
+.sx-vector-box .sx-scrub-handle { width: 14px; }
 /* the ring is on the focused segment only */
 .sx-scrub:focus-within { z-index: 1; border-radius: var(--r-sm); box-shadow: 0 0 0 1px var(--accent), var(--focus-field); }
 .sx-scrub[data-boxed]:focus-within { border-color: var(--accent); box-shadow: var(--focus-field); }
