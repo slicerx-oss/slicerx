@@ -148,3 +148,45 @@ describe('design tools over the app link', () => {
     expect(e.message).toMatch(/wait a moment and call again/)
   })
 })
+
+describe('design tools with --app', () => {
+  const required = (call: AppLinkCaller['call']) => {
+    const tools = routeToApp(designToolset(NO_ENGINE_HOST), { call }, 'SlicerX', { required: true })
+    return (name: string, input: Record<string, unknown>) => tools.find((t) => t.name === name)!.run(input as never, {} as never)
+  }
+
+  it('run in the app, without the --no-app note', async () => {
+    const run = required((async () => ({ summary: 'New design Clip', output: { design: 'obj_1' } })) as AppLinkCaller['call'])
+    const out = await run('design.new', { name: 'Clip' })
+    expect(out.summary).toBe('New design Clip (in SlicerX)')
+    expect(out.output).toEqual({ design: 'obj_1', in: 'app' })
+  })
+
+  it('refuse instead of running here while the link does not answer, and say why', async () => {
+    for (const [code, message, why] of [
+      ['app_link_off', '', /app link is off: turn it on in SlicerX's Settings/],
+      ['app_closed', '', /SlicerX is not open/],
+      ['forbidden', '', /not allowed on the app link/],
+      ['unauthorized', '', /not allowed on the app link/],
+      ['bad_request', 'unknown method app.call', /older than the app link/],
+    ] as const) {
+      const run = required((async () => {
+        throw Object.assign(new Error(message || code), { code })
+      }) as AppLinkCaller['call'])
+      const e = await run('design.new', { name: 'Clip' }).catch((x: unknown) => x)
+      // Never engine_unavailable: nothing ran on this server's designs.
+      expect((e as ToolInputError).code, code).toBe('not_configured')
+      expect((e as ToolInputError).message, code).toMatch(why)
+      expect((e as ToolInputError).message, code).toMatch(/run without --app/)
+      expect((e as ToolInputError).details, code).toEqual({ appLink: code })
+    }
+  })
+
+  it('still pass the app\'s own refusals on as they are', async () => {
+    const run = required((async () => {
+      throw fail('busy')
+    }) as AppLinkCaller['call'])
+    const e = await run('design.undo', { design: 'obj_1' }).catch((x: unknown) => x)
+    expect((e as ToolInputError).code).toBe('busy')
+  })
+})

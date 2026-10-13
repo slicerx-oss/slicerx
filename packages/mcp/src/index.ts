@@ -61,8 +61,11 @@ export interface SlicerxMcpOptions {
   linkHubKey?: string | undefined
   /** This client's own hub credential (a remembered agent key), instead of the shared agent code. */
   linkClientKey?: string | undefined
-  /** With printers through sx-link: run the design tools on the project open in the app while the app link answers (default true; `--no-app` sets false). */
-  app?: boolean | undefined
+  /**
+   * With printers through sx-link: run the design tools on the project open in the app while the app link answers
+   * (default true; `--no-app` sets false). 'required' (`--app`) runs them only there and refuses while the link does not answer.
+   */
+  app?: boolean | 'required' | undefined
   /** WebSocket class for the sx-link connection; tests pass a scripted hub. */
   linkWebSocket?: typeof WebSocket | undefined
   /** Permission policy file; defaults to ~/.config/slicerx/mcp-policy.json when present. */
@@ -157,10 +160,11 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const geomCall = opts.geomEngine ?? (geomBin ? geomEngine(geomBin) : undefined)
   const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
   const appLink = opts.app !== false ? printers?.appLink : undefined
+  if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')
   const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs }), ...(designs ? [...designTools(designs, designFiles(policy)), ...paintTools(designs)] : [])] : []
   // Without an engine here, the design tools still work on the app's project, through the link.
   const here = appLink && !designs ? [...built, ...designToolset(NO_ENGINE_HOST).filter((t) => APP_DESIGN_TOOLS.has(t.name) && !built.some((b) => b.name === t.name))] : built
-  const geom = appLink ? routeToApp(here, appLink, productName()) : here
+  const geom = appLink ? routeToApp(here, appLink, productName(), { required: opts.app === 'required' }) : here
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)

@@ -28,6 +28,8 @@ for the next. It stops at the first call that fails, with exit code 1. The tool 
 be named with or without its slicerx_ prefix; <json> is its arguments (default {}).
 Example: slicerx-mcp call project_open '{"printer":"bambu_a1"}' \
            project_add_filament '{"type":"PETG","color":"#ff5500"}' project_show
+With --app the design calls edit the project open in the app, each step in its history:
+         slicerx-mcp call --app design_new '{"name":"Clip"}' design_list
 
 Transport
   --http                   Serve streamable HTTP on /mcp instead of stdio
@@ -61,6 +63,9 @@ Printers
   --link-state-dir <dir>   sx-link's state directory, when it is not the default
   --no-app                 with --printers link: keep designs on this server, even while the app link to
                            the open app answers (SLICERX_MCP_NO_APP=1)
+  --app                    run the design tools only in the project open in the app, through the app link;
+                           sets --printers link, and a design call fails while the link does not answer
+                           instead of running here (SLICERX_MCP_APP=1)
 
 Permissions and records
   --policy <file>          Permission policy (default ~/.config/slicerx/mcp-policy.json if present,
@@ -102,6 +107,7 @@ async function main(): Promise<void> {
       'link-code': { type: 'string' },
       'link-state-dir': { type: 'string' },
       'no-app': { type: 'boolean' },
+      app: { type: 'boolean' },
       policy: { type: 'string' },
       log: { type: 'string' },
       'profiles-dir': { type: 'string' },
@@ -120,7 +126,11 @@ async function main(): Promise<void> {
   const http = values.http ?? flag('HTTP')
   const engine = values.engine ?? env('ENGINE') ?? 'auto'
   if (!['auto', 'sx', 'stub'].includes(engine)) throw new Error(`--engine must be auto, sx or stub, not ${engine}`)
-  const printers = values.printers ?? env('PRINTERS') ?? 'demo'
+  const app = values.app ?? flag('APP')
+  const noApp = values['no-app'] ?? flag('NO_APP')
+  if (app && noApp) throw new Error('--app and --no-app cannot both be set')
+  const printers = values.printers ?? env('PRINTERS') ?? (app ? 'link' : 'demo')
+  if (app && printers !== 'link') throw new Error(`--app works through sx-link, so --printers must be link, not ${printers}`)
   if (printers !== 'demo' && printers !== 'link' && printers !== 'off') throw new Error(`--printers must be demo, link or off, not ${printers}`)
   const envDirs = env('ALLOW_DIR')?.split(':').filter(Boolean)
   const keyRef = env('LINK_KEY_REF')
@@ -147,7 +157,7 @@ async function main(): Promise<void> {
     linkCode: keyRef || partnerKey ? undefined : linkCodeFrom({ argvCode: values['link-code'], stateDir: values['link-state-dir'] ?? env('LINK_STATE_DIR'), envCode: env('LINK_CODE'), needed: printers === 'link' }),
     // The hub's key from its state directory is checked even when the code comes from the environment.
     linkHubKey: printers === 'link' ? (env('LINK_HUB_KEY') ?? readHubKey(values['link-state-dir'] ?? env('LINK_STATE_DIR'))) : undefined,
-    app: !(values['no-app'] ?? flag('NO_APP')),
+    app: app ? 'required' : !noApp,
     policyFile: values.policy ?? env('POLICY'),
     logFile: values.log ?? env('LOG'),
     profilesDir: values['profiles-dir'] ?? env('PROFILES_DIR'),
