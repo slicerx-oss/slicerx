@@ -90,33 +90,38 @@ impl PrinterConnector for PrusaLinkConnector {
     }
 
     /// Asks a typed address for `GET /api/version`. PrusaLink answers with `text` "PrusaLink" and
-    /// its hostname, or, without a login, with a 401 and a Digest challenge, as 5.x firmware does.
+    /// its hostname, or, without a login, with a 401 and a Digest challenge, as 5.x firmware does. A
+    /// printer that answers without a login is also asked for `/api/v1/info`, whose `name` (the one
+    /// given on the printer) is shown ahead of the hostname, with its `serial`.
     async fn probe(&self, host: &str, timeout: Duration) -> Option<DiscoveredPrinter> {
         let ip: std::net::IpAddr = host.parse().ok()?;
         let client = http::service_client().ok()?;
-        let url = format!(
-            "http://{}/api/version",
-            std::net::SocketAddr::from((ip, self.probe_port))
-        );
-        let r = client.get(url).timeout(timeout).send().await.ok()?;
-        let found = |name: Option<String>, firmware: Option<String>| DiscoveredPrinter {
-            plugin: "prusalink".to_owned(),
-            host: host.to_owned(),
-            port: Some(self.probe_port),
-            name,
-            model: None,
-            serial: None,
-            firmware,
-            lan_only: None,
-            ..DiscoveredPrinter::default()
-        };
+        let at = std::net::SocketAddr::from((ip, self.probe_port));
+        let r = client
+            .get(format!("http://{at}/api/version"))
+            .timeout(timeout)
+            .send()
+            .await
+            .ok()?;
+        let found =
+            |name: Option<String>, serial: Option<String>, firmware: Option<String>| DiscoveredPrinter {
+                plugin: "prusalink".to_owned(),
+                host: host.to_owned(),
+                port: Some(self.probe_port),
+                name,
+                model: None,
+                serial,
+                firmware,
+                lan_only: None,
+                ..DiscoveredPrinter::default()
+            };
         if r.status() == reqwest::StatusCode::UNAUTHORIZED {
             let digest = r
                 .headers()
                 .get(reqwest::header::WWW_AUTHENTICATE)
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|v| Challenge::parse(v).is_some());
-            return digest.then(|| found(None, None));
+            return digest.then(|| found(None, None, None));
         }
         if !r.status().is_success() {
             return None;
@@ -125,10 +130,17 @@ impl PrinterConnector for PrusaLinkConnector {
         if !str_at(&v, &["text"]).is_some_and(|t| t.contains("PrusaLink")) {
             return None;
         }
-        Some(found(
-            str_at(&v, &["hostname"]).map(str::to_owned),
-            str_at(&v, &["firmware"]).map(str::to_owned),
-        ))
+        let info = match client
+            .get(format!("http://{at}/api/v1/info"))
+            .timeout(timeout)
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r.json::<Value>().await.ok(),
+            _ => None,
+        };
+        let (name, serial) = probe_identity(&v, info.as_ref());
+        Some(found(name, serial, nonempty(&v, "firmware")))
     }
 
     async fn connect(&self, cfg: &PrinterConfig, secrets: &dyn Secrets) -> Result<Box<dyn PrinterSession>> {
@@ -225,22 +237,33 @@ fn model_from_version(v: &Value) -> Option<String> {
     })
 }
 
+/// The text at `key`, trimmed, when it is not empty.
+fn nonempty(v: &Value, key: &str) -> Option<String> {
+    str_at(v, &[key])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
+/// The name and serial a probe shows: the `/api/v1/info` `name` (given on the printer), else the
+/// `/api/version` `hostname`, and the info `serial`.
+fn probe_identity(version: &Value, info: Option<&Value>) -> (Option<String>, Option<String>) {
+    let name = info
+        .and_then(|i| nonempty(i, "name"))
+        .or_else(|| nonempty(version, "hostname"));
+    (name, info.and_then(|i| nonempty(i, "serial")))
+}
+
 /// The hardware in an `/api/v1/info` reply, with the firmware and any model from `/api/version`. The
 /// MMU3 has five slots; the info reply says only whether one is attached. An XL's toolheads are not
 /// reported (one `nozzle_diameter`), so they come from the catalog model.
 pub(crate) fn prusalink_hardware(v: &Value, version: Option<&Value>) -> PrinterHardware {
     let mmu = v.get("mmu").and_then(Value::as_bool) == Some(true);
-    let text = |v: &Value, k: &str| {
-        str_at(v, &[k])
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_owned)
-    };
     PrinterHardware {
         model: version.and_then(model_from_version),
-        firmware: version.and_then(|v| text(v, "firmware")),
-        serial: text(v, "serial"),
-        hostname: text(v, "hostname"),
+        firmware: version.and_then(|v| nonempty(v, "firmware")),
+        serial: nonempty(v, "serial"),
+        hostname: nonempty(v, "hostname"),
         extruders: vec![ExtruderInfo {
             tool: 0,
             nozzle_diameter_mm: v.get("nozzle_diameter").and_then(Value::as_f64),
@@ -541,8 +564,20 @@ pub(crate) fn parse_status(id: &str, status: &Value, job: Option<&Value>, camera
         })
     };
     let active = matches!(state, PrinterState::Printing | PrinterState::Paused);
+    // A file arriving (from this app, another slicer, the web page or Prusa Connect) is the spec's
+    // `transfer` in the status, with its `progress` in percent. While nothing prints, it is what the
+    // printer is doing, so it is said instead of plain idle.
+    let receiving = status
+        .get("transfer")
+        .filter(|t| t.is_object())
+        .filter(|_| matches!(state, PrinterState::Idle | PrinterState::Finished))
+        .map(|t| match f64_at(t, &["progress"]).filter(|p| p.is_finite()) {
+            Some(p) => format!("Receiving a file ({:.0}%)", p.clamp(0.0, 100.0).floor()),
+            None => "Receiving a file".to_owned(),
+        });
     let message = reason
         .filter(|_| matches!(state, PrinterState::Paused | PrinterState::Error))
+        .or(receiving)
         .or(message);
     // `speed` is the print speed in percent of the sliced speeds; `axis_z` the head's height, which is the layer
     // printing now while a job runs.
@@ -871,6 +906,78 @@ mod tests {
         assert_eq!(stopped.message.as_deref(), Some("The print was stopped"));
         let ready = parse_status("p", &st("READY"), None, false);
         assert_eq!((ready.state, ready.message), (PrinterState::Idle, None));
+    }
+
+    #[test]
+    fn a_file_arriving_reads_as_receiving_while_nothing_prints() {
+        let st =
+            |state: &str, transfer: Value| json!({ "printer": { "state": state }, "transfer": transfer });
+        let idle = parse_status(
+            "p",
+            &st(
+                "IDLE",
+                json!({ "id": 7, "time_transferring": 3, "progress": 65.82 }),
+            ),
+            None,
+            false,
+        );
+        assert_eq!(idle.state, PrinterState::Idle);
+        assert_eq!(idle.message.as_deref(), Some("Receiving a file (65%)"));
+        // Only `id` and `time_transferring` are required: no progress, no percent.
+        let bare = parse_status(
+            "p",
+            &st("FINISHED", json!({ "id": 7, "time_transferring": 0 })),
+            None,
+            false,
+        );
+        assert_eq!(bare.message.as_deref(), Some("Receiving a file"));
+        // It replaces the word for a stopped print, which is over.
+        let after_stop = parse_status(
+            "p",
+            &st(
+                "STOPPED",
+                json!({ "id": 8, "time_transferring": 1, "progress": 100.0 }),
+            ),
+            None,
+            false,
+        );
+        assert_eq!(after_stop.message.as_deref(), Some("Receiving a file (100%)"));
+        // A print in progress keeps its own state and words.
+        let printing = parse_status(
+            "p",
+            &st(
+                "PRINTING",
+                json!({ "id": 9, "time_transferring": 1, "progress": 10 }),
+            ),
+            None,
+            false,
+        );
+        assert_eq!(printing.message, None);
+        assert_eq!(
+            parse_status("p", &st("IDLE", Value::Null), None, false).message,
+            None
+        );
+    }
+
+    #[test]
+    fn a_probe_shows_the_printers_own_name_and_serial() {
+        let version = json!({ "text": "PrusaLink", "hostname": "prusa-mk4s" });
+        let info = json!({ "name": "MuadDib", "serial": "CZPX4720X004XC34242" });
+        assert_eq!(
+            probe_identity(&version, Some(&info)),
+            (Some("MuadDib".to_owned()), Some("CZPX4720X004XC34242".to_owned()))
+        );
+        // A blank name falls back to the hostname; no info, no serial.
+        assert_eq!(
+            probe_identity(&version, Some(&json!({ "name": " " })))
+                .0
+                .as_deref(),
+            Some("prusa-mk4s")
+        );
+        assert_eq!(
+            probe_identity(&version, None),
+            (Some("prusa-mk4s".to_owned()), None)
+        );
     }
 
     #[test]

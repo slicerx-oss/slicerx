@@ -19,13 +19,17 @@ const STATUS: Record<string, string> = { idle: 'IDLE', finished: 'IDLE', error: 
  * Changed through the control server (`POST /snapmaker`): `drop` makes the next n status requests of
  * an authorized token answer 401, as an A350 does when it drops an idle session; `decline` makes
  * pairing prompts answer 401, as when No is tapped; `forget` clears every token, as a power cycle does.
+ * `enclosure` is what `GET /api/v1/enclosure` reports: `ready` (Luban's `isReady`, an enclosure attached
+ * and answering), `led` and `fan` (Luban switches each between 0 and 100). It starts with no enclosure
+ * attached; `null` makes the endpoint answer 404, as firmware without it would.
  */
-export interface LubanExtra { drop: number; decline: boolean; forget(): void }
+export interface LubanEnclosure { ready: boolean; led: number; fan: number }
+export interface LubanExtra { drop: number; decline: boolean; forget(): void; enclosure: LubanEnclosure | null }
 
 export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?: number; headType?: number } = {}) {
   const confirmAfter = opts.confirmAfter ?? 2
   const tokens = new Map<string, { polls: number }>()
-  const extra: LubanExtra = { drop: 0, decline: false, forget: () => tokens.clear() }
+  const extra: LubanExtra = { drop: 0, decline: false, forget: () => tokens.clear(), enclosure: { ready: false, led: 0, fan: 0 } }
   let prepared: string | undefined
 
   const form = async (req: Req): Promise<URLSearchParams> => {
@@ -103,7 +107,14 @@ export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?:
         },
       }
     }
-    if (p === '/api/v1/enclosure' && req.method === 'GET') return { json: { isReady: true, isDoorEnabled: true, led: 50, fan: 0 } }
+    if (p === '/api/v1/enclosure' && req.method === 'GET') {
+      if (!extra.enclosure) throw new MockError(404, p)
+      // Luban sends the token in the query, as for the status; a form body is read too.
+      const token = req.query.get('token') ?? (req.body.length ? new URLSearchParams(req.body.toString('utf8')).get('token') : null)
+      if (!authed(token)) return { status: 401, json: { code: 401 } }
+      const e = extra.enclosure
+      return { json: { isReady: e.ready, isDoorEnabled: true, led: e.led, fan: e.fan } }
+    }
     if (!['/api/v1/prepare_print', '/api/v1/start_print', '/api/v1/pause_print', '/api/v1/resume_print', '/api/v1/stop_print', '/api/v1/execute_code'].includes(p)) throw new MockError(404, p)
     // Everything below needs an authorized token.
     const f = req.method === 'POST' ? await form(req) : req.query

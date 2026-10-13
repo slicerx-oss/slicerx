@@ -44,8 +44,16 @@ export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; di
   // Offline: the next request gets the spec's 503 (Service Unavailable), then connections are refused until cleared.
   let served503 = false
   m.onChange(() => { if (!m.faults.has('offline')) served503 = false })
-  // An upload in progress keeps the storage busy: a second one gets the spec's 409.
-  let uploading = false
+  // An upload in progress keeps the storage busy: a second one gets the spec's 409. While it lands, the status
+  // carries the spec's `transfer` (id and time_transferring always, progress and data_transferred while known).
+  let uploading: { id: number; started: number; size: number } | undefined
+  let transferId = 0
+  const transfer = () => {
+    if (!uploading) return undefined
+    const ms = Date.now() - uploading.started
+    const part = m.uploadDelayMs > 0 ? Math.min(0.99, ms / m.uploadDelayMs) : 0.99
+    return { id: uploading.id, time_transferring: Math.floor(ms / 1000), progress: round2(part * 100), data_transferred: Math.floor(part * uploading.size) }
+  }
   const handler: Handler = async (req) => {
     if (m.faults.has('offline')) {
       served503 = true
@@ -57,7 +65,8 @@ export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; di
     }
     const p = req.path
     if (p === '/api/version') return { json: { api: '2.0.0', server: '2.1.2', text: 'PrusaLink', hostname: 'mock', firmware: '6.2.4+mock', nozzle_diameter: 0.4 } }
-    if (p === '/api/v1/info') return { json: { name: m.fx.model, hostname: 'prusa-mock', serial: 'CZPXMOCK0001', nozzle_diameter: 0.4, mmu: false } }
+    // `name` and `location` are what a person set on the printer; the fake uses the fixture's printer name.
+    if (p === '/api/v1/info') return { json: { name: m.fx.name, location: 'Workshop', hostname: 'prusa-mock', serial: 'CZPXMOCK0001', nozzle_diameter: 0.4, mmu: false } }
     if (p === '/api/v1/storage') {
       const usb = { name: 'USB', type: 'USB', path: '/usb', available: extra.storage === 'usb', read_only: false }
       const local = { name: 'Local', type: 'LOCAL', path: '/local', available: extra.storage === 'local', read_only: false }
@@ -73,6 +82,7 @@ export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; di
         json: {
           job: active() && m.job ? { id: 1, progress: m.job.progress * 100, time_remaining: m.job.timeLeftS, time_printing: m.printedS } : undefined,
           storage: { path: '/usb/', name: 'usb', read_only: false },
+          transfer: transfer(),
           printer: {
             state: printerState, temp_nozzle: t.n?.current, target_nozzle: t.n?.target, temp_bed: t.b?.current, target_bed: t.b?.target,
             ...(moving ? {} : { axis_x: m.position[0], axis_y: m.position[1] }),
@@ -107,12 +117,12 @@ export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; di
         // The spec's 409: the file is printing, or the storage is busy with another upload.
         if (active() && m.job?.name === name) throw new MockError(409, `${name} is printing`)
         if (uploading) throw new MockError(409, 'storage busy')
-        uploading = true
+        uploading = { id: ++transferId, started: Date.now(), size: req.body.length }
         try {
           if (m.uploadDelayMs > 0) await new Promise((r) => setTimeout(r, m.uploadDelayMs))
           m.upload(name, req.body)
         } finally {
-          uploading = false
+          uploading = undefined
         }
         return { status: 201, json: { name } }
       }

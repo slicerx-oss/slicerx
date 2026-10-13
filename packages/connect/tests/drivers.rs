@@ -1204,6 +1204,58 @@ async fn snapmaker_luban_recovers_a_dropped_session_and_says_when_to_pair_again(
     assert_eq!(e.login_need(), Some(LoginNeed::Declined), "{e}");
 }
 
+// A Snapmaker 2.0 enclosure gives the live view its light and exhaust fan once it is attached and
+// answering. A machine whose firmware has no enclosure endpoint (404) is not asked again that session,
+// and its status is unaffected.
+#[tokio::test]
+async fn snapmaker_luban_reads_the_enclosure_light_and_fan() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("snapmaker-luban", &[]).await;
+    mocks.set_state("snapmaker-luban", "idle").await;
+    let mut cfg = config("bay-2", "snapmaker", mocks.port("snapmaker-luban"));
+    cfg.credential_ref = Some("t".to_owned());
+    let connector = SnapmakerConnector::new(gate.clone());
+    let token = connector
+        .authorize(&cfg, Duration::from_secs(20))
+        .await
+        .unwrap()
+        .unwrap();
+    let s = connector.connect(&cfg, &secrets(&[("t", token)])).await.unwrap();
+    assert!(
+        s.status().await.unwrap().live.is_none(),
+        "no enclosure attached, nothing printing"
+    );
+    mocks
+        .control(
+            "/snapmaker",
+            serde_json::json!({ "enclosure": { "ready": true, "led": 100, "fan": 100 } }),
+        )
+        .await;
+    let live = s.status().await.unwrap().live.expect("the enclosure's part");
+    assert_eq!(live.light, Some(true));
+    assert_eq!(live.fans.and_then(|f| f.chamber), Some(100));
+    mocks
+        .control("/snapmaker", serde_json::json!({ "enclosure": { "led": 0 } }))
+        .await;
+    let live = s.status().await.unwrap().live.unwrap();
+    assert_eq!(live.light, Some(false));
+
+    // Firmware without the endpoint: the status still reads, and the session stops asking.
+    mocks
+        .control("/snapmaker", serde_json::json!({ "enclosure": null }))
+        .await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Idle);
+    assert!(st.live.is_none());
+    mocks
+        .control(
+            "/snapmaker",
+            serde_json::json!({ "enclosure": { "ready": true, "led": 100 } }),
+        )
+        .await;
+    assert!(s.status().await.unwrap().live.is_none(), "not asked again");
+}
+
 // A J1 or Artisan found by a scan (port 8888) says SACP is not supported yet instead of failing as
 // an unreachable 2.0 machine.
 #[tokio::test]
@@ -1519,8 +1571,9 @@ async fn prusalink_status_carries_speed_height_and_the_printers_reason() {
     assert_eq!(st.message.as_deref(), Some("Filament runout"));
 }
 
-// A typed address is confirmed with `GET /api/version`, open or behind a Digest login. OctoPrint
-// answers the same path and is not taken for PrusaLink.
+// A typed address is confirmed with `GET /api/version`, open or behind a Digest login. An open
+// printer also gives its own name and serial from `/api/v1/info`. OctoPrint answers the same path and
+// is not taken for PrusaLink.
 #[tokio::test]
 async fn prusalink_probe_confirms_a_typed_address() {
     let gate = Arc::new(MemoryGate::new());
@@ -1532,8 +1585,8 @@ async fn prusalink_probe_confirms_a_typed_address() {
         .await
         .unwrap();
     assert_eq!(
-        (p.plugin.as_str(), p.name.as_deref()),
-        ("prusalink", Some("mock"))
+        (p.plugin.as_str(), p.name.as_deref(), p.serial.as_deref()),
+        ("prusalink", Some("Bay 3"), Some("CZPXMOCK0001"))
     );
     assert!(
         at(mocks.port("octoprint"))
@@ -1547,6 +1600,44 @@ async fn prusalink_probe_confirms_a_typed_address() {
         .await
         .unwrap();
     assert_eq!((p.plugin.as_str(), p.name), ("prusalink", None));
+}
+
+// While a file lands on an idle PrusaLink printer, its status says so (the spec's `transfer`), with the
+// share received; once the file is in, the printer reads as plain idle again.
+#[tokio::test]
+async fn prusalink_status_says_a_file_is_arriving() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("prusalink", &[]).await;
+    mocks.set_state("prusalink", "idle").await;
+    let cfg = config("bay-3", "prusalink", mocks.port("prusalink"));
+    let s = PrusaLinkConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    assert_eq!(s.status().await.unwrap().message, None);
+    mocks.set_upload_delay("prusalink", 1500).await;
+    let f = job_file("a.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        sx_connect::Action::Upload,
+        "bay-3",
+        &sx_connect::params::upload("bay-3", &f.name, &f.sha256),
+    );
+    let watch = async {
+        for _ in 0..40 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let st = s.status().await.unwrap();
+            if let Some(m) = st.message.filter(|m| m.starts_with("Receiving a file (")) {
+                return Some((st.state, m));
+            }
+        }
+        None
+    };
+    let (up, seen) = tokio::join!(s.upload(f, &t), watch);
+    up.unwrap();
+    let (state, message) = seen.expect("the transfer shows while the file lands");
+    assert_eq!(state, PrinterState::Idle);
+    assert!(message.ends_with("%)"), "{message}");
+    assert_eq!(s.status().await.unwrap().message, None);
 }
 
 // A scan probes the addresses the neighbour table lists with Prusa's MAC prefix (here handed in) and keeps the ones
@@ -1567,7 +1658,7 @@ async fn prusalink_scan_finds_a_printer_from_the_neighbour_table() {
             found[0].host.as_str(),
             found[0].name.as_deref()
         ),
-        ("prusalink", "127.0.0.1", Some("mock"))
+        ("prusalink", "127.0.0.1", Some("Bay 3"))
     );
     let none = PrusaLinkConnector::new(gate)
         .with_probe_port(mocks.port("prusalink"))
