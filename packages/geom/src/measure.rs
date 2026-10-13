@@ -343,15 +343,25 @@ pub(crate) fn fit_cylinder(mesh: &TriMesh, region: &[u32], rel: f64) -> Option<(
         return None;
     }
     let frame = Frame::from_normal([0.0; 3], axis, None)?;
-    let mut pts = Vec::new();
-    let mut seen = HashSet::new();
-    for &r in region {
+    // the circle runs through the seams between facets; a point inside a facet (a boolean splits facets) lies on
+    // its chord, inside the circle
+    let mut index: HashMap<Key, usize> = HashMap::new();
+    let mut at: Vec<(V3, V3, bool)> = Vec::new();
+    for (&r, &n) in region.iter().zip(&normals) {
         for p in mesh.corners(mesh.triangles[r as usize]) {
-            if seen.insert(key(p)) {
-                pts.push(frame.project(p));
-            }
+            let i = *index.entry(key(p)).or_insert_with(|| {
+                at.push((p, n, false));
+                at.len() - 1
+            });
+            at[i].2 |= vec3::dot(at[i].1, n) < 1.0 - 1e-6;
         }
     }
+    let seams: Vec<V2> = at.iter().filter(|v| v.2).map(|v| frame.project(v.0)).collect();
+    let pts: Vec<V2> = if seams.len() >= 6 {
+        seams
+    } else {
+        at.iter().map(|v| frame.project(v.0)).collect()
+    };
     let (c, r, err) = fit_circle_2d(&pts)?;
     (err < rel * r).then(|| (frame.at(c, 0.0), axis, r))
 }
