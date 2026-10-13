@@ -463,6 +463,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .ws-error .sx-ic { color: var(--red); }
 .ws-error h2 { margin: 0; font: var(--fw-semibold) var(--fs-lg) var(--f-body); color: var(--fg); }
 .ws-error p { margin: 0 0 8px; max-width: 68ch; text-wrap: balance; }
+/* On a phone the frame grows with its content, so the message takes the window's height left by the frame, its bars and borders. */
+@media (max-width: 900px) { .ws-error { min-height: calc(100dvh - 2 * var(--gutter) - 2px - var(--h-bar) - var(--h-status)); } }
 
 /* generated cover art: a model as a stack of print layers */
 .layer-art { display: flex; flex-direction: column-reverse; align-items: center; justify-content: flex-start; gap: 3px; width: 62%; height: 62%; margin: auto; }
