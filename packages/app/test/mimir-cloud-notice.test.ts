@@ -38,7 +38,7 @@ describe('the mimir cloud notice', () => {
       render(createElement(CloudNotice))
       const notice = screen.getByTestId('mimir-cloud-notice')
       expect(notice.textContent).toMatch(/mimir in LayerMate runs on a cloud model provider/)
-      expect(notice.textContent).toMatch(/LayerMate keeps your mimir sessions for 180 days/)
+      expect(notice.textContent).toMatch(/LayerMate keeps your mimir sessions for 180 days to improve mimir\. You can turn that off here, or later in Settings > mimir\./)
       const sw = screen.getByTestId('mimir-notice-share')
       expect(sw.getAttribute('aria-checked')).toBe('true')
       act(() => fireEvent.click(sw))

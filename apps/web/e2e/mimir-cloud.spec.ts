@@ -50,7 +50,7 @@ test.describe('mimir cloud', () => {
     await page.getByTestId('tab-mimir').click()
     const notice = page.getByTestId('mimir-cloud-notice')
     await expect(notice).toBeVisible()
-    await expect(notice).toContainText(/mimir in \S+ runs on a cloud model provider\. What you send mimir/)
+    await expect(notice).toContainText(/mimir in \S+ runs on a cloud model provider\. Your messages, photos and the parts mimir works on go to the provider/)
     await expect(notice).toContainText(/keeps your mimir sessions for 180 days to improve mimir/)
     await expect(page.locator('.mimir-empty')).toHaveCount(0)
     // for review: the notice in the chat column
