@@ -45,12 +45,24 @@ export function reloadForChunk(now = Date.now(), dirty = isDirty(), reload = () 
 }
 
 let told = false
+let workspaceDown = false
 
-/** The message when the app cannot reload by itself: once per page. */
+/** The workspace could not load and says so itself, so the toast stays away (the boundary calls this). */
+export function noteWorkspaceDown(): void {
+  workspaceDown = true
+}
+
+/** How long the toast waits, so a workspace that failed with the same download says so first. */
+const TOAST_DELAY_MS = 400
+
+/** The message when the app cannot reload by itself: once per page, and only while the workspace is up. */
 function tell(): void {
   if (told) return
-  told = true
-  toast(`Part of ${appName()} did not load (the connection dropped). Save your work, then reload.`, 'warn', { label: 'Reload', run: () => window.location.reload() })
+  window.setTimeout(() => {
+    if (told || workspaceDown) return
+    told = true
+    toast(`Part of ${appName()} did not load (the connection dropped). Save your work, then reload.`, 'warn', { label: 'Reload', run: () => window.location.reload() })
+  }, TOAST_DELAY_MS)
 }
 
 /** A chunk that failed to load: reloads, or says so. */

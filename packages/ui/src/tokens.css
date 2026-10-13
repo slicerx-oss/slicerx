@@ -107,6 +107,8 @@
   --h-lg: 44px;
   --h-bar: 52px;
   --h-status: 28px;
+  /* Where toasts rest when nothing else places them: 8 px above the status bar, inside the window frame and its border. */
+  --toast-floor: calc(var(--gutter) + 1px + var(--h-status) + 8px);
   --w-rail: 48px;
   --w-side: 264px;
 
