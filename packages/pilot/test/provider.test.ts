@@ -67,14 +67,14 @@ describe('OpenAI Responses adapter', () => {
       ev({ type: 'response.output_item.done', item: { type: 'reasoning', id: 'rs_1', encrypted_content: 'enc', summary: [] } }),
       ev({ type: 'response.output_item.done', item: { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'kb__filament', arguments: '{"material":"PETG"}' } }),
       ev({ type: 'response.output_item.done', item: { type: 'message', id: 'msg_1', content: [{ type: 'output_text', text: 'x', annotations: [{ type: 'url_citation', url: 'https://example.org/a', title: 'A' }] }] } }),
-      ev({ type: 'response.completed', response: { usage: { input_tokens: 10, output_tokens: 5 } } }),
+      ev({ type: 'response.completed', response: { usage: { input_tokens: 10, input_tokens_details: { cached_tokens: 8 }, output_tokens: 5 } } }),
     ])
     const out: LlmEvent[] = await collect(adapter.parse(body))
     expect(out).toContainEqual({ type: 'reasoning', delta: 'Think' })
     expect(out).toContainEqual({ type: 'text', delta: 'Hello' })
     expect(out).toContainEqual({ type: 'tool_call', call: { id: 'call_1', name: 'kb.filament', arguments: '{"material":"PETG"}' } })
     expect(out).toContainEqual({ type: 'citation', url: 'https://example.org/a', title: 'A' })
-    expect(out).toContainEqual({ type: 'usage', inputTokens: 10, outputTokens: 5 })
+    expect(out).toContainEqual({ type: 'usage', inputTokens: 10, outputTokens: 5, cacheReadTokens: 8 })
     const done = out.at(-1)
     expect(done).toMatchObject({ type: 'done', stop: 'tool_calls' })
     // Reasoning keeps its id for the encrypted content; stored ids are dropped from the rest.

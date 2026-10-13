@@ -161,7 +161,8 @@ export function createOpenAiAdapter(): LlmAdapter {
           case 'response.incomplete': {
             const resp = isObj(ev['response']) ? ev['response'] : {}
             const usage = isObj(resp['usage']) ? resp['usage'] : {}
-            yield { type: 'usage', inputTokens: num(usage['input_tokens']), outputTokens: num(usage['output_tokens']) }
+            const details = isObj(usage['input_tokens_details']) ? usage['input_tokens_details'] : {}
+            yield { type: 'usage', inputTokens: num(usage['input_tokens']), outputTokens: num(usage['output_tokens']), cacheReadTokens: num(details['cached_tokens']) }
             if (type === 'response.incomplete') stop = 'length'
             break
           }

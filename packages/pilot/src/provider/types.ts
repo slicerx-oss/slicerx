@@ -55,7 +55,7 @@ export type LlmEvent =
   | { type: 'reasoning'; delta: string }
   | { type: 'tool_call'; call: LlmToolCall }
   | { type: 'citation'; url: string; title: string }
-  | { type: 'usage'; inputTokens: number; outputTokens: number }
+  | { type: 'usage'; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
   | { type: 'done'; stop: LlmStop; raw?: unknown[] }
   | { type: 'error'; message: string; retryable: boolean }
 
