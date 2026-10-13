@@ -20,6 +20,7 @@ import { loadFaces } from './fonts'
 import { autoSliceMode } from '../state/auto-slice-mode'
 import { cadShown } from '../state/model-mode'
 import { layerView } from '../workspaces/preview/layer-keys'
+import { slicePanes } from '../lib/slice-panes'
 
 export { BridgeError } from './dom'
 
@@ -264,7 +265,8 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
   }
 
   const tools: Record<string, (a: Args) => unknown> = {
-    state: () => ({ ...appState(get()), exports: exportCommands(), dialogs: capture.openDialogs(), toasts: capture.visibleToasts(), marker: capture.marker() }),
+    // `panes`: Slice's right pane, the playback bar, the toolhead and gantry switches and the toolbar, as on screen.
+    state: () => ({ ...appState(get()), panes: slicePanes(get(), doc), exports: exportCommands(), dialogs: capture.openDialogs(), toasts: capture.visibleToasts(), marker: capture.marker() }),
     toasts: log('toast'),
     // The layer slider, one layer mode, the legend and the jump field, as the layer keys and commands leave them.
     layers: () => layerView(),
