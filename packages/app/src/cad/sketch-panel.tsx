@@ -301,9 +301,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       dragHandles: draft.tool === 'select',
       ...(gridMm > 0 ? { grid: { stepMm: gridMm * 10, min: plane.min, max: plane.max } } : {}),
       marks: issues.flatMap((i) => (i.at ? [i.at] : [])),
-      ...sketchMarks(sketch, constraints),
+      ...sketchMarks(sketch, constraints, (mm) => formatLength(mm, units)),
     })
-  }, [view, plane, sketch, constraints, draft, selected, issues, hs, gridMm, engineSnaps, finish, axis, states])
+  }, [view, plane, sketch, constraints, draft, selected, issues, hs, gridMm, engineSnaps, finish, axis, states, units])
   useEffect(() => () => view?.setSketch(null), [view])
 
   const targets = (skip?: Parameters<typeof sketchTargets>[1]): SnapTargets[] => [live.current.engineSnaps, sketchTargets(live.current.sketch, skip)]
