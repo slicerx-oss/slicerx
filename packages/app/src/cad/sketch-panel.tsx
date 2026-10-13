@@ -2,19 +2,21 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Sketch mode. Pick the bed or a flat face, draw lines, rectangles, circles and three point arcs on
 // it with snaps and typed sizes, fix what sketch.check reports, then extrude or revolve. The camera
-// stays free; "Look at the sketch" turns it square on. There is no solver. Finishing records the
+// stays free; "Look at the sketch" turns it square on. Constraints go through the engine's solver
+// (sketch-constraints.ts), and the palette says how defined the sketch is. Finishing records the
 // sketch as a step of the object's history, where it opens again in this panel to be changed.
 //
 // Speed: the view reports the cursor at most once a frame (viewport cadtools.ts). The hover path
 // here snaps, moves the rubber band in its fixed buffer and writes one text node; it renders no
 // React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
+import { afterLoopChange, curveStates, dofText, fromSolver, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent, SketchEvent, SketchScene, SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch } from '@slicerx/ui'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { checkSketch, offsetSketch, pickFace, sketchSnaps, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
+import { checkSketch, offsetSketch, pickFace, sketchSnaps, solveSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
@@ -85,6 +87,7 @@ interface SketchInit {
   operation: 'new' | 'join' | 'cut'
   axis: { e: number; seg: number } | null
   pattern?: Pattern
+  constraints: SketchConstraint[]
 }
 
 function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; init: SketchInit } | { note: string } | null {
@@ -93,6 +96,7 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
   if (!ed || !p || !((p.op === 'shape.extrude' && p.shape.type === 'sketch') || p.op === 'sketch.revolve')) return null
   const loops = p.op === 'sketch.revolve' ? p.loops : p.shape.type === 'sketch' ? p.shape.loops : []
   const sketch = fromLoops(loops)
+  const constraints = (p.op === 'sketch.revolve' ? p.constraints : p.shape.type === 'sketch' ? p.shape.constraints : undefined) ?? []
   if (!sketch) return { note: 'This sketch has segments given by length and angle, which sketch mode cannot show. Its numbers can still change in the history list.' }
   const now = nowOf(ed.step, ed.entry.transform)
   const frame = p.frame ? now.frame(p.frame) : BED_FRAME
@@ -119,6 +123,7 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
       fields: { distance: String(spec?.distanceMm ?? 5), extent: spec?.extent ?? 'oneSide', distance2: String(spec?.distance2Mm ?? 5), taper: String(spec?.taperDeg ?? 0), flip: Boolean(spec?.flip), angle: String(p.op === 'sketch.revolve' ? (p.angleDeg ?? 360) : 360) },
       operation,
       axis: p.op === 'sketch.revolve' ? axisSegment(sketch, p.axis) : null,
+      constraints,
       ...(p.op === 'shape.extrude' && p.pattern ? { pattern: p.pattern } : {}),
     },
   }
@@ -163,10 +168,14 @@ export function SketchTool() {
   return <SketchEditor plane={plane} onRestart={() => setPlane(null)} {...(edit && 'init' in edit ? { init: edit.init } : {})} />
 }
 
+const toneOf = (s: DefState | undefined): SketchTone => (s === 'defined' ? 'defined' : s === 'fixed' ? 'fixed' : 'normal')
+
 function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () => void; init?: SketchInit }) {
   const host = useHost()
   const view = cameraBus()?.cad
   const [sketch, setSketch] = useDraft<Entity[]>('sketch', init?.sketch ?? [])
+  const [constraints, setConstraints] = useDraft<SketchConstraint[]>('constraints', init?.constraints ?? [])
+  const [solved, setSolved] = useState<{ solved: Solved; map: SolverMap } | null>(null)
   const [draft, setDraft] = useDraft<Draft>('draft', emptyDraft(init ? 'select' : 'line'))
   const [selected, setSelected] = useDraft<{ e: number; seg: number } | null>('selected', init?.axis ?? null)
   const [grid, setGrid] = useDraft('grid', '1')
@@ -224,6 +233,32 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     }
   }, [sketch])
 
+  // The solver runs a moment after each change: it says how defined the sketch is, and moves the drawing to meet
+  // its constraints. A conflict leaves the drawing as it is.
+  useEffect(() => {
+    if (!sketch.length) return void setSolved(null)
+    const ac = new AbortController()
+    const t = setTimeout(() => {
+      const { solver, map } = toSolver(sketch, constraints)
+      solveSketch(solver, undefined, ac.signal).then(
+        (s) => {
+          if (ac.signal.aborted) return
+          setSolved({ solved: s, map })
+          if ((s.status === 'ok' || s.status === 'redundant') && solver.constraints.length) {
+            const next = fromSolver(sketch, s, map)
+            if (JSON.stringify(next) !== JSON.stringify(sketch)) setSketch(next)
+          }
+        },
+        (e: unknown) => !ac.signal.aborted && setNote(errorText(e)),
+      )
+    }, 60)
+    return () => {
+      clearTimeout(t)
+      ac.abort()
+    }
+  }, [sketch, constraints])
+  const states = useMemo(() => (solved ? curveStates(sketch, constraints, solved.solved, solved.map) : null), [solved, sketch, constraints])
+
   // The chain being drawn is open on purpose; its open end is not a problem yet.
   const issues = useMemo(() => (check?.issues ?? []).filter((i) => !(i.kind === 'open' && i.loop === draft.chain)), [check, draft.chain])
   const hs = useMemo(() => handles(sketch), [sketch])
@@ -237,7 +272,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     sketch.forEach((e, i) => {
       for (const p of entityPaths(e)) {
         const isSel = selected?.e === i && selected.seg === p.seg
-        const tone: SketchTone = bad.has(`${i}:${p.seg}`) || bad.has(`${i}:-1`) ? 'issue' : isSel ? (finish === 'revolve' && axis ? 'axis' : 'selected') : 'normal'
+        const tone: SketchTone = bad.has(`${i}:${p.seg}`) || bad.has(`${i}:-1`) ? 'issue' : isSel ? (finish === 'revolve' && axis ? 'axis' : 'selected') : toneOf(states?.get(`${i}:${p.seg}`))
         paths.push({ points: p.points, ...(p.closed ? { closed: true } : {}), tone })
       }
     })
@@ -249,7 +284,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       ...(gridMm > 0 ? { grid: { stepMm: gridMm * 10, min: plane.min, max: plane.max } } : {}),
       marks: issues.flatMap((i) => (i.at ? [i.at] : [])),
     })
-  }, [view, plane, sketch, draft, selected, issues, hs, gridMm, engineSnaps, finish, axis])
+  }, [view, plane, sketch, draft, selected, issues, hs, gridMm, engineSnaps, finish, axis, states])
   useEffect(() => () => view?.setSketch(null), [view])
 
   const targets = (skip?: Parameters<typeof sketchTargets>[1]): SnapTargets[] => [live.current.engineSnaps, sketchTargets(live.current.sketch, skip)]
@@ -308,7 +343,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && l.draft.tool === 'select') {
         const sel = l.selected
         if (sel) {
-          setSketch(deleteSegment(l.sketch, sel.e, sel.seg))
+          const next = deleteSegment(l.sketch, sel.e, sel.seg)
+          setConstraints((c) => afterLoopChange(c, sel.e, next.length - l.sketch.length + 1))
+          setSketch(next)
           setSelected(null)
         }
       } else if (e.key === 'Escape' || e.key === 'Enter') {
@@ -380,6 +417,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       const r = cornerKind === 'fillet' ? await filletSketch(toLoops(sketch), corners, d) : await chamferSketch(toLoops(sketch), corners, d)
       const next = fromLoops(r.loops)
       if (!next) throw new Error('The rounded sketch could not be shown.')
+      // the loop's segments change, so constraints on it go
+      setConstraints((c) => afterLoopChange(c, selected.e, 1))
       setSketch(next)
       setSelected(null)
     } catch (e) {
@@ -416,14 +455,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         const bad = pattern ? patternProblem(pattern) : null
         if (bad) throw new Error(bad)
         bindNext(distance)
-        const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...target, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
+        const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops, ...(constraints.length ? { constraints } : {}) }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...target, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
         r = init ? await saveSketch(extrudeParams(input)) : await applyExtrude(host.slicer, input)
       } else {
         if (!axis) throw new Error('Pick a straight line of the sketch as the axis.')
         const a = num(angle)
         if (!(a > 0 && a <= 360)) throw new Error('The angle is more than 0 and at most 360 degrees.')
         bindNext(angle)
-        const input: RevolveInput = { frame: plane.frame, loops, axis, angleDeg: a, operation: op, ...target, name: 'Revolved body' }
+        const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...target, name: 'Revolved body' }
         r = init ? await saveSketch(revolveParams(input)) : await applyRevolve(host.slicer, input)
       }
       toast(r.message, r.warn ? 'warn' : 'ok')
@@ -459,6 +498,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         </Field>
         <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
       </div>
+      {solved ? (
+        <p className="cad-hint" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof}>
+          {dofText(solved.solved)}
+        </p>
+      ) : null}
       {issues.length ? (
         <ul className="cad-issues" role="status">
           {issues.slice(0, 6).map((i, k) => (

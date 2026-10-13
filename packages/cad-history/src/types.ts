@@ -37,7 +37,7 @@ export type Shape =
 /** Free outlines for shapeProfile and extrudeShape, beside the typed shapes. */
 export type FreeShape =
   /** Closed loops in frame coordinates; check them first with checkSketch. */
-  | { type: 'sketch'; loops: SketchLoop[] }
+  | { type: 'sketch'; loops: SketchLoop[]; constraints?: SketchConstraint[] }
   /** The filled outline of SVG artwork (colors merged), widthMm wide, centered on the placement, SVG up along v. */
   | { type: 'svg'; svg: string; widthMm: number; toleranceMm?: number }
 
@@ -70,6 +70,30 @@ export type SketchSegment =
   | { type: 'arc'; to: Vec2; radiusMm: number; clockwise?: boolean; large?: boolean }
   /** Tangent to the previous segment; positive sweepDeg turns left. */
   | { type: 'arc'; radiusMm: number; sweepDeg: number }
+
+/**
+ * A point of a sketch loop by loop index: a chain's start, the end of segment `seg`, a circle's center, or the center
+ * of the arc that is segment `seg`.
+ */
+export type SketchPointRef = { e: number; at: 'start' } | { e: number; at: 'to'; seg: number } | { e: number; at: 'center' } | { e: number; at: 'arcCenter'; seg: number }
+/** A line or arc of a loop by loop and segment index; a circle is segment 0. */
+export type SketchCurveRef = { e: number; seg: number }
+
+/** A constraint between sketch loops' points and curves, kept with the sketch. Values are mm, angles degrees. */
+export type SketchConstraint =
+  | { type: 'coincident'; a: SketchPointRef; b: SketchPointRef }
+  | { type: 'fix'; point: SketchPointRef }
+  | { type: 'horizontal' | 'vertical'; line: SketchCurveRef }
+  | { type: 'parallel' | 'perpendicular' | 'collinear' | 'equal' | 'tangent' | 'concentric'; a: SketchCurveRef; b: SketchCurveRef }
+  | { type: 'midpoint' | 'onLine'; point: SketchPointRef; line: SketchCurveRef }
+  | { type: 'onCircle'; point: SketchPointRef; circle: SketchCurveRef }
+  | { type: 'symmetric'; a: SketchPointRef; b: SketchPointRef; line: SketchCurveRef }
+  | { type: 'distance' | 'horizontalDistance' | 'verticalDistance'; a: SketchPointRef; b: SketchPointRef; value: number }
+  | { type: 'length'; line: SketchCurveRef; value: number }
+  | { type: 'radius' | 'diameter'; circle: SketchCurveRef; value: number }
+  /** From line a to line b, counterclockwise. */
+  | { type: 'angle'; a: SketchCurveRef; b: SketchCurveRef; value: number }
+  | { type: 'lineDistance'; point: SketchPointRef; line: SketchCurveRef; value: number }
 
 /** A loop closes when its last segment ends within 0.001 mm of start. */
 export type SketchLoop =

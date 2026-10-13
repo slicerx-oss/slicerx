@@ -399,6 +399,11 @@ export interface SketchCornerResult {
   added: { loop: number; segment: number }[]
 }
 
+/** Solves a constrained sketch (sketch-constraints.ts builds the request); `drag` pulls one point toward a spot. */
+export function solveSketch(sketch: import('../cad/sketch-constraints').SolverSketch, drag?: { point: number; to: Vec2 }, signal?: AbortSignal) {
+  return geom().call<import('../cad/sketch-constraints').Solved>('sketch.solve', { ...sketch, ...(drag ? { drag } : {}) }, signal)
+}
+
 /** Rounds sketch corners between two straight segments. */
 export function filletSketch(loops: SketchLoop[], corners: SketchCorner[], radiusMm: number, signal?: AbortSignal) {
   return geom().call<SketchCornerResult>('sketch.fillet', { loops, corners, radiusMm }, signal)

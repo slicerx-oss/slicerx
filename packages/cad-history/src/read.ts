@@ -124,14 +124,21 @@ function targetOk(t: unknown): boolean {
   }
 }
 
+/** Sketch constraints: a type, and refs that are loop (and segment) indices or numbers. */
+function constraintsOk(c: unknown): boolean {
+  if (c === undefined) return true
+  const ref = (r: unknown) => isNum(r) || (obj(r) && Number.isInteger(r['e']) && (r['seg'] === undefined || Number.isInteger(r['seg'])) && (r['at'] === undefined || typeof r['at'] === 'string'))
+  return Array.isArray(c) && c.length <= 10_000 && c.every((k) => obj(k) && typeof k['type'] === 'string' && Object.entries(k).every(([f, v]) => f === 'type' || ref(v)))
+}
+
 function paramsOk(p: Record<string, unknown>): boolean {
   switch (p['op']) {
     case 'face.push':
       return vec3(p['at']) && vec3(p['normal']) && isNum(p['distanceMm']) && keyOk(p['faceKey'])
     case 'shape.extrude':
-      return obj(p['shape']) && typeof p['shape']['type'] === 'string' && obj(p['spec']) && isNum(p['spec']['distanceMm']) && frameOk(p['frame']) && (p['font'] === undefined || typeof p['font'] === 'string') && (p['pattern'] === undefined || patternOk(p['pattern']))
+      return obj(p['shape']) && typeof p['shape']['type'] === 'string' && constraintsOk(p['shape']['constraints']) && obj(p['spec']) && isNum(p['spec']['distanceMm']) && frameOk(p['frame']) && (p['font'] === undefined || typeof p['font'] === 'string') && (p['pattern'] === undefined || patternOk(p['pattern']))
     case 'sketch.revolve':
-      return Array.isArray(p['loops']) && obj(p['axis']) && vec2(p['axis']['point']) && vec2(p['axis']['direction']) && frameOk(p['frame']) && (p['angleDeg'] === undefined || isNum(p['angleDeg']))
+      return Array.isArray(p['loops']) && constraintsOk(p['constraints']) && obj(p['axis']) && vec2(p['axis']['point']) && vec2(p['axis']['direction']) && frameOk(p['frame']) && (p['angleDeg'] === undefined || isNum(p['angleDeg']))
     case 'subtract':
       return Array.isArray(p['solids']) && typeof p['label'] === 'string'
     case 'hollow':
