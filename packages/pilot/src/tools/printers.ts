@@ -105,7 +105,7 @@ async function exportProject(shared: ToolShared, ctx: ToolContext, plate: number
   const entry = slicedPlate(shared, ctx, plate)
   if (!entry.project) {
     const slicer = ctx.host.slicer
-    if (!slicer?.exportGcode3mf) throw refusal('not_supported', `${printerName} takes a .gcode.3mf to follow its filament slots, and this SlicerX cannot make one, so nothing was sent.`)
+    if (!slicer?.exportGcode3mf) throw refusal('not_supported', `${printerName} takes a .gcode.3mf to follow its filament slots, and this ${productName()} cannot make one, so nothing was sent.`)
     const g = await slicer.exportGcode3mf(entry.result.id, { plate })
     if (!g.blob) throw new Error('The slicer returned no .gcode.3mf')
     entry.project = { file: g, data: await g.blob.arrayBuffer() }
@@ -146,7 +146,7 @@ export function plateFilaments(stats: Pick<SliceStats, 'filamentG'>, config: obj
  */
 export function autoSlotMap(filaments: readonly MapFilament[], slots: readonly MapSlot[], printerName: string): Record<number, string> {
   if (slots.length === 0) {
-    throw refusal('slots_not_reported', `${printerName} has not reported its filament slots yet, so SlicerX cannot match the plate's filaments to them: wait a few seconds and send again, or pass slotMap.`)
+    throw refusal('slots_not_reported', `${printerName} has not reported its filament slots yet, so ${productName()} cannot match the plate's filaments to them: wait a few seconds and send again, or pass slotMap.`)
   }
   const map = matchSlots(filaments, slots)
   const missing = filaments.filter((f) => map[f.index] === undefined)
