@@ -82,6 +82,11 @@
   .shelf-tool > span { display: none; }
   .shelf-tool { padding: 0 7px; }
 }
+/* The same, wherever the labeled shelf does not fit its own width (the mimir panel open beside it): shelf.tsx sets
+   data-fit from the shelf's own size. */
+.shelf[data-fit="icons"] .shelf-tool > span, .shelf[data-fit="icons"] .shelf-pick > span { display: none; }
+.shelf[data-fit="icons"] .shelf-tool { padding: 0 7px; }
+.shelf[data-fit="icons"] .shelf-pick { position: absolute; top: -7px; left: -7px; z-index: 1; height: 16px; min-width: 16px; justify-content: center; padding: 0 4px; margin: 0; background: var(--ink-1); font-size: var(--fs-xs); line-height: 1; }
 @media (max-width: 900px) {
   .shelf-next { display: none; }
 }
