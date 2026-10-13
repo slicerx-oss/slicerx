@@ -12,6 +12,8 @@ import { plateScrub } from '../../plate/scrub'
 import { bounds, decompose, sizeOf, type Vec3 } from '../../plate/transform'
 import { useShownOrigin } from '../../state/model-mode'
 import { selectedIds, useApp } from '../../state/store'
+import { formatLength } from '../../cad/units'
+import { useLength } from '../../cad/use-units'
 
 const AXES = ['X', 'Y', 'Z'] as const
 
@@ -32,8 +34,10 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
   const more = useMore('object') || full
   // Model counts from the grid center and leaves copies to Slice; the stored transform is the same either way
   const { origin, frame } = useShownOrigin()
+  const len = useLength()
   const model = frame === 'grid'
   const ground = model ? 'ground' : 'bed'
+  const inches = model && len.unit !== 'mm'
   if (!entry) return null
   const t = decompose(entry.transform)
   const shown = t.position.map((v, i) => v - (origin[i] ?? 0)) as Vec3
@@ -41,19 +45,25 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
   const size = b ? sizeOf(b) : ([0, 0, 0] as Vec3)
   const bottom = b ? b.min[2] : 0
   const scrub = (i: number, onAxis: (axis: 0 | 1 | 2, v: number) => void) => plateScrub(entry.id, (v) => onAxis(i as 0 | 1 | 2, v))
-  const row = (name: string, unit: string, values: Vec3, onAxis: (axis: 0 | 1 | 2, v: number) => void, opts: { digits?: number; min?: number } = {}) => (
-    <VectorField
-      className="tf-row"
-      id={`tf-${name}`.toLowerCase().replace(/\s+/g, '-')}
-      label={name}
-      unit={unit}
-      values={values}
-      onCommit={(i, v) => scrub(i, onAxis).onCommit(v)}
-      onPreview={(i, v) => scrub(i, onAxis).onPreview(v)}
-      onCancel={(i) => scrub(i, onAxis).onCancel()}
-      {...opts}
-    />
-  )
+  const row = (name: string, unit: string, values: Vec3, onAxis: (axis: 0 | 1 | 2, v: number) => void, opts: { digits?: number; min?: number } = {}) => {
+    // Model shows lengths in the display unit; Slice stays in mm
+    const shown = unit === 'mm' && inches
+    const back = (v: number) => (shown ? len.toMm(v) : v)
+    return (
+      <VectorField
+        className="tf-row"
+        id={`tf-${name}`.toLowerCase().replace(/\s+/g, '-')}
+        label={name}
+        unit={shown ? len.unit : unit}
+        values={shown ? (values.map(len.show) as Vec3) : values}
+        onCommit={(i, v) => scrub(i, onAxis).onCommit(back(v))}
+        onPreview={(i, v) => scrub(i, onAxis).onPreview(back(v))}
+        onCancel={(i) => scrub(i, onAxis).onCancel()}
+        {...opts}
+        {...(shown ? { parse: len.parse, ...(len.digits !== undefined ? { digits: len.digits } : {}), ...(opts.min !== undefined ? { min: len.show(opts.min) } : {}) } : {})}
+      />
+    )
+  }
   return (
     <div className="tf" data-section="transform" data-frame={frame}>
       {/* more sits above what it opens, so pressing it moves nothing */}
@@ -63,7 +73,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
       </div>}
       {!more && tool !== 'rotate' && tool !== 'scale' ? (
         <p className="tf-readout" aria-label="Position">
-          X {fmt(shown[0])} Y {fmt(shown[1])} Z {fmt(shown[2])} mm
+          {inches ? `X ${formatLength(shown[0], len.units)} Y ${formatLength(shown[1], len.units)} Z ${formatLength(shown[2], len.units)} in` : `X ${fmt(shown[0])} Y ${fmt(shown[1])} Z ${fmt(shown[2])} mm`}
         </p>
       ) : row('Position', 'mm', shown, (i, v) => {
         const p = [...t.position] as Vec3

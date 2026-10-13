@@ -8,7 +8,9 @@ import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
 import { set, useApp } from '../state/store'
 import { stepName } from '@slicerx/cad-history'
-import { typedNumber } from './value-table'
+import { currentValues, typedNumber } from './value-table'
+import { fromMmText, lengthText, toMmText } from './units'
+import { useLength } from './use-units'
 
 /** A typed number: plain, or arithmetic over the project's named values (`wall * 2`). NaN when it does not read. */
 export const num = (s: string) => typedNumber(s)
@@ -50,27 +52,42 @@ export function useProbe(onPick: (hit: PickEvent) => void, faces: boolean): void
   }, [faces])
 }
 
-/** A typed number for a tool: plain or an expression over named values, the unit once beside the label. */
+/** A typed number for a tool: plain or an expression over named values, the unit once beside the label. A length
+ * (unit mm) shows in the display unit while `value` stays mm text (cad/units.ts). */
 export function Num({ id, label, unit, value, onChange, onEnter }: { id: string; label: string; unit: string; value: string; onChange: (v: string) => void; onEnter?: () => void }) {
+  const units = useApp((s) => s.units)
+  const shown = unit === 'mm' && units.length !== 'mm'
+  // what the person typed, kept while `value` is still what it gave
+  const [draft, setDraft] = useState<{ text: string; gave: string } | null>(null)
+  const text = !shown ? value : draft && draft.gave === value ? draft.text : fromMmText(value, units)
+  const change = (t: string) => {
+    if (!shown) return onChange(t)
+    const gave = toMmText(t, units, currentValues())
+    setDraft({ text: t, gave })
+    onChange(gave)
+  }
   return (
     <Field
       htmlFor={id}
       label={
         <>
-          {label} <span className="cad-num-unit">{unit}</span>
+          {label} <span className="cad-num-unit">{shown ? units.length : unit}</span>
         </>
       }
     >
-      <Input id={id} className="cad-num" inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} {...(onEnter ? { onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), onEnter()) } : {})} />
+      <Input id={id} className="cad-num" inputMode="decimal" value={text} onChange={(e) => change(e.target.value)} {...(onEnter ? { onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), onEnter()) } : {})} />
     </Field>
   )
 }
 
 /** An X, Y (and Z) row in one outline, over the panel's text values. A drag on an axis letter edits it live, and a typed
- * value can use named values. */
+ * value can use named values. A length row shows in the display unit; the values stay mm. */
 export function Vec({ id, label, ariaLabel, unit, axes, values, onChange }: { id: string; label: string; ariaLabel?: string; unit: string; axes: readonly Axis[]; values: readonly string[]; onChange: readonly ((v: string) => void)[] }) {
-  const set = (i: number, v: number) => onChange[i]?.(String(v))
-  return <VectorField id={id} label={label} {...(ariaLabel ? { ariaLabel } : {})} unit={unit} axes={axes} values={values.map((v) => (Number.isFinite(num(v)) ? num(v) : 0))} parse={num} onCommit={set} onPreview={set} />
+  const len = useLength()
+  const length = unit === 'mm' && len.unit !== 'mm'
+  const set = (i: number, v: number) => onChange[i]?.(String(length ? len.toMm(v) : v))
+  const mm = values.map((v) => (Number.isFinite(num(v)) ? num(v) : 0))
+  return <VectorField id={id} label={label} {...(ariaLabel ? { ariaLabel } : {})} unit={length ? len.unit : unit} axes={axes} values={length ? mm.map(len.show) : mm} parse={length ? len.parse : num} {...(length && len.digits !== undefined ? { digits: len.digits } : {})} onCommit={set} onPreview={set} />
 }
 
 export function Shell({ title, aside, children }: { title: string; aside?: string; children: ReactNode }) {
@@ -82,7 +99,7 @@ export function Shell({ title, aside, children }: { title: string; aside?: strin
   const crumb = useApp((s) => {
     const e = s.historyEdit
     const step = e && !e.view ? e.original.history?.steps[e.index] : undefined
-    return e && step ? `${e.original.name} › ${stepName(step)}` : null
+    return e && step ? `${e.original.name} › ${stepName(step, (mm) => lengthText(mm, s.units))}` : null
   })
   return (
     <Block title={title} data-section="cad-tool" aside={crumb ? <span data-testid="model-tool-crumb">{crumb}</span> : aside} className="cad">

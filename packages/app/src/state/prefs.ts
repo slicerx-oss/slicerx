@@ -3,6 +3,7 @@
 // Per-user conveniences kept in localStorage. Anything read back from storage may be old, edited
 // or corrupt, so every field is checked by hand and a bad one falls back to its default on its
 // own. No schema library: this runs before first paint and stays out of the shell budget.
+import { readUnits, type UnitPrefs } from '../cad/units'
 import { LOOK_IDS, type LookAndFeelChoice, type FirstRunState } from '@slicerx/contracts'
 
 /** A model file with several separate bodies opens as one object with parts or as separate objects (state/multi-body.ts). */
@@ -63,6 +64,8 @@ export interface Prefs {
   /** A model file with several separate bodies: ask, or always one object with parts, or always separate objects. */
   multiBodyImport?: MultiBodyPref | undefined
   electricity?: { pricePerKwh: number; symbol: string } | undefined
+  /** Display units for lengths in Model (cad/units.ts); data stays in mm. */
+  units?: UnitPrefs | undefined
   tooltips?: { enabled: boolean; media: boolean } | undefined
   setupPilotOff?: boolean | undefined
   noPrinter?: boolean | undefined
@@ -311,6 +314,7 @@ export function normalizePrefs(v: unknown): Prefs {
     ...opt('autoSlice', r['autoSlice'] === undefined ? undefined : or(bool(r['autoSlice']), true)),
     ...opt('autoSliceBySize', bool(r['autoSliceBySize'])),
     ...opt('multiBodyImport', oneOf(r['multiBodyImport'], ['ask', 'parts', 'objects'] as const)),
+    ...opt('units', readUnits(r['units'])),
     ...opt('electricity', isRec(r['electricity']) && num(r['electricity']['pricePerKwh'], 0, 5) !== undefined && str(r['electricity']['symbol'], 4) ? { pricePerKwh: r['electricity']['pricePerKwh'] as number, symbol: r['electricity']['symbol'] as string } : undefined),
     tooltips: or(isRec(r['tooltips']) && bool(r['tooltips']['enabled']) !== undefined && bool(r['tooltips']['media']) !== undefined ? { enabled: r['tooltips']['enabled'] as boolean, media: r['tooltips']['media'] as boolean } : undefined, { enabled: true, media: true }),
     setupPilotOff: or(bool(r['setupPilotOff']), false),
