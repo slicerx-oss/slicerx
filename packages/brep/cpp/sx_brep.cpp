@@ -8,6 +8,7 @@
 #include <SmApiBrep.h>
 #include <SmApiCurves.h>
 #include <SmApiGeneral.h>
+#include <SmApiImportExport.h>
 #include <SmApiPrimitives.h>
 #include <SmApiQueries.h>
 #include <SmBrep.h>
@@ -19,8 +20,13 @@
 #include <SmVector3d.h>
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <map>
+#include <random>
+#include <sstream>
 #include <tuple>
 
 using sxj::Error;
@@ -75,10 +81,76 @@ SmVector3d cross(const SmVector3d& a, const SmVector3d& b)
 
 double dot(const SmVector3d& a, const SmVector3d& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
+void check(long st, const char* what);
+
+// bodies read from a request's {"smb"} for one call, freed when it ends
+std::vector<SmBrep*> loaded;
+
+// SMLib's text format goes through a file; its binary one depends on the build's integer sizes, so the web and
+// native builds would not read each other's
+std::filesystem::path scratch_file()
+{
+    // unique between processes sharing the temp folder, too
+    static const unsigned long long tag = std::random_device{}() * 4294967296ULL + std::random_device{}();
+    static long n = 0;
+    return std::filesystem::temp_directory_path() / ("sx_brep_" + std::to_string(tag) + "_" + std::to_string(++n) + ".smb");
+}
+
+// the kernel's reader trusts its input, so saved text carries a hash of itself and nothing else gets read
+const char* kSeal = "//sx-brep fnv1a64 ";
+
+std::string seal_of(const std::string& text)
+{
+    unsigned long long h = 1469598103934665603ULL;
+    for (unsigned char c : text) h = (h ^ c) * 1099511628211ULL;
+    char hex[17];
+    std::snprintf(hex, sizeof hex, "%016llx", h);
+    return std::string(kSeal) + hex + "\n";
+}
+
+SmBrep* read_smb(const std::string& sealed, const char* k)
+{
+    size_t at = sealed.rfind(kSeal);
+    std::string text = at == std::string::npos ? std::string() : sealed.substr(0, at);
+    if (at == std::string::npos || sealed.compare(at, std::string::npos, seal_of(text)) != 0)
+        throw Error(k, "not a body sx-brep saved, or changed since");
+    std::filesystem::path p = scratch_file();
+    {
+        std::ofstream f(p, std::ios::binary);
+        f << text;
+        if (!f) throw Error(k, "could not write a scratch file");
+    }
+    SmBrep* b = nullptr;
+    long st = SmApiReadBrepFromFile(p.string().c_str(), TRUE, TRUE, b);
+    std::error_code ignored;
+    std::filesystem::remove(p, ignored);
+    if (st != SM_SUCCESS || !b) throw Error(k, "not a body SMLib can read (status " + std::to_string(st) + ")");
+    return b;
+}
+
+std::string write_smb(SmBrep* b)
+{
+    std::filesystem::path p = scratch_file();
+    check(SmApiWriteBrepToFile(b, p.string().c_str(), TRUE), "save");
+    std::ifstream f(p, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    f.close();
+    std::error_code ignored;
+    std::filesystem::remove(p, ignored);
+    std::string text = ss.str();
+    return text + seal_of(text);
+}
+
+// a body by its number, or one carried in the request as {"smb": text} from an earlier save
 SmBrep* body(const Value& r, const char* k)
 {
     const Value& v = r[k];
-    if (v.kind != Value::Number) throw Error(k, "must be a body number");
+    if (v.kind == Value::Object && v["smb"].kind == Value::String) {
+        loaded.push_back(read_smb(v["smb"].s, k));
+        return loaded.back();
+    }
+    if (v.kind != Value::Number) throw Error(k, "must be a body number or {\"smb\"}");
     auto it = bodies.find(long(v.n));
     if (it == bodies.end()) throw Error(k, "no such body (freed, or from an earlier session)");
     return it->second;
@@ -499,10 +571,20 @@ Value run(const std::string& op, const Value& r)
             bodies.erase(it);
         }
         out.set("freed", it != bodies.end());
+    } else if (op == "load") {
+        // a saved body, kept under a number
+        out.set("body", Value(keep(copy_of(body(r, "body")))));
+    } else if (op == "save") {
+        out.set("smb", write_smb(body(r, "body")));
     } else if (op == "count") {
         out.set("bodies", Value((unsigned long)bodies.size()));
     } else {
         throw Error("op", "unknown operation " + op);
+    }
+    // save: true also returns each new body as SMLib text, for a caller that keeps bodies between processes
+    if (r["save"].kind == Value::Bool && r["save"].b && op != "save") {
+        for (const char* k : {"body", "below", "above"})
+            if (out[k].kind == Value::Number) out.set(std::string(k) + "Smb", write_smb(bodies.at(long(out[k].n))));
     }
     return out;
 }
@@ -528,6 +610,13 @@ char* sx_brep_call(const char* op, const char* request)
         SmApiGetOrCreateContext();
         ready = true;
     }
+    struct Unload {
+        ~Unload()
+        {
+            for (SmBrep* b : loaded) delete b;
+            loaded.clear();
+        }
+    } unload;
     try {
         Value r = sxj::Parser(request ? std::string(request) : std::string("{}")).parse();
         return reply(run(op ? op : "", r));
