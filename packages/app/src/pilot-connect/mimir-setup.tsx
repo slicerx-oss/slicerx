@@ -48,7 +48,7 @@ export function cloudOffer(edition: EditionConfig, h: MimirCloudHost | null): Cl
  */
 export function mimirChoices(opts: { cloud?: CloudOffer; signIn: boolean; localAi: boolean; skip?: boolean }): MimirOption[] {
   const out: MimirOption[] = []
-  if (opts.cloud === 'ready') out.push({ id: 'cloud', icon: 'cloud', name: `${ASSISTANT_NAME} cloud, free daily`, sum: PROVIDERS['mimir-cloud'].where })
+  if (opts.cloud === 'ready') out.push({ id: 'cloud', icon: 'cloud', name: `Use ${ASSISTANT_NAME} free`, sum: PROVIDERS['mimir-cloud'].where })
   if (opts.cloud === 'sign-in') out.push({ id: 'cloud', icon: 'cloud', name: `Sign in to use ${ASSISTANT_NAME} free`, sum: `Free daily use with your ${ASSISTANT_NAME} account. No key.` })
   if (opts.signIn) out.push({ id: 'chatgpt', icon: 'creator', name: 'Sign in with ChatGPT', sum: 'Answers with your ChatGPT plan. Nothing to paste.' })
   out.push({ id: 'key', icon: 'key', name: 'Use your own API key', sum: 'An OpenAI or Anthropic key. You pick the model.' })

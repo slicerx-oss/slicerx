@@ -7,9 +7,10 @@ import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, Chip, Icon, LinkButton, Pill } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { useHost } from '../host'
+import { hostSlices } from '../state/model-mode'
 import { set, useApp } from '../state/store'
 import { useChatGpt, type ChatGptAccount } from './chatgpt'
-import { ConnectPanel } from './connect-panel'
+import { ConnectPanel, sentToModel } from './connect-panel'
 import './connect.css'
 
 type State = { status: 'loading' } | { status: 'out' } | { status: 'in'; account: ChatGptAccount } | { status: 'connecting' } | { status: 'error'; message: string }
@@ -133,7 +134,7 @@ export function ChatGptCard({ compact = false, idPrefix = 'cg', withLocal = true
           <Icon name="alert" size={16} /> {state.message}
         </p>
       ) : null}
-      <p className="cg-note">Usage counts against your ChatGPT plan. Weekly caps are set in ChatGPT&apos;s settings, not here. What leaves this computer: your questions and the printer setup you entered. Access codes and printer keys are never sent.</p>
+      <p className="cg-note">Usage counts against your ChatGPT plan. Weekly caps are set in ChatGPT&apos;s settings, not here. What leaves this computer: {sentToModel()}.{hostSlices() ? ' Access codes and printer keys are never sent.' : ''}</p>
       <div className="cg-key">
         <LinkButton icon="key" expanded={keyOpen} aria-controls={`${idPrefix}-key-panel`} onClick={() => setKeyOpen(!keyOpen)}>
           Use an API key instead
