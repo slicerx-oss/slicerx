@@ -10,6 +10,7 @@ import { forHub, type ApprovalDone, type PersonHandOff } from './gate'
 import { createFleetSim } from '@slicerx/fleet-sim'
 import { connectLink } from '@slicerx/link-client'
 import { STUB_MARKER } from './slicer'
+import { readZip } from './zip'
 
 export type PrinterMode = 'demo' | 'link' | 'off'
 
@@ -37,7 +38,7 @@ function handOffOf(host: unknown): PersonHandOff | undefined {
     ...((host as { partner?: boolean }).partner ? { partner: true } : {}),
     register: async (request, work) => {
       // The same guard as uploads: stub engine output never goes to a printer.
-      if (work.kind === 'print' && new TextDecoder().decode(new Uint8Array(work.file.data).subarray(0, 200)).includes(STUB_MARKER)) {
+      if (work.kind === 'print' && stubOutput(work.file)) {
         throw new Error('That G-code came from the stub engine and is not printable. Slice with the sx engine first.')
       }
       await registerWork.call(h.approvals, request, work)
@@ -46,13 +47,26 @@ function handOffOf(host: unknown): PersonHandOff | undefined {
   }
 }
 
+/** Whether a file to print is stub engine output: its G-code starts with the marker, in a .gcode.3mf its plate's G-code does. */
+export function stubOutput(file: Pick<JobFile, 'data'>): boolean {
+  const bytes = new Uint8Array(file.data)
+  const head = (b: Uint8Array): boolean => new TextDecoder().decode(b.subarray(0, 200)).includes(STUB_MARKER)
+  // A ZIP starts with the bytes 50 4B 03 04 ("PK").
+  if (bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) return head(bytes)
+  try {
+    const gcode = readZip(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)).read('Metadata/plate_1.gcode')
+    return gcode ? head(gcode) : false
+  } catch {
+    return false
+  }
+}
+
 /** Refuses uploads of stub engine output, which holds only comments. */
 function guardUploads(host: PrinterHost): PrinterHost {
   const upload = host.upload.bind(host)
   const guarded: PrinterHost = Object.create(host) as PrinterHost
   guarded.upload = async (id: string, file: JobFile, token) => {
-    const head = new TextDecoder().decode(new Uint8Array(file.data).subarray(0, 200))
-    if (head.includes(STUB_MARKER)) throw new Error('That G-code came from the stub engine and is not printable. Slice with the sx engine first.')
+    if (stubOutput(file)) throw new Error('That G-code came from the stub engine and is not printable. Slice with the sx engine first.')
     return upload(id, file, token)
   }
   return guarded

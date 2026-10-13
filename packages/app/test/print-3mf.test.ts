@@ -11,6 +11,7 @@ import { unzipEntries } from '../src/export/import3mf'
 import { unzipStored } from '../src/export/zip'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
+import { pilotSlicer } from '../src/features/pilot/project'
 import { matchSlots } from '../src/send/options'
 import { refusalReason, sendToPrinter } from '../src/state/actions'
 import { get, set, type PlateEntry, type PlateMeta } from '../src/state/store'
@@ -222,6 +223,25 @@ describe('the Print sheet on a Bambu Lab printer', () => {
     const inside = await unzipEntries(new Uint8Array(uploads[0]!.data))
     expect(dec(inside.get('Metadata/plate_1.gcode'))).toBe(withoutThumbnails(text))
     expect(starts).toEqual([expect.objectContaining({ name: 'cube.gcode.3mf', sha256: uploads[0]!.sha256 })])
+  })
+})
+
+describe("mimir's printer.queue on a Bambu Lab printer", () => {
+  it('gets the same .gcode.3mf the Print sheet sends, for the plate it sliced', async () => {
+    const text = gcode()
+    const blob = new Blob([text], { type: 'text/x-gcode' })
+    const host = { slicer: { exportGcode: async () => ({ fileName: 'cube.gcode', blob, bytes: blob.size, sha256: 'x' }) } } as unknown as Host
+    // The active plate's objects live in `plate`, as the store keeps them.
+    set({ plate: plates[0]!.objects, plates: [{ ...plates[0]!, objects: [] }], activePlate: 'p1' } as never)
+    const out = await pilotSlicer(host).exportGcode3mf!('r1', { plate: 1 })
+    expect(out.fileName).toBe('cube.gcode.3mf')
+    const data = new Uint8Array(await out.blob!.arrayBuffer())
+    expect(out.sha256).toBe(await sha256Hex(data.buffer))
+    expect(out.bytes).toBe(data.byteLength)
+    const inside = await unzipEntries(data)
+    expect(dec(inside.get('Metadata/plate_1.gcode'))).toBe(withoutThumbnails(text))
+    expect(dec(inside.get('Metadata/plate_1.gcode.md5'))).toBe(md5Hex(new TextEncoder().encode(withoutThumbnails(text))).toUpperCase())
+    expect(dec(inside.get('Metadata/slice_info.config'))).toContain('cube_a')
   })
 })
 

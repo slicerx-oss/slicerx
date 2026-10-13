@@ -8,9 +8,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import type { GcodeExport, GcodeTarget, MeshHandle, MeshPart, PrintConfig, SettingValue, SliceRequest, SliceResult, SlicerHost } from '@slicerx/contracts'
+import { gcode3mf } from './gcode3mf'
 import { defaultConfig, sameValue } from '@slicerx/settings'
 import { meshStats, readStlPositions, transformPositions, writeBinaryStl } from './mesh'
-import type { SliceJobObject, SlicerBackend } from './slicer'
+import type { SliceJobObject, SliceSummary, SlicerBackend } from './slicer'
 
 interface StoredMesh {
   handle: MeshHandle
@@ -22,6 +23,9 @@ interface StoredSlice {
   result: SliceResult
   gcodePath?: string
   previewPath?: string
+  /** What the engine reported and the settings it sliced with, for the .gcode.3mf's slice info. */
+  summary: SliceSummary
+  config: Record<string, SettingValue>
 }
 
 export interface NodeSlicerHost extends SlicerHost {
@@ -63,6 +67,29 @@ export function weld(soup: Float32Array): { positions: Float32Array; indices: Ui
     indices[v] = i
   }
   return { positions: new Float32Array(positions), indices }
+}
+
+/**
+ * Millimeters and grams per filament, index 0 for filament 1, as the app's slicer reports them, so a send can tell
+ * which filaments a plate prints with. An engine that names no filaments counts everything as filament 1.
+ */
+export function perFilament(summary: Pick<SliceSummary, 'filament_mm' | 'filament_g' | 'filaments'>): { filamentMm: number[]; filamentG: number[] } {
+  const used = summary.filaments.filter((f) => Number.isInteger(f.slot) && f.slot >= 1)
+  if (used.length === 0) return { filamentMm: [summary.filament_mm], filamentG: [summary.filament_g] }
+  const n = Math.max(...used.map((f) => f.slot))
+  const filamentMm = new Array<number>(n).fill(0)
+  const filamentG = new Array<number>(n).fill(0)
+  // One filament carries the plate's own totals, unrounded.
+  if (used.length === 1) {
+    filamentMm[n - 1] = summary.filament_mm
+    filamentG[n - 1] = summary.filament_g
+    return { filamentMm, filamentG }
+  }
+  for (const f of used) {
+    filamentMm[f.slot - 1] = (filamentMm[f.slot - 1] ?? 0) + f.filament_mm
+    filamentG[f.slot - 1] = (filamentG[f.slot - 1] ?? 0) + f.filament_g
+  }
+  return { filamentMm, filamentG }
 }
 
 /** Keys that differ from the schema defaults: what profiles and overrides chose, which is all an engine with its own defaults needs. */
@@ -158,12 +185,12 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
         layerCount: summary.layer_count,
         layerZ: new Float32Array(0),
         layerTimeS: new Float32Array(0),
-        stats: { timeS: summary.time_s, filamentMm: [summary.filament_mm], filamentG: [summary.filament_g], cost: Math.round((summary.filament_g / 1000) * costPerKg * 100) / 100, toolChanges: 0 },
+        stats: { timeS: summary.time_s, ...perFilament(summary), cost: Math.round((summary.filament_g / 1000) * costPerKg * 100) / 100, toolChanges: 0 },
         stageMicros: {},
         wallMs: performance.now() - started,
         warnings: [...summary.warnings.map((message) => ({ code: 'unsupported_setting' as const, message })), ...(summary.note ? [{ code: 'unsupported_setting' as const, message: summary.note }] : [])],
       }
-      slices.set(id, { result, ...(summary.gcode_path ? { gcodePath: summary.gcode_path } : {}), ...(summary.preview_path ? { previewPath: summary.preview_path } : {}) })
+      slices.set(id, { result, summary, config: req.config as unknown as Record<string, SettingValue>, ...(summary.gcode_path ? { gcodePath: summary.gcode_path } : {}), ...(summary.preview_path ? { previewPath: summary.preview_path } : {}) })
       opts?.onProgress?.({ stage: 'gcode', fraction: 1 })
       return result
     },
@@ -184,6 +211,13 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
         return { fileName, bytes: bytes.length, sha256, path: target.path }
       }
       return { fileName, bytes: bytes.length, sha256, blob: new Blob([bytes], { type: 'text/x-gcode' }) }
+    },
+    async exportGcode3mf(sliceId): Promise<GcodeExport> {
+      const s = slices.get(sliceId)
+      if (!s?.gcodePath) throw new Error(`No G-code for slice ${sliceId}`)
+      const bytes = gcode3mf(readFileSync(s.gcodePath, 'utf8'), s.summary, s.config)
+      const sha256 = createHash('sha256').update(bytes).digest('hex')
+      return { fileName: `${sliceId}.gcode.3mf`, bytes: bytes.length, sha256, blob: new Blob([new Uint8Array(bytes)], { type: 'model/3mf' }) }
     },
     release(id) {
       meshes.delete(id)

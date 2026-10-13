@@ -231,6 +231,8 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
   if (needsPerson(request) || (deps.handOff?.partner && forHub(request) && !onlyStops(request))) {
     // The card goes to SlicerX with its work; the hub runs the work once a person approves.
     // With no hub (demo printers) nothing can approve it, and the request only waits.
+    // The print the hub was handed, so the answer can say which slots it starts from.
+    let handed: AgentWork | undefined
     if (deps.handOff) {
       let work: AgentWork
       try {
@@ -240,6 +242,7 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
       } catch (e) {
         return failFrom(e)
       }
+      handed = work
       const entry: PendingCall = { tool, input, request, expiresMs, personOnly: true }
       deps.waiting?.set(request.id, (d) => {
         entry.outcome = d
@@ -256,7 +259,8 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
       deps.pending.set(request.id, { tool, input, request, expiresMs, personOnly: true })
     }
     deps.log.append({ ...base, decision: 'needs_person', request_id: request.id })
-    const data = { status: 'needs_person', request_id: request.id, title: request.title, lines: request.lines, permission, expires_at: request.expiresAt }
+    const sent = handed?.kind === 'print' ? { file: handed.file.name, ...(handed.opts?.slotMap ? { slot_map: handed.opts.slotMap } : {}) } : {}
+    const data = { status: 'needs_person', request_id: request.id, title: request.title, lines: request.lines, permission, expires_at: request.expiresAt, ...sent }
     const text = [`Needs a person: ${request.title}`, ...request.lines.map((l) => `- ${l}`), PERSON_ONLY_NOTE, `The request expires at ${request.expiresAt}.`].join('\n')
     return { content: [{ type: 'text', text }], structuredContent: data }
   }
