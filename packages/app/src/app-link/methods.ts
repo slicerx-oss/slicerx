@@ -12,7 +12,7 @@ import { bounds } from '../plate/transform'
 import { LinkError } from './methods-error'
 import { listSessions, readSession } from './sessions'
 import { toolStore } from '../plate/tools'
-import { get, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
+import { get, pilotState, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -44,6 +44,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.session': 'read',
   // today's mimir cloud use and caps; the install token stays in the shell
   'mimir.quota': 'read',
+  // whether mimir cloud keeps this install's sessions (Settings > mimir), and whether the notice was read
+  'mimir.share': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -166,6 +168,18 @@ const HANDLERS: Record<string, Handler> = {
     const cloud = mimirCloudHost()
     if (!cloud || !cloudReady(currentEdition(), cloud)) throw new LinkError('not_found', `${appName()} has no ${ASSISTANT_NAME} cloud in this build`)
     return cloud.quota()
+  },
+  'mimir.share': async () => {
+    const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
+    const s = get()
+    const edition = currentEdition()
+    const cloud = cloudReady(edition, mimirCloudHost())
+    return {
+      cloud,
+      onCloud: cloud && pilotState(s) !== 'off' && pilotModel(edition, s.pilot, cloud)?.provider === 'mimir-cloud',
+      share: s.mimirShare,
+      noticeRead: s.mimirNotice === CLOUD_NOTICE_VERSION,
+    }
   },
 }
 

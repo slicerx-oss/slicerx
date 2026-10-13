@@ -18,6 +18,7 @@ vi.mock('../src/link/bridge', () => ({ liveBridge: () => (bridge.appLink ? { app
 import { toolStore } from '../src/plate/tools'
 import { get, set } from '../src/state/store'
 import { currentEdition, NEUTRAL, setCurrentEdition } from '../src/edition'
+import { CLOUD_NOTICE_VERSION } from '../src/pilot-connect/cloud-notice'
 import { registerMimirCloud } from '../src/pilot-connect/cloud'
 
 /** The hub's pinned list, read from roles.rs. */
@@ -128,6 +129,30 @@ describe('mimir cloud over the link', () => {
     } finally {
       registerMimirCloud(null)
       setCurrentEdition(before)
+    }
+  })
+})
+
+describe('the mimir cloud share setting over the link', () => {
+  it('reads the switch and the notice the way Settings shows them', async () => {
+    const before = currentEdition()
+    const was = { mimirShare: get().mimirShare, mimirNotice: get().mimirNotice, pilot: get().pilot }
+    try {
+      set({ pilot: null, mimirShare: true, mimirNotice: null })
+      expect(await runCall('mimir.share', {})).toEqual({ cloud: false, onCloud: false, share: true, noticeRead: false })
+      setCurrentEdition({ ...NEUTRAL, ai: { ...NEUTRAL.ai, keySource: 'cloud' }, backend: { ...NEUTRAL.backend, supabase: { url: 'https://abcdefghijklmnop.supabase.co', anonKey: 'public-anon-key-from-the-supabase-dashboard' } } })
+      registerMimirCloud({ quota: async () => { throw new Error('unused') }, forget: async () => 0, register: async () => undefined })
+      expect(await runCall('mimir.share', {})).toEqual({ cloud: true, onCloud: true, share: true, noticeRead: false })
+      set({ mimirShare: false, mimirNotice: CLOUD_NOTICE_VERSION })
+      expect(await runCall('mimir.share', {})).toEqual({ cloud: true, onCloud: true, share: false, noticeRead: true })
+      // a person's own key wins over the cloud
+      set({ pilot: { mode: 'on', provider: 'openai' } })
+      expect(await runCall('mimir.share', {})).toMatchObject({ cloud: true, onCloud: false })
+      expect(APP_LINK_METHODS['mimir.share']).toBe('read')
+    } finally {
+      registerMimirCloud(null)
+      setCurrentEdition(before)
+      set(was)
     }
   })
 })
