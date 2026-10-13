@@ -439,6 +439,16 @@ fn chamfer_sets_both_faces_back() {
     );
     close(volume(one), 8000.0 - 2.0 * 20.0);
     assert_eq!(mesh_check(one).0, 0);
+    // an inside edge (the corner of an L) gets material, so it goes through the fillet solver, not a wedge cut
+    let l = body(
+        "extrude",
+        &json!({ "frame": { "origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1] }, "polygons": [{ "outer": { "points": [[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]] }, "holes": [] }], "fromMm": 0, "toMm": 5 }),
+    );
+    let inner = body(
+        "chamfer",
+        &json!({ "body": l, "edges": [{ "a": [10, 10, 0], "b": [10, 10, 5], "face": [1, 0, 0] }], "distanceMm": 2 }),
+    );
+    close(volume(inner), 1500.0 + 2.0 * 5.0);
     let two = sx_brep::call(
         "chamfer",
         &json!({ "body": cube(), "edges": edge, "distanceMm": 2, "distance2Mm": 3 }).to_string(),
