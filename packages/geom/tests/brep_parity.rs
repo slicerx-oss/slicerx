@@ -366,6 +366,101 @@ fn extrude_into_the_top() {
     }
 }
 
+#[test]
+fn circle_polygon_and_rounded_extrudes() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    let top = json!({ "origin": [10, 10, 20], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    let body = cube();
+    // each loop as the exact replay sends it (exact.ts loops): a hexagon on its 10 mm circle, a flat side down, and a
+    // rounded rectangle as lines and quarter arcs
+    let y = 2.5 * 3f64.sqrt();
+    let hexagon = json!({ "points": [[-2.5, -y], [2.5, -y], [5, 0], [2.5, y], [-2.5, y], [-5, 0]] });
+    let rounded = json!({ "start": [6, -2], "segments": [
+        { "to": [6, 2] }, { "to": [4, 4], "center": [4, 2], "sweepDeg": 90 },
+        { "to": [-4, 4] }, { "to": [-6, 2], "center": [-4, 2], "sweepDeg": 90 },
+        { "to": [-6, -2] }, { "to": [-4, -4], "center": [-4, -2], "sweepDeg": 90 },
+        { "to": [4, -4] }, { "to": [6, -2], "center": [4, -2], "sweepDeg": 90 }
+    ] });
+    for (name, outer, shape, area, half, tol) in [
+        (
+            "circle",
+            json!({ "center": [0, 0], "diameterMm": 8 }),
+            json!({ "type": "circle", "diameterMm": 8 }),
+            PI * 16.0,
+            [4.0, 4.0],
+            ARC_TOL,
+        ),
+        (
+            "hexagon",
+            hexagon,
+            json!({ "type": "polygon", "sides": 6, "diameterMm": 10 }),
+            1.5 * 3f64.sqrt() * 25.0,
+            [5.0, y],
+            0.0,
+        ),
+        (
+            "rounded rectangle",
+            rounded,
+            json!({ "type": "rectangle", "widthMm": 12, "heightMm": 8, "cornerRadiusMm": 2 }),
+            80.0 + 4.0 * PI,
+            [6.0, 4.0],
+            ARC_TOL,
+        ),
+    ] {
+        let polygons = json!([{ "outer": outer }]);
+        // a new body 5 tall on the origin, then a boss and a pocket of the same on the cube's top
+        for (op, from, to, want, min, max) in [
+            (
+                "new",
+                0,
+                5,
+                area * 5.0,
+                [-half[0], -half[1], 0.0],
+                [half[0], half[1], 5.0],
+            ),
+            ("join", 0, 5, 8000.0 + area * 5.0, [0.0; 3], [20.0, 20.0, 25.0]),
+            ("cut", -5, 0, 8000.0 - area * 5.0, [0.0; 3], [20.0; 3]),
+        ] {
+            let (brep, on_mesh) = if op == "new" {
+                (
+                    made(
+                        "extrude",
+                        json!({ "frame": frame, "polygons": polygons, "fromMm": from, "toMm": to }),
+                    ),
+                    call(
+                        "shape.extrude",
+                        &json!({ "frame": frame, "shape": shape, "placement": {}, "spec": { "distanceMm": 5 } }),
+                    ),
+                )
+            } else {
+                (
+                    made(
+                        "extrude",
+                        json!({ "frame": top, "polygons": polygons, "fromMm": from, "toMm": to, "target": body, "operation": op }),
+                    ),
+                    call(
+                        "shape.extrude",
+                        &json!({ "frame": top, "shape": shape, "placement": {}, "spec": { "distanceMm": 5, "operation": op }, "target": mesh(&body) }),
+                    ),
+                )
+            };
+            check(
+                &format!("{name} {op}"),
+                &brep_solid(&brep),
+                0.0,
+                &mesh_solid(&on_mesh["mesh"]),
+                tol,
+                want,
+                min,
+                max,
+            );
+        }
+    }
+}
+
 /// The volume of a rectangle's taper, `w` by `h`, `d` long, each side moving in by `t` per mm (out when negative).
 fn tapered_box(w: f64, h: f64, d: f64, t: f64) -> f64 {
     w * h * d - (w + h) * t * d * d + 4.0 / 3.0 * t * t * d * d * d
