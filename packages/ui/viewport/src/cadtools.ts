@@ -245,6 +245,8 @@ export type SketchDimMark = NonNullable<SketchScene['dims']>[number]
 /** The line being drawn (a polyline from the last point to the cursor), the snapped cursor, an alignment guide, and a dimension being placed. */
 export interface SketchCursor {
   path?: readonly V2[] | null
+  /** The path is what a trim takes off: red and wider than a curve, so it reads apart from one with a problem. */
+  cut?: boolean
   at?: V2 | null
   guide?: readonly [V2, V2] | null
   dim?: SketchDimMark | null
@@ -317,6 +319,8 @@ export class SketchLayer {
   private cursorLabel: { sprite: Sprite; aspect: number; text: string } | null = null
   private scaledFor = ''
   private readonly band: Line2
+  // what a trim takes off: the problem red, drawn wide
+  private readonly cutMat = new LineMaterial({ color: new Color(TONE.issue.color), linewidth: CURVE_PX * 2.5, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, ...KEEP_ALPHA })
   /** A closed shape being drawn, shaded like a profile so the whole outline reads at the cursor. */
   private bandFill: Mesh | null = null
   private readonly snap: Points
@@ -341,6 +345,7 @@ export class SketchLayer {
       this.mats.set(tone, m)
     }
     // the shape being drawn takes the sketch's own curve color and width, so it reads as what the click will make
+    this.cutMat.uniforms['resolution']!.value = curveRes
     this.band = new Line2(new LineGeometry(), this.mats.get('normal') as LineMaterial)
     this.band.visible = false
     this.band.frustumCulled = false
@@ -557,6 +562,7 @@ export class SketchLayer {
     const path = c?.path ?? null
     const n = path ? Math.min(CURSOR_POINTS, path.length) : 0
     this.band.visible = n >= 2
+    this.band.material = c?.cut ? this.cutMat : (this.mats.get('normal') as LineMaterial)
     if (n >= 2) {
       const pos = new Float32Array(n * 3)
       for (let i = 0; i < n; i++) {
@@ -574,7 +580,7 @@ export class SketchLayer {
     this.bandFill = null
     const first = path?.[0]
     const last = path?.[n - 1]
-    if (path && n > 3 && first && last && Math.hypot(first[0] - last[0], first[1] - last[1]) < 1e-6) {
+    if (path && !c?.cut && n > 3 && first && last && Math.hypot(first[0] - last[0], first[1] - last[1]) < 1e-6) {
       const ring = path.slice(0, n - 1)
       const pos: number[] = []
       for (const tri of ShapeUtils.triangulateShape(ring.map((p) => new Vector2(p[0], p[1])), [])) for (const k of tri) pos.push(ring[k]![0], ring[k]![1], 0.02)
@@ -642,12 +648,14 @@ export class SketchLayer {
     this.fixMat.color.set(light ? LIGHT_TONE.fixed! : TONE.fixed.color)
     this.dimMat.color.set(light ? '#5c5f73' : '#f1fa8c')
     this.dimPickMat.color.set(light ? LIGHT_TONE.selected! : TONE.selected.color)
+    this.cutMat.color.set(light ? LIGHT_TONE.issue! : TONE.issue.color)
   }
 
   dispose(): void {
     this.set(null)
     for (const o of [this.band, this.snap, this.guide]) o.geometry.dispose()
     for (const m of this.mats.values()) m.dispose()
+    this.cutMat.dispose()
     this.guideMat.dispose()
     this.dotMat.dispose()
     this.fillMat.dispose()
