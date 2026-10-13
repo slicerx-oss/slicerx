@@ -45,7 +45,7 @@ async function pressStill(target: Locator, others: Locator[]): Promise<void> {
 test.describe('mimir cloud', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop only: phones have no modeling tabs')
 
-  test('in the dock, the header and the notice span the dock', async ({ page }) => {
+  test('in the dock, the header, the notice and the chat span the dock', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.addInitScript(() => {
       localStorage.setItem('slicerx.debug', '1')
@@ -67,6 +67,12 @@ test.describe('mimir cloud', () => {
     expect((await page.locator('.mimir-dock > .mimir-head').boundingBox())!.width).toBeGreaterThan(dock!.width - 2)
     await expect(page.locator('.mimir-dock').getByTestId('mimir-notice-ok')).toBeInViewport()
     await page.locator('.mimir-dock').screenshot({ path: test.info().outputPath('mimir-dock-notice.png') })
+    // and so does the chat once the notice is read
+    await page.locator('.mimir-dock').getByTestId('mimir-notice-ok').click()
+    const term = page.locator('.mimir-dock > .term')
+    await expect(term).toBeVisible()
+    expect((await term.boundingBox())!.width).toBeGreaterThan(dock!.width - 2)
+    await page.locator('.mimir-dock').screenshot({ path: test.info().outputPath('mimir-dock-chat.png') })
   })
 
   test('the mimir tab shows the notice once before the first chat', async ({ page }) => {
