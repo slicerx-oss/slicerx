@@ -37,11 +37,11 @@ export function CloudNotice() {
     <section className="pc-notice" data-testid="mimir-cloud-notice" aria-labelledby="pc-notice-title">
       <h3 id="pc-notice-title">Before you start</h3>
       <p>
-        {ASSISTANT_NAME} in {app} runs on a cloud model provider. What you send {ASSISTANT_NAME}, your messages, photos and the parts it works on, goes to
-        the provider to get an answer.
+        {ASSISTANT_NAME} in {app} runs on a cloud model provider. Your messages, photos and the parts {ASSISTANT_NAME} works on go to the provider to get an
+        answer.
       </p>
       <p>
-        {app} keeps your {ASSISTANT_NAME} sessions for 180 days to improve {ASSISTANT_NAME}. You can turn that off here, or later in Settings, {ASSISTANT_NAME}.
+        {app} keeps your {ASSISTANT_NAME} sessions for 180 days to improve {ASSISTANT_NAME}. You can turn that off here, or later in Settings &gt; {ASSISTANT_NAME}.
       </p>
       <SwitchRow
         id="pc-notice-share"
