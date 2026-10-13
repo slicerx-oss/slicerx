@@ -42,7 +42,6 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
   await page.goto('./')
   // The starter is on the plate (the objects list is in the right pane, shut here, and the plate chip names the plate only).
   await expect.poll(() => page.evaluate(() => (window as unknown as { __sx?: Sx }).__sx?.getState().plate.some((p) => p.name.includes('Layered X')) ?? false), { timeout: 120_000 }).toBe(true)
-  await expect(page.getByTestId('edge-tab-right')).toHaveAttribute('aria-expanded', 'false')
   const state = () =>
     page.evaluate(() => {
       const s = (window as unknown as { __sx: Sx }).__sx.getState()
@@ -57,6 +56,11 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
     const s = await state()
     return (s.status === 'running' && s.startedAt !== since.startedAt) || (await slices()) > since.slices
   }
+  // The starter's own slice opens the right pane when it finishes; shut by hand, it stays shut.
+  await expect.poll(async () => (await state()).status, { timeout: 120_000 }).not.toBe('running')
+  const tab = page.getByTestId('edge-tab-right')
+  if ((await tab.getAttribute('aria-expanded')) === 'true') await tab.click()
+  await expect(tab).toHaveAttribute('aria-expanded', 'false')
   const before = { startedAt: (await state()).startedAt, slices: await slices() }
   // One listener for the whole test: the plate's first slice can finish and draw while Ctrl+O is pressed, so the
   // chooser may come late. A chooser no listener takes stays open, and the browser then shows no other, so a
