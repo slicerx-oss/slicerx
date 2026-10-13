@@ -4,6 +4,7 @@
 // about how long and how much from the last slice, and moving a control the goal sets marks its tile edited. Auto slice stays on
 // here (the plain Playwright test, as in auto-slice.spec.ts), so a pick slices again on its own.
 import { expect, test, type Page } from '@playwright/test'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { openSheet, plateReady } from './fixtures'
 import { projectZip } from './project-zip'
 
@@ -94,13 +95,11 @@ test('moving the layer height keeps Standard picked, marked edited, and pressing
 
 test('a project that matches no goal opens on the nearest goal, marked edited', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
+  interceptFileDialogs(page)
   await open(page, { autoSlice: false })
   const P1S = { printer_settings_id: 'Bambu Lab P1S 0.4 nozzle', printer_model: 'Bambu Lab P1S', printer_variant: '0.4', nozzle_diameter: ['0.4'], layer_height: '0.14', different_settings_to_system: ['layer_height', '', ''] }
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'odd-layers.3mf', mimeType: 'model/3mf', buffer: projectZip(P1S, {}, [118, 118]) })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'odd-layers.3mf', mimeType: 'model/3mf', buffer: projectZip(P1S, {}, [118, 118]) })
   await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
   const fine = page.getByTestId('slice-goal-fine')
   await expect(fine).toHaveAttribute('aria-checked', 'true')

@@ -4,6 +4,7 @@
 // plain line, with what the project changes folded under Show differences until they open it. The printer's G-code is
 // the default. The project is made here: a cube and a start G-code with an M500 in it.
 import { expect, type Page } from '@playwright/test'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { plateReady, sliceCount, sliced, test } from './fixtures'
 import { projectZip } from './project-zip'
 
@@ -11,6 +12,7 @@ const START = 'G28\nM500 ; keep my offsets\nG1 Z5 F3000\n'
 const A1_MINI = { id: 'e2e-a1-mini', name: 'Desk A1 mini', profileId: 'bambu-a1-mini', vendor: 'Bambu Lab', model: 'A1 mini', nozzleCount: 1 }
 
 async function open(page: Page): Promise<void> {
+  interceptFileDialogs(page)
   await page.addInitScript((a1) => {
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
@@ -21,11 +23,8 @@ async function open(page: Page): Promise<void> {
   await page.goto('./')
   await plateReady(page)
   await expect(page.locator('[data-section="printer"] .printer-name')).toContainText('A1 mini')
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'bracket.sx3mf', mimeType: 'model/3mf', buffer: projectZip({ machine_start_gcode: START }, {}, [90, 90]) })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'bracket.sx3mf', mimeType: 'model/3mf', buffer: projectZip({ machine_start_gcode: START }, {}, [90, 90]) })
   await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
 }
 

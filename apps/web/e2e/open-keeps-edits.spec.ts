@@ -4,6 +4,7 @@
 // the edit. The edit lands the moment the opened object appears, before the project's settings are applied, which a
 // real drop cannot be timed to do; the app's store hook makes it, the way a drop adds its model.
 import { expect, type Page } from '@playwright/test'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { plateReady, test } from './fixtures'
 import { projectZip } from './project-zip'
 
@@ -14,6 +15,7 @@ type Store = {
 }
 
 async function open(page: Page): Promise<void> {
+  interceptFileDialogs(page)
   await page.addInitScript(() => {
     localStorage.setItem('slicerx.debug', '1')
     if (sessionStorage.getItem('sx-e2e')) return
@@ -26,11 +28,8 @@ async function open(page: Page): Promise<void> {
 
 /** Open (Mod+O) a project file: a 20 mm cube with print settings, which are applied after the cube appears. */
 async function openProject(page: Page, name: string): Promise<void> {
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name, mimeType: 'model/3mf', buffer: projectZip({ layer_height: '0.16', wall_loops: '3' }) })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name, mimeType: 'model/3mf', buffer: projectZip({ layer_height: '0.16', wall_loops: '3' }) })
 }
 
 test('a model added while a project opens stays, and the next open asks to save first', async ({ page, isMobile }) => {

@@ -3,6 +3,7 @@
 // Toasts never cover the plate bar or the playback bar: on the plate tab they center over the viewport and sit above
 // what it stacks along its bottom edge, at desktop and phone width.
 import { expect, type Locator, type Page } from '@playwright/test'
+import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { closeSheet, openSheet, plateReady, sliceCount, sliced, test } from './fixtures'
 import { projectZip } from './project-zip'
 
@@ -20,6 +21,7 @@ const P1S = {
 const A1_MINI = { id: 'e2e-a1-mini', name: 'Desk A1 mini', profileId: 'bambu-a1-mini', vendor: 'Bambu Lab', model: 'A1 mini', nozzleCount: 1 }
 
 async function open(page: Page): Promise<void> {
+  interceptFileDialogs(page)
   await page.addInitScript((a1) => {
     // The store hook the checks use to post a toast and switch the theme.
     localStorage.setItem('slicerx.debug', '1')
@@ -33,11 +35,8 @@ async function open(page: Page): Promise<void> {
 
 /** Opens a Bambu Studio project, which posts "Opened as P1S 0.2 mm from the project." */
 async function openProject(page: Page): Promise<Locator> {
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'keychain.3mf', mimeType: 'model/3mf', buffer: projectZip(P1S, {}, [118, 118]) })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'keychain.3mf', mimeType: 'model/3mf', buffer: projectZip(P1S, {}, [118, 118]) })
   await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
   const note = page.getByTestId('toast').filter({ hasText: 'Opened as P1S' })
   await expect(note).toBeVisible()
