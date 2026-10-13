@@ -165,12 +165,15 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs }), ...(designs ? [...designTools(designs, designFiles(policy)), ...paintTools(designs)] : [])] : []
   // Without an engine here, the design tools still work on the app's project, through the link.
   const here = appLink && !designs ? [...built, ...designToolset(NO_ENGINE_HOST).filter((t) => APP_DESIGN_TOOLS.has(t.name) && !built.some((b) => b.name === t.name))] : built
-  const geom = appLink ? routeToApp(here, appLink, productName(), { required: opts.app === 'required' }) : here
+  // The plate edits go to the app's shown plate too, unless this server's own project has the object.
+  const serverHas = (object: string): boolean => project.current?.objects().some((o) => o.id === object || o.name === object) ?? false
+  const route = (t: PilotTool<never>[]) => (appLink ? routeToApp(t, appLink, productName(), { required: opts.app === 'required', serverHas }) : t)
+  const geom = route(here)
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
   const mimir = mimirQuotaTools(appLink, productName())
-  const tools = [...registry, ...local, ...geom, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...registry, ...route(local), ...geom, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,

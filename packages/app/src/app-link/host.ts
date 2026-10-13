@@ -46,7 +46,7 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
       return
     }
     inFlight.add(c.client.id)
-    runCall(c.method, c.args)
+    runCall(c.method, c.args, c.client.name)
       .then(
         (value) => link.reply(c.callId, { ok: true, value: value ?? null }),
         (e: unknown) =>
