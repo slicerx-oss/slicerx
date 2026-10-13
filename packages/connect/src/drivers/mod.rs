@@ -56,6 +56,15 @@ pub(crate) fn test_neighbors(value: Option<&str>) -> Option<(Vec<std::net::Ipv4A
     Some((ips, port?))
 }
 
+/// The addresses a test build's PrusaLink scan probes (`SX_TEST_NEIGHBORS`, as set), or `None` when the hook is off
+/// because the variable is unset or malformed. sx-link prints it at startup, so a test can tell it has a build with
+/// the hook before it relies on one.
+#[cfg(feature = "test-hooks")]
+pub fn test_neighbors_hook() -> Option<String> {
+    let value = std::env::var("SX_TEST_NEIGHBORS").ok()?;
+    test_neighbors(Some(&value)).map(|_| value)
+}
+
 pub(crate) fn all(
     gate: Arc<dyn ApprovalGate>,
     discovery_bind: std::net::IpAddr,

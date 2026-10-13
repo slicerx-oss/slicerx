@@ -2,6 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Real printers through the real sx-link binary and the mock printers: approvals for printer
 // calls go to sx-link's broker, which is what the bridge verifies. Skipped when sx-link is not built.
+// The printer scan case needs sx-link's test hooks: `cargo build -p sx-link --features test-hooks`, then point
+// SX_LINK_BIN at that binary. A build without them fails that case with a message saying so.
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -207,8 +209,12 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
   })
 })
 
-// A client's printer scan through the hub finds a Prusa printer: the hub's PrusaLink scan reads the neighbour table,
+// A client's printer scan through the hub finds a Prusa printer: the hub's PrusaLink scan reads the neighbor table,
 // which a test build (sx-link with `test-hooks`) takes from SX_TEST_NEIGHBORS, here the PrusaLink fake's address.
+// Such a build prints a "test hook:" line at startup. Without it the scan finds nothing and the case would fail on
+// an empty list, so the setup refuses the build instead, with the command that makes the right one.
+const HOOK_LINE = /^test hook: printer scans probe /m
+const HOOKS_BUILD = 'cargo build -p sx-link --features test-hooks'
 describe.skipIf(!bin || !existsSync(bin))('a printer scan through sx-link', () => {
   let proc: ChildProcessByStdio<null, Readable, Readable>
   let mocks: RunningMocks
@@ -229,7 +235,9 @@ describe.skipIf(!bin || !existsSync(bin))('a printer scan through sx-link', () =
         if (u && c) {
           url = u[0]
           code = c[1] ?? ''
-          done()
+          // The hook line comes before the pairing code, so by now it is here or never will be.
+          if (HOOK_LINE.test(out)) done()
+          else fail(new Error(`${bin} was built without --features test-hooks, so its printer scan ignores SX_TEST_NEIGHBORS. Build it with \`${HOOKS_BUILD}\` and point SX_LINK_BIN at that binary.`))
         }
       })
       proc.once('exit', () => fail(new Error('sx-link exited early')))
@@ -242,7 +250,7 @@ describe.skipIf(!bin || !existsSync(bin))('a printer scan through sx-link', () =
     await mocks?.stop()
   })
 
-  it('lists the Prusa printer the neighbour table points at, with its address', async () => {
+  it('lists the Prusa printer the neighbor table points at, with its address', async () => {
     const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
     const found = data<{ output: { family: string; address: string | null; name: string }[] }>(await h.call('slicerx_printer_discover', { timeoutMs: 3000 }))
     const prusa = found.output.find((f) => f.family === 'prusalink')

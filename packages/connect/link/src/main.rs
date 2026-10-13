@@ -264,6 +264,11 @@ async fn run(args: Vec<String>) {
         Err(e) => fail(&format!("cannot start on 127.0.0.1:{port}: {e}")),
     };
     println!("sx-link listening on ws://{}", link.addr());
+    // A test build says when a test hook is on, so a test that needs one can refuse a build without it.
+    #[cfg(feature = "test-hooks")]
+    if let Some(addrs) = sx_connect::drivers::test_neighbors_hook() {
+        println!("test hook: printer scans probe {addrs} in place of the neighbor table");
+    }
     match link.state_dir() {
         Some(d) => println!("state in {}", d.display()),
         None => println!("state in memory only (--no-state)"),
