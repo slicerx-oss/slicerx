@@ -13,7 +13,7 @@ import { patternFromFields, patternProblem, type Pattern, type PatternFields } f
 import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type SketchTone } from '@slicerx/viewport'
-import { Button, Field, Icon, Seg, Select, Switch } from '@slicerx/ui'
+import { Button, Field, Icon, Seg, Select, Switch, type SegOption } from '@slicerx/ui'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { checkSketch, offsetSketch, pickFace, sketchSnaps, solveSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
@@ -74,13 +74,54 @@ interface Plane {
   fresh?: boolean
 }
 
-const TOOLS: { value: DrawTool; label: string }[] = [
-  { value: 'select', label: 'Select' },
-  { value: 'line', label: 'Line' },
-  { value: 'rect', label: 'Rectangle' },
-  { value: 'circle', label: 'Circle' },
-  { value: 'arc', label: 'Arc' },
+/** What each tool wants clicked, in order. */
+const HINTS: Record<DrawTool, string> = {
+  select: 'Click a line to pick it, drag a point to move it. Delete removes the picked line.',
+  line: 'Click point after point. Click the first point to close, right click to stop.',
+  rect: 'Click two opposite corners.',
+  rect3: 'Click the two ends of one edge, then out to the width.',
+  rectCenter: 'Click the center, then a corner.',
+  circle: 'Click the center, then a point on the rim.',
+  circle2: 'Click the two ends of a diameter.',
+  arc: 'Click the start, the end, then a point on the arc.',
+  arcCenter: 'Click the center, the start, then where it ends.',
+  arcTangent: 'Click the open end of a line or arc, then where the arc ends.',
+  polygon: 'Click the center, then a corner.',
+  polygonOut: 'Click the center, then the middle of an edge.',
+  polygonEdge: 'Click the two ends of one edge, then the side it goes on.',
+  slot: 'Click the two arc centers, then out to the width.',
+  slotOverall: 'Click the two ends, then out to the width.',
+  slotCenter: 'Click the center, an arc center, then out to the width.',
+}
+
+/** Fusion's keys for the sketch tools it gives one. */
+const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle' }
+
+type Family = 'select' | 'line' | 'rect' | 'circle' | 'arc' | 'polygon' | 'slot'
+
+/** The tool families, as icons; a family with ways to draw it shows them in the row below. */
+const FAMILIES: SegOption<Family>[] = [
+  { value: 'select', label: '', icon: 'select-object', title: 'Select' },
+  { value: 'line', label: '', icon: 'sk-line', title: 'Line', tip: { title: 'Line', key: 'L' } },
+  { value: 'rect', label: '', icon: 'sk-rect', title: 'Rectangle', tip: { title: 'Rectangle', key: 'R' } },
+  { value: 'circle', label: '', icon: 'sk-circle', title: 'Circle', tip: { title: 'Circle', key: 'C' } },
+  { value: 'arc', label: '', icon: 'sk-arc', title: 'Arc' },
+  { value: 'polygon', label: '', icon: 'sk-polygon', title: 'Polygon' },
+  { value: 'slot', label: '', icon: 'sk-slot', title: 'Slot' },
 ]
+
+const VARIANTS: Partial<Record<Family, SegOption<DrawTool>[]>> = {
+  rect: [{ value: 'rect', label: '2-point' }, { value: 'rect3', label: '3-point' }, { value: 'rectCenter', label: 'Center' }],
+  circle: [{ value: 'circle', label: 'Center' }, { value: 'circle2', label: '2-point' }],
+  arc: [{ value: 'arc', label: '3-point' }, { value: 'arcCenter', label: 'Center' }, { value: 'arcTangent', label: 'Tangent' }],
+  polygon: [{ value: 'polygon', label: 'Inscribed' }, { value: 'polygonOut', label: 'Circumscribed' }, { value: 'polygonEdge', label: 'Edge' }],
+  slot: [{ value: 'slot', label: 'Center to center' }, { value: 'slotOverall', label: 'Overall' }, { value: 'slotCenter', label: 'Center point' }],
+}
+
+const familyOf = (t: DrawTool): Family => (Object.entries(VARIANTS).find(([, v]) => v.some((o) => o.value === t))?.[0] as Family | undefined) ?? (t as Family)
+
+/** The way each family was last drawn this session, so picking the family again draws it the same way. */
+const lastVariant: Partial<Record<Family, DrawTool>> = {}
 
 /** The sketch palette's toggles, kept for the session. */
 export interface SketchLook {
@@ -292,10 +333,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [note, setNote] = useState<string | null>(null)
   const readoutRef = useRef<HTMLSpanElement | null>(null)
   const gridMm = pal.snap ? Number(pal.step) : 0
+  // a polygon's side count, 3 to 64
+  const [sides, setSides] = useDraft<string>('sides', '6')
+  const sidesN = Math.max(3, Math.min(64, Math.round(Number(sides)) || 6))
 
   // What the hover path reads without a render.
-  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, cursor: [0, 0] as V2, screen: [0, 0] as [number, number] })
-  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps }
+  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number] })
+  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, sides: sidesN }
 
   // Snap targets on the plane: the picked face's outline, and edges of bodies lying in the plane.
   useEffect(() => {
@@ -407,7 +451,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         l.cursor = s.at
         l.screen = ev.screen
         if (ev.kind === 'hover') {
-          view.setSketchCursor({ path: preview(l.draft, s.at), at: s.at, guide: 'guide' in s && s.guide ? s.guide : null })
+          view.setSketchCursor({ path: preview(l.draft, s.at, { sides: l.sides }, l.sketch), at: s.at, guide: 'guide' in s && s.guide ? s.guide : null })
           const r = readoutRef.current
           if (r) r.textContent = `${l.draft.tool === 'select' ? '' : readout(l.draft, s.at, ...readoutUnits(get().units))}${s.kind ? `${l.draft.tool === 'select' ? '' : ', '}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
           return
@@ -416,7 +460,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           setSelected(hitTest(l.sketch, ev.at, tol))
           return
         }
-        const r = click(l.sketch, l.draft, s.at)
+        const r = click(l.sketch, l.draft, s.at, { sides: l.sides })
         // the next click can come before the next render
         l.sketch = r.sketch
         l.draft = r.draft
@@ -448,6 +492,15 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       const typing = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
       if (typing) return
       const l = live.current
+      // Fusion's tool keys: L line, R 2-point rectangle, C center circle
+      const key = TOOL_KEYS[e.key.toLowerCase()]
+      if (key && !e.metaKey && !e.ctrlKey && !e.altKey && !featureOnly) {
+        e.preventDefault()
+        setDraft(emptyDraft(key))
+        setField(null)
+        view?.setSketchCursor(null)
+        return
+      }
       if (/^[0-9.\-]$/.test(e.key) && l.draft.tool !== 'select' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
         setField({ x: l.screen[0], y: l.screen[1], values: [e.key, ''], focus: 0 })
@@ -484,13 +537,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const p = typedPoint(draft, values, live.current.cursor)
     if (typeof p === 'string') return setNote(p)
     setNote(null)
-    const r = click(sketch, draft, p)
+    const r = click(sketch, draft, p, { sides: sidesN })
     setSketch(r.sketch)
     setDraft(r.draft)
     setField(null)
   }
 
   const pickTool = (t: DrawTool) => {
+    if (VARIANTS[familyOf(t)]) lastVariant[familyOf(t)] = t
     setDraft(emptyDraft(t))
     setField(null)
     view?.setSketchCursor(null)
@@ -638,11 +692,23 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label}>
       {featureOnly ? null : (
         <>
-          <Seg label="Drawing tool" size="sm" full value={draft.tool} onChange={pickTool} options={TOOLS} />
+          <Seg label="Drawing tool" size="sm" full value={familyOf(draft.tool)} onChange={(f) => pickTool(lastVariant[f] ?? VARIANTS[f]?.[0]?.value ?? (f as DrawTool))} options={FAMILIES} />
+          {/* the ways to draw the family; the row is always there, so nothing below moves */}
+          <div className="sketch-variants">
+            {VARIANTS[familyOf(draft.tool)] ? (
+              <Seg label="Draw it by" size="sm" full={familyOf(draft.tool) !== 'polygon'} value={draft.tool} onChange={pickTool} options={VARIANTS[familyOf(draft.tool)]!} />
+            ) : null}
+            {familyOf(draft.tool) === 'polygon' ? (
+              <label className="sketch-sides" data-tip-title="Sides" data-tip-body="How many sides the polygon has, 3 to 64.">
+                <Icon name="sk-polygon" size={14} />
+                <input id="sk-sides" className="sx-input" data-mono data-size="sm" inputMode="numeric" aria-label="Sides" value={sides} onChange={(e) => setSides(e.target.value)} />
+              </label>
+            ) : null}
+          </div>
           <p className="cad-hint" role="status">
             <Icon name="mouse-left" size={15} />{' '}
             <span>
-              {draft.tool === 'select' ? 'Click a line to pick it, drag a point to move it. Delete removes the picked line.' : draft.tool === 'line' ? 'Click point after point. Click the first point to close, right click to stop.' : draft.tool === 'rect' ? 'Click two opposite corners.' : draft.tool === 'circle' ? 'Click the center, then a point on the rim.' : 'Click the start, the end, then a point on the arc.'}{' '}
+              {HINTS[draft.tool]}{' '}
               {draft.tool !== 'select' ? 'Type a number to give exact sizes.' : ''}
             </span>
           </p>
