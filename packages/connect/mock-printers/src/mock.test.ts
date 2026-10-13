@@ -99,6 +99,46 @@ test('the RTSP camera checks a digest login as live555 does', async () => {
   }
 })
 
+// A refused PLAY gets a status with the connection left open, so the client can end the session it
+// set up; that TEARDOWN is logged as one for a session that never played.
+test('the RTSP camera answers a refused PLAY and logs the TEARDOWN of a session that never played', async () => {
+  let refuse = 1
+  const cam = await startRtsp({ refusePlay: () => refuse-- > 0 })
+  const uri = `rtsp://127.0.0.1:${cam.port}/stream`
+  const reqs = [`SETUP ${uri}/track1`, `PLAY ${uri}`, `TEARDOWN ${uri}`]
+  const lines: string[] = []
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let sent = 0
+      const sock = connect(cam.port, '127.0.0.1')
+      const send = () => {
+        sent++
+        sock.write(`${reqs[sent - 1]} RTSP/1.0\r\nCSeq: ${sent}\r\nSession: abc123\r\n\r\n`)
+      }
+      sock.on('connect', send)
+      sock.on('error', reject)
+      let buf = ''
+      sock.on('data', (d) => {
+        buf += d.toString('latin1')
+        let i: number
+        while ((i = buf.indexOf('\r\n\r\n')) >= 0) {
+          lines.push(buf.slice(0, buf.indexOf('\r\n')))
+          buf = buf.slice(i + 4)
+          if (sent < reqs.length) send()
+          else {
+            sock.destroy()
+            resolve()
+          }
+        }
+      })
+    })
+    assert.deepEqual(lines, ['RTSP/1.0 200 OK', 'RTSP/1.0 453 Not Enough Bandwidth', 'RTSP/1.0 200 OK'])
+    assert.deepEqual(cam.log, ['SETUP ok', 'PLAY refused: 453', 'TEARDOWN ok: the session never played'])
+  } finally {
+    cam.close()
+  }
+})
+
 // Developer Mode as the report's `fun` flags carry it: bit 0x20000000 set while it is off.
 test('the Bambu fake reports Developer Mode in its fun flags', async () => {
   const { reportFor } = await import('./bambu.ts')

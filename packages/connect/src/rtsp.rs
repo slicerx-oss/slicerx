@@ -396,38 +396,47 @@ struct Client {
     auth: Auth,
     login: Option<(String, String)>,
     session: Option<String>,
+    /// The camera closed the connection, or it can no longer carry requests.
+    closed: bool,
 }
 
 impl Client {
+    /// The next request, with its CSeq, session and login.
+    fn compose(&mut self, method: &str, uri: &str, extra: &[(&str, &str)]) -> String {
+        self.cseq += 1;
+        let mut req = format!(
+            "{method} {uri} RTSP/1.0\r\nCSeq: {}\r\nUser-Agent: SlicerX\r\n",
+            self.cseq
+        );
+        for (k, v) in extra {
+            let _ = write!(req, "{k}: {v}\r\n");
+        }
+        if let Some(s) = &self.session {
+            let _ = write!(req, "Session: {s}\r\n");
+        }
+        if let Some((u, p)) = &self.login
+            && let Some(h) = self.auth.header(u, p, method, uri, self.cseq)
+        {
+            trace(
+                &self.who,
+                format_args!(
+                    "{method} login: {}, code {}",
+                    login_words(&h),
+                    crate::trace::fingerprint(p)
+                ),
+            );
+            let _ = write!(req, "Authorization: {h}\r\n");
+        }
+        req.push_str("\r\n");
+        req
+    }
+
     async fn request(&mut self, method: &str, uri: &str, extra: &[(&str, &str)]) -> Option<Response> {
         for attempt in 0..2 {
-            self.cseq += 1;
-            let mut req = format!(
-                "{method} {uri} RTSP/1.0\r\nCSeq: {}\r\nUser-Agent: SlicerX\r\n",
-                self.cseq
-            );
-            for (k, v) in extra {
-                let _ = write!(req, "{k}: {v}\r\n");
-            }
-            if let Some(s) = &self.session {
-                let _ = write!(req, "Session: {s}\r\n");
-            }
-            if let Some((u, p)) = &self.login
-                && let Some(h) = self.auth.header(u, p, method, uri, self.cseq)
-            {
-                trace(
-                    &self.who,
-                    format_args!(
-                        "{method} login: {}, code {}",
-                        login_words(&h),
-                        crate::trace::fingerprint(p)
-                    ),
-                );
-                let _ = write!(req, "Authorization: {h}\r\n");
-            }
-            req.push_str("\r\n");
+            let req = self.compose(method, uri, extra);
             if let Err(e) = self.io.write_all(req.as_bytes()).await {
                 trace(&self.who, format_args!("{method}: not sent: {e}"));
+                self.closed = true;
                 return None;
             }
             let resp = match tokio::time::timeout(STEP_TIMEOUT, read_response(&mut self.io)).await {
@@ -437,6 +446,7 @@ impl Client {
                         &self.who,
                         format_args!("{method}: the camera closed the connection or sent no RTSP reply"),
                     );
+                    self.closed = true;
                     return None;
                 }
                 Err(_) => {
@@ -616,6 +626,7 @@ pub(crate) async fn open(target: &Target) -> Result<FrameStream, Failure> {
         auth: Auth::None,
         login: target.login.clone(),
         session: None,
+        closed: false,
     };
     client
         .request("OPTIONS", &base, &[])
@@ -655,14 +666,51 @@ pub(crate) async fn open(target: &Target) -> Result<FrameStream, Failure> {
     client.session = setup
         .header("Session")
         .map(|v| v.split(';').next().unwrap_or(v).trim().to_owned());
-    let playing = client
-        .request("PLAY", &base, &[("Range", "npt=0.000-")])
-        .await
-        .ok_or_else(|| step_failed(target, "PLAY"))?;
-    refused(&playing)?;
+    let played = match client.request("PLAY", &base, &[("Range", "npt=0.000-")]).await {
+        Some(r) => refused(&r),
+        None => Err(step_failed(target, "PLAY")),
+    };
+    if let Err(f) = played {
+        end_unplayed(client, &base);
+        return Err(f);
+    }
     let target = target.clone();
     let sps_pps = sdp.sps_pps;
     Ok(spawn_stream(move |tx| play(target, client, base, sps_pps, tx)))
+}
+
+/// Ends a session that was set up but did not play. While the connection is open (the camera refused
+/// PLAY with a status, or did not answer it), TEARDOWN goes out on it, as for a playing session, so
+/// the camera does not keep a session nobody uses. When the camera already closed the connection
+/// nothing is sent: a new connection only to end the session would be one more login on a camera
+/// that is turning sessions away, and live555 ends a session it hears nothing from by itself.
+fn end_unplayed(mut client: Client, base: &str) {
+    if client.session.is_none() {
+        return;
+    }
+    if client.closed {
+        trace(
+            &client.who,
+            "TEARDOWN not sent: the camera closed the connection; it ends the session itself",
+        );
+        return;
+    }
+    let Ok(rt) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    let req = client.compose("TEARDOWN", base, &[]);
+    let answer = format!("CSeq: {}\r\n", client.cseq);
+    let target = client.who.clone();
+    let done = closing(&target);
+    let (rd, wr) = tokio::io::split(client.io);
+    rt.spawn(async move {
+        let how = teardown(rd, wr, req.as_bytes(), answer.as_bytes()).await;
+        trace(
+            &target,
+            format_args!("TEARDOWN of the session that did not play: {how}"),
+        );
+        drop(done);
+    });
 }
 
 /// Reads a playing stream into frames until it ends, with a keepalive every [`KEEPALIVE`], and logs
@@ -681,6 +729,7 @@ async fn play(
         login,
         session,
         cseq,
+        closed: _,
     } = client;
     let (rd, wr) = tokio::io::split(io);
     let mut ctl = Control {

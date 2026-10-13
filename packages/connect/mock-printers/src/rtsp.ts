@@ -35,6 +35,8 @@ export interface RtspOptions {
   oneSession?: { holdMs: number }
   /** True to drop this PLAY (asked once per PLAY), as live555 sometimes does just after a session ended. */
   dropPlay?: () => boolean
+  /** True to answer this PLAY `453 Not Enough Bandwidth` with the connection left open (asked once per PLAY, after `dropPlay`). */
+  refusePlay?: () => boolean
   /** Drops a PLAY that comes less than this many milliseconds after the last session ended, as the H2D does 5 to 10 s after a TEARDOWN. */
   dropWithinMs?: () => number
   /** True for a session that started playing at `startedAt` (ms) and should stop sending frames, its connection left open. */
@@ -130,6 +132,8 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
     let seq = 1
     let n = 0
     let timer: NodeJS.Timeout | undefined
+    // Whether this connection's session got as far as playing, for the TEARDOWN line.
+    let played = false
     sock.on('close', () => {
       if (timer) {
         clearInterval(timer)
@@ -168,7 +172,13 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
           sock.destroy()
           return
         }
-        note(`${method} ${ok ? 'ok' : 'denied'}`)
+        if (ok && method === 'PLAY' && o.refusePlay?.()) {
+          note('PLAY refused: 453')
+          reply('453 Not Enough Bandwidth')
+          continue
+        }
+        // A TEARDOWN of a session that never played: what a client sends when PLAY was refused.
+        note(method === 'TEARDOWN' && ok && !played ? 'TEARDOWN ok: the session never played' : `${method} ${ok ? 'ok' : 'denied'}`)
         if (!ok) {
           const ch = o.login?.scheme === 'basic' ? `Basic realm="${REALM}"` : `Digest realm="${REALM}", nonce="${NONCE}"${challengeQop ? ', qop="auth"' : ''}`
           reply('401 Unauthorized', [`WWW-Authenticate: ${ch}`])
@@ -183,6 +193,7 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
         } else if (method === 'SETUP') reply('200 OK', ['Transport: RTP/AVP/TCP;unicast;interleaved=0-1', 'Session: abc123;timeout=60'])
         else if (method === 'PLAY') {
           playing = sock
+          played = true
           reply('200 OK', ['Session: abc123', 'Range: npt=0.000-'])
           const startedAt = Date.now()
           timer = setInterval(() => {

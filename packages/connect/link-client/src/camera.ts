@@ -397,8 +397,11 @@ export function linkCameraStreams(host: { camera: LinkCamera }, o: LinkStreamsOp
         for (const cb of statuses) cb(s)
         if (ended) return
         if (s.state === 'failed') say(s.reason ?? 'The camera did not open.')
-        else if (s.state === 'retrying') say(`The camera connection dropped. Trying again in ${Math.max(1, Math.round((s.retryInMs ?? 0) / 1000))} s.`)
-        else if (problem.startsWith('The camera connection dropped')) say('')
+        else if (s.state === 'retrying') {
+          const secs = Math.max(1, Math.round((s.retryInMs ?? 0) / 1000))
+          // Busy: the camera closed several connections in a row and is left alone for a while.
+          say(s.busy ? `The camera is busy. Trying again in ${secs} s.` : `The camera connection dropped. Trying again in ${secs} s.`)
+        } else if (problem.startsWith('The camera connection dropped') || problem.startsWith('The camera is busy')) say('')
       })
       const firstPicture = setTimeout(() => {
         if (!pictured && !problem && status.state !== 'retrying') say('No picture from the camera after 10 seconds.')

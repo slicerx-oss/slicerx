@@ -52,6 +52,10 @@ export interface BambuExtra {
   digestQop?: boolean
   /** How many of the next PLAY requests the camera drops. */
   dropPlays?: number
+  /** The camera drops every PLAY, by closing the connection with no reply, until this is turned off. */
+  dropEveryPlay?: boolean
+  /** How many of the next PLAY requests the camera answers `453` with the connection left open. */
+  refusePlays?: number
   /** The camera drops a PLAY that comes less than this many milliseconds after its last session ended. */
   dropWithinMs?: number
   /** When set (ms since the epoch), the camera sessions playing then stop sending frames and keep their connections open. */
@@ -506,7 +510,7 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
     get qop() { return extra.digestQop === true },
   }
   // live555 holds a session a while after its connection drops without TEARDOWN.
-  const rtsps = await startRtsp({ tls, login, oneSession: { holdMs: 3000 }, sharedLog: log, dropPlay: () => (extra.dropPlays ?? 0) > 0 && (extra.dropPlays = (extra.dropPlays ?? 0) - 1, true), dropWithinMs: () => extra.dropWithinMs ?? 0, stalled: (startedAt) => extra.stalledAt !== undefined && startedAt <= extra.stalledAt, path: '/streaming/live/1', accept: () => extra.liveview !== false, inBand: () => extra.inBandParameterSets === true })
+  const rtsps = await startRtsp({ tls, login, oneSession: { holdMs: 3000 }, sharedLog: log, dropPlay: () => extra.dropEveryPlay === true || ((extra.dropPlays ?? 0) > 0 && (extra.dropPlays = (extra.dropPlays ?? 0) - 1, true)), refusePlay: () => (extra.refusePlays ?? 0) > 0 && (extra.refusePlays = (extra.refusePlays ?? 0) - 1, true), dropWithinMs: () => extra.dropWithinMs ?? 0, stalled: (startedAt) => extra.stalledAt !== undefined && startedAt <= extra.stalledAt, path: '/streaming/live/1', accept: () => extra.liveview !== false, inBand: () => extra.inBandParameterSets === true })
 
   // SSDP on a loopback UDP port (2021 and 1990 on a real printer): a search for Bambu printers gets
   // the answer by unicast, as a real printer gives it.

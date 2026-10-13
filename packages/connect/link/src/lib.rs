@@ -131,6 +131,9 @@ pub struct LinkConfig {
     /// How long the app link waits for the person's answer, and how long a client whose question
     /// went unanswered waits before asking again. Tests shorten them.
     pub app_link_waits: AppLinkWaits,
+    /// How long a printer's camera is left alone after its 2nd, 3rd, 4th and each later PLAY in a
+    /// row that it closed (the last repeats); empty keeps the defaults. Tests shorten them.
+    pub camera_holds: Vec<Duration>,
 }
 
 /// Secret store entry for the app code when [`LinkConfig::code_in_secrets`] is set.
@@ -158,6 +161,7 @@ impl Default for LinkConfig {
             discovery_bind: None,
             name_ports: sx_connect::drivers::bambu::SSDP_PORTS.to_vec(),
             app_link_waits: AppLinkWaits::default(),
+            camera_holds: feeds::HOLDS.to_vec(),
         }
     }
 }
@@ -429,6 +433,7 @@ pub async fn serve_with_approvals(
     }
     state.remote.set_rtc_bind(cfg.rtc_bind);
     state.app_link.set_waits(cfg.app_link_waits);
+    state.feeds.set_holds(cfg.camera_holds.clone());
     remote::resume(&state);
     let kept = state.clone();
     let watcher = tokio::spawn(hub_rpc::watch(state.clone()));

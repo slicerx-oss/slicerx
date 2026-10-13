@@ -261,8 +261,9 @@ pub(crate) fn close_reason(p: &Value) -> String {
 }
 
 /// `camera.status`: what the stream's camera feed is doing. `state` is `live`, `retrying` (with
-/// `attempt`, `retryInMs` and the `reason` in plain words) or `failed` (with the `reason`; the
-/// stream ends after it).
+/// `attempt`, `retryInMs`, the `reason` in plain words, and `busy` when the camera closed several
+/// PLAYs in a row and is left alone until then) or `failed` (with the `reason`; the stream ends
+/// after it).
 pub(crate) fn status_event(id: u32, printer: &str, s: &crate::feeds::FeedStatus) -> Value {
     match s {
         crate::feeds::FeedStatus::Live => {
@@ -272,9 +273,10 @@ pub(crate) fn status_event(id: u32, printer: &str, s: &crate::feeds::FeedStatus)
             attempt,
             in_ms,
             reason,
+            busy,
         } => json!({
             "event": "camera.status", "stream": id, "printerId": printer, "state": "retrying",
-            "attempt": attempt, "retryInMs": in_ms, "reason": reason,
+            "attempt": attempt, "retryInMs": in_ms, "reason": reason, "busy": busy,
         }),
         crate::feeds::FeedStatus::Failed { reason } => json!({
             "event": "camera.status", "stream": id, "printerId": printer, "state": "failed",
