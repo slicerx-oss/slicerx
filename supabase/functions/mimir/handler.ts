@@ -236,9 +236,12 @@ async function messages(req: Request, env: Env): Promise<Response> {
   if (!up.ok || !up.body) {
     // nothing was generated, so the call settles at nothing; the provider's words stay here,
     // in the function log only: its status and error, never the key or the prompt
-    console.error('mimir upstream:', up.status, await upstreamError(up))
+    const e = await upstreamError(up)
+    console.error('mimir upstream:', up.status, e.line)
     await later(settle(false))
     if (up.status === 429 || up.status === 529 || up.status >= 500) return fail(503, 'overloaded_error', 'The model provider is busy. Try again in a moment.')
+    // a request the provider calls invalid is the caller's to fix, so its reason goes back with it
+    if (e.type === 'invalid_request_error' && e.message) return fail(400, 'invalid_request_error', `The model provider refused the request: ${e.message}`)
     return fail(502, 'api_error', `The model provider refused the request (${up.status}).`)
   }
 
@@ -267,14 +270,15 @@ async function messages(req: Request, env: Env): Promise<Response> {
 
 // The provider's error type and message from a refused call, cut short. Its validation
 // messages name fields, not what the person wrote.
-async function upstreamError(up: Response): Promise<string> {
+async function upstreamError(up: Response): Promise<{ type?: string; message?: string; line: string }> {
   try {
-    const text = await up.text()
-    const e = (JSON.parse(text) as Obj)['error']
-    if (typeof e === 'object' && e !== null) return `${String((e as Obj)['type'])}: ${String((e as Obj)['message']).slice(0, 300)}`
-    return 'no error body'
+    const e = (JSON.parse(await up.text()) as Obj)['error']
+    if (typeof e !== 'object' || e === null) return { line: 'no error body' }
+    const type = String((e as Obj)['type'])
+    const message = String((e as Obj)['message']).slice(0, 300)
+    return { type, message, line: `${type}: ${message}` }
   } catch {
-    return 'unreadable error body'
+    return { line: 'unreadable error body' }
   }
 }
 
@@ -288,7 +292,7 @@ async function countTokens(env: Env, body: Obj): Promise<number | null> {
       body: JSON.stringify({ model, system, messages, tools, tool_choice, thinking }),
     })
     if (!res.ok) {
-      console.error('mimir count_tokens:', res.status, await upstreamError(res))
+      console.error('mimir count_tokens:', res.status, (await upstreamError(res)).line)
       return null
     }
     const n = ((await res.json()) as Obj)['input_tokens']

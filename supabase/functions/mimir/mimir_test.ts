@@ -288,7 +288,8 @@ Deno.test('a failed, refused or cut-short call stores no session', async () => {
     assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_output'], MAX_OUTPUT)
     assert(!h.calls.some((c) => c.fn === 'mimir_store_session'))
   }
-  const refused = harness({ upstream: () => Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'secret detail' } }, { status: 400 }) })
+  // only an invalid request's reason goes back to the caller; anything else about our account stays here
+  const refused = harness({ upstream: () => Response.json({ type: 'error', error: { type: 'authentication_error', message: 'secret detail' } }, { status: 401 }) })
   const res = await handle(post('/v1/messages', base(), shared), refused.env)
   assertEquals(res.status, 502)
   assert(!(await res.text()).includes('secret detail'), 'the provider\'s words stay on the server')
@@ -395,7 +396,9 @@ Deno.test('a refused call logs the provider status and error, never the key or t
   try {
     const h = harness({ upstream: () => Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'tools.3.custom.input_schema: bad' } }, { status: 400 }) })
     const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
-    assertEquals(res.status, 502)
+    // the caller gets the provider's reason too, so a bad tool schema is fixable from the client
+    assertEquals(res.status, 400)
+    assertEquals((await res.json()).error, { type: 'invalid_request_error', message: 'The model provider refused the request: tools.3.custom.input_schema: bad' })
     await Promise.all(h.pending)
   } finally {
     console.error = was
