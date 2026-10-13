@@ -57,7 +57,7 @@ export function createBrowserMimirCloud(o: BrowserCloudOptions): BrowserMimirClo
       const res = await call(`${base}/quota`, { method: 'GET', signal: AbortSignal.timeout(TIMEOUT_MS) })
       const r = (await res.json()) as Record<string, unknown>
       const n = (k: string) => (typeof r[k] === 'number' ? (r[k] as number) : 0)
-      return { edition: String(r['edition'] ?? ''), day: String(r['day'] ?? ''), installUsed: n('install_used'), installCap: n('install_cap'), ipUsed: n('ip_used'), ipCap: n('ip_cap'), editionOpen: r['edition_open'] === true }
+      return { edition: String(r['edition'] ?? ''), day: String(r['day'] ?? ''), installUsed: n('install_used'), installCap: n('install_cap'), ipUsed: n('ip_used'), ipCap: n('ip_cap'), editionOpen: r['edition_open'] === true, ...(r['v2'] !== undefined ? { v2: r['v2'] } : {}) }
     },
     async forget(): Promise<number> {
       const res = await call(`${base}/forget`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(TIMEOUT_MS) })
