@@ -2600,11 +2600,11 @@ class ViewportImpl implements Viewport {
     return rayOnPlane(s.frame, o, d)
   }
 
-  private sketchEvent(kind: SketchEvent['kind'], e: { clientX: number; clientY: number; shiftKey: boolean; altKey: boolean }, handle?: number): void {
+  private sketchEvent(kind: SketchEvent['kind'], e: { clientX: number; clientY: number; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }, handle?: number): void {
     const s = this.sketchLayer.scene
     const at = s ? this.sketchAt(e) : null
     if (!s || !at) return
-    this.emit('sketch', { kind, at, ...(handle !== undefined ? { handle } : {}), mmPerPx: this.mmPerPx(fromPlane(s.frame, at)), screen: [e.clientX, e.clientY], shift: e.shiftKey, alt: e.altKey })
+    this.emit('sketch', { kind, at, ...(handle !== undefined ? { handle } : {}), mmPerPx: this.mmPerPx(fromPlane(s.frame, at)), screen: [e.clientX, e.clientY], shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey })
   }
 
   lookAtPlane(point: V3, normal: V3, radiusMm: number, opts: { animate?: boolean } = {}): void {
@@ -3089,7 +3089,7 @@ class ViewportImpl implements Viewport {
       return bh ? [bh[0], bh[1], 0] : null
     }
     // Sketch hovers and point drags go out at most once per frame, with the latest cursor.
-    type SketchPending = { kind: 'hover' | 'drag'; e: { clientX: number; clientY: number; shiftKey: boolean; altKey: boolean }; handle?: number }
+    type SketchPending = { kind: 'hover' | 'drag'; e: { clientX: number; clientY: number; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }; handle?: number }
     let sketchPending: SketchPending | null = null
     const flushSketch = (): void => {
       const p = sketchPending
@@ -3098,7 +3098,7 @@ class ViewportImpl implements Viewport {
     }
     const queueSketch = (kind: SketchPending['kind'], e: PointerEvent, handle?: number): void => {
       const first = sketchPending === null
-      sketchPending = { kind, e: { clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey, altKey: e.altKey }, ...(handle !== undefined ? { handle } : {}) }
+      sketchPending = { kind, e: { clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }, ...(handle !== undefined ? { handle } : {}) }
       if (first) requestAnimationFrame(flushSketch)
     }
     // Probe hovers go out at most once per frame, with the latest cursor, and only while a tool asks.
@@ -3196,11 +3196,13 @@ class ViewportImpl implements Viewport {
         return
       }
       if (this.sketchOn()) {
-        // A press on a sketch point drags it; anywhere else the press is the camera's, and a click is the tool's.
+        // A press on a sketch point drags it, as does one on a drawing tool's drag point (handle -1); anywhere else the
+        // press is the camera's, and a click is the tool's.
         const s = this.sketchLayer.scene!
         const at = this.sketchAt(e)
-        const h = at ? this.sketchLayer.handleAt(at, 8 * this.mmPerPx(fromPlane(s.frame, at))) : -1
-        if (h >= 0) {
+        const tol = at ? 8 * this.mmPerPx(fromPlane(s.frame, at)) : 0
+        const h = at ? this.sketchLayer.handleAt(at, tol) : -1
+        if (h >= 0 || (at && this.sketchLayer.dragFromAt(at, tol))) {
           this.sketchDrag = { handle: h }
           this.controls.enabled = false
           el.setPointerCapture(e.pointerId)
