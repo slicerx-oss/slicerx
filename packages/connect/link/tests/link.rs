@@ -2104,6 +2104,111 @@ async fn a_live_view_right_after_a_still_waits_out_the_cameras_rest() {
     );
 }
 
+// The H2D closed 10 PLAYs in a row while stills and the live view kept trying every few seconds,
+// and only a quiet gap brought it back. From the second close in a row the bridge leaves the camera
+// alone for a while (6 s here; 15 s and up for real): stills get the busy error without a new
+// session, a live view says the camera is busy, and the first try after the hold plays.
+#[tokio::test]
+async fn a_camera_that_keeps_closing_play_is_left_alone_and_said_busy() {
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    mocks
+        .control("/bambu", json!({ "model": "O1D", "dropEveryPlay": true }))
+        .await;
+    let link = serve(
+        LinkConfig {
+            camera_holds: vec![Duration::from_secs(6)],
+            ..mdns_rig(MdnsConfig::default())
+        },
+        Arc::new(MemoryGate::new()),
+        Arc::new(MemorySecrets::new()),
+    )
+    .await
+    .unwrap();
+    let mut ws = paired(&link).await;
+    let r = call(
+        &mut ws,
+        2,
+        "secrets.set",
+        json!({ "name": "bambu-code", "value": mocks.str("accessCode") }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let r = call(
+        &mut ws,
+        3,
+        "printers.add",
+        json!({ "config": {
+            "id": "h2d", "name": "H2D", "plugin": "bambu-lan", "host": "127.0.0.1", "port": mocks.port("bambu"),
+            "serial": mocks.str("serial"), "credentialRef": "bambu-code",
+            "rtspPort": mocks.port("bambu-rtsps"),
+        } }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    // Connected, with the report that says the printer streams over RTSPS.
+    let r = call(&mut ws, 30, "status", json!({ "printerId": "h2d" })).await;
+    assert!(r["error"].is_null(), "{r}");
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    // Two stills, two closes in a row; the stills after them are told the camera is busy.
+    for id in [4, 5] {
+        let r = call(&mut ws, id, "camera.grab", json!({ "printerId": "h2d" })).await;
+        assert_eq!(r["error"]["code"], "timeout", "{r}");
+    }
+    for id in [6, 7, 8] {
+        let r = call(&mut ws, id, "camera.grab", json!({ "printerId": "h2d" })).await;
+        assert_eq!(r["error"]["code"], "timeout", "{r}");
+        let m = r["error"]["message"].as_str().unwrap();
+        assert!(
+            m.starts_with("The camera is busy. Try again in ") && m.ends_with(" s."),
+            "{m}"
+        );
+    }
+    // A live view opens and says the camera is busy until the hold is over.
+    let r = call(&mut ws, 9, "camera.open", json!({ "printerId": "h2d" })).await;
+    let stream = r["result"]["stream"].as_u64().unwrap_or_else(|| panic!("{r}"));
+    let mut states: Vec<(String, Option<bool>, Option<u64>)> = Vec::new();
+    let mut frames = 0;
+    let mut freed = false;
+    let started = tokio::time::Instant::now();
+    let end = started + Duration::from_secs(15);
+    while frames < 3 && tokio::time::Instant::now() < end {
+        if !freed && started.elapsed() >= Duration::from_secs(2) {
+            // Still held: nothing has been sent to the camera since the second close.
+            let plays = rtsp_lines(&mocks.state().await);
+            assert_eq!(plays, ["rtsp PLAY dropped", "rtsp PLAY dropped"]);
+            mocks.control("/bambu", json!({ "dropEveryPlay": false })).await;
+            freed = true;
+        }
+        let Ok(Some(Ok(m))) = tokio::time::timeout(Duration::from_millis(500), ws.next()).await else {
+            continue;
+        };
+        match m {
+            Message::Binary(_) => frames += 1,
+            Message::Text(t) => {
+                let v: Value = serde_json::from_str(t.as_str()).unwrap();
+                if v["event"] == "camera.status" && v["stream"] == stream {
+                    states.push((
+                        v["state"].as_str().unwrap().to_owned(),
+                        v["busy"].as_bool(),
+                        v["retryInMs"].as_u64(),
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(frames, 3, "{states:?}");
+    assert_eq!(states.len(), 2, "{states:?}");
+    let (state, busy, retry) = &states[0];
+    assert_eq!((state.as_str(), *busy), ("retrying", Some(true)), "{states:?}");
+    assert!(retry.is_some_and(|ms| ms > 0 && ms <= 6000), "{states:?}");
+    assert_eq!(states[1].0, "live");
+    assert_eq!(
+        rtsp_lines(&mocks.state().await),
+        ["rtsp PLAY dropped", "rtsp PLAY dropped", "rtsp PLAY ok"]
+    );
+}
+
 // rc14: the H2D stopped sending with the session open, and a live view sat on one frame for over
 // a minute. Now the feed counts 3 s without a frame as dead: the viewer hears retrying, the session
 // ends with TEARDOWN, a new one opens after the rest, and the viewer hears live and gets frames.

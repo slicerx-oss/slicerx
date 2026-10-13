@@ -232,7 +232,7 @@ test('camera discovery returns well formed ONVIF suggestions', { skip }, async (
 test('a live view says in one line why there is no picture', async () => {
   let ended: (() => void) | undefined
   let closedWith: string | undefined
-  let setStatus: ((s: { state: 'live' | 'retrying' | 'failed'; retryInMs?: number; reason?: string }) => void) | undefined
+  let setStatus: ((s: { state: 'live' | 'retrying' | 'failed'; retryInMs?: number; reason?: string; busy?: boolean }) => void) | undefined
   const handle = {
     stream: 1,
     quality: 'high' as const,
@@ -242,7 +242,7 @@ test('a live view says in one line why there is no picture', async () => {
       ended = cb
       return () => undefined
     },
-    onStatus: (cb: (s: { state: 'live' | 'retrying' | 'failed'; retryInMs?: number; reason?: string }) => void) => {
+    onStatus: (cb: (s: { state: 'live' | 'retrying' | 'failed'; retryInMs?: number; reason?: string; busy?: boolean }) => void) => {
       setStatus = cb
       return () => undefined
     },
@@ -275,11 +275,22 @@ test('a live view says in one line why there is no picture', async () => {
   s.onStatus?.((st) => states.push(st.state))
   setStatus?.({ state: 'retrying', retryInMs: 5000 })
   setStatus?.({ state: 'live' })
+  // A camera that closed several connections in a row is left alone for a while: busy, not dropped.
+  setStatus?.({ state: 'retrying', retryInMs: 30000, reason: 'The camera is busy.', busy: true })
+  setStatus?.({ state: 'live' })
   // A camera that will not open by waiting: its reason, and no "stopped" line after it.
   setStatus?.({ state: 'failed', reason: 'The printer refused the camera login. Check the access code.' })
-  assert.deepEqual(states, ['live', 'retrying', 'live', 'failed'])
+  assert.deepEqual(states, ['live', 'retrying', 'live', 'retrying', 'live', 'failed'])
   ended?.()
-  assert.deepEqual(said, ["This computer cannot decode the camera's video (H.264, avc1.640028).", '', 'The camera connection dropped. Trying again in 5 s.', '', 'The printer refused the camera login. Check the access code.'])
+  assert.deepEqual(said, [
+    "This computer cannot decode the camera's video (H.264, avc1.640028).",
+    '',
+    'The camera connection dropped. Trying again in 5 s.',
+    '',
+    'The camera is busy. Trying again in 30 s.',
+    '',
+    'The printer refused the camera login. Check the access code.',
+  ])
   // The reason a view gives for closing reaches the bridge, for its connection log.
   s.close('the view closed or the app navigated away')
   assert.equal(closedWith, 'the view closed or the app navigated away')
