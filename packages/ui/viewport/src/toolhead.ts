@@ -319,6 +319,7 @@ export class ToolheadRig {
   private lastTool = -1
   private lastKey = ''
   private model: HeadModel = 'generic'
+  private carriageOn = false
 
   constructor() {
     this.root.name = 'toolhead'
@@ -344,6 +345,16 @@ export class ToolheadRig {
 
   set headVisible(on: boolean) {
     this.head.visible = on
+  }
+
+  /** The carriage plate a docked toolhead hangs on (Prusa XL, Snapmaker U1): part of the gantry, shown with it. */
+  get carriageVisible(): boolean {
+    return this.carriageOn
+  }
+
+  set carriageVisible(on: boolean) {
+    this.carriageOn = on
+    for (const c of this.head.children) if (c.name === 'carriage') c.visible = on
   }
 
   /** The printer family's head, drawn when the printer has one nozzle (see heads.ts). */
@@ -458,6 +469,7 @@ export class ToolheadRig {
     }
     this.head.traverse((o) => void ((o as Mesh).isMesh && (((o as Mesh).castShadow = true), ((o as Mesh).receiveShadow = false))))
     shadow.castShadow = false
+    this.carriageVisible = this.carriageOn
     this.track(this.head)
     this.track(this.fixed)
     this.slots = []

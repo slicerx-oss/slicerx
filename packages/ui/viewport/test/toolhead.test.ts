@@ -75,6 +75,8 @@ function sweep(spec: ToolChangerSpec, from: number, to: number, history: [number
   rig.setSpec(spec)
   rig.setColors(['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff'])
   rig.visible = true
+  // The carriage shows only with the gantry, but it moves with the head and is checked here all the same.
+  rig.carriageVisible = true
   const at: V3 = [spec.bed.widthMm / 2, spec.bed.depthMm / 2, 12]
   const seq = changeSequence(spec, from, to, at, [at[0] + 10, at[1], 12], 20, history)
   const head = rig.root.getObjectByName('nozzle')!
@@ -289,6 +291,19 @@ describe('ToolheadRig geometry', () => {
     expect(seq.phases.map((p) => p.name)).toEqual(['lift', 'to dock', 'approach', 'unlock', 'seat', 'park', 'pull back', 'to next', 'insert', 'seat', 'lock', 'lock', 'clear', 'extract', 'heat', 'return', 'lower'])
     expect(seq.phases[5]!.to.slice(0, 2)).toEqual([25, 455])
     expect(seq.phases[12]!.to.slice(0, 2)).toEqual([107 - 9.9, 455])
+  })
+
+  it('U1 and Prusa XL: the carriage shows with the gantry only, and stays as set through a rebuild', () => {
+    const rig = new ToolheadRig()
+    rig.setSpec(u1())
+    const carriage = () => rig.root.getObjectByName('nozzle')!.children.find((c) => c.name === 'carriage')!
+    expect(carriage().visible).toBe(false)
+    rig.carriageVisible = true
+    expect(carriage().visible).toBe(true)
+    rig.setSpec(xl())
+    expect(carriage().visible).toBe(true)
+    rig.carriageVisible = false
+    expect(carriage().visible).toBe(false)
   })
 
   it('U1: the toolhead stays in its slot while the carriage slides off it', () => {
