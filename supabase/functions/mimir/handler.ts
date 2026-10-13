@@ -29,6 +29,9 @@ const KEY = /^[A-Za-z0-9_-]{16,128}$/
 const MAX_REGISTER_BYTES = 4096
 // a shared session's turn larger than this is not stored (the database refuses it too)
 const MAX_STORED_BYTES = 262_144
+// tokens the thinking setting may add to a prompt, counted when the count went without it
+const THINKING_SLACK = 512
+const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 function json(status: number, body: unknown, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extra } })
@@ -282,9 +285,33 @@ async function upstreamError(up: Response): Promise<{ type?: string; message?: s
   }
 }
 
-// The prompt's exact token count from the provider, or null when it cannot say.
+// Thinking blocks taken out of the messages, and their bytes. count_tokens refuses a signed
+// block made in another conversation, which every agent turn carries back.
+export function withoutThinking(messages: unknown): { messages: unknown; bytes: number } {
+  if (!Array.isArray(messages)) return { messages, bytes: 0 }
+  const enc = new TextEncoder()
+  let bytes = 0
+  const out = messages.map((m) => {
+    if (!isObj(m) || !Array.isArray(m['content'])) return m
+    const kept = (m['content'] as unknown[]).filter((b) => {
+      if (!isObj(b) || (b['type'] !== 'thinking' && b['type'] !== 'redacted_thinking')) return true
+      bytes += enc.encode(JSON.stringify(b)).length
+      return false
+    })
+    if (kept.length === m['content'].length) return m
+    return { ...m, content: kept.length ? kept : [{ type: 'text', text: '.' }] }
+  })
+  return { messages: out, bytes }
+}
+
+// The prompt's token count from the provider, or null when it cannot say. Thinking blocks
+// are counted a token a byte instead, signature and all: the signature carries the whole
+// thinking, so that never undercounts.
 async function countTokens(env: Env, body: Obj): Promise<number | null> {
-  const { model, system, messages, tools, tool_choice, thinking } = body
+  const { model, system, tools, tool_choice } = body
+  const { messages, bytes } = withoutThinking(body['messages'])
+  // with its blocks gone, the thinking setting would ask for them back
+  const thinking = bytes ? undefined : body['thinking']
   try {
     const res = await (env.fetch ?? fetch)(`${env.upstream}/v1/messages/count_tokens`, {
       method: 'POST',
@@ -296,7 +323,7 @@ async function countTokens(env: Env, body: Obj): Promise<number | null> {
       return null
     }
     const n = ((await res.json()) as Obj)['input_tokens']
-    return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.ceil(n) : null
+    return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.ceil(n) + bytes + (bytes ? THINKING_SLACK : 0) : null
   } catch {
     return null
   }
