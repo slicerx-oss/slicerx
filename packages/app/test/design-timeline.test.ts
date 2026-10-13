@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
 import { compose } from '../src/plate/transform'
 import { useGeomEngine } from './geom-engine'
-import { clearReplayCache, replayHistory, type HistoryMesh, timelineFiles, timelineOf, historiesOf, historyFiles, historyLost, historyNewer, historyOf, madeAt, parseHistories, parseTimeline, withHistory, type FaceFrame, type FeatureItem, type History, type SketchItem, type SketchLoop, type Step, type StepParams, type Timeline } from '@slicerx/cad-history'
+import { clearReplayCache, replayHistory, type HistoryMesh, timelineFiles, timelineOf, historiesOf, historyFiles, historyLost, historyNewer, historyOf, madeAt, parseHistories, parseTimeline, withHistory, withSketch, type FaceFrame, type FeatureItem, type History, type SketchItem, type SketchLoop, type Step, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 useGeomEngine('design-timeline-replies')
@@ -26,6 +26,9 @@ const pull = (d: number): StepParams => ({ op: 'face.push', at: [100, 100, 5], n
 const sketched = (): StepParams => ({ op: 'shape.extrude', frame: top(), shape: { type: 'sketch', loops: [square()] }, placement: {}, spec: { distanceMm: 3, operation: 'join' } })
 const revolved = (): StepParams => ({ op: 'sketch.revolve', loops: [{ type: 'circle', center: [10, 0], diameterMm: 4 }], axis: { point: [0, 0], direction: [0, 1] }, angleDeg: 360, operation: 'new', name: 'Ring' })
 const circle = (): StepParams => ({ op: 'shape.extrude', frame: top(), shape: { type: 'circle', diameterMm: 6 }, placement: {}, spec: { distanceMm: 2, operation: 'join' } })
+
+/** A view's steps without the sketch ids they name, to compare with a history recorded before the timeline. */
+const bare = (h: History | null | undefined): History | null | undefined => h && { ...h, steps: h.steps.map(({ sketch: _s, ...st }) => st) }
 
 /** Two objects worked on in turns: a box (pull, sketch, circle) and a ring made by a revolve, then pulled. */
 function plate(): { id: string; history: History }[] {
@@ -87,7 +90,9 @@ describe('design timeline', () => {
   it('reads every object back unchanged as a view of the timeline', () => {
     const objects = plate()
     const views = historiesOf(timelineOf(objects))
-    for (const o of objects) expect(views.get(o.id)).toEqual(o.history)
+    for (const o of objects) expect(bare(views.get(o.id))).toEqual(o.history)
+    // a sketched step names its sketch
+    expect(views.get('box')!.steps[1]!.sketch).toBe(`${id(2000, 3)}k`)
   })
 
   it('carries sketch constraints with the sketch', () => {
@@ -96,7 +101,21 @@ describe('design timeline', () => {
     const h: History = { version: 1, base: [], steps: [step(id(0, 1), { ...p, shape: { ...p.shape, constraints: cons } as never })] }
     const d = timelineOf([{ id: 'a', history: h }])
     expect((d.items[0] as SketchItem).constraints).toEqual(cons)
-    expect(historyOf(d, 'a')).toEqual(h)
+    expect(bare(historyOf(d, 'a'))).toEqual(h)
+  })
+
+  it('puts a finished sketch in at the marker, and an extrude of it names it instead of making its own', () => {
+    const t = withSketch(timelineOf(plate()), { id: 'kfin', loops: [square()], frame: top() })
+    expect(t.items.at(-1)).toMatchObject({ kind: 'sketch', id: 'kfin', name: 'Sketch 3' })
+    const h = historyOf(t, 'ring')!
+    const p = sketched() as Extract<StepParams, { op: 'shape.extrude' }>
+    const moved = { ...p, shape: { type: 'sketch' as const, loops: [{ type: 'circle' as const, center: [1, 1] as [number, number], diameterMm: 3 }] } }
+    const next = withHistory(t, 'ring', { ...h, steps: [...h.steps, step(id(9000, 9), moved, { sketch: 'kfin' })] })
+    expect(next.items.filter((i) => i.kind === 'sketch')).toHaveLength(3)
+    expect(next.items.at(-1)).toMatchObject({ kind: 'feature', body: 'ring', sketch: 'kfin' })
+    expect((next.items.find((i) => i.id === 'kfin') as SketchItem).loops).toEqual(moved.shape.loops)
+    // rolled back before the sketch, a new sketch goes in at the marker
+    expect(withSketch({ ...t, marker: 1 }, { id: 'k2', loops: [] }).items[1]).toMatchObject({ id: 'k2', name: 'Sketch 4' })
   })
 
   it('takes a body history back unchanged', () => {
