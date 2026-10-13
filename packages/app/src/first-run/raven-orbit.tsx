@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A connection test that takes a while: huginn and muninn circle the printer, with a three step trail
 // read from the real test steps, and land on it when the printer answers.
-import { Button, Icon, Raven } from '@slicerx/ui'
+import { Button, Icon } from '@slicerx/ui'
+import { Raven } from '@slicerx/ui/raven'
 import { useEffect, useState } from 'react'
 import type { ConnectionMethod } from '@slicerx/printer-catalog'
 import type { TestStep, TestStepId } from './setup-host'

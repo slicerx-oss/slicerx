@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { ReactNode } from 'react'
-import { Raven, RuneRing } from '@slicerx/ui'
+import { Raven, RuneRing } from '@slicerx/ui/raven'
 
 /** Tools that read the knowledge base or what the project remembers: muninn's work, not huginn's. */
 export function isRecall(tool: string): boolean {

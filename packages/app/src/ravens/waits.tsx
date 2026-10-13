@@ -4,7 +4,8 @@
 // over the plate while a big model loads, and one carries the file while an upload goes up. Loaded only once a wait
 // has run past about 1.2 s (lib/waited.ts), so the art never weighs on the start. Under reduced motion they keep
 // still where they would be.
-import { Icon, Raven } from '@slicerx/ui'
+import { Icon } from '@slicerx/ui'
+import { Raven } from '@slicerx/ui/raven'
 import './waits.css'
 
 /** Muninn flying just ahead of the slicing line, drawing it out behind; with `done` it flies off. */
