@@ -815,8 +815,14 @@ export function ViewportHost({ layers }: { layers: boolean }) {
     mo.observe(root, { childList: true, subtree: true })
     watch()
     const late = window.setTimeout(watch, 600)
+    // The lookup cards slide up over an opening timeline without resizing: frame again once they settle.
+    const moved = (e: TransitionEvent) => {
+      if ((e.target as Element).classList?.contains('mimir-lookups')) send()
+    }
+    root.addEventListener('transitionend', moved)
     return () => {
       window.clearTimeout(late)
+      root.removeEventListener('transitionend', moved)
       mo.disconnect()
       ro.disconnect()
     }

@@ -33,6 +33,9 @@
 /* Lookup cards: a band at the view's bottom left, above the timeline's edge tab. Lifted (they float over the view). */
 .mimir-lookups { position: absolute; left: 12px; bottom: 28px; z-index: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 276px)) auto; grid-template-rows: 96px; align-items: end; gap: 8px; max-width: calc(100% - 24px); pointer-events: none; }
 .mimir-lookups > * { pointer-events: auto; }
+/* While the timeline is open, the cards sit above it, as the bottom-left pills do. */
+.vp .mimir-lookups { transition: bottom 160ms ease-out; }
+.vp[data-bpanel-open] .mimir-lookups { bottom: calc(var(--bpanel-h) + 8px); }
 .mimir-lookup { display: grid; grid-template-rows: 24px auto 16px; align-content: space-between; gap: 2px; grid-row: 1; height: 96px; min-width: 0; padding: 6px 6px 7px 12px; border-radius: var(--r-md); outline-offset: 2px; animation: mimir-rise 200ms var(--ease) both; }
 .mimir-lookup-h .sx-btn { width: 24px; height: 24px; }
 .mimir-lookup-h { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: var(--fs-sm); }
