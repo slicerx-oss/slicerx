@@ -105,6 +105,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setHeadModel?: Viewport['setHeadModel']
   setToolChange?: Viewport['setToolChange']
   setShowToolhead?: Viewport['setShowToolhead']
+  setShowGantry?: Viewport['setShowGantry']
   setFollowNozzle?: Viewport['setFollowNozzle']
   setPurges?: Viewport['setPurges']
   setPaintData?: Viewport['setPaintData']
@@ -453,6 +454,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
           ;(vp as unknown as Viewport).setGantry?.(gantrySpec(s), gantryHits(s))
         }
         if (vp.setShowToolhead && (first || s.showToolhead !== prev.showToolhead)) vp.setShowToolhead(s.showToolhead)
+        if (vp.setShowGantry && (first || s.showGantry !== prev.showGantry)) vp.setShowGantry(s.showGantry)
         if (vp.setFollowNozzle && (first || s.followNozzle !== prev.followNozzle)) vp.setFollowNozzle(s.followNozzle)
         if (first || s.plate !== prev.plate || s.bed !== prev.bed || s.overrides !== prev.overrides || s.easy !== prev.easy) (vp as unknown as Viewport).setBedAlert?.(s.plate.some((e) => objectWarnings(e, s).some((w) => w.kind === 'off-bed')))
         if (first || s.zoneHover !== prev.zoneHover) (vp as unknown as Viewport).setZoneHighlight?.(s.zoneHover)

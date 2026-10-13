@@ -3903,9 +3903,16 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
-  /** Preview's "Show toolhead": false hides the moving head and its carriage; the rack, dock, chute and wiper stay. */
+  /** Preview's "Show toolhead": false hides the moving head; the rack, dock, chute and wiper stay. */
   setShowToolhead(on: boolean): void {
     this.toolpaths.setShowToolhead(on)
+    this.shadowDirty = true
+    this.invalidate()
+  }
+
+  /** Preview's "Show gantry": the beam over the head and a docked head's carriage. A gantry strike shows the beam either way. */
+  setShowGantry(on: boolean): void {
+    this.toolpaths.setShowGantry(on)
     this.shadowDirty = true
     this.invalidate()
   }
