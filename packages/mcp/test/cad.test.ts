@@ -73,7 +73,7 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
   it('lists the CAD tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('extrudes a rectangle, then cuts a hole into its top face', async () => {
@@ -171,6 +171,28 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
     const issues = data<{ output: { ok: boolean; issues: { kind: string }[] } }>(open).output
     expect(issues.ok).toBe(false)
     expect(issues.issues[0]?.kind).toBe('open')
+
+    // a square held by its constraints: fully defined, and the corners land where the constraints say
+    const square = {
+      points: [[0, 0], [9, 1], [11, 9], [1, 11]],
+      entities: [0, 1, 2, 3].map((k) => ({ type: 'line', a: k, b: (k + 1) % 4 })),
+      constraints: [
+        { type: 'fix', point: 0 },
+        { type: 'horizontal', line: 0 },
+        { type: 'vertical', line: 1 },
+        { type: 'horizontal', line: 2 },
+        { type: 'vertical', line: 3 },
+        { type: 'length', line: 0, value: 10 },
+        { type: 'equal', a: 0, b: 1 },
+      ],
+    }
+    const solved = data<{ ok: boolean; output: { status: string; dof: number; points: number[][] } }>(await h.call('slicerx_geom_sketch_solve', square))
+    expect(solved.output.status).toBe('ok')
+    expect(solved.output.dof).toBe(0)
+    expect(solved.output.points[2]?.[0]).toBeCloseTo(10)
+    expect(solved.output.points[2]?.[1]).toBeCloseTo(10)
+    const clash = await h.call('slicerx_geom_sketch_solve', { ...square, constraints: [...square.constraints, { type: 'length', line: 1, value: 12 }] })
+    expect(data<{ ok: boolean; output: { status: string } }>(clash).output.status).toBe('conflict')
   })
 
   it('reads a model back: its size, volume and whether it is closed, a hole diameter and a face distance', async () => {

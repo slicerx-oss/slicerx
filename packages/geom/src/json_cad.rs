@@ -37,6 +37,8 @@ use crate::shell::{self, OpenFace};
 use crate::sketch;
 #[cfg(feature = "cad")]
 use crate::sketch_corner;
+#[cfg(feature = "cad")]
+use crate::sketch_solve;
 #[cfg(feature = "threads")]
 use crate::thread::{self, ThreadSpec, ThreadTarget};
 #[cfg(feature = "cad")]
@@ -185,6 +187,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "sketch.fillet" => sketch_corner_op(req, true),
         #[cfg(feature = "cad")]
         "sketch.chamfer" => sketch_corner_op(req, false),
+        #[cfg(feature = "cad")]
+        "sketch.solve" => sketch_solve_op(req),
         _ => return None,
     })
 }
@@ -638,6 +642,13 @@ fn sketch_corner_op(req: &Value, fillet: bool) -> Result<Value> {
         sketch_corner::CornerCut::Chamfer(d1, field_or(req, "distance2Mm", d1)?)
     };
     to_value(&sketch_corner::corners(&lps, &corners, cut)?)
+}
+
+// points, entities and constraints at the top level, an optional drag beside them
+#[cfg(feature = "cad")]
+fn sketch_solve_op(req: &Value) -> Result<Value> {
+    let s: sketch_solve::Sketch = parse(req)?;
+    to_value(&sketch_solve::solve(&s, field_or(req, "drag", None)?)?)
 }
 
 #[cfg(all(test, feature = "cad", feature = "holes"))]
@@ -1305,5 +1316,34 @@ mod tests {
         );
         let c = run("sketch.check", &json!({ "loops": out["loops"] }));
         assert!((c["areaMm2"].as_f64().unwrap() - 99.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sketch_solve_op() {
+        let req = json!({
+            "points": [[0, 0], [9, 1]],
+            "entities": [{ "type": "line", "a": 0, "b": 1 }],
+            "constraints": [
+                { "type": "fix", "point": 0 },
+                { "type": "horizontal", "line": 0 },
+                { "type": "length", "line": 0, "value": 12 }
+            ],
+        });
+        let out = run("sketch.solve", &req);
+        assert_eq!(out["status"], "ok");
+        assert_eq!(out["dof"], 0);
+        assert_eq!(out["freePoints"], json!([false, false]));
+        assert!((out["points"][1][0].as_f64().unwrap() - 12.0).abs() < 1e-9);
+        let mut drag = req.clone();
+        drag["constraints"] = json!([{ "type": "fix", "point": 0 }]);
+        drag["drag"] = json!({ "point": 1, "to": [3, 4] });
+        let out = run("sketch.solve", &drag);
+        assert_eq!(out["points"][1], json!([3.0, 4.0]));
+        assert_eq!(out["dof"], 2);
+        let err = call(
+            "sketch.solve",
+            &json!({ "points": [[0, 0]], "constraints": [{ "type": "fix", "point": 4 }] }).to_string(),
+        );
+        assert!(err.unwrap_err().to_string().contains("point 4"));
     }
 }
