@@ -5,7 +5,7 @@
 import { assert, assertEquals, assertMatch } from 'jsr:@std/assert@1.0.13'
 import { MAX_OUTPUT, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
-import { clientIp, type Env, handle, marked } from './handler.ts'
+import { clientIp, type Env, handle, marked, withoutThinking } from './handler.ts'
 import geomCut from './geom_cut_0.1.4.json' with { type: 'json' }
 
 type Obj = Record<string, unknown>
@@ -252,7 +252,7 @@ Deno.test('the passed-on stream folds cache counts into the input count', () => 
 })
 
 // A fake database and provider, recording what reaches them.
-function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Response; count?: () => Response } = {}) {
+function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Response; count?: (body: Obj) => Response } = {}) {
   const calls: { fn: string; args: Obj }[] = []
   const sent: { url: string; headers: Headers; body: Obj }[] = []
   const pending: Promise<unknown>[] = []
@@ -276,7 +276,7 @@ function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Res
         return Response.json(null)
       }
       sent.push({ url, headers: new Headers(init?.headers), body })
-      if (url.endsWith('/count_tokens')) return opts.count?.() ?? Response.json({ input_tokens: 10 })
+      if (url.endsWith('/count_tokens')) return opts.count?.(body) ?? Response.json({ input_tokens: 10 })
       return opts.upstream?.() ?? new Response(STREAM, { headers: { 'content-type': 'text/event-stream' } })
     },
   }
@@ -387,6 +387,55 @@ Deno.test('when the byte estimate hits a daily cap, the exact count gets one mor
   }
 })
 
+Deno.test('the exact count leaves out thinking blocks signed in another conversation, and counts them a token a byte', async () => {
+  // an agent turn as LayerMate sends it: its earlier thinking, signed by the provider for that conversation
+  const signed = { type: 'thinking', thinking: 'Plan the hook: a plate, an arm, an upturned tip.', signature: 'EqQBCkYIBxgCKkB'.repeat(40) }
+  const redacted = { type: 'redacted_thinking', data: 'EmwKAhgBEgy3va3pzix'.repeat(20) }
+  const turn = {
+    messages: [
+      { role: 'user', content: 'a wall hook for a 6 mm screw' },
+      { role: 'assistant', content: [signed, redacted, { type: 'tool_use', id: 't1', name: 'design_box', input: { w: 20 } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'made', is_error: false }] },
+      { role: 'assistant', content: [{ ...signed, thinking: 'done' }] },
+      { role: 'user', content: 'thanks' },
+    ],
+    tools: [TOOL],
+  }
+  let n = 0
+  const h = harness({
+    reserve: () => (n++ === 0 ? Response.json({ message: 'daily limit', hint: 'install_daily' }, { status: 400 }) : Response.json('22222222-2222-2222-2222-222222222222')),
+    // the provider refuses any thinking block it did not sign for this request
+    count: (body) =>
+      JSON.stringify(body).includes('thinking')
+        ? Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'messages.1.content.0: Invalid signature in thinking block' } }, { status: 400 })
+        : Response.json({ input_tokens: 900 }),
+  })
+  const res = await handle(post('/v1/messages', turn, { 'x-sx-install': TOKEN }), h.env)
+  assertEquals(res.status, 200)
+  await res.text()
+  const counted = h.sent.find((x) => x.url.endsWith('/count_tokens'))!.body
+  assert(!('thinking' in counted))
+  const msgs = counted['messages'] as Obj[]
+  assertEquals((msgs[1]!['content'] as Obj[]).map((b) => b['type']), ['tool_use'])
+  // an assistant turn that was only thinking keeps a placeholder, so the turns still alternate
+  assertEquals(msgs[3]!['content'], [{ type: 'text', text: '.' }])
+  const bytes = withoutThinking(ok(turn).body['messages']).bytes
+  assert(bytes > JSON.stringify(signed).length * 2)
+  const reserves = h.calls.filter((c) => c.fn === 'mimir_reserve')
+  assertEquals(reserves.length, 2)
+  assertEquals(reserves[1]!.args['p_input'], 900 + bytes + 512)
+  // the call itself goes out with its thinking blocks as sent
+  const sent = h.sent.find((x) => x.url.endsWith('/v1/messages'))!.body
+  assertEquals(((sent['messages'] as Obj[])[1]!['content'] as Obj[])[0]!['signature'], signed.signature)
+})
+
+Deno.test('a turn with no thinking blocks is counted as it is', () => {
+  const m = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: [{ type: 'text', text: 'hello' }] }]
+  const out = withoutThinking(m)
+  assertEquals(out.bytes, 0)
+  assertEquals(out.messages, m)
+})
+
 Deno.test('a refused call counts toward the rates, once per request', async () => {
   for (const hint of ['install_daily', 'ip_busy', 'edition_busy']) {
     const h = harness({ reserve: () => Response.json({ message: 'no', hint }, { status: 400 }) })
@@ -443,11 +492,26 @@ Deno.test('requests without a token, too large, or refused never reach the datab
 })
 
 Deno.test('a provider failure settles at nothing and says so plainly', async () => {
-  const h = harness({ upstream: () => Response.json({ type: 'error', error: { type: 'overloaded_error', message: 'busy' } }, { status: 529 }) })
-  const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
-  assertEquals(res.status, 503)
+  const zero = { p_input: 0, p_cache_write: 0, p_cache_read: 0, p_output: 0, p_searches: 0 }
+  for (const [status, type, ours] of [[529, 'overloaded_error', 503], [503, 'api_error', 503], [502, 'api_error', 503], [400, 'invalid_request_error', 502]] as const) {
+    const h = harness({ upstream: () => Response.json({ type: 'error', error: { type, message: 'no' } }, { status }) })
+    const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
+    assertEquals(res.status, ours, String(status))
+    await res.text()
+    await Promise.all(h.pending)
+    const settled = h.calls.filter((c) => c.fn === 'mimir_settle')
+    assertEquals(settled.length, 1, String(status))
+    const { p_call: _, p_model: __, ...usage } = settled[0]!.args
+    assertEquals(usage, zero, String(status))
+  }
+  // and one that never reached the provider
+  const h = harness()
+  const was = h.env.fetch!
+  h.env.fetch = (input, init) => String(input).startsWith('http://provider') ? Promise.reject(new TypeError('connection reset')) : was(input, init)
+  assertEquals((await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)).status, 502)
   await Promise.all(h.pending)
-  assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_output'], 0)
+  const { p_call: _, p_model: __, ...usage } = h.calls.find((c) => c.fn === 'mimir_settle')!.args
+  assertEquals(usage, zero)
 })
 
 Deno.test('a refused call logs the provider status and error, never the key or the prompt', async () => {

@@ -113,6 +113,8 @@ select ok(not exists (select 1 from public.mimir_installs where token_hash = 'st
 select ok(exists (select 1 from public.mimir_installs where token_hash = 'stale-shared'), 'unless it has shared sessions, which keep their 180 days');
 
 -- Reservations ------------------------------------------------------------------------
+-- (open calls count in full against the install here; mimir_install_call_cap.test.sql covers the clamp)
+update public.mimir_limits set install_call_micros = 1000000000;
 select throws_ok($$ select public.mimir_reserve('not-a-token', '10.0.0.1', 'claude-haiku-5-5', 0, 2000, 0) $$, 'P0001', 'unknown install', 'an unknown token is refused');
 select throws_ok(format($$ select public.mimir_reserve(%L, '10.0.0.1', 'claude-haiku-5-5', 0, -2, 0) $$, (select v from t where k = 'a')), '22023', null,
   'a negative reservation is refused');
