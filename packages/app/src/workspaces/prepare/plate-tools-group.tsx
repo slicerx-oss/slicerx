@@ -27,7 +27,7 @@ export function clampOffset(off: Offset, delta: Offset, box: DOMRect | { left: n
 /** The grip at the bar's end: two columns of dots, drag to move the group, or the arrow keys once it has focus. */
 function Grip({ onDrag, onKey }: { onDrag: (e: PointerEvent<HTMLButtonElement>) => void; onKey: (e: KeyboardEvent<HTMLButtonElement>) => void }) {
   return (
-    <button type="button" className="plate-tools-grip" data-testid="plate-tools-grip" aria-label="Move the toolbar" {...tipAttrs({ title: 'Move the toolbar', body: 'Drag it anywhere in the view, or use the arrow keys.' })} onPointerDown={onDrag} onKeyDown={onKey}>
+    <button type="button" className="plate-tools-grip" data-testid="plate-tools-grip" aria-label="Drag the toolbar" {...tipAttrs({ title: 'Drag the toolbar', body: 'Drag it anywhere in the view, or use the arrow keys.' })} onPointerDown={onDrag} onKeyDown={onKey}>
       <i />
       <i />
       <i />
