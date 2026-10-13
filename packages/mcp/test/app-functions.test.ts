@@ -176,3 +176,56 @@ describe('the app functions and the permission policy', () => {
     expect((await h.call('slicerx_fit_check', { gapMm: 0.2, feature: 'slide' })).isError).toBeFalsy()
   })
 })
+
+describe('region_modifiers with apply over stdio', () => {
+  let s: Awaited<ReturnType<typeof stdioSession>>
+  beforeAll(async () => {
+    s = await stdioSession()
+  }, 60_000)
+  afterAll(async () => {
+    await s?.close()
+  })
+
+  it(
+    'places the ring, the region and the object settings, and the project reads them back',
+    async () => {
+      expect((await s.call('slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })).ok).toBe(true)
+      expect((await s.call('slicerx_project_add_model', { model: join(s.dir, 'cube.stl') })).ok).toBe(true)
+      const bounds = (await s.call<{ objects: { model_bounds: { min: number[]; max: number[] } }[] }>('slicerx_project_show')).output.objects[0]!.model_bounds
+      const mid = [0, 1, 2].map((k) => ((bounds.min[k] ?? 0) + (bounds.max[k] ?? 0)) / 2) as [number, number, number]
+
+      type Applied = {
+        applied: boolean
+        objectSettings: Record<string, unknown>
+        volumes: { id: string; role: string; settings: Record<string, unknown> }[]
+        readBack: { objectSettings: Record<string, unknown> | null; volumes: { id: string; role: string }[] | null }
+      }
+      const out = await s.call<Applied>('slicerx_region_modifiers', {
+        goals: ['strong_holes', 'overhangs'],
+        apply: true,
+        holes: [{ center: mid, diameter: 5 }],
+        regions: [{ goal: 'overhangs', shape: { sphere: { diameter: 8 } }, center: [mid[0], mid[1], mid[2] + 4] }],
+      })
+      expect(out.ok).toBe(true)
+      expect(out.output.applied).toBe(true)
+      expect(out.output.volumes.map((v) => v.role)).toEqual(['modifier', 'modifier'])
+      expect(out.output.volumes[0]?.settings['wall_loops']).toBeDefined()
+      // The skill's own read-back comes from the MCP project, not from the plan.
+      expect(out.output.readBack.volumes?.map((v) => v.id)).toEqual(out.output.volumes.map((v) => v.id))
+      expect(Object.keys(out.output.readBack.objectSettings ?? {})).toEqual(Object.keys(out.output.objectSettings))
+
+      const obj = (
+        await s.call<{ objects: { settings: Record<string, unknown>; volumes: { id: string; role: string; shape: string; settings?: Record<string, unknown> }[] }[] }>('slicerx_project_show')
+      ).output.objects[0]!
+      expect(Object.keys(obj.settings).sort()).toEqual(Object.keys(out.output.objectSettings).sort())
+      expect(obj.volumes.map((v) => v.id)).toEqual(out.output.volumes.map((v) => v.id))
+      expect(obj.volumes[0]?.shape).toMatch(/^cylinder 11 mm across, 20 mm tall, at \[/)
+      expect(obj.volumes[1]?.shape).toMatch(/^sphere 8 mm across at \[/)
+      expect(obj.volumes[0]?.settings?.['wall_loops']).toBeDefined()
+
+      // The plate still slices with the volumes on it.
+      expect((await s.call('slicerx_slice')).ok).toBe(true)
+    },
+    sxTimeout * 2,
+  )
+})

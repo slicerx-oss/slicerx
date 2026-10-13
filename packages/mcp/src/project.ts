@@ -4,7 +4,7 @@
 // memory by the server. mimir's skills (orient, arrange, cut, slice,
 // estimate) read and change it through the PilotProject interface.
 import type { HeightRange, MeshPart, PilotMachine, Plate, PlateObject, PrintConfig, SettingValue, VolumeRole } from '@slicerx/contracts'
-import { rotationMatrix, type PilotProject, type ProjectObject, type ProjectPlate } from '@slicerx/pilot'
+import { rotationMatrix, type PilotProject, type ProjectObject, type ProjectPlate, type ProjectVolume as PilotVolume, type VolumeShape, type VolumeSpec } from '@slicerx/pilot'
 import type { DataStore } from './data'
 import type { ProfileCatalog } from './profiles'
 import { isGcodeKey, SHIPPED_GCODE_SOURCES } from './config'
@@ -13,6 +13,7 @@ import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import type { NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
 import { bedArea, boxRows, describeBed, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
+import { boxPositions, cylinderPositions, spherePositions } from './mesh'
 
 /** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
 export interface ProjectVolume {
@@ -401,6 +402,32 @@ export class McpProject implements PilotProject {
     return volume
   }
 
+  /**
+   * Adds a volume by shape and size, centered in the object's own coordinates: what region_modifiers places with
+   * apply (a ring round a hole, a named region), as the app does.
+   */
+  async addVolume(objectId: string, v: VolumeSpec): Promise<{ id: string }> {
+    this.entry(objectId)
+    const positions = shapePositions(v.shape, v.centerMm)
+    const handle = await this.host.loadParts(v.name, [{ name: v.name, slot: 1, positions, indices: Uint32Array.from({ length: positions.length / 3 }, (_, k) => k) }])
+    const shape = `${shapeWords(v.shape)} at [${v.centerMm.map(round2).join(', ')}]`
+    return { id: this.addHeldVolume(objectId, { name: v.name, role: v.role, meshId: handle.id, shape, ...(v.settings ? { settings: v.settings } : {}) }).id }
+  }
+
+  /** An object's volumes, for a pilot function's read-back. */
+  volumes(objectId: string): PilotVolume[] {
+    return (this.entry(objectId).volumes ?? []).map((v) => ({ id: v.id, name: v.name, role: v.role, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
+  }
+
+  /** Merges settings into an object's own, as slicerx_project_object_settings does without clearing any. */
+  setObjectSettings(objectId: string, changes: Record<string, SettingValue>): void {
+    this.setOwnSettings(objectId, changes, [])
+  }
+
+  objectSettings(objectId: string): Record<string, SettingValue> {
+    return { ...(this.entry(objectId).settings ?? {}) }
+  }
+
   removeVolume(objectId: string, volumeId: string): void {
     const e = this.entry(objectId)
     if (!e.volumes?.some((v) => v.id === volumeId)) throw new ToolInputError(`${e.obj.name} has no volume ${volumeId}`)
@@ -534,4 +561,17 @@ function addItem(plate: ProjectPlate, objectId: string, copies: number): void {
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100
+}
+
+function shapePositions(shape: VolumeShape, center: [number, number, number]): Float32Array {
+  if (shape.kind === 'box') return boxPositions(shape.sizeMm, center)
+  if (shape.kind === 'cylinder') return cylinderPositions(shape.diameterMm, shape.heightMm, center)
+  return spherePositions(shape.diameterMm, center)
+}
+
+/** The shape as slicerx_project_add_volume words it in the read-back. */
+function shapeWords(shape: VolumeShape): string {
+  if (shape.kind === 'box') return `box ${shape.sizeMm.map(round2).join(' x ')} mm`
+  if (shape.kind === 'cylinder') return `cylinder ${round2(shape.diameterMm)} mm across, ${round2(shape.heightMm)} mm tall,`
+  return `sphere ${round2(shape.diameterMm)} mm across`
 }
