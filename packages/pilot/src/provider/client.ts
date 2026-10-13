@@ -51,7 +51,11 @@ export function createTransportClient(transport: LlmTransport, provider: string,
   const adapter = adapterFor(provider)
   const cloud = provider === MIMIR_CLOUD
   // mimir cloud's refusals (daily caps, a pause) are shown as the proxy wrote them, never retried elsewhere
-  const failure = (e: unknown): LlmEvent => (cloud ? { type: 'error', message: errorText(e).replace(/^\d{3}: /, ''), retryable: false } : { type: 'error', message: errorText(e), retryable: true })
+  const failure = (e: unknown): LlmEvent => {
+    if (!cloud) return { type: 'error', message: errorText(e), retryable: true }
+    const code = errorCode(e)
+    return { type: 'error', message: errorText(e).replace(/^\d{3}: /, ''), retryable: false, ...(code ? { code } : {}) }
+  }
   return {
     provider,
     async *stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent> {
@@ -80,4 +84,10 @@ export function createTransportClient(transport: LlmTransport, provider: string,
 export function errorText(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
   return msg.replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-...').slice(0, 300)
+}
+
+/** mimir cloud's refusal code on a transport error, when it is a plain word. */
+export function errorCode(e: unknown): string | undefined {
+  const code = e && typeof e === 'object' && 'code' in e ? (e as { code: unknown }).code : undefined
+  return typeof code === 'string' && /^[a-z_]{1,40}$/.test(code) ? code : undefined
 }

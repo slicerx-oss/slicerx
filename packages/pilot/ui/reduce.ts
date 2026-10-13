@@ -57,7 +57,7 @@ export type Block =
   | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
-  | { kind: 'error'; id: string; message: string; retryable: boolean }
+  | { kind: 'error'; id: string; message: string; retryable: boolean; code?: string }
 
 export type BlockKind = Block['kind']
 
@@ -367,7 +367,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
     case 'usage':
       return { ...s, meter: { ...s.meter, tokens: s.meter.tokens + event.inputTokens + event.outputTokens } }
     case 'error':
-      return append(settleStreams(s), (id) => ({ kind: 'error', id, message: event.message, retryable: event.retryable }), false)
+      return append(settleStreams(s), (id) => ({ kind: 'error', id, message: event.message, retryable: event.retryable, ...(event.code ? { code: event.code } : {}) }), false)
     case 'done':
       return finishRun(s, event.stopReason, event.ms, now)
   }

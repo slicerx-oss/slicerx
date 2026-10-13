@@ -248,14 +248,21 @@ fn http_error(status: StatusCode, body: &[u8], token: Option<&ApiKey>) -> Error 
     Error::Http {
         status: status.as_u16(),
         message,
+        code: field(body, "/error/code"),
     }
 }
 
 /// The proxy's reason code (`unknown_install`, `install_daily`, ...), if the body has one.
 fn reason(body: &[u8]) -> Option<String> {
+    field(body, "/error/reason")
+}
+
+/// A short word from the proxy's error body; anything long or odd is dropped.
+fn field(body: &[u8], pointer: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_slice(body).ok()?;
-    v.pointer("/error/reason")
+    v.pointer(pointer)
         .and_then(serde_json::Value::as_str)
+        .filter(|s| s.len() <= 40 && s.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
         .map(str::to_owned)
 }
 
@@ -433,4 +440,21 @@ pub async fn forget(store: &dyn SecretStore, cloud: &MimirCloud) -> Result<u64> 
     let got: Forgotten = serde_json::from_slice(&body)
         .map_err(|_| Error::Transport("mimir cloud sent an odd answer".to_owned()))?;
     Ok(got.deleted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::field;
+
+    #[test]
+    fn only_a_plain_code_comes_through() {
+        let body = |code: &str| serde_json::json!({ "error": { "code": code } }).to_string();
+        assert_eq!(
+            field(body("day_used").as_bytes(), "/error/code").as_deref(),
+            Some("day_used")
+        );
+        assert_eq!(field(body("<b>x</b>").as_bytes(), "/error/code"), None);
+        assert_eq!(field(body(&"a".repeat(41)).as_bytes(), "/error/code"), None);
+        assert_eq!(field(b"not json", "/error/code"), None);
+    }
 }

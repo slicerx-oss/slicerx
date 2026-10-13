@@ -184,6 +184,7 @@ fn auth_err(message: &str) -> Error {
     Error::Http {
         status: 0,
         message: format!("ChatGPT sign-in: {message}"),
+        code: None,
     }
 }
 
@@ -531,6 +532,7 @@ async fn read_body(mut res: reqwest::Response, trace: Trace<'_>, call: &str) -> 
             status: status.as_u16(),
             // Auth errors carry no tokens, but the redactor runs anyway.
             message: server_detail(&bytes),
+            code: None,
         });
     }
     Ok(Body { content_type, bytes })
@@ -1338,7 +1340,7 @@ async fn accepted(url: &str, token: &str, body: &serde_json::Value, trace: Trace
             None if stream_ok(&b.bytes) => Outcome::Accepted,
             None => Outcome::RequestError("the answer never completed".to_owned()),
         },
-        Ok(Err(Error::Http { status, message })) => classify(status, message),
+        Ok(Err(Error::Http { status, message, .. })) => classify(status, message),
         Ok(Err(_)) | Err(_) => Outcome::NoAnswer,
     }
 }
@@ -1496,6 +1498,7 @@ pub async fn judge_frame(
         return Err(Error::Http {
             status: 0,
             message: detail,
+            code: None,
         });
     }
     let text = stream_text(&b.bytes);

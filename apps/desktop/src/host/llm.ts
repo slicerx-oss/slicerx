@@ -5,7 +5,7 @@
 import type { LlmHttpRequest, LlmTransport } from '@slicerx/contracts'
 import { Channel, invoke } from '@tauri-apps/api/core'
 
-type Chunk = { kind: 'data'; b64: string } | { kind: 'error'; status: number; message: string } | { kind: 'end' }
+type Chunk = { kind: 'data'; b64: string } | { kind: 'error'; status: number; message: string; code?: string } | { kind: 'end' }
 
 let nextId = 1
 
@@ -16,11 +16,12 @@ function bytes(b64: string): Uint8Array {
   return out
 }
 
-/** Thrown for a failed request; `status` is the HTTP status, 0 when there was none. */
+/** Thrown for a failed request; `status` is the HTTP status, 0 when there was none; `code` is mimir cloud's refusal code. */
 export class LlmHttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
   ) {
     super(status ? `${status}: ${message}` : message)
   }
@@ -60,7 +61,7 @@ export function createTauriLlm(): DesktopLlm {
             continue
           }
           if (c.kind === 'data') yield bytes(c.b64)
-          else if (c.kind === 'error') throw new LlmHttpError(c.status, c.message)
+          else if (c.kind === 'error') throw new LlmHttpError(c.status, c.message, c.code)
           else return
         }
       } finally {

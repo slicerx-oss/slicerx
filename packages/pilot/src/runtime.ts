@@ -486,6 +486,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let raw: unknown[] | undefined
       let thinkingStart: number | null = null
       let failed: string | null = null
+      let failedCode: string | undefined
       const model = modelFor(opts.config, tier)
       if (model !== shown) {
         emit({ type: 'model_switch', model, label: modelLabel(model), reason: why })
@@ -533,6 +534,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
               break
             case 'error':
               failed = ev.message
+              failedCode = ev.code
               break
             case 'done':
               raw = ev.raw
@@ -549,7 +551,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (thinkingStart !== null) emit({ type: 'thinking_done', ms: now() - thinkingStart })
       if (text) emit({ type: 'text_done' })
       if (failed !== null) {
-        emit({ type: 'error', message: failed, retryable: true })
+        emit({ type: 'error', message: failed, retryable: true, ...(failedCode ? { code: failedCode } : {}) })
         stopReason = 'error'
         break
       }

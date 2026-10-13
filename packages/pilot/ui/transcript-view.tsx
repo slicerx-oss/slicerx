@@ -69,7 +69,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
     case 'citations':
       return <Citations items={block.items} />
     case 'error':
-      return <ErrorLine message={block.message} />
+      return <ErrorLine message={block.message} code={block.code} />
   }
 })
 

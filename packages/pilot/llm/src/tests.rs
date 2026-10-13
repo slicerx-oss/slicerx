@@ -287,7 +287,7 @@ async fn http_errors_carry_a_redacted_provider_message() {
     let (url, server) = one_shot("401 Unauthorized", &body).await;
     let err = stream_err(&FakeKeys::default(), request("openai-compatible", &url)).await;
     let _ = server.await.unwrap();
-    let Error::Http { status, message } = &err else {
+    let Error::Http { status, message, .. } = &err else {
         panic!("expected Http, got {err:?}");
     };
     assert_eq!(*status, 401);
@@ -309,7 +309,8 @@ async fn empty_error_body_falls_back_to_the_status_reason() {
         err,
         Error::Http {
             status: 503,
-            message: "Service Unavailable".into()
+            message: "Service Unavailable".into(),
+            code: None,
         }
     );
 }

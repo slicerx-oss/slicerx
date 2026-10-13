@@ -15,9 +15,10 @@ export function ModelLine({ label, reason }: { label: string; reason: 'request' 
   return <div className="model-ln" data-testid="mimir-model-switch">{reason === 'request' ? `Using ${label} for this one.` : `Switched to ${label} for the harder part.`}</div>
 }
 
-export function ErrorLine({ message }: { message: string }) {
+/** `code` marks a mimir cloud refusal (`day_used`, `paused`, ...) for the limit hook. */
+export function ErrorLine({ message, code }: { message: string; code?: string | undefined }) {
   return (
-    <div className="pp-err" role="alert">
+    <div className="pp-err" role="alert" data-testid={code ? 'mimir-limit' : undefined} data-code={code}>
       <Icon name="alert" />
       <span>{message}</span>
     </div>

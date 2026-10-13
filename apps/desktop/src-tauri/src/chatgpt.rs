@@ -37,6 +37,7 @@ pub async fn chatgpt_connect() -> Result<Account, String> {
         open_in_browser(url).map_err(|m| sx_llm::Error::Http {
             status: 0,
             message: m,
+            code: None,
         })
     };
     let opts = ConnectOptions {

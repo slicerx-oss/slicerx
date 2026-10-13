@@ -291,6 +291,7 @@ async fn get_text(url: Url, key: Option<ApiKey>) -> Result<String> {
             return Err(Error::Http {
                 status: status.as_u16(),
                 message: status.canonical_reason().unwrap_or_default().to_owned(),
+                code: None,
             });
         }
         let mut body = Vec::new();
@@ -318,11 +319,19 @@ async fn send_on_plan(
     let token = chatgpt::plan_token(store, endpoints).await?;
     let first = send_response(Checked::new(&req)?, plan_request(req.clone()), Some(token)).await;
     match first {
-        Err(Error::Http { status, message }) if chatgpt::fall_back(status, &message) => {
+        Err(Error::Http {
+            status,
+            message,
+            code,
+        }) if chatgpt::fall_back(status, &message) => {
             chatgpt::note_refusal(store, needs, status, &message);
             match keys::openai_key(store) {
                 Some(key) => send_response(Checked::new(&req)?, req, Some(key)).await,
-                None => Err(Error::Http { status, message }),
+                None => Err(Error::Http {
+                    status,
+                    message,
+                    code,
+                }),
             }
         }
         other => other,
@@ -427,6 +436,7 @@ async fn send_response(
         return Err(Error::Http {
             status: status.as_u16(),
             message,
+            code: None,
         });
     }
     Ok(response)

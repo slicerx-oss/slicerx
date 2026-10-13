@@ -74,10 +74,10 @@ struct Seen {
 
 const SSE: &str = "event: message_start\ndata: {\"type\":\"message_start\"}\n\n";
 
-fn fail(status: u16, kind: &str, message: &str, reason: &str) -> (u16, String) {
+fn fail(status: u16, kind: &str, code: &str, message: &str, reason: &str) -> (u16, String) {
     (
         status,
-        serde_json::json!({ "type": "error", "error": { "type": kind, "message": message, "reason": reason } })
+        serde_json::json!({ "type": "error", "error": { "type": kind, "code": code, "message": message, "reason": reason } })
             .to_string(),
     )
 }
@@ -88,12 +88,19 @@ fn route(p: &mut Proxy, seen: &Seen) -> (u16, String) {
     if first.starts_with("POST /functions/v1/mimir/register ") {
         let v: serde_json::Value = serde_json::from_str(&seen.body).unwrap_or_default();
         if v["edition"] != "slicerx" {
-            return fail(400, "invalid_request_error", "Unknown edition.", "");
+            return fail(
+                400,
+                "invalid_request_error",
+                "invalid_request",
+                "Unknown edition.",
+                "",
+            );
         }
         if v["key"] != REGISTER_KEY {
             return fail(
                 403,
                 "permission_error",
+                "register_refused",
                 "This build of the app cannot register with mimir.",
                 "register_key",
             );
@@ -112,6 +119,7 @@ fn route(p: &mut Proxy, seen: &Seen) -> (u16, String) {
         return fail(
             401,
             "authentication_error",
+            "not_registered",
             "This install is not registered with mimir.",
             "unknown_install",
         );
@@ -121,6 +129,7 @@ fn route(p: &mut Proxy, seen: &Seen) -> (u16, String) {
             return fail(
                 429,
                 "mimir_limit",
+                "day_used",
                 "Today's free mimir use on this computer is used up. It resets at midnight Melbourne time.",
                 reason,
             );
@@ -136,7 +145,7 @@ fn route(p: &mut Proxy, seen: &Seen) -> (u16, String) {
     if first.starts_with("POST /functions/v1/mimir/forget ") {
         return (200, r#"{"deleted":3}"#.to_owned());
     }
-    fail(404, "not_found_error", "No such mimir route.", "")
+    fail(404, "not_found_error", "not_found", "No such mimir route.", "")
 }
 
 async fn serve(proxy: Arc<Mutex<Proxy>>) -> String {
@@ -325,7 +334,8 @@ async fn a_cap_comes_back_with_the_proxy_message_and_no_retry() {
             status: 429,
             message:
                 "Today's free mimir use on this computer is used up. It resets at midnight Melbourne time."
-                    .into()
+                    .into(),
+            code: Some("day_used".into()),
         }
     );
     let calls = proxy
