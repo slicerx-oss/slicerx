@@ -20,7 +20,7 @@ schema_version: 1
 src: ["orca_src:src/libslic3r/PrintConfig.cpp"]
 settings:
   # Quality and geometry
-  - {key: layer_height, label: Layer height, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0.04, max: 0.8}, note: "Keep between 25 and 75 percent of nozzle diameter"}
+  - {key: layer_height, label: Layer height, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0.04, max: 0.8}, note: "Bambu: 20 to 70 percent of the nozzle (0.08 to 0.28 mm on 0.4). Prusa: below 80 percent (about 0.32 mm on 0.4)"}
   - {key: initial_layer_print_height, label: First layer height, group: quality, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0.08, max: 0.8}}
   - {key: line_width, label: Default line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
   - {key: outer_wall_line_width, label: Outer wall line width, group: quality, scope: process, type: percent_or_mm, unit: mm, pilot: edit, bounds: {min: 0.1, max: 2.0}}
@@ -159,7 +159,7 @@ settings:
   - {key: enable_support, label: Enable support, group: support, scope: process, type: bool, pilot: edit}
   - {key: support_type, label: Support type, group: support, scope: process, type: enum, values: ["normal(auto)", "tree(auto)", "normal(manual)", "tree(manual)"], pilot: edit}
   - {key: support_style, label: Support style, group: support, scope: process, type: enum, values: [default, grid, snug, organic, tree_slim, tree_strong, tree_hybrid], pilot: edit}
-  - {key: support_threshold_angle, label: Support threshold angle, group: support, scope: process, type: int, unit: deg, pilot: edit, bounds: {min: 0, max: 90}}
+  - {key: support_threshold_angle, label: Support threshold angle, group: support, scope: process, type: int, unit: deg, pilot: edit, bounds: {min: 0, max: 90}, note: "Higher angle, more support; lower angle, less"}
   - {key: support_on_build_plate_only, label: Support on build plate only, group: support, scope: process, type: bool, pilot: edit}
   - {key: support_top_z_distance, label: Support top Z distance, group: support, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0, max: 1}}
   - {key: support_object_xy_distance, label: Support XY distance, group: support, scope: process, type: float, unit: mm, pilot: edit, bounds: {min: 0, max: 5}}

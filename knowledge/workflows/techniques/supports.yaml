@@ -10,7 +10,8 @@ summary: >
 facts:
   - {text: "Normal supports are a grid under overhangs: stable and good for large flat overhangs. Tree supports branch from trunks and use less material.", src: ["orca_wiki:support_settings_support"]}
   - {text: "Organic is the default tree style and saves material. Tree slim is lighter, tree strong is sturdier for heavy overhangs, and tree hybrid behaves like normal support under large flat overhangs. Snug normal supports reduce scarring.", src: ["orca_wiki:support_settings_support"]}
-  - {text: "Overhangs whose slope is below the threshold angle get support. A smaller threshold means steeper overhangs print without it.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {text: "Overhangs whose slope is below the support threshold angle get support, so a larger threshold angle gives more support and a smaller one gives less. Bambu shows 5 and 85 degrees side by side: the larger the angle, the more supports.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", bambu_wiki_overhang]}
+  - {text: "Bambu measures the overhang angle between the sloped face and the bed, and suggests supports when it is under 45 degrees.", src: [bambu_wiki_overhang]}
   - {text: "Orca's default gaps are 0.2 mm between support top and part, and 0.35 mm in XY.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
   - {text: "Higher branch density at the tips gives better overhangs but harder removal; use top interface layers instead when a dense surface is needed.", src: ["orca_wiki:support_settings_tree"]}
   - {text: "Bambu's presets change the threshold with layer height: 15 degrees at 0.08 mm, 30 at 0.20 mm, 40 at 0.28 mm.", src: ["orca:BBL/process/0.08mm Extra Fine @BBL X1C.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.28mm Extra Draft @BBL X1C.json"]}
@@ -23,5 +24,6 @@ material_notes:
   - {text: "Soluble PVA or BVOH interfaces give clean undersides on multi material printers; see the pva and bvoh filament files.", basis: expert}
 pilot_actions:
   - "Run orient with minimum support before enabling supports."
+  - "To add support under a drooping overhang, raise support_threshold_angle; to remove support, lower it. Never say the opposite."
   - "Report support volume and removal risk; offer manual support painting for critical faces."
 src: ["orca_wiki:support_settings_support", "orca_wiki:support_settings_tree", "orca_src:src/libslic3r/PrintConfig.cpp"]

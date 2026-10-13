@@ -48,8 +48,10 @@ enclosure:
   confidence: high
   src: [bambu_wiki_material_table]
   note: >
-    Not needed to stop warping. Bambu recommends an enclosed printer for PETG
-    so a cold room does not weaken layer bonds, and recommends removing the top
+    Not required. Bambu lists PETG as not prone to warping, with no mandatory
+    temperature requirements, for an open-frame or enclosed printer, so it
+    prints fine on an A1 or A1 mini. Bambu adds that an enclosure helps keep a
+    cold room from weakening layer bonds. On enclosed printers, remove the top
     glass cover when the bed is above 70 C to avoid heat creep.
 
 plates:

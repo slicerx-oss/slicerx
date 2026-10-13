@@ -1,0 +1,21 @@
+kind: guide
+schema_version: 1
+id: fits
+name: Fits and clearance for printed parts
+aliases: [clearance, tolerance, press fit, slip fit, sliding fit, friction fit, snap fit, peg and hole, hole for a pin, hinge clearance, parts that fit together]
+applies_to: [all]
+summary: >
+  Parts that fit together need clearance: the hole is drawn larger than the
+  pin, never smaller. How much depends on the printer, the material and the
+  orientation, so start from a known value and confirm with a tolerance test.
+facts:
+  - {text: "Two parts drawn at exactly the same size will probably not slot together. Leave clearance between them.", src: [prusa_kb_modeling]}
+  - {text: "A 3 mm peg will not fit a 3 mm hole, because extruded lines come out wider than the nozzle.", src: [snapmaker_blog_threads]}
+  - {text: "There is no universal clearance. It depends on part size, horizontal or vertical orientation, the shape of the interlocking parts, calibration, settings and the material.", src: [prusa_kb_modeling]}
+  - {text: "Prusa says an Original Prusa is accurate to at least 0.2 mm, and that a good first value for parts that move, like a hinge, is at least 0.3 mm.", src: [prusa_kb_modeling]}
+  - {text: "The Orca tolerance test prints holes at 0, 0.05, 0.1, 0.2, 0.3 and 0.4 mm clearance, so the user can find the fit on their own printer and spool.", src: ["orca_wiki:tolerance_calib"]}
+pilot_actions:
+  - "Never tell the user to make a hole smaller than its pin or shaft. A tighter fit means less clearance, not negative clearance."
+  - "For moving parts start at 0.3 mm or more; for a tight or friction fit use less, and confirm with the tolerance test (workflow tolerance)."
+  - "Say which way the clearance is measured (on the diameter or per side) whenever you give a number."
+src: [prusa_kb_modeling, snapmaker_blog_threads, "orca_wiki:tolerance_calib"]
