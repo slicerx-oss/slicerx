@@ -13,6 +13,8 @@
 :root[data-motion="reduced"] .mimir-watch { animation: none; }
 .mimir-watch[data-attention] { background: var(--orange); animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 35%, transparent); }
 .mimir-dock .term { min-height: 0; }
+/* The chat log takes what the dock has left. .sx-pilot's narrow layout gives it a fixed 66vh, which pushed the composer over the footer. */
+.mimir-dock.sx-pilot .term-body { flex: 1; height: auto; min-height: 0; }
 /* One column: .sx-pilot's three (rail, chat, inspector) would leave the dock 248 px of chat.
    The theme's colors replace the terminal palette. Both classes, so this outranks .sx-pilot's own palette on the same element. */
 .mimir-dock.sx-pilot { --t-bg: var(--ink-1); --t-bar: var(--ink-2); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); --t-bubble: var(--ink-3); grid-template-columns: minmax(0, 1fr); }
