@@ -28,7 +28,7 @@ A 200 returns `{"install": "<uuid>", "token": "<64 lowercase hex characters>"}`.
 - Register once, on the first mimir message, not at startup.
 - The edition id is lowercase letters, digits and hyphens. The key is 16 to 128 letters, digits, `-` or `_`. The body may be at most 4 KB.
 - A network may register only 3 new installs a day (per IPv4 address, or per IPv6 /64), and 20 per IPv6 /48. Days run to midnight in Melbourne, Australia.
-- An install that never makes a call is removed after 7 days. One that goes 30 days without a call is removed too, unless it has shared sessions. Its token then gets `401 unknown_install`, and the app registers again (see Refusals).
+- An install that never makes a call is removed after 7 days. One that goes 30 days without a call is removed too, unless it has saved chats. Its token then gets `401 unknown_install`, and the app registers again (see Refusals).
 
 ## Send a message
 
@@ -63,17 +63,17 @@ Blocks in messages:
 
 Replies can hold `thinking` and `redacted_thinking` blocks, and `server_tool_use` and `web_search_tool_result` blocks when the model searches. Put every assistant block back in the history exactly as you received it, signatures included, or the next call fails. Any other block type is refused with a 400.
 
-### Headers for sharing
+### Saved chats
 
-These go on `/v1/messages` and are optional:
+During alpha, mimir cloud saves free chats for 30 days to improve mimir. Each edition has a default for a call that says nothing: on for SlicerX, and for a partner edition once its app tells users. With the default on, a call is saved unless the client sends `x-sx-share: 0`, so a kit that sends none of these headers is saved too. These headers go on `/v1/messages` and are optional:
 
 | Header | Value |
 | --- | --- |
-| `x-sx-share` | `1` while the user has sharing on. Without it, nothing is stored. |
-| `x-sx-session` | one id per conversation, 1 to 64 letters, digits, `_` or `-` (16 random bytes as base64url works) |
+| `x-sx-share` | `0` when the user turned saving off: nothing from that call is stored. `1` saves it. Without the header, the edition's default applies. |
+| `x-sx-session` | one id per conversation, 1 to 64 letters, digits, `_` or `-` (16 random bytes as base64url works). Without it, the turn is filed under one session per install and Melbourne day. |
 | `x-sx-version` | your app's version, 1 to 40 letters, digits, `.`, `+` or `-` |
 
-A turn is stored only when all three are present and valid and the call answered in full. Images are stored as a placeholder, without their data, and a turn over 256 KB isn't stored. Give the user a setting to turn sharing off and a way to delete what was shared (`/forget`).
+Only a call that answered in full is saved. The reply keeps every tool call with its whole input, so a design can be replayed. Images are stored as a placeholder, without their data. The system prompt and tool list are stored once per distinct text, not in every turn, and a turn over 1 MB isn't saved. Give the user a switch that sends `x-sx-share: 0` and a way to delete what was saved (`/forget`). With `@slicerx/pilot`, pass `share: () => ({ on, version })` to `createTransportClient`; `on: false` sends the `0`.
 
 ## Today's use
 
@@ -94,14 +94,14 @@ Returns:
 
 Amounts are in millionths of a US dollar. The install cap can shrink late in a busy day, so read it from here rather than keeping a copy. A simple line for the chat: the share left is `1 - install_used / install_cap`, rounded down. When `edition_open` is false, show "mimir's daily limit is used up. It resets at midnight Melbourne time." instead.
 
-## Delete shared sessions
+## Delete saved chats
 
 ```
 POST /forget
 x-sx-install: <token>
 ```
 
-Deletes every session this install shared and returns `{"deleted": <count>}`.
+Deletes every chat saved from this install and returns `{"deleted": <count>}`.
 
 ## Refusals
 
