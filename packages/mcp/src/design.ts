@@ -50,8 +50,8 @@ export class Designs implements DesignHost {
   }
 
   /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through. */
-  async add(d: Design, part: number, params: StepParams, label?: string): Promise<Step> {
-    const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}) }
+  async add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string }): Promise<Step> {
+    const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
     const history = appendStep(d.history, step)
     const r = await replayHistory(this.deps.engine, { history })
     const st = r.status[r.status.length - 1]

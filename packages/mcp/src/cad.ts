@@ -338,6 +338,12 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   }
   const plane = (f: z.infer<typeof frameSchema> | undefined): Record<string, unknown> => (f ? { frame: frameFor(f.origin, f.normal, f.u) } : {})
   const frameOf = (f: z.infer<typeof frameSchema> | undefined): FaceFrame | undefined => (f ? frameFor(f.origin, f.normal, f.u) : undefined)
+  // a finished sketch of the design timeline: only the app keeps them
+  const finished = (id: string) => {
+    const host = deps.designs
+    if (!host?.sketch) throw new ToolInputError(`sketch: finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again`)
+    return host.sketch(id)
+  }
   const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().call(op, request) as Promise<Record<string, unknown>>
 
   const faces = defineTool({
@@ -453,13 +459,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description:
       'Sketch and extrude: a shape (rectangle, circle, slot, polygon, text, a free sketch of lines and arcs, or SVG artwork) on the bed, any plane or a picked face, extruded as a new body, joined to a target, or cut from it. With "design" it adds a step to the design (a new body becomes a new part; join and cut work on "part") and returns the design; with a model it writes the result as an STL ("mesh") and the extruded solid ("tool"), with volume, bounds and whether it is watertight.',
     input: z.object({
-      shape,
+      shape: shape.optional(),
+      sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id from slicerx_design_timeline (or slicerx_design_sketch); its plane and loops are the shape, so leave shape and frame out. The step names the sketch'),
       frame: frameSchema.optional(),
       placement: z.object({ center: vec2.optional(), rotationDeg: z.number().optional() }).optional().describe('Where the shape sits in the plane: center [u, v] and rotation, degrees'),
       distance_mm: z.number().positive().max(10_000),
@@ -476,14 +483,20 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     async run(i) {
       const spec = { distanceMm: i.distance_mm, extent: i.extent, operation: i.operation, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}), ...(i.flip !== undefined ? { flip: i.flip } : {}), ...(i.taper_deg !== undefined ? { taperDeg: i.taper_deg } : {}) }
       const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Extruded'
+      if (i.sketch !== undefined && (i.shape || i.frame)) throw new ToolInputError('sketch: the sketch gives the shape and plane; leave shape and frame out')
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
-        const frame = frameOf(i.frame)
-        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: i.shape, placement: i.placement, spec, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        const k = i.sketch !== undefined ? finished(i.sketch) : null
+        const frame = k ? k.frame : frameOf(i.frame)
+        const drawn = k ? { type: 'sketch' as const, loops: k.loops, ...(k.constraints ? { constraints: k.constraints } : {}) } : i.shape
+        if (!drawn) throw new ToolInputError('shape: give a shape, or a finished sketch id as sketch')
+        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: drawn, placement: i.placement, spec, name: i.name })
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, k ? { sketch: k.id } : undefined)
         return stepOut(d, verb)
       }
+      if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch extrudes on a design; give its id as design')
+      if (!i.shape) throw new ToolInputError('shape: give the shape to extrude')
       const out = await call('shape.extrude', { shape: i.shape, ...plane(i.frame), ...(i.placement ? { placement: i.placement } : {}), spec, ...(await target(i.target, i.operation)) })
       return { summary: `${verb} a ${i.shape.type} ${i.distance_mm} mm`, output: out }
     },
@@ -491,12 +504,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: 'Revolve a sketch profile around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. The profile must stay on one side of the axis. With "design" it adds a step to the design; with no design it writes the result as an STL.',
     input: z.object({
-      loops,
+      loops: loops.optional(),
+      sketch: z.string().min(1).max(80).optional().describe('With a design: a finished sketch id from slicerx_design_timeline (or slicerx_design_sketch); its plane and loops are the shape, so leave shape and frame out. The step names the sketch'),
       frame: frameSchema.optional(),
       axis: z.object({ point: vec2, direction: vec2 }).describe('The axis in the sketch plane, [u, v]'),
       angle_deg: z.number().positive().max(360).default(360),
@@ -507,16 +521,38 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
     }),
     async run(i) {
+      if (i.sketch !== undefined && (i.loops || i.frame)) throw new ToolInputError('sketch: the sketch gives the loops and plane; leave loops and frame out')
       if (i.design) {
         if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
         const d = designOf(i.design)
-        const frame = frameOf(i.frame)
-        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: i.loops, axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: i.name })
-        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        const k = i.sketch !== undefined ? finished(i.sketch) : null
+        const frame = k ? k.frame : frameOf(i.frame)
+        const drawn = k ? k.loops : i.loops
+        if (!drawn) throw new ToolInputError('loops: give the loops, or a finished sketch id as sketch')
+        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: drawn, ...(k?.constraints ? { constraints: k.constraints } : {}), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: i.name })
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params, undefined, k ? { sketch: k.id } : undefined)
         return stepOut(d, 'Revolved')
       }
+      if (i.sketch !== undefined) throw new ToolInputError('sketch: a finished sketch revolves on a design; give its id as design')
+      if (!i.loops) throw new ToolInputError('loops: give the loops to revolve')
       const out = await call('sketch.revolve', { loops: i.loops, ...plane(i.frame), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, ...(await target(i.target, i.operation)) })
       return { summary: `Revolved the sketch ${i.angle_deg} degrees`, output: out }
+    },
+  })
+
+  const sketch = defineTool({
+    name: 'design.sketch',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: `Finish a sketch into the design timeline without making a solid, as Finish Sketch does in the app: closed loops of lines and arcs on the bed, any plane or a picked face. Returns the sketch's id and name; pass the id as sketch to slicerx_geom_extrude or slicerx_geom_revolve with a design to make a feature from it. Works on the project open in the app, through the app link.`,
+    input: z.object({ loops, frame: frameSchema.optional() }),
+    async run(i) {
+      const host = deps.designs
+      if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
+      const frame = frameOf(i.frame)
+      const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: i.loops }))
+      return { summary: `${k.name} is in the timeline`, output: { id: k.id, name: k.name, loops: k.loops.length } }
     },
   })
 
@@ -723,5 +759,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketch, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell] as PilotTool<never>[]
 }

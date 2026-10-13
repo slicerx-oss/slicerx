@@ -36,6 +36,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // the design timeline, and moving its marker (rolling the design back or forward)
   'design.timeline': 'read',
   'design.roll': 'edit',
+  // a finished sketch put in the timeline, for an extrude or revolve to name
+  'design.sketch': 'edit',
   'geom.faces': 'read',
   'geom.face_pick': 'read',
   'geom.edge_pick': 'read',

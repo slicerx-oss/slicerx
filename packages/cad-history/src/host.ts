@@ -3,7 +3,9 @@
 // A design host: where designs live and how a step lands on one. The MCP server keeps designs in memory and writes
 // files; the app keeps them as plate objects, so a step made through the host is the same history step a person's
 // edit makes. The modeling tools take a host and never know which one they run on.
+import type { SketchItem } from './design'
 import type { History, HistoryMesh, Mat4, Step, StepParams, StepStatus } from './model'
+import type { FaceFrame, SketchConstraint, SketchLoop } from './types'
 
 export interface Design {
   id: string
@@ -27,9 +29,13 @@ export interface DesignHost {
   /** A new design: empty (its first step makes the body) or from parts, with a history to replay when given. */
   create(name: string, base: HistoryMesh[], history?: History, transform?: Mat4): Promise<Design>
   /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through; else throws its reason. */
-  add(d: Design, part: number, params: StepParams, label?: string): Promise<Step>
+  add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string }): Promise<Step>
   /** Replays the design as `d.history` says, after a tool edited, removed or put back steps. */
   replay(d: Design): Promise<void>
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
   call(op: string, request: unknown): Promise<unknown>
+  /** A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. */
+  sketch?(id: string): SketchItem
+  /** Puts a finished sketch in the design timeline at its marker. No frame is the bed. */
+  addSketch?(s: { frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[] }): SketchItem
 }

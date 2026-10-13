@@ -10,6 +10,7 @@ import { geom } from '../geom/client'
 import { identity } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
+import { finishSketch, sketchById } from './sketches'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -69,8 +70,8 @@ export function appDesignHost(loader: Loader): DesignHost {
       return host.get(id)
     },
 
-    async add(d, part, params, label) {
-      const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}) }
+    async add(d, part, params, label, opts) {
+      const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
       const next = appendStep(d.history, step)
       const w = empty.get(d.id)
       if (w) {
@@ -107,6 +108,16 @@ export function appDesignHost(loader: Loader): DesignHost {
         markStale()
       }
       Object.assign(d, host.get(d.id))
+    },
+
+    sketch(id) {
+      const k = sketchById(get().timeline, id)
+      if (!k) throw Object.assign(new Error(`No finished sketch ${id} in the design timeline; slicerx_design_timeline lists them.`), { code: 'not_found' })
+      return k
+    },
+
+    addSketch(s) {
+      return finishSketch(s)
     },
   }
 

@@ -242,3 +242,20 @@ describe('the design timeline over the app link', () => {
     expect((await off.run('design.timeline', {})).output).toMatchObject({ marker: 0, end: 0, rolledBack: false })
   })
 })
+
+describe('finished sketches over the app link', () => {
+  it('puts a sketch in the app timeline, and says it needs the app here', async () => {
+    const call = vi.fn(async () => ({ summary: 'Sketch 1 is in the timeline', output: { id: 'sk1', name: 'Sketch 1', loops: 1 } }))
+    const { run } = routed(call as AppLinkCaller['call'])
+    const loops = [{ type: 'circle', center: [0, 0], diameterMm: 10 }]
+    const out = await run('design.sketch', { loops })
+    expect(call).toHaveBeenCalledWith('design.sketch', { loops })
+    expect(out.output).toMatchObject({ id: 'sk1', name: 'Sketch 1', in: 'app' })
+    const off = routed(vi.fn(async () => {
+      throw Object.assign(new Error('app_closed'), { code: 'app_closed' })
+    }) as AppLinkCaller['call'])
+    const e = await off.run('design.sketch', { loops }).catch((x: unknown) => x)
+    expect((e as Error).message).toMatch(/turn on the app link/)
+  })
+})
+
