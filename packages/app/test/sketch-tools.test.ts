@@ -3,7 +3,7 @@
 // The drawing tools past line, 2-point rectangle, center circle and 3-point arc (cad/sketch-shapes.ts), each driven
 // through click() as the panel does: the entity each one makes, closed shapes counterclockwise, and the typed values.
 import { describe, expect, it } from 'vitest'
-import { click, emptyDraft, fieldsFor, pickedText, preview, tangentAtEnd, toLoops, typedPoint, type Chain, type DrawTool, type Entity, type V2 } from '../src/cad/sketch-model'
+import { click, emptyDraft, fieldsFor, fromLoops, pickedText, preview, profileRings, tangentAtEnd, toggleConstruction, toLoops, typedPoint, type Chain, type DrawTool, type Entity, type V2 } from '../src/cad/sketch-model'
 
 /** Clicks the points in turn with a tool on an empty (or given) sketch. */
 function draw(tool: DrawTool, pts: V2[], sketch: Entity[] = [], sides?: number) {
@@ -113,6 +113,19 @@ describe('drawing tools', () => {
     expect(pickedText(sketch, { e: 0, seg: 1 })).toBe('Arc, radius 5.00 mm')
     expect(pickedText(draw('circle2', [[0, 0], [8, 0]]).sketch, { e: 0, seg: 0 })).toBe('Circle, diameter 8.00 mm')
     expect(pickedText(sketch, null)).toBe('')
+  })
+
+  it('construction curves keep their place and the flag through loops, and make no profile', () => {
+    const s = [...draw('rectCenter', [[0, 0], [5, 5]]).sketch, ...draw('circle2', [[-20, 0], [20, 0]]).sketch]
+    const c = toggleConstruction(s, 1)
+    expect(c[1]).toMatchObject({ kind: 'circle', construction: true })
+    expect(profileRings(c)).toHaveLength(1)
+    const loops = toLoops(c)
+    expect(loops[1]).toMatchObject({ type: 'circle', construction: true })
+    expect(loops[0]).not.toHaveProperty('construction')
+    expect(fromLoops(loops)).toEqual(c)
+    // X again turns it back
+    expect(toggleConstruction(c, 1)[1]).not.toHaveProperty('construction')
   })
 
   it('previews the whole shape once the last click is next', () => {

@@ -10,8 +10,8 @@ import { arcCenter, arcTangent, circle2, offsetFrom, polygon, rect3, rectCenter,
 export type V2 = Vec2
 export type Seg = { kind: 'line'; to: V2 } | { kind: 'arc'; to: V2; through: V2 }
 /** Segments run on from `start`; a closed chain's last segment ends exactly on `start`. */
-export interface Chain { kind: 'chain'; start: V2; segs: Seg[]; closed: boolean }
-export interface Circle { kind: 'circle'; center: V2; diameterMm: number }
+export interface Chain { kind: 'chain'; start: V2; segs: Seg[]; closed: boolean; construction?: boolean }
+export interface Circle { kind: 'circle'; center: V2; diameterMm: number; construction?: boolean }
 export type Entity = Chain | Circle
 export type Sketch = readonly Entity[]
 
@@ -36,8 +36,9 @@ export function chainEnd(c: Chain): V2 | null {
 /** The engine's loops, one per entity and in the same order, so an issue's loop index is the entity's. */
 export function toLoops(sketch: Sketch): SketchLoop[] {
   return sketch.map((e): SketchLoop => {
-    if (e.kind === 'circle') return { type: 'circle', center: e.center, diameterMm: e.diameterMm }
-    return { start: e.start, segments: e.segs.map((s) => (s.kind === 'line' ? { type: 'line' as const, to: s.to } : { type: 'arc' as const, to: s.to, through: s.through })) }
+    const c = e.construction ? { construction: true as const } : {}
+    if (e.kind === 'circle') return { type: 'circle', center: e.center, diameterMm: e.diameterMm, ...c }
+    return { start: e.start, segments: e.segs.map((s) => (s.kind === 'line' ? { type: 'line' as const, to: s.to } : { type: 'arc' as const, to: s.to, through: s.through })), ...c }
   })
 }
 
@@ -142,17 +143,18 @@ export function deleteSegment(sketch: Sketch, e: number, seg: number): Entity[] 
   sketch.forEach((x, i) => {
     if (i !== e) return void out.push(x)
     if (x.kind === 'circle') return
+    const c = x.construction ? { construction: true } : {}
     if (x.closed) {
       if (x.segs.length <= 1) return
       // Starts where the removed segment ended and runs round to where it began.
       const segs = [...x.segs.slice(seg + 1), ...x.segs.slice(0, seg)]
-      out.push({ kind: 'chain', start: x.segs[seg]!.to, segs, closed: false })
+      out.push({ kind: 'chain', start: x.segs[seg]!.to, segs, closed: false, ...c })
       return
     }
     const before = x.segs.slice(0, seg)
     const after = x.segs.slice(seg + 1)
-    if (before.length) out.push({ kind: 'chain', start: x.start, segs: before, closed: false })
-    if (after.length) out.push({ kind: 'chain', start: x.segs[seg]!.to, segs: after, closed: false })
+    if (before.length) out.push({ kind: 'chain', start: x.start, segs: before, closed: false, ...c })
+    if (after.length) out.push({ kind: 'chain', start: x.segs[seg]!.to, segs: after, closed: false, ...c })
   })
   return out
 }
@@ -731,14 +733,15 @@ export function extent(sketch: Sketch): { center: V2; radius: number } | null {
 export function fromLoops(loops: readonly SketchLoop[]): Entity[] | null {
   const out: Entity[] = []
   for (const l of loops) {
+    const k = l.construction ? { construction: true } : {}
     if ('type' in l && l.type === 'circle') {
-      out.push({ kind: 'circle', center: pt(l.center[0], l.center[1]), diameterMm: l.diameterMm })
+      out.push({ kind: 'circle', center: pt(l.center[0], l.center[1]), diameterMm: l.diameterMm, ...k })
       continue
     }
     if ('points' in l) {
       const c = polylineToChain(l.points)
       if (!c) return null
-      out.push(c)
+      out.push({ ...c, ...k })
       continue
     }
     if (!('start' in l)) return null
@@ -761,7 +764,7 @@ export function fromLoops(loops: readonly SketchLoop[]): Entity[] | null {
     }
     const closed = segs.length > 0 && dist(at, l.start) < 1e-3
     if (closed) segs[segs.length - 1] = { ...segs[segs.length - 1]!, to: pt(l.start[0], l.start[1]) }
-    out.push({ kind: 'chain', start: pt(l.start[0], l.start[1]), segs, closed })
+    out.push({ kind: 'chain', start: pt(l.start[0], l.start[1]), segs, closed, ...k })
   }
   return out
 }
@@ -801,6 +804,7 @@ export function straightCorners(c: Chain, seg?: number): number[] {
 /** Closed loops of the sketch as rings, for the profile shading. */
 export function profileRings(sketch: Sketch): V2[][] {
   return sketch.flatMap((e) => {
+    if (e.construction) return []
     if (e.kind === 'circle') return [entityPaths(e)[0]!.points]
     const pts = entityPaths(e).flatMap((p, i) => (i ? p.points.slice(1) : p.points))
     const a = pts[0]
@@ -820,4 +824,16 @@ export function pickedText(sketch: Sketch, picked: { e: number; seg: number } | 
   if (s.kind === 'line') return `Line, ${f(dist(from, s.to))} ${u}`
   const a = arcThrough(from, s.through, s.to)
   return a ? `Arc, radius ${f(a.r)} ${u}` : 'Arc'
+}
+
+/** The sketch with entity `e` turned into construction geometry, or back into a curve that makes profiles. */
+export function toggleConstruction(sketch: Sketch, e: number): Entity[] {
+  return sketch.map((x, i) => {
+    if (i !== e) return x
+    if (x.construction) {
+      const { construction: _c, ...rest } = x
+      return rest
+    }
+    return { ...x, construction: true }
+  })
 }
