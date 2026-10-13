@@ -41,6 +41,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.boolean': 'edit',
   'geom.fillet': 'edit',
   'geom.chamfer': 'edit',
+  // A client's dimension sheet: asking puts a question in front of the person, so it is an edit.
+  'sheet.ask': 'edit',
+  'sheet.get': 'read',
   // mimir's conversations in this window: what was said and what mimir did.
   'mimir.sessions': 'read',
   'mimir.session': 'read',
@@ -50,7 +53,13 @@ export { LinkError } from './methods-error'
 
 const round = (v: number): number => Math.round(v * 1000) / 1000
 
-type Handler = (args: Record<string, unknown>, client: string) => unknown
+/** The client a call came from, as the hub knows it: its id and the name it gave. */
+export interface LinkClient {
+  id: string
+  name: string
+}
+
+type Handler = (args: Record<string, unknown>, client: LinkClient) => unknown
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
 const CAMERAS: readonly CameraView[] = ['iso', 'top', 'front', 'fit']
@@ -157,11 +166,14 @@ const HANDLERS: Record<string, Handler> = {
     }),
   }),
   // Loaded when first used, so arranging stays out of the link's startup.
-  'project.move': async (args, client) => (await import('./plate-edits')).move(args, client),
-  'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client),
-  'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client),
+  'project.move': async (args, client) => (await import('./plate-edits')).move(args, client.name),
+  'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client.name),
+  'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client.name),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
+  // A client's dimension sheet for the person to confirm, and its answer read back by that client.
+  'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
+  'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),
   'mimir.sessions': () => listSessions(),
   'mimir.session': (args) => readSession(args),
 }
@@ -200,8 +212,8 @@ async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): P
   }
 }
 
-/** Runs one call the hub handed over, from the client named `client`. The hub already checked the method and its grant. */
-export async function runCall(method: string, args: Record<string, unknown>, client = 'An agent'): Promise<unknown> {
+/** Runs one call the hub handed over, from `client`. The hub already checked the method and the client's grant. */
+export async function runCall(method: string, args: Record<string, unknown>, client: LinkClient = { id: '', name: 'An agent' }): Promise<unknown> {
   if (!Object.hasOwn(APP_LINK_METHODS, method)) throw new LinkError('not_found', `${appName()} has no app link method ${method}`)
   const h = Object.hasOwn(HANDLERS, method) ? HANDLERS[method] : undefined
   if (h) return h(args, client)

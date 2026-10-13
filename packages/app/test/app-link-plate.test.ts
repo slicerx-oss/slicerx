@@ -29,7 +29,7 @@ afterEach(() => vi.useRealTimers())
 
 describe('plate edits over the app link', () => {
   it('move an object by its footprint center, by name or id, and read it back', async () => {
-    const out = (await runCall('project.move', { object: 'Box', x: 50, y: 60 }, 'Print Helper')) as Read
+    const out = (await runCall('project.move', { object: 'Box', x: 50, y: 60 }, { id: 'c1', name: 'Print Helper' })) as Read
     expect(out.objects).toEqual([expect.objectContaining({ id: 'obj_1', minMm: [45, 50, 0], sizeMm: [10, 20, 5] })])
     expect((await read('obj_1')).minMm).toEqual([45, 50, 0])
     // Its copy stays where it is.

@@ -132,6 +132,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("geom.boolean", LinkClass::Edit),
     ("geom.fillet", LinkClass::Edit),
     ("geom.chamfer", LinkClass::Edit),
+    // A client's dimension sheet: asking puts a question in front of the person, so it edits.
+    ("sheet.ask", LinkClass::Edit),
+    ("sheet.get", LinkClass::Read),
     // mimir's conversations in the window, read back: what was said and what mimir did.
     ("mimir.sessions", LinkClass::Read),
     ("mimir.session", LinkClass::Read),
@@ -334,6 +337,8 @@ mod tests {
             ("geom.boolean", LinkClass::Edit),
             ("geom.fillet", LinkClass::Edit),
             ("geom.chamfer", LinkClass::Edit),
+            ("sheet.ask", LinkClass::Edit),
+            ("sheet.get", LinkClass::Read),
             ("mimir.sessions", LinkClass::Read),
             ("mimir.session", LinkClass::Read),
         ];
