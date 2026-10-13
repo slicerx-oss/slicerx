@@ -316,3 +316,17 @@ export function withBodyIds(t: Timeline, id: (old: string) => string | undefined
     marker: out.marker,
   }
 }
+
+/** The timeline as an agent reads it: the marker, the bodies and each item in order, without loops or meshes. */
+export function timelineSummary(t: Timeline): { marker: number; end: number; bodies: string[]; items: Record<string, unknown>[] } {
+  return {
+    marker: t.marker,
+    end: t.items.length,
+    bodies: t.bodies.map((b) => b.id),
+    items: t.items.map((i) =>
+      i.kind === 'sketch'
+        ? { kind: 'sketch', id: i.id, name: i.name, loops: i.loops.length }
+        : { kind: 'feature', id: i.id, body: i.body, op: i.params.op, ...(i.sketch ? { sketch: i.sketch } : {}), ...(i.label ? { label: i.label } : {}), ...(i.suppressed ? { suppressed: true } : {}) },
+    ),
+  }
+}
