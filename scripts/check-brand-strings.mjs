@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-export const SCOPE = ['packages/mcp/src', 'packages/pilot/src', 'packages/pilot/skills', 'packages/pilot/llm/src', 'packages/embed/src', 'packages/ui/viewport/src', 'packages/connect/link-client/src', 'packages/connect/link/src', 'packages/connect/src', 'packages/cad-history/src', 'packages/core/src', 'packages/core/cli/src']
+export const SCOPE = ['packages/mcp/src', 'packages/pilot/src', 'packages/pilot/skills', 'packages/pilot/llm/src', 'packages/embed/src', 'packages/ui/viewport/src', 'packages/connect/link-client/src', 'packages/connect/link/src', 'packages/connect/src', 'packages/cad-history/src', 'packages/core/src', 'packages/core/cli/src', 'packages/settings/js', 'packages/settings/src', 'apps/desktop/src-tauri/src', 'packages/app/src']
 
 /** What stays SlicerX, by file and the text around it, and why. */
 export const KEPT = [
@@ -33,6 +33,9 @@ export const KEPT = [
   { file: /^packages\/mcp\/src\/tooldocs\.ts$/, text: "'# SlicerX MCP tools'", why: 'TOOLS.md title (repository doc)' },
   { file: /^packages\/pilot\/skills\/(make_model\/index|index)\.ts$/, text: /the SlicerX (X|mark)\b|is the SlicerX X|The SlicerX mark could not be read/, why: "SlicerX's X mark, a shape the make_model tool draws by name" },
   { file: /^packages\/embed\/src\/agreement\.tsx$/, text: /The SlicerX parts of|come from SlicerX|bugs in the SlicerX parts on the SlicerX Discord|When a SlicerX part fails|the app and SlicerX versions/, why: "the pre-alpha agreement names SlicerX's parts of the host app (credit and legal text)" },
+  { file: /^apps\/desktop\/src-tauri\/src\/brand\.rs$/, text: '.unwrap_or_else(|| "SlicerX".to_owned())', why: 'the default name' },
+  { file: /^packages\/settings\/js\/(engine-choices|schema)\.ts$/, text: "replaceAll('SlicerX', productName())", why: 'the data says SlicerX; this swaps in the name' },
+  { file: /^packages\/app\/src\/updates\/dialog\.tsx$/, text: "edition.id === 'slicerx' ? 'SlicerX | A slicer for the gods'", why: "SlicerX's own tagline, shown only in the SlicerX edition" },
   { file: /./, text: 'The SlicerX contributors', why: 'copyright line' },
   { file: /./, text: 'Made possible by SlicerX', why: 'the credit' },
 ]
@@ -52,6 +55,13 @@ function code(line, rust, state) {
       continue
     }
     if (c === '/' && line[i + 1] === '/') break
+    // An inline block comment, such as JSX's {/* ... */}.
+    if (c === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2)
+      if (end < 0) break
+      i = end + 1
+      continue
+    }
     if (c === '"' || c === '`' || (!rust && c === "'")) quote = c
     out += c
   }

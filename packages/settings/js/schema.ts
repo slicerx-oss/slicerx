@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The settings schema as data: facts (keys, types, units, defaults, ranges) and our own labels.
 // schema.json is checked in as our own data (key names follow OrcaSlicer's for profile interchange). sx-settings reads the same file.
+import { productName } from '@slicerx/contracts/brand'
 import type { SettingDef, SettingSection } from '@slicerx/contracts/settings'
 import type { SliceStage } from '@slicerx/contracts/slice'
 import notesJson from '../notes.json'
@@ -18,13 +19,22 @@ const file = schemaJson as unknown as SchemaFile
 /** Orca commit the schema was extracted from. */
 export const ORCA_COMMIT: string = file.orca_commit
 
-/** Plain notes keyed by setting key: what each setting does and when to change it. */
-export const SETTING_NOTES: Readonly<Record<string, string>> = (notesJson as { notes: Record<string, string> }).notes
+const NOTES = (notesJson as { notes: Record<string, string> }).notes
 
-const original: readonly SettingDef[] = file.settings.map((d) => {
-  const note = SETTING_NOTES[d.key]
-  return d.note === undefined && note ? { ...d, note } : d
-})
+/** Plain notes keyed by setting key: what each setting does and when to change it. */
+// The notes name the product as the edition does (white label): notes.json says SlicerX, read when asked.
+export const SETTING_NOTES: Readonly<Record<string, string>> = Object.defineProperties(
+  {},
+  Object.fromEntries(Object.entries(NOTES).map(([k, v]) => [k, { enumerable: true, get: () => v.replaceAll('SlicerX', productName()) }])),
+)
+
+/** `d` with the note from notes.json, read when asked like `SETTING_NOTES`, unless the schema or an overlay gives one. */
+function withNote(d: SettingDef): SettingDef {
+  if (d.note !== undefined || NOTES[d.key] === undefined) return d
+  return Object.defineProperty({ ...d }, 'note', { enumerable: true, get: () => SETTING_NOTES[d.key] })
+}
+
+const original: readonly SettingDef[] = file.settings.map(withNote)
 const list: SettingDef[] = original.slice()
 
 /** Every setting, process first, then filament, then printer. Updated in place by `registerSettingText`. */
@@ -76,7 +86,7 @@ export function registerSettingText(text: Readonly<Record<string, SettingText>>)
   for (let i = 0; i < original.length; i++) {
     const base = original[i] as SettingDef
     const t = text[base.key]
-    list[i] = t ? { ...base, ...(t.label !== undefined ? { label: t.label } : {}), ...(t.help !== undefined ? { help: t.help } : {}), ...(t.note !== undefined ? { note: t.note } : {}), ...(t.enumLabels ? { enumLabels: t.enumLabels } : {}), ...(t.category !== undefined ? { category: t.category } : {}) } : base
+    list[i] = t ? withNote({ ...(file.settings[i] as SettingDef), ...(t.label !== undefined ? { label: t.label } : {}), ...(t.help !== undefined ? { help: t.help } : {}), ...(t.note !== undefined ? { note: t.note } : {}), ...(t.enumLabels ? { enumLabels: t.enumLabels } : {}), ...(t.category !== undefined ? { category: t.category } : {}) }) : base
     byKey.set(base.key, list[i] as SettingDef)
   }
 }

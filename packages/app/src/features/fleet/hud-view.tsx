@@ -428,7 +428,7 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
                   className="sx-select"
                   value={reported ? String(reported.percent) : ''}
                   disabled={!hub || busy || watchOnly}
-                  {...tipAttrs(watchOnly ? watchTip('Speed') : hub ? undefined : { title: 'Speed', reason: 'Speed changes need the SlicerX link on your network.' })}
+                  {...tipAttrs(watchOnly ? watchTip('Speed') : hub ? undefined : { title: 'Speed', reason: `Speed changes need the ${appName()} link on your network.` })}
                   onChange={(e) => {
                     const v = Number(e.currentTarget.value)
                     setBusy(true)
@@ -449,7 +449,7 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
                 icon="led"
                 pressed={lightOn}
                 disabled={!hub?.adjust.light || st.state === 'offline' || watchOnly}
-                tip={watchOnly ? watchTip('Light') : hub?.adjust.light ? 'Chamber light' : { title: 'Light', reason: 'The light switches from the SlicerX app on your network.' }}
+                tip={watchOnly ? watchTip('Light') : hub?.adjust.light ? 'Chamber light' : { title: 'Light', reason: `The light switches from the ${appName()} app on your network.` }}
                 onClick={() => void setLight(host, row, !lightOn)}
               >
                 Light

@@ -7,6 +7,7 @@ import { noteViewClosing } from '../camera/closing'
 import { Button, Icon } from '@slicerx/ui'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { reportCrash } from '../bugs/crash'
+import { appName } from '../edition'
 import { isChunkLoadError, reloadForChunk } from '../lib/chunk-reload'
 
 interface State {
@@ -41,7 +42,7 @@ export class WorkspaceBoundary extends Component<{ name: string; children: React
         <div className="ws-error" role="alert">
           <Icon name="alert" size={24} />
           <h2>{this.props.name} did not load</h2>
-          <p>The connection dropped while SlicerX was loading. Save your work, then reload.</p>
+          <p>The connection dropped while {appName()} was loading. Save your work, then reload.</p>
           <Button onClick={() => window.location.reload()}>Reload</Button>
         </div>
       )

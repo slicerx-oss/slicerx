@@ -7,6 +7,7 @@
 // connectors are on, and that switch is here, in Developer mode.
 import { Button, Chip, Input, Pill, Switch, tipAttrs } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
+import { appName } from '../edition'
 import { useHost } from '../host'
 import { SpoolmanRows } from '../inventory/spoolman-settings'
 import { liveBridge, type BridgeServices, type ConnectedBridge } from '../link/bridge'
@@ -90,7 +91,7 @@ export function ConnectedAppsSection() {
   return (
     <section className="set-sec" aria-labelledby="apps-h" data-testid="connected-apps">
       <h3 id="apps-h">Connected apps</h3>
-      <p className="sx-small sx-muted">Apps on your network that SlicerX works with. Add one once; its address stays on this computer and a key goes to the system keychain. Printers and spools work as before until you add an app.</p>
+      <p className="sx-small sx-muted">Apps on your network that {appName()} works with. Add one once; its address stays on this computer and a key goes to the system keychain. Printers and spools work as before until you add an app.</p>
       {services ? (
         <>
           {shown.map((app) =>

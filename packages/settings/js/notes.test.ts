@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Every setting a user can see has a short, plain note for its tooltip.
-import { describe, expect, it } from 'vitest'
-import { SETTING_NOTES, SETTINGS, settingDef } from './index'
+import { afterEach, describe, expect, it } from 'vitest'
+import { DEFAULT_PRODUCT_NAME, setProductName } from '@slicerx/contracts/brand'
+import { SETTING_NOTES, SETTINGS, clearSettingText, registerSettingText, settingDef } from './index'
 
 const VISIBLE = new Set(['simple', 'advanced', 'expert'])
 const MAX = 240
@@ -46,5 +47,28 @@ describe('setting notes', () => {
 
   it('reach the definitions', () => {
     expect(settingDef('wall_loops')?.note).toMatch(/loops/)
+  })
+})
+
+// White label: notes.json says SlicerX, and an edition's notes say its own name.
+describe('setting notes in an edition', () => {
+  afterEach(() => {
+    setProductName(DEFAULT_PRODUCT_NAME)
+    clearSettingText()
+  })
+
+  it('name the edition, including after a text overlay', () => {
+    const key = 'flush_into_infill'
+    expect(settingDef(key)?.note).toMatch(/\bSlicerX\b/)
+    setProductName('Acme Slicer')
+    expect(SETTING_NOTES[key]).toMatch(/\bAcme Slicer\b/)
+    expect(SETTING_NOTES[key]).not.toMatch(/SlicerX/)
+    expect(settingDef(key)?.note).toBe(SETTING_NOTES[key])
+    registerSettingText({ [key]: { label: 'Flush into infill' } })
+    expect(settingDef(key)?.label).toBe('Flush into infill')
+    expect(settingDef(key)?.note).toMatch(/\bAcme Slicer\b/)
+    // An overlay's own note is used as written.
+    registerSettingText({ [key]: { note: 'Own words.' } })
+    expect(settingDef(key)?.note).toBe('Own words.')
   })
 })
