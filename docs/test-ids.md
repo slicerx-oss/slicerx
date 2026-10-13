@@ -460,6 +460,7 @@ Ids that tests read for their text:
 | `tl-rolled` | The timeline's status while it is rolled back: "Rolled back to N of M" |
 | `model-tree-object` | An object row in the Model tree; `data-object-id`, and `data-kind` is `body` (has a history) or `mesh` |
 | `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`), and `data-made-by` on the step that made the one face picked |
+| `model-tree-step-later` | A step past the timeline marker in the Model tree, dimmed, with its timeline number |
 | `model-tree-more` | A step row's More button, which opens the step's menu |
 | `model-tree-filter` | The tree's filter field, opened by typing in the tree; Escape shuts it |
 | `model-tree-rollback` | The rollback row after the step the part is shown at: drag it, or Up, Down and End with focus |

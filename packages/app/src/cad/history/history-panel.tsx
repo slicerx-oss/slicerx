@@ -12,9 +12,10 @@ import { toast, useApp } from '../../state/store'
 import { num } from '../panel-kit'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { mainNumber, withNumber } from '@slicerx/cad-history'
+import { featureParams, mainNumber, stepName, withNumber, type FeatureItem, type SketchItem, type Step } from '@slicerx/cad-history'
 import { beginEdit, cancelEdit, deleteStep, renameStep, moveStep, setParams, setSuppressed, toolFor, viewStep } from './ops'
 import { StepRow } from './step-row'
+import { stepIcon } from './step-icon'
 import { useMadeBy } from '../../workspaces/design/use-made-by'
 import '../cad.css'
 
@@ -92,12 +93,21 @@ export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?
   const madeAt = tree && made?.objectId === objectId ? made.index : -1
   // the tree numbers steps the way the timeline strip does, across the whole design
   const items = useApp((s) => (tree ? s.timeline.items : null))
+  const marker = useApp((s) => s.timeline.marker)
   const numberOf = (id: string) => {
     const i = items?.findIndex((it) => it.kind === 'feature' && it.body === objectId && it.id === id) ?? -1
     return i < 0 ? undefined : i + 1
   }
   const h = entry?.history
-  if (!entry || !h || (!h.steps.length && !h.ended)) return null
+  // rolled back steps stay in the tree, dimmed, with their timeline numbers
+  const sketches = new Map((items ?? []).filter((i): i is SketchItem => i.kind === 'sketch').map((k) => [k.id, k]))
+  const later = (items ?? []).flatMap((it, n) => {
+    if (only || n < marker || it.kind !== 'feature' || it.body !== objectId) return []
+    const params = featureParams(it, sketches)
+    const { kind: _k, body: _b, ...rest } = it as FeatureItem
+    return [{ n: n + 1, id: it.id, step: params ? ({ ...rest, params } as Step) : null }]
+  })
+  if (!entry || !h || (!h.steps.length && !h.ended && !later.length)) return null
 
   const run = async (i: number, fn: () => Promise<unknown>) => {
     setBusy(i)
@@ -169,6 +179,20 @@ export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?
           ) : null}
           </Fragment>
         )))}
+        {later.map((l) => {
+          const name = l.step ? stepName(l.step) : 'A step whose sketch is gone'
+          return (
+            <li key={l.id} className="cad-step" data-later="" role="treeitem" aria-level={3} aria-label={name} data-testid="model-tree-step-later" data-tip-title={name} data-tip-body="Rolled back: move the timeline marker past it to use it.">
+              <span className="cad-step-n sx-mono">{l.n}</span>
+              <span className="cad-step-name">
+                <span className="cad-step-icon">
+                  <Icon name={l.step ? stepIcon(l.step.params) : 'warning'} size={16} />
+                </span>
+                <span className="cad-step-label">{name}</span>
+              </span>
+            </li>
+          )
+        })}
       </ol>
       {editingIndex !== null ? (
         <div className="cad-row">

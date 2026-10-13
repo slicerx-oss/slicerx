@@ -70,6 +70,8 @@ export function HistoryTree() {
   const objects: PlateEntry[] = editing && !plate.some((p) => p.id === editing.objectId) ? [...plate, editing.original] : plate
   const shown = filterTree(objects.map((p) => (editing?.objectId === p.id ? { ...p, history: editing.original.history } : p)), query ?? '')
   const visible = objects.filter((p) => shown.get(p.id)?.show !== false)
+  // bodies with steps past the marker: the tree keeps those steps, dimmed
+  const rolled = new Set(timeline.items.slice(timeline.marker).flatMap((it) => (it.kind === 'feature' ? [it.body] : [])))
   const closeFilter = () => {
     setQuery(null)
     requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>('[data-tree-row][tabindex="0"]')?.focus())
@@ -187,7 +189,7 @@ export function HistoryTree() {
             <ObjectRow entry={p} kind={kind} steps={steps} isOpen={isOpen} isSel={isSel} setOpen={(o) => setOpen((m) => ({ ...m, [p.id]: o }))} />
             {isOpen ? (
               <div className="dtree-body" role="group">
-                {steps ? <HistorySteps objectId={p.id} tree only={only} /> : null}
+                {steps || rolled.has(p.id) ? <HistorySteps objectId={p.id} tree only={only} /> : null}
                 <ul className="dtree-parts" role="group" aria-label={`Parts of ${p.name}`}>
                   {p.handle.parts.map((part, i) => (
                     <li key={`${part.name}-${i}`} role="treeitem" aria-level={3} aria-label={part.name}>
