@@ -14,6 +14,7 @@ import { ModelPicker } from '../src/pilot-connect/connect-panel'
 import { pilotModel } from '../src/pilot-connect/llm'
 import { PROVIDERS } from '../src/pilot-connect/keys'
 import { PilotSettingsSection } from '../src/pilot-connect/settings-section'
+import { setHostSlices } from '../src/state/model-mode'
 import { normalizePrefs } from '../src/state/prefs'
 import { set } from '../src/state/store'
 
@@ -41,6 +42,20 @@ describe('one mimir setup', () => {
     const cards = [...b.container.querySelectorAll('.pc-provider')]
     expect(cards.map((c) => c.querySelector('b')?.textContent)).toEqual(['Anthropic', 'OpenAI'])
     expect(cards[0]?.getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('says what a CAD-only build sends, with no printer claims and no agent section', () => {
+    setHostSlices(false)
+    try {
+      const view = render(inHost(createElement(PilotSettingsSection)))
+      const privacy = view.container.querySelector('.pc-privacy')?.textContent ?? ''
+      expect(privacy).toContain("the design you're working on")
+      expect(view.container.textContent).not.toMatch(/printer/i)
+      expect(view.container.querySelector('.ag-sec')).toBeNull()
+      view.unmount()
+    } finally {
+      setHostSlices(true)
+    }
   })
 
   it('starts the model list on Auto, never on Opus, and keeps any other id', () => {
