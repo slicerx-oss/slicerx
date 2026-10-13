@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Reads the CAD history parts of a project (docs/cad-history.md, "Storage"), written by
 // file.ts. Untrusted: a bad step or mesh drops that object's history, never the project.
+import { productName } from '@slicerx/contracts/brand'
 import { BIN_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
 import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type Step, type StepParams } from './model'
 
@@ -258,7 +259,7 @@ export function historyLost(files: ReadonlyMap<string, Uint8Array>, objectIds: R
 }
 
 /**
- * The sentence to show when the project's histories come from a newer SlicerX than this one reads: the objects
+ * The sentence to show when the project's histories come from a newer app than this one reads: the objects
  * open, without their history. Null when there is nothing to say.
  */
 export function historyNewer(files: ReadonlyMap<string, Uint8Array>): string | null {
@@ -267,7 +268,7 @@ export function historyNewer(files: ReadonlyMap<string, Uint8Array>): string | n
   try {
     const v = (JSON.parse(new TextDecoder().decode(bytes)) as { version?: unknown }).version
     if (typeof v === 'number' && v > HISTORY_FILE_VERSION) {
-      return `This project's CAD history was saved by a newer SlicerX (history version ${v}). Its objects open without their history; update SlicerX to edit it.`
+      return `This project's CAD history was saved by a newer ${productName()} (history version ${v}). Its objects open without their history; update ${productName()} to edit it.`
     }
   } catch {
     // A damaged part opens without histories, as before.

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The edition config (name, theme, printer families, AI defaults, legal links)
 // the app was built with. Without one the neutral defaults apply.
-import { setProductName } from '@slicerx/contracts'
+import { setProductColors, setProductName } from '@slicerx/contracts'
 import { fontStack, neutralEdition, type EditionConfig, type PrinterFamily } from '@slicerx/edition-config'
 import { createTheme, subban, subbanLight, type Theme, type ThemeColors, type ThemeInput } from '@slicerx/ui'
 import { createContext, useContext } from 'react'
@@ -22,6 +22,7 @@ export function setCurrentEdition(edition: EditionConfig): void {
   current = edition
   // the packages with no edition of their own (settings, the link client, the printer catalog) name it too
   setProductName(edition.brand.name)
+  setProductColors(edition.brand.colors)
 }
 
 export function currentEdition(): EditionConfig {

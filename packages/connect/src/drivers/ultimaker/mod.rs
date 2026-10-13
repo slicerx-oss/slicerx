@@ -252,6 +252,8 @@ impl PrinterConnector for UltiMakerConnector {
     /// Pairing for the printer API: `POST /api/v1/auth/request`, then `GET /api/v1/auth/check/{id}`
     /// every second until someone allows it on the touchscreen. Returns `id:key` to keep in the
     /// keychain. Jobs and print cores need no pairing; only control without the cluster API does.
+    /// `application` and `user` are only shown on the touchscreen prompt; the printer checks the login by `id` and
+    /// `key` alone, so they carry the edition's name (Cura sends "Cura-" and its version).
     async fn authorize(&self, cfg: &PrinterConfig, timeout: Duration) -> Result<Option<String>> {
         let client = http::client(cfg)?;
         let base = http::base_url(cfg, 80);
@@ -259,7 +261,7 @@ impl PrinterConnector for UltiMakerConnector {
             &cfg.id,
             client
                 .post(format!("{base}/api/v1/auth/request"))
-                .form(&[("application", "SlicerX"), ("user", "SlicerX")]),
+                .form(&[("application", crate::app_name()), ("user", crate::app_name())]),
         )
         .await?;
         let v = http::json(&cfg.id, resp).await?;
@@ -719,7 +721,7 @@ impl PrinterSession for UltiMakerSession {
         Ok(Some(ultimaker_hardware(&system, cluster.as_ref())))
     }
 
-    /// Holds the file in SlicerX. An UltiMaker starts a job as soon as it arrives, so the file goes to
+    /// Holds the file in the app. An UltiMaker starts a job as soon as it arrives, so the file goes to
     /// the printer only with the approved start. One file is held at a time.
     async fn upload(&self, file: JobFile, token: &ApprovalToken) -> Result<RemoteFile> {
         self.inner.gate.check(
@@ -742,7 +744,8 @@ impl PrinterSession for UltiMakerSession {
     }
 
     /// Sends the held file to the cluster queue (`POST /cluster-api/v1/print_jobs/`, multipart
-    /// `owner` and `file`, as Cura sends it), which prints it on this printer.
+    /// `owner` and `file`, as Cura sends it), which prints it on this printer. `owner` is free text the printer shows
+    /// with the job (Cura sends `user@` and the computer's name), so it carries the edition's name.
     async fn start(&self, file: &RemoteFile, opts: StartOptions, token: &ApprovalToken) -> Result<()> {
         opts.refuse_slot_map("ultimaker")?;
         self.inner.gate.check(
@@ -761,13 +764,15 @@ impl PrinterSession for UltiMakerSession {
         else {
             return Err(Error::NotFound {
                 printer: self.inner.id().to_owned(),
-                what: "the file to start (send it again; SlicerX holds the file sent last until the start)"
-                    .to_owned(),
+                what: format!(
+                    "the file to start (send it again; {} holds the file sent last until the start)",
+                    crate::app_name()
+                ),
             });
         };
         self.require("start a job", &[PrinterState::Idle]).await?;
         let mut form = Form::new()
-            .text("owner", "SlicerX")
+            .text("owner", crate::app_name())
             .part("file", Part::bytes(job.data).file_name(job.name));
         // A group host routes the job to the printer it is meant for.
         if let Some(unique) = self

@@ -22,7 +22,11 @@
         }
       }
     },
-    "supportEmail": "support@harborprint.example"
+    "supportEmail": "support@harborprint.example",
+    "colors": {
+      "navy": "#1b2a41",
+      "sand": "#e8d8b0"
+    }
   },
   "apps": {
     "web": {

@@ -74,6 +74,13 @@ describe('edition config', () => {
     expect(issues(mergeLayers(NEUTRAL_EDITION, { funding: { githubSponsors: 'not a url' } })).join()).toMatch(/funding/)
   })
 
+  it('takes named brand colors, a lowercase name to a hex color', () => {
+    expect(defineEditionConfig({}).brand.colors).toBeUndefined()
+    expect(issues(mergeLayers(harbor, { brand: { colors: { navy: '#1b2a41', sand: '#E8D8B0' } } }))).toEqual([])
+    expect(issues(mergeLayers(harbor, { brand: { colors: { navy: 'navy' } } })).join()).toMatch(/brand\.colors.*hex color/)
+    expect(issues(mergeLayers(harbor, { brand: { colors: { 'Deep Navy': '#1b2a41' } } })).join()).toMatch(/brand\.colors\.Deep Navy/)
+  })
+
   it('allows the store on demo data without a backend', () => {
     expect(issues(mergeLayers(NEUTRAL_EDITION, { features: { store: true, demoData: true }, legal: { sourceUrl: 'https://example.com/src/{commit}' } }))).toEqual([])
   })

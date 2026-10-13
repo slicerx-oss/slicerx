@@ -16,7 +16,10 @@ export function createTauriAgents(): AgentInstallHost {
   return {
     serverCommand: async () => {
       const path = await invoke<string | null>('mcp_server_path')
-      return path ? { command: 'node', args: [path] } : null
+      if (!path) return null
+      // The edition file names this edition in the server's tool text (SLICERX_CONFIG); without it, SlicerX.
+      const editionFile = await invoke<string>('mcp_edition_file').catch(() => undefined)
+      return { command: 'node', args: [path], ...(editionFile ? { editionFile } : {}) }
     },
     hub: async () => {
       const info = await invoke<{ url: string; code: string; hubKey: string }>('link_start')

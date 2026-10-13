@@ -1,28 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A white-label edition (the Acme Slicer fixture) names itself in the server's tool text, results and errors, as a
-// client sees them. The only SlicerX left is the cloud service's name in its setup text, and SlicerX's brand colors
-// and X mark, which the make_model tool takes by name.
+// client sees them. The only SlicerX left is the cloud service's name in its setup text and SlicerX's X mark, a shape
+// the make_model tool draws.
 import { execFile } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { productName, setProductName } from '@slicerx/contracts'
+import { productName, setProductColors, setProductName } from '@slicerx/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
-import { editionNameFromEnv } from '../src/edition'
+import { editionColorsFromEnv, editionNameFromEnv } from '../src/edition'
 import { connect, text } from './helpers'
 
 const ACME = resolve(__dirname, '../../edition-config/fixtures/acme/acme.json')
 const acmeName = (JSON.parse(readFileSync(ACME, 'utf8')) as { brand: { name: string } }).brand.name
 
-/** What may still say SlicerX: the cloud service's name, the brand colors and the X mark. */
+/** What may still say SlicerX: the cloud service's name and the X mark. */
 const leftover = (s: string) =>
   s
     .replaceAll('the SlicerX cloud service', '')
-    .replace(/SlicerX (black|white|purple|cyan|green|orange|yellow|red|X|logo)/g, '')
+    .replace(/the SlicerX (X|mark)\b|is the SlicerX X/g, '')
     .match(/.{0,60}SlicerX.{0,60}/g) ?? []
 
-afterEach(() => setProductName('SlicerX'))
+afterEach(() => {
+  setProductName('SlicerX')
+  setProductColors(undefined)
+})
 
 describe('a white-label edition over MCP', () => {
   it('reads its name from the resolved edition config SLICERX_CONFIG names', () => {
@@ -30,6 +34,19 @@ describe('a white-label edition over MCP', () => {
     expect(editionNameFromEnv({ SLICERX_CONFIG: ACME })).toBe('Acme Slicer')
     expect(editionNameFromEnv({})).toBeUndefined()
     expect(editionNameFromEnv({ SLICERX_CONFIG: '/nowhere/edition.json' })).toBeUndefined()
+  })
+
+  it('reads its brand colors from the same file, and make_model offers them', async () => {
+    expect(editionColorsFromEnv({ SLICERX_CONFIG: ACME })).toBeUndefined()
+    const file = join(mkdtempSync(join(tmpdir(), 'sx-edition-')), 'edition.json')
+    writeFileSync(file, JSON.stringify({ brand: { name: 'Acme Slicer', colors: { black: '#101010', orange: '#ff6600', 'not a name': '#000000', red: 'red' } } }))
+    expect(editionColorsFromEnv({ SLICERX_CONFIG: file })).toEqual({ black: '#101010', orange: '#ff6600' })
+    setProductName(acmeName)
+    setProductColors(editionColorsFromEnv({ SLICERX_CONFIG: file }))
+    const h = await connect()
+    const { tools } = await h.client.listTools()
+    const make = tools.find((t) => t.name === 'slicerx_make_model')
+    expect(JSON.stringify([make?.description, make?.inputSchema])).toContain('\\"Acme Slicer black\\" or \\"Acme Slicer orange\\"')
   })
 
   it('names itself in the instructions, every tool, its input schema and the resources', async () => {

@@ -1,23 +1,58 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Color names to filament colors, and filament presets for a slot.
+import { DEFAULT_PRODUCT_NAME, productColors, productName } from '@slicerx/contracts'
 import { listFilamentFamilies } from '@slicerx/settings'
 import { parseColor } from '../d_common/index'
 
-/** The SlicerX brand kit (design/tokens.css, editions/slicerx/brand). Black is the kit's ink-1. */
-export const BRAND_COLORS: Record<string, { hex: string; label: string }> = {
-  'slicerx black': { hex: '#17181f', label: 'SlicerX black' },
-  'slicerx ink': { hex: '#17181f', label: 'SlicerX black' },
-  'slicerx white': { hex: '#f8f8f2', label: 'SlicerX white' },
-  'slicerx purple': { hex: '#bd93f9', label: 'SlicerX purple' },
-  'x purple': { hex: '#bd93f9', label: 'SlicerX purple' },
-  'slicerx pink': { hex: '#ff79c6', label: 'X pink' },
-  'x pink': { hex: '#ff79c6', label: 'X pink' },
-  'slicerx cyan': { hex: '#8be9fd', label: 'SlicerX cyan' },
-  'slicerx green': { hex: '#50fa7b', label: 'SlicerX green' },
-  'slicerx orange': { hex: '#ffb86c', label: 'SlicerX orange' },
-  'slicerx yellow': { hex: '#f1fa8c', label: 'SlicerX yellow' },
-  'slicerx red': { hex: '#ff5555', label: 'SlicerX red' },
+/** SlicerX's brand kit (design/tokens.css, editions/slicerx/brand), the palette of an edition without brand.colors. Black is the kit's ink-1. */
+export const KIT_COLORS: Readonly<Record<string, string>> = {
+  black: '#17181f',
+  white: '#f8f8f2',
+  purple: '#bd93f9',
+  pink: '#ff79c6',
+  cyan: '#8be9fd',
+  green: '#50fa7b',
+  orange: '#ffb86c',
+  yellow: '#f1fa8c',
+  red: '#ff5555',
+}
+
+/** Older names the SlicerX edition keeps taking: "<name> ink" is black, and the X mark's "X pink" and "X purple". */
+const KIT_ALIASES: Readonly<Record<string, string>> = { ink: 'black', 'x purple': 'purple', 'x pink': 'pink' }
+
+/** The kit's pink is the X mark's color, so the SlicerX edition labels it "X pink". */
+const KIT_LABELS: Readonly<Record<string, string>> = { pink: 'X pink' }
+
+const key = (text: string): string => text.trim().toLowerCase().replace(/\s+/g, ' ')
+
+/**
+ * The brand colors make_model takes by name: the edition's brand.colors as "<brand name> <color>" (Acme Slicer black),
+ * or SlicerX's kit under the edition's name when it has none. The SlicerX edition keeps its kit's older names too.
+ */
+export function brandColors(): Record<string, { hex: string; label: string }> {
+  const name = productName()
+  const own = productColors()
+  const kit = !own && name === DEFAULT_PRODUCT_NAME
+  const out: Record<string, { hex: string; label: string }> = {}
+  for (const [color, hex] of Object.entries(own ?? KIT_COLORS)) {
+    const label = (kit ? KIT_LABELS[color] : undefined) ?? `${name} ${color}`
+    out[key(`${name} ${color}`)] = { hex, label }
+    if (kit && KIT_LABELS[color]) out[key(label)] = { hex, label }
+  }
+  if (kit) {
+    for (const [alias, color] of Object.entries(KIT_ALIASES)) {
+      const c = out[key(`${name} ${color}`)]
+      if (c) out[alias.includes(' ') ? alias : key(`${name} ${alias}`)] = c
+    }
+  }
+  return out
+}
+
+/** Two brand color names for tool text, such as "Acme Slicer black" and "Acme Slicer pink". */
+export function brandColorExamples(): [string, string] {
+  const labels = [...new Set(Object.values(brandColors()).map((c) => c.label))]
+  return [labels[0] ?? 'black', labels.find((l) => /pink/.test(l)) ?? labels[1] ?? labels[0] ?? 'pink']
 }
 
 export interface ResolvedColor {
@@ -27,10 +62,10 @@ export interface ResolvedColor {
 
 const hex2 = (n: number): string => n.toString(16).padStart(2, '0')
 
-/** A brand name ("SlicerX black", "X pink"), a plain name ("blue") or a hex value. Null when unknown. */
+/** A brand color name (brandColors), a plain name ("blue") or a hex value. Null when unknown. */
 export function resolveColor(text: string): ResolvedColor | null {
-  const t = text.trim().toLowerCase().replace(/\s+/g, ' ')
-  const brand = BRAND_COLORS[t]
+  const t = key(text)
+  const brand = brandColors()[t]
   if (brand) return brand
   const rgb = parseColor(t)
   if (!rgb) return null

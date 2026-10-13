@@ -55,6 +55,26 @@ describe('connect your AI agent', () => {
     expect(h.calls).toHaveLength(2)
   })
 
+  it('hands a white-label build\'s server its edition file, in the link and in every entry to paste', async () => {
+    const editionFile = '/Users/maker/Library/Application Support/com.acme.slicer/mcp/edition.json'
+    const seen: string[] = []
+    const h = host({
+      serverCommand: async () => ({ command: 'node', args: ['/Applications/Acme Slicer.app/Contents/Resources/mcp/slicerx-mcp.mjs'], editionFile }),
+      run: async (_, step) => {
+        if (step.kind === 'deeplink') seen.push(Buffer.from(new URL(step.url).searchParams.get('config') ?? '', 'base64').toString('utf8'))
+        return { ok: true, message: 'done' }
+      },
+    })
+    for (const client of ['cursor', 'codex', 'claude-desktop'] as const) {
+      const r = await installAgent(h.host, client)
+      expect(r.paste, client).toContain('SLICERX_CONFIG')
+      expect(r.paste, client).toContain(editionFile)
+    }
+    expect(JSON.parse(seen[0] ?? '{}').env.SLICERX_CONFIG).toBe(editionFile)
+    // The server path stays the command's own argument.
+    expect(JSON.parse(seen[0] ?? '{}').args).toEqual(['/Applications/Acme Slicer.app/Contents/Resources/mcp/slicerx-mcp.mjs'])
+  })
+
   it('in the browser asks for no credential and points at the desktop app', async () => {
     const r = await installAgent(browserHost, 'codex')
     expect(r.ok).toBe(false)

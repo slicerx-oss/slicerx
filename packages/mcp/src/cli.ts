@@ -12,9 +12,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { createContext, createSlicerxServer, startHttp, SERVER_VERSION, type EngineMode } from './index'
-import { setProductName } from '@slicerx/contracts'
+import { setProductColors, setProductName } from '@slicerx/contracts'
 import { cloudFromEnv } from './cloud'
-import { editionNameFromEnv } from './edition'
+import { editionColorsFromEnv, editionNameFromEnv } from './edition'
 import { localAiFromEnv } from './localai'
 import { sxlockFromEnv } from './sxlock'
 import { linkCodeFrom, linkKeyFrom, readHubKey, readKeychainKey } from './link-code'
@@ -77,8 +77,9 @@ Permissions and records
 
 Edition
   SLICERX_CONFIG names a resolved edition config (edition-config resolve). Tool text,
-  results and errors then name the app by its brand.name instead of SlicerX, and the
-  sx engine this server runs reads the same file.
+  results and errors then name the app by its brand.name instead of SlicerX,
+  make_model takes its brand.colors, and the sx engine this server runs reads the
+  same file.
 
 Every option also reads an environment variable: SLICERX_MCP_<OPTION> in upper
 snake case, such as SLICERX_MCP_ALLOW_DIR (colon separated) or SLICERX_MCP_ENGINE.
@@ -133,6 +134,8 @@ async function main(): Promise<void> {
   // A white-label edition's name in tool text and messages, before any tool is built.
   const name = editionNameFromEnv(process.env)
   if (name) setProductName(name)
+  const colors = editionColorsFromEnv(process.env)
+  if (colors) setProductColors(colors)
 
   const http = values.http ?? flag('HTTP')
   const engine = values.engine ?? env('ENGINE') ?? 'auto'

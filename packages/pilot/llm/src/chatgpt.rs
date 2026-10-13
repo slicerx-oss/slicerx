@@ -582,7 +582,12 @@ pub async fn connect(store: &dyn SecretStore, opts: &ConnectOptions<'_>) -> Resu
     let d = discovery(&opts.endpoints).await?;
     let listener = TcpListener::bind(("127.0.0.1", opts.redirect_port))
         .await
-        .map_err(|_| auth_err("the sign-in port is in use; close the other copy of SlicerX and try again"))?;
+        .map_err(|_| {
+            auth_err(&format!(
+                "the sign-in port is in use; close the other copy of {} and try again",
+                crate::app_name()
+            ))
+        })?;
     let port = listener
         .local_addr()
         .map_err(|_| auth_err("no callback port"))?
@@ -651,6 +656,42 @@ pub async fn connect(store: &dyn SecretStore, opts: &ConnectOptions<'_>) -> Resu
     Ok(s.account())
 }
 
+/// The page the browser shows after the sign-in redirect, naming the app.
+fn callback_page(ok: bool, app: &str) -> (&'static str, String) {
+    let app = html_text(app);
+    let (status, text) = if ok {
+        (
+            "200 OK",
+            format!("Signed in. You can close this tab and go back to {app}."),
+        )
+    } else {
+        (
+            "400 Bad Request",
+            format!("This sign-in link is not valid. Go back to {app} and try again."),
+        )
+    };
+    let page = format!(
+        "<!doctype html><meta charset=utf-8><title>{app}</title><body style=\"font:16px system-ui;padding:48px\">{text}</body>"
+    );
+    (status, page)
+}
+
+/// `text` escaped for HTML: an edition's name is plain text, never markup.
+fn html_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Reads one GET request at a time until the real callback arrives. Anything else
 /// (favicon, a wrong state) gets an error page and the wait goes on.
 async fn wait_for_callback(listener: &TcpListener, port: u16, state: &str) -> Result<Callback> {
@@ -673,19 +714,7 @@ async fn wait_for_callback(listener: &TcpListener, port: u16, state: &str) -> Re
         }
         let head = String::from_utf8_lossy(buf.get(..n).unwrap_or_default()).into_owned();
         let outcome = parse_callback(&head, port, state);
-        let (status, text) = match &outcome {
-            Ok(_) => (
-                "200 OK",
-                "Signed in. You can close this tab and go back to SlicerX.",
-            ),
-            Err(_) => (
-                "400 Bad Request",
-                "This sign-in link is not valid. Go back to SlicerX and try again.",
-            ),
-        };
-        let page = format!(
-            "<!doctype html><meta charset=utf-8><title>SlicerX</title><body style=\"font:16px system-ui;padding:48px\">{text}</body>"
-        );
+        let (status, page) = callback_page(outcome.is_ok(), crate::app_name());
         let reply = format!(
             "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
             page.len()
@@ -868,9 +897,10 @@ pub async fn disconnect(store: &dyn SecretStore, endpoints: &Endpoints) -> Resul
     store.delete(CHATGPT_KEYCHAIN_SERVICE, CHATGPT_KEYCHAIN_ACCOUNT)?;
     let d = discovery(endpoints).await?;
     let Some(url) = d.revocation_endpoint else {
-        return Err(auth_err(
-            "revocation is not offered; disconnect SlicerX in ChatGPT settings",
-        ));
+        return Err(auth_err(&format!(
+            "revocation is not offered; disconnect {} in ChatGPT settings",
+            crate::app_name()
+        )));
     };
     post_form(
         &url,

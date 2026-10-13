@@ -10,7 +10,7 @@ import { check, scan } from './check-brand-strings.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-test('no hard-coded SlicerX in the MCP server, mimir, embed, viewport, link client, hub or engine text', () => {
+test('no hard-coded SlicerX in the MCP server, mimir, embed, viewport, link client, hub, printer drivers, CAD history or engine text', () => {
   assert.deepEqual(check(root), [])
 })
 
@@ -23,6 +23,13 @@ test('catches a new hard-coded name in a message, a tool description, JSX text a
   assert.deepEqual(scan('packages/mcp/src/new-tool.ts', ts).map((h) => h.line), [1, 2, 3])
   assert.equal(scan('packages/embed/src/panel.tsx', '      <p>SlicerX could not read this file.</p>').length, 1)
   assert.equal(scan('packages/connect/link/src/hub.rs', '    eprintln!("Open SlicerX and pair again");').length, 1)
+  // the printer drivers, mimir's ChatGPT sign-in and the CAD history reader are in scope
+  assert.equal(scan('packages/connect/src/drivers/ultimaker/mod.rs', '                .form(&[("application", "SlicerX"), ("user", "SlicerX")]),').length, 1)
+  assert.equal(scan('packages/pilot/llm/src/chatgpt.rs', '                "Signed in. You can close this tab and go back to SlicerX.",').length, 1)
+  assert.equal(scan('packages/cad-history/src/read.ts', "      return `saved by a newer SlicerX (history version ${v})`").length, 1)
+  // make_model's brand colors come from the edition; only the X mark keeps the name
+  assert.equal(scan('packages/pilot/skills/make_model/colors.ts', "  'slicerx black': { hex: '#17181f', label: 'SlicerX black' },").length, 1)
+  assert.equal(scan('packages/pilot/skills/make_model/index.ts', "    mark: z.enum(['slicerx-x', 'svg']).describe('slicerx-x is the SlicerX X. svg needs the svg field'),").length, 0)
   // a template literal over several lines is still text
   assert.equal(scan('packages/mcp/src/x.ts', 'const t = `first line\nsecond line names SlicerX`').length, 1)
 })

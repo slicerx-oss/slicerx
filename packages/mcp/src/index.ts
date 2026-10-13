@@ -37,9 +37,9 @@ export { createSlicerxServer, SERVER_NAME, SERVER_VERSION, serverTools, type Ser
 export { startHttp, type HttpOptions } from './http'
 export { AGENT_CLIENTS, agentKeyRef, installSteps, serverEnv, SERVER_ID, type AgentClient, type AgentClientId, type InstallInput, type InstallStep } from './agents'
 export { CLOUD_NOT_CONFIGURED, cloudFromEnv, type CloudOptions } from './cloud'
-export { editionNameFromEnv } from './edition'
+export { editionColorsFromEnv, editionNameFromEnv } from './edition'
 // The app's name in tool text and messages: an app that runs the server in its own process sets its edition's name.
-export { productName, setProductName } from '@slicerx/contracts'
+export { productColors, productName, setProductColors, setProductName } from '@slicerx/contracts'
 export { SXLOCK_NOT_CONFIGURED, sxlockFromEnv, type SxlockOptions } from './sxlock'
 export { DataStore, resolveDataPaths } from './data'
 export { DEFAULT_POLICY_PATH, loadPolicy } from './policy'
