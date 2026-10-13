@@ -308,6 +308,11 @@ export interface AppState {
   strikeJump: { timeS: number; seq: number } | null
   /** The strike the pointer is over in the collision list: its mark shows on any layer. */
   strikeHover: number | null
+  /**
+   * Show me on a refused slice: the spot it names (plate frame, mm), the excluded area it enters if it names one, and
+   * the refusal it belongs to. The mark shows while that refusal is the slice on screen.
+   */
+  refusalSpot: { x: number; y: number; z: number; area: [number, number][] | null; slice: SliceState } | null
   shortcutsOpen: boolean
   /** A prompt handed to the Pilot workspace by a command; it clears it once started. */
   pilotPrompt: string | null
@@ -671,6 +676,7 @@ export const appStore = createStore<AppState>()(() => ({
   strikePick: null,
   strikeJump: null,
   strikeHover: null,
+  refusalSpot: null,
   shortcutsOpen: false,
   pilotPrompt: null,
   fleetRefresh: 0,
