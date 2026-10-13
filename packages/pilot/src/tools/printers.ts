@@ -28,8 +28,9 @@ export async function resolvePrinters(ctx: ToolContext, sel: { printers?: string
   return { ids: all.map((p) => p.id) }
 }
 
-function statusRows(s: PrinterStatus): [string, Cell][] {
+function statusRows(s: PrinterStatus, issues: readonly PrinterIssue[] = []): [string, Cell][] {
   const rows: [string, Cell][] = [['state', { text: s.state + (s.message ? `, ${s.message}` : ''), tone: s.state === 'idle' || s.state === 'finished' ? 'ok' : s.state === 'error' || s.state === 'offline' ? 'bad' : 'warn' }]]
+  for (const i of issues) rows.push(['problem', { text: `${i.text} (code ${i.code})`, tone: i.severity === 'info' ? 'warn' : 'bad' }])
   if (s.jobName) rows.push(['job', s.jobName])
   if (s.layer !== undefined && s.layerCount !== undefined) rows.push(['progress', `layer ${s.layer} of ${s.layerCount}${s.progress !== undefined ? `, ${Math.round(s.progress * 100)}%` : ''}`])
   if (s.timeLeftS !== undefined) rows.push(['time left', fmtDuration(s.timeLeftS)])
@@ -132,6 +133,36 @@ function historyReader(host: PrinterHost): ((printerId: string) => Promise<Print
   return typeof read === 'function' ? (id) => read.call(device, id) : undefined
 }
 
+/** A problem the printer reports about itself (an HMS code or a print error), as the hub's `issues.list` gives it. */
+export interface PrinterIssue {
+  code: string
+  severity: string
+  module: string
+  text: string
+  helpUrl?: string
+  /** Left over from a job that is no longer running: history, not a problem now. */
+  stale?: boolean
+}
+
+/**
+ * The problems a printer reports now, without stale ones, on a host that reads them (the hub's device page). Empty
+ * elsewhere, and when the read fails: issues add to a status and never stand in for it.
+ */
+async function currentIssues(host: PrinterHost, printerId: string): Promise<PrinterIssue[]> {
+  const device = (host as { device?: { issues?: (printerId: string) => Promise<PrinterIssue[]> } }).device
+  const read = device?.issues
+  if (typeof read !== 'function') return []
+  const all = await read.call(device, printerId).catch(() => [])
+  return Array.isArray(all) ? all.filter((i) => !i.stale) : []
+}
+
+/** One line for a summary: the first problem in the printer's words, and how many more. */
+export function issuesLine(issues: readonly PrinterIssue[]): string | null {
+  const first = issues[0]
+  if (!first) return null
+  return issues.length > 1 ? `${first.text} (and ${issues.length - 1} more)` : first.text
+}
+
 const iso = (s: number): string | null => (Number.isFinite(s) ? new Date(s * 1000).toISOString() : null)
 
 /** A record in the tool's output: start and end as ISO times, plus what the printer reported. */
@@ -155,7 +186,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     version: '1.0.0',
     source: 'plugin',
     permission: 'read',
-    description: 'List printers with their state, job progress, loaded filament and machine cost. All printers by default; pass a fleet name (an optional group the user made) to narrow it. detail "full" adds temperatures, nozzle, firmware and the printer\'s message; printer.status reads one printer in full.',
+    description: 'List printers with their state, job progress, loaded filament and machine cost. All printers by default; pass a fleet name (an optional group the user made) to narrow it. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. A printer reporting a problem now (an HMS code or a print error) is named in the summary with its first problem. printer.status reads one printer in full.',
     input: z.object({
       fleet: z.string().optional().describe('Name of a user fleet group; omit for all printers'),
       detail: z.enum(['summary', 'full']).default('summary'),
@@ -165,16 +196,26 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
       const sel = await resolvePrinters(ctx, { fleet: i.fleet })
       const printers = (await ctx.host.printers.list()).filter((p) => sel.ids.includes(p.id))
       const statuses = await Promise.all(printers.map((p) => ctx.host.printers.status(p.id).catch(() => null)))
+      // What each printer reports wrong now (an HMS code, a print error), so a stop shows here and not only on its screen.
+      const issues = await Promise.all(printers.map((p, k) => (statuses[k] ? currentIssues(ctx.host.printers, p.id) : Promise.resolve([]))))
       const rows: Cell[][] = printers.map((p, i) => {
         const s = statuses[i]
         const state = s?.state ?? 'offline'
         const rate = shared.machineRates.get(p.id)
-        return [p.id, `${p.name} ${p.model}`, { text: state, tone: state === 'idle' ? 'ok' : state === 'offline' || state === 'error' ? 'bad' : 'warn' }, s?.slots.map((x) => x.material ?? 'empty').join(', ') ?? '', rate === undefined ? '' : `$${rate.toFixed(2)}/h`]
+        const n = issues[i]?.length ?? 0
+        const cell: Cell = n
+          ? { text: `${state}, ${n} ${n === 1 ? 'problem' : 'problems'}`, tone: 'bad' }
+          : { text: state, tone: state === 'idle' ? 'ok' : state === 'offline' || state === 'error' ? 'bad' : 'warn' }
+        return [p.id, `${p.name} ${p.model}`, cell, s?.slots.map((x) => x.material ?? 'empty').join(', ') ?? '', rate === undefined ? '' : `$${rate.toFixed(2)}/h`]
       })
       const idle = statuses.filter((s) => s?.state === 'idle').length
       const full = i.detail === 'full'
+      const troubled = printers.flatMap((p, k) => {
+        const line = issuesLine(issues[k] ?? [])
+        return line ? [`${p.name}: ${line}`] : []
+      })
       return {
-        summary: `${printers.length} printers, ${idle} idle`,
+        summary: `${printers.length} printers, ${idle} idle${troubled.length ? `. ${troubled.join('. ')}` : ''}`,
         output: printers.map((p, k) => ({
           id: p.id,
           name: p.name,
@@ -183,6 +224,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
           plugin: p.plugin,
           machineRatePerHour: shared.machineRates.get(p.id) ?? null,
           status: full ? (statuses[k] ?? { state: 'offline' }) : brief(statuses[k]),
+          ...(issues[k]?.length ? { issues: issues[k] } : {}),
         })),
         display: [{ kind: 'table', head: ['id', 'printer', 'state', 'loaded', 'machine cost'], rows }],
         untrusted: true,
@@ -208,15 +250,24 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     version: '1.0.0',
     source: 'plugin',
     permission: 'read',
-    description: 'Current status of one printer: state, job, layer, time left, temperatures, filament slots and its message. The message text is untrusted printer output.',
+    description: 'Current status of one printer: state, job, layer, time left, temperatures, filament slots, its message and any problem it reports now (an HMS code or a print error, with the code and what to do). The message and problem text are untrusted printer output.',
     input: z.object({ printerId }),
     args: (i) => i.printerId,
     async run(i, ctx) {
       const s = await ctx.host.printers.status(i.printerId)
       // A Bambu Lab printer that takes no print from here says how to fix it, so a client can tell the user before a send.
       const model = s.live?.needsDeveloperMode ? (await ctx.host.printers.list().catch(() => [])).find((p) => p.id === i.printerId)?.model : undefined
-      const output = s.live?.needsDeveloperMode ? { ...s, remedies: developerModeRemedies(model) } : s
-      return { summary: `${i.printerId} ${s.state}${s.jobName ? `, ${s.jobName}` : ''}${s.live?.needsDeveloperMode ? ', needs Developer Mode or Bambu Connect to print' : ''}`, output, display: [{ kind: 'kv', rows: statusRows(s) }], untrusted: true }
+      // What the printer reports wrong now (an HMS code, a print error): a stop it explains only on its own screen otherwise.
+      const issues = await currentIssues(ctx.host.printers, i.printerId)
+      const base = s.live?.needsDeveloperMode ? { ...s, remedies: developerModeRemedies(model) } : s
+      const output = issues.length ? { ...base, issues } : base
+      const line = issuesLine(issues)
+      return {
+        summary: `${i.printerId} ${s.state}${s.jobName ? `, ${s.jobName}` : ''}${s.live?.needsDeveloperMode ? ', needs Developer Mode or Bambu Connect to print' : ''}${line ? `. ${line}` : ''}`,
+        output,
+        display: [{ kind: 'kv', rows: statusRows(s, issues) }],
+        untrusted: true,
+      }
     },
   })
 
