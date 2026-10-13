@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // mimir cloud: the edition's model proxy on its Supabase project (supabase/functions/mimir), free per day with no
 // key. The desktop app registers a host whose commands run in Rust (packages/pilot/llm cloud.rs): the install token
-// lives in the keychain and the webview never sees it. The browser build has no host, so it never offers the cloud.
+// lives in the keychain and the webview never sees it. The browser build registers its own host (browser-cloud.ts),
+// which runs for signed-in members only.
 // This module loads with the shell; the edition check is in cloud-edition.ts, loaded with the pilot.
 import { useSyncExternalStore } from 'react'
 
@@ -28,6 +29,11 @@ export interface MimirCloudHost {
   forget(): Promise<number>
   /** Registers this install again (a new token). */
   register(): Promise<void>
+  /**
+   * The browser build's host sends mimir's model calls itself (browser-cloud.ts), with the member's session; the desktop's
+   * go through its Rust transport and leave this out.
+   */
+  send?(url: string, init: { method: string; headers: Record<string, string>; body?: string }, signal?: AbortSignal): Promise<Response>
 }
 
 let host: MimirCloudHost | null = null
@@ -38,7 +44,7 @@ let testBase: string | null = null
 /** The test hook's stand-in proxy address, if a script set one. */
 export const cloudTestBase = (): string | null => testBase
 
-/** Called once by an app entry whose shell carries mimir cloud (the desktop app). */
+/** Called by an app entry whose shell carries mimir cloud: once on the desktop, on each sign-in or sign-out in the browser. */
 export function registerMimirCloud(h: MimirCloudHost | null): void {
   host = h
   for (const l of listeners) l()

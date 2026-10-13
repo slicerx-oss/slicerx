@@ -1,25 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The mimir proxy's routes. Nobody signs in: an install registers for a token, and every
-// model call reserves its worst case against the install's, the address's and the
-// edition's daily caps (migrations/0020_mimir_proxy.sql), then settles what it used.
+// The mimir proxy's routes. The desktop editions' installs register for a token; the web
+// edition (slicerx-web) takes the signed-in user's Supabase session instead, and its user
+// stands where an install would. Every model call reserves its worst case against the
+// install's (or user's), the address's and the edition's daily caps
+// (migrations/0020_mimir_proxy.sql, 0026_mimir_web_users.sql), then settles what it used.
 //   POST register        {edition, key}          -> {install, token}
-//   POST v1/messages     Messages API, streamed  (x-sx-install: token)
-//   GET  quota                                   (x-sx-install: token): v1 fields, plus v2 (fractions for
-//                                                 a usage page)
-//   POST forget          deletes saved chats (x-sx-install: token)
+//   POST v1/messages     Messages API, streamed  (x-sx-install: token, or authorization: Bearer session)
+//   GET  quota                                   (the same): v1 fields, plus v2 (fractions for a usage page)
+//   POST forget          deletes saved chats (the same)
 // Saved chats: a call is saved when the edition saves by default (alpha: SlicerX) or the
 // client sends x-sx-share: 1, never with x-sx-share: 0. x-sx-session and x-sx-version file it; without
 // them it goes under one key per install and Melbourne day.
 // Every error is {type: 'error', error: {type, code, message, ...}}; errors.ts has the codes.
+// Browsers: only the web app's pages (https://slicerx.app) may call it; a request from any other page is refused.
 import { MAX_BODY_BYTES, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
 import { capRefusal, errorId, installRef, logLine, type MimirCode, PAUSED, providerPaused } from './errors.ts'
+import { type Jwks, verifySession } from './jwt.ts'
 
 export interface Env {
   supabaseUrl: string
   serviceKey: string
   anthropicKey: string
+  // the web edition's own provider key, so its spend is apart from the desktop's
+  anthropicWebKey?: string
+  // the project's signing keys, for the web edition's sessions
+  jwks?: Jwks
+  // the sessions' issuer, when it is not this project's own URL (a local stack's is)
+  issuer?: string
   upstream: string
   ipSource: 'cf-connecting-ip' | 'x-forwarded-for-last'
   waitUntil?: (p: Promise<unknown>) => void
@@ -127,9 +136,32 @@ async function alertPaused(env: Env, status: number, line: string, id: string): 
   }).catch((e) => console.error('mimir alert failed:', e instanceof Error ? e.message : 'unknown'))
 }
 
-function token(req: Request): string | null {
-  const t = req.headers.get('x-sx-install') ?? ''
-  return TOKEN.test(t) ? t : null
+const WEB = 'slicerx-web'
+
+// Who is calling: an install's token, or a signed-in web user, whose install the database
+// keeps under their id (mimir_user_token). The token never leaves the server for a web user.
+type Caller = { tok: string; key: string }
+async function caller(req: Request, env: Env, ip: string): Promise<Caller | Response> {
+  const auth = req.headers.get('authorization') ?? ''
+  if (!auth) {
+    const t = req.headers.get('x-sx-install') ?? ''
+    if (!TOKEN.test(t)) return fail(401, 'not_registered', 'This install is not registered with mimir.', { reason: 'unknown_install' })
+    return { tok: t, key: env.anthropicKey }
+  }
+  const m = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(auth)
+  if (!env.jwks || !env.anthropicWebKey) {
+    logLine('error', { code: 'paused', status: 503, provider: 'web edition not set up: no web key or signing keys' })
+    return fail(503, 'paused', PAUSED, { reason: 'web_not_set_up' })
+  }
+  const v = m ? await verifySession(m[1]!, env.jwks, env.issuer || `${env.supabaseUrl}/auth/v1`) : { ok: false as const, reason: 'malformed' as const }
+  if (!v.ok) return fail(401, 'sign_in', 'Sign in to use mimir.', { reason: 'sign_in' })
+  if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
+  try {
+    const tok = (await rpc(env, 'mimir_user_token', { p_edition: WEB, p_user: v.user, p_ip: ip })) as string
+    return { tok, key: env.anthropicWebKey }
+  } catch (e) {
+    return rpcFailure(e)
+  }
 }
 
 async function readBody(req: Request, max = MAX_BODY_BYTES): Promise<string | null> {
@@ -179,8 +211,10 @@ export function dayKey(now = new Date()): string {
 }
 
 async function messages(req: Request, env: Env): Promise<Response> {
-  const tok = token(req)
-  if (!tok) return fail(401, 'not_registered', 'This install is not registered with mimir.', { reason: 'unknown_install' })
+  const ip = clientIp(req, env.ipSource)
+  const who = await caller(req, env, ip)
+  if (who instanceof Response) return who
+  const tok = who.tok
   const text = await readBody(req)
   if (text === null) return fail(413, 'too_large', 'The conversation is too large for mimir.')
   let raw: unknown
@@ -191,7 +225,6 @@ async function messages(req: Request, env: Env): Promise<Response> {
   }
   const s = shape(raw)
   if (!s.ok) return fail(400, 'invalid_request', s.error)
-  const ip = clientIp(req, env.ipSource)
   if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
 
   const reserve = (prompt: number) =>
@@ -213,7 +246,7 @@ async function messages(req: Request, env: Env): Promise<Response> {
     call = await reserve(s.promptEstimate)
   } catch (e) {
     // the byte count overstates most prompts; when it is what hit a cap, count exactly and try once more
-    const exact = e instanceof RpcError && DAILY_CAPS.has(e.hint) ? await countTokens(env, s.body) : null
+    const exact = e instanceof RpcError && DAILY_CAPS.has(e.hint) ? await countTokens(env, s.body, who.key) : null
     if (exact === null) return refused(e)
     try {
       call = await reserve(exact)
@@ -259,7 +292,7 @@ async function messages(req: Request, env: Env): Promise<Response> {
   try {
     up = await (env.fetch ?? fetch)(`${env.upstream}/v1/messages`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': env.anthropicKey, 'anthropic-version': '2023-06-01' },
+      headers: { 'content-type': 'application/json', 'x-api-key': who.key, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify(marked(s.body, await installMark(tok))),
     })
   } catch (e) {
@@ -348,7 +381,7 @@ export function withoutThinking(messages: unknown): { messages: unknown; bytes: 
 // The prompt's token count from the provider, or null when it cannot say. Thinking blocks
 // are counted a token a byte instead, signature and all: the signature carries the whole
 // thinking, so that never undercounts.
-async function countTokens(env: Env, body: Obj): Promise<number | null> {
+async function countTokens(env: Env, body: Obj, key: string): Promise<number | null> {
   const { model, system, tools, tool_choice } = body
   const { messages, bytes } = withoutThinking(body['messages'])
   // with its blocks gone, the thinking setting would ask for them back
@@ -356,7 +389,7 @@ async function countTokens(env: Env, body: Obj): Promise<number | null> {
   try {
     const res = await (env.fetch ?? fetch)(`${env.upstream}/v1/messages/count_tokens`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': env.anthropicKey, 'anthropic-version': '2023-06-01' },
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({ model, system, messages, tools, tool_choice, thinking }),
     })
     if (!res.ok) {
@@ -370,7 +403,29 @@ async function countTokens(env: Env, body: Obj): Promise<number | null> {
   }
 }
 
+// The pages a browser may call from: only the web app. The desktop and other clients send no Origin.
+const ORIGINS = new Set(['https://slicerx.app'])
+const ALLOW_HEADERS = 'content-type, accept, authorization, x-sx-install, x-sx-share, x-sx-session, x-sx-version'
+
+export function allowedOrigin(origin: string): boolean {
+  return ORIGINS.has(origin)
+}
+
 export async function handle(req: Request, env: Env): Promise<Response> {
+  const origin = req.headers.get('origin')
+  if (origin === null) return route(req, env)
+  if (!allowedOrigin(origin)) return fail(403, 'origin_refused', 'mimir does not take calls from this page.')
+  const cors = { 'access-control-allow-origin': origin, vary: 'Origin' }
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...cors, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': ALLOW_HEADERS, 'access-control-max-age': '600' } })
+  }
+  const res = await route(req, env)
+  const headers = new Headers(res.headers)
+  for (const [k, v] of Object.entries(cors)) headers.set(k, v)
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
+}
+
+async function route(req: Request, env: Env): Promise<Response> {
   const path = new URL(req.url).pathname.replace(/\/+$/, '')
   const route = path.slice(path.indexOf('/mimir') + '/mimir'.length)
   try {
@@ -400,22 +455,22 @@ export async function handle(req: Request, env: Env): Promise<Response> {
       }
     }
     if (route === '/quota' && req.method === 'GET') {
-      const tok = token(req)
-      if (!tok) return fail(401, 'not_registered', 'This install is not registered with mimir.', { reason: 'unknown_install' })
       const ip = clientIp(req, env.ipSource)
+      const who = await caller(req, env, ip)
+      if (who instanceof Response) return who
       if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
       try {
-        const [rows, v2] = await Promise.all([rpc(env, 'mimir_quota', { p_token: tok, p_ip: ip }) as Promise<Obj[]>, rpc(env, 'mimir_usage', { p_token: tok })])
+        const [rows, v2] = await Promise.all([rpc(env, 'mimir_quota', { p_token: who.tok, p_ip: ip }) as Promise<Obj[]>, rpc(env, 'mimir_usage', { p_token: who.tok })])
         return json(200, { ...(rows[0] ?? {}), v2 })
       } catch (e) {
         return rpcFailure(e)
       }
     }
     if (route === '/forget' && req.method === 'POST') {
-      const tok = token(req)
-      if (!tok) return fail(401, 'not_registered', 'This install is not registered with mimir.', { reason: 'unknown_install' })
+      const who = await caller(req, env, clientIp(req, env.ipSource))
+      if (who instanceof Response) return who
       try {
-        return json(200, { deleted: await rpc(env, 'mimir_forget', { p_token: tok }) })
+        return json(200, { deleted: await rpc(env, 'mimir_forget', { p_token: who.tok }) })
       } catch (e) {
         return rpcFailure(e)
       }

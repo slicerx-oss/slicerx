@@ -6,6 +6,7 @@
 import type { LlmHttpRequest, LlmTransport } from '@slicerx/contracts'
 import { PROVIDERS, type KeyStore, type PilotProvider } from './keys'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
+import { mimirCloudHost } from './cloud'
 
 export interface ConnectConfig {
   provider: PilotProvider
@@ -60,14 +61,29 @@ export function browserTransport(store: KeyStore, config: () => ConnectConfig | 
   return {
     async available() {
       const c = config()
-      // mimir cloud runs through the desktop host only
-      if (!c || c.provider === 'mimir-cloud') return false
+      if (!c) return false
+      // mimir cloud runs through a host that sends for it: the browser build's, while the member is signed in
+      if (c.provider === 'mimir-cloud') {
+        const h = mimirCloudHost()
+        return typeof h?.send === 'function' && h.needsSignIn !== true
+      }
       return !PROVIDERS[c.provider].needsKey || store.has(c.provider)
     },
     async *stream(req: LlmHttpRequest, signal?: AbortSignal) {
       const c = config()
       if (!c) throw new Error(`${ASSISTANT_NAME} is not connected.`)
-      if (c.provider === 'mimir-cloud') throw new Error(`${ASSISTANT_NAME} cloud runs in the desktop app.`)
+      if (c.provider === 'mimir-cloud') {
+        const host = mimirCloudHost()
+        if (!host?.send) throw new Error(`${ASSISTANT_NAME} cloud is not part of this build.`)
+        const res = await host.send(req.url, { method: req.method, headers: req.headers, ...(req.body !== undefined ? { body: req.body } : {}) }, signal)
+        if (!res.body) return
+        const reader = res.body.getReader()
+        for (;;) {
+          const { value, done } = await reader.read()
+          if (done) return
+          if (value) yield value
+        }
+      }
       if (c.provider === 'local' && !localAllowed(req.url)) throw new Error('A local model must run on this computer or your home network.')
       // A local server's key is optional; the desktop host adds it itself and reads null here.
       const key = PROVIDERS[c.provider].needsKey || c.provider === 'local' ? await store.get(c.provider) : null

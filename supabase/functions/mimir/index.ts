@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // mimir's cloud model, as a Supabase edge function (handler.ts has the routes).
-// Secrets: ANTHROPIC_API_KEY (set by the owner); SUPABASE_URL and
-// SUPABASE_SERVICE_ROLE_KEY come from the platform.
+// Secrets: ANTHROPIC_API_KEY, and ANTHROPIC_API_KEY_WEB for the web edition (set by the
+// owner); SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY come from the platform.
 //
 // The client address: Supabase's hosted functions sit behind Cloudflare, which sets
 // cf-connecting-ip itself and overwrites what a client sends. Supabase's gateway appends
@@ -13,12 +13,17 @@
 // Check it on the host before relying on the IP cap: two networks must show different
 // IP use on quota, and a spoofed x-forwarded-for must change nothing.
 import { type Env, handle } from './handler.ts'
+import { Jwks } from './jwt.ts'
 
 const src = Deno.env.get('MIMIR_CLIENT_IP_SOURCE') === 'x-forwarded-for-last' ? 'x-forwarded-for-last' : 'cf-connecting-ip'
+const supabaseUrl = (Deno.env.get('SUPABASE_URL') ?? '').replace(/\/+$/, '')
 const env: Env = {
-  supabaseUrl: (Deno.env.get('SUPABASE_URL') ?? '').replace(/\/+$/, ''),
+  supabaseUrl,
   serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   anthropicKey: Deno.env.get('ANTHROPIC_API_KEY') ?? '',
+  anthropicWebKey: Deno.env.get('ANTHROPIC_API_KEY_WEB') ?? '',
+  issuer: Deno.env.get('MIMIR_AUTH_ISSUER') ?? '',
+  jwks: new Jwks(`${supabaseUrl}/auth/v1/.well-known/jwks.json`),
   upstream: (Deno.env.get('MIMIR_UPSTREAM') ?? 'https://api.anthropic.com').replace(/\/+$/, ''),
   ipSource: src,
   waitUntil: (p) => (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(p),

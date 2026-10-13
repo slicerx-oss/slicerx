@@ -84,6 +84,13 @@ if (__SX_E2E__) {
   }
 }
 
+// The end-to-end build exposes the browser's mimir cloud host, to point at a proxy the spec stubs
+// (apps/web/e2e/mimir-web-cloud.spec.ts) with a stand-in session token, or none for signed out.
+if (__SX_E2E__ && __SX_FEATURE_PILOT__) {
+  const { createBrowserMimirCloud } = await import('@slicerx/app/pilot-connect/browser-cloud')
+  Object.assign(window, { __sxBrowserMimirCloud: (base: string, token: string | null) => createBrowserMimirCloud({ base, session: () => token }) })
+}
+
 const el = document.getElementById('root')
 if (!el) throw new Error('index.html is missing #root')
 const config = editionFromBuild()
@@ -103,6 +110,23 @@ if (__SX_FEATURE_STORE__) {
     configureRelayTokens(sb && config.backend.relay ? { url: sb.url, anonKey: sb.anonKey } : null)
     store.onTokenChange((t) => pushAccountToken(t))
     void store.getAccessToken().then((t) => pushAccountToken(t), () => pushAccountToken(null))
+  }
+  // mimir cloud, for signed-in members only: the host sends the member's session token to the edition's proxy, which
+  // checks it and caps the web edition per user. No key ships in the bundle. A new host goes in on each sign-in and
+  // sign-out, so the app shows the cloud as ready or as a sign-in step.
+  const mimirUrl = config.ai.keySource === 'cloud' ? config.backend.supabase?.url : undefined
+  if (__SX_FEATURE_PILOT__ && mimirUrl) {
+    const [{ registerMimirCloud }, { createBrowserMimirCloud }] = await Promise.all([import('@slicerx/app'), import('@slicerx/app/pilot-connect/browser-cloud')])
+    const base = `${new URL(mimirUrl).origin}/functions/v1/mimir`
+    let token: string | null = null
+    registerMimirCloud(createBrowserMimirCloud({ base, session: () => token }))
+    const seen = (t: string | null) => {
+      const flipped = (t === null) !== (token === null)
+      token = t
+      if (flipped) registerMimirCloud(createBrowserMimirCloud({ base, session: () => token }))
+    }
+    store.onTokenChange(seen)
+    void store.getAccessToken().then(seen, () => seen(null))
   }
   // Saved .sx3mf files name the person who exported them; empty when signed out.
   const { setExportIdentity } = await import('@slicerx/app')

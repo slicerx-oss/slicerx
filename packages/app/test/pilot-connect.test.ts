@@ -238,12 +238,12 @@ describe('mimir cloud', () => {
     expect(pilotModel(CLOUD, null)?.provider).toBe('anthropic')
   })
 
-  it('is never sent from the browser transport', async () => {
+  it('is not sent from the browser transport without a host that sends for it', async () => {
     const t = browserTransport(browserStore(null), () => ({ provider: 'mimir-cloud' }))
     expect(await t.available('mimir-cloud')).toBe(false)
     await expect(async () => {
       for await (const _ of t.stream({ provider: 'mimir-cloud', url: `${onCloud.baseUrl}/v1/messages`, method: 'POST', headers: {}, body: '{}' })) void _
-    }).rejects.toThrow(/desktop app/)
+    }).rejects.toThrow(/not part of this build/)
   })
 
   it('keeps the cloud choice and the share switch in prefs, sharing on by default', () => {

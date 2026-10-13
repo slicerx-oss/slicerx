@@ -6,7 +6,8 @@ import { assert, assertEquals, assertMatch } from 'jsr:@std/assert@1.0.13'
 import { MAX_OUTPUT, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
 import { inWords, resetsAt } from './errors.ts'
-import { clientIp, dayKey, type Env, handle, marked, withoutThinking } from './handler.ts'
+import { allowedOrigin, clientIp, dayKey, type Env, handle, marked, withoutThinking } from './handler.ts'
+import { Jwks, verifySession } from './jwt.ts'
 import geomCut from './geom_cut_0.1.4.json' with { type: 'json' }
 
 type Obj = Record<string, unknown>
@@ -279,6 +280,7 @@ function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Res
         if (fn === 'mimir_install_edition') return Response.json('slicerx')
         if (fn === 'mimir_quota') return Response.json([QUOTA_V1])
         if (fn === 'mimir_usage') return Response.json(USAGE)
+        if (fn === 'mimir_user_token') return Response.json('b'.repeat(64))
         return Response.json(null)
       }
       sent.push({ url, headers: new Headers(init?.headers), body })
@@ -754,4 +756,137 @@ Deno.test('register, quota and forget', async () => {
   const f = await handle(post('/forget', {}, { 'x-sx-install': TOKEN }), h.env)
   assertEquals(await f.json(), { deleted: 2 })
   assertEquals((await handle(new Request('http://fn/functions/v1/mimir/nope'), h.env)).status, 404)
+})
+
+Deno.test('browsers call from the web app only, with CORS on every answer', async () => {
+  assert(allowedOrigin('https://slicerx.app'))
+  for (const o of ['http://localhost:5173', 'http://127.0.0.1:4391', 'https://evil.example', 'http://slicerx.app', 'https://slicerx.app.evil.example', 'http://localhost.evil.example', 'null']) assert(!allowedOrigin(o), o)
+  const h = harness()
+  const pre = await handle(new Request('http://fn/functions/v1/mimir/v1/messages', { method: 'OPTIONS', headers: { origin: 'https://slicerx.app', 'access-control-request-headers': 'content-type, x-sx-install' } }), h.env)
+  assertEquals(pre.status, 204)
+  assertEquals(pre.headers.get('access-control-allow-origin'), 'https://slicerx.app')
+  assertMatch(pre.headers.get('access-control-allow-headers') ?? '', /x-sx-install/)
+  assertMatch(pre.headers.get('access-control-allow-headers') ?? '', /x-sx-session/)
+  // the stream and a refusal both carry it, so the page can read either
+  const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN, origin: 'https://slicerx.app' }), h.env)
+  assertEquals(res.headers.get('access-control-allow-origin'), 'https://slicerx.app')
+  assertMatch(await res.text(), /A 20 mm /)
+  await Promise.all(h.pending)
+  const bad = await handle(post('/register', { edition: 'Bad Edition', key: 'k'.repeat(20) }, { origin: 'https://slicerx.app' }), h.env)
+  assertEquals(bad.status, 400)
+  assertEquals(bad.headers.get('access-control-allow-origin'), 'https://slicerx.app')
+  // another page gets nothing, and nothing reaches the database
+  const n = h.calls.length
+  const other = await handle(post('/register', { edition: 'slicerx-web', key: 'k'.repeat(20) }, { origin: 'https://evil.example' }), h.env)
+  assertEquals(other.status, 403)
+  assertEquals(other.headers.get('access-control-allow-origin'), null)
+  assertEquals((await handle(new Request('http://fn/functions/v1/mimir/register', { method: 'OPTIONS', headers: { origin: 'https://evil.example' } }), h.env)).status, 403)
+  assertEquals(h.calls.length, n)
+})
+
+// Sessions for the web edition: a key pair standing in for the project's, and another project's.
+const enc = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+const ISSUER = 'http://db/auth/v1'
+const USER = '0b0b0b0b-0000-4000-8000-000000000001'
+const pair = () => crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']) as Promise<CryptoKeyPair>
+const ours = await pair()
+const theirs = await pair()
+const ourJwk = { ...(await crypto.subtle.exportKey('jwk', ours.publicKey)), kid: 'k1', alg: 'ES256', key_ops: ['verify'] }
+async function session(claims: Obj = {}, o: { key?: CryptoKey; kid?: string; alg?: string } = {}): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const head = enc({ alg: o.alg ?? 'ES256', kid: o.kid ?? 'k1', typ: 'JWT' })
+  const body = enc({ iss: ISSUER, aud: 'authenticated', role: 'authenticated', sub: USER, exp: now + 3600, iat: now, is_anonymous: false, ...claims })
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, o.key ?? ours.privateKey, new TextEncoder().encode(`${head}.${body}`))
+  return `${head}.${body}.${btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')}`
+}
+function webHarness() {
+  const h = harness()
+  let fetched = 0
+  h.env.anthropicWebKey = 'sk-ant-web'
+  h.env.jwks = new Jwks('http://db/auth/v1/.well-known/jwks.json', (async () => {
+    fetched++
+    return Response.json({ keys: [ourJwk] })
+  }) as typeof fetch)
+  return { ...h, fetches: () => fetched }
+}
+const bearer = (t: string) => ({ authorization: `Bearer ${t}` })
+
+Deno.test('a signed-in member calls as the web edition, keyed by their id, on the web key', async () => {
+  const h = webHarness()
+  const res = await handle(post('/v1/messages', base(), { ...bearer(await session()), origin: 'https://slicerx.app' }), h.env)
+  assertEquals(res.status, 200)
+  assertEquals(res.headers.get('access-control-allow-origin'), 'https://slicerx.app')
+  assertMatch(await res.text(), /A 20 mm /)
+  await Promise.all(h.pending)
+  // the database decides whether the turn is saved (the web edition's default is off)
+  assertEquals(h.calls.map((c) => c.fn), ['mimir_user_token', 'mimir_reserve', 'mimir_settle', 'mimir_save_chat'])
+  assertEquals(h.calls[0]!.args, { p_edition: 'slicerx-web', p_user: USER, p_ip: '9.9.9.9' })
+  assertEquals(h.calls[1]!.args['p_token'], 'b'.repeat(64))
+  assertEquals(h.sent[0]!.headers.get('x-api-key'), 'sk-ant-web')
+  // quota and forget go the same way; the key set was fetched once
+  assertEquals((await handle(new Request('http://fn/functions/v1/mimir/quota', { headers: { ...bearer(await session()), 'cf-connecting-ip': '9.9.9.9' } }), h.env)).status, 200)
+  assertEquals(await (await handle(post('/forget', {}, bearer(await session())), h.env)).json(), { deleted: 2 })
+  assertEquals(h.calls.filter((c) => c.fn === 'mimir_forget')[0]!.args, { p_token: 'b'.repeat(64) })
+  assertEquals(h.fetches(), 1)
+  // the browser may send the header
+  const pre = await handle(new Request('http://fn/functions/v1/mimir/v1/messages', { method: 'OPTIONS', headers: { origin: 'https://slicerx.app' } }), h.env)
+  assertMatch(pre.headers.get('access-control-allow-headers') ?? '', /authorization/)
+})
+
+Deno.test('no session, an expired one, another project\'s, or a forged one is refused before the database', async () => {
+  const h = webHarness()
+  const now = Math.floor(Date.now() / 1000)
+  const refused: [string, Record<string, string>][] = [
+    ['no token', {}],
+    ['empty bearer', { authorization: 'Bearer ' }],
+    ['not a jwt', bearer('not-a-jwt')],
+    ['expired', bearer(await session({ exp: now - 120 }))],
+    ['not yet valid', bearer(await session({ nbf: now + 600 }))],
+    ['other project issuer', bearer(await session({ iss: 'https://other.supabase.co/auth/v1' }))],
+    ['other project key', bearer(await session({}, { key: theirs.privateKey }))],
+    ['unknown kid', bearer(await session({}, { kid: 'k9' }))],
+    ['anon key', bearer(await session({ role: 'anon', sub: undefined }))],
+    ['anonymous user', bearer(await session({ is_anonymous: true }))],
+    ['service role', bearer(await session({ role: 'service_role' }))],
+    ['hs256', bearer(await session({}, { alg: 'HS256' }))],
+    ['tampered', bearer((await session()).replace(/\.([^.]+)\./, (_m, b: string) => `.${enc({ ...JSON.parse(atob(b.replace(/-/g, '+').replace(/_/g, '/'))), sub: '0b0b0b0b-0000-4000-8000-000000000002' })}.`))],
+  ]
+  for (const [what, headers] of refused) {
+    const res = await handle(post('/v1/messages', base(), headers), h.env)
+    assertEquals(res.status, 401, what)
+    const reason = ((await res.json()) as { error: Obj }).error['reason']
+    assertEquals(reason, what === 'no token' ? 'unknown_install' : 'sign_in', what)
+  }
+  assertEquals(h.calls.length, 0)
+  assertEquals(h.sent.length, 0)
+})
+
+Deno.test('the session check, on its own', async () => {
+  const jwks = new Jwks('x', (async () => Response.json({ keys: [ourJwk] })) as typeof fetch)
+  assertEquals(await verifySession(await session(), jwks, ISSUER), { ok: true, user: USER })
+  assertEquals(await verifySession(await session({ exp: Math.floor(Date.now() / 1000) - 10 }), jwks, ISSUER), { ok: true, user: USER }, 'within the skew')
+  assertEquals((await verifySession(await session({ aud: 'other' }), jwks, ISSUER)).ok, false)
+  assertEquals(await verifySession(await session({ sub: 'nope' }), jwks, ISSUER), { ok: false, reason: 'malformed' })
+  // the key set is fetched again for an unknown kid, at most once a minute
+  let n = 0
+  let t = 0
+  const slow = new Jwks('x', (async () => (n++, Response.json({ keys: [ourJwk] }))) as typeof fetch, () => t)
+  await verifySession(await session({}, { kid: 'k9' }), slow, ISSUER)
+  await verifySession(await session({}, { kid: 'k9' }), slow, ISSUER)
+  assertEquals(n, 1)
+  t = 61_000
+  await verifySession(await session({}, { kid: 'k9' }), slow, ISSUER)
+  assertEquals(n, 2)
+})
+
+Deno.test('a server without the web key or key set refuses sessions, and desktop installs never use the web key', async () => {
+  const h = harness()
+  const res = await handle(post('/v1/messages', base(), bearer(await session())), h.env)
+  assertEquals(res.status, 503)
+  assertEquals(h.calls.length, 0)
+  const w = webHarness()
+  await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), w.env)
+  await Promise.all(w.pending)
+  assertEquals(w.sent[0]!.headers.get('x-api-key'), 'sk-ant-test')
+  assertEquals(w.calls.some((c) => c.fn === 'mimir_user_token'), false)
 })
