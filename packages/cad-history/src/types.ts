@@ -95,11 +95,12 @@ export type SketchConstraint =
   | { type: 'angle'; a: SketchCurveRef; b: SketchCurveRef; value: number }
   | { type: 'lineDistance'; point: SketchPointRef; line: SketchCurveRef; value: number }
 
-/** A loop closes when its last segment ends within 0.001 mm of start. */
-export type SketchLoop =
+/** A loop closes when its last segment ends within 0.001 mm of start. A construction loop is kept for constraints and never makes a profile. */
+export type SketchLoop = (
   | { start: Vec2; segments: SketchSegment[] }
   | { type: 'circle'; center: Vec2; diameterMm: number }
   | { points: Vec2[] }
+) & { construction?: true }
 
 /** A face that moved, as face.push reports it (world). Pass it to evaluateDimensions. */
 export interface MovedFace {

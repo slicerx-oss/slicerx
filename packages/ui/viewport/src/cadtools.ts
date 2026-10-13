@@ -15,6 +15,7 @@ import {
   Group,
   Line,
   LineBasicMaterial,
+  LineDashedMaterial,
   LineSegments,
   Matrix4,
   Mesh,
@@ -196,7 +197,7 @@ export class PushPreview {
 }
 
 /** normal is free geometry; defined is fully defined by its constraints, fixed is held by Fix. */
-export type SketchTone = 'normal' | 'defined' | 'fixed' | 'selected' | 'issue' | 'soft' | 'axis' | 'grid'
+export type SketchTone = 'normal' | 'defined' | 'fixed' | 'selected' | 'issue' | 'soft' | 'axis' | 'grid' | 'construction'
 
 /** What the sketch layer shows, all in plane coordinates (mm). */
 export interface SketchScene {
@@ -234,6 +235,8 @@ const TONE: Record<SketchTone, { color: string; opacity: number }> = {
   soft: { color: '#bd93f9', opacity: 0.55 },
   axis: { color: '#ffb86c', opacity: 1 },
   grid: { color: '#6272a4', opacity: 0.32 },
+  // dashed (see below), in the theme's selection color
+  construction: { color: '#bd93f9', opacity: 0.9 },
 }
 
 /** Room for the line being drawn: an arc preview needs the most points. */
@@ -271,7 +274,9 @@ export class SketchLayer {
     this.group.matrixAutoUpdate = false
     this.group.visible = false
     for (const [tone, t] of Object.entries(TONE) as [SketchTone, { color: string; opacity: number }][]) {
-      this.mats.set(tone, new LineBasicMaterial({ color: new Color(t.color), transparent: true, opacity: t.opacity, depthTest: false, toneMapped: false }))
+      const o = { color: new Color(t.color), transparent: true, opacity: t.opacity, depthTest: false, toneMapped: false }
+      // construction lines dash in mm on the plane, as Fusion draws them
+      this.mats.set(tone, tone === 'construction' ? new LineDashedMaterial({ ...o, dashSize: 1.2, gapSize: 0.8 }) : new LineBasicMaterial(o))
     }
     const bandGeo = new BufferGeometry()
     bandGeo.setAttribute('position', new BufferAttribute(this.bandPos, 3))
@@ -333,13 +338,14 @@ export class SketchLayer {
       if (p.closed && pts.length > 2) push(p.tone ?? 'normal', pts[pts.length - 1]!, pts[0]!)
     }
     // Draw order: grid, soft, normal, axis, selected, issue on top.
-    const order: SketchTone[] = ['grid', 'soft', 'normal', 'defined', 'fixed', 'axis', 'selected', 'issue']
+    const order: SketchTone[] = ['grid', 'soft', 'construction', 'normal', 'defined', 'fixed', 'axis', 'selected', 'issue']
     order.forEach((tone, k) => {
       const pos = byTone.get(tone)
       if (!pos?.length) return
       const geo = new BufferGeometry()
       geo.setAttribute('position', new Float32BufferAttribute(pos, 3))
       const seg = new LineSegments(geo, this.mats.get(tone))
+      if (tone === 'construction') seg.computeLineDistances()
       seg.renderOrder = 6 + k * 0.1
       seg.raycast = () => {}
       this.group.add(seg)
@@ -469,6 +475,7 @@ export class SketchLayer {
   /** Construction lines take the theme's selection color. */
   setAccent(hex: string): void {
     this.mats.get('soft')?.color.set(hex)
+    this.mats.get('construction')?.color.set(hex)
   }
 
   dispose(): void {

@@ -63,6 +63,9 @@ pub struct Loop {
     pub center: Option<V2>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diameter_mm: Option<f64>,
+    // construction geometry: kept for constraints, never a profile
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub construction: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -618,10 +621,25 @@ fn crossings(rings: &[&[V2]], eps: f64) -> Vec<(usize, usize, usize, usize)> {
     out
 }
 
+// no loops at all, or only construction ones
+fn no_profile(loops: &[Loop]) -> Option<Issue> {
+    let msg = if loops.is_empty() {
+        "The sketch has no loops."
+    } else if loops.iter().all(|l| l.construction) {
+        "The sketch has only construction lines."
+    } else {
+        return None;
+    };
+    Some(issue(0, None, IssueKind::TooSmall, msg.to_owned(), None))
+}
+
 pub fn check(loops: &[Loop]) -> SketchCheck {
     let mut issues = Vec::new();
     let mut rings: Vec<(usize, Ring)> = Vec::new();
     for (l, lp) in loops.iter().enumerate() {
+        if lp.construction {
+            continue;
+        }
         match flatten(l, lp) {
             Ok(r) if r.pts.len() < 3 => issues.push(issue(
                 l,
@@ -634,15 +652,7 @@ pub fn check(loops: &[Loop]) -> SketchCheck {
             Err(e) => issues.push(e),
         }
     }
-    if loops.is_empty() {
-        issues.push(issue(
-            0,
-            None,
-            IssueKind::TooSmall,
-            "The sketch has no loops.".to_owned(),
-            None,
-        ));
-    }
+    issues.extend(no_profile(loops));
     let size = rings
         .iter()
         .flat_map(|(_, r)| r.pts.iter())
@@ -1501,6 +1511,28 @@ mod tests {
         let back = loops(json!([{ "points": [[0, 0], [10, 0], [5, 0], [5, 5]] }]));
         assert!(!check(&back).ok);
         assert!(!check(&[]).ok);
+    }
+
+    #[test]
+    fn construction_loops_are_no_profile() {
+        // an open construction line crossing the square: no issue, one profile, loop indices kept
+        let l = loops(json!([
+            { "start": [-5, 5], "segments": [{ "type": "line", "to": [15, 5] }], "construction": true },
+            { "points": [[0, 0], [10, 0], [10, 10], [0, 10]] },
+        ]));
+        let c = check(&l);
+        assert!(c.ok, "{:?}", c.issues);
+        assert_eq!(c.polygons.len(), 1);
+        let only =
+            loops(json!([{ "type": "circle", "center": [0, 0], "diameterMm": 4, "construction": true }]));
+        assert!(check(&only).issues[0].message.contains("only construction"));
+        // the flag round trips, and plain loops leave it out
+        assert!(
+            serde_json::to_string(&l[0])
+                .unwrap()
+                .contains("\"construction\":true")
+        );
+        assert!(!serde_json::to_string(&l[1]).unwrap().contains("construction"));
     }
 
     #[test]

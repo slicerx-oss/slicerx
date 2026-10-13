@@ -61,6 +61,7 @@ import {
   type V2,
   pickedText,
   profileRings,
+  toggleConstruction,
 } from './sketch-model'
 
 interface Plane {
@@ -77,7 +78,7 @@ interface Plane {
 
 /** What each tool wants clicked, in order. */
 const HINTS: Record<DrawTool, string> = {
-  select: 'Click a line to pick it, drag a point to move it. Delete removes the picked line.',
+  select: 'Click a line to pick it, drag a point to move it. Delete removes it, X makes it construction.',
   line: 'Click point after point. Click the first point to close, right click to stop.',
   rect: 'Click two opposite corners.',
   rect3: 'Click the two ends of one edge, then out to the width.',
@@ -416,7 +417,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     sketch.forEach((e, i) => {
       for (const p of entityPaths(e)) {
         const isSel = selected?.e === i && selected.seg === p.seg
-        const tone: SketchTone = bad.has(`${i}:${p.seg}`) || bad.has(`${i}:-1`) ? 'issue' : isSel ? (finish === 'revolve' && axis ? 'axis' : 'selected') : toneOf(states?.get(`${i}:${p.seg}`))
+        const tone: SketchTone = bad.has(`${i}:${p.seg}`) || bad.has(`${i}:-1`) ? 'issue' : isSel ? (finish === 'revolve' && axis ? 'axis' : 'selected') : e.construction ? 'construction' : toneOf(states?.get(`${i}:${p.seg}`))
         paths.push({ points: p.points, ...(p.closed ? { closed: true } : {}), tone })
       }
     })
@@ -499,6 +500,12 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       const typing = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
       if (typing) return
       const l = live.current
+      // X turns the picked curve into construction geometry and back, as in Fusion
+      if (e.key.toLowerCase() === 'x' && !e.metaKey && !e.ctrlKey && !e.altKey && !featureOnly && l.draft.tool === 'select' && l.selected) {
+        e.preventDefault()
+        setSketch(toggleConstruction(l.sketch, l.selected.e))
+        return
+      }
       // Fusion's tool keys: L line, R 2-point rectangle, C center circle
       const key = TOOL_KEYS[e.key.toLowerCase()]
       if (key && !e.metaKey && !e.ctrlKey && !e.altKey && !featureOnly) {
@@ -768,6 +775,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
               <Num id="sk-offset" label="Offset this loop" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
               <Button size="sm" variant="ghost" onClick={() => void doOffset()}>Offset</Button>
               <Button size="sm" variant="ghost" icon="delete" onClick={() => { setSketch((s) => s.filter((_, i) => i !== selected!.e)); setSelected(null) }}>Delete loop</Button>
+          <Button size="sm" variant="ghost" aria-pressed={sel.construction === true} data-tip-title="Construction" data-tip-key="X" data-tip-body="A construction curve stays in the sketch for constraints and snaps, and makes no profile." onClick={() => setSketch((s) => toggleConstruction(s, selected!.e))}>Construction</Button>
             </div>
           ) : null}
           {draft.tool === 'select' && sel?.kind === 'chain' ? (
