@@ -254,7 +254,7 @@ Deno.test('the passed-on stream folds cache counts into the input count', () => 
 
 // A fake database and provider, recording what reaches them.
 const QUOTA_V1 = { edition: 'slicerx', day: '2026-10-13', install_used: 250000, install_cap: 1000000, ip_used: 250000, ip_cap: 2000000, edition_open: true }
-const USAGE = { day: { used: 0.25, resetsAt: '2026-10-13T13:00:00Z' }, week: { used: 0.05, resetsAt: '2026-10-13T13:00:00Z' }, hourly: Array.from({ length: 24 }, (_, i) => (i === 23 ? 0.25 : 0)), perMinute: { limit: 10 } }
+const USAGE = { day: { used: 0.25, resetsAt: '2026-10-13T13:00:00Z' }, hourly: Array.from({ length: 24 }, (_, i) => (i === 23 ? 0.25 : 0)), daily: [0, 0, 0.1, 0, 0, 0.4, 0.25], perMinute: { limit: 10 } }
 function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Response; count?: (body: Obj) => Response; forget?: () => Response } = {}) {
   const calls: { fn: string; args: Obj }[] = []
   const sent: { url: string; headers: Headers; body: Obj }[] = []

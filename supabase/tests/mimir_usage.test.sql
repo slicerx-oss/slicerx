@@ -1,10 +1,10 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright (C) 2026 The SlicerX contributors
--- mimir_usage: an install's day, week and last 24 hours as shares of its caps, open calls at
+-- mimir_usage: an install's day, last 24 hours and last 7 days as shares of its daily cap, open calls at
 -- install_call_micros; and mimir_install_edition. Run with `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(16);
 
 create temp table t (k text primary key, v text) on commit drop;
 grant all on t to service_role;
@@ -22,6 +22,8 @@ set local role service_role;
 insert into t values ('a', pg_temp.reg('slicerx', '10.0.4.1'));
 select is((public.mimir_usage((select v from t where k = 'a')) -> 'day' ->> 'used')::numeric, 0::numeric, 'a new install has used nothing');
 select is(jsonb_array_length(public.mimir_usage((select v from t where k = 'a')) -> 'hourly'), 24, 'hourly has the last 24 hours');
+select is(jsonb_array_length(public.mimir_usage((select v from t where k = 'a')) -> 'daily'), 7, 'daily has the last 7 days');
+select ok(not (public.mimir_usage((select v from t where k = 'a')) ? 'week'), 'there is no week share, since there is no weekly cap');
 select is((public.mimir_usage((select v from t where k = 'a')) -> 'perMinute' ->> 'limit')::int,
   (select install_per_minute from public.mimir_limits where edition = 'slicerx'), 'perMinute is the install''s rate limit');
 select is((public.mimir_usage((select v from t where k = 'a')) -> 'day' ->> 'resetsAt')::timestamptz,
@@ -35,15 +37,15 @@ insert into t values ('c2', public.mimir_reserve((select v from t where k = 'a')
 select is((public.mimir_usage((select v from t where k = 'a')) -> 'day' ->> 'used')::numeric, 0.3, 'an open call counts at the clamp');
 select is((public.mimir_usage((select v from t where k = 'a')) -> 'hourly' ->> 23)::numeric, 0.3, 'the hour under way holds both');
 select is((public.mimir_usage((select v from t where k = 'a')) -> 'hourly' ->> 0)::numeric, 0::numeric, 'the oldest hour is empty');
-select is((public.mimir_usage((select v from t where k = 'a')) -> 'week' ->> 'used')::numeric, round(0.3 / 7, 4), 'the week is against 7 days of cap');
+select is((public.mimir_usage((select v from t where k = 'a')) -> 'daily' ->> 6)::numeric, 0.3, 'today is the last day');
 
--- a call from yesterday counts in the week and not in today
+-- a call from yesterday counts on yesterday and not today
 reset role;
 update public.mimir_calls set day = public.mimir_day() - 1, created_at = now() - interval '25 hours'
 where id = (select v::uuid from t where k = 'c1');
 set local role service_role;
 select is((public.mimir_usage((select v from t where k = 'a')) -> 'day' ->> 'used')::numeric, 0.05, 'yesterday is not today');
-select is((public.mimir_usage((select v from t where k = 'a')) -> 'week' ->> 'used')::numeric, round(0.3 / 7, 4), 'but it is this week');
+select is((public.mimir_usage((select v from t where k = 'a')) -> 'daily' ->> 5)::numeric, 0.25, 'it is the day before');
 
 select is(public.mimir_install_edition((select v from t where k = 'a')), 'slicerx', 'the edition an install belongs to');
 select throws_ok($$ select public.mimir_usage('nope') $$, 'P0001', 'unknown install', 'an unknown token gets nothing');
