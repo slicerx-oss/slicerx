@@ -7,9 +7,9 @@
 import { appStore, fullPlate, markStale, type AppState } from '../state/store'
 
 /** What one step restores. */
-export type Snapshot = Pick<AppState, 'plate' | 'selection'> & Partial<Pick<AppState, 'selectedIds' | 'plates' | 'activePlate' | 'objectSettings' | 'slotSetup' | 'flush'>>
+export type Snapshot = Pick<AppState, 'plate' | 'selection'> & Partial<Pick<AppState, 'selectedIds' | 'plates' | 'activePlate' | 'objectSettings' | 'slotSetup' | 'flush' | 'timeline'>>
 
-const KEYS = ['plate', 'selection', 'selectedIds', 'plates', 'activePlate', 'objectSettings', 'slotSetup', 'flush'] as const
+const KEYS = ['plate', 'selection', 'selectedIds', 'plates', 'activePlate', 'objectSettings', 'slotSetup', 'flush', 'timeline'] as const
 
 export interface History {
   undo(): boolean
