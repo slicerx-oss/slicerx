@@ -33,12 +33,12 @@ export const MODEL_ICONS = {
   modifier: dash(CUBE),
   // the box primitive, wider than it is tall
   // sketch tools: the curve with its end points, as the sketch draws them
-  'sk-line': '<path d="M5 19L19 5"/>' + DOT(5, 19) + DOT(19, 5),
-  'sk-rect': '<rect x="3.5" y="6.5" width="17" height="11" rx="0.5"/>' + DOT(3.5, 17.5) + DOT(20.5, 6.5),
-  'sk-circle': '<circle cx="12" cy="12" r="8.5"/>' + DOT(12, 12),
-  'sk-arc': '<path d="M4 18a8.5 8.5 0 0 1 16 0"/>' + DOT(4, 18) + DOT(20, 18),
-  'sk-polygon': '<path d="M12 3.25l7.6 4.4v8.7L12 20.75l-7.6-4.4v-8.7z"/>' + DOT(12, 12, 1.25),
-  'sk-slot': '<rect x="2.75" y="7.75" width="18.5" height="8.5" rx="4.25"/>' + DOT(7, 12, 1.25) + DOT(17, 12, 1.25),
+  'sk-line': '<path d="M6.5 17.5l11-11"/><rect x="3.5" y="17.5" width="3" height="3" rx="0.5"/><rect x="17.5" y="3.5" width="3" height="3" rx="0.5"/>',
+  'sk-rect': '<path d="M5 6.5h15.5v11H5"/><path d="M3.5 16V8"/><rect x="2.0" y="5.0" width="3" height="3" rx="0.5"/><rect x="19.0" y="16.0" width="3" height="3" rx="0.5"/>',
+  'sk-circle': '<circle cx="11" cy="13" r="8"/><rect x="9.5" y="11.5" width="3" height="3" rx="0.5"/><rect x="17.5" y="11.5" width="3" height="3" rx="0.5"/>',
+  'sk-arc': '<path d="M4 18a8.5 8.5 0 0 1 16 0"/><rect x="2.5" y="16.5" width="3" height="3" rx="0.5"/><rect x="18.5" y="16.5" width="3" height="3" rx="0.5"/><rect x="10.5" y="8.0" width="3" height="3" rx="0.5"/>',
+  'sk-polygon': '<path d="M12.00 3.50L4.64 7.75L4.64 16.25L12.00 20.50L19.36 16.25L19.36 7.75z"/><rect x="10.5" y="10.5" width="3" height="3" rx="0.5"/><rect x="10.5" y="2.0" width="3" height="3" rx="0.5"/>',
+  'sk-slot': '<rect x="2.75" y="7.75" width="18.5" height="8.5" rx="4.25"/><rect x="5.5" y="10.5" width="3" height="3" rx="0.5"/><rect x="15.5" y="10.5" width="3" height="3" rx="0.5"/>',
   'box-shape': '<path d="M12 5l8.5 4v7.5L12 20.5l-8.5-4V9z"/><path d="M3.5 9 12 13l8.5-4M12 13v7.5"/>',
   // copies in a row
   'array-linear': '<rect x="2.5" y="9.5" width="5" height="5" rx="1"/>' + dash('<rect x="9.5" y="9.5" width="5" height="5" rx="1"/><rect x="16.5" y="9.5" width="5" height="5" rx="1"/>', '1.6 1.8'),
