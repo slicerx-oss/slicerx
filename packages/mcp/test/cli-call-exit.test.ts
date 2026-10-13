@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// `slicerx-mcp --printers link call ...` run the way a client runs it: as its own process, against a hub on a loopback
-// port. It has to print its result and exit by itself, 0 when every call worked and 1 when a call failed or the hub
-// can't be reached. The open link to the hub used to keep the process running after the last result.
+// `slicerx-mcp --printers link` run the way a client runs it: as its own process, against a hub on a loopback port.
+// `call ...` has to print its result and exit by itself, 0 when every call worked and 1 when a call failed or the hub
+// can't be reached. The stdio server has to answer what it read and exit when the client closes stdin. The open link
+// to the hub used to keep the process running in both.
 import { spawn } from 'node:child_process'
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
@@ -100,15 +101,21 @@ interface Run {
   exitedAfterMs: number | undefined
 }
 
-/** Runs the CLI as a client would, and stops it (by its own pid) when it outlives a bounded wait. */
-function runCli(port: number, hubKey: string, dir: string, calls: string[]): Promise<Run> {
+/** The CLI's environment and arguments for a link run against the hub on `port`, then `extra` (such as `call ...`). */
+function cliSetup(port: number, hubKey: string, dir: string, extra: string[]): { env: Record<string, string>; args: string[] } {
   const env: Record<string, string> = {}
   // Nothing from the caller's own setup (a hub port, a link code or key) reaches the run.
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith('SLICERX_MCP_') && k !== 'SX_TEST_HUB_PORT') env[k] = v
   // A saved key goes only to a hub that proves the pinned key.
   env['SLICERX_MCP_LINK_KEY'] = PARTNER_KEY
   env['SLICERX_MCP_LINK_HUB_KEY'] = hubKey
-  const args = ['--import', 'tsx', 'src/cli.ts', '--engine', 'stub', '--printers', 'link', '--link-url', `ws://127.0.0.1:${port}`, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles'), 'call', ...calls]
+  const args = ['--import', 'tsx', 'src/cli.ts', '--engine', 'stub', '--printers', 'link', '--link-url', `ws://127.0.0.1:${port}`, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles'), ...extra]
+  return { env, args }
+}
+
+/** Runs the CLI as a client would, and stops it (by its own pid) when it outlives a bounded wait. */
+function runCli(port: number, hubKey: string, dir: string, calls: string[]): Promise<Run> {
+  const { env, args } = cliSetup(port, hubKey, dir, ['call', ...calls])
   const child = spawn(process.execPath, args, { cwd: resolve(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
@@ -131,6 +138,41 @@ function runCli(port: number, hubKey: string, dir: string, calls: string[]): Pro
     child.on('exit', (code) => {
       clearInterval(check)
       done({ code, stdout, stderr, exitedAfterMs: Date.now() - (stdout ? lastLine : started) })
+    })
+  })
+}
+
+/**
+ * Runs the stdio server as a client would: once it has started (its first stderr line), writes `messages` to stdin as
+ * JSON lines and closes stdin at once. Stops it (by its own pid) when it is still running a bounded wait after that.
+ */
+function runStdio(port: number, hubKey: string, dir: string, messages: object[]): Promise<Run> {
+  const { env, args } = cliSetup(port, hubKey, dir, [])
+  const child = spawn(process.execPath, args, { cwd: resolve(__dirname, '..'), env, stdio: ['pipe', 'pipe', 'pipe'] })
+  let stdout = ''
+  let stderr = ''
+  let endedAt: number | undefined
+  child.stdout.on('data', (d: Buffer) => void (stdout += d.toString()))
+  child.stderr.on('data', (d: Buffer) => {
+    stderr += d.toString()
+    if (endedAt === undefined && stderr.includes('\n')) {
+      endedAt = Date.now()
+      child.stdin.end(messages.map((m) => `${JSON.stringify(m)}\n`).join(''))
+    }
+  })
+  return new Promise((done) => {
+    const started = Date.now()
+    const check = setInterval(() => {
+      const now = Date.now()
+      if ((endedAt !== undefined && now - endedAt > EXIT_WITHIN_MS) || now - started > RUN_LIMIT_MS) {
+        clearInterval(check)
+        child.kill()
+        done({ code: null, stdout, stderr, exitedAfterMs: undefined })
+      }
+    }, 100)
+    child.on('exit', (code) => {
+      clearInterval(check)
+      done({ code, stdout, stderr, exitedAfterMs: Date.now() - (endedAt ?? started) })
     })
   })
 }
@@ -178,5 +220,44 @@ describe('slicerx-mcp --printers link call, as its own process', () => {
     expect(r.code).toBe(1)
     expect(r.stdout).toBe('')
     expect(r.stderr).toMatch(/Cannot reach sx-link/)
+  }, 60_000)
+})
+
+describe('slicerx-mcp --printers link as a stdio server, as its own process', () => {
+  let hub: Awaited<ReturnType<typeof startFakeHub>>
+  const dir = mkdtempSync(join(tmpdir(), 'slicerx-mcp-stdio-exit-'))
+
+  beforeAll(async () => {
+    hub = await startFakeHub()
+  })
+
+  afterAll(async () => {
+    await hub?.stop()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('exits when the client closes stdin, and closes the link', async () => {
+    const r = await runStdio(hub.port, hub.hubKey, dir, [])
+    expect(r.exitedAfterMs, `still running ${EXIT_WITHIN_MS} ms after stdin closed; stderr: ${r.stderr}`).toBeDefined()
+    expect(r.code, r.stderr).toBe(0)
+    expect(r.stdout).toBe('')
+    expect(hub.open()).toBe(0)
+  }, 60_000)
+
+  it('answers the requests it read before stdin closed, then exits', async () => {
+    const before = hub.methods.length
+    const r = await runStdio(hub.port, hub.hubKey, dir, [
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'exit-test', version: '1' } } },
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'slicerx_printer_list', arguments: {} } },
+    ])
+    expect(r.exitedAfterMs, `still running ${EXIT_WITHIN_MS} ms after stdin closed; stderr: ${r.stderr}`).toBeDefined()
+    expect(r.code, r.stderr).toBe(0)
+    const replies = r.stdout.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { id: number; result?: { isError?: boolean } })
+    expect(replies.map((m) => m.id)).toEqual([1, 2])
+    expect(replies[1]?.result?.isError).not.toBe(true)
+    // The printer list came from the hub, and the hub saw the client go.
+    expect(hub.methods.slice(before)).toContain('list')
+    expect(hub.open()).toBe(0)
   }, 60_000)
 })
