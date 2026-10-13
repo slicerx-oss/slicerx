@@ -400,6 +400,8 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
     let user = ''
     let dataServer: Server | undefined
     let dataReady: Promise<TLSSocket> | undefined
+    // The data connections of the current PASV, so a refused STOR can drop them as a printer may.
+    let dataConns: Socket[] = []
     const reply = (s: string) => ctl.write(`${s}\r\n`)
     ctl.on('error', () => undefined)
     reply('220 sx mock ftps')
@@ -424,6 +426,8 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
         case 'TYPE': reply('200 ok'); break
         case 'PASV': {
           dataServer = createTlsServer(tls)
+          dataConns = []
+          dataServer.on('connection', (s: Socket) => dataConns.push(s))
           dataReady = new Promise<TLSSocket>((resolve) => dataServer?.once('secureConnection', resolve))
           const port = await listen(dataServer)
           reply(`227 Entering Passive Mode (127,0,0,1,${port >> 8},${port & 255})`)
@@ -433,7 +437,14 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
           if (!authed || !dataReady) { reply('530 not logged in'); break }
           if (extra.developerMode === false) { log.push(`refused STOR ${arg}`); reply('550 not authorized'); break }
           if (extra.authorizationControl === 'silent') { log.push(`dropped STOR ${arg}`); dataServer?.close(); ctl.destroy(); break }
-          if (extra.storageFull) { log.push(`full STOR ${arg}`); dataServer?.close(); reply('452 insufficient storage space'); break }
+          if (extra.storageFull) {
+            // A full card drops the data connection before its handshake, then answers on the control connection.
+            log.push(`full STOR ${arg}`)
+            for (const s of dataConns) s.destroy()
+            dataServer?.close()
+            reply('452 insufficient storage space')
+            break
+          }
           const name = arg
           reply('150 send it')
           const sock = await dataReady

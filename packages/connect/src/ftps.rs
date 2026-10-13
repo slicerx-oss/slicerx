@@ -250,10 +250,21 @@ async fn run(t: &FtpsTarget<'_>, name: &str, data: &[u8]) -> Result<()> {
         .await
         .map_err(|e| Error::unreachable(t.printer, e))?;
     send(t, &mut wr, &format!("STOR {name}")).await?;
-    let mut dtls = connector
-        .connect(server_name, dtcp)
-        .await
-        .map_err(|e| Error::unreachable(t.printer, e))?;
+    let mut dtls = match connector.connect(server_name, dtcp).await {
+        Ok(d) => d,
+        // A server that turns STOR away (a full card: 452) may drop the data connection before
+        // its handshake. Its reply on the control connection says why, so that decides the error;
+        // with no reply in time the printer is unreachable.
+        Err(e) => {
+            if let Ok(Ok(code)) = tokio::time::timeout(Duration::from_secs(5), reply(t, &mut rd)).await
+                && code != 150
+                && code != 125
+            {
+                return Err(stor_failure(t.printer, code, "STOR"));
+            }
+            return Err(Error::unreachable(t.printer, e));
+        }
+    };
     let code = reply(t, &mut rd).await?;
     if code != 150 && code != 125 {
         return Err(stor_failure(t.printer, code, "STOR"));
