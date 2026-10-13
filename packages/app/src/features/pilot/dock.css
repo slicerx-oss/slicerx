@@ -22,7 +22,6 @@
 .mimir-dock > .cg-compact { grid-row: 2; }
 .mimir-dock > .term, .mimir-dock > .mimir-more, .mimir-dock > .ws-loading { grid-row: 3; }
 .mimir-dock > .mimir-foot { grid-row: 4; }
-.mimir-dock .term-bar { display: none; }
 .mimir-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px; border-top: 1px solid var(--line-soft); font-size: var(--fs-sm); }
 .mimir-more { min-height: 0; overflow: auto; }
 .mimir-dock > .pc-notice { grid-row: 2 / 5; align-self: start; max-height: calc(100% - 2 * var(--s-3)); min-height: 0; overflow: auto; }
