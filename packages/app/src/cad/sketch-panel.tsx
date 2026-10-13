@@ -596,7 +596,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     }
   }
 
-  // Finish Sketch: the sketch goes in the timeline as it is, no solid; the camera stays where it is.
+  // Finish sketch: the sketch goes in the timeline as it is, no solid; the camera stays where it is.
   const finishOnly = async () => {
     if (busy || !sketch.length || draft.points.length) return
     setBusy(true)
@@ -716,7 +716,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         <span>Result</span>
         <Seg label="Result" size="sm" value={op} onChange={setOperation} options={[{ value: 'join', label: 'Join', disabled: !plane.target }, { value: 'cut', label: 'Cut', disabled: !plane.target }, { value: 'new', label: 'New body' }]} />
       </div>
-      <p className="cad-hint"><Icon name="info" size={15} /> {stepEdit ? 'Applying changes this step; the steps after it run again.' : 'Finish Sketch keeps it in the timeline without a solid. Extrude or Revolve here turns it into one.'}</p>
+      <p className="cad-hint"><Icon name="info" size={15} /> {stepEdit ? 'Applying changes this step; the steps after it run again.' : 'Finish sketch keeps it in the timeline without a solid. Extrude or revolve here turns it into one.'}</p>
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
       <ToolFooter
         verb={finish === 'extrude' ? 'Extrude' : 'Revolve'}
