@@ -74,6 +74,12 @@ function split(s: Step, body: string, name: string): [SketchItem, FeatureItem] {
   return [sketch, { ...s, kind: 'feature', body, sketch: id, params: use }]
 }
 
+/** A step as a feature on `body`; with a sketch id, its plane and loops are left to that sketch. */
+export function featureOf(s: Step, body: string, sketch?: string): FeatureItem {
+  if (sketch === undefined || !isSketch(s.params)) return { ...s, kind: 'feature', body }
+  return { ...split(s, body, '')[1], sketch }
+}
+
 /**
  * The design of a plate whose objects each kept their own history (files before version 3): every step merged into
  * one timeline by when it was made, each object's steps staying in their own order, and every sketch an extrude or

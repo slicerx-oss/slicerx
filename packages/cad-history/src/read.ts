@@ -3,6 +3,7 @@
 // Reads the CAD history parts of a project (docs/cad-history.md, "Storage"), written by
 // file.ts. Untrusted: a bad step or mesh drops that object's history, never the project.
 import { productName } from '@slicerx/contracts/brand'
+import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
 import { followField, type Follow, type History, type HistoryMesh, type PaintTexts, type Step, type StepParams } from './model'
 
@@ -223,7 +224,7 @@ const MAX_ITEMS = 4000
  * A version 3 file's bodies as version 2 objects: each body with the live features on it, in timeline order, their
  * sketches put back in (design.ts, featureParams). The steps are then read as any others. Null when it does not read.
  */
-function designObjects(j: Record<string, unknown>): Record<string, unknown>[] | null {
+function designObjects(j: Record<string, unknown>, all = false): Record<string, unknown>[] | null {
   const items = j['items']
   const marker = j['marker']
   if (!Array.isArray(j['bodies']) || !Array.isArray(items) || items.length > MAX_ITEMS || !Number.isInteger(marker) || (marker as number) < 0) return null
@@ -231,7 +232,7 @@ function designObjects(j: Record<string, unknown>): Record<string, unknown>[] | 
   const steps = new Map<string, unknown[]>()
   // a feature whose sketch is gone drops its body's history, not the others
   const bad = new Set<string>()
-  for (const it of items.slice(0, marker as number)) {
+  for (const it of all ? items : items.slice(0, marker as number)) {
     if (!obj(it)) return null
     if (it['kind'] === 'sketch') {
       if (typeof it['id'] !== 'string' || !Array.isArray(it['loops']) || !frameOk(it['frame']) || (it['constraints'] !== undefined && !Array.isArray(it['constraints']))) return null
@@ -267,6 +268,57 @@ function storedObjects(j: unknown): unknown[] | null {
   if (j['version'] === DESIGN_FILE_VERSION) return designObjects(j)
   if ((j['version'] !== 1 && j['version'] !== HISTORY_FILE_VERSION) || !Array.isArray(j['objects'])) return null
   return j['objects']
+}
+
+/**
+ * The plate's design timeline (design.ts), bodies by 3MF object id: a version 3 file as it was saved, rolled back
+ * steps included, or an older file's histories merged by when each step was made. Null when there is none; a body
+ * whose history does not read is left out with its features.
+ */
+export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds: ReadonlySet<string>): Timeline | null {
+  const bytes = files.get('Metadata/slicerx_history.json')
+  if (!bytes) return null
+  let j: unknown
+  try {
+    j = JSON.parse(new TextDecoder().decode(bytes))
+  } catch {
+    return null
+  }
+  if (!obj(j)) return null
+  if (j['version'] !== DESIGN_FILE_VERSION) {
+    const h = parseHistories(files, objectIds)
+    return h.size ? timelineOf([...h].map(([id, history]) => ({ id, history }))) : null
+  }
+  const objects = designObjects(j, true)
+  if (!objects) return null
+  const histories = new Map<string, History>()
+  for (const o of objects) {
+    if (!obj(o) || typeof o['object'] !== 'string' || !objectIds.has(o['object']) || histories.has(o['object'])) continue
+    try {
+      const h = readHistory(o, files)
+      if (h) histories.set(o['object'], h)
+    } catch {
+      // that body is left out
+    }
+  }
+  if (!histories.size) return null
+  const items: Item[] = []
+  let marker = 0
+  ;(j['items'] as unknown[]).forEach((it, i) => {
+    if (!obj(it)) return
+    if (it['kind'] === 'sketch') {
+      const name = typeof it['name'] === 'string' && it['name'].trim() ? it['name'].trim().slice(0, 100) : 'Sketch'
+      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}) }
+      items.push(k)
+    } else {
+      const step = histories.get(it['body'] as string)?.steps.find((s) => s.id === it['id'])
+      if (!step) return
+      items.push(featureOf(step, it['body'] as string, typeof it['sketch'] === 'string' ? it['sketch'] : undefined))
+    }
+    if (i < (j['marker'] as number)) marker = items.length
+  })
+  const bodies = [...histories].map(([id, h]) => ({ id, base: h.base, ...(h.ended ? { ended: h.ended } : {}) }))
+  return { bodies, items, marker }
 }
 
 /** Histories by 3MF object id. A newer version, a missing object or a part that does not read leaves that history out. */

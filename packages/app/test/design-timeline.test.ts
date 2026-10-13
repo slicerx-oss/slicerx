@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
 import { compose } from '../src/plate/transform'
 import { useGeomEngine } from './geom-engine'
-import { clearReplayCache, replayHistory, type HistoryMesh, timelineFiles, timelineOf, historiesOf, historyFiles, historyLost, historyNewer, historyOf, madeAt, parseHistories, withHistory, type FaceFrame, type FeatureItem, type History, type SketchItem, type SketchLoop, type Step, type StepParams, type Timeline } from '@slicerx/cad-history'
+import { clearReplayCache, replayHistory, type HistoryMesh, timelineFiles, timelineOf, historiesOf, historyFiles, historyLost, historyNewer, historyOf, madeAt, parseHistories, parseTimeline, withHistory, type FaceFrame, type FeatureItem, type History, type SketchItem, type SketchLoop, type Step, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 useGeomEngine('design-timeline-replies')
@@ -175,6 +175,21 @@ describe('design timeline', () => {
     expect(plain(read.get('2')!)).toEqual(plain(objects[1]!.history))
     expect(historyLost(files, new Set(['1', '2']), read)).toBeNull()
     expect(historyNewer(files)).toBeNull()
+  })
+
+  it('reads a version 3 file back as the same timeline, rolled back steps included', () => {
+    const ids = new Map([
+      ['box', 1],
+      ['ring', 2],
+    ])
+    const t: Timeline = { ...timelineOf(plate()), marker: 4 }
+    const files = new Map(timelineFiles(t, ids).map((e) => [e.name, typeof e.data === 'string' ? new TextEncoder().encode(e.data) : e.data]))
+    const back = parseTimeline(files, new Set(['1', '2']))!
+    const named = (x: Timeline) => JSON.parse(JSON.stringify({ ...x, bodies: x.bodies.map((b) => ({ ...b, base: b.base.map((m) => ({ ...m, positions: Array.from(m.positions), indices: Array.from(m.indices) })) })) }).replaceAll('"box"', '"1"').replaceAll('"ring"', '"2"')) as unknown
+    expect(named(back)).toEqual(named(t))
+    // a version 2 file reads as its merge
+    const v2 = new Map(historyFiles(plate(), ids).map((e) => [e.name, typeof e.data === 'string' ? new TextEncoder().encode(e.data) : e.data]))
+    expect(named(parseTimeline(v2, new Set(['1', '2']))!)).toEqual(named(timelineOf(plate())))
   })
 
   it('is no bigger on disk than the version 2 file', () => {
