@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
 import { compose } from '../src/plate/transform'
 import { useGeomEngine } from './geom-engine'
-import { clearReplayCache, replayHistory, type HistoryMesh, timelineFiles, timelineOf, historiesOf, historyFiles, historyLost, historyNewer, historyOf, madeAt, parseHistories, type FaceFrame, type FeatureItem, type History, type SketchItem, type SketchLoop, type Step, type StepParams, type Timeline } from '@slicerx/cad-history'
+import { clearReplayCache, replayHistory, type HistoryMesh, timelineFiles, timelineOf, historiesOf, historyFiles, historyLost, historyNewer, historyOf, madeAt, parseHistories, withHistory, type FaceFrame, type FeatureItem, type History, type SketchItem, type SketchLoop, type Step, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 useGeomEngine('design-timeline-replies')
@@ -97,6 +97,58 @@ describe('design timeline', () => {
     const d = timelineOf([{ id: 'a', history: h }])
     expect((d.items[0] as SketchItem).constraints).toEqual(cons)
     expect(historyOf(d, 'a')).toEqual(h)
+  })
+
+  it('takes a body history back unchanged', () => {
+    const t = timelineOf(plate())
+    for (const b of t.bodies) expect(withHistory(t, b.id, historyOf(t, b.id)!)).toEqual(t)
+  })
+
+  it('puts a new step at the end, with a sketch of its own', () => {
+    const t = timelineOf(plate())
+    const h = historyOf(t, 'ring')!
+    const next = withHistory(t, 'ring', { ...h, steps: [...h.steps, step(id(9000, 9), sketched())] })
+    expect(next.items.slice(-2).map((i) => (i.kind === 'sketch' ? i.name : i.body))).toEqual(['Sketch 3', 'ring'])
+    expect(next.marker).toBe(next.items.length)
+    expect(historyOf(next, 'ring')!.steps.at(-1)!.params).toEqual(sketched())
+  })
+
+  it('edits a sketch in place: same id, name and spot, new loops, later steps unchanged', () => {
+    const t = timelineOf(plate())
+    const h = historyOf(t, 'box')!
+    const tri: SketchLoop = { points: [[0, 0], [5, 0], [0, 5]] }
+    const steps = h.steps.map((s) => (s.params.op === 'shape.extrude' && s.params.shape.type === 'sketch' ? { ...s, params: { ...s.params, shape: { type: 'sketch' as const, loops: [tri] } } } : s))
+    const next = withHistory(t, 'box', { ...h, steps })
+    const k = next.items.findIndex((i) => i.kind === 'sketch' && i.name === 'Sketch 2')
+    expect(k).toBe(t.items.findIndex((i) => i.kind === 'sketch' && i.name === 'Sketch 2'))
+    expect((next.items[k] as SketchItem).loops).toEqual([tri])
+    expect(next.items.length).toBe(t.items.length)
+    expect(historyOf(next, 'box')!.steps).toEqual(steps)
+  })
+
+  it('drops a removed step and keeps its sketch, as Fusion does', () => {
+    const t = timelineOf(plate())
+    const h = historyOf(t, 'box')!
+    const next = withHistory(t, 'box', { ...h, steps: h.steps.filter((s) => s.params.op !== 'shape.extrude' || s.params.shape.type !== 'sketch') })
+    expect(next.items.filter((i) => i.kind === 'sketch')).toHaveLength(2)
+    expect(next.items).toHaveLength(t.items.length - 1)
+  })
+
+  it('adds a body a step made', () => {
+    const t = timelineOf(plate())
+    const next = withHistory(t, 'peg', { version: 1, base: [], steps: [step(id(9500, 1), revolved())] })
+    expect(next.bodies.map((b) => b.id)).toEqual(['box', 'ring', 'peg'])
+    expect(next.items.slice(-2).map((i) => (i.kind === 'sketch' ? i.name : i.body))).toEqual(['Sketch 3', 'peg'])
+  })
+
+  it('keeps the marker where it was when a step goes in before it', () => {
+    const t: Timeline = { ...timelineOf(plate()), marker: 3 }
+    const h = historyOf({ ...t, marker: t.items.length }, 'box')!
+    const first = h.steps[0]!
+    const added = step(id(100, 8), pull(2))
+    const next = withHistory(t, 'box', { ...h, steps: [first, added, ...h.steps.slice(1)] })
+    expect(next.items[1]).toMatchObject({ id: added.id })
+    expect(next.marker).toBe(4)
   })
 
   it('rolls back to the marker: later items leave the views', () => {
