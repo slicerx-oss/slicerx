@@ -46,6 +46,9 @@ test('a workspace whose code never downloads says so once, in the workspace, wit
   // The toast waits a moment for the workspace, then stays away.
   await page.waitForTimeout(1_500)
   await expect(page.getByTestId('toast')).toHaveCount(0)
+  // The message fills the window down to the gutter, on a phone too, where the frame grows with its content.
+  const frame = (await page.locator('.sx-frame').boundingBox())!
+  expect(Math.round(page.viewportSize()!.height - (frame.y + frame.height))).toBe(16)
 })
 
 test('a dialog whose code did not download leaves the workspace up and says so in a toast', async ({ page }) => {
