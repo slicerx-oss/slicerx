@@ -196,6 +196,39 @@ fn cut_in_two() {
 }
 
 #[test]
+fn intersection_with_two_parts() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // what all three share, as the mesh boolean folds them
+    let body = cube();
+    let right = made("box", json!({ "min": [10, 0, 0], "max": [30, 20, 20] }));
+    let back = made("box", json!({ "min": [0, 15, 0], "max": [20, 35, 20] }));
+    let first = made(
+        "boolean",
+        json!({ "op": "intersection", "a": body, "b": right }),
+    );
+    let brep = made(
+        "boolean",
+        json!({ "op": "intersection", "a": first, "b": back }),
+    );
+    let on_mesh = call(
+        "boolean",
+        &json!({ "op": "intersection", "a": [mesh(&body)], "b": [mesh(&right), mesh(&back)] }),
+    );
+    let m = mesh_solid(&on_mesh["mesh"]);
+    assert!(near(m.volume, 1000.0), "mesh {}", m.volume);
+    check(
+        "intersection",
+        &brep_solid(&brep),
+        Some(&m),
+        1000.0,
+        [10.0, 15.0, 0.0],
+        [20.0; 3],
+    );
+}
+
+#[test]
 fn sketch_and_slot_extrudes() {
     if !sx_brep::KERNEL {
         return;
