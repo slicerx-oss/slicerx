@@ -3,7 +3,6 @@
 // Tells the slice which printer model it is for: the printer shown in the sidebar (the selected one, else the first
 // idle one), so its bed, speeds, limits and G-code follow the machine.
 import { useEffect } from 'react'
-import { startProfileSync } from '../state/profile-sync'
 import { set } from '../state/store'
 import { usePrinter } from '../lib/use-printer'
 
@@ -14,7 +13,8 @@ export function ProfileFollow() {
   const id = printer?.id
   const reported = printer?.status.nozzleDiameterMm
   useEffect(() => {
-    startProfileSync()
+    // The sync loads after first paint; it reads the store as it is then, so nothing set before it is missed.
+    void import('../state/profile-sync').then((m) => m.startProfileSync())
     void import('../project/project-printer').then((m) => m.startProjectPrinterSync())
   }, [])
   useEffect(() => {
