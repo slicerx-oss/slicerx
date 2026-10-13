@@ -31,6 +31,7 @@
 #include <SmSurfTypes.h>
 #include <SmVector3d.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -469,6 +470,43 @@ SmBrep* sweep_loop(const Value& l, double z0, double z1)
     return b;
 }
 
+// the flat ruled faces of a taper (its sides, and the pieces an outward one fills each corner's gap with) on exact
+// planes, shared with any face on the same plane, so the edges between faces on one plane can go
+void join_flat_faces(SmBrep* b)
+{
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    SmContext& cx = *SmApiGetOrCreateContext();
+    std::vector<std::pair<SmVector3d, double>> planes;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (ULONG i = 0; i < fs.GetSize(); ++i) {
+            SmSurface* s = fs[i]->GetSurface();
+            bool flat = s && s->GetType() == SmPlane_TYPE;
+            if (!s || flat != (pass == 0)) continue;
+            SmPoint3d o;
+            SmVector3d n;
+            if (!s->IsPlanar(1e-4, &o, &n)) continue;
+            double d = dot(n, SmVector3d(o.x, o.y, o.z));
+            auto same = std::find_if(planes.begin(), planes.end(), [&](const auto& q) {
+                double c = dot(n, q.first);
+                return std::fabs(std::fabs(c) - 1) < 1e-6 && std::fabs((c > 0 ? 1 : -1) * q.second - d) < 1e-4;
+            });
+            if (same == planes.end()) {
+                planes.emplace_back(n, d);
+                same = planes.end() - 1;
+            }
+            if (flat) continue;
+            // the new plane faces the way the old surface did
+            double c = dot(n, same->first) > 0 ? 1 : -1;
+            SmVector3d m(c * same->first.x, c * same->first.y, c * same->first.z);
+            SmPlane* pl = nullptr;
+            check(SmPlane::CreateCanonical(cx, SmAxis2Placement(m, -c * same->second), pl), "taperDeg");
+            check(b->ReplaceSurface(fs[i], pl, FALSE), "taperDeg");
+        }
+    }
+    check(b->RemoveTopologicalEdgesAndVertices(), "taperDeg");
+}
+
 // one loop from z = 0 to h (below for a negative h), capped, its sides leaning in by deg as they leave z = 0 (out for
 // a negative deg)
 SmBrep* taper_half(const Value& l, double h, double deg)
@@ -485,7 +523,15 @@ SmBrep* taper_half(const Value& l, double h, double deg)
     free_curves(cs);
     // a taper that closes the shape early comes back as a point or a ridge short of h
     SmPoint3d lo, hi;
-    if (b && SmApiBrepBoundingBox(b, FALSE, lo, hi) == SM_SUCCESS && hi.z - lo.z > std::fabs(h) - 1e-6) return b;
+    if (b && SmApiBrepBoundingBox(b, FALSE, lo, hi) == SM_SUCCESS && hi.z - lo.z > std::fabs(h) - 1e-6) {
+        try {
+            join_flat_faces(b);
+        } catch (...) {
+            delete b;
+            throw;
+        }
+        return b;
+    }
     delete b;
     throw Error("taperDeg", "the taper closes the shape before the full distance; use a smaller angle or distance");
 }

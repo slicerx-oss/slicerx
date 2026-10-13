@@ -590,6 +590,16 @@ fn tapered_extrudes() {
     close(volume(up), (8000.0 - (20.0 - 20.0 * tan).powi(3)) / (6.0 * tan));
     assert_eq!(info(up)["faceTypes"], json!({ "plane": 6 }));
     assert_eq!(mesh_check(up).0, 0);
+    // leaning out, each side is still one face; the corners stay sharp
+    let out = taper(json!([{ "outer": square }]), 0.0, 10.0, -10.0);
+    close(volume(out), ((20.0 + 20.0 * tan).powi(3) - 8000.0) / (6.0 * tan));
+    assert_eq!(info(out)["faceTypes"], json!({ "plane": 6 }));
+    assert_eq!(mesh_check(out).0, 0);
+    // an L's inner corner opens a gap as it narrows; each of its six sides is still one face
+    let l = json!({ "points": [[0, 0], [20, 0], [20, 10], [10, 10], [10, 20], [0, 20]] });
+    let narrowed = taper(json!([{ "outer": l }]), 0.0, 5.0, 10.0);
+    assert_eq!(info(narrowed)["faceTypes"], json!({ "plane": 8 }));
+    assert_eq!(mesh_check(narrowed).0, 0);
     // across the face each side narrows away from it, and a hole widens
     let both = taper(json!([{ "outer": square }]), -5.0, 5.0, 10.0);
     close(
