@@ -316,7 +316,11 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             }
             let mut out = m.clone();
             for c in &convex_pieces(&solids)? {
-                out = convex::subtract(&out, c)?;
+                // a cutter face flush with a body face goes past it
+                out = convex::subtract(
+                    &out,
+                    &convex::overshoot_flush(c, &out, crate::solids::OVERSHOOT_MM),
+                )?;
             }
             let out = emboss::merge_coplanar(&out)?;
             let mut v = mesh_report(&out, enc);
@@ -1358,6 +1362,38 @@ mod tests {
         let bad = json!({ "mesh": mesh, "solids": [
             { "type": "prism", "points": [[0, 0], [4, 0], [4, 4], [2, 1], [0, 4]], "heightMm": 3 }] });
         assert!(call("subtract", &bad.to_string()).is_err());
+    }
+
+    #[test]
+    fn subtract_flush_with_the_body_stays_closed() {
+        let cube = build::box_mesh([0.0; 3], [20.0, 20.0, 20.0]);
+        let mesh = json!({ "positions": cube.positions.iter().flatten().collect::<Vec<_>>(),
+                           "indices": cube.triangles.iter().flatten().collect::<Vec<_>>() });
+        let pi = std::f64::consts::PI;
+        // full depth hole: the cutter's floor lies on the cube's bottom; a box flush at both caps; a notch flush
+        // with a side
+        for (solid, expect) in [
+            (
+                json!({ "type": "cylinder", "origin": [10, 10, 0], "diameterMm": 8, "heightMm": 20.5 }),
+                pi * 16.0 * 20.0,
+            ),
+            (
+                json!({ "type": "box", "min": [5, 5, 0], "max": [15, 15, 20] }),
+                10.0 * 10.0 * 20.0,
+            ),
+            (
+                json!({ "type": "box", "min": [15, 5, 10], "max": [20, 15, 20] }),
+                5.0 * 10.0 * 10.0,
+            ),
+        ] {
+            let out = run("subtract", &json!({ "mesh": mesh, "solids": [solid] }));
+            assert_eq!(out["watertight"], true, "{solid}: {}", out["edges"]);
+            let removed = out["removedVolumeMm3"].as_f64().unwrap();
+            assert!(
+                (removed - expect).abs() < 0.01 * expect,
+                "{solid}: {removed} vs {expect}"
+            );
+        }
     }
 
     #[test]
