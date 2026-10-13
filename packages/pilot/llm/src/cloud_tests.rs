@@ -130,7 +130,7 @@ fn route(p: &mut Proxy, seen: &Seen) -> (u16, String) {
     if first.starts_with("GET /functions/v1/mimir/quota ") {
         return (
             200,
-            r#"{"edition":"slicerx","day":"2026-10-12","install_used":1200,"install_cap":500000,"ip_used":1200,"ip_cap":2000000,"edition_open":true}"#.to_owned(),
+            r#"{"edition":"slicerx","day":"2026-10-12","install_used":1200,"install_cap":500000,"ip_used":1200,"ip_cap":2000000,"edition_open":true,"v2":{"perMinute":{"limit":10}}}"#.to_owned(),
         );
     }
     if first.starts_with("POST /functions/v1/mimir/forget ") {
@@ -377,6 +377,11 @@ async fn quota_and_forget() {
     assert_eq!(
         serde_json::to_value(&q).unwrap()["installCap"],
         serde_json::json!(500_000)
+    );
+    // the usage report passes through untouched
+    assert_eq!(
+        serde_json::to_value(&q).unwrap()["v2"]["perMinute"]["limit"],
+        serde_json::json!(10)
     );
     assert_eq!(cloud::forget(&store, &cloud).await.unwrap(), 3);
     // a token the proxy forgot has nothing to delete, and forget never registers

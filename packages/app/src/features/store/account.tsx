@@ -11,8 +11,19 @@ import { openExternal, privacyUrl } from './routes'
 import { openEditor, openUpload } from './sheets'
 import { SignInNotice } from './signin'
 import { Loading } from '../../shell/loading'
+import { MimirUsageSection } from '../../pilot-connect/usage'
 
 export default function Account() {
+  return (
+    <>
+      <AccountBody />
+      {/* free mimir runs per install on the desktop, so its usage shows signed in or not */}
+      <MimirUsageSection />
+    </>
+  )
+}
+
+function AccountBody() {
   const store = useStore()
   const { session, ready } = useSession()
   if (!store) return <p className="sx-muted">This build has no accounts.</p>
