@@ -38,3 +38,17 @@ describe('slicerx-mcp call --app', () => {
     expect(stdout).toContain(`slicerx-mcp call --app design_new '{"name":"Clip"}' design_list`)
   }, 30_000)
 })
+
+describe('slicerx-mcp call design_timeline and design_roll', () => {
+  // the design tools need the geometry engine binary (SLICERX_SX_GEOM_BIN); without it they are not listed
+  const bin = process.env['SLICERX_SX_GEOM_BIN']
+  it.skipIf(!bin)('reads the timeline here, and says rolling back needs the app', async () => {
+    const env = { SLICERX_SX_GEOM_BIN: bin ?? '' }
+    const out = await run(process.execPath, ['--import', 'tsx', 'src/cli.ts', '--engine', 'stub', '--no-app', 'call', 'design_timeline'], { cwd: resolve(__dirname, '..'), env: { ...process.env, ...env } })
+    const line = JSON.parse(out.stdout.trim().split('\n').at(-1)!) as { ok: boolean; output: { output: { marker: number; end: number } } }
+    expect(line).toMatchObject({ ok: true, output: { output: { marker: 0, end: 0 } } })
+    const e = await cli(['--no-app', 'call', 'design_roll', '{"marker":0}'], env)
+    expect(e?.code).toBe(1)
+    expect(e?.stdout).toMatch(/turn on the app link/)
+  }, 30_000)
+})

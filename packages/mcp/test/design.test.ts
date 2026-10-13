@@ -155,6 +155,14 @@ describe('a client models a cable clip as a design', () => {
     const none = await h.call('slicerx_design_redo', { design: again.design })
     expect(none.isError).toBe(true)
     expect(text(none)).toMatch(/Nothing to redo/)
+
+    // The timeline lists the design's steps in order; rolling it back needs the project open in the app.
+    const tl = data<{ output: { marker: number; end: number; items: { kind: string; body?: string }[] } }>(await h.call('slicerx_design_timeline', {})).output
+    expect(tl.marker).toBe(tl.end)
+    expect(tl.items.filter((i) => i.kind === 'feature' && i.body === again.design).length).toBeGreaterThan(0)
+    const roll = await h.call('slicerx_design_roll', { marker: 0 })
+    expect(roll.isError).toBe(true)
+    expect(text(roll)).toMatch(/app link/)
   }, 60_000)
 
   it('opens a plain 3MF: printed parts with their slots and paint, modifiers left out', async () => {

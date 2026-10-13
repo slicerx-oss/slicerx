@@ -83,6 +83,10 @@ A fillet or chamfer edge keeps the keys of the two faces either side (`keys`, th
 - A sketch is its own item: its plane (the bed when it has no frame), its loops and its constraints. An extrude or revolve of it names it by id and keeps only its own fields; `featureParams` puts the sketch back in for the engine.
 - A body is the object it prints as, with the parts it started from (none for one a feature made). An object's history is a view of the timeline, filtered by its body (`historyOf`), so replay and the per-object tools read it unchanged.
 - Projects saved before version 3 open as one: every step merged by when it was made (its id holds the time, `madeAt`), each object's steps kept in their own order, and every sketch an extrude or revolve drew on made an item, named Sketch 1, Sketch 2 and on.
+- In the app the store keeps the timeline (`timeline`, in undo with the plate). The tools still record each object's history; `plate/timeline.ts` folds each change back in (`withHistory`): a kept step stays put, an edited sketch keeps its id and name, a new step goes in at the marker, and a step past the marker stays rolled back. An object that leaves the plate takes its features (`withoutBody`); a pasted copy gets sketches of its own.
+- A finished sketch goes in at the marker on its own (`withSketch`); an extrude or revolve drawn on it carries its id (`Step.sketch`) and names it instead of making a new one.
+- Moving the marker (`cad/history/rollback.ts`, the timeline strip, or `design.roll` over the app link and MCP) replays each body to it. A body made after the marker leaves the plate and the slice until the marker passes it again; while rolled back, Slice, Print and Export say so ("The timeline is rolled back to step N. Slicing uses this state.") with Move to the end. Undo puts the marker back. A project saved rolled back keeps the hidden bodies and opens rolled back.
+- The app saves version 3 files; `design.timeline` (MCP, app link) reads the timeline.
 
 ## Storage
 

@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-160 tools.
+162 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -24,8 +24,10 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_design_new` |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
 | `slicerx_design_open` |  |  | read | Open the objects of any 3MF project (SlicerX, Bambu Studio, Orca) as designs, one per object. |
 | `slicerx_design_redo` |  |  | slice | Put back the step slicerx_design_undo last removed. |
+| `slicerx_design_roll` |  |  | slice | Move the timeline marker, rolling the whole design back to how it was after that many items (0 is before everything; leave marker out for the end), as dragging the marker in SlicerX does. |
 | `slicerx_design_save` |  |  | slice | Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in SlicerX with every step editable (other slicers open the parts). |
 | `slicerx_design_steps` |  |  | read | The steps of a design in order: each one's index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), its main number, and whether it went through, broke (with the reason) or is suppressed. |
+| `slicerx_design_timeline` |  |  | read | The design timeline: every sketch and feature across the designs in the order made, the way SlicerX's Model timeline shows them, with the marker (how many items are live; the end when nothing is rolled back). |
 | `slicerx_design_undo` |  |  | slice | Remove the last step of a design and replay it, back to how it was before that step. |
 | `slicerx_diagnose` |  |  | read | Explain a failed or odd print on one of your printers: reads its status and message, matches the symptom against the troubleshooting guides and ranks causes with checks and fixes. |
 | `slicerx_emboss` |  |  | slice | Emboss (raised) or deboss (recessed) text on a face of a part. |
