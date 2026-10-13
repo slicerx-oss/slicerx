@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright (C) 2026 The SlicerX contributors
--- Removes mimir's cloud model accounting and saved chats (migrations/0020_mimir_proxy.sql, 0023_mimir_saved_chats.sql).
+-- Removes mimir's cloud model accounting and saved chats (migrations/0020_mimir_proxy.sql, 0024_mimir_saved_chats.sql).
 do $$
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
