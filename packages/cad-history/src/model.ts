@@ -530,22 +530,26 @@ const SHAPE_WORDS: Record<string, string> = { rectangle: 'Rectangle', circle: 'C
 
 /** A step in a few plain words, such as "Pull 5 mm", "Hole 6 mm" or "Sketch extrude 12 mm". */
 /** A step's name: the one the person gave it, or one made from what it does. */
-export function stepName(s: Pick<Step, 'params'> & { label?: string | undefined }): string {
+export function stepName(s: Pick<Step, 'params'> & { label?: string | undefined }, len: LengthWords = mmWords): string {
   const own = s.label?.trim()
-  return own ? own : madeName(s)
+  return own ? own : madeName(s, len)
 }
 
+/** A length in mm as words with its unit, "5 mm"; the app passes its display unit. */
+export type LengthWords = (mm: number) => string
+const mmWords: LengthWords = (v) => `${n2(v)} mm`
+
 /** The name a step's numbers give it ("Pull 5 mm"). */
-export function madeName(s: Pick<Step, 'params'>): string {
+export function madeName(s: Pick<Step, 'params'>, len: LengthWords = mmWords): string {
   const p = s.params
   switch (p.op) {
     case 'face.push':
-      return p.distanceMm >= 0 ? `Pull ${n2(p.distanceMm)} mm` : `Push ${n2(-p.distanceMm)} mm`
+      return p.distanceMm >= 0 ? `Pull ${len(p.distanceMm)}` : `Push ${len(-p.distanceMm)}`
     case 'shape.extrude': {
       const op = p.spec.operation ?? 'new'
-      const d = `${n2(p.spec.distanceMm)} mm`
+      const d = `${len(p.spec.distanceMm)}`
       const copies = p.pattern ? `, ${copyCount(p.pattern)} copies` : ''
-      if (p.shape.type === 'circle' && op === 'cut') return `Hole ${n2(p.shape.diameterMm)} mm${copies}`
+      if (p.shape.type === 'circle' && op === 'cut') return `Hole ${len(p.shape.diameterMm)}${copies}`
       if (p.shape.type === 'sketch') return `${op === 'cut' ? `Sketch cut ${d}` : `Sketch extrude ${d}`}${copies}`
       if (p.shape.type === 'text') return `Text "${p.shape.text.length > 16 ? `${p.shape.text.slice(0, 15)}...` : p.shape.text}" ${op === 'cut' ? 'cut' : 'raised'} ${d}${copies}`
       return `${SHAPE_WORDS[p.shape.type] ?? 'Shape'} ${op === 'cut' ? 'cut' : 'extrude'} ${d}${copies}`
@@ -555,9 +559,9 @@ export function madeName(s: Pick<Step, 'params'>): string {
     case 'subtract':
       return p.label
     case 'hollow':
-      return `Hollow, ${n2(p.wallMm)} mm walls`
+      return `Hollow, ${len(p.wallMm)} walls`
     case 'shell':
-      return `Shell, ${n2(p.wallMm)} mm walls${p.open.length ? `, ${p.open.length} open face${p.open.length === 1 ? '' : 's'}` : ''}`
+      return `Shell, ${len(p.wallMm)} walls${p.open.length ? `, ${p.open.length} open face${p.open.length === 1 ? '' : 's'}` : ''}`
     case 'repair':
       return 'Repair'
     case 'simplify':
@@ -567,9 +571,9 @@ export function madeName(s: Pick<Step, 'params'>): string {
     case 'parts.add':
       return p.label
     case 'edge.fillet':
-      return `Fillet ${n2(p.radiusMm)} mm${p.edges.length > 1 ? `, ${p.edges.length} edges` : ''}`
+      return `Fillet ${len(p.radiusMm)}${p.edges.length > 1 ? `, ${p.edges.length} edges` : ''}`
     case 'edge.chamfer':
-      return `Chamfer ${n2(p.distanceMm)} mm${p.edges.length > 1 ? `, ${p.edges.length} edges` : ''}`
+      return `Chamfer ${len(p.distanceMm)}${p.edges.length > 1 ? `, ${p.edges.length} edges` : ''}`
     case 'hole.apply':
     case 'thread.apply':
       return p.label

@@ -14,6 +14,7 @@ import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { brandAccent } from '../edition'
+import { lengthText } from './units'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -227,7 +228,8 @@ export async function applyArray(host: Loader, objectId: string, spec: ArraySpec
   return r.count
 }
 
-const mm = (v: number) => `${v.toFixed(Math.abs(v) < 10 ? 3 : 2)} mm`
+// lengths in the display unit; mm keeps three decimals under 10
+const mm = (v: number) => (get().units.length === 'mm' ? `${v.toFixed(Math.abs(v) < 10 ? 3 : 2)} mm` : lengthText(v, get().units))
 
 /** A picked feature in a few words, with its own size. */
 export function describeFeature(f: Feature): string {

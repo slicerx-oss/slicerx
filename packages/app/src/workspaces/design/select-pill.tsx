@@ -13,12 +13,14 @@ import { PICK_KINDS, PICK_LABEL, pickReadout, type PickKind } from '../../plate/
 import { setPickKind } from '../../plate/sub-pick'
 import { get, set, useApp } from '../../state/store'
 import { useMadeBy } from './use-made-by'
+import { useLengthWords } from '../../cad/use-units'
 
 const ICON: Readonly<Record<PickKind, 'select-object' | 'select-face' | 'select-edge'>> = { object: 'select-object', face: 'select-face', edge: 'select-edge' }
 
 export function SelectPill() {
   const filter = useApp((s) => s.pickFilter)
   const plate = useApp((s) => s.plate)
+  const words = useLengthWords()
   const names: Record<string, string> = {}
   for (const p of plate) names[p.id] = p.name
   const selected = useApp((s) => s.selectedIds)
@@ -83,7 +85,7 @@ export function SelectPill() {
           </span>
         ) : (
           <button type="button" className="select-pill-made select-pill-crumb" data-testid="model-select-made-by" data-step={made.index} {...tipAttrs({ title: 'Open the step that made this face' })} onClick={() => openStep(made.objectId, made.index)}>
-            made by {stepName(madeStep!)}
+            made by {stepName(madeStep!, words)}
           </button>
         )
       ) : null}

@@ -157,7 +157,35 @@ export function SlicingSettingsSection() {
       <div className="set-group">
         <h4>Modeling</h4>
         <SwitchRow id="set-cad" icon="shapes" label="Drawing tools" detail={modeling ? 'Draw a shape or text on a face or the bed and extrude it, add basic shapes, subtract a shape. Measure, arrays, repair and simplify are always on.' : 'Add basic shapes and subtract a shape. Measure, arrays, repair and simplify are always on.'} checked={cad} onChange={(v) => set({ cadTools: v })} />
+        <UnitRows />
       </div>
     </section>
+  )
+}
+
+const PRECISION_MM = [0, 1, 2, 3].map((d) => ({ value: `d${d}`, label: d ? (0).toFixed(d) : '0', testId: `set-precision-d${d}` }))
+const PRECISION_IN = [
+  ...[2, 3, 4].map((d) => ({ value: `d${d}`, label: (0).toFixed(d), testId: `set-precision-d${d}` })),
+  ...[16, 32, 64].map((f) => ({ value: `f${f}`, label: `1/${f}`, testId: `set-precision-f${f}` })),
+]
+
+/** Display units for lengths in Model, and how precisely they show. Data stays in mm; Slice stays in mm. */
+function UnitRows() {
+  const u = useApp((s) => s.units)
+  const inches = u.length === 'in'
+  const precision = inches ? (u.inchFraction ? `f${u.inchFraction}` : `d${u.inchDigits}`) : `d${u.mmDigits}`
+  const setPrecision = (v: string) => {
+    const n = Number(v.slice(1))
+    set({ units: { ...u, ...(inches ? (v[0] === 'f' ? { inchFraction: n } : { inchDigits: n, inchFraction: 0 }) : { mmDigits: n }) } })
+  }
+  return (
+    <>
+      <SetRow id="set-units" icon="ruler" label="Display units" detail="Lengths in Model show in this unit. A typed unit always works, such as 25.4mm, 1in, 1&quot; or 3/8 in. Files and print settings stay in mm.">
+        <Seg label="Display units" size="sm" value={u.length} onChange={(v) => set({ units: { ...u, length: v } })} options={[{ value: 'mm', label: 'mm', title: 'Millimeters', testId: 'set-units-mm' }, { value: 'in', label: 'in', title: 'Inches', testId: 'set-units-in' }]} />
+      </SetRow>
+      <SetRow id="set-precision" icon="tolerance" label="Precision" detail="Decimals shown, or in inches a fraction to the nearest 1/16, 1/32 or 1/64.">
+        <Seg label="Precision" size="sm" value={precision} onChange={setPrecision} options={inches ? PRECISION_IN : PRECISION_MM} />
+      </SetRow>
+    </>
   )
 }
