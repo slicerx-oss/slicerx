@@ -422,6 +422,7 @@ Ids that tests read for their text:
 | `model-select-object` | In the readout, the object the faces or edges are on: selects that object alone |
 | `model-select-made-by` | The step that made the one face picked: opens it; `data-step` is its index, or `base` for "from the original mesh" |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
+| `sketch-dof` | The sketch palette's line from the solver: "Fully defined", the degrees of freedom left, or a conflict; `data-dof` is the count |
 | `model-tree-object` | An object row in the Model tree; `data-object-id`, and `data-kind` is `body` (has a history) or `mesh` |
 | `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`), and `data-made-by` on the step that made the one face picked |
 | `model-tree-more` | A step row's More button, which opens the step's menu |
