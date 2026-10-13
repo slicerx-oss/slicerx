@@ -11,7 +11,8 @@ import { getArrangeOptions, sourceOf } from '../../plate/edit'
 import { inStep } from '../../plate/history'
 import { allPlates, projectBase } from '../../plate/plates'
 import { bounds, centerOnBed, decompose, dropToBed, identity, modelOrigin, sizeOf, withTrs, type Mat4, type Vec3 } from '../../plate/transform'
-import { GCODE_TEXT_KEYS, plateObjects, plateSliceConfig, trustOptions } from '../../state/actions'
+import { GCODE_TEXT_KEYS, trustOptions } from '../../state/actions'
+import { plateObjects, plateSliceConfig } from '../../state/slice-plate'
 import { get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta } from '../../state/store'
 
 const round = (v: number): number => Math.round(v * 100) / 100

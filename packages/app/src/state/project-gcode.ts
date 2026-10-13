@@ -7,7 +7,7 @@
 import type { SettingValue } from '@slicerx/contracts'
 import type { GcodeChange } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
-import { slotConfig } from '../filament/slots'
+import { slotConfig } from '../filament/slot-config'
 import { get, set, toast } from './store'
 
 export type GcodeChoice = 'project' | 'profile'

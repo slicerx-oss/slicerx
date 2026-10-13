@@ -77,7 +77,7 @@ writeFileSync(resolve(here, '../src/icons/icon-startup.ts'), [
   '}',
   '',
 ].join('\n'))
-// The 16px drawings, loaded with the full table. None ride in the shell: the web shell is held to 228 KB gzip, and
+// The 16px drawings, loaded with the full table. None ride in the shell: the web shell is held to 218 KB gzip, and
 // a startup icon draws its 24px art until they arrive, so nothing pops in.
 writeFileSync(resolve(here, '../src/icons/icon-small.ts'), [
   ...header,
