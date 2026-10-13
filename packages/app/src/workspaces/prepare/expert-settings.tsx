@@ -361,7 +361,8 @@ export function ExpertSettings() {
       // (the command palette jumps here with the setting's name as the search).
       if (def.mode === 'simple' && !changed && !q) continue
       if (def.mode === 'advanced' || def.mode === 'simple') g.shown.push(def)
-      else if (expert && levels.has(def.mode)) g.more.push(def)
+      // A changed key above the mode stays listed under the Expert divider, so a change is never hidden by the mode.
+      else if ((changed && def.mode !== 'hidden') || (expert && levels.has(def.mode))) g.more.push(def)
     }
     // The prime tower switch heads the Color tab, with atlas's placement under it, and print sequence heads Output.
     for (const g of out) {
@@ -485,8 +486,8 @@ export function ExpertSettings() {
         </section>
       ))}
       </div>
-      {/* Print sequence is an Expert row; below Expert the note still shows when the plate prints otherwise. */}
-      {!expert && seqNote ? <p className="app-note">{seqNote}</p> : null}
+      {/* Print sequence is an Expert row; below Expert, unless changed, the note still shows when the plate prints otherwise. */}
+      {!expert && seqNote && !groups.some((g) => g.more.some((d) => d.key === 'print_sequence')) ? <p className="app-note">{seqNote}</p> : null}
       {scoped ? <p className="app-note">Changes apply to {scopeName} only, over the plate's settings.</p> : null}
       <p className="app-note" hidden={scoped}>Changes apply to this plate. Saved profiles stay as they are. {Object.keys(overrides).length ? `${Object.keys(overrides).length} changed: ${Object.keys(overrides).slice(0, 3).map((k) => { const d = SETTINGS.find((x) => x.key === k); return `${d?.label ?? k} ${formatValue(d, config[k])}` }).join(', ')}` : ''}</p>
     </div>

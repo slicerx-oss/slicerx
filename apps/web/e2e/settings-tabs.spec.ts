@@ -134,3 +134,43 @@ test('shots: the tabs in the phone sheet, Advanced and Expert, light and dark', 
     }
   }
 })
+
+test('a setting changed in Expert stays listed after a switch to Advanced, under the Expert divider', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: the mode chip sits in the Slice pane title')
+  await open(page, isMobile, 'expert')
+  const quality = page.locator('#set-tab-panel section[aria-label="Quality"]')
+  await quality.locator('.tier-more').click()
+  const row = quality.locator('li', { has: page.locator('#set-detect_thin_wall') })
+  await row.locator('#set-detect_thin_wall').click()
+  await expect(row).toHaveClass(/changed/)
+  await page.getByTestId('slice-mode-chip').click()
+  await page.getByTestId('slice-mode-chip-advanced').click()
+  await expect(page.getByTestId('slice-mode-chip')).toHaveText('Advanced')
+  // Still there, after the Advanced rows and the divider; nothing else from Expert, and no "more" to open.
+  await expect(row).toBeVisible()
+  await expect(row).toHaveClass(/changed/)
+  const items = quality.locator('ul > li')
+  const order = await items.evaluateAll((els) => els.map((e) => (e.classList.contains('tier-divider') ? 'divider' : e.querySelector('#set-detect_thin_wall') ? 'changed' : 'row')))
+  expect(order.filter((x) => x !== 'row')).toEqual(['divider', 'changed'])
+  expect(order.at(-1)).toBe('changed')
+  await expect(quality.locator('.tier-more')).toHaveCount(0)
+  // An Expert setting left alone stays out of Advanced.
+  await expect(page.locator('#set-precise_z_height')).toHaveCount(0)
+})
+
+// Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test('shots: a changed Expert setting in Advanced, light and dark', async ({ page, isMobile }, info) => {
+  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  const width = page.viewportSize()?.width ?? 0
+  await open(page, isMobile, 'advanced')
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.evaluate((p) => (window as unknown as { __sx: Sx }).__sx.setState(p), { scheme, themeFollowsSystem: false, settingsMode: 'advanced', expertOpen: true, settingsTab: 'quality', overrides: { detect_thin_wall: true } })
+    // A phone has Simple settings only: its shot shows the sheet as it is.
+    const last = page.locator('#set-tab-panel section[aria-label="Quality"] ul > li').last()
+    if (!isMobile) await last.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${dir}/expert-in-advanced-${scheme}-${width}.png` })
+  }
+})
