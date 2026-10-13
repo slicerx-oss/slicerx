@@ -1161,11 +1161,106 @@
     "a8c59e71d0ded694b9e6f0ad8a46c48c"
    ]
   },
-  "elegoo-centauri-carbon": {},
-  "elegoo-neptune-4": {},
-  "elegoo-neptune-4-max": {},
-  "elegoo-neptune-4-plus": {},
-  "elegoo-neptune-4-pro": {},
+  "elegoo-centauri-carbon": {
+   "before_layer_change_gcode": [
+    "65005d455eb43b8b7d2468843796d85b"
+   ],
+   "change_filament_gcode": [
+    "d44e37c7990c7aeebe7b600747b75018"
+   ],
+   "layer_change_gcode": [
+    "c9126c5f1f433c40117cd2ab5bb7a151"
+   ],
+   "machine_end_gcode": [
+    "eed423c5bdbf11dfbbfd611c008c82a2"
+   ],
+   "machine_pause_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "machine_start_gcode": [
+    "951c6d35232a084fab2899f0b86ccda1"
+   ]
+  },
+  "elegoo-neptune-4": {
+   "before_layer_change_gcode": [
+    "65005d455eb43b8b7d2468843796d85b"
+   ],
+   "change_filament_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "layer_change_gcode": [
+    "12bf324462fb85dc946d8ed3e936056e"
+   ],
+   "machine_end_gcode": [
+    "365378ea068cf3638f65836728346d23"
+   ],
+   "machine_pause_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "machine_start_gcode": [
+    "f54b9a8ffe033f120d569e4a37a2b0eb"
+   ]
+  },
+  "elegoo-neptune-4-max": {
+   "before_layer_change_gcode": [
+    "65005d455eb43b8b7d2468843796d85b"
+   ],
+   "change_filament_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "layer_change_gcode": [
+    "12bf324462fb85dc946d8ed3e936056e"
+   ],
+   "machine_end_gcode": [
+    "365378ea068cf3638f65836728346d23"
+   ],
+   "machine_pause_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "machine_start_gcode": [
+    "f54b9a8ffe033f120d569e4a37a2b0eb"
+   ]
+  },
+  "elegoo-neptune-4-plus": {
+   "before_layer_change_gcode": [
+    "65005d455eb43b8b7d2468843796d85b"
+   ],
+   "change_filament_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "layer_change_gcode": [
+    "12bf324462fb85dc946d8ed3e936056e"
+   ],
+   "machine_end_gcode": [
+    "365378ea068cf3638f65836728346d23"
+   ],
+   "machine_pause_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "machine_start_gcode": [
+    "f54b9a8ffe033f120d569e4a37a2b0eb"
+   ]
+  },
+  "elegoo-neptune-4-pro": {
+   "before_layer_change_gcode": [
+    "f02db16833b35882697c8135302d797c"
+   ],
+   "change_filament_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "layer_change_gcode": [
+    "12bf324462fb85dc946d8ed3e936056e"
+   ],
+   "machine_end_gcode": [
+    "365378ea068cf3638f65836728346d23"
+   ],
+   "machine_pause_gcode": [
+    "dd9965c086fc5fa6b3d9759ea204a568"
+   ],
+   "machine_start_gcode": [
+    "f54b9a8ffe033f120d569e4a37a2b0eb"
+   ]
+  },
   "prusa-core-one": {
    "before_layer_change_gcode": [
     "8ed2830f994c4abf50723b5cd4a8ef87"
