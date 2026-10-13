@@ -34,11 +34,19 @@ function sentence(file: string, code: string, object: number, at: number, value:
   }
 }
 
-/** The engine's message with a coded refusal in words; any other message as it is. */
+/**
+ * The message with its first word capitalized ("blocked by the safety preflight: ..." reads "Blocked by ..."). A message
+ * that opens with a file name, a path or a code is left alone.
+ */
+export function capitalized(message: string): string {
+  return message.replace(/^([a-z])([a-z]*)(?=[\s,:]|$)/, (_, a: string, rest: string) => a.toUpperCase() + rest)
+}
+
+/** The engine's message with a coded refusal in words, and its first letter capitalized; the engine's own string stays as it is. */
 export function engineErrorText(message: string): string {
   const m = REFUSED.exec(message)
-  if (!m) return message
+  if (!m) return capitalized(message)
   const [whole, file = '', code = '', object = '0', at = '0', value = ''] = m
   const text = sentence(file, code, Number(object), Number(at), value.trim())
-  return text ? message.slice(0, m.index) + text + message.slice(m.index + whole.length) : message
+  return capitalized(text ? message.slice(0, m.index) + text + message.slice(m.index + whole.length) : message)
 }

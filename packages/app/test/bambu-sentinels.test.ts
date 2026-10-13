@@ -79,7 +79,7 @@ describe("a Bambu Studio project's -1 values", () => {
     await slicePlate(host, { auto: true })
     expect(requests).toHaveLength(1)
     expect(engineRefusal(cfgOf(requests[0]!))).toBeNull()
-    expect(get().slice).toEqual({ status: 'error', message: 'stop' })
+    expect(get().slice).toEqual({ status: 'error', message: 'Stop' })
   })
 
   it('open as our value for auto on the printer the project is for, where its process is taken whole', async () => {
@@ -104,7 +104,7 @@ describe("a Bambu Studio project's -1 values", () => {
     await slicePlate(host, { auto: true })
     expect(requests).toHaveLength(1)
     expect(engineRefusal(cfgOf(requests[0]!))).toBeNull()
-    expect(get().slice).toEqual({ status: 'error', message: 'stop' })
+    expect(get().slice).toEqual({ status: 'error', message: 'Stop' })
   })
 
   it('a value the engine still refuses is dropped with a note, and the plate slices with the profile value', async () => {
@@ -120,7 +120,7 @@ describe("a Bambu Studio project's -1 values", () => {
     expect(get().overrides).not.toHaveProperty('raft_expansion')
     expect(get().projectSettings?.keys).not.toContain('raft_expansion')
     expect(get().toast?.text).toMatch(/^Setting not imported from a1-mini\.3mf: Raft expansion \(-3 is outside 0 to 100\)/)
-    expect(get().slice).toEqual({ status: 'error', message: 'stop' })
+    expect(get().slice).toEqual({ status: 'error', message: 'Stop' })
   })
 
   it('a refusal over a key the person set is shown, not dropped', async () => {
@@ -129,7 +129,7 @@ describe("a Bambu Studio project's -1 values", () => {
     set((s) => ({ overrides: { ...s.overrides, raft_expansion: -3 } }))
     await slicePlate(host, { auto: true })
     expect(requests).toHaveLength(1)
-    expect(get().slice).toEqual({ status: 'error', message: 'config key raft_expansion: -3 is outside 0 to 100' })
+    expect(get().slice).toEqual({ status: 'error', message: 'Config key raft_expansion: -3 is outside 0 to 100' })
     expect(get().overrides['raft_expansion']).toBe(-3)
   })
 })
