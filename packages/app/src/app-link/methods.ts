@@ -192,19 +192,12 @@ const HANDLERS: Record<string, Handler> = {
     if (!cloud || !cloudReady(currentEdition(), cloud)) throw new LinkError('not_found', `${appName()} has no ${ASSISTANT_NAME} cloud in this build`)
     return cloud.quota()
   },
-  'design.timeline': () => {
+  'design.timeline': async () => {
     const s = get()
-    const t = s.timeline
-    return {
-      marker: t.marker,
-      rolledBack: s.rollback !== null,
-      bodies: t.bodies.map((b) => b.id),
-      items: t.items.map((i) =>
-        i.kind === 'sketch'
-          ? { kind: 'sketch', id: i.id, name: i.name, loops: i.loops.length }
-          : { kind: 'feature', id: i.id, body: i.body, op: i.params.op, ...(i.sketch ? { sketch: i.sketch } : {}), ...(i.label ? { label: i.label } : {}), ...(i.suppressed ? { suppressed: true } : {}) },
-      ),
-    }
+    const { timelineSummary } = await import('@slicerx/cad-history')
+    // shaped as the design tools reply, so the MCP server passes it on as it does theirs
+    const output = { ...timelineSummary(s.timeline), rolledBack: s.rollback !== null }
+    return { summary: `${output.items.length} ${output.items.length === 1 ? 'item' : 'items'}, ${output.rolledBack ? `rolled back to ${output.marker}` : 'at the end'}`, output }
   },
   'design.roll': async (args) => {
     const t = get().timeline
@@ -215,7 +208,8 @@ const HANDLERS: Record<string, Handler> = {
     const { rollTo } = await import('../cad/history/rollback')
     await rollTo(linkLoader, m)
     const s = get()
-    return { marker: s.timeline.marker, rolledBack: s.rollback !== null, objects: s.plate.length }
+    const rolled = s.rollback !== null
+    return { summary: rolled ? `Rolled back to ${s.timeline.marker} of ${s.timeline.items.length}` : 'At the end of the timeline', output: { marker: s.timeline.marker, end: s.timeline.items.length, rolledBack: rolled, objects: s.plate.length } }
   },
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
