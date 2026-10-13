@@ -700,8 +700,10 @@ export interface Viewport {
   setToolChange(c: { segment: number; seconds: number; fixed: number } | null): void
   /** Each tool change's purge at the chute, read from the G-code; the blob grows and drops while the change plays. Null for none. */
   setPurges?(plans: readonly PurgePlan[] | null): void
-  /** Preview's "Show toolhead": false hides the moving head and its carriage; the rack, dock, chute and wiper stay and follow the print. */
+  /** Preview's "Show toolhead": false hides the moving head; the rack, dock, chute and wiper stay and follow the print. */
   setShowToolhead?(on: boolean): void
+  /** Preview's "Show gantry": the beam over the head (with its uprights on a bed slinger) and a docked head's carriage. */
+  setShowGantry?(on: boolean): void
   /** Preview's "Follow the nozzle": the camera moves with the head during playback, keeping its angle and zoom. */
   setFollowNozzle?(on: boolean): void
   setTravels(on: boolean): void

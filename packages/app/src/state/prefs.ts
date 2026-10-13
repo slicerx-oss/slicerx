@@ -26,6 +26,8 @@ export interface Prefs {
   sidebarFolds?: Record<string, boolean> | undefined
   /** Preview draws the moving toolhead (the machine's fixed parts show either way). */
   showToolhead?: boolean | undefined
+  /** Preview draws the gantry beam over the head and a docked head's carriage. Off by default. */
+  showGantry?: boolean | undefined
   /** Preview playback speed, times real time; the last choice is kept. */
   playbackSpeed?: number | undefined
   /** Preview playback keeps the camera on the nozzle. */
@@ -291,6 +293,7 @@ export function normalizePrefs(v: unknown): Prefs {
     appearance: appearance(r['appearance'], r['toolpathPalette'] === 'colorblind'),
     sidebarFolds: or(record(r['sidebarFolds'], (k) => /^[a-z-]{1,40}$/.test(k), bool), {}),
     showToolhead: or(bool(r['showToolhead']), true),
+    showGantry: or(bool(r['showGantry']), false),
     playbackSpeed: or((PLAYBACK_SPEEDS as readonly number[]).includes(r['playbackSpeed'] as number) ? (r['playbackSpeed'] as number) : undefined, DEFAULT_PLAYBACK_SPEED),
     followNozzle: or(bool(r['followNozzle']), false),
     easy: or(nullable(r['easy'], easy), null),

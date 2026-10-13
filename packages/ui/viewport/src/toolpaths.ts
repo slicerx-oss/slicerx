@@ -604,6 +604,8 @@ export class Toolpaths {
   private changer: ToolChangerSpec | null = null
   /** Preview's "Show toolhead": off hides the moving head; the rack, dock, chute and wiper stay. */
   private headOn = true
+  /** The gantry beam and a docked head's carriage: off unless asked for, or on a layer with a gantry strike. */
+  private gantryOn = false
   private change: { segment: number; seconds: number; fixed: number } | null = null
   private changeSeq: { key: string; seq: ChangeSequence } | null = null
   /** Segments where the tool differs from the one before, in order, with the tools either side. */
@@ -1202,10 +1204,21 @@ export class Toolpaths {
     this.gantry.setColor(hit)
   }
 
-  /** Shows or hides the moving head and its carriage. The machine's fixed parts stay and still follow the print. */
+  /** Shows or hides the moving head. The machine's fixed parts stay and still follow the print. */
   setShowToolhead(on: boolean): void {
     if (on === this.headOn) return
     this.headOn = on
+    this.apply()
+  }
+
+  /**
+   * Shows or hides the gantry: the beam over the head (and its uprights on a bed slinger) and the carriage a docked
+   * head hangs on. A layer with a gantry strike shows the beam either way.
+   */
+  setShowGantry(on: boolean): void {
+    if (on === this.gantryOn) return
+    this.gantryOn = on
+    this.head.carriageVisible = on
     this.apply()
   }
 
@@ -1256,7 +1269,7 @@ export class Toolpaths {
       this.gantry.place(false, 0, 0, 0)
       return
     }
-    const beam = moving && (this.headOn || this.gantry.striking(this.hi))
+    const beam = moving && (this.gantryOn || this.gantry.striking(this.hi))
     // With nothing drawn yet the machine stands as the print starts.
     to = Math.max(1, Math.min(to, b.segmentCount))
     const bytes = new Uint8Array(b.raw, b.segmentsOffset, b.segmentCount * SXPV_SEGMENT_BYTES)

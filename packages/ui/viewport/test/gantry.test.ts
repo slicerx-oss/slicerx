@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // heimdall's gantry in Preview: the beam over the moving head at the rod height, red where it runs through a part
-// it strikes, shown on a strike's layers even with the head hidden, with uprights on a bed slinger.
+// it strikes, with uprights on a bed slinger. It has its own Show gantry switch, off by default, apart from Show
+// toolhead; a strike's layers show it either way.
 import { describe, expect, it } from 'vitest'
 import { FEATURE } from '@slicerx/contracts'
 import { Box3, type Mesh, type Object3D } from 'three'
@@ -20,13 +21,17 @@ function shown(o: Object3D, stop: Object3D): boolean {
   return true
 }
 
-function rig(): Toolpaths {
+function rig(gantryOn = true): Toolpaths {
   const t = new Toolpaths()
   t.set(preview)
   t.setGantry(A1)
   t.setGantryHits([HIT])
+  if (gantryOn) t.setShowGantry(true)
   return t
 }
+
+/** Whether the moving head is drawn (the rig's own head group). */
+const headShown = (t: Toolpaths) => (t as unknown as { head: { headVisible: boolean; visible: boolean } }).head.headVisible
 
 const gantry = (t: Toolpaths) => t.root.getObjectByName('gantry')!
 const box = (t: Toolpaths, name: string) => {
@@ -70,6 +75,7 @@ describe('gantry beam', () => {
     const t = new Toolpaths()
     t.set(preview)
     t.setGantry(A1)
+    t.setShowGantry(true)
     // the part starts 1.5 mm past the band (128 + 56.5), within the engine's two cells
     t.setGantryHits([{ ...HIT, box: [100, 128 + 56.5 + 1.5, 156, 200] }])
     t.setRange(0, 1, 2)
@@ -80,13 +86,30 @@ describe('gantry beam', () => {
     expect(hits(t)).toHaveLength(0)
   })
 
-  it('shows on a strike\'s layers with the head hidden, and not elsewhere', () => {
+  it('shows on a strike\'s layers with the gantry switched off, and not elsewhere', () => {
     const t = rig()
-    t.setShowToolhead(false)
+    t.setShowGantry(false)
     t.setRange(0, 0, 2)
     expect(shown(gantry(t), t.root)).toBe(false)
     t.setRange(0, 2, 2)
     expect(shown(gantry(t), t.root)).toBe(true)
+  })
+
+  it('is off by default while the head shows, and each switch works alone', () => {
+    const t = rig(false)
+    t.setGantryHits(null)
+    t.setRange(0, 0, 2)
+    expect(headShown(t)).toBe(true)
+    expect(shown(gantry(t), t.root)).toBe(false)
+    t.setShowGantry(true)
+    expect(shown(gantry(t), t.root)).toBe(true)
+    t.setShowToolhead(false)
+    expect(headShown(t)).toBe(false)
+    expect(shown(gantry(t), t.root)).toBe(true)
+    t.setShowGantry(false)
+    expect(shown(gantry(t), t.root)).toBe(false)
+    t.setShowToolhead(true)
+    expect(headShown(t)).toBe(true)
   })
 
   it('draws no uprights for a printer whose bed does not move in y, and nothing without a rod', () => {

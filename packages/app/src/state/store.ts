@@ -257,6 +257,8 @@ export interface AppState {
   sidebarFolds: Record<string, boolean>
   /** Preview draws the moving toolhead; the rack, dock, chute and wiper show either way. */
   showToolhead: boolean
+  /** Preview draws the gantry beam over the head and a docked head's carriage (a gantry strike shows the beam either way). */
+  showGantry: boolean
   /** Preview playback speed, times real time (PLAYBACK_SPEEDS). */
   playbackSpeed: number
   /** Preview playback keeps the camera on the nozzle. */
@@ -671,6 +673,7 @@ export const appStore = createStore<AppState>()(() => ({
   appearance: prefs.appearance ?? DEFAULT_APPEARANCE,
   sidebarFolds: prefs.sidebarFolds ?? {},
   showToolhead: prefs.showToolhead ?? true,
+  showGantry: prefs.showGantry ?? false,
   playbackSpeed: prefs.playbackSpeed ?? DEFAULT_PLAYBACK_SPEED,
   followNozzle: prefs.followNozzle ?? false,
   toast: null,
@@ -849,7 +852,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 // the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
 const setup0 = appStore.getState().setup
@@ -869,6 +872,7 @@ appStore.subscribe((s, prev) => {
       appearance: s.appearance,
       sidebarFolds: s.sidebarFolds,
       showToolhead: s.showToolhead,
+      showGantry: s.showGantry,
       playbackSpeed: s.playbackSpeed,
       followNozzle: s.followNozzle,
       easy: s.easy,
