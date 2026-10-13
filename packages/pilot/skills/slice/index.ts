@@ -56,7 +56,10 @@ export function createSlice(shared: ToolShared) {
         output: {
           plates: indexes.map((idx) => {
             const r = shared.slices.get(idx)?.result
-            return r ? { plate: idx, layers: r.layerCount, timeS: Math.round(r.stats.timeS), grams: Math.round(r.stats.filamentG.reduce((a, b) => a + b, 0) * 10) / 10, cost: Math.round(r.stats.cost * 100) / 100, warnings: r.warnings.map((w) => w.message) } : null
+            if (!r) return null
+            const base = { plate: idx, layers: r.layerCount, timeS: Math.round(r.stats.timeS), grams: Math.round(r.stats.filamentG.reduce((a, b) => a + b, 0) * 10) / 10, cost: Math.round(r.stats.cost * 100) / 100, warnings: r.warnings.map((w) => w.message) }
+            // Which filament each object's walls, infill, support and other features printed with, when the host reports it.
+            return r.featureFilaments?.length ? { ...base, featureFilaments: r.featureFilaments } : base
           }),
           total: { timeS: Math.round(time), grams: Math.round(grams * 10) / 10, cost: Math.round(cost * 100) / 100, layers },
         },

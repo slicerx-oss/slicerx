@@ -59,6 +59,11 @@ export interface SliceSummary {
   /** Use per filament slot (slot 1 is the first filament), for multi-material plates and spool tracking. */
   filaments: { slot: number; filament_mm: number; filament_g: number }[]
   tool_changes?: number
+  /**
+   * The filaments each object's features printed with, read from the engine's sliced paths (sx engine): the plate
+   * object's id when it has one, its name, and each feature's filament slots.
+   */
+  feature_filaments?: { object?: string; name: string; features: Record<string, number[]> }[]
   /** The plate that was sliced, for a 3MF or .sx3mf project. */
   plate?: number
   gcode_path?: string

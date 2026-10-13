@@ -6,6 +6,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
+- Slices report which filament each object's features printed with. `slicerx_slice` gives `featureFilaments` per plate and `slicerx_slice_file` gives `feature_filaments`: for each object, the filament slots its walls, infill, surfaces, support and other features printed with, after the project's and the object's own settings (sx engine). `slicerx-mcp call` reads it from a shell.
 - `slicerx_geom_sketch_solve` solves a constrained 2D sketch: points, lines, circles and arcs held by coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, symmetric, distance, angle and the other sketch constraints. It answers with the solved points and radii, the degrees of freedom left, which points can still move, and the constraints that conflict or repeat.
 - `slicerx_mimir_quota` reads today's free mimir use on this computer from the app over the app link: what the install and the network have used of their daily caps, in US dollars, and whether mimir cloud is open. `slicerx-mcp call slicerx_mimir_quota` reads it from a shell.
 - `slicerx_printer_status` and `slicerx_printer_list` show what a printer reports wrong now (an HMS code or a print error) through sx-link: the first problem in the summary, a `problem` row with its code in the display, and `issues` in the output. Problems left over from an earlier job are left out.
