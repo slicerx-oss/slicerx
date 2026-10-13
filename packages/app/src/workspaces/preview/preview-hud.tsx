@@ -185,8 +185,10 @@ export function LayerDock() {
     let last = performance.now()
     const tick = (now: number) => {
       if (!playingRef.current) return
-      clockRef.current = Math.min(timeline.total, clockRef.current + ((now - last) / 1000) * speedRef.current)
-      last = now
+      // A frame's time is when the frame began, which can come before the moment playback started: the clock never
+      // runs back, or a jump's lead-in that starts just inside a layer would show the layer below for a frame.
+      clockRef.current = Math.min(timeline.total, clockRef.current + (Math.max(0, now - last) / 1000) * speedRef.current)
+      last = Math.max(last, now)
       if (stopAt.current !== null && clockRef.current >= stopAt.current) {
         clockRef.current = stopAt.current
         stopAt.current = null
