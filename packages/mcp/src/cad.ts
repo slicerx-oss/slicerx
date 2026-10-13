@@ -8,7 +8,7 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost } from '@slicerx/cad-history'
@@ -246,6 +246,16 @@ const sketchConstraint = z
   .object({ type: z.enum(SKETCH_CONSTRAINTS) })
   .catchall(z.number())
   .describe('Fields by type: a, b (points, or lines and circles by entity index), point, line, circle, value (mm, or degrees for angle)')
+
+// a finished sketch's constraints name its loops: points by loop, place and segment, lines and circles by loop and segment
+const loopPoint = z.object({ e: z.number().int().min(-1), at: z.enum(['start', 'to', 'center', 'arcCenter']), seg: z.number().int().min(0).optional() })
+const loopCurve = z.object({ e: z.number().int().min(0), seg: z.number().int().min(0) })
+const loopConstraint = z
+  .object({ type: z.enum(SKETCH_CONSTRAINTS), driven: z.literal(true).optional(), expr: z.string().max(200).optional() })
+  .catchall(z.union([z.number(), loopPoint, loopCurve]))
+  .describe(
+    'Fields by type as for slicerx_geom_sketch_solve, naming the loops: a point is {e: loop, at: start | to | center | arcCenter, seg} (to and arcCenter take the segment; e -1 at start is the sketch origin), a line, arc or circle is {e: loop, seg} (a circle is seg 0). Dimensions (length, distance, horizontalDistance, verticalDistance, lineDistance, radius, diameter, angle) take value, mm or degrees, and offset, mm, where the dimension line sits',
+  )
 
 const shape = z
   .discriminatedUnion('type', [
@@ -542,17 +552,26 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const sketch = defineTool({
     name: 'design.sketch',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
-    description: `Finish a sketch into the design timeline without making a solid, as Finish Sketch does in the app: closed loops of lines and arcs on the bed, any plane or a picked face. Returns the sketch's id and name; pass the id as sketch to slicerx_geom_extrude or slicerx_geom_revolve with a design to make a feature from it. Works on the project open in the app, through the app link.`,
-    input: z.object({ loops, frame: frameSchema.optional() }),
+    description: `Finish a sketch into the design timeline without making a solid, as Finish Sketch does in the app: closed loops of lines and arcs on the bed, any plane or a picked face. With constraints (dimensions among them) the sketch is solved first, as the sketch tool does: the loops move to meet them, and a dimension that would over-define the sketch is kept driven (it reports the size). Returns the sketch's id and name, and with constraints the degrees of freedom left and which dimensions are driven; pass the id as sketch to slicerx_geom_extrude or slicerx_geom_revolve with a design to make a feature from it. Works on the project open in the app, through the app link.`,
+    input: z.object({ loops, frame: frameSchema.optional(), constraints: z.array(loopConstraint).max(8192).optional() }),
     async run(i) {
       const host = deps.designs
       if (!host?.addSketch) throw new ToolInputError('Finished sketches live in the design timeline of the project open in the app; turn on the app link there, then try again')
       const frame = frameOf(i.frame)
-      const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: i.loops }))
-      return { summary: `${k.name} is in the timeline`, output: { id: k.id, name: k.name, loops: k.loops.length } }
+      if (!i.constraints?.length) {
+        const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: i.loops }))
+        return { summary: `${k.name} is in the timeline`, output: { id: k.id, name: k.name, loops: k.loops.length } }
+      }
+      if (!host.settleSketch) throw new ToolInputError('constraints: this host cannot solve sketches; leave them out')
+      const solved = await host.settleSketch(plain({ loops: i.loops, constraints: i.constraints as unknown as SketchConstraint[] }))
+      if (solved.status === 'conflict' || solved.status === 'failed') throw new ToolInputError(`constraints: they conflict (${solved.status}), so the sketch was not added; slicerx_geom_sketch_solve names the clashing ones`)
+      const k = host.addSketch(plain({ ...(frame ? { frame } : {}), loops: solved.loops, constraints: solved.constraints }))
+      const driven = solved.constraints.flatMap((c, n) => ('driven' in c && c.driven ? [n] : []))
+      const head = solved.dof === 0 ? 'fully defined' : `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
+      return { summary: `${k.name} is in the timeline, ${head}${driven.length ? `; dimensions ${JSON.stringify(driven)} are driven` : ''}`, output: { id: k.id, name: k.name, loops: k.loops, dof: solved.dof, driven } }
     },
   })
 
