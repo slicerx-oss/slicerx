@@ -26,7 +26,7 @@ Exact solids for the modeling tools come from SMLib and its C API, SM_API, by NV
 | --- | --- | --- |
 | manifold-rust 0.15.0 | Apache-2.0 | Mesh booleans in sx-geom |
 | spade 2.15.1 (with robust, smallvec, hashbrown and num-traits) | MIT or Apache-2.0 | Constrained Delaunay triangulation of flat faces in sx-geom (remesh.rs) |
-| ttf-parser 0.25.1 | MIT or Apache-2.0 | Reading the font for text solids in sx-geom. Marked unmaintained upstream (RUSTSEC-2026-0192); replacement planned. |
+| read-fonts 0.44.0 (with font-types 0.12.5 and bytemuck) | MIT or Apache-2.0 | Reading the font for text solids in sx-geom: its tables and CFF outlines. TrueType outlines are drawn by sx-geom (outline.rs). |
 | str0m 0.24.0 | MIT or Apache-2.0 | WebRTC for camera and remote links in sx-link |
 | aws-lc-rs and aws-lc-sys | ISC, Apache-2.0, MIT and BSD-3-Clause | TLS crypto through rustls. aws-lc-sys bundles AWS-LC, which carries several of these licenses. |
 | openh264 (crate) 0.9.8 | BSD-2-Clause | Rust bindings for the decoder below |
