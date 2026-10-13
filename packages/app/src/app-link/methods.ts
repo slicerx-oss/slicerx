@@ -13,6 +13,7 @@ import { LinkError } from './methods-error'
 import { listSessions, readSession } from './sessions'
 import { toolStore } from '../plate/tools'
 import { get, pilotState, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
+import { slicePanes } from '../lib/slice-panes'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -82,10 +83,16 @@ const COLORS: readonly ColorMode[] = ['feature', 'tool', 'speed', 'flow', 'layer
 function previewState() {
   const s = get()
   const p = s.preview
+  const panes = slicePanes(s)
   return {
     sliced: p !== null,
     toolpaths: showsLayers(s),
     camera: s.camera,
+    // The Preview switches, and the right pane and the playback bar as on screen (lib/slice-panes.ts).
+    toolhead: s.showToolhead,
+    gantry: s.showGantry,
+    rightPane: panes.rightPane,
+    drawer: panes.drawer,
     ...(p
       ? {
           layers: p.layerCount,
@@ -107,9 +114,11 @@ const layerArg = (v: unknown, n: number, key: string): number => {
 const BUSY_TOOLS = ['paint', 'brim', 'face']
 
 /**
- * Moves the preview: `layer` (the top handle), `range` [bottom, top], `oneLayer`, `colorMode`, `camera`. It never
- * interrupts the person: it answers busy unless the window is already on Slice with no paint, brim or face tool open,
- * and it changes only what the window shows now, never a saved choice (the tab, the look, a picked color mode).
+ * Moves the preview: `layer` (the top handle), `range` [bottom, top], `oneLayer`, `colorMode`, `camera`, and turns the
+ * playback bar's Show toolhead (`toolhead`) and Show gantry (`gantry`) on or off. It never interrupts the person: it
+ * answers busy unless the window is already on Slice with no paint, brim or face tool open. It changes only what the
+ * window shows, never the project; the tab, the look and a picked color mode stay the person's. The two switches are the
+ * same ones the person sees in the playback bar, so they stay as the agent leaves them.
  */
 function setPreview(args: Record<string, unknown>) {
   const s = get()
@@ -119,6 +128,7 @@ function setPreview(args: Record<string, unknown>) {
   if (args['camera'] !== undefined && !CAMERAS.includes(args['camera'] as CameraView)) throw new LinkError('invalid_input', `camera is one of ${CAMERAS.join(', ')}`)
   if (args['colorMode'] !== undefined && !COLORS.includes(args['colorMode'] as ColorMode)) throw new LinkError('invalid_input', `colorMode is one of ${COLORS.join(', ')}`)
   if (args['oneLayer'] !== undefined && typeof args['oneLayer'] !== 'boolean') throw new LinkError('invalid_input', 'oneLayer is true or false')
+  for (const k of ['toolhead', 'gantry']) if (args[k] !== undefined && typeof args[k] !== 'boolean') throw new LinkError('invalid_input', `${k} is true or false`)
   const layered = ['layer', 'range', 'oneLayer', 'colorMode'].some((k) => args[k] !== undefined)
   let lo = s.layerLo
   let hi = s.layerHi
@@ -141,6 +151,8 @@ function setPreview(args: Record<string, unknown>) {
   }
   // Everything is checked before anything moves, so a refused call changes nothing.
   if (args['camera'] !== undefined) setCamera(args['camera'] as CameraView)
+  if (args['toolhead'] !== undefined) set({ showToolhead: args['toolhead'] as boolean })
+  if (args['gantry'] !== undefined) set({ showGantry: args['gantry'] as boolean })
   if (layered) {
     // The color mode the person picked stays theirs: an agent's choice is not remembered as a pick.
     set({ layerLo: lo, layerHi: hi, moveCut: 1, toolChange: null, ...(args['colorMode'] !== undefined ? { colorMode: args['colorMode'] as ColorMode } : {}) })
