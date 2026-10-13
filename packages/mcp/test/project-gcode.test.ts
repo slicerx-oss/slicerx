@@ -42,7 +42,7 @@ function a1Project(dir: string, name: string, start: string): string {
   return path
 }
 
-type Err = { error: { code: string; message: string; details?: { approvable: boolean; changes: { key: string; label: string; added: number; approvable: boolean; flags: { line: number; code: string; reason: string; severity: string }[]; diff: string }[] } } }
+type Err = { error: { code: string; message: string; details?: { summary?: string; printer?: string; approvable: boolean; changes: { key: string; label: string; added: number; approvable: boolean; flags: { line: number; code: string; reason: string; severity: string }[]; diff: string }[] } } }
 type Summary = { project_gcode?: { key: string; use: string; message: string }[]; gcode_path: string }
 
 describe('a project with its own printer G-code', () => {
@@ -67,8 +67,11 @@ describe('a project with its own printer G-code', () => {
     const r = await h.call('slicerx_slice_file', { model: a1Project(h.dir, 'edited.3mf', EDITED_START), project_settings: true })
     const e = data<Err>(r).error
     expect(e.code).toBe('project_gcode_review')
-    expect(text(r)).toMatch(/^Error: project_gcode_review: edited\.3mf carries printer G-code that is not the printer's stock text\. The start G-code differs from the printer profile's \(1 line added, 0 removed\)\. Flagged: line 10: M500 writes settings to the printer's memory\./)
-    expect(text(r)).toMatch(/call again with project_gcode "profile"/)
+    // One plain line and what to do; the counts and flagged lines are in details only.
+    expect(e.message).toBe(`edited.3mf's printer G-code doesn't match the Bambu Lab A1 profile's. Show the person the differences in details, or call again with project_gcode "profile" to use the printer's G-code.`)
+    expect(text(r)).toBe(`Error: project_gcode_review: ${e.message}`)
+    expect(e.details?.summary).toBe("edited.3mf's printer G-code doesn't match the Bambu Lab A1 profile's.")
+    expect(e.details?.printer).toBe('bambu-a1')
     expect(e.details?.approvable).toBe(true)
     const c = e.details!.changes[0]!
     expect(c).toMatchObject({ key: 'machine_start_gcode', label: 'start G-code', added: 1, approvable: true })
@@ -76,6 +79,27 @@ describe('a project with its own printer G-code', () => {
     expect(c.diff).toMatch(/\n\+M500 ; keep my offsets\n/)
     // The stock lines around it are not flagged.
     expect(c.flags.some((f) => f.code === 'endstops' || f.code === 'motors_off')).toBe(false)
+  })
+
+  it('asks for the printer when no printer was named and the project names none SlicerX has', async () => {
+    const h = await connect()
+    const path = join(h.dir, 'mystery.3mf')
+    writeFileSync(
+      path,
+      writeZip([
+        { name: '3D/3dmodel.model', data: MODEL },
+        { name: 'Metadata/project_settings.config', data: JSON.stringify({ printer_settings_id: 'Workshop Special 0.4 nozzle', machine_start_gcode: 'G28\nG1 Z5 F3000\nM104 S200\n' }) },
+      ]),
+    )
+    const r = await h.call('slicerx_slice_file', { model: path, project_settings: true })
+    const e = data<Err>(r).error
+    expect(e.code).toBe('printer_needed')
+    expect(e.message).toBe(`mystery.3mf has its own printer G-code, and no printer was named to check it against. Name the printer profile the project is for, or call again with project_gcode "profile".`)
+    expect(e.details?.summary).toBe('mystery.3mf has its own printer G-code, and no printer was named to check it against.')
+    // The printer profile's G-code still slices it.
+    const read = readProjectFile(path)
+    const kept = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'mystery.3mf', config: read.config, gcode: 'profile' } })
+    expect(kept.gcodeReplaced).toEqual(['machine_start_gcode'])
   })
 
   it("leaves the printer profile's G-code in place of changed text when asked to", async () => {

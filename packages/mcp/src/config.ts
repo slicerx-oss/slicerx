@@ -5,7 +5,7 @@
 // then overrides.
 // Shared by the file tools and cloud slicing.
 import type { SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerProfile, reviewProjectGcode, type GcodeChange, type GcodeKept } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerName, printerProfile, reviewProjectGcode, type GcodeChange, type GcodeKept } from '@slicerx/settings'
 import type { DataStore } from './data'
 import type { PresetLayer } from './presets'
 import { ToolInputError } from './models'
@@ -144,21 +144,34 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   return { config: { ...defaultConfig(store), ...explicit }, explicit, applied, trustedGcode: !untrusted && !untrustedProfile && !untrustedSlot, gcodeKept: kept, gcodeReplaced: replaced, noPrinter }
 }
 
-/** The refusal for a project whose G-code is not the printer's stock text: the diff and flags for a person to see. */
-function projectGcodeReview(project: string, changes: GcodeChange[]): ToolInputError {
-  return new ToolInputError(projectGcodeMessage(project, changes), 'project_gcode_review', {
+/**
+ * The refusal for a project whose G-code is not the printer's stock text. The message is one plain sentence and what
+ * to do; the per-script counts, flagged lines and diffs are in the details, for a client to show behind a toggle.
+ */
+function projectGcodeReview(project: string, printer: { id: string | undefined; name: string | undefined }, changes: GcodeChange[]): ToolInputError {
+  const summary = projectGcodeSummary(project, printer.name)
+  return new ToolInputError(projectGcodeMessage(summary), 'project_gcode_review', {
     project,
+    summary,
+    ...(printer.id ? { printer: printer.id } : {}),
     approvable: changes.every((c) => c.approvable),
     changes: changes.map((c) => ({ key: c.key, ...(c.slot !== undefined ? { slot: c.slot } : {}), label: c.label, added: c.added, removed: c.removed, approvable: c.approvable, fingerprint: c.fingerprint, flags: c.flags, diff: c.unified })),
   })
 }
 
-function projectGcodeMessage(project: string, changes: GcodeChange[]): string {
-  const parts = changes.map((c) => {
-    const flags = c.flags.map((f) => `line ${f.line}: ${f.reason}${f.severity === 'error' ? ' (not allowed even with approval)' : ''}`)
-    return `The ${c.label} differs from the printer profile's (${c.added} ${c.added === 1 ? 'line' : 'lines'} added, ${c.removed} removed)${flags.length ? `. Flagged: ${flags.join('; ')}` : ', with no flagged lines'}.`
-  })
-  return `${project} carries printer G-code that is not the printer's stock text. ${parts.join(' ')} Show the diff to the person. To slice now with the printer profile's G-code instead, call again with project_gcode "profile". Only a person can choose the project's own G-code, in SlicerX.`
+/** The one line a client shows first: `edited.3mf's printer G-code doesn't match the Bambu Lab A1 profile's.` */
+function projectGcodeSummary(project: string, printerName: string | undefined): string {
+  return `${project}'s printer G-code doesn't match the ${printerName ? `${printerName} profile's` : "printer profile's"}.`
+}
+
+function projectGcodeMessage(summary: string): string {
+  return `${summary} Show the person the differences in details, or call again with project_gcode "profile" to use the printer's G-code.`
+}
+
+/** The refusal for a project with its own G-code and no printer to compare it with. */
+function printerNeeded(project: string): ToolInputError {
+  const summary = `${project} has its own printer G-code, and no printer was named to check it against.`
+  return new ToolInputError(`${summary} Name the printer profile the project is for, or call again with project_gcode "profile".`, 'printer_needed', { project, summary })
 }
 
 /**
@@ -181,7 +194,14 @@ function projectGcode(store: DataStore, profiles: ProfileCatalog, names: string[
   const limits = model ? printerProfile(model)?.limits : undefined
   const review = reviewProjectGcode({ project: own, profile: reference, model, limits: { nozzleMaxC: limits?.hotendMaxTemp, bedMaxC: limits?.bedMaxTemp } })
   if (review.changes.length === 0) return { kept: review.kept, replaced: [] }
-  if ((project.gcode ?? 'review') === 'review') throw projectGcodeReview(project.name, review.changes)
+  if ((project.gcode ?? 'review') === 'review') {
+    // Nothing to compare with but the engine's generic G-code, against which nearly every line reads as added.
+    if (!machine && !Object.keys(own).some((k) => layered[k] !== undefined || shipped[k] !== undefined)) throw printerNeeded(project.name)
+    // The printer it was compared with: the model when SlicerX knows it, else the printer profile named in the call.
+    const named = names.map((n) => profiles.get(n)).filter((p) => p?.section === 'printer').pop()
+    const known = model && printerProfile(model) ? model : undefined
+    throw projectGcodeReview(project.name, { id: known ?? machine?.id ?? named?.id ?? model, name: known ? printerName(known) : (machine ?? named)?.name }, review.changes)
+  }
   const replaced = [...new Set(review.changes.map((c) => c.key))]
   for (const k of replaced) {
     const v = reference[k] as SettingValue | undefined

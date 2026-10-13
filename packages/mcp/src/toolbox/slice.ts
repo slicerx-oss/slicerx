@@ -32,7 +32,7 @@ export const sliceInput = {
     .enum(['review', 'profile'])
     .default('review')
     .describe(
-      "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review and the diff and flagged lines in structuredContent.error.details, for the person to see. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. Only a person can choose a project's own G-code, in SlicerX; no tool call can.",
+      "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review, a one-line details.summary to show first and the diff and flagged lines in structuredContent.error.details, for the person to see; printer_needed when no printer profile names the printer to compare with. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. Only a person can choose a project's own G-code, in SlicerX; no tool call can.",
     ),
   paint: z
     .record(z.string().regex(/^\d+$/), z.partialRecord(z.enum(['color', 'seam', 'support', 'fuzzy']), z.record(z.string().regex(/^\d+$/), z.string().max(4096))))
