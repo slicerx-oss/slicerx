@@ -166,6 +166,8 @@ export function tauriConfig(config: EditionConfig, target: 'desktop' | 'mobile')
   const csp = sbUrl && supabase ? { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} ${supabase}`, 'img-src': `${DESKTOP_IMG_SRC} ${publicStorageSource(sbUrl)}` } } : {}
   // The shell opens only the pages its capabilities allow: the shared ones, and exactly the edition's own links.
   const security = { security: { ...csp, capabilities: [...DESKTOP_CAPABILITIES, editionLinksCapability(config)] } }
+  // mimir cloud's one host for the desktop's model transport (src-tauri llm.rs init_cloud); set only at startup
+  const cloud = config.features.pilot && config.ai.keySource === 'cloud' && sbUrl ? { 'mimir-cloud': { url: new URL(sbUrl).origin, edition: config.id } } : {}
   const { publisher, copyright, description } = publisherOf(config)
   return {
     productName: config.apps.desktop.productName,
@@ -179,7 +181,7 @@ export function tauriConfig(config: EditionConfig, target: 'desktop' | 'mobile')
       fileAssociations: desktopFileTypes(config),
       ...(config.brand.logo.appIcon ? { icon: DESKTOP_ICONS.map((f) => `${DESKTOP_ICON_DIR}/${f}`) } : {}),
     },
-    plugins: { ...plugins, ...updater },
+    plugins: { ...plugins, ...updater, ...cloud },
   }
 }
 

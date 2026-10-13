@@ -44,6 +44,8 @@ export interface LlmRequest {
   reasoning?: 'low' | 'medium' | 'high'
   /** Enable the provider's hosted web search tool for this request. */
   webSearch?: boolean
+  /** The pilot session this turn belongs to; mimir cloud files a shared session under it. */
+  session?: string
 }
 
 export type LlmStop = 'end' | 'tool_calls' | 'length' | 'error'

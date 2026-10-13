@@ -52,7 +52,9 @@ export default defineEditionConfig({
     pilot: true,
   },
   auth: { providers: [{ kind: 'email' }] },
-  ai: { provider: 'openai', model: 'gpt-6-sol', keySource: 'keychain' },
+  // Pre-alpha: with a backend, mimir runs on mimir cloud (Haiku through the project's proxy) until a person connects
+  // their own key or model.
+  ai: supabase ? { provider: 'anthropic', model: 'claude-haiku-5-5', keySource: 'cloud' } : { provider: 'openai', model: 'gpt-6-sol', keySource: 'keychain' },
   // Download URLs are set when releases exist.
   funding: {
     githubSponsors: 'https://github.com/sponsors/Subydev',

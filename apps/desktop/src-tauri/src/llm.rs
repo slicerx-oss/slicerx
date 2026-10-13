@@ -108,6 +108,55 @@ pub async fn llm_billing() -> Option<&'static str> {
     .unwrap_or(None)
 }
 
+/// The edition's mimir cloud, from the `mimir-cloud` entry the edition overlay writes into the
+/// Tauri config (`{url, edition}`, packages/edition-config tauriConfig). Set once at startup, so
+/// the webview can never move the install token to another host. No entry: not available.
+pub fn init_cloud(config: &tauri::Config) {
+    let Some(c) = config.plugins.0.get("mimir-cloud") else {
+        return;
+    };
+    let url = c.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+    let edition = c.get("edition").and_then(|v| v.as_str()).unwrap_or_default();
+    if let Err(e) = sx_llm::set_mimir_cloud(url, edition) {
+        eprintln!("mimir cloud is off: {e}");
+    }
+}
+
+fn cloud_or_err() -> Result<&'static sx_llm::MimirCloud, String> {
+    sx_llm::mimir_cloud().ok_or_else(|| "mimir cloud is not part of this build.".to_owned())
+}
+
+fn text(e: sx_llm::Error) -> String {
+    match e {
+        sx_llm::Error::Http { message, .. } => message,
+        other => other.to_string(),
+    }
+}
+
+/// Registers this install with mimir cloud again; the new token replaces the old in the keychain.
+#[tauri::command]
+pub async fn mimir_cloud_register() -> Result<(), String> {
+    sx_llm::cloud::register(&SystemKeySource, cloud_or_err()?)
+        .await
+        .map_err(text)
+}
+
+/// Today's mimir cloud use and caps for this install (registers it first when it has no token).
+#[tauri::command]
+pub async fn mimir_cloud_quota() -> Result<sx_llm::cloud::Quota, String> {
+    sx_llm::cloud::quota(&SystemKeySource, cloud_or_err()?)
+        .await
+        .map_err(text)
+}
+
+/// Deletes the sessions this install shared with mimir cloud; returns how many.
+#[tauri::command]
+pub async fn mimir_cloud_forget() -> Result<u64, String> {
+    sx_llm::cloud::forget(&SystemKeySource, cloud_or_err()?)
+        .await
+        .map_err(text)
+}
+
 /// Starts a request; its body arrives on `on_chunk`. `id` is the webview's, for `llm_cancel`.
 #[tauri::command]
 pub fn llm_stream(id: u32, request: LlmHttpRequest, on_chunk: Channel<LlmChunk>) {

@@ -45,6 +45,7 @@ export interface Prefs {
   fonts?: { ui: string; mono: string } | undefined
   settingsMode?: 'simple' | 'advanced' | 'expert' | 'developer' | undefined
   crashReports?: boolean | undefined
+  mimirShare?: boolean | undefined
   /** Settings > Appearance > Motion; absent means the edition's default. */
   motion?: 'system' | 'full' | 'reduced' | undefined
   /** The pre-alpha agreement the person accepted, and when (ISO date). */
@@ -82,7 +83,7 @@ export interface Prefs {
   paneSizes?: Record<string, number> | undefined
   spoolLinks?: Record<string, number> | undefined
   queue?: { id: string; printerId: string; printerName: string; plateName: string; remote: { printerId: string; path: string; name: string }; sha256: string; layers: number; timeS: number; grams: number; options: Record<string, boolean>; startAfter?: string; addedAt: string }[] | undefined
-  pilot?: { mode: 'on' | 'off' | 'unset'; provider?: 'openai' | 'anthropic' | 'local'; baseUrl?: string; model?: string } | null | undefined
+  pilot?: { mode: 'on' | 'off' | 'unset'; provider?: 'openai' | 'anthropic' | 'local' | 'cloud'; baseUrl?: string; model?: string } | null | undefined
 }
 
 /** A printer added by hand in setup that no host knows: it slices and exports, and takes no jobs. */
@@ -262,7 +263,7 @@ function pilot(v: unknown): Prefs['pilot'] | undefined {
   if (!isRec(v)) return undefined
   const mode = oneOf(v['mode'], ['on', 'off', 'unset'] as const)
   if (!mode) return undefined
-  const provider = oneOf(v['provider'], ['openai', 'anthropic', 'local'] as const)
+  const provider = oneOf(v['provider'], ['openai', 'anthropic', 'local', 'cloud'] as const)
   const baseUrl = str(v['baseUrl'], 200)
   const model = str(v['model'], 80)
   return { mode, ...(provider ? { provider } : {}), ...(baseUrl ? { baseUrl } : {}), ...(model ? { model } : {}) }
@@ -299,6 +300,7 @@ export function normalizePrefs(v: unknown): Prefs {
     ...opt('fonts', isRec(r['fonts']) && str(r['fonts']['ui'], 40) && str(r['fonts']['mono'], 40) ? { ui: r['fonts']['ui'] as string, mono: r['fonts']['mono'] as string } : undefined),
     settingsMode: or(oneOf(r['settingsMode'], ['simple', 'advanced', 'expert', 'developer'] as const), 'simple'),
     crashReports: or(bool(r['crashReports']), false),
+    mimirShare: or(bool(r['mimirShare']), true),
     ...opt('motion', oneOf(r['motion'], ['system', 'full', 'reduced'] as const)),
     agreement: or(nullable(r['agreement'], (x) => (isRec(x) && num(x['version'], 1, 1e6) !== undefined && str(x['acceptedAt'], 40) ? { version: x['version'] as number, acceptedAt: x['acceptedAt'] as string } : undefined)), null),
     ...opt('installId', typeof r['installId'] === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r['installId']) ? r['installId'] : undefined),

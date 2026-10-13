@@ -109,6 +109,9 @@ pub(crate) enum Provider {
     /// or the home network over http. Only the optional local key is sent, so a local
     /// process can never receive the OpenAI key.
     OpenAiCompatible,
+    /// `mimir-cloud`: the edition's model proxy, on the one host set at startup, with the
+    /// install token sent as `x-sx-install`. No key is ever sent there.
+    MimirCloud,
 }
 
 impl Provider {
@@ -117,6 +120,7 @@ impl Provider {
             "openai" => Some(Provider::OpenAi),
             "anthropic" => Some(Provider::Anthropic),
             "openai-compatible" => Some(Provider::OpenAiCompatible),
+            "mimir-cloud" => Some(Provider::MimirCloud),
             _ => None,
         }
     }

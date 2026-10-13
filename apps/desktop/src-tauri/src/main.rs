@@ -53,6 +53,9 @@ fn main() {
     // The edition's name and link scheme, from the config this build was made with; the menu and links read it.
     let context = tauri::generate_context!();
     brand::init(context.config());
+    // mimir cloud's one host, from the same config.
+    #[cfg(feature = "pilot")]
+    llm::init_cloud(context.config());
     // Linux: a launch that cannot reach a display hands over to a running app or says why, before the toolkit panics.
     #[cfg(target_os = "linux")]
     display::preflight(&context.config().identifier, &brand::get().name);
@@ -213,6 +216,12 @@ fn main() {
             llm::llm_stream,
             #[cfg(feature = "pilot")]
             llm::llm_cancel,
+            #[cfg(feature = "pilot")]
+            llm::mimir_cloud_register,
+            #[cfg(feature = "pilot")]
+            llm::mimir_cloud_quota,
+            #[cfg(feature = "pilot")]
+            llm::mimir_cloud_forget,
             #[cfg(feature = "pilot")]
             localai::local_ai_hardware,
             #[cfg(feature = "pilot")]

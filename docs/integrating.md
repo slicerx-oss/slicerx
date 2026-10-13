@@ -154,7 +154,7 @@ Every loader, in TypeScript and in Rust, applies these on top of the file. They 
 
 ## Rules the checker enforces
 
-- Features need what they depend on: the feed needs the store; the store needs Supabase (or `demoData`, which serves a bundled demo catalog); cloud slicing needs `backend.cloudApi`; phone pairing needs a relay; mimir needs an AI provider, and `keySource: 'cloud'` needs the cloud API.
+- Features need what they depend on: the feed needs the store; the store needs Supabase (or `demoData`, which serves a bundled demo catalog); cloud slicing needs `backend.cloudApi`; phone pairing needs a relay; mimir needs an AI provider, and `keySource: 'cloud'` needs Supabase, where the mimir cloud proxy runs.
 - Every edition other than SlicerX's own needs `legal.sourceUrl`, because every build ships the AGPL-3.0 stock profiles and printer images (see `REUSE.toml`) and users of your apps and site are entitled to the source. The unbranded reference build links SlicerX's source.
 - No secrets. The Supabase anon key and OAuth client ids are public by design; the checker refuses a Supabase service role key, API keys (`sk-...`) and private keys. Secrets go in your server's environment or a secret manager, and model keys in the OS keychain or your cloud.
 - Your own name and identity. An edition whose `id` is not `slicerx` cannot use the SlicerX name, the SlicerX logo, the `slicerx://` scheme or `app.slicerx.*` identifiers, and must set `brand.logo.appIcon` so the desktop build does not ship the SlicerX icon.

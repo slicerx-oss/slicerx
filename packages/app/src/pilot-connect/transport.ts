@@ -60,12 +60,14 @@ export function browserTransport(store: KeyStore, config: () => ConnectConfig | 
   return {
     async available() {
       const c = config()
-      if (!c) return false
+      // mimir cloud runs through the desktop host only
+      if (!c || c.provider === 'cloud') return false
       return !PROVIDERS[c.provider].needsKey || store.has(c.provider)
     },
     async *stream(req: LlmHttpRequest, signal?: AbortSignal) {
       const c = config()
       if (!c) throw new Error(`${ASSISTANT_NAME} is not connected.`)
+      if (c.provider === 'cloud') throw new Error(`${ASSISTANT_NAME} cloud runs in the desktop app.`)
       if (c.provider === 'local' && !localAllowed(req.url)) throw new Error('A local model must run on this computer or your home network.')
       // A local server's key is optional; the desktop host adds it itself and reads null here.
       const key = PROVIDERS[c.provider].needsKey || c.provider === 'local' ? await store.get(c.provider) : null

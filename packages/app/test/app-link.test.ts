@@ -17,6 +17,8 @@ const bridge = vi.hoisted(() => ({ appLink: null as unknown }))
 vi.mock('../src/link/bridge', () => ({ liveBridge: () => (bridge.appLink ? { appLink: bridge.appLink } : null) }))
 import { toolStore } from '../src/plate/tools'
 import { get, set } from '../src/state/store'
+import { currentEdition, NEUTRAL, setCurrentEdition } from '../src/edition'
+import { registerMimirCloud } from '../src/pilot-connect/cloud'
 
 /** The hub's pinned list, read from roles.rs. */
 function hubMethods(): Record<string, string> {
@@ -106,6 +108,26 @@ describe('app link methods', () => {
       const e = await runCall(m, {}).catch((x: unknown) => x)
       expect(e, m).toBeInstanceOf(LinkError)
       expect((e as LinkError).code).toBe('not_found')
+    }
+  })
+})
+
+describe('mimir cloud over the link', () => {
+  it("reads today's quota through the shell, and says so when the build has no cloud", async () => {
+    const before = currentEdition()
+    const quota = { edition: 'slicerx', day: '2026-10-12', installUsed: 1200, installCap: 500000, ipUsed: 1200, ipCap: 2000000, editionOpen: true }
+    try {
+      const none = await runCall('mimir.quota', {}).catch((x: unknown) => x)
+      expect((none as LinkError).code).toBe('not_found')
+      setCurrentEdition({ ...NEUTRAL, ai: { ...NEUTRAL.ai, keySource: 'cloud' }, backend: { ...NEUTRAL.backend, supabase: { url: 'https://abcdefghijklmnop.supabase.co', anonKey: 'public-anon-key-from-the-supabase-dashboard' } } })
+      const noShell = await runCall('mimir.quota', {}).catch((x: unknown) => x)
+      expect((noShell as LinkError).code).toBe('not_found')
+      registerMimirCloud({ quota: async () => quota, forget: async () => 0, register: async () => undefined })
+      expect(await runCall('mimir.quota', {})).toEqual(quota)
+      expect(APP_LINK_METHODS['mimir.quota']).toBe('read')
+    } finally {
+      registerMimirCloud(null)
+      setCurrentEdition(before)
     }
   })
 })

@@ -4,13 +4,14 @@
 // Used by first-run setup and by Settings. The key stays in an uncontrolled field until it is
 // stored; it never enters React state, the app store or a log.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Button, Field, Icon, Input, LinkButton } from '@slicerx/ui'
+import { Button, Field, Icon, Input, LinkButton, SwitchRow } from '@slicerx/ui'
 import { useEffect, useRef, useState } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
 import { AgentPanel } from './agent-panel'
 import { ChatGptCard } from './chatgpt-card'
 import { chatGptFor, useChatGpt } from './chatgpt'
+import { cloudReady, useMimirCloudHost } from './cloud'
 import { LocalAiCard } from './local-ai-card'
 import { detectRunners, useLocalAi } from './local-ai'
 import { pilotState, set, useApp, type PilotPref } from '../state/store'
@@ -18,7 +19,7 @@ import { keyStoreFor, PROVIDERS, type PilotProvider } from './keys'
 import { hostLocalFetch, testConnection, type TestResult } from './transport'
 import './connect.css'
 
-const ORDER: PilotProvider[] = ['openai', 'anthropic', 'local']
+const ORDER: PilotProvider[] = ['cloud', 'openai', 'anthropic', 'local']
 
 /** The host of a typed server address, or null when it is empty, unparseable or this computer. */
 function remoteHost(address: string): string | null {
@@ -41,13 +42,15 @@ export interface ConnectState {
 export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }: { onConnected?: () => void; idPrefix?: string; withLocal?: boolean }) {
   const host = useHost()
   const pref = useApp((s) => s.pilot)
-  const [provider, setProvider] = useState<PilotProvider>(pref?.provider ?? 'openai')
+  const edition = useEdition()
+  const withCloud = cloudReady(edition, useMimirCloudHost())
+  const [provider, setProvider] = useState<PilotProvider>(pref?.provider ?? (withCloud ? 'cloud' : 'openai'))
   const [baseUrl, setBaseUrl] = useState(pref?.baseUrl ?? '')
   const [model, setModel] = useState(pref?.model ?? '')
   const [shown, setShown] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
   const [busy, setBusy] = useState(false)
-  const localAi = useEdition().features.localAi
+  const localAi = edition.features.localAi
   // A server on another computer is the one case that needs an address typed in.
   const [manual, setManual] = useState(!localAi || Boolean(pref?.provider === 'local' && pref.baseUrl && !/^http:\/\/127\.0\.0\.1:(11434|1234)\//.test(pref.baseUrl)))
   const keyRef = useRef<HTMLInputElement>(null)
@@ -82,6 +85,12 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
     setBusy(true)
     setResult(null)
     try {
+      if (provider === 'cloud') {
+        // no key and nothing to test: the install registers on the first question
+        set({ pilot: { mode: 'on', provider: 'cloud' } })
+        onConnected?.()
+        return
+      }
       const typed = keyRef.current?.value.trim() ?? ''
       const key = info.needsKey || localKey ? typed || (await store.get(provider)) : null
       const config = { provider, ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}), ...(model.trim() ? { model: model.trim() } : {}) }
@@ -107,7 +116,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
   return (
     <div className="pc">
       <div className="pc-providers" role="radiogroup" aria-label="Model provider">
-        {ORDER.filter((id) => withLocal || id !== 'local').map((id) => {
+        {ORDER.filter((id) => (withLocal || id !== 'local') && (withCloud || id !== 'cloud')).map((id) => {
           const p = PROVIDERS[id]
           const on = id === provider
           return (
@@ -126,13 +135,24 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
               <Icon name={id === 'local' ? 'desktop' : 'cloud'} />
               <span>
                 <b>{p.label}</b>
-                <small>{id === 'local' ? 'A model you run yourself, on this computer or your network.' : `Your own ${p.label} API key. Calls go to ${p.label} only.`}</small>
+                <small>{id === 'local' ? 'A model you run yourself, on this computer or your network.' : id === 'cloud' ? p.where : `Your own ${p.label} API key. Calls go to ${p.label} only.`}</small>
               </span>
             </button>
           )
         })}
       </div>
-      {info.needsKey ? (
+      {provider === 'cloud' ? (
+        <div className="pc-act">
+          <Button variant="primary" icon="link" onClick={() => void connect()} disabled={busy}>
+            Use {info.label}
+          </Button>
+          {saved ? (
+            <p className="pc-result ok" role="status">
+              <Icon name="check" size={16} /> Connected to {info.label}.
+            </p>
+          ) : null}
+        </div>
+      ) : info.needsKey ? (
         <Field
           htmlFor={`${idPrefix}-key`}
           label="API key"
@@ -253,6 +273,46 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
   )
 }
 
+/** Settings > mimir: whether mimir cloud may keep sessions, and deleting the ones it kept. Only where the cloud runs. */
+function CloudShare() {
+  const edition = useEdition()
+  const cloud = useMimirCloudHost()
+  const share = useApp((s) => s.mimirShare)
+  const [note, setNote] = useState<string | null>(null)
+  if (!cloud || !cloudReady(edition, cloud)) return null
+  const forget = async () => {
+    setNote(null)
+    try {
+      const n = await cloud.forget()
+      setNote(n === 0 ? 'Nothing was shared from this computer.' : `Deleted ${n} shared ${n === 1 ? 'session' : 'sessions'}.`)
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e))
+    }
+  }
+  return (
+    <div className="pc-cloud-share">
+      <SwitchRow
+        id="mimir-share"
+        testId="mimir-share"
+        label={`Share my ${ASSISTANT_NAME} sessions to improve ${ASSISTANT_NAME}`}
+        detail={`Only chats on ${ASSISTANT_NAME} cloud are shared, and kept for 180 days. Your own key or local model never shares anything.`}
+        checked={share}
+        onChange={(v) => set({ mimirShare: v })}
+      />
+      <p className="set-actions">
+        <Button variant="ghost" data-testid="danger-mimir-forget" onClick={() => void forget()}>
+          Delete my shared sessions
+        </Button>
+        {note ? (
+          <span className="sx-small sx-muted" role="status">
+            {note}
+          </span>
+        ) : null}
+      </p>
+    </div>
+  )
+}
+
 /** Settings > mimir: connect, or turn it off. */
 export function PilotSettingsSection() {
   const host = useHost()
@@ -267,6 +327,7 @@ export function PilotSettingsSection() {
       <ChatGptCard idPrefix="pcs" withLocal={!gpt} />
       {gpt ? <LocalAiCard /> : null}
       <AgentPanel idPrefix="pcs-ag" />
+      <CloudShare />
       {off ? <p className="sx-small sx-muted">{ASSISTANT_NAME} is off. Connect above to turn it back on.</p> : null}
       {!off ? (
         <p className="set-actions">
@@ -274,7 +335,7 @@ export function PilotSettingsSection() {
             variant="ghost"
             onClick={() => {
               const provider = pref?.provider
-              if (provider) void keyStoreFor(host).delete(provider)
+              if (provider && provider !== 'cloud') void keyStoreFor(host).delete(provider)
               set({ pilot: { mode: 'off' } })
             }}
           >

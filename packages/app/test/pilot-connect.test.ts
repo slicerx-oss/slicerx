@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest'
 import type { Host } from '@slicerx/contracts'
 import { chatGptFor, registerChatGpt, type ChatGptHost } from '../src/pilot-connect/chatgpt'
 import { browserStore, keyStoreFor } from '../src/pilot-connect/keys'
+import { cloudBase, cloudReady, registerMimirCloud, type MimirCloudHost } from '../src/pilot-connect/cloud'
 import { pilotModel } from '../src/pilot-connect/llm'
+import { normalizePrefs } from '../src/state/prefs'
 import { authHeaders, browserTransport, hostLocalFetch, localAllowed, testConnection } from '../src/pilot-connect/transport'
 import { NEUTRAL } from '../src/edition'
 
@@ -178,5 +180,58 @@ describe('mimir transport', () => {
     expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'anthropic' })).toMatchObject({ provider: 'anthropic', baseUrl: 'https://api.anthropic.com' })
     expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'local', baseUrl: 'http://localhost:1234/v1', model: 'qwen' })).toEqual({ provider: 'openai-compatible', model: 'qwen', baseUrl: 'http://localhost:1234/v1' })
     expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'openai' })?.provider).toBe('openai')
+  })
+})
+
+describe('mimir cloud', () => {
+  const CLOUD = { ...NEUTRAL, ai: { ...NEUTRAL.ai, provider: 'anthropic' as const, model: 'claude-haiku-5-5', keySource: 'cloud' as const }, backend: { ...NEUTRAL.backend, supabase: { url: 'https://abcdefghijklmnop.supabase.co/', anonKey: 'public-anon-key-from-the-supabase-dashboard' } } }
+  const host: MimirCloudHost = { quota: async () => ({ edition: 'slicerx', day: '2026-10-12', installUsed: 0, installCap: 500000, ipUsed: 0, ipCap: 2000000, editionOpen: true }), forget: async () => 0, register: async () => undefined }
+  const onCloud = { provider: 'mimir-cloud', model: 'claude-haiku-5-5', baseUrl: 'https://abcdefghijklmnop.supabase.co/functions/v1/mimir' }
+
+  it('is the default with nothing chosen, only where the edition and the shell both have it', () => {
+    expect(cloudBase(CLOUD)).toBe(onCloud.baseUrl)
+    expect(cloudBase(NEUTRAL)).toBeNull()
+    expect(pilotModel(CLOUD, null, true)).toEqual(onCloud)
+    expect(pilotModel(CLOUD, { mode: 'unset' }, true)).toEqual(onCloud)
+    expect(pilotModel(CLOUD, { mode: 'on', provider: 'cloud' }, true)).toEqual(onCloud)
+    // the browser build has no cloud host: the edition's own model, which needs a key
+    expect(pilotModel(CLOUD, null, false)).toEqual({ provider: 'anthropic', model: 'claude-haiku-5-5' })
+    expect(pilotModel(CLOUD, { mode: 'on', provider: 'cloud' }, false)).toBeNull()
+    // an edition without the cloud never uses it
+    expect(pilotModel(NEUTRAL, null, true)?.provider).not.toBe('mimir-cloud')
+    expect(cloudReady(CLOUD, null)).toBe(false)
+    expect(cloudReady(CLOUD, host)).toBe(true)
+    expect(cloudReady(NEUTRAL, host)).toBe(false)
+  })
+
+  it("lets a person's own key or local model win", () => {
+    expect(pilotModel(CLOUD, { mode: 'on', provider: 'anthropic' }, true)).toMatchObject({ provider: 'anthropic', baseUrl: 'https://api.anthropic.com' })
+    expect(pilotModel(CLOUD, { mode: 'on', provider: 'local', baseUrl: 'http://localhost:1234/v1', model: 'qwen' }, true)?.provider).toBe('openai-compatible')
+    expect(pilotModel(CLOUD, { mode: 'on', provider: 'openai' }, true)?.provider).toBe('openai')
+  })
+
+  it('reads whether the shell carries it from the registered host', () => {
+    registerMimirCloud(host)
+    try {
+      expect(pilotModel(CLOUD, null)).toEqual(onCloud)
+    } finally {
+      registerMimirCloud(null)
+    }
+    expect(pilotModel(CLOUD, null)?.provider).toBe('anthropic')
+  })
+
+  it('is never sent from the browser transport', async () => {
+    const t = browserTransport(browserStore(null), () => ({ provider: 'cloud' }))
+    expect(await t.available('mimir-cloud')).toBe(false)
+    await expect(async () => {
+      for await (const _ of t.stream({ provider: 'mimir-cloud', url: `${onCloud.baseUrl}/v1/messages`, method: 'POST', headers: {}, body: '{}' })) void _
+    }).rejects.toThrow(/desktop app/)
+  })
+
+  it('keeps the cloud choice and the share switch in prefs, sharing on by default', () => {
+    const prefs = normalizePrefs({ pilot: { mode: 'on', provider: 'cloud' } })
+    expect(prefs.pilot).toEqual({ mode: 'on', provider: 'cloud' })
+    expect(prefs.mimirShare).toBe(true)
+    expect(normalizePrefs({ mimirShare: false }).mimirShare).toBe(false)
   })
 })
