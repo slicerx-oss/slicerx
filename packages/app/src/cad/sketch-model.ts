@@ -327,6 +327,8 @@ export type DrawTool =
   | 'slotOverall'
   | 'slotCenter'
   | 'dimension'
+  | 'trim'
+  | 'extend'
 
 /** Options a tool reads as it draws. */
 export interface DrawOptions {

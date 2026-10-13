@@ -18,6 +18,8 @@
 .sketch-toggles .sx-selectwrap { width: 88px; margin-left: auto; }
 .sketch-show { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; margin: 0; padding: 0; border: 0; }
 .sketch-show legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--dim); }
+.sketch-copies { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.sketch-copies legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--dim); }
 .cad-note { color: var(--fg); }
 .cad-note .sx-ic { color: var(--orange); }
 .cad-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
@@ -93,6 +95,8 @@
 /* eight tools share the row: icons only, so the buttons may shrink to their icon */
 .sx-seg.sketch-tools[data-size] > button { min-width: 0; padding: 0 4px; }
 .sketch-variants { display: flex; align-items: center; gap: 8px; min-height: var(--h-sm); }
+/* mirror, construction and delete for the picked loop, packed from the left so all three fit the rail */
+.sketch-loop-actions { justify-content: flex-start; gap: 2px; }
 .sketch-variants > .sx-seg:not([data-full]) { flex: 1; }
 .sketch-sides { display: flex; align-items: center; gap: 4px; flex: none; color: var(--dim); }
 .sketch-sides .sx-input { width: 36px; text-align: right; }
