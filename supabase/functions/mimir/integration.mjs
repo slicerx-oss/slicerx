@@ -101,7 +101,7 @@ try {
   assert.equal(sql('select cost_micros from public.mimir_calls'), '10500')
   assert.equal(sql("select transcript->'reply'->'content'->0->>'text' from public.mimir_sessions where session_key = 'it-1'"), 'A 20 mm cube.')
 
-  const r2 = await call('/v1/messages', { body: msg, headers: { ...auth, 'x-sx-session': 'it-2', 'x-sx-version': '0.2.0' } })
+  const r2 = await call('/v1/messages', { body: msg, headers: { ...auth, 'x-sx-share': '0', 'x-sx-session': 'it-2', 'x-sx-version': '0.2.0' } })
   await r2.text()
   await settled(2)
   assert.equal(sql("select count(*) from public.mimir_sessions where session_key = 'it-2'"), '0', 'sharing off stores nothing')
@@ -170,13 +170,13 @@ try {
     select public.mimir_day(), 'slicerx', '${inst}', 'x', 0, 0, now() from generate_series(1, 2) returning id`).split('\n').slice(0, 2)
   sql(`update public.mimir_limits set install_store_daily_bytes = 30 where edition = 'slicerx'`)
   const store = (id, key) => new Promise((done, fail) => execFile('docker', ['exec', '-i', DB, 'psql', '-U', 'postgres', '-tA', '-c',
-    `begin; select public.mimir_store_session('${id}', '${key}', '0.2.0', 'claude-haiku-5-5', '{"pad": "xxxxxxxxxx"}'); select pg_sleep(1); commit;`],
+    `begin; select public.mimir_save_chat('${id}', true, '${key}', '0.2.0', 'claude-haiku-5-5', null, null, '{"pad": "xxxxxxxxxx"}'); select pg_sleep(1); commit;`],
   { encoding: 'utf8' }, (e, out) => (e ? fail(e) : done(out))))
   const stored = await Promise.all([store(calls[0], 'n7-a'), store(calls[1], 'n7-b')])
   assert.deepEqual(stored.map((o) => o.split('\n').find((l) => l === 't' || l === 'f')).sort(), ['f', 't'], 'one store fits, the other is refused')
   assert.ok(Number(sql(`select sum(stored_bytes) from public.mimir_calls where install_id = '${inst}'`)) <= 30, 'the stored bytes stay under the day\'s cap')
   assert.equal(sql(`select count(*) from public.mimir_sessions where install_id = '${inst}'`), '1')
-  sql(`update public.mimir_limits set install_store_daily_bytes = 8388608 where edition = 'slicerx'`)
+  sql(`update public.mimir_limits set install_store_daily_bytes = 33554432 where edition = 'slicerx'`)
   console.log('mimir proxy integration: ok')
 } finally {
   sql(RESET)
