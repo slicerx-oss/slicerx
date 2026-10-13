@@ -18,7 +18,7 @@ import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type S
 import { Button, Field, Icon, Seg, Select, Switch, type SegOption } from '@slicerx/ui'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { checkSketch, offsetSketch, pickFace, sketchSnaps, solveSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
+import { checkSketch, extendSketch, mirrorSketch, offsetSketch, patternSketch, pickFace, sketchSnaps, solveSketch, trimSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
@@ -29,6 +29,7 @@ import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext, sketchNext } from './history/record'
 import { defaultTarget, finishSketch, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
+import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { flipFor, goesIntoFace } from './extrude-direction'
 import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
@@ -52,6 +53,7 @@ import {
   preview,
   readout,
   SNAP_NAMES,
+  segStart,
   sketchTargets,
   snap,
   toLoops,
@@ -103,16 +105,21 @@ const HINTS: Record<DrawTool, string> = {
   slotOverall: 'Click the two ends, then out to the width.',
   slotCenter: 'Click the center, an arc center, then out to the width.',
   dimension: 'Click a line, a circle or two points, then where the value goes. Type the size and press Enter.',
+  trim: 'Click the piece of a curve to take off. It goes back to the nearest crossings.',
+  extend: 'Click near the open end of a line or arc to run it on to the next curve.',
 }
 
-const hintText = (t: DrawTool): string => `${HINTS[t]}${t !== 'select' && t !== 'dimension' ? ' Type a number to give exact sizes.' : ''}`
+/** What Mirror and a round Pattern wait for, in place of the tool's hint. */
+const PENDING_HINTS = { mirror: 'Click the straight line to mirror across. Esc stops.', round: 'Click the point to pattern round. Esc stops.' }
+
+const hintText = (t: DrawTool): string => `${HINTS[t]}${t !== 'select' && t !== 'dimension' && t !== 'trim' && t !== 'extend' ? ' Type a number to give exact sizes.' : ''}`
 // the longest hint sizes the hint's box, so picking a tool moves nothing below it
 const HINT_SIZER = (Object.keys(HINTS) as DrawTool[]).map(hintText).reduce((a, b) => (b.length > a.length ? b : a))
 
 /** Fusion's keys for the sketch tools it gives one. */
-const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle', d: 'dimension' }
+const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle', d: 'dimension', t: 'trim' }
 
-type Family = 'select' | 'line' | 'rect' | 'circle' | 'arc' | 'polygon' | 'slot' | 'dimension'
+type Family = 'select' | 'line' | 'rect' | 'circle' | 'arc' | 'polygon' | 'slot' | 'trim' | 'dimension'
 
 /** The tool families, as icons; a family with ways to draw it shows them in the row below. */
 const FAMILIES: SegOption<Family>[] = [
@@ -123,6 +130,7 @@ const FAMILIES: SegOption<Family>[] = [
   { value: 'arc', label: '', icon: 'sk-arc', title: 'Arc' },
   { value: 'polygon', label: '', icon: 'sk-polygon', title: 'Polygon' },
   { value: 'slot', label: '', icon: 'sk-slot', title: 'Slot' },
+  { value: 'trim', label: '', icon: 'cut', title: 'Trim', tip: { title: 'Trim', key: 'T' } },
   { value: 'dimension', label: '', icon: 'ruler', title: 'Dimension', tip: { title: 'Dimension', key: 'D' } },
 ]
 
@@ -132,6 +140,7 @@ const VARIANTS: Partial<Record<Family, SegOption<DrawTool>[]>> = {
   arc: [{ value: 'arc', label: '3-point' }, { value: 'arcCenter', label: 'Center' }, { value: 'arcTangent', label: 'Tangent' }],
   polygon: [{ value: 'polygon', label: 'Inscribed' }, { value: 'polygonOut', label: 'Circumscribed' }, { value: 'polygonEdge', label: 'Edge' }],
   slot: [{ value: 'slot', label: 'Center to center' }, { value: 'slotOverall', label: 'Overall' }, { value: 'slotCenter', label: 'Center point' }],
+  trim: [{ value: 'trim', label: 'Trim' }, { value: 'extend', label: 'Extend' }],
 }
 
 const familyOf = (t: DrawTool): Family => (Object.entries(VARIANTS).find(([, v]) => v.some((o) => o.value === t))?.[0] as Family | undefined) ?? (t as Family)
@@ -370,6 +379,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [offset, setOffset] = useDraft('offset', '1')
   const [corner, setCorner] = useDraft('corner', '2')
   const [cornerKind, setCornerKind] = useDraft<'fillet' | 'chamfer'>('cornerKind', 'fillet')
+  const [copies, setCopies] = useDraft<{ kind: 'line' | 'circle'; count: string; dx: string; dy: string; angle: string }>('copies', { kind: 'line', count: '3', dx: '10', dy: '0', angle: '360' })
+  // Mirror waits for its line, a round pattern for its center
+  const [pending, setPending] = useState<{ kind: 'mirror' | 'round'; e: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   // the dimension tool's picks so far, and its value field once the value is placed (or a kept one is edited)
@@ -410,8 +422,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // What the hover path reads without a render.
   // landed: the clicks of the shape being drawn and what each snapped to, for the constraints it leaves
   // dims and glyphs: what the view shows, to read its picks by
-  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null })
-  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, solved: solved?.solved ?? null }
+  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, pending, copies, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null })
+  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, pending, copies, solved: solved?.solved ?? null }
 
   // Snap targets on the plane: the picked face's outline, and edges of bodies lying in the plane.
   useEffect(() => {
@@ -480,7 +492,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   useEffect(() => {
     if (!view) return
     const paths: SketchScene['paths'][number][] = engineSnaps.edges.map((e) => ({ points: [e.a, e.b], tone: 'soft' as SketchTone }))
-    const bad = new Set(issues.map((i) => `${i.loop}:${i.segment ?? -1}`))
+    // crossings and open ends are what Trim and Extend work on and leave, so they do not show as problems then; red is
+    // what a trim takes off
+    const trimming = draft.tool === 'trim' || draft.tool === 'extend'
+    const shown = trimming ? issues.filter((i) => i.kind !== 'loopsCross' && i.kind !== 'selfCrossing' && i.kind !== 'open') : issues
+    const bad = new Set(shown.map((i) => `${i.loop}:${i.segment ?? -1}`))
     const dimCurves = new Set(dimPicks.flatMap((p) => ('curve' in p ? [`${p.curve.e}:${p.curve.seg}`] : [])))
     sketch.forEach((e, i) => {
       for (const p of entityPaths(e)) {
@@ -505,7 +521,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       dragHandles: draft.tool === 'select' && !featureOnly,
       ...(arcFrom && !featureOnly ? { dragFrom: arcFrom } : {}),
       ...(pal.grid && !featureOnly ? { grid: { stepMm: Number(pal.step) * 10, min: plane.min, max: plane.max } } : {}),
-      marks: issues.flatMap((i) => (i.at ? [i.at] : [])),
+      marks: shown.flatMap((i) => (i.at ? [i.at] : [])),
       ...(pal.dimensions ? { dims: dims.map((d) => (d.of === editing || d.of === -1 ? { ...d, picked: true } : d)) } : {}),
       // the origin always shows, for dimensions to measure from
       fixed: featureOnly ? [] : [[0, 0], ...(pal.constraints ? marks.fixed : [])],
@@ -676,6 +692,96 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       )
   }
 
+  // the sketch and its constraints after an engine edit, kept in step for the next event
+  const takeEdit = (next: Entity[], cons: SketchConstraint[]): void => {
+    const l = live.current
+    l.sketch = next
+    l.constraints = cons
+    setConstraints(cons)
+    setSketch(next)
+    setPickedCon(null)
+    setNote(null)
+  }
+
+  // Trim and Extend: a hover shows what the click does (what a trim takes off in red), a click does it.
+  const editAbort = useRef<AbortController | null>(null)
+  const editEvent = async (ev: SketchEvent, tol: number): Promise<void> => {
+    const l = live.current
+    const sketch = l.sketch
+    const trim = l.draft.tool === 'trim'
+    const hit = hitTest(sketch, ev.at, tol)
+    const end = hit && !trim ? endNear(sketch, hit.e, hit.seg, ev.at) : null
+    editAbort.current?.abort()
+    if (!hit || (!trim && !end)) {
+      view?.setSketchCursor(null)
+      if (ev.kind === 'click' && hit) setNote('Only an open end extends: click near the end of a line or arc that is not part of a closed loop.')
+      return
+    }
+    const ac = (editAbort.current = new AbortController())
+    try {
+      const r = trim ? await trimSketch(toLoops(sketch), hit.e, hit.seg, ev.at, ac.signal) : await extendSketch(toLoops(sketch), hit.e, end!, ac.signal)
+      if (ac.signal.aborted || l.sketch !== sketch) return
+      if (ev.kind === 'hover') {
+        const shown = fromLoops(trim ? (r.removed ? [r.removed] : []) : [r.loops[hit.e]!])?.[0]
+        const path = shown ? entityPaths(shown).flatMap((q, i) => (i ? q.points.slice(1) : q.closed ? [...q.points, q.points[0]!] : q.points)) : null
+        return view?.setSketchCursor(path ? { path, ...(trim ? { cut: true } : {}) } : null)
+      }
+      const next = fromLoops(r.loops)
+      if (!next) throw new Error('The edited sketch could not be shown.')
+      view?.setSketchCursor(null)
+      takeEdit(next, afterEdit(sketch, next, r, l.constraints, hit.e))
+      setSelected(null)
+    } catch (e) {
+      if (ac.signal.aborted) return
+      if (ev.kind === 'click') setNote(errorText(e))
+      else view?.setSketchCursor(null)
+    }
+  }
+
+  // Mirror: the waiting loop copied across the clicked line, each point held symmetric to its original.
+  const mirrorAcross = async (e: number, axis: { e: number; seg: number }): Promise<void> => {
+    const l = live.current
+    const sketch = l.sketch
+    const c = sketch[axis.e]
+    const s = c?.kind === 'chain' ? c.segs[axis.seg] : undefined
+    if (!c || c.kind !== 'chain' || s?.kind !== 'line') return setNote('Click a straight line to mirror across.')
+    const a = segStart(c, axis.seg)
+    try {
+      const r = await mirrorSketch(toLoops(sketch), [e], { point: a, direction: [s.to[0] - a[0], s.to[1] - a[1]] })
+      const next = fromLoops(r.loops)
+      if (!next) throw new Error('The mirrored sketch could not be shown.')
+      takeEdit(next, [...afterEdit(sketch, next, r, l.constraints), ...mirrorConstraints(next, [[e, next.length - 1]], axis)])
+      setPending(null)
+      setSelected({ e: next.length - 1, seg: 0 })
+    } catch (err) {
+      setNote(errorText(err))
+    }
+  }
+
+  // Pattern: copies of the picked loop along a step, or round a center through an angle.
+  const copyLoop = async (e: number, center?: V2): Promise<void> => {
+    const l = live.current
+    const sketch = l.sketch
+    // a round copy runs from the view's click, so the fields are read as they are now
+    const copies = l.copies
+    const count = Math.round(num(copies.count))
+    if (!(count >= 2 && count <= 200)) return setNote('A pattern has 2 to 200 copies, the first one included.')
+    const kind = center ? 'circle' : 'line'
+    const step: V2 = [num(copies.dx), num(copies.dy)]
+    const angleDeg = num(copies.angle)
+    if (kind === 'line' && !(step.every(Number.isFinite) && (step[0] || step[1]))) return setNote('Give a step across or up, in mm.')
+    if (kind === 'circle' && !(Number.isFinite(angleDeg) && angleDeg !== 0 && Math.abs(angleDeg) <= 360)) return setNote('The angle is up to 360 degrees, not 0; 360 spreads the copies evenly.')
+    try {
+      const r = await patternSketch(toLoops(sketch), [e], center ? { kind: 'circle', count, center, angleDeg } : { kind: 'line', count, step })
+      const next = fromLoops(r.loops)
+      if (!next) throw new Error('The patterned sketch could not be shown.')
+      takeEdit(next, afterEdit(sketch, next, r, l.constraints))
+      setPending(null)
+    } catch (err) {
+      setNote(errorText(err))
+    }
+  }
+
   // Events from the view.
   useEffect(() => {
     if (!view) return
@@ -686,6 +792,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       if (l.draft.tool === 'dimension' && (ev.kind === 'hover' || ev.kind === 'click')) {
         l.screen = ev.screen
         return dimEvent(ev, tol)
+      }
+      if ((l.draft.tool === 'trim' || l.draft.tool === 'extend') && (ev.kind === 'hover' || ev.kind === 'click')) {
+        l.screen = ev.screen
+        return void editEvent(ev, tol)
       }
       if (ev.kind === 'hover' || ev.kind === 'click') {
         const s = ev.alt ? { at: ev.at, kind: null } : snap(ev.at, targets(), { anchor: l.draft.tool === 'line' || l.draft.tool === 'arc' ? anchor : null, parallel: l.draft.tool === 'line', gridMm: l.gridMm, tolMm: tol })
@@ -698,6 +808,12 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           const base = l.draft.tool === 'select' ? pickedText(l.sketch, l.selected, ...u) : readout(l.draft, s.at, ...u)
           if (r) r.textContent = `${base}${s.kind ? `${base ? ', ' : ''}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
           return
+        }
+        if (l.draft.tool === 'select' && l.pending) {
+          const w = l.pending
+          if (w.kind === 'round') return void copyLoop(w.e, s.at)
+          const axis = hitTest(l.sketch, ev.at, tol)
+          return axis ? void mirrorAcross(w.e, axis) : setNote('Click a straight line to mirror across.')
         }
         if (l.draft.tool === 'select') {
           // a press on a dimension's value picks it, and a second one opens it; one on a glyph picks its constraint
@@ -767,6 +883,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         view?.setSketchCursor(null)
         return
       }
+      if (l.pending && e.key === 'Escape') {
+        e.preventDefault()
+        setPending(null)
+        return
+      }
       if (l.pickedCon !== null && l.draft.tool === 'select' && !featureOnly && (e.key === 'Delete' || e.key === 'Backspace' || e.key === 'Enter')) {
         // a picked dimension or constraint: Delete removes it, Enter opens a dimension's value
         e.preventDefault()
@@ -834,6 +955,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     setField(null)
     dropDim()
     setPickedCon(null)
+    setPending(null)
     view?.setSketchCursor(null)
     if (t !== 'select') setSelected(null)
   }
@@ -882,8 +1004,19 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       const r = cornerKind === 'fillet' ? await filletSketch(toLoops(sketch), corners, d) : await chamferSketch(toLoops(sketch), corners, d)
       const next = fromLoops(r.loops)
       if (!next) throw new Error('The rounded sketch could not be shown.')
-      // the loop's segments change, so constraints on it go
-      setConstraints((c) => afterLoopChange(c, selected.e, 1))
+      // what still holds on the shortened lines stays; a round is tangent to both and takes the radius, the rest equal to the first
+      const kept = afterEdit(sketch, next, { from: next.map((_, i) => [i]) }, constraints)
+      const rounds: SketchConstraint[] = []
+      if (cornerKind === 'fillet') {
+        r.added.forEach((a, k) => {
+          const n = (next[a.loop] as { segs?: unknown[] } | undefined)?.segs?.length ?? 0
+          const arc = { e: a.loop, seg: a.segment }
+          rounds.push({ type: 'tangent', a: arc, b: { e: a.loop, seg: (a.segment + n - 1) % n } }, { type: 'tangent', a: arc, b: { e: a.loop, seg: (a.segment + 1) % n } })
+          const first = r.added[0]!
+          rounds.push(k ? { type: 'equal', a: { e: first.loop, seg: first.segment }, b: arc } : { type: 'radius', circle: arc, value: d })
+        })
+      }
+      setConstraints([...kept, ...rounds])
       setSketch(next)
       setSelected(null)
     } catch (e) {
@@ -996,7 +1129,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           <p className="cad-hint sketch-hint" role="status">
             <Icon name="mouse-left" size={15} />{' '}
             <span className="sketch-hint-text" data-sizer={HINT_SIZER}>
-              <span>{hintText(draft.tool)}</span>
+              <span>{pending ? PENDING_HINTS[pending.kind] : hintText(draft.tool)}</span>
             </span>
           </p>
           <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" /></p>
@@ -1045,12 +1178,42 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       {featureOnly ? null : (
         <>
           {draft.tool === 'select' && sel ? (
-            <div className="cad-row">
-              <Num id="sk-offset" label="Offset this loop" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
-              <Button size="sm" variant="ghost" onClick={() => void doOffset()}>Offset</Button>
-              <Button size="sm" variant="ghost" icon="delete" onClick={() => { setSketch((s) => s.filter((_, i) => i !== selected!.e)); setSelected(null) }}>Delete loop</Button>
-          <Button size="sm" variant="ghost" aria-pressed={sel.construction === true} data-tip-title="Construction" data-tip-key="X" data-tip-body="A construction curve stays in the sketch for constraints and snaps, and makes no profile." onClick={() => setSketch((s) => toggleConstruction(s, selected!.e))}>Construction</Button>
-            </div>
+            <>
+              <div className="cad-row sketch-loop-actions">
+                <Button size="sm" variant="ghost" icon="mirror" aria-pressed={pending?.kind === 'mirror'} data-tip-title="Mirror" data-tip-body="Adds a copy of this loop across the straight line you click next, held symmetric to it." onClick={() => setPending(pending?.kind === 'mirror' ? null : { kind: 'mirror', e: selected!.e })}>Mirror</Button>
+                <Button size="sm" variant="ghost" aria-pressed={sel.construction === true} data-tip-title="Construction" data-tip-key="X" data-tip-body="A construction curve stays in the sketch for constraints and snaps, and makes no profile." onClick={() => setSketch((s) => toggleConstruction(s, selected!.e))}>Construction</Button>
+                <Button size="sm" variant="ghost" icon="delete" onClick={() => { const e = selected!.e; setConstraints((c) => afterLoopChange(c, e, 0)); setSketch((s) => s.filter((_, i) => i !== e)); setSelected(null) }}>Delete loop</Button>
+              </div>
+              <div className="cad-pair">
+                <Num id="sk-offset" label="Offset" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
+                <Button full data-tip-title="Offset" data-tip-body="Adds a copy of this loop grown by the distance; a negative one shrinks it." onClick={() => void doOffset()}>Offset the loop</Button>
+              </div>
+              {/* copies of the loop in this sketch; the extrude's Pattern below copies the solid */}
+              <fieldset className="sketch-copies">
+                <legend>Copy in sketch</legend>
+                <div className="cad-pair">
+                  {/* a radio group has no input to name, so the label is drawn as a field's */}
+                  <div className="sx-field">
+                    <span className="sx-field-label" aria-hidden>Kind</span>
+                    <Seg label="Copy kind" size="sm" full value={copies.kind} onChange={(kind) => (setCopies({ ...copies, kind }), setPending(null))} options={[{ value: 'line', label: 'Line' }, { value: 'circle', label: 'Circle' }]} />
+                  </div>
+                  <Num id="sk-copies" label="Copies" unit="" value={copies.count} onChange={(count) => setCopies({ ...copies, count })} />
+                </div>
+                <div className="cad-pair">
+                  {copies.kind === 'line' ? (
+                    <>
+                      <Num id="sk-step-x" label="Step across" unit="mm" value={copies.dx} onChange={(dx) => setCopies({ ...copies, dx })} onEnter={() => void copyLoop(selected!.e)} />
+                      <Num id="sk-step-y" label="Step up" unit="mm" value={copies.dy} onChange={(dy) => setCopies({ ...copies, dy })} onEnter={() => void copyLoop(selected!.e)} />
+                    </>
+                  ) : (
+                    <Num id="sk-pattern-angle" label="Angle" unit="°" value={copies.angle} onChange={(angle) => setCopies({ ...copies, angle })} />
+                  )}
+                </div>
+                <Button full pressed={pending?.kind === 'round'} data-tip-title="Add copies" data-tip-body="Copies of this loop in the sketch, the original counted: along the step, or round a point you click next." onClick={() => (copies.kind === 'line' ? void copyLoop(selected!.e) : setPending(pending?.kind === 'round' ? null : { kind: 'round', e: selected!.e }))}>
+                  {copies.kind === 'line' ? 'Add copies' : 'Add copies round a point'}
+                </Button>
+              </fieldset>
+            </>
           ) : null}
           {draft.tool === 'select' && sel?.kind === 'chain' ? (
             <>

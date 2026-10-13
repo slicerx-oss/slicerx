@@ -409,6 +409,38 @@ export function filletSketch(loops: SketchLoop[], corners: SketchCorner[], radiu
   return geom().call<SketchCornerResult>('sketch.fillet', { loops, corners, radiusMm }, signal)
 }
 
+/**
+ * What a sketch edit gives back: the loops, the loops each came from (a trimmed loop's pieces sit in its place, joined
+ * end to end with open chains they meet; copies go at the end), and what a trim takes off.
+ */
+export interface SketchEdited {
+  loops: SketchLoop[]
+  from: number[][]
+  removed?: SketchLoop
+}
+
+/** Takes off the piece of a segment under `at`, back to the nearest crossings either side; a lone curve goes whole. What is left joins the open chains its ends meet, closing when it can. */
+export function trimSketch(loops: SketchLoop[], loop: number, segment: number, at: Vec2, signal?: AbortSignal) {
+  return geom().call<SketchEdited>('sketch.trim', { loops, loop, segment, at }, signal)
+}
+
+/** Runs an open chain's end segment on to the nearest curve it would meet. */
+export function extendSketch(loops: SketchLoop[], loop: number, end: 'start' | 'end', signal?: AbortSignal) {
+  return geom().call<SketchEdited>('sketch.extend', { loops, loop, end }, signal)
+}
+
+/** Adds the picked loops mirrored across a line. */
+export function mirrorSketch(loops: SketchLoop[], pick: number[], axis: { point: Vec2; direction: Vec2 }, signal?: AbortSignal) {
+  return geom().call<SketchEdited>('sketch.mirror', { loops, pick, axis }, signal)
+}
+
+/** Copies of the picked loops: `count` in all, a step apart, or round a center through angleDeg (360 spreads them evenly). */
+export type SketchSpread = { kind: 'line'; count: number; step: Vec2 } | { kind: 'circle'; count: number; center: Vec2; angleDeg: number }
+
+export function patternSketch(loops: SketchLoop[], pick: number[], spread: SketchSpread, signal?: AbortSignal) {
+  return geom().call<SketchEdited>('sketch.pattern', { loops, pick, ...spread }, signal)
+}
+
 /** Bevels sketch corners: distanceMm back along the segment ending at the corner, distance2Mm (default equal) along the next. */
 export function chamferSketch(loops: SketchLoop[], corners: SketchCorner[], distanceMm: number, distance2Mm?: number, signal?: AbortSignal) {
   return geom().call<SketchCornerResult>('sketch.chamfer', { loops, corners, distanceMm, distance2Mm }, signal)
