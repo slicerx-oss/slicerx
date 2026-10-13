@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type PreviewBuffers } from '@slicerx/contracts'
 import { toolChangerSpec } from '@slicerx/viewport'
-import { CHANGE_SHARE, buildTimeline, clock, movesAt, movesOf, positionAt, sliderOf, timeAt, timeOfSlider, type Timeline } from '../src/lib/preview-timeline'
+import { CHANGE_SHARE, buildTimeline, clock, leadInStart, movesAt, movesOf, positionAt, sliderOf, timeAt, timeOfSlider, type Timeline } from '../src/lib/preview-timeline'
 import { toolChangerFor } from '../src/lib/toolchanger'
 import { LayerDock } from '../src/workspaces/preview/preview-hud'
 import { get, set, type ProfileInfo } from '../src/state/store'
@@ -144,6 +144,20 @@ describe('preview timeline', () => {
     expect(tl.total).toBe(30)
     expect(Array.from(tl.layerEnd)).toEqual([20, 30])
     expect(Array.from(tl.segEnd).map((x) => Math.round(x))).toEqual([5, 10, 15, 20, 25, 30])
+  })
+
+  it('starts a jump no earlier than its own layer, so the layer readout never reads the one below', () => {
+    const p = fixture()
+    const tl = buildTimeline(p)
+    // Layer 2 starts at 20 s. A strike at 22 s with 5 s of lead in would start in layer 1; it starts in layer 2.
+    const start = leadInStart(tl, p, 22, 5)
+    expect(start).toBeGreaterThan(20)
+    expect(positionAt(tl, p, start).layerHi).toBe(2)
+    // Lead that stays inside the layer is kept as asked.
+    expect(leadInStart(tl, p, 28, 5)).toBe(23)
+    // In the first layer it never starts before the print does, or after the strike.
+    expect(leadInStart(tl, p, 3, 5)).toBe(tl.lead)
+    expect(leadInStart(tl, p, 0, 5)).toBeLessThanOrEqual(0)
   })
 
   it('maps time to a layer and move share and back', () => {
