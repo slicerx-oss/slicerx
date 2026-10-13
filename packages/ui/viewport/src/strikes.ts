@@ -3,7 +3,7 @@
 // The strike: heimdall's mark where the machine would meet a printed part. The slicerx X drawn as two offset
 // perimeters per stroke, cracked at the point of contact, inside a ring. Drawn over the toolpaths at a fixed size on
 // screen, so a strike inside a part still shows.
-import { CanvasTexture, Group, Sprite, SpriteMaterial, type Texture } from 'three'
+import { BufferGeometry, CanvasTexture, DoubleSide, Group, Line, LineBasicMaterial, Mesh, MeshBasicMaterial, Shape, ShapeGeometry, Sprite, SpriteMaterial, Vector2, Vector3, type Texture } from 'three'
 
 export interface StrikeMark {
   /** Bed frame, mm. */
@@ -82,12 +82,16 @@ function strikeTexture(color: string): Texture | null {
 
 export class Strikes {
   readonly root = new Group()
+  /** The outlined area (see `setArea`), kept apart from the marks so placing marks leaves it. */
+  private readonly areaGroup = new Group()
+  private areaDisposables: { dispose(): void }[] = []
   private readonly materials = new Map<string, SpriteMaterial>()
   private colors = { hit: '#ff4b5c', close: '#ffb86c' }
 
   constructor() {
     this.root.name = 'strikes'
     this.root.renderOrder = 10
+    this.areaGroup.name = 'strike area'
   }
 
   /** The colors of hits and close calls (the theme's overhang red and amber). */
@@ -109,7 +113,7 @@ export class Strikes {
 
   /** Places one strike per mark; null or an empty list clears them. */
   set(marks: readonly StrikeMark[] | null): void {
-    this.root.clear()
+    for (const c of [...this.root.children]) if (c !== this.areaGroup) this.root.remove(c)
     for (const m of marks ?? []) {
       const s = new Sprite(this.material(m.close ? this.colors.close : this.colors.hit, m.ghost))
       s.name = `${m.selected ? 'strike selected' : 'strike'}${m.ghost ? ' ghost' : ''}`
@@ -118,6 +122,42 @@ export class Strikes {
       s.scale.set(k, k, 1)
       s.renderOrder = m.selected ? 12 : 11
       this.root.add(s)
+    }
+  }
+
+  /**
+   * Outlines a patch of the bed (bed frame, mm) in the hit color over a faint wash of it, drawn over everything like
+   * the marks; null clears it. The refusal of a slice into an excluded area outlines that area this way.
+   */
+  setArea(poly: readonly (readonly [number, number])[] | null, z = 0): void {
+    for (const d of this.areaDisposables) d.dispose()
+    this.areaDisposables = []
+    this.areaGroup.clear()
+    this.root.remove(this.areaGroup)
+    if (!poly || poly.length < 3) return
+    this.root.add(this.areaGroup)
+    const shape = new ShapeGeometry(new Shape(poly.map(([x, y]) => new Vector2(x, y))))
+    const fill = new Mesh(shape, new MeshBasicMaterial({ color: this.colors.hit, transparent: true, opacity: 0.26, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false }))
+    fill.position.z = z
+    fill.renderOrder = 9
+    this.areaGroup.add(fill)
+    this.areaDisposables.push(shape, fill.material)
+    // The outline is a band of three lines (a pixel wide each, whatever the zoom): a dark one a hair outside, so it reads
+    // on a bright or dark bed, then two in the hit color.
+    const cx = poly.reduce((a, q) => a + q[0], 0) / poly.length
+    const cy = poly.reduce((a, q) => a + q[1], 0) / poly.length
+    const loop = (grow: number): Vector3[] => {
+      const pts = poly.map(([x, y]) => {
+        const d = Math.hypot(x - cx, y - cy) || 1
+        return new Vector3(x + ((x - cx) / d) * grow, y + ((y - cy) / d) * grow, z)
+      })
+      return [...pts, pts[0] as Vector3]
+    }
+    for (const [grow, color, order] of [[0.5, OUTLINE, 10], [0, this.colors.hit, 11], [-0.5, this.colors.hit, 11]] as const) {
+      const line = new Line(new BufferGeometry().setFromPoints(loop(grow)), new LineBasicMaterial({ color, depthTest: false, depthWrite: false, toneMapped: false }))
+      line.renderOrder = order
+      this.areaGroup.add(line)
+      this.areaDisposables.push(line.geometry, line.material)
     }
   }
 
@@ -130,6 +170,7 @@ export class Strikes {
   }
 
   dispose(): void {
+    this.setArea(null)
     this.root.clear()
     this.disposeMaterials()
   }
