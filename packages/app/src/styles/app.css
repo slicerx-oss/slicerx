@@ -535,6 +535,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .settings-body { display: grid; align-content: start; gap: 24px; min-width: 0; }
 .set-sec { display: grid; gap: 12px; }
 .set-sec h3 { margin: 0; font: var(--fw-semibold) var(--fs-md, 15px) var(--f-body); }
+/* The grid's gap spaces a section's paragraphs; their default margins would add to it. */
+.set-sec > p { margin: 0; }
 .set-sub { margin: 8px 0 0; font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); color: var(--muted); }
 .acct-who, .dev-list li, .tok-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .acct-who .min0, .dev-list .min0, .tok-list .min0 { display: grid; gap: 2px; }
