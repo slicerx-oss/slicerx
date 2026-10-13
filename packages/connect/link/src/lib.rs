@@ -306,10 +306,16 @@ impl Link {
         .map_err(|e| e.message)
     }
 
-    /// Stops accepting connections and frees the port. Connections already open and the
-    /// in-process calls above keep working until the `Link` is dropped.
-    pub fn stop_listening(&self) {
+    /// Stops accepting connections and frees the port: once this returns, the listener is closed and
+    /// the port can be bound again. Connections already open and the in-process calls above keep
+    /// working until the `Link` is dropped.
+    pub async fn stop_listening(&mut self) {
         self.task.abort();
+        // An aborted task finishes only after its future, and the listener it owns, is dropped. A
+        // finished task's handle is not awaited twice.
+        if !self.task.is_finished() {
+            let _ = (&mut self.task).await;
+        }
     }
 
     /// The ids of the agent credentials named `name`.
