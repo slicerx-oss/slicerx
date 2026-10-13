@@ -147,3 +147,68 @@ export function historiesOf(d: Timeline): Map<string, History> {
   }
   return out
 }
+
+/** The next free Sketch N name. */
+function nextName(items: readonly Item[]): string {
+  let n = 0
+  for (const i of items) if (i.kind === 'sketch') n = Math.max(n, Number(/^Sketch (\d+)$/.exec(i.name)?.[1] ?? 0))
+  return `Sketch ${n + 1}`
+}
+
+/**
+ * The timeline after a tool changed one body's history (the tools still record per object): a step kept stays where
+ * it is, a step edited in place keeps its sketch (which takes the new plane and loops), a removed step goes (its
+ * sketch stays, as in Fusion). A new last step goes in at the marker, as a new feature does in Fusion; one put in
+ * between goes right after the body's step before it.
+ */
+export function withHistory(t: Timeline, body: string, h: History): Timeline {
+  const next = new Map(h.steps.map((s) => [s.id, s]))
+  const items: Item[] = []
+  const atEnd = t.marker >= t.items.length
+  let marker = 0
+  const sketchAt = new Map<string, number>()
+  const place = new Map<string, number>()
+  t.items.forEach((it, i) => {
+    if (it.kind === 'feature' && it.body === body) {
+      const s = next.get(it.id)
+      if (s) {
+        if (isSketch(s.params)) {
+          const [k, f] = split(s, body, '')
+          const own = it.sketch !== undefined ? sketchAt.get(it.sketch) : undefined
+          if (own !== undefined) {
+            const old = items[own] as SketchItem
+            const { frame: _f, constraints: _c, ...keep } = old
+            items[own] = { ...keep, loops: k.loops, ...(k.frame ? { frame: k.frame } : {}), ...(k.constraints ? { constraints: k.constraints } : {}) }
+            items.push({ ...f, sketch: old.id })
+          } else items.push({ ...k, name: nextName(items) }, f)
+        } else items.push({ ...s, kind: 'feature', body })
+        place.set(s.id, items.length - 1)
+      }
+    } else {
+      if (it.kind === 'sketch') sketchAt.set(it.id, items.length)
+      items.push(it)
+    }
+    if (i < t.marker) marker = items.length
+  })
+  h.steps.forEach((s, k) => {
+    if (place.has(s.id)) return
+    const before = h.steps[k - 1]
+    const after = before ? place.get(before.id) : undefined
+    const later = h.steps.slice(k + 1).map((x) => place.get(x.id)).find((p) => p !== undefined)
+    let at = atEnd ? items.length : marker
+    if (later !== undefined && after !== undefined) at = after + 1
+    else if (later !== undefined) {
+      // first of the body: before the next step and its sketch
+      const f = items[later] as FeatureItem
+      at = f.sketch !== undefined && items[later - 1]?.kind === 'sketch' && items[later - 1]!.id === f.sketch ? later - 1 : later
+    }
+    const add: Item[] = isSketch(s.params) ? split(s, body, nextName(items)) : [{ ...s, kind: 'feature', body }]
+    items.splice(at, 0, ...add)
+    for (const [id, p] of place) if (p >= at) place.set(id, p + add.length)
+    place.set(s.id, at + add.length - 1)
+    if (at < marker || (!atEnd && at === marker)) marker += add.length
+  })
+  const b: Body = { id: body, base: h.base, ...(h.ended ? { ended: h.ended } : {}) }
+  const bodies = t.bodies.some((x) => x.id === body) ? t.bodies.map((x) => (x.id === body ? b : x)) : [...t.bodies, b]
+  return { bodies, items, marker: atEnd ? items.length : marker }
+}
