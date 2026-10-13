@@ -44,6 +44,7 @@ export function clearProject(): void {
     objectSettings: {},
     historyEdit: null,
     timeline: { bodies: [], items: [], marker: 0 },
+    rollback: null,
     parked: null,
     slice: { status: 'idle' },
     sliceHeld: false,

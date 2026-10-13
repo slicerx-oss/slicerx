@@ -180,6 +180,7 @@ async function addProjectShown(
     const { joinTimelines, withBodyIds } = await import('@slicerx/cad-history')
     const ours = withBodyIds(project.timeline, (fileId) => idOf.get(fileId))
     mine(() => set({ timeline: joinTimelines(designBefore, ours) }))
+    if (ours.marker < ours.items.length) mine((await import('../cad/history/rollback')).settleRollback)
   }
   mine(() => switchPlate(startPlate))
   // An Orca or Bambu Studio project (anything but our .sx3mf) opens with its own fixed layers, so
