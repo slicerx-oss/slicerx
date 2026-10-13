@@ -86,6 +86,7 @@
     "@slicerx/settings": "workspace:*",
     "@slicerx/ui": "workspace:*",
     "@types/node": "24.19.0",
+    "ajv": "8.20.0",
     "esbuild": "0.28.2",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
