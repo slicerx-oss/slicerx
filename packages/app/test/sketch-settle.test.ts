@@ -2,11 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A sketch solved away from the editor, as an agent's design.sketch does it: the drawing moves to meet its
 // dimensions, one that would over-define it is kept driven with the size it measures, and dimensions from the origin
-// define where it sits.
+// define where it sits. What the drawing tools infer solves clean, with nothing said twice.
 import { describe, expect, it } from 'vitest'
 import type { SketchConstraint } from '../src/cad/sketch-constraints'
 import { settle } from '../src/cad/sketch-dimension'
-import { rectangle, type Entity } from '../src/cad/sketch-model'
+import { inferred } from '../src/cad/sketch-infer'
+import { click, emptyDraft, rectangle, type DrawTool, type Entity, type V2 } from '../src/cad/sketch-model'
 import { useGeomEngine } from './geom-engine'
 
 useGeomEngine('sketch-settle-replies')
@@ -52,5 +53,26 @@ describe('settling a sketch', () => {
     expect(r.solved.status).toBe('ok')
     expect(r.solved.dof).toBe(0)
     expect(corners(r.sketch)).toEqual([[5, 5], [30, 5], [30, 17], [5, 17]])
+  })
+
+  it('takes what the polygon and slot tools infer with nothing said twice', async () => {
+    const shape = (tool: DrawTool, pts: V2[], sides?: number) => {
+      let sk: Entity[] = []
+      let d = emptyDraft(tool)
+      let cons: SketchConstraint[] = []
+      for (const p of pts) {
+        const r = click(sk, d, p, sides ? { sides } : {})
+        cons = [...cons, ...inferred(sk, r.sketch, [], cons, tool)]
+        sk = r.sketch
+        d = r.draft
+      }
+      return { sk, cons }
+    }
+    for (const [tool, pts, sides] of [['polygon', [[0, 0], [10, 3]], 6], ['polygonEdge', [[0, 0], [10, 0], [5, 5]], 4], ['polygonEdge', [[0, 0], [10, 2], [5, 5]], 4], ['polygon', [[0, 0], [7, 1]], 3], ['slot', [[0, 0], [20, 5], [10, 9]], undefined]] as [DrawTool, V2[], number | undefined][]) {
+      const { sk, cons } = shape(tool, pts, sides)
+      expect(cons.some((c) => c.type === 'equal'), tool).toBe(true)
+      const r = await settle(sk, cons)
+      expect(r.solved.status, `${tool} ${sides ?? ''}`).toBe('ok')
+    }
   })
 })

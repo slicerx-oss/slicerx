@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The constraints a drawing tool leaves behind, as in Fusion: a level line is horizontal, a line square to the last is
-// perpendicular, an arc off a line's end is tangent, and a point dropped on another curve's end point, midpoint,
-// center or edge is held there. Ctrl or Cmd on the click leaves none.
+// perpendicular, a line snapped parallel to another is parallel to it, an arc off a line's end is tangent, a
+// polygon's sides and a slot's ends are equal, and a point dropped on another curve's end point, midpoint, center or
+// edge is held there. Ctrl or Cmd on the click leaves none.
 import type { SketchConstraint, SketchCurveRef, SketchPointRef } from './sketch-constraints'
-import { arcThrough, chainEnd, dist, reverseChain, segStart, type Chain, type Entity, type SnapKind, type Sketch, type V2 } from './sketch-model'
+import { arcThrough, chainEnd, dist, reverseChain, segStart, type Chain, type DrawTool, type Entity, type SnapKind, type Sketch, type V2 } from './sketch-model'
 
 const EPS = 1e-6
 // unit vectors this close count as square or in line
@@ -106,11 +107,33 @@ function joint(c: Chain, e: number, i: number, k: number, square: boolean): Sket
   return null
 }
 
+// the line of another curve that runs the same way as segment `k` of chain `e`
+function parallelTo(sketch: Sketch, e: number, k: number): SketchCurveRef | null {
+  const x = sketch[e]
+  const d = x?.kind === 'chain' && x.segs[k]?.kind === 'line' ? dirAt(x, k, false) : null
+  if (!d) return null
+  for (let j = 0; j < sketch.length; j++) {
+    const y = sketch[j]!
+    if (y.kind !== 'chain') continue
+    for (let i = 0; i < y.segs.length; i++) {
+      // itself, or a neighbor it runs on from
+      if (j === e && (i === k || Math.abs(i - k) === 1 || (y.closed && Math.abs(i - k) === y.segs.length - 1))) continue
+      const q = y.segs[i]!.kind === 'line' ? dirAt(y, i, false) : null
+      // snapped points are kept to 1e-6 mm, so the directions agree that closely
+      if (q && Math.abs(d[0] * q[1] - d[1] * q[0]) < 1e-5) return { e: j, seg: i }
+    }
+  }
+  return null
+}
+
+const POLYGONS: readonly DrawTool[] = ['polygon', 'polygonOut', 'polygonEdge']
+const SLOTS: readonly DrawTool[] = ['slot', 'slotOverall', 'slotCenter']
+
 /**
  * The constraints a click adds, going from `before` to `after` (the tool's click result), for the shape's clicks in
- * `landed`. Ones already in `have` are left out.
+ * `landed`. Ones already in `have` are left out. `tool` says what drew it, for what the shape keeps (equal sides).
  */
-export function inferred(before: Sketch, after: Sketch, landed: readonly Landing[], have: readonly SketchConstraint[]): SketchConstraint[] {
+export function inferred(before: Sketch, after: Sketch, landed: readonly Landing[], have: readonly SketchConstraint[], tool?: DrawTool): SketchConstraint[] {
   let e = after.length > before.length ? after.length - 1 : after.findIndex((x, i) => JSON.stringify(x) !== JSON.stringify(before[i]))
   if (e < 0) return []
   const x = after[e]!
@@ -141,10 +164,21 @@ export function inferred(before: Sketch, after: Sketch, landed: readonly Landing
       if (j) out.push(j)
       if (j?.type === 'perpendicular') squares++
     }
+    // a polygon's sides are equal (one is enough on four, already square); a slot's two ends are
+    if (!old && x.closed && tool && POLYGONS.includes(tool)) for (let k = 1; k < (n === 4 ? 2 : n); k++) out.push({ type: 'equal', a: { e, seg: 0 }, b: { e, seg: k } })
+    const arcs = x.segs.flatMap((s, i) => (s.kind === 'arc' ? [i] : []))
+    if (!old && x.closed && tool && SLOTS.includes(tool) && arcs.length === 2) out.push({ type: 'equal', a: { e, seg: arcs[0]! }, b: { e, seg: arcs[1]! } })
+    // a line snapped parallel to another
+    for (const l of landed) {
+      if (l.kind !== 'parallel') continue
+      const k = x.segs.findIndex((s, i) => i >= from && s.kind === 'line' && same(s.to, l.at))
+      const other = k >= 0 && !hv.has(k) ? parallelTo(after, e, k) : null
+      if (other) out.push({ type: 'parallel', a: { e, seg: k }, b: other })
+    }
   }
   const ownCurve = x.kind === 'circle' ? { e, seg: 0 } : undefined
   for (const l of landed) {
-    if (!l.kind || l.kind === 'grid' || l.kind === 'horizontal' || l.kind === 'vertical') continue
+    if (!l.kind || l.kind === 'grid' || l.kind === 'horizontal' || l.kind === 'vertical' || l.kind === 'parallel') continue
     const own = pointsOf(after, e).find((p) => same(p.at, l.at))
     if (!own) continue
     const c = landedOn(after, e, l, own.ref, ownCurve)
