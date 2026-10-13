@@ -5226,7 +5226,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slicerx-desktop"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -5509,7 +5509,7 @@ dependencies = [
 
 [[package]]
 name = "sx-cli"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "rayon",
  "serde_json",
@@ -5519,7 +5519,7 @@ dependencies = [
 
 [[package]]
 name = "sx-cloud"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "async-trait",
  "axum",
@@ -5541,7 +5541,7 @@ dependencies = [
 
 [[package]]
 name = "sx-connect"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "aes 0.9.3",
  "async-trait",
@@ -5570,7 +5570,7 @@ dependencies = [
 
 [[package]]
 name = "sx-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "criterion",
  "libm",
@@ -5588,7 +5588,7 @@ dependencies = [
 
 [[package]]
 name = "sx-cpace"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "curve25519-dalek 5.0.0",
  "hmac 0.13.0",
@@ -5616,7 +5616,7 @@ dependencies = [
 
 [[package]]
 name = "sx-ffi"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "cbindgen",
  "serde_json",
@@ -5625,7 +5625,7 @@ dependencies = [
 
 [[package]]
 name = "sx-geom"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "flate2",
  "libm",
@@ -5642,7 +5642,7 @@ dependencies = [
 
 [[package]]
 name = "sx-geom-wasm"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_json",
  "sx-geom",
@@ -5660,7 +5660,7 @@ dependencies = [
 
 [[package]]
 name = "sx-link"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64 0.23.1",
  "chacha20poly1305 0.11.0",
@@ -5692,7 +5692,7 @@ dependencies = [
 
 [[package]]
 name = "sx-llm"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -5711,7 +5711,7 @@ dependencies = [
 
 [[package]]
 name = "sx-permit"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.4.3",
@@ -5724,11 +5724,11 @@ dependencies = [
 
 [[package]]
 name = "sx-profiles"
-version = "0.1.4"
+version = "0.1.5"
 
 [[package]]
 name = "sx-relay"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64 0.23.1",
  "futures",
@@ -5741,7 +5741,7 @@ dependencies = [
 
 [[package]]
 name = "sx-settings"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -5753,7 +5753,7 @@ dependencies = [
 
 [[package]]
 name = "sx-stills"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "openh264",
  "sha2 0.11.0",
@@ -5762,7 +5762,7 @@ dependencies = [
 
 [[package]]
 name = "sx-upload-scan"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "async-trait",
  "crc32fast",
@@ -5779,7 +5779,7 @@ dependencies = [
 
 [[package]]
 name = "sx-wasm"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "getrandom 0.3.4",
  "libm",
@@ -5789,7 +5789,7 @@ dependencies = [
 
 [[package]]
 name = "sx-watch"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64 0.23.1",
  "futures",
@@ -5808,7 +5808,7 @@ dependencies = [
 
 [[package]]
 name = "sx3mf"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "quick-xml",
  "serde",
