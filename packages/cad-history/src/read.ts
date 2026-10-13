@@ -125,11 +125,11 @@ function targetOk(t: unknown): boolean {
   }
 }
 
-/** Sketch constraints: a type, and refs that are loop (and segment) indices or numbers. */
+/** Sketch constraints: a type, refs that are loop (and segment) indices or numbers, and a dimension's driven flag and typed text. */
 function constraintsOk(c: unknown): boolean {
   if (c === undefined) return true
   const ref = (r: unknown) => isNum(r) || (obj(r) && Number.isInteger(r['e']) && (r['seg'] === undefined || Number.isInteger(r['seg'])) && (r['at'] === undefined || typeof r['at'] === 'string'))
-  return Array.isArray(c) && c.length <= 10_000 && c.every((k) => obj(k) && typeof k['type'] === 'string' && Object.entries(k).every(([f, v]) => f === 'type' || ref(v)))
+  return Array.isArray(c) && c.length <= 10_000 && c.every((k) => obj(k) && typeof k['type'] === 'string' && Object.entries(k).every(([f, v]) => f === 'type' || (f === 'driven' && v === true) || (f === 'expr' && typeof v === 'string' && v.length <= 200) || ref(v)))
 }
 
 function paramsOk(p: Record<string, unknown>): boolean {

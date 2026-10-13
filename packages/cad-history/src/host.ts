@@ -38,4 +38,6 @@ export interface DesignHost {
   sketch?(id: string): SketchItem
   /** Puts a finished sketch in the design timeline at its marker. No frame is the bed. */
   addSketch?(s: { frame?: FaceFrame; loops: SketchLoop[]; constraints?: SketchConstraint[] }): SketchItem
+  /** Solves loops with their constraints as the sketch tool does: the loops move to meet them, and a dimension that would over-define the sketch turns driven. */
+  settleSketch?(s: { loops: SketchLoop[]; constraints: SketchConstraint[] }): Promise<{ loops: SketchLoop[]; constraints: SketchConstraint[]; status: 'ok' | 'redundant' | 'conflict' | 'failed'; dof: number }>
 }
