@@ -21,6 +21,8 @@ export interface MimirQuota {
 }
 
 export interface MimirCloudHost {
+  /** True while the person is signed out, where mimir cloud needs a signed-in person (the browser). Unset elsewhere. */
+  needsSignIn?: boolean
   quota(): Promise<MimirQuota>
   /** Deletes the sessions this install shared; resolves to how many. */
   forget(): Promise<number>

@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Settings > mimir: the shared mimir setup, agents, mimir cloud's sharing switch, and turning mimir off.
+import { ASSISTANT_NAME } from '@slicerx/pilot/name'
+import { Button, SwitchRow } from '@slicerx/ui'
+import { useState } from 'react'
+import { useEdition } from '../edition'
+import { useHost } from '../host'
+import { pilotState, set, useApp } from '../state/store'
+import { AgentPanel } from './agent-panel'
+import { useMimirCloudHost } from './cloud'
+import { cloudReady } from './cloud-edition'
+import { keyStoreFor } from './keys'
+import { MimirSetup } from './mimir-setup'
+import './connect.css'
+
+/** Settings > mimir: whether mimir cloud may keep sessions, and deleting the ones it kept. Only where the cloud runs. */
+function CloudShare() {
+  const edition = useEdition()
+  const cloud = useMimirCloudHost()
+  const share = useApp((s) => s.mimirShare)
+  const [note, setNote] = useState<string | null>(null)
+  if (!cloud || !cloudReady(edition, cloud)) return null
+  const forget = async () => {
+    setNote(null)
+    try {
+      const n = await cloud.forget()
+      setNote(n === 0 ? 'Nothing was shared from this computer.' : `Deleted ${n} shared ${n === 1 ? 'session' : 'sessions'}.`)
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e))
+    }
+  }
+  return (
+    <div className="pc-cloud-share">
+      <SwitchRow
+        id="mimir-share"
+        testId="mimir-share"
+        label={`Share my ${ASSISTANT_NAME} sessions to improve ${ASSISTANT_NAME}`}
+        detail={`Only chats on ${ASSISTANT_NAME} cloud are shared, and kept for 180 days. Your own key or local model never shares anything.`}
+        checked={share}
+        onChange={(v) => set({ mimirShare: v })}
+      />
+      <p className="set-actions">
+        <Button variant="ghost" data-testid="danger-mimir-forget" onClick={() => void forget()}>
+          Delete my shared sessions
+        </Button>
+        {note ? (
+          <span className="sx-small sx-muted" role="status">
+            {note}
+          </span>
+        ) : null}
+      </p>
+    </div>
+  )
+}
+
+/** Settings > mimir: connect, or turn it off. */
+export function PilotSettingsSection() {
+  const host = useHost()
+  const pref = useApp((s) => s.pilot)
+  const on = pref === null || pref.mode === 'on'
+  const off = useApp((s) => pilotState(s) === 'off')
+  return (
+    <section className="set-sec" aria-labelledby="pilot-h">
+      <h3 id="pilot-h">{ASSISTANT_NAME}</h3>
+      <p className="sx-small sx-muted">{ASSISTANT_NAME} answers questions and suggests changes you approve. It uses a model you connect; nothing is sent while it is off.</p>
+      <MimirSetup place="settings" idPrefix="pcs" />
+      <AgentPanel idPrefix="pcs-ag" />
+      <CloudShare />
+      {off ? <p className="sx-small sx-muted">{ASSISTANT_NAME} is off. Connect above to turn it back on.</p> : null}
+      {!off ? (
+        <p className="set-actions">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              const provider = pref?.provider
+              if (provider && provider !== 'mimir-cloud') void keyStoreFor(host).delete(provider)
+              set({ pilot: { mode: 'off' } })
+            }}
+          >
+            {on ? `Turn ${ASSISTANT_NAME} off and forget the key` : `Turn ${ASSISTANT_NAME} off`}
+          </Button>
+        </p>
+      ) : null}
+    </section>
+  )
+}

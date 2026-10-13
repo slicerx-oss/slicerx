@@ -6,6 +6,7 @@ import type { LookAndFeelChoice } from '@slicerx/contracts'
 import { Button, Dialog } from '@slicerx/ui'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
+import { cloudReady } from '../pilot-connect/cloud-edition'
 import { useHost } from '../host'
 import { useMediaQuery } from '../lib/media'
 import { isPhoneLayout } from '../lib/phone-layout'
@@ -14,7 +15,7 @@ import { Footer } from './frame'
 import { useLookChoice } from './look'
 import { contractStep, initialFlow, normalizeStep, outcome, progress, reduceFlow, setupSteps, stepLabel, type FlowState, type SetupStep } from './model'
 import { hostSlices } from '../state/model-mode'
-import { MimirStep, type MimirChoice } from './mimir-step'
+import { MimirStep, mimirOnFinish, type MimirChoice } from './mimir-step'
 import { OpenStep } from './open-step'
 import { KnownPrinter } from './known-printer'
 import { ThemeStep } from './theme-step'
@@ -45,7 +46,10 @@ export function FirstRun() {
   // Someone who already has a printer keeps it with one click: setup run again (or from Settings) shows it instead of the scan. Adding a printer from Settings always scans.
   const [keepPrinter, setKeepPrinter] = useState(() => opened !== 'printer' && Boolean(get().firstRun) && get().printerId !== null)
   const [flow, dispatch] = useReducer(reduceFlow, null, () => initialFlow(normalizeStep(opened, steps), choice, null, steps, get().modelModeDefault))
-  const [mimir, setMimir] = useState<MimirChoice>('skip')
+  // mimir cloud, free and with nothing to paste, is picked where it runs now; anything else waits for a pick
+  const [mimir, setMimir] = useState<MimirChoice>(() => (cloudReady(edition) ? 'cloud' : 'skip'))
+  const mimirRef = useRef(mimir)
+  mimirRef.current = mimir
   const atOpen = useRef({ look: storedLook })
   const [announce, setAnnounce] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
@@ -99,6 +103,8 @@ export function FirstRun() {
     if (o.printerId) Object.assign(patch, { printerId: o.printerId })
     if (o.noPrinter) Object.assign(patch, { noPrinter: true })
     if (flow.closed === 'finished') {
+      const pilot = mimirOnFinish(mimirRef.current)
+      if (pilot) Object.assign(patch, { pilot })
       if (flow.printer) {
         const bed = bedOf(ctl.form)
         if (bed) Object.assign(patch, { bed })
@@ -228,7 +234,6 @@ export function FirstRun() {
               </div>
               <Footer
                 back={flow.trail.length ? { label: 'Back', onClick: back } : null}
-                skip={mimir === 'skip' ? null : { label: 'Skip', onClick: () => dispatch({ type: 'finish' }) }}
                 primary={{ label: 'Open the plate', onClick: () => dispatch({ type: 'finish' }), icon: 'prepare' }}
               />
             </>

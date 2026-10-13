@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Connect mimir: pick a provider, paste a key (or point at a local server), test once, save.
-// Used by first-run setup and by Settings. The key stays in an uncontrolled field until it is
+// Connect mimir: pick a provider, paste a key (or point at a local server), pick the model, test once, save.
+// Used inside the shared mimir setup (mimir-setup.tsx). The key stays in an uncontrolled field until it is
 // stored; it never enters React state, the app store or a log.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Button, Field, Icon, Input, LinkButton, SwitchRow } from '@slicerx/ui'
-import { useEffect, useRef, useState } from 'react'
+import { Button, Field, Icon, Input, LinkButton, Select, SwitchRow } from '@slicerx/ui'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
-import { AgentPanel } from './agent-panel'
-import { ChatGptCard } from './chatgpt-card'
 import { chatGptFor, useChatGpt } from './chatgpt'
 import { useMimirCloudHost } from './cloud'
 import { cloudReady } from './cloud-edition'
@@ -17,10 +15,12 @@ import { LocalAiCard } from './local-ai-card'
 import { detectRunners, useLocalAi } from './local-ai'
 import { pilotState, set, useApp, type PilotPref } from '../state/store'
 import { keyStoreFor, PROVIDERS, type PilotProvider } from './keys'
+import { modelChoices, AUTO_MODEL } from './models'
 import { hostLocalFetch, testConnection, type TestResult } from './transport'
 import './connect.css'
 
-const ORDER: PilotProvider[] = ['mimir-cloud', 'openai', 'anthropic', 'local']
+// Anthropic before OpenAI: its Auto pairs Haiku with Sonnet, and it leads the bench
+const ORDER: PilotProvider[] = ['mimir-cloud', 'anthropic', 'openai', 'local']
 
 /** The host of a typed server address, or null when it is empty, unparseable or this computer. */
 function remoteHost(address: string): string | null {
@@ -34,20 +34,70 @@ function remoteHost(address: string): string | null {
   }
 }
 
+const OTHER = '\u0000other'
+
+/** The saved model, with nothing saved read as Auto. */
+const savedModel = (model: string | undefined): string => model?.trim() || AUTO_MODEL
+
+/** The model, from a list with Auto first and a cost hint on each, or any other id typed under "Other model id". */
+export function ModelPicker({ idPrefix, provider, value, onChange }: { idPrefix: string; provider: PilotProvider; value: string; onChange(id: string): void }) {
+  const choices = modelChoices(provider)
+  const listed = choices.some((c) => c.id === value)
+  const [other, setOther] = useState(!listed)
+  if (!choices.length)
+    return (
+      <Field htmlFor={`${idPrefix}-model`} label="Model" hint="As the server names it. Empty runs its default.">
+        <Input id={`${idPrefix}-model`} data-testid="pc-model" mono value={value === AUTO_MODEL ? '' : value} placeholder={PROVIDERS[provider].defaultModel} onChange={(e) => onChange(e.target.value)} />
+      </Field>
+    )
+  return (
+    <>
+      <Field htmlFor={`${idPrefix}-model`} label="Model">
+        <Select
+          id={`${idPrefix}-model`}
+          data-testid="pc-model"
+          value={other ? OTHER : value}
+          onChange={(e) => {
+            const v = e.target.value
+            setOther(v === OTHER)
+            if (v !== OTHER) onChange(v)
+          }}
+        >
+          {choices.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.cost ? `${c.label} (${c.cost})` : c.label}
+            </option>
+          ))}
+          <option value={OTHER}>Other model id</option>
+        </Select>
+      </Field>
+      {other ? (
+        <Field htmlFor={`${idPrefix}-model-id`} label="Model id" hint={`Exactly as ${PROVIDERS[provider].label} names it.`}>
+          <Input id={`${idPrefix}-model-id`} mono value={value} placeholder={PROVIDERS[provider].defaultModel} onChange={(e) => onChange(e.target.value)} />
+        </Field>
+      ) : null}
+    </>
+  )
+}
+
 export interface ConnectState {
   /** True once a test passed and the connection was saved. */
   connected: boolean
 }
 
-/** `withLocal` false leaves out the local model tab, for a page that shows the local setup card on its own. */
-export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }: { onConnected?: () => void; idPrefix?: string; withLocal?: boolean }) {
+/**
+ * `withLocal` false leaves out the local model tab, for a page that shows the local setup card on its own. `only` limits
+ * the providers to these (the shared mimir setup passes the key providers, or the local one).
+ */
+export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, only }: { onConnected?: () => void; idPrefix?: string; withLocal?: boolean; only?: readonly PilotProvider[] }) {
   const host = useHost()
   const pref = useApp((s) => s.pilot)
   const edition = useEdition()
   const withCloud = cloudReady(edition, useMimirCloudHost())
-  const [provider, setProvider] = useState<PilotProvider>(pref?.provider ?? (withCloud ? 'mimir-cloud' : 'openai'))
+  const offered = ORDER.filter((id) => (withLocal || id !== 'local') && (withCloud || id !== 'mimir-cloud') && (!only || only.includes(id)))
+  const [provider, setProvider] = useState<PilotProvider>(() => (pref?.provider && offered.includes(pref.provider) ? pref.provider : (offered[0] ?? 'openai')))
   const [baseUrl, setBaseUrl] = useState(pref?.baseUrl ?? '')
-  const [model, setModel] = useState(pref?.model ?? '')
+  const [model, setModel] = useState(pref?.provider === provider ? savedModel(pref?.model) : AUTO_MODEL)
   const [shown, setShown] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -94,7 +144,9 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
       }
       const typed = keyRef.current?.value.trim() ?? ''
       const key = info.needsKey || localKey ? typed || (await store.get(provider)) : null
-      const config = { provider, ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}), ...(model.trim() ? { model: model.trim() } : {}) }
+      const picked = savedModel(model)
+      // the test call runs Auto as the provider default; the pref keeps Auto for mimir's routing
+      const config = { provider, ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}), ...(picked !== AUTO_MODEL ? { model: picked } : {}) }
       const viaHost = provider === 'local' ? chatGptFor(host)?.localModels : undefined
       const r = await testConnection(config, key, viaHost ? hostLocalFetch(viaHost) : undefined)
       setResult(r)
@@ -104,7 +156,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
         if (provider === 'local') setHasLocalKey(true)
       }
       if (keyRef.current) keyRef.current.value = ''
-      const next: PilotPref = { mode: 'on', provider, ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}), ...(config.model ? { model: config.model } : {}) }
+      const next: PilotPref = { mode: 'on', provider, ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}), model: picked }
       set({ pilot: next })
       onConnected?.()
     } catch (e) {
@@ -116,8 +168,9 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
 
   return (
     <div className="pc">
-      <div className="pc-providers" role="radiogroup" aria-label="Model provider">
-        {ORDER.filter((id) => (withLocal || id !== 'local') && (withCloud || id !== 'mimir-cloud')).map((id) => {
+      {offered.length > 1 ? (
+      <div className="pc-providers" role="radiogroup" aria-label="Model provider" style={{ '--n': offered.length } as CSSProperties}>
+        {offered.map((id) => {
           const p = PROVIDERS[id]
           const on = id === provider
           return (
@@ -129,11 +182,12 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
               className="pc-provider"
               data-on={on ? true : undefined}
               onClick={() => {
+                if (id !== provider) setModel(pref?.provider === id ? savedModel(pref.model) : AUTO_MODEL)
                 setProvider(id)
                 setResult(null)
               }}
             >
-              <Icon name={id === 'local' ? 'desktop' : 'cloud'} />
+              <Icon name={id === 'local' ? 'desktop' : id === 'mimir-cloud' ? 'cloud' : 'key'} />
               <span>
                 <b>{p.label}</b>
                 <small>{id === 'local' ? 'A model you run yourself, on this computer or your network.' : id === 'mimir-cloud' ? p.where : `Your own ${p.label} API key. Calls go to ${p.label} only.`}</small>
@@ -142,6 +196,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
           )
         })}
       </div>
+      ) : null}
       {provider === 'mimir-cloud' ? (
         <div className="pc-act">
           <Button variant="primary" icon="link" onClick={() => void connect()} disabled={busy}>
@@ -241,9 +296,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
         </>
       )}
       {info.needsKey || manual ? (
-        <Field htmlFor={`${idPrefix}-model`} label="Model (optional)" hint={`Leave empty for ${info.defaultModel}.`}>
-          <Input id={`${idPrefix}-model`} mono value={model} placeholder={info.defaultModel} onChange={(e) => setModel(e.target.value)} />
-        </Field>
+        <ModelPicker key={provider} idPrefix={idPrefix} provider={provider} value={model} onChange={setModel} />
       ) : null}
       {info.needsKey || manual ? (
         <>
@@ -271,79 +324,5 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
         </>
       ) : null}
     </div>
-  )
-}
-
-/** Settings > mimir: whether mimir cloud may keep sessions, and deleting the ones it kept. Only where the cloud runs. */
-function CloudShare() {
-  const edition = useEdition()
-  const cloud = useMimirCloudHost()
-  const share = useApp((s) => s.mimirShare)
-  const [note, setNote] = useState<string | null>(null)
-  if (!cloud || !cloudReady(edition, cloud)) return null
-  const forget = async () => {
-    setNote(null)
-    try {
-      const n = await cloud.forget()
-      setNote(n === 0 ? 'Nothing was shared from this computer.' : `Deleted ${n} shared ${n === 1 ? 'session' : 'sessions'}.`)
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : String(e))
-    }
-  }
-  return (
-    <div className="pc-cloud-share">
-      <SwitchRow
-        id="mimir-share"
-        testId="mimir-share"
-        label={`Share my ${ASSISTANT_NAME} sessions to improve ${ASSISTANT_NAME}`}
-        detail={`Only chats on ${ASSISTANT_NAME} cloud are shared, and kept for 180 days. Your own key or local model never shares anything.`}
-        checked={share}
-        onChange={(v) => set({ mimirShare: v })}
-      />
-      <p className="set-actions">
-        <Button variant="ghost" data-testid="danger-mimir-forget" onClick={() => void forget()}>
-          Delete my shared sessions
-        </Button>
-        {note ? (
-          <span className="sx-small sx-muted" role="status">
-            {note}
-          </span>
-        ) : null}
-      </p>
-    </div>
-  )
-}
-
-/** Settings > mimir: connect, or turn it off. */
-export function PilotSettingsSection() {
-  const host = useHost()
-  const gpt = useChatGpt(host)
-  const pref = useApp((s) => s.pilot)
-  const on = pref === null || pref.mode === 'on'
-  const off = useApp((s) => pilotState(s) === 'off')
-  return (
-    <section className="set-sec" aria-labelledby="pilot-h">
-      <h3 id="pilot-h">{ASSISTANT_NAME}</h3>
-      <p className="sx-small sx-muted">{ASSISTANT_NAME} answers questions and suggests changes you approve. It uses a model you connect; nothing is sent while it is off.</p>
-      <ChatGptCard idPrefix="pcs" withLocal={!gpt} />
-      {gpt ? <LocalAiCard /> : null}
-      <AgentPanel idPrefix="pcs-ag" />
-      <CloudShare />
-      {off ? <p className="sx-small sx-muted">{ASSISTANT_NAME} is off. Connect above to turn it back on.</p> : null}
-      {!off ? (
-        <p className="set-actions">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              const provider = pref?.provider
-              if (provider && provider !== 'mimir-cloud') void keyStoreFor(host).delete(provider)
-              set({ pilot: { mode: 'off' } })
-            }}
-          >
-            {on ? `Turn ${ASSISTANT_NAME} off and forget the key` : `Turn ${ASSISTANT_NAME} off`}
-          </Button>
-        </p>
-      ) : null}
-    </section>
   )
 }

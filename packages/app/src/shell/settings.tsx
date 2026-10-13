@@ -17,7 +17,7 @@ import { set, useApp } from '../state/store'
 import { Loading } from './loading'
 
 const PHONE_ID = 'phone'
-const PilotSettingsSection = lazy(() => import('../pilot-connect/connect-panel').then((m) => ({ default: m.PilotSettingsSection })))
+const PilotSettingsSection = lazy(() => import('../pilot-connect/settings-section').then((m) => ({ default: m.PilotSettingsSection })))
 const PresetsSection = lazy(() => import('../presets/section').then((m) => ({ default: m.PresetsSection })))
 const BridgeSection = lazy(() => import('../link/section').then((m) => ({ default: m.BridgeSection })))
 const BRIDGE_ID = 'bridge'
@@ -83,7 +83,7 @@ export function SettingsDialog() {
         {sections.length > 1 ? (
           <nav className="settings-nav" aria-label="Settings sections">
             {sections.map((s) => (
-              <button key={s.id} type="button" aria-current={id === s.id ? 'true' : undefined} onClick={() => setPicked(s.id)}>
+              <button key={s.id} type="button" data-testid={`settings-nav-${s.id}`} aria-current={id === s.id ? 'true' : undefined} onClick={() => setPicked(s.id)}>
                 <Icon name={s.icon} />
                 {s.label}
               </button>
