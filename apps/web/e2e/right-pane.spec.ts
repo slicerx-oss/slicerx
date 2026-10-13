@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Slice's right pane never opens by itself: it starts shut, stays shut through a slice, and its edge tab glows when
-// something in it wants a look, until the pane is opened. Long names stay on one line, cut in the middle.
+// Slice's right pane starts shut and opens when a slice finishes. Once the person shuts it by hand it stays shut through
+// that project's slices until they open it again, and a new session starts it shut. While it is shut, its edge tab
+// glows when something in it wants a look. Long names stay on one line, cut in the middle.
 import { type Page } from '@playwright/test'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 
-/** The plate is in when its chip names the starter (plateReady looks in the objects list, which is shut here). */
-const plateIn = (page: Page) => expect(page.locator('.platechip', { hasText: 'Layered X' })).toBeVisible({ timeout: 120_000 })
+type Sx = { getState(): { plate: { name: string }[]; slice: { status: string; result: { warnings: unknown[] } } }; setState(p: unknown): void }
 
-type Sx = { getState(): { slice: { status: string; result: { warnings: unknown[] } } }; setState(p: unknown): void }
+/** The starter is on the plate (plateReady looks in the objects list, which is shut here). */
+const plateIn = (page: Page) => expect.poll(() => page.evaluate(() => (window as unknown as { __sx?: Sx }).__sx?.getState().plate.some((p) => p.name.includes('Layered X')) ?? false), { timeout: 120_000 }).toBe(true)
 const tab = (page: Page) => page.getByTestId('edge-tab-right')
 
 async function open(page: Page, prefs: Record<string, unknown> = {}): Promise<void> {
@@ -34,18 +35,47 @@ async function slice(page: Page): Promise<void> {
 test.describe('the right pane', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop width: on a phone the panes are sheets')
 
-  test('starts shut and stays shut through a clean slice, with no glow', async ({ page }) => {
+  test('starts shut, and a finished slice opens it with the summary', async ({ page }) => {
     await open(page)
     await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
     await expect(page.getByTestId('slice-summary')).toHaveCount(0)
     await slice(page)
-    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByTestId('slice-summary')).toBeVisible()
     await expect(tab(page)).not.toHaveAttribute('data-attention', /./)
   })
 
-  test('glows for a slice with warnings until it is opened, and stays open after a reload', async ({ page }) => {
+  test('shut by hand, it stays shut through the project\'s slices until opened again, and a reload starts it shut', async ({ page }) => {
     await open(page)
     await slice(page)
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
+    await tab(page).click()
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
+    await slice(page)
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
+    // Opened by hand again, the next slice leaves it open; shut by the key, it stays shut again.
+    await tab(page).click()
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
+    await slice(page)
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
+    await page.mouse.move(700, 300)
+    await page.keyboard.press('BracketRight')
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
+    await slice(page)
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
+    // Not kept between sessions: open it, reload, and it starts shut.
+    await tab(page).click()
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
+    await page.reload()
+    await plateIn(page)
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('shut by hand, it glows for a slice with warnings until it is opened', async ({ page }) => {
+    await open(page)
+    await slice(page)
+    await tab(page).click()
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
     await page.evaluate(() => {
       const sx = (window as unknown as { __sx: Sx }).__sx
       const s = sx.getState().slice
@@ -59,12 +89,6 @@ test.describe('the right pane', () => {
     // Seen: shutting it again does not bring the glow back for the same warnings.
     await tab(page).click()
     await expect(tab(page)).not.toHaveAttribute('data-attention', /./)
-    // The person's choice persists. Wait for the click to land before reloading: a busy page can take it late.
-    await tab(page).click()
-    await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
-    await page.reload()
-    await plateIn(page)
-    await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
   })
 
   test('glows for an object off the bed', async ({ page }) => {

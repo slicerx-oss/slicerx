@@ -20,7 +20,7 @@ import { plateSequence } from '../plate/plate-sequence'
 import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
 import { markOpenStage } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
-import { colorModeAfterSlice, fullPlate, get, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
+import { colorModeAfterSlice, fullPlate, get, openRightOnSlice, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
 import { beginSlice, currentSlice, endSlice, layersAfterSlice, trustOptions } from './actions'
 import { hostSlices } from './model-mode'
 
@@ -148,6 +148,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
     set({ slice: { status: 'done', result, stale: false }, sliceHeld: false, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
+    // The summary of what just sliced: the right pane opens unless the person shut it for this project.
+    openRightOnSlice()
     sliceStage(timed, 'shown')
     markOpenStage('sliced')
   } catch (e) {
