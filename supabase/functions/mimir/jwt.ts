@@ -15,9 +15,10 @@ const SKEW_S = 30
 
 export type JwtResult = { ok: true; user: string } | { ok: false; reason: 'missing' | 'malformed' | 'signature' | 'expired' | 'project' | 'anonymous' }
 
-function b64url(s: string): Uint8Array<ArrayBuffer> {
+// An ArrayBuffer, so crypto.subtle takes it on older and newer TypeScript lib types alike.
+function b64url(s: string): ArrayBuffer {
   const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4))
-  return Uint8Array.from(b, (c) => c.charCodeAt(0))
+  return Uint8Array.from(b, (c) => c.charCodeAt(0)).buffer as ArrayBuffer
 }
 
 function params(alg: string): { imp: EcKeyImportParams | RsaHashedImportParams; ver: EcdsaParams | AlgorithmIdentifier } | null {
