@@ -16,7 +16,7 @@ import { allPlates, switchPlate } from '../plate/plates'
 import { isMac } from '../lib/keys'
 import { useFeatures, type ActiveWorkspace } from '../features'
 import { orderWorkspaces, useLayout } from '../first-run/look'
-import { listedInMode, titleInMode, useModelMode } from '../state/model-mode'
+import { hostSlices, listedInMode, listedOnHost, titleInMode, useModelMode } from '../state/model-mode'
 import { get, pilotState, pushRecent, set, setWorkspace, toast, useApp } from '../state/store'
 
 /** The pilot feature registers this command; it takes the typed text as input. */
@@ -81,7 +81,7 @@ export function CommandBar() {
   const mode = useModelMode()
   const all = useMemo(() => {
     const shown = workspace === 'prepare' ? mode : 'slice'
-    return registered.filter((c) => listedInMode(c.id, shown)).map((c) => {
+    return registered.filter((c) => listedOnHost(c) && listedInMode(c.id, shown)).map((c) => {
       const title = titleInMode(c.id, c.title, shown)
       return title === c.title ? c : { ...c, title }
     })
@@ -143,8 +143,8 @@ export function CommandBar() {
           plates: allPlates({ plates, plate, activePlate }).map((p) => ({ id: p.id, name: p.name, count: p.objects.length })),
           activePlate,
           objects: plate.map((p) => ({ id: p.id, name: p.name })),
-          printers: (fleet.data ?? []).map((r) => ({ id: r.id, name: r.name, model: r.model })),
-          presets: userPresets.map((p) => ({ id: p.id, name: p.name, kind: p.kind })),
+          printers: hostSlices() ? (fleet.data ?? []).map((r) => ({ id: r.id, name: r.name, model: r.model })) : [],
+          presets: hostSlices() ? userPresets.map((p) => ({ id: p.id, name: p.name, kind: p.kind })) : [],
         },
         {
           plate: (id) => { setWorkspace('prepare'); switchPlate(id) },
@@ -154,7 +154,8 @@ export function CommandBar() {
         },
       )
       // The setting index loads the first time the bar opens; until then only commands and jump targets show.
-      const settings = settingsApi ? settingEntries(q, { easy, overrides, settingsMode }, open_, settingsApi) : []
+      // print settings mean nothing without an engine, so a host that cannot slice leaves them out
+      const settings = settingsApi && hostSlices() ? settingEntries(q, { easy, overrides, settingsMode }, open_, settingsApi) : []
       if (ranked.length) out.push({ title: `${ranked.length === 40 ? 'Top 40' : ranked.length} ${ranked.length === 1 ? 'command' : 'commands'}`, items: ranked.map((m) => toItem(m.command, workspace, spaces, toolHint)) })
       if (nav.length) out.push({ title: 'Go to', items: nav.map(toRow) })
       if (settings.length) out.push({ title: 'Settings', items: settings.map(toRow) })
@@ -205,7 +206,7 @@ export function CommandBar() {
       query={query}
       onQueryChange={setQuery}
       groups={groups}
-      placeholder="Type a command, a setting or a printer"
+      placeholder={hostSlices() ? 'Type a command, a setting or a printer' : 'Type a command'}
       empty={`No command matches "${query}"`}
       footerRight={`${count} of ${all.length} commands`}
       onSelect={(item) => {

@@ -3,15 +3,18 @@
 // Model's tool shelf, a lifted bar over the view: Create, Shape, Fasten and Mesh, set apart by space and a short
 // hairline, then the next slot with the tools for what is picked, then Measure and Values as icons by undo and redo.
 // Narrow windows drop the labels. The tools come from shelf-tools.ts, the same list as the Tools menu in Slice.
-// Modeling tools wait while the full geometry engine loads.
+// Modeling tools wait while the full geometry engine loads. A host that cannot slice ends the shelf with Export, the
+// only way out for a model there.
 import { Button, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator } from '@slicerx/ui'
 import { lazy, Suspense, useState } from 'react'
+import { getCommand, isEnabled, runCommand } from '../../commands/registry'
 import { editionHasCad, useEdition } from '../../edition'
 import { useFullEngine } from '../../geom/full-engine'
 import { useHost } from '../../host'
 import { addPrimitive } from '../../plate/edit'
 import { repairSelected } from '../../plate/geom-ops'
 import { history } from '../../plate/history'
+import { hostSlices } from '../../state/model-mode'
 import { set, toast, useApp, type AppState } from '../../state/store'
 import { SHAPES } from '../prepare/object-actions'
 import { useHistoryCounts } from '../prepare/plate-toolbar'
@@ -32,6 +35,15 @@ export function nextPick(s: Pick<AppState, 'subPicks' | 'selection' | 'selectedI
   if (!s.selection) return null
   return { kind: 'object', count: Math.max(1, s.selectedIds.length) }
 }
+
+/** Export in a host that cannot slice: the commands behind it, so the menu and the command bar do the same thing. */
+const EXPORTS = [
+  { id: 'export-plate-stl', label: 'Whole model as STL', icon: 'export' },
+  { id: 'export-plate-obj', label: 'Whole model as OBJ', icon: 'export' },
+  { id: 'export-selection-stl', label: 'Selection as STL', icon: 'export' },
+  { id: 'export-selection-obj', label: 'Selection as OBJ', icon: 'export' },
+  { id: 'project-save', label: 'Project file (.sx3mf)', icon: 'save' },
+] as const
 
 const MENU_LABEL = { face: { label: 'On a face', icon: 'on-face' }, mesh: { label: 'Mesh', icon: 'mesh-menu' } } as const
 
@@ -168,6 +180,38 @@ export function Shelf() {
         <span className="shelf-sep" aria-hidden="true" />
         <Button variant="ghost" size="sm" icon="undo" aria-label="Undo" tip="edit.undo" disabled={undo === 0} onClick={() => history().undo()} />
         <Button variant="ghost" size="sm" icon="redo" aria-label="Redo" tip="edit.redo" disabled={redo === 0} onClick={() => history().redo()} />
+        {hostSlices() ? null : (
+          <>
+            <span className="shelf-sep" aria-hidden="true" />
+            <MenuAnchor>
+              <button type="button" className="shelf-tool" data-testid="model-export" aria-label="Export" aria-haspopup="menu" aria-expanded={menu === 'export'} onClick={() => setMenu(menu === 'export' ? null : 'export')}>
+                <Icon name="export" />
+                <span>Export</span>
+                <Icon name="chevron-down" size={12} />
+              </button>
+              <Menu open={menu === 'export'} onClose={() => setMenu(null)} label="Export">
+                {EXPORTS.map((e) => {
+                  const c = getCommand(e.id)
+                  return (
+                    <MenuItem
+                      key={e.id}
+                      icon={e.icon}
+                      disabled={!c || !isEnabled(c)}
+                      onClick={() =>
+                        run(async () => {
+                          const r = await runCommand(e.id)
+                          if (!r.ok) throw new Error(r.message)
+                        })
+                      }
+                    >
+                      {e.label}
+                    </MenuItem>
+                  )
+                })}
+              </Menu>
+            </MenuAnchor>
+          </>
+        )}
       </div>
       <ViewRing />
       {dialog ? (

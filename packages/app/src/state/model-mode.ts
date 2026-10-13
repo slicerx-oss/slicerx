@@ -100,6 +100,23 @@ export function useShownOrigin(): { origin: Vec3; frame: 'grid' | 'bed' } {
 /** Commands Model leaves out of the command bar (they still run from their shortcuts on a host that slices). */
 export const SLICE_ONLY_COMMANDS: ReadonlySet<string> = new Set(['slice', 'slice-cancel', 'export-gcode', 'export-gcode-3mf', 'export-all-plates', 'gcode-lines'])
 
+/** Commands a host that cannot slice leaves out of the command bar, beside every slice and printer command: print
+ * settings and presets, the printer's connections, print-only painting and volumes, and the layer preview. */
+const SLICER_COMMANDS: ReadonlySet<string> = new Set([
+  'user-presets', 'printer-settings', 'bridge-open', 'apps-open', 'vary-layer-height', 'brim-toggle', 'expert-open', 'expert-reset',
+  'calibration', 'flush-volumes', 'paint-support', 'paint-seam', 'paint-fuzzy', 'volume-blocker', 'volume-enforcer', 'volume-modifier', 'toolpath-palette',
+  'check-printers', 'toggle-printable', 'print-rest',
+])
+const SLICER_PREFIXES = ['nozzle-', 'goal-', 'speed-', 'layer-', 'preview-']
+
+/** Whether the command bar lists a command at all on this host. */
+export function listedOnHost(c: { id: string; section?: string }): boolean {
+  if (slicing) return true
+  // workspace tabs the host does not show
+  if (c.id.startsWith('open-') && c.section === 'navigate' && !MODEL_ONLY_WORKSPACES.has(c.id.slice(5))) return false
+  return c.section !== 'slice' && c.section !== 'printers' && !SLICER_COMMANDS.has(c.id) && !SLICER_PREFIXES.some((p) => c.id.startsWith(p))
+}
+
 /** Whether the command bar lists a command in the mode shown. */
 export function listedInMode(id: string, mode: ModelMode): boolean {
   if (!slicing && id === 'mode-slice') return false
@@ -114,7 +131,12 @@ const MODEL_TITLES: Readonly<Record<string, string>> = {
   'drop-to-bed': 'Drop the selected object to the ground',
 }
 
+/** Settings sections a host that cannot slice names its own way, as its Settings does. */
+const MODEL_ONLY_TITLES: Readonly<Record<string, string>> = {
+  'slicing-open': 'Modeling: drawing tools',
+}
+
 /** A command's title in the mode shown: grid and ground in Model, bed in Slice. */
 export function titleInMode(id: string, title: string, mode: ModelMode): string {
-  return (mode !== 'slice' && MODEL_TITLES[id]) || title
+  return (!slicing && MODEL_ONLY_TITLES[id]) || (mode !== 'slice' && MODEL_TITLES[id]) || title
 }
