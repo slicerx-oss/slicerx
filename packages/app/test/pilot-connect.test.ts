@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest'
 import type { Host } from '@slicerx/contracts'
 import { chatGptFor, registerChatGpt, type ChatGptHost } from '../src/pilot-connect/chatgpt'
 import { browserStore, keyStoreFor } from '../src/pilot-connect/keys'
-import { cloudBase, cloudReady, registerMimirCloud, type MimirCloudHost } from '../src/pilot-connect/cloud'
+import { registerMimirCloud, type MimirCloudHost } from '../src/pilot-connect/cloud'
+import { cloudBase, cloudReady } from '../src/pilot-connect/cloud-edition'
 import { pilotModel } from '../src/pilot-connect/llm'
 import { normalizePrefs } from '../src/state/prefs'
 import { authHeaders, browserTransport, hostLocalFetch, localAllowed, testConnection } from '../src/pilot-connect/transport'
@@ -193,10 +194,10 @@ describe('mimir cloud', () => {
     expect(cloudBase(NEUTRAL)).toBeNull()
     expect(pilotModel(CLOUD, null, true)).toEqual(onCloud)
     expect(pilotModel(CLOUD, { mode: 'unset' }, true)).toEqual(onCloud)
-    expect(pilotModel(CLOUD, { mode: 'on', provider: 'cloud' }, true)).toEqual(onCloud)
+    expect(pilotModel(CLOUD, { mode: 'on', provider: 'mimir-cloud' }, true)).toEqual(onCloud)
     // the browser build has no cloud host: the edition's own model, which needs a key
     expect(pilotModel(CLOUD, null, false)).toEqual({ provider: 'anthropic', model: 'claude-haiku-5-5' })
-    expect(pilotModel(CLOUD, { mode: 'on', provider: 'cloud' }, false)).toBeNull()
+    expect(pilotModel(CLOUD, { mode: 'on', provider: 'mimir-cloud' }, false)).toBeNull()
     // an edition without the cloud never uses it
     expect(pilotModel(NEUTRAL, null, true)?.provider).not.toBe('mimir-cloud')
     expect(cloudReady(CLOUD, null)).toBe(false)
@@ -221,7 +222,7 @@ describe('mimir cloud', () => {
   })
 
   it('is never sent from the browser transport', async () => {
-    const t = browserTransport(browserStore(null), () => ({ provider: 'cloud' }))
+    const t = browserTransport(browserStore(null), () => ({ provider: 'mimir-cloud' }))
     expect(await t.available('mimir-cloud')).toBe(false)
     await expect(async () => {
       for await (const _ of t.stream({ provider: 'mimir-cloud', url: `${onCloud.baseUrl}/v1/messages`, method: 'POST', headers: {}, body: '{}' })) void _
@@ -229,8 +230,8 @@ describe('mimir cloud', () => {
   })
 
   it('keeps the cloud choice and the share switch in prefs, sharing on by default', () => {
-    const prefs = normalizePrefs({ pilot: { mode: 'on', provider: 'cloud' } })
-    expect(prefs.pilot).toEqual({ mode: 'on', provider: 'cloud' })
+    const prefs = normalizePrefs({ pilot: { mode: 'on', provider: 'mimir-cloud' } })
+    expect(prefs.pilot).toEqual({ mode: 'on', provider: 'mimir-cloud' })
     expect(prefs.mimirShare).toBe(true)
     expect(normalizePrefs({ mimirShare: false }).mimirShare).toBe(false)
   })
