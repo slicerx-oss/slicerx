@@ -179,6 +179,20 @@ it('joins and cuts a sketch on a face into the solid, and a shape that misses br
   expect(m.status[1]).toEqual({ state: 'broken', message: 'The shape no longer reaches the part.' })
 })
 
+it('sends circles as circles and polygons as their corners, turned and moved as the engine places them', async () => {
+  const circle = step('circle-1', { ...box.params, shape: { type: 'circle', diameterMm: 8 }, placement: { center: [1, 2] } } as StepParams)
+  const e = engine()
+  await replayHistory(e.call, { history: history(circle), exact: true })
+  expect(e.sent[0]!.req['polygons']).toEqual([{ outer: { center: [1, 2], diameterMm: 8 }, holes: [] }])
+  const square = step('square-1', { ...box.params, shape: { type: 'polygon', sides: 4, diameterMm: 10, fit: 'circumscribed' }, placement: { rotationDeg: 45 } } as StepParams)
+  const f = engine()
+  await replayHistory(f.call, { history: history(square), exact: true })
+  // a square around a 10 mm circle, flat side down, turned 45 degrees: its corners on the axes at 5 * sqrt 2
+  const corners = (f.sent[0]!.req['polygons'] as { outer: { points: number[][] } }[])[0]!.outer.points
+  const r = 5 * Math.SQRT2
+  for (const [p, q] of corners.map((c, i) => [c, [[0, -r], [r, 0], [0, r], [-r, 0]][i]!])) for (const k of [0, 1]) expect(p![k]).toBeCloseTo(q![k]!, 9)
+})
+
 it('sends slots, rounded rectangles and sketches to the kernel as lines and arcs', async () => {
   const slot = step('slot-1', { ...box.params, shape: { type: 'slot', lengthMm: 30, widthMm: 10 } } as StepParams)
   const e = engine()
