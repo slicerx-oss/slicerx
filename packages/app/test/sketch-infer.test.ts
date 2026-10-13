@@ -102,6 +102,17 @@ describe('inferred constraints', () => {
     expect(snap([10.1, 8.2], [sketchTargets(base)], { anchor: [0, 5], gridMm: 0, tolMm: 0.5 }).kind).not.toBe('parallel')
   })
 
+  it('a point dropped on the origin is held there', () => {
+    expect(sketchTargets([]).points).toEqual([{ at: [0, 0], kind: 'vertex' }])
+    const r = draw('rect', [[0, 0, 'vertex'], [10, 5]])
+    // a closed chain names its start by the last segment's end
+    expect(r.cons).toContainEqual({ type: 'coincident', a: { e: 0, at: 'to', seg: 3 }, b: { e: -1, at: 'start' } })
+    const c = draw('circle', [[0, 0, 'vertex'], [4, 0]])
+    expect(c.cons).toEqual([{ type: 'coincident', a: { e: 0, at: 'center' }, b: { e: -1, at: 'start' } }])
+    // a rectangle held at its corner, level and upright, is free only in its two sizes
+    expect(toSolver(r.sketch, r.cons).solver.constraints).toContainEqual({ type: 'fix', point: 4 })
+  })
+
   it('Ctrl leaves nothing behind', () => {
     expect(draw('line', [[0, 0], [10, 0], [10, 10]], [], true).cons).toEqual([])
   })
