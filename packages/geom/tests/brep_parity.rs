@@ -10,6 +10,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn call(op: &str, req: &Value) -> Value {
+    // bodies travel as text here, which sx-geom takes only from a developer
+    sx_geom::json::allow_brep_text(true);
     let r = sx_geom::json::call(op, &req.to_string()).unwrap_or_else(|e| panic!("{op}: {e}"));
     serde_json::from_str(&r).expect("reply is JSON")
 }
@@ -77,7 +79,12 @@ fn check(name: &str, brep: &Solid, mesh: Option<&Solid>, volume: f64, min: [f64;
     if let Some(m) = mesh
         && exact(m, volume, min, max)
     {
-        assert!(near(m.volume, brep.volume), "{name}: mesh {} and brep {} differ", m.volume, brep.volume);
+        assert!(
+            near(m.volume, brep.volume),
+            "{name}: mesh {} and brep {} differ",
+            m.volume,
+            brep.volume
+        );
     }
 }
 
@@ -92,7 +99,14 @@ fn box_and_its_mesh() {
     }
     let c = made("box", json!({ "min": [1, 2, 3], "max": [11, 22, 33] }));
     let m = mesh_solid(&mesh(&c));
-    check("box", &brep_solid(&c), Some(&m), 6000.0, [1.0, 2.0, 3.0], [11.0, 22.0, 33.0]);
+    check(
+        "box",
+        &brep_solid(&c),
+        Some(&m),
+        6000.0,
+        [1.0, 2.0, 3.0],
+        [11.0, 22.0, 33.0],
+    );
     // flat faces tessellate exactly, so here the mesh path is right too
     assert!(exact(&m, 6000.0, [1.0, 2.0, 3.0], [11.0, 22.0, 33.0]), "box mesh");
 }
@@ -107,11 +121,25 @@ fn subtract_a_box_and_a_hole() {
     let b = made("subtract", json!({ "body": c, "solids": slot }));
     let m = call("subtract", &json!({ "mesh": mesh(&c), "solids": slot }));
     let want = 8000.0 - 10.0 * 20.0 * 5.0;
-    check("slot", &brep_solid(&b), Some(&mesh_solid(&m["mesh"])), want, [0.0; 3], [20.0; 3]);
+    check(
+        "slot",
+        &brep_solid(&b),
+        Some(&mesh_solid(&m["mesh"])),
+        want,
+        [0.0; 3],
+        [20.0; 3],
+    );
     // a through hole, flush with both faces: exact only on the brep side, as the mesh's circle is a polygon
     let hole = json!([{ "type": "cylinder", "origin": [10, 10, 0], "axis": [0, 0, 1], "diameterMm": 8, "heightMm": 20 }]);
     let h = made("subtract", json!({ "body": c, "solids": hole }));
-    check("hole", &brep_solid(&h), None, 8000.0 - PI * 16.0 * 20.0, [0.0; 3], [20.0; 3]);
+    check(
+        "hole",
+        &brep_solid(&h),
+        None,
+        8000.0 - PI * 16.0 * 20.0,
+        [0.0; 3],
+        [20.0; 3],
+    );
 }
 
 #[test]
@@ -128,7 +156,14 @@ fn union_and_intersection_of_boxes() {
     ] {
         let r = made("boolean", json!({ "op": op, "a": a, "b": b }));
         let m = call("boolean", &json!({ "op": op, "a": [mesh(&a)], "b": [mesh(&b)] }));
-        check(op, &brep_solid(&r), Some(&mesh_solid(&m["mesh"])), volume, min, max);
+        check(
+            op,
+            &brep_solid(&r),
+            Some(&mesh_solid(&m["mesh"])),
+            volume,
+            min,
+            max,
+        );
     }
 }
 
@@ -172,7 +207,14 @@ fn extrude_with_a_hole() {
             "fromMm": 0, "toMm": 4
         }),
     );
-    check("extrude", &brep_solid(&b), None, (600.0 - 9.0 * PI) * 4.0, [0.0; 3], [30.0, 20.0, 4.0]);
+    check(
+        "extrude",
+        &brep_solid(&b),
+        None,
+        (600.0 - 9.0 * PI) * 4.0,
+        [0.0; 3],
+        [30.0, 20.0, 4.0],
+    );
 }
 
 #[test]
@@ -180,8 +222,14 @@ fn the_cli_runs_each_call_in_its_own_process() {
     if !sx_brep::KERNEL {
         return;
     }
-    let run = |op: &str, req: &Value| -> Value {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_sx-geom"))
+    let cli = |op: &str, req: &Value, dev: bool| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_sx-geom"));
+        if dev {
+            cmd.env("SX_BREP_DEV", "1");
+        } else {
+            cmd.env_remove("SX_BREP_DEV");
+        }
+        let mut child = cmd
             .arg(op)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -193,12 +241,30 @@ fn the_cli_runs_each_call_in_its_own_process() {
             .expect("stdin")
             .write_all(req.to_string().as_bytes())
             .expect("request written");
-        let out = child.wait_with_output().expect("sx-geom exits");
-        assert!(out.status.success(), "{op}: {}", String::from_utf8_lossy(&out.stdout));
+        child.wait_with_output().expect("sx-geom exits")
+    };
+    let run = |op: &str, req: &Value| -> Value {
+        let out = cli(op, req, true);
+        assert!(
+            out.status.success(),
+            "{op}: {}",
+            String::from_utf8_lossy(&out.stdout)
+        );
         serde_json::from_slice(&out.stdout).expect("reply is JSON")
     };
-    let b = run("brep.box", &json!({ "min": [0, 0, 0], "max": [2, 3, 4], "save": true }));
+    let b = run(
+        "brep.box",
+        &json!({ "min": [0, 0, 0], "max": [2, 3, 4], "save": true }),
+    );
     let smb = b["bodySmb"].as_str().expect("bodySmb");
     let i = run("brep.info", &json!({ "body": { "smb": smb } }));
     assert!(near(i["volumeMm3"].as_f64().expect("volume"), 24.0), "{i}");
+    // without the developer flag a body as text is refused before the kernel reads it
+    let out = cli("brep.info", &json!({ "body": { "smb": smb } }), false);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("SX_BREP_DEV"),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }

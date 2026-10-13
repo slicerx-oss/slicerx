@@ -16,10 +16,16 @@
 //! | `cut` | `body`, `plane` (`point`, `normal`) | `below`, `above` (a body, or null when empty) |
 //! | `info` | `body` | `manifold`, `volumeMm3`, `bounds`, `faces`, `faceTypes` |
 //! | `tessellate` | `body`, `chordMm` (0.01), `angleDeg` (15) | `positions`, `indices`, `faceIds`, `faces` (`id`, `type`) |
+//! | `save` | `body` | `smb` (the body as `SMLib` text) |
+//! | `load` | `body` (`{"smb"}`) | `body` |
 //! | `free` | `body` | `freed` |
 //! | `count` | | `bodies` |
 //!
-//! Ops that change a body make a new one and leave their inputs as they were.
+//! Ops that change a body make a new one and leave their inputs as they were. Wherever a request names a body it
+//! can instead carry one, `{"smb": text}` from an earlier `save`, which lasts for that call only; and `"save": true`
+//! adds each new body's text to the reply (`bodySmb`, `belowSmb`, `aboveSmb`). So a caller that starts a new
+//! process per call keeps its bodies as text between calls, and a project can store them. The text ends in a hash
+//! of itself; anything without a matching one is refused before the kernel reads it.
 
 #[cfg(sx_brep_kernel)]
 use std::ffi::c_char;

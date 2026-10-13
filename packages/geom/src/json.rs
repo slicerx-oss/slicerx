@@ -513,10 +513,31 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
     }
 }
 
-/// An exact solid op of sx-brep. A body lasts only as long as the process that made it, so a caller that starts one
-/// per call (the CLI) asks for `"save": true` and passes bodies back as `{"smb": text}`.
+#[cfg(feature = "brep")]
+static BREP_TEXT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Lets brep.* requests carry bodies as text in this process, as `SX_BREP_DEV=1` does (a developer's tools, tests).
+#[cfg(feature = "brep")]
+pub fn allow_brep_text(on: bool) {
+    BREP_TEXT.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// An exact solid op of sx-brep. A body lasts only as long as the process that made it. Bodies sent back as
+/// `{"smb": text}` are a cache the app keeps for itself, not an input: the kernel's reader trusts its text, so a
+/// request may carry one only with `SX_BREP_DEV=1` (developers, and tests that run one process per call).
 #[cfg(feature = "brep")]
 fn brep_op(op: &str, req: &Value) -> Result<Value> {
+    let carries_text = req
+        .as_object()
+        .is_some_and(|o| o.values().any(|v| v.get("smb").is_some()));
+    let dev = BREP_TEXT.load(std::sync::atomic::Ordering::Relaxed)
+        || std::env::var_os("SX_BREP_DEV").is_some_and(|v| v == "1");
+    if carries_text && !dev {
+        return Err(Error::invalid(
+            "body",
+            "takes a body number; a body as text needs SX_BREP_DEV=1",
+        ));
+    }
     let reply = sx_brep::call(op, &req.to_string()).map_err(|e| Error::geometry("brep", e))?;
     serde_json::from_str(&reply).map_err(|e| Error::Json(e.to_string()))
 }
