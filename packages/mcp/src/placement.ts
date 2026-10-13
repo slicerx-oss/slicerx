@@ -55,6 +55,27 @@ function checkSettings(deps: LocalToolDeps, settings: Record<string, unknown>, o
   if (errors.length) throw new ToolInputError(`Invalid settings: ${errors.map((e) => `${e.keys.join(", ")}: ${e.message}`).join('; ')}`, 'invalid_input', { errors })
 }
 
+/**
+ * The rotation, degrees about X then Y (none about Z), that turns a face with this outward normal (in the model as
+ * modeled, before the object's scale) to point straight down.
+ */
+export function downRotation(normal: [number, number, number], scale: [number, number, number] = [1, 1, 1]): [number, number, number] {
+  // A scale changes a face's direction by its inverse.
+  const n = normal.map((v, k) => v / (scale[k] ?? 1))
+  const len = Math.hypot(n[0]!, n[1]!, n[2]!)
+  if (!(len > 1e-9)) throw new ToolInputError('The normal has no direction; give the face\'s outward normal, such as [0, 0, 1].')
+  const [x, y, z] = n.map((v) => v / len) as [number, number, number]
+  const r = Math.hypot(y, z)
+  // About X first so the normal has no Y left and points down in YZ, then about Y to point it straight down.
+  const a = r < 1e-9 ? 0 : Math.atan2(0 - y, 0 - z)
+  const b = Math.atan2(x, r)
+  const deg = (v: number): number => {
+    const d = Math.round(((v * 180) / Math.PI) * 1e6) / 1e6
+    return d === 0 ? 0 : d
+  }
+  return [deg(a), deg(b), 0]
+}
+
 export function placementTools(deps: LocalToolDeps, need: () => McpProject): PilotTool<never>[] {
   const done = (summary: string, project: McpProject, extra: Record<string, unknown> = {}) => ({ summary, output: { ...extra, project: project.describe() } })
   const tool = <I>(spec: { name: string; description: string; input: z.ZodType<I>; title(i: I): string; run(i: I, project: McpProject): Promise<{ summary: string; output: unknown }> | { summary: string; output: unknown } }): PilotTool<I> =>
@@ -245,5 +266,42 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
     },
   })
 
-  return [move, rotate, scale, objectSettings, addVolume, removeVolume, heightRanges, plateAdd, plateRemove, moveToPlate, removeObject] as PilotTool<never>[]
+  const duplicate = tool({
+    name: 'project.duplicate',
+    description:
+      'Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows. For identical copies that always print alike, add the model with copies instead. Answers with the new ids and the project.',
+    input: z.object({ object: objectArg, count: z.number().int().min(1).max(50).default(1).describe('How many copies, 1 to 50') }),
+    title: (i) => `Duplicate ${i.object}${i.count > 1 ? ` ${i.count} times` : ''}?`,
+    run(i, project) {
+      const ids = project.duplicate(i.object, i.count)
+      return done(`${i.object} duplicated as ${ids.join(', ')}`, project, { objects: ids })
+    },
+  })
+
+  const rename = tool({
+    name: 'project.rename',
+    description: 'Rename an object. Its id stays, and the new name shows in the app and in the exported project.',
+    input: z.object({ object: objectArg, name: z.string().min(1).max(120) }),
+    title: (i) => `Rename ${i.object} to ${i.name}?`,
+    run(i, project) {
+      const id = project.rename(i.object, i.name)
+      return done(`${id} is now ${i.name.trim()}`, project)
+    },
+  })
+
+  const layOnFace = tool({
+    name: 'project.lay_on_face',
+    description:
+      'Lay an object on one of its faces, as Lay on bed does in the app: it turns so that face points straight down and sits on the bed. normal is the face\'s outward normal in the model as modeled, as slicerx_geom_faces gives it for the same model file (for example [1, 0, 0] lays it on its +x side). It sets the rotation (absolute, as slicerx_project_rotate does) and keeps the scale. Answers with the project, including the rotation and the new size.',
+    input: z.object({ object: objectArg, normal: vec3.describe('Outward normal of the face, in the model as modeled') }),
+    title: (i) => `Lay ${i.object} on a face?`,
+    run(i, project) {
+      const pose = project.pose(i.object)
+      const rotate = downRotation(i.normal, pose.scale)
+      project.setRotation(pose.id, rotate)
+      return done(`${pose.id} laid on its face, rotated to ${rotate.join(', ')} deg`, project, { rotate })
+    },
+  })
+
+  return [move, rotate, scale, objectSettings, addVolume, removeVolume, heightRanges, plateAdd, plateRemove, moveToPlate, removeObject, duplicate, rename, layOnFace] as PilotTool<never>[]
 }
