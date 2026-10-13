@@ -27,12 +27,13 @@ const FILL = '#bd93f9'
 
 // each name at its own corner, in the plane's u, v: XY front right on the bed, XZ top left, YZ top back. the
 // names are page text over the canvas (the viewport places them), so no model or outline pass draws over them
-const CORNER: Record<OriginPlane, [number, number]> = { xy: [0.4, -0.4], xz: [-0.4, 0.4], yz: [0.4, 0.4] }
+const CORNER: Record<OriginPlane, [number, number]> = { xy: [0.45, -0.45], xz: [-0.45, 0.45], yz: [0.45, 0.45] }
 
 export class OriginPlanes {
   readonly group = new Group()
   private readonly quads = new Map<OriginPlane, Mesh>()
   private hovered: OriginPlane | null = null
+  private fill = 0.12
 
   constructor() {
     this.group.name = 'origin-planes'
@@ -71,6 +72,16 @@ export class OriginPlanes {
     return true
   }
 
+  /** On a light background the faint squares get a stronger fill and edge, so each name sits on something. */
+  setLight(light: boolean): void {
+    this.fill = light ? 0.2 : 0.12
+    for (const [k, q] of this.quads) {
+      ;(q.material as MeshBasicMaterial).opacity = k === this.hovered ? 0.32 : this.fill
+      const rim = q.parent!.children.find((c): c is LineSegments => c instanceof LineSegments)
+      if (rim) (rim.material as LineBasicMaterial).opacity = light ? 0.95 : 0.6
+    }
+  }
+
   /** Where each plane's name goes, in world space (after the group's matrices are current). */
   names(): { name: string; at: Vector3 }[] {
     if (!this.group.visible) return []
@@ -98,7 +109,7 @@ export class OriginPlanes {
   hover(p: OriginPlane | null): boolean {
     if (p === this.hovered) return false
     this.hovered = p
-    for (const [k, q] of this.quads) (q.material as MeshBasicMaterial).opacity = k === p ? 0.32 : 0.12
+    for (const [k, q] of this.quads) (q.material as MeshBasicMaterial).opacity = k === p ? 0.32 : this.fill
     return true
   }
 
