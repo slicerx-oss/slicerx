@@ -46,7 +46,7 @@ import { alongAxis, arrowDir, ARROW_PX, MoveArrows, rayToSegment, type ArrowAxis
 import { applyToAll } from './group'
 import { RingSet, angleAround, pickRing, rayPlane, ringAxes, rotateAbout, snapAngle, turnVector, unit, unwrapAngle, type RingAxis, type RotateSpace } from './rings'
 import { CutGizmo, CutPreview, extentAlong, movePlane, tiltAxes, type CutKeep } from './cutplane'
-import { DimensionLayer, EdgePreview, PushPreview, SketchLayer, fromPlane, rayOnPlane, type DimensionMark, type SketchCursor, type SketchScene, type V2 } from './cadtools'
+import { DimensionLayer, EdgePreview, PushPreview, SketchLayer, fromPlane, rayOnPlane, setSketchResolution, type DimensionMark, type SketchCursor, type SketchScene, type V2 } from './cadtools'
 import { clampScale, factorsFor, handleAxis, handleLocal, minFactorFor, nearestOnLine, pivotFor, ratioLine, ratioPivotFor, ratioPlane, ratioPoint, scaleTransform, snapScale, type HandleId, type V3 } from './scaling'
 import type { ModKey } from './gizmobindings'
 import { layerTopsProblems } from './layerheights'
@@ -375,6 +375,8 @@ class ViewportImpl implements Viewport {
   private readonly sketchLayer = new SketchLayer()
   private readonly finished = new Group()
   private finishedLayers: SketchLayer[] = []
+  // sketch tones for a light studio
+  private sketchLight = false
   private section: Plane | null = null
   /** Back faces of each part in a flat, darker color: through the section cut they read as the solid's cap. */
   private sectionCaps: Mesh[] = []
@@ -953,6 +955,7 @@ class ViewportImpl implements Viewport {
     this.renderer.setSize(w, h, false)
     this.pipeline.setSize(w, h, this.pr)
     setEdgeResolution(w * this.pr, h * this.pr)
+    setSketchResolution(w * this.pr, h * this.pr)
     // On a high density screen the first orbit starts at about half the pixels, so it is smooth from its first frame.
     // tuneMotionScale raises it while frames stay cheap; still frames are always drawn at the full size with MSAA.
     if (!this.motionSeeded) {
@@ -2543,6 +2546,7 @@ class ViewportImpl implements Viewport {
     }
     this.finishedLayers = scenes.map((s) => {
       const l = new SketchLayer()
+      l.setLight(this.sketchLight)
       l.set({ frame: s.frame, paths: s.paths, handles: [], ...(s.profiles ? { profiles: s.profiles } : {}) })
       this.finished.add(l.group)
       return l
@@ -2907,6 +2911,9 @@ class ViewportImpl implements Viewport {
     this.brim.setColors(t.scene)
     this.cutRings.setColor('v', t.scene.selection)
     this.sketchLayer.setAccent(t.scene.selection)
+    this.sketchLight = lightStudio(t.scene.bgTop)
+    this.sketchLayer.setLight(this.sketchLight)
+    for (const l of this.finishedLayers) l.setLight(this.sketchLight)
     this.planeInk = { fg: lightStudio(t.scene.bgTop) ? '#282a36' : '#f8f8f2', halo: t.scene.bgTop }
     this.originPlanes.setLight(lightStudio(t.scene.bgTop))
     this.stage.setSceneColors(t.scene)

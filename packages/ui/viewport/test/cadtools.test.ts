@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { BufferAttribute, LineSegments, Matrix4, Vector3 } from 'three'
+import { InterleavedBufferAttribute, LineSegments, Matrix4, Vector3 } from 'three'
+import { Line2 } from 'three/addons/lines/Line2.js'
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { describe, expect, it } from 'vitest'
 import { DimensionLayer, EdgePreview, PushPreview, SketchLayer, frameMatrix, fromPlane, prismMatrix, rayOnPlane, toPlane, type CadFrame } from '../src/cadtools'
 import type { V3 } from '../src/scaling'
@@ -64,9 +66,9 @@ describe('sketch layer', () => {
     const s = new SketchLayer()
     s.set({ frame: WALL, paths: [{ points: [[0, 0], [10, 0], [10, 5]], closed: true }, { points: [[0, 0], [10, 5]], tone: 'issue' }], handles: [[0, 0], [10, 0], [10, 5]], dragHandles: true, grid: { stepMm: 10, min: [-20, -20], max: [20, 20] } })
     expect(s.group.visible).toBe(true)
-    const lines = s.group.children.filter((c): c is LineSegments => c instanceof LineSegments)
-    // Grid, normal and issue.
-    expect(lines.length).toBe(3)
+    // the grid thin, the normal and issue curves 2 px wide (the rubber band is wide too, but not one of them)
+    expect(s.group.children.filter((c) => c instanceof LineSegments).length).toBe(1)
+    expect(s.group.children.filter((c) => c instanceof LineSegments2 && !(c instanceof Line2)).length).toBe(2)
     expect(s.handleAt([9.6, 0.2], 0.5)).toBe(1)
     expect(s.handleAt([5, 5], 0.5)).toBe(-1)
     s.set({ ...s.scene!, dragHandles: false })
@@ -76,18 +78,21 @@ describe('sketch layer', () => {
     s.dispose()
   })
 
-  it('moves the rubber band in its own buffer without allocating', () => {
+  it('draws the rubber band as a wide line to the cursor, and hides it with no path', () => {
     const s = new SketchLayer()
     s.set({ frame: WALL, paths: [], handles: [] })
-    const band = s.group.children[0] as LineSegments
-    const before = band.geometry.getAttribute('position') as BufferAttribute
+    const band = s.group.children[0] as Line2
+    expect(band).toBeInstanceOf(Line2)
+    expect(band.visible).toBe(false)
     s.cursor({ path: [[0, 0], [3, 4]], at: [3, 4] })
-    const after = band.geometry.getAttribute('position') as BufferAttribute
-    expect(after).toBe(before)
-    expect(band.geometry.drawRange.count).toBe(2)
-    expect(Array.from(after.array.slice(3, 5))).toEqual([3, 4])
+    expect(band.visible).toBe(true)
+    const start = band.geometry.getAttribute('instanceStart') as InterleavedBufferAttribute
+    expect(start.count).toBe(1)
+    expect([start.getX(0), start.getY(0)]).toEqual([0, 0])
+    const end = band.geometry.getAttribute('instanceEnd') as InterleavedBufferAttribute
+    expect([end.getX(0), end.getY(0)]).toEqual([3, 4])
     s.cursor(null)
-    expect(band.geometry.drawRange.count).toBe(0)
+    expect(band.visible).toBe(false)
     s.dispose()
   })
 })
