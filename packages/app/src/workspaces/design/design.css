@@ -4,6 +4,7 @@
    the end a count or a More button in a slot of its own, so nothing moves on hover. */
 .dtree { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 2px; }
 .dtree-row { display: flex; align-items: center; gap: 2px; min-height: 36px; border-radius: var(--r-sm); padding-right: 8px; }
+.dtree-row[data-hover]:not([data-selected]) { background: var(--ink-2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent); }
 .dtree-row[data-selected] { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
 .dtree-chev { display: grid; place-items: center; width: 22px; height: 28px; border: 0; background: none; color: var(--dim); border-radius: var(--r-sm); flex: none; }
 .dtree-chev:hover { color: var(--fg); }
@@ -112,6 +113,10 @@
 .tl-sketch { display: inline-flex; align-items: center; gap: 4px; padding-left: 7px; border-left: 1px solid var(--line-soft); font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--muted); }
 .tl-marker { width: 4px; height: 40px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent); cursor: ew-resize; touch-action: none; }
 .tl-status { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; white-space: nowrap; }
+.tl-link { padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; font: var(--fw-medium) var(--fs-sm) var(--f-body); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; }
+.tl-link:hover { color: var(--fg); text-decoration-color: currentColor; }
+.tl-link:focus-visible { border-radius: 3px; outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.tl-link:disabled { cursor: default; opacity: 0.5; }
 .tl-empty { margin: 4px 6px; }
 @media (max-width: 900px) {
   .tl { grid-template-columns: minmax(0, 1fr); }
