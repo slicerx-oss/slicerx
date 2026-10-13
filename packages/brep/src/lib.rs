@@ -28,6 +28,8 @@
 //! adds each new body's text to the reply (`bodySmb`, `belowSmb`, `aboveSmb`). So a caller that starts a new
 //! process per call keeps its bodies as text between calls, and a project can store them. The text ends in a hash
 //! of itself; anything without a matching one is refused before the kernel reads it.
+//! `"withKeys": true` adds each new body's face keys in face order (`bodyKeys`, `belowKeys`, `aboveKeys`), for a
+//! caller that keeps bodies by number and tessellates only when it needs the mesh.
 //!
 //! A request with `keySalt` (a history step's, the same in every replay of it) gives each face of the bodies it makes
 //! a key, numbered in the order the call makes them as sx-geom numbers a step's meshes. Faces keep their keys through

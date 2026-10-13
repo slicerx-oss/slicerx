@@ -398,10 +398,20 @@ fn fillet_rounds_the_named_edges() {
     };
     let rounded = call(
         "fillet",
-        &json!({ "body": keyed["body"], "edges": [{ "a": [20, 20, 0], "b": [20, 20, 20], "face": [1, 0, 0], "keys": [key(1.0, 0.0), key(0.0, 1.0)] }], "radiusMm": 3, "keySalt": 9 }),
+        &json!({ "body": keyed["body"], "edges": [{ "a": [20, 20, 0], "b": [20, 20, 20], "face": [1, 0, 0], "keys": [key(1.0, 0.0), key(0.0, 1.0)] }], "radiusMm": 3, "keySalt": 9, "withKeys": true }),
     );
     let after = faces(&rounded["body"]);
     assert_eq!(after.len(), 7);
+    // withKeys gives the same keys in face order without a tessellate
+    assert_eq!(
+        rounded["bodyKeys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k.as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        after.iter().map(|f| f.0).collect::<Vec<_>>()
+    );
     let old: Vec<u64> = before.iter().map(|f| f.0).collect();
     assert!(
         after.iter().filter(|f| old.contains(&f.0)).count() == 6,
