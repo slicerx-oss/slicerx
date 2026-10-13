@@ -4,7 +4,7 @@
 // mimir through plateSliceConfig, the print sheet's preflight) sends the plate's curr_bed_type, which picks the bed
 // temperatures. Before, none did, and every plate heated to the high temp plate's.
 import { describe, expect, it } from 'vitest'
-import { plateSliceConfig } from '../src/state/actions'
+import { plateSliceConfig } from '../src/state/slice-plate'
 import { get, type PlateMeta, type PlateSettings } from '../src/state/store'
 
 const meta = (settings: PlateSettings): PlateMeta => ({ id: 'p1', name: 'Plate 1', objects: [], settings })

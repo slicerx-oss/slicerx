@@ -42,7 +42,7 @@ const card = (title: string, lines: string[], printerId: string): ApprovalReques
 })
 
 async function preflightFor(printers: PrinterHost, printer: PrinterInfo, file: { name: string; sha256: string }) {
-  const [{ preflight }, { bounds }, { plateSliceConfig }] = await Promise.all([import('./preflight'), import('./transform'), import('../state/actions')])
+  const [{ preflight }, { bounds }, { plateSliceConfig }] = await Promise.all([import('./preflight'), import('./transform'), import('../state/slice-plate')])
   const s = get()
   const status = await printers.status(printer.id).catch(() => null)
   let pb: { min: [number, number, number]; max: [number, number, number] } | null = null
