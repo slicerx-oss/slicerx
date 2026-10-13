@@ -102,6 +102,10 @@ export function timelineFiles(d: Timeline, fileIds: ReadonlyMap<string, number>)
       if (!store) return
       const p = it.params
       items.push({ ...it, body: String(fileIds.get(it.body)), ...(p.op === 'parts.add' ? { params: { ...p, parts: store(p.parts) } } : {}) })
+    } else if (it.on) {
+      // a sketch keeps the body it sits on only while that body is saved
+      const { on, ...k } = it
+      items.push(fileIds.has(on.body) ? { ...it, on: { ...on, body: String(fileIds.get(on.body)) } } : k)
     } else items.push(it)
     if (i < d.marker) marker = items.length
   })

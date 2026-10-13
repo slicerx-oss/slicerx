@@ -270,6 +270,12 @@ function storedObjects(j: unknown): unknown[] | null {
   return j['objects']
 }
 
+// the body a sketch sits on; anything malformed is dropped, the sketch kept
+function onOf(v: unknown): Pick<SketchItem, 'on'> {
+  if (!obj(v) || typeof v['body'] !== 'string' || !Number.isInteger(v['part']) || (v['part'] as number) < 0) return {}
+  return { on: { body: v['body'], part: v['part'] as number } }
+}
+
 /**
  * The plate's design timeline (design.ts), bodies by 3MF object id: a version 3 file as it was saved, rolled back
  * steps included, or an older file's histories merged by when each step was made. Null when there is none; a body
@@ -308,7 +314,7 @@ export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds:
     if (!obj(it)) return
     if (it['kind'] === 'sketch') {
       const name = typeof it['name'] === 'string' && it['name'].trim() ? it['name'].trim().slice(0, 100) : 'Sketch'
-      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}) }
+      const k: SketchItem = { kind: 'sketch', id: it['id'] as string, name, ...(it['frame'] ? { frame: it['frame'] as NonNullable<SketchItem['frame']> } : {}), loops: it['loops'] as SketchItem['loops'], ...(Array.isArray(it['constraints']) ? { constraints: it['constraints'] } : {}), ...onOf(it['on']) }
       items.push(k)
     } else {
       const step = histories.get(it['body'] as string)?.steps.find((s) => s.id === it['id'])
