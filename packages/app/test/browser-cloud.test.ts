@@ -51,6 +51,13 @@ describe('mimir cloud in the browser', () => {
     expect(p.seen[2]!.headers).toMatchObject({ 'x-sx-share': '1' })
   })
 
+  it('keeps the usage report (quota v2) for Settings > Account > Usage', async () => {
+    const v2 = { day: { used: 1, resetsAt: '2026-10-13T13:00:00.000Z' }, hourly: [0.5], daily: [0.2, 1], perMinute: { limit: 10 } }
+    const fetch = (async () => Response.json({ edition: 'slicerx-web', day: '2026-10-13', install_used: 250000, install_cap: 250000, ip_used: 0, ip_cap: 1000000, edition_open: true, v2 })) as unknown as typeof globalThis.fetch
+    const host = createBrowserMimirCloud({ base: BASE, session: () => JWT, fetch })
+    expect((await host.quota()).v2).toEqual(v2)
+  })
+
   it('reads the token at each call, so a refreshed session goes with the next one', async () => {
     const p = proxy()
     let t = JWT
