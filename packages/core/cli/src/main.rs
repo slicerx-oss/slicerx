@@ -260,6 +260,64 @@ fn split_projects(
     Ok(cache)
 }
 
+/// The meshes of a request as the engine asks for them. A mesh is let go once the last object or volume naming it
+/// has it: the engine keeps what it needs of each mesh, and a painted model's own copy would otherwise stay in memory
+/// for the whole slice.
+struct Meshes<'a> {
+    /// Loaded meshes still to be asked for (the plates split from projects, and meshes named more than once).
+    cache: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<Mesh>>>,
+    /// How many more times each mesh will be asked for.
+    uses: std::sync::Mutex<std::collections::HashMap<String, usize>>,
+    base: &'a Path,
+    paths: &'a std::collections::HashMap<String, String>,
+    painted: &'a std::collections::HashMap<String, Value>,
+}
+
+impl Meshes<'_> {
+    fn get(&self, id: &str) -> sx_core::Result<std::sync::Arc<Mesh>> {
+        let last = self.uses.lock().is_ok_and(|mut u| match u.get_mut(id) {
+            Some(n) if *n > 1 => {
+                *n -= 1;
+                false
+            }
+            _ => true,
+        });
+        let kept = self
+            .cache
+            .lock()
+            .ok()
+            .and_then(|mut c| if last { c.remove(id) } else { c.get(id).cloned() });
+        if let Some(m) = kept {
+            return Ok(m);
+        }
+        let mesh = load_entry(
+            self.base,
+            self.paths.get(id).map_or(id, String::as_str),
+            self.painted.get(id),
+        )?;
+        if !last && let Ok(mut c) = self.cache.lock() {
+            c.insert(id.to_owned(), mesh.clone());
+        }
+        Ok(mesh)
+    }
+}
+
+/// How many times the request asks for each mesh: once per object and once per volume naming it.
+fn mesh_uses(req: &sx_core::api::SliceRequest) -> std::collections::HashMap<String, usize> {
+    let mut uses: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for o in &req.plate.objects {
+        *uses.entry(o.mesh_ref()).or_default() += 1;
+        for v in &o.volumes {
+            let id = match &v.mesh {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            *uses.entry(id).or_default() += 1;
+        }
+    }
+    uses
+}
+
 /// The request's text, from a file or stdin (`-`), and the folder its mesh paths are relative to.
 fn read_request(src: &str) -> Result<(String, PathBuf), String> {
     if src == "-" {
@@ -287,7 +345,6 @@ fn report_options(req: &mut sx_core::api::SliceRequest, args: &[String]) {
 }
 
 fn cmd_request(args: &[String]) -> ExitCode {
-    use std::sync::Arc;
     use sx_core::api;
     let fail = |code: u8, msg: String| {
         eprintln!("sx slice: {msg}");
@@ -315,19 +372,17 @@ fn cmd_request(args: &[String]) -> ExitCode {
     report_options(&mut req, args);
     let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
     let cache = match split_projects(&mut req, &base, &paths, &painted) {
-        Ok(split) => std::sync::Mutex::new(split),
+        Ok(split) => split,
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
     };
-    let resolve = |id: &str| -> sx_core::Result<Arc<Mesh>> {
-        if let Some(m) = cache.lock().ok().and_then(|c| c.get(id).cloned()) {
-            return Ok(m);
-        }
-        let mesh = load_entry(&base, paths.get(id).map_or(id, String::as_str), painted.get(id))?;
-        if let Ok(mut c) = cache.lock() {
-            c.insert(id.to_owned(), mesh.clone());
-        }
-        Ok(mesh)
+    let meshes = Meshes {
+        cache: std::sync::Mutex::new(cache),
+        uses: std::sync::Mutex::new(mesh_uses(&req)),
+        base: &base,
+        paths: &paths,
+        painted: &painted,
     };
+    let resolve = |id: &str| meshes.get(id);
     let run = match api::run_request(&req, &resolve) {
         Ok(r) => r,
         Err(
