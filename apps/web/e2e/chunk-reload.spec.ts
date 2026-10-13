@@ -31,3 +31,45 @@ test('a workspace whose code failed to download comes back after one reload', as
   expect(loads).toBe(2)
   await expect(page.getByText('did not load')).toHaveCount(0)
 })
+
+type Sx = { setState(p: unknown): void }
+
+test('a workspace whose code never downloads says so once, in the workspace, with no toast over it', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
+  })
+  // Every fetch fails: the one reload does not help.
+  await page.route(/\/static\/studio-[^/]+\.js$/, (route) => route.abort('internetdisconnected'))
+  await page.goto('./')
+  await expect(page.getByRole('heading', { name: /did not load/ })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible()
+  // The toast waits a moment for the workspace, then stays away.
+  await page.waitForTimeout(1_500)
+  await expect(page.getByTestId('toast')).toHaveCount(0)
+})
+
+test('a dialog whose code did not download leaves the workspace up and says so in a toast', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('slicerx.debug', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
+  })
+  await page.route(/\/static\/about-[^/]+\.js$/, (route) => route.abort('internetdisconnected'))
+  let loads = 0
+  page.on('load', () => loads++)
+  const ready = () => page.locator('html[data-sx-ready="plate"], html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: COLD_START_MS })
+  const about = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ aboutOpen: true }))
+  await page.goto('./')
+  await ready()
+  // With nothing unsaved the first failure reloads the page, which fetches the code again.
+  await about()
+  await expect.poll(() => loads).toBe(2)
+  await ready()
+  // It fails again within half a minute: no second reload, a toast instead, and the workspace keeps working.
+  await about()
+  const toast = page.getByTestId('toast').filter({ hasText: /Part of .* did not load/ })
+  await expect(toast).toBeVisible()
+  await expect(toast.getByRole('button', { name: 'Reload' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /did not load/ })).toHaveCount(0)
+  await expect(page.getByText(/Plate 1\s*Layered X/).first()).toBeVisible()
+  expect(loads).toBe(2)
+})
