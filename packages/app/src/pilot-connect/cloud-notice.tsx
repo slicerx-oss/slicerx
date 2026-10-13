@@ -13,7 +13,8 @@ import { cloudReady } from './cloud-edition'
 import { pilotModel } from './llm'
 import './connect.css'
 
-export const CLOUD_NOTICE_VERSION = 1
+// 2: saved chats for 30 days during alpha, generations included (2026-10-13)
+export const CLOUD_NOTICE_VERSION = 2
 
 /** Whether mimir would answer on mimir cloud and the person has not read this notice yet. */
 export function cloudNoticeDue(edition: EditionConfig, s: Pick<AppState, 'pilot' | 'setupPilotOff' | 'mimirNotice'>, cloud: boolean): boolean {
@@ -41,12 +42,13 @@ export function CloudNotice() {
         answer.
       </p>
       <p>
-        {app} keeps your {ASSISTANT_NAME} sessions for 180 days to improve {ASSISTANT_NAME}. You can turn that off here, or later in Settings &gt; {ASSISTANT_NAME}.
+        During alpha we save free {ASSISTANT_NAME} chats for 30 days to improve it, including the parts it designs. You can turn this off here, or later in Settings
+        &gt; {ASSISTANT_NAME}.
       </p>
       <SwitchRow
         id="pc-notice-share"
         testId="mimir-notice-share"
-        label={`Share my ${ASSISTANT_NAME} sessions to improve ${ASSISTANT_NAME}`}
+        label={`Save my chats to improve ${ASSISTANT_NAME}`}
         checked={share}
         onChange={(v) => set({ mimirShare: v })}
       />
