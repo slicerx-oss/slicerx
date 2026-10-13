@@ -256,6 +256,8 @@ function gridSteps(u: UnitPrefs, now: string): { value: string; label: string }[
 }
 
 function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () => void; init?: SketchInit }) {
+  // Extrude or Revolve from a finished sketch's menu: only that feature's settings; Edit sketch changes the shape
+  const featureOnly = init?.from !== undefined && init.from.mode !== 'edit'
   const host = useHost()
   const view = cameraBus()?.cad
   const [sketch, setSketch] = useDraft<Entity[]>('sketch', init?.sketch ?? [])
@@ -368,22 +370,22 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       frame: plane.frame,
       paths,
       // points hide when Show points is off, but a picked sketch keeps its handles to drag
-      handles: draft.tool === 'select' ? hs.points : pal.points ? [...hs.points, ...draft.points] : draft.points,
-      dragHandles: draft.tool === 'select',
-      ...(pal.grid ? { grid: { stepMm: Number(pal.step) * 10, min: plane.min, max: plane.max } } : {}),
+      handles: featureOnly ? [] : draft.tool === 'select' ? hs.points : pal.points ? [...hs.points, ...draft.points] : draft.points,
+      dragHandles: draft.tool === 'select' && !featureOnly,
+      ...(pal.grid && !featureOnly ? { grid: { stepMm: Number(pal.step) * 10, min: plane.min, max: plane.max } } : {}),
       marks: issues.flatMap((i) => (i.at ? [i.at] : [])),
       ...(pal.dimensions ? { dims: marks.dims } : {}),
       ...(pal.constraints ? { fixed: marks.fixed } : {}),
       ...(pal.profiles ? { profiles: profileRings(sketch) } : {}),
     })
-  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states])
+  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly])
 
   // Section cuts away the model in front of the sketch plane while the sketch is open.
   useEffect(() => {
-    if (!view || !pal.section) return
+    if (!view || !pal.section || featureOnly) return
     view.setSection({ point: plane.frame.origin, normal: plane.frame.normal })
     return () => view.setSection(null)
-  }, [view, plane, pal.section])
+  }, [view, plane, pal.section, featureOnly])
   useEffect(() => () => view?.setSketch(null), [view])
 
   const targets = (skip?: Parameters<typeof sketchTargets>[1]): SnapTargets[] => [live.current.engineSnaps, sketchTargets(live.current.sketch, skip)]
@@ -424,7 +426,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         view.setSketchCursor(null)
         return
       }
-      if (ev.kind === 'drag' && ev.handle !== undefined) {
+      if (ev.kind === 'drag' && ev.handle !== undefined && !featureOnly) {
         const ref = handles(l.sketch).refs[ev.handle]
         if (!ref) return
         const s = ev.alt ? { at: ev.at } : snap(ev.at, targets(ref), { gridMm: l.gridMm, tolMm: tol })
@@ -444,7 +446,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       if (/^[0-9.\-]$/.test(e.key) && l.draft.tool !== 'select' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
         setField({ x: l.screen[0], y: l.screen[1], values: [e.key, ''], focus: 0 })
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && l.draft.tool === 'select') {
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && l.draft.tool === 'select' && !featureOnly) {
         const sel = l.selected
         if (sel) {
           const next = deleteSegment(l.sketch, sel.e, sel.seg)
@@ -458,7 +460,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           e.preventDefault()
           setDraft(emptyDraft(l.draft.tool))
           view?.setSketchCursor(null)
-        } else if (e.key === 'Enter' && l.sketch.length) {
+        } else if (e.key === 'Enter' && l.sketch.length && !featureOnly) {
           e.preventDefault()
           finishRef.current()
         }
@@ -616,53 +618,57 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }
   const finishRef = useRef(finishOnly)
   finishRef.current = finishOnly
-  useEffect(() => (stepEdit ? undefined : provideFinish(() => void finishRef.current())), [stepEdit])
+  useEffect(() => (stepEdit || featureOnly ? undefined : provideFinish(() => void finishRef.current())), [stepEdit, featureOnly])
 
   const fields = fieldsFor(draft)
   const sel = selected ? sketch[selected.e] : undefined
   return (
-    <Shell title="Sketch" aside={plane.label}>
-      <Seg label="Drawing tool" size="sm" full value={draft.tool} onChange={pickTool} options={TOOLS} />
-      <p className="cad-hint" role="status">
-        <Icon name="mouse-left" size={15} />{' '}
-        <span>
-          {draft.tool === 'select' ? 'Click a line to pick it, drag a point to move it. Delete removes the picked line.' : draft.tool === 'line' ? 'Click point after point. Click the first point to close, right click to stop.' : draft.tool === 'rect' ? 'Click two opposite corners.' : draft.tool === 'circle' ? 'Click the center, then a point on the rim.' : 'Click the start, the end, then a point on the arc.'}{' '}
-          {draft.tool !== 'select' ? 'Type a number to give exact sizes.' : ''}
-        </span>
-      </p>
-      <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" /></p>
-      {solved ? (
-        <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)}>
-          {dofText(solved.solved)}
-        </p>
-      ) : null}
-      <div className="sketch-palette" role="group" aria-label="Sketch palette">
-        <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
-        <div className="sketch-toggles">
-          <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
-          <label htmlFor="sk-grid">Grid</label>
-          <Switch id="sk-snap" checked={pal.snap} onChange={(on) => setPal({ snap: on })} label="Snap" />
-          <label htmlFor="sk-snap">Snap</label>
-          <Select id="sk-step" size="sm" aria-label="Snap step" value={pal.step} onChange={(e) => setPal({ step: e.target.value })}>
-            {gridSteps(units, pal.step).map((g) => (
-              <option key={g.value} value={g.value}>{g.label}</option>
-            ))}
-          </Select>
-        </div>
-        <div className="sketch-toggles" data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">
-          <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
-          <label htmlFor="sk-section">Section</label>
-        </div>
-        <fieldset className="sketch-show">
-          <legend>Show</legend>
-          {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
-            <span key={k} className="sketch-toggles">
-              <Switch id={`sk-show-${k}`} checked={pal[k]} onChange={(on) => setPal({ [k]: on })} label={`Show ${k}`} />
-              <label htmlFor={`sk-show-${k}`}>{k[0]!.toUpperCase() + k.slice(1)}</label>
+    <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label}>
+      {featureOnly ? null : (
+        <>
+          <Seg label="Drawing tool" size="sm" full value={draft.tool} onChange={pickTool} options={TOOLS} />
+          <p className="cad-hint" role="status">
+            <Icon name="mouse-left" size={15} />{' '}
+            <span>
+              {draft.tool === 'select' ? 'Click a line to pick it, drag a point to move it. Delete removes the picked line.' : draft.tool === 'line' ? 'Click point after point. Click the first point to close, right click to stop.' : draft.tool === 'rect' ? 'Click two opposite corners.' : draft.tool === 'circle' ? 'Click the center, then a point on the rim.' : 'Click the start, the end, then a point on the arc.'}{' '}
+              {draft.tool !== 'select' ? 'Type a number to give exact sizes.' : ''}
             </span>
-          ))}
-        </fieldset>
-      </div>
+          </p>
+          <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" /></p>
+          {solved ? (
+            <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)}>
+              {dofText(solved.solved)}
+            </p>
+          ) : null}
+          <div className="sketch-palette" role="group" aria-label="Sketch palette">
+            <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
+            <div className="sketch-toggles">
+              <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
+              <label htmlFor="sk-grid">Grid</label>
+              <Switch id="sk-snap" checked={pal.snap} onChange={(on) => setPal({ snap: on })} label="Snap" />
+              <label htmlFor="sk-snap">Snap</label>
+              <Select id="sk-step" size="sm" aria-label="Snap step" value={pal.step} onChange={(e) => setPal({ step: e.target.value })}>
+                {gridSteps(units, pal.step).map((g) => (
+                  <option key={g.value} value={g.value}>{g.label}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="sketch-toggles" data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">
+              <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
+              <label htmlFor="sk-section">Section</label>
+            </div>
+            <fieldset className="sketch-show">
+              <legend>Show</legend>
+              {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
+                <span key={k} className="sketch-toggles">
+                  <Switch id={`sk-show-${k}`} checked={pal[k]} onChange={(on) => setPal({ [k]: on })} label={`Show ${k}`} />
+                  <label htmlFor={`sk-show-${k}`}>{k[0]!.toUpperCase() + k.slice(1)}</label>
+                </span>
+              ))}
+            </fieldset>
+          </div>
+        </>
+      )}
       {issues.length ? (
         <ul className="cad-issues" role="status">
           {issues.slice(0, 6).map((i, k) => (
@@ -670,26 +676,30 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           ))}
         </ul>
       ) : null}
-      {draft.tool === 'select' && sel ? (
-        <div className="cad-row">
-          <Num id="sk-offset" label="Offset this loop" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
-          <Button size="sm" variant="ghost" onClick={() => void doOffset()}>Offset</Button>
-          <Button size="sm" variant="ghost" icon="delete" onClick={() => { setSketch((s) => s.filter((_, i) => i !== selected!.e)); setSelected(null) }}>Delete loop</Button>
-        </div>
-      ) : null}
-      {draft.tool === 'select' && sel?.kind === 'chain' ? (
+      {featureOnly ? null : (
         <>
-          <div className="cad-row">
-            <Seg label="Corner shape" size="sm" value={cornerKind} onChange={setCornerKind} options={[{ value: 'fillet', label: 'Round' }, { value: 'chamfer', label: 'Bevel' }]} />
-            <Num id="sk-corner" label={cornerKind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={corner} onChange={setCorner} onEnter={() => void doCorners(false)} />
-          </div>
-          <div className="cad-row">
-            <Button size="sm" variant="ghost" data-tip="sketch.corners" onClick={() => void doCorners(false)}>Corners of this line</Button>
-            <Button size="sm" variant="ghost" onClick={() => void doCorners(true)}>Every corner of the loop</Button>
-          </div>
+          {draft.tool === 'select' && sel ? (
+            <div className="cad-row">
+              <Num id="sk-offset" label="Offset this loop" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
+              <Button size="sm" variant="ghost" onClick={() => void doOffset()}>Offset</Button>
+              <Button size="sm" variant="ghost" icon="delete" onClick={() => { setSketch((s) => s.filter((_, i) => i !== selected!.e)); setSelected(null) }}>Delete loop</Button>
+            </div>
+          ) : null}
+          {draft.tool === 'select' && sel?.kind === 'chain' ? (
+            <>
+              <div className="cad-row">
+                <Seg label="Corner shape" size="sm" value={cornerKind} onChange={setCornerKind} options={[{ value: 'fillet', label: 'Round' }, { value: 'chamfer', label: 'Bevel' }]} />
+                <Num id="sk-corner" label={cornerKind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={corner} onChange={setCorner} onEnter={() => void doCorners(false)} />
+              </div>
+              <div className="cad-row">
+                <Button size="sm" variant="ghost" data-tip="sketch.corners" onClick={() => void doCorners(false)}>Corners of this line</Button>
+                <Button size="sm" variant="ghost" onClick={() => void doCorners(true)}>Every corner of the loop</Button>
+              </div>
         </>
       ) : null}
-      <Seg label="Finish with" size="sm" full value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} />
+        </>
+      )}
+      {featureOnly ? null : <Seg label="Finish with" size="sm" full value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} />}
       {finish === 'extrude' ? (
         <>
           <div className="cad-row">
@@ -708,7 +718,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         </>
       ) : (
         <>
-          <p className="cad-hint"><Icon name="info" size={15} /> {axis ? 'The picked line is the axis.' : 'Pick a straight line of the sketch with Select: it becomes the axis.'}</p>
+          <p className="cad-hint"><Icon name="info" size={15} /> {axis ? 'The picked line is the axis.' : featureOnly ? 'Click a straight line of the sketch: it becomes the axis.' : 'Pick a straight line of the sketch with Select: it becomes the axis.'}</p>
           <Num id="sk-angle" label="Angle" unit="°" value={angle} onChange={setAngle} onEnter={() => void go()} />
         </>
       )}
@@ -716,14 +726,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         <span>Result</span>
         <Seg label="Result" size="sm" value={op} onChange={setOperation} options={[{ value: 'join', label: 'Join', disabled: !plane.target }, { value: 'cut', label: 'Cut', disabled: !plane.target }, { value: 'new', label: 'New body' }]} />
       </div>
-      <p className="cad-hint"><Icon name="info" size={15} /> {stepEdit ? 'Applying changes this step; the steps after it run again.' : 'Finish sketch keeps it in the timeline without a solid. Extrude or revolve here turns it into one.'}</p>
+      <p className="cad-hint"><Icon name="info" size={15} /> {stepEdit ? 'Applying changes this step; the steps after it run again.' : featureOnly ? `Made from ${plane.label}. Edit sketch in its menu changes the shape.` : 'Finish sketch keeps it in the timeline without a solid. Extrude or revolve here turns it into one.'}</p>
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
       <ToolFooter
         verb={finish === 'extrude' ? 'Extrude' : 'Revolve'}
         onApply={go}
         busy={busy}
         disabled={!ready}
-        extra={<Button variant="ghost" onClick={onRestart} disabled={busy}>Other plane</Button>}
+        {...(featureOnly ? {} : { extra: <Button variant="ghost" onClick={onRestart} disabled={busy}>Other plane</Button> })}
       />
       {field && fields.length
         ? createPortal(
