@@ -479,6 +479,43 @@ fn subtract_in_the_body_frame() {
 }
 
 #[test]
+fn extrude_lines_and_arcs() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1] });
+    // a 30 x 10 slot: two lines and two half circles, counterclockwise
+    let slot = json!({ "start": [-10, -5], "segments": [
+        { "to": [10, -5] },
+        { "to": [10, 5], "center": [10, 0], "sweepDeg": 180 },
+        { "to": [-10, 5] },
+        { "to": [-10, -5], "center": [-10, 0], "sweepDeg": 180 }
+    ] });
+    let s = body(
+        "extrude",
+        &json!({ "frame": frame, "polygons": [{ "outer": slot }], "fromMm": 0, "toMm": 4 }),
+    );
+    close(volume(s), (200.0 + PI * 25.0) * 4.0);
+    assert_eq!(info(s)["faces"], 6);
+    assert_eq!(mesh_check(s).0, 0);
+    // a square with a half round bite out of its top: the bite's arc runs clockwise
+    let bitten = json!({ "start": [0, 0], "segments": [
+        { "to": [20, 0] },
+        { "to": [20, 20] },
+        { "to": [15, 20] },
+        { "to": [5, 20], "center": [10, 20], "sweepDeg": -180 },
+        { "to": [0, 20] },
+        { "to": [0, 0] }
+    ] });
+    let b = body(
+        "extrude",
+        &json!({ "frame": frame, "polygons": [{ "outer": bitten, "holes": [{ "center": [10, 8], "diameterMm": 4 }] }], "fromMm": 0, "toMm": 3 }),
+    );
+    close(volume(b), (400.0 - PI * 12.5 - PI * 4.0) * 3.0);
+    assert_eq!(mesh_check(b).0, 0);
+}
+
+#[test]
 fn extrude_joins_and_cuts() {
     if !sx_brep::KERNEL {
         return;

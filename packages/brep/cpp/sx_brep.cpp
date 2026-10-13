@@ -15,6 +15,7 @@
 #include <SmVertex.h>
 #include <SmAttribute.h>
 #include <SmAxis2Placement.h>
+#include <SmBSplineCurve.h>
 #include <SmBrep.h>
 #include <SmCone.h>
 #include <SmCylinder.h>
@@ -353,9 +354,46 @@ SmBrep* make_cylinder(const SmVector3d& origin, const SmVector3d& axis, double d
     return b;
 }
 
-// a closed loop in the frame's plane: a polygon ({"points": [[x, y], ...]}) or a circle ({"center", "diameterMm"})
+// a closed loop in the frame's plane: a polygon ({"points": [[x, y], ...]}), a circle ({"center", "diameterMm"}),
+// or lines and arcs from a start ({"start", "segments": [{"to"}, or {"to", "center", "sweepDeg"} for an arc]})
 void loop_curves(const Value& l, double z, SmTArray<SmCurve*>& out)
 {
+    if (l.has("start")) {
+        double x, y;
+        v2(l["start"], "start", x, y);
+        const Value& ss = l["segments"];
+        if (ss.kind != Value::Array || ss.a.empty()) throw Error("segments", "a loop needs at least one segment");
+        for (const auto& sg : ss.a) {
+            double tx, ty;
+            v2(sg["to"], "to", tx, ty);
+            if (sg.has("center")) {
+                double cx, cy;
+                v2(sg["center"], "center", cx, cy);
+                double sw = num(sg, "sweepDeg"), r = std::hypot(x - cx, y - cy);
+                if (!(r > 1e-9) || !(std::fabs(sw) > 1e-9 && std::fabs(sw) <= 360))
+                    throw Error("segments", "an arc needs a center away from its start and a sweep up to 360 degrees");
+                // the kernel's arcs run counterclockwise between angles in -360..360; a clockwise one is turned round
+                double a0 = std::atan2(y - cy, x - cx) * 180 / kPi;
+                double lo = sw > 0 ? a0 : a0 + sw, hi = sw > 0 ? a0 + sw : a0;
+                if (hi > 360) lo -= 360, hi -= 360;
+                if (lo < -360) lo += 360, hi += 360;
+                SmBSplineCurve* c = nullptr;
+                check(SmApiCreateArc(SmPoint3d(cx, cy, z), r, lo, hi, c), "arc");
+                out.Add(c);
+                if (sw < 0) {
+                    SmExtent1d back;
+                    check(c->ReverseParameterization(c->GetNaturalInterval(), back), "arc direction");
+                }
+            } else if (std::hypot(tx - x, ty - y) >= 1e-9) {
+                SmLine* s = nullptr;
+                check(SmApiCreateLineSegment(SmPoint3d(x, y, z), SmPoint3d(tx, ty, z), s), "line");
+                out.Add(s);
+            }
+            x = tx;
+            y = ty;
+        }
+        return;
+    }
     if (l.has("center")) {
         double cx, cy;
         v2(l["center"], "center", cx, cy);
