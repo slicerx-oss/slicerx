@@ -127,6 +127,35 @@ function system(raw: unknown): Obj[] | undefined {
   return raw.map((b) => (isObj(b) && b['type'] === 'text' ? textBlock(b) : refuse('system holds text blocks only')))
 }
 
+// keywords holding one subschema, a list of them, or a map of them
+const ONE = ['items', 'additionalProperties', 'not', 'if', 'then', 'else', 'contains', 'propertyNames', 'unevaluatedItems', 'unevaluatedProperties']
+const LIST = ['prefixItems', 'anyOf', 'oneOf', 'allOf']
+const MAP = ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas']
+
+// draft-07 tuples (items as a list, from older kits) in the 2020-12 form the provider
+// requires: prefixItems for the list, items for what follows it
+function tuples(s: unknown): void {
+  if (!isObj(s)) return
+  if (Array.isArray(s['items'])) {
+    const rest = s['additionalItems']
+    s['prefixItems'] = s['items']
+    delete s['items']
+    delete s['additionalItems']
+    if (rest !== undefined && rest !== true) s['items'] = rest
+  }
+  for (const k of ONE) tuples(s[k])
+  for (const k of LIST) if (Array.isArray(s[k])) (s[k] as unknown[]).forEach(tuples)
+  for (const k of MAP) if (isObj(s[k])) Object.values(s[k]).forEach(tuples)
+}
+
+function inputSchema(raw: Obj): Obj {
+  const s = structuredClone(raw)
+  // a draft-07 or older $schema line would have the rest read under that draft
+  if (typeof s['$schema'] === 'string' && /json-schema\.org\/draft-0[0-7]\//.test(s['$schema'])) delete s['$schema']
+  tuples(s)
+  return s
+}
+
 function tools(raw: unknown): { list: Obj[]; searches: number } {
   if (raw === undefined) return { list: [], searches: 0 }
   if (!Array.isArray(raw) || raw.length > MAX_TOOLS) return refuse('tools must be a list of at most 128')
@@ -144,7 +173,7 @@ function tools(raw: unknown): { list: Obj[]; searches: number } {
     }
     if (typeof t['name'] !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(t['name'])) return refuse('bad tool name')
     if (!isObj(t['input_schema'])) return refuse('a tool needs an input schema')
-    const out: Obj = { name: t['name'], input_schema: t['input_schema'] }
+    const out: Obj = { name: t['name'], input_schema: inputSchema(t['input_schema'] as Obj) }
     if (typeof t['description'] === 'string') out['description'] = t['description']
     if (t['strict'] === true) out['strict'] = true
     cachePoint(t, out)

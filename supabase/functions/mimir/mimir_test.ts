@@ -6,6 +6,7 @@ import { assert, assertEquals, assertMatch } from 'jsr:@std/assert@1.0.13'
 import { MAX_OUTPUT, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
 import { clientIp, type Env, handle, marked } from './handler.ts'
+import geomCut from './geom_cut_0.1.4.json' with { type: 'json' }
 
 type Obj = Record<string, unknown>
 const TOOL = { name: 'design_box', description: 'A box.', input_schema: { type: 'object', properties: {} } }
@@ -50,6 +51,66 @@ Deno.test('only client tools and web search pass, with searches capped', () => {
     assert(!r.ok, t)
   }
   assert(!shape(base({ tools: [{ name: 'bad name!', input_schema: {} }] })).ok)
+})
+
+// slicerx_geom_cut's input schema as @slicerx/mcp 0.1.4 lists it: draft-07 tuples
+const GEOM_CUT: Obj = geomCut
+const VEC3 = { type: 'array', prefixItems: [{ type: 'number' }, { type: 'number' }, { type: 'number' }], items: false, minItems: 3, maxItems: 3 }
+const schemaOf = (input_schema: Obj) => (ok(base({ tools: [{ name: 'slicerx_geom_cut', input_schema }] })).body['tools'] as Obj[])[0]!['input_schema'] as Obj
+
+Deno.test('draft-07 tuples go out as 2020-12 prefixItems', () => {
+  const sent = structuredClone(GEOM_CUT)
+  const s = schemaOf(sent)
+  assertEquals(sent, GEOM_CUT)
+  assert(!('$schema' in s))
+  const plane = (s['properties'] as Obj)['plane'] as Obj
+  const byPoint = (plane['anyOf'] as Obj[])[1]!['properties'] as Obj
+  assertEquals(byPoint['point'], VEC3)
+  assertEquals(byPoint['normal'], VEC3)
+  assert(!JSON.stringify(s).includes('additionalItems'))
+  // the rest of the schema is as sent
+  const { $schema: _, ...rest } = structuredClone(GEOM_CUT) as Obj
+  ;((((rest['properties'] as Obj)['plane'] as Obj)['anyOf'] as Obj[])[1]!['properties'] as Obj)['point'] = VEC3
+  ;((((rest['properties'] as Obj)['plane'] as Obj)['anyOf'] as Obj[])[1]!['properties'] as Obj)['normal'] = VEC3
+  assertEquals(s, rest)
+})
+
+Deno.test('nested tuples are rewritten at every depth', () => {
+  const num = { type: 'number' }
+  const pair = { type: 'array', items: [num, num], additionalItems: false }
+  const s = schemaOf({
+    type: 'object',
+    properties: {
+      loops: { type: 'array', items: { type: 'array', items: pair } },
+      seg: { type: 'array', items: [pair, pair], additionalItems: { type: 'string' } },
+      open: { type: 'array', items: [num], additionalItems: true },
+      either: { oneOf: [pair, { allOf: [{ not: pair }] }] },
+      map: { type: 'object', additionalProperties: pair },
+    },
+    $defs: { p: pair },
+    definitions: { p: pair },
+  })
+  const p2 = { type: 'array', prefixItems: [num, num], items: false }
+  assertEquals(s['properties'], {
+    loops: { type: 'array', items: { type: 'array', items: p2 } },
+    seg: { type: 'array', prefixItems: [p2, p2], items: { type: 'string' } },
+    open: { type: 'array', prefixItems: [num] },
+    either: { oneOf: [p2, { allOf: [{ not: p2 }] }] },
+    map: { type: 'object', additionalProperties: p2 },
+  })
+  assertEquals(s['$defs'], { p: p2 })
+  assertEquals(s['definitions'], { p: p2 })
+})
+
+Deno.test('a schema without tuples passes unchanged', () => {
+  const plain = {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    type: 'object',
+    properties: { items: { type: 'array', items: { type: 'string' } }, additionalItems: { type: 'number' }, n: { anyOf: [{ type: 'integer' }, { type: 'null' }] } },
+    required: ['items'],
+    additionalProperties: false,
+  }
+  assertEquals(schemaOf(structuredClone(plain)), plain)
 })
 
 Deno.test('cache points go on the last tool and system block, and the tail', () => {

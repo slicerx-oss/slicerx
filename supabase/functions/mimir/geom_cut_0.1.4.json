@@ -1,0 +1,141 @@
+{
+  "type": "object",
+  "properties": {
+    "model": {
+      "description": "Absolute path to an STL file, an http(s) URL, or a built-in model; or give \"design\" instead",
+      "type": "string",
+      "minLength": 1
+    },
+    "design": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A design id from slicerx_design_new or slicerx_design_open"
+    },
+    "part": {
+      "description": "With a design: the part to cut, from 0 (default 0)",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "keep": {
+      "default": "both",
+      "description": "With a design: which pieces to keep",
+      "type": "string",
+      "enum": [
+        "both",
+        "below",
+        "above"
+      ]
+    },
+    "plane": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "axis": {
+              "type": "string",
+              "enum": [
+                "x",
+                "y",
+                "z"
+              ]
+            },
+            "at": {
+              "type": "number",
+              "description": "Position along the axis, mm"
+            }
+          },
+          "required": [
+            "axis",
+            "at"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "point": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "additionalItems": false,
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "normal": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "additionalItems": false,
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "point",
+            "normal"
+          ]
+        }
+      ],
+      "description": "Cut plane: {\"axis\":\"z\",\"at\":40} or {\"point\":[x,y,z],\"normal\":[x,y,z]}, in mm with Z up and the bed at Z = 0"
+    },
+    "connector": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "pin",
+            "dowel",
+            "dovetail"
+          ]
+        },
+        "diameter_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 50
+        },
+        "depth_mm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        },
+        "tolerance_mm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "description": "Alignment connector added at each cut, so the printed parts glue together in the right place"
+    }
+  },
+  "required": [
+    "plane"
+  ],
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
