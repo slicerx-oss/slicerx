@@ -200,6 +200,11 @@ export function setScale(parts: readonly Pick<MeshPart, 'positions'>[], m: Mat4,
   return keepFootprint(parts, m, withTrs(m, { scale }))
 }
 
+/** Sets the rotation in degrees (absolute), keeping the center in X and Y, and sets the object back down on the bed. */
+export function setRotation(parts: readonly Pick<MeshPart, 'positions'>[], m: Mat4, rotation: Vec3): Mat4 {
+  return dropToBed(parts, keepFootprint(parts, m, withTrs(m, { rotation })))
+}
+
 function keepFootprint(parts: readonly Pick<MeshPart, 'positions'>[], before: Mat4, after: Mat4): Mat4 {
   const a = bounds(parts, before)
   const b = bounds(parts, after)
