@@ -22,7 +22,8 @@ export function shownSketches(t: Timeline): SketchItem[] {
 export function sketchScene(k: SketchItem): SketchScene | null {
   const entities = fromLoops(k.loops)
   if (!entities) return null
-  return { frame: k.frame ?? BED_FRAME, paths: entities.flatMap(entityPaths).map((p) => ({ points: p.points, ...(p.closed ? { closed: true } : {}) })), handles: [], profiles: profileRings(entities) }
+  const paths = entities.flatMap((e) => entityPaths(e).map((p) => ({ points: p.points, ...(p.closed ? { closed: true } : {}), ...(e.construction ? { tone: 'construction' as const } : {}) })))
+  return { frame: k.frame ?? BED_FRAME, paths, handles: [], profiles: profileRings(entities) }
 }
 
 /** Keeps the view's finished sketches current while Model shows. */
