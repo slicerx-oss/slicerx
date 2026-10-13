@@ -17,8 +17,17 @@ export function stepLayer(by: number, to?: number): number {
   const s = get()
   const cur = Math.max(1, Math.min(s.layerHi, n))
   const next = Math.max(1, Math.min(n, to ?? cur + by))
-  if (next !== s.layerHi || s.moveCut !== 1) set({ layerHi: next, layerLo: Math.min(s.layerLo, next), moveCut: 1, toolChange: null })
+  // In one layer mode the bottom handle travels with the top one.
+  const lo = oneLayerOn() ? next : Math.min(s.layerLo, next)
+  if (next !== s.layerHi || lo !== s.layerLo || s.moveCut !== 1) set({ layerHi: next, layerLo: lo, moveCut: 1, toolChange: null })
   return next
+}
+
+/** One layer mode: the bottom handle sits on the top one, so only the top layer is drawn. */
+export function oneLayerOn(): boolean {
+  const n = layerCountNow()
+  const s = get()
+  return n > 1 && s.layerLo >= Math.max(1, Math.min(s.layerHi, n))
 }
 
 /** The layer step a key stands for: 1 for an arrow, 10 for a page key, 0 for any other key. */
