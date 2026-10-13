@@ -3,6 +3,7 @@
 // createViewport: owns the renderer, the scene graph and the render loop.
 // Frames are rendered on demand; the GPU idles when nothing changes, and the
 // loop pauses while the canvas is offscreen or the page is hidden.
+import { OriginPlanes } from './originplanes'
 import { FirstFrameGate } from './firstframe'
 import { PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
 import { crossfadeFrom } from './crossfade'
@@ -371,6 +372,9 @@ class ViewportImpl implements Viewport {
   private push: PushSpec | null = null
   private pushDrag: { started: boolean; objectId: string; partIndex: number; triangle: number; point: V3; normal: V3; d0: number; d: number; snapped: boolean; t0: number | null; mmPerPx: number; x0: number; y0: number } | null = null
   private readonly sketchLayer = new SketchLayer()
+  private readonly originPlanes = new OriginPlanes()
+  private planeNames: HTMLDivElement[] = []
+  private planeInk = { fg: '#f8f8f2', halo: '#1e1f29' }
   private sketchDrag: { handle: number } | null = null
   private readonly dims = new DimensionLayer()
   private readonly tmpRay = new Raycaster()
@@ -485,7 +489,7 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.gaps.group)
     this.stage.objectsRoot.add(this.guides.group)
     this.stage.objectsRoot.add(this.edgeMarks.group)
-    this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.dims.group)
+    this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.originPlanes.group, this.dims.group)
     this.stage.envSH.then(
       (sh) => {
         if (this.disposed) return
@@ -755,8 +759,38 @@ class ViewportImpl implements Viewport {
     this.emit('degrade', { message: 'Ambient occlusion paused to keep the view smooth on this GPU.' })
   }
 
+  /** The origin planes' names as page text over the canvas, with a halo of the background, so nothing draws over them. */
+  private placePlaneNames(): void {
+    const names = this.originPlanes.names()
+    if (typeof document === 'undefined' || (!names.length && !this.planeNames.length)) return
+    const rect = this.canvas.getBoundingClientRect()
+    const { fg, halo } = this.planeInk
+    const ring = ([[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]] as const).map(([x, y]) => `${x * 1.5}px ${y * 1.5}px 1px ${halo}`).join(',')
+    names.forEach(({ name, at }, i) => {
+      let el = this.planeNames[i]
+      if (!el) {
+        el = document.createElement('div')
+        el.className = 'vp-plane-name'
+        el.style.cssText = 'position:fixed;pointer-events:none;z-index:5;transform:translate(-50%,-50%);font:600 12px/1 system-ui,sans-serif;letter-spacing:0.02em'
+        document.body.appendChild(el)
+        this.planeNames[i] = el
+      }
+      const v = at.clone().project(this.camera)
+      const x = rect.left + ((v.x + 1) / 2) * rect.width
+      const y = rect.top + ((1 - v.y) / 2) * rect.height
+      el.textContent = name
+      el.style.color = fg
+      el.style.textShadow = ring
+      el.style.left = `${x}px`
+      el.style.top = `${y}px`
+      el.style.display = v.z < 1 && x > rect.left && x < rect.right && y > rect.top && y < rect.bottom ? 'block' : 'none'
+    })
+    for (let i = names.length; i < this.planeNames.length; i++) this.planeNames[i]!.style.display = 'none'
+  }
+
   private renderFrame(aoMix: number, moving: boolean): void {
     const t0 = performance.now()
+    this.placePlaneNames()
     const first = this.frames === 0
     const compile0 = first ? [this.compileClock.ms, this.compileClock.programs] : null
     this.edgeMarks.refresh((p) => this.mmPerPx(p))
@@ -2426,6 +2460,11 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
+  /** Create Sketch's origin planes, `sizeMm` across through `center` (bed coordinates), or null to hide them. */
+  setOriginPlanes(o: { center: V3; sizeMm: number } | null): void {
+    if (this.originPlanes.set(o)) this.invalidate()
+  }
+
   private sketchOn(): boolean {
     return this.sketchLayer.scene !== null && this.tool === 'probe' && this.mode === 'prepare'
   }
@@ -2745,6 +2784,7 @@ class ViewportImpl implements Viewport {
     this.brim.setColors(t.scene)
     this.cutRings.setColor('v', t.scene.selection)
     this.sketchLayer.setAccent(t.scene.selection)
+    this.planeInk = { fg: lightStudio(t.scene.bgTop) ? '#282a36' : '#f8f8f2', halo: t.scene.bgTop }
     this.stage.setSceneColors(t.scene)
     setSharedSceneColors(t.scene)
     this.mats.dispose()
@@ -3164,6 +3204,10 @@ class ViewportImpl implements Viewport {
       }
       if (e.buttons === 0 && this.mode === 'prepare' && !this.drag) {
         if (this.sketchOn()) queueSketch('hover', e)
+        if (this.originPlanes.shown) {
+          setRay(e)
+          if (this.originPlanes.hover(this.originPlanes.at(ray)?.plane ?? null)) this.invalidate()
+        }
         if (this.cut) {
           setRay(e)
           this.cutHover(ray)
@@ -3340,7 +3384,11 @@ class ViewportImpl implements Viewport {
       const p = pick(e)
       // the selection as it was before the pick: a host may set its own selection while it answers the pick
       const was = [...this.selection]
-      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}) })
+      // an origin plane counts when nothing solid is in front of it
+      setRay(e)
+      const op = this.originPlanes.at(ray)
+      const onPlane = op && (!p || op.distance < p.point.distanceTo(ray.ray.origin)) ? op.plane : null
+      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(onPlane ? { originPlane: onPlane } : {}), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}) })
       if (this.pathsShown() && !p) {
         // A click on a toolpath: which path it is, so the app can show the setting that made it.
         setRay(e)
@@ -3924,8 +3972,10 @@ class ViewportImpl implements Viewport {
     this.pushView.dispose()
     this.edgeView.dispose()
     this.sketchLayer.dispose()
+    this.originPlanes.dispose()
     this.dims.dispose()
     this.gizmoLabel?.remove()
+    for (const el of this.planeNames) el.remove()
     this.probe?.dispose()
     this.probe = null
     this.reveal?.finish()
