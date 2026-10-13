@@ -32,6 +32,13 @@ export const MODEL_ICONS = {
   // a modifier volume: a dashed cube
   modifier: dash(CUBE),
   // the box primitive, wider than it is tall
+  // sketch tools: the curve with its end points, as the sketch draws them
+  'sk-line': '<path d="M5 19L19 5"/>' + DOT(5, 19) + DOT(19, 5),
+  'sk-rect': '<rect x="3.5" y="6.5" width="17" height="11" rx="0.5"/>' + DOT(3.5, 17.5) + DOT(20.5, 6.5),
+  'sk-circle': '<circle cx="12" cy="12" r="8.5"/>' + DOT(12, 12),
+  'sk-arc': '<path d="M4 18a8.5 8.5 0 0 1 16 0"/>' + DOT(4, 18) + DOT(20, 18),
+  'sk-polygon': '<path d="M12 3.25l7.6 4.4v8.7L12 20.75l-7.6-4.4v-8.7z"/>' + DOT(12, 12, 1.25),
+  'sk-slot': '<rect x="2.75" y="7.75" width="18.5" height="8.5" rx="4.25"/>' + DOT(7, 12, 1.25) + DOT(17, 12, 1.25),
   'box-shape': '<path d="M12 5l8.5 4v7.5L12 20.5l-8.5-4V9z"/><path d="M3.5 9 12 13l8.5-4M12 13v7.5"/>',
   // copies in a row
   'array-linear': '<rect x="2.5" y="9.5" width="5" height="5" rx="1"/>' + dash('<rect x="9.5" y="9.5" width="5" height="5" rx="1"/><rect x="16.5" y="9.5" width="5" height="5" rx="1"/>', '1.6 1.8'),
@@ -59,5 +66,6 @@ export const MODEL_ICONS = {
 export const MODEL_ICON_GROUPS = {
   Model: ['model', 'body', 'mesh-object', 'part', 'modifier', 'box-shape'],
   Steps: ['sketch', 'extrude', 'revolve', 'array-linear', 'array-polar', 'repair-mesh', 'mesh-menu', 'step-broken'],
+  Sketch: ['sk-line', 'sk-rect', 'sk-circle', 'sk-arc', 'sk-polygon', 'sk-slot'],
   Picking: ['select-object', 'select-face', 'select-edge', 'box-select', 'roll-to-here'],
 }

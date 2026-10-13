@@ -422,6 +422,12 @@ export const ICON_PATHS = {
   "mesh-object": "<path d=\"M12 3l7.5 4.25v9L12 20.5l-7.5-4.25v-9z\"/><path d=\"M4.5 7.25L12 11.5l7.5-4.25M12 11.5v9\"/><path d=\"M12 3v8.5M4.5 7.25 12 20.5M19.5 7.25 12 20.5\"/>",
   "part": "<path d=\"M3.5 4.5h17v15h-9v-6h-8z\"/>",
   "modifier": "<path stroke-dasharray=\"2 2.2\" d=\"M12 3l7.5 4.25v9L12 20.5l-7.5-4.25v-9z\"/><path stroke-dasharray=\"2 2.2\" d=\"M4.5 7.25L12 11.5l7.5-4.25M12 11.5v9\"/>",
+  "sk-line": "<path d=\"M5 19L19 5\"/><circle cx=\"5\" cy=\"19\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"19\" cy=\"5\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/>",
+  "sk-rect": "<rect x=\"3.5\" y=\"6.5\" width=\"17\" height=\"11\" rx=\"0.5\"/><circle cx=\"3.5\" cy=\"17.5\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"20.5\" cy=\"6.5\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/>",
+  "sk-circle": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><circle cx=\"12\" cy=\"12\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/>",
+  "sk-arc": "<path d=\"M4 18a8.5 8.5 0 0 1 16 0\"/><circle cx=\"4\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"20\" cy=\"18\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/>",
+  "sk-polygon": "<path d=\"M12 3.25l7.6 4.4v8.7L12 20.75l-7.6-4.4v-8.7z\"/><circle cx=\"12\" cy=\"12\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\"/>",
+  "sk-slot": "<rect x=\"2.75\" y=\"7.75\" width=\"18.5\" height=\"8.5\" rx=\"4.25\"/><circle cx=\"7\" cy=\"12\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"17\" cy=\"12\" r=\"1.25\" fill=\"currentColor\" stroke=\"none\"/>",
   "box-shape": "<path d=\"M12 5l8.5 4v7.5L12 20.5l-8.5-4V9z\"/><path d=\"M3.5 9 12 13l8.5-4M12 13v7.5\"/>",
   "array-linear": "<rect x=\"2.5\" y=\"9.5\" width=\"5\" height=\"5\" rx=\"1\"/><rect stroke-dasharray=\"1.6 1.8\" x=\"9.5\" y=\"9.5\" width=\"5\" height=\"5\" rx=\"1\"/><rect stroke-dasharray=\"1.6 1.8\" x=\"16.5\" y=\"9.5\" width=\"5\" height=\"5\" rx=\"1\"/>",
   "array-polar": "<rect x=\"10\" y=\"6\" width=\"4\" height=\"4\" rx=\"1\"/><rect stroke-dasharray=\"1.4 1.6\" x=\"2.5\" y=\"11.25\" width=\"4\" height=\"4\" rx=\"1\"/><rect stroke-dasharray=\"1.4 1.6\" x=\"17.5\" y=\"11.25\" width=\"4\" height=\"4\" rx=\"1\"/><circle cx=\"12\" cy=\"17.5\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/>",
@@ -467,7 +473,8 @@ export const ICON_GROUPS: Readonly<Record<string, readonly IconName[]>> = {
   "Settings tabs": ["section-printer","section-print-settings","tab-quality","tab-strength","tab-speed","tab-adhesion","tab-color","tab-surface","tab-output"],
   "Model": ["model","body","mesh-object","part","modifier","box-shape"],
   "Steps": ["sketch","extrude","revolve","array-linear","array-polar","repair-mesh","mesh-menu","step-broken"],
+  "Sketch": ["sk-line","sk-rect","sk-circle","sk-arc","sk-polygon","sk-slot"],
   "Picking": ["select-object","select-face","select-edge","box-select","roll-to-here"],
 }
 
-export const ICON_COUNT = 427
+export const ICON_COUNT = 433
