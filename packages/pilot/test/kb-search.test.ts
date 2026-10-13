@@ -16,7 +16,7 @@ const CASES: [string, string[]][] = [
   ['fastest possible draft print', ['intent/speed']],
   ['big overhang on one side, do I need supports', ['workflow/supports', 'troubleshoot/poor_overhangs']],
   ['watertight cup that holds water', ['intent/watertight']],
-  ['clearance for a press fit between two printed parts', ['workflow/tolerance']],
+  ['clearance for a press fit between two printed parts', ['workflow/fits', 'workflow/tolerance']],
   ['switching from pla to petg, what changes', ['filament/petg']],
   ['textured or smooth pei plate for pla', ['workflow/bambu_plates']],
   ['first layer not sticking and the corners lift', ['troubleshoot/bed_adhesion', 'troubleshoot/first_layer', 'troubleshoot/warping']],
@@ -29,6 +29,7 @@ const CASES: [string, string[]][] = [
   ['brim or raft, which one', ['workflow/adhesion']],
   ['how do I paint different colors onto my model', ['workflow/slicerx_paint']],
   ['best way to print threads that screw together', ['workflow/printed_threads']],
+  ['how do I clean and lubricate my a1', ['printer/bambu_a1']],
   ['paint where the seam goes', ['workflow/slicerx_paint', 'workflow/seams']],
   ['print tpu on an a1 with the ams lite', ['filament/tpu_95a', 'printer/bambu_a1', 'accessory/bambu_ams_lite']],
 ]

@@ -80,6 +80,7 @@ pilot_notes:
   - "The nozzle swap is toolless. After a swap to another diameter or the high flow hotend, sync the nozzle on the screen and rerun flow dynamics."
   - "Auto flow dynamics reads force from the toolhead. A third party hotend and 0.2 mm nozzles can produce bad results."
   - "Build plate position detection can be turned off in print options if the plate is not recognized."
+  - "The A1 moves on all-metal rails (an X linear rail and Y guide rails), so it has no carbon rods to clean. Monthly: pick debris off the X and Y rails with tweezers, wipe them with a dust-free cloth, and oil them with lubricant oil, never grease on the X rail. Every 3 months: grease the two Z lead screws and oil the X and Y idler pulleys. Weekly: clear dust from the part and hotend cooling fan ducts. Clean the extruder gear and nozzle every 5 spools (every 2 for carbon fiber)."
 common_issues:
   - symptom: "Nozzle wraps in filament (clumping) and the print stops"
     cause: "First layer did not stick, so plastic dragged and wrapped the nozzle."
@@ -103,4 +104,4 @@ disagreements:
       - {claim: "10000 mm/s2", src: [bambu_store_a1]}
       - {claim: "12000 mm/s2 in the Orca machine profile", src: ["orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]}
     resolution: "Use 10000 as the hardware figure. The slicer process profile prints at 6000."
-src: [bambu_store_a1, bambu_wiki_hotend_a1, bambu_store_tpu_for_ams, bambu_wiki_amslite_faq, "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]
+src: [bambu_store_a1, bambu_wiki_hotend_a1, bambu_store_tpu_for_ams, bambu_wiki_amslite_faq, bambu_wiki_a1_maintenance, "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]

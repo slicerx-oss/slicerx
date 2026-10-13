@@ -13,7 +13,7 @@ facts:
     src: [bambu_wiki_build_plates, bambu_wiki_material_table, "orca_src:src/libslic3r/PrintConfig.cpp"]
   - text: "Textured PEI is the standard plate. It grips most filaments without glue and prints release once the bed cools to 35 C or lower. PC, PA, ABS and ASA may need a glue stick layer on it."
     src: [bambu_wiki_build_plates]
-  - text: "Smooth PEI is a matte sheet: it leaves the bottom face smooth and matte, not glossy. Bambu says to apply glue for any filament other than PLA, or the PEI sheet can tear."
+  - text: "Smooth PEI is a matte sheet: it leaves the bottom face smooth and matte, not glossy. It takes many filaments. Only PLA needs no glue on it; Bambu says to apply glue for every other filament, or the PEI sheet can tear. Textured PEI is different: there only PC, PA, ABS and ASA may need glue."
     src: [bambu_wiki_build_plates, bambu_store_smooth_pei]
   - text: "The Engineering Plate wants a thin glue layer before any filament. Glue stick or liquid glue depends on the material. Use alcohol at the part edge if a print will not release."
     src: [bambu_wiki_build_plates]
