@@ -224,3 +224,21 @@ describe('plate edits over the app link', () => {
     expect((e as ToolInputError).code).toBe('not_configured')
   })
 })
+
+describe('the design timeline over the app link', () => {
+  it('reads and rolls the timeline in the app; here, rolling back says it needs the app', async () => {
+    const call = vi.fn(async (method: string, args: Record<string, unknown>) => (method === 'design.roll' ? { summary: 'Rolled back to 1 of 2', output: { marker: args['marker'], end: 2, rolledBack: true } } : { summary: '2 items, at the end', output: { marker: 2, end: 2, items: [] } }))
+    const { run } = routed(call as AppLinkCaller['call'])
+    expect((await run('design.timeline', {})).output).toMatchObject({ marker: 2, in: 'app' })
+    const rolled = await run('design.roll', { marker: 1 })
+    expect(call).toHaveBeenCalledWith('design.roll', { marker: 1 })
+    expect(rolled.summary).toMatch(/^Rolled back to 1 of 2 \(in SlicerX\)/)
+    expect(rolled.output).toMatchObject({ marker: 1, rolledBack: true, in: 'app' })
+    const off = routed(vi.fn(async () => {
+      throw Object.assign(new Error('app_closed'), { code: 'app_closed' })
+    }) as AppLinkCaller['call'])
+    const e = await off.run('design.roll', { marker: 0 }).catch((x: unknown) => x)
+    expect((e as Error).message).toMatch(/turn on the app link/)
+    expect((await off.run('design.timeline', {})).output).toMatchObject({ marker: 0, end: 0, rolledBack: false })
+  })
+})

@@ -143,7 +143,8 @@ describe('the timeline over the app link', () => {
     const { runCall } = await import('../src/app-link/methods')
     stop = startTimeline()
     appStore.setState({ plate: [entry('a', box())] })
-    const r = (await runCall('design.timeline', {})) as { marker: number; rolledBack: boolean; items: { kind: string; sketch?: string; name?: string }[] }
+    const { output: r, summary } = (await runCall('design.timeline', {})) as { summary: string; output: { marker: number; rolledBack: boolean; items: { kind: string; sketch?: string; name?: string }[] } }
+    expect(summary).toBe('3 items, at the end')
     expect(r).toMatchObject({ marker: 3, rolledBack: false })
     expect(r.items.map((i) => i.kind)).toEqual(['feature', 'sketch', 'feature'])
     expect(r.items[2]!.sketch).toBe(`${id(2000, 3)}k`)
