@@ -24,7 +24,7 @@ describe('the right pane glow', () => {
     expect(attentionKey({ ...base, slice: { status: 'idle' } }, [], 'bay-1:finished:t')).toBe('print:bay-1:finished:t')
   })
 
-  it('starts shut: the pane opens only when the person opens it, and then stays as they left it', () => {
+  it('starts shut, and reads open once opened (by the person or a finished slice)', () => {
     expect(railOpen({}, 'preview', 'right', true)).toBe(false)
     expect(railOpen({ preview: { right: true } }, 'preview', 'right', true)).toBe(true)
     // Other panes keep their own rule.

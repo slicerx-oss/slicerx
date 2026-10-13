@@ -342,6 +342,11 @@ export interface AppState {
   viewportBackend: string
   /** What the right pane last showed when it was open (lib/right-attention.ts): its tab glows for anything newer. Not saved. */
   rightSeen: string | null
+  /**
+   * The project (its `jobSeq`) whose right pane the person shut by hand in this session: a finished slice of that
+   * project leaves the pane shut until they open it again. Null opens it on every finished slice. Not saved.
+   */
+  rightShut: number | null
   /** The stored look and feel, or null before one is chosen (the edition default applies). */
   lookAndFeel: LookAndFeelChoice | null
   /** Follow the operating system's light or dark setting instead of `scheme`. */
@@ -664,7 +669,7 @@ export const appStore = createStore<AppState>()(() => ({
   modelModeDefault: prefs.modelModeDefault ?? 'slice',
   devBuild: false,
   sliceLook: prefs.sliceLook ?? 'toolpaths',
-  rails: prefs.rails,
+  rails: sessionRails(prefs.rails),
   commandOpen: false,
   recents: prefs.recents,
   appearance: prefs.appearance ?? DEFAULT_APPEARANCE,
@@ -720,6 +725,7 @@ export const appStore = createStore<AppState>()(() => ({
   liveEdit: false,
   viewportBackend: '',
   rightSeen: null,
+  rightShut: null,
   scheme: prefs.scheme,
   lookAndFeel: (prefs.lookAndFeel ?? null) as LookAndFeelChoice | null,
   themeFollowsSystem: prefs.themeFollowsSystem ?? false,
@@ -857,7 +863,7 @@ appStore.subscribe((s, prev) => {
       workspace: s.workspace,
       modelModeDefault: s.modelModeDefault,
       sliceLook: s.sliceLook,
-      rails: s.rails,
+      rails: sessionRails(s.rails),
       recents: s.recents,
       appearance: s.appearance,
       sidebarFolds: s.sidebarFolds,
@@ -1008,12 +1014,23 @@ export function closeSettings(): void {
   set({ settingsOpen: false })
 }
 
+/**
+ * The rails as they are kept between launches: without Slice's right pane, which starts shut in every session and
+ * opens when a slice finishes (`openRightOnSlice`).
+ */
+export function sessionRails(rails: AppState['rails']): AppState['rails'] {
+  const p = rails['preview']
+  if (!p || (p.left === undefined && p.right === undefined)) return rails
+  const { preview: _drop, ...rest } = rails
+  return rest
+}
+
 /** Default rail state: expanded on wide windows, collapsed below 1200 px */
 export function railOpen(rails: AppState['rails'], ws: Workspace, side: Side, wide: boolean): boolean {
   const chosen = rails[ws]?.[side]
   if (chosen !== undefined) return chosen
-  // Slice's right pane (the objects and the slice summary) never opens by itself: it stays shut until the person opens
-  // it, and its edge tab glows when something in it wants a look (lib/right-attention.ts).
+  // Slice's right pane (the objects and the slice summary) starts shut. A finished slice opens it (openRightOnSlice),
+  // and its edge tab glows when something in it wants a look while it is shut (lib/right-attention.ts).
   if (ws === 'preview') return rightPaneOpenByDefault()
   return wide
 }
@@ -1032,9 +1049,24 @@ function rightPaneOpenByDefault(): boolean {
   }
 }
 
+/**
+ * Opens or shuts a pane as the person asks. Shutting Slice's right pane by hand keeps it shut through this project's
+ * slices for the session; opening it again lets the next slice open it.
+ */
 export function setRail(ws: Workspace, side: Side, open: boolean): void {
-  const rails = get().rails
-  set({ rails: { ...rails, [ws]: { ...rails[ws], [side]: open } } })
+  const s = get()
+  const rails = s.rails
+  set({ rails: { ...rails, [ws]: { ...rails[ws], [side]: open } }, ...(ws === 'preview' ? { rightShut: open ? null : s.jobSeq } : {}) })
+}
+
+/** A slice finished: Slice's right pane opens with its summary, unless the person shut it by hand for this project. */
+export function openRightOnSlice(): void {
+  const s = get()
+  if (s.rightShut === s.jobSeq) return
+  // The look puts the pane on the side the settings leave free; Slice reads only that side of its rails.
+  const p = s.rails['preview']
+  if (p?.left === true && p.right === true) return
+  set({ rails: { ...s.rails, preview: { left: true, right: true } } })
 }
 
 /** Any settings or plate change marks a finished slice stale instead of discarding it. */
