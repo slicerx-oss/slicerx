@@ -11,8 +11,8 @@ import { chatGptFor, type ChatGptHost } from './chatgpt'
 
 /** The providers that may keep a key. */
 export type KeyedProvider = 'openai' | 'anthropic' | 'local'
-/** `cloud` is mimir cloud: the edition's proxy, no key (pilot-connect/cloud.ts). */
-export type PilotProvider = KeyedProvider | 'cloud'
+/** `mimir-cloud` is mimir cloud: the edition's proxy, no key (pilot-connect/cloud.ts). */
+export type PilotProvider = KeyedProvider | 'mimir-cloud'
 
 export interface ProviderInfo {
   id: PilotProvider
@@ -29,7 +29,7 @@ export const PROVIDERS: Readonly<Record<PilotProvider, ProviderInfo>> = {
   openai: { id: 'openai', label: 'OpenAI', needsKey: true, keyHint: 'sk-...', where: 'Create a key at platform.openai.com, under API keys.', defaultBase: 'https://api.openai.com/v1', defaultModel: 'gpt-6-sol' },
   anthropic: { id: 'anthropic', label: 'Anthropic', needsKey: true, keyHint: 'sk-ant-...', where: 'Create a key in the Anthropic Console, under API keys.', defaultBase: 'https://api.anthropic.com/v1', defaultModel: 'claude-opus-5-5' },
   local: { id: 'local', label: 'Local model', needsKey: false, keyHint: '', where: 'llama.cpp, LocalAI, vLLM, or Ollama on another computer, such as http://192.168.1.50:8080/v1.', defaultBase: 'http://localhost:11434/v1', defaultModel: 'llama3.1' },
-  cloud: { id: 'cloud', label: 'mimir cloud', needsKey: false, keyHint: '', where: 'Free daily use, no key. Runs on Claude Haiku through this app.', defaultBase: '', defaultModel: 'claude-haiku-5-5' },
+  'mimir-cloud': { id: 'mimir-cloud', label: 'mimir cloud', needsKey: false, keyHint: '', where: 'Free daily use, no key. Runs on Claude Haiku through this app.', defaultBase: '', defaultModel: 'claude-haiku-5-5' },
 }
 
 export interface KeyStore {

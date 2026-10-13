@@ -11,7 +11,8 @@ import { useHost } from '../host'
 import { AgentPanel } from './agent-panel'
 import { ChatGptCard } from './chatgpt-card'
 import { chatGptFor, useChatGpt } from './chatgpt'
-import { cloudReady, useMimirCloudHost } from './cloud'
+import { useMimirCloudHost } from './cloud'
+import { cloudReady } from './cloud-edition'
 import { LocalAiCard } from './local-ai-card'
 import { detectRunners, useLocalAi } from './local-ai'
 import { pilotState, set, useApp, type PilotPref } from '../state/store'
@@ -19,7 +20,7 @@ import { keyStoreFor, PROVIDERS, type PilotProvider } from './keys'
 import { hostLocalFetch, testConnection, type TestResult } from './transport'
 import './connect.css'
 
-const ORDER: PilotProvider[] = ['cloud', 'openai', 'anthropic', 'local']
+const ORDER: PilotProvider[] = ['mimir-cloud', 'openai', 'anthropic', 'local']
 
 /** The host of a typed server address, or null when it is empty, unparseable or this computer. */
 function remoteHost(address: string): string | null {
@@ -44,7 +45,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
   const pref = useApp((s) => s.pilot)
   const edition = useEdition()
   const withCloud = cloudReady(edition, useMimirCloudHost())
-  const [provider, setProvider] = useState<PilotProvider>(pref?.provider ?? (withCloud ? 'cloud' : 'openai'))
+  const [provider, setProvider] = useState<PilotProvider>(pref?.provider ?? (withCloud ? 'mimir-cloud' : 'openai'))
   const [baseUrl, setBaseUrl] = useState(pref?.baseUrl ?? '')
   const [model, setModel] = useState(pref?.model ?? '')
   const [shown, setShown] = useState(false)
@@ -85,9 +86,9 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
     setBusy(true)
     setResult(null)
     try {
-      if (provider === 'cloud') {
+      if (provider === 'mimir-cloud') {
         // no key and nothing to test: the install registers on the first question
-        set({ pilot: { mode: 'on', provider: 'cloud' } })
+        set({ pilot: { mode: 'on', provider: 'mimir-cloud' } })
         onConnected?.()
         return
       }
@@ -116,7 +117,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
   return (
     <div className="pc">
       <div className="pc-providers" role="radiogroup" aria-label="Model provider">
-        {ORDER.filter((id) => (withLocal || id !== 'local') && (withCloud || id !== 'cloud')).map((id) => {
+        {ORDER.filter((id) => (withLocal || id !== 'local') && (withCloud || id !== 'mimir-cloud')).map((id) => {
           const p = PROVIDERS[id]
           const on = id === provider
           return (
@@ -135,13 +136,13 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
               <Icon name={id === 'local' ? 'desktop' : 'cloud'} />
               <span>
                 <b>{p.label}</b>
-                <small>{id === 'local' ? 'A model you run yourself, on this computer or your network.' : id === 'cloud' ? p.where : `Your own ${p.label} API key. Calls go to ${p.label} only.`}</small>
+                <small>{id === 'local' ? 'A model you run yourself, on this computer or your network.' : id === 'mimir-cloud' ? p.where : `Your own ${p.label} API key. Calls go to ${p.label} only.`}</small>
               </span>
             </button>
           )
         })}
       </div>
-      {provider === 'cloud' ? (
+      {provider === 'mimir-cloud' ? (
         <div className="pc-act">
           <Button variant="primary" icon="link" onClick={() => void connect()} disabled={busy}>
             Use {info.label}
@@ -335,7 +336,7 @@ export function PilotSettingsSection() {
             variant="ghost"
             onClick={() => {
               const provider = pref?.provider
-              if (provider && provider !== 'cloud') void keyStoreFor(host).delete(provider)
+              if (provider && provider !== 'mimir-cloud') void keyStoreFor(host).delete(provider)
               set({ pilot: { mode: 'off' } })
             }}
           >

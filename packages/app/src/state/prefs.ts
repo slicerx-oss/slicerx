@@ -83,7 +83,7 @@ export interface Prefs {
   paneSizes?: Record<string, number> | undefined
   spoolLinks?: Record<string, number> | undefined
   queue?: { id: string; printerId: string; printerName: string; plateName: string; remote: { printerId: string; path: string; name: string }; sha256: string; layers: number; timeS: number; grams: number; options: Record<string, boolean>; startAfter?: string; addedAt: string }[] | undefined
-  pilot?: { mode: 'on' | 'off' | 'unset'; provider?: 'openai' | 'anthropic' | 'local' | 'cloud'; baseUrl?: string; model?: string } | null | undefined
+  pilot?: { mode: 'on' | 'off' | 'unset'; provider?: 'openai' | 'anthropic' | 'local' | 'mimir-cloud'; baseUrl?: string; model?: string } | null | undefined
 }
 
 /** A printer added by hand in setup that no host knows: it slices and exports, and takes no jobs. */
@@ -263,7 +263,7 @@ function pilot(v: unknown): Prefs['pilot'] | undefined {
   if (!isRec(v)) return undefined
   const mode = oneOf(v['mode'], ['on', 'off', 'unset'] as const)
   if (!mode) return undefined
-  const provider = oneOf(v['provider'], ['openai', 'anthropic', 'local', 'cloud'] as const)
+  const provider = oneOf(v['provider'], ['openai', 'anthropic', 'local', 'mimir-cloud'] as const)
   const baseUrl = str(v['baseUrl'], 200)
   const model = str(v['model'], 80)
   return { mode, ...(provider ? { provider } : {}), ...(baseUrl ? { baseUrl } : {}), ...(model ? { model } : {}) }

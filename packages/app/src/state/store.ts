@@ -591,7 +591,7 @@ export type SettingsMode = 'simple' | 'advanced' | 'expert' | 'developer'
 export interface PilotPref {
   /** on: a model is connected. unset: never connected, so mimir shows and offers the connect step. off: turned off on purpose in Settings. */
   mode: 'on' | 'off' | 'unset'
-  provider?: 'openai' | 'anthropic' | 'local' | 'cloud'
+  provider?: 'openai' | 'anthropic' | 'local' | 'mimir-cloud'
   baseUrl?: string
   model?: string
 }

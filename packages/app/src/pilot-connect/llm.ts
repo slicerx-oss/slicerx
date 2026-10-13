@@ -8,7 +8,7 @@
 import type { Host, LlmTransport } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { get, type PilotPref } from '../state/store'
-import { cloudBase, cloudReady, CLOUD_MODEL } from './cloud'
+import { cloudBase, cloudReady, CLOUD_MODEL } from './cloud-edition'
 import { keyStoreFor, PROVIDERS } from './keys'
 import { browserTransport } from './transport'
 
@@ -30,7 +30,7 @@ export function pilotTransport(host: Host): LlmTransport | null {
 export function pilotModel(edition: EditionConfig, pref: PilotPref | null, cloud: boolean = cloudReady(edition)): { provider: string; model: string; baseUrl?: string } | null {
   const base = cloud ? cloudBase(edition) : null
   const onCloud = base ? { provider: 'mimir-cloud', model: CLOUD_MODEL, baseUrl: base } : null
-  if (pref?.provider === 'cloud') return onCloud
+  if (pref?.provider === 'mimir-cloud') return onCloud
   if (!pref?.provider) {
     if (onCloud) return onCloud
     const ai = edition.ai
