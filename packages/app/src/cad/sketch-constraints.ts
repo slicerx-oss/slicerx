@@ -35,9 +35,14 @@ export interface SolverMap {
   curve: Map<string, number>
   /** Constraints left out because a point or curve they name is gone, by index in the sketch's list. */
   dropped: number[]
-  /** Solver constraint index to the sketch's. */
+  /** Solver constraint index to the sketch's; driven dimensions are not sent, and -1 is the fix that holds the origin. */
   from: number[]
 }
+
+/** The sketch origin: a point at (0, 0) that never moves, for dimensions to measure from. */
+export const ORIGIN: SketchPointRef = { e: -1, at: 'start' }
+
+const namesOrigin = (c: SketchConstraint): boolean => Object.values(c).some((v) => !!v && typeof v === 'object' && (v as { e?: number }).e === -1)
 
 export const pointKey = (r: SketchPointRef): string => ('seg' in r ? `${r.e}:${r.at}:${r.seg}` : `${r.e}:${r.at}`)
 export const curveKey = (r: SketchCurveRef): string => `${r.e}:${r.seg}`
@@ -79,14 +84,19 @@ export function toSolver(sketch: readonly Entity[], constraints: readonly Sketch
       from = to
     })
   })
+  // the origin is in the solve only when something names it
+  const origin = constraints.some(namesOrigin) ? add([0, 0], pointKey(ORIGIN)) : -1
   const dropped: number[] = []
   const from: number[] = []
   const out: Record<string, unknown>[] = []
   constraints.forEach((c, k) => {
+    // a driven dimension only shows what the sketch measures
+    if ('driven' in c && c.driven) return
     const r: Record<string, unknown> = { type: c.type }
     let ok = true
     for (const [field, v] of Object.entries(c)) {
-      if (field === 'type') continue
+      // where a dimension's value sits is the sketch's, not the solver's
+      if (field === 'type' || field === 'offset' || field === 'expr') continue
       if (typeof v === 'number') r[field] = v
       else if (v && typeof v === 'object' && 'at' in v) {
         const i = point.get(pointKey(v as SketchPointRef))
@@ -102,6 +112,10 @@ export function toSolver(sketch: readonly Entity[], constraints: readonly Sketch
     from.push(k)
     out.push(r)
   })
+  if (origin >= 0) {
+    from.push(-1)
+    out.push({ type: 'fix', point: origin })
+  }
   return { solver: { points, entities, constraints: out }, map: { point, curve, dropped, from } }
 }
 
@@ -246,6 +260,7 @@ export function afterReverse(constraints: readonly SketchConstraint[], e: number
 
 /** Where a point reference is in the sketch now, or null (an arc center is not drawn with a mark). */
 function pointOf(sketch: readonly Entity[], r: SketchPointRef): V2 | null {
+  if (r.e === -1) return [0, 0]
   const e = sketch[r.e]
   if (!e) return null
   if (e.kind === 'circle') return r.at === 'center' ? e.center : null
@@ -260,45 +275,154 @@ export interface SketchDim {
   to: V2
   /** Where the value goes when not mid-line: the line runs on to it as a leader. */
   at?: V2
+  /** Extension lines from the geometry out to a dimension set off to the side. */
+  ext?: [V2, V2][]
   label: string
+  /** The constraint it shows, by index. */
+  of: number
 }
 
 const mmText = (v: number): string => `${Number(v.toFixed(2))}`
 
+const plus = (a: V2, b: V2, k = 1): V2 => [a[0] + b[0] * k, a[1] + b[1] * k]
+
+const unitOf = (a: V2, b: V2): V2 => {
+  const l = Math.hypot(b[0] - a[0], b[1] - a[1])
+  return l < 1e-9 ? [1, 0] : [(b[0] - a[0]) / l, (b[1] - a[1]) / l]
+}
+
+// a dimension from a to b moved `o` off to the left, with extension lines a little past it
+function offsetDim(a: V2, b: V2, o: number, n: V2): Pick<SketchDim, 'from' | 'to' | 'ext'> {
+  if (Math.abs(o) < 1e-9) return { from: a, to: b }
+  const from = plus(a, n, o)
+  const to = plus(b, n, o)
+  const past = Math.sign(o) * Math.min(1, Math.abs(o) * 0.25)
+  return { from, to, ext: [[a, plus(from, n, past)], [b, plus(to, n, past)]] }
+}
+
+// where two lines cross, or null when parallel
+function crossing(a: V2, b: V2, c: V2, d: V2): V2 | null {
+  const r: V2 = [b[0] - a[0], b[1] - a[1]]
+  const s: V2 = [d[0] - c[0], d[1] - c[1]]
+  const den = r[0] * s[1] - r[1] * s[0]
+  if (Math.abs(den) < 1e-12) return null
+  const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den
+  return plus(a, r, t)
+}
+
 /**
- * What the sketch draws for its constraints: a dimension for each driving value (diameter across the circle,
- * radius from the center, a line's length along it, a distance between its points), a mark on each fixed point,
- * and a glyph for each constraint without a value.
+ * How one value constraint is drawn, with `value` as its text (the measured value for a driven one), or null when
+ * what it names is gone. Diameters go across a circle at 45 degrees, clear of the axes, with the value on a leader
+ * past the rim; lengths and distances run beside what they measure when set off.
  */
-export function sketchMarks(sketch: readonly Entity[], constraints: readonly SketchConstraint[]): { dims: SketchDim[]; fixed: V2[]; glyphs: SketchGlyph[] } {
+export function dimMark(sketch: readonly Entity[], c: SketchConstraint, value: number, of: number): SketchDim | null {
+  const off = 'offset' in c && typeof c.offset === 'number' ? c.offset : 0
+  const text = c.type === 'angle' ? `${mmText(value)}\u00b0` : c.type === 'diameter' ? `\u2300${mmText(value)}` : c.type === 'radius' ? `R${mmText(value)}` : mmText(value)
+  const label = 'driven' in c && c.driven ? `(${text})` : text
+  const d = Math.SQRT1_2
+  switch (c.type) {
+    case 'diameter':
+    case 'radius': {
+      const e = sketch[c.circle.e]
+      let center: V2
+      let r: number
+      if (e?.kind === 'circle') {
+        center = e.center
+        r = e.diameterMm / 2
+      } else {
+        const s = e?.kind === 'chain' ? e.segs[c.circle.seg] : undefined
+        const arc = e?.kind === 'chain' && s?.kind === 'arc' ? arcThrough(segStartOf(e, c.circle.seg), s.through, s.to) : null
+        if (!arc) return null
+        center = arc.center
+        r = arc.r
+      }
+      const rim: V2 = [center[0] + r * d, center[1] + r * d]
+      // the value sits on a leader past the rim, so the center and its marks stay clear
+      const out = r + Math.max(2, r * 0.4)
+      const at: V2 = [center[0] + out * d, center[1] + out * d]
+      return c.type === 'diameter' ? { from: [center[0] - r * d, center[1] - r * d], to: rim, at, label, of } : { from: center, to: rim, at, label, of }
+    }
+    case 'length': {
+      const e = sketch[c.line.e]
+      if (e?.kind !== 'chain' || !e.segs[c.line.seg]) return null
+      const a = segStartOf(e, c.line.seg)
+      const b = e.segs[c.line.seg]!.to
+      const u = unitOf(a, b)
+      return { ...offsetDim(a, b, off, [-u[1], u[0]]), label, of }
+    }
+    case 'distance':
+    case 'horizontalDistance':
+    case 'verticalDistance': {
+      const a = anyPointOf(sketch, c.a)
+      const b = anyPointOf(sketch, c.b)
+      if (!a || !b) return null
+      if (c.type === 'distance') {
+        const u = unitOf(a, b)
+        return { ...offsetDim(a, b, off, [-u[1], u[0]]), label, of }
+      }
+      // level and upright distances run at the label's height or across, from where each point is
+      if (c.type === 'horizontalDistance') {
+        const y = (a[1] + b[1]) / 2 + off
+        const from: V2 = [a[0], y]
+        const to: V2 = [b[0], y]
+        return { from, to, ext: [[a, from], [b, to]], label, of }
+      }
+      const x = (a[0] + b[0]) / 2 + off
+      const from: V2 = [x, a[1]]
+      const to: V2 = [x, b[1]]
+      return { from, to, ext: [[a, from], [b, to]], label, of }
+    }
+    case 'lineDistance': {
+      const p = anyPointOf(sketch, c.point)
+      const e = sketch[c.line.e]
+      if (!p || e?.kind !== 'chain' || !e.segs[c.line.seg]) return null
+      const a = segStartOf(e, c.line.seg)
+      const u = unitOf(a, e.segs[c.line.seg]!.to)
+      const t = (p[0] - a[0]) * u[0] + (p[1] - a[1]) * u[1]
+      return { from: p, to: plus(a, u, t), label, of }
+    }
+    case 'angle': {
+      const ea = sketch[c.a.e]
+      const eb = sketch[c.b.e]
+      if (ea?.kind !== 'chain' || eb?.kind !== 'chain' || !ea.segs[c.a.seg] || !eb.segs[c.b.seg]) return null
+      const a0 = segStartOf(ea, c.a.seg)
+      const a1 = ea.segs[c.a.seg]!.to
+      const b0 = segStartOf(eb, c.b.seg)
+      const b1 = eb.segs[c.b.seg]!.to
+      const v = crossing(a0, a1, b0, b1)
+      if (!v) return null
+      // the value sits between the two lines, out from where they cross, toward their middles
+      const ma: V2 = [(a0[0] + a1[0]) / 2, (a0[1] + a1[1]) / 2]
+      const mb: V2 = [(b0[0] + b1[0]) / 2, (b0[1] + b1[1]) / 2]
+      const r = Math.max(2, 0.4 * Math.min(Math.hypot(ma[0] - v[0], ma[1] - v[1]), Math.hypot(mb[0] - v[0], mb[1] - v[1])))
+      const from = plus(v, unitOf(v, ma), r)
+      const to = plus(v, unitOf(v, mb), r)
+      return { from, to, label, of }
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * What the sketch draws for its constraints: a dimension for each value (driven ones in parentheses), a mark on
+ * each fixed point, and a glyph for each constraint without a value. `measure` gives a driven dimension's value as
+ * drawn.
+ */
+export function sketchMarks(sketch: readonly Entity[], constraints: readonly SketchConstraint[], measure?: (c: SketchConstraint) => number | null): { dims: SketchDim[]; fixed: V2[]; glyphs: SketchGlyph[] } {
   const dims: SketchDim[] = []
   const fixed: V2[] = []
-  // circles' dimensions go across at 45 degrees, clear of the axes
-  const d = Math.SQRT1_2
-  for (const c of constraints) {
+  constraints.forEach((c, i) => {
     if (c.type === 'fix') {
       const p = pointOf(sketch, c.point)
       if (p) fixed.push(p)
-    } else if (c.type === 'diameter' || c.type === 'radius') {
-      const e = sketch[c.circle.e]
-      if (e?.kind !== 'circle') continue
-      const r = e.diameterMm / 2
-      const rim: V2 = [e.center[0] + r * d, e.center[1] + r * d]
-      // the value sits on a leader past the rim, so the center and its marks stay clear
-      const out = r + Math.max(2, r * 0.4)
-      const at: V2 = [e.center[0] + out * d, e.center[1] + out * d]
-      if (c.type === 'diameter') dims.push({ from: [e.center[0] - r * d, e.center[1] - r * d], to: rim, at, label: `\u2300${length(c.value)}` })
-      else dims.push({ from: e.center, to: rim, at, label: `R${length(c.value)}` })
-    } else if (c.type === 'length') {
-      const e = sketch[c.line.e]
-      if (e?.kind !== 'chain' || !e.segs[c.line.seg]) continue
-      dims.push({ from: segStartOf(e, c.line.seg), to: e.segs[c.line.seg]!.to, label: length(c.value) })
-    } else if (c.type === 'distance' || c.type === 'horizontalDistance' || c.type === 'verticalDistance') {
-      const a = pointOf(sketch, c.a)
-      const b = pointOf(sketch, c.b)
-      if (a && b) dims.push({ from: a, to: b, label: length(c.value) })
+      return
     }
-  }
+    if (!('value' in c)) return
+    const v = c.driven ? (measure?.(c) ?? c.value) : c.value
+    const m = dimMark(sketch, c, v, i)
+    if (m) dims.push(m)
+  })
   return { dims, fixed, glyphs: glyphsOf(sketch, constraints) }
 }
 
@@ -307,6 +431,8 @@ export interface SketchGlyph {
   at: V2
   kind: GlyphKind
   slot: number
+  /** The constraint it shows, by index. */
+  of: number
 }
 
 export type GlyphKind = 'coincident' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'tangent' | 'equal' | 'midpoint' | 'concentric' | 'collinear' | 'symmetric'
@@ -341,8 +467,10 @@ function endsOf(sketch: readonly Entity[], r: SketchCurveRef): V2[] {
 /** The marks for constraints without a value: a dot on a held point, a bar on a level line, a right angle at a square corner. */
 export function glyphsOf(sketch: readonly Entity[], constraints: readonly SketchConstraint[]): SketchGlyph[] {
   const out: Omit<SketchGlyph, 'slot'>[] = []
-  const put = (at: V2 | null, kind: GlyphKind) => at && out.push({ at, kind })
-  for (const c of constraints) {
+  let of = 0
+  const put = (at: V2 | null, kind: GlyphKind) => at && out.push({ at, kind, of })
+  for (const [i, c] of constraints.entries()) {
+    of = i
     switch (c.type) {
       case 'coincident':
         put(anyPointOf(sketch, c.a), 'coincident')
