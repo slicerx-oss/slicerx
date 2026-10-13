@@ -3,7 +3,7 @@
 // The drawing tools past line, 2-point rectangle, center circle and 3-point arc (cad/sketch-shapes.ts), each driven
 // through click() as the panel does: the entity each one makes, closed shapes counterclockwise, and the typed values.
 import { describe, expect, it } from 'vitest'
-import { click, emptyDraft, fieldsFor, preview, tangentAtEnd, toLoops, typedPoint, type Chain, type DrawTool, type Entity, type V2 } from '../src/cad/sketch-model'
+import { click, emptyDraft, fieldsFor, pickedText, preview, tangentAtEnd, toLoops, typedPoint, type Chain, type DrawTool, type Entity, type V2 } from '../src/cad/sketch-model'
 
 /** Clicks the points in turn with a tool on an empty (or given) sketch. */
 function draw(tool: DrawTool, pts: V2[], sketch: Entity[] = [], sides?: number) {
@@ -105,6 +105,14 @@ describe('drawing tools', () => {
     expect(sweep[0]).toBeCloseTo(0)
     expect(sweep[1]).toBeCloseTo(10)
     expect(typedPoint({ tool: 'rect3', points: [[0, 0], [10, 0]] }, [0], [3, 9])).toMatch(/more than 0/)
+  })
+
+  it("says what Select picked: a line's length, an arc's radius, a circle's diameter", () => {
+    const { sketch } = draw('arcTangent', [[10, 0], [10, 10]], draw('line', [[0, 0], [10, 0]]).sketch)
+    expect(pickedText(sketch, { e: 0, seg: 0 })).toBe('Line, 10.00 mm')
+    expect(pickedText(sketch, { e: 0, seg: 1 })).toBe('Arc, radius 5.00 mm')
+    expect(pickedText(draw('circle2', [[0, 0], [8, 0]]).sketch, { e: 0, seg: 0 })).toBe('Circle, diameter 8.00 mm')
+    expect(pickedText(sketch, null)).toBe('')
   })
 
   it('previews the whole shape once the last click is next', () => {

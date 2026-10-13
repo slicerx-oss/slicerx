@@ -75,6 +75,10 @@ test('keys and the variant row draw a circle, a 3-point rectangle, a pentagon, a
   await families.getByRole('radio', { name: 'Arc' }).click()
   await expect(variants.getByRole('radio', { name: 'Tangent' })).toHaveAttribute('aria-checked', 'true')
 
+  // a new tool starts with an empty readout, not the last tool's
+  await families.getByRole('radio', { name: 'Select' }).click()
+  await expect(panel.locator('.sketch-readout')).toHaveText('')
+
   await page.getByTestId('sketch-finish').click()
   await expect.poll(async () => (await loops(page)).length, { timeout: 10_000 }).toBe(5)
   const got = (await loops(page)).map((l) => (l.type === 'circle' ? 'circle' : l.segments!.map((s) => s.type).join(' ')))
