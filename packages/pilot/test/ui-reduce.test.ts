@@ -173,6 +173,16 @@ describe('reduceTranscript', () => {
     expect(blocks(s)[0]).toMatchObject({ mode: 'allow' })
   })
 
+  it("shows Auto's model switch as its own line", () => {
+    const s = fold([
+      { type: 'text', delta: 'Looking.' },
+      { type: 'model_switch', model: 'claude-sonnet-5-5', label: 'Sonnet 5.5', reason: 'struggle' },
+    ])
+    expect(kinds(s)).toEqual(['say', 'model'])
+    expect(blocks(s)[1]).toMatchObject({ label: 'Sonnet 5.5', reason: 'struggle' })
+    expect(blocks(s)[0]).toMatchObject({ streaming: false })
+  })
+
   it('marks replayed approvals so they are not actionable', () => {
     const s = fold([{ type: 'approval_request', request: REQUEST }], startTurn(setReplaying(emptyTranscript(), true), {}, T0))
     expect(blocks(s)[0]).toMatchObject({ kind: 'approval', replay: true })
