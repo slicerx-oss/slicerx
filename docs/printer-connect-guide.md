@@ -394,6 +394,16 @@ Ordered by impact on getting a printer connected. Items in the same tier are rou
 61. Done in 72fcd93. The catalog adds the QIDI X-Max 3, X-Plus 3, X-Smart 3, Q2 and X-Max 4 with OrcaSlicer 2.4.2's build volumes, all on `FIND_QIDI` with `checkedOnPrinter: false`. FLSUN S1 stays out until verified. Setup prefers the printer's own travel limits through `buildVolumeMm` (item 39). Sovol SV04 Klipper builds stay unconfirmed.
 62. Done in b6fc5825. `docs/finding-printers.md` lists the UDP 20054 broadcast for the A series, J1 and Artisan, and `docs/snapmaker.md` says the U1's RTSP streams on 8554 and 8555 belong to the extended firmware and that the stock camera path is unconfirmed (a camera shows only when Moonraker lists one).
 
+### Bambu Lab status, filament mapping and errors
+
+63. Done before this round: a refused pause, resume, stop, plain G-code start, speed, fan, light or G-code line reads the printer's answer and returns `refused` with its reason (055729bc, 02626cf7, 5067b733); an H2 printer's two external spools are slots `1` and `2` (5b6a6427); a reconnect asks for a full report at most every 5 minutes (6e36d93d).
+64. Done. The step of a job (`stg_cur`) is the status message while it prepares, prints or is paused and nothing is wrong, in our own words for every code Bambu Studio names (1 to 77). Still open: when an A1 sends each step during a start, which needs a recording.
+65. Done. The P1P, P1S, A1, A1 mini and A2L show no chamber temperature, following Bambu Studio's per-model printer settings (the P1S has a chamber but no reading).
+66. Done. The chamber target is read from `ctt`, and on printers that heat the chamber from `device.ctc.info.temp` (current in the low 16 bits, target in the high 16), as Bambu Studio reads them. Still open: a recorded H2D or H2S report to confirm the field on hardware.
+67. Done. AMS HT slots `E1` to `L1` (units 128 to 135) can be mapped: `ams_mapping` carries the unit id and `ams_mapping2` the unit and slot 0, as Bambu Studio counts AMS HT trays. A slot the status does not list is refused before anything is sent. Still open: a print mapped to an AMS HT on a real printer.
+68. Done. HMS and print error wording grows from the error catalog Bambu Studio ships: AMS lite (module 12) and AMS HT (module 18) runouts and feed problems, the filament cutter, hotend and part cooling fans, the build plate, the storage card, homing and the purge chute, in our own words. Other codes keep the generic text and the wiki link.
+69. Still open, each needs a real printer: `gcode_file` paths on printers that print from internal storage (`fun2` bit 0, no card); an empty `md5` in `project_file` on newer H2 firmware; how P1 firmware near 01.07.00.00 answers commands when cloud-bound and used on the LAN. Still open, needs a printer profile each: catalog models for the H2D Pro (O1E) and X2D (N6). Left out by owner decision: the cloud device list (item 42).
+
 ## 4. Unconfirmed
 
 Verify each on a real printer or against an official source.
