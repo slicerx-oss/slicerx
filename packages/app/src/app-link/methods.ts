@@ -17,6 +17,10 @@ export type LinkClass = 'read' | 'edit'
 export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'app.info': 'read',
   'plate.list': 'read',
+  // Moving, turning and scaling objects on the shown plate, each one undo step; the person sees who did it.
+  'project.move': 'edit',
+  'project.rotate': 'edit',
+  'project.scale': 'edit',
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
@@ -46,7 +50,7 @@ export { LinkError } from './methods-error'
 
 const round = (v: number): number => Math.round(v * 1000) / 1000
 
-type Handler = (args: Record<string, unknown>) => unknown
+type Handler = (args: Record<string, unknown>, client: string) => unknown
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
 const CAMERAS: readonly CameraView[] = ['iso', 'top', 'front', 'fit']
@@ -152,6 +156,10 @@ const HANDLERS: Record<string, Handler> = {
       }
     }),
   }),
+  // Loaded when first used, so arranging stays out of the link's startup.
+  'project.move': async (args, client) => (await import('./plate-edits')).move(args, client),
+  'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client),
+  'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
   'mimir.sessions': () => listSessions(),
@@ -192,11 +200,11 @@ async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): P
   }
 }
 
-/** Runs one call the hub handed over. The hub already checked the method and the client's grant. */
-export async function runCall(method: string, args: Record<string, unknown>): Promise<unknown> {
+/** Runs one call the hub handed over, from the client named `client`. The hub already checked the method and its grant. */
+export async function runCall(method: string, args: Record<string, unknown>, client = 'An agent'): Promise<unknown> {
   if (!Object.hasOwn(APP_LINK_METHODS, method)) throw new LinkError('not_found', `${appName()} has no app link method ${method}`)
   const h = Object.hasOwn(HANDLERS, method) ? HANDLERS[method] : undefined
-  if (h) return h(args)
+  if (h) return h(args, client)
   const tool = designTools?.get(method)
   if (!tool) throw new LinkError('not_ready', `${appName()} is still starting its design tools`)
   return runTool(tool, args)

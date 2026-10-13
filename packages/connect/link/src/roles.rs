@@ -106,6 +106,10 @@ pub(crate) enum LinkClass {
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("plate.list", LinkClass::Read),
+    // Moving, turning and scaling objects on the shown plate, each one undo step the person can take back.
+    ("project.move", LinkClass::Edit),
+    ("project.rotate", LinkClass::Edit),
+    ("project.scale", LinkClass::Edit),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
@@ -309,6 +313,9 @@ mod tests {
         let pinned: &[(&str, LinkClass)] = &[
             ("app.info", LinkClass::Read),
             ("plate.list", LinkClass::Read),
+            ("project.move", LinkClass::Edit),
+            ("project.rotate", LinkClass::Edit),
+            ("project.scale", LinkClass::Edit),
             ("preview.get", LinkClass::Read),
             ("preview.set", LinkClass::Read),
             ("design.new", LinkClass::Edit),
