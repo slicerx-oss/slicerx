@@ -133,6 +133,24 @@ pub fn interior_point(ring: &[V2]) -> V2 {
 
 pub fn nest(rings: Vec<Vec<V2>>) -> Vec<Polygon> {
     let rings: Vec<Vec<V2>> = rings.into_iter().filter(|r| r.len() >= 3).collect();
+    nest_indices(&rings)
+        .into_iter()
+        .map(|(o, hs)| {
+            let mut poly = Polygon::simple(rings[o].clone());
+            for h in hs {
+                let mut h = rings[h].clone();
+                if signed_area(&h) > 0.0 {
+                    h.reverse();
+                }
+                poly.holes.push(h);
+            }
+            poly
+        })
+        .collect()
+}
+
+/// [`nest`] by index: each outer ring with its holes, rings at even depth being outers
+pub fn nest_indices(rings: &[Vec<V2>]) -> Vec<(usize, Vec<usize>)> {
     let areas: Vec<f64> = rings.iter().map(|r| signed_area(r).abs()).collect();
     let probes: Vec<V2> = rings.iter().map(|r| interior_point(r)).collect();
     let n = rings.len();
@@ -159,23 +177,19 @@ pub fn nest(rings: Vec<Vec<V2>>) -> Vec<Polygon> {
         }
         depth[i] = d;
     }
-    let mut out: Vec<Polygon> = Vec::new();
+    let mut out: Vec<(usize, Vec<usize>)> = Vec::new();
     let mut slot = vec![usize::MAX; n];
     for i in 0..n {
         if depth[i].is_multiple_of(2) {
             slot[i] = out.len();
-            out.push(Polygon::simple(rings[i].clone()));
+            out.push((i, Vec::new()));
         }
     }
     for i in 0..n {
         if depth[i] % 2 == 1
             && let Some(poly) = out.get_mut(slot[parent[i]])
         {
-            let mut h = rings[i].clone();
-            if signed_area(&h) > 0.0 {
-                h.reverse();
-            }
-            poly.holes.push(h);
+            poly.1.push(i);
         }
     }
     out

@@ -196,6 +196,58 @@ fn cut_in_two() {
 }
 
 #[test]
+fn sketch_and_slot_extrudes() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    // a clockwise D with a round hole, the arc through a point; the kernel takes the engine's exact curves
+    let loops = json!([
+        { "start": [0, 0], "segments": [
+            { "type": "line", "to": [0, 20] },
+            { "type": "line", "to": [10, 20] },
+            { "type": "arc", "to": [10, 0], "through": [20, 10] },
+            { "type": "line", "to": [0, 0] }
+        ] },
+        { "type": "circle", "center": [8, 10], "diameterMm": 8 }
+    ]);
+    let profiles = call("sketch.curves", &json!({ "loops": loops }));
+    let sketch = made(
+        "extrude",
+        json!({ "frame": frame, "polygons": profiles, "fromMm": 0, "toMm": 5 }),
+    );
+    let on_mesh = call(
+        "shape.extrude",
+        &json!({ "frame": frame, "shape": { "type": "sketch", "loops": loops }, "placement": {}, "spec": { "distanceMm": 5 } }),
+    );
+    let slot = made(
+        "extrude",
+        json!({ "frame": frame, "polygons": [{ "outer": { "start": [-10, -5], "segments": [
+            { "to": [10, -5] }, { "to": [10, 5], "center": [10, 0], "sweepDeg": 180 },
+            { "to": [-10, 5] }, { "to": [-10, -5], "center": [-10, 0], "sweepDeg": 180 }
+        ] } }], "fromMm": 0, "toMm": 4 }),
+    );
+    let slot_mesh = call(
+        "shape.extrude",
+        &json!({ "frame": frame, "shape": { "type": "slot", "lengthMm": 30, "widthMm": 10 }, "placement": {}, "spec": { "distanceMm": 4 } }),
+    );
+    // the brep is exact; the mesh's arcs are polygons within the engine's arc tolerance
+    for (name, brep, mesh, want) in [
+        ("sketch", &sketch, &on_mesh, (200.0 + PI * 50.0 - PI * 16.0) * 5.0),
+        ("slot", &slot, &slot_mesh, (200.0 + PI * 25.0) * 4.0),
+    ] {
+        let b = brep_solid(brep);
+        assert!(near(b.volume, want), "{name}: brep {} against {want}", b.volume);
+        let m = mesh_solid(&mesh["mesh"]);
+        assert!(
+            (m.volume - want).abs() <= 2e-3 * want,
+            "{name}: mesh {} against {want}",
+            m.volume
+        );
+    }
+}
+
+#[test]
 fn extrude_into_the_top() {
     if !sx_brep::KERNEL {
         return;

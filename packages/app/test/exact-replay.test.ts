@@ -70,7 +70,7 @@ it('runs a step the kernel fails on the mesh, with a note, and the steps after i
 })
 
 it('leaves to the mesh what the kernel has no version of', async () => {
-  const rounded = step('box-2', { ...box.params, shape: { type: 'rectangle', widthMm: 20, heightMm: 10, cornerRadiusMm: 2 } } as StepParams)
+  const rounded = step('box-2', { ...box.params, spec: { distanceMm: 5, operation: 'new', taperDeg: 5 } } as StepParams)
   const scaled = step('hole-2', hole.params, [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1])
   const e = engine()
   await replayHistory(e.call, { history: history(rounded), exact: true })
@@ -160,6 +160,36 @@ it('joins and cuts a sketch on a face into the solid, and a shape that misses br
   clearReplayCache()
   const m = await replayHistory(away, { history: history(box, on('cut', 'pocket-1')), exact: true })
   expect(m.status[1]).toEqual({ state: 'broken', message: 'The shape no longer reaches the part.' })
+})
+
+it('sends slots, rounded rectangles and sketches to the kernel as lines and arcs', async () => {
+  const slot = step('slot-1', { ...box.params, shape: { type: 'slot', lengthMm: 30, widthMm: 10 } } as StepParams)
+  const e = engine()
+  await replayHistory(e.call, { history: history(slot), exact: true })
+  expect(e.sent[0]!.req['polygons']).toEqual([
+    { outer: { start: [-10, -5], segments: [{ to: [10, -5] }, { to: [10, 5], center: [10, 0], sweepDeg: 180 }, { to: [-10, 5] }, { to: [-10, -5], center: [-10, 0], sweepDeg: 180 }] }, holes: [] },
+  ])
+  // a sketch's loops come nested and exact from the engine, then are placed in the frame
+  const loops = [{ start: [0, 0], segments: [{ type: 'line', to: [4, 0] }, { type: 'arc', to: [0, 0], through: [2, 2] }] }]
+  const sketched = step('sketch-1', { ...box.params, shape: { type: 'sketch', loops }, placement: { center: [1, 2] } } as StepParams)
+  const profile = { outer: { start: [0, 0], segments: [{ to: [4, 0] }, { to: [0, 0], center: [2, 0], sweepDeg: 180 }] }, holes: [{ center: [2, 0.5], diameterMm: 1 }] }
+  const f = engine()
+  const withProfiles = async (op: string, req: unknown) => (op === 'sketch.curves' ? [profile] : f.call(op, req))
+  await replayHistory(withProfiles, { history: history(sketched), exact: true })
+  expect(f.ops()).toEqual(['brep.extrude', 'brep.tessellate'])
+  expect(f.sent[0]!.req['polygons']).toEqual([
+    { outer: { start: [1, 2], segments: [{ to: [5, 2] }, { to: [1, 2], center: [3, 2], sweepDeg: 180 }] }, holes: [{ center: [3, 2.5], diameterMm: 1 }] },
+  ])
+  // one the engine finds a problem in runs on the mesh, which says what it is
+  clearReplayCache()
+  const g = engine()
+  const broken = async (op: string, req: unknown) => {
+    if (op === 'sketch.curves') throw new Error('Loop 1 is open.')
+    return g.call(op, req)
+  }
+  const r = await replayHistory(broken, { history: history(sketched), exact: true })
+  expect(g.ops()).toEqual(['shape.extrude'])
+  expect(r.status[0]).toEqual({ state: 'done' })
 })
 
 /** A kernel that keeps bodies by number, each with the face keys its op gave it, and records what it frees. */

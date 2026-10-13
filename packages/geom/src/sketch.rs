@@ -123,14 +123,21 @@ struct Ring {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Prim {
-    Line { to: V2 },
-    Arc { to: V2 },
+    Line {
+        to: V2,
+    },
+    /// sweep in radians, counterclockwise positive
+    Arc {
+        to: V2,
+        center: V2,
+        sweep: f64,
+    },
 }
 
 impl Prim {
     pub(crate) fn to(self) -> V2 {
         match self {
-            Self::Line { to } | Self::Arc { to } => to,
+            Self::Line { to } | Self::Arc { to, .. } => to,
         }
     }
 }
@@ -481,6 +488,8 @@ fn flatten(l: usize, lp: &Loop) -> std::result::Result<Ring, Issue> {
                 dir = if sweep > 0.0 { t } else { [-t[0], -t[1]] };
                 prims.push(Prim::Arc {
                     to: pts.last().copied().unwrap_or(pos),
+                    center: c,
+                    sweep,
                 });
                 pts
             }
@@ -738,6 +747,115 @@ pub fn polygons(loops: &[Loop]) -> Result<Vec<Polygon>> {
         Some(i) => Err(Error::invalid("sketch", i.message)),
         None => Ok(c.polygons),
     }
+}
+
+/// one piece of an exact loop: a line to `to`, or an arc to it around `center`
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Piece {
+    pub to: V2,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub center: Option<V2>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sweep_deg: Option<f64>,
+}
+
+/// a loop as exact lines and arcs, counterclockwise
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged, rename_all = "camelCase")]
+pub enum CurveLoop {
+    Circle {
+        center: V2,
+        #[serde(rename = "diameterMm")]
+        diameter_mm: f64,
+    },
+    Pieces {
+        start: V2,
+        segments: Vec<Piece>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CurveProfile {
+    pub outer: CurveLoop,
+    pub holes: Vec<CurveLoop>,
+}
+
+/// the sketch as exact lines and arcs for the b-rep kernel, nested as [`polygons`] nests them
+pub fn curves(loops: &[Loop]) -> Result<Vec<CurveProfile>> {
+    let c = check(loops);
+    if let Some(i) = c.issues.into_iter().next() {
+        return Err(Error::invalid("sketch", i.message));
+    }
+    let mut rings = Vec::new();
+    let mut paths = Vec::new();
+    for (l, lp) in loops.iter().enumerate() {
+        let r = flatten(l, lp).map_err(|i| Error::invalid("sketch", i.message))?;
+        paths.push(exact_path(lp, &r)?);
+        rings.push(r.pts);
+    }
+    Ok(poly2d::nest_indices(&rings)
+        .into_iter()
+        .map(|(o, hs)| CurveProfile {
+            outer: paths[o].clone(),
+            holes: hs.into_iter().map(|h| paths[h].clone()).collect(),
+        })
+        .collect())
+}
+
+fn exact_path(lp: &Loop, r: &Ring) -> Result<CurveLoop> {
+    if lp.kind.as_deref() == Some("circle") {
+        let (Some(center), Some(diameter_mm)) = (lp.center, lp.diameter_mm) else {
+            return Err(Error::invalid("sketch", "a circle needs a center and diameterMm"));
+        };
+        return Ok(CurveLoop::Circle { center, diameter_mm });
+    }
+    let start = r.pts[0];
+    let mut pieces: Vec<Piece> = r
+        .prims
+        .iter()
+        .map(|&p| match p {
+            Prim::Line { to } => Piece {
+                to,
+                center: None,
+                sweep_deg: None,
+            },
+            Prim::Arc { to, center, sweep } => Piece {
+                to,
+                center: Some(center),
+                sweep_deg: Some(sweep.to_degrees()),
+            },
+        })
+        .collect();
+    // the kernel joins pieces end to end, so the loop must close exactly
+    if let Some(last) = pieces.last_mut() {
+        if last.center.is_none() {
+            last.to = start;
+        } else if len2(sub2(last.to, start)) > 1e-9 {
+            return Err(Error::invalid(
+                "sketch",
+                "the loop closes only to within its tolerance",
+            ));
+        }
+    }
+    if poly2d::signed_area(&r.pts) < 0.0 {
+        // the same pieces the other way round, each arc swept back
+        let ends: Vec<V2> = std::iter::once(start)
+            .chain(pieces.iter().map(|p| p.to))
+            .collect();
+        pieces = (0..pieces.len())
+            .rev()
+            .map(|i| Piece {
+                to: ends[i],
+                center: pieces[i].center,
+                sweep_deg: pieces[i].sweep_deg.map(|s| -s),
+            })
+            .collect();
+    }
+    Ok(CurveLoop::Pieces {
+        start,
+        segments: pieces,
+    })
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1220,6 +1338,47 @@ mod tests {
 
     fn loops(v: serde_json::Value) -> Vec<Loop> {
         serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn curves_are_exact_nested_and_counterclockwise() {
+        // a clockwise D shape (its arc given by a point it passes) around a round hole, and an island in the hole
+        let l = loops(json!([
+            { "start": [0, 0], "segments": [
+                { "type": "line", "to": [0, 20] },
+                { "type": "line", "to": [10, 20] },
+                { "type": "arc", "to": [10, 0], "through": [20, 10] },
+                { "type": "line", "to": [0, 0] }
+            ] },
+            { "type": "circle", "center": [8, 10], "diameterMm": 8 },
+            { "points": [[7, 9], [9, 9], [9, 11], [7, 11]] }
+        ]));
+        let p = curves(&l).unwrap();
+        assert_eq!(p.len(), 2);
+        let CurveLoop::Pieces { start, segments } = &p[0].outer else {
+            panic!("{p:?}")
+        };
+        assert_eq!(*start, [0.0, 0.0]);
+        // turned round: counterclockwise, the arc sweeping +180 about (10, 10)
+        let ends: Vec<V2> = segments.iter().map(|g| g.to).collect();
+        assert_eq!(ends, vec![[10.0, 0.0], [10.0, 20.0], [0.0, 20.0], [0.0, 0.0]]);
+        let arc = segments[1];
+        let c = arc.center.unwrap();
+        assert!((c[0] - 10.0).abs() < 1e-9 && (c[1] - 10.0).abs() < 1e-9, "{c:?}");
+        assert!((arc.sweep_deg.unwrap() - 180.0).abs() < 1e-9, "{arc:?}");
+        assert_eq!(
+            p[0].holes,
+            vec![CurveLoop::Circle {
+                center: [8.0, 10.0],
+                diameter_mm: 8.0
+            }]
+        );
+        assert!(p[1].holes.is_empty());
+        // a sketch with a problem has no profiles
+        let open = loops(
+            json!([{ "start": [0, 0], "segments": [{ "type": "line", "to": [5, 0] }, { "type": "line", "to": [5, 5] }] }]),
+        );
+        assert!(curves(&open).is_err());
     }
 
     #[test]
