@@ -479,6 +479,60 @@ fn subtract_in_the_body_frame() {
 }
 
 #[test]
+fn extrude_joins_and_cuts() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let top = |op: &str, d: f64, x: f64| {
+        let (a, b) = if d > 0.0 { (0.0, d) } else { (d, 0.0) };
+        call(
+            "extrude",
+            &json!({
+                "frame": { "origin": [10, 10, 20], "u": [1, 0, 0], "normal": [0, 0, 1] },
+                "polygons": [{ "outer": { "center": [x, 0], "diameterMm": 8 } }],
+                "fromMm": a, "toMm": b, "target": cube(), "operation": op
+            }),
+        )
+    };
+    let boss = top("join", 5.0, 0.0);
+    assert_eq!(boss["touches"], true);
+    close(volume(boss["body"].as_u64().unwrap()), 8000.0 + PI * 16.0 * 5.0);
+    // a cut flush through the bottom leaves a closed solid with one round wall
+    let hole = top("cut", -20.0, 0.0);
+    let h = hole["body"].as_u64().unwrap();
+    close(volume(h), 8000.0 - PI * 16.0 * 20.0);
+    assert_eq!(mesh_check(h).0, 0);
+    // a cut off the side, a join that stands apart, a cut away from the face and a join inside the body change
+    // nothing and make no body
+    for miss in [
+        top("cut", -5.0, 40.0),
+        top("join", 5.0, 40.0),
+        top("cut", 5.0, 0.0),
+        top("join", -5.0, 0.0),
+    ] {
+        assert_eq!(miss["touches"], false, "{miss}");
+        assert!(miss["body"].is_null(), "{miss}");
+    }
+    // a slab off the whole top and a hidden cavity both change the body
+    let slab = call(
+        "extrude",
+        &json!({ "frame": { "origin": [10, 10, 20], "u": [1, 0, 0], "normal": [0, 0, 1] }, "polygons": [{ "outer": { "points": [[-15, -15], [15, -15], [15, 15], [-15, 15]] } }], "fromMm": -2, "toMm": 0, "target": cube(), "operation": "cut" }),
+    );
+    close(volume(slab["body"].as_u64().unwrap()), 8000.0 - 800.0);
+    let cavity = call(
+        "extrude",
+        &json!({ "frame": { "origin": [10, 10, 20], "u": [1, 0, 0], "normal": [0, 0, 1] }, "polygons": [{ "outer": { "center": [0, 0], "diameterMm": 8 } }], "fromMm": -15, "toMm": -5, "target": cube(), "operation": "cut" }),
+    );
+    close(
+        volume(cavity["body"].as_u64().unwrap()),
+        8000.0 - PI * 16.0 * 10.0,
+    );
+    let all = json!({ "frame": { "origin": [10, 10, 20], "u": [1, 0, 0], "normal": [0, 0, 1] }, "polygons": [{ "outer": { "points": [[-20, -20], [20, -20], [20, 20], [-20, 20]] } }], "fromMm": -30, "toMm": 0, "target": cube(), "operation": "cut" });
+    let e = sx_brep::call("extrude", &all.to_string()).unwrap_err();
+    assert!(e.contains("removes the whole body"), "{e}");
+}
+
+#[test]
 fn no_kernel_says_so() {
     if sx_brep::KERNEL {
         return;

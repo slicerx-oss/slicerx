@@ -130,7 +130,8 @@ function loops(shape: Shape, placement: { center?: Vec2; rotationDeg?: number },
 function range(spec: Extract<StepParams, { op: 'shape.extrude' }>['spec']): [number, number] | null {
   if (spec.taperDeg) return null
   const d = spec.distanceMm
-  const sign = (spec.flip ? -1 : 1) * (d < 0 ? -1 : 1)
+  // a cut goes into the face, as in sx-geom face.rs
+  const sign = (spec.operation === 'cut' ? -1 : 1) * (spec.flip ? -1 : 1) * (d < 0 ? -1 : 1)
   const m = Math.abs(d)
   const extent = spec.extent ?? 'oneSide'
   const [a, b] = extent === 'symmetric' ? [-m, m] : extent === 'twoSides' ? [-sign * (spec.distance2Mm ?? 0), sign * m] : [0, sign * m]
@@ -171,14 +172,23 @@ export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBac
     const out = parts.slice()
     switch (p.op) {
       case 'shape.extrude': {
-        if ((p.spec.operation ?? 'new') !== 'new' || !p.frame || p.pattern || !('type' in p.shape)) return null
+        const op = p.spec.operation ?? 'new'
+        if (!p.frame || p.pattern || !('type' in p.shape)) return null
+        const into = op === 'new' ? null : solid(target)
+        if (op !== 'new' && (into === null || !target)) return null
         const f = localFrame(s, p.frame)
         // the kernel's frame has v = normal x u; the step's may be the other way round
         const flipV = dot(cross(f.normal, f.u), direction(invert(s.transform), p.frame.v)) < 0
         const polygons = loops(p.shape as Shape, p.placement ?? {}, flipV)
         const z = range(p.spec)
         if (!polygons || !z) return null
-        const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...kept })
+        const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...(into === null ? {} : { target: into, operation: op }), ...kept })
+        if (into !== null) {
+          // a join or cut that misses changes nothing; the kernel makes no body then
+          if (!(r as { touches?: boolean }).touches) throw new ExactBroken('The shape no longer reaches the part.')
+          out[s.part] = await part(target!, r)
+          return out
+        }
         const body = await part({ name: p.name ?? 'Body', slot: out[s.part]?.slot ?? 1 }, r)
         if (s.part < out.length) out[s.part] = body
         else out.push(body)
