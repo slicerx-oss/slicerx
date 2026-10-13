@@ -11,7 +11,8 @@ import { commitMade } from '../cad/commit'
 import { selectedEntry } from './select'
 import { bake, invert } from './mesh-ops'
 import { repairHeadline, showRepairReport, sumRepair, type RepairCounts, type RepairEntry } from './repair-report'
-import { bounds, compose, dropToBed, identity, multiply, type Mat4, type Vec3 } from './transform'
+import { bounds, compose, dropToBed, identity, multiply, type Box, type Mat4, type Vec3 } from './transform'
+import { modelPlace } from './edit'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -134,7 +135,7 @@ export interface CutSpec {
   connector?: { kind: 'pin' | 'dowel' | 'dovetail'; diameterMm: number; depthMm: number; toleranceMm: number; count?: number; positions?: Vec3[] }
 }
 
-/** Cuts the selected object with a plane. The pieces become objects standing on the bed. */
+/** Cuts the selected object with a plane. The pieces become objects standing on the bed, side by side. */
 export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> {
   const e = need()
   const below: MeshPart[] = []
@@ -162,6 +163,19 @@ export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> 
     }),
   )
   const plate = get().plate
+  // the pieces stand side by side, each beside the one before and clear of the other objects, not on top of each other
+  const boxOf = (x: PlateEntry) => bounds(x.parts, x.transform)
+  const taken = plate.filter((p) => p.id !== e.id).map(boxOf).filter((b): b is Box => b !== null)
+  for (let i = 1; i < entries.length; i++) {
+    const prev = boxOf(entries[i - 1]!)
+    const own = boxOf(entries[i]!)
+    if (!prev || !own) continue
+    taken.push(prev)
+    const size: Vec3 = [own.max[0] - own.min[0], own.max[1] - own.min[1], 0]
+    const [x, y] = modelPlace(size, [0, 0, 0], prev, taken)
+    const move = compose({ position: [x - (own.min[0] + own.max[0]) / 2, y - (own.min[1] + own.max[1]) / 2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
+    entries[i] = { ...entries[i]!, transform: multiply(move, entries[i]!.transform) }
+  }
   const at = plate.findIndex((p) => p.id === e.id)
   // The pieces sit where the object was when the cut started: an object deleted or moved meanwhile keeps its new state.
   if (at < 0 || plate[at]!.transform !== e.transform) {
