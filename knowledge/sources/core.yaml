@@ -88,3 +88,17 @@ sources:
     url: https://github.com/slicerx-oss/slicerx/blob/main/packages/app/src/workspaces/prepare/paint-panel.tsx
     retrieved: 2026-10-13
     note: "Paint layers Color, Seam, Support, Fuzzy skin; brushes Brush, Fill, Height, with Triangle and Gap fill under More; color slots come from the Filament block."
+  - id: snapmaker_blog_threads
+    title: "Guide to Designing and 3D Printing Threads"
+    publisher: Snapmaker
+    type: manufacturer_blog
+    url: https://blog.snapmaker.com/blog/3d-printing-threads/
+    retrieved: 2026-10-13
+    note: "Stand threaded parts upright; 0.16 mm layers or better 0.12 mm; ACME or trapezoidal over V threads; small negative offset on the male thread; test with an M10 or M12 nut and bolt; heat-set inserts for strong or reused threads. No numeric clearance."
+  - id: prusa_store_heat_set_inserts
+    title: "Heat set inserts M4 standard (50 pcs)"
+    publisher: Prusa Research
+    type: manufacturer_store
+    url: https://www.prusa3d.com/en/product/heat-set-inserts-m4-standard-50-pcs/
+    retrieved: 2026-10-13
+    note: "Seen through a search excerpt. Installation temperature is the printing temperature +10 C; the printed plastic melts and reflows around the knurled external surface."

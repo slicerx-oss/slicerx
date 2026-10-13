@@ -28,6 +28,7 @@ const CASES: [string, string[]][] = [
   ['bottom layers squished out, elephant foot', ['troubleshoot/elephant_foot']],
   ['brim or raft, which one', ['workflow/adhesion']],
   ['how do I paint different colors onto my model', ['workflow/slicerx_paint']],
+  ['best way to print threads that screw together', ['workflow/printed_threads']],
   ['paint where the seam goes', ['workflow/slicerx_paint', 'workflow/seams']],
   ['print tpu on an a1 with the ams lite', ['filament/tpu_95a', 'printer/bambu_a1', 'accessory/bambu_ams_lite']],
 ]
