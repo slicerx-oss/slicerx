@@ -140,6 +140,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-estimate-breakdown` | The breakdown: where the time goes, filament per slot, electricity, filament changes and layers |
 | `slice-estimate-warnings` | The warnings chip, shown only with warnings; shows the first one on the plate |
 | `slice-estimate-error` | The engine's message when a slice fails |
+| `slice-error-show` | Show me on a slice the safety check refused, when its message names a spot: turns the view there and picks the object |
+| `slice-block-show` | Show me on the footer's heimdall block: opens the toolpaths at the first strike |
 | `slice-estimate-held` | The footer's quiet line when Auto slice holds a big plate's slice for Slice |
 | `danger-slice-print` | Print, the footer's main action (opens the Print sheet; the bridge refuses it) |
 | `check-show` | Show me on a Print sheet check that blocks the print and has a place in the slice: closes the sheet and opens the toolpaths there |

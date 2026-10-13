@@ -13,6 +13,7 @@ import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { printTarget, usePrinter } from '../../lib/use-printer'
 import { useWaited } from '../../lib/waited'
 import { printBlock } from '../../plate/heimdall'
+import { firstHit, refusalSpot, showRefusal, showSpot } from '../../plate/preflight-show'
 import { sequenceProblem } from '../../plate/sequence-check'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../../state/actions'
 import { get, showSliced, shownSlice, toast, useApp } from '../../state/store'
@@ -42,6 +43,9 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   // profile allows by object are a heads-up: heimdall checks every move when the plate slices.
   const unsafe = useApp(printBlock)
   const heads = useApp(sequenceProblem)
+  // Show me on a block: the first strike in the sliced plate, or the spot a refused slice names.
+  const hit = useApp(firstHit)
+  const refused = slice.status === 'error' ? refusalSpot(slice.message) : null
   const fresh = done !== null && !done.stale && unsafe === null
   const { printer, rows } = usePrinter()
   const target = printTarget(printer, rows)
@@ -120,6 +124,12 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       {unsafe !== null ? (
         <p className="app-err" role="alert">
           {unsafe}
+          {hit !== null ? ' ' : null}
+          {hit !== null ? (
+            <button type="button" className="est-show" data-testid="slice-block-show" {...tipAttrs({ title: 'Show me', body: 'Go to the first strike in the sliced plate.' })} onClick={() => void showSpot({ kind: 'collision', index: hit })}>
+              Show me
+            </button>
+          ) : null}
         </p>
       ) : heads !== null && !done ? (
         <p className="app-note">{heads}</p>
@@ -127,6 +137,12 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       {slice.status === 'error' ? (
         <p className="app-err est-error" role="alert" data-testid="slice-estimate-error">
           {slice.message}
+          {refused !== null ? ' ' : null}
+          {refused !== null ? (
+            <button type="button" className="est-show" data-testid="slice-error-show" {...tipAttrs({ title: 'Show me', body: 'Turn the view to where it first goes wrong on the plate.' })} onClick={() => showRefusal(refused)}>
+              Show me
+            </button>
+          ) : null}
         </p>
       ) : null}
     </>
