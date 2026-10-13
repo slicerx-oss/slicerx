@@ -10,6 +10,7 @@ import type { EditionConfig } from '@slicerx/edition-config'
 import { get, type PilotPref } from '../state/store'
 import { cloudBase, cloudReady, CLOUD_MODEL } from './cloud-edition'
 import { keyStoreFor, PROVIDERS } from './keys'
+import { AUTO_MODEL, autoPair } from './models'
 import { browserTransport } from './transport'
 
 export function pilotTransport(host: Host): LlmTransport | null {
@@ -27,7 +28,7 @@ export function pilotTransport(host: Host): LlmTransport | null {
  * The adapter and model mimir runs for the connection, or null when nothing is set up. With nothing chosen, an edition
  * on mimir cloud uses it; a person's own key or local model wins once set. `cloud` says whether this shell carries it.
  */
-export function pilotModel(edition: EditionConfig, pref: PilotPref | null, cloud: boolean = cloudReady(edition)): { provider: string; model: string; baseUrl?: string } | null {
+export function pilotModel(edition: EditionConfig, pref: PilotPref | null, cloud: boolean = cloudReady(edition)): { provider: string; model: string; baseUrl?: string; models?: { huginn: string; muninn: string }; auto?: boolean; deepDesign?: boolean } | null {
   const base = cloud ? cloudBase(edition) : null
   const onCloud = base ? { provider: 'mimir-cloud', model: CLOUD_MODEL, baseUrl: base } : null
   if (pref?.provider === 'mimir-cloud') return onCloud
@@ -37,9 +38,12 @@ export function pilotModel(edition: EditionConfig, pref: PilotPref | null, cloud
     return ai.provider === 'none' ? null : { provider: ai.provider, model: ai.model, ...(ai.baseUrl ? { baseUrl: ai.baseUrl } : {}) }
   }
   const info = PROVIDERS[pref.provider]
-  const model = pref.model || info.defaultModel
+  // No model picked on a key is Auto: the small model, and the larger one for hard parts
+  const pair = !pref.model || pref.model === AUTO_MODEL ? autoPair(pref.provider) : null
+  const model = pair?.huginn || (pref.model && pref.model !== AUTO_MODEL ? pref.model : info.defaultModel)
+  const auto = pair ? { models: { huginn: pair.huginn, muninn: pair.muninn }, auto: true, ...(pair.design ? { deepDesign: true } : {}) } : {}
   // The Anthropic adapter adds /v1 itself; the others take the base with /v1.
-  if (pref.provider === 'anthropic') return { provider: 'anthropic', model, baseUrl: (pref.baseUrl || info.defaultBase).replace(/\/v1\/?$/, '') }
+  if (pref.provider === 'anthropic') return { provider: 'anthropic', model, baseUrl: (pref.baseUrl || info.defaultBase).replace(/\/v1\/?$/, ''), ...auto }
   if (pref.provider === 'local') return { provider: 'openai-compatible', model, baseUrl: pref.baseUrl || info.defaultBase }
-  return { provider: 'openai', model, baseUrl: pref.baseUrl || info.defaultBase }
+  return { provider: 'openai', model, baseUrl: pref.baseUrl || info.defaultBase, ...auto }
 }

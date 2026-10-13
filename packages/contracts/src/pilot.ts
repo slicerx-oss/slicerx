@@ -325,6 +325,8 @@ export type PilotEvent =
   | { type: 'approval_resolved'; requestId: string; decision: ApprovalDecision; by: 'user' | 'policy' | 'expiry'; via?: 'card' | 'phone' }
   | { type: 'summary'; title: string; rows: [string, string][]; stopped: boolean }
   | { type: 'usage'; inputTokens: number; outputTokens: number }
+  /** Auto moved the run to another model: asked for deep work, reached a deep tool, or kept failing on the small one. */
+  | { type: 'model_switch'; model: string; label: string; reason: 'request' | 'tool' | 'struggle' }
   | { type: 'error'; message: string; retryable: boolean }
   | { type: 'done'; stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error'; ms: number }
 
@@ -352,6 +354,10 @@ export interface PilotConfig {
   modelChoice?: string
   /** Who pays, set by the host: the user's ChatGPT `plan`, or an API `key` billed per token (then huginn does everything). */
   billing?: 'plan' | 'key'
+  /** Auto on a key: huginn's model to start, muninn's for hard parts, the switch shown in the chat. */
+  auto?: boolean
+  /** With auto: design and geometry tools move the run to muninn too (when huginn's model is weak at building parts). */
+  deepDesign?: boolean
 }
 
 /** The machine a plate targets. Ids are knowledge ids (`prusa_mk4s`, `petg`). */
