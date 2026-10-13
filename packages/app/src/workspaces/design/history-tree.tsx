@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The Model tree: each object on the plate with its history steps under it (a sketch as a sub-row under its
-// extrude), then its parts and volumes. The selected object, and one whose step is open, start expanded.
+// The Model tree, as Fusion's browser: the design's sketches (from the timeline), then its bodies, each object on the
+// plate with its history steps under it (a sketch as a sub-row under its extrude), then its parts and volumes. The
+// selected object, and one whose step is open, start expanded.
 // Steps use the same rows and operations as the history list in Slice (cad/history), so nothing new is stored.
 // It is a tree to the keyboard: one row is in the tab order, Up and Down move between rows, Right opens an object or
 // goes into it (on a step, to its More button), Left closes it or goes back to its object, and Home and End jump.
@@ -61,6 +62,7 @@ export function HistoryTree() {
   const editing = useApp((s) => s.historyEdit)
   const selection = useApp((s) => s.selection)
   const selected = useApp((s) => s.selectedIds)
+  const timeline = useApp((s) => s.timeline)
   const [open, setOpen] = useState<Record<string, boolean>>({})
   // The filter: null while it is shut; typing in the tree opens it with that character.
   const [query, setQuery] = useState<string | null>(null)
@@ -82,7 +84,24 @@ export function HistoryTree() {
     for (const el of tree.querySelectorAll<HTMLElement>(ROW)) el.tabIndex = el === current ? 0 : -1
   })
 
-  if (!objects.length) return <p className="dtree-empty sx-small sx-muted">Add a model or a shape to start.</p>
+  const sketches = timeline.items.flatMap((k, i) => (k.kind === 'sketch' ? [{ k, later: i >= timeline.marker }] : []))
+  const folder = (id: string, name: string, icon: 'sketch' | 'body', count: number) => {
+    const isOpen = open[id] ?? true
+    return (
+      <div className="dtree-row">
+        <button type="button" className="dtree-chev" tabIndex={-1} aria-hidden="true" onClick={() => setOpen((m) => ({ ...m, [id]: !isOpen }))}>
+          <Icon name={isOpen ? 'chevron-down' : 'chevron-right'} size={14} />
+        </button>
+        <button type="button" className="dtree-folder-name" data-tree-row="" onClick={() => setOpen((m) => ({ ...m, [id]: !isOpen }))}>
+          <Icon name={icon} size={16} />
+          <span className="min0">{name}</span>
+        </button>
+        <span className="dtree-count sx-mono">{count}</span>
+      </div>
+    )
+  }
+
+  if (!objects.length && !sketches.length) return <p className="dtree-empty sx-small sx-muted">Add a model or a shape to start.</p>
   return (
     <>
     {query !== null ? (
@@ -136,6 +155,27 @@ export function HistoryTree() {
         treeKey(e.currentTarget, e, (id, o) => setOpen((s) => ({ ...s, [id]: o })))
       }}
     >
+      {sketches.length && query === null ? (
+        <li className="dtree-folder" role="treeitem" aria-level={1} aria-expanded={open['folder:sketches'] ?? true} aria-label="Sketches" data-testid="model-tree-sketches">
+          {folder('folder:sketches', 'Sketches', 'sketch', sketches.length)}
+          {(open['folder:sketches'] ?? true) ? (
+            <ul className="dtree-body dtree-parts" role="group" aria-label="Sketches">
+              {sketches.map(({ k, later }) => (
+                <li key={k.id} role="treeitem" aria-level={2} aria-label={k.name}>
+                  <button type="button" className="dtree-part" data-tree-row="" tabIndex={-1} data-later={later || undefined} data-tip-title={k.name} data-tip-body={later ? 'Rolled back: move the timeline marker past it to use it.' : k.loops.length === 1 ? '1 loop' : `${k.loops.length} loops`}>
+                    <Icon name="sketch" size={16} />
+                    <span className="min0">{k.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </li>
+      ) : null}
+      <li className="dtree-folder" role="treeitem" aria-level={1} aria-expanded={open['folder:bodies'] ?? true} aria-label="Bodies" data-testid="model-tree-bodies">
+      {folder('folder:bodies', 'Bodies', 'body', visible.length)}
+      {(open['folder:bodies'] ?? true) ? (
+      <ul className="dtree dtree-folder-list" role="group" aria-label="Bodies">
       {visible.map((p) => {
         const steps = (editing?.objectId === p.id ? editing.original : p).history?.steps.length ?? 0
         const only = (shown.get(p.id) as { steps: ReadonlySet<number> | null } | undefined)?.steps ?? null
@@ -143,14 +183,14 @@ export function HistoryTree() {
         const isSel = p.id === selection || selected.includes(p.id)
         const kind = p.history ? 'body' : 'mesh'
         return (
-          <li key={p.id} className="dtree-obj" role="treeitem" aria-level={1} aria-expanded={isOpen} aria-selected={isSel} aria-label={p.name} data-open={isOpen || undefined} data-object-id={p.id} data-testid="model-tree-object" data-kind={kind}>
+          <li key={p.id} className="dtree-obj" role="treeitem" aria-level={2} aria-expanded={isOpen} aria-selected={isSel} aria-label={p.name} data-open={isOpen || undefined} data-object-id={p.id} data-testid="model-tree-object" data-kind={kind}>
             <ObjectRow entry={p} kind={kind} steps={steps} isOpen={isOpen} isSel={isSel} setOpen={(o) => setOpen((m) => ({ ...m, [p.id]: o }))} />
             {isOpen ? (
               <div className="dtree-body" role="group">
                 {steps ? <HistorySteps objectId={p.id} tree only={only} /> : null}
                 <ul className="dtree-parts" role="group" aria-label={`Parts of ${p.name}`}>
                   {p.handle.parts.map((part, i) => (
-                    <li key={`${part.name}-${i}`} role="treeitem" aria-level={2} aria-label={part.name}>
+                    <li key={`${part.name}-${i}`} role="treeitem" aria-level={3} aria-label={part.name}>
                       <button type="button" className="dtree-part" data-tree-row="" tabIndex={-1} onClick={() => selectObject(p.id, false)}>
                         <Icon name="part" size={16} />
                         <span className="min0">{part.name}</span>
@@ -158,7 +198,7 @@ export function HistoryTree() {
                     </li>
                   ))}
                   {(p.volumes ?? []).map((v) => (
-                    <li key={v.id} role="treeitem" aria-level={2} aria-label={v.name}>
+                    <li key={v.id} role="treeitem" aria-level={3} aria-label={v.name}>
                       <button type="button" className="dtree-part" data-tree-row="" tabIndex={-1} onClick={() => selectObject(p.id, false)}>
                         <Icon name="modifier" size={16} />
                         <span className="min0">{v.name}</span>
@@ -171,6 +211,9 @@ export function HistoryTree() {
           </li>
         )
       })}
+      </ul>
+      ) : null}
+      </li>
     </ul>
     </>
   )

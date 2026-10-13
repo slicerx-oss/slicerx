@@ -454,6 +454,10 @@ Ids that tests read for their text:
 | `model-select-made-by` | The step that made the one face picked: opens it; `data-step` is its index, or `base` for "from the original mesh" |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
 | `sketch-dof` | The sketch palette's line from the solver: "Fully defined", the degrees of freedom left, or a conflict; `data-dof` is the count |
+| `model-tree-sketches` | The Sketches folder in the Model tree: the design's sketches from the timeline, rolled back ones dimmed |
+| `model-tree-bodies` | The Bodies folder in the Model tree, holding the object rows |
+| `tl-marker` | The design timeline's marker, a slider: drag it or use the arrows, Home and End to roll the design back |
+| `tl-rolled` | The timeline's status while it is rolled back: "Rolled back to N of M" |
 | `model-tree-object` | An object row in the Model tree; `data-object-id`, and `data-kind` is `body` (has a history) or `mesh` |
 | `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`), and `data-made-by` on the step that made the one face picked |
 | `model-tree-more` | A step row's More button, which opens the step's menu |
