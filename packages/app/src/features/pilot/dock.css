@@ -34,3 +34,4 @@
 @media (max-width: 720px) {
   .mimir-dock { width: 100%; --mimir-w: 100%; }
 }
+.sx-pilot-dock .pc-notice { margin: var(--s-3); }
