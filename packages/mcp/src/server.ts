@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
-import type { CallToolResult, ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js'
+import { ListToolsRequestSchema, type CallToolResult, type ServerNotification, type ServerRequest, type Tool } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import { PERMISSION_LABELS, productName } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
@@ -99,6 +99,14 @@ export function serverTools(ctx: ServerContext, gate: GateDeps = ctx.gate): Pilo
   })
 }
 
+/** A tool's schema in JSON Schema 2020-12, the dialect MCP and the model APIs read. */
+export function jsonSchema(schema: z.ZodType, io: 'input' | 'output'): Record<string, unknown> {
+  const out = z.toJSONSchema(schema, { target: 'draft-2020-12', io, unrepresentable: 'any' }) as Record<string, unknown>
+  // no dialect line: 2020-12 is the default, and some readers refuse any $schema they do not expect
+  delete out['$schema']
+  return { type: 'object', properties: {}, ...out }
+}
+
 export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptions = {}): McpServer {
   const gate: GateDeps = opts.pending ? { ...ctx.gate, pending: opts.pending } : ctx.gate
   const server = new McpServer(
@@ -118,27 +126,36 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       if (out.structured !== undefined || out.text !== undefined) return ok(out.structured ?? {}, out.text)
       return ok({ ok: out.ok !== false, summary: out.summary, ...(out.output !== undefined ? { output: out.output } : {}) })
     })
+  const listed: Tool[] = []
   for (const tool of serverTools(ctx, gate)) {
     const read = tool.permission === 'read' && !tool.permissionFor
     const label = PERMISSION_LABELS[tool.permission as keyof typeof PERMISSION_LABELS]
     const h = tool.hints ?? {}
+    const config = {
+      title: tool.title ?? tool.name,
+      description: read ? tool.description : `${tool.description} Permission class: ${tool.permission}${label ? ` (${label.title})` : ''}. The user's policy decides whether it runs, asks the user first, or is off.`,
+      annotations: {
+        readOnlyHint: h.readOnly ?? read,
+        destructiveHint: h.destructive ?? (tool.permission === 'start' || tool.permission === 'queue'),
+        idempotentHint: h.idempotent ?? read,
+        openWorldHint: h.openWorld ?? tool.source === 'plugin',
+      },
+    }
     server.registerTool(
       mcpName(tool.name),
-      {
-        title: tool.title ?? tool.name,
-        description: read ? tool.description : `${tool.description} Permission class: ${tool.permission}${label ? ` (${label.title})` : ''}. The user's policy decides whether it runs, asks the user first, or is off.`,
-        inputSchema: tool.input as unknown as z.ZodObject,
-        ...(tool.outputShape ? { outputSchema: tool.outputShape } : {}),
-        annotations: {
-          readOnlyHint: h.readOnly ?? read,
-          destructiveHint: h.destructive ?? (tool.permission === 'start' || tool.permission === 'queue'),
-          idempotentHint: h.idempotent ?? read,
-          openWorldHint: h.openWorld ?? tool.source === 'plugin',
-        },
-      },
+      { ...config, inputSchema: tool.input as unknown as z.ZodObject, ...(tool.outputShape ? { outputSchema: tool.outputShape } : {}) },
       (args: unknown, extra: ToolExtra) => (tool.ungated ? ungated(tool, args, extra) : gatedCall(server, gate, tool as PilotTool<unknown>, args, extra.signal, progressOf(extra))),
     )
+    listed.push({
+      name: mcpName(tool.name),
+      ...config,
+      inputSchema: jsonSchema(tool.input, 'input') as Tool['inputSchema'],
+      ...(tool.outputShape ? { outputSchema: jsonSchema(z.object(tool.outputShape), 'output') as Tool['outputSchema'] } : {}),
+    })
   }
+  // The SDK lists tool schemas in JSON Schema draft-07, where a tuple is `items: [...]`. Model APIs take 2020-12 only
+  // and refuse the whole request over one such tool, and 2020-12 is MCP's own default, so the list is written here.
+  if (listed.length > 0) server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed }))
 
   server.registerResource(
     'knowledge',
