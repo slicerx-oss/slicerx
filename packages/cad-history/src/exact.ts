@@ -270,16 +270,20 @@ export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBac
         const others = p.with.map((i) => parts[i])
         const all = [target, ...others]
         if (!others.length || p.with.includes(s.part) || all.some((x) => solid(x) === null)) return null
-        // the engine intersects the part with all the others joined, which pairwise steps would not give
-        if (p.kind === 'intersection' && others.length > 1) return null
         // pairwise, in the parts' own coordinates (one object, one transform)
-        let acc: unknown = solid(target)
         let r: unknown = null
-        for (const o of others) {
-          r = await call('brep.boolean', { op: p.kind, a: acc, b: solid(o), ...kept })
-          const v = reply(r)
-          acc = typeof v === 'number' ? v : { smb: v }
+        const fold = async (op: string, first: unknown, rest: unknown[]) => {
+          let acc = first
+          for (const b of rest) {
+            r = await call('brep.boolean', { op, a: acc, b, ...kept })
+            if ((r as { body?: unknown }).body === null) throw new ExactBroken('Nothing is left of the part after this step.')
+            const v = reply(r)
+            acc = typeof v === 'number' ? v : { smb: v }
+          }
+          return acc
         }
+        // as the mesh boolean does: an intersection keeps what every part shares
+        const acc = await fold(p.kind, solid(target), others.map(solid))
         out[s.part] = typeof acc === 'number' ? await part(target!, r) : await fromSolid(call, target!, (acc as { smb: string }).smb)
         return out.filter((_, i) => !p.with.includes(i))
       }

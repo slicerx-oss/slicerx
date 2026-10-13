@@ -1021,7 +1021,13 @@ Value run(const std::string& op, const Value& r)
             delete a;
             throw;
         }
-        out.set("body", Value(keep(combine(a, b, r["op"].s))));
+        SmBrep* m = combine(a, b, r["op"].s);
+        // nothing left (an intersection of parts apart, or a difference that takes it all) is no body
+        if (face_count(m)) out.set("body", Value(keep(m)));
+        else {
+            delete m;
+            out.set("body", Value());
+        }
     } else if (op == "subtract") {
         const Value& ss = r["solids"];
         if (ss.kind != Value::Array || ss.a.empty()) throw Error("solids", "needs at least one solid");

@@ -10,6 +10,7 @@ import { EXACT_FELL_BACK, IDENTITY, PAINT_DROPPED, clearReplayCache, replayHisto
 const tri = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] }
 
 type Sent = { op: string; req: Record<string, unknown> }
+type R = Record<string, unknown>
 
 /** An engine whose kernel names each solid after the op that made it, and fails the ops in `failing`. */
 function engine(failing: string[] = []) {
@@ -190,6 +191,25 @@ it('sends slots, rounded rectangles and sketches to the kernel as lines and arcs
   const r = await replayHistory(broken, { history: history(sketched), exact: true })
   expect(g.ops()).toEqual(['shape.extrude'])
   expect(r.status[0]).toEqual({ state: 'done' })
+})
+
+it('intersects a part with several others, as the mesh does, and breaks the step when nothing is left', async () => {
+  const body = (id: string, part: number) => ({ ...step(id, box.params), part })
+  const meet = step('meet-1', { op: 'boolean', kind: 'intersection', with: [1, 2] })
+  const e = engine()
+  const r = await replayHistory(e.call, { history: history(body('a', 0), body('b', 1), body('c', 2), meet), exact: true })
+  expect(r.status.map((x) => x.state)).toEqual(['done', 'done', 'done', 'done'])
+  const bools = e.sent.filter((x) => x.op === 'brep.boolean').map((x) => [x.req['op'], x.req['a'], x.req['b']])
+  expect(bools).toEqual([
+    ['intersection', { smb: 'extrude-1' }, { smb: 'extrude-2' }],
+    ['intersection', { smb: 'boolean-4' }, { smb: 'extrude-3' }],
+  ])
+  expect(r.parts).toHaveLength(1)
+  clearReplayCache()
+  const f = engine()
+  const empty = async (op: string, req: unknown) => (op === 'brep.boolean' && (req as R)['op'] === 'intersection' ? { body: null } : f.call(op, req))
+  const n = await replayHistory(empty, { history: history(body('a', 0), body('b', 1), body('c', 2), meet), exact: true })
+  expect(n.status[3]).toEqual({ state: 'broken', message: 'Nothing is left of the part after this step.' })
 })
 
 /** A kernel that keeps bodies by number, each with the face keys its op gave it, and records what it frees. */

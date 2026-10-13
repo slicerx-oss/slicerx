@@ -479,6 +479,24 @@ fn subtract_in_the_body_frame() {
 }
 
 #[test]
+fn boolean_with_nothing_left() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let apart = body("box", &json!({ "min": [40, 0, 0], "max": [50, 10, 10] }));
+    let r = call(
+        "boolean",
+        &json!({ "op": "intersection", "a": cube(), "b": apart }),
+    );
+    assert!(r["body"].is_null(), "{r}");
+    let all = call(
+        "boolean",
+        &json!({ "op": "difference", "a": cube(), "b": body("box", &json!({ "min": [-1, -1, -1], "max": [21, 21, 21] })) }),
+    );
+    assert!(all["body"].is_null(), "{all}");
+}
+
+#[test]
 fn extrude_lines_and_arcs() {
     if !sx_brep::KERNEL {
         return;
