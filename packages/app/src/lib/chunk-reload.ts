@@ -45,24 +45,51 @@ export function reloadForChunk(now = Date.now(), dirty = isDirty(), reload = () 
 }
 
 let told = false
-let workspaceDown = false
+let pending = false
+/** Where the workspace is: still loading its code, up, down (it says so itself), or not shown behind setup. */
+let workspace: 'loading' | 'up' | 'down' = 'loading'
 
 /** The workspace could not load and says so itself, so the toast stays away (the boundary calls this). */
 export function noteWorkspaceDown(): void {
-  workspaceDown = true
+  workspace = 'down'
 }
 
-/** How long the toast waits, so a workspace that failed with the same download says so first. */
-const TOAST_DELAY_MS = 400
+/** The workspace is up, or nothing covers for the toast (setup or the agreement hides it): a waiting toast can show. */
+export function noteWorkspaceUp(): void {
+  if (workspace === 'down') return
+  workspace = 'up'
+  if (pending) show(TOAST_DELAY_MS)
+}
 
-/** The message when the app cannot reload by itself: once per page, and only while the workspace is up. */
-function tell(): void {
-  if (told) return
+/** How long the toast waits once the workspace is up, so a failure it is about to report says so first. */
+const TOAST_DELAY_MS = 400
+/** How long a toast waits for a workspace that is still loading before it shows anyway. */
+const TOAST_MAX_WAIT_MS = 10_000
+
+function show(after: number): void {
   window.setTimeout(() => {
-    if (told || workspaceDown) return
+    if (told || workspace === 'down') return
     told = true
+    pending = false
     toast(`Part of ${appName()} did not load (the connection dropped). Save your work, then reload.`, 'warn', { label: 'Reload', run: () => window.location.reload() })
-  }, TOAST_DELAY_MS)
+  }, after)
+}
+
+/**
+ * The message when the app cannot reload by itself: once per page, and only while the workspace is up. A workspace
+ * that fails with the same download says so itself, however long it takes to get there, so the toast waits for it.
+ */
+function tell(): void {
+  if (told || pending) return
+  pending = true
+  show(workspace === 'up' ? TOAST_DELAY_MS : TOAST_MAX_WAIT_MS)
+}
+
+/** Clears what this page has said, for tests. */
+export function resetChunkNotice(): void {
+  told = false
+  pending = false
+  workspace = 'loading'
 }
 
 /** A chunk that failed to load: reloads, or says so. */

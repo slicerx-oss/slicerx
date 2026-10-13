@@ -30,7 +30,7 @@ import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice 
 import { useAskForPrinter } from './first-run/ask-printer'
 import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
-import { startChunkReload } from './lib/chunk-reload'
+import { noteWorkspaceUp, startChunkReload } from './lib/chunk-reload'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
 import { hostSlices, setHostSlices, stayInModel, useCadShown, useModelMode } from './state/model-mode'
@@ -268,6 +268,11 @@ function Shell() {
   // A pressed radio, tab, switch, checkbox, select or section header never moves: what it changes settles around it.
   useEffect(() => keepPressedControlsInPlace(), [])
 
+  // Setup or the agreement covers the workspace: no workspace will say a download failed, so the toast does.
+  useEffect(() => {
+    if (covered) noteWorkspaceUp()
+  }, [covered])
+
   const Feature = current?.component ?? null
   return (
     <>
@@ -278,6 +283,7 @@ function Shell() {
               {workspace === 'prepare' ? <Studio /> : null}
               {workspace === 'library' ? <Library /> : null}
               {Feature ? <Feature /> : null}
+              <WorkspaceUp />
             </Suspense>
           )}
         </WorkspaceBoundary>
@@ -505,4 +511,10 @@ function useFileDrops(): void {
       off()
     }
   }, [host])
+}
+
+/** Renders once the workspace's code is in (Suspense holds it back until then), so a waiting chunk toast can show. */
+function WorkspaceUp(): null {
+  useEffect(() => noteWorkspaceUp(), [])
+  return null
 }
