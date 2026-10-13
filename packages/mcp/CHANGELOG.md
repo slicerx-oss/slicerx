@@ -6,6 +6,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
+- `slicerx_printer_status` and `slicerx_printer_list` show what a printer reports wrong now (an HMS code or a print error) through sx-link: the first problem in the summary, a `problem` row with its code in the display, and `issues` in the output. Problems left over from an earlier job are left out.
+
 - Project filaments: `slicerx_project_add_filament` adds a filament after the last one and `slicerx_project_set_filament` changes one's material type or color, as a person does on the app's filament rail. Both answer with the project, and `slicerx_project_show` lists its `filaments`. Once a client sets one, the project's slices carry `filament_type` and `filament_colour` for every filament.
 - `slicerx-mcp call <tool> [<json>] ...` runs tools from a shell, in order in one process, and prints one JSON line per call; it stops with exit code 1 at the first failure.
 - `slicerx_project_add_model` takes `bodies` for an STL that holds several separate bodies: `auto` (the default, one object as before), `parts` (one object with a part per body) or `objects` (an object per body). The answer lists each new object with its part count (`objects`, `object_count`, `part_count`), and `slicerx_project_show` gives every object's `parts`.
