@@ -10,7 +10,7 @@ import { parseArgs } from 'node:util'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import type { CallToolResult, JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { createContext, createSlicerxServer, startHttp, SERVER_VERSION, type EngineMode } from './index'
 import { setProductColors, setProductName } from '@slicerx/contracts'
 import { cloudFromEnv } from './cloud'
@@ -207,7 +207,48 @@ async function main(): Promise<void> {
     process.stderr.write(tokenFile ? `slicerx-mcp: bearer token written to ${tokenFile} (mode 0600, new at every launch)\n` : 'slicerx-mcp: bearer token from SLICERX_MCP_TOKEN\n')
     return
   }
-  await createSlicerxServer(ctx).connect(new StdioServerTransport())
+  const server = createSlicerxServer(ctx)
+  // The sx-link connection is an open socket, so it goes when the session does, or Node would keep running.
+  server.server.onclose = () => ctx.printers?.close?.()
+  const transport = new StdioServerTransport()
+  await server.connect(transport)
+  endAtStdinEnd(transport, () => void server.close())
+}
+
+/**
+ * Ends a stdio session when the client closes stdin, as an MCP client does to end one. The SDK's transport stops
+ * reading there but never closes. Requests read before the end still get their answers first, so a client that writes
+ * its requests and closes stdin at once gets every reply.
+ */
+function endAtStdinEnd(transport: StdioServerTransport, end: () => void): void {
+  const open = new Set<string | number>()
+  let ended = false
+  const settle = () => {
+    if (ended && open.size === 0) end()
+  }
+  const onmessage = transport.onmessage
+  transport.onmessage = (msg: JSONRPCMessage) => {
+    if ('method' in msg && 'id' in msg) open.add(msg.id)
+    // A canceled request gets no answer.
+    else if ('method' in msg && msg.method === 'notifications/cancelled') {
+      const id = (msg.params as { requestId?: string | number } | undefined)?.requestId
+      if (id !== undefined) open.delete(id)
+    }
+    onmessage?.(msg)
+    settle()
+  }
+  const send = transport.send.bind(transport)
+  transport.send = async (msg: JSONRPCMessage) => {
+    await send(msg)
+    if (!('method' in msg) && 'id' in msg && msg.id !== undefined) {
+      open.delete(msg.id)
+      settle()
+    }
+  }
+  process.stdin.once('end', () => {
+    ended = true
+    settle()
+  })
 }
 
 /** `call` arguments as tool calls: each tool name, then its arguments when the next word is a JSON object. */
