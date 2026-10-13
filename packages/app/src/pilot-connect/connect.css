@@ -128,6 +128,6 @@
 .ms-radio { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--dim); }
 .ms-card[data-on] > .ms-radio { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px); }
 .ms-detail:empty { display: none; }
-.ms-signin { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-2); }
+.ms-signin { display: flex; flex-direction: column; gap: var(--s-2); }
 .ms[data-place='panel'] .ms-card { padding: var(--s-2) var(--s-3); }
 .ms[data-place='panel'] .ms-card-ic { width: 28px; height: 28px; }
