@@ -4,7 +4,7 @@
 // from it names it, and Model draws it until a feature uses it or the marker rolls back past it.
 import { afterEach, describe, expect, it } from 'vitest'
 import { type FaceFrame, type History, type SketchLoop, type StepParams } from '@slicerx/cad-history'
-import { finishSketch, sketchById, usersOf } from '../src/cad/sketches'
+import { defaultTarget, finishSketch, sketchById, usersOf } from '../src/cad/sketches'
 import { sketchNext, withStep } from '../src/cad/history/record'
 import { fromLoops, profileRings } from '../src/cad/sketch-model'
 import { createHistory } from '../src/plate/history'
@@ -68,6 +68,16 @@ describe('Finish sketch', () => {
     // rolled back past the feature, the sketch shows again; past the sketch, it hides
     expect(shownSketches({ ...t, marker: 1 }).map((s) => s.id)).toEqual([k.id])
     expect(shownSketches({ ...t, marker: 0 })).toEqual([])
+  })
+
+  it('joins or cuts the body the sketch sits on by default, else the only body, else asks', () => {
+    const k = finishSketch({ frame: XZ, loops: [square()], on: { body: 'b', part: 1 } })
+    expect(k.on).toEqual({ body: 'b', part: 1 })
+    expect(defaultTarget(k, [{ id: 'a' }, { id: 'b' }])).toEqual({ objectId: 'b', partIndex: 1 })
+    // its body gone: the only body, or none when there are more
+    expect(defaultTarget(k, [{ id: 'a' }])).toEqual({ objectId: 'a', partIndex: 0 })
+    expect(defaultTarget(k, [{ id: 'a' }, { id: 'c' }])).toBeNull()
+    expect(defaultTarget(finishSketch({ loops: [square()] }), [])).toBeNull()
   })
 
   it('draws a finished sketch on its plane, a closed loop shaded and an open one not', () => {
