@@ -2,11 +2,11 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Model's tool shelf, a lifted bar over the view: Create, Shape, Fasten and Mesh, set apart by space and a short
 // hairline, then the next slot with the tools for what is picked, then Measure and Values as icons by undo and redo.
-// Narrow windows drop the labels. The tools come from shelf-tools.ts, the same list as the Tools menu in Slice.
+// A shelf without room for its labels (a narrow window, or the mimir panel open beside it) drops them. The tools come from shelf-tools.ts, the same list as the Tools menu in Slice.
 // Modeling tools wait while the full geometry engine loads. A host that cannot slice ends the shelf with Export, the
 // only way out for a model there.
 import { Button, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator } from '@slicerx/ui'
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { getCommand, isEnabled, runCommand } from '../../commands/registry'
 import { editionHasCad, useEdition } from '../../edition'
 import { useFullEngine } from '../../geom/full-engine'
@@ -22,6 +22,32 @@ import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
 import { startFillet } from '../../cad/start-hint'
 import { availableTools, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
+
+/**
+ * 'icons' when the labeled shelf does not fit its own width, so every tool stays in view; back to labels once the
+ * width it needed is there again. Only a change of size decides, never a press, so nothing moves under the pointer.
+ */
+function useShelfFit(ref: RefObject<HTMLDivElement | null>): 'labels' | 'icons' {
+  const [fit, setFit] = useState<'labels' | 'icons'>('labels')
+  const need = useRef(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const check = () => {
+      setFit((f) => {
+        if (f === 'labels' && el.scrollWidth > el.clientWidth + 1) {
+          need.current = el.scrollWidth
+          return 'icons'
+        }
+        return f === 'icons' && el.clientWidth >= need.current ? 'labels' : f
+      })
+    }
+    const watch = new ResizeObserver(check)
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [ref])
+  return fit
+}
 
 const ToolDialog = lazy(() => import('../prepare/tool-dialog').then((m) => ({ default: m.ToolDialog })))
 
@@ -48,6 +74,8 @@ const EXPORTS = [
 const MENU_LABEL = { face: { label: 'On a face', icon: 'on-face' }, mesh: { label: 'Mesh', icon: 'mesh-menu' } } as const
 
 export function Shelf() {
+  const shelfRef = useRef<HTMLDivElement>(null)
+  const fit = useShelfFit(shelfRef)
   const host = useHost()
   const hasSel = useApp((s) => s.selection !== null)
   const pickKey = useApp((s) => {
@@ -113,7 +141,7 @@ export function Shelf() {
   const dialog = objectTool === 'simplify' || objectTool === 'hollow' || objectTool === 'hole' ? (objectTool as DialogTool) : null
 
   return (
-    <div className="shelf sx-overlay" role="toolbar" aria-label="Model tools" data-testid="model-shelf" aria-busy={engine === 'loading' || undefined}>
+    <div ref={shelfRef} className="shelf sx-overlay" data-fit={fit} role="toolbar" aria-label="Model tools" data-testid="model-shelf" aria-busy={engine === 'loading' || undefined}>
       {SHELF_GROUPS.filter((g) => g.id !== 'utility').map((g) => (
         <div key={g.id} className="shelf-grp" data-group={g.id}>
           <div className="shelf-tools">
