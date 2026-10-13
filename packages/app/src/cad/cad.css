@@ -82,7 +82,12 @@
 /* the ways to draw a sketch tool family: the row keeps its height when the family has none */
 .sketch-hint-text { display: grid; }
 .sketch-hint-text::before { content: attr(data-sizer); visibility: hidden; grid-area: 1 / 1; }
-.sketch-hint-text > span { grid-area: 1 / 1; }
+.sketch-hint-text > span { grid-area: 1 / 1; align-self: center; }
+/* the reserved room sits evenly above and below a short hint, with the icon beside it */
+.sketch-hint { align-items: center; }
+.sketch-hint .sx-ic { margin-top: 0; }
+/* eight tools share the row: icons only, so the buttons may shrink to their icon */
+.sx-seg.sketch-tools[data-size] > button { min-width: 0; padding: 0 4px; }
 .sketch-variants { display: flex; align-items: center; gap: 8px; min-height: var(--h-sm); }
 .sketch-variants > .sx-seg:not([data-full]) { flex: 1; }
 .sketch-sides { display: flex; align-items: center; gap: 4px; flex: none; color: var(--dim); }
