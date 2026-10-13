@@ -66,7 +66,7 @@ export function choiceOf(pref: PilotPref | null, signIn: boolean): MimirChoice |
 }
 
 /** What finishing first-run on a choice connects. mimir cloud has no key to test, so choosing it is the connect, as
- * Use mimir cloud is elsewhere; the other choices connect (or not) in their own panel. */
+ * Use mimir free is elsewhere; the other choices connect (or not) in their own panel. */
 export function mimirOnFinish(choice: MimirChoice): { mode: 'on'; provider: 'mimir-cloud' } | null {
   return choice === 'cloud' ? { mode: 'on', provider: 'mimir-cloud' } : null
 }
@@ -159,7 +159,7 @@ export function MimirSetup({ place, choice: controlled, onChoose, idPrefix = 'ms
           ) : (
             <div className="pc-act">
               <Button variant="primary" icon="link" onClick={() => set({ pilot: { mode: 'on', provider: 'mimir-cloud' } })}>
-                Use {PROVIDERS['mimir-cloud'].label}
+                Use {ASSISTANT_NAME} free
               </Button>
               {onCloud ? (
                 <p className="pc-result ok" role="status">
