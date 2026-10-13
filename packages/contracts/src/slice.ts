@@ -408,6 +408,13 @@ export interface SlicerHost {
   getPreview(sliceId: string): Promise<ArrayBuffer>
   exportGcode(sliceId: string, target: GcodeTarget): Promise<GcodeExport>
   /**
+   * The slice as a .gcode.3mf, the file a printer that starts a project and follows a slot map (Bambu Lab) takes: the
+   * G-code as Metadata/plate_1.gcode with its MD5 and the plate's slice info, as the Print sheet sends it. The export
+   * holds the file as a blob. `plate` is the project's 1 based plate number the slice came from, for the object names
+   * in the file. Optional: a host without it sends plain G-code only.
+   */
+  exportGcode3mf?(sliceId: string, opts?: { plate?: number }): Promise<GcodeExport>
+  /**
    * Where each line of a slice's G-code text starts (byte offsets, then one past the end: line count + 1 of them).
    * With gcodeBytes, a reader such as the G-code line view reads lines from the host that keeps the text, without a
    * copy of its own. Optional: without it the page reads the whole text through exportGcode.

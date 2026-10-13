@@ -153,12 +153,14 @@ export async function exportGcode3mf(host: Host): Promise<boolean> {
  * The file the Print sheet sends to a Bambu Lab printer: the active plate alone as plate 1 of a .gcode.3mf, with
  * its G-code, the MD5 the printer checks, slice_info.config (objects the printer can skip, filaments, the
  * printer's facts), plate_1.json and the thumbnails. The printer starts it with `project_file` and `param`
- * Metadata/plate_1.gcode, so the person's slot choice reaches it as `ams_mapping`.
+ * Metadata/plate_1.gcode, so the person's slot choice reaches it as `ams_mapping`. `plateNumber` (1 based) picks
+ * another plate than the active one, for printer.queue, which sends the plate it sliced.
  */
-export async function printGcode3mf(gcode: string): Promise<Uint8Array> {
+export async function printGcode3mf(gcode: string, plateNumber?: number): Promise<Uint8Array> {
   const s = get()
-  const active = allPlates(s).find((p) => p.id === s.activePlate)
-  const plates = active ? [active] : []
+  const all = allPlates(s)
+  const plate = (plateNumber !== undefined ? all[plateNumber - 1] : undefined) ?? all.find((p) => p.id === s.activePlate)
+  const plates = plate ? [plate] : []
   return (await import('./threemf')).writeProjectCompressed({ plates, bed: s.bed, settings: orcaSettings(await loadSettings()), gcode: { 0: gcode }, ...(await printMarks(plates)) })
 }
 

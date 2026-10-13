@@ -3,9 +3,12 @@
 // The print options a send offers per printer: what the printer does before or during the job. Which
 // ones a printer supports, and their defaults, follow the maker's own slicer for that model (Bambu Studio's
 // SelectMachineDialog and resources/printers/<model>.json; Orca's send dialog does the same).
-import { pluginHas, type FilamentSlot, type PrinterInfo, type PrinterStatus, type StartOptions } from '@slicerx/contracts'
+import { EXTERNAL_SLOT, pluginHas, type FilamentSlot, type MapSlot, type PrinterInfo, type PrinterStatus, type StartOptions } from '@slicerx/contracts'
 // The connection methods alone: the catalog's model list stays out of the startup shell.
 import { CONNECTION_METHODS } from '@slicerx/printer-catalog/methods'
+
+// The slot match is shared with printer.queue, so a client's send starts from the same slots as the Print sheet's.
+export { backupSlots, colorDistance, duplicateTargets, EXTERNAL_SLOT, matchSlots, type MapFilament, type MapSlot } from '@slicerx/contracts'
 
 export type SendOptionId = 'bedLeveling' | 'flowCalibration' | 'vibrationCompensation' | 'timelapse' | 'firstLayerInspection'
 
@@ -209,9 +212,6 @@ export function withEnding(name: string, ending: PrintEnding): string {
   return ending === '.gcode' ? withGcodeEnding(name.replace(/\.(gcode\.3mf|3mf)$/i, '')) : `${bareName(name)}${ending}`
 }
 
-/** The external spool as the printer drivers name it: a slot id of "1" (Bambu tray 254). */
-export const EXTERNAL_SLOT = '1'
-
 /** A Bambu Lab H2 printer's second external spool, on its right nozzle: slot "2" (Bambu tray 255). Its status lists it only while it holds a spool. */
 export const SECOND_EXTERNAL_SLOT = '2'
 
@@ -228,76 +228,4 @@ export function externalSlots(plugin: string, slots: readonly MapSlot[]): { id: 
     ]
   }
   return [{ id: EXTERNAL_SLOT, label: 'External spool' }]
-}
-
-export interface MapFilament {
-  index: number
-  color: string
-  type: string
-}
-
-export interface MapSlot {
-  id: string
-  material?: string
-  color?: string
-}
-
-const rgb = (hex: string | undefined): [number, number, number] | null => {
-  const m = /^#?([0-9a-f]{6})/i.exec(hex ?? '')
-  if (!m) return null
-  const n = parseInt(m[1]!, 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-}
-
-/** Distance between two colors, 0 to 441. Colors that cannot be read are far apart. */
-export function colorDistance(a: string | undefined, b: string | undefined): number {
-  const x = rgb(a)
-  const y = rgb(b)
-  if (!x || !y) return 441
-  return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2])
-}
-
-const baseType = (m: string | undefined): string => (m ?? '').toUpperCase().split(/[^A-Z0-9]+/)[0] ?? ''
-
-/**
- * Loaded slots that can take over when the mapped one runs dry: another slot with the same material and a close
- * color, not already mapped to a filament of this print. The printer's own auto refill (Bambu AMS) works the same way, so
- * this shows what it will find. Different material or color does not qualify; a change like that would show in the print.
- */
-export function backupSlots(filament: MapFilament, map: Readonly<Record<number, string>>, slots: readonly MapSlot[]): MapSlot[] {
-  const mapped = new Set(Object.values(map))
-  const own = map[filament.index]
-  return slots.filter((s) => s.id !== own && s.id !== EXTERNAL_SLOT && !mapped.has(s.id) && baseType(s.material) === baseType(filament.type) && colorDistance(s.color, filament.color) < 60)
-}
-
-/**
- * The starting slot for each filament on a printer that follows a slot map, the way Bambu Studio's mapping
- * dialog picks it: a loaded slot of the same material, the closest color first, each slot used once. The
- * closest pairs across the whole plate go first, so one filament cannot take the slot another matches better. A
- * filament no loaded slot matches by material stays out of the map: the sheet shows it as not loaded and the
- * person picks a slot.
- */
-export function matchSlots(filaments: readonly MapFilament[], slots: readonly MapSlot[]): Record<number, string> {
-  const pairs: { f: number; s: string; d: number; order: number }[] = []
-  slots.forEach((s, order) => {
-    if (!s.material) return
-    for (const f of filaments) if (baseType(s.material) === baseType(f.type)) pairs.push({ f: f.index, s: s.id, d: colorDistance(s.color, f.color), order })
-  })
-  pairs.sort((a, b) => a.d - b.d || a.f - b.f || a.order - b.order)
-  const out: Record<number, string> = {}
-  const taken = new Set<string>()
-  for (const p of pairs) {
-    if (out[p.f] !== undefined || taken.has(p.s)) continue
-    out[p.f] = p.s
-    taken.add(p.s)
-  }
-  return out
-}
-
-/** True when two filaments of one print would end up in the same printer slot. */
-export function duplicateTargets(map: Readonly<Record<number, string>>): string[] {
-  const seen = new Set<string>()
-  const dup = new Set<string>()
-  for (const id of Object.values(map)) (seen.has(id) ? dup : seen).add(id)
-  return [...dup]
 }

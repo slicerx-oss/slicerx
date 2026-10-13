@@ -165,7 +165,8 @@ describe('printer side effects', () => {
   })
 
   it('a slot map the printer would not follow is refused before any card', async () => {
-    const env = createEvalEnv({ client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-2', plate: 1, slotMap: { '0': 'A3' } } }] }, { text: 'done' }]), machine: MACHINE, objects: [CLIP] })
+    // Bay 4 is a Voron on Moonraker: it takes filament as the G-code says.
+    const env = createEvalEnv({ client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-4', plate: 1, slotMap: { '0': 'T0' } } }] }, { text: 'done' }]), machine: MACHINE, objects: [CLIP] })
     const events: PilotEvent[] = []
     for await (const ev of env.pilot.run('t', 'test', { context: { machine: MACHINE } })) {
       events.push(ev)
