@@ -7,7 +7,7 @@
 // so the shards can spread them. Bambu Lab is checked on real printers; its own flows stay in bridge.spec.ts.
 import { type Locator, type Page } from '@playwright/test'
 import { expect, test } from './fixtures'
-import { connectApp, ctl, hub, HUB_ROUTE, logOf, reportHand, resumeFromCard, sawToast, sheetFor, start, toastsWith, useBridge } from './bridge-hub'
+import { connectApp, ctl, hub, logOf, reportHand, resumeFromCard, sawToast, sheetFor, start, toastsWith, useBridge } from './bridge-hub'
 import type { MockName } from '../../../packages/connect/mock-printers/src/index.ts'
 
 /** One simulated printer: how the hub adds it, its mock, and what it can show. */
@@ -184,7 +184,7 @@ function flows(p: BrandPrinter): void {
     test.slow()
     // The file the app hands the hub, read on the way through: the printer must get these very bytes.
     const sent: string[] = []
-    await page.routeWebSocket(HUB_ROUTE, (ws) => {
+    await page.routeWebSocket(hub.route, (ws) => {
       const server = ws.connectToServer()
       ws.onMessage((m) => {
         if (typeof m === 'string') {

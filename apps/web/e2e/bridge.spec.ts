@@ -6,12 +6,12 @@
 // over MCP with its matched slots, a refused start with its reason and the plain G-code offer) and the camera guard.
 // The flows every brand shares run per brand in prusa-bridge, elegoo-bridge and snapmaker-bridge
 // (e2e/bridge-brands.ts); Bambu Lab is checked on real printers.
-// The harness and its hub lock are in e2e/bridge-hub.ts.
+// The harness, with each file's own hub on a free loopback port, is in e2e/bridge-hub.ts.
 import { type Locator, type Page, type WebSocketRoute } from '@playwright/test'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { bridgeOn, connectApp, ctl, hub, HUB_ROUTE, mockLog, reportHand, resumeFromCard, sawToast, seed, sheetFor, start, useBridge } from './bridge-hub'
+import { bridgeOn, connectApp, ctl, hub, mockLog, reportHand, resumeFromCard, sawToast, seed, sheetFor, start, useBridge } from './bridge-hub'
 
 /** The describe the Bambu Lab printers belong to. addBambu refuses to run outside it. */
 const BAMBU = 'Bambu Lab'
@@ -104,7 +104,7 @@ test('pairs with the bridge and lists its printer', async ({ page }) => {
 test('printer setup asks the bridge to search the network only when Search my network is pressed', async ({ page }) => {
   // Every call the app makes on the hub, read on the way through.
   const calls: string[] = []
-  await page.routeWebSocket(HUB_ROUTE, (ws) => {
+  await page.routeWebSocket(hub.route, (ws) => {
     const server = ws.connectToServer()
     ws.onMessage((m) => {
       if (typeof m === 'string') {
@@ -749,7 +749,7 @@ test('a dropped bridge connection comes back on its own; the cards stay in place
   // and hold the reconnect off for a while.
   let refuse = false
   const routes: WebSocketRoute[] = []
-  await page.routeWebSocket(HUB_ROUTE, (ws) => {
+  await page.routeWebSocket(hub.route, (ws) => {
     if (refuse) {
       void ws.close()
       return
@@ -809,7 +809,7 @@ test('a send whose connection drops part way is never sent again, and says what 
   test.slow()
   const starts: string[] = []
   const routes: WebSocketRoute[] = []
-  await page.routeWebSocket(HUB_ROUTE, (ws) => {
+  await page.routeWebSocket(hub.route, (ws) => {
     const server = ws.connectToServer()
     routes.push(ws)
     ws.onMessage((m) => {
