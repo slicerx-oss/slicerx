@@ -67,7 +67,7 @@ async function signedHello(keys: CryptoKeyPair, clientNonce: string) {
 
 const CODES = { app: 'APPS-CODE', agent: 'AGNT-CODE', watch: 'WTCH-CODE' }
 
-function scriptedHub(outcome: { ok: boolean; code?: string; message?: string }, proves = true, fleet: { printer: Record<string, unknown>; status: Record<string, unknown> } = { printer, status }) {
+function scriptedHub(outcome: { ok: boolean; code?: string; message?: string }, proves = true, fleet: { printer: Record<string, unknown>; status: Record<string, unknown> } = { printer, status }, app?: (method: string, args: Record<string, unknown>) => unknown) {
   let socket: FakeSocket | undefined
   const keys = crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']) as Promise<CryptoKeyPair>
   let hello: Awaited<ReturnType<typeof signedHello>> | undefined
@@ -106,6 +106,10 @@ function scriptedHub(outcome: { ok: boolean; code?: string; message?: string }, 
             setTimeout(() => s.event({ event: 'approval.done', data: { requestId: req.id, printerId: 'bay-4', ...outcome } }), 20)
             return { registered: true, answeredIn: 'app' }
           }
+          // The app link: the hub hands the call to the open app and returns its answer.
+          case 'app.call':
+            if (!app) throw { code: 'app_link_off', message: 'the app link is off' }
+            return app(String(params['method']), (params['args'] ?? {}) as Record<string, unknown>)
           default:
             return {}
         }
@@ -221,5 +225,39 @@ describe('person-only work through a scripted hub', () => {
     expect(p.pending[0]?.sure).toBeUndefined()
     expect(p.pending[0]?.remedies?.map((r) => r.id)).toEqual(['free_storage'])
     expect(p.pending[0]?.remedies?.[0]?.steps.join(' ')).toMatch(/Delete old print files/)
+  })
+})
+
+describe('--app through a scripted hub', () => {
+  const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS, app: 'required' as const })
+
+  it('runs the design calls in the open app and reads them back from there', async () => {
+    const calls: [string, Record<string, unknown>][] = []
+    const hub = scriptedHub({ ok: true }, true, undefined, (method, args) => {
+      calls.push([method, args])
+      return method === 'design.new' ? { summary: 'New design Clip', output: { design: 'obj_1' } } : { summary: '1 design', output: { designs: [{ design: 'obj_1', name: 'Clip' }] } }
+    })
+    const h = await connect(opts(hub))
+    const made = await h.call('slicerx_design_new', { name: 'Clip' })
+    expect(made.isError, text(made)).toBeFalsy()
+    expect(data<{ output: unknown }>(made).output).toEqual({ design: 'obj_1', in: 'app' })
+    const list = await h.call('slicerx_design_list')
+    expect(data<{ output: unknown }>(list).output).toEqual({ designs: [{ design: 'obj_1', name: 'Clip' }], in: 'app' })
+    expect(calls.map(([m]) => m)).toEqual(['design.new', 'design.list'])
+    expect(calls[0]![1]).toEqual({ name: 'Clip' })
+  })
+
+  it('refuses a design call while the link is off, and runs nothing here', async () => {
+    const h = await connect(opts(scriptedHub({ ok: true })))
+    const r = await h.call('slicerx_design_new', { name: 'Clip' })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toMatch(/^Error: not_configured: the app link is off: turn it on in .+'s Settings, or run without --app/)
+    const list = await h.call('slicerx_design_list')
+    expect(list.isError).toBe(true)
+    expect(text(list)).toMatch(/not_configured/)
+  })
+
+  it('needs printers through sx-link', async () => {
+    await expect(createContext({ engine: 'stub', policy: DEFAULT_POLICY, printers: 'demo', app: 'required' })).rejects.toThrow(/--app needs printers through sx-link/)
   })
 })
