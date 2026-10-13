@@ -238,6 +238,15 @@ describe('the design timeline in the tree and the strip', () => {
     expect(row.querySelector('button')?.textContent).toBe('3')
   })
 
+  it('keeps rolled back steps in the tree, dimmed, with their timeline numbers', () => {
+    set({ plate: [entry('o1', 'Pi enclosure'), entry('o2', 'Ball', [])], selection: 'o2', timeline: timeline() })
+    const el = mount(() => createElement(HistoryTree))
+    const rows = [...el.querySelectorAll('[data-object-id="o2"] [data-testid="model-tree-step-later"]')]
+    expect(rows.map((r) => r.querySelector('.cad-step-n')?.textContent)).toEqual(['3'])
+    expect(rows[0]!.hasAttribute('data-later')).toBe(true)
+    expect(rows[0]!.getAttribute('aria-label')).toMatch(/^Shell/)
+  })
+
   it("picks out a hovered item's body in the tree", () => {
     set({ plate: [entry('o1', 'Box'), entry('o2', 'Box')], timeline: timeline() })
     const tree = mount(() => createElement(HistoryTree))
