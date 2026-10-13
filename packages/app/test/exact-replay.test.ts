@@ -72,14 +72,29 @@ it('runs a step the kernel fails on the mesh, with a note, and the steps after i
 })
 
 it('leaves to the mesh what the kernel has no version of', async () => {
-  const rounded = step('box-2', { ...box.params, spec: { distanceMm: 5, operation: 'new', taperDeg: 5 } } as StepParams)
+  const copies = step('box-2', { ...box.params, pattern: { kind: 'linear', count: 2, stepMm: [30, 0] } } as StepParams)
   const scaled = step('hole-2', hole.params, [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1])
   const e = engine()
-  await replayHistory(e.call, { history: history(rounded), exact: true })
+  await replayHistory(e.call, { history: history(copies), exact: true })
   expect(e.ops()).toEqual(['shape.extrude'])
   const f = engine()
   await replayHistory(f.call, { history: history(box, scaled), exact: true })
   expect(f.ops()).toEqual(['brep.extrude', 'brep.tessellate', 'subtract'])
+})
+
+it('sends a taper to the kernel, and runs it on the mesh when the kernel refuses it', async () => {
+  const tapered = step('box-2', { ...box.params, spec: { distanceMm: 5, operation: 'new', extent: 'symmetric', taperDeg: 5 } } as StepParams)
+  const e = engine()
+  await replayHistory(e.call, { history: history(tapered), exact: true })
+  expect(e.sent[0]).toMatchObject({ op: 'brep.extrude', req: { fromMm: -5, toMm: 5, taperDeg: 5 } })
+  const g = engine()
+  await replayHistory(g.call, { history: history(box), exact: true })
+  expect('taperDeg' in g.sent[0]!.req).toBe(false)
+  clearReplayCache()
+  const f = engine(['brep.extrude'])
+  const r = await replayHistory(f.call, { history: history(tapered), exact: true })
+  expect(f.ops()).toEqual(['brep.extrude', 'shape.extrude'])
+  expect(r.status[0]).toEqual({ state: 'done', note: EXACT_FELL_BACK })
 })
 
 it('a plane that misses the solid breaks the step, as on the mesh', async () => {

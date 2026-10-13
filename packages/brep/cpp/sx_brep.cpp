@@ -469,6 +469,27 @@ SmBrep* sweep_loop(const Value& l, double z0, double z1)
     return b;
 }
 
+// one loop from z = 0 to h (below for a negative h), capped, its sides leaning in by deg as they leave z = 0 (out for
+// a negative deg)
+SmBrep* taper_half(const Value& l, double h, double deg)
+{
+    SmTArray<SmCurve*> cs;
+    SmBrep* b = nullptr;
+    try {
+        loop_curves(l, 0, cs);
+        check(SmApiCreateTaperExtrude(cs, h, deg, 3, FALSE, b), "taperDeg");
+    } catch (...) {
+        free_curves(cs);
+        throw;
+    }
+    free_curves(cs);
+    // a taper that closes the shape early comes back as a point or a ridge short of h
+    SmPoint3d lo, hi;
+    if (b && SmApiBrepBoundingBox(b, FALSE, lo, hi) == SM_SUCCESS && hi.z - lo.z > std::fabs(h) - 1e-6) return b;
+    delete b;
+    throw Error("taperDeg", "the taper closes the shape before the full distance; use a smaller angle or distance");
+}
+
 // a op b; a and b are consumed whatever happens
 SmBrep* combine(SmBrep* a, SmBrep* b, const std::string& op)
 {
@@ -549,10 +570,20 @@ SmBrep* extrude(const Value& r)
     if (!(z1 - z0 > 1e-6)) throw Error("toMm", "must be above fromMm");
     const Value& polys = r["polygons"];
     if (polys.kind != Value::Array || polys.a.empty()) throw Error("polygons", "needs at least one polygon");
+    double taper = r.has("taperDeg") ? num(r, "taperDeg") : 0;
+    if (!(std::fabs(taper) <= 45)) throw Error("taperDeg", "between -45 and 45");
+    if (taper != 0 && (z0 > 0 || z1 < 0)) throw Error("fromMm", "a tapered extrude starts or ends at the face");
+    // tapered, each side of the face narrows away from it, as on the mesh path; a hole widens
+    auto piece = [&](const Value& l, double deg) {
+        if (taper == 0) return sweep_loop(l, z0, z1);
+        if (z0 == 0) return taper_half(l, z1, deg);
+        if (z1 == 0) return taper_half(l, z0, deg);
+        return combine(taper_half(l, z0, deg), taper_half(l, z1, deg), "union");
+    };
     SmBrep* out = nullptr;
     for (const auto& p : polys.a) {
-        SmBrep* s = sweep_loop(p["outer"], z0, z1);
-        for (const auto& h : p["holes"].a) s = combine(s, sweep_loop(h, z0, z1), "difference");
+        SmBrep* s = piece(p["outer"], taper);
+        for (const auto& h : p["holes"].a) s = combine(s, piece(h, -taper), "difference");
         out = out ? combine(out, s, "union") : s;
     }
     place(out, f);
@@ -606,7 +637,8 @@ const char* surface_name(SmSurface* s)
     case SmTorus_TYPE: return "torus";
     case SmSurfOfRevolution_TYPE: return "revolution";
     case SmSurfOfExtrusion_TYPE: return "extrusion";
-    case SmBSplineSurface_TYPE: return "nurbs";
+    // a tapered extrude makes its flat sides as ruled surfaces, flat to 1e-5 mm
+    case SmBSplineSurface_TYPE: return s->IsPlanar(1e-4) ? "plane" : "nurbs";
     case SmBlendSurface_TYPE: return "blend";
     case SmOffsetSurface_TYPE: return "offset";
     default: break;

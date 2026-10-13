@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use std::f64::consts::PI;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use sx_geom::fm::Fm;
 
 fn call(op: &str, req: &Value) -> Value {
     // bodies travel as text here, which sx-geom takes only from a developer
@@ -363,6 +364,159 @@ fn extrude_into_the_top() {
             [20.0, 20.0, top],
         );
     }
+}
+
+/// The volume of a rectangle's taper, `w` by `h`, `d` long, each side moving in by `t` per mm (out when negative).
+fn tapered_box(w: f64, h: f64, d: f64, t: f64) -> f64 {
+    w * h * d - (w + h) * t * d * d + 4.0 / 3.0 * t * t * d * d * d
+}
+
+/// A cone's frustum from radius `r0` to `r1`, `d` long.
+fn frustum(r0: f64, r1: f64, d: f64) -> f64 {
+    PI * d / 3.0 * (r0 * r0 + r0 * r1 + r1 * r1)
+}
+
+#[test]
+fn tapered_extrudes() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    let t = 10f64.to_radians().m_tan();
+    let rect = json!([{ "outer": { "points": [[-10, -5], [10, -5], [10, 5], [-10, 5]] } }]);
+    let rect_shape = json!({ "type": "rectangle", "widthMm": 20, "heightMm": 10 });
+    // a square with a round hole, from a sketch; the hole widens as the square narrows
+    let loops = json!([
+        { "start": [-10, -10], "segments": [
+            { "type": "line", "to": [10, -10] },
+            { "type": "line", "to": [10, 10] },
+            { "type": "line", "to": [-10, 10] },
+            { "type": "line", "to": [-10, -10] }
+        ] },
+        { "type": "circle", "center": [0, 0], "diameterMm": 6 }
+    ]);
+    let profiles = call("sketch.curves", &json!({ "loops": loops }));
+    let circle = json!([{ "outer": { "center": [0, 0], "diameterMm": 20 } }]);
+    let circle_shape = json!({ "type": "circle", "diameterMm": 20 });
+    let (r2, w2) = (10.0 - 5.0 * t, 5.0 * t);
+    for (name, polygons, shape, spec, from, to, mesh_tol, want, min, max) in [
+        (
+            "taper in",
+            &rect,
+            &rect_shape,
+            json!({ "distanceMm": 5, "taperDeg": 10 }),
+            0,
+            5,
+            0.0,
+            tapered_box(20.0, 10.0, 5.0, t),
+            [-10.0, -5.0, 0.0],
+            [10.0, 5.0, 5.0],
+        ),
+        (
+            "taper out",
+            &rect,
+            &rect_shape,
+            json!({ "distanceMm": 5, "taperDeg": -10 }),
+            0,
+            5,
+            0.0,
+            tapered_box(20.0, 10.0, 5.0, -t),
+            [-10.0 - w2, -5.0 - w2, 0.0],
+            [10.0 + w2, 5.0 + w2, 5.0],
+        ),
+        (
+            "taper both sides",
+            &circle,
+            &circle_shape,
+            json!({ "distanceMm": 5, "extent": "symmetric", "taperDeg": 10 }),
+            -5,
+            5,
+            ARC_TOL,
+            2.0 * frustum(10.0, r2, 5.0),
+            [-10.0, -10.0, -5.0],
+            [10.0, 10.0, 5.0],
+        ),
+        (
+            "taper with a hole",
+            &profiles,
+            &json!({ "type": "sketch", "loops": loops }),
+            json!({ "distanceMm": 5, "taperDeg": 10 }),
+            0,
+            5,
+            ARC_TOL,
+            tapered_box(20.0, 20.0, 5.0, t) - frustum(3.0, 3.0 + w2, 5.0),
+            [-10.0, -10.0, 0.0],
+            [10.0, 10.0, 5.0],
+        ),
+    ] {
+        let brep = made(
+            "extrude",
+            json!({ "frame": frame, "polygons": polygons, "fromMm": from, "toMm": to, "taperDeg": spec["taperDeg"] }),
+        );
+        let on_mesh = call(
+            "shape.extrude",
+            &json!({ "frame": frame, "shape": shape, "placement": {}, "spec": spec }),
+        );
+        check(
+            name,
+            &brep_solid(&brep),
+            0.0,
+            &mesh_solid(&on_mesh["mesh"]),
+            mesh_tol,
+            want,
+            min,
+            max,
+        );
+    }
+}
+
+#[test]
+fn tapered_pocket_and_closing() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    let t = 10f64.to_radians().m_tan();
+    let rect = json!([{ "outer": { "points": [[-10, -5], [10, -5], [10, 5], [-10, 5]] } }]);
+    let rect_shape = json!({ "type": "rectangle", "widthMm": 20, "heightMm": 10 });
+    // a pocket that narrows as it goes down into the cube's top
+    let body = cube();
+    let face = json!({ "origin": [10, 10, 20], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    let brep = made(
+        "extrude",
+        json!({ "frame": face, "polygons": [{ "outer": { "points": [[-3, -2], [3, -2], [3, 2], [-3, 2]] } }], "fromMm": -5, "toMm": 0, "taperDeg": 10, "target": body, "operation": "cut" }),
+    );
+    let on_mesh = call(
+        "shape.extrude",
+        &json!({ "frame": face, "shape": { "type": "rectangle", "widthMm": 6, "heightMm": 4 }, "placement": {}, "spec": { "distanceMm": 5, "operation": "cut", "taperDeg": 10 }, "target": mesh(&body) }),
+    );
+    check(
+        "tapered pocket",
+        &brep_solid(&brep),
+        0.0,
+        &mesh_solid(&on_mesh["mesh"]),
+        0.0,
+        8000.0 - tapered_box(6.0, 4.0, 5.0, t),
+        [0.0; 3],
+        [20.0, 20.0, 20.0],
+    );
+    // a taper that closes the shape before the full distance is refused on both paths, for the same field
+    let closing = sx_geom::json::call(
+        "brep.extrude",
+        &json!({ "frame": frame, "polygons": rect, "fromMm": 0, "toMm": 100, "taperDeg": 10 }).to_string(),
+    )
+    .unwrap_err()
+    .to_string();
+    let on_mesh = sx_geom::json::call(
+        "shape.extrude",
+        &json!({ "frame": frame, "shape": rect_shape, "placement": {}, "spec": { "distanceMm": 100, "taperDeg": 10 } }).to_string(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        closing.contains("taperDeg") && on_mesh.contains("taperDeg"),
+        "{closing} / {on_mesh}"
+    );
 }
 
 #[test]
