@@ -6,11 +6,10 @@
 // and its reason returned: a design never keeps a broken edit the client did not ask for.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, historyFiles, parseHistories, replayHistory, stepId, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, historyFiles, parseHistories, replayHistory, stepId, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { soup, slug, type Design, type DesignFiles } from './design-tools'
 import { writeBinaryStl, readStlPositions } from './mesh'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
-import { readFileObjects, type FilePart } from './threemf'
 import { readZip, writeZip } from './zip'
 
 export { designArg, designSummary, designTools, faceAt, item, partAt, type Design, type DesignFiles } from './design-tools'
@@ -180,14 +179,79 @@ export function design3mf(d: Design): Buffer {
   ])
 }
 
+/** A part as the engine's 3MF reader (sx-geom `format.read3mf`) gives it, its mesh as numbers. */
+interface EnginePart {
+  name?: string
+  meshName?: string
+  kind?: string
+  kindText?: string | null
+  slot?: number | null
+  positions?: number[]
+  indices?: number[]
+  /** Painted triangles per layer as [triangle, code] pairs, or null with no paint. */
+  paint?: Partial<Record<PaintLayer, [number, string][]>> | null
+}
+
+interface EngineObject {
+  id: number
+  name?: string
+  /** The build item's transform as 3MF writes it (rows of a 4x3 matrix), in the file's unit. */
+  transform?: number[]
+  slot?: number | null
+  parts?: EnginePart[]
+}
+
+type PaintLayer = keyof PaintTexts
+
+/** What each kind of part that is not printed is called in Bambu Studio and Orca. */
+const KIND_WORDS: Record<string, string> = { negative: 'negative part', modifier: 'modifier part', support_blocker: 'support blocker', support_enforcer: 'support enforcer' }
+
+/** A 3MF transform (rows of a 4x3 matrix, in the file's unit) as a column-major Mat4 in millimeters. */
+function fileMatrix(t: number[] | undefined, unitScale: number): Mat4 {
+  if (!t || t.length !== 12 || t.some((x) => !Number.isFinite(x))) return [...IDENTITY]
+  const v = (i: number): number => t[i]!
+  return [v(0), v(1), v(2), 0, v(3), v(4), v(5), 0, v(6), v(7), v(8), 0, v(9) * unitScale, v(10) * unitScale, v(11) * unitScale, 1]
+}
+
+function paintOf(p: EnginePart['paint']): PaintTexts | undefined {
+  if (!p) return undefined
+  const out: PaintTexts = {}
+  for (const [layer, pairs] of Object.entries(p) as [PaintLayer, [number, string][] | undefined][]) {
+    if (pairs?.length) out[layer] = Object.fromEntries(pairs)
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 /**
- * The objects of a 3MF as designs to open: those with a SlicerX CAD history keep it, the others start from their
- * printed parts (component transforms baked in, slots and paint kept) with no steps yet.
+ * The objects of a 3MF as designs to open, read by the engine's 3MF reader: those with a SlicerX CAD history keep
+ * it, the others start from their printed parts (in their object's space, slots and paint kept) with no steps yet.
+ * Modifiers and other volumes are left out and named.
  */
-export function readDesigns(buf: Buffer, label: string): { name: string; transform: Mat4; history?: History; base: FilePart[]; skipped: string[] }[] {
+export async function readDesigns(engine: EngineCall, buf: Buffer, label: string): Promise<{ name: string; transform: Mat4; history?: History; base: HistoryMesh[]; skipped: string[] }[]> {
   const zip = readZip(buf, label)
   if (zip.text('3D/3dmodel.model') === undefined) throw new ToolInputError(`${label} is not a 3MF project: it has no 3D/3dmodel.model`, 'unsupported_format')
-  const objects = readFileObjects(zip, label)
+  let read: { unitScale?: number; objects?: EngineObject[] }
+  try {
+    read = (await engine('format.read3mf', { data: { base64: buf.toString('base64') } })) as typeof read
+  } catch (e) {
+    throw new ToolInputError(`${label}: ${e instanceof Error ? e.message : String(e)}`, 'invalid_model')
+  }
+  const unitScale = read.unitScale ?? 1
+  const objects = (read.objects ?? []).flatMap((o) => {
+    const name = o.name || `Object ${o.id}`
+    const parts: HistoryMesh[] = []
+    const skipped: string[] = []
+    for (const p of o.parts ?? []) {
+      const partName = p.name || p.meshName || name
+      if (p.kind && p.kind !== 'normal') {
+        skipped.push(`${partName} (${KIND_WORDS[p.kind] ?? p.kind.replace(/_/g, ' ')})`)
+        continue
+      }
+      const paint = paintOf(p.paint)
+      parts.push({ name: partName, slot: p.slot ?? o.slot ?? 1, positions: p.positions ?? [], indices: p.indices ?? [], ...(paint ? { paint } : {}) })
+    }
+    return parts.length ? [{ id: String(o.id), name, transform: fileMatrix(o.transform, unitScale), parts, skipped }] : []
+  })
   const files = new Map<string, Uint8Array>()
   for (const n of zip.names()) if (n.startsWith('Metadata/slicerx_history')) files.set(n, zip.read(n) ?? new Uint8Array())
   const histories = parseHistories(files, new Set(objects.map((o) => o.id)))
@@ -198,13 +262,13 @@ export function readDesigns(buf: Buffer, label: string): { name: string; transfo
 }
 
 /** The server's files for the design tools: models from paths, URLs and samples, 3MF files in the output folder. */
-export function designFiles(policy: PathPolicy): DesignFiles {
+export function designFiles(policy: PathPolicy, engine: EngineCall): DesignFiles {
   return {
     async model(from, name) {
       return [stlMesh(readFileSync(await resolveModel(policy, from)), name)]
     },
     async open(path) {
-      return readDesigns(readFileSync(await resolveModel(policy, path)), path)
+      return readDesigns(engine, readFileSync(await resolveModel(policy, path)), path)
     },
     async save(d, fileName) {
       const dir = join(policy.outDir, 'designs')

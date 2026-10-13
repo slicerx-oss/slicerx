@@ -9,7 +9,6 @@ import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './errors'
 import { meshStats } from './mesh'
-import type { FilePart } from './threemf'
 
 type V3 = [number, number, number]
 
@@ -151,7 +150,7 @@ const r3 = (v: number): number => Math.round(v * 1000) / 1000
 export function designSummary(d: Design): Record<string, unknown> {
   const parts = d.parts.map((p, i) => {
     const s = meshStats(soup([bakeMesh(p, d.transform)]))
-    const paint = (p as FilePart).paint
+    const paint = p.paint
     const painted = paint ? Object.fromEntries(Object.entries(paint).map(([k, v]) => [k, Object.keys(v ?? {}).length])) : undefined
     return { index: i, name: p.name, slot: p.slot, triangles: s.triangles, minMm: s.minMm, sizeMm: s.bboxMm, volumeMm3: r3(s.volumeMm3), ...(painted ? { paintedTriangles: painted } : {}) }
   })

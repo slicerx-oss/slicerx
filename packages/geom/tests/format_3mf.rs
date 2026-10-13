@@ -299,3 +299,27 @@ fn the_cli_reads_a_project_into_stl_files() {
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn the_cli_without_an_output_folder_gives_meshes_as_numbers() {
+    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus/subtypes.3mf");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_sx-geom"))
+        .arg("format.read3mf")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("runs sx-geom");
+    let request = serde_json::json!({ "data": { "path": file } }).to_string();
+    std::io::Write::write_all(child.stdin.as_mut().expect("stdin"), request.as_bytes()).expect("writes");
+    drop(child.stdin.take());
+    let out = child.wait_with_output().expect("answers");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    let parts = v["objects"][0]["parts"].as_array().expect("parts");
+    assert_eq!(parts.len(), 5);
+    for p in parts {
+        // a box keeps its 8 shared corners, as the file has them
+        assert_eq!(p["positions"].as_array().expect("positions").len(), 8 * 3);
+        assert_eq!(p["indices"].as_array().expect("indices").len(), 12 * 3);
+        assert!(p.get("stlBase64").is_none() && p.get("positionsOut").is_none());
+    }
+}

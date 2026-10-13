@@ -24,6 +24,9 @@ interface GeomExports {
   geom_call(): number
   geom_out_ptr(): number
   geom_out_len(): number
+  geom_out_files(): number
+  geom_out_file_ptr(n: number): number
+  geom_out_file_len(n: number): number
   geom_error_ptr(): number
   geom_error_len(): number
 }
@@ -41,7 +44,7 @@ async function wasmEngine(record: (r: Recorded) => void): Promise<EngineCall> {
     const at = x.geom_input(bytes.length)
     new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
     if (x.geom_call() === 0) {
-      const reply = JSON.parse(text(x.geom_out_ptr(), x.geom_out_len())) as unknown
+      const reply = withBuffers(JSON.parse(text(x.geom_out_ptr(), x.geom_out_len())) as unknown, x)
       record({ op, request: digest(req), reply })
       return reply
     }
@@ -56,11 +59,68 @@ async function wasmEngine(record: (r: Recorded) => void): Promise<EngineCall> {
   }
 }
 
+const PAINT_LAYERS = ['color', 'seam', 'support', 'fuzzy'] as const
+
+/** The paint buffer (`format.read3mf`) as the sx-geom program gives it: per layer, [triangle, code] pairs. */
+function paintPairs(b: Uint8Array): Record<string, [number, string][]> {
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength)
+  let at = 0
+  const u32 = (): number => {
+    const v = at + 4 <= b.length ? view.getUint32(at, true) : 0
+    at += 4
+    return v
+  }
+  const out: Record<string, [number, string][]> = {}
+  for (const layer of PAINT_LAYERS) {
+    const list: [number, string][] = []
+    for (let n = u32(); n > 0; n--) {
+      const t = u32()
+      const len = u32()
+      list.push([t, new TextDecoder().decode(b.subarray(at, at + len))])
+      at += len
+    }
+    out[layer] = list
+  }
+  return out
+}
+
+/**
+ * The output buffers a call wrote (a 3MF's parts and paint), as the sx-geom program answers without an output
+ * folder: meshes as `positions` and `indices` numbers, paint as pairs. So the tests see what the server gets.
+ */
+function withBuffers(reply: unknown, x: GeomExports): unknown {
+  const count = x.geom_out_files()
+  if (count === 0) return reply
+  const bytes = (n: unknown): Uint8Array | undefined => {
+    if (typeof n !== 'number' || n >= count) return undefined
+    return new Uint8Array(x.memory.buffer, x.geom_out_file_ptr(n), x.geom_out_file_len(n)).slice()
+  }
+  const walk = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(walk)
+    if (!v || typeof v !== 'object') return v
+    const o = v as Record<string, unknown>
+    const paint = bytes(o['rawBytes'])
+    if (paint) return paintPairs(paint)
+    const p = bytes(o['positionsOut'])
+    const t = bytes(o['trianglesOut'])
+    const out: Record<string, unknown> = {}
+    for (const [k, c] of Object.entries(o)) if (k !== 'positionsOut' && k !== 'trianglesOut') out[k] = walk(c)
+    if (p && t) {
+      out['positions'] = Array.from(new Float32Array(p.buffer, 0, p.length / 4))
+      out['indices'] = Array.from(new Uint32Array(t.buffer, 0, t.length / 4))
+    }
+    return out
+  }
+  return walk(reply)
+}
+
 // A step's key salt comes from its id, which has the time in it; the face keys it makes come back in the recorded
 // replies, so every later request still matches.
 const saltless = (r: unknown): unknown => {
   if (r === null || typeof r !== 'object' || Array.isArray(r)) return r
   const { keySalt: _salt, ...rest } = r as Record<string, unknown>
+  // A saved file read back holds its steps' ids, which have the time in them, so its bytes differ on every run.
+  if ((rest['data'] as { base64?: unknown } | undefined)?.base64 !== undefined) delete rest['data']
   return rest
 }
 

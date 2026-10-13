@@ -167,7 +167,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
   const appLink = opts.app !== false ? printers?.appLink : undefined
   if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')
-  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs }), ...(designs ? [...designTools(designs, designFiles(policy)), ...paintTools(designs)] : [])] : []
+  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine)), ...paintTools(designs)] : [])] : []
   // Without an engine here, the design tools still work on the app's project, through the link.
   const here = appLink && !designs ? [...built, ...designToolset(NO_ENGINE_HOST).filter((t) => APP_DESIGN_TOOLS.has(t.name) && !built.some((b) => b.name === t.name))] : built
   // The plate edits go to the app's shown plate too, unless this server's own project has the object.
