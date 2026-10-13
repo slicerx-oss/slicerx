@@ -14,6 +14,8 @@ Provider `anthropic` reads its key the same way (Keychain service `slicerx-anthr
 
 Provider `openai-compatible` (Ollama, LM Studio, llama.cpp, LocalAI, vLLM) is a model server on this computer or the home network. It gets no key unless the person saved one for it in its own keychain item (`slicerx-local-api-key`, for servers started with an API key), so a process listening on a local port can never receive the OpenAI key.
 
+Provider `mimir-cloud` is the edition's model proxy (`supabase/functions/mimir`). The desktop sets its one host at startup with `set_mimir_cloud(base_url, edition)` from the edition's `backend.supabase.url`; with nothing set the provider is not available. Requests go only to `https://<that host>/functions/v1/mimir/v1/messages` (debug builds also take `http://127.0.0.1` for a local stack). No key is ever sent there: the install token, from its own Keychain item (`slicerx-mimir-cloud-token`, account `slicerx`), goes as `x-sx-install`. An install with no token registers on first use (`POST register {edition}`), and when the proxy answers 401 `unknown_install` it registers once more and retries once. Any other refusal (the daily caps, a pause) comes back as `Error::Http` with the proxy's own message. `cloud::quota` and `cloud::forget` read today's use and delete the sessions the install shared.
+
 ## Sign in with ChatGPT
 
 `chatgpt` lets the user's ChatGPT plan pay for `openai` requests. It is written from OpenAI's published protocol. OpenAI's own SDK is under a noncommercial license, so it is not used.
@@ -56,9 +58,9 @@ The Model setting stores `automatic` (the default, shown as "Automatic (huginn f
 
 These run before the key is read:
 
-- The provider must be `openai`, `anthropic` or `openai-compatible`.
-- The URL must match the provider's allowlist: `https://api.openai.com` (default port) for `openai`, `https://api.anthropic.com` (default port) for `anthropic`, and for `openai-compatible` `http://127.0.0.1`, `http://localhost`, a private IPv4 address (10/8, 172.16/12, 192.168/16) or a `.local` name on any port. The auto-detect probe (`local_get`) stays loopback only. URLs with user info are refused.
-- The request must not carry an `authorization`, `proxy-authorization`, `x-api-key` or `anthropic-version` header in any letter case.
+- The provider must be `openai`, `anthropic`, `openai-compatible` or `mimir-cloud`.
+- The URL must match the provider's allowlist: `https://api.openai.com` (default port) for `openai`, `https://api.anthropic.com` (default port) for `anthropic`, and for `openai-compatible` `http://127.0.0.1`, `http://localhost`, a private IPv4 address (10/8, 172.16/12, 192.168/16) or a `.local` name on any port, and for `mimir-cloud` exactly the proxy's model path on the host set at startup (same scheme and port, no query). The auto-detect probe (`local_get`) stays loopback only. URLs with user info are refused.
+- The request must not carry an `authorization`, `proxy-authorization`, `x-api-key`, `anthropic-version` or `x-sx-install` header in any letter case.
 
 Redirects are not followed and no proxy is used, so the `Authorization` header only goes to the allowed host.
 

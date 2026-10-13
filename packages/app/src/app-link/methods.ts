@@ -5,7 +5,9 @@
 // test checks the two lists match. Nothing here prints, queues, approves, signs in or changes settings.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
-import { appName } from '../edition'
+import { ASSISTANT_NAME } from '@slicerx/pilot/name'
+import { appName, currentEdition } from '../edition'
+import { cloudReady, mimirCloudHost } from '../pilot-connect/cloud'
 import { bounds } from '../plate/transform'
 import { LinkError } from './methods-error'
 import { listSessions, readSession } from './sessions'
@@ -40,6 +42,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // mimir's conversations in this window: what was said and what mimir did.
   'mimir.sessions': 'read',
   'mimir.session': 'read',
+  // today's mimir cloud use and caps; the install token stays in the shell
+  'mimir.quota': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -156,6 +160,11 @@ const HANDLERS: Record<string, Handler> = {
   'preview.set': (args) => setPreview(args),
   'mimir.sessions': () => listSessions(),
   'mimir.session': (args) => readSession(args),
+  'mimir.quota': () => {
+    const cloud = mimirCloudHost()
+    if (!cloud || !cloudReady(currentEdition(), cloud)) throw new LinkError('not_found', `${appName()} has no ${ASSISTANT_NAME} cloud in this build`)
+    return cloud.quota()
+  },
 }
 
 /** The design tools, once the link has a loader to put bodies on the plate. */

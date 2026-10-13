@@ -43,6 +43,21 @@ describe('edition config', () => {
     expect(out.join('\n')).toMatch(/phonePairing needs backend.relay/)
   })
 
+  it("needs Supabase for keySource 'cloud', where mimir cloud's proxy runs, and not the cloud API", () => {
+    const cloud = { features: { pilot: true }, ai: { provider: 'anthropic', model: 'claude-haiku-5-5', keySource: 'cloud' } }
+    expect(issues(mergeLayers(NEUTRAL_EDITION, cloud as never)).join('\n')).toMatch(/keySource 'cloud' needs backend.supabase/)
+    const withSupabase = mergeLayers(NEUTRAL_EDITION, { ...cloud, backend: { supabase: { url: 'https://abcdefghijklmnop.supabase.co', anonKey: 'public-anon-key-from-the-supabase-dashboard' }, cloudApi: null } } as never)
+    expect(issues(withSupabase).join('\n')).not.toMatch(/keySource/)
+  })
+
+  it("hands the desktop mimir cloud's host only for keySource 'cloud'", () => {
+    const c = defineEditionConfig({}, { extends: harbor as never })
+    expect(tauriConfig(c, 'desktop')).toMatchObject({ plugins: { 'mimir-cloud': { url: 'https://abcdefghijklmnop.supabase.co', edition: c.id } } })
+    expect(tauriConfig(c, 'mobile')).not.toHaveProperty(['plugins', 'mimir-cloud'])
+    const keychain = defineEditionConfig({ ai: { keySource: 'keychain' } }, { extends: harbor as never })
+    expect(tauriConfig(keychain, 'desktop')).not.toHaveProperty(['plugins', 'mimir-cloud'])
+  })
+
   it('fills donations, moderation, routes and first run defaults', () => {
     const c = defineEditionConfig({})
     expect(c.library.moderation.mode).toBe('owner-approves-all')
@@ -127,7 +142,7 @@ describe('edition config', () => {
     const c = defineEditionConfig({}, { extends: harbor as never })
     expect(tauriConfig(c, 'desktop')).toMatchObject({ app: { security: { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} https://abcdefghijklmnop.supabase.co` } } } })
     expect(tauriConfig(c, 'mobile')).not.toHaveProperty('app')
-    const bare = defineEditionConfig({ backend: { supabase: null }, features: { store: false, feed: false, creators: false } }, { extends: harbor as never })
+    const bare = defineEditionConfig({ backend: { supabase: null }, ai: { keySource: 'keychain' }, features: { store: false, feed: false, creators: false } }, { extends: harbor as never })
     expect(tauriConfig(bare, 'desktop')).not.toHaveProperty('app.security.csp')
   })
 
@@ -153,10 +168,10 @@ describe('edition config', () => {
   })
 
   it('keeps upstream crash reports off unless the edition turns them on', () => {
-    const c = defineEditionConfig({ backend: { supabase: null }, features: { store: false } }, { extends: harbor as never })
+    const c = defineEditionConfig({ backend: { supabase: null }, ai: { keySource: 'keychain' }, features: { store: false } }, { extends: harbor as never })
     expect(c.bugs.upstream).toBe(false)
     expect(crashReportsSent(c)).toBe(false)
-    const on = defineEditionConfig({ backend: { supabase: null }, features: { store: false }, bugs: { upstream: true } }, { extends: harbor as never })
+    const on = defineEditionConfig({ backend: { supabase: null }, ai: { keySource: 'keychain' }, features: { store: false }, bugs: { upstream: true } }, { extends: harbor as never })
     expect(crashReportsSent(on)).toBe(true)
     expect(checkEditionConfig({ ...NEUTRAL_EDITION, bugs: { upstream: 'yes' } }).ok).toBe(false)
   })

@@ -5,6 +5,7 @@
 export { SlicerXApp } from './app'
 export { useHost } from './host'
 export { registerChatGpt, type ChatGptHost, type ChatGptAccount } from './pilot-connect/chatgpt'
+export { registerMimirCloud, type MimirCloudHost, type MimirQuota } from './pilot-connect/cloud'
 export { registerLocalAi, type LocalAiHost } from './pilot-connect/local-ai-host'
 export type { Hardware, LocalNet } from '@slicerx/pilot/local-ai'
 export { registerAgentInstall, registerAgentMarks, type AgentInstallHost, type AgentId, type InstallResult } from './pilot-connect/agents'

@@ -392,6 +392,8 @@ export interface AppState {
   /** Setup is open at this step. `since` limits it to the steps newer than that onboarding version (a changed onboarding after alpha); `rerun` marks a run that opened by itself because onboarding changed. */
   setup: { step: SetupStep; byHand?: boolean; since?: number; rerun?: boolean } | null
   crashReports: boolean
+  /** Settings > mimir: share mimir cloud sessions to improve mimir (on by default). Sent only to mimir cloud. */
+  mimirShare: boolean
   /** Settings > Appearance > Motion; null until picked, which means the edition's default. */
   motion: 'system' | 'full' | 'reduced' | null
   /** The pre-alpha agreement accepted on this install, or null. */
@@ -589,7 +591,7 @@ export type SettingsMode = 'simple' | 'advanced' | 'expert' | 'developer'
 export interface PilotPref {
   /** on: a model is connected. unset: never connected, so mimir shows and offers the connect step. off: turned off on purpose in Settings. */
   mode: 'on' | 'off' | 'unset'
-  provider?: 'openai' | 'anthropic' | 'local'
+  provider?: 'openai' | 'anthropic' | 'local' | 'cloud'
   baseUrl?: string
   model?: string
 }
@@ -716,6 +718,7 @@ export const appStore = createStore<AppState>()(() => ({
   // Setup opens by itself only on an install that has never stored anything.
   setup: firstLaunch ? { step: 'welcome' } : null,
   crashReports: prefs.crashReports ?? false,
+  mimirShare: prefs.mimirShare ?? true,
   motion: prefs.motion ?? null,
   agreement: prefs.agreement ?? null,
   agreementOpen: false,
@@ -798,7 +801,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -844,6 +847,7 @@ appStore.subscribe((s, prev) => {
       spoolLinks: s.spoolLinks,
       firstRun: s.firstRun as Prefs['firstRun'],
       crashReports: s.crashReports,
+      mimirShare: s.mimirShare,
       ...(s.motion ? { motion: s.motion } : {}),
       agreement: s.agreement,
       ...(s.installId ? { installId: s.installId } : {}),

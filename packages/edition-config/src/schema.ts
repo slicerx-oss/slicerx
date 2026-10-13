@@ -120,7 +120,7 @@ export const aiSchema = z.object({
   /** Default model id; users can change it in mimir settings. */
   model: z.string().min(1).default('gpt-6-sol'),
   baseUrl: httpUrl.optional(),
-  /** Where the key comes from: the OS keychain, the environment, or the edition's cloud (which holds it server side). */
+  /** Where the key comes from: the OS keychain, the environment, or mimir cloud, the edition's proxy on its Supabase project, which holds it server side. */
   keySource: z.enum(['keychain', 'env', 'cloud']).default('keychain'),
   /** Local model ids (packages/pilot/llm/local-models.json) Set up local AI may offer. Unset: all of them. */
   allowedLocalModels: z.array(z.string().regex(/^[a-z0-9][a-z0-9.-]*$/, 'a model id such as qwen-2.5-14b')).min(1).optional(),
@@ -280,7 +280,8 @@ export const editionConfigSchema = baseSchema.superRefine((c, ctx) => {
   need(f.store && !f.demoData, c.backend.supabase !== null, ['backend', 'supabase'], 'store needs backend.supabase (or features.demoData for the bundled demo catalog)')
   need(f.cloudSlicing, c.backend.cloudApi !== null, ['backend', 'cloudApi'], 'cloudSlicing needs backend.cloudApi')
   need(f.phonePairing, c.backend.relay !== null, ['backend', 'relay'], 'phonePairing needs backend.relay')
-  need(f.pilot && c.ai.keySource === 'cloud', c.backend.cloudApi !== null, ['ai', 'keySource'], "keySource 'cloud' needs backend.cloudApi")
+  // mimir cloud's proxy is a function on the edition's Supabase project (supabase/functions/mimir)
+  need(f.pilot && c.ai.keySource === 'cloud', c.backend.supabase !== null, ['ai', 'keySource'], "keySource 'cloud' needs backend.supabase")
   need(f.pilot, c.ai.provider !== 'none', ['ai', 'provider'], "pilot needs an AI provider other than 'none'")
   need(c.ai.provider === 'openai-compatible', c.ai.baseUrl !== undefined, ['ai', 'baseUrl'], 'openai-compatible needs ai.baseUrl')
   // Every build ships the AGPL-3.0 stock profiles and printer images (REUSE.toml). The SlicerX edition and the

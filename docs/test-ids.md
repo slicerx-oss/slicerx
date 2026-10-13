@@ -335,6 +335,15 @@ Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the
 | `device-<id>` | A key's row; `<id>` is the hub's client id |
 | `device-revoke-<id>` | Revoke on that row; it also closes the connection the key has open |
 
+## Settings: mimir cloud
+
+Shown only in a build whose edition runs mimir cloud (the desktop app).
+
+| Test id | Control |
+| --- | --- |
+| `mimir-share` | Share my mimir sessions to improve mimir (on by default) |
+| `danger-mimir-forget` | Delete my shared sessions |
+
 ## Settings: Agents and the app link
 
 | Test id | Control |

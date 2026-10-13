@@ -18,6 +18,7 @@
 )]
 
 pub mod chatgpt;
+pub mod cloud;
 mod error;
 mod guard;
 mod keys;
@@ -33,6 +34,9 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 
+pub use cloud::{
+    MIMIR_CLOUD_KEYCHAIN_ACCOUNT, MIMIR_CLOUD_KEYCHAIN_SERVICE, MimirCloud, mimir_cloud, set_mimir_cloud,
+};
 pub use error::{Error, Result};
 pub use keys::{
     ANTHROPIC_KEY_ENV, ANTHROPIC_KEYCHAIN_ACCOUNT, ANTHROPIC_KEYCHAIN_SERVICE, KeySource,
@@ -73,7 +77,8 @@ pub struct LlmHttpRequest {
 
 /// True when [`stream`] can authenticate for `provider`: for `openai`, a ChatGPT plan
 /// connection or a key in the keychain or the environment; `openai-compatible` needs no key
-/// and is always available.
+/// and is always available; `mimir-cloud` when its host was set at startup (the install
+/// registers on first use).
 /// Unknown providers are not available. Reads the keychain, so it can block briefly.
 pub fn available(provider: &str) -> bool {
     if provider == "openai" && chatgpt::openai_auth(&SystemKeySource, chatgpt::Needs::default()).is_some() {
@@ -88,6 +93,7 @@ pub fn available_with(keys: &dyn KeySource, provider: &str) -> bool {
         Some(Provider::OpenAi) => keys::openai_key(keys).is_some(),
         Some(Provider::Anthropic) => keys::anthropic_key(keys).is_some(),
         Some(Provider::OpenAiCompatible) => true,
+        Some(Provider::MimirCloud) => cloud::mimir_cloud().is_some(),
         None => false,
     }
 }
@@ -141,6 +147,7 @@ pub async fn stream(req: LlmHttpRequest) -> Result<impl Stream<Item = Result<Byt
                 .await
                 .map_err(|_| Error::Transport("key lookup failed".to_owned()))?
         }
+        Provider::MimirCloud => return Ok(body_stream(cloud_send(&SystemKeySource, checked, req).await?)),
     };
     Ok(body_stream(send_response(checked, req, key).await?))
 }
@@ -155,6 +162,8 @@ pub async fn stream_with(
         Provider::OpenAi => Some(keys::openai_key(keys).ok_or_else(|| missing_key(&req))?),
         Provider::Anthropic => Some(keys::anthropic_key(keys).ok_or_else(|| missing_key(&req))?),
         Provider::OpenAiCompatible => keys::local_key(keys),
+        // registering writes the keychain, which a plain key source cannot
+        Provider::MimirCloud => return Err(missing_key(&req)),
     };
     Ok(body_stream(send_response(checked, req, key).await?))
 }
@@ -181,8 +190,38 @@ pub async fn stream_with_store(
         },
         Provider::Anthropic => Some(keys::anthropic_key(store).ok_or_else(|| missing_key(&req))?),
         Provider::OpenAiCompatible => keys::local_key(store),
+        Provider::MimirCloud => return Ok(body_stream(cloud_send(store, checked, req).await?)),
     };
     Ok(body_stream(send_response(checked, req, key).await?))
+}
+
+/// Sends a `mimir-cloud` request to an explicit proxy over an explicit store: the install
+/// token (registering first when there is none) goes as `x-sx-install`, and a forgotten
+/// install registers again and retries once. The URL must be the proxy's model endpoint.
+pub async fn stream_mimir_cloud(
+    store: &dyn chatgpt::SecretStore,
+    cloud: &MimirCloud,
+    req: LlmHttpRequest,
+) -> Result<impl Stream<Item = Result<Bytes>> + Send + 'static> {
+    let checked = Checked::new_in(&req, Some(cloud))?;
+    if checked.provider != Provider::MimirCloud {
+        return Err(Error::UnknownProvider {
+            provider: req.provider,
+        });
+    }
+    Ok(body_stream(
+        cloud::send_messages(store, cloud, checked.url, checked.headers, req.body).await?,
+    ))
+}
+
+async fn cloud_send(
+    store: &dyn chatgpt::SecretStore,
+    checked: Checked,
+    req: LlmHttpRequest,
+) -> Result<reqwest::Response> {
+    // the URL check already needed the host, so it is set
+    let cloud = cloud::mimir_cloud().ok_or_else(|| missing_key(&req))?;
+    cloud::send_messages(store, cloud, checked.url, checked.headers, req.body).await
 }
 
 /// Largest listing [`local_get`] reads.
@@ -294,10 +333,14 @@ struct Checked {
 
 impl Checked {
     fn new(req: &LlmHttpRequest) -> Result<Self> {
+        Self::new_in(req, cloud::mimir_cloud())
+    }
+
+    fn new_in(req: &LlmHttpRequest, cloud: Option<&MimirCloud>) -> Result<Self> {
         let provider = Provider::parse(&req.provider).ok_or_else(|| Error::UnknownProvider {
             provider: req.provider.clone(),
         })?;
-        let url = guard::check_url(provider, &req.provider, &req.url)?;
+        let url = guard::check_url_in(provider, &req.provider, &req.url, cloud)?;
         let headers = guard::check_headers(&req.headers)?;
         Ok(Self {
             provider,
@@ -422,5 +465,7 @@ fn build_client() -> Result<Client> {
 
 #[cfg(test)]
 mod chatgpt_tests;
+#[cfg(test)]
+mod cloud_tests;
 #[cfg(test)]
 mod tests;

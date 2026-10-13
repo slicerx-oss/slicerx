@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import { createAnthropicAdapter } from '../src/provider/anthropic'
-import { adapterFor } from '../src/provider/client'
+import { adapterFor, createTransportClient } from '../src/provider/client'
+import type { LlmHttpRequest, LlmTransport } from '@slicerx/contracts'
 import { createOpenAiCompatibleAdapter } from '../src/provider/openai-compatible'
 import type { LlmEvent, LlmRequest } from '../src/provider/types'
 
@@ -32,6 +33,58 @@ const REQ: LlmRequest = {
 describe('adapter registry', () => {
   it('knows all three providers', () => {
     expect(['openai', 'anthropic', 'openai-compatible'].map((p) => adapterFor(p).id)).toEqual(['openai', 'anthropic', 'openai-compatible'])
+  })
+})
+
+describe('mimir cloud', () => {
+  const BASE = 'https://abcdefghijklmnop.supabase.co/functions/v1/mimir'
+  function transport(fail?: Error): { t: LlmTransport; sent: LlmHttpRequest[] } {
+    const sent: LlmHttpRequest[] = []
+    return {
+      sent,
+      t: {
+        available: async () => true,
+        // eslint-disable-next-line require-yield
+        async *stream(req) {
+          sent.push(req)
+          if (fail) throw fail
+          yield new TextEncoder().encode(sse([['message_stop', { type: 'message_stop' }]]).join(''))
+        },
+      },
+    }
+  }
+
+  it('builds a Messages request to the proxy and keeps its own provider id', async () => {
+    const { t, sent } = transport()
+    const client = createTransportClient(t, 'mimir-cloud', { baseUrl: BASE, share: () => ({ on: true, version: '0.2.0' }) })
+    await collect(client.stream({ ...REQ, model: 'claude-haiku-5-5', session: 'ses_abc-1' }))
+    expect(sent[0]?.provider).toBe('mimir-cloud')
+    expect(sent[0]?.url).toBe(`${BASE}/v1/messages`)
+    expect(sent[0]?.headers).toMatchObject({ 'x-sx-share': '1', 'x-sx-session': 'ses_abc-1', 'x-sx-version': '0.2.0' })
+    expect(JSON.parse(sent[0]?.body ?? '{}')).toMatchObject({ model: 'claude-haiku-5-5', stream: true })
+  })
+
+  it('sends no share headers with sharing off, or a session the proxy would not take', async () => {
+    for (const [share, session] of [[{ on: false, version: '0.2.0' }, 'ses_1'], [{ on: true, version: '0.2.0' }, 'bad id!'], [{ on: true, version: '' }, 'ses_1']] as const) {
+      const { t, sent } = transport()
+      await collect(createTransportClient(t, 'mimir-cloud', { baseUrl: BASE, share: () => share }).stream({ ...REQ, session }))
+      expect(Object.keys(sent[0]?.headers ?? {}).filter((h) => h.startsWith('x-sx-'))).toEqual([])
+    }
+    // never on another provider's request
+    const { t, sent } = transport()
+    await collect(createTransportClient(t, 'anthropic', { share: () => ({ on: true, version: '0.2.0' }) }).stream({ ...REQ, session: 'ses_1' }))
+    expect(sent[0]?.provider).toBe('anthropic')
+    expect(Object.keys(sent[0]?.headers ?? {}).filter((h) => h.startsWith('x-sx-'))).toEqual([])
+  })
+
+  it("shows the proxy's cap message as is, and not as something to retry", async () => {
+    const message = "Today's free mimir use on this computer is used up. It resets at midnight Melbourne time."
+    const { t } = transport(new Error(`429: ${message}`))
+    const events = await collect(createTransportClient(t, 'mimir-cloud', { baseUrl: BASE }).stream(REQ))
+    expect(events[0]).toEqual({ type: 'error', message, retryable: false })
+    // another provider keeps its status prefix and stays retryable
+    const other = await collect(createTransportClient(transport(new Error('429: slow down')).t, 'anthropic').stream(REQ))
+    expect(other[0]).toEqual({ type: 'error', message: '429: slow down', retryable: true })
   })
 })
 
