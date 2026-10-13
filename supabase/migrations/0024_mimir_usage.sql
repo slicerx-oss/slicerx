@@ -2,7 +2,8 @@
 -- Copyright (C) 2026 The SlicerX contributors
 -- What an install's usage page shows, as shares of its caps and never as money: today
 -- against its cap (shrunk as the edition's day fills, as mimir_quota shows it), each of the
--- last 24 hours against the daily cap, and the last 7 days against 7 days' worth. Open calls
+-- last 24 hours and each of the last 7 days against the daily cap. There is no weekly cap, so
+-- the days are plain usage, not a share of a limit. Open calls
 -- count at install_call_micros, as everywhere else. The proxy adds it to /quota as v2.
 -- Also the edition an install belongs to, for the proxy's log lines.
 
@@ -17,7 +18,7 @@ declare
   v_edition_used bigint;
   v_used bigint;
   v_cap bigint;
-  v_week bigint;
+  v_daily jsonb;
   v_hourly jsonb;
 begin
   select * into v_inst from public.mimir_installs where token_hash = public.mimir_token_hash(p_token);
@@ -30,8 +31,15 @@ begin
   select coalesce(sum(coalesce(cost_micros, least(reserved_micros, v_lim.install_call_micros))), 0) into v_used
   from public.mimir_calls where install_id = v_inst.id and day = v_day;
   v_cap := public.mimir_install_cap(v_lim, v_edition_used);
-  select coalesce(sum(coalesce(cost_micros, least(reserved_micros, v_lim.install_call_micros))), 0) into v_week
-  from public.mimir_calls where install_id = v_inst.id and day > v_day - 7;
+  -- oldest Melbourne day first; the last one is today
+  select jsonb_agg(round(least(1, coalesce(u.micros, 0)::numeric / greatest(v_lim.install_daily_micros, 1)), 4) order by d.day)
+  into v_daily
+  from generate_series(v_day - 6, v_day, interval '1 day') as d(day)
+  left join lateral (
+    select sum(coalesce(cost_micros, least(reserved_micros, v_lim.install_call_micros))) as micros
+    from public.mimir_calls
+    where install_id = v_inst.id and day = d.day::date
+  ) u on true;
   -- oldest hour first; the last one is the hour now under way
   select jsonb_agg(round(least(1, coalesce(u.micros, 0)::numeric / greatest(v_lim.install_daily_micros, 1)), 4) order by h.start)
   into v_hourly
@@ -44,10 +52,8 @@ begin
   return jsonb_build_object(
     'day', jsonb_build_object('used', case when v_cap <= 0 then 1 else round(least(1, v_used::numeric / v_cap), 4) end,
       'resetsAt', to_char(v_reset at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')),
-    'week', jsonb_build_object('used', case when v_lim.install_daily_micros <= 0 then 1
-        else round(least(1, v_week::numeric / (7 * v_lim.install_daily_micros)), 4) end,
-      'resetsAt', to_char(v_reset at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')),
     'hourly', v_hourly,
+    'daily', v_daily,
     'perMinute', jsonb_build_object('limit', v_lim.install_per_minute));
 end;
 $$;
