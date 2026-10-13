@@ -21,7 +21,9 @@
 #include <SmFace.h>
 #include <SmLine.h>
 #include <SmPlane.h>
+#include <SmPointClass.h>
 #include <SmPoly.h>
+#include <SmRegion.h>
 #include <SmSphere.h>
 #include <SmSurface.h>
 #include <SmSurfTypes.h>
@@ -776,6 +778,105 @@ bool square(SmEdge* e)
     return std::fabs(dot(n[0], n[1])) < 1e-6;
 }
 
+// whether a point is inside the solid
+bool inside(SmEdge* e, const SmVector3d& p)
+{
+    SmBrep* b = e->GetBrep();
+    SmPointClassification pc(SmTol::GetZoneTol3d(e), SmApiGetOrCreateContext());
+    if (!b || b->Point3DClassify(SmPoint3d(p.x, p.y, p.z), SM_EFF_ZERO, FALSE, pc) != SM_SUCCESS) return false;
+    SmRegion* r = SM_CAST_PTR(SmRegion, pc.GetObject());
+    return r && !r->IsInfiniteRegion() && !r->IsVoid();
+}
+
+double off_face(SmFace* f, const SmVector3d& q)
+{
+    SmPoint3d c;
+    double d = 0;
+    if (SmApiFaceClosestPoint(f, SmPoint3d(q.x, q.y, q.z), c, d) != SM_SUCCESS) return 1e30;
+    return d;
+}
+
+// a chamfer of a straight edge between flat faces square to each other, where the solid is the corner between
+// them: the triangle the distance cuts off, run along the edge. Null when the edge is not like that
+SmBrep* wedge(SmEdge* e, double dist)
+{
+    if (e->IsClosed() || !square(e)) return nullptr;
+    SmTArray<SmFace*> fs;
+    e->GetFaces(fs);
+    SmVector3d s = at(e->GetStartVertex()), t = at(e->GetEndVertex());
+    SmVector3d along(t.x - s.x, t.y - s.y, t.z - s.z);
+    double len = std::sqrt(dot(along, along));
+    if (!(len > 1e-6)) return nullptr;
+    SmVector3d u(along.x / len, along.y / len, along.z / len);
+    // straight: the edge's middle is on the line between its ends
+    SmVector3d mid((s.x + t.x) / 2, (s.y + t.y) / 2, (s.z + t.z) / 2);
+    if (off_edge(e, mid) > 1e-6 * std::max(1.0, len)) return nullptr;
+    SmVector3d z[2];
+    for (int k = 0; k < 2; ++k) z[k] = static_cast<SmPlane*>(fs[k]->GetSurface())->GetPosition().GetZAxis();
+    // the way each face runs from the edge: across its plane, the other face's normal one way or the other,
+    // and it has to reach the distance along the whole edge
+    SmVector3d side[2];
+    const double tol = 1e-6 * std::max(1.0, dist);
+    for (int k = 0; k < 2; ++k) {
+        SmVector3d n = z[1 - k];
+        bool found = false;
+        for (double sign : {1.0, -1.0}) {
+            SmVector3d dir(sign * n.x, sign * n.y, sign * n.z);
+            bool on = true;
+            for (double f : {0.02, 0.5, 0.98}) {
+                SmVector3d q(s.x + f * along.x + dist * dir.x, s.y + f * along.y + dist * dir.y, s.z + f * along.z + dist * dir.z);
+                if (off_face(fs[k], q) > tol) {
+                    on = false;
+                    break;
+                }
+            }
+            if (on) {
+                side[k] = dir;
+                found = true;
+                break;
+            }
+        }
+        if (!found) return nullptr;
+    }
+    SmVector3d a = side[0], c = side[1];
+    // the solid fills the corner between the faces (an outside edge), not the rest
+    double q = std::min(dist, len) * 0.25;
+    if (!inside(e, SmVector3d(mid.x + q * (a.x + c.x), mid.y + q * (a.y + c.y), mid.z + q * (a.z + c.z)))) return nullptr;
+    // the triangle in the frame at the edge's start (x along a, y along normal x a), its long side on the
+    // chamfer's line and its corner pushed out past the faces
+    SmVector3d v = cross(u, a);
+    double cy = dot(c, v), m = dist * 0.25;
+    auto pt = [&](double alpha, double beta) {
+        Value p = Value::array();
+        p.push(Value(alpha));
+        p.push(Value(beta * cy));
+        return p;
+    };
+    Value pts = Value::array();
+    pts.push(pt(-m, -m));
+    pts.push(pt(dist + m, -m));
+    pts.push(pt(-m, dist + m));
+    // counterclockwise in the frame
+    if (cy < 0) std::swap(pts.a[1], pts.a[2]);
+    Value outer = Value::object();
+    outer.set("points", pts);
+    Value poly = Value::object();
+    poly.set("outer", outer);
+    poly.set("holes", Value::array());
+    Value polys = Value::array();
+    polys.push(poly);
+    Value frame = Value::object();
+    frame.set("origin", xyz(s));
+    frame.set("u", xyz(a));
+    frame.set("normal", xyz(u));
+    Value r = Value::object();
+    r.set("frame", frame);
+    r.set("polygons", polys);
+    r.set("fromMm", Value(0.0));
+    r.set("toMm", Value(len));
+    return extrude(r);
+}
+
 // keys for the faces an op made (a fillet's rounds), leaving the ones carried over
 SmBrep* key_new_faces(SmBrep* b)
 {
@@ -867,13 +968,40 @@ Value run(const std::string& op, const Value& r)
         SmBrep* b = copy_of(body(r, "body"));
         try {
             SmTArray<SmEdge*> es = edges_of(b, r["edges"]);
-            // a flat cross section tangent where a circle of the distance would be: that sets each face back by
-            // the distance only where the faces are square to each other
-            if (!round)
-                for (ULONG i = 0; i < es.GetSize(); ++i)
-                    if (!square(es[i])) throw Error("edges", "edge " + std::to_string(i) + ": a chamfer between faces not square to each other runs on the mesh");
-            // circular or flat cross section, G1 at the corners
-            check(SmApiFilletEdges(b, es, size, round ? 1 : 0, 1, 1.0), op.c_str());
+            // a square outside edge is a wedge cut; any other edge sends them all through the fillet solver
+            std::vector<SmBrep*> ws;
+            if (!round) {
+                for (ULONG i = 0; i < es.GetSize(); ++i) {
+                    SmBrep* w = wedge(es[i], size);
+                    if (!w) break;
+                    ws.push_back(w);
+                }
+                if (ws.size() != es.GetSize()) {
+                    for (auto w : ws) delete w;
+                    ws.clear();
+                }
+            }
+            if (!ws.empty()) {
+                SmBrep* cut = b;
+                b = nullptr;
+                for (size_t i = 0; i < ws.size(); ++i) {
+                    try {
+                        cut = combine(cut, fresh_keys(ws[i]), "difference");
+                    } catch (...) {
+                        for (size_t j = i + 1; j < ws.size(); ++j) delete ws[j];
+                        throw;
+                    }
+                }
+                b = cut;
+            } else {
+                // a flat cross section tangent where a circle of the distance would be: that sets each face back
+                // by the distance only where the faces are square to each other
+                if (!round)
+                    for (ULONG i = 0; i < es.GetSize(); ++i)
+                        if (!square(es[i])) throw Error("edges", "edge " + std::to_string(i) + ": a chamfer between faces not square to each other runs on the mesh");
+                // circular or flat cross section, G1 at the corners
+                check(SmApiFilletEdges(b, es, size, round ? 1 : 0, 1, 1.0), op.c_str());
+            }
         } catch (...) {
             delete b;
             throw;
