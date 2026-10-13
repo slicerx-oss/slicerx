@@ -33,7 +33,7 @@ export interface BlockProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   /** An icon before the title, for sections that stand as their own panel. */
   icon?: IconName
   /** Tooltip on the disclosure button; the aside lets clicks through, so its full text goes here. */
-  tip?: TipSpec
+  tip?: TipSpec | undefined
   children?: ReactNode
 }
 
