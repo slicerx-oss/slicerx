@@ -67,3 +67,17 @@ sources:
     url: https://help.prusa3d.com/article/food-safe-fdm-printing_112313
     retrieved: 2026-09-29
     note: "Layer grooves harbor bacteria; brass nozzles contain about 2 percent lead; Prusa does not recommend prints as food containers without a food safe coating and a stainless nozzle."
+  - id: prusa_kb_bed_thermal_runaway
+    title: "Bed thermal runaway"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/bed-thermal-runaway-31203-core-one-35203-core-one-l-36203-core-one-indx-26203-mk4s-13203-mk4-27203-mk3-9s-21203-mk3-9-28203-mk3-5s-23203-mk3-5_401068
+    retrieved: 2026-10-13
+    note: "If the heatbed temperature drops by more than 2 C for over 60 seconds, the printer stops the print and shows the Thermal Runaway error."
+  - id: bambu_a1_recall
+    title: "Bambu Lab recalls A1 3D printers"
+    publisher: Bambu Lab
+    type: manufacturer_notice
+    url: https://bambulab.com/de-de/support/A1recall
+    retrieved: 2026-10-13
+    note: "A1 printers sold before January 30, 2024 (sixth serial digit A): the heatbed cable can be damaged when bent, with a risk of short circuit, shock or fire. Refund or heatbed and cable replacement."
