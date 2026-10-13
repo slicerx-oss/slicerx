@@ -11,6 +11,7 @@ import { useHost } from '../../host'
 import { projectExportHost } from '../../export/actions'
 import { geom } from '../../geom/client'
 import { guardedPrinters } from '../../plate/guard'
+import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { get } from '../../state/store'
 import { bundledKb } from './kb'
@@ -42,6 +43,8 @@ export function dockPilotOptions(host: Host, parts: { printers: PrinterHost; llm
 export function usePilot(): Pilot | null {
   const host = useHost()
   const edition = useEdition()
+  // a new mimir cloud host (the browser build, on sign-in or sign-out) makes the runtime again
+  const cloud = useMimirCloudHost()
   const [pilot, setPilot] = useState<Pilot | null>(null)
   useEffect(() => {
     const { printers, approvals } = host
@@ -64,6 +67,6 @@ export function usePilot(): Pilot | null {
     return () => {
       live = false
     }
-  }, [host, edition])
+  }, [host, edition, cloud])
   return pilot
 }

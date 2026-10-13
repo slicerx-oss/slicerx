@@ -13,7 +13,7 @@ grant all on t to service_role, mimir_session_reader;
 grant mimir_session_reader to postgres with set true;
 grant usage on schema extensions to mimir_session_reader;
 update public.mimir_limits set register_key_hash = public.mimir_token_hash(edition || '-key'), registers_per_day = 5000,
-  install_per_minute = 100, edition_daily_micros = 5000000, enabled = true;
+  install_per_minute = 100, edition_daily_micros = 5000000, enabled = true where not signed_in;
 create function pg_temp.reg(p_edition text, p_ip text) returns text language plpgsql as $$
 declare v text;
 begin
@@ -46,7 +46,7 @@ reset role;
 -- Defaults ------------------------------------------------------------------------------
 select is((select share_default from public.mimir_limits where edition = 'slicerx'), true, 'SlicerX saves by default in alpha');
 select is((select share_default from public.mimir_limits where edition = 'layermate'), false, 'LayerMate waits for its app''s notice');
-select is((select array_agg(edition_daily_micros order by edition) from public.mimir_limits), array[5000000, 5000000]::bigint[], 'each edition gets $5 a day of free mimir');
+select is((select array_agg(edition_daily_micros order by edition) from public.mimir_limits where not signed_in), array[5000000, 5000000]::bigint[], 'each edition gets $5 a day of free mimir');
 select is((select install_store_daily_bytes from public.mimir_limits where edition = 'slicerx'), 33554432::bigint,
   'an install may save 32 MB a day');
 select ok(exists (select 1 from cron.job where jobname = 'mimir-expire-saved' and command like '%mimir_expire_saved%'),

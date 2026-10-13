@@ -22,6 +22,8 @@ export type MimirCode =
   | 'unreachable'
   | 'server_error'
   | 'not_found'
+  | 'sign_in'
+  | 'origin_refused'
 
 /** The next midnight in Melbourne, when every daily cap starts over (mimir_day in 0020). */
 export function resetsAt(now: Date): Date {
