@@ -64,7 +64,8 @@ for (const key of seen) {
 // Only the icons in packages/ui/icons/startup.mjs load with the shell; the rest draw as an empty box until their
 // table arrives. A startup chunk that names any other icon (a quoted name that is not an object key) would show
 // it popping in, so the build fails and names it: add it to startup.mjs and run gen-icons.mjs. Names built at run
-// time (a template string) are not seen here. The edition's keySource value ('cloud') is not an icon.
+// time (a template string) are not seen here. The edition's keySource value ('cloud') is not an icon, and neither is
+// a name right after ===, !==, == or !=: code comparing a string to 'isolate' is not drawing that icon.
 const icons = join(import.meta.dirname, '..', '..', '..', 'packages', 'ui', 'icons')
 const drawn = new Set()
 for (const [file, key] of [['base.mjs', 'BASE_ICONS'], ['extra.mjs', 'EXTRA_ICONS'], ['hardware.mjs', 'HARDWARE_ICONS']]) {
@@ -74,7 +75,7 @@ const startup = new Set((await import(pathToFileURL(join(icons, 'startup.mjs')).
 const late = new Map()
 for (const key of seen) {
   const text = readFileSync(join(dist, manifest[key].file), 'utf8')
-  for (const [, , name] of text.matchAll(/(?<!keySource:\s*)(["'`])([a-z0-9-]+)\1(?!\s*:)/g)) {
+  for (const [, , name] of text.matchAll(/(?<!(?:keySource:|[!=]==?)\s*)(["'`])([a-z0-9-]+)\1(?!\s*:)/g)) {
     if (drawn.has(name) && !startup.has(name)) late.set(name, manifest[key].file)
   }
 }
