@@ -572,6 +572,51 @@ fn extrude_lines_and_arcs() {
 }
 
 #[test]
+fn tapered_extrudes() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let frame = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1] });
+    let square = json!({ "points": [[-10, -10], [10, -10], [10, 10], [-10, 10]] });
+    let tan = 10f64.to_radians().tan();
+    let taper = |polygons: Value, from: f64, to: f64, deg: f64| {
+        body(
+            "extrude",
+            &json!({ "frame": frame, "polygons": polygons, "fromMm": from, "toMm": to, "taperDeg": deg }),
+        )
+    };
+    // the sides lean in by 10 degrees; the kernel makes them as ruled surfaces, which read as planes
+    let up = taper(json!([{ "outer": square }]), 0.0, 10.0, 10.0);
+    close(volume(up), (8000.0 - (20.0 - 20.0 * tan).powi(3)) / (6.0 * tan));
+    assert_eq!(info(up)["faceTypes"], json!({ "plane": 6 }));
+    assert_eq!(mesh_check(up).0, 0);
+    // across the face each side narrows away from it, and a hole widens
+    let both = taper(json!([{ "outer": square }]), -5.0, 5.0, 10.0);
+    close(
+        volume(both),
+        2.0 * (8000.0 - (20.0 - 10.0 * tan).powi(3)) / (6.0 * tan),
+    );
+    let r = 3.0 + 10.0 * tan;
+    let holed = taper(
+        json!([{ "outer": square, "holes": [{ "center": [0, 0], "diameterMm": 6 }] }]),
+        0.0,
+        10.0,
+        10.0,
+    );
+    close(
+        volume(holed),
+        volume(up) - PI * 10.0 / 3.0 * (9.0 + 3.0 * r + r * r),
+    );
+    // closing before the full distance is an error, as on the mesh path
+    let e = sx_brep::call(
+        "extrude",
+        &json!({ "frame": frame, "polygons": [{ "outer": square }], "fromMm": 0, "toMm": 100, "taperDeg": 10 }).to_string(),
+    )
+    .unwrap_err();
+    assert!(e.contains("taperDeg"), "{e}");
+}
+
+#[test]
 fn extrude_joins_and_cuts() {
     if !sx_brep::KERNEL {
         return;
