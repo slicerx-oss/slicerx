@@ -54,6 +54,20 @@ export function takeBind(params: StepParams): { bind?: string } {
   return bind ? { bind } : {}
 }
 
+// The finished sketch the next recorded step draws on, used once.
+let drawsOn: string | null = null
+
+/** The timeline sketch the next step a tool records draws on: the step names it by id. */
+export function sketchNext(id: string | null): void {
+  drawsOn = id
+}
+
+function takeSketch(params: StepParams): { sketch?: string } {
+  const id = drawsOn
+  drawsOn = null
+  return id && (params.op === 'shape.extrude' || params.op === 'sketch.revolve') ? { sketch: id } : {}
+}
+
 /** The entry's history, or a new one whose base is the entry's parts now. */
 export function historyOf(e: Pick<PlateEntry, 'parts' | 'history'>): History {
   return e.history ?? { version: HISTORY_VERSION, base: e.parts, steps: [] }
@@ -64,12 +78,12 @@ export function historyOf(e: Pick<PlateEntry, 'parts' | 'history'>): History {
  * as it was. `transform` is the object's transform the params were given in (world values).
  */
 export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform): History {
-  return appendStep(historyOf(before), { id: takeId(), part, transform: [...transform], params, ...takeBind(params) })
+  return appendStep(historyOf(before), { id: takeId(), part, transform: [...transform], params, ...takeBind(params), ...takeSketch(params) })
 }
 
 /** A new body made by a step: empty base, the step first. `transform` is the new object's transform. */
 export function bodyHistory(params: StepParams, transform: number[]): History {
-  return { version: HISTORY_VERSION, base: [], steps: [{ id: takeId(), part: 0, transform: [...transform], params, ...takeBind(params) }] }
+  return { version: HISTORY_VERSION, base: [], steps: [{ id: takeId(), part: 0, transform: [...transform], params, ...takeBind(params), ...takeSketch(params) }] }
 }
 
 /** After an edit that is not a step: no history, or a fresh one starting from `parts` with the reason shown. */
