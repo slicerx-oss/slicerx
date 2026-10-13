@@ -1082,3 +1082,12 @@ jobs:
             echo "Em or en dash found."; fail=1
           fi
           exit $fail
+      # Regenerates the checked-in generated files and fails on a diff (scripts/check-generated.mjs names the fix command).
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generated files are current
+        run: node scripts/check-generated.mjs
