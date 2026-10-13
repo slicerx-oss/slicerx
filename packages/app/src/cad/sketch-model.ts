@@ -456,25 +456,25 @@ export function arcMiddle(a: V2, b: V2, r: number, p: V2): V2 | string {
   return pt(m[0] + nrm[0] * s, m[1] + nrm[1] * s)
 }
 
-/** The live readout for the cursor: the length and angle of a line, a rectangle's size, a diameter. */
-export function readout(draft: Draft, p: V2): string {
+/** The live readout for the cursor: the length and angle of a line, a rectangle's size, a diameter. `f` shows a length
+ * in the display unit `u`. */
+export function readout(draft: Draft, p: V2, f: (mm: number) => string = (v) => v.toFixed(2), u = 'mm'): string {
   const a = draft.points[0]
-  const f = (v: number) => v.toFixed(2)
-  if (!a) return `X ${f(p[0])} mm, Y ${f(p[1])} mm`
+  if (!a) return `X ${f(p[0])} ${u}, Y ${f(p[1])} ${u}`
   switch (draft.tool) {
     case 'rect':
-      return `${f(Math.abs(p[0] - a[0]))} by ${f(Math.abs(p[1] - a[1]))} mm`
+      return `${f(Math.abs(p[0] - a[0]))} by ${f(Math.abs(p[1] - a[1]))} ${u}`
     case 'circle':
-      return `Diameter ${f(2 * dist(a, p))} mm`
+      return `Diameter ${f(2 * dist(a, p))} ${u}`
     case 'arc':
       if (draft.points.length === 2) {
         const c = arcThrough(a, p, draft.points[1]!)
-        return c ? `Radius ${f(c.r)} mm` : 'Straight'
+        return c ? `Radius ${f(c.r)} ${u}` : 'Straight'
       }
     // falls through: the chord reads like a line
     default: {
       const ang = (Math.atan2(p[1] - a[1], p[0] - a[0]) / DEG + 360) % 360
-      return `Length ${f(dist(a, p))} mm, angle ${ang.toFixed(1)}°`
+      return `Length ${f(dist(a, p))} ${u}, angle ${ang.toFixed(1)}°`
     }
   }
 }

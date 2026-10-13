@@ -26,6 +26,8 @@ import { chamferSketch, filletSketch } from './edge-api'
 import { flipFor, goesIntoFace } from './extrude-direction'
 import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
+import { formatLength, fraction, parseLength, type UnitPrefs } from './units'
+import { currentValues } from './value-table'
 import {
   axisOf,
   axisSegment,
@@ -163,6 +165,21 @@ export function SketchTool() {
   return <SketchEditor plane={plane} onRestart={() => setPlane(null)} {...(edit && 'init' in edit ? { init: edit.init } : {})} />
 }
 
+/** The readout's length format and unit: two decimals in mm, the inch precision in inches. */
+function readoutUnits(u: UnitPrefs): [(mm: number) => string, string] {
+  return u.length === 'mm' ? [(v) => v.toFixed(2), 'mm'] : [(v) => formatLength(v, u), 'in']
+}
+
+// grid steps in mm, by the display unit; a step picked in the other unit stays listed
+const GRID_MM = ['0.5', '1', '5']
+const GRID_IN = ['0.79375', '1.5875', '3.175', '6.35']
+
+function gridSteps(u: UnitPrefs, now: string): { value: string; label: string }[] {
+  const list = u.length === 'mm' ? GRID_MM : GRID_IN
+  const all = now !== 'off' && !list.includes(now) ? [...list, now].sort((a, b) => Number(a) - Number(b)) : list
+  return all.map((v) => ({ value: v, label: u.length === 'mm' ? `${Number(v)} mm` : `${fraction(Number(v) / 25.4, 64)} in` }))
+}
+
 function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () => void; init?: SketchInit }) {
   const host = useHost()
   const view = cameraBus()?.cad
@@ -170,6 +187,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [draft, setDraft] = useDraft<Draft>('draft', emptyDraft(init ? 'select' : 'line'))
   const [selected, setSelected] = useDraft<{ e: number; seg: number } | null>('selected', init?.axis ?? null)
   const [grid, setGrid] = useDraft('grid', '1')
+  const units = useApp((s) => s.units)
   const [check, setCheck] = useState<SketchCheck | null>(null)
   const [engineSnaps, setEngineSnaps] = useState<SnapTargets>({ points: [], edges: [] })
   const [field, setField] = useState<{ x: number; y: number; values: string[]; focus: number } | null>(null)
@@ -268,7 +286,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (ev.kind === 'hover') {
           view.setSketchCursor({ path: preview(l.draft, s.at), at: s.at, guide: 'guide' in s && s.guide ? s.guide : null })
           const r = readoutRef.current
-          if (r) r.textContent = `${l.draft.tool === 'select' ? '' : readout(l.draft, s.at)}${s.kind ? `${l.draft.tool === 'select' ? '' : ', '}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
+          if (r) r.textContent = `${l.draft.tool === 'select' ? '' : readout(l.draft, s.at, ...readoutUnits(get().units))}${s.kind ? `${l.draft.tool === 'select' ? '' : ', '}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
           return
         }
         if (l.draft.tool === 'select') {
@@ -326,7 +344,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   const commitField = () => {
     if (!field) return
-    const values = field.values.map((v) => (v.trim() === '' ? null : Number.isFinite(num(v)) ? num(v) : NaN))
+    const kinds = fieldsFor(draft)
+    const read = (v: string, i: number) => (kinds[i]?.unit === 'mm' ? parseLength(v, units, currentValues()) : num(v))
+    const values = field.values.map((v, i) => (v.trim() === '' ? null : read(v, i)))
     if (values.some((v) => Number.isNaN(v))) return setNote('Type numbers only.')
     const p = typedPoint(draft, values, live.current.cursor)
     if (typeof p === 'string') return setNote(p)
@@ -452,9 +472,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         <Field htmlFor="sk-grid" label="Grid snap">
           <Select id="sk-grid" value={grid} onChange={(e) => setGrid(e.target.value)}>
             <option value="off">Off</option>
-            <option value="0.5">0.5 mm</option>
-            <option value="1">1 mm</option>
-            <option value="5">5 mm</option>
+            {gridSteps(units, grid).map((g) => (
+              <option key={g.value} value={g.value}>{g.label}</option>
+            ))}
           </Select>
         </Field>
         <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
@@ -526,7 +546,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             <CursorField
               x={field.x}
               y={field.y}
-              labels={fields.map((f) => `${f.label} ${f.unit}`)}
+              labels={fields.map((f) => `${f.label} ${f.unit === 'mm' ? units.length : f.unit}`)}
               values={field.values}
               onChange={(values) => setField({ ...field, values })}
               onCommit={commitField}

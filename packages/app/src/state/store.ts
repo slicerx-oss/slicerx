@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The one client store. Server data (store listings,
 // printer status) lives in TanStack Query; this holds what the user is doing.
+import { DEFAULT_UNITS, type UnitPrefs } from '../cad/units'
 import type { PickKind } from '../plate/pick-filter'
 import type { NamedValue } from '../cad/value-names'
 import type {
@@ -352,6 +353,8 @@ export interface AppState {
   cadTools: boolean
   /** What a kWh costs the person and the currency symbol in front of it, for the electricity estimate. */
   electricity: { pricePerKwh: number; symbol: string }
+  /** Display units for lengths in Model: mm or in, and their precision (cad/units.ts). Data stays in mm. */
+  units: UnitPrefs
   /** Draw every kept dimension, not only those of the selected object. */
   showDimensions: boolean
   /** The project's named values (cad/values.ts), saved with the project. */
@@ -700,6 +703,7 @@ export const appStore = createStore<AppState>()(() => ({
   sliceHeld: false,
   cadTools: prefs.cadTools ?? true,
   electricity: prefs.electricity ?? DEFAULT_ELECTRICITY,
+  units: prefs.units ?? DEFAULT_UNITS,
   showDimensions: false,
   namedValues: [],
   printerNozzles: prefs.printerNozzles ?? {},
@@ -807,7 +811,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -840,6 +844,7 @@ appStore.subscribe((s, prev) => {
       multiBodyImport: s.multiBodyImport,
       cadTools: s.cadTools,
       electricity: s.electricity,
+      units: s.units,
       printerNozzles: s.printerNozzles,
       printerExtruders: s.printerExtruders,
       handPrinters: s.handPrinters,

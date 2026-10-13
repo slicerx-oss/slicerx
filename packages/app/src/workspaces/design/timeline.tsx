@@ -12,12 +12,14 @@ import { useHost } from '../../host'
 import { useMadeBy } from './use-made-by'
 import { useBottomPanel } from '../../shell/bottom-panel'
 import { toast, useApp } from '../../state/store'
+import { DEFAULT_UNITS, formatLength, lengthText, type UnitPrefs } from '../../cad/units'
+import { useLengthWords } from '../../cad/use-units'
 
 /** A chip's short name: the step's name up to its first comma, without units, with its main number ("Shell 2", "Fillet 5"). */
-export function chipName(s: Pick<Step, 'params'>): string {
-  const base = stepName(s).split(',')[0]!.replace(/ mm\b/g, '').trim()
+export function chipName(s: Pick<Step, 'params'>, units: UnitPrefs = DEFAULT_UNITS): string {
+  const base = stepName(s, (mm) => lengthText(mm, units)).split(',')[0]!.replace(/ (mm|in)\b/g, '').trim()
   const n = mainNumber(s.params)
-  return /\d/.test(base) || !n ? base : `${base} ${Math.round(n.value * 100) / 100}`
+  return /\d/.test(base) || !n ? base : `${base} ${n.unit === 'mm' ? formatLength(n.value, units) : Math.round(n.value * 100) / 100}`
 }
 
 const text = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -26,6 +28,8 @@ const quiet = (e: unknown) => (e as { name?: string }).name === 'AbortError'
 export function Timeline() {
   const host = useHost()
   const panel = useBottomPanel()
+  const units = useApp((s) => s.units)
+  const words = useLengthWords()
   const edit = useApp((s) => s.historyEdit)
   const objectId = useApp((s) => s.historyEdit?.objectId ?? s.selection)
   const entry = useApp((s) => (s.historyEdit?.objectId === objectId ? s.historyEdit?.original : s.plate.find((p) => p.id === objectId)))
@@ -78,7 +82,7 @@ export function Timeline() {
       </div>
       <ol ref={track} className="tl-track" aria-label={`Steps of ${entry.name}`}>
         {steps.map((s, i) => {
-          const name = stepName(s)
+          const name = stepName(s, words)
           const sketch = stepSketch(s.params)
           const state = s.suppressed ? 'suppressed' : s.broken !== undefined ? 'broken' : 'done'
           return (
@@ -124,7 +128,7 @@ export function Timeline() {
               >
                 <span className="tl-n sx-mono">{i + 1}</span>
                 <Icon name={stepIcon(s.params)} size={14} />
-                <span className="tl-name">{chipName(s)}</span>
+                <span className="tl-name">{chipName(s, units)}</span>
                 {sketch ? <span className="tl-sketch"><Icon name="sketch" size={11} />{sketch.loops === 1 ? '1 loop' : `${sketch.loops} loops`}</span> : null}
               </button>
               {i === at ? (
@@ -136,7 +140,7 @@ export function Timeline() {
                   aria-valuemin={1}
                   aria-valuemax={steps.length}
                   aria-valuenow={at + 1}
-                  aria-valuetext={`After step ${at + 1}, ${stepName(steps[at]!)}`}
+                  aria-valuetext={`After step ${at + 1}, ${stepName(steps[at]!, words)}`}
                   onKeyDown={(e) => {
                     if (e.key === 'ArrowLeft' && at > 0) (e.preventDefault(), show(at - 1))
                     if (e.key === 'ArrowRight' && at < last) (e.preventDefault(), show(at + 1))

@@ -5,18 +5,21 @@
 // those steps (value-ops.ts). `clearance` and `nozzle` are built in and read only.
 import { Button, Icon, Input } from '@slicerx/ui'
 import { useState } from 'react'
-import { useApp } from '../state/store'
+import { get, useApp } from '../state/store'
+import { lengthText } from './units'
 import { close, errorText, Shell } from './panel-kit'
 import { removeValue, setValue, stepsUsing } from './value-ops'
 import { builtIns, valueTable } from './value-table'
 
-const mm = (v: number) => `${Number(v.toFixed(3))} mm`
+// values are mm; with inches shown, the inch value follows
+const mm = (v: number) => `${Number(v.toFixed(3))} mm${get().units.length === 'in' ? ` (${lengthText(v, get().units)})` : ''}`
 
 function Row({ name, expr }: { name: string; expr: string }) {
   const [text, setText] = useState(expr)
   const [note, setNote] = useState<string | null>(null)
   // A string from the store, so the selector is stable; the table is rebuilt from it.
   const table = JSON.parse(useApp((s) => JSON.stringify(valueTable(s)))) as ReturnType<typeof valueTable>
+  useApp((s) => s.units)
   const value = table.values[name]
   const used = stepsUsing(name)
   const apply = () => {
@@ -57,6 +60,8 @@ function Row({ name, expr }: { name: string; expr: string }) {
 
 export function ValuesPanel() {
   const values = useApp((s) => s.namedValues)
+  // rows show the inch value too
+  useApp((s) => s.units)
   const fixed = JSON.parse(useApp((s) => JSON.stringify(builtIns(s)))) as Record<string, number>
   const [name, setName] = useState('')
   const [expr, setExpr] = useState('')
@@ -73,7 +78,7 @@ export function ValuesPanel() {
   }
   return (
     <Shell title="Named values" aside={values.length === 1 ? '1 value' : `${values.length} values`}>
-      <p className="cad-hint">Type a name in any size, or a sum such as <span className="sx-mono">wall * 2 + clearance</span>. Steps typed with a name follow it when it changes.</p>
+      <p className="cad-hint">Type a name in any size, or a sum such as <span className="sx-mono">wall * 2 + clearance</span>. Steps typed with a name follow it when it changes. Values are in mm unless you type a unit, such as <span className="sx-mono">1/8 in</span>.</p>
       <ul className="cad-values">
         {values.map((v) => (
           <Row key={`${v.name}=${v.expr}`} name={v.name} expr={v.expr} />
