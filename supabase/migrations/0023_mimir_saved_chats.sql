@@ -9,6 +9,8 @@
 
 alter table public.mimir_limits add column share_default boolean not null default false;
 update public.mimir_limits set share_default = true where edition = 'slicerx';
+-- free mimir is $5 a day per edition (owner, 2026-10-13); production was set by hand the same day
+update public.mimir_limits set edition_daily_micros = 5000000 where edition = 'slicerx';
 
 -- a design session carries its geometry ops in every turn, so a turn may run to 1 MB
 alter table public.mimir_sessions drop constraint mimir_sessions_transcript_check;

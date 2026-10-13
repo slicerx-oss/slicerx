@@ -6,7 +6,7 @@
 -- clients cannot reach any of it. Run with `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(24);
+select plan(25);
 
 create temp table t (k text primary key, v text) on commit drop;
 grant all on t to service_role, mimir_session_reader;
@@ -46,6 +46,7 @@ reset role;
 -- Defaults ------------------------------------------------------------------------------
 select is((select share_default from public.mimir_limits where edition = 'slicerx'), true, 'SlicerX saves by default in alpha');
 select is((select share_default from public.mimir_limits where edition = 'layermate'), false, 'LayerMate waits for its app''s notice');
+select is((select array_agg(edition_daily_micros order by edition) from public.mimir_limits), array[5000000, 5000000]::bigint[], 'each edition gets $5 a day of free mimir');
 select is((select install_store_daily_bytes from public.mimir_limits where edition = 'slicerx'), 33554432::bigint,
   'an install may save 32 MB a day');
 select ok(exists (select 1 from cron.job where jobname = 'mimir-expire-saved' and command like '%mimir_expire_saved%'),

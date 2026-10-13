@@ -41,7 +41,7 @@ function CloudShare() {
         id="mimir-share"
         testId="mimir-share"
         label={`Save my chats to improve ${ASSISTANT_NAME}`}
-        detail={`Free ${ASSISTANT_NAME} chats are kept 30 days during alpha. Turned off, nothing new is saved. Your own key or local model never saves anything.`}
+        detail="Turned off, nothing new is saved. Your own key or local model never saves anything."
         checked={share}
         onChange={(v) => set({ mimirShare: v })}
       />
