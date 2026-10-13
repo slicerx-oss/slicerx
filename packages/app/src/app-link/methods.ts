@@ -222,10 +222,11 @@ const HANDLERS: Record<string, Handler> = {
     // waits for a sign-in (the browser build's cloud is for signed-in members); the desktop's needs none
     const needsSignIn = cloud && host?.needsSignIn === true
     const ready = cloudReady(edition, host)
-    const enabled = ready && pilotState(s) !== 'off' && pilotModel(edition, s.pilot, ready)?.provider === 'mimir-cloud'
+    // On only, never the connect step: a fresh profile (mimir not chosen yet) would otherwise read the quota below
+    const enabled = ready && pilotState(s) === 'on' && pilotModel(edition, s.pilot, ready)?.provider === 'mimir-cloud'
     const signedIn = linkSession ? await linkSession().catch(() => null) : null
     // Today's use only while mimir runs on the cloud: reading it registers an install that has none yet, which a status
-    // read must not do for a person who turned mimir off or uses their own model.
+    // read must not do for a person who turned mimir off, uses their own model or has not chosen yet.
     let quota: Omit<MimirQuota, 'v2'> | null = null
     let quotaError: { code: string; message: string } | null = null
     if (enabled && host) {
