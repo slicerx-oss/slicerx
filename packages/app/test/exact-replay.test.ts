@@ -140,3 +140,91 @@ it('chamfers on the kernel with one distance', async () => {
   expect(e.sent[2]!.req['distanceMm']).toBe(1)
   expect(e.sent[2]!.req).not.toHaveProperty('distance2Mm')
 })
+
+/** A kernel that keeps bodies by number, each with the face keys its op gave it, and records what it frees. */
+function keeper() {
+  const sent: Sent[] = []
+  const bodies = new Map<number, number[]>()
+  const freed: number[] = []
+  let n = 0
+  const make = (keys: number[]) => {
+    bodies.set(++n, keys)
+    return n
+  }
+  const call = async (op: string, request: unknown) => {
+    const req = request as Record<string, unknown>
+    const of = (v: unknown) => (typeof v === 'number' ? bodies.get(v)! : [])
+    if (op === 'brep.free') {
+      freed.push(req['body'] as number)
+      return { freed: true }
+    }
+    sent.push({ op, req })
+    if (op === 'brep.tessellate') {
+      const keys = of(req['body'])
+      return { ...tri, faceIds: [0], faces: keys.map((k, id) => ({ id, type: 'plane', surface: { kind: 'plane', normal: [0, 0, 1], offset: 0 }, key: k })) }
+    }
+    if (op === 'brep.cut') {
+      const keys = of(req['body'])
+      const [below, above] = [make([...keys, 90]), make([...keys, 91])]
+      return { below, above, belowKeys: bodies.get(below), aboveKeys: bodies.get(above) }
+    }
+    if (op.startsWith('brep.')) {
+      const keys = [...of(req['body']), 10 + n]
+      const body = make(keys)
+      return { body, bodyKeys: keys }
+    }
+    return { mesh: { ...tri, positions: [1, 0, 0, 10, 0, 0, 0, 10, 0] }, report: {} }
+  }
+  return { call, sent, freed, ops: () => sent.map((s) => s.op) }
+}
+
+const fillet2 = step('fillet-2', { op: 'edge.fillet', edges: [{ a: [10, -5, 0], b: [10, -5, 5], face: [1, 0, 0] }], radiusMm: 1 })
+
+it('with kept bodies, passes them by number and tessellates once, for the result', async () => {
+  const e = keeper()
+  const r = await replayHistory(e.call, { history: history(box, hole, fillet2), exact: true }, { keepsBodies: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+  expect(e.ops()).toEqual(['brep.extrude', 'brep.subtract', 'brep.fillet', 'brep.tessellate'])
+  // no text either way
+  expect(e.sent.every((s) => s.req['save'] === undefined)).toBe(true)
+  expect(e.sent.slice(0, 3).every((s) => s.req['withKeys'] === true)).toBe(true)
+  expect(e.sent[1]!.req['body']).toBe(1)
+  expect(e.sent[2]!.req['body']).toBe(2)
+  expect(e.sent[3]!.req['body']).toBe(3)
+  // which step made each face, from the keys each op gave back
+  expect(r.madeBy).toEqual({ 10: 'box-1', 11: 'hole-1', 12: 'fillet-2' })
+  expect(r.parts[0]!.faces?.keys).toEqual([10, 11, 12])
+  expect(r.parts.some((p) => 'body' in p || 'smb' in p || 'unmeshed' in p)).toBe(false)
+  // every body is held by a cached step, so none is freed
+  expect(e.freed).toEqual([])
+})
+
+it('with kept bodies, a step on the mesh gets the mesh first, and a warm replay starts from a kept body', async () => {
+  const e = keeper()
+  const shell = step('shell-1', { op: 'shell', open: [], wallMm: 1 } as StepParams)
+  await replayHistory(e.call, { history: history(box, hole), exact: true }, { keepsBodies: true })
+  expect(e.ops()).toEqual(['brep.extrude', 'brep.subtract', 'brep.tessellate'])
+  const r = await replayHistory(e.call, { history: history(box, hole, shell), exact: true }, { keepsBodies: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+  // the warm start has the hole's body, tessellated for the shell, which runs on the mesh
+  expect(e.ops().slice(3)).toEqual(['brep.tessellate', 'shell'])
+  expect(e.sent[3]!.req['body']).toBe(2)
+})
+
+it('with kept bodies, frees the ones no cached step holds', async () => {
+  const e = keeper()
+  await replayHistory(e.call, { history: history(box, hole), exact: true }, { keepsBodies: true })
+  // (that replay also freed what earlier tests left in the cache)
+  e.freed.length = 0
+  clearReplayCache()
+  // a plane that misses: the kernel drops the empty side itself, and the other is not kept
+  const missing = async (op: string, req: unknown) => {
+    if (op !== 'brep.cut') return e.call(op, req)
+    const r = (await e.call(op, req)) as Record<string, unknown>
+    return { ...r, above: null }
+  }
+  const r = await replayHistory(missing, { history: history(box, cut), exact: true }, { keepsBodies: true })
+  expect(r.status[1]).toEqual({ state: 'broken', message: 'The plane no longer crosses the part.' })
+  // the first replay's two bodies (the cache was cleared) and the cut's side
+  expect(e.freed.sort((a, b) => a - b)).toEqual([1, 2, 4])
+})

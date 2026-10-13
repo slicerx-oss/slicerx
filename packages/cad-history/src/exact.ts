@@ -19,6 +19,17 @@ export interface ExactPart {
   faces?: NonNullable<HistoryMesh['faces']>
   paint?: PaintTexts
   smb?: string
+  /** The solid as a body number in the kernel, when the replay's engine keeps bodies between calls (the worker). */
+  body?: number
+  /** With `body`, before the part is tessellated: its faces' keys. Its mesh is empty until a step or the result
+   * needs it (meshed). */
+  unmeshed?: number[]
+}
+
+/** How a replay holds its solids: as text through each call, or (`keep`) as kernel bodies, each one `made` told. */
+export interface Solids {
+  keep: boolean
+  made: (body: number) => void
 }
 
 /** The largest solid text kept with a part; a bigger one is dropped and the part goes on on the mesh. */
@@ -40,6 +51,17 @@ interface Tessellated {
 /** A part from a solid: its tessellation with faces and keys, and the solid's text unless it is too big to keep. */
 export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot'>, smb: string): Promise<ExactPart> {
   const t = (await call('brep.tessellate', { body: { smb } })) as Tessellated
+  return { name: like.name, slot: like.slot, ...tessellated(t), ...(smb.length <= MAX_SOLID_TEXT ? { smb } : {}) }
+}
+
+/** The part with its body tessellated, when it has not been yet. */
+export async function meshed<P extends ExactPart>(call: Call, p: P): Promise<P> {
+  if (!p.unmeshed || p.body === undefined) return p
+  const { unmeshed: _keys, ...rest } = p
+  return { ...rest, ...tessellated((await call('brep.tessellate', { body: p.body })) as Tessellated) } as P
+}
+
+function tessellated(t: Tessellated): Pick<ExactPart, 'positions' | 'indices' | 'faces'> {
   const table = t.faces.map((f) => f.surface)
   const keys = t.faces.map((f) => f.key)
   // a triangle the kernel could not place on a face gets a face of its own kind, with no key
@@ -53,8 +75,7 @@ export async function fromSolid(call: Call, like: Pick<ExactPart, 'name' | 'slot
     }
     return none
   })
-  const faces = { ids, table, ...(keys.some((k) => k) ? { keys } : {}) }
-  return { name: like.name, slot: like.slot, positions: t.positions, indices: t.indices, faces, ...(smb.length <= MAX_SOLID_TEXT ? { smb } : {}) }
+  return { positions: t.positions, indices: t.indices, faces: { ids, table, ...(keys.some((k) => k) ? { keys } : {}) } }
 }
 
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -126,16 +147,25 @@ function localFrame(s: Step, f: FaceFrame): { origin: Vec3; u: Vec3; normal: Vec
  * The parts after step `s` on exact solids, or null when the mesh path should run it. Kernel failures come back as
  * null too, with `fellBack` told; an answer that is the step's real result (a plane that misses) throws ExactBroken.
  */
-export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBack: () => void): Promise<ExactPart[] | null> {
+export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBack: () => void, solids: Solids = { keep: false, made: () => {} }): Promise<ExactPart[] | null> {
   const p = s.params
-  const part = parts[s.part]
+  const target = parts[s.part]
   const frame = rigidFrame(s.transform)
   if (!frame) return null
-  const solid = (b: ExactPart | undefined) => (b?.smb ? { smb: b.smb } : null)
-  const saved = (r: unknown, k = 'bodySmb') => {
-    const t = (r as Record<string, unknown>)[k]
-    if (typeof t !== 'string') throw new Error(`brep: no ${k} in the reply`)
-    return t
+  const solid = (b: ExactPart | undefined) => (b?.body !== undefined ? b.body : b?.smb ? { smb: b.smb } : null)
+  // kept bodies come back by number with their faces' keys, text ones as text
+  const kept = solids.keep ? { withKeys: true } : { save: true }
+  const reply = (r: unknown, k = 'body') => {
+    const v = (r as Record<string, unknown>)[solids.keep ? k : `${k}Smb`]
+    if (solids.keep ? typeof v !== 'number' : typeof v !== 'string') throw new Error(`brep: no ${k} in the reply`)
+    if (typeof v === 'number') solids.made(v)
+    return v as number | string
+  }
+  const part = async (like: Pick<ExactPart, 'name' | 'slot'>, r: unknown, k = 'body'): Promise<ExactPart> => {
+    const v = reply(r, k)
+    if (typeof v === 'string') return fromSolid(call, like, v)
+    const keys = (r as Record<string, unknown>)[`${k}Keys`]
+    return { name: like.name, slot: like.slot, positions: [], indices: [], body: v, unmeshed: Array.isArray(keys) ? (keys as number[]) : [] }
   }
   try {
     const out = parts.slice()
@@ -148,59 +178,63 @@ export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBac
         const polygons = loops(p.shape as Shape, p.placement ?? {}, flipV)
         const z = range(p.spec)
         if (!polygons || !z) return null
-        const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], save: true })
-        const body = await fromSolid(call, { name: p.name ?? 'Body', slot: out[s.part]?.slot ?? 1 }, saved(r))
+        const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...kept })
+        const body = await part({ name: p.name ?? 'Body', slot: out[s.part]?.slot ?? 1 }, r)
         if (s.part < out.length) out[s.part] = body
         else out.push(body)
         return out
       }
       case 'subtract': {
-        const b = solid(part)
-        if (!b || !part) return null
-        const r = await call('brep.subtract', { body: b, solids: p.solids, frame, save: true })
-        out[s.part] = await fromSolid(call, part, saved(r))
+        const b = solid(target)
+        if (b === null || !target) return null
+        const r = await call('brep.subtract', { body: b, solids: p.solids, frame, ...kept })
+        out[s.part] = await part(target, r)
         return out
       }
       case 'boolean': {
         const others = p.with.map((i) => parts[i])
-        const all = [part, ...others]
-        if (p.with.includes(s.part) || all.some((x) => !solid(x))) return null
+        const all = [target, ...others]
+        if (!others.length || p.with.includes(s.part) || all.some((x) => solid(x) === null)) return null
         // the engine intersects the part with all the others joined, which pairwise steps would not give
         if (p.kind === 'intersection' && others.length > 1) return null
         // pairwise, in the parts' own coordinates (one object, one transform)
-        let acc = solid(part)!
+        let acc: unknown = solid(target)
+        let r: unknown = null
         for (const o of others) {
-          const r = await call('brep.boolean', { op: p.kind, a: acc, b: solid(o), save: true })
-          acc = { smb: saved(r) }
+          r = await call('brep.boolean', { op: p.kind, a: acc, b: solid(o), ...kept })
+          const v = reply(r)
+          acc = typeof v === 'number' ? v : { smb: v }
         }
-        out[s.part] = await fromSolid(call, part!, acc.smb)
+        out[s.part] = typeof acc === 'number' ? await part(target!, r) : await fromSolid(call, target!, (acc as { smb: string }).smb)
         return out.filter((_, i) => !p.with.includes(i))
       }
       case 'edge.fillet':
       case 'edge.chamfer': {
-        const b = solid(part)
-        if (!b || !part) return null
+        const b = solid(target)
+        if (b === null || !target) return null
         // the edges in the part's own coordinates; the kernel finds each by its faces' keys, then by place
         const inv = invert(s.transform)
         const edges = p.edges.map((e) => ({ a: point(inv, e.a), b: point(inv, e.b), ...(e.center ? { center: point(inv, e.center) } : {}), ...(e.keys ? { keys: e.keys } : {}) }))
         const size = p.op === 'edge.fillet' ? { radiusMm: p.radiusMm } : { distanceMm: p.distanceMm, ...(p.distance2Mm !== undefined ? { distance2Mm: p.distance2Mm } : {}) }
-        const r = await call(p.op === 'edge.fillet' ? 'brep.fillet' : 'brep.chamfer', { body: b, edges, ...size, save: true })
-        out[s.part] = await fromSolid(call, part, saved(r))
+        const r = await call(p.op === 'edge.fillet' ? 'brep.fillet' : 'brep.chamfer', { body: b, edges, ...size, ...kept })
+        out[s.part] = await part(target, r)
         return out
       }
       case 'plane.cut': {
-        const b = solid(part)
-        if (!b || !part) return null
+        const b = solid(target)
+        if (b === null || !target) return null
         const inv = invert(s.transform)
         const n = direction(inv, p.plane.normal)
         const l = Math.hypot(...n) || 1
         const plane = { point: point(inv, p.plane.point), normal: [n[0] / l, n[1] / l, n[2] / l] }
-        const r = (await call('brep.cut', { body: b, plane, save: true })) as Record<string, unknown>
-        if (typeof r['belowSmb'] !== 'string' || typeof r['aboveSmb'] !== 'string') throw new ExactBroken('The plane no longer crosses the part.')
-        const below = () => fromSolid(call, part, saved(r, 'belowSmb'))
-        const above = async () => ({ ...(await fromSolid(call, part, saved(r, 'aboveSmb'))), name: `${part.name} top` })
+        const r = (await call('brep.cut', { body: b, plane, ...kept })) as Record<string, unknown>
+        // both sides are made, kept or not; a side the plane misses comes back null
+        for (const k of ['below', 'above']) if (solids.keep && typeof r[k] === 'number') solids.made(r[k] as number)
+        if (r['below'] === null || r['above'] === null) throw new ExactBroken('The plane no longer crosses the part.')
+        const below = () => part(target, r, 'below')
+        const above = async () => ({ ...(await part(target, r, 'above')), name: `${target.name} top` })
         if (p.keep === 'below') out[s.part] = await below()
-        else if (p.keep === 'above') out[s.part] = { ...(await above()), name: part.name }
+        else if (p.keep === 'above') out[s.part] = { ...(await above()), name: target.name }
         else out.splice(s.part, 1, await below(), await above())
         return out
       }
