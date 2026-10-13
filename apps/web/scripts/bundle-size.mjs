@@ -82,7 +82,8 @@ for (const [name, file] of late) {
   console.error(`bundle-size: the startup chunk ${file} names the icon "${name}", which is not in packages/ui/icons/startup.mjs`)
   failed = true
 }
-const files = (dir) => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)).map((x) => join(f, x)) : [f]))
+// Paths under dist always use '/', as the manifest does, so the checks above read the same on Windows.
+const files = (dir) => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)).map((x) => `${f}/${x}`) : [f]))
 for (const key of seen) {
   if (isStepReader(manifest[key].file)) {
     console.error(`bundle-size: the STEP reader is in the startup chunk ${manifest[key].file}`)
