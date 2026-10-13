@@ -115,8 +115,69 @@ test('X makes a picked line construction, and it reaches the timeline flagged', 
   await expect(toggle).toHaveAttribute('aria-pressed', 'false')
   await page.locator('body').press('x')
   await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  // a construction line is no open loop
+  await expect(panel).not.toContainText('is open')
 
   await page.getByTestId('sketch-finish').click()
   await expect.poll(async () => (await loops(page)).length, { timeout: 10_000 }).toBe(2)
   expect((await loops(page)).map((l) => l.construction === true)).toEqual([false, true])
+})
+
+type Scene = { dragFrom?: [number, number]; glyphs?: { kind: string }[] } | null
+const scene = (page: Page) => page.evaluate(() => (window as unknown as { __vp: { sketchLayer: { scene: Scene } } }).__vp.sketchLayer.scene)
+const drag = (page: Page, kind: 'drag' | 'release', at: [number, number], ctrl = false) =>
+  page.evaluate(({ kind, at, ctrl }) => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('sketch', { kind, at, handle: -1, mmPerPx: 0.2, screen: [700, 420], shift: false, alt: false, ctrl }), { kind, at, ctrl })
+
+test('L, clicks and a drag off the end draw a closed shape with a tangent arc, and its glyphs', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Modeling tools are desktop only')
+  test.slow()
+  await openStudio(page)
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
+  await page.locator('.sx-tab[data-mode="design"]').click()
+  await command(page, 'Sketch on the bed or a face')
+  const panel = toolPanel(page)
+  await expect(panel).toContainText('Click an origin plane')
+  await pick(page, { objectId: null, partIndex: null, triangle: null, point: null, bed: [100, 100] })
+  await expect(panel).toContainText('The bed')
+  const line = panel.getByTestId('sketch-dof')
+  const freedom = async () => ((await line.count()) ? Number(await line.getAttribute('data-dof')) : -1)
+  const step = async (go: () => Promise<unknown>) => {
+    const before = await freedom()
+    await go()
+    await expect.poll(freedom).not.toBe(before)
+  }
+  const glyphs = async () => ((await scene(page))?.glyphs ?? []).map((g) => g.kind).sort()
+
+  await page.locator('body').press('l')
+  await sketchAt(page, 'click', [60, 60])
+  // one point has nothing to be tangent to, so there is nowhere to drag from yet
+  expect((await scene(page))?.dragFrom).toBeUndefined()
+  await step(() => sketchAt(page, 'click', [90, 60]))
+  await expect.poll(async () => (await scene(page))?.dragFrom).toEqual([90, 60])
+  // press on the end and drag round: a tangent arc, placed on release, and the line goes on from its end
+  await drag(page, 'drag', [97, 66])
+  await step(() => drag(page, 'release', [90, 76]))
+  await expect.poll(async () => (await scene(page))?.dragFrom).toEqual([90, 76])
+  // a level line tangent to the arc adds two freedoms and takes two, so wait on its end instead
+  await sketchAt(page, 'click', [60, 76])
+  await expect.poll(async () => (await scene(page))?.dragFrom).toEqual([60, 76])
+  await step(() => sketchAt(page, 'click', [60, 60]))
+  // a level line, the arc tangent to it, a level line tangent to the arc, and the upright that closes it
+  await expect.poll(glyphs).toEqual(['horizontal', 'horizontal', 'tangent', 'tangent', 'vertical'])
+
+  // Ctrl (Cmd on a Mac) leaves no constraints behind
+  await page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('sketch', { kind: 'click', at: [120, 60], mmPerPx: 0.2, screen: [700, 420], shift: false, alt: false, ctrl: true }))
+  await step(() => page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('sketch', { kind: 'click', at: [140, 60], mmPerPx: 0.2, screen: [700, 420], shift: false, alt: false, ctrl: true })))
+  expect(await glyphs()).toHaveLength(5)
+
+  // Show constraints hides the glyphs
+  await panel.locator('#sk-show-constraints').click()
+  await expect.poll(glyphs).toEqual([])
+  await panel.locator('#sk-show-constraints').click()
+  await expect.poll(glyphs).toHaveLength(5)
+
+  await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Select' }).click()
+  await page.getByTestId('sketch-finish').click()
+  await expect.poll(async () => (await loops(page)).length, { timeout: 10_000 }).toBe(2)
+  expect((await loops(page))[0]!.segments!.map((s) => s.type)).toEqual(['line', 'arc', 'line', 'line'])
 })

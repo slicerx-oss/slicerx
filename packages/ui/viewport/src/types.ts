@@ -324,13 +324,15 @@ export interface SketchEvent {
   /** `hover` (at most one per frame), `click`, `context` (a right click), `drag` and `release` of a handle. */
   kind: 'hover' | 'click' | 'context' | 'drag' | 'release'
   at: [number, number]
-  /** The handle being dragged, an index into the scene's handles. */
+  /** The handle being dragged, an index into the scene's handles, or -1 for the scene's dragFrom point. */
   handle?: number
   mmPerPx: number
   /** Client pixels, for a field placed at the cursor. */
   screen: [number, number]
   shift: boolean
   alt: boolean
+  /** Ctrl, or Cmd on a Mac. */
+  ctrl?: boolean
 }
 
 export interface CameraState {

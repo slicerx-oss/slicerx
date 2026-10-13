@@ -837,3 +837,19 @@ export function toggleConstruction(sketch: Sketch, e: number): Entity[] {
     return { ...x, construction: true }
   })
 }
+
+/** Where the line being drawn can drag a tangent arc from: its open end, once it has a segment to be tangent to. */
+export function lineArcFrom(sketch: Sketch, draft: Draft): V2 | null {
+  if (draft.tool !== 'line' || draft.chain === undefined || !draft.points[0]) return null
+  const c = sketch[draft.chain]
+  return c?.kind === 'chain' && tangentAtEnd(c) ? draft.points[0] : null
+}
+
+/** A drag off the line's open end draws a tangent arc to `p`, as in Fusion; the line goes on from the arc's end. */
+export function dragArc(sketch: Sketch, draft: Draft, p: V2): { sketch: Entity[]; draft: Draft } {
+  const r = click(sketch, { ...draft, tool: 'arcTangent' }, p)
+  return { sketch: r.sketch, draft: r.draft.points.length ? { ...r.draft, tool: 'line' } : emptyDraft('line') }
+}
+
+/** The tangent arc a drag off the line's open end would draw to `p`. */
+export const dragArcPreview = (sketch: Sketch, draft: Draft, p: V2): V2[] => preview({ ...draft, tool: 'arcTangent' }, p, {}, sketch)
