@@ -1,0 +1,20 @@
+kind: guide
+schema_version: 1
+id: unattended_printing
+name: Printing unattended or overnight
+aliases: [overnight printing, leave printer running, unattended print, fire safety, printer safety, smoke detector, thermal runaway, safe to leave printer]
+applies_to: [all]
+summary: >
+  Long prints often run overnight. Firmware protection makes that safer, not
+  risk free: a heater fault, a damaged cable or a print that came loose can
+  still go wrong with nobody there. Place the printer well, watch it remotely
+  and keep a smoke detector nearby.
+facts:
+  - {text: "Thermal runaway protection stops a print when a heater's temperature does not follow what it was told. Prusa stops the print and shows a Thermal Runaway error when the bed drops more than 2 C for over 60 seconds.", src: [prusa_kb_bed_thermal_runaway]}
+  - {text: "Bambu recalled early A1 printers (sold before January 30, 2024) because the heatbed cable could be damaged and short, with a risk of fire. Affected units were offered a replacement heatbed and cable.", src: [bambu_a1_recall]}
+  - {text: "Bambu's X1 and H2 printers watch the print with a camera and detect spaghetti.", src: [bambu_wiki_x1_intro, bambu_wiki_h2_detection]}
+pilot_actions:
+  - "Say plainly that many people print overnight but it is not risk free; never call it completely safe."
+  - "Suggest a smoke detector near the printer, a stable spot away from anything that burns, current firmware, and a camera or failure detection to watch from a phone."
+  - "For an A1, mention checking that the unit is not one of the recalled early serials, or that it has the replacement cable."
+src: [prusa_kb_bed_thermal_runaway, bambu_a1_recall, bambu_wiki_x1_intro, bambu_wiki_h2_detection]

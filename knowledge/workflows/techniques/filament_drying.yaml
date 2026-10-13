@@ -1,0 +1,21 @@
+kind: guide
+schema_version: 1
+id: filament_drying
+name: Drying and storing filament
+aliases: [dry filament, wet filament, moisture, humidity, filament storage, dry box, desiccant, how often to dry filament]
+applies_to: [all]
+summary: >
+  When filament needs drying and how to keep it dry. How much a material takes on
+  water decides how often: nylon and TPU need drying before most prints, PETG
+  when it shows signs, PLA rarely. Each filament file has its own drying
+  temperature and time.
+facts:
+  - {text: "Bambu's material table marks drying as required for PA (nylon) and TPU, and as recommended for PLA and PETG. Required means dry before printing and print from a dry box.", src: [bambu_wiki_material_table]}
+  - {text: "Bambu asks for TPU and nylon to be stored and printed with desiccant below 20 percent relative humidity.", src: [bambu_wiki_material_table, bambu_wiki_drying]}
+  - {text: "Signs of wet filament: popping at the nozzle, new stringing, bubbles, rough walls and weak layer bonding. Wet nylon steams and foams.", src: [bambu_wiki_drying, bambu_wiki_material_table]}
+  - {text: "Drying temperatures and times differ by material. Bambu gives PETG 60 to 65 C on its drying page (70 C for 8 h in its material table), TPU 70 C for 8 h and PA 80 C for 8 to 12 h, in an oven.", src: [bambu_wiki_drying, bambu_wiki_material_table]}
+pilot_actions:
+  - "Answer 'how often' by material: nylon and TPU before most prints and stored sealed; PETG when it pops, strings or prints rough; PLA when it turns brittle or prints rough after open storage."
+  - "Read the drying block of the filament file (kb.filament) for the temperature and time; never give one number for every material."
+  - "Suggest sealed storage with desiccant for any open spool kept for weeks."
+src: [bambu_wiki_drying, bambu_wiki_material_table]

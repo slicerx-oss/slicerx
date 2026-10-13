@@ -98,10 +98,30 @@ const norm = (s: string): string =>
 
 const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'to', 'for', 'in', 'on', 'with', 'is', 'my', 'it', 'how', 'what', 'why', 'do', 'i', 'at', 'be', 'by', 'from', 'this', 'that', 'should', 'can', 'use'])
 
+// words whose ending is not a suffix
+const KEEP = new Set(['string', 'spring', 'ring', 'bring', 'thing', 'during', 'ceiling', 'speed', 'feed', 'need', 'bleed', 'gas', 'pass', 'less', 'glass', 'press', 'stress', 'gloss', 'loss', 'abs', 'pls', 'yes', 'ptfe', 'series', 'always', 'its', 'has', 'was', 'this', 'thus', 'plus', 'bus', 'axis', 'chassis', 'bias'])
+
+/** A light stem, so "strings", "stringing" and "string" meet: drops a plural s, -ing and -ed. */
+export function stem(t: string): string {
+  if (KEEP.has(t) || /[0-9]/.test(t)) return t
+  if (t.endsWith('ing') && t.length > 5) return undouble(t.slice(0, -3))
+  if (t.endsWith('ied') && t.length > 4) return `${t.slice(0, -3)}y`
+  if (t.endsWith('ies') && t.length > 4) return `${t.slice(0, -3)}y`
+  if (t.endsWith('ed') && t.length > 4 && !t.endsWith('eed')) return undouble(t.slice(0, -2))
+  if (t.endsWith('s') && t.length > 3 && !t.endsWith('ss') && !t.endsWith('us') && !t.endsWith('is')) return t.slice(0, -1)
+  return t
+}
+
+// "shipped" to "ship", "stopping" to "stop"
+function undouble(t: string): string {
+  return t.length > 3 && t[t.length - 1] === t[t.length - 2] && !/[lsz]/.test(t[t.length - 1]!) ? t.slice(0, -1) : t
+}
+
 export function tokenize(s: string): string[] {
   return norm(s)
     .split(' ')
     .filter((t) => t.length > 1 && !STOP.has(t))
+    .map(stem)
 }
 
 function flatten(v: unknown, out: string[]): void {
@@ -134,6 +154,7 @@ export function createKnowledgeBase(index: KbIndex): KnowledgeBase {
   // BM25 fields: names and aliases weigh more than body text.
   const docTerms = index.docs.map((d) => {
     const head = tokenize([d.id, d.name, ...d.aliases].join(' '))
+    const named = new Set(head)
     const body: string[] = []
     flatten(d.data, body)
     const terms = new Map<string, number>()
@@ -141,7 +162,7 @@ export function createKnowledgeBase(index: KbIndex): KnowledgeBase {
     for (const t of tokenize(body.join(' '))) terms.set(t, (terms.get(t) ?? 0) + 1)
     let len = 0
     for (const n of terms.values()) len += n
-    return { d, terms, len }
+    return { d, terms, len, named }
   })
   const avgLen = docTerms.reduce((a, x) => a + x.len, 0) / Math.max(1, docTerms.length)
   const df = new Map<string, number>()
@@ -170,6 +191,8 @@ export function createKnowledgeBase(index: KbIndex): KnowledgeBase {
           const n = df.get(t) ?? 0
           const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5))
           score += (idf * tf * 2.2) / (tf + 1.2 * (0.25 + 0.75 * (x.len / avgLen)))
+          // a word in the entry's own name or aliases says more than any count of it in the body
+          if (x.named.has(t)) score += Math.max(idf, 1.5) * 1.5
         }
         if (score > 0) hits.push({ doc: x.d, score })
       }
