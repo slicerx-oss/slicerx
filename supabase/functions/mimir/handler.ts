@@ -234,8 +234,9 @@ async function messages(req: Request, env: Env): Promise<Response> {
     return fail(502, 'api_error', 'mimir could not reach the model provider.')
   }
   if (!up.ok || !up.body) {
-    // nothing was generated, so the call settles at nothing; the provider's words stay here
-    await up.body?.cancel().catch(() => {})
+    // nothing was generated, so the call settles at nothing; the provider's words stay here,
+    // in the function log only: its status and error, never the key or the prompt
+    console.error('mimir upstream:', up.status, await upstreamError(up))
     await later(settle(false))
     if (up.status === 429 || up.status === 529 || up.status >= 500) return fail(503, 'overloaded_error', 'The model provider is busy. Try again in a moment.')
     return fail(502, 'api_error', `The model provider refused the request (${up.status}).`)
@@ -264,6 +265,19 @@ async function messages(req: Request, env: Env): Promise<Response> {
   })
 }
 
+// The provider's error type and message from a refused call, cut short. Its validation
+// messages name fields, not what the person wrote.
+async function upstreamError(up: Response): Promise<string> {
+  try {
+    const text = await up.text()
+    const e = (JSON.parse(text) as Obj)['error']
+    if (typeof e === 'object' && e !== null) return `${String((e as Obj)['type'])}: ${String((e as Obj)['message']).slice(0, 300)}`
+    return 'no error body'
+  } catch {
+    return 'unreadable error body'
+  }
+}
+
 // The prompt's exact token count from the provider, or null when it cannot say.
 async function countTokens(env: Env, body: Obj): Promise<number | null> {
   const { model, system, messages, tools, tool_choice, thinking } = body
@@ -273,7 +287,10 @@ async function countTokens(env: Env, body: Obj): Promise<number | null> {
       headers: { 'content-type': 'application/json', 'x-api-key': env.anthropicKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({ model, system, messages, tools, tool_choice, thinking }),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.error('mimir count_tokens:', res.status, await upstreamError(res))
+      return null
+    }
     const n = ((await res.json()) as Obj)['input_tokens']
     return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.ceil(n) : null
   } catch {
