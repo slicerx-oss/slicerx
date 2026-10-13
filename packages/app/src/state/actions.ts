@@ -428,8 +428,9 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
       }
       return
     }
-    const message = engineErrorText(e instanceof Error ? e.message : String(e))
-    if (await dropRefusedProjectSetting(message)) again = true
+    const raw = e instanceof Error ? e.message : String(e)
+    const message = engineErrorText(raw)
+    if (await dropRefusedProjectSetting(raw)) again = true
     else {
       // A refused slice (off the bed, in an excluded area) must not leave the last slice's toolpaths looking current.
       set({ slice: { status: 'error', message }, preview: null })
