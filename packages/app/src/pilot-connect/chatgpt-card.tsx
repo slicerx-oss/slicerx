@@ -69,7 +69,7 @@ export function ChatGptCard({ compact = false, idPrefix = 'cg', withLocal = true
     if (signedIn || state.status === 'loading') return null
     return (
       <div className="cg cg-compact">
-        <Icon name="cloud" size={16} />
+        <Icon name="creator" size={16} />
         <span className="min0">
           <b>Connect your ChatGPT account</b>
           <small>{ASSISTANT_NAME} answers with your plan. Nothing to paste.</small>
@@ -84,7 +84,7 @@ export function ChatGptCard({ compact = false, idPrefix = 'cg', withLocal = true
   return (
     <div className="cg">
       <div className="cg-head">
-        <Icon name="cloud" size={18} />
+        <Icon name="creator" size={18} />
         <div className="min0">
           <b>ChatGPT account</b>
           <small>{signedIn ? `Signed in${signedIn.email ? ` as ${signedIn.email}` : ''}${signedIn.connectedAt ? `, since ${whenText(signedIn.connectedAt)}` : ''}.` : `Sign in once and ${ASSISTANT_NAME} answers with your plan. The browser opens for the sign-in; no key to paste.`}</small>
