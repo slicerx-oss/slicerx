@@ -8,6 +8,7 @@ import { EditionContext, NEUTRAL } from '../src/edition'
 import { HostContext } from '../src/host'
 import { MimirStep, mimirChoices, mimirOnFinish, type MimirChoice } from '../src/first-run/mimir-step'
 import { registerMimirCloud } from '../src/pilot-connect/cloud'
+import { MimirSetup } from '../src/pilot-connect/mimir-setup'
 import { BASE_STEPS, contractStep, initialFlow, normalizeStep, progress, reduceFlow, stepLabel, type FlowEvent, type FlowState } from '../src/first-run/model'
 import { registerLocalAi, type LocalNet } from '../src/pilot-connect/local-ai'
 import { localAiJob, resetLocalAi } from '../src/pilot-connect/local-ai-job'
@@ -75,6 +76,19 @@ describe('first run with the mimir step', () => {
     view.unmount()
     expect(mimirOnFinish('cloud')).toEqual({ mode: 'on', provider: 'mimir-cloud' })
     for (const c of ['key', 'chatgpt', 'local', 'skip'] as const) expect(mimirOnFinish(c)).toBeNull()
+  })
+
+  it('in Settings, the cloud card offers Use mimir free only until it is the connection', () => {
+    const cloudEdition = { ...NEUTRAL, ai: { ...NEUTRAL.ai, keySource: 'cloud' as const }, backend: { ...NEUTRAL.backend, supabase: { url: 'https://abcdefghijklmnop.supabase.co', anonKey: 'public-anon-key-from-the-supabase-dashboard' } } }
+    registerMimirCloud({ quota: async () => { throw new Error('unused') }, forget: async () => 0, register: async () => undefined })
+    set({ pilot: { mode: 'on', provider: 'anthropic', model: 'auto' } })
+    const view = render(inHost(createElement(EditionContext.Provider, { value: cloudEdition }, createElement(MimirSetup, { place: 'settings', idPrefix: 't' }))))
+    fireEvent.click(screen.getByTestId('ms-choice-cloud'))
+    expect(screen.getByRole('button', { name: /Use mimir free/ })).toBeTruthy()
+    act(() => set({ pilot: { mode: 'on', provider: 'mimir-cloud' } }))
+    expect(screen.queryByRole('button', { name: /Use mimir free/ })).toBeNull()
+    expect(screen.getByRole('status').textContent).toContain('Connected to mimir cloud')
+    view.unmount()
   })
 
   it('offers a local model only where the shell can run one', () => {
