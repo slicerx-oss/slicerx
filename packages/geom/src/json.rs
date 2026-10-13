@@ -85,6 +85,16 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("nest.step", "nest"),
     ("nest.end", "nest"),
     ("format.read3mf", "formats"),
+    ("brep.box", "brep"),
+    ("brep.cylinder", "brep"),
+    ("brep.extrude", "brep"),
+    ("brep.boolean", "brep"),
+    ("brep.subtract", "brep"),
+    ("brep.cut", "brep"),
+    ("brep.info", "brep"),
+    ("brep.tessellate", "brep"),
+    ("brep.save", "brep"),
+    ("brep.load", "brep"),
 ];
 
 /// Whether this build has the feature.
@@ -105,6 +115,7 @@ fn has(feature: &str) -> bool {
         "calib" => cfg!(feature = "calib"),
         "hollow" => cfg!(feature = "hollow"),
         "formats" => cfg!(feature = "formats"),
+        "brep" => cfg!(feature = "brep"),
         _ => false,
     }
 }
@@ -496,8 +507,18 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             crate::nest::end(field(req, "session")?);
             Ok(json!({}))
         }
+        #[cfg(feature = "brep")]
+        o if o.starts_with("brep.") && ALL_OPERATIONS.iter().any(|(n, _)| *n == o) => brep_op(&o[5..], req),
         _ => crate::json_cad::call(op, req, enc, files).unwrap_or_else(|| Err(unknown(op))),
     }
+}
+
+/// An exact solid op of sx-brep. A body lasts only as long as the process that made it, so a caller that starts one
+/// per call (the CLI) asks for `"save": true` and passes bodies back as `{"smb": text}`.
+#[cfg(feature = "brep")]
+fn brep_op(op: &str, req: &Value) -> Result<Value> {
+    let reply = sx_brep::call(op, &req.to_string()).map_err(|e| Error::geometry("brep", e))?;
+    serde_json::from_str(&reply).map_err(|e| Error::Json(e.to_string()))
 }
 
 fn import_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
