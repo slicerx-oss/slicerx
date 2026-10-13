@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! `sx-geom <operation> [--out-dir DIR] < request.json > response.json`; `sx-geom --version` prints the version.
 //!
-//! meshes come back as base64 stl (`stlBase64`), or with `--out-dir` as stl files (`stlPath`). `format.read3mf`
-//! reads a 3mf named by `{"data":{"path":"file.3mf"}}` this way: each part's mesh in its object's space.
+//! meshes come back as numbers (`positions` and `indices`, as `meshOutput` asks), or with `--out-dir` as stl files
+//! (`stlPath`). `format.read3mf` reads a 3mf named by `{"data":{"path":"file.3mf"}}` this way: each part's mesh in
+//! its object's space, its vertices shared as the file has them.
 
 use serde_json::Value;
 use std::io::{Read, Write};
@@ -64,7 +65,8 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
     let mut out = json::call_value(op, &req, &loader)?;
     // meshes the call wrote as buffers (`rawOut`, a 3mf's parts) leave as stl like the rest
     let mut files: Vec<Option<json::OutFile>> = json::take_out_files().into_iter().map(Some).collect();
-    raw_meshes(&mut out, &mut files)?;
+    let as_stl = req.get("meshOutput").and_then(Value::as_str) == Some("stlBase64");
+    raw_meshes(&mut out, &mut files, as_stl)?;
     if let Some(dir) = out_dir {
         std::fs::create_dir_all(&dir)
             .map_err(|e| sx_geom::Error::invalid_arg(format!("{}: {e}", dir.display())))?;
@@ -120,7 +122,9 @@ fn paint(bytes: &[u8]) -> Value {
     Value::Object(out)
 }
 
-fn raw_meshes(v: &mut Value, files: &mut [Option<json::OutFile>]) -> sx_geom::Result<()> {
+/// output buffers as json: a mesh as base64 stl when `as_stl`, else as flat `positions` and `indices` numbers like
+/// every other operation's meshes; paint codes as pairs
+fn raw_meshes(v: &mut Value, files: &mut [Option<json::OutFile>], as_stl: bool) -> sx_geom::Result<()> {
     let mut take = |n: Option<u64>| {
         n.and_then(|n| usize::try_from(n).ok())
             .and_then(|n| files.get_mut(n))
@@ -144,18 +148,25 @@ fn raw_meshes(v: &mut Value, files: &mut [Option<json::OutFile>]) -> sx_geom::Re
             if let (Some(json::OutFile::Positions(p)), Some(json::OutFile::Triangles(t))) =
                 (positions, triangles)
             {
-                let positions = p.iter().map(|c| c.map(f64::from)).collect();
                 map.remove("positionsOut");
                 map.remove("trianglesOut");
-                map.insert("stlBase64".to_owned(), stl(&sx_geom::TriMesh::new(positions, t)));
+                if as_stl {
+                    let positions = p.iter().map(|c| c.map(f64::from)).collect();
+                    map.insert("stlBase64".to_owned(), stl(&sx_geom::TriMesh::new(positions, t)));
+                } else {
+                    let flat: Vec<f64> = p.iter().flatten().map(|&c| f64::from(c)).collect();
+                    let indices: Vec<u32> = t.iter().flatten().copied().collect();
+                    map.insert("positions".to_owned(), Value::from(flat));
+                    map.insert("indices".to_owned(), Value::from(indices));
+                }
             }
             for (_, child) in map.iter_mut() {
-                raw_meshes(child, files)?;
+                raw_meshes(child, files, as_stl)?;
             }
         }
         Value::Array(items) => {
             for child in items {
-                raw_meshes(child, files)?;
+                raw_meshes(child, files, as_stl)?;
             }
         }
         _ => {}
