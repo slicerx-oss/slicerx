@@ -467,6 +467,61 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
+  const sketchEdit = defineTool({
+    name: 'geom.sketch_edit',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Edit sketch loops as the sketch tools do, and get the loops back: "intersect" lists where segments cross; "trim" takes off the piece of a segment around a point, back to the nearest crossings (a curve that crosses nothing goes whole); "extend" runs an open loop\'s end segment on to the nearest curve; "mirror" adds copies of picked loops across a line; "pattern" adds copies along a step or round a center. Loops and segments count from 0. `from` gives, for each loop back, the loops it came from (a trim joins what is left to open chains its ends meet, and closes it when the ends meet). Pass the loops on to slicerx_design_sketch or slicerx_geom_extrude.',
+    input: z.object({
+      loops,
+      op: z.enum(['intersect', 'trim', 'extend', 'mirror', 'pattern']),
+      loop: z.number().int().min(0).optional().describe('trim and extend: the loop'),
+      segment: z.number().int().min(0).optional().describe('trim: the segment'),
+      at: vec2.optional().describe('trim: a point on the piece to take off, mm'),
+      end: z.enum(['start', 'end']).optional().describe('extend: which end'),
+      pick: z.array(z.number().int().min(0)).min(1).max(256).optional().describe('mirror and pattern: the loops to copy'),
+      axis: z.object({ point: vec2, direction: vec2 }).optional().describe('mirror: the line to mirror across'),
+      kind: z.enum(['line', 'circle']).optional().describe('pattern: along a step, or round a center'),
+      count: z.number().int().min(2).max(1000).optional().describe('pattern: how many in all, the original counted'),
+      step: vec2.optional().describe('pattern along: mm from one copy to the next'),
+      center: vec2.optional().describe('pattern round: the center'),
+      angle_deg: z.number().min(-360).max(360).optional().describe('pattern round: the angle the copies spread through; 360 spreads them evenly'),
+    }),
+    async run(i) {
+      const need = (what: string, v: unknown) => {
+        if (v === undefined) throw new Error(`${i.op} needs ${what}`)
+      }
+      let req: Record<string, unknown> = { loops: i.loops }
+      if (i.op === 'trim') {
+        need('loop', i.loop)
+        need('segment', i.segment)
+        need('at', i.at)
+        req = { ...req, loop: i.loop, segment: i.segment, at: i.at }
+      } else if (i.op === 'extend') {
+        need('loop', i.loop)
+        need('end', i.end)
+        req = { ...req, loop: i.loop, end: i.end }
+      } else if (i.op === 'mirror') {
+        need('pick', i.pick)
+        need('axis', i.axis)
+        req = { ...req, pick: i.pick, axis: i.axis }
+      } else if (i.op === 'pattern') {
+        need('pick', i.pick)
+        need('count', i.count)
+        const round = i.kind === 'circle'
+        if (round) need('center', i.center)
+        else need('step', i.step)
+        req = { ...req, pick: i.pick, kind: round ? 'circle' : 'line', count: i.count, ...(round ? { center: i.center, angleDeg: i.angle_deg ?? 360 } : { step: i.step }) }
+      }
+      const out = await call(`sketch.${i.op}`, req)
+      const n = Array.isArray(out['loops']) ? out['loops'].length : 0
+      const summary = i.op === 'intersect' ? `${Array.isArray(out['hits']) ? out['hits'].length / 2 : 0} crossing(s)` : `${n} loop${n === 1 ? '' : 's'} after the ${i.op}`
+      return { summary, output: out }
+    },
+  })
+
   const extrude = defineTool({
     name: 'geom.extrude',
     version: '1.2.0',
@@ -778,5 +833,5 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketch, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell] as PilotTool<never>[]
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell] as PilotTool<never>[]
 }

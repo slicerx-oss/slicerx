@@ -73,7 +73,7 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
   it('lists the CAD tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('extrudes a rectangle, then cuts a hole into its top face', async () => {
@@ -193,6 +193,24 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
     expect(solved.output.points[2]?.[1]).toBeCloseTo(10)
     const clash = await h.call('slicerx_geom_sketch_solve', { ...square, constraints: [...square.constraints, { type: 'length', line: 1, value: 12 }] })
     expect(data<{ ok: boolean; output: { status: string } }>(clash).output.status).toBe('conflict')
+
+    // a plus: trim one arm, extend a short line to the upright, mirror and pattern a square
+    const plus = [{ start: [0, 0], segments: [{ type: 'line', to: [10, 0] }] }, { start: [5, -5], segments: [{ type: 'line', to: [5, 5] }] }]
+    const hits = data<{ output: { hits: unknown[] } }>(await h.call('slicerx_geom_sketch_edit', { op: 'intersect', loops: plus })).output
+    expect(hits.hits).toHaveLength(2)
+    const trimmed = data<{ output: { loops: { segments: { to: number[] }[] }[]; from: number[] } }>(await h.call('slicerx_geom_sketch_edit', { op: 'trim', loops: plus, loop: 0, segment: 0, at: [8, 0] })).output
+    expect(trimmed.from).toEqual([[0], [1]])
+    expect(trimmed.loops[0]?.segments[0]?.to).toEqual([5, 0])
+    const short = [{ start: [0, 0], segments: [{ type: 'line', to: [2, 0] }] }, plus[1]!]
+    const ext = data<{ output: { loops: { segments: { to: number[] }[] }[] } }>(await h.call('slicerx_geom_sketch_edit', { op: 'extend', loops: short, loop: 0, end: 'end' })).output
+    expect(ext.loops[0]?.segments[0]?.to).toEqual([5, 0])
+    const mirrored = data<{ output: { loops: unknown[] } }>(await h.call('slicerx_geom_sketch_edit', { op: 'mirror', loops: ring, pick: [0], axis: { point: [0, 0], direction: [0, 1] } })).output
+    expect(mirrored.loops).toHaveLength(2)
+    const pat = data<{ output: { loops: unknown[] } }>(await h.call('slicerx_geom_sketch_edit', { op: 'pattern', loops: ring, pick: [0], kind: 'circle', count: 6, center: [0, 0] })).output
+    expect(pat.loops).toHaveLength(6)
+    const none = await h.call('slicerx_geom_sketch_edit', { op: 'extend', loops: short, loop: 1, end: 'start' })
+    expect(none.isError).toBe(true)
+    expect(JSON.stringify(none.content)).toMatch(/nothing to extend to/)
   })
 
   it('reads a model back: its size, volume and whether it is closed, a hole diameter and a face distance', async () => {
