@@ -22,7 +22,7 @@ emxx="$work/emsdk/upstream/emscripten/em++"
 export EM_CONFIG="$work/emsdk/.emscripten"
 
 # the paths of the sources stay out of the output, so a build elsewhere gives the same bytes
-flags="-Oz -std=c++17 -w -fwasm-exceptions -DNDEBUG -DNOMINMAX -DSM_NO_DEBUG_CODE -DSM_NO_GFX_OUTPUT_CODE \
+flags="-Oz -flto -std=c++17 -w -fwasm-exceptions -DNDEBUG -DNOMINMAX -DSM_NO_DEBUG_CODE -DSM_NO_GFX_OUTPUT_CODE \
   -ffile-prefix-map=$kernel=smlib -ffile-prefix-map=$here=brep -I$here/cpp"
 obj="$work/obj"
 mkdir -p "$obj/smlib" "$obj/smapi"
@@ -49,12 +49,14 @@ xargs -P "$jobs" -L 1 sh -c 'f=$1 o=$2; s=$( (cat "$f"; echo "$SX_COMMON") | $SX
   [ -f "$o" ] && [ "$(cat "$o.stamp" 2> /dev/null)" = "$s" ] && exit 0
   '"$emxx $flags"' -I"$3" -I"$4" -c "$f" -o "$o" && echo "$s" > "$o.stamp"' sh < "$list"
 
+# Link-time optimization makes the code at the link, so the link takes the exception model too: without it a
+# failed call throws past its catch and the reply loses its message.
 # An ES module that runs in a browser worker and in Node (tests). The kernel recurses deeply, so it gets an 8 MB stack.
 mkdir -p "$here/lib"
 # only this build's objects, so one left from an earlier kernel copy is not linked in
 "$emxx" $flags $(awk '$2 ~ /\/obj\/smapi\// {print $2}' "$list") $(awk '$2 ~ /\/obj\/smlib\// {print $2}' "$list") -o "$here/lib/sx_brep.mjs" \
   -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,worker,node -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB \
-  -sSTACK_SIZE=8MB -sEXPORTED_FUNCTIONS=_sx_brep_call,_sx_brep_free,_malloc,_free \
+  -sSTACK_SIZE=8MB -Wl,-mllvm,-wasm-enable-eh -Wl,-mllvm,-exception-model=wasm -sEXPORTED_FUNCTIONS=_sx_brep_call,_sx_brep_free,_malloc,_free \
   -sEXPORTED_RUNTIME_METHODS=UTF8ToString,stringToNewUTF8
 cd "$here/lib"
 for f in sx_brep.mjs sx_brep.wasm; do
