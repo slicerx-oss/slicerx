@@ -74,7 +74,7 @@ A request may carry `keySalt` (a history step's, up to 2^52): the faces the oper
 
 Errors come back as a message the UI can show as is, for example "the cut removes the whole body".
 
-Bundle size: the worker's wasm is under 3 MB (under 1 MB gzip). manifold-rust and its exact arithmetic add about 880 KB of code, and ttf-parser about 68 KB plus the 24.5 KB font. The main app bundle does not include it.
+Bundle size: the worker's wasm is under 3 MB (under 1 MB gzip). manifold-rust and its exact arithmetic add about 880 KB of code, and the font reader (read-fonts) about 96 KB plus the 24.5 KB font. The main app bundle does not include it.
 
 ### Engine features
 
