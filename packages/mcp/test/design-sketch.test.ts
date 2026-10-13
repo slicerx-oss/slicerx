@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Finished sketches through the design tools: design.sketch puts one in the host's timeline, and an extrude or revolve
-// given its id draws on it and names it. Only a host with a timeline (the app) has them.
-import type { Design, DesignHost, SketchItem, StepParams } from '@slicerx/cad-history'
+// given its id draws on it and names it. With constraints the host solves the sketch first. Only a host with a
+// timeline (the app) has them.
+import type { Design, DesignHost, SketchConstraint, SketchItem, StepParams } from '@slicerx/cad-history'
 import { describe, expect, it, vi } from 'vitest'
 import { designToolset, NO_ENGINE_HOST } from '../src/toolset'
 
@@ -10,7 +11,7 @@ const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 const LOOPS = [{ type: 'circle' as const, center: [0, 0] as [number, number], diameterMm: 10 }]
 const FRAME = { origin: [0, 0, 5] as [number, number, number], normal: [0, -1, 0] as [number, number, number], u: [1, 0, 0] as [number, number, number], v: [0, 0, 1] as [number, number, number] }
 
-function host() {
+function host(settle?: DesignHost['settleSketch']) {
   const d: Design = { id: 'd1', name: 'Clip', history: { version: 1, base: [], steps: [] }, transform: I, parts: [], status: [], madeBy: {}, redo: [] }
   const sketches: SketchItem[] = []
   const add = vi.fn(async (_d: Design, part: number, params: StepParams, _l?: string, opts?: { sketch?: string }) => {
@@ -33,10 +34,11 @@ function host() {
       sketches.push(k)
       return k
     },
+    ...(settle ? { settleSketch: settle } : {}),
   }
   const tools = designToolset(h)
   const run = (name: string, input: Record<string, unknown>) => tools.find((t) => t.name === name)!.run(input as never, {} as never)
-  return { d, add, run }
+  return { d, add, run, sketches }
 }
 
 describe('finished sketches in the design tools', () => {
@@ -62,5 +64,34 @@ describe('finished sketches in the design tools', () => {
     const plain = designToolset({ ...NO_ENGINE_HOST, get: () => ({}) as Design })
     const sk = plain.find((t) => t.name === 'design.sketch')!
     await expect(sk.run({ loops: LOOPS } as never, {} as never)).rejects.toThrow(/turn on the app link/)
+  })
+
+  it('solves the constraints first, keeps what the host settled, and reports driven dimensions', async () => {
+    const moved = [{ type: 'circle' as const, center: [0, 0] as [number, number], diameterMm: 12 }]
+    const settle = vi.fn(async (k: { loops: unknown[]; constraints: SketchConstraint[] }) => ({
+      loops: moved,
+      constraints: k.constraints.map((c, n) => (n === 1 ? ({ ...c, value: 12, driven: true } as SketchConstraint) : c)),
+      status: 'redundant' as const,
+      dof: 2,
+    }))
+    const { run, sketches } = host(settle)
+    const cons = [
+      { type: 'diameter', circle: { e: 0, seg: 0 }, value: 12, offset: 3 },
+      { type: 'radius', circle: { e: 0, seg: 0 }, value: 7 },
+    ]
+    const made = await run('design.sketch', { loops: LOOPS, constraints: cons })
+    expect(settle.mock.calls[0]![0]).toEqual({ loops: LOOPS, constraints: cons })
+    expect(made.summary).toBe('Sketch 1 is in the timeline, 2 degrees of freedom left; dimensions [1] are driven')
+    expect(made.output).toMatchObject({ dof: 2, driven: [1] })
+    expect(sketches[0]!.loops).toEqual(moved)
+    expect(sketches[0]!.constraints?.[1]).toMatchObject({ driven: true, value: 12 })
+  })
+
+  it('refuses constraints that conflict, and constraints on a host that cannot solve', async () => {
+    const { run, sketches } = host(async (k) => ({ ...k, status: 'conflict', dof: 0 }))
+    await expect(run('design.sketch', { loops: LOOPS, constraints: [{ type: 'diameter', circle: { e: 0, seg: 0 }, value: 12 }] })).rejects.toThrow(/conflict/)
+    expect(sketches).toHaveLength(0)
+    const none = host()
+    await expect(none.run('design.sketch', { loops: LOOPS, constraints: [{ type: 'diameter', circle: { e: 0, seg: 0 }, value: 12 }] })).rejects.toThrow(/cannot solve/)
   })
 })
