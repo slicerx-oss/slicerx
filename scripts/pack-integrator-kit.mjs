@@ -16,7 +16,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const REPO = 'slicerx-oss/slicerx'
@@ -101,10 +101,14 @@ export function layOutEngine(archives, dest, label) {
 }
 
 function unpack(file, into) {
-  if (file.endsWith('.tar.gz')) return execFileSync('tar', ['-xzf', file, '-C', into], { stdio: 'inherit' })
+  // tar runs in the archive's folder with relative paths: GNU tar (Git for Windows, MSYS2) reads a drive letter in
+  // C:\path as a remote host, and its --force-local is not a bsdtar option
+  const cwd = dirname(file)
+  const local = ['-f', basename(file), '-C', relative(cwd, into) || '.']
+  if (file.endsWith('.tar.gz')) return execFileSync('tar', ['-xz', ...local], { cwd, stdio: 'inherit' })
   // bsdtar (macOS, Windows) reads zip archives; GNU tar does not, so Linux uses unzip
   try {
-    execFileSync('tar', ['-xf', file, '-C', into], { stdio: 'ignore' })
+    execFileSync('tar', ['-x', ...local], { cwd, stdio: 'ignore' })
   } catch {
     execFileSync('unzip', ['-q', '-o', file, '-d', into], { stdio: 'inherit' })
   }
