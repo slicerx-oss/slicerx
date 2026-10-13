@@ -75,6 +75,9 @@ const CAP_MESSAGES: Record<string, [number, string]> = {
   install_rate: [429, 'mimir is getting requests too quickly. Wait a minute and try again.'],
   install_busy: [429, 'mimir is still answering on this computer. Try again when it finishes.'],
   ip_busy: [429, 'mimir is still answering on this network. Try again when it finishes.'],
+  net_daily: [429, "Today's free mimir use on this network is used up. It resets at midnight Melbourne time."],
+  net_full: [429, "Today's free mimir use on this network is used up. It resets at midnight Melbourne time."],
+  net_busy: [429, 'mimir is still answering on this network. Try again when it finishes.'],
   ip_rate: [429, 'mimir is getting requests too quickly from this network. Wait a minute and try again.'],
   edition_busy: [503, 'mimir is busy. Try again in a moment.'],
   register_limit: [429, 'Too many new installs from this network today.'],
@@ -85,11 +88,12 @@ const CAP_MESSAGES: Record<string, [number, string]> = {
   no_ip: [400, 'mimir could not tell which network this came from.'],
 }
 // refusals that an exact token count can turn around
-const DAILY_CAPS = new Set(['install_daily', 'ip_daily', 'edition_daily'])
+// (net_full is not one: the network had used its day before this call)
+const DAILY_CAPS = new Set(['install_daily', 'ip_daily', 'net_daily', 'edition_daily'])
 // refusals that count toward the per-minute rates, so a refused client cannot retry for free.
 // Rate refusals are not counted: they come only while the window is already full, and
 // counting them would grow the log at the flood's own rate.
-const COUNTED = new Set([...DAILY_CAPS, 'install_busy', 'ip_busy', 'edition_busy'])
+const COUNTED = new Set([...DAILY_CAPS, 'net_full', 'install_busy', 'ip_busy', 'net_busy', 'edition_busy'])
 
 // Each install's conversations cache apart from every other install's: a mark after the
 // shared tools and system prompt, so neither a cache hit's speed nor the cost /quota shows
