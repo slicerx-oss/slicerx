@@ -20,8 +20,6 @@ import { get, isCadTool, railOpen, setRail, showsLayers, useApp, type PlateEntry
 import { bounds, sizeOf } from '../plate/transform'
 import { usePrinter } from '../lib/use-printer'
 import { useRightAttention } from '../lib/right-attention'
-import { MiddleName } from '../lib/short-name'
-import { tipAttrs } from '@slicerx/ui'
 import { ViewportHost } from '../viewport/viewport-host'
 import { LayerStrip } from './layer-strip'
 import { ZoneLegend } from './zone-legend'
@@ -124,7 +122,6 @@ export function Studio() {
   const nornOn = useApp((s) => s.norn.pick !== null || s.norn.before !== null)
   const gcodeOn = useGcodeView((s) => s.panel)
   const plate = useApp((s) => s.plate)
-  const plateLoading = useApp((s) => s.plateLoading)
   const layout = useLayout()
   const plateName = useApp((s) => s.plates.find((p) => p.id === s.activePlate)?.name ?? 'Plate 1')
   const manyPlates = useApp((s) => s.plates.length > 1)
@@ -278,14 +275,14 @@ export function Studio() {
 
         <div className="hud hud-bl">
           {cad || layout.plateList === 'sidebar' ? null : <PlateList layout={layout} />}
+          {/* The plate chip names the plate only; the objects' names and sizes are in the objects list and the scale tool. */}
           {cad ? null : (
-            <div className="platechip sx-overlay">
+            <div className="platechip sx-overlay" data-testid="plate-chip">
               <b>{plateName}</b>
-              <span className="platechip-name" {...(selected ? tipAttrs({ title: selected.name }) : {})}>{selected ? <MiddleName name={selected.name} /> : plateLoading ? 'Loading' : 'Empty'}</span>
-              {plate.length > 1 ? <span>+{plate.length - 1}</span> : null}
             </div>
           )}
-          {selected ? <ModelSize model={design} /> : null}
+          {/* Design keeps the size of the design on screen, which its own panels do not show. */}
+          {cad && selected ? <ModelSize model={design} /> : null}
         </div>
 
         {/* a phone views and prints: no plate tools */}
