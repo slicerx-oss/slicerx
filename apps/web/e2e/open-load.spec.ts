@@ -7,7 +7,7 @@
 // and the settings that follow keep what was built.
 import { expect, type Page } from '@playwright/test'
 import { expectFileDialog, interceptFileDialogs } from './file-dialog'
-import { plateReady, test } from './fixtures'
+import { plateReady, test, viewportReady } from './fixtures'
 import { zip } from './project-zip'
 
 /** A closed tube of `rings` by `around` quads (2 triangles each), the size of a real scan's mesh. */
@@ -50,6 +50,17 @@ const A1_MINI = { id: 'e2e-a1-mini', name: 'Desk A1 mini', profileId: 'bambu-a1-
 type Vp = { stats(): { objectBuilds: number } }
 type Sx = { getState(): { plate: unknown[] } }
 
+/**
+ * Objects the 3D view has built so far. The plate can be ready before the view is, so this waits for the view's ready
+ * mark first: the view sets its handle (__vp) in the same step that raises the mark and builds the plate it has.
+ */
+async function objectBuilds(page: Page): Promise<number> {
+  await viewportReady(page)
+  const n = await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds)
+  if (n === undefined) throw new Error('the 3D view has no __vp handle')
+  return n
+}
+
 async function open(page: Page): Promise<void> {
   interceptFileDialogs(page)
   await page.addInitScript((a1) => {
@@ -90,9 +101,9 @@ test('a big project opens with the page answering and each model built once', as
   await expect.poll(() => page.evaluate(() => performance.getEntriesByName('sx:open:done').length + performance.getEntriesByName('sx:open:drawn').length), { timeout: 120_000 }).toBe(2)
   const run = await page.evaluate(() => {
     const ms = Object.fromEntries(performance.getEntriesByType('measure').filter((e) => e.name.startsWith('sx:open:')).map((e) => [e.name.slice(8), e.startTime + e.duration]))
-    const w = window as unknown as { __stalls: [number, number][]; __vp?: Vp; __sx?: Sx }
+    const w = window as unknown as { __stalls: [number, number][]; __sx?: Sx }
     const parsedIn = (performance.getEntriesByName('sx:open:parse')[0] as PerformanceMeasure | undefined)?.detail?.parsedIn as string | undefined
-    return { ms, parsedIn, stalls: w.__stalls, builds: w.__vp?.stats().objectBuilds ?? -1, objects: w.__sx?.getState().plate.length ?? -1 }
+    return { ms, parsedIn, stalls: w.__stalls, objects: w.__sx?.getState().plate.length ?? -1 }
   })
   // Every stage of the open was timed, in order.
   const stages = ['read', 'unzip', 'parse', 'printer', 'engine', 'objects', 'settings', 'done']
@@ -111,9 +122,10 @@ test('a big project opens with the page answering and each model built once', as
   // The view built the example plate's model, then each of the project's two objects once, however often the printer,
   // the bed and the settings changed after.
   expect(run.objects).toBe(2)
-  expect(run.builds).toBeLessThanOrEqual(3)
+  const builds = await objectBuilds(page)
+  expect(builds).toBeLessThanOrEqual(3)
   await page.waitForTimeout(1000)
-  expect(await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)).toBe(run.builds)
+  expect(await objectBuilds(page)).toBe(builds)
 })
 
 /** The tube as a binary STL: every triangle with its own three corners, as STL writes them. */
@@ -133,7 +145,7 @@ test('a binary STL is drawn from its own read and built once, however soon the e
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await open(page)
-  const builds = await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)
+  const builds = await objectBuilds(page)
   // About 60,000 triangles.
   const file = tubeStl(75, 400)
   const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
@@ -152,7 +164,7 @@ test('a binary STL is drawn from its own read and built once, however soon the e
   // The tube is clean, so the engine's import changed nothing: the object shown first, from the page's own read, stays,
   // built once.
   await expect(page.locator('.obj-name')).toHaveText(['tube.stl'])
-  expect(await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)).toBe(builds + 1)
+  expect(await objectBuilds(page)).toBe(builds + 1)
 })
 
 test('a project opened at start is drawn before the toolpath shader warm-up runs', async ({ page, isMobile }) => {
@@ -161,11 +173,8 @@ test('a project opened at start is drawn before the toolpath shader warm-up runs
   // As a project opened with the app: the open starts as soon as the plate is ready, while the 3D view is new.
   await open(page)
   const file = zip({ '3D/3dmodel.model': tubeModel(125, 400), 'Metadata/project_settings.config': JSON.stringify(P1S) })
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles({ name: 'tube.3mf', mimeType: 'model/3mf', buffer: file })
-  }).toPass({ timeout: 60_000 })
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'tube.3mf', mimeType: 'model/3mf', buffer: file })
   // The warm-up compiles the toolpath shaders once per view; its measure lands when it is done.
   const span = (name: string) => page.evaluate((n) => performance.getEntriesByName(n).map((e) => [e.startTime, e.startTime + e.duration] as [number, number])[0] ?? null, name)
   await expect.poll(async () => (await span('sx:open:drawn')) !== null && (await span('sx:view:warm')) !== null, { timeout: 120_000 }).toBe(true)
