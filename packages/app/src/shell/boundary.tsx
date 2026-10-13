@@ -5,9 +5,10 @@
 // boundaries as class components, hence the one class in the app.
 import { noteViewClosing } from '../camera/closing'
 import { Button, Icon } from '@slicerx/ui'
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, Suspense, type ErrorInfo, type ReactNode } from 'react'
 import { reportCrash } from '../bugs/crash'
-import { isChunkLoadError, reloadForChunk } from '../lib/chunk-reload'
+import { appName } from '../edition'
+import { isChunkLoadError, noteWorkspaceDown, onChunkError, reloadForChunk } from '../lib/chunk-reload'
 
 interface State {
   error: Error | null
@@ -17,6 +18,7 @@ export class WorkspaceBoundary extends Component<{ name: string; children: React
   override state: State = { error: null }
 
   static getDerivedStateFromError(error: Error): State {
+    if (isChunkLoadError(error)) noteWorkspaceDown()
     // A camera view inside goes with it; its stream's close says why.
     noteViewClosing(`the view crashed: ${error.message.slice(0, 60)}`)
     return { error }
@@ -41,7 +43,7 @@ export class WorkspaceBoundary extends Component<{ name: string; children: React
         <div className="ws-error" role="alert">
           <Icon name="alert" size={24} />
           <h2>{this.props.name} did not load</h2>
-          <p>The connection dropped while SlicerX was loading. Save your work, then reload.</p>
+          <p>The connection dropped while {appName()} was loading. Save your work, then reload.</p>
           <Button onClick={() => window.location.reload()}>Reload</Button>
         </div>
       )
@@ -54,5 +56,29 @@ export class WorkspaceBoundary extends Component<{ name: string; children: React
         <Button onClick={() => this.setState({ error: null })}>Try again</Button>
       </div>
     )
+  }
+}
+
+/**
+ * A part of the shell that loads its code when it first shows (a dialog, a watcher). If that code did not download,
+ * the part shows nothing and the app reloads or says so, while the workspace stays up. Other errors go on up as
+ * before.
+ */
+export class LazySlot extends Component<{ children: ReactNode }, State> {
+  override state: State = { error: null }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { error }
+  }
+
+  override componentDidCatch(error: Error): void {
+    if (isChunkLoadError(error)) onChunkError()
+  }
+
+  override render(): ReactNode {
+    const { error } = this.state
+    if (error && !isChunkLoadError(error)) throw error
+    if (error) return null
+    return <Suspense fallback={null}>{this.props.children}</Suspense>
   }
 }

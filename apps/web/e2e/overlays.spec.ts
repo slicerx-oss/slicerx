@@ -189,8 +189,15 @@ test('away from the plate tab, toasts keep their place at the window bottom', { 
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ workspace: 'printers' }))
   await expect(page.locator('.vp')).toHaveCount(0)
   const toast = await postToast(page, 'Saved the plate.')
-  const height = page.viewportSize()!.height
-  expect(Math.round(height - (toast.y + toast.height))).toBe(28)
+  const { width, height } = page.viewportSize()!
+  if (width > 900) {
+    // It rests clear of the status bar along the window's bottom.
+    const bar = (await page.locator('.sx-status').boundingBox())!
+    expect(Math.round(bar.y - (toast.y + toast.height))).toBe(8)
+  } else {
+    // On a phone the page scrolls, status bar and all; the toast keeps to the window bottom.
+    expect(Math.round(height - (toast.y + toast.height))).toBe(28)
+  }
 })
 
 // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).

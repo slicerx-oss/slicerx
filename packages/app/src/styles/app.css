@@ -458,7 +458,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .ws-error { display: grid; justify-items: center; align-content: center; gap: 10px; height: 100%; padding: 32px; text-align: center; color: var(--muted); }
 .ws-error .sx-ic { color: var(--red); }
 .ws-error h2 { margin: 0; font: var(--fw-semibold) var(--fs-lg) var(--f-body); color: var(--fg); }
-.ws-error p { margin: 0 0 8px; max-width: 60ch; }
+.ws-error p { margin: 0 0 8px; max-width: 68ch; text-wrap: balance; }
 
 /* generated cover art: a model as a stack of print layers */
 .layer-art { display: flex; flex-direction: column-reverse; align-items: center; justify-content: flex-start; gap: 3px; width: 62%; height: 62%; margin: auto; }

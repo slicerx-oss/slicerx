@@ -377,6 +377,7 @@ button { cursor: pointer; }
 .sx-frame-root { height: 100%; padding: var(--gutter); display: flex; flex-direction: column; }
 /* The desktop app fills its window: no gap around the app and no rounded frame inside the native one. */
 :root[data-shell="desktop"] .sx-frame-root { padding: 0; }
+:root[data-shell="desktop"] { --toast-floor: calc(var(--h-status) + 8px); }
 :root[data-shell="desktop"] .sx-frame { border: 0; border-radius: 0; }
 /* macOS draws the traffic lights over the top bar (an overlay title bar), so the bar starts after them. */
 :root[data-shell="desktop"][data-os="mac"] .sx-appbar { padding-left: 98px; }
@@ -423,7 +424,7 @@ button { cursor: pointer; }
 .sx-ticks { display: flex; justify-content: space-between; font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--dim); margin-top: 2px; }
 
 /* toasts */
-.sx-toasts { position: fixed; left: var(--overlay-center, 50%); top: var(--overlay-top, auto); bottom: var(--overlay-bottom, calc(28px + env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: var(--overlay-width, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
+.sx-toasts { position: fixed; left: var(--overlay-center, 50%); top: var(--overlay-top, auto); bottom: var(--overlay-bottom, calc(var(--toast-floor) + env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: var(--overlay-width, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
 .sx-toast { pointer-events: none; background: color-mix(in srgb, var(--ink-4) 90%, transparent); border: 1px solid var(--line); padding: 9px 14px; border-radius: var(--r-md); font-size: var(--fs-md); box-shadow: var(--shadow-float); display: flex; align-items: center; gap: 10px; max-width: 100%; animation: sx-toast-in var(--t-slow) var(--ease); }
 .sx-toast button, .sx-toast a { pointer-events: auto; }
 .sx-toast .sx-ic { width: 16px; height: 16px; flex: none; }
@@ -435,6 +436,8 @@ button { cursor: pointer; }
 
 /* phone width */
 @media (max-width: 900px) {
+  /* The frame scrolls with the page here, so the status bar is not under a toast. */
+  :root { --toast-floor: 28px; }
   html, body { height: auto; }
   .sx-frame { min-height: 0; flex: none; }
   .sx-frame-root { height: auto; }
