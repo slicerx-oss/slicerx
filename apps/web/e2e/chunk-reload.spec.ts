@@ -38,8 +38,9 @@ test('a workspace whose code never downloads says so once, in the workspace, wit
   await page.addInitScript(() => {
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
   })
-  // Every fetch fails: the one reload does not help.
-  await page.route(/\/static\/studio-[^/]+\.js$/, (route) => route.abort('internetdisconnected'))
+  // Every fetch fails: the one reload does not help. A reset, as above: a lost network would have the fixtures reload
+  // the page too, and that reload races the app's own one.
+  await page.route(/\/static\/studio-[^/]+\.js$/, (route) => route.abort('connectionreset'))
   await page.goto('./')
   await expect(page.getByRole('heading', { name: /did not load/ })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible()
