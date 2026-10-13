@@ -61,13 +61,14 @@ export function PilotSettingsSection() {
   const pref = useApp((s) => s.pilot)
   const on = pref === null || pref.mode === 'on'
   const off = useApp((s) => pilotState(s) === 'off')
+  const bridgeOn = useApp((s) => s.bridgeStatus.state === 'on')
   return (
     <section className="set-sec" aria-labelledby="pilot-h">
       <h3 id="pilot-h">{ASSISTANT_NAME}</h3>
       <p className="sx-small sx-muted">{ASSISTANT_NAME} answers questions and suggests changes you approve. It uses a model you connect; nothing is sent while it is off.</p>
       <MimirSetup place="settings" idPrefix="pcs" />
-      {/* an outside agent reaches mimir through the hub the desktop app runs; a browser has none */}
-      {bridgeConnector()?.automatic === true ? <AgentPanel idPrefix="pcs-ag" /> : null}
+      {/* an outside agent reaches mimir through a hub: the one the desktop app runs, or one this page is paired with */}
+      {bridgeConnector()?.automatic === true || bridgeOn ? <AgentPanel idPrefix="pcs-ag" /> : null}
       <CloudShare />
       {off ? <p className="sx-small sx-muted">{ASSISTANT_NAME} is off. Connect above to turn it back on.</p> : null}
       {!off ? (
