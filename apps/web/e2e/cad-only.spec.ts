@@ -13,6 +13,8 @@ const sliceStatus = (page: Page) => page.evaluate(() => (window as unknown as { 
 
 async function openCadOnly(page: Page): Promise<void> {
   await page.addInitScript(() => {
+    // saves go through a plain download, not the browser's save picker
+    Reflect.deleteProperty(window, 'showSaveFilePicker')
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.debug', '1')
