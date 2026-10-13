@@ -62,10 +62,11 @@ export function PrinterSettingsDialog({ printer }: { printer: { vendor: string; 
   // The values the slice uses: the printer's shipped presets under the person's changes.
   const config = useMemo(() => ({ ...base, ...resolveConfig(easy, overrides) }) as Record<string, SettingValue | undefined>, [base, easy, overrides, profile])
   const groups = TABS.find((t) => t.id === tab)?.groups ?? []
+  // A changed key stays listed whatever the mode, so a change made in a higher mode is never hidden.
   const defs: SettingDef[] = useMemo(
     () =>
-      PRINTER_KEYS.filter((d) => levels.has(d.mode) && (q ? fuzzyScore(q, d.label) >= 0 || fuzzyScore(q, d.key) >= 0 : groups.includes(d.group))),
-    [levels, q, groups.join()],
+      PRINTER_KEYS.filter((d) => (levels.has(d.mode) || (d.mode !== 'hidden' && d.key in overrides)) && (q ? fuzzyScore(q, d.label) >= 0 || fuzzyScore(q, d.key) >= 0 : groups.includes(d.group))),
+    [levels, q, groups.join(), overrides],
   )
   const changed = Object.keys(overrides).filter((k) => PRINTER_KEYS.some((d) => d.key === k)).length
   const close = () => set({ printerSettingsOpen: false })

@@ -196,11 +196,17 @@ describe('one print sequence for the plate', () => {
     })
     expect(get().overrides['print_sequence']).toBe('by layer')
     expect(get().plates[0]!.settings.sequence).toBeUndefined()
-    // Below Expert the row is hidden, and the note shows under the panel instead.
+    // Below Expert a changed sequence stays listed with its note, said once.
+    const note = 'Plate 1 prints by object, set in its plate settings, and that wins over this setting.'
     set({ settingsMode: 'advanced', plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence: 'by-object' } }] })
     flushSync(() => root.render(createElement(ExpertSettings)))
+    expect(row()).not.toBeNull()
+    expect(el.textContent!.split(note).length - 1).toBe(1)
+    // Unchanged, the row is hidden below Expert, and the note shows under the panel instead.
+    set({ overrides: {} })
+    flushSync(() => root.render(createElement(ExpertSettings)))
     expect(document.getElementById('set-print_sequence')).toBeNull()
-    expect(el.textContent).toContain('Plate 1 prints by object, set in its plate settings, and that wins over this setting.')
+    expect(el.textContent).toContain(note)
     flushSync(() => root.unmount())
     el.remove()
   })
