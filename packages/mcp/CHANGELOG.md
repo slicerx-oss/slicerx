@@ -28,6 +28,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Changed
 
+- `slicerx_design_open` reads 3MF files with the engine's 3MF reader (sx-geom `format.read3mf`), the one the app uses, instead of a reader of its own. Parts keep their shared vertices, and a file in centimeters, meters or inches now places its build items in millimeters too. `readDesigns` takes the engine as its first argument and returns a promise.
 - The `project_gcode_review` message is one short line and what to do ("edited.3mf's printer G-code doesn't match the Bambu Lab A1 profile's. ..."). The per-script counts and flagged lines stay in `details`, which adds `summary` (that first line) and `printer` (the printer it was compared with), so a client can show one line and keep the rest behind a toggle.
 - A project with its own printer G-code and no printer to compare it with (no `machine:` profile, and a printer SlicerX has no profile for) is refused with the new code `printer_needed` instead of a diff against the generic machine's G-code, where nearly every line read as added. `project_gcode: "profile"` slices it as before.
 - A project object whose mesh a tool replaced (cut parts, a repaired or hollowed mesh) keeps its geometry and rotation, so it slices; before, the plate came out without it.
