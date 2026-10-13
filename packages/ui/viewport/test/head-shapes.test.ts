@@ -105,6 +105,8 @@ function build() {
   const family = new Map<string, string>()
   for (const model of HEAD_MODELS) {
     const rig = new ToolheadRig()
+    // The carriage a docked toolhead hangs on is drawn only with the gantry, but heimdall checks it either way.
+    rig.carriageVisible = true
     rig.setModel(model)
     rig.place(0, 0, 0, 0, null, null)
     const cols = columns(rig)
@@ -134,6 +136,7 @@ function build() {
     const keys: string[] = []
     for (let e = 0; e < nozzles; e++) {
       const rig = new ToolheadRig()
+      rig.carriageVisible = true
       rig.setSpec(spec)
       rig.place(0, 0, 0, Math.max(0, spec.extruderOf.indexOf(e)), null, null)
       keys.push(head(`${id}:${e}`, columns(rig)))
