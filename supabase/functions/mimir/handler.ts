@@ -5,13 +5,16 @@
 // edition's daily caps (migrations/0020_mimir_proxy.sql), then settles what it used.
 //   POST register        {edition, key}          -> {install, token}
 //   POST v1/messages     Messages API, streamed  (x-sx-install: token)
-//   GET  quota                                   (x-sx-install: token)
+//   GET  quota                                   (x-sx-install: token): v1 fields, plus v2 (fractions for
+//                                                 a usage page)
 //   POST forget          deletes saved chats (x-sx-install: token)
 // Saved chats: a call is saved when the edition saves by default (alpha: SlicerX) or the
 // client sends x-sx-share: 1, never with x-sx-share: 0. x-sx-session and x-sx-version file it; without
 // them it goes under one key per install and Melbourne day.
+// Every error is {type: 'error', error: {type, code, message, ...}}; errors.ts has the codes.
 import { MAX_BODY_BYTES, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
+import { capRefusal, errorId, installRef, logLine, type MimirCode, PAUSED, providerPaused } from './errors.ts'
 
 export interface Env {
   supabaseUrl: string
@@ -38,8 +41,10 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 function json(status: number, body: unknown, extra: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extra } })
 }
-const fail = (status: number, type: string, message: string, reason?: string) =>
-  json(status, { type: 'error', error: { type, message, ...(reason ? { reason } : {}) } })
+const TYPES: Partial<Record<number, string>> = { 400: 'invalid_request_error', 401: 'authentication_error', 403: 'permission_error', 404: 'not_found_error', 413: 'request_too_large', 429: 'mimir_limit', 503: 'overloaded_error' }
+// `type` keeps the Messages API's error types, so a client that knows only those still reads it
+const fail = (status: number, code: MimirCode, message: string, extra: Obj = {}) =>
+  json(status, { type: 'error', error: { type: TYPES[status] ?? 'api_error', code, message, ...extra } })
 
 // The client's address, from the one header the host's edge sets itself (index.ts says
 // which). Never the first x-forwarded-for entry: the client writes that one.
@@ -72,26 +77,6 @@ async function rpc(env: Env, fn: string, args: Obj): Promise<unknown> {
   return body
 }
 
-// how a refused reservation reads to the app
-const CAP_MESSAGES: Record<string, [number, string]> = {
-  install_daily: [429, "Today's free mimir use on this computer is used up. It resets at midnight Melbourne time."],
-  ip_daily: [429, "Today's free mimir use on this network is used up. It resets at midnight Melbourne time."],
-  edition_daily: [429, "mimir's daily limit is used up. It resets at midnight Melbourne time."],
-  install_rate: [429, 'mimir is getting requests too quickly. Wait a minute and try again.'],
-  install_busy: [429, 'mimir is still answering on this computer. Try again when it finishes.'],
-  ip_busy: [429, 'mimir is still answering on this network. Try again when it finishes.'],
-  net_daily: [429, "Today's free mimir use on this network is used up. It resets at midnight Melbourne time."],
-  net_full: [429, "Today's free mimir use on this network is used up. It resets at midnight Melbourne time."],
-  net_busy: [429, 'mimir is still answering on this network. Try again when it finishes.'],
-  ip_rate: [429, 'mimir is getting requests too quickly from this network. Wait a minute and try again.'],
-  edition_busy: [503, 'mimir is busy. Try again in a moment.'],
-  register_limit: [429, 'Too many new installs from this network today.'],
-  edition_register_limit: [429, 'mimir is taking no more new installs today. Try again tomorrow.'],
-  register_key: [403, 'This build of the app cannot register with mimir.'],
-  paused: [503, 'mimir is paused for now.'],
-  unknown_install: [401, 'This install is not registered with mimir.'],
-  no_ip: [400, 'mimir could not tell which network this came from.'],
-}
 // refusals that an exact token count can turn around
 // (net_full is not one: the network had used its day before this call)
 const DAILY_CAPS = new Set(['install_daily', 'ip_daily', 'net_daily', 'edition_daily'])
@@ -112,12 +97,34 @@ export function marked(body: Obj, mark: string): Obj {
 }
 
 function rpcFailure(e: unknown): Response {
-  if (e instanceof RpcError && CAP_MESSAGES[e.hint]) {
-    const [status, message] = CAP_MESSAGES[e.hint]!
-    return fail(status, status === 401 ? 'authentication_error' : 'mimir_limit', message, e.hint)
-  }
-  if (e instanceof RpcError && e.hint === 'invalid') return fail(400, 'invalid_request_error', e.message)
-  return fail(502, 'api_error', 'mimir could not reach its service.')
+  const r = e instanceof RpcError ? capRefusal(e.hint, new Date()) : null
+  if (r && e instanceof RpcError) return fail(r.status, r.code, r.message, { reason: e.hint, ...(r.resetsAt ? { resetsAt: r.resetsAt } : {}) })
+  if (e instanceof RpcError && e.hint === 'invalid') return fail(400, 'invalid_request', e.message)
+  const id = errorId()
+  logLine('error', { code: 'server_error', errorId: id, status: 502, provider: e instanceof Error ? e.message.slice(0, 300) : 'unknown' })
+  return fail(502, 'server_error', `mimir could not reach its service. (error ${id})`, { errorId: id })
+}
+
+// rate refusals come in floods, so they log without the extra lookup of the install's edition
+const RATES = new Set(['install_rate', 'ip_rate'])
+async function editionOf(env: Env, tok: string | null): Promise<string | null> {
+  if (!tok) return null
+  return ((await rpc(env, 'mimir_install_edition', { p_token: tok }).catch(() => null)) as string | null) ?? null
+}
+
+// Free mimir is down for everyone when the provider stops taking our key: one alert at most
+// every 15 minutes from each instance, through the bug report intake (0012), which posts to
+// the team's Discord; its own limit is 10 an hour for one install id.
+const ALERT_INSTALL = '00000000-0000-4000-8000-00000000a1e7'
+const lastAlert = new WeakMap<Env, number>()
+async function alertPaused(env: Env, status: number, line: string, id: string): Promise<void> {
+  if (Date.now() - (lastAlert.get(env) ?? 0) < 15 * 60_000) return
+  lastAlert.set(env, Date.now())
+  await rpc(env, 'submit_bug_report', {
+    p_kind: 'manual', p_install_id: ALERT_INSTALL, p_app_version: 'mimir-proxy', p_commit: 'edge', p_os: 'supabase-edge',
+    p_printer: '', p_title: 'Free mimir is paused: the model provider refused our key', p_body: `Status ${status}, error ${id}: ${line}`,
+    p_stack: '', p_log_tail: '', p_fingerprint: 'mimir-provider-paused',
+  }).catch((e) => console.error('mimir alert failed:', e instanceof Error ? e.message : 'unknown'))
 }
 
 function token(req: Request): string | null {
@@ -173,17 +180,17 @@ export function dayKey(now = new Date()): string {
 
 async function messages(req: Request, env: Env): Promise<Response> {
   const tok = token(req)
-  if (!tok) return fail(401, 'authentication_error', 'This install is not registered with mimir.', 'unknown_install')
+  if (!tok) return fail(401, 'not_registered', 'This install is not registered with mimir.', { reason: 'unknown_install' })
   const text = await readBody(req)
-  if (text === null) return fail(413, 'request_too_large', 'The conversation is too large for mimir.')
+  if (text === null) return fail(413, 'too_large', 'The conversation is too large for mimir.')
   let raw: unknown
   try {
     raw = JSON.parse(text)
   } catch {
-    return fail(400, 'invalid_request_error', 'The body is not JSON.')
+    return fail(400, 'invalid_request', 'The body is not JSON.')
   }
   const s = shape(raw)
-  if (!s.ok) return fail(400, 'invalid_request_error', s.error)
+  if (!s.ok) return fail(400, 'invalid_request', s.error)
   const ip = clientIp(req, env.ipSource)
   if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
 
@@ -194,7 +201,12 @@ async function messages(req: Request, env: Env): Promise<Response> {
     }) as Promise<string>
   const refused = async (e: unknown) => {
     if (e instanceof RpcError && COUNTED.has(e.hint)) await rpc(env, 'mimir_refused', { p_token: tok, p_ip: ip }).catch(() => {})
-    return rpcFailure(e)
+    const res = rpcFailure(e)
+    if (e instanceof RpcError) {
+      const err = ((await res.clone().json()) as { error: Obj }).error
+      logLine('info', { code: err['code'], reason: e.hint, edition: RATES.has(e.hint) ? null : await editionOf(env, tok), install: await installRef(tok), status: res.status })
+    }
+    return res
   }
   let call: string
   try {
@@ -250,20 +262,31 @@ async function messages(req: Request, env: Env): Promise<Response> {
       headers: { 'content-type': 'application/json', 'x-api-key': env.anthropicKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify(marked(s.body, await installMark(tok))),
     })
-  } catch {
+  } catch (e) {
     await later(settle(false))
-    return fail(502, 'api_error', 'mimir could not reach the model provider.')
+    const id = errorId()
+    logLine('error', { code: 'unreachable', errorId: id, edition: await editionOf(env, tok), install: await installRef(tok), status: 0, provider: e instanceof Error ? e.message.slice(0, 300) : 'unknown' })
+    return fail(502, 'unreachable', `mimir could not reach the model. Try again in a moment. (error ${id})`, { errorId: id })
   }
   if (!up.ok || !up.body) {
     // nothing was generated, so the call settles at nothing; the provider's words stay here,
     // in the function log only: its status and error, never the key or the prompt
     const e = await upstreamError(up)
-    console.error('mimir upstream:', up.status, e.line)
     await later(settle(false))
-    if (up.status === 429 || up.status === 529 || up.status >= 500) return fail(503, 'overloaded_error', 'The model provider is busy. Try again in a moment.')
-    // a request the provider calls invalid is the caller's to fix, so its reason goes back with it
-    if (e.type === 'invalid_request_error' && e.message) return fail(400, 'invalid_request_error', `The model provider refused the request: ${e.message}`)
-    return fail(502, 'api_error', `The model provider refused the request (${up.status}).`)
+    const id = errorId()
+    const paused = providerPaused(up.status, e.type, e.message)
+    const busy = !paused && (up.status === 429 || up.status === 529 || up.status >= 500)
+    const code: MimirCode = paused ? 'paused' : busy ? 'provider_busy' : 'provider_error'
+    logLine('error', { code, errorId: id, edition: await editionOf(env, tok), install: await installRef(tok), status: up.status, provider: e.line })
+    if (paused) {
+      await later(alertPaused(env, up.status, e.line, id))
+      return fail(503, 'paused', PAUSED, { errorId: id })
+    }
+    if (busy) return fail(503, 'provider_busy', `The model is busy right now. Try again in a moment. (error ${id})`, { errorId: id })
+    // a request the provider calls invalid is the caller's to fix: its reason goes along as
+    // `detail` for developers, and the person reads a plain message
+    const detail = e.type === 'invalid_request_error' && e.message ? { detail: e.message } : {}
+    return fail(up.status === 400 ? 400 : 502, 'provider_error', `mimir could not get an answer to that. (error ${id})`, { errorId: id, ...detail })
   }
 
   const enc = new TextEncoder()
@@ -337,7 +360,7 @@ async function countTokens(env: Env, body: Obj): Promise<number | null> {
       body: JSON.stringify({ model, system, messages, tools, tool_choice, thinking }),
     })
     if (!res.ok) {
-      console.error('mimir count_tokens:', res.status, (await upstreamError(res)).line)
+      logLine('error', { code: 'count_tokens', status: res.status, provider: (await upstreamError(res)).line })
       return null
     }
     const n = ((await res.json()) as Obj)['input_tokens']
@@ -354,7 +377,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     if (route === '/v1/messages' && req.method === 'POST') return await messages(req, env)
     if (route === '/register' && req.method === 'POST') {
       const text = await readBody(req, MAX_REGISTER_BYTES)
-      if (text === null) return fail(413, 'request_too_large', 'The request is too large.')
+      if (text === null) return fail(413, 'too_large', 'The request is too large.')
       let body: Obj = {}
       try {
         const parsed = JSON.parse(text) as unknown
@@ -363,7 +386,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
         // an unreadable body is an unknown edition
       }
       const edition = typeof body['edition'] === 'string' ? body['edition'] : ''
-      if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(edition)) return fail(400, 'invalid_request_error', 'Unknown edition.')
+      if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(edition)) return fail(400, 'invalid_request', 'Unknown edition.')
       const key = typeof body['key'] === 'string' && KEY.test(body['key']) ? body['key'] : ''
       if (!key) return rpcFailure(new RpcError('register_key', 'no registration key'))
       const ip = clientIp(req, env.ipSource)
@@ -378,28 +401,29 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     }
     if (route === '/quota' && req.method === 'GET') {
       const tok = token(req)
-      if (!tok) return fail(401, 'authentication_error', 'This install is not registered with mimir.', 'unknown_install')
+      if (!tok) return fail(401, 'not_registered', 'This install is not registered with mimir.', { reason: 'unknown_install' })
       const ip = clientIp(req, env.ipSource)
       if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
       try {
-        const rows = (await rpc(env, 'mimir_quota', { p_token: tok, p_ip: ip })) as Obj[]
-        return json(200, rows[0] ?? {})
+        const [rows, v2] = await Promise.all([rpc(env, 'mimir_quota', { p_token: tok, p_ip: ip }) as Promise<Obj[]>, rpc(env, 'mimir_usage', { p_token: tok })])
+        return json(200, { ...(rows[0] ?? {}), v2 })
       } catch (e) {
         return rpcFailure(e)
       }
     }
     if (route === '/forget' && req.method === 'POST') {
       const tok = token(req)
-      if (!tok) return fail(401, 'authentication_error', 'This install is not registered with mimir.', 'unknown_install')
+      if (!tok) return fail(401, 'not_registered', 'This install is not registered with mimir.', { reason: 'unknown_install' })
       try {
         return json(200, { deleted: await rpc(env, 'mimir_forget', { p_token: tok }) })
       } catch (e) {
         return rpcFailure(e)
       }
     }
-    return fail(404, 'not_found_error', 'No such mimir route.')
+    return fail(404, 'not_found', 'No such mimir route.')
   } catch (e) {
-    console.error('mimir error:', e instanceof Error ? e.message : 'unknown')
-    return fail(500, 'api_error', 'mimir hit an error.')
+    const id = errorId()
+    logLine('error', { code: 'server_error', errorId: id, status: 500, provider: e instanceof Error ? e.message.slice(0, 300) : 'unknown' })
+    return fail(500, 'server_error', `mimir hit a problem on our side. (error ${id})`, { errorId: id })
   }
 }
