@@ -24,7 +24,7 @@ levels:
       - {key: wall_loops, op: at_most, value: 2, priority: core, why: "Two walls are enough for a shape check."}
       - {key: sparse_infill_pattern, op: set, value: lightning, priority: core, why: "Lightning infill only holds up the top surfaces and uses the least plastic. Use it for looks only, never for load.", src: [prusa_kb_infill_patterns]}
       - {key: sparse_infill_density, op: at_most, value: 10, priority: supporting, why: "Lightning at low density is enough to carry the top skin.", src: [prusa_kb_infill_patterns]}
-      - {key: support_threshold_angle, op: set, value: 40, priority: supporting, why: "Only the steepest overhangs get support, as in Bambu's Extra Draft preset.", src: ["orca:BBL/process/0.28mm Extra Draft @BBL X1C.json"]}
+      - {key: support_threshold_angle, op: set, value: 40, priority: supporting, why: "Thick draft layers sag on overhangs that finer layers print unsupported, so Bambu's Extra Draft preset supports more of them: every overhang under 40 degrees. A higher angle means more support, not less.", src: ["orca:BBL/process/0.28mm Extra Draft @BBL X1C.json"]}
 hardware_levers:
   - {advice: "A 0.6 mm nozzle at 0.30 mm layers moves much more plastic per pass. Bambu ships 0.30 mm Standard and Strength presets for it. Suggest it for large parts when one is available (hardened steel handles every material).", kind: hardware, src: ["orca:BBL/process/0.30mm Standard @BBL X1C 0.6 nozzle.json"]}
   - {advice: "High flow filament and a high flow hotend raise the melt limit. Bambu PETG HF runs 21 mm3/s on a standard X1C hotend and 29 on the high flow one.", kind: hardware, src: ["orca:BBL/filament/Bambu PETG HF @BBL X1C.json"]}

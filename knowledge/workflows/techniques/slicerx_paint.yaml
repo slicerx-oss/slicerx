@@ -1,0 +1,21 @@
+kind: guide
+schema_version: 1
+id: slicerx_paint
+name: Painting colors, seams and supports in SlicerX
+aliases: [paint colors, color painting, multicolor painting, paint tool, paint filament, mmu painting, paint supports, paint seam, fuzzy skin painting]
+applies_to: [all]
+summary: >
+  How to paint in SlicerX: the Paint tool on the plate toolbar paints filament
+  colors, seams, supports or fuzzy skin onto an object's surface. Colors are
+  the filament slots from the Filament block, so a painted part prints in
+  several colors only on a printer that can change filament.
+facts:
+  - {text: "Select an object on the Slice tab, then pick Paint on the plate toolbar (or search 'Paint tool' with Cmd+K). The Paint panel opens in the Objects card.", src: [slicerx_app_paint]}
+  - {text: "Paint layer picks what the brush paints: Color, Seam, Support or Fuzzy skin.", src: [slicerx_app_paint]}
+  - {text: "For Color, pick the filament to paint with from the slot buttons. The slots are the ones in the Filament block, so add or change a slot there first.", src: [slicerx_app_paint]}
+  - {text: "Brushes: Brush (a sphere or circle with a size in mm), Fill (fills a region up to an edge angle), and Height (paints a band at a height). More brushes adds Triangle and Gap fill.", src: [slicerx_app_paint]}
+  - {text: "Each color change on a multi-color print flushes filament, usually into a prime tower, and that waste grows with the number of changes.", src: [bambu_wiki_reduce_waste]}
+pilot_actions:
+  - "Walk the person through Slice tab, select the object, Paint, Paint layer Color, pick a slot, then brush or fill."
+  - "Say that painted colors need a filament changer such as an AMS, or manual filament changes, to print in color."
+src: [slicerx_app_paint, bambu_wiki_reduce_waste]

@@ -81,3 +81,10 @@ sources:
     url: https://bambulab.com/de-de/support/A1recall
     retrieved: 2026-10-13
     note: "A1 printers sold before January 30, 2024 (sixth serial digit A): the heatbed cable can be damaged when bent, with a risk of short circuit, shock or fire. Refund or heatbed and cable replacement."
+  - id: slicerx_app_paint
+    title: "SlicerX Paint tool (plate toolbar and Paint panel)"
+    publisher: SlicerX
+    type: app_source
+    url: https://github.com/slicerx-oss/slicerx/blob/main/packages/app/src/workspaces/prepare/paint-panel.tsx
+    retrieved: 2026-10-13
+    note: "Paint layers Color, Seam, Support, Fuzzy skin; brushes Brush, Fill, Height, with Triangle and Gap fill under More; color slots come from the Filament block."
