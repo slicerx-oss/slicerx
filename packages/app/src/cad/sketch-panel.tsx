@@ -10,7 +10,9 @@
 // here snaps, moves the rubber band in its fixed buffer and writes one text node; it renders no
 // React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
-import { afterLoopChange, afterReverse, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
+import { afterLoopChange, afterReverse, curveStates, dimMark, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
+import { dimensionFor, isDimension, measured, pointAt, pointHit, type DimPick } from './sketch-dimension'
+import { evaluate, namesIn } from './values'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch, type SegOption } from '@slicerx/ui'
@@ -57,6 +59,7 @@ import {
   type Draft,
   type DrawTool,
   type Entity,
+  type HandleRef,
   type SnapTargets,
   type V2,
   pickedText,
@@ -99,16 +102,17 @@ const HINTS: Record<DrawTool, string> = {
   slot: 'Click the two arc centers, then out to the width.',
   slotOverall: 'Click the two ends, then out to the width.',
   slotCenter: 'Click the center, an arc center, then out to the width.',
+  dimension: 'Click a line, a circle or two points, then where the value goes. Type the size and press Enter.',
 }
 
-const hintText = (t: DrawTool): string => `${HINTS[t]}${t !== 'select' ? ' Type a number to give exact sizes.' : ''}`
+const hintText = (t: DrawTool): string => `${HINTS[t]}${t !== 'select' && t !== 'dimension' ? ' Type a number to give exact sizes.' : ''}`
 // the longest hint sizes the hint's box, so picking a tool moves nothing below it
 const HINT_SIZER = (Object.keys(HINTS) as DrawTool[]).map(hintText).reduce((a, b) => (b.length > a.length ? b : a))
 
 /** Fusion's keys for the sketch tools it gives one. */
-const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle' }
+const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle', d: 'dimension' }
 
-type Family = 'select' | 'line' | 'rect' | 'circle' | 'arc' | 'polygon' | 'slot'
+type Family = 'select' | 'line' | 'rect' | 'circle' | 'arc' | 'polygon' | 'slot' | 'dimension'
 
 /** The tool families, as icons; a family with ways to draw it shows them in the row below. */
 const FAMILIES: SegOption<Family>[] = [
@@ -119,6 +123,7 @@ const FAMILIES: SegOption<Family>[] = [
   { value: 'arc', label: '', icon: 'sk-arc', title: 'Arc' },
   { value: 'polygon', label: '', icon: 'sk-polygon', title: 'Polygon' },
   { value: 'slot', label: '', icon: 'sk-slot', title: 'Slot' },
+  { value: 'dimension', label: '', icon: 'ruler', title: 'Dimension', tip: { title: 'Dimension', key: 'D' } },
 ]
 
 const VARIANTS: Partial<Record<Family, SegOption<DrawTool>[]>> = {
@@ -312,6 +317,31 @@ function gridSteps(u: UnitPrefs, now: string): { value: string; label: string }[
   return all.map((v) => ({ value: v, label: u.length === 'mm' ? `${Number(v)} mm` : `${fraction(Number(v) / 25.4, 64)} in` }))
 }
 
+/** The dimension tool's value field: a new dimension being placed, or a kept one (`index`) being changed. */
+interface DimField {
+  x: number
+  y: number
+  c: Extract<SketchConstraint, { value: number }>
+  index?: number
+  text: string
+}
+
+const DIM_NAMES: Record<Extract<SketchConstraint, { value: number }>['type'], string> = {
+  length: 'Length',
+  distance: 'Distance',
+  horizontalDistance: 'Horizontal',
+  verticalDistance: 'Vertical',
+  lineDistance: 'Distance',
+  diameter: 'Diameter',
+  radius: 'Radius',
+  angle: 'Angle',
+}
+
+// a dimension's value as the field shows it, in the display unit
+const dimValueText = (c: SketchConstraint, v: number, u: UnitPrefs): string => (c.type === 'angle' ? String(Number(v.toFixed(3))) : formatLength(v, u))
+
+const samePick = (a: DimPick, b: DimPick): boolean => JSON.stringify(a) === JSON.stringify(b)
+
 function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () => void; init?: SketchInit }) {
   // Extrude or Revolve from a finished sketch's menu: only that feature's settings; Edit sketch changes the shape
   const featureOnly = init?.from !== undefined && init.from.mode !== 'edit'
@@ -342,11 +372,36 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [cornerKind, setCornerKind] = useDraft<'fillet' | 'chamfer'>('cornerKind', 'fillet')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
+  // the dimension tool's picks so far, and its value field once the value is placed (or a kept one is edited)
+  const [dimPicks, setDimPicks] = useState<DimPick[]>([])
+  const [dimField, setDimField] = useState<DimField | null>(null)
+  // a dimension or constraint glyph picked with Select, by constraint index
+  const [pickedCon, setPickedCon] = useState<number | null>(null)
   const readoutRef = useRef<HTMLSpanElement | null>(null)
   // a new tool starts with an empty readout; Select's says what is picked
   useEffect(() => {
     if (readoutRef.current) readoutRef.current.textContent = draft.tool === 'select' ? pickedText(sketch, selected, ...readoutUnits(units)) : ''
   }, [draft.tool, selected, sketch, units])
+  // a dimension typed with a name from the value table follows it: the value is read again as the sketch opens
+  useEffect(() => {
+    const u = get().units
+    const values = currentValues()
+    let changed = false
+    const next = constraints.map((c) => {
+      if (!isDimension(c) || !c.expr || c.driven) return c
+      let v: number
+      try {
+        v = c.type === 'angle' ? evaluate(c.expr, (n) => values[n]) : parseLength(c.expr, u, values)
+      } catch {
+        return c
+      }
+      if (!Number.isFinite(v) || Math.abs(v - c.value) < 1e-9) return c
+      changed = true
+      return { ...c, value: v }
+    })
+    if (changed) setConstraints(next)
+    // once, as the sketch opens
+  }, [])
   const gridMm = pal.snap ? Number(pal.step) : 0
   // a polygon's side count, 3 to 64
   const [sides, setSides] = useDraft<string>('sides', '6')
@@ -354,8 +409,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   // What the hover path reads without a render.
   // landed: the clicks of the shape being drawn and what each snapped to, for the constraints it leaves
-  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[] })
-  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN }
+  // dims and glyphs: what the view shows, to read its picks by
+  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null })
+  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, solved: solved?.solved ?? null }
 
   // Snap targets on the plane: the picked face's outline, and edges of bodies lying in the plane.
   useEffect(() => {
@@ -419,33 +475,44 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const axis = finish === 'revolve' ? axisOf(sketch, selected) : null
 
   // The drawn sketch to the view: on edits, never per cursor move.
-  const marks = useMemo(() => sketchMarks(sketch, constraints), [sketch, constraints])
+  const marks = useMemo(() => sketchMarks(sketch, constraints, (c) => measured(sketch, c)), [sketch, constraints])
   const arcFrom = useMemo(() => lineArcFrom(sketch, draft), [sketch, draft])
   useEffect(() => {
     if (!view) return
     const paths: SketchScene['paths'][number][] = engineSnaps.edges.map((e) => ({ points: [e.a, e.b], tone: 'soft' as SketchTone }))
     const bad = new Set(issues.map((i) => `${i.loop}:${i.segment ?? -1}`))
+    const dimCurves = new Set(dimPicks.flatMap((p) => ('curve' in p ? [`${p.curve.e}:${p.curve.seg}`] : [])))
     sketch.forEach((e, i) => {
       for (const p of entityPaths(e)) {
-        const isSel = selected?.e === i && selected.seg === p.seg
+        const isSel = (selected?.e === i && selected.seg === p.seg) || dimCurves.has(`${i}:${p.seg}`)
         const tone: SketchTone = bad.has(`${i}:${p.seg}`) || bad.has(`${i}:-1`) ? 'issue' : isSel ? (finish === 'revolve' && axis ? 'axis' : 'selected') : e.construction ? 'construction' : toneOf(states?.get(`${i}:${p.seg}`))
         paths.push({ points: p.points, ...(p.closed ? { closed: true } : {}), tone })
       }
     })
+    // the one being placed shows with the kept ones, picked
+    const placing = dimField && dimField.index === undefined ? dimMark(sketch, dimField.c, dimField.c.value, -1) : null
+    const editing = dimField?.index ?? pickedCon
+    const dims = [...marks.dims, ...(placing ? [placing] : [])]
+    const glyphs = pal.constraints ? marks.glyphs : []
+    live.current.dims = pal.dimensions ? dims : []
+    live.current.glyphs = glyphs
+    const dimPoints = dimPicks.flatMap((p) => ('point' in p ? [pointAt(sketch, p.point)] : [])).filter((p): p is V2 => p !== null)
     view.setSketch({
       frame: plane.frame,
       paths,
       // points hide when Show points is off, but a picked sketch keeps its handles to drag
-      handles: featureOnly ? [] : draft.tool === 'select' ? hs.points : pal.points ? [...hs.points, ...draft.points] : draft.points,
+      handles: featureOnly ? [] : draft.tool === 'select' ? hs.points : pal.points ? [...hs.points, ...draft.points, ...dimPoints] : [...draft.points, ...dimPoints],
       dragHandles: draft.tool === 'select' && !featureOnly,
       ...(arcFrom && !featureOnly ? { dragFrom: arcFrom } : {}),
       ...(pal.grid && !featureOnly ? { grid: { stepMm: Number(pal.step) * 10, min: plane.min, max: plane.max } } : {}),
       marks: issues.flatMap((i) => (i.at ? [i.at] : [])),
-      ...(pal.dimensions ? { dims: marks.dims } : {}),
-      ...(pal.constraints ? { fixed: marks.fixed, glyphs: marks.glyphs } : {}),
+      ...(pal.dimensions ? { dims: dims.map((d) => (d.of === editing || d.of === -1 ? { ...d, picked: true } : d)) } : {}),
+      // the origin always shows, for dimensions to measure from
+      fixed: featureOnly ? [] : [[0, 0], ...(pal.constraints ? marks.fixed : [])],
+      ...(pal.constraints ? { glyphs: glyphs.map((g) => (g.of === pickedCon ? { ...g, picked: true } : g)) } : {}),
       ...(pal.profiles ? { profiles: profileRings(sketch) } : {}),
     })
-  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom])
+  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom, marks, dimPicks, dimField, pickedCon])
 
   // Section cuts away the model in front of the sketch plane while the sketch is open.
   useEffect(() => {
@@ -483,6 +550,132 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     setField(null)
   }
 
+  // A kept dimension opens in the value field at a screen spot.
+  const editDim = (i: number, at: [number, number]): void => {
+    const l = live.current
+    const c = l.constraints[i]
+    if (!c || !isDimension(c)) return
+    const v = c.driven ? (measured(l.sketch, c) ?? c.value) : c.value
+    setPickedCon(i)
+    setSelected(null)
+    setDimField({ x: at[0], y: at[1], c, index: i, text: c.expr ?? dimValueText(c, v, get().units) })
+    view?.setSketchCursor(null)
+  }
+
+  // the constraint a press on a dimension value or glyph names
+  const markOf = (m: NonNullable<SketchEvent['mark']>): number | undefined => ('dim' in m ? live.current.dims[m.dim]?.of : live.current.glyphs[m.glyph]?.of)
+
+  // The dimension tool: pick a line, circle or arc, or two points or lines; the value follows the cursor; a click puts
+  // it down and opens its field.
+  const dimEvent = (ev: SketchEvent, tol: number): void => {
+    const l = live.current
+    if (ev.kind === 'hover') {
+      const c = !l.dimField && l.dimPicks.length ? dimensionFor(l.sketch, l.dimPicks, ev.at) : null
+      const m = c ? dimMark(l.sketch, c, c.value, -1) : null
+      view?.setSketchCursor(m ? { dim: m } : null)
+      const u = get().units
+      if (readoutRef.current) readoutRef.current.textContent = c ? `${DIM_NAMES[c.type]} ${dimValueText(c, c.value, u)} ${c.type === 'angle' ? '\u00b0' : u.length}` : ''
+      return
+    }
+    if (l.dimField) return void commitDim()
+    const kept = ev.mark ? markOf(ev.mark) : undefined
+    if (kept !== undefined && ev.mark && 'dim' in ev.mark && kept >= 0) return editDim(kept, ev.screen)
+    const p = pointHit(l.sketch, ev.at, tol)
+    const k = p ? null : hitTest(l.sketch, ev.at, tol)
+    const pick: DimPick | null = p ? { point: p } : k ? { curve: k } : null
+    const picks = l.dimPicks
+    if (pick && picks.length < 2 && !picks.some((q) => samePick(q, pick))) {
+      const next = [...picks, pick]
+      l.dimPicks = next
+      setDimPicks(next)
+      return
+    }
+    const c = picks.length ? dimensionFor(l.sketch, picks, ev.at) : null
+    if (!c) {
+      // picks that make no dimension start again from this one
+      l.dimPicks = pick ? [pick] : []
+      setDimPicks(l.dimPicks)
+      return
+    }
+    view?.setSketchCursor(null)
+    setDimField({ x: ev.screen[0], y: ev.screen[1], c, text: dimValueText(c, c.value, get().units) })
+  }
+
+  // Enter in the value field: the dimension drives the sketch, unless it would over-define it; then it is driven, and
+  // only shows the size.
+  const commitDim = async (): Promise<void> => {
+    const l = live.current
+    const f = l.dimField
+    if (!f) return
+    const u = get().units
+    let v: number
+    try {
+      v = f.c.type === 'angle' ? evaluate(f.text, (n) => currentValues()[n]) : parseLength(f.text, u, currentValues())
+    } catch {
+      v = NaN
+    }
+    if (!Number.isFinite(v) || (f.c.type === 'angle' ? v < 0 || v >= 360 : v <= 0)) return setNote(f.c.type === 'angle' ? 'An angle is from 0 up to 360 degrees.' : 'A dimension is a size more than 0.')
+    setNote(null)
+    const { driven: _d, expr: _e, ...base } = f.c
+    const expr = namesIn(f.text).length ? f.text.trim() : undefined
+    const c = { ...base, value: v, ...(expr ? { expr } : {}) } as SketchConstraint
+    const k = f.index ?? l.constraints.length
+    const list = f.index === undefined ? [...l.constraints, c] : l.constraints.map((x, i) => (i === f.index ? c : x))
+    const before = l.solved?.status
+    const { solver, map } = toSolver(l.sketch, list)
+    try {
+      const out = await solveSketch(solver)
+      const j = map.from.indexOf(k)
+      const over = out.redundant.includes(j) || out.conflicting.includes(j) || (out.status === 'conflict' && before !== 'conflict')
+      if (over) {
+        const now = measured(l.sketch, c)
+        list[k] = { ...c, value: now === null ? v : Math.round(now * 1e6) / 1e6, driven: true } as SketchConstraint
+        setNote('The other constraints already set that size, so this dimension is driven: it shows the size and does not set it.')
+      }
+    } catch (e) {
+      return setNote(errorText(e))
+    }
+    l.constraints = list
+    setConstraints(list)
+    setDimField(null)
+    setDimPicks([])
+    l.dimPicks = []
+  }
+
+  const dropDim = (): void => {
+    setDimField(null)
+    setDimPicks([])
+    live.current.dimPicks = []
+  }
+
+  // a point drag pulls it toward the cursor as far as the constraints let it
+  const dragAbort = useRef<AbortController | null>(null)
+  const dragTo = (ref: HandleRef, to: V2): void => {
+    const l = live.current
+    const moved = moveHandle(l.sketch, ref, to)
+    const key = ref.at === 'start' ? `${ref.e}:start` : ref.at === 'to' ? `${ref.e}:to:${ref.seg}` : ref.at === 'center' ? `${ref.e}:center` : null
+    if (!l.constraints.length || key === null) return setSketch(moved)
+    const { solver, map } = toSolver(moved, l.constraints)
+    const point = map.point.get(key)
+    if (point === undefined) return setSketch(moved)
+    dragAbort.current?.abort()
+    const ac = (dragAbort.current = new AbortController())
+    const met = (s: Solved) => s.status === 'ok' || s.status === 'redundant'
+    // held right at the cursor when the constraints let it get there; else pulled toward it
+    const held = { ...solver, constraints: [...solver.constraints, { type: 'fix', point }] }
+    solveSketch(held, undefined, ac.signal)
+      .then((s) => (met(s) ? s : solveSketch(solver, { point, to }, ac.signal)))
+      .then(
+        (s) => {
+          if (ac.signal.aborted) return
+          const next = met(s) ? fromSolver(moved, s, map) : moved
+          l.sketch = next
+          setSketch(next)
+        },
+        () => undefined,
+      )
+  }
+
   // Events from the view.
   useEffect(() => {
     if (!view) return
@@ -490,6 +683,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       const l = live.current
       const tol = SNAP_PX * ev.mmPerPx
       const anchor = l.draft.points.length ? l.draft.points[l.draft.points.length - 1]! : null
+      if (l.draft.tool === 'dimension' && (ev.kind === 'hover' || ev.kind === 'click')) {
+        l.screen = ev.screen
+        return dimEvent(ev, tol)
+      }
       if (ev.kind === 'hover' || ev.kind === 'click') {
         const s = ev.alt ? { at: ev.at, kind: null } : snap(ev.at, targets(), { anchor: l.draft.tool === 'line' || l.draft.tool === 'arc' ? anchor : null, gridMm: l.gridMm, tolMm: tol })
         l.cursor = s.at
@@ -503,6 +700,15 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           return
         }
         if (l.draft.tool === 'select') {
+          // a press on a dimension's value picks it, and a second one opens it; one on a glyph picks its constraint
+          const of = ev.mark ? markOf(ev.mark) : undefined
+          if (of !== undefined && of >= 0) {
+            if (ev.mark && 'dim' in ev.mark && l.pickedCon === of) return editDim(of, ev.screen)
+            setPickedCon(of)
+            setSelected(null)
+            return
+          }
+          setPickedCon(null)
           setSelected(hitTest(l.sketch, ev.at, tol))
           return
         }
@@ -531,7 +737,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         const ref = handles(l.sketch).refs[ev.handle]
         if (!ref) return
         const s = ev.alt ? { at: ev.at } : snap(ev.at, targets(ref), { gridMm: l.gridMm, tolMm: tol })
-        setSketch(moveHandle(l.sketch, ref, s.at))
+        dragTo(ref, s.at)
       }
     })
   }, [view])
@@ -556,10 +762,30 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         e.preventDefault()
         setDraft(emptyDraft(key))
         setField(null)
+        dropDim()
+        setPickedCon(null)
         view?.setSketchCursor(null)
         return
       }
-      if (/^[0-9.\-]$/.test(e.key) && l.draft.tool !== 'select' && !e.metaKey && !e.ctrlKey) {
+      if (l.pickedCon !== null && l.draft.tool === 'select' && !featureOnly && (e.key === 'Delete' || e.key === 'Backspace' || e.key === 'Enter')) {
+        // a picked dimension or constraint: Delete removes it, Enter opens a dimension's value
+        e.preventDefault()
+        const i = l.pickedCon
+        if (e.key === 'Enter') return editDim(i, l.screen)
+        const next = l.constraints.filter((_, k) => k !== i)
+        l.constraints = next
+        setConstraints(next)
+        setPickedCon(null)
+        return
+      }
+      if (l.draft.tool === 'dimension' && (e.key === 'Escape' || e.key === 'Enter')) {
+        // the picks go; Enter does not finish the sketch from here
+        e.preventDefault()
+        dropDim()
+        view?.setSketchCursor(null)
+        return
+      }
+      if (/^[0-9.\-]$/.test(e.key) && l.draft.tool !== 'select' && l.draft.tool !== 'dimension' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault()
         setField({ x: l.screen[0], y: l.screen[1], values: [e.key, ''], focus: 0 })
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && l.draft.tool === 'select' && !featureOnly) {
@@ -567,6 +793,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (sel) {
           const next = deleteSegment(l.sketch, sel.e, sel.seg)
           setConstraints((c) => afterLoopChange(c, sel.e, next.length - l.sketch.length + 1))
+          setPickedCon(null)
           setSketch(next)
           setSelected(null)
         }
@@ -605,6 +832,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     if (VARIANTS[familyOf(t)]) lastVariant[familyOf(t)] = t
     setDraft(emptyDraft(t))
     setField(null)
+    dropDim()
+    setPickedCon(null)
     view?.setSketchCursor(null)
     if (t !== 'select') setSelected(null)
   }
@@ -750,7 +979,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label}>
       {featureOnly ? null : (
         <>
-          <Seg label="Drawing tool" size="sm" full value={familyOf(draft.tool)} onChange={(f) => pickTool(lastVariant[f] ?? VARIANTS[f]?.[0]?.value ?? (f as DrawTool))} options={FAMILIES} />
+          <Seg label="Drawing tool" size="sm" full className="sketch-tools" value={familyOf(draft.tool)} onChange={(f) => pickTool(lastVariant[f] ?? VARIANTS[f]?.[0]?.value ?? (f as DrawTool))} options={FAMILIES} />
           {/* the ways to draw the family; the row is always there, so nothing below moves */}
           <div className="sketch-variants">
             {VARIANTS[familyOf(draft.tool)] ? (
@@ -763,7 +992,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
               </label>
             ) : null}
           </div>
-          <p className="cad-hint" role="status">
+          <p className="cad-hint sketch-hint" role="status">
             <Icon name="mouse-left" size={15} />{' '}
             <span className="sketch-hint-text" data-sizer={HINT_SIZER}>
               <span>{hintText(draft.tool)}</span>
@@ -905,19 +1134,39 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             document.body,
           )
         : null}
+      {dimField
+        ? createPortal(
+            <CursorField
+              key={`${dimField.index ?? 'new'}:${dimField.x}:${dimField.y}`}
+              x={dimField.x}
+              y={dimField.y}
+              labels={[{ label: DIM_NAMES[dimField.c.type], unit: dimField.c.type === 'angle' ? '\u00b0' : units.length }]}
+              values={[dimField.text]}
+              selectAll
+              onChange={(v) => setDimField({ ...dimField, text: v[0] ?? '' })}
+              onCommit={() => void commitDim()}
+              onCancel={() => {
+                setDimField(null)
+                if (dimField.index === undefined) dropDim()
+              }}
+            />,
+            document.body,
+          )
+        : null}
     </Shell>
   )
 }
 
 /** The small field at the cursor: one or two numbers, Tab between them, Enter to place, Escape to drop. */
-function CursorField({ x, y, labels, values, onChange, onCommit, onCancel }: { x: number; y: number; labels: { label: string; unit: string }[]; values: string[]; onChange: (v: string[]) => void; onCommit: () => void; onCancel: () => void }) {
+function CursorField({ x, y, labels, values, onChange, onCommit, onCancel, selectAll }: { x: number; y: number; labels: { label: string; unit: string }[]; values: string[]; onChange: (v: string[]) => void; onCommit: () => void; onCancel: () => void; selectAll?: boolean }) {
   const first = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     const el = first.current
     if (!el) return
     el.focus()
-    // The key that opened the field is already in it; the caret goes after it.
-    el.setSelectionRange(el.value.length, el.value.length)
+    // The key that opened the field is already in it; the caret goes after it. A value to change is all picked.
+    if (selectAll) el.select()
+    else el.setSelectionRange(el.value.length, el.value.length)
   }, [])
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'Enter') {

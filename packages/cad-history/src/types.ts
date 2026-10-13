@@ -73,7 +73,7 @@ export type SketchSegment =
 
 /**
  * A point of a sketch loop by loop index: a chain's start, the end of segment `seg`, a circle's center, or the center
- * of the arc that is segment `seg`.
+ * of the arc that is segment `seg`. Loop -1 is the sketch origin, `{ e: -1, at: 'start' }`, held at (0, 0).
  */
 export type SketchPointRef = { e: number; at: 'start' } | { e: number; at: 'to'; seg: number } | { e: number; at: 'center' } | { e: number; at: 'arcCenter'; seg: number }
 /** A line or arc of a loop by loop and segment index; a circle is segment 0. */
@@ -88,12 +88,24 @@ export type SketchConstraint =
   | { type: 'midpoint' | 'onLine'; point: SketchPointRef; line: SketchCurveRef }
   | { type: 'onCircle'; point: SketchPointRef; circle: SketchCurveRef }
   | { type: 'symmetric'; a: SketchPointRef; b: SketchPointRef; line: SketchCurveRef }
-  | { type: 'distance' | 'horizontalDistance' | 'verticalDistance'; a: SketchPointRef; b: SketchPointRef; value: number }
-  | { type: 'length'; line: SketchCurveRef; value: number }
-  | { type: 'radius' | 'diameter'; circle: SketchCurveRef; value: number }
+  | ({ type: 'distance' | 'horizontalDistance' | 'verticalDistance'; a: SketchPointRef; b: SketchPointRef; value: number } & DimLook)
+  | ({ type: 'length'; line: SketchCurveRef; value: number } & DimLook)
+  | ({ type: 'radius' | 'diameter'; circle: SketchCurveRef; value: number } & DimLook)
   /** From line a to line b, counterclockwise. */
-  | { type: 'angle'; a: SketchCurveRef; b: SketchCurveRef; value: number }
-  | { type: 'lineDistance'; point: SketchPointRef; line: SketchCurveRef; value: number }
+  | ({ type: 'angle'; a: SketchCurveRef; b: SketchCurveRef; value: number } & DimLook)
+  | ({ type: 'lineDistance'; point: SketchPointRef; line: SketchCurveRef; value: number } & DimLook)
+
+/**
+ * How a dimension shows. `offset` places its line: for a length or distance, mm to the left of the measured points;
+ * for a level or upright distance, mm from their middle across. A driven dimension only reports: the solver leaves it
+ * out, and it reads in parentheses. `expr` is what was typed when it names a value from the table, so the dimension
+ * follows that value when the sketch opens again.
+ */
+export interface DimLook {
+  offset?: number
+  driven?: true
+  expr?: string
+}
 
 /** A loop closes when its last segment ends within 0.001 mm of start. A construction loop is kept for constraints and never makes a profile. */
 export type SketchLoop = (

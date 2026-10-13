@@ -11,6 +11,8 @@ import { identity } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
 import { finishSketch, sketchById } from './sketches'
+import { settle } from './sketch-dimension'
+import { fromLoops, toLoops } from './sketch-model'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -118,6 +120,13 @@ export function appDesignHost(loader: Loader): DesignHost {
 
     addSketch(s) {
       return finishSketch(s)
+    },
+
+    async settleSketch(s) {
+      const drawn = fromLoops(s.loops)
+      if (!drawn) throw Object.assign(new Error('The loops could not be read as lines, arcs and circles.'), { code: 'invalid_input' })
+      const r = await settle(drawn, s.constraints)
+      return { loops: toLoops(r.sketch), constraints: r.constraints, status: r.solved.status, dof: r.solved.dof }
     },
   }
 
