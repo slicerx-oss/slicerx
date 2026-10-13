@@ -335,6 +335,34 @@ test('choosing CAD model opens the plate in Model, now and on the next launch, a
 })
 
 // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test('a first setup quit partway records the onboarding version, and the next launch opens the app, not setup again', async ({ page, isMobile }) => {
+  await fresh(page, isMobile)
+  const stored = async () => JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as { firstRun?: Record<string, unknown> }
+  await expect.poll(async () => (await stored()).firstRun).toMatchObject({ completedAt: null, step: 'printer', version: 4 })
+  // Quitting here and opening the app again: no setup by itself; Settings still offers to finish it.
+  await page.reload()
+  await page.locator('html[data-sx-ready]').waitFor({ state: 'attached' })
+  await expect(page.locator('.fr')).toHaveCount(0)
+  expect((await stored()).firstRun).toMatchObject({ completedAt: null, step: 'printer', version: 4 })
+})
+
+// Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test('shots: the launch after a first setup quit partway, light and dark', async ({ page, isMobile }, info) => {
+  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  const width = page.viewportSize()?.width ?? 0
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await fresh(page, isMobile)
+  await page.reload()
+  await page.locator('html[data-sx-ready]').waitFor({ state: 'attached' })
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(600)
+    await page.screenshot({ path: `${dir}/setup-quit-relaunch-${scheme}-${width}.png` })
+  }
+})
+
 test('shots: the settings mode question in the slicer step, light and dark', async ({ page }, info) => {
   test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
   const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
