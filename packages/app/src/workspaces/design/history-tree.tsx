@@ -11,7 +11,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import type { SketchItem } from '@slicerx/cad-history'
 import { HistorySteps } from '../../cad/history/history-panel'
 import { SketchMenu } from '../../cad/sketch-menu'
-import { openSketch } from '../../cad/sketches'
+import { openSketch, useSketchInUse } from '../../cad/sketches'
 import { selectObject } from '../../plate/edit'
 import { MAX_NAME, onRenameRequest, renameObject } from '../../plate/object-list'
 import { get, useApp, type PlateEntry } from '../../state/store'
@@ -334,6 +334,8 @@ function NameField({ value, label, onDone }: { value: string; label: string; onD
 function SketchRow({ k, later }: { k: SketchItem; later: boolean }) {
   const menu = useContextMenu()
   const loops = k.loops.length === 1 ? '1 loop' : `${k.loops.length} loops`
+  // an Extrude or Revolve from its menu is using it
+  const used = useSketchInUse() === k.id
   return (
     <>
       <button
@@ -342,6 +344,7 @@ function SketchRow({ k, later }: { k: SketchItem; later: boolean }) {
         data-tree-row=""
         tabIndex={-1}
         data-later={later || undefined}
+        data-current={used || undefined}
         data-testid="model-tree-sketch"
         aria-haspopup="menu"
         data-tip-title={k.name}

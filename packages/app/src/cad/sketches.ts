@@ -112,3 +112,26 @@ export function useCanFinish(): boolean {
     () => finisher !== null,
   )
 }
+
+// The finished sketch an Extrude or Revolve from its menu is using: the tree marks it, the shelf's Sketch stays up.
+let inUse: string | null = null
+const useListeners = new Set<() => void>()
+
+/** Marks a finished sketch as in use; returns the unmark. */
+export function provideInUse(id: string): () => void {
+  inUse = id
+  for (const l of useListeners) l()
+  return () => {
+    if (inUse !== id) return
+    inUse = null
+    for (const l of useListeners) l()
+  }
+}
+
+/** The finished sketch a feature from its menu is using, or null. */
+export function useSketchInUse(): string | null {
+  return useSyncExternalStore(
+    (l) => (useListeners.add(l), () => void useListeners.delete(l)),
+    () => inUse,
+  )
+}
