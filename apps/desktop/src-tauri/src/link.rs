@@ -31,7 +31,7 @@ pub async fn link_start(_state: State<'_, Bridge>) -> Result<LinkInfo, String> {
 #[derive(Default)]
 pub struct Bridge(tokio::sync::Mutex<Option<sx_link::Link>>);
 
-#[cfg(feature = "connect")]
+#[cfg(all(feature = "connect", feature = "pilot"))]
 impl Bridge {
     /// The running hub, for commands in this process that act on it directly (agent credentials).
     pub(crate) async fn link(&self) -> tokio::sync::MutexGuard<'_, Option<sx_link::Link>> {
