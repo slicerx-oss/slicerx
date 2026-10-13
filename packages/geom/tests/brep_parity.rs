@@ -3,7 +3,8 @@
 // The exact solid ops (brep.*) against the values the math gives: a closed solid, its volume and its bounds. The mesh
 // path runs the same case on the tessellated inputs; where its answer is exact too, the two must agree. Every brep
 // call goes through JSON with its bodies carried as text, the way the CLI runs them, one process per call. Skipped
-// in a build without the kernel.
+// in a build without the kernel, and empty without the brep feature, so a plain `cargo test` passes over it.
+#![cfg(feature = "brep")]
 use serde_json::{Value, json};
 use std::f64::consts::PI;
 use std::io::Write;
