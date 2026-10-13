@@ -10,6 +10,8 @@ select plan(9);
 create temp table t (k text primary key, v text) on commit drop;
 grant all on t to service_role;
 update public.mimir_limits set register_key_hash = public.mimir_token_hash(edition || '-key');
+-- the $0.50 install day these numbers were written for (0023 made it $1)
+update public.mimir_limits set install_daily_micros = 500000 where edition = 'slicerx';
 create function pg_temp.reg(p_edition text, p_ip text) returns text language plpgsql as $$
 declare v text;
 begin
