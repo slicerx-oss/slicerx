@@ -14,6 +14,7 @@ import { ObjectTransform } from '../prepare/object-transform'
 import { fixedLength } from '../../cad/units'
 import { HistoryTree } from './history-tree'
 import { Timeline } from './timeline'
+import { useFinishedSketches } from './finished-sketches'
 import { BottomPanel } from '../../shell/bottom-panel'
 // Design closing parks the open tool and ends a step's rollback; the watch starts with Design.
 import '../../cad/park'
@@ -39,6 +40,7 @@ export function DesignLeft() {
 }
 
 export function DesignRight() {
+  useFinishedSketches()
   const objectTool = useApp((s) => s.objectTool)
   const selected = useApp((s) => s.plate.find((p) => p.id === s.selection)?.name ?? null)
   const many = useApp((s) => selectedIds(s).length > 1)

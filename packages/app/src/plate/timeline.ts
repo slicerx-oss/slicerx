@@ -5,6 +5,7 @@
 // Undo brings back the plate and the timeline together, so folding what undo restored changes nothing.
 import { syncTimeline, type History } from '@slicerx/cad-history'
 import { appStore, fullPlate, get, type AppState, type PlateEntry } from '../state/store'
+import { quietly } from './history'
 
 /** The bodies made after the marker, off the plates while it is rolled back. */
 export function heldBodies(s: Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'rollback'> = get()): { plate: string; entry: PlateEntry }[] {
@@ -32,7 +33,8 @@ export function startTimeline(store = appStore): () => void {
   const seen = new WeakSet<History>()
   const run = (s: AppState) => {
     const t = syncTimeline(s.timeline, every(s), seen)
-    if (t !== s.timeline) store.setState({ timeline: t })
+    // following the plates is part of their edit, not an undo step of its own
+    if (t !== s.timeline) quietly(() => store.setState({ timeline: t }))
   }
   run(store.getState())
   return store.subscribe((s, prev) => {
