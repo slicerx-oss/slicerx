@@ -6,6 +6,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
+- The model ring's verbs for clients: `slicerx_project_duplicate` copies an object as new objects of their own (same model, rotation, scale, settings and volumes), `slicerx_project_rename` renames one, and `slicerx_project_lay_on_face` lays one on the face whose outward normal `slicerx_geom_faces` gives. Each answers with the project, so a client reads the change back.
 - Slices report which filament each object's features printed with. `slicerx_slice` gives `featureFilaments` per plate and `slicerx_slice_file` gives `feature_filaments`: for each object, the filament slots its walls, infill, surfaces, support and other features printed with, after the project's and the object's own settings (sx engine). `slicerx-mcp call` reads it from a shell.
 - `slicerx_geom_sketch_solve` solves a constrained 2D sketch: points, lines, circles and arcs held by coincident, horizontal, vertical, parallel, perpendicular, tangent, equal, symmetric, distance, angle and the other sketch constraints. It answers with the solved points and radii, the degrees of freedom left, which points can still move, and the constraints that conflict or repeat.
 - `slicerx_mimir_quota` reads today's free mimir use on this computer from the app over the app link: what the install and the network have used of their daily caps, in US dollars, and whether mimir cloud is open. `slicerx-mcp call slicerx_mimir_quota` reads it from a shell.

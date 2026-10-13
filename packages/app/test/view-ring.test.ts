@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Model's ring menu: what it is for after a right click, its verbs for each target, Delete never on a ring, and every
-// verb naming the MCP tool an agent uses for the same, or the cad-mcp gap that has none yet.
+// verb naming an MCP tool the server has (packages/mcp/TOOLS.md), for an agent to do the same.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ringTarget } from '../src/plate/view-ring'
 import { RING_VERBS } from '../src/workspaces/design/view-ring'
@@ -22,7 +24,12 @@ describe('the view ring', () => {
     }
   })
 
-  it('names the MCP tool or the cad-mcp gap for every verb', () => {
-    for (const verbs of Object.values(RING_VERBS)) for (const v of verbs) expect(v.agent, v.id).toMatch(/^(slicerx_[a-z_]+|gap [246]: .+|view)$/)
+  it('names an MCP tool the server has for every verb, other than a change of view', () => {
+    const tools = new Set(readFileSync(join(__dirname, '..', '..', 'mcp', 'TOOLS.md'), 'utf8').match(/`slicerx_[a-z_]+`/g)?.map((t) => t.slice(1, -1)))
+    for (const verbs of Object.values(RING_VERBS))
+      for (const v of verbs) {
+        expect(v.agent, v.id).toMatch(/^(slicerx_[a-z_]+|view)$/)
+        if (v.agent !== 'view') expect(tools.has(v.agent), `${v.id}: ${v.agent}`).toBe(true)
+      }
   })
 })

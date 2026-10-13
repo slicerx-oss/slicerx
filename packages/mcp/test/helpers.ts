@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ElicitRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
@@ -82,6 +82,18 @@ export function noSx(): boolean {
   if (existsSync(sxBin)) return false
   if (process.env['SLICERX_TEST_REQUIRE_SX'] === '1') {
     throw new Error(`SLICERX_TEST_REQUIRE_SX=1 but there is no sx at ${sxBin}: build it (cargo build -p sx-cli) and name it in SLICERX_TEST_SX_BIN`)
+  }
+  return true
+}
+
+/** sx-geom beside sx, as the server finds it (CI's Rust tests build both into one folder). */
+export const sxGeomBin = join(dirname(sxBin), process.platform === 'win32' ? 'sx-geom.exe' : 'sx-geom')
+
+/** True when there is no sx-geom beside sx; with SLICERX_TEST_REQUIRE_SX=1 a missing one fails instead. */
+export function noSxGeom(): boolean {
+  if (existsSync(sxGeomBin)) return false
+  if (process.env['SLICERX_TEST_REQUIRE_SX'] === '1') {
+    throw new Error(`SLICERX_TEST_REQUIRE_SX=1 but there is no sx-geom at ${sxGeomBin}: build it (cargo build -p sx-geom) beside sx`)
   }
   return true
 }
