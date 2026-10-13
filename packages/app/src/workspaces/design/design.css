@@ -167,3 +167,5 @@ button.select-pill-made { color: var(--muted); }
 .dtree-folder-name:hover { color: var(--fg); }
 .dtree-folder-list { margin: 0 0 0 11px; padding-left: 8px; border-left: 1px solid var(--line-soft); }
 .dtree-part[data-later] { opacity: 0.45; }
+.cad-step[data-later] .cad-step-icon, .cad-step[data-later] .cad-step-n { opacity: 0.45; }
+span.cad-step-n, span.cad-step-name { cursor: default; }
