@@ -122,8 +122,8 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$e2e" = false ] && printf '%s\n' "$changed" | grep -qE "$browser"; then smoke=true; fi
           echo "smoke=$smoke" >> "$GITHUB_OUTPUT"
           # The B-rep kernel builds from source in about two minutes, so a pull request builds it only when it changes
-          # packages/brep (or this file); the merge queue and main always do, from the cache when nothing changed.
-          if [ "$GITHUB_EVENT_NAME" != pull_request ] || printf '%s\n' "$changed" | grep -qE '^(packages/brep/|\.github/workflows/ci\.yml$)'; then brep=true; else brep=false; fi
+          # packages/brep or packages/geom (or this file); the merge queue and main always do, from the cache when nothing changed.
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] || printf '%s\n' "$changed" | grep -qE '^(packages/brep/|packages/geom/|\.github/workflows/ci\.yml$)'; then brep=true; else brep=false; fi
           echo "brep=$brep" >> "$GITHUB_OUTPUT"
 
   web:
@@ -459,6 +459,9 @@ jobs:
       - run: sh packages/brep/scripts/fetch-smlib.sh
       - run: cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings
       - run: cargo test -p sx-brep --release --features routine-probe
+      # the exact solid ops through sx-geom's JSON and CLI, against exact values and the mesh path
+      - run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
+      - run: cargo test -p sx-geom --release --features brep --test brep_parity
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
   # so the specs test what the desktop slices, and no spec needs the WebAssembly slicer. Built once per run beside the
