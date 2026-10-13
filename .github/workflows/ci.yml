@@ -49,6 +49,18 @@ env:
         exit 1
       fi
     fi
+  # How a Playwright step on the GPU lane ended, from its exit status in sx_rc (eval "$SX_GPU_RUN_EXIT"). In the merge
+  # queue, heavy.sh giving up on the heavy lock (status 75: no tests ran) is a busy machine, not a broken change, so the
+  # step notes it and leaves <report>.lock-busy, and the results step skips that report. A pull request or nightly run
+  # still fails on it (scripts/ci/run-exit.sh), and so does any other status everywhere.
+  SX_GPU_RUN_EXIT: |
+    if [ "$sx_rc" = 75 ] && [ "${GITHUB_EVENT_NAME:-}" = merge_group ]; then
+      echo "playwright exited 75"
+      echo "::notice title=GPU run skipped::The heavy lock stayed busy for ${SX_HEAVY_WAIT:-?} s, so this step ran no tests. In the merge queue that does not fail the job."
+      touch "$PLAYWRIGHT_JSON_OUTPUT_FILE.lock-busy"
+    else
+      bash scripts/ci/run-exit.sh "$sx_rc" "$PLAYWRIGHT_JSON_OUTPUT_FILE"
+    fi
 
 # A cancelled required check recorded after a passing one keeps a pull request out of the merge queue, so the runs of
 # one pull request never cancel each other across these cases. Adding full-ci (also right after opening: gh and the web
@@ -766,7 +778,7 @@ jobs:
       # One retry per failing test; the next step decides from the results, as in e2e-shard. The runner's port comes
       # from its .env (4317 is the default on a developer's machine, 4417 and 4418 are the WSL runners'), 4419 when it
       # sets none.
-      - run: eval "$SX_GROUP_CHECK"; SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --gpu timeout 900 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu --grep-invert @gpu-timing --fully-parallel --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure || bash scripts/ci/run-exit.sh $? "$PLAYWRIGHT_JSON_OUTPUT_FILE"
+      - run: eval "$SX_GROUP_CHECK"; SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --gpu timeout 900 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu --grep-invert @gpu-timing --fully-parallel --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure || { sx_rc=$?; eval "$SX_GPU_RUN_EXIT"; }
         env:
           SX_HEAVY_LOCK: C:/builds/heavy-lock/lock
           SX_HEAVY_WAIT: 1200
@@ -775,7 +787,7 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
       # The frame timing specs, alone on the machine: they measure frame gaps, which another suite's load would skew.
       # Their blob joins the first run's (PWTEST_BLOB_DO_NOT_REMOVE) and their failures go to their own folder.
-      - run: eval "$SX_GROUP_CHECK"; SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --e2e timeout 300 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu-timing --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure --output=test-results/timing || bash scripts/ci/run-exit.sh $? "$PLAYWRIGHT_JSON_OUTPUT_FILE"
+      - run: eval "$SX_GROUP_CHECK"; SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --e2e timeout 300 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu-timing --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure --output=test-results/timing || { sx_rc=$?; eval "$SX_GPU_RUN_EXIT"; }
         env:
           SX_HEAVY_LOCK: C:/builds/heavy-lock/lock
           SX_HEAVY_WAIT: 1200
@@ -785,8 +797,13 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results-timing.json
       - name: flaky and quarantined tests
         run: |
-          node scripts/ci/playwright-results.mjs "$RUNNER_TEMP/e2e-results.json" "$RUNNER_TEMP/retried.txt" "$RUNNER_TEMP/failed.txt"
-          node scripts/ci/playwright-results.mjs "$RUNNER_TEMP/e2e-results-timing.json" "$RUNNER_TEMP/retried-timing.txt" "$RUNNER_TEMP/failed-timing.txt"
+          # A run skipped for a busy lock in the merge queue (SX_GPU_RUN_EXIT) has no report and no results.
+          results() {
+            if [ -e "$1.lock-busy" ]; then echo "skipped (heavy lock busy): $1"; : > "$2"; : > "$3"
+            else node scripts/ci/playwright-results.mjs "$1" "$2" "$3"; fi
+          }
+          results "$RUNNER_TEMP/e2e-results.json" "$RUNNER_TEMP/retried.txt" "$RUNNER_TEMP/failed.txt"
+          results "$RUNNER_TEMP/e2e-results-timing.json" "$RUNNER_TEMP/retried-timing.txt" "$RUNNER_TEMP/failed-timing.txt"
           cat "$RUNNER_TEMP/retried-timing.txt" >> "$RUNNER_TEMP/retried.txt"
           cat "$RUNNER_TEMP/failed-timing.txt" >> "$RUNNER_TEMP/failed.txt"
           bad=0

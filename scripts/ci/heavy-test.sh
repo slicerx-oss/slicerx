@@ -302,6 +302,13 @@ release f5 "$f5"; wait "$pAll"
 rm -f "$dir.gpu-slots"
 rm -f "$dir.slots"
 
+# Status 75 means heavy.sh gave up without running the command (CI reads it as a busy lock), so a command's own 75 is
+# reported as 1; any other status passes through.
+name="a command's own exit 75 is reported as 1, and other statuses pass through"
+SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'exit 75' 2> /dev/null; rc75=$?
+SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'exit 3'; rc3=$?
+ok eval '[ "$rc75" = 1 ] && [ "$rc3" = 3 ]'
+
 # The record and the history carry no secrets: a token in the command is redacted, the command still gets it, and
 # variables like *_SESSION_ID are not read from the environment.
 name="the record and the history redact a token in the command and leave the environment out"
