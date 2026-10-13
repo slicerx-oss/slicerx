@@ -325,6 +325,55 @@ mod tests {
         panic!("no wall")
     }
 
+    /// a 30 x 20 x 5 plate drilled the way the subtract op drills, the hole 6 mm from `z0` up through the top
+    #[allow(clippy::cast_possible_truncation, reason = "rounding to f32 on purpose")]
+    fn subtracted(z0: f64, f32ed: bool) -> TriMesh {
+        let mut cube = build::box_mesh([0.0; 3], [30.0, 20.0, 5.0]);
+        if f32ed {
+            for p in &mut cube.positions {
+                *p = p.map(|v| f64::from(v as f32));
+            }
+        }
+        let c = crate::solids::SolidSpec::Cylinder {
+            origin: Some([15.0, 10.0, z0]),
+            axis: None,
+            diameter_mm: Some(6.0),
+            radius_mm: None,
+            height_mm: 5.5 - z0,
+            segments: None,
+        };
+        let mut out = cube;
+        for piece in c.to_convex().unwrap() {
+            out = crate::convex::subtract(&out, &crate::convex::overshoot_flush(&piece, &out, 0.01)).unwrap();
+        }
+        crate::emboss::merge_coplanar(&out).unwrap()
+    }
+
+    #[test]
+    fn a_subtract_hole_is_found() {
+        // the subtract op's cutters: through, flush with the bottom, blind, and on f32 positions as the app sends them;
+        // its many-sided cylinder splits the faces at the rims, so the rims have corners on chords
+        for (z0, f32ed, through) in [
+            (-1.0, false, true),
+            (0.0, false, true),
+            (2.0, false, false),
+            (2.0, true, false),
+        ] {
+            let m = subtracted(z0, f32ed);
+            let (t, at) = wall(&m);
+            let h = find(&m, t, at).unwrap_or_else(|e| panic!("z0 {z0}: {e}"));
+            assert_eq!(h.through, through, "z0 {z0}");
+            assert!((h.diameter_mm - 6.0).abs() < 1e-3, "z0 {z0}: {h:?}");
+            assert!((h.depth_mm - (5.0 - z0.max(0.0))).abs() < 1e-3, "z0 {z0}: {h:?}");
+            // the thread tool finds the same hole
+            #[cfg(feature = "threads")]
+            assert!(
+                crate::thread::find(&m, t, at).is_ok_and(|th| th.internal),
+                "z0 {z0}"
+            );
+        }
+    }
+
     #[test]
     fn a_through_hole_and_a_blind_one_are_found() {
         let m = plate_minus(post(3.0, -1.0, 6.0));
