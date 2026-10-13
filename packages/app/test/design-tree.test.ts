@@ -230,4 +230,24 @@ describe('the design timeline in the tree and the strip', () => {
     expect(chips[1]!.nextElementSibling?.getAttribute('data-testid')).toBe('tl-marker')
     expect(el.querySelector('[data-testid="tl-rolled"]')?.textContent).toBe('Rolled back to 2 of 4')
   })
+
+  it("numbers a body's steps in the tree the way the strip does", () => {
+    set({ plate: [entry('o1', 'Pi enclosure'), entry('o2', 'Ball', [step('b', { op: 'shell', open: [{}], wallMm: 2 })])], selection: 'o2', timeline: { ...timeline(), marker: 4 } })
+    const el = mount(() => createElement(HistoryTree))
+    const row = el.querySelector('[data-object-id="o2"] [data-testid="model-tree-step"]')!
+    expect(row.querySelector('button')?.textContent).toBe('3')
+  })
+
+  it("picks out a hovered item's body in the tree", () => {
+    set({ plate: [entry('o1', 'Box'), entry('o2', 'Box')], timeline: timeline() })
+    const tree = mount(() => createElement(HistoryTree))
+    const strip = mount(() => createElement(TimelineStrip))
+    const chip = strip.querySelectorAll('.tl-chip')[1]!
+    flushSync(() => chip.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })))
+    expect(get().hoverBody).toBe('o1')
+    const hovered = [...tree.querySelectorAll('.dtree-row[data-hover]')].map((r) => r.closest('[data-object-id]')?.getAttribute('data-object-id'))
+    expect(hovered).toEqual(['o1'])
+    flushSync(() => chip.dispatchEvent(new MouseEvent('pointerout', { bubbles: true })))
+    expect(get().hoverBody).toBe(null)
+  })
 })

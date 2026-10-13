@@ -90,6 +90,12 @@ export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?
   const [open, setOpen] = useState<number | null>(null)
   const made = useMadeBy()
   const madeAt = tree && made?.objectId === objectId ? made.index : -1
+  // the tree numbers steps the way the timeline strip does, across the whole design
+  const items = useApp((s) => (tree ? s.timeline.items : null))
+  const numberOf = (id: string) => {
+    const i = items?.findIndex((it) => it.kind === 'feature' && it.body === objectId && it.id === id) ?? -1
+    return i < 0 ? undefined : i + 1
+  }
   const h = entry?.history
   if (!entry || !h || (!h.steps.length && !h.ended)) return null
 
@@ -115,6 +121,7 @@ export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?
             step={s}
             tree={tree}
             index={i}
+            n={numberOf(s.id)}
             entry={entry}
             skipped={firstBroken >= 0 && i > firstBroken && !s.suppressed}
             busy={busy === i}

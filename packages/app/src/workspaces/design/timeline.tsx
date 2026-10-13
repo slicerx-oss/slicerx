@@ -5,7 +5,7 @@
 // A click on a feature picks its body, a double click opens the step's tool, and dragging a feature moves it among
 // its body's steps. Every action is an existing history operation (cad/history/ops.ts).
 import { Button, Icon } from '@slicerx/ui'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { featureParams, mainNumber, stepName, type FeatureItem, type SketchItem, type Step } from '@slicerx/cad-history'
 import { beginEdit, cancelEdit, moveStep, toolFor } from '../../cad/history/ops'
 import { stepIcon } from '../../cad/history/step-icon'
@@ -45,6 +45,8 @@ export function Timeline() {
   const [dropAt, setDropAt] = useState<number | null>(null)
   const track = useRef<HTMLOListElement>(null)
   const made = useMadeBy()
+  // a hovered item's body stays picked out in the tree only while the strip is up
+  useEffect(() => () => set({ hoverBody: null }), [])
 
   if (!t.items.length) return <p className="tl-empty sx-small sx-muted">No sketches or steps yet. What you draw and the tools you use add them here.</p>
 
@@ -168,6 +170,8 @@ export function Timeline() {
                 draggable={!busy && !later}
                 aria-label={`${i + 1}, ${name}, on ${body}`}
                 data-tip-title={`${name} (${body})`}
+                onPointerEnter={() => set({ hoverBody: f.body })}
+                onPointerLeave={() => set({ hoverBody: null })}
                 data-tip-body={later ? LATER : (f.broken ?? 'Click to pick its body, double-click to edit it, drag to move it among its body’s steps.')}
                 disabled={busy}
                 onClick={() => {
@@ -222,7 +226,7 @@ export function Timeline() {
         {editing ? (
           <>
             <span className="sx-muted">Editing a step of {names.get(editing.body) ?? 'a body'}</span>
-            <button type="button" className="sx-linkbtn" onClick={() => cancelEdit()}>
+            <button type="button" className="tl-link" onClick={() => cancelEdit()}>
               Stop editing
             </button>
           </>
@@ -231,7 +235,7 @@ export function Timeline() {
             <span className="sx-muted" data-testid="tl-rolled">
               Rolled back to {at} of {end}
             </span>
-            <button type="button" className="sx-linkbtn" disabled={busy} onClick={() => roll(end)}>
+            <button type="button" className="tl-link" disabled={busy} onClick={() => roll(end)}>
               Move to the end
             </button>
           </>

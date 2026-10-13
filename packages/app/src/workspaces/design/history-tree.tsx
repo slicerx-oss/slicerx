@@ -223,6 +223,7 @@ export function HistoryTree() {
 function ObjectRow({ entry: p, kind, steps, isOpen, isSel, setOpen }: { entry: PlateEntry; kind: 'body' | 'mesh'; steps: number; isOpen: boolean; isSel: boolean; setOpen: (open: boolean) => void }) {
   const nameRef = useRef<HTMLButtonElement>(null)
   const [renaming, setRenaming] = useState(false)
+  const hover = useApp((s) => s.hoverBody === p.id)
   useEffect(() => onRenameRequest(p.id, () => setRenaming(true)), [p.id])
   // The menu acts on the selection, so a right click on an object outside it selects that object first.
   const pick = () => {
@@ -237,6 +238,7 @@ function ObjectRow({ entry: p, kind, steps, isOpen, isSel, setOpen }: { entry: P
     <div
       className="dtree-row"
       data-selected={isSel || undefined}
+      data-hover={hover || undefined}
       {...menu.bind}
       onContextMenu={(e) => {
         e.preventDefault()
