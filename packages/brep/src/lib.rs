@@ -14,6 +14,7 @@
 //! | `boolean` | `op` (`union`, `difference`, `intersection`), `a`, `b` | `body` |
 //! | `subtract` | `body`, `solids` (box or cylinder), `frame` (the body's, with the solids in world) | `body` |
 //! | `cut` | `body`, `plane` (`point`, `normal`) | `below`, `above` (a body, or null when empty) |
+//! | `fillet` | `body`, `edges` (`a`, `b`, optional `center` for a round rim and `keys` of its two faces), `radiusMm` | `body` |
 //! | `info` | `body` | `manifold`, `volumeMm3`, `bounds`, `faces`, `faceTypes` |
 //! | `tessellate` | `body`, `chordMm` (0.01), `angleDeg` (15) | `positions`, `indices`, `faceIds`, `faces` (`id`, `type`, `surface`, `key`) |
 //! | `save` | `body` | `smb` (the body as `SMLib` text) |

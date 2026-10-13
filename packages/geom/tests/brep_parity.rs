@@ -196,6 +196,34 @@ fn cut_in_two() {
 }
 
 #[test]
+fn fillet_an_edge() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let c = cube();
+    let edges = json!([{ "a": [20, 20, 0], "b": [20, 20, 20], "face": [1, 0, 0] }]);
+    let b = made("fillet", json!({ "body": c, "edges": edges, "radiusMm": 3 }));
+    let want = 8000.0 - (1.0 - PI / 4.0) * 9.0 * 20.0;
+    // the round may be a spline, so both answers are near the exact one; the mesh's round is a polygon
+    let s = brep_solid(&b);
+    assert!(
+        (s.volume - want).abs() <= 1e-4 * want,
+        "brep {} against {want}",
+        s.volume
+    );
+    let m = call(
+        "edge.fillet",
+        &json!({ "mesh": mesh(&c), "edges": edges, "radiusMm": 3 }),
+    );
+    let ms = mesh_solid(&m["mesh"]);
+    assert!(
+        (ms.volume - want).abs() <= 1e-2 * want,
+        "mesh {} against {want}",
+        ms.volume
+    );
+}
+
+#[test]
 fn extrude_with_a_hole() {
     if !sx_brep::KERNEL {
         return;

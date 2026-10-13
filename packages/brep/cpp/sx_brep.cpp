@@ -11,6 +11,8 @@
 #include <SmApiImportExport.h>
 #include <SmApiPrimitives.h>
 #include <SmApiQueries.h>
+#include <SmEdge.h>
+#include <SmVertex.h>
 #include <SmAttribute.h>
 #include <SmAxis2Placement.h>
 #include <SmBrep.h>
@@ -678,6 +680,98 @@ Value tessellate(SmBrep* b, double chord, double angle)
     return out;
 }
 
+// --- picking edges
+
+double dist(const SmVector3d& a, const SmVector3d& b)
+{
+    SmVector3d d(a.x - b.x, a.y - b.y, a.z - b.z);
+    return std::sqrt(dot(d, d));
+}
+
+SmVector3d at(SmVertex* v)
+{
+    SmPoint3d p = v->GetPoint();
+    return SmVector3d(p.x, p.y, p.z);
+}
+
+double off_edge(SmEdge* e, const SmVector3d& q)
+{
+    SmPoint3d c;
+    double t = 0, d = 0;
+    if (SmApiEdgeClosestPoint(e, SmPoint3d(q.x, q.y, q.z), c, t, d) != SM_SUCCESS) return 1e30;
+    return d;
+}
+
+// how far edge e is from a reference: its ends against a and b, or for a closed one (a round rim) a and the
+// point across the circle from it
+double miss(SmEdge* e, const Value& ref)
+{
+    SmVector3d a = v3(ref, "a"), b = v3(ref, "b");
+    if (e->IsClosed()) {
+        if (!ref.has("center")) return off_edge(e, a) + off_edge(e, b);
+        SmVector3d c = v3(ref, "center");
+        return off_edge(e, a) + off_edge(e, SmVector3d(2 * c.x - a.x, 2 * c.y - a.y, 2 * c.z - a.z));
+    }
+    SmVector3d s = at(e->GetStartVertex()), t = at(e->GetEndVertex());
+    return std::min(dist(s, a) + dist(t, b), dist(s, b) + dist(t, a));
+}
+
+bool between(SmEdge* e, unsigned long long k0, unsigned long long k1)
+{
+    SmTArray<SmFace*> fs;
+    e->GetFaces(fs);
+    if (fs.GetSize() != 2) return false;
+    unsigned long long f0 = face_key(fs[0]), f1 = face_key(fs[1]);
+    return (f0 == k0 && f1 == k1) || (f0 == k1 && f1 == k0);
+}
+
+// the body's edge each reference names: by its two faces' keys when it has them, then by place. A reference that
+// matches nothing, or two edges equally, is an error, so the step runs on the mesh instead
+SmTArray<SmEdge*> edges_of(SmBrep* b, const Value& refs)
+{
+    if (refs.kind != Value::Array || refs.a.empty()) throw Error("edges", "needs at least one edge");
+    SmTArray<SmEdge*> all, out;
+    check(SmApiGetEdges(b, all), "edges");
+    const double tol = 0.01;
+    for (size_t i = 0; i < refs.a.size(); ++i) {
+        const Value& ref = refs.a[i];
+        const Value& ks = ref["keys"];
+        bool keyed = ks.kind == Value::Array && ks.a.size() == 2 && ks.a[0].kind == Value::Number && ks.a[1].kind == Value::Number;
+        SmEdge* best = nullptr;
+        double first = 1e30, second = 1e30;
+        for (ULONG j = 0; j < all.GetSize(); ++j) {
+            if (keyed && !between(all[j], (unsigned long long)ks.a[0].n, (unsigned long long)ks.a[1].n)) continue;
+            double m = miss(all[j], ref);
+            if (m < first) {
+                second = first;
+                first = m;
+                best = all[j];
+            } else if (m < second) {
+                second = m;
+            }
+        }
+        // a keyed edge may have moved along its faces (a push since), so only a near tie counts against it
+        if (!best || (!keyed && first > tol) || second < first + tol)
+            throw Error("edges", "edge " + std::to_string(i) + " is not on the body");
+        for (ULONG j = 0; j < out.GetSize(); ++j)
+            if (out[j] == best) throw Error("edges", "edge " + std::to_string(i) + " is named twice");
+        out.Add(best);
+    }
+    return out;
+}
+
+// keys for the faces an op made (a fillet's rounds), leaving the ones carried over
+SmBrep* key_new_faces(SmBrep* b)
+{
+    if (!keys.on) return b;
+    ++keys.next;
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    for (ULONG i = 0; i < fs.GetSize(); ++i)
+        if (!face_key(fs[i])) set_key(fs[i], key_of(keys.salt, keys.next, i));
+    return b;
+}
+
 // --- the ops
 
 Value run(const std::string& op, const Value& r)
@@ -748,6 +842,19 @@ Value run(const std::string& op, const Value& r)
                 out.set(side.first, Value());
             }
         }
+    } else if (op == "fillet") {
+        double radius = num(r, "radiusMm");
+        if (!(radius > 0)) throw Error("radiusMm", "must be more than 0");
+        SmBrep* b = copy_of(body(r, "body"));
+        try {
+            SmTArray<SmEdge*> es = edges_of(b, r["edges"]);
+            // circular cross section, G1 at the corners
+            check(SmApiFilletEdges(b, es, radius, 1, 1, 1.0), "fillet");
+        } catch (...) {
+            delete b;
+            throw;
+        }
+        out.set("body", Value(keep(key_new_faces(b))));
     } else if (op == "info") {
         out = info(body(r, "body"));
     } else if (op == "tessellate") {

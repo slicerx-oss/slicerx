@@ -364,6 +364,60 @@ fn faces_keep_their_keys() {
 }
 
 #[test]
+fn fillet_rounds_the_named_edges() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // the fillet's surface may be a spline, so its volume is near the exact one rather than equal
+    let near = |a: f64, b: f64| assert!((a - b).abs() <= 1e-4 * b, "{a} != {b}");
+    let notch = (1.0 - PI / 4.0) * 9.0 * 20.0;
+    let one = body(
+        "fillet",
+        &json!({ "body": cube(), "edges": [{ "a": [20, 20, 0], "b": [20, 20, 20], "face": [1, 0, 0] }], "radiusMm": 3 }),
+    );
+    near(volume(one), 8000.0 - notch);
+    assert_eq!(mesh_check(one).0, 0);
+    // the four upright edges, ends either way round
+    let ups = [[0, 0], [20, 0], [20, 20], [0, 20]].map(
+        |[x, y]| json!({ "a": [x, y, 20], "b": [x, y, 0], "face": [if x == 0 { -1 } else { 1 }, 0, 0] }),
+    );
+    let four = body("fillet", &json!({ "body": cube(), "edges": ups, "radiusMm": 3 }));
+    near(volume(four), 8000.0 - 4.0 * notch);
+    // by the faces' keys: the old faces keep theirs and the round gets one of the step's
+    let keyed = call(
+        "box",
+        &json!({ "min": [0, 0, 0], "max": [20, 20, 20], "keySalt": 7, "save": true }),
+    );
+    let before = faces(&keyed["body"]);
+    let key = |x: f64, y: f64| {
+        before
+            .iter()
+            .find(|f| f.1["normal"][0].as_f64() == Some(x) && f.1["normal"][1].as_f64() == Some(y))
+            .unwrap()
+            .0
+    };
+    let rounded = call(
+        "fillet",
+        &json!({ "body": keyed["body"], "edges": [{ "a": [20, 20, 0], "b": [20, 20, 20], "face": [1, 0, 0], "keys": [key(1.0, 0.0), key(0.0, 1.0)] }], "radiusMm": 3, "keySalt": 9 }),
+    );
+    let after = faces(&rounded["body"]);
+    assert_eq!(after.len(), 7);
+    let old: Vec<u64> = before.iter().map(|f| f.0).collect();
+    assert!(
+        after.iter().filter(|f| old.contains(&f.0)).count() == 6,
+        "{after:?}"
+    );
+    assert!(after.iter().all(|f| f.0 > 0));
+    // an edge the body doesn't have
+    let e = sx_brep::call(
+        "fillet",
+        &json!({ "body": cube(), "edges": [{ "a": [5, 5, 0], "b": [5, 5, 20], "face": [1, 0, 0] }], "radiusMm": 3 }).to_string(),
+    )
+    .unwrap_err();
+    assert!(e.contains("edges"), "{e}");
+}
+
+#[test]
 fn subtract_in_the_body_frame() {
     if !sx_brep::KERNEL {
         return;
