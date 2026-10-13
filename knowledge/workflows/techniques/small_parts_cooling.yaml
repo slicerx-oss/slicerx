@@ -1,0 +1,19 @@
+kind: guide
+schema_version: 1
+id: small_parts_cooling
+name: Small parts and short layers
+aliases: [small towers, tiny parts, small details melt, rough top on a small part, droopy small part, minimum layer time, short layer time, layers too fast, small part overheating]
+applies_to: [all]
+summary: >
+  A small part or a thin tower prints each layer in a few seconds, so the
+  next layer lands on plastic that is still soft. The cure is more cooling
+  and more time per layer, not less fan.
+facts:
+  - {text: "When a layer prints faster than the Slow down if layer print time is below value, the fan runs at its maximum speed and the print slows down to stretch the layer to that time.", src: [prusa_kb_cooling]}
+  - {text: "Even at the slowest allowed speed a tiny layer can still finish under that time, and raising the minimum print speed too far partly undoes the minimum layer time.", src: [prusa_kb_cooling]}
+material_notes:
+  - {text: "Raise slow_down_layer_time and check fan_max_speed before anything else when a small part comes out rough or melted. Bambu's PETG and Prusa's PETG profiles use about 8 to 12 seconds (see the pillowing troubleshooter).", basis: expert}
+pilot_actions:
+  - "For a rough or melted small part, raise cooling and the minimum layer time; never suggest less fan for it."
+  - "Suggest printing two or more copies at once, so each layer takes longer."
+src: [prusa_kb_cooling]
