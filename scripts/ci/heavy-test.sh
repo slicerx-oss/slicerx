@@ -215,9 +215,9 @@ ok eval '[ "$rc" = 75 ]'
 name="an --e2e waiter waits while a --gpu run holds, with the plain slots free"
 SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --e2e true > /dev/null 2>&1; rc=$?
 ok eval '[ "$rc" = 75 ] && [ ! -d "$dir" ]'
-name="a --gpu waiter behind a waiting --e2e ticket waits, with a GPU slot free"
+name="a --gpu waiter behind a waiting CI --e2e ticket waits, with a GPU slot free"
 release g2 "$g2"
-SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --e2e sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/e3.child" > /dev/null 2>&1 &
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 RUNNER_ENVIRONMENT=self-hosted bash "$heavy" --e2e sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/e3.child" > /dev/null 2>&1 &
 e3=$!; lpids="$lpids $!"; sleep 1.5
 SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
 ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.gpu.2" ]'
@@ -231,6 +231,136 @@ name="the --gpu waiter runs once the --e2e holder is gone"
 release e3 "$e3"
 SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
 ok eval '[ "$rc" = 0 ]'
+
+# --class engine: beside a --gpu run, at most SX_HEAVY_GPU_ENGINE (<lock>.gpu-engine, default 1) engine holds run. A
+# --gpu waiter waits for the engine holds to drop to that many, and while a --gpu run holds, engine waiters keep to
+# that many slots. Other plain jobs are not limited.
+ehold() {
+  SX_HEAVY_LOCK=$lock bash "$heavy" --class engine sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/$1.child" > /dev/null 2>&1 &
+  wait_for "$tmp/$1.child"; lpids="$lpids $(cat "$tmp/$1.child") $!"
+}
+ewaiter() {
+  local t0=$SECONDS
+  SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=$1 bash "$heavy" --class engine sh -c 'echo "$1" >> "$2"' sh "$2" "$tmp/order" > "$tmp/waiter.out" 2>&1
+  rc=$? secs=$((SECONDS - t0))
+}
+echo 3 > "$dir.slots"
+ehold p1; p1=$!
+name="an engine hold's record says class engine, and its history line says so"
+ok eval 'grep -qx "class engine" "$dir/owner" && tail -n 1 "$tmp/history.log" | grep -q "waited [0-9]* s, class engine"'
+name="heavy.sh refuses a class other than engine"
+SX_HEAVY_LOCK=$lock bash "$heavy" --class other true 2> /dev/null; rc=$?
+ok eval '[ "$rc" = 2 ]'
+ehold p2; p2=$!
+name="a --gpu waiter waits while two engine holds run, with GPU slots free"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.gpu.1" ]'
+name="a plain hold that is no engine suite does not count: beside one engine hold and one plain, a --gpu waiter runs"
+release p2 "$p2"
+hold q1; q1=$!
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=10 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 0 ]'
+release q1 "$q1"
+ehold p2; p2=$!
+name="an engine waiter behind a CI --gpu ticket that waits for the engine holds stays out of the free slot"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 RUNNER_ENVIRONMENT=self-hosted bash "$heavy" --gpu sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/g5.child" > /dev/null 2>&1 &
+g5=$!; lpids="$lpids $!"; sleep 1.5
+ewaiter 3 w14
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.3" ]'
+name="a plain waiter that is no engine suite takes the free slot"
+waiter 10 w14b
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
+name="the --gpu ticket runs once one engine hold is left"
+release p2 "$p2"; wait_for "$tmp/g5.child"; lpids="$lpids $(cat "$tmp/g5.child")"
+ok eval 'grep -qx "class gpu" "$dir.gpu.1/owner"'
+name="while a --gpu run holds, an engine waiter waits with one engine hold running and two slots free"
+ewaiter 3 w15
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.2" ] && [ ! -d "$dir.3" ]'
+name="and a plain waiter takes a slot beside them"
+waiter 10 w15b
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
+name="SX_HEAVY_GPU_ENGINE=2 lets a second engine hold in beside the --gpu run"
+SX_HEAVY_GPU_ENGINE=2 ewaiter 10 w16
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
+name="with the --gpu run gone, an engine waiter takes a free slot at once"
+release g5 "$g5"
+ewaiter 10 w17
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
+name="<lock>.gpu-engine 0 keeps a --gpu waiter out while any engine hold runs"
+echo 0 > "$dir.gpu-engine"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.gpu.1" ]'
+release p1 "$p1"
+name="and lets it run once none runs"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 0 ]'
+rm -f "$dir.gpu-engine"
+
+# A --gpu waiter that waits for the engine holds keeps the engine waiters behind it out only when it is a CI one, and
+# only for its first SX_HEAVY_GPU_HOLDBACK (<lock>.gpu-holdback, default 300) seconds. Each blocked state is one line
+# naming who blocks it.
+ehold p3; p3=$!
+ehold p4; p4=$!
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --gpu true 2> "$tmp/g6.err" > /dev/null &
+g6=$!; lpids="$lpids $!"; sleep 3
+name="a manual --gpu waiter blocked by the engine holds says so once, naming them, and that engine waiters pass it"
+ok eval '[ "$(grep -c "^heavy.sh: waiting:" "$tmp/g6.err")" = 1 ] && grep -q "waiting: 2 engine holds run" "$tmp/g6.err" \
+  && grep -q "(pid $p3, pid $p4)\|(pid $p4, pid $p3)" "$tmp/g6.err" && grep -q "; engine waiters pass it$" "$tmp/g6.err"'
+name="and an engine waiter behind it takes the free slot"
+ewaiter 10 w18
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ] && [ ! -d "$dir.gpu.1" ]'
+kill "$g6"; wait "$g6" 2> /dev/null
+echo 6 > "$dir.gpu-holdback"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 RUNNER_ENVIRONMENT=self-hosted bash "$heavy" --gpu sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/g8.child" 2> "$tmp/g8.err" > /dev/null &
+g8=$!; lpids="$lpids $!"; sleep 1.5
+name="a CI --gpu waiter keeps an engine waiter behind it out for its first <lock>.gpu-holdback seconds, and says so"
+ewaiter 2 w19
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.3" ] && grep -q "waiting: 2 engine holds run.*; it keeps engine waiters out for [0-9]* s more" "$tmp/g8.err"'
+name="after that, it says engine waiters pass it, and an engine waiter takes the free slot"
+for _ in $(seq 30); do grep -q "; engine waiters pass it$" "$tmp/g8.err" && break; sleep 0.5; done
+ewaiter 10 w20
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ] && grep -q "; engine waiters pass it$" "$tmp/g8.err"'
+name="SX_HEAVY_GPU_HOLDBACK overrides <lock>.gpu-holdback"
+SX_HEAVY_GPU_HOLDBACK=900 ewaiter 3 w20b
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.3" ]'
+name="the CI --gpu waiter runs once one engine hold is left"
+release p4 "$p4"; wait_for "$tmp/g8.child"; lpids="$lpids $(cat "$tmp/g8.child")"
+ok eval 'grep -qx "class gpu" "$dir.gpu.1/owner"'
+release g8 "$g8"; release p3 "$p3"
+rm -f "$dir.gpu-holdback"
+
+# One plain slot and a --gpu run: a manual --e2e waiter keeps no slot free for itself while it waits for the --gpu run,
+# and keeps no --gpu waiter behind it out; once its ticket is SX_HEAVY_RESERVE_AFTER (<lock>.reserve-after, default
+# 900) seconds old, it keeps its turn as a CI waiter does, and does both.
+echo 1 > "$dir.slots"
+echo 2 > "$dir.gpu-slots"
+gpu_hold g7
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --e2e sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/e4.child" 2> "$tmp/e4.err" > /dev/null &
+e4=$!; lpids="$lpids $!"; sleep 3
+name="a manual --e2e waiter blocked by a --gpu run says so once, naming the holder"
+ok eval '[ "$(grep -c "^heavy.sh: waiting:" "$tmp/e4.err")" = 1 ] \
+  && grep -q "waiting: a --gpu run holds or is handed a GPU slot (pid $g7); it gives its turn back" "$tmp/e4.err"'
+name="it gives the only slot to a plain waiter behind it"
+waiter 10 w21
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
+name="and lets a --gpu waiter behind it into the free GPU slot"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=10 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 0 ]'
+name="once it keeps its turn, a plain waiter and a --gpu waiter behind it wait"
+echo 2 > "$dir.reserve-after"
+sleep 1
+waiter 3 w22; rcp=$rc
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rcp" = 75 ] && [ "$rc" = 75 ] && [ ! -d "$dir" ] && [ ! -d "$dir.gpu.2" ] && grep -q "it keeps its turn" "$tmp/e4.err"'
+name="SX_HEAVY_RESERVE_AFTER overrides <lock>.reserve-after"
+SX_HEAVY_RESERVE_AFTER=900 waiter 10 w23
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
+name="the --e2e waiter runs once the --gpu run is gone"
+release g7 "$g7"; wait_for "$tmp/e4.child"; lpids="$lpids $(cat "$tmp/e4.child")"
+ok eval 'grep -qx "class e2e" "$dir/owner"'
+release e4 "$e4"
+rm -f "$dir.reserve-after" "$dir.gpu-slots"
+echo 2 > "$dir.slots"
 
 # Fairness for CI: a manual (class 1) --all waiter gives its slots back while a CI ticket waits, and slots a --all
 # waiter holds while it still waits do not keep a --gpu ticket ahead of it in the queue out of the GPU lane.

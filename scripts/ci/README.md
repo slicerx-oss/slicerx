@@ -124,6 +124,21 @@ collected while it still waits do not count as a run: a `--gpu` ticket ahead of 
 slot, and the `--all` run starts after that one ends. The GPU lane runs its `@gpu` specs under `--gpu` and its frame timing specs (`@gpu-timing`) after
 them under `--e2e`, alone.
 
+A `--gpu` run also slices on the CPU in several browsers at once, and stalls beside more than one engine test suite.
+`heavy.sh --class engine <command>` marks a plain hold as one (its record says `class engine`). CI's Rust test steps
+set it, and so should a manual `cargo test` of the engine crates. A `--gpu` run starts only while at most
+`SX_HEAVY_GPU_ENGINE` engine holds run (the number in `<lock>.gpu-engine`, default 1), and while one holds, engine
+waiters keep to that many slots; other plain jobs are not limited. A CI `--gpu` waiter that waits for the engine holds
+to drop keeps the engine waiters behind it out for its first `SX_HEAVY_GPU_HOLDBACK` seconds (the number in
+`<lock>.gpu-holdback`, default 300); after that, they pass it. A manual `--gpu` waiter never keeps anyone out.
+
+A manual `--e2e` waiter that cannot run yet (a `--gpu` run or another `--e2e` run blocks it) gives its turn back: it
+keeps its place in the queue but holds nobody back, so the waiters behind it use what is free. Once its ticket is
+`SX_HEAVY_RESERVE_AFTER` seconds old (the number in `<lock>.reserve-after`, default 900) it keeps its turn as a CI
+waiter does from the start: the slot it needs is kept free for it, and the `--gpu` waiters behind it wait, so it is
+never starved. The holdback and this setting are read again at every decision. Each time what blocks a waiter changes, it
+prints one `heavy.sh: waiting:` line naming the holders or tickets in its way.
+
 `scripts/ci/heavy-test.sh` tests all of this on a temporary lock: alone on any side, and with
 `cross <distro> [<stopped distro>]` from Git Bash, Windows against WSL.
 

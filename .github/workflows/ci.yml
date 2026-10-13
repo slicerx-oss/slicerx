@@ -289,7 +289,8 @@ jobs:
           ln -s "$HOME/target/$RUNNER_NAME" "$GITHUB_WORKSPACE/target"
           echo "SX_HEAVY_LOCK=/mnt/c/builds/heavy-lock/lock" >> "$GITHUB_ENV"
           echo "SX_HEAVY_WAIT=1200" >> "$GITHUB_ENV"
-          echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh timeout 1500" >> "$GITHUB_ENV"
+          # engine test suites: a GPU lane run starts beside one of them at most (heavy.sh --class engine)
+          echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh --class engine timeout 1500" >> "$GITHUB_ENV"
       - if: matrix.part == 'firmware' || matrix.part == 'requests'
         run: cargo test -p sx-core --test ${{ matrix.part }}
       # every other test file of sx-core, read from the directory so a new one is never left out
