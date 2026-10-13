@@ -1,0 +1,28 @@
+/* SPDX-License-Identifier: Apache-2.0
+   Copyright (C) 2026 The SlicerX contributors */
+/* Settings > Account > Usage (usage.tsx). Everything keeps its size while loading: bars at full width, lines one line
+   tall, the hours in a placeholder shape. Today large on the left, the hours and the week beside it; one column on a
+   phone. */
+.mu-sum { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: start; gap: var(--s-4) var(--s-6); }
+.mu-row { display: grid; gap: 6px; min-width: 0; }
+.mu-row-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); font-size: var(--fs-md); }
+.mu-pc { font-variant-numeric: tabular-nums; color: var(--muted); }
+.mu-line { display: block; min-height: 1lh; }
+.mu-line[data-loading] { width: 12ch; border-radius: 4px; background: var(--ink-3); }
+.mu-row-h .mu-line { display: inline-block; }
+.mu-bar { height: 8px; border-radius: 8px; background: var(--ink-3); overflow: hidden; }
+.mu-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.mu-hours { position: relative; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); align-items: end; gap: 2px; height: 56px; padding-bottom: 18px; }
+.mu-hours[data-count='7'] { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.mu-hours i { display: block; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--accent) 70%, transparent); }
+.mu-hours[data-loading] i { background: var(--ink-3); }
+.mu-hours-ax { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--dim); }
+.mu-rate { grid-column: 1 / -1; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
+.mu-big { display: grid; gap: 8px; }
+.mu-big-n { display: flex; align-items: baseline; gap: 8px; }
+.mu-num { font: var(--fw-semibold) 32px/1.1 var(--f-display, var(--f-body)); font-variant-numeric: tabular-nums; }
+.mu-num[data-loading] { width: 3ch; }
+.mu-big .mu-bar { height: 12px; }
+.mu-out { margin: 0; color: var(--orange); }
+.mu-sum-side { display: grid; gap: var(--s-4); }
+@media (max-width: 700px) { .mu-sum { grid-template-columns: minmax(0, 1fr); } }

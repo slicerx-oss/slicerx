@@ -16,6 +16,8 @@ export interface MimirQuota {
   ipCap: number
   /** False when mimir cloud is paused or the edition's budget for today is used up. */
   editionOpen: boolean
+  /** The usage report (quota v2) as the proxy sent it; usage-quota.ts reads it. */
+  v2?: unknown
 }
 
 export interface MimirCloudHost {
