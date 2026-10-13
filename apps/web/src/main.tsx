@@ -116,17 +116,8 @@ if (__SX_FEATURE_STORE__) {
   // sign-out, so the app shows the cloud as ready or as a sign-in step.
   const mimirUrl = config.ai.keySource === 'cloud' ? config.backend.supabase?.url : undefined
   if (__SX_FEATURE_PILOT__ && mimirUrl) {
-    const [{ registerMimirCloud }, { createBrowserMimirCloud }] = await Promise.all([import('@slicerx/app'), import('@slicerx/app/pilot-connect/browser-cloud')])
-    const base = `${new URL(mimirUrl).origin}/functions/v1/mimir`
-    let token: string | null = null
-    registerMimirCloud(createBrowserMimirCloud({ base, session: () => token }))
-    const seen = (t: string | null) => {
-      const flipped = (t === null) !== (token === null)
-      token = t
-      if (flipped) registerMimirCloud(createBrowserMimirCloud({ base, session: () => token }))
-    }
-    store.onTokenChange(seen)
-    void store.getAccessToken().then(seen, () => seen(null))
+    const { startBrowserMimirCloud } = await import('@slicerx/app/pilot-connect/browser-cloud')
+    startBrowserMimirCloud(mimirUrl, store)
   }
   // Saved .sx3mf files name the person who exported them; empty when signed out.
   const { setExportIdentity } = await import('@slicerx/app')

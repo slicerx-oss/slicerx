@@ -4,7 +4,7 @@
 // v1/messages), straight from the page, for signed-in members only. Each call carries the member's session token,
 // which the proxy checks against the project's signing keys; the proxy keys the web edition's caps by the user, so
 // there is no install token and nothing to register. Signed out, the host says so (needsSignIn) and sends nothing.
-import type { MimirCloudHost, MimirQuota } from './cloud'
+import { registerMimirCloud, type MimirCloudHost, type MimirQuota } from './cloud'
 
 export interface BrowserCloudOptions {
   /** The proxy, ending in /functions/v1/mimir. */
@@ -71,4 +71,28 @@ export function createBrowserMimirCloud(o: BrowserCloudOptions): BrowserMimirClo
       return call(url, { method: init.method, headers: init.headers, ...(init.body !== undefined ? { body: init.body } : {}), ...(signal ? { signal } : {}) })
     },
   }
+}
+
+/** The sign-in state the browser build reads its session from. */
+export interface SessionSource {
+  onTokenChange(cb: (token: string | null) => void): unknown
+  getAccessToken(): Promise<string | null>
+}
+
+/**
+ * Starts mimir cloud in the browser build, against the edition's Supabase project: a host for the current sign-in,
+ * registered again whenever the member signs in or out, so the app shows the cloud as ready or as a sign-in step.
+ * Kept here, out of the app's entry, so the startup bundle does not carry it.
+ */
+export function startBrowserMimirCloud(supabaseUrl: string, auth: SessionSource): void {
+  const base = `${new URL(supabaseUrl).origin}/functions/v1/mimir`
+  let token: string | null = null
+  registerMimirCloud(createBrowserMimirCloud({ base, session: () => token }))
+  const seen = (t: string | null) => {
+    const flipped = (t === null) !== (token === null)
+    token = t
+    if (flipped) registerMimirCloud(createBrowserMimirCloud({ base, session: () => token }))
+  }
+  auth.onTokenChange(seen)
+  void auth.getAccessToken().then(seen, () => seen(null))
 }
