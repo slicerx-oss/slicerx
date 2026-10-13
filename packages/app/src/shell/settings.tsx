@@ -3,7 +3,7 @@
 // Settings: sections that features add (Account) and the base's own (Phone access, Look and feel).
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, Dialog, Icon, Switch, type IconName } from '@slicerx/ui'
-import { lazy, Suspense, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useEdition, appName } from '../edition'
 import { useFeatures } from '../features'
 import { bridgeConnector } from '../link/connector'
@@ -74,6 +74,16 @@ export function SettingsDialog() {
     measure()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, want])
+  // the row's size settles after the dialog opens and the fonts load, so the edges are measured again then
+  useEffect(() => {
+    const n = nav.current
+    if (!open || !n || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => measure())
+    ro.observe(n)
+    for (const c of n.children) ro.observe(c)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
   const close = () => set({ settingsOpen: false, settingsSection: null })
   const Feature = settings.find((s) => s.id === id)?.component ?? null
   return (
