@@ -224,6 +224,28 @@ fn fillet_an_edge() {
 }
 
 #[test]
+fn chamfer_an_edge() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let c = cube();
+    let edges = json!([{ "a": [20, 20, 0], "b": [20, 20, 20], "face": [1, 0, 0] }]);
+    let b = made("chamfer", json!({ "body": c, "edges": edges, "distanceMm": 2 }));
+    let m = call(
+        "edge.chamfer",
+        &json!({ "mesh": mesh(&c), "edges": edges, "distanceMm": 2 }),
+    );
+    check(
+        "chamfer",
+        &brep_solid(&b),
+        Some(&mesh_solid(&m["mesh"])),
+        8000.0 - 40.0,
+        [0.0; 3],
+        [20.0; 3],
+    );
+}
+
+#[test]
 fn extrude_with_a_hole() {
     if !sx_brep::KERNEL {
         return;
