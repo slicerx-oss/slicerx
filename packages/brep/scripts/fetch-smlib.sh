@@ -5,13 +5,15 @@
 # kernel (source/SMLib), its C API (source/SM_API) and the license into a cache outside the repository, then swaps
 # in our versions of the routines swap-routines.sh names. Prints the directory, which the native build (build.rs) and
 # scripts/build-wasm.sh read from SX_SMLIB_DIR. The marker's number goes up with each change to swap-routines.sh.
+# Each run checks that the copy it prints has every inventoried routine swapped out.
 set -eu
 commit=c9c5979f04cea8c38213004d4f04df0dcfb40d05
 sha256=211feb33612aac2641151bbb47d904488e547bcbcff814095a8676f9d3f85182
 cache="${SX_SMLIB_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/slicerx/smlib}"
 dir="$cache/$commit"
-ready="$dir/.ready-2"
+ready="$dir/.ready-3"
 if [ -f "$ready" ]; then
+  sh "$(dirname "$0")/swap-routines.sh" --check "$dir"
   echo "$dir"
   exit 0
 fi
@@ -30,5 +32,6 @@ tar -xzf "$tmp" -C "$dir" --strip-components=1 \
   "usd-brep-$commit/source/SMLib" "usd-brep-$commit/source/SM_API" "usd-brep-$commit/LICENSE"
 rm -f "$tmp"
 sh "$(dirname "$0")/swap-routines.sh" "$dir"
+sh "$(dirname "$0")/swap-routines.sh" --check "$dir"
 touch "$ready"
 echo "$dir"
