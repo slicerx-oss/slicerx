@@ -55,6 +55,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | --- | --- |
 | `mimir-chat` | The chat column on the left of the mimir tab; a dropped image joins the message |
 | `mimir-transcript` | The conversation in the chat |
+| `mimir-model-switch` | Auto's one line when a run moves to another model (Using Sonnet 5.5 for this one.) |
 | `mimir-composer` | The message box pinned at the foot of the chat |
 | `mimir-attach` | The composer's attach button, which opens the image picker |
 | `mimir-attachment` | An image on the message or on a sent turn; its remove button is named Remove and the file name |

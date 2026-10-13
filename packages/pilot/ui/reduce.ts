@@ -50,6 +50,7 @@ export type Block =
   | { kind: 'tools'; id: string; rows: ToolRowModel[] }
   | { kind: 'diff'; id: string; diff: SettingsDiff }
   | { kind: 'perm'; id: string; permission: PermissionClass; mode: 'allow' | 'off'; message: string }
+  | { kind: 'model'; id: string; model: string; label: string; reason: 'request' | 'tool' | 'struggle' }
   | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean }
   | { kind: 'lookup'; id: string; lookup: PilotLookup }
   | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean }
@@ -361,6 +362,8 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       )
     case 'summary':
       return append(settleStreams(s), (id) => ({ kind: 'summary', id, title: event.title, rows: event.rows, stopped: event.stopped, ms: s.clockStart === null ? null : now - s.clockStart }), true)
+    case 'model_switch':
+      return append(settleStreams(s), (id) => ({ kind: 'model', id, model: event.model, label: event.label, reason: event.reason }), true)
     case 'usage':
       return { ...s, meter: { ...s.meter, tokens: s.meter.tokens + event.inputTokens + event.outputTokens } }
     case 'error':

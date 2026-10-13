@@ -17,6 +17,8 @@ const schema = z.object({
   models: z.object({ huginn: z.string().min(1).optional(), muninn: z.string().min(1).optional() }).optional(),
   modelChoice: z.string().min(1).optional(),
   billing: z.enum(['plan', 'key']).optional(),
+  auto: z.boolean().optional(),
+  deepDesign: z.boolean().optional(),
 })
 
 export function parsePilotConfig(input: unknown): PilotConfig {
@@ -33,6 +35,8 @@ export function parsePilotConfig(input: unknown): PilotConfig {
   }
   if (parsed.modelChoice !== undefined) out.modelChoice = parsed.modelChoice
   if (parsed.billing !== undefined) out.billing = parsed.billing
+  if (parsed.auto !== undefined) out.auto = parsed.auto
+  if (parsed.deepDesign !== undefined) out.deepDesign = parsed.deepDesign
   return out
 }
 

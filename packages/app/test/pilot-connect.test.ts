@@ -7,6 +7,7 @@ import { browserStore, keyStoreFor } from '../src/pilot-connect/keys'
 import { registerMimirCloud, type MimirCloudHost } from '../src/pilot-connect/cloud'
 import { cloudBase, cloudReady } from '../src/pilot-connect/cloud-edition'
 import { pilotModel } from '../src/pilot-connect/llm'
+import { AUTO_MODEL, modelChoices } from '../src/pilot-connect/models'
 import { normalizePrefs } from '../src/state/prefs'
 import { authHeaders, browserTransport, hostLocalFetch, localAllowed, testConnection } from '../src/pilot-connect/transport'
 import { NEUTRAL } from '../src/edition'
@@ -181,6 +182,22 @@ describe('mimir transport', () => {
     expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'anthropic' })).toMatchObject({ provider: 'anthropic', baseUrl: 'https://api.anthropic.com' })
     expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'local', baseUrl: 'http://localhost:1234/v1', model: 'qwen' })).toEqual({ provider: 'openai-compatible', model: 'qwen', baseUrl: 'http://localhost:1234/v1' })
     expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'openai' })?.provider).toBe('openai')
+  })
+
+  it('runs Auto on a key with no model picked: the small model, the larger for hard parts, never Opus by default', () => {
+    expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'anthropic' })).toMatchObject({ model: 'claude-haiku-5-5', models: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, auto: true })
+    expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'anthropic', model: AUTO_MODEL })).toMatchObject({ model: 'claude-haiku-5-5', auto: true })
+    expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'anthropic' })).not.toHaveProperty('deepDesign')
+    expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'openai', model: 'auto' })).toMatchObject({ model: 'gpt-6-luna', models: { huginn: 'gpt-6-luna', muninn: 'gpt-6-sol' }, auto: true, deepDesign: true })
+    const pinned = pilotModel(NEUTRAL, { mode: 'on', provider: 'anthropic', model: 'claude-opus-5-5' })
+    expect(pinned).toMatchObject({ model: 'claude-opus-5-5' })
+    expect(pinned).not.toHaveProperty('auto')
+    expect(pilotModel(NEUTRAL, { mode: 'on', provider: 'local', baseUrl: 'http://localhost:1234/v1' })).not.toHaveProperty('auto')
+    expect(modelChoices('anthropic').map((c) => c.label)).toEqual(['Auto', 'Haiku 5.5', 'Sonnet 5.5', 'Opus 5.5'])
+    expect(modelChoices('anthropic')[0]!.id).toBe('auto')
+    expect(modelChoices('openai').map((c) => c.id)).toEqual([AUTO_MODEL, 'gpt-6-luna', 'gpt-6-sol'])
+    expect(modelChoices('mimir-cloud')).toEqual([])
+    expect(modelChoices('local')).toEqual([])
   })
 })
 

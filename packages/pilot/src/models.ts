@@ -33,6 +33,9 @@ export const MUNINN_TOOLS: ReadonlySet<string> = new Set([
   'cut',
 ])
 
+/** Failed tool results on huginn before Auto moves the rest of the run to muninn. */
+export const STRUGGLE_FAILS = 2
+
 export function tierForPrompt(prompt: string): Tier {
   return DEEP.test(prompt) ? MUNINN : HUGINN
 }
@@ -40,10 +43,24 @@ export function tierForPrompt(prompt: string): Tier {
 /**
  * The model id for a tier. A pinned choice wins. `models` are the ChatGPT plan's tiers (the
  * owner's pick from the plan listing is in pilot.config.example.json). On an API key, billed
- * per token, one model does everything: `config.model`, which should be a small one.
+ * per token, one model does everything (`config.model`, a small one) unless the person chose
+ * Auto, which uses the tiers too.
  */
-export function modelFor(config: Pick<PilotConfig, 'model' | 'models' | 'modelChoice' | 'billing'>, tier: Tier): string {
+export function modelFor(config: Pick<PilotConfig, 'model' | 'models' | 'modelChoice' | 'billing' | 'auto'>, tier: Tier): string {
   if (config.modelChoice && config.modelChoice !== MODEL_AUTOMATIC) return config.modelChoice
-  if (config.billing === 'key') return config.model
+  if (config.billing === 'key' && !config.auto) return config.model
   return config.models?.[tier] ?? config.model
+}
+
+const LABELS: Record<string, string> = {
+  'claude-haiku-5-5': 'Haiku 5.5',
+  'claude-sonnet-5-5': 'Sonnet 5.5',
+  'claude-opus-5-5': 'Opus 5.5',
+  'gpt-6-luna': 'GPT-6 luna',
+  'gpt-6-sol': 'GPT-6 sol',
+}
+
+/** How the chat names a model. */
+export function modelLabel(id: string): string {
+  return LABELS[id] ?? id
 }

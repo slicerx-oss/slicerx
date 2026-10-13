@@ -8,7 +8,7 @@ import { LookupRecord } from './lookup-record'
 import { SheetRecord } from './sheet-record'
 import { Citations } from './citations'
 import { Diff } from './diff'
-import { ErrorLine, PermLine, PlanList, PluginsLoading } from './notes'
+import { ErrorLine, ModelLine, PermLine, PlanList, PluginsLoading } from './notes'
 import type { Block, Transcript } from './reduce'
 import { Say } from './say'
 import { Summary } from './summary'
@@ -45,6 +45,8 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
       return <Diff diff={block.diff} />
     case 'perm':
       return <PermLine mode={block.mode} message={block.message} />
+    case 'model':
+      return <ModelLine label={block.label} reason={block.reason} />
     case 'approval':
       return (
         <ApprovalCard
