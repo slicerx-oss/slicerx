@@ -20,7 +20,7 @@ import { FeaturesContext, resolveFeatures, useFeatures } from './features'
 import { HostContext, useHost } from './host'
 import { inTextField, matchShortcut } from './lib/keys'
 import { lookCommandFor, onControl } from './controls/global-keys'
-import { WorkspaceBoundary } from './shell/boundary'
+import { LazySlot, WorkspaceBoundary } from './shell/boundary'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { CommandBar } from './shell/command-bar'
 import { bridgeConnector } from './link/connector'
@@ -282,100 +282,100 @@ function Shell() {
           )}
         </WorkspaceBoundary>
         {covered ? null : (
-          <Suspense fallback={null}>
+          <LazySlot>
             <PilotDock />
-          </Suspense>
+          </LazySlot>
         )}
       </Frame>
       <CommandBar />
-      <Suspense fallback={null}>
+      <LazySlot>
         <ResumeDialog />
-      </Suspense>
-      <Suspense fallback={null}>
+      </LazySlot>
+      <LazySlot>
         <RepairDialog />
-      </Suspense>
-      <Suspense fallback={null}>
+      </LazySlot>
+      <LazySlot>
         <ChecksDialog />
-      </Suspense>
-      <Suspense fallback={null}>
+      </LazySlot>
+      <LazySlot>
         <SvgImportDialog />
-      </Suspense>
+      </LazySlot>
       {printSheetOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <PrintSheet />
-        </Suspense>
+        </LazySlot>
       ) : null}
       <ApprovalDialog />
       {bridgeOn ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <AppLinkPrompt />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {settingsOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <SettingsDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       <AppTooltips />
       <QueueWatcher />
       <ProfileFollow />
-      <Suspense fallback={null}>
+      <LazySlot>
         <FitWatch />
-      </Suspense>
+      </LazySlot>
       {aboutOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <AboutDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {shortcutsOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <ShortcutsDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {cameraOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <CameraPlayer />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {updaterRegistered() ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <UpdatesRoot />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {unsavedOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <UnsavedDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {multiBodyOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <MultiBodyDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {projectGcodeOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <ProjectGcodeDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {projectOpenAsk ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <ProjectOpenDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {projectsOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <ProjectsDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {calibrationOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <CalibrationDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {bugReportOpen ? (
-        <Suspense fallback={null}>
+        <LazySlot>
           <BugReportDialog />
-        </Suspense>
+        </LazySlot>
       ) : null}
       {agreementOpen && host.kind !== 'embedded' ? (
         <Suspense fallback={<div className="fr-loading" aria-busy="true" />}>
