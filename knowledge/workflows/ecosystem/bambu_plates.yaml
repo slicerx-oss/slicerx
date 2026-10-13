@@ -13,8 +13,8 @@ facts:
     src: [bambu_wiki_build_plates, bambu_wiki_material_table, "orca_src:src/libslic3r/PrintConfig.cpp"]
   - text: "Textured PEI is the standard plate. It grips most filaments without glue and prints release once the bed cools to 35 C or lower. PC, PA, ABS and ASA may need a glue stick layer on it."
     src: [bambu_wiki_build_plates]
-  - text: "Smooth PEI gives a flat matte bottom. Only PLA prints on it without glue. Every other filament needs glue or the PEI sheet can tear."
-    src: [bambu_wiki_build_plates]
+  - text: "Smooth PEI is a matte sheet: it leaves the bottom face smooth and matte, not glossy. Bambu says to apply glue for any filament other than PLA, or the PEI sheet can tear."
+    src: [bambu_wiki_build_plates, bambu_store_smooth_pei]
   - text: "The Engineering Plate wants a thin glue layer before any filament. Glue stick or liquid glue depends on the material. Use alcohol at the part edge if a print will not release."
     src: [bambu_wiki_build_plates]
   - text: "Cool Plate SuperTack is for PLA and PETG only. It holds PLA at a 40 C bed. Second generation PETG needs 55 to 60 C, but shared X and P series parameters may still use about 65 C."
@@ -44,7 +44,7 @@ steps:
   - text: "Let the bed cool to 35 C or lower before flexing the plate. Use alcohol or a warm 50 C bed for SuperTack."
 pilot_actions:
   - "Suggest the plate from the filament first. Refuse PETG, ABS, ASA, PC and PA on the Cool Plate and TPU or PLA Silk on SuperTack."
-  - "Set curr_bed_type to match the plate the user says is installed. Then set the matching temperature key only."
+  - "Set curr_bed_type to match the plate the user says is installed. Then set the matching temperature key only. To the user, call it the Plate type setting, not by its key."
   - "When a plate warning about recognition appears on X1 or P2S, tell the user to pick Resolved or turn off build plate detection instead of changing settings."
   - "On X1C, X1E and P1S remind the user to take off the top glass when the bed is above 45 C for PLA and above 70 C for PETG."
   - "Warn that PETG on smooth PEI or the High Temperature Plate needs glue as a release layer."

@@ -136,11 +136,11 @@ layer_height:
   at_0_4_mm: {min: 0.08, max: 0.28, typical: 0.2}
   smart_layer:
     quality_mode: "PETG rounds off fine detail and strings on small features, so very thin layers buy less than in PLA. Use 0.12 to 0.16 mm on curved tops and keep 0.2 mm elsewhere. Bambu uses 0.1 mm with a wider 0.5 mm line for translucent PETG."
-    strength_mode: "PETG layer bonding depends on heat, not layer thinness. Thicker layers (0.2 to 0.28 mm) keep more heat in the stack and tolerate the low fan PETG wants. Stay at or under 0.7 of the nozzle diameter."
+    strength_mode: "Thinner is stronger for PETG too: tensile strength fell about 12 percent from 0.1 to 0.3 mm layers in one study. Keep 0.2 mm or less for strong or watertight parts, and get layer bonding from heat and the low fan PETG wants rather than from thick layers."
     thin_layer_cooling: "Bambu sets a 12 s minimum layer time for PETG and a low fan, so thin layers on small parts slow down a lot. Printing several parts at once keeps the nozzle moving and reduces blobs."
   confidence: medium
-  src: ["orca:BBL/machine/fdm_machine_common.json", bambu_wiki_adaptive_layer, bambu_wiki_petg_guide, "orca:Prusa/machine/fdm_machine_common_mk4s.json", "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json"]
-  note: "Bambu tests 0.08 to 0.28 mm on a 0.4 mm nozzle and Prusa allows 0.07 to 0.30 mm on the MK4S. CNC Kitchen tested layer height on PLA only, so the strength rule is carried over from that test with less certainty."
+  src: ["orca:BBL/machine/fdm_machine_common.json", bambu_wiki_adaptive_layer, bambu_wiki_petg_guide, "orca:Prusa/machine/fdm_machine_common_mk4s.json", "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json", stojkovic_2023_layer_height_annealing]
+  note: "Bambu tests 0.08 to 0.28 mm on a 0.4 mm nozzle and Prusa allows 0.07 to 0.30 mm on the MK4S. Stojkovic 2023 measured PETG at 33.5, 30.4 and 29.5 MPa for 0.1, 0.2 and 0.3 mm layers."
 smart_layer:
   min_ratio: 0.2
   max_ratio: 0.7

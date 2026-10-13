@@ -185,12 +185,12 @@ multi_material:
   bambu_ams_lite: not_compatible
   bambu_ams_ht: compatible
   confidence: high
-  src: [bambu_wiki_material_table, bambu_wiki_tpu_guide, bambu_wiki_tpu_85a_90a_x_series]
+  src: [bambu_wiki_material_table, bambu_wiki_tpu_guide, bambu_wiki_tpu_85a_90a_x_series, bambu_store_tpu_for_ams]
   note: >
     Standard TPU 95A and TPU 95A HF cannot go through AMS, AMS lite or AMS 2 Pro.
     The AMS HT works only as a sealed drybox: feed through its dedicated TPU
-    outlet by hand, no auto loading. TPU for AMS is the exception and feeds through
-    every AMS model. Bambu does not support TPU below 85A.
+    outlet by hand, no auto loading. TPU for AMS (68D) is the exception: Bambu sells
+    it for the AMS and the AMS lite. Bambu does not support TPU below 85A.
 
 properties:
   density_g_cm3: {typical: 1.22, min: 1.22, max: 1.26, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 95A @base.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU for AMS @base.json", "orca:OrcaFilamentLibrary/filament/Generic TPU @System.json"], note: "TPU for AMS is 1.26."}
