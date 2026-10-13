@@ -153,9 +153,9 @@ function crashBody(what: string, extra: string[] = []): string {
   return [what, '', `Workspace: ${s.workspace}`, `Build: ${ctx?.host.kind ?? 'unknown'}`, ...extra].join('\n')
 }
 
-async function queueCrash(raw: Omit<RawReport, 'appVersion' | 'commit' | 'os' | 'printer'>): Promise<BugReport | null> {
+async function queueCrash(raw: Omit<RawReport, 'appVersion' | 'commit' | 'os' | 'printer'>, crashed?: Partial<Pick<RawReport, 'appVersion' | 'commit'>>): Promise<BugReport | null> {
   if (!crashReportsOn()) return null
-  const report = finishReport({ ...raw, ...(await environment()) })
+  const report = finishReport({ ...raw, ...(await environment()), ...crashed })
   if (report.fingerprint) {
     if (seen.has(report.fingerprint)) return null
     seen.add(report.fingerprint)
@@ -183,19 +183,27 @@ export function reportCrash(error: unknown, o: CrashInfo = {}): void {
 async function takeNative(host: Host, pageLoad: boolean): Promise<void> {
   const crashHost = nativeCrashHost()
   if (!crashHost) return
-  const got = await crashHost.take(pageLoad)
+  const got = await crashHost.take(pageLoad, host.build.commit)
   if (ctx) ctx.os = got.os || ctx.os
   const started = typeof performance !== 'undefined' ? performance.timeOrigin : Date.now()
   for (const c of got.reports) {
     // A panic from before this page loaded ended the session whose log was saved; a newer one belongs to this one.
     const earlier = c.at < started
-    await queueCrash({
-      kind: 'crash',
-      title: c.title,
-      body: crashBody(c.source === 'panic' ? 'Automatic crash report: the app panicked.' : 'Automatic crash report: the window\'s web content process stopped and the window reloaded.', [`When: ${new Date(c.at).toISOString()}`]),
-      stack: c.stack,
-      logTail: earlier ? previousLogTail() : logTail(),
-    })
+    // Stamped with the version that crashed, which an update may have replaced by this launch; this one sends it.
+    const version = c.version?.trim() ? `${c.version.trim()} desktop` : null
+    const commit = c.commit?.trim() || null
+    const now = await environment()
+    const moved = (version !== null && version !== now.appVersion) || (commit !== null && commit !== now.commit)
+    await queueCrash(
+      {
+        kind: 'crash',
+        title: c.title,
+        body: crashBody(c.source === 'panic' ? 'Automatic crash report: the app panicked.' : 'Automatic crash report: the window\'s web content process stopped and the window reloaded.', [`When: ${new Date(c.at).toISOString()}`, ...(moved ? [`Sent from: ${now.appVersion} (${now.commit})`] : [])]),
+        stack: c.stack,
+        logTail: earlier ? previousLogTail() : logTail(),
+      },
+      { ...(version ? { appVersion: version } : {}), ...(commit ? { commit } : {}) },
+    )
   }
   if (got.reports.length) await crashHost.ack(got.reports.map((c) => c.file)).catch(() => undefined)
   // The page loaded again in the same run of the shell, and the dev server's reloads do not count.

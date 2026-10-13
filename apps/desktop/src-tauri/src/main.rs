@@ -52,6 +52,8 @@ fn main() {
     slicing::give_available_memory();
     // The edition's name and link scheme, from the config this build was made with; the menu and links read it.
     let context = tauri::generate_context!();
+    // Crash reports say which version crashed, even when an update lands before the next launch sends them.
+    crash::set_version(&context.package_info().version.to_string());
     brand::init(context.config());
     // mimir cloud's one host, from the same config.
     #[cfg(feature = "pilot")]

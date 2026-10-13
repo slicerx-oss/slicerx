@@ -7,7 +7,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 export function createTauriCrash(): CrashHost {
   return {
-    take: (pageLoad) => invoke<NativeCrashes>('crash_take', { pageLoad }),
+    take: (pageLoad, commit) => invoke<NativeCrashes>('crash_take', { pageLoad, ...(commit ? { commit } : {}) }),
     ack: (files) => invoke('crash_ack', { files }),
     testPanic: () => invoke('crash_test_panic'),
   }
