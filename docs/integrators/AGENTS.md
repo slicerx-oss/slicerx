@@ -28,6 +28,7 @@ The other files in this folder:
 
 - [quickstart.md](quickstart.md): the reference for every tool, option, result field and error code.
 - [partner-app-key.md](partner-app-key.md): how an app on the same computer reaches the user's printers through SlicerX's bridge, with a key the user makes in SlicerX and can revoke.
+- [mimir-cloud.md](mimir-cloud.md): how an app that runs its own mimir chat calls SlicerX's hosted model proxy: register, messages, quota, refusals and testing.
 - [llms.txt](llms.txt): an index of these files for tools that read `llms.txt`.
 - [updates.md](updates.md): which release tags and labels to watch so an edition or integration stays current.
 
@@ -291,7 +292,7 @@ Write the plan back to the user in a few lines and wait for a yes before you bui
 | viewport and slicing | Both, wired together: slice with `preview: true`, read `preview_path` in the main process, pass the bytes to the renderer. Recipes A and B. |
 | printers and sending | Two choices. If the app already talks to printers, it sends the `.gcode.3mf` or G-code from a slice itself, and SlicerX stays out of it. Otherwise run the server with `--printers link` and SlicerX's printer bridge `sx-link`; `slicerx_printer_queue` asks the person to approve each start in SlicerX or on their phone. The app cannot approve starts. Recipe E. |
 | profiles and presets | `slicerx_list_profiles` and `slicerx_get_profile` for pickers, `profile_files` for the user's own presets, `filaments` for a preset per slot, `SettingsPanel` for an editor whose `overrides` go straight into a slice. Recipe C. |
-| mimir | Over MCP: `slicerx_plan_settings`, `slicerx_diagnose`, `slicerx_calibrate`, the knowledge tools and the project tools (`slicerx_project_open`, `slicerx_orient`, `slicerx_arrange`, `slicerx_cut`, `slicerx_slice`). The app calls them like any other tool, or hands the server to the app's own AI assistant. There is no mimir chat UI to embed. |
+| mimir | Over MCP: `slicerx_plan_settings`, `slicerx_diagnose`, `slicerx_calibrate`, the knowledge tools and the project tools (`slicerx_project_open`, `slicerx_orient`, `slicerx_arrange`, `slicerx_cut`, `slicerx_slice`). The app calls them like any other tool, or hands the server to the app's own AI assistant. There is no mimir chat UI to embed; an app with its own chat can use the hosted model proxy ([mimir-cloud.md](mimir-cloud.md)). |
 | local AI | `LocalAiSetup` from `@slicerx/embed` for people (recommendation, size and license, a confirmed Ollama download, a tool call check; `onReady` hands over the model and its base URL), or over MCP `slicerx_local_ai_check`, `slicerx_local_ai_setup` and `slicerx_local_ai_status`. Recipe F. |
 | the full app | Not available as a package yet. Say so plainly. Offer the closest path today: the viewport, the settings panel and slicing together (recipes A to C), which cover the plate view, the settings and the slice. |
 
