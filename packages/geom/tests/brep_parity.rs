@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The exact solid ops (brep.*) against the values the math gives: a closed solid, its volume and its bounds. The mesh
-// path runs the same case on the tessellated inputs; where its answer is exact too, the two must agree. Every brep
-// call goes through JSON with its bodies carried as text, the way the CLI runs them, one process per call. Skipped
-// in a build without the kernel, and empty without the brep feature, so a plain `cargo test` passes over it.
+// path runs the same case on the tessellated inputs and must agree, exactly where its faces are flat and within its
+// arc tolerance where they are round; a case without a mesh answer fails. Every brep call goes through JSON with its
+// bodies carried as text, the way the CLI runs them, one process per call. Skipped in a build without the kernel, and
+// empty without the brep feature, so a plain `cargo test` passes over it.
 #![cfg(feature = "brep")]
 use serde_json::{Value, json};
 use std::f64::consts::PI;
@@ -64,30 +65,59 @@ fn near(a: f64, b: f64) -> bool {
     (a - b).abs() <= 1e-6 * a.abs().max(b.abs()).max(1.0)
 }
 
-fn exact(s: &Solid, volume: f64, min: [f64; 3], max: [f64; 3]) -> bool {
-    near(s.volume, volume) && (0..3).all(|k| near(s.min[k], min[k]) && near(s.max[k], max[k]))
+/// Within `tol` of `want`, relative to the larger of the two (and of the part's size, for a bound); exact at 0.
+fn within(got: f64, want: f64, tol: f64, size: f64) -> bool {
+    if tol == 0.0 {
+        near(got, want)
+    } else {
+        (got - want).abs() <= tol * want.abs().max(size)
+    }
 }
 
-/// The brep answer must be exact; the mesh one, when it is exact too, must match it.
-fn check(name: &str, brep: &Solid, mesh: Option<&Solid>, volume: f64, min: [f64; 3], max: [f64; 3]) {
+/// The brep answer must be exact (within `brep_tol` for a round the kernel makes as a spline), and the mesh answer
+/// must be there and agree with it: exactly for flat faces (`mesh_tol` 0), within its arc tolerance for round ones.
+#[allow(clippy::too_many_arguments)]
+fn check(
+    name: &str,
+    brep: &Solid,
+    brep_tol: f64,
+    mesh: &Solid,
+    mesh_tol: f64,
+    volume: f64,
+    min: [f64; 3],
+    max: [f64; 3],
+) {
+    let size = (0..3).map(|k| max[k] - min[k]).fold(0.0, f64::max);
+    let fits = |s: &Solid, tol: f64| {
+        within(s.volume, volume, tol, 0.0)
+            && (0..3).all(|k| within(s.min[k], min[k], tol, size) && within(s.max[k], max[k], tol, size))
+    };
     assert!(
-        exact(brep, volume, min, max),
+        fits(brep, brep_tol),
         "{name}: brep gave {} in {:?}..{:?}, exact {volume} in {min:?}..{max:?}",
         brep.volume,
         brep.min,
         brep.max
     );
-    if let Some(m) = mesh
-        && exact(m, volume, min, max)
-    {
-        assert!(
-            near(m.volume, brep.volume),
-            "{name}: mesh {} and brep {} differ",
-            m.volume,
-            brep.volume
-        );
-    }
+    assert!(
+        fits(mesh, mesh_tol),
+        "{name}: mesh gave {} in {:?}..{:?}, brep {} in {:?}..{:?}",
+        mesh.volume,
+        mesh.min,
+        mesh.max,
+        brep.volume,
+        brep.min,
+        brep.max
+    );
+    eprintln!(
+        "parity compared {name}: mesh off by {:.2e} of the volume",
+        (mesh.volume - brep.volume).abs() / volume
+    );
 }
+
+/// How far a mesh with round faces may be from the exact solid: its circles are polygons within the engine's arc
+/// tolerance, under a thousandth of the volume at these sizes.
+const ARC_TOL: f64 = 2e-3;
 
 fn cube() -> Value {
     made("box", json!({ "min": [0, 0, 0], "max": [20, 20, 20] }))
@@ -100,16 +130,17 @@ fn box_and_its_mesh() {
     }
     let c = made("box", json!({ "min": [1, 2, 3], "max": [11, 22, 33] }));
     let m = mesh_solid(&mesh(&c));
+    // flat faces tessellate exactly, so the mesh path is right too
     check(
         "box",
         &brep_solid(&c),
-        Some(&m),
+        0.0,
+        &m,
+        0.0,
         6000.0,
         [1.0, 2.0, 3.0],
         [11.0, 22.0, 33.0],
     );
-    // flat faces tessellate exactly, so here the mesh path is right too
-    assert!(exact(&m, 6000.0, [1.0, 2.0, 3.0], [11.0, 22.0, 33.0]), "box mesh");
 }
 
 #[test]
@@ -125,18 +156,23 @@ fn subtract_a_box_and_a_hole() {
     check(
         "slot",
         &brep_solid(&b),
-        Some(&mesh_solid(&m["mesh"])),
+        0.0,
+        &mesh_solid(&m["mesh"]),
+        0.0,
         want,
         [0.0; 3],
         [20.0; 3],
     );
-    // a through hole, flush with both faces: exact only on the brep side, as the mesh's circle is a polygon
+    // a through hole, flush with both faces: exact on the brep side; the mesh's circle is a polygon
     let hole = json!([{ "type": "cylinder", "origin": [10, 10, 0], "axis": [0, 0, 1], "diameterMm": 8, "heightMm": 20 }]);
     let h = made("subtract", json!({ "body": c, "solids": hole }));
+    let hm = call("subtract", &json!({ "mesh": mesh(&c), "solids": hole }));
     check(
         "hole",
         &brep_solid(&h),
-        None,
+        0.0,
+        &mesh_solid(&hm["mesh"]),
+        ARC_TOL,
         8000.0 - PI * 16.0 * 20.0,
         [0.0; 3],
         [20.0; 3],
@@ -160,7 +196,9 @@ fn union_and_intersection_of_boxes() {
         check(
             op,
             &brep_solid(&r),
-            Some(&mesh_solid(&m["mesh"])),
+            0.0,
+            &mesh_solid(&m["mesh"]),
+            0.0,
             volume,
             min,
             max,
@@ -183,7 +221,9 @@ fn cut_in_two() {
         check(
             side,
             &brep_solid(&body),
-            Some(&mesh_solid(&m[side])),
+            0.0,
+            &mesh_solid(&m[side]),
+            0.0,
             400.0 * h,
             [0.0, 0.0, lo],
             [20.0, 20.0, hi],
@@ -204,14 +244,8 @@ fn intersection_with_two_parts() {
     let body = cube();
     let right = made("box", json!({ "min": [10, 0, 0], "max": [30, 20, 20] }));
     let back = made("box", json!({ "min": [0, 15, 0], "max": [20, 35, 20] }));
-    let first = made(
-        "boolean",
-        json!({ "op": "intersection", "a": body, "b": right }),
-    );
-    let brep = made(
-        "boolean",
-        json!({ "op": "intersection", "a": first, "b": back }),
-    );
+    let first = made("boolean", json!({ "op": "intersection", "a": body, "b": right }));
+    let brep = made("boolean", json!({ "op": "intersection", "a": first, "b": back }));
     let on_mesh = call(
         "boolean",
         &json!({ "op": "intersection", "a": [mesh(&body)], "b": [mesh(&right), mesh(&back)] }),
@@ -221,7 +255,9 @@ fn intersection_with_two_parts() {
     check(
         "intersection",
         &brep_solid(&brep),
-        Some(&m),
+        0.0,
+        &m,
+        0.0,
         1000.0,
         [10.0, 15.0, 0.0],
         [20.0; 3],
@@ -265,17 +301,33 @@ fn sketch_and_slot_extrudes() {
         &json!({ "frame": frame, "shape": { "type": "slot", "lengthMm": 30, "widthMm": 10 }, "placement": {}, "spec": { "distanceMm": 4 } }),
     );
     // the brep is exact; the mesh's arcs are polygons within the engine's arc tolerance
-    for (name, brep, mesh, want) in [
-        ("sketch", &sketch, &on_mesh, (200.0 + PI * 50.0 - PI * 16.0) * 5.0),
-        ("slot", &slot, &slot_mesh, (200.0 + PI * 25.0) * 4.0),
+    for (name, brep, mesh, want, min, max) in [
+        (
+            "sketch",
+            &sketch,
+            &on_mesh,
+            (200.0 + PI * 50.0 - PI * 16.0) * 5.0,
+            [0.0; 3],
+            [20.0, 20.0, 5.0],
+        ),
+        (
+            "slot",
+            &slot,
+            &slot_mesh,
+            (200.0 + PI * 25.0) * 4.0,
+            [-15.0, -5.0, 0.0],
+            [15.0, 5.0, 4.0],
+        ),
     ] {
-        let b = brep_solid(brep);
-        assert!(near(b.volume, want), "{name}: brep {} against {want}", b.volume);
-        let m = mesh_solid(&mesh["mesh"]);
-        assert!(
-            (m.volume - want).abs() <= 2e-3 * want,
-            "{name}: mesh {} against {want}",
-            m.volume
+        check(
+            name,
+            &brep_solid(brep),
+            0.0,
+            &mesh_solid(&mesh["mesh"]),
+            ARC_TOL,
+            want,
+            min,
+            max,
         );
     }
 }
@@ -301,7 +353,9 @@ fn extrude_into_the_top() {
         check(
             op,
             &brep_solid(&brep),
-            Some(&mesh_solid(&on_mesh["mesh"])),
+            0.0,
+            &mesh_solid(&on_mesh["mesh"]),
+            0.0,
             want,
             [0.0; 3],
             [20.0, 20.0, top],
@@ -319,21 +373,19 @@ fn fillet_an_edge() {
     let b = made("fillet", json!({ "body": c, "edges": edges, "radiusMm": 3 }));
     let want = 8000.0 - (1.0 - PI / 4.0) * 9.0 * 20.0;
     // the round may be a spline, so both answers are near the exact one; the mesh's round is a polygon
-    let s = brep_solid(&b);
-    assert!(
-        (s.volume - want).abs() <= 1e-4 * want,
-        "brep {} against {want}",
-        s.volume
-    );
     let m = call(
         "edge.fillet",
         &json!({ "mesh": mesh(&c), "edges": edges, "radiusMm": 3 }),
     );
-    let ms = mesh_solid(&m["mesh"]);
-    assert!(
-        (ms.volume - want).abs() <= 1e-2 * want,
-        "mesh {} against {want}",
-        ms.volume
+    check(
+        "fillet",
+        &brep_solid(&b),
+        1e-4,
+        &mesh_solid(&m["mesh"]),
+        1e-2,
+        want,
+        [0.0; 3],
+        [20.0; 3],
     );
 }
 
@@ -352,7 +404,9 @@ fn chamfer_an_edge() {
     check(
         "chamfer",
         &brep_solid(&b),
-        Some(&mesh_solid(&m["mesh"])),
+        0.0,
+        &mesh_solid(&m["mesh"]),
+        0.0,
         8000.0 - 40.0,
         [0.0; 3],
         [20.0; 3],
@@ -372,10 +426,23 @@ fn extrude_with_a_hole() {
             "fromMm": 0, "toMm": 4
         }),
     );
+    let on_mesh = call(
+        "shape.extrude",
+        &json!({
+            "frame": { "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] },
+            "shape": { "type": "sketch", "loops": [
+                { "start": [0, 0], "segments": [{ "type": "line", "to": [30, 0] }, { "type": "line", "to": [30, 20] }, { "type": "line", "to": [0, 20] }, { "type": "line", "to": [0, 0] }] },
+                { "type": "circle", "center": [15, 10], "diameterMm": 6 }
+            ] },
+            "placement": {}, "spec": { "distanceMm": 4 }
+        }),
+    );
     check(
         "extrude",
         &brep_solid(&b),
-        None,
+        0.0,
+        &mesh_solid(&on_mesh["mesh"]),
+        ARC_TOL,
         (600.0 - 9.0 * PI) * 4.0,
         [0.0; 3],
         [30.0, 20.0, 4.0],
