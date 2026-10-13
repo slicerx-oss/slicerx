@@ -6,6 +6,7 @@
 // one step. A face with a fillet or chamfer on one of its edges in the history is pushed before that
 // step and the round made again on the moved edge (docs/cad-history.md). No React in here.
 import { typedNumber } from './value-table'
+import { lengthText } from './units'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { pickFace, pushFace, type FaceFrame, type FacePick, type MovedFace, type Pick as HitPick, type Polygon, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom } from '../geom/client'
@@ -31,7 +32,7 @@ export interface PushFace {
   thicknessMm: number | null
 }
 
-const fmt = (v: number) => String(Math.round(v * 100) / 100)
+const len = (v: number) => lengthText(v, get().units)
 
 /** A typed distance: a number, comma decimals accepted. Null for anything else. */
 export function parseDistance(text: string): number | null {
@@ -43,9 +44,9 @@ export function parseDistance(text: string): number | null {
 /** What a push of `d` mm does, in words. */
 export function pushWords(d: number | null, thicknessMm: number | null): string {
   if (d === null || d === 0) return 'Drag the face, or type a distance: positive pulls out, negative pushes in.'
-  if (d > 0) return `Adds ${fmt(d)} mm`
+  if (d > 0) return `Adds ${len(d)}`
   if (thicknessMm !== null && -d >= thicknessMm - 1e-6) return 'Opens a hole'
-  return `Cuts ${fmt(-d)} mm`
+  return `Cuts ${len(-d)}`
 }
 
 /** Whether a bed point and normal lie on the face. */

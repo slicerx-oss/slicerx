@@ -6,9 +6,12 @@
 // row's end, and under a sketch extrude or revolve the sketch as a sub-row that opens it (the history is unchanged).
 import { Button, Icon, useContextMenu } from '@slicerx/ui'
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import type { PlateEntry } from '../../state/store'
+import { useApp, type PlateEntry } from '../../state/store'
 import { mainNumber, stepName, type Step } from '@slicerx/cad-history'
 import { toolFor } from './ops'
+import { fromMmText, toMmText } from '../units'
+import { currentValues } from '../value-table'
+import { useLengthWords } from '../use-units'
 import { DeleteStepDialog, StepMenu } from './step-menu'
 import { stepIcon, stepSketch } from './step-icon'
 import { selectStepFaces } from '../../workspaces/design/use-made-by'
@@ -45,7 +48,7 @@ export function StepRow(props: {
   usedBy?: boolean | undefined
 }) {
   const { step: s, index, skipped, busy, editing } = props
-  const name = stepName(s)
+  const name = stepName(s, useLengthWords())
   const number = mainNumber(s.params)
   const tool = toolFor(s.params)
   const sketch = props.tree ? stepSketch(s.params) : null
@@ -215,19 +218,24 @@ function RenameField({ value, label, onDone }: { value: string; label: string; o
 
 /** One number, or a sum of named values the step then follows, applied on Enter or when the field is left. */
 function NumberEdit({ label, unit, value, onApply }: { label: string; unit: string; value: string; onApply: (text: string) => string | null }) {
-  const [text, setText] = useState(value)
+  // a length shows in the display unit; what goes back is mm text (cad/units.ts)
+  const units = useApp((s) => s.units)
+  const length = unit === 'mm' && units.length !== 'mm'
+  const shown = length ? fromMmText(value, units) : value
+  const [text, setText] = useState(shown)
   const [note, setNote] = useState<string | null>(null)
-  useEffect(() => setText(value), [value])
+  useEffect(() => setText(shown), [shown])
   const apply = () => {
-    if (text.trim() === value) return
-    setNote(onApply(text))
+    if (text.trim() === shown) return
+    setNote(onApply(length ? toMmText(text, units, currentValues()) : text))
   }
+  const shownUnit = length ? units.length : unit
   return (
     <div className="cad-step-edit">
       <label>
         <span className="sx-small sx-muted">{label}</span>
-        <input className="sx-input" data-mono data-size="sm" value={text} aria-label={`${label} in ${unit}`} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && apply()} />
-        <span className="sx-small sx-muted">{unit}</span>
+        <input className="sx-input" data-mono data-size="sm" value={text} aria-label={`${label} in ${shownUnit}`} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && apply()} />
+        <span className="sx-small sx-muted">{shownUnit}</span>
       </label>
       {note ? <p className="cad-note"><Icon name="alert" size={13} /> {note}</p> : null}
     </div>

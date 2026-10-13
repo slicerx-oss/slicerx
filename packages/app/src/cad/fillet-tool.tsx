@@ -24,6 +24,7 @@ import { bindNext } from './history/record'
 import { close, errorText, num, Num, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, type Now } from './park'
 import { takeFilletKind } from './start-hint'
+import { useLengthWords } from './use-units'
 
 interface Picked {
   objectId: string
@@ -55,6 +56,7 @@ function editState(): { index: number; picked: Picked; kind: Kind; size: string;
 export function FilletTool() {
   const host = useHost()
   const view = cameraBus()?.cad
+  const words = useLengthWords()
   const [edit] = useState(editState)
   const [kind, setKind] = useDraft<Kind>('kind', () => edit?.kind ?? takeFilletKind() ?? 'fillet')
   const [picked, setPicked] = useDraft<Picked | null>('picked', edit?.picked ?? null, follow((p, now) => p && { ...p, edges: p.edges.map((e) => movedEdge(e, now)), last: null }))
@@ -244,7 +246,7 @@ export function FilletTool() {
         <Num id="edge-size" label={kind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={size} onChange={setSize} onEnter={() => void apply()} />
         {kind === 'chamfer' ? <Num id="edge-size2" label="Other face, if different" unit="mm" value={size2} onChange={setSize2} onEnter={() => void apply()} /> : null}
       </div>
-      {limit !== null && Number.isFinite(limit) ? <p className="cad-hint"><Icon name="info" size={15} /> At most {limit.toFixed(2)} mm on the last picked edge.</p> : null}
+      {limit !== null && Number.isFinite(limit) ? <p className="cad-hint"><Icon name="info" size={15} /> At most {words(limit)} on the last picked edge.</p> : null}
       <div className="cad-row">
         <span className="sx-small sx-muted">{picked?.last ? `${picked.last.loop.length} edges around this face` : 'Pick an edge to offer its loop'}</span>
         <Button size="sm" variant="ghost" data-tip="cad.edgeLoop" disabled={!picked?.last || busy} onClick={wholeLoop}>Whole loop</Button>

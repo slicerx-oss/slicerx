@@ -9,6 +9,7 @@ import { dimensionAnchor, evaluateDimensions, type Dimension, type DimensionKind
 import type { GeomMesh } from '../geom/client'
 import { get, set, type PlateEntry } from '../state/store'
 import { applyMat, wholeMesh } from './cad-ops'
+import { lengthText } from './units'
 
 /** A measure pick on an object, as the view reported it (bed coordinates). */
 export interface ObjectPick {
@@ -108,7 +109,7 @@ export async function followPush(plate: PlateEntry[], objectId: string, moved: M
   }
 }
 
-const fmt = (v: number, unit: 'mm' | 'deg') => (unit === 'deg' ? `${v.toFixed(1)}°` : `${v.toFixed(2)} mm`)
+const fmt = (v: number, unit: 'mm' | 'deg') => (unit === 'deg' ? `${v.toFixed(1)}°` : get().units.length === 'mm' ? `${v.toFixed(2)} mm` : lengthText(v, get().units))
 
 /** The value of an evaluated dimension in words, or "Lost". */
 export function dimensionText(d: Pick<Dimension, 'kind'>, r: Pick<EvaluatedDimension, 'status' | 'value' | 'unit'> | undefined): string {
