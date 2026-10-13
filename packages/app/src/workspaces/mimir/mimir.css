@@ -3,7 +3,7 @@
 /* The mimir tab: the chat column on the left, the design's view on the right. The composer and the caption float, so
    they are lifted (.sx-overlay); everything inside the transcript is flat. */
 /* the pilot styles' own grid and terminal colors give way to the column's */
-.mimir-chat.sx-pilot { --t-bg: var(--ink-1); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); grid-template-columns: minmax(0, 1fr); }
+.mimir-chat.sx-pilot { --t-bg: var(--ink-1); --t-fg: var(--fg); --t-bubble: var(--ink-3); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); grid-template-columns: minmax(0, 1fr); }
 .mimir-chat { position: relative; order: 0; flex: none; width: var(--w-chat, 420px); min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-1); border-right: 1px solid var(--line-soft); }
 .mimir-chat[hidden] { display: none; }
 .mimir-chat-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
