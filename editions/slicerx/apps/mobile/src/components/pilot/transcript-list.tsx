@@ -55,6 +55,8 @@ export function TranscriptList({ transcript, onApprove, onDeny, onRetry, empty }
         return <Diff diff={b.diff} />
       case 'perm':
         return <PermLine permission={b.permission} mode={b.mode} message={b.message} />
+      case 'model':
+        return <Say text={b.reason === 'request' ? `Using ${b.label} for this one.` : `Switched to ${b.label} for the harder part.`} streaming={false} />
       case 'approval':
         return <ApprovalCard request={b.request} resolution={b.resolution} actionable={!replay && !b.replay} onApprove={onApprove} onDeny={onDeny} />
       case 'choice': {
