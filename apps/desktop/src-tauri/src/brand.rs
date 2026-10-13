@@ -42,6 +42,7 @@ impl Brand {
     }
 
     /// The name AI clients list the MCP server under (`mcpServerId` in packages/edition-config).
+    #[cfg(feature = "pilot")]
     pub fn server_id(&self) -> String {
         self.scheme
             .chars()
@@ -106,6 +107,7 @@ pub mod tests {
         let b = Brand::from_config(&base_config());
         assert_eq!(b.name, "SlicerX");
         assert_eq!(b.scheme, "slicerx");
+        #[cfg(feature = "pilot")]
         assert_eq!(b.server_id(), "slicerx");
     }
 
@@ -116,6 +118,7 @@ pub mod tests {
         assert_eq!(b.scheme, "acmeslicer");
         assert_eq!(b.publisher, "Acme Printers Inc.");
         assert_eq!(b.homepage.as_deref(), Some("https://slicer.acme.example"));
+        #[cfg(feature = "pilot")]
         assert_eq!(b.server_id(), "acmeslicer");
     }
 }
