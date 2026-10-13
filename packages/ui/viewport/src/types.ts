@@ -653,6 +653,11 @@ export interface Viewport {
    */
   holdScene(on: boolean): void
   /**
+   * Holds the toolpath shader warm-up back while a file opens. The warm-up's compile holds every frame until it is done,
+   * so it waits for the open and for the frame that draws its plate. Off lets a waiting warm-up start.
+   */
+  holdWarmup(on: boolean): void
+  /**
    * Plays the plate reveal again from the start (on the ground too): the app asks for it when Model first opens in a
    * session and when a job opens while Model shows. False when this view does not play it (`reveal: false`, software
    * graphics without `always`, reduced motion).

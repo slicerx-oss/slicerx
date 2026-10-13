@@ -158,3 +158,25 @@ test('a binary STL is drawn from its own read and built once, however soon the e
   await expect(page.locator('.obj-name')).toHaveText(['tube.stl'])
   expect(await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)).toBe(builds + 1)
 })
+
+test('a project opened at start is drawn before the toolpath shader warm-up runs', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Runs at desktop width')
+  test.slow()
+  // As a project opened with the app: the open starts as soon as the plate is ready, while the 3D view is new.
+  await open(page)
+  const file = zip({ '3D/3dmodel.model': tubeModel(125, 400), 'Metadata/project_settings.config': JSON.stringify(P1S) })
+  await expect(async () => {
+    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
+    await page.keyboard.press('ControlOrMeta+o')
+    await (await chooser).setFiles({ name: 'tube.3mf', mimeType: 'model/3mf', buffer: file })
+  }).toPass({ timeout: 60_000 })
+  // The warm-up compiles the toolpath shaders once per view; its measure lands when it is done.
+  const span = (name: string) => page.evaluate((n) => performance.getEntriesByName(n).map((e) => [e.startTime, e.startTime + e.duration] as [number, number])[0] ?? null, name)
+  await expect.poll(async () => (await span('sx:open:drawn')) !== null && (await span('sx:view:warm')) !== null, { timeout: 120_000 }).toBe(true)
+  const [read, drawn, warm] = [(await span('sx:open:read'))!, (await span('sx:open:drawn'))!, (await span('sx:view:warm'))!]
+  // A warm-up that had started before the open is not this test's case: its compile cannot be called back.
+  test.skip(warm[0] < read[1], 'The warm-up started before the open')
+  // The compile holds every frame while it runs, so one that started during the open held the model's first frame
+  // back to its own end. It waits for that frame now.
+  expect(warm[0], `warm-up ${Math.round(warm[0])} to ${Math.round(warm[1])} ms, model drawn at ${Math.round(drawn[1])} ms`).toBeGreaterThanOrEqual(drawn[1])
+})
