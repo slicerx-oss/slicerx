@@ -109,7 +109,7 @@ test('a printer with no connection reads Export only', async ({ page }) => {
   await expect(page.getByTestId('slice-machine-status')).toHaveText('Export only')
 })
 
-test('Advanced lists Printer settings, and the card stays one row of boxes', async ({ page, isMobile }) => {
+test('Advanced lists Printer settings, and the card keeps the printer on top with the nozzle and plate side by side under it', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop: a phone has Simple settings only')
   await open(page, { printerId: 'bay-1', settingsMode: 'advanced' })
   const card = page.getByTestId('slice-machine-card')
@@ -120,9 +120,15 @@ test('Advanced lists Printer settings, and the card stays one row of boxes', asy
   await dialog.getByRole('button', { name: 'Done', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   await expect(card.locator('.mc-row')).toHaveAttribute('data-summary', /^Bay 1, \d\.\d+ mm, .+, [A-Z][a-z ]+$/)
-  // The three boxes share one row: the same top edge.
-  const tops = await Promise.all(['slice-machine-printer', 'slice-machine-nozzle', 'slice-machine-plate'].map(async (id) => (await page.getByTestId(id).boundingBox())!.y))
-  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(1)
+  // The printer box spans the card; the nozzle and the plate share the row under it, the same size, each in words.
+  const [printer, nozzle, plate] = await Promise.all(['slice-machine-printer', 'slice-machine-nozzle', 'slice-machine-plate'].map(async (id) => (await page.getByTestId(id).boundingBox())!))
+  expect(Math.abs(nozzle!.y - plate!.y)).toBeLessThan(1)
+  expect(nozzle!.y).toBeGreaterThanOrEqual(printer!.y + printer!.height)
+  expect(Math.abs(nozzle!.width - plate!.width)).toBeLessThan(1)
+  expect(Math.abs(nozzle!.x - printer!.x)).toBeLessThan(1)
+  expect(Math.abs(plate!.x + plate!.width - (printer!.x + printer!.width))).toBeLessThan(1)
+  await expect(page.getByTestId('slice-machine-nozzle')).toContainText('Nozzle')
+  await expect(page.getByTestId('slice-machine-plate-label')).not.toBeEmpty()
 })
 
 test('the card works by keyboard: Enter opens a box, arrows move, Escape closes', async ({ page, isMobile }) => {
