@@ -5,10 +5,12 @@
 // buffer, call geom_call, read the JSON output or the error. history.replay runs in TypeScript here
 // (@slicerx/cad-history replay.ts) so meshes stay in the worker between steps; it yields between steps, so other
 // requests still get answers meanwhile, and stops when its caller cancels. The engine is two builds (modules.ts):
-// the core loads first, the full engine the first time a call needs it.
+// the core loads first, the full engine the first time a call needs it. Calls named brep.<op> go to the B-rep kernel
+// (brep.ts), which loads the first time one comes.
 import { replayHistory, type ReplayRequest } from '@slicerx/cad-history'
 import { engineModules, type EngineModule } from './modules'
 import { callEngine, transferables, type GeomExports } from './engine-call'
+import { loadBrep, type BrepModule } from './brep'
 
 async function load(url: URL): Promise<EngineModule> {
   const response = await fetch(url)
@@ -47,6 +49,18 @@ function bytesAsBase64(request: unknown): unknown {
   return { ...request, data: { base64: btoa(text) } }
 }
 
+let brep: Promise<BrepModule> | null = null
+
+/** The B-rep kernel, loaded on the first brep.<op> call; a load that failed is tried again on the next call. */
+function brepKernel(): Promise<BrepModule> {
+  return (brep ??= loadBrep().catch((err: unknown) => {
+    brep = null
+    const message = err instanceof Error ? err.message : String(err)
+    self.postMessage({ loadError: { module: 'brep', message } })
+    throw new Error(`The B-rep kernel did not load: ${message}`)
+  }))
+}
+
 const canceled = new Set<number>()
 
 self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unknown } | { cancel: number }>) => {
@@ -59,13 +73,19 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
   const { id, op, request } = e.data
   try {
     if (op === 'history.replay') {
-      const result = await replayHistory(async (o, r) => engine.run(o, r), request as ReplayRequest, {
+      // a replay with exact solids calls the kernel's ops too
+      const result = await replayHistory(async (o, r) => (o.startsWith('brep.') ? (await brepKernel()).call(o.slice('brep.'.length), r) : engine.run(o, r)), request as ReplayRequest, {
         yieldStep: async () => {
           await new Promise((r) => setTimeout(r, 0))
           if (canceled.has(id)) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })
         },
       })
       canceled.delete(id)
+      self.postMessage({ id, result, memoryBytes: memoryBytes() })
+      return
+    }
+    if (op.startsWith('brep.')) {
+      const result = (await brepKernel()).call(op.slice('brep.'.length), request)
       self.postMessage({ id, result, memoryBytes: memoryBytes() })
       return
     }

@@ -16,6 +16,7 @@ import { currentValues } from '../value-table'
 import { bindFor } from '../values'
 import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, type History, type HistoryMesh, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
+import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
 import { opensDesign } from '../../workspaces/design/shelf-tools'
 
@@ -25,13 +26,16 @@ const abortError = () => Object.assign(new Error('Canceled'), { name: 'AbortErro
 
 /** Replays in the worker, or with the installed engine when the host gives its own (tests). */
 export async function runReplay(req: ReplayRequest, signal?: AbortSignal): Promise<ReplayResult & { before?: HistoryMesh[] }> {
-  const full: ReplayRequest = { ...req, fonts: { ...sessionFonts(), ...req.fonts } }
-  if (usesWorker()) return geom().call('history.replay', full, signal)
-  return replayHistory((op, r) => geom().call(op, r, signal), full, {
-    yieldStep: async () => {
-      if (signal?.aborted) throw abortError()
-    },
-  })
+  const full: ReplayRequest = { ...req, fonts: { ...sessionFonts(), ...req.fonts }, ...(exactSolids() ? { exact: true } : {}) }
+  const r: ReplayResult & { before?: HistoryMesh[] } = usesWorker()
+    ? await geom().call('history.replay', full, signal)
+    : await replayHistory((op, r) => geom().call(op, r, signal), full, {
+        yieldStep: async () => {
+          if (signal?.aborted) throw abortError()
+        },
+      })
+  if (r.exactFellBack?.length) noteFallBack(r.exactFellBack.length)
+  return r
 }
 
 const toPart = (m: HistoryMesh): MeshPart => ({ name: m.name, slot: m.slot, positions: m.positions instanceof Float32Array ? m.positions : new Float32Array(m.positions), indices: m.indices instanceof Uint32Array ? m.indices : new Uint32Array(m.indices) })
