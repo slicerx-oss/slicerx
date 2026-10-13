@@ -241,8 +241,8 @@ const TONE: Record<SketchTone, { color: string; opacity: number }> = {
   soft: { color: '#bd93f9', opacity: 0.55 },
   axis: { color: '#ffb86c', opacity: 1 },
   grid: { color: '#6272a4', opacity: 0.32 },
-  // dashed (see below), in the theme's selection color
-  construction: { color: '#bd93f9', opacity: 0.9 },
+  // dashed orange (see below), as the plan's colors have it
+  construction: { color: '#ffb86c', opacity: 0.9 },
 }
 
 /** Room for the line being drawn: an arc preview needs the most points. */
@@ -494,10 +494,9 @@ export class SketchLayer {
     return best
   }
 
-  /** Construction lines take the theme's selection color. */
+  /** Projected (soft) lines take the theme's selection color. */
   setAccent(hex: string): void {
     this.mats.get('soft')?.color.set(hex)
-    this.mats.get('construction')?.color.set(hex)
   }
 
   dispose(): void {
