@@ -184,6 +184,8 @@ export interface PickEvent {
   triangle: number | null
   /** Where the click meets the bed plane (mm), hit or miss; null when the ray runs away from the bed. */
   bed: [number, number] | null
+  /** Create Sketch's origin plane under the click, when they show and nothing solid is in front. */
+  originPlane?: 'xy' | 'xz' | 'yz'
   /** Shift was down: tools that pick several things add to the picks. */
   shift?: boolean
   /** Cmd (macOS) or Ctrl was down: Model's select toggles the face or edge under the click. */
@@ -560,6 +562,8 @@ export interface Viewport {
   setSketch(scene: SketchScene | null): void
   /** The line being drawn and the snapped cursor. Cheap: call it on every hover event. */
   setSketchCursor(cursor: SketchCursor | null): void
+  /** Create Sketch's origin planes, `sizeMm` across through `center` (bed coordinates), or null to hide them. */
+  setOriginPlanes(o: { center: [number, number, number]; sizeMm: number } | null): void
   /** Turns the camera to look straight at a plane through `point` along `normal` (bed coordinates), framing `radiusMm`. */
   lookAtPlane(point: [number, number, number], normal: [number, number, number], radiusMm: number, opts?: { animate?: boolean }): void
   /** Kept dimensions: a line and a value label each, drawn through the model. An empty list clears them. */
