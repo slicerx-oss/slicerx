@@ -53,7 +53,7 @@ for (const gen of GENERATORS.filter((g) => !wanted.length || wanted.includes(g.n
   const t0 = Date.now()
   const command = gen.run.join(' ')
   // pnpm is a .cmd shim on Windows, which spawn only finds through a shell
-  const result = spawnSync(gen.run[0], gen.run.slice(1), { cwd: root, encoding: 'utf8', shell: win, timeout: 180_000, maxBuffer: 64 * 1024 * 1024 })
+  const result = spawnSync(win ? gen.run.join(' ') : gen.run[0], win ? [] : gen.run.slice(1), { cwd: root, encoding: 'utf8', shell: win, timeout: 180_000, maxBuffer: 64 * 1024 * 1024 })
   let problem = ''
   if (result.error || result.status !== 0) {
     problem = `the generator failed (${result.error ? result.error.message : `exit ${result.status}`})\n${tail(`${result.stdout ?? ''}${result.stderr ?? ''}`, 15)}`
