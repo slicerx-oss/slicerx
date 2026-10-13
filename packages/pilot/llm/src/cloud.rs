@@ -357,6 +357,9 @@ pub struct Quota {
     pub ip_cap: u64,
     /// False when mimir cloud is paused or the edition's budget for today is used up.
     pub edition_open: bool,
+    /// The usage report (quota v2), passed through as the proxy sent it; the app reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub v2: Option<serde_json::Value>,
 }
 
 // a missing limits row reads as nulls
@@ -369,6 +372,7 @@ struct QuotaRow {
     ip_used: Option<u64>,
     ip_cap: Option<u64>,
     edition_open: Option<bool>,
+    v2: Option<serde_json::Value>,
 }
 
 async fn call_json(
@@ -407,6 +411,7 @@ pub async fn quota(store: &dyn SecretStore, cloud: &MimirCloud) -> Result<Quota>
         ip_used: row.ip_used.unwrap_or(0),
         ip_cap: row.ip_cap.unwrap_or(0),
         edition_open: row.edition_open.unwrap_or(false),
+        v2: row.v2,
     })
 }
 

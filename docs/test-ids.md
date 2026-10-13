@@ -349,6 +349,22 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 | `mimir-notice-share` | The notice's share switch, the same setting as `mimir-share` |
 | `mimir-notice-ok` | Start: the notice was read, and does not show again |
 
+## Settings: Account > Usage
+
+Shown only while mimir runs on mimir cloud and the proxy sends the v2 usage report. While the report loads, each element
+carries `data-loading`.
+
+| Test id | Control |
+| --- | --- |
+| `mu-section` | The Usage section (`aria-busy` while the report loads) |
+| `mu-today-left` | Today's share left, as a percent |
+| `mu-today-bar` | Today's bar, a meter filled with what is left |
+| `mu-today-reset` | When today's limit resets, on the person's own clock |
+| `mu-today-out` | The note that today's free mimir is used up |
+| `mu-hours` | Use in each of the last 24 hours, one bar per hour |
+| `mu-days` | Use on each of the last 7 days, one bar per day; absent until the proxy sends days |
+| `mu-rate` | The per-minute limit |
+
 ## Settings: Agents and the app link
 
 | Test id | Control |
