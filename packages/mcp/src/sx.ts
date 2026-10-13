@@ -144,6 +144,17 @@ export function parseSxOutput(stdout: string): Parsed {
 }
 
 /**
+ * The engine's per-object feature filaments, with each object named as the job named it: the request calls the plate
+ * objects o0, o1 and so on, in the job's order.
+ */
+function featureFilaments(reported: { object?: string; features?: Record<string, number[]> }[], objects: { name: string; id?: string }[]): NonNullable<SliceSummary['feature_filaments']> {
+  return reported.flatMap((r) => {
+    const o = objects[Number(/^o(\d+)$/.exec(r.object ?? '')?.[1] ?? -1)]
+    return o ? [{ ...(o.id ? { object: o.id } : {}), name: o.name, features: r.features ?? {} }] : []
+  })
+}
+
+/**
  * Slices with `sx slice --request <json> --out-dir <dir>`: one object for a
  * file, or every object of a project plate with its transform. The result
  * JSON carries the time, filament per slot (length and grams) and warnings.
@@ -209,6 +220,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         stats?: { timeS?: number; filamentMm?: number[]; filamentG?: number[]; toolChanges?: number }
         warnings?: { message?: string }[]
         files?: { gcode?: string; preview?: string } & Record<string, unknown>
+        featureFilaments?: { object?: string; features?: Record<string, number[]> }[]
       }
       const sum = (v: number[] | undefined): number => (v ?? []).reduce((a, b) => a + b, 0)
       const timeS = out.stats?.timeS ?? 0
@@ -225,6 +237,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         filament_mm: Math.round(sum(out.stats?.filamentMm)),
         filaments: (out.stats?.filamentMm ?? []).map((mm, i) => ({ slot: i + 1, filament_mm: Math.round(mm), filament_g: Math.round((out.stats?.filamentG?.[i] ?? 0) * 10) / 10 })),
         ...(out.stats?.toolChanges !== undefined ? { tool_changes: out.stats.toolChanges } : {}),
+        ...(out.featureFilaments?.length ? { feature_filaments: featureFilaments(out.featureFilaments, objects) } : {}),
         ...(job.modelPlate && !job.plate ? { plate: job.modelPlate } : {}),
         ...(job.emitGcode && out.gcodeSha256 ? { gcode_sha256: out.gcodeSha256 } : {}),
         warnings: (out.warnings ?? []).map((w) => String(w.message ?? '')),

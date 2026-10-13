@@ -275,6 +275,21 @@ export interface FilamentMapInfo {
   auto: boolean
 }
 
+/**
+ * The filaments one plate object's features printed with, read from the sliced paths: what each feature resolved to
+ * after the plate's, the object's, its parts' and modifiers' settings, height ranges and paint.
+ */
+export interface FeatureFilaments {
+  /** The plate object's id. */
+  object: string
+  name: string
+  /**
+   * Each feature the object printed, by its name in FEATURE (outerWall, sparseInfill, support and the rest), with the
+   * filament slots its paths printed with, 1-based and ascending. A feature a height range or modifier moves lists both.
+   */
+  features: Partial<Record<string, number[]>>
+}
+
 /** What variable layer heights (sleipnir) cost on a multi-color plate against fixed layers. */
 export interface VaryLayerCost {
   /** Tool changes added (negative when fewer). */
@@ -376,6 +391,8 @@ export interface SliceResult {
   varyLayerCost?: VaryLayerCost
   /** Present on a printer with two extruders fed by their own AMS: the nozzle of each filament. */
   filamentMap?: FilamentMapInfo
+  /** The filaments each object's features printed with, one entry per plate object; absent when the host doesn't report it. */
+  featureFilaments?: FeatureFilaments[]
   /** Print by object: every place the head, gantry or tool changer would meet a printed part, in print order. */
   collisions?: Collision[]
   /** Fixes for the collisions. */
