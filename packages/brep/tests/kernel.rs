@@ -418,6 +418,26 @@ fn fillet_rounds_the_named_edges() {
 }
 
 #[test]
+fn chamfer_sets_both_faces_back() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let edge = json!([{ "a": [20, 20, 0], "b": [20, 20, 20], "face": [1, 0, 0] }]);
+    let one = body(
+        "chamfer",
+        &json!({ "body": cube(), "edges": edge, "distanceMm": 2 }),
+    );
+    close(volume(one), 8000.0 - 2.0 * 20.0);
+    assert_eq!(mesh_check(one).0, 0);
+    let two = sx_brep::call(
+        "chamfer",
+        &json!({ "body": cube(), "edges": edge, "distanceMm": 2, "distance2Mm": 3 }).to_string(),
+    )
+    .unwrap_err();
+    assert!(two.contains("distance2Mm"), "{two}");
+}
+
+#[test]
 fn subtract_in_the_body_frame() {
     if !sx_brep::KERNEL {
         return;

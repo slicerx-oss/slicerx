@@ -20,6 +20,7 @@
 #include <SmCylinder.h>
 #include <SmFace.h>
 #include <SmLine.h>
+#include <SmPlane.h>
 #include <SmPoly.h>
 #include <SmSphere.h>
 #include <SmSurface.h>
@@ -760,6 +761,21 @@ SmTArray<SmEdge*> edges_of(SmBrep* b, const Value& refs)
     return out;
 }
 
+// whether an edge runs between two flat faces square to each other
+bool square(SmEdge* e)
+{
+    SmTArray<SmFace*> fs;
+    e->GetFaces(fs);
+    if (fs.GetSize() != 2) return false;
+    SmVector3d n[2];
+    for (int k = 0; k < 2; ++k) {
+        SmSurface* s = fs[k]->GetSurface();
+        if (!s || s->GetType() != SmPlane_TYPE) return false;
+        n[k] = static_cast<SmPlane*>(s)->GetPosition().GetZAxis();
+    }
+    return std::fabs(dot(n[0], n[1])) < 1e-6;
+}
+
 // keys for the faces an op made (a fillet's rounds), leaving the ones carried over
 SmBrep* key_new_faces(SmBrep* b)
 {
@@ -842,14 +858,22 @@ Value run(const std::string& op, const Value& r)
                 out.set(side.first, Value());
             }
         }
-    } else if (op == "fillet") {
-        double radius = num(r, "radiusMm");
-        if (!(radius > 0)) throw Error("radiusMm", "must be more than 0");
+    } else if (op == "fillet" || op == "chamfer") {
+        bool round = op == "fillet";
+        double size = num(r, round ? "radiusMm" : "distanceMm");
+        if (!(size > 0)) throw Error(round ? "radiusMm" : "distanceMm", "must be more than 0");
+        if (!round && r.has("distance2Mm") && std::fabs(num(r, "distance2Mm") - size) > 1e-9)
+            throw Error("distance2Mm", "a chamfer with two distances runs on the mesh");
         SmBrep* b = copy_of(body(r, "body"));
         try {
             SmTArray<SmEdge*> es = edges_of(b, r["edges"]);
-            // circular cross section, G1 at the corners
-            check(SmApiFilletEdges(b, es, radius, 1, 1, 1.0), "fillet");
+            // a flat cross section tangent where a circle of the distance would be: that sets each face back by
+            // the distance only where the faces are square to each other
+            if (!round)
+                for (ULONG i = 0; i < es.GetSize(); ++i)
+                    if (!square(es[i])) throw Error("edges", "edge " + std::to_string(i) + ": a chamfer between faces not square to each other runs on the mesh");
+            // circular or flat cross section, G1 at the corners
+            check(SmApiFilletEdges(b, es, size, round ? 1 : 0, 1, 1.0), op.c_str());
         } catch (...) {
             delete b;
             throw;
