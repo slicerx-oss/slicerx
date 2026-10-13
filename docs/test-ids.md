@@ -102,7 +102,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `set-autoslice-<mode>` | Auto slice in Settings, Slicing and modeling: `set-autoslice-auto`, `set-autoslice-always`, `set-autoslice-off` |
 | `set-multibody-<mode>` | Files with several bodies in Settings, Slicing and modeling: `set-multibody-ask`, `set-multibody-parts`, `set-multibody-objects` |
 | `set-units-<unit>` | Display units in Settings, Modeling: `set-units-mm`, `set-units-in` |
-| `set-precision-<p>` | Precision of shown lengths: `set-precision-d0` to `set-precision-d4` decimals, `set-precision-f16`, `set-precision-f32`, `set-precision-f64` inch fractions |
+| `set-precision` | The Precision row in Settings |
+| `set-precision-pick` | Precision of shown lengths, a select: `d0` to `d4` decimals, `f16`, `f32`, `f64` inch fractions |
 | `theme-<family>` | A theme card in setup's theme step and in Settings, Look and feel: `theme-subban`, `theme-dracula` and so on |
 
 ## Slice: sidebar
