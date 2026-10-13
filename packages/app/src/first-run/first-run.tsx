@@ -13,7 +13,7 @@ import { isPhoneLayout } from '../lib/phone-layout'
 import { get, set, useApp, type AppState } from '../state/store'
 import { Footer } from './frame'
 import { useLookChoice } from './look'
-import { contractStep, initialFlow, normalizeStep, outcome, progress, reduceFlow, setupSteps, stepLabel, type FlowState, type SetupStep } from './model'
+import { initialFlow, normalizeStep, outcome, progress, progressRecord, reduceFlow, setupSteps, stepLabel, type FlowState, type SetupStep } from './model'
 import { hostSlices } from '../state/model-mode'
 import { MimirStep, mimirOnFinish, type MimirChoice } from './mimir-step'
 import { OpenStep } from './open-step'
@@ -84,8 +84,7 @@ export function FirstRun() {
     setAnnounce(stepLabel(flow.step, flow.steps).text)
     rootRef.current?.querySelector<HTMLElement>('.fr-body')?.scrollTo({ top: 0 })
     if (!flow.closed) {
-      const prior = get().firstRun
-      set({ firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(flow.step, flow.steps), look: prior?.look ?? flow.look, printerId: prior?.printerId ?? null, ...(prior?.version !== undefined ? { version: prior.version } : {}) } })
+      set({ firstRun: progressRecord(flow, get().firstRun) })
     }
     // flow.look is read for a first record only.
     // eslint-disable-next-line react-hooks/exhaustive-deps

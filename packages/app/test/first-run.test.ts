@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { resolvePreset } from '@slicerx/ui'
 import { controlsFor, withControlOverrides } from '../src/first-run/controls'
 import { effectiveMode, orderWorkspaces } from '../src/first-run/look'
-import { choose, initialFlow, normalizeStep, ONBOARDING_VERSION, onboardingRerun, outcome, progress, reduceFlow, setupSteps, STEP_SINCE, stepLabel, type FlowEvent, type FlowState, type SetupPrinter } from '../src/first-run/model'
+import { choose, initialFlow, normalizeStep, ONBOARDING_VERSION, onboardingRerun, outcome, progress, progressRecord, reduceFlow, setupSteps, STEP_SINCE, stepLabel, type FlowEvent, type FlowState, type SetupPrinter } from '../src/first-run/model'
 import { EMPTY_FORM, pickModel, skipForm } from '../src/first-run/printer-form'
 import { adoptFound, matchFound } from '../src/first-run/printer-step'
 import { importPresetFile } from '../src/first-run/preset-import'
@@ -164,6 +164,21 @@ describe('onboarding version', () => {
     expect(outcome(fin, NOW, done(1)).firstRun.version).toBe(ONBOARDING_VERSION)
     const left = run(initialFlow('theme', { id: 'slicerx' }), { type: 'leave' })
     expect(outcome(left, NOW, done(1)).firstRun).toMatchObject({ version: ONBOARDING_VERSION, completedAt: NOW, printerId: 'bay-1' })
+  })
+
+  it('a first setup quit partway records the current version, so the next launch does not take it for an old onboarding', () => {
+    const s = run(initialFlow('theme', { id: 'slicerx' }), { type: 'next' })
+    const kept = progressRecord(s, null)
+    expect(kept).toEqual({ completedAt: null, step: 'printer', look: { id: 'slicerx' }, printerId: null, version: ONBOARDING_VERSION })
+    for (const stage of ['pre-alpha', 'alpha', 'beta', 'stable']) expect(onboardingRerun(stage, kept)).toBeNull()
+  })
+
+  it('a rerun in progress keeps the earlier version until it closes, so quitting partway brings it back', () => {
+    const s = run(initialFlow('theme', { id: 'slicerx' }), { type: 'next' })
+    expect(progressRecord(s, done(2))).toMatchObject({ completedAt: NOW, step: 'printer', printerId: 'bay-1', version: 2 })
+    expect(onboardingRerun('beta', progressRecord(s, done(2)))).toEqual({ since: 2 })
+    // A record from before versions stays one: the person has not seen the new onboarding yet.
+    expect(progressRecord(s, done())).not.toHaveProperty('version')
   })
 
   it('a rerun prefilled from the settings keeps them when skipped through', () => {
