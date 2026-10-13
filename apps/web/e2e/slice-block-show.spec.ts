@@ -69,21 +69,27 @@ test('Show me on a strike opens the toolpaths at its layer and centers the view 
   // Every layer the readout shows from the click on, frame by frame: the strike's first layer ("layers 4 to 5" on
   // the collision card) the whole way, never the layer below while the playback runs up to the strike.
   await page.evaluate(() => {
-    const seen = new Set<string>()
-    ;(window as unknown as { __seen: Set<string> }).__seen = seen
-    const t0 = performance.now()
+    const w = window as unknown as { __seen: Set<string>; __sampling: boolean; __sx: Sx }
+    w.__seen = new Set<string>()
+    w.__sampling = true
+    // samples until the test stops it, so a slow machine can't run the window out before the jump lands
     const tick = () => {
       const v = document.querySelector('#pv-layer')?.getAttribute('aria-valuetext')
       // From the click on: the jump has picked the strike, before that the bar shows the whole print.
-      if (v && (window as unknown as { __sx: Sx }).__sx.getState().strikePick !== null) seen.add(v.replace(/ of .*/, ''))
-      if (performance.now() - t0 < 4000) requestAnimationFrame(tick)
+      if (v && w.__sx.getState().strikePick !== null) w.__seen.add(v.replace(/ of .*/, ''))
+      if (w.__sampling) requestAnimationFrame(tick)
     }
     tick()
   })
   await show.click()
   await expect.poll(async () => { const s = await state(page); return `${s.sliceLook} ${s.layerHi} ${s.strikePick}` }).toBe('toolpaths 4 0')
   await page.waitForTimeout(3500)
-  expect(await page.evaluate(() => [...(window as unknown as { __seen: Set<string> }).__seen])).toEqual(['Layer 4'])
+  const seen = await page.evaluate(() => {
+    const w = window as unknown as { __seen: Set<string>; __sampling: boolean }
+    w.__sampling = false
+    return [...w.__seen]
+  })
+  expect(seen).toEqual(['Layer 4'])
   // Playback runs to the strike's moment and stays on its layer.
   expect((await state(page)).layerHi).toBe(4)
   await expect.poll(async () => near(await target(page), [120, 110, 8])).toBe(true)
