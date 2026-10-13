@@ -5,7 +5,7 @@
 // carry it, and a solid from anywhere else is never read. A step the kernel has no version of, or whose part has no
 // solid, returns null and the mesh path runs it; so does a step the kernel fails, with a note. The mesh each step
 // leaves is the solid's tessellation, with the solid's faces and keys.
-import type { FaceFrame, Shape, Vec2, Vec3 } from './types'
+import type { FaceFrame, FreeShape, Shape, Vec2, Vec3 } from './types'
 import { direction, invert, point, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams } from './model'
 
 export type Call = (op: string, request: unknown) => Promise<unknown>
@@ -92,38 +92,103 @@ export function rigidFrame(m: Mat4): { origin: Vec3; u: Vec3; normal: Vec3 } | n
   return { origin: [m[12]!, m[13]!, m[14]!], u: x, normal: z }
 }
 
-/** A new body's outline as the kernel's loops, in the frame, or null for one only the mesh path draws. */
-function loops(shape: Shape, placement: { center?: Vec2; rotationDeg?: number }, flipV: boolean): { outer: unknown; holes: unknown[] }[] | null {
+/** A piece of a kernel loop: a line to `to`, or an arc to it around `center` (sweep counterclockwise positive). */
+type Piece = { to: Vec2; center?: Vec2; sweepDeg?: number }
+type Loop = { points: Vec2[] } | { center: Vec2; diameterMm: number } | { start: Vec2; segments: Piece[] }
+type Profile = { outer: Loop; holes: Loop[] }
+
+/** The same loop the other way round, each arc swept back. */
+function reversed(start: Vec2, segments: Piece[]): Piece[] {
+  const ends = [start, ...segments.map((g) => g.to)]
+  return segments.map((_, k) => {
+    const i = segments.length - 1 - k
+    const g = segments[i]!
+    return { to: ends[i]!, ...(g.center ? { center: g.center, sweepDeg: -g.sweepDeg! } : {}) }
+  })
+}
+
+/** A slot or a rounded rectangle as lines and arcs, counterclockwise, centered on the origin. */
+function rounded(shape: Shape): Loop | null {
+  if (shape.type === 'slot') {
+    const r = shape.widthMm / 2
+    const x = shape.lengthMm / 2 - r
+    if (!(r > 0) || x < 0) return null
+    return { start: [-x, -r], segments: [{ to: [x, -r] }, { to: [x, r], center: [x, 0], sweepDeg: 180 }, { to: [-x, r] }, { to: [-x, -r], center: [-x, 0], sweepDeg: 180 }] }
+  }
+  if (shape.type !== 'rectangle' || !shape.cornerRadiusMm) return null
+  const w = shape.widthMm / 2
+  const h = shape.heightMm / 2
+  const r = shape.cornerRadiusMm
+  if (!(w > 0 && h > 0 && r > 0 && r <= Math.min(w, h))) return null
+  const [x, y] = [w - r, h - r]
+  return {
+    start: [w, -y],
+    segments: [
+      { to: [w, y] },
+      { to: [x, h], center: [x, y], sweepDeg: 90 },
+      { to: [-x, h] },
+      { to: [-w, y], center: [-x, y], sweepDeg: 90 },
+      { to: [-w, -y] },
+      { to: [-x, -h], center: [-x, -y], sweepDeg: 90 },
+      { to: [x, -h] },
+      { to: [w, -y], center: [x, -y], sweepDeg: 90 },
+    ],
+  }
+}
+
+/**
+ * A new body's outline as the kernel's loops, in the frame, or null for one only the mesh path draws. A sketch's
+ * loops come from the engine (sketch.curves), nested and exact; one it finds a problem in goes to the mesh path,
+ * which says what the problem is.
+ */
+async function loops(call: Call, shape: Shape | FreeShape, placement: { center?: Vec2; rotationDeg?: number }, flipV: boolean): Promise<Profile[] | null> {
   const [cx, cy] = placement.center ?? [0, 0]
   const a = ((placement.rotationDeg ?? 0) * Math.PI) / 180
   const c = Math.cos(a)
   const s = Math.sin(a)
   // as the engine places a shape (sx-geom face.rs): turned about its center, then moved
-  const at = (x: number, y: number): Vec2 => {
-    const p: Vec2 = [cx + c * x - s * y, cy + s * x + c * y]
-    return flipV ? [p[0], -p[1]] : p
+  const at = (p: Vec2): Vec2 => {
+    const q: Vec2 = [cx + c * p[0] - s * p[1], cy + s * p[0] + c * p[1]]
+    return flipV ? [q[0], -q[1]] : q
   }
-  if (shape.type === 'circle') {
-    const [x, y] = at(0, 0)
-    return [{ outer: { center: [x, y], diameterMm: shape.diameterMm }, holes: [] }]
+  // placed in the frame and kept counterclockwise there, as the kernel wants
+  const placed = (l: Loop): Loop => {
+    if ('points' in l) {
+      const ring = l.points.map(at)
+      return { points: flipV ? ring.reverse() : ring }
+    }
+    if ('start' in l) {
+      const start = at(l.start)
+      const segments = l.segments.map((g) => ({ to: at(g.to), ...(g.center ? { center: at(g.center), sweepDeg: flipV ? -g.sweepDeg! : g.sweepDeg! } : {}) }))
+      return { start, segments: flipV ? reversed(start, segments) : segments }
+    }
+    return { center: at(l.center), diameterMm: l.diameterMm }
   }
-  let ring: Vec2[]
-  if (shape.type === 'rectangle' && !shape.cornerRadiusMm) {
+  let profiles: Profile[]
+  if (shape.type === 'sketch') {
+    try {
+      profiles = (await call('sketch.curves', { loops: shape.loops })) as Profile[]
+    } catch {
+      return null
+    }
+  } else if (shape.type === 'circle') {
+    profiles = [{ outer: { center: [0, 0], diameterMm: shape.diameterMm }, holes: [] }]
+  } else if (shape.type === 'rectangle' && !shape.cornerRadiusMm) {
     const w = shape.widthMm / 2
     const h = shape.heightMm / 2
-    ring = [at(-w, -h), at(w, -h), at(w, h), at(-w, h)]
+    profiles = [{ outer: { points: [[-w, -h], [w, -h], [w, h], [-w, h]] }, holes: [] }]
   } else if (shape.type === 'polygon') {
     const n = shape.sides
     const apothem = shape.fit === 'circumscribed' ? shape.diameterMm / 2 : (shape.diameterMm / 2) * Math.cos(Math.PI / n)
     const r = apothem / Math.cos(Math.PI / n)
     const start = -Math.PI / 2 - Math.PI / n
-    ring = Array.from({ length: n }, (_, i) => at(r * Math.cos(start + (2 * Math.PI * i) / n), r * Math.sin(start + (2 * Math.PI * i) / n)))
+    profiles = [{ outer: { points: Array.from({ length: n }, (_, i): Vec2 => [r * Math.cos(start + (2 * Math.PI * i) / n), r * Math.sin(start + (2 * Math.PI * i) / n)]) }, holes: [] }]
   } else {
-    return null
+    const l = rounded(shape as Shape)
+    if (!l) return null
+    profiles = [{ outer: l, holes: [] }]
   }
-  // the kernel wants the outline counterclockwise in the frame
-  if (flipV) ring.reverse()
-  return [{ outer: { points: ring }, holes: [] }]
+  return profiles.map((p) => ({ outer: placed(p.outer), holes: p.holes.map(placed) }))
 }
 
 /** Where a new body runs along the frame's normal, as the engine reads the spec (sx-geom face.rs). */
@@ -179,7 +244,7 @@ export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBac
         const f = localFrame(s, p.frame)
         // the kernel's frame has v = normal x u; the step's may be the other way round
         const flipV = dot(cross(f.normal, f.u), direction(invert(s.transform), p.frame.v)) < 0
-        const polygons = loops(p.shape as Shape, p.placement ?? {}, flipV)
+        const polygons = await loops(call, p.shape, p.placement ?? {}, flipV)
         const z = range(p.spec)
         if (!polygons || !z) return null
         const r = await call('brep.extrude', { frame: f, polygons, fromMm: z[0], toMm: z[1], ...(into === null ? {} : { target: into, operation: op }), ...kept })
