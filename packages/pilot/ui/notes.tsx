@@ -3,7 +3,9 @@
 // One line blocks: the permission note, Auto's model switch, errors, the plan and the plugins loading line.
 import type { PluginLoad } from '@slicerx/contracts'
 import { Icon } from '@slicerx/ui'
+import { useContext } from 'react'
 import { Spinner } from './spinner'
+import { USAGE_CODES, UsageLinkContext } from './usage-link'
 
 /** What the Permissions setting decided for a step mimir did not ask about. */
 export function PermLine({ mode, message }: { mode: 'allow' | 'off'; message: string }) {
@@ -15,12 +17,24 @@ export function ModelLine({ label, reason }: { label: string; reason: 'request' 
   return <div className="model-ln" data-testid="mimir-model-switch">{reason === 'request' ? `Using ${label} for this one.` : `Switched to ${label} for the harder part.`}</div>
 }
 
-/** `code` marks a mimir cloud refusal (`day_used`, `paused`, ...) for the limit hook. */
+/** `code` marks a mimir cloud refusal (`day_used`, `paused`, ...) for the limit hook. A used-up allowance links to the
+ * usage page when the host has one. */
 export function ErrorLine({ message, code }: { message: string; code?: string | undefined }) {
+  const seeUsage = useContext(UsageLinkContext)
   return (
     <div className="pp-err" role="alert" data-testid={code ? 'mimir-limit' : undefined} data-code={code}>
       <Icon name="alert" />
-      <span>{message}</span>
+      <span>
+        {message}
+        {seeUsage && code && USAGE_CODES.has(code) && (
+          <>
+            {' '}
+            <button type="button" className="pp-err-link" data-testid="mimir-see-usage" onClick={seeUsage}>
+              See usage
+            </button>
+          </>
+        )}
+      </span>
     </div>
   )
 }

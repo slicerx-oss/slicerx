@@ -6,7 +6,7 @@
 import { PERMISSION_LABELS, type ApprovalRequest, type PermissionMode, type PermissionPolicy } from '@slicerx/contracts'
 import { SKILL_INFO } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Inspector, Terminal, usePilotRun, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
+import { Inspector, Terminal, UsageLinkContext, usePilotRun, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
 import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, LinkButton } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -22,6 +22,7 @@ import { ChatGptCard } from '../../pilot-connect/chatgpt-card'
 import { MimirSetup } from '../../pilot-connect/mimir-setup'
 import { Loading } from '../../shell/loading'
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
+import { openUsage } from '../../pilot-connect/usage-open'
 import './dock.css'
 
 const MODE_WORD: Record<PermissionMode, string> = { allow: 'Allow', ask: 'Ask first', off: 'Off' }
@@ -118,6 +119,7 @@ function DockRun(p: {
           <Inspector transcript={run.transcript} paused={run.paused} skills={SKILL_INFO} plugins={run.transcript.plugins ?? []} policy={p.policy} onPolicy={onPolicy} />
         </div>
       ) : (
+      <UsageLinkContext.Provider value={openUsage}>
       <Terminal
         sessionTitle={first ? first.slice(0, 40) : 'new'}
         transcript={run.transcript}
@@ -139,6 +141,7 @@ function DockRun(p: {
         emptyNote={empty}
         announcement={p.announcement}
       />
+      </UsageLinkContext.Provider>
       )}
       <div className="mimir-foot">
         <LinkButton icon="plus" onClick={p.onNewSession}>
