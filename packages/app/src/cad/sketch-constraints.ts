@@ -222,3 +222,60 @@ export function afterLoopChange(constraints: readonly SketchConstraint[], e: num
   }
   return out
 }
+
+/** Where a point reference is in the sketch now, or null (an arc center is not drawn with a mark). */
+function pointOf(sketch: readonly Entity[], r: SketchPointRef): V2 | null {
+  const e = sketch[r.e]
+  if (!e) return null
+  if (e.kind === 'circle') return r.at === 'center' ? e.center : null
+  if (r.at === 'start') return e.start
+  if (r.at === 'to') return e.segs[r.seg]?.to ?? null
+  return null
+}
+
+/** A dimension as the sketch shows it: a line from `from` to `to` with its value at the middle. */
+export interface SketchDim {
+  from: V2
+  to: V2
+  /** Where the value goes when not mid-line: the line runs on to it as a leader. */
+  at?: V2
+  label: string
+}
+
+const mmText = (v: number): string => `${Number(v.toFixed(2))}`
+
+/**
+ * What the sketch draws for its constraints: a dimension for each driving value (diameter across the circle,
+ * radius from the center, a line's length along it, a distance between its points) and a mark on each fixed point.
+ */
+export function sketchMarks(sketch: readonly Entity[], constraints: readonly SketchConstraint[]): { dims: SketchDim[]; fixed: V2[] } {
+  const dims: SketchDim[] = []
+  const fixed: V2[] = []
+  // circles' dimensions go across at 45 degrees, clear of the axes
+  const d = Math.SQRT1_2
+  for (const c of constraints) {
+    if (c.type === 'fix') {
+      const p = pointOf(sketch, c.point)
+      if (p) fixed.push(p)
+    } else if (c.type === 'diameter' || c.type === 'radius') {
+      const e = sketch[c.circle.e]
+      if (e?.kind !== 'circle') continue
+      const r = e.diameterMm / 2
+      const rim: V2 = [e.center[0] + r * d, e.center[1] + r * d]
+      // the value sits on a leader past the rim, so the center and its marks stay clear
+      const out = r + Math.max(2, r * 0.4)
+      const at: V2 = [e.center[0] + out * d, e.center[1] + out * d]
+      if (c.type === 'diameter') dims.push({ from: [e.center[0] - r * d, e.center[1] - r * d], to: rim, at, label: `\u2300${mmText(c.value)}` })
+      else dims.push({ from: e.center, to: rim, at, label: `R${mmText(c.value)}` })
+    } else if (c.type === 'length') {
+      const e = sketch[c.line.e]
+      if (e?.kind !== 'chain' || !e.segs[c.line.seg]) continue
+      dims.push({ from: segStartOf(e, c.line.seg), to: e.segs[c.line.seg]!.to, label: mmText(c.value) })
+    } else if (c.type === 'distance' || c.type === 'horizontalDistance' || c.type === 'verticalDistance') {
+      const a = pointOf(sketch, c.a)
+      const b = pointOf(sketch, c.b)
+      if (a && b) dims.push({ from: a, to: b, label: mmText(c.value) })
+    }
+  }
+  return { dims, fixed }
+}

@@ -10,7 +10,7 @@
 // here snaps, moves the rubber band in its fixed buffer and writes one text node; it renders no
 // React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
-import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
+import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type Solved, type SolverMap } from './sketch-constraints'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent, SketchEvent, SketchScene, SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch } from '@slicerx/ui'
@@ -283,8 +283,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       dragHandles: draft.tool === 'select',
       ...(gridMm > 0 ? { grid: { stepMm: gridMm * 10, min: plane.min, max: plane.max } } : {}),
       marks: issues.flatMap((i) => (i.at ? [i.at] : [])),
+      ...sketchMarks(sketch, constraints),
     })
-  }, [view, plane, sketch, draft, selected, issues, hs, gridMm, engineSnaps, finish, axis, states])
+  }, [view, plane, sketch, constraints, draft, selected, issues, hs, gridMm, engineSnaps, finish, axis, states])
   useEffect(() => () => view?.setSketch(null), [view])
 
   const targets = (skip?: Parameters<typeof sketchTargets>[1]): SnapTargets[] => [live.current.engineSnaps, sketchTargets(live.current.sketch, skip)]
