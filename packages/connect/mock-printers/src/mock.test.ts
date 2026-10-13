@@ -152,6 +152,25 @@ test('the Bambu fake reports Developer Mode in its fun flags', async () => {
   assert.equal(fun(), undefined)
 })
 
+// The job step goes out as `stg_cur`, and a chamber target as `ctt`, or packed in `device.ctc` on an H2D.
+test('the Bambu fake reports the job step and the chamber target', async () => {
+  const { reportFor } = await import('./bambu.ts')
+  const { MockMachine } = await import('./machine.ts')
+  const fixture = JSON.parse(readFileSync(fileURLToPath(new URL('../../fixtures/demo-fleet.json', import.meta.url)), 'utf8'))
+  const m = new MockMachine(fixture, 'bay-1')
+  const plain = reportFor(m).print as Record<string, unknown>
+  assert.equal(plain.stg_cur, undefined)
+  assert.equal(plain.ctt, undefined)
+  const x1 = reportFor(m, { skipped: [], printError: 0, stage: 2, chamberTarget: 45 }).print as Record<string, unknown>
+  assert.equal(x1.stg_cur, 2)
+  assert.equal(x1.ctt, 45)
+  const h2d = reportFor(m, { skipped: [], printError: 0, model: 'O1D', chamberTarget: 55 }).print as { ctt?: number; device: { ctc: { info: { temp: number } } } }
+  assert.equal(h2d.ctt, undefined)
+  const temp = h2d.device.ctc.info.temp
+  assert.equal(temp >> 16, 55)
+  assert.equal(temp & 0xffff, Math.round(m.fx.chamber?.current ?? 0))
+})
+
 test('the Bambu camera sends a JPEG file in place of its picture when asked', async () => {
   const { MOCK_ACCESS_CODE } = await import('./bambu.ts')
   const { connect: tlsConnect } = await import('node:tls')

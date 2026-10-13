@@ -7,7 +7,7 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{Case, Mocks, config, expect_code, job_file, run_contract, secrets};
+use common::{Case, Mocks, config, expect_code, job_file, run_contract, secrets, wait_state};
 use sx_connect::drivers::{
     AnycubicConnector, BambuConnector, CrealityConnector, DuetConnector, ElegooConnector, MoonrakerConnector,
     OctoPrintConnector, PrusaLinkConnector, SnapmakerConnector, UltiMakerConnector,
@@ -672,6 +672,8 @@ async fn bambu_a1_with_ams_lite_and_external_spool() {
     let ids: Vec<&str> = st.slots.iter().map(|x| x.id.as_str()).collect();
     assert_eq!(ids, ["A1", "A2", "A3", "A4", "1"]);
     assert_eq!(st.slots[4].material.as_deref(), Some("PETG"));
+    // The fake reports a `chamber_temper`, but an A1 has no chamber sensor.
+    assert_eq!(st.chamber, None);
     assert!(line.contains("\"ams_mapping\":[1,-1]"), "{line}");
     assert!(
         line.contains("\"ams_mapping2\":[{\"ams_id\":0,\"slot_id\":1},{\"ams_id\":254,\"slot_id\":0}]"),
@@ -730,6 +732,93 @@ async fn bambu_h2d_prints_from_both_external_spools() {
         "{line}"
     );
     assert!(line.contains("\"use_ams\":false"), "{line}");
+}
+
+// An H2D's AMS HT (unit 128) is slot E1: a plate mapped to it and to an AMS tray goes out with the
+// AMS HT as 128 in `ams_mapping` and as unit 128, slot 0 in `ams_mapping2`.
+#[tokio::test]
+async fn bambu_h2d_prints_from_its_ams_ht() {
+    let spec = serde_json::json!({ "model": "O1D" });
+    let (_mocks, s, line) = bambu_as(spec, &[(0, "A1"), (1, "E1")]).await;
+    let st = s.status().await.unwrap();
+    let e1 = st.slots.iter().find(|x| x.id == "E1").expect("the AMS HT slot");
+    assert_eq!(e1.material.as_deref(), Some("PAHT-CF"));
+    assert!(line.contains("\"ams_mapping\":[0,128]"), "{line}");
+    assert!(
+        line.contains("\"ams_mapping2\":[{\"ams_id\":0,\"slot_id\":0},{\"ams_id\":128,\"slot_id\":0}]"),
+        "{line}"
+    );
+    assert!(line.contains("\"use_ams\":true"), "{line}");
+}
+
+// A printer job's step and the chamber target reach the status: the X1 Carbon fake while
+// preparing on step 2 (bed heating) with a chamber target in `ctt`, then an H2D with its chamber
+// packed in `device.ctc`.
+#[tokio::test]
+async fn bambu_status_names_the_step_and_the_chamber_target() {
+    for (spec, target) in [
+        (serde_json::json!({ "stage": 2, "chamberTarget": 45 }), 45.0),
+        (
+            serde_json::json!({ "model": "O1D", "stage": 2, "chamberTarget": 55 }),
+            55.0,
+        ),
+    ] {
+        let gate = Arc::new(MemoryGate::new());
+        let mocks = Mocks::start("bambu", &[]).await;
+        mocks.control("/bambu", spec).await;
+        mocks.set_state("bambu", "preparing").await;
+        let mut cfg = config("x1", "bambu-lan", mocks.port("bambu"));
+        cfg.serial = Some(mocks.str("serial"));
+        cfg.credential_ref = Some("bambu-code".to_owned());
+        let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+        let session = BambuConnector::new(gate).connect(&cfg, &sec).await.unwrap();
+        wait_state(session.as_ref(), PrinterState::Preparing).await;
+        let st = session.status().await.unwrap();
+        assert_eq!(st.message.as_deref(), Some("Heating the bed"));
+        assert_eq!(st.chamber.map(|c| c.target), Some(target));
+    }
+}
+
+// A printer with no AMS HT has no slot E1: a plate mapped to it is refused before anything is
+// sent, the way slot 2 is on a printer with one external spool.
+#[tokio::test]
+async fn bambu_refuses_an_ams_ht_slot_the_printer_does_not_report() {
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    mocks
+        .control("/bambu", serde_json::json!({ "model": "N2S", "ams": "lite" }))
+        .await;
+    mocks.set_state("bambu", "idle").await;
+    let mut cfg = config("a1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    cfg.ftp_port = Some(mocks.port("bambu-ftp"));
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    let session = BambuConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    let file = job_file("cube.gcode.3mf", JobKind::Gcode3mf);
+    let t = gate.mint(
+        Action::Upload,
+        "a1",
+        &params::upload("a1", &file.name, &file.sha256),
+    );
+    let rf = session.upload(file, &t).await.unwrap();
+    let opts = StartOptions {
+        slot_map: Some([(0, "A1".to_owned()), (1, "E1".to_owned())].into_iter().collect()),
+        ..StartOptions::default()
+    };
+    let t = gate.mint(Action::Start, "a1", &params::start("a1", &rf, &opts));
+    let e = session.start(&rf, opts, &t).await.unwrap_err();
+    assert_eq!(e.code(), ErrorCode::NotSupported);
+    assert!(
+        e.to_string().contains("\"E1\"") && e.to_string().contains("AMS HT"),
+        "{e}"
+    );
+    let log = mocks.state().await["bambu"]["log"].clone();
+    assert!(!log.to_string().contains("project_file"), "{log}");
 }
 
 // A printer with one external spool has no slot 2: a plate mapped to it is refused before
