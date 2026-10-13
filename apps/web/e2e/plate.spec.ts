@@ -152,7 +152,7 @@ async function setBedType(page: Page, plate: string, value: string): Promise<voi
 test('the printer card shows each plate\'s bed type', async ({ page }) => {
   await prepare(page)
   const card = page.locator('[data-section="printer"]')
-  const plateType = page.getByTestId('slice-machine-plate')
+  const plateType = page.getByTestId('slice-machine-plate-label')
   // Plate 1 prints on the printer's default; the card names it and never reads "unknown".
   await expect(plateType).toHaveText(/\S/)
   const first = (await plateType.textContent()) ?? ''
@@ -178,11 +178,11 @@ test('the plate box names the longest plate type in its tooltip and keeps the pr
   await page.getByRole('button', { name: 'Add plate' }).first().click()
   await setBedType(page, 'Plate 2', 'engineering')
   await openSheet(page)
-  await expect(plateType).toHaveText('Engineering plate')
+  await expect(page.getByTestId('slice-machine-plate-label')).toHaveText('Engineering plate')
   await expect(plateType).toHaveAttribute('data-tip-title', 'Engineering plate')
   await expect(plateType).toHaveAttribute('aria-label', 'Plate: Engineering plate')
-  // The box shows the type's icon, so the row keeps its height: the plate box is as tall as the printer box.
-  expect(Math.abs((await plateType.boundingBox())!.height - (await page.getByTestId('slice-machine-printer').boundingBox())!.height)).toBeLessThan(1)
+  // The box shows the type's icon, so the row keeps its height: the plate box is as tall as the nozzle box beside it.
+  expect(Math.abs((await plateType.boundingBox())!.height - (await page.getByTestId('slice-machine-nozzle').boundingBox())!.height)).toBeLessThan(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
 })
 
