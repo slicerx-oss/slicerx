@@ -13,7 +13,7 @@ use crate::poly2d::{self, Polygon};
 use crate::vec3::{self, Frame, Plane, V2, V3};
 use serde::Deserialize;
 
-const OVERSHOOT_MM: f64 = 0.01;
+pub(crate) const OVERSHOOT_MM: f64 = 0.01;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
