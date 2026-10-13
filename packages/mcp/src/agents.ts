@@ -28,9 +28,21 @@ export const AGENT_CLIENTS: readonly AgentClient[] = [
 /** Server name every client shows. */
 export const SERVER_ID = 'slicerx'
 
-/** The keychain service holding a client's hub credential (account `slicerx`). */
+/** The keychain service holding a client's hub credential (account `slicerx`), as a client's config names it. */
 export function agentKeyRef(client: AgentClientId): string {
   return `slicerx-agent-${client}`
+}
+
+/** The shipping desktop app's identifier. Its keychain items keep the names they always had. */
+export const SHIPPING_APP_IDENTIFIER = 'app.slicerx.desktop'
+
+/**
+ * The keychain service `base` is kept under by the desktop app with `identifier` (keychain.rs in the desktop shell):
+ * the shipping app, or no identifier, uses `base` as it is; any other app (the agent bridge's test build, a dev
+ * identifier, another edition) adds `.<identifier>`, so a test build never reads or replaces the installed app's items.
+ */
+export function keychainService(base: string, identifier?: string): string {
+  return identifier === undefined || identifier === SHIPPING_APP_IDENTIFIER ? base : `${base}.${identifier}`
 }
 
 export interface InstallInput {
@@ -42,6 +54,8 @@ export interface InstallInput {
   hubKey: string
   /** sx-link's address. Default ws://127.0.0.1:47615. */
   linkUrl?: string
+  /** The desktop app's identifier. One other than the shipping app's goes into the config (SLICERX_MCP_APP_IDENTIFIER), so the server reads that app's own credential item. */
+  appIdentifier?: string
   /** The app the server belongs to, as clients list it: server name, display name and author. Default SlicerX. */
   app?: { id: string; name: string; author?: { name: string; url?: string } }
 }
@@ -68,6 +82,7 @@ export function serverEnv(client: AgentClientId, input: InstallInput): Record<st
     SLICERX_MCP_LINK_HUB_KEY: input.hubKey,
     SLICERX_MCP_LINK_KEY_REF: agentKeyRef(client),
     ...(input.editionFile ? { SLICERX_CONFIG: input.editionFile } : {}),
+    ...(input.appIdentifier && input.appIdentifier !== SHIPPING_APP_IDENTIFIER ? { SLICERX_MCP_APP_IDENTIFIER: input.appIdentifier } : {}),
   }
 }
 

@@ -209,6 +209,9 @@ fn health(app: &AppHandle) -> Value {
         "pageReady": relay.page_ready.load(Ordering::SeqCst),
         "appReady": relay.app_ready.load(Ordering::SeqCst),
         "tools": PAGE_TOOLS.iter().chain(SHELL_TOOLS.iter()).collect::<Vec<_>>(),
+        // The keychain items this build keeps its credentials under (names only), so a run can check that they
+        // are its own and not the installed app's.
+        "keychain": crate::keychain::keychain_names(),
     })
 }
 

@@ -445,3 +445,35 @@ async fn local_get_refuses_anything_but_loopback_http() {
         );
     }
 }
+
+#[test]
+fn the_system_store_asks_for_the_service_the_app_names() {
+    fn bridge(base: &str) -> String {
+        format!("{base}.app.slicerx.desktop.agent-bridge")
+    }
+    // The only test that sets the hook: it is process wide. Names only; the keychain is never opened.
+    assert_eq!(
+        keychain_service(MIMIR_CLOUD_KEYCHAIN_SERVICE),
+        "slicerx-mimir-cloud-token"
+    );
+    set_keychain_service(bridge);
+    for base in [
+        OPENAI_KEYCHAIN_SERVICE,
+        ANTHROPIC_KEYCHAIN_SERVICE,
+        LOCAL_KEYCHAIN_SERVICE,
+        chatgpt::CHATGPT_KEYCHAIN_SERVICE,
+        chatgpt::LEGACY_KEY_SERVICE,
+        MIMIR_CLOUD_KEYCHAIN_SERVICE,
+    ] {
+        assert_eq!(
+            keychain_service(base),
+            format!("{base}.app.slicerx.desktop.agent-bridge")
+        );
+    }
+    // The first setting stays.
+    set_keychain_service(str::to_owned);
+    assert_eq!(
+        keychain_service("slicerx-pair"),
+        "slicerx-pair.app.slicerx.desktop.agent-bridge"
+    );
+}
