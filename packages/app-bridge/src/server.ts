@@ -96,6 +96,17 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     forward('state'),
   )
   server.registerTool(
+    'app_layers',
+    {
+      title: 'Read the layer view',
+      description:
+        'What the layer keys, the layer commands (app.layer_up, app.layer_down, app.layer_one, app.layer_legend) and the jump to a layer field leave in Slice: whether there is a slice to step (showing) and the toolpaths show, the top drawn layer and the layer count, the lowest drawn layer, whether one layer mode is on, whether the legend shows and whether the jump to a layer field is open.',
+      inputSchema: {},
+      annotations: read,
+    },
+    forward('layers'),
+  )
+  server.registerTool(
     'app_toasts',
     { title: 'Read toasts', description: 'Toasts the app showed, each with its text, tone (ok, info, warn, error, plain) and time, in order. Pass since to get only newer ones; the answer carries the new marker.', inputSchema: { since, limit }, annotations: read },
     forward('toasts'),
@@ -269,6 +280,7 @@ export function createAppBridgeServer(client: AppClient): McpServer {
 export const TOOL_NAMES = [
   'app_health',
   'app_state',
+  'app_layers',
   'app_toasts',
   'app_dialogs',
   'app_console',

@@ -47,8 +47,9 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const MAX_TIMEOUT_MS: u64 = 15 * 60_000;
 
 /// Tools the page answers. Anything not listed here or in `SHELL_TOOLS` is refused before it reaches the page.
-pub const PAGE_TOOLS: [&str; 16] = [
+pub const PAGE_TOOLS: [&str; 17] = [
     "state",
+    "layers",
     "toasts",
     "dialogs",
     "console",

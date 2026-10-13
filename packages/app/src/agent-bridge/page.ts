@@ -19,6 +19,7 @@ import { BridgeError, click, elements, fill, pressKey, testids, waitFor } from '
 import { loadFaces } from './fonts'
 import { autoSliceMode } from '../state/auto-slice-mode'
 import { cadShown } from '../state/model-mode'
+import { layerView } from '../workspaces/preview/layer-keys'
 
 export { BridgeError } from './dom'
 
@@ -265,6 +266,8 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
   const tools: Record<string, (a: Args) => unknown> = {
     state: () => ({ ...appState(get()), exports: exportCommands(), dialogs: capture.openDialogs(), toasts: capture.visibleToasts(), marker: capture.marker() }),
     toasts: log('toast'),
+    // The layer slider, one layer mode, the legend and the jump field, as the layer keys and commands leave them.
+    layers: () => layerView(),
     dialogs: (a) => ({ ...log('dialog')(a), open: capture.openDialogs() }),
     console: log('console'),
     network: log('network'),

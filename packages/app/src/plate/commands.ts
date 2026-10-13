@@ -18,6 +18,7 @@ import { appName, editionHasCad, MODELING_COMMANDS } from '../edition'
 import { openTool } from '../workspaces/design/open-tool'
 import { SHELF_TOOLS } from '../workspaces/design/shelf-tools'
 import { fromVault } from '../export/vault'
+import { layerCommands } from '../workspaces/preview/layer-keys'
 
 const hasSelection = () => get().selection !== null
 
@@ -181,6 +182,7 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
     { id: 'zoom-out', title: 'Zoom out', section: 'view', keywords: ['farther', 'camera'], shortcut: 'Mod+-', enabled: () => Boolean(cameraBus()?.zoomBy), run: () => cameraBus()?.zoomBy?.(0.8) },
     withKey({ id: 'zoom-bed', title: 'Zoom to the bed', section: 'view', keywords: ['plate', 'frame'], run: () => cameraBus()?.zoomToBed?.({ animate: true }) }, 'view.zoomBed'),
     withKey({ id: 'toggle-projection', title: 'Switch perspective and orthographic', section: 'view', keywords: ['ortho', 'camera'], run: () => void cameraBus()?.toggleProjection?.() }, 'view.projection'),
+    ...layerCommands(key),
   ]
   // A tool's command takes its gates from the shelf list. Drawing commands exist only when the drawing tools are on;
   // measure, arrays, hollow, repair and simplify always do.

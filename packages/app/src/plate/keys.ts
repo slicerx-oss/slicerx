@@ -12,6 +12,7 @@ import { get, set } from '../state/store'
 import { toggleEdge } from '../shell/edge-keys'
 import { onControl } from '../controls/global-keys'
 import { layerCountNow, stepLayer } from '../workspaces/preview/layer-step'
+import { toggleLegend, toggleOneLayer } from '../workspaces/preview/layer-keys'
 import { PICK_KINDS, pickKeysOn } from './pick-filter'
 import { clearPicks, setPickKind } from './sub-pick'
 import { arrangePlate, centerSelected, clearSelection, dropSelectedToBed, selectAll } from './edit'
@@ -75,12 +76,8 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
     'preview.layerUp': () => layerKey(1),
     'preview.layerDown': () => layerKey(-1),
     // One layer: the bottom handle joins the top one; again, it goes back to the first layer.
-    'preview.singleLayer': () =>
-      set((s) => {
-        const hi = Math.max(1, Math.min(s.layerHi, layerCountNow()))
-        return { layerLo: s.layerLo >= hi ? 1 : hi, sliceLook: 'toolpaths' }
-      }),
-    'preview.legend': () => set((s) => ({ legendHidden: !s.legendHidden })),
+    'preview.singleLayer': toggleOneLayer,
+    'preview.legend': toggleLegend,
     // Opens the layer field in the playback bar: a layer number, or a height in mm.
     'preview.jumpToLayer': () => set({ layerJump: true, sliceLook: 'toolpaths' }),
   }
