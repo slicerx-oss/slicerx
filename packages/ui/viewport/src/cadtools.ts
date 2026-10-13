@@ -257,6 +257,8 @@ export class SketchLayer {
   private labels: { sprite: Sprite; aspect: number }[] = []
   private scaledFor = ''
   private readonly band: Line
+  /** A closed shape being drawn, shaded like a profile so the whole outline reads at the cursor. */
+  private bandFill: Mesh | null = null
   private readonly bandPos = new Float32Array(CURSOR_POINTS * 3)
   private readonly snap: Points
   private readonly snapPos = new Float32Array(3)
@@ -274,7 +276,8 @@ export class SketchLayer {
     const bandGeo = new BufferGeometry()
     bandGeo.setAttribute('position', new BufferAttribute(this.bandPos, 3))
     bandGeo.setDrawRange(0, 0)
-    this.band = new Line(bandGeo, this.mats.get('selected'))
+    // the shape being drawn takes the sketch's own curve color, so it reads as what the click will make
+    this.band = new Line(bandGeo, this.mats.get('normal'))
     this.band.frustumCulled = false
     this.band.renderOrder = 12
     const snapGeo = new BufferGeometry()
@@ -414,6 +417,25 @@ export class SketchLayer {
     const bg = this.band.geometry
     bg.setDrawRange(0, n >= 2 ? n : 0)
     ;(bg.getAttribute('position') as BufferAttribute).needsUpdate = true
+    this.bandFill?.geometry.dispose()
+    this.bandFill?.removeFromParent()
+    this.bandFill = null
+    const first = path?.[0]
+    const last = path?.[n - 1]
+    if (path && n > 3 && first && last && Math.hypot(first[0] - last[0], first[1] - last[1]) < 1e-6) {
+      const ring = path.slice(0, n - 1)
+      const pos: number[] = []
+      for (const tri of ShapeUtils.triangulateShape(ring.map((p) => new Vector2(p[0], p[1])), [])) for (const k of tri) pos.push(ring[k]![0], ring[k]![1], 0.02)
+      if (pos.length) {
+        const geo = new BufferGeometry()
+        geo.setAttribute('position', new Float32BufferAttribute(pos, 3))
+        this.bandFill = new Mesh(geo, this.fillMat)
+        this.bandFill.renderOrder = 11
+        this.bandFill.frustumCulled = false
+        this.bandFill.raycast = () => {}
+        this.group.add(this.bandFill)
+      }
+    }
     const at = c?.at ?? null
     if (at) {
       this.snapPos[0] = at[0]

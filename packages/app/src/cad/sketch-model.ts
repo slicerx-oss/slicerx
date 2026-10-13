@@ -808,3 +808,16 @@ export function profileRings(sketch: Sketch): V2[][] {
     return a && b && pts.length > 3 && Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-3 ? [pts.slice(0, -1)] : []
   })
 }
+
+/** What the picked curve is, for Select's readout: a line's length, an arc's radius, a circle's diameter, in the display unit as readout() has it. Empty with nothing picked. */
+export function pickedText(sketch: Sketch, picked: { e: number; seg: number } | null, f: (mm: number) => string = (v) => v.toFixed(2), u = 'mm'): string {
+  const e = picked ? sketch[picked.e] : undefined
+  if (!e || !picked) return ''
+  if (e.kind === 'circle') return `Circle, diameter ${f(e.diameterMm)} ${u}`
+  const s = e.segs[picked.seg]
+  if (!s) return ''
+  const from = segStart(e, picked.seg)
+  if (s.kind === 'line') return `Line, ${f(dist(from, s.to))} ${u}`
+  const a = arcThrough(from, s.through, s.to)
+  return a ? `Arc, radius ${f(a.r)} ${u}` : 'Arc'
+}

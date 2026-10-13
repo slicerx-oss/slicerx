@@ -59,6 +59,7 @@ import {
   type Entity,
   type SnapTargets,
   type V2,
+  pickedText,
   profileRings,
 } from './sketch-model'
 
@@ -332,6 +333,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const readoutRef = useRef<HTMLSpanElement | null>(null)
+  // a new tool starts with an empty readout; Select's says what is picked
+  useEffect(() => {
+    if (readoutRef.current) readoutRef.current.textContent = draft.tool === 'select' ? pickedText(sketch, selected, ...readoutUnits(units)) : ''
+  }, [draft.tool, selected, sketch, units])
   const gridMm = pal.snap ? Number(pal.step) : 0
   // a polygon's side count, 3 to 64
   const [sides, setSides] = useDraft<string>('sides', '6')
@@ -453,7 +458,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (ev.kind === 'hover') {
           view.setSketchCursor({ path: preview(l.draft, s.at, { sides: l.sides }, l.sketch), at: s.at, guide: 'guide' in s && s.guide ? s.guide : null })
           const r = readoutRef.current
-          if (r) r.textContent = `${l.draft.tool === 'select' ? '' : readout(l.draft, s.at, ...readoutUnits(get().units))}${s.kind ? `${l.draft.tool === 'select' ? '' : ', '}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
+          const u = readoutUnits(get().units)
+          const base = l.draft.tool === 'select' ? pickedText(l.sketch, l.selected, ...u) : readout(l.draft, s.at, ...u)
+          if (r) r.textContent = `${base}${s.kind ? `${base ? ', ' : ''}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
           return
         }
         if (l.draft.tool === 'select') {
