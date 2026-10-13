@@ -121,7 +121,8 @@ pub fn init_cloud(config: &tauri::Config) {
     let Some(c) = config.plugins.0.get("mimir-cloud") else {
         return;
     };
-    let Some(key) = REGISTER_KEY else {
+    // a secret piped into the build can carry a trailing newline
+    let Some(key) = REGISTER_KEY.map(str::trim).filter(|k| !k.is_empty()) else {
         eprintln!("mimir cloud is off: this build has no registration key");
         return;
     };
