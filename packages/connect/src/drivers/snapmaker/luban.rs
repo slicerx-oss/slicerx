@@ -664,6 +664,28 @@ impl PrinterSession for Session {
         Ok(None)
     }
 
+    /// The enclosure's light, as Luban's switch does: `POST /api/v1/enclosure` with `led` 100 or 0 and
+    /// the token in the form body. Only while an enclosure is attached (`isReady`); a machine without
+    /// one, or firmware without the endpoint, says so instead of sending. The next status reads the
+    /// light back from the enclosure.
+    async fn set_light(&self, on: bool, token: &ApprovalToken) -> Result<()> {
+        self.gate
+            .check(token, Action::Adjust, self.id(), &params::light(self.id(), on))?;
+        let ready = self
+            .state
+            .enclosure()
+            .await
+            .is_some_and(|e| e.get("isReady").and_then(Value::as_bool) == Some(true));
+        if !ready {
+            return Err(Error::not_supported(
+                "snapmaker",
+                "switching the light without an enclosure attached",
+            ));
+        }
+        self.post("/api/v1/enclosure", &[("led", if on { "100" } else { "0" })])
+            .await
+    }
+
     async fn send_gcode(&self, line: &str, token: &ApprovalToken) -> Result<()> {
         // One command per call: a card showed this line whole, and nothing may ride behind it.
         crate::gate::one_gcode_line(self.id(), line)?;

@@ -19,8 +19,9 @@ const STATUS: Record<string, string> = { idle: 'IDLE', finished: 'IDLE', error: 
  * Changed through the control server (`POST /snapmaker`): `drop` makes the next n status requests of
  * an authorized token answer 401, as an A350 does when it drops an idle session; `decline` makes
  * pairing prompts answer 401, as when No is tapped; `forget` clears every token, as a power cycle does.
- * `enclosure` is what `GET /api/v1/enclosure` reports: `ready` (Luban's `isReady`, an enclosure attached
- * and answering), `led` and `fan` (Luban switches each between 0 and 100). It starts with no enclosure
+ * `enclosure` is what `GET /api/v1/enclosure` reports and `POST /api/v1/enclosure` switches: `ready`
+ * (Luban's `isReady`, an enclosure attached and answering), `led` and `fan` (Luban switches each between
+ * 0 and 100). It starts with no enclosure
  * attached; `null` makes the endpoint answer 404, as firmware without it would.
  */
 export interface LubanEnclosure { ready: boolean; led: number; fan: number }
@@ -114,6 +115,22 @@ export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?:
       if (!authed(token)) return { status: 401, json: { code: 401 } }
       const e = extra.enclosure
       return { json: { isReady: e.ready, isDoorEnabled: true, led: e.led, fan: e.fan } }
+    }
+    if (p === '/api/v1/enclosure' && req.method === 'POST') {
+      // Switches the light (`led`) or the exhaust fan (`fan`), 0 off and 100 on, with the token in the form body.
+      // The next GET reports the new value.
+      if (!extra.enclosure) throw new MockError(404, p)
+      const f = await form(req)
+      if (!authed(f.get('token'))) return { status: 401, json: { code: 401 } }
+      for (const k of ['led', 'fan'] as const) {
+        const v = f.get(k)
+        if (v === null) continue
+        const n = Number(v)
+        if (!Number.isFinite(n)) return { status: 400, json: { code: 400 } }
+        extra.enclosure[k] = Math.min(100, Math.max(0, Math.round(n)))
+        m.log.push(`enclosure ${k} ${extra.enclosure[k]}`)
+      }
+      return { json: {} }
     }
     if (!['/api/v1/prepare_print', '/api/v1/start_print', '/api/v1/pause_print', '/api/v1/resume_print', '/api/v1/stop_print', '/api/v1/execute_code'].includes(p)) throw new MockError(404, p)
     // Everything below needs an authorized token.

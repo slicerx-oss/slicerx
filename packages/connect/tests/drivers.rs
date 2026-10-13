@@ -1256,6 +1256,61 @@ async fn snapmaker_luban_reads_the_enclosure_light_and_fan() {
     assert!(s.status().await.unwrap().live.is_none(), "not asked again");
 }
 
+// The Snapmaker 2.0 enclosure light switches as Luban switches it, and the next status reads it back.
+// With no enclosure attached, or firmware without the endpoint, the switch says so and sends nothing.
+#[tokio::test]
+async fn snapmaker_luban_switches_the_enclosure_light() {
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("snapmaker-luban", &[]).await;
+    mocks.set_state("snapmaker-luban", "idle").await;
+    let mut cfg = config("bay-2", "snapmaker", mocks.port("snapmaker-luban"));
+    cfg.credential_ref = Some("t".to_owned());
+    let connector = SnapmakerConnector::new(gate.clone());
+    let token = connector
+        .authorize(&cfg, Duration::from_secs(20))
+        .await
+        .unwrap()
+        .unwrap();
+    let s = connector.connect(&cfg, &secrets(&[("t", token)])).await.unwrap();
+    let light = |on: bool| gate.mint(Action::Adjust, "bay-2", &params::light("bay-2", on));
+    let log = || async { mocks.state().await["snapmaker-luban"]["log"].to_string() };
+
+    // No enclosure attached yet.
+    let e = s.set_light(true, &light(true)).await.err().unwrap();
+    assert_eq!(e.code(), ErrorCode::NotSupported, "{e}");
+    assert!(!log().await.contains("enclosure led"), "nothing sent");
+
+    mocks
+        .control(
+            "/snapmaker",
+            serde_json::json!({ "enclosure": { "ready": true, "led": 0, "fan": 0 } }),
+        )
+        .await;
+    s.set_light(true, &light(true)).await.unwrap();
+    assert!(log().await.contains("enclosure led 100"));
+    let live = s.status().await.unwrap().live.expect("the enclosure's part");
+    assert_eq!(live.light, Some(true));
+    assert_eq!(
+        live.fans.and_then(|f| f.chamber),
+        Some(0),
+        "the fan is left alone"
+    );
+    s.set_light(false, &light(false)).await.unwrap();
+    assert_eq!(s.status().await.unwrap().live.unwrap().light, Some(false));
+
+    // A token approved for one state does not switch to the other.
+    assert!(s.set_light(true, &light(false)).await.is_err());
+    assert_eq!(s.status().await.unwrap().live.unwrap().light, Some(false));
+
+    // Firmware without the endpoint.
+    mocks
+        .control("/snapmaker", serde_json::json!({ "enclosure": null }))
+        .await;
+    let e = s.set_light(true, &light(true)).await.err().unwrap();
+    assert_eq!(e.code(), ErrorCode::NotSupported, "{e}");
+}
+
 // A J1 or Artisan found by a scan (port 8888) says SACP is not supported yet instead of failing as
 // an unreachable 2.0 machine.
 #[tokio::test]
