@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { InterleavedBufferAttribute, LineSegments, Matrix4, Vector3 } from 'three'
+import { InterleavedBufferAttribute, LineSegments, Matrix4, Mesh, Vector3 } from 'three'
 import { Line2 } from 'three/addons/lines/Line2.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { describe, expect, it } from 'vitest'
@@ -93,6 +93,24 @@ describe('sketch layer', () => {
     expect([end.getX(0), end.getY(0)]).toEqual([3, 4])
     s.cursor(null)
     expect(band.visible).toBe(false)
+    s.dispose()
+  })
+
+  it('draws what a trim takes off wider than a curve, in red, and without a fill', () => {
+    const s = new SketchLayer()
+    s.set({ frame: WALL, paths: [], handles: [] })
+    const band = s.group.children[0] as Line2
+    const plain = band.material
+    const fills = () => s.group.children.filter((o) => o instanceof Mesh).length
+    const none = fills()
+    const ring: [number, number][] = [[0, 0], [4, 0], [4, 4], [0, 0]]
+    s.cursor({ path: ring, cut: true })
+    expect(band.material).not.toBe(plain)
+    expect(band.material.linewidth).toBeGreaterThan(plain.linewidth)
+    expect(fills()).toBe(none)
+    s.cursor({ path: ring })
+    expect(band.material).toBe(plain)
+    expect(fills()).toBe(none + 1)
     s.dispose()
   })
 
