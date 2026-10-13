@@ -24,7 +24,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | --- | --- |
 | `tab-<workspace>` | A workspace tab in the top bar: `tab-prepare`, `tab-preview`, `tab-printers`, `tab-feed` (the Vault). In an edition with modeling tools the first three tabs are mimir, Model and Slice: `tab-mimir`, `tab-model` and `tab-prepare` (Slice). The Model tab also answers to its old id, `tab-design`, through `data-testid-alias`, until scripts move to `tab-model` |
 | `tab-overflow` | More, at the end of the tabs on a narrow window, holding the tabs that no longer fit; each item is `tab-overflow-<workspace>` (`tab-overflow-printers` first) |
-| `edge-tab-<side>` | The tab on a panel's edge that shuts and reopens it: `edge-tab-left` (the left sidebar), `edge-tab-right` (the right pane), `edge-tab-bottom` (the bottom panel); `aria-expanded` says whether the panel is open, `data-attention` is set while a shut panel's tab glows for something to look at, and `data-panel` says which panel: `model-tree`, `model-inspector`, `model-timeline`, `slice-sidebar` or `slice-summary` |
+| `edge-tab-<side>` | The tab on a panel's edge that shuts and reopens it: `edge-tab-left` (the left sidebar), `edge-tab-right` (the right pane), `edge-tab-bottom` (the bottom panel, and in Slice the playback bar); `aria-expanded` says whether the panel is open, `data-attention` is set while a shut panel's tab glows for something to look at, and `data-panel` says which panel: `model-tree`, `model-inspector`, `model-timeline`, `slice-sidebar` or `slice-summary` |
 | `model-tree`, `model-inspector`, `slice-sidebar`, `slice-summary` | The body of the side pane with that edge tab: Model's tree and its tool and transform pane, Slice's printer and settings sidebar (its printer and filaments sit above it, pinned) and its right pane with the objects and the slice summary. It is gone while the pane is shut |
 | `open-in-app` | Open in SlicerX in the top bar of the CAD-only browser build: downloads the design and asks the desktop app to open it |
 | `toast` | A toast on screen; `data-tone` is ok, info, warn or error |
@@ -123,7 +123,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-machine-model` | The printer's maker and model, muted under its name in the printer box |
 | `slice-machine-nozzle` | The nozzle box ("Nozzle", the size and the type), with `data-nozzle` and an `aria-label` such as "Nozzle: 0.4 mm" |
 | `slice-machine-nozzle-option` | A nozzle size in its popover, with `data-nozzle` |
-| `slice-machine-plate` | The plate box: the icon of the type the active plate prints on, with `data-bed-type` and an `aria-label` such as "Plate: Textured PEI" |
+| `slice-machine-plate` | The plate box beside the nozzle box: the icon and name of the type the active plate prints on, with `data-bed-type` and an `aria-label` such as "Plate: Textured PEI" |
+| `slice-machine-plate-label` | The plate type's name in the plate box |
 | `slice-machine-plate-option` | A plate type in its popover, with `data-bed-type` (empty for the printer's default) |
 | `slice-machine-status` | The printer's status: Ready, Printing, Paused, Error, Offline or Export only |
 | `slice-mode-chip` | The settings mode chip in the Slice pane title |
@@ -501,4 +502,9 @@ Ids that tests read for their text:
 | `cut-conn-tol-source` | Where the cut connector tolerance comes from |
 | `pv-change`, `pv-purge` | Preview: the tool change and the purge at the playhead |
 | `pv-layer-jump` | Preview: the jump to a layer field over the layer number |
+| `pv-show-toolhead`, `pv-show-gantry` | Preview: the playback bar's Show toolhead and Show gantry checkboxes |
+| `preview-drawer` | Preview: the playback bar under the view; `data-mode` is `slim` while it is shut to its transport row, and its `edge-tab-bottom` opens the sliders |
+| `plate-tools-group` | The plate toolbar with the view switch under it; `data-moved` is set once the person dragged it |
+| `plate-tools-grip` | The grip at the toolbar's end that drags the group (the arrow keys move it too) |
+| `plate-chip` | The chip under the bed naming the active plate |
 | `ph-placeholder` | The phone view's placeholder |
