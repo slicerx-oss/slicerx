@@ -546,7 +546,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             <CursorField
               x={field.x}
               y={field.y}
-              labels={fields.map((f) => `${f.label} ${f.unit === 'mm' ? units.length : f.unit}`)}
+              labels={fields.map((f) => ({ label: f.label, unit: f.unit === 'mm' ? units.length : f.unit }))}
               values={field.values}
               onChange={(values) => setField({ ...field, values })}
               onCommit={commitField}
@@ -560,7 +560,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 }
 
 /** The small field at the cursor: one or two numbers, Tab between them, Enter to place, Escape to drop. */
-function CursorField({ x, y, labels, values, onChange, onCommit, onCancel }: { x: number; y: number; labels: string[]; values: string[]; onChange: (v: string[]) => void; onCommit: () => void; onCancel: () => void }) {
+function CursorField({ x, y, labels, values, onChange, onCommit, onCancel }: { x: number; y: number; labels: { label: string; unit: string }[]; values: string[]; onChange: (v: string[]) => void; onCommit: () => void; onCancel: () => void }) {
   const first = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     const el = first.current
@@ -580,10 +580,12 @@ function CursorField({ x, y, labels, values, onChange, onCommit, onCancel }: { x
   }
   return (
     <div className="sketch-field" style={{ left: x + 14, top: y + 14 }} role="group" aria-label="Exact size">
-      {labels.map((label, i) => (
+      {labels.map(({ label, unit }, i) => (
         <label key={label}>
-          <span>{label}</span>
-          <input ref={i === 0 ? first : undefined} className="sx-input" data-mono data-size="sm" inputMode="decimal" aria-label={label} value={values[i] ?? ''} onChange={(e) => onChange(values.map((v, k) => (k === i ? e.target.value : v)))} onKeyDown={onKey} />
+          <span>
+            {label} <span className="cad-num-unit">{unit}</span>
+          </span>
+          <input ref={i === 0 ? first : undefined} className="sx-input" data-mono data-size="sm" inputMode="decimal" aria-label={`${label} ${unit}`} value={values[i] ?? ''} onChange={(e) => onChange(values.map((v, k) => (k === i ? e.target.value : v)))} onKeyDown={onKey} />
         </label>
       ))}
     </div>
