@@ -15,6 +15,7 @@ import { gatedCall, mcpName, type GateDeps, type ToolProgress } from './gate'
 import { ToolInputError, type ErrorCode, type PathPolicy } from './models'
 import type { PrinterBackend } from './printers'
 import type { ProfileCatalog } from './profiles'
+import { plainToolRefusals } from './sdk-errors'
 import { explainSetting } from './settings'
 import type { SlicerBackend } from './slicer'
 import { SERVER_TOOLS } from './toolbox'
@@ -116,6 +117,8 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
         `${productName()}, the AI-ready slicer. Tools slice and estimate models, plan and check OrcaSlicer settings, run mimir skills on a project (orient, arrange, cut, slice), and read and control printers. Anything that changes a printer, a saved profile or spends money follows the permission policy the user set: it runs, asks the user first, or is refused. When a tool returns status "approval_required", show the request to the user and call slicerx_approve only with their answer. Resources hold the knowledge base, the settings reference, printer setup guides and the theming and embedding docs.`,
     },
   )
+  // Before the first tool is registered, which is when the SDK sets its tools/call handler.
+  plainToolRefusals(server)
   const { store } = ctx
 
   // One list: the server's own tools (src/toolbox) and mimir's registry with the project, CAD and printer tools.

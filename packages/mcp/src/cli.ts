@@ -16,6 +16,7 @@ import { setProductColors, setProductName } from '@slicerx/contracts'
 import { cloudFromEnv } from './cloud'
 import { editionColorsFromEnv, editionNameFromEnv } from './edition'
 import { localAiFromEnv } from './localai'
+import { plainSdkText } from './sdk-errors'
 import { sxlockFromEnv } from './sxlock'
 import { linkCodeFrom, linkKeyFrom, readHubKey, readKeychainKey } from './link-code'
 import { hubUrlFromEnv } from '@slicerx/link-client'
@@ -282,8 +283,8 @@ async function runCalls(server: ReturnType<typeof createSlicerxServer>, calls: {
   try {
     for (const c of calls) {
       const r = (await client.callTool({ name: c.name, arguments: c.args })) as CallToolResult
-      const joined = r.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
-      const text = r.isError ? plainSdkText(joined) : joined
+      // The server's refusals already read plainly (sdk-errors.ts).
+      const text = r.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
       process.stdout.write(`${JSON.stringify({ tool: c.name, ok: r.isError !== true, text, output: r.structuredContent ?? null })}\n`)
       if (r.isError) {
         process.exitCode = 1
@@ -293,14 +294,6 @@ async function runCalls(server: ReturnType<typeof createSlicerxServer>, calls: {
   } finally {
     await client.close()
   }
-}
-
-/**
- * The MCP SDK's errors read "MCP error -32602: Tool slicerx_x not found", and its server hands that whole message
- * back as a refused call's text. People reading `call` output or a CLI error get the message without the code.
- */
-function plainSdkText(text: string): string {
-  return text.replace(/^MCP error -?\d+: /, '')
 }
 
 /** Writes a fresh file only the current user can read. Never follows a link left at the path. */
