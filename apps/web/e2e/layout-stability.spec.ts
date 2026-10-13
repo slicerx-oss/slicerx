@@ -405,3 +405,99 @@ test.describe('controls never move when pressed', () => {
     expect(moved).toEqual([])
   })
 })
+
+/** The boxes of what `selector` finds, in order. */
+const boxesOf = (page: Page, selector: string) =>
+  page.locator(selector).evaluateAll((els) => els.map((e) => {
+    const r = e.getBoundingClientRect()
+    return { x: r.x, y: r.y, w: r.width, h: r.height }
+  }))
+
+/** The panes have stopped sliding and the view's width holds: two reads 100 ms apart agree, with no pane transition running. */
+async function settled(page: Page): Promise<void> {
+  let last = -1
+  await expect
+    .poll(async () => {
+      const w = await page.locator('.vp').evaluate((el) => (document.getAnimations().some((a) => a.playState === 'running' && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.matches('.pane, .vp')) ? -1 : Math.round(el.getBoundingClientRect().width)))
+      const done = w > 0 && w === last
+      last = w
+      return done
+    }, { intervals: [100] })
+    .toBe(true)
+}
+
+/** What moved between two lists of boxes, by more than half a pixel. */
+function shifts(what: string, before: { x: number; y: number; w: number; h: number }[], after: { x: number; y: number; w: number; h: number }[]): Moved[] {
+  expect(after.length, what).toBe(before.length)
+  const out: Moved[] = []
+  after.forEach((a, i) => {
+    const b = before[i]!
+    const d = { dx: a.x - b.x, dy: a.y - b.y, dw: a.w - b.w, dh: a.h - b.h }
+    if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) out.push({ control: what, what: `item ${i}`, ...d })
+  })
+  return out
+}
+
+test.describe('the view\'s panels open without moving anything', () => {
+  test.skip(({ isMobile }) => isMobile, 'Desktop width: on a phone the panes are sheets and the toolbar is off')
+
+  /** Opens with the shut right pane and the shut playback bar people get, and slices. */
+  async function sliceShut(page: Page): Promise<void> {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('sx-right-pane', 'shut')
+      sessionStorage.setItem('sx-preview-drawer', 'shut')
+      localStorage.setItem('slicerx.debug', '1')
+      if (sessionStorage.getItem('sx-e2e')) return
+      sessionStorage.setItem('sx-e2e', '1')
+      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' }, printerId: 'bay-1', settingsMode: 'simple' }))
+    })
+    await page.goto('./')
+    // The objects list is in the shut right pane: the plate is in once the store has the starter and the view is up.
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx?: { getState(): { plate: { name: string }[] } } }).__sx?.getState().plate.some((p) => p.name.includes('Layered X')) ?? false), { timeout: 120_000 }).toBe(true)
+    await page.locator('html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: 120_000 })
+  }
+
+  test('the toolbar grip shows on hover and no button moves', async ({ page }, info) => {
+    await open(page, { settingsMode: 'simple' })
+    const bar = page.locator('.plate-tools-group')
+    await expect(bar).toBeVisible()
+    await page.mouse.move(5, 5)
+    const grip = page.getByTestId('plate-tools-grip')
+    await expect.poll(() => grip.evaluate((el) => getComputedStyle(el).opacity)).toBe('0')
+    const sel = '.plate-tools-group .sx-btn, .plate-tools-group .slice-look button, .plate-tools-group > *'
+    const before = await boxesOf(page, sel)
+    await page.locator('.plate-tools [aria-label="Undo"]').hover()
+    await expect.poll(() => grip.evaluate((el) => getComputedStyle(el).opacity)).toBe('1')
+    const moved = shifts('toolbar on hover', before, await boxesOf(page, sel))
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
+  test('opening the playback bar and the right pane moves nothing above or beside them', async ({ page }, info) => {
+    test.slow()
+    await sliceShut(page)
+    const tab = page.getByTestId('edge-tab-right')
+    await expect(tab).toHaveAttribute('aria-expanded', 'false')
+    // Above the right pane: the top bar; beside it: the settings sidebar's controls.
+    const beside = '.sx-appbar .sx-tab, .sx-appbar .sx-btn, aside.pane[data-side="left"] [role="radio"], aside.pane[data-side="left"] .mc-box'
+    const before = await boxesOf(page, beside)
+    const n = Number((await page.locator('.studio').getAttribute('data-slices')) ?? 0)
+    await page.mouse.click(700, 450)
+    await page.keyboard.press('ControlOrMeta+Enter')
+    await expect(page.locator(`.studio[data-layers][data-slice="current"]:not([data-slices="${n}"])`)).toBeVisible({ timeout: 120_000 })
+    await expect(tab).toHaveAttribute('aria-expanded', 'true')
+    await settled(page)
+    const moved = shifts('right pane opening', before, await boxesOf(page, beside))
+    // Above the playback bar: the toolbar, the chips over the bar, the layer slider and the legend.
+    const dock = page.getByTestId('preview-drawer')
+    await expect(dock).toHaveAttribute('data-mode', 'slim')
+    const above = '.plate-tools-group, .vp .hud-bl > *, .vp .lstrip, .vp .hud-top .hud-col > *'
+    const top = await boxesOf(page, above)
+    await dock.getByTestId('edge-tab-bottom').click()
+    await expect(dock).toHaveAttribute('data-mode', 'full')
+    await settled(page)
+    moved.push(...shifts('playback bar opening', top, await boxesOf(page, above)))
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+})
