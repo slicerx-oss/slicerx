@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The packages a white-label edition ships without packages/app name the app through productName() or app_name().
+// Text people read names the app through productName() or app_name(), so a white-label edition shows its own name.
 // Usage: node --test scripts/check-brand-strings.test.mjs (pnpm test:scripts)
 import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
@@ -10,7 +10,7 @@ import { check, scan } from './check-brand-strings.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-test('no hard-coded SlicerX in the MCP server, mimir, embed, viewport, link client, hub, printer drivers, CAD history or engine text', () => {
+test('no hard-coded SlicerX in the app, settings, desktop shell, MCP server, mimir, embed, viewport, link client, hub, printer drivers, CAD history or engine text', () => {
   assert.deepEqual(check(root), [])
 })
 
@@ -30,6 +30,10 @@ test('catches a new hard-coded name in a message, a tool description, JSX text a
   // make_model's brand colors come from the edition; only the X mark keeps the name
   assert.equal(scan('packages/pilot/skills/make_model/colors.ts', "  'slicerx black': { hex: '#17181f', label: 'SlicerX black' },").length, 1)
   assert.equal(scan('packages/pilot/skills/make_model/index.ts', "    mark: z.enum(['slicerx-x', 'svg']).describe('slicerx-x is the SlicerX X. svg needs the svg field'),").length, 0)
+  // the app, the settings notes and the desktop shell are in scope
+  assert.equal(scan('packages/app/src/shell/boundary.tsx', '      <p>The connection dropped while SlicerX was loading.</p>').length, 1)
+  assert.equal(scan('packages/settings/src/validate.rs', '        "is not supported by the SlicerX engine yet",').length, 1)
+  assert.equal(scan('apps/desktop/src-tauri/src/menu.rs', '    item("About SlicerX")').length, 1)
   // a template literal over several lines is still text
   assert.equal(scan('packages/mcp/src/x.ts', 'const t = `first line\nsecond line names SlicerX`').length, 1)
 })
@@ -46,6 +50,8 @@ test('skips comments, identifiers, tests and the kept categories', () => {
     '// Copyright (C) 2026 The SlicerX contributors',
     "      <metadata name=\"Application\">SlicerX</metadata>",
     `  title: \`\${productName()} print knowledge\`,`,
+    '      {/* SlicerX in a JSX comment */}',
+    "      <p>{appName()} is ready</p> {/* not SlicerX */}",
   ].join('\n')
   assert.deepEqual(scan('packages/mcp/src/design.ts', ts), [])
   const rs = ['/// SlicerX in a doc comment', 'let s = format!("{} walls", app_name());', '#[cfg(test)]', 'mod tests {', '    assert!(s.contains("SlicerX"));', '}'].join('\n')

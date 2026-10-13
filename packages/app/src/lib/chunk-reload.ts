@@ -4,6 +4,7 @@
 // failed for the rest of the page: the browser keeps the failed module and every later import of it fails at once,
 // so "Try again" cannot fix it. Only a reload fetches it again. The app reloads once by itself when nothing would be
 // lost; with unsaved work it asks the person to reload after saving instead.
+import { appName } from '../edition'
 import { isDirty } from '../project/unsaved'
 import { toast } from '../state/store'
 
@@ -49,7 +50,7 @@ let told = false
 function tell(): void {
   if (told) return
   told = true
-  toast('Part of SlicerX did not load (the connection dropped). Save your work, then reload.', 'warn', { label: 'Reload', run: () => window.location.reload() })
+  toast(`Part of ${appName()} did not load (the connection dropped). Save your work, then reload.`, 'warn', { label: 'Reload', run: () => window.location.reload() })
 }
 
 /** A chunk that failed to load: reloads, or says so. */

@@ -168,7 +168,7 @@ pub fn check_values(config: &PrintConfig) -> Vec<SettingIssue> {
                     Severity::Warning,
                     &[key],
                     format!(
-                        "{}: \"{}\" is not supported by the SlicerX engine yet, so it prints with the default.",
+                        "{}: \"{}\" is not supported by this engine yet, so it prints with the default.",
                         def.label, m
                     ),
                 ));

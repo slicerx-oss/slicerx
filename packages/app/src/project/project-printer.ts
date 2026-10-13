@@ -7,6 +7,7 @@
 import type { PrinterInfo, SettingValue } from '@slicerx/contracts'
 import { GCODE_TEXT_KEYS, SLICERX_KEEPS, changedKeys, importFlat, listPrinterProfiles, machineEntry, printerProfile, reviewProjectGcode, settingDef } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
+import { appName } from '../edition'
 import { projectSettingChanges } from '../export/project-settings'
 import { slotConfig } from '../filament/slot-config'
 import { profileReady } from '../state/profile-sync'
@@ -130,7 +131,7 @@ export function applyProjectSettings(source: string, settings: Record<string, un
     set((st) => ({ overrides: { ...st.overrides, ...kept }, ...(Object.keys(kept).length ? { goal: 'custom' as const } : {}) }))
     const here = s.printerModel ? `the ${s.printerModel.model}` : 'the generic bed'
     const left = dropped.length ? ` Left out, made for a ${mm(fileNozzle)} nozzle: ${labels(dropped)}.` : ''
-    const note = match ? `${source} is for a ${match.name}, which SlicerX has no profile for, so it opened on ${here}.${left}` : `Applied ${Object.keys(kept).length} settings from ${source}.${left}`
+    const note = match ? `${source} is for a ${match.name}, which ${appName()} has no profile for, so it opened on ${here}.${left}` : `Applied ${Object.keys(kept).length} settings from ${source}.${left}`
     return { keys: Object.keys(kept), note }
   }
   const only = changedKeys(settings)
@@ -166,9 +167,9 @@ export function applyProjectSettings(source: string, settings: Record<string, un
     goal: 'custom' as const,
   }))
   let note = match.asked
-    ? `Opened as ${match.model} with its ${mm(match.nozzle)} nozzle. The project is set up for a ${mm(match.asked)} nozzle, which SlicerX has no ${match.model} profile for.`
+    ? `Opened as ${match.model} with its ${mm(match.nozzle)} nozzle. The project is set up for a ${mm(match.asked)} nozzle, which ${appName()} has no ${match.model} profile for.`
     : `Opened as ${match.model} ${mm(match.nozzle)} from the project.`
-  if (blocked.length) note += ` Its ${blocked.map((c) => c.label).join(', ')} has lines SlicerX never sends, so the ${match.model} profile's is used.`
+  if (blocked.length) note += ` Its ${blocked.map((c) => c.label).join(', ')} has lines ${appName()} never sends, so the ${match.model} profile's is used.`
   if (keptNote) note += ` ${keptNote}`
   return { keys: [...Object.keys(applied), ...Object.keys(gcode)], note }
 }
