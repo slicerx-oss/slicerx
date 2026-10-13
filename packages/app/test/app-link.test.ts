@@ -196,6 +196,33 @@ describe('mimir cloud status over the link', () => {
       set(was)
     }
   })
+
+  it('never reads the quota or registers before the person has chosen mimir (a fresh profile)', async () => {
+    const before = currentEdition()
+    const was = { pilot: get().pilot, setupPilotOff: get().setupPilotOff }
+    const read = vi.fn(async () => quota)
+    const register = vi.fn(async () => undefined)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network in this test'))
+    try {
+      setCurrentEdition(CLOUD)
+      registerMimirCloud({ quota: read, forget: async () => 0, register })
+      // what a first launch stores: mimir not chosen, so the connect step shows and nothing is sent
+      set({ pilot: { mode: 'unset' }, setupPilotOff: false })
+      expect(await runCall('mimir.status', {})).toEqual({ cloud: true, enabled: false, needsSignIn: false, signedIn: null, quota: null, quotaError: null })
+      // turned off in Settings
+      set({ pilot: { mode: 'off' } })
+      expect(await runCall('mimir.status', {})).toMatchObject({ cloud: true, enabled: false, quota: null, quotaError: null })
+      // no /quota and no /register: neither the host's calls nor any request
+      expect(read).not.toHaveBeenCalled()
+      expect(register).not.toHaveBeenCalled()
+      expect(fetchSpy).not.toHaveBeenCalled()
+    } finally {
+      fetchSpy.mockRestore()
+      registerMimirCloud(null)
+      setCurrentEdition(before)
+      set(was)
+    }
+  })
 })
 
 describe('the preview over the link', () => {
