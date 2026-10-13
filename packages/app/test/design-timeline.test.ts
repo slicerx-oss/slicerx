@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
 import { compose } from '../src/plate/transform'
 import { useGeomEngine } from './geom-engine'
-import { clearReplayCache, replayHistory, type HistoryMesh, timelineFiles, timelineOf, historiesOf, historyFiles, historyLost, historyNewer, historyOf, madeAt, parseHistories, parseTimeline, withHistory, withSketch, type FaceFrame, type FeatureItem, type History, type SketchItem, type SketchLoop, type Step, type StepParams, type Timeline } from '@slicerx/cad-history'
+import { clearReplayCache, replayHistory, type HistoryMesh, timelineFiles, timelineOf, historiesOf, historyFiles, historyLost, historyNewer, historyOf, madeAt, parseHistories, parseTimeline, withBodyIds, withHistory, withSketch, type FaceFrame, type FeatureItem, type History, type SketchItem, type SketchLoop, type Step, type StepParams, type Timeline } from '@slicerx/cad-history'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 useGeomEngine('design-timeline-replies')
@@ -218,6 +218,25 @@ describe('design timeline', () => {
     // a version 2 file reads as its merge
     const v2 = new Map(historyFiles(plate(), ids).map((e) => [e.name, typeof e.data === 'string' ? new TextEncoder().encode(e.data) : e.data]))
     expect(named(parseTimeline(v2, new Set(['1', '2']))!)).toEqual(named(timelineOf(plate())))
+  })
+
+  it('keeps the body a finished sketch sits on through save, open and new ids, and drops it with the body', () => {
+    const ids = new Map([
+      ['box', 1],
+      ['ring', 2],
+    ])
+    const t = withSketch(timelineOf(plate()), { id: 'kon', loops: [square()], frame: top(), on: { body: 'box', part: 0 } })
+    const files = new Map(timelineFiles(t, ids).map((e) => [e.name, typeof e.data === 'string' ? new TextEncoder().encode(e.data) : e.data]))
+    const back = parseTimeline(files, new Set(['1', '2']))!
+    const k = back.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === 'kon')!
+    expect(k.on).toEqual({ body: '1', part: 0 })
+    const renamed = withBodyIds(back, (b) => (b === '1' ? 'plate-box' : b === '2' ? 'plate-ring' : undefined))
+    expect(renamed.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === 'kon')!.on).toEqual({ body: 'plate-box', part: 0 })
+    const gone = withBodyIds(back, (b) => (b === '2' ? '2' : undefined))
+    expect(gone.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === 'kon')).not.toHaveProperty('on')
+    // a body that is not saved leaves the sketch without it
+    const lone = new Map(timelineFiles(withSketch(timelineOf(plate()), { id: 'kx', loops: [square()], on: { body: 'nope', part: 0 } }), ids).map((e) => [e.name, typeof e.data === 'string' ? new TextEncoder().encode(e.data) : e.data]))
+    expect(parseTimeline(lone, new Set(['1', '2']))!.items.find((i): i is SketchItem => i.kind === 'sketch' && i.id === 'kx')).not.toHaveProperty('on')
   })
 
   it('is no bigger on disk than the version 2 file', () => {

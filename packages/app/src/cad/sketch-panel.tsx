@@ -25,7 +25,7 @@ import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext, sketchNext } from './history/record'
-import { finishSketch, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
+import { defaultTarget, finishSketch, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
 import { flipFor, goesIntoFace } from './extrude-direction'
 import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
@@ -111,6 +111,8 @@ interface SketchInit {
   constraints: SketchConstraint[]
   /** A finished sketch opened from the timeline, rather than a step of a body. */
   from?: SketchOpen
+  /** For Extrude or Revolve from a finished sketch: the body Join and Cut start on */
+  target?: { objectId: string; partIndex: number } | null
 }
 
 function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; init: SketchInit } | { note: string } | null {
@@ -161,6 +163,7 @@ function finishedEdit(open: SketchOpen, bed: { widthMm: number; depthMm: number 
   const ext = extent(sketch)
   const r = ext ? ext.radius + 20 : 50
   const c = ext?.center ?? [0, 0]
+  const target = defaultTarget(k, get().plate)
   const plane: Plane = {
     frame: k.frame ?? BED_FRAME,
     outline: [],
@@ -175,10 +178,12 @@ function finishedEdit(open: SketchOpen, bed: { widthMm: number; depthMm: number 
       sketch,
       finish: open.mode === 'revolve' ? 'revolve' : 'extrude',
       fields: { distance: '5', extent: 'oneSide', distance2: '5', taper: '0', flip: false, angle: '360' },
-      operation: 'new',
+      // a sketch drawn on a face joins it, as it would have before Finish sketch
+      operation: target && k.on?.body === target.objectId ? 'join' : 'new',
       axis: null,
       constraints: (k.constraints ?? []) as SketchConstraint[],
       from: open,
+      ...(open.mode === 'edit' ? {} : { target }),
     },
   }
 }
@@ -545,7 +550,12 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     }
   }
 
-  const op = plane.target ? operation : 'new'
+  // from a finished sketch's menu the body to join or cut is picked here; otherwise it is the face's
+  const [picked, setPicked] = useState(init?.target ?? null)
+  const target = featureOnly ? picked : plane.target
+  const bodies = useApp((s) => s.plate)
+  const canInto = featureOnly ? bodies.length > 0 : !!plane.target
+  const op = canInto ? operation : 'new'
   // The switch shows where the extrusion goes; the engine's flip is relative to the operation.
   const intoFace = goesIntoFace(flip, op)
   const setIntoFace = (on: boolean) => setFlip(flipFor(on, op))
@@ -559,11 +569,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const stepEdit = init !== undefined && !init.from
   const ready = sketch.length > 0 && check?.ok === true && draft.points.length === 0 && issues.length === 0
   const go = async () => {
-    if (!ready) return
+    if (!ready || (op !== 'new' && !target)) return
     setBusy(true)
     setNote(null)
     try {
-      const target = op !== 'new' && plane.target ? { target: plane.target } : {}
+      const into = op !== 'new' && target ? { target } : {}
       let r: { message: string; warn: boolean }
       if (finish === 'extrude') {
         const d = num(distance)
@@ -576,7 +586,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         const bad = pattern ? patternProblem(pattern) : null
         if (bad) throw new Error(bad)
         bindNext(distance)
-        const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops, ...(constraints.length ? { constraints } : {}) }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...target, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
+        const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops, ...(constraints.length ? { constraints } : {}) }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...into, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
         sketchNext(init?.from?.id ?? null)
         r = stepEdit ? await saveSketch(extrudeParams(input)) : await applyExtrude(host.slicer, input)
       } else {
@@ -584,7 +594,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         const a = num(angle)
         if (!(a > 0 && a <= 360)) throw new Error('The angle is more than 0 and at most 360 degrees.')
         bindNext(angle)
-        const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...target, name: 'Revolved body' }
+        const input: RevolveInput = { frame: plane.frame, loops, ...(constraints.length ? { constraints } : {}), axis, angleDeg: a, operation: op, ...into, name: 'Revolved body' }
         sketchNext(init?.from?.id ?? null)
         r = stepEdit ? await saveSketch(revolveParams(input)) : await applyRevolve(host.slicer, input)
       }
@@ -604,7 +614,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     setBusy(true)
     setNote(null)
     try {
-      const s = { frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints }
+      const s = { frame: plane.frame === BED_FRAME ? undefined : plane.frame, loops, constraints, ...(plane.target ? { on: { body: plane.target.objectId, part: plane.target.partIndex } } : {}) }
       if (init?.from) {
         const r = await updateSketch(host.slicer, init.from.id, s)
         toast(r.replayed ? `Changed ${plane.label} and rebuilt ${r.replayed === 1 ? 'the body' : `${r.replayed} bodies`} made from it.` : `Changed ${plane.label}.`, 'ok')
@@ -726,15 +736,35 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       )}
       <div className="cad-row">
         <span>Result</span>
-        <Seg label="Result" size="sm" value={op} onChange={setOperation} options={[{ value: 'join', label: 'Join', disabled: !plane.target }, { value: 'cut', label: 'Cut', disabled: !plane.target }, { value: 'new', label: 'New body' }]} />
+        <Seg label="Result" size="sm" value={op} onChange={setOperation} options={[{ value: 'join', label: 'Join', disabled: !canInto }, { value: 'cut', label: 'Cut', disabled: !canInto }, { value: 'new', label: 'New body' }]} />
       </div>
+      {featureOnly && op !== 'new' ? (
+        <div className="cad-row">
+          <label htmlFor="sk-into">{op === 'join' ? 'Join to' : 'Cut from'}</label>
+          <Select
+            id="sk-into"
+            size="sm"
+            className="sketch-into"
+            value={picked?.objectId ?? ''}
+            onChange={(e) => {
+              const id = e.target.value
+              setPicked(id ? { objectId: id, partIndex: init?.target?.objectId === id ? init.target.partIndex : 0 } : null)
+            }}
+          >
+            {picked ? null : <option value="">Pick a body</option>}
+            {bodies.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
       <p className="cad-hint"><Icon name="info" size={15} /> {stepEdit ? 'Applying changes this step; the steps after it run again.' : featureOnly ? `Made from ${plane.label}. Edit sketch in its menu changes the shape.` : 'Finish sketch keeps it in the timeline without a solid. Extrude or revolve here turns it into one.'}</p>
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
       <ToolFooter
         verb={finish === 'extrude' ? 'Extrude' : 'Revolve'}
         onApply={go}
         busy={busy}
-        disabled={!ready}
+        disabled={!ready || (op !== 'new' && !target)}
         {...(featureOnly ? {} : { extra: <Button variant="ghost" onClick={onRestart} disabled={busy}>Other plane</Button> })}
       />
       {field && fields.length

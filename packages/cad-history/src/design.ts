@@ -15,6 +15,8 @@ export interface SketchItem {
   frame?: FaceFrame
   loops: SketchLoop[]
   constraints?: unknown[]
+  /** the body whose face the sketch was drawn on, and its part: Join and Cut default to it */
+  on?: { body: string; part: number }
 }
 
 type Extrude = Extract<StepParams, { op: 'shape.extrude' }>
@@ -312,7 +314,13 @@ export function withBodyIds(t: Timeline, id: (old: string) => string | undefined
   for (const b of t.bodies) if (id(b.id) === undefined) out = withoutBody(out, b.id)
   return {
     bodies: out.bodies.map((b) => ({ ...b, id: id(b.id)! })),
-    items: out.items.map((i) => (i.kind === 'feature' ? { ...i, body: id(i.body)! } : i)),
+    items: out.items.map((i) => {
+      if (i.kind === 'feature') return { ...i, body: id(i.body)! }
+      if (!i.on) return i
+      const body = id(i.on.body)
+      const { on: _on, ...k } = i
+      return body === undefined ? k : { ...i, on: { ...i.on, body } }
+    }),
     marker: out.marker,
   }
 }
