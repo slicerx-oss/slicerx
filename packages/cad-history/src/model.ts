@@ -100,6 +100,8 @@ export interface Step {
   bind?: string
   /** A name the person gave the step, shown instead of the one made from its numbers. */
   label?: string
+  /** The timeline sketch an extrude or revolve draws on, by id; its plane and loops are copied into params. */
+  sketch?: string
 }
 
 export interface History {
