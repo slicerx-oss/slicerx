@@ -4,7 +4,7 @@
 // the first tab opens in, hints and the ways back into setup. Settings > Slicing and modeling: auto
 // slice, the electricity price and the drawing tools.
 import { LOOK_OPTIONS } from '@slicerx/contracts'
-import { Button, Seg, SwitchRow } from '@slicerx/ui'
+import { Button, Seg, Select, SwitchRow } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
 import { formatShortcut } from '../lib/keys'
@@ -163,11 +163,8 @@ export function SlicingSettingsSection() {
   )
 }
 
-const PRECISION_MM = [0, 1, 2, 3].map((d) => ({ value: `d${d}`, label: d ? (0).toFixed(d) : '0', testId: `set-precision-d${d}` }))
-const PRECISION_IN = [
-  ...[2, 3, 4].map((d) => ({ value: `d${d}`, label: (0).toFixed(d), testId: `set-precision-d${d}` })),
-  ...[16, 32, 64].map((f) => ({ value: `f${f}`, label: `1/${f}`, testId: `set-precision-f${f}` })),
-]
+const PRECISION_MM = [0, 1, 2, 3].map((d) => ({ value: `d${d}`, label: d ? (0).toFixed(d) : '0' }))
+const PRECISION_IN = [...[2, 3, 4].map((d) => ({ value: `d${d}`, label: (0).toFixed(d) })), ...[16, 32, 64].map((f) => ({ value: `f${f}`, label: `1/${f}` }))]
 
 /** Display units for lengths in Model, and how precisely they show. Data stays in mm; Slice stays in mm. */
 function UnitRows() {
@@ -184,7 +181,14 @@ function UnitRows() {
         <Seg label="Display units" size="sm" value={u.length} onChange={(v) => set({ units: { ...u, length: v } })} options={[{ value: 'mm', label: 'mm', title: 'Millimeters', testId: 'set-units-mm' }, { value: 'in', label: 'in', title: 'Inches', testId: 'set-units-in' }]} />
       </SetRow>
       <SetRow id="set-precision" icon="tolerance" label="Precision" detail="Decimals shown, or in inches a fraction to the nearest 1/16, 1/32 or 1/64.">
-        <Seg label="Precision" size="sm" value={precision} onChange={setPrecision} options={inches ? PRECISION_IN : PRECISION_MM} />
+        {/* a select, not a segment: the inch choices outnumber the mm ones, and a switch of unit must not move the rows below */}
+        <Select id="set-precision-pick" className="set-precision" size="sm" aria-label="Precision" data-testid="set-precision-pick" value={precision} onChange={(e) => setPrecision(e.target.value)}>
+          {(inches ? PRECISION_IN : PRECISION_MM).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
       </SetRow>
     </>
   )
