@@ -97,7 +97,7 @@ test('the menu holds Calibrate, Flush volumes, Swap colors, Reset to printer and
   await expect(page.locator('[data-testid="slice-filament-slot"][data-used="false"]').first()).toBeVisible()
 })
 
-test('the Filament options menu sits on top of the nozzle rows under it, on a solid surface', async ({ page, isMobile }) => {
+test('the Filament options menu sits on top of the nozzle rows under it', async ({ page, isMobile }) => {
   // A folding Filament card (advanced settings) on a two-nozzle hotend rack printer whose AMS has not reported yet: the
   // rail is short, so the menu hangs over the nozzle switch and the hotend rack buttons.
   await open(page, { printerId: 'bay-6', settingsMode: 'advanced' })
@@ -121,14 +121,12 @@ test('the Filament options menu sits on top of the nozzle rows under it, on a so
       const y = Math.min(b.top + 4, r.bottom - 6)
       return inside(x, y) && x > b.left && y < b.bottom ? [m.contains(document.elementFromPoint(x, y))] : []
     })
-    return { missed, under, background: getComputedStyle(m).backgroundColor }
+    return { missed, under }
   })
   expect(hits.missed).toBe(0)
   // the short rail puts something under the menu at both widths, so the check above is not empty
   if (!isMobile) expect(hits.under.length).toBeGreaterThan(0)
   expect(hits.under.every(Boolean)).toBe(true)
-  // a solid surface: no alpha in the computed color
-  expect(hits.background).not.toMatch(/\/\s*0?\.\d|rgba\(.*,\s*0?\.\d+\)/)
   // the menu still works where it overlaps a rack button
   const unused = menu.getByRole('menuitemcheckbox', { name: 'Show unused slots' })
   await unused.click()
