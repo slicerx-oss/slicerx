@@ -131,8 +131,9 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
     const s = get()
     if (s.setup || s.commandOpen || s.approval || s.aboutOpen || s.shortcutsOpen || s.settingsOpen) return
     if (s.workspace !== 'prepare') return
-    // While sketching, a typed number opens the size field at the cursor; the view keys (1 is top) step aside.
-    if (s.objectTool === 'sketch' && /^[0-9.\-]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) return
+    // While sketching, a typed number opens the size field at the cursor and L, R and C pick the sketch's line,
+    // rectangle and circle as in Fusion; the view and tool keys (1 is top, R rotates) step aside.
+    if (s.objectTool === 'sketch' && /^[0-9.\-lrc]$/i.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) return
     const run = (h: Handler) => {
       e.preventDefault()
       e.stopPropagation()

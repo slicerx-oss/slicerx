@@ -79,3 +79,8 @@
 .cad-step-edit input { width: 96px; }
 /* the body a finished sketch joins or cuts: room for a name and the chevron */
 .sketch-into { min-width: 160px; }
+/* the ways to draw a sketch tool family: the row keeps its height when the family has none */
+.sketch-variants { display: flex; align-items: center; gap: 8px; min-height: var(--h-sm); }
+.sketch-variants > .sx-seg:not([data-full]) { flex: 1; }
+.sketch-sides { display: flex; align-items: center; gap: 4px; flex: none; color: var(--dim); }
+.sketch-sides .sx-input { width: 36px; text-align: right; }
