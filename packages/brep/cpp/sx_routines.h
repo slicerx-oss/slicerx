@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Our own versions of the nine kernel routines that cite Numerical Recipes. scripts/swap-routines.sh makes each
+// Our own versions of the kernel routines that cite Numerical Recipes. scripts/swap-routines.sh makes each
 // kernel body call the matching function here, with the kernel's own signature and contract; routines.cpp has them.
 #pragma once
 #include <nurbs.h>
@@ -19,3 +19,6 @@ SmStatus sx_SmMatrix_EigenSystemJacobiSolver(SmMatrix& A, SmTArray<double>& valu
 SmStatus sx_SmMatrix_SVDecompose(SmMatrix& A, SmTArray<double>& W, SmMatrix& V);
 SmStatus sx_SmMatrix_SolveWithSVDMatrices(const SmMatrix& U, const SmTArray<double>& rhs, SmTArray<double>& W,
                                           const SmMatrix& V, SmTArray<double>& x, double tol, SmBoolean adjust);
+SmStatus sx_SmMatrix_LUDecompose(SmMatrix& A, ULONG* piv);
+SmStatus sx_SmMatrix_SolveWithLUMatrix(const SmMatrix& LU, const ULONG* piv, const SmTArray<double>& b,
+                                       SmTArray<double>& x);

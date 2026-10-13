@@ -4,13 +4,15 @@
 // them, on fixed inputs. Values come back in a form that does not depend on choices the math leaves open (sorted
 // singular values, vectors with their largest entry positive), so tests/routines.rs can hold them against the
 // values the kernel's original routines gave (tests/routines.golden.json). Names starting "check." are residuals
-// that must be near zero, whichever routines ran.
+// that must be near zero, whichever routines ran; names starting "accuracy." are errors against the exact value,
+// as a fraction of the accuracy asked for, where adaptive routines may rightly take different steps.
 #include "json.h"
 
 #include <SmApiGeneral.h>
 #include <SmApiPrimitives.h>
 #include <SmApiQueries.h>
 #include <SmBrep.h>
+#include <SmIntegrator.h>
 #include <SmMatrix.h>
 #include <nurbs.h>
 
@@ -18,6 +20,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
+#include <string>
 #include <vector>
 
 using sxj::Value;
@@ -371,6 +375,272 @@ void transform_cases()
     }
 }
 
+
+// LU on a square matrix, then the solves that use it: LUDecompose and SolveWithLUMatrix directly, and through
+// SolveLinearSystem and Invert
+void lu_case(const std::string& tag, int n, const std::vector<double>& a)
+{
+    SmMatrix m(n, n);
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++) m.SetAt(i, j, a[size_t(i) * n + j]);
+    SmMatrix lu(m);
+    std::vector<ULONG> idx(n + 1, 0);
+    SmStatus st = lu.LUDecompose(idx.data());
+    std::vector<double> v{double(st)};
+    if (st != SM_ERR) {
+        for (int i = 0; i < n; i++) v.push_back(double(idx[i]));
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++) v.push_back(lu.GetAt(i, j));
+    }
+    put("lu." + tag, v);
+    SmTArray<double> b;
+    b.SetSize(n);
+    for (int i = 0; i < n; i++) b[i] = i + 1.5;
+    if (st != SM_ERR) {
+        SmTArray<double> x;
+        x.SetSize(n);
+        v = {double(lu.SolveWithLUMatrix(idx.data(), b, x))};
+        for (int i = 0; i < n; i++) v.push_back(x[i]);
+        put("lu." + tag + ".solve", v);
+        SmTArray<double> c(b);
+        v = {double(lu.SolveWithLUMatrix(idx.data(), c, c))};
+        for (int i = 0; i < n; i++) v.push_back(c[i]);
+        put("lu." + tag + ".alias", v);
+    }
+    SmTArray<double> x;
+    v = {double(m.SolveLinearSystem(b, x))};
+    if (v[0] != SM_ERR)
+        for (int i = 0; i < n; i++) v.push_back(x[i]);
+    put("lu." + tag + ".system", v);
+    SmMatrix inv(m);
+    v = {double(inv.Invert())};
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++) v.push_back(inv.GetAt(i, j));
+    put("lu." + tag + ".invert", v);
+}
+
+void lu_cases()
+{
+    // pivoting, ties (the last row wins), rows and pivots at the SM_EFF_ZERO threshold, singular matrices
+    lu_case("pivot", 2, {1, 2, 3, 4});
+    lu_case("rowscale", 2, {2, 1000, 1, 1});
+    lu_case("three", 3, {2, 1, 1, 4, -6, 0, -2, 7, 2});
+    lu_case("four", 4, {0, 2, 0, 1, 2, 2, 3, 2, 4, -3, 0, 1, 6, 1, -6, -5});
+    lu_case("tie", 2, {2, 1, 2, 1.5});
+    lu_case("tie3", 3, {1, 0, 0, 1, 0, 0, 1, 1, 1});
+    lu_case("scalechoice", 3, {1, 1, 1, 1, 1.001, 100, 1, 2, 0});
+    lu_case("neg", 3, {-3, 1, -1, 2, -4, 1, 1, -1, -5});
+    lu_case("zerocol", 2, {0, 1, 0, 2});
+    lu_case("rank1", 2, {1, 2, 2, 4});
+    lu_case("rank2", 3, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+    lu_case("negpivot", 3, {1, 1, 5, 1, 1 + 1e-14, 0, 0, 0, 1});
+    std::pair<const char*, double> pivots[] = {{"at", 1e-12},       {"below", std::nextafter(1e-12, 0.0)},
+                                               {"negat", -1e-12},   {"negbelow", std::nextafter(-1e-12, 0.0)},
+                                               {"tiny", 1e-14},     {"negtiny", -1e-14},
+                                               {"zero", 0.0}};
+    for (auto& p : pivots) lu_case(std::string("pivot.") + p.first, 3, {1, 0, 0, 0, p.second, 1, 0, 0, 1});
+    for (int k : {2, 6, 10, 14, 16}) {
+        double e = std::pow(10.0, -k);
+        lu_case("near" + std::to_string(k), 2, {1, 1, 1, 1 + e});
+        lu_case("nearbig" + std::to_string(k), 2, {1e6, 1e6, 1e6, 1e6 * (1 + e)});
+    }
+    lu_case("zerorow", 2, {1, 2, 0, 0});
+    lu_case("rowmax", 2, {1, 2, 1e-12, 0.5e-12});
+    lu_case("rowbelow", 2, {1, 2, std::nextafter(1e-12, 0.0), 0});
+    lu_case("one", 1, {5});
+    lu_case("onezero", 1, {0});
+    Lcg g{13};
+    for (int k = 0; k < 30; k++) {
+        int n = 1 + k % 8;
+        std::vector<double> a(size_t(n) * n);
+        for (int i = 0; i < n; i++) {
+            double scale = std::pow(10.0, std::floor(g.next() * 6));
+            for (int j = 0; j < n; j++) a[size_t(i) * n + j] = scale * g.next();
+        }
+        lu_case("random" + std::to_string(k), n, a);
+    }
+    SmMatrix wide(2, 3);
+    ULONG idx[4];
+    put("lu.wide", {double(wide.LUDecompose(idx))});
+}
+
+// what an accuracy case gives when the routine fails
+const double kFailed = 1e300;
+
+struct Quad : SmIntegFuncEvalObj {
+    std::function<double(double)> f;
+    SmStatus Evaluate(double t, double& r) const override
+    {
+        r = f(t);
+        return SM_SUCCESS;
+    }
+};
+
+// exposes the steps the kernel keeps protected
+struct Steps : SmIntegrator {
+    using SmIntegrator::SmIntegrator;
+    SmStatus trapezoid(double a, double b, ULONG n, double& r) { return Trapazoid(a, b, n, r); }
+};
+
+// y' for a system with the kernel's arrays, which run from 1: quadratures, decay and an oscillator
+struct System : SmODEIntegFuncEvalObj {
+    int kind;
+    explicit System(int k) : kind(k) {}
+    SmStatus Evaluate(double x, SmTArray<double>& y, SmTArray<double>& d) const override
+    {
+        if (kind == 0) d[1] = std::cos(x), d[2] = x * x;
+        else if (kind == 1) d[1] = -2 * y[1], d[2] = y[1];
+        else if (kind == 2) d[1] = y[2], d[2] = -y[1];
+        else d[1] = std::cos(x), d[2] = std::cos(40 * x);
+        return SM_SUCCESS;
+    }
+};
+
+double off(double got, double exact)
+{
+    return std::fabs(got - exact) / std::max(std::fabs(exact), 1e-300);
+}
+
+void integrator_cases()
+{
+    struct F {
+        const char* name;
+        std::function<double(double)> f;
+        double a, b, exact;
+    };
+    std::vector<F> fs{{"exp", [](double x) { return std::exp(x); }, 0, 1, std::exp(1.0) - 1},
+                      {"x4", [](double x) { return x * x * x * x; }, 0, 2, 32.0 / 5},
+                      {"sin", [](double x) { return std::sin(x); }, 0, M_PI, 2},
+                      {"runge", [](double x) { return 1 / (1 + x * x); }, -5, 5, 2 * std::atan(5.0)},
+                      {"reversed", [](double x) { return std::exp(x); }, 1, 0, 1 - std::exp(1.0)},
+                      {"large", [](double x) { return 1e6 * std::cos(x); }, 0, 1, 1e6 * std::sin(1.0)}};
+    for (auto& c : fs)
+        for (double eps : {1e-6, 1e-9}) {
+            Quad q;
+            q.f = c.f;
+            SmIntegrator in(q);
+            double r = 0;
+            SmStatus st = in.IntegrateIt(c.a, c.b, SM_IA_ROMBERG, eps, r);
+            put(std::string("accuracy.integrate.") + c.name + "." + std::to_string(int(-std::log10(eps))),
+                {st == SM_SUCCESS ? off(r, c.exact) / eps : kFailed});
+        }
+    {
+        Quad q;
+        q.f = [](double x) { return std::exp(x); };
+        Steps in(q);
+        std::vector<double> v;
+        for (ULONG k = 1; k <= 6; k++) {
+            double r = 0;
+            in.trapezoid(0, 1, k, r);
+            v.push_back(r);
+        }
+        put("trapezoid", v);
+        double xa[7] = {-10, 0, 1, 2, 3, 4, 50}, ya[7] = {-99, 1, 3, 2, 5, 4, 77};
+        for (ULONG n = 1; n <= 5; n++)
+            for (double x : {1.5, 2.7, -0.5, 3.0}) {
+                double y = 0, dy = 0;
+                SmStatus st = in.PolynomialInterpolation(xa, ya, n, x, y, dy);
+                put("interpolate." + std::to_string(n) + "." + std::to_string(int(x * 10)), {double(st), y});
+            }
+    }
+    // the driver; a scale of 1e300 leaves a value out of the error control
+    struct O {
+        const char* name;
+        int kind;
+        double x1, x2, h1, y1, y2, s1, s2, exact1, exact2;
+    };
+    std::vector<O> os{{"quadrature", 0, 0, 2, 1, 0, 0, 1, 1, std::sin(2.0), 8.0 / 3},
+                      {"reversed", 0, 2, 0, 1, 0, 0, 1, 1, -std::sin(2.0), -8.0 / 3},
+                      {"decay", 1, 0, 3, 0.5, 1, 0, 1, 1, std::exp(-6.0), (1 - std::exp(-6.0)) / 2},
+                      {"oscillator", 2, 0, 10, 0.1, 1, 0, 1, 1, std::cos(10.0), -std::sin(10.0)},
+                      {"second", 3, 0, 3, 1, 0, 0, 1e300, 1, std::sin(3.0), std::sin(120.0) / 40}};
+    for (auto& c : os)
+        for (double eps : {1e-6, 1e-9}) {
+            System sys(c.kind);
+            SmODEIntegrator in(sys);
+            SmTArray<double> y, sc;
+            y.SetSize(2);
+            sc.SetSize(2);
+            y[0] = c.y1, y[1] = c.y2, sc[0] = c.s1, sc[1] = c.s2;
+            ULONG ok = 0, bad = 0;
+            SmStatus st = in.RungeKuttaODEIntegrate(y, c.x1, c.x2, eps, c.h1, 0, ok, bad, &sc);
+            // (the kernel's original starts from zero whatever ystart holds, so it fails decay and oscillator)
+            std::vector<double> v;
+            if (c.s1 < 1e300) v.push_back(st == SM_SUCCESS ? std::fabs(y[0] - c.exact1) / eps : kFailed);
+            v.push_back(st == SM_SUCCESS ? std::fabs(y[1] - c.exact2) / eps : kFailed);
+            put(std::string("accuracy.ode.") + c.name + "." + std::to_string(int(-std::log10(eps))), v);
+        }
+    // single steps on the oscillator from (1, 0.5), whose exact solution turns the point through the angle
+    System sys(2);
+    SmODEIntegrator in(sys);
+    {
+        // the original sizes its work arrays in the driver
+        SmTArray<double> y0;
+        y0.SetSize(2);
+        ULONG a = 0, b = 0;
+        in.RungeKuttaODEIntegrate(y0, 0, 1, 1e-6, 0.5, 0, a, b, nullptr);
+    }
+    SmTArray<double> y, d, o, e;
+    y.SetSize(3), d.SetSize(3), o.SetSize(3), e.SetSize(3);
+    y[0] = 0, y[1] = 1, y[2] = 0.5;
+    sys.Evaluate(0.3, y, d);
+    in.RungeKuttaAdvance(y, d, 0.3, 0.2, o);
+    put("ode.rk4", {o[1], o[2]});
+    in.RungeKuttaCashKarpAdvance(y, d, 0.3, 0.2, o, e);
+    put("ode.cashkarp", {o[1], o[2], e[1], e[2]});
+    for (ULONG ns : {1u, 2u, 4u, 7u}) {
+        SmStatus st = in.ModifiedMidpointStep(y, d, 0.3, 0.2, ns, o);
+        put("ode.midpoint." + std::to_string(ns), {double(st), o[1], o[2]});
+    }
+    auto turned = [](double t, double& a, double& b) {
+        a = std::cos(t) + 0.5 * std::sin(t), b = -std::sin(t) + 0.5 * std::cos(t);
+    };
+    for (double eps : {1e-3, 1e-8}) {
+        SmTArray<double> sc;
+        sc.SetSize(3);
+        sc[1] = sc[2] = 1;
+        for (int bs = 0; bs < 2; bs++) {
+            SmTArray<double> yy(y);
+            double x = 0.3, hd = 0, hn = 0, a, b;
+            SmStatus st = bs ? in.BulirschStoerStep(yy, d, x, 0.5, eps, sc, hd, hn)
+                             : in.RungeKutta5thOrderStep(yy, d, x, 0.5, eps, sc, hd, hn);
+            turned(x - 0.3, a, b);
+            put(std::string("accuracy.ode.") + (bs ? "extrapolation." : "step.") + std::to_string(int(-std::log10(eps))),
+                {st == SM_SUCCESS && hd > 0 && std::fabs(x - 0.3 - hd) < 1e-15 && hn > 0
+                     ? std::max(std::fabs(yy[1] - a), std::fabs(yy[2] - b)) / eps
+                     : kFailed});
+        }
+    }
+}
+
+// volumes and areas, which the kernel integrates with the Runge-Kutta driver
+void property_cases()
+{
+    struct S {
+        const char* name;
+        int shape;
+        double volume, area;
+    };
+    for (S c : {S{"sphere", 0, 36 * M_PI, 36 * M_PI}, S{"cone", 1, 7 * M_PI, M_PI * (5 + 3 * std::sqrt(10.0))},
+                S{"torus", 2, 10 * M_PI * M_PI, 20 * M_PI * M_PI}, S{"cylinder", 3, 20 * M_PI, 28 * M_PI}}) {
+        SmBrep* b = nullptr;
+        if (c.shape == 0) SmApiCreateSphere(SmVector3d(1, 2, 3), 3, b);
+        else if (c.shape == 1) SmApiCreateCone(SmVector3d(0, 0, 0), 2, 1, 3, b);
+        else if (c.shape == 2) SmApiCreateTorus(SmVector3d(0, 0, 0), 5, 1, b);
+        else SmApiCreateCylinder(SmVector3d(0, 0, 0), 2, 5, b);
+        for (double eps : {1e-4, 1e-6, 1e-8}) {
+            double vol = 0;
+            bool ok = b && SmApiBrepComputeVolume(b, eps, vol) == SM_SUCCESS;
+            put(std::string("accuracy.volume.") + c.name + "." + std::to_string(int(-std::log10(eps))),
+                {ok ? off(std::fabs(vol), c.volume) / eps : kFailed});
+        }
+        double area = 0;
+        bool ok = b && SmApiBrepComputeArea(b, 1e-4, area) == SM_SUCCESS;
+        put(std::string("accuracy.area.") + c.name, {ok ? off(area, c.area) / 1e-4 : kFailed});
+        delete b;
+    }
+}
+
 } // namespace
 
 extern "C" char* sx_brep_routine_probe()
@@ -384,6 +654,9 @@ extern "C" char* sx_brep_routine_probe()
     quadratic_cases();
     fit_cases();
     transform_cases();
+    lu_cases();
+    integrator_cases();
+    property_cases();
     std::string s = sxj::dump(out);
     char* text = static_cast<char*>(std::malloc(s.size() + 1));
     if (text) std::memcpy(text, s.c_str(), s.size() + 1);
