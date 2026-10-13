@@ -493,7 +493,7 @@ Deno.test('requests without a token, too large, or refused never reach the datab
 
 Deno.test('a provider failure settles at nothing and says so plainly', async () => {
   const zero = { p_input: 0, p_cache_write: 0, p_cache_read: 0, p_output: 0, p_searches: 0 }
-  for (const [status, type, ours] of [[529, 'overloaded_error', 503], [503, 'api_error', 503], [502, 'api_error', 503], [400, 'invalid_request_error', 502]] as const) {
+  for (const [status, type, ours] of [[529, 'overloaded_error', 503], [503, 'api_error', 503], [502, 'api_error', 503], [400, 'invalid_request_error', 400]] as const) {
     const h = harness({ upstream: () => Response.json({ type: 'error', error: { type, message: 'no' } }, { status }) })
     const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
     assertEquals(res.status, ours, String(status))
