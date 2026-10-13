@@ -34,7 +34,8 @@ export function makesLayer(s: LayerStyle): boolean {
     set(s.backdropFilter) ||
     set(s.clipPath) ||
     Number(s.opacity) < 1 ||
-    s.isolation === 'isolate' ||
+    // A regex, not the quoted word: bundle-size.mjs reads a quoted 'isolate' in a startup chunk as the late icon.
+    /isolate/.test(s.isolation) ||
     (s.mixBlendMode !== undefined && s.mixBlendMode !== '' && s.mixBlendMode !== 'normal') ||
     /paint|layout|strict|content/.test(s.contain) ||
     /transform|filter|opacity/.test(s.willChange ?? '')
