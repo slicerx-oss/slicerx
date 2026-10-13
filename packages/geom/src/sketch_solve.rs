@@ -399,6 +399,17 @@ impl Model<'_> {
         matches!(self.s.entities.get(e), Some(Entity::Line { .. }))
     }
 
+    // the end point a line or arc shares with another, if any
+    fn joint(&self, a: usize, b: usize) -> Option<usize> {
+        let ends = |e: usize| match self.s.entities.get(e) {
+            Some(Entity::Line { a, b }) => vec![self.l.rep[*a], self.l.rep[*b]],
+            Some(Entity::Arc { start, end, .. }) => vec![self.l.rep[*start], self.l.rep[*end]],
+            _ => vec![],
+        };
+        let eb = ends(b);
+        ends(a).into_iter().find(|p| eb.contains(p))
+    }
+
     // the residuals of constraint `k`, zero when it holds
     #[allow(clippy::too_many_lines, reason = "one arm per constraint")]
     fn residuals(&self, k: usize, c: &mut Ctx<'_>) -> Result<Vec<D>> {
@@ -465,11 +476,23 @@ impl Model<'_> {
                         ));
                     }
                 };
+                // at a shared end the distance form has no slope where it holds, so it reads as
+                // redundant; there the radius is square to the line, or both centers in line
+                let joint = self.joint(a, b);
                 if let Some(line) = line {
                     let (l0, l1) = self.line(c, line)?;
                     let (center, r) = self.round(c, round)?;
                     let (d, l) = unit(l0, l1);
-                    vec![d.cross(center.sub(l0)) / l * sign - r]
+                    if let Some(p) = joint {
+                        vec![d.dot(self.point(c, p).sub(center)) / l]
+                    } else {
+                        vec![d.cross(center.sub(l0)) / l * sign - r]
+                    }
+                } else if let Some(p) = joint {
+                    let (ca, ra) = self.round(c, a)?;
+                    let (cb, rb) = self.round(c, b)?;
+                    let p = self.point(c, p);
+                    vec![ca.sub(p).cross(cb.sub(p)) / (ra + rb)]
                 } else {
                     let (ca, ra) = self.round(c, a)?;
                     let (cb, rb) = self.round(c, b)?;
@@ -1469,6 +1492,34 @@ mod tests {
         assert_eq!(r.dof, 0);
         assert!(near(r.points[1], r.points[2]));
         assert!(near(r.points[3], [5.0, 6.0]), "{:?}", r.points[3]);
+    }
+
+    #[test]
+    fn tangents_at_shared_ends_are_not_redundant() {
+        // a level line, a half turn back and a level line, as the line tool's drag arc draws it
+        let s = Sketch {
+            points: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 5.2], [10.0, 10.0], [0.0, 10.0]],
+            entities: vec![
+                Entity::Line { a: 0, b: 1 },
+                Entity::Arc {
+                    center: 2,
+                    start: 1,
+                    end: 3,
+                },
+                Entity::Line { a: 3, b: 4 },
+            ],
+            constraints: vec![
+                C::Horizontal { line: 0 },
+                C::Tangent { a: 0, b: 1 },
+                C::Horizontal { line: 2 },
+                C::Tangent { a: 2, b: 1 },
+            ],
+        };
+        let r = solve(&s, None).unwrap();
+        assert_eq!(r.status, Status::Ok, "{:?}", r.redundant);
+        // the center sits square above both ends
+        assert!((r.points[2][0] - r.points[1][0]).abs() < 1e-6, "{:?}", r.points);
+        assert!((r.points[2][0] - r.points[3][0]).abs() < 1e-6, "{:?}", r.points);
     }
 
     #[test]
