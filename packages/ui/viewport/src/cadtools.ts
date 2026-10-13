@@ -219,25 +219,35 @@ export interface SketchScene {
   grid?: { stepMm: number; min: V2; max: V2 }
   /** Problem spots, drawn as red dots. */
   marks?: readonly V2[]
-  /** Driving dimensions: a line from `from` to `to` with the value at its middle. */
-  dims?: readonly { from: V2; to: V2; at?: V2; label: string }[]
+  /**
+   * Dimensions: a line from `from` to `to` with the value at its middle, extension lines out to it, and the picked
+   * one drawn bright. A press on a value comes back as the event's `mark`.
+   */
+  dims?: readonly { from: V2; to: V2; at?: V2; ext?: readonly (readonly [V2, V2])[]; label: string; picked?: boolean }[]
   /** Points held by Fix, drawn as squares. */
   fixed?: readonly V2[]
   /** Closed loops, shaded faintly so a closed profile reads at a glance. */
   profiles?: readonly (readonly V2[])[]
   /** Constraint marks beside the geometry; `slot` sets marks at one spot side by side. */
-  glyphs?: readonly { at: V2; kind: SketchGlyphKind; slot: number }[]
+  glyphs?: readonly { at: V2; kind: SketchGlyphKind; slot: number; picked?: boolean }[]
   /** In a drawing tool, a point a press can drag from (the open end of the line being drawn); the drag goes out as handle -1. */
   dragFrom?: V2
 }
 
+/** A dimension's value or a constraint glyph on screen, by its index in the scene's dims or glyphs. */
+export type SketchMark = { dim: number } | { glyph: number }
+
 export type SketchGlyphKind = 'coincident' | 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'tangent' | 'equal' | 'midpoint' | 'concentric' | 'collinear' | 'symmetric'
 
-/** The line being drawn (a polyline from the last point to the cursor), the snapped cursor and an alignment guide. */
+/** A dimension as the sketch layer draws it. */
+export type SketchDimMark = NonNullable<SketchScene['dims']>[number]
+
+/** The line being drawn (a polyline from the last point to the cursor), the snapped cursor, an alignment guide, and a dimension being placed. */
 export interface SketchCursor {
   path?: readonly V2[] | null
   at?: V2 | null
   guide?: readonly [V2, V2] | null
+  dim?: SketchDimMark | null
 }
 
 const TONE: Record<SketchTone, { color: string; opacity: number }> = {
@@ -299,8 +309,12 @@ export class SketchLayer {
   private readonly fixMat = new PointsMaterial({ color: new Color(TONE.fixed.color), size: 9, sizeAttenuation: false, depthTest: false, transparent: true, toneMapped: false, ...KEEP_ALPHA })
   private readonly fillMat = new MeshBasicMaterial({ color: new Color('#8be9fd'), transparent: true, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false, ...KEEP_ALPHA, opacity: 0.12 })
   private readonly dimMat = new LineBasicMaterial({ color: new Color('#f1fa8c'), transparent: true, depthTest: false, toneMapped: false, ...KEEP_ALPHA, opacity: 0.8 })
+  private readonly dimPickMat = new LineBasicMaterial({ color: new Color(TONE.selected.color), transparent: true, depthTest: false, toneMapped: false, ...KEEP_ALPHA })
   private drawn: (LineSegments | Points | Sprite | Mesh)[] = []
-  private labels: { sprite: Sprite; aspect: number; size?: number }[] = []
+  private labels: { sprite: Sprite; aspect: number; size?: number; mark?: SketchMark; at?: V2 }[] = []
+  /** The dimension following the cursor: its lines, and its value, made again only when the text changes. */
+  private cursorDim: LineSegments | null = null
+  private cursorLabel: { sprite: Sprite; aspect: number; text: string } | null = null
   private scaledFor = ''
   private readonly band: Line2
   /** A closed shape being drawn, shaded like a profile so the whole outline reads at the cursor. */
@@ -435,41 +449,107 @@ export class SketchLayer {
     dots(scene.fixed, this.fixMat, 9)
     if (scene.dims?.length) {
       const geo = new BufferGeometry()
-      geo.setAttribute('position', new Float32BufferAttribute(scene.dims.flatMap((m) => [m.from[0], m.from[1], lift, m.to[0], m.to[1], lift, ...(m.at ? [m.to[0], m.to[1], lift, m.at[0], m.at[1], lift] : [])]), 3))
-      const seg = new LineSegments(geo, this.dimMat)
-      seg.renderOrder = 9
-      seg.raycast = () => {}
-      this.group.add(seg)
-      this.drawn.push(seg)
-      for (const m of scene.dims) {
-        const label = makeLabel(m.label)
-        if (!label) continue
-        const at = m.at ?? [(m.from[0] + m.to[0]) / 2, (m.from[1] + m.to[1]) / 2]
+      const lines = (m: NonNullable<SketchScene['dims']>[number]) => [
+        m.from[0], m.from[1], lift, m.to[0], m.to[1], lift,
+        ...(m.at ? [m.to[0], m.to[1], lift, m.at[0], m.at[1], lift] : []),
+        ...(m.ext ?? []).flatMap(([a, b]) => [a[0], a[1], lift, b[0], b[1], lift]),
+      ]
+      for (const picked of [false, true]) {
+        const pos = scene.dims.filter((m) => !!m.picked === picked).flatMap(lines)
+        if (!pos.length) continue
+        const geo = new BufferGeometry()
+        geo.setAttribute('position', new Float32BufferAttribute(pos, 3))
+        const seg = new LineSegments(geo, picked ? this.dimPickMat : this.dimMat)
+        seg.renderOrder = 9
+        seg.raycast = () => {}
+        this.group.add(seg)
+        this.drawn.push(seg)
+      }
+      scene.dims.forEach((m, i) => {
+        const label = makeLabel(m.label, m.picked)
+        if (!label) return
+        const at: V2 = m.at ?? [(m.from[0] + m.to[0]) / 2, (m.from[1] + m.to[1]) / 2]
         label.sprite.position.set(at[0], at[1], lift)
         this.group.add(label.sprite)
         this.drawn.push(label.sprite)
-        this.labels.push(label)
-      }
+        this.labels.push({ ...label, mark: { dim: i }, at })
+      })
     }
-    for (const g of scene.glyphs ?? []) {
-      const sprite = makeGlyph(g.kind)
+    for (const [i, g] of (scene.glyphs ?? []).entries()) {
+      const sprite = makeGlyph(g.kind, g.picked)
       if (!sprite) continue
       // up and to the right of the spot, side by side when several share it
       sprite.center.set(-0.25 - g.slot * 1.15, -0.25)
       sprite.position.set(g.at[0], g.at[1], lift)
       this.group.add(sprite)
       this.drawn.push(sprite)
-      this.labels.push({ sprite, aspect: 1, size: 0.8 })
+      this.labels.push({ sprite, aspect: 1, size: 0.8, mark: { glyph: i }, at: g.at })
     }
+  }
+
+  /** The value or glyph under a screen point, topmost first; `toScreen` takes a plane point to client pixels. */
+  markAt(toScreen: (at: V2) => [number, number], px: [number, number]): SketchMark | null {
+    for (let k = this.labels.length - 1; k >= 0; k--) {
+      const l = this.labels[k]!
+      if (!l.mark || !l.at) continue
+      const p = toScreen(l.at)
+      const h = LABEL_PX * (l.size ?? 1)
+      const w = h * l.aspect
+      // the sprite's center shifts it on screen from its anchor
+      const cx = p[0] + (0.5 - l.sprite.center.x) * w
+      const cy = p[1] - (0.5 - l.sprite.center.y) * h
+      if (Math.abs(px[0] - cx) <= w / 2 && Math.abs(px[1] - cy) <= h / 2) return l.mark
+    }
+    return null
   }
 
   /** Keeps dimension values LABEL_PX tall on screen, as the dimension layer does. */
   fit(fovDeg: number, heightPx: number): void {
-    const key = `${fovDeg}:${heightPx}:${this.labels.length}`
-    if (key === this.scaledFor || this.labels.length === 0) return
+    const key = `${fovDeg}:${heightPx}:${this.labels.length}:${this.cursorLabel?.text ?? ''}`
+    if (key === this.scaledFor || (this.labels.length === 0 && !this.cursorLabel)) return
     this.scaledFor = key
     const h = (LABEL_PX / Math.max(1, heightPx)) * 2 * Math.tan((fovDeg * Math.PI) / 360)
-    for (const l of this.labels) l.sprite.scale.set(h * l.aspect * (l.size ?? 1), h * (l.size ?? 1), 1)
+    for (const l of [...this.labels, ...(this.cursorLabel ? [this.cursorLabel] : [])]) l.sprite.scale.set(h * l.aspect * ('size' in l ? (l.size ?? 1) : 1), h * ('size' in l ? (l.size ?? 1) : 1), 1)
+  }
+
+  // the dimension being placed, drawn as a picked one
+  private placing(m: SketchDimMark | null): void {
+    this.cursorDim?.geometry.dispose()
+    this.cursorDim?.removeFromParent()
+    this.cursorDim = null
+    if (!m) {
+      this.dropCursorLabel()
+      return
+    }
+    const z = 0.03
+    const pos = [m.from[0], m.from[1], z, m.to[0], m.to[1], z, ...(m.at ? [m.to[0], m.to[1], z, m.at[0], m.at[1], z] : []), ...(m.ext ?? []).flatMap(([a, b]) => [a[0], a[1], z, b[0], b[1], z])]
+    const geo = new BufferGeometry()
+    geo.setAttribute('position', new Float32BufferAttribute(pos, 3))
+    this.cursorDim = new LineSegments(geo, this.dimPickMat)
+    this.cursorDim.renderOrder = 12
+    this.cursorDim.frustumCulled = false
+    this.cursorDim.raycast = () => {}
+    this.group.add(this.cursorDim)
+    if (this.cursorLabel?.text !== m.label) {
+      this.dropCursorLabel()
+      const l = makeLabel(m.label, true)
+      if (l) {
+        this.cursorLabel = { ...l, text: m.label }
+        this.group.add(l.sprite)
+        this.scaledFor = ''
+      }
+    }
+    const at = m.at ?? [(m.from[0] + m.to[0]) / 2, (m.from[1] + m.to[1]) / 2]
+    this.cursorLabel?.sprite.position.set(at[0], at[1], z)
+  }
+
+  private dropCursorLabel(): void {
+    const l = this.cursorLabel
+    if (!l) return
+    l.sprite.removeFromParent()
+    l.sprite.material.map?.dispose()
+    l.sprite.material.dispose()
+    this.cursorLabel = null
   }
 
   /** The rubber band and snap marker; the marker rewrites a fixed buffer. */
@@ -520,6 +600,7 @@ export class SketchLayer {
     if (gd) this.guidePos.set([gd[0][0], gd[0][1], 0.025, gd[1][0], gd[1][1], 0.025])
     this.guide.geometry.setDrawRange(0, gd ? 2 : 0)
     ;(this.guide.geometry.getAttribute('position') as BufferAttribute).needsUpdate = true
+    this.placing(c?.dim ?? null)
   }
 
   /** Whether a press at a plane point is on the drawing tool's drag point. */
@@ -559,6 +640,8 @@ export class SketchLayer {
     this.dotMat.color.set(light ? '#282a36' : '#f8f8f2')
     this.snapMat.color.set(light ? LIGHT_TONE.selected! : '#f1fa8c')
     this.fixMat.color.set(light ? LIGHT_TONE.fixed! : TONE.fixed.color)
+    this.dimMat.color.set(light ? '#5c5f73' : '#f1fa8c')
+    this.dimPickMat.color.set(light ? LIGHT_TONE.selected! : TONE.selected.color)
   }
 
   dispose(): void {
@@ -570,6 +653,9 @@ export class SketchLayer {
     this.fillMat.dispose()
     this.markMat.dispose()
     this.snapMat.dispose()
+    this.fixMat.dispose()
+    this.dimMat.dispose()
+    this.dimPickMat.dispose()
     this.group.removeFromParent()
   }
 }
@@ -726,17 +812,17 @@ function disc(c: CanvasRenderingContext2D, x: number, y: number, r: number): voi
   c.fill()
 }
 
-function makeGlyph(kind: SketchGlyphKind): Sprite | null {
+function makeGlyph(kind: SketchGlyphKind, picked = false): Sprite | null {
   if (typeof document === 'undefined') return null
   const cv = document.createElement('canvas')
   cv.width = cv.height = 40
   const c = cv.getContext('2d')
   if (!c) return null
-  c.fillStyle = 'rgba(30, 31, 41, 0.9)'
+  c.fillStyle = picked ? '#f1fa8c' : 'rgba(30, 31, 41, 0.9)'
   c.beginPath()
   c.roundRect?.(0, 0, 40, 40, 8)
   c.fill()
-  c.strokeStyle = c.fillStyle = '#f8f8f2'
+  c.strokeStyle = c.fillStyle = picked ? '#1e1f29' : '#f8f8f2'
   c.lineWidth = 3
   c.lineCap = 'round'
   GLYPHS[kind](c)
@@ -747,7 +833,7 @@ function makeGlyph(kind: SketchGlyphKind): Sprite | null {
   return sprite
 }
 
-function makeLabel(text: string): { sprite: Sprite; aspect: number } | null {
+function makeLabel(text: string, picked = false): { sprite: Sprite; aspect: number } | null {
   if (typeof document === 'undefined') return null
   const c = document.createElement('canvas')
   const ctx = c.getContext('2d')
@@ -759,11 +845,11 @@ function makeLabel(text: string): { sprite: Sprite; aspect: number } | null {
   c.width = w
   c.height = px
   ctx.font = font
-  ctx.fillStyle = 'rgba(30, 31, 41, 0.9)'
+  ctx.fillStyle = picked ? '#f1fa8c' : 'rgba(30, 31, 41, 0.9)'
   ctx.beginPath()
   ctx.roundRect?.(0, 0, w, px, px * 0.22)
   ctx.fill()
-  ctx.fillStyle = '#f1fa8c'
+  ctx.fillStyle = picked ? '#1e1f29' : '#f1fa8c'
   ctx.textBaseline = 'middle'
   ctx.fillText(text, px * 0.3, px / 2 + 1)
   const tex = new CanvasTexture(c)

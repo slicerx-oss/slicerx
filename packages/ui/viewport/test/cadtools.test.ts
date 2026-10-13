@@ -95,6 +95,22 @@ describe('sketch layer', () => {
     expect(band.visible).toBe(false)
     s.dispose()
   })
+
+  it('draws a dimension being placed with its extension lines, and drops it with the cursor', () => {
+    const s = new SketchLayer()
+    s.set({ frame: WALL, paths: [], handles: [] })
+    const thin = () => s.group.children.filter((c) => c instanceof LineSegments && !(c instanceof LineSegments2)) as LineSegments[]
+    expect(thin()).toHaveLength(0)
+    s.cursor({ dim: { from: [0, -4], to: [10, -4], ext: [[[0, 0], [0, -5]], [[10, 0], [10, -5]]], label: '10' } })
+    expect(thin()).toHaveLength(1)
+    // the dimension line and two extension lines
+    expect(thin()[0]!.geometry.getAttribute('position').count).toBe(6)
+    s.cursor({ dim: { from: [0, -6], to: [10, -6], label: '10' } })
+    expect(thin()).toHaveLength(1)
+    s.cursor(null)
+    expect(thin()).toHaveLength(0)
+    s.dispose()
+  })
 })
 
 describe('kept dimensions', () => {
