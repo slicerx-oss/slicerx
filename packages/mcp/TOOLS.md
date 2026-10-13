@@ -117,7 +117,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_printer_set_temperature` |  |  | start | Set a nozzle, bed or chamber target temperature on a printer (0 turns the heater off). |
 | `slicerx_printer_setup` |  |  | read | Guides a new user through printer setup, one question at a time: optional look and feel, brand, model, nozzle, connection method, test connection, add the printer, first calibration suggestion. |
 | `slicerx_printer_snapshot` | Camera snapshot | printers | read, ungated | Take a camera snapshot from a printer and return it as an image. |
-| `slicerx_printer_status` |  |  | read | Current status of one printer: state, job, layer, time left, temperatures, filament slots and its message. |
+| `slicerx_printer_status` |  |  | read | Current status of one printer: state, job, layer, time left, temperatures, filament slots, its message and any problem it reports now (an HMS code or a print error, with the code and what to do). |
 | `slicerx_printer_test` |  |  | printer_config | Tests that SlicerX can reach the printer: reaches it, signs in and reads its state. |
 | `slicerx_project_add_filament` |  |  | slice | Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. |
 | `slicerx_project_add_model` |  |  | read | Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. |
