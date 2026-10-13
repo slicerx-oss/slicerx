@@ -329,6 +329,14 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       let excludedKey: string | null = null
       let towerBefore: ShownTower | null = null
       let keyBefore = ''
+      // Test hook: with localStorage 'slicerx.debug' and 'slicerx.warmupWaitsForOpen' set, the toolpath shader warm-up
+      // waits until the first file open starts (a plate restored at start is not one), so a test can open a project
+      // before it as a person can at launch.
+      let warmupWaitsForOpen = false
+      try {
+        warmupWaitsForOpen = Boolean(localStorage.getItem('slicerx.debug') && localStorage.getItem('slicerx.warmupWaitsForOpen'))
+      } catch { /* storage blocked */ }
+      if (warmupWaitsForOpen) offs.push(onOpenStage(() => void (warmupWaitsForOpen = false)))
       let changerSent: ToolChangerSpec | null | undefined
       // The purge at the chute for each change, read from the G-code once per preview and tool changer.
       let purgesFor: Timeline | null = null
@@ -391,7 +399,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (!first && s.plateLoading && s.plate.length === 0 && prev.plate.length > 0) view.holdScene?.(true)
         else if (!first && !s.plateLoading && prev.plateLoading) view.holdScene?.(false)
         // The toolpath shader warm-up holds every frame while it compiles, so it waits for a file being opened.
-        if (first || s.plateLoading !== prev.plateLoading) view.holdWarmup?.(s.plateLoading)
+        if (first || s.plateLoading !== prev.plateLoading) view.holdWarmup?.(s.plateLoading || warmupWaitsForOpen)
         // Fit notes and markers belong to the objects on the plate: a new project or a removed object takes its own along.
         if (s.plate !== prev.plate) keepFits(s.plate.map((p) => p.id))
         if (rebuilt) vp.setPlate(platePayload(s, shown), { keepCamera: !first && !reframesOnRebuild(prev, s) })
