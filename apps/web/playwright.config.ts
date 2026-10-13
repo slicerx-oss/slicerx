@@ -7,18 +7,19 @@ import { defineConfig } from '@playwright/test'
 
 // SX_E2E_PORT serves the app on another port, for a second run on the same machine.
 const port = Number(process.env['SX_E2E_PORT'] ?? 4317)
-// SX_TEST_HUB_PORT moves the bridge specs' sx-link off 47615, for a second run, the release gate or a running sx-link on
-// the same machine. The test build pairs with it, and the specs' hub listens on it (e2e/bridge-hub.ts); workers read
-// it from the environment set here.
-const hubPort = process.env['SX_TEST_HUB_PORT'] || '47615'
+// A free loopback port, picked once here; workers load this file again and read it back from the environment.
+const freePort = (): string =>
+  execFileSync(process.execPath, ['-e', "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{process.stdout.write(String(s.address().port));s.close()})"]).toString()
+// The hub port the test build pairs with when a page names none: SX_TEST_HUB_PORT, else a free one, so a page never
+// reaches a running sx-link on 47615. Each bridge file runs its own hub on a port of its own and points its pages at it
+// (e2e/bridge-hub.ts), so bridge files run in parallel and beside another run, the release gate or a running sx-link.
+const hubPort = process.env['SX_TEST_HUB_PORT'] || freePort()
 process.env['SX_TEST_HUB_PORT'] = hubPort
 // The app slices in the native engine (e2e/native-host/server.mjs runs `sx` from SX_CLI_BIN, else this checkout's release
 // build), on a free loopback port picked here and shared with the workers through the environment.
 const sxBin = process.env['SX_CLI_BIN'] || resolve(import.meta.dirname, '../../target/release/sx')
 if (!existsSync(sxBin)) throw new Error(`The browser suite slices with the native sx (${sxBin}); build it with cargo build --release -p sx-cli, or set SX_CLI_BIN`)
-const nativePort =
-  process.env['SX_E2E_NATIVE_PORT'] ||
-  execFileSync(process.execPath, ['-e', "const s=require('net').createServer().listen(0,'127.0.0.1',()=>{process.stdout.write(String(s.address().port));s.close()})"]).toString()
+const nativePort = process.env['SX_E2E_NATIVE_PORT'] || freePort()
 process.env['SX_E2E_NATIVE_PORT'] = nativePort
 const nativeUrl = `http://127.0.0.1:${nativePort}`
 // SX_E2E_GPU=1 runs the installed Chrome with hardware WebGL, on a machine with a GPU (the project's GPU runner).
