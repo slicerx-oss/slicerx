@@ -154,6 +154,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         #[cfg(feature = "cad")]
         "sketch.check" => loops(req).and_then(|l| to_value(&sketch::check(&l))),
         #[cfg(feature = "cad")]
+        "sketch.curves" => loops(req).and_then(|l| to_value(&sketch::curves(&l)?)),
+        #[cfg(feature = "cad")]
         "sketch.revolve" => sketch_revolve_op(req, enc, files),
         #[cfg(feature = "cad")]
         "sketch.snaps" => sketch_snaps_op(req, files),
