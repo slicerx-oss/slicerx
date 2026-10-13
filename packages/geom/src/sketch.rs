@@ -212,7 +212,7 @@ fn bad_arc(l: usize, s: usize, why: &str, at: V2) -> Issue {
     )
 }
 
-fn arc_of(
+pub(crate) fn arc_of(
     l: usize,
     s: usize,
     seg: &Segment,
