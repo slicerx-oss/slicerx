@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Settings > mimir: the shared mimir setup, agents, mimir cloud's sharing switch, and turning mimir off.
+// Settings > mimir: the shared mimir setup, agents, mimir cloud's saved chats switch, and turning mimir off.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, SwitchRow } from '@slicerx/ui'
 import { useState } from 'react'
@@ -15,42 +15,57 @@ import { keyStoreFor } from './keys'
 import { MimirSetup } from './mimir-setup'
 import './connect.css'
 
-/** Settings > mimir: whether mimir cloud may keep sessions, and deleting the ones it kept. Only where the cloud runs. */
+type Forget = { step: 'idle' } | { step: 'confirm' } | { step: 'busy' } | { step: 'done'; note: string }
+
+/** Settings > mimir: whether free mimir saves chats, and deleting the ones it saved. Only where the cloud runs. */
 function CloudShare() {
   const edition = useEdition()
   const cloud = useMimirCloudHost()
   const share = useApp((s) => s.mimirShare)
-  const [note, setNote] = useState<string | null>(null)
+  const [forget, setForget] = useState<Forget>({ step: 'idle' })
   if (!cloud || !cloudReady(edition, cloud)) return null
-  const forget = async () => {
-    setNote(null)
+  const run = async () => {
+    setForget({ step: 'busy' })
     try {
       const n = await cloud.forget()
-      setNote(n === 0 ? 'Nothing was shared from this computer.' : `Deleted ${n} shared ${n === 1 ? 'session' : 'sessions'}.`)
+      setForget({ step: 'done', note: n === 0 ? 'No chats were saved from this computer.' : `Deleted ${n} saved ${n === 1 ? 'chat' : 'chats'}.` })
     } catch (e) {
-      setNote(e instanceof Error ? e.message : String(e))
+      setForget({ step: 'done', note: e instanceof Error ? e.message : String(e) })
     }
   }
+  const asking = forget.step === 'confirm' || forget.step === 'busy'
+  // every state sits in the same grid cell, so the row keeps the height of the tallest and nothing below moves
   return (
     <div className="pc-cloud-share">
       <SwitchRow
         id="mimir-share"
         testId="mimir-share"
-        label={`Share my ${ASSISTANT_NAME} sessions to improve ${ASSISTANT_NAME}`}
-        detail={`Only chats on ${ASSISTANT_NAME} cloud are shared, and kept for 180 days. Your own key or local model never shares anything.`}
+        label={`Save my chats to improve ${ASSISTANT_NAME}`}
+        detail={`Free ${ASSISTANT_NAME} chats are kept 30 days during alpha. Turned off, nothing new is saved. Your own key or local model never saves anything.`}
         checked={share}
         onChange={(v) => set({ mimirShare: v })}
       />
-      <p className="set-actions">
-        <Button variant="ghost" data-testid="danger-mimir-forget" onClick={() => void forget()}>
-          Delete my shared sessions
-        </Button>
-        {note ? (
+      <div className="pc-forget">
+        <div className="set-actions" data-on={forget.step === 'idle' || undefined} inert={forget.step !== 'idle' || undefined}>
+          <Button variant="ghost" data-testid="danger-mimir-forget" onClick={() => setForget({ step: 'confirm' })}>
+            Delete my saved chats
+          </Button>
+        </div>
+        <div className="set-actions" role="alertdialog" aria-label="Confirm delete" data-on={asking || undefined} inert={!asking || undefined}>
+          <span className="sx-small">Delete all saved chats? This can't be undone.</span>
+          <Button variant="danger" data-testid="danger-mimir-forget-confirm" disabled={forget.step === 'busy'} onClick={() => void run()}>
+            Delete
+          </Button>
+          <Button variant="ghost" disabled={forget.step === 'busy'} onClick={() => setForget({ step: 'idle' })}>
+            Cancel
+          </Button>
+        </div>
+        <div className="set-actions" data-on={forget.step === 'done' || undefined} inert={forget.step !== 'done' || undefined}>
           <span className="sx-small sx-muted" role="status">
-            {note}
+            {forget.step === 'done' ? forget.note : ''}
           </span>
-        ) : null}
-      </p>
+        </div>
+      </div>
     </div>
   )
 }

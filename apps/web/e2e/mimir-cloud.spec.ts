@@ -21,11 +21,11 @@ async function open(page: Page): Promise<void> {
   await standIn(page)
 }
 
-/** A mimir cloud shell: the quota, and a forget that deleted three sessions. */
+/** A mimir cloud shell: the quota, and a forget that deleted three chats and counts its calls. */
 async function standIn(page: Page): Promise<void> {
   await page.evaluate(() => {
     const quota = { edition: 'slicerx', day: '2026-10-12', installUsed: 0, installCap: 500000, ipUsed: 0, ipCap: 2000000, editionOpen: true }
-    ;(window as unknown as W).__sxMimirCloud({ quota: async () => quota, forget: async () => 3, register: async () => undefined }, 'http://127.0.0.1:9/functions/v1/mimir')
+    ;(window as unknown as W).__sxMimirCloud({ quota: async () => quota, forget: async () => ((window as unknown as { __forgets?: number }).__forgets = ((window as unknown as { __forgets?: number }).__forgets ?? 0) + 1, 3), register: async () => undefined }, 'http://127.0.0.1:9/functions/v1/mimir')
   })
 }
 
@@ -51,13 +51,14 @@ test.describe('mimir cloud', () => {
     const notice = page.getByTestId('mimir-cloud-notice')
     await expect(notice).toBeVisible()
     await expect(notice).toContainText(/mimir in \S+ runs on a cloud model provider\. Your messages, photos and the parts mimir works on go to the provider/)
-    await expect(notice).toContainText(/keeps your mimir sessions for 180 days to improve mimir/)
+    await expect(notice).toContainText(/During alpha we save free mimir chats for 30 days to improve it/)
     await expect(page.locator('.mimir-empty')).toHaveCount(0)
     // for review: the notice in the chat column
     await page.getByTestId('mimir-chat').screenshot({ path: test.info().outputPath('mimir-cloud-notice.png') })
 
     const share = page.getByTestId('mimir-notice-share')
     const start = page.getByTestId('mimir-notice-ok')
+    // Save my chats starts on, since free chats are saved during alpha
     await expect(share).toHaveAttribute('aria-checked', 'true')
     await pressStill(share, [start, page.getByTestId('mimir-composer')])
     await expect(share).toHaveAttribute('aria-checked', 'false')
@@ -66,7 +67,7 @@ test.describe('mimir cloud', () => {
     await start.click()
     await expect(notice).toHaveCount(0)
     await expect(page.locator('.mimir-empty')).toBeVisible()
-    expect((await state(page)).mimirNotice).toBe(1)
+    expect((await state(page)).mimirNotice).toBe(2)
 
     // read once: it stays gone after a reload
     await page.reload()
@@ -78,7 +79,7 @@ test.describe('mimir cloud', () => {
     expect((await state(page)).mimirShare).toBe(false)
   })
 
-  test('Settings, mimir: the share switch is on by default, and delete says what it deleted', async ({ page }) => {
+  test('Settings, mimir: Save my chats is on by default, and delete asks first and says what it deleted', async ({ page }) => {
     await open(page)
     await page.evaluate(() => (window as unknown as W).__sx.setState({ settingsOpen: true, settingsSection: 'pilot' }))
     const share = page.getByTestId('mimir-share')
@@ -89,7 +90,22 @@ test.describe('mimir cloud', () => {
     expect((await state(page)).mimirShare).toBe(false)
     await pressStill(share, [forget])
     expect((await state(page)).mimirShare).toBe(true)
+    // for review: the switch and the delete button
+    await page.locator('.pc-cloud-share').first().screenshot({ path: test.info().outputPath('mimir-save-switch.png') })
+    // delete asks first, cancel keeps everything, and the row never changes height
+    const row = page.locator('.pc-forget').first()
+    const h = (await row.boundingBox())!.height
+    const forgets = () => page.evaluate(() => (window as unknown as { __forgets?: number }).__forgets ?? 0)
     await forget.click()
-    await expect(page.getByRole('status').filter({ hasText: 'Deleted 3 shared sessions.' })).toBeVisible()
+    await expect(page.getByText("Delete all saved chats? This can't be undone.")).toBeVisible()
+    expect((await row.boundingBox())!.height).toBe(h)
+    await page.getByRole('alertdialog', { name: 'Confirm delete' }).getByRole('button', { name: 'Cancel' }).click()
+    await expect(forget).toBeVisible()
+    expect(await forgets()).toBe(0)
+    await forget.click()
+    await page.getByTestId('danger-mimir-forget-confirm').click()
+    await expect(page.getByRole('status').filter({ hasText: 'Deleted 3 saved chats.' })).toBeVisible()
+    expect(await forgets()).toBe(1)
+    expect((await row.boundingBox())!.height).toBe(h)
   })
 })

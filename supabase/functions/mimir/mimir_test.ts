@@ -5,7 +5,7 @@
 import { assert, assertEquals, assertMatch } from 'jsr:@std/assert@1.0.13'
 import { MAX_OUTPUT, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
-import { clientIp, type Env, handle, marked } from './handler.ts'
+import { clientIp, dayKey, type Env, handle, marked } from './handler.ts'
 
 type Obj = Record<string, unknown>
 const TOOL = { name: 'design_box', description: 'A box.', input_schema: { type: 'object', properties: {} } }
@@ -235,7 +235,8 @@ Deno.test('a call reserves, streams through, and settles what it used', async ()
   assertEquals(res.status, 200)
   assertMatch(await res.text(), /A 20 mm /)
   await Promise.all(h.pending)
-  assertEquals(h.calls.map((c) => c.fn), ['mimir_reserve', 'mimir_settle'])
+  // saved by the edition's default, since the client said nothing
+  assertEquals(h.calls.map((c) => c.fn), ['mimir_reserve', 'mimir_settle', 'mimir_save_chat'])
   assertEquals(h.calls[0]!.args['p_ip'], '9.9.9.9')
   assertEquals(h.calls[0]!.args['p_output'], MAX_OUTPUT)
   assertEquals(h.calls[0]!.args['p_input'], ok(base({ tools: [TOOL] })).promptEstimate)
@@ -254,24 +255,62 @@ Deno.test('the client never sets provider headers', async () => {
   assertEquals(h.sent[0]!.headers.get('x-api-key'), 'sk-ant-test')
 })
 
-Deno.test('shared sessions are stored without image data, and only when shared', async () => {
+Deno.test('a saved chat keeps no image data, files its prompt apart, and follows the client', async () => {
   const img = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'QUJD'.repeat(100) } }
-  const msg = { messages: [{ role: 'user', content: [img, { type: 'text', text: 'like this' }] }] }
+  const msg = { system: 'You are mimir.', tools: [TOOL], messages: [{ role: 'user', content: [img, { type: 'text', text: 'like this' }] }] }
   const h = harness()
   const res = await handle(post('/v1/messages', msg, { 'x-sx-install': TOKEN, 'x-sx-share': '1', 'x-sx-session': 's-1', 'x-sx-version': '0.2.0' }), h.env)
   await res.text()
   await Promise.all(h.pending)
-  const stored = h.calls.find((c) => c.fn === 'mimir_store_session')!
-  assertEquals(stored.args['p_session_key'], 's-1')
-  const text = JSON.stringify(stored.args['p_transcript'])
+  const saved = h.calls.find((c) => c.fn === 'mimir_save_chat')!
+  assertEquals([saved.args['p_share'], saved.args['p_session_key'], saved.args['p_app_version']], [true, 's-1', '0.2.0'])
+  const text = JSON.stringify(saved.args['p_transcript'])
   assert(!text.includes('QUJD'))
   assertMatch(text, /\[image, 400 base64 chars\]/)
   assertMatch(text, /A 20 mm cube\./)
+  // the system prompt and tools go once per distinct text, not in every turn
+  const request = (saved.args['p_transcript'] as Obj)['request'] as Obj
+  assert(!('tools' in request) && !('system' in request) && !text.includes('You are mimir.'))
+  assertMatch(String(saved.args['p_prompt_hash']), /^[0-9a-f]{64}$/)
+  assertEquals((saved.args['p_transcript'] as Obj)['prompt'], saved.args['p_prompt_hash'])
+  assertMatch(JSON.stringify(saved.args['p_prompt']), /design_box/)
+
+  // an older kit says nothing: the edition's default decides, filed under the install's Melbourne day
+  const quiet = harness()
+  await (await handle(post('/v1/messages', msg, { 'x-sx-install': TOKEN }), quiet.env)).text()
+  await Promise.all(quiet.pending)
+  const q = quiet.calls.find((c) => c.fn === 'mimir_save_chat')!
+  assertEquals([q.args['p_share'], q.args['p_session_key'], q.args['p_app_version']], [null, dayKey(), 'unknown'])
 
   const off = harness()
-  await (await handle(post('/v1/messages', msg, { 'x-sx-install': TOKEN, 'x-sx-session': 's-1', 'x-sx-version': '0.2.0' }), off.env)).text()
+  await (await handle(post('/v1/messages', msg, { 'x-sx-install': TOKEN, 'x-sx-share': '0', 'x-sx-session': 's-1', 'x-sx-version': '0.2.0' }), off.env)).text()
   await Promise.all(off.pending)
-  assert(!off.calls.some((c) => c.fn === 'mimir_store_session'))
+  assert(!off.calls.some((c) => c.fn === 'mimir_save_chat'))
+})
+
+Deno.test('the session key for a client without one is the Melbourne day', () => {
+  // 2026-10-13 14:30 UTC is already the 14th in Melbourne
+  assertEquals(dayKey(new Date('2026-10-13T14:30:00Z')), 'day-20261014')
+  assertEquals(dayKey(new Date('2026-10-13T12:00:00Z')), 'day-20261013')
+})
+
+Deno.test('a saved reply keeps every tool call whole, however long the text before it', async () => {
+  const input = { ops: Array.from({ length: 400 }, (_, i) => ({ op: 'extrude', sketch: `s${i}`, distance: 2.5 })) }
+  const json = JSON.stringify(input)
+  const stream = sse([
+    { type: 'message_start', message: { usage: { input_tokens: 5 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'y'.repeat(210_000) } },
+    { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'tu1', name: 'geom_build', input: {} } },
+    ...[0, 1, 2, 3].map((k) => ({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: json.slice((k * json.length) / 4, ((k + 1) * json.length) / 4) } })),
+    { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 40 } },
+    { type: 'message_stop' },
+  ])
+  const h = harness({ upstream: () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }) })
+  await (await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)).text()
+  await Promise.all(h.pending)
+  const reply = ((h.calls.find((c) => c.fn === 'mimir_save_chat')!.args['p_transcript'] as Obj)['reply'] as { content: Obj[] }).content
+  assertEquals(reply[1]!['input'], input)
 })
 
 Deno.test('a failed, refused or cut-short call stores no session', async () => {
@@ -286,22 +325,22 @@ Deno.test('a failed, refused or cut-short call stores no session', async () => {
     await Promise.all(h.pending)
     // an unfinished stream may have billed more than it counted: it settles at the whole allowance
     assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_output'], MAX_OUTPUT)
-    assert(!h.calls.some((c) => c.fn === 'mimir_store_session'))
+    assert(!h.calls.some((c) => c.fn === 'mimir_save_chat'))
   }
   const refused = harness({ upstream: () => Response.json({ type: 'error', error: { type: 'invalid_request_error', message: 'secret detail' } }, { status: 400 }) })
   const res = await handle(post('/v1/messages', base(), shared), refused.env)
   assertEquals(res.status, 502)
   assert(!(await res.text()).includes('secret detail'), 'the provider\'s words stay on the server')
   await Promise.all(refused.pending)
-  assert(!refused.calls.some((c) => c.fn === 'mimir_store_session'))
+  assert(!refused.calls.some((c) => c.fn === 'mimir_save_chat'))
 })
 
-Deno.test('a turn over 256 KB is not stored', async () => {
+Deno.test('a turn over 1 MB is not stored', async () => {
   const h = harness()
-  const big = { messages: [{ role: 'user', content: 'x'.repeat(300_000) }] }
+  const big = { messages: [{ role: 'user', content: 'x'.repeat(1_100_000) }] }
   await (await handle(post('/v1/messages', big, { 'x-sx-install': TOKEN, 'x-sx-share': '1', 'x-sx-session': 's-1', 'x-sx-version': '0.2.0' }), h.env)).text()
   await Promise.all(h.pending)
-  assert(!h.calls.some((c) => c.fn === 'mimir_store_session'))
+  assert(!h.calls.some((c) => c.fn === 'mimir_save_chat'))
 })
 
 Deno.test('when the byte estimate hits a daily cap, the exact count gets one more try', async () => {

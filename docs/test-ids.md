@@ -344,13 +344,15 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 
 | Test id | Control |
 | --- | --- |
-| `mimir-share` | Share my mimir sessions to improve mimir (on by default) |
-| `danger-mimir-forget` | Delete my shared sessions |
+| `mimir-share` | Save my chats to improve mimir (on by default during alpha; off saves nothing) |
+| `danger-mimir-forget` | Delete my saved chats (asks first) |
+| `danger-mimir-forget-confirm` | Delete in the inline confirm: removes every saved chat from this computer |
 | `mimir-cloud-notice` | The notice before the first chat on mimir cloud (mimir tab and dock) |
-| `mimir-notice-share` | The notice's share switch, the same setting as `mimir-share` |
+| `mimir-notice-share` | The notice's Save my chats switch, the same setting as `mimir-share` |
 | `mimir-notice-ok` | Start: the notice was read, and does not show again |
 | `ms-choice-<id>` | A card in the shared mimir setup (first-run, Settings and the mimir panel): `ms-choice-cloud`, `ms-choice-chatgpt`, `ms-choice-key`, `ms-choice-local`, `ms-choice-skip` |
-| `ms-cloud-note` | First-run's line under mimir cloud: no key, it connects when you finish |
+| `ms-cloud-note` | First-run's line under mimir cloud: no key, it connects when you finish, and free chats are saved for 30 days during alpha |
+| `ms-cloud-saved` | Settings and the mimir panel: the line under mimir cloud saying free chats are saved for 30 days, and where to turn that off |
 | `ms-cloud-signin` | The inline sign-in form under "Sign in to use mimir free" where mimir cloud needs a signed-in person |
 | `pc-model` | The model list under your own key or a local server: Auto first, each with a cost hint, then Other model id |
 

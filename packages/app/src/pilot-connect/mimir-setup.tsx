@@ -155,18 +155,25 @@ export function MimirSetup({ place, choice: controlled, onChoose, idPrefix = 'ms
           place === 'setup' ? (
             <p className="sx-small sx-muted" data-testid="ms-cloud-note">
               No key to paste. {ASSISTANT_NAME} connects when you finish. To see today's use or switch to your own key, open Settings, {ASSISTANT_NAME}.
+              During alpha we save free {ASSISTANT_NAME} chats for 30 days to improve it; you can turn this off there too.
             </p>
           ) : (
-            <div className="pc-act">
-              <Button variant="primary" icon="link" onClick={() => set({ pilot: { mode: 'on', provider: 'mimir-cloud' } })}>
-                Use {ASSISTANT_NAME} free
-              </Button>
-              {onCloud ? (
-                <p className="pc-result ok" role="status">
-                  <Icon name="check" size={16} /> Connected to {PROVIDERS['mimir-cloud'].label}.
-                </p>
-              ) : null}
-            </div>
+            <>
+              <p className="sx-small sx-muted" data-testid="ms-cloud-saved">
+                During alpha we save free {ASSISTANT_NAME} chats for 30 days to improve it.{' '}
+                {place === 'settings' ? 'You can turn this off below.' : `You can turn this off in Settings, ${ASSISTANT_NAME}.`}
+              </p>
+              <div className="pc-act">
+                <Button variant="primary" icon="link" onClick={() => set({ pilot: { mode: 'on', provider: 'mimir-cloud' } })}>
+                  Use {ASSISTANT_NAME} free
+                </Button>
+                {onCloud ? (
+                  <p className="pc-result ok" role="status">
+                    <Icon name="check" size={16} /> Connected to {PROVIDERS['mimir-cloud'].label}.
+                  </p>
+                ) : null}
+              </div>
+            </>
           )
         ) : null}
         {choice === 'cloud' && cloud === 'sign-in' ? (

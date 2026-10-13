@@ -18,8 +18,9 @@ const ADAPTERS: Record<string, () => LlmAdapter> = {
 /** The mimir cloud provider id. Its requests keep this id so the host sends them to the proxy only. */
 export const MIMIR_CLOUD = 'mimir-cloud'
 
-/** Whether mimir cloud may keep the session, read when each request is built. */
+/** Whether mimir cloud may save the chat, read when each request is built. Partner apps pass their own switch here. */
 export interface CloudShare {
+  /** false sends x-sx-share: 0, which mimir cloud never saves. */
   on: boolean
   /** The app version, filed with a shared session. */
   version: string
@@ -28,10 +29,15 @@ export interface CloudShare {
 const SESSION = /^[A-Za-z0-9_-]{1,64}$/
 const VERSION = /^[0-9A-Za-z.+-]{1,40}$/
 
-/** The proxy's share headers: only with sharing on and a session and version it accepts. */
+/** The proxy's save headers. Off says so; on files the chat under its session and app version when they are valid. With no share setting at all the proxy follows the edition's default. */
 export function cloudHeaders(share: CloudShare | undefined, session: string | undefined): Record<string, string> {
-  if (!share?.on || !session || !SESSION.test(session) || !VERSION.test(share.version)) return {}
-  return { 'x-sx-share': '1', 'x-sx-session': session, 'x-sx-version': share.version }
+  if (!share) return {}
+  if (!share.on) return { 'x-sx-share': '0' }
+  return {
+    'x-sx-share': '1',
+    ...(session && SESSION.test(session) ? { 'x-sx-session': session } : {}),
+    ...(VERSION.test(share.version) ? { 'x-sx-version': share.version } : {}),
+  }
 }
 
 export function adapterFor(provider: string): LlmAdapter {

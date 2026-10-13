@@ -64,11 +64,18 @@ describe('mimir cloud', () => {
     expect(JSON.parse(sent[0]?.body ?? '{}')).toMatchObject({ model: 'claude-haiku-5-5', stream: true })
   })
 
-  it('sends no share headers with sharing off, or a session the proxy would not take', async () => {
-    for (const [share, session] of [[{ on: false, version: '0.2.0' }, 'ses_1'], [{ on: true, version: '0.2.0' }, 'bad id!'], [{ on: true, version: '' }, 'ses_1']] as const) {
+  it('says no with saving off, and leaves out a session or version the proxy would not take', async () => {
+    const cases = [
+      [{ on: false, version: '0.2.0' }, 'ses_1', { 'x-sx-share': '0' }],
+      [{ on: true, version: '0.2.0' }, 'bad id!', { 'x-sx-share': '1', 'x-sx-version': '0.2.0' }],
+      [{ on: true, version: '' }, 'ses_1', { 'x-sx-share': '1', 'x-sx-session': 'ses_1' }],
+      // no setting at all (an older kit): the proxy follows the edition's default
+      [undefined, 'ses_1', {}],
+    ] as const
+    for (const [share, session, want] of cases) {
       const { t, sent } = transport()
-      await collect(createTransportClient(t, 'mimir-cloud', { baseUrl: BASE, share: () => share }).stream({ ...REQ, session }))
-      expect(Object.keys(sent[0]?.headers ?? {}).filter((h) => h.startsWith('x-sx-'))).toEqual([])
+      await collect(createTransportClient(t, 'mimir-cloud', { baseUrl: BASE, ...(share ? { share: () => share } : {}) }).stream({ ...REQ, session }))
+      expect(Object.fromEntries(Object.entries(sent[0]?.headers ?? {}).filter(([h]) => ['x-sx-share', 'x-sx-session', 'x-sx-version'].includes(h)))).toEqual(want)
     }
     // never on another provider's request
     const { t, sent } = transport()
