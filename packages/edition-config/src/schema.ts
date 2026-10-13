@@ -62,6 +62,11 @@ export const brandSchema = z.object({
     z.object({ base: z.enum(['subban', 'nocturne']).default('subban'), tokens: themeTokens }),
   ]).default('subban'),
   supportEmail: z.email().optional(),
+  /**
+   * Named brand colors, such as `{ black: '#17181f', pink: '#ff79c6' }`. mimir's make_model tool takes them as
+   * "<brand name> <color>" (Acme Slicer black). Unset: SlicerX's brand kit colors under this edition's name.
+   */
+  colors: z.record(z.string().regex(/^[a-z][a-z]{0,15}$/, 'a lowercase color name such as black'), z.string().regex(/^#[0-9a-fA-F]{6}$/, 'a hex color such as #17181f')).optional(),
 })
 
 export const appsSchema = z.object({

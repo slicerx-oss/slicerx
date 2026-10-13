@@ -72,6 +72,9 @@ pub struct Brand {
     pub logo: Logo,
     pub theme: Theme,
     pub support_email: Option<String>,
+    /// Named brand colors (`brand.colors`), such as `black` to `#17181f`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colors: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -618,6 +621,9 @@ mod tests {
         assert_eq!(harbor.apps.desktop.identifier, "com.harborprint.slice");
         assert!(!harbor.features.printer("duet"));
         assert!(harbor.features.printer("bambu"));
+        let colors = harbor.brand.colors.as_ref().unwrap();
+        assert_eq!(colors.get("navy").map(String::as_str), Some("#1b2a41"));
+        assert_eq!(neutral.brand.colors, None);
     }
 
     // The Motion setting added firstRun.defaultMotion to the TypeScript schema; sx-cloud refused

@@ -64,8 +64,9 @@ export interface InstallResult {
 
 /** What an app entry with a shell provides. Every method may say no; the flow then shows what to paste. */
 export interface AgentInstallHost {
-  /** How a client starts the server shipped with this app, such as node and the path of cli.js. */
-  serverCommand(): Promise<{ command: string; args: string[] } | null>
+  /** How a client starts the server shipped with this app, such as node and the path of cli.js, and the edition file
+   * the server reads its name from (SLICERX_CONFIG) when the app has one. */
+  serverCommand(): Promise<{ command: string; args: string[]; editionFile?: string } | null>
   /** The hub's public key and address, from the bridge this app runs. */
   hub(): Promise<{ hubKey: string; linkUrl?: string } | null>
   /** Gets this agent its own hub credential and keeps it in the keychain under agentKeyRef(client). Never returns the key. */
@@ -120,7 +121,7 @@ export const browserHost: AgentInstallHost = {
   relayReady: async () => false,
 }
 
-const FALLBACK_SERVER = { command: 'node', args: ['/path/to/slicerx/packages/mcp/dist/cli.js'] }
+const FALLBACK_SERVER: { command: string; args: string[]; editionFile?: string } = { command: 'node', args: ['/path/to/slicerx/packages/mcp/dist/cli.js'] }
 
 function os(): 'mac' | 'windows' | 'linux' {
   const p = typeof navigator === 'undefined' ? '' : navigator.platform
@@ -138,9 +139,9 @@ export async function installAgent(host: AgentInstallHost, client: AgentId): Pro
     const [step] = installSteps(client, { server: FALLBACK_SERVER, hubKey: '', app: serverApp() }, os())
     return { ok: false, message: step?.kind === 'waits' ? step.reason : 'Available once the camera relay is set up.' }
   }
-  const server = (await host.serverCommand()) ?? FALLBACK_SERVER
+  const { editionFile, ...server } = (await host.serverCommand()) ?? FALLBACK_SERVER
   const hub = await host.hub()
-  const input: InstallInput = { server, hubKey: hub?.hubKey ?? '<hub key: shown by the desktop app>', app: serverApp(), ...(hub?.linkUrl ? { linkUrl: hub.linkUrl } : {}) }
+  const input: InstallInput = { server, ...(editionFile ? { editionFile } : {}), hubKey: hub?.hubKey ?? '<hub key: shown by the desktop app>', app: serverApp(), ...(hub?.linkUrl ? { linkUrl: hub.linkUrl } : {}) }
   const steps = installSteps(client, input, os())
   const config = configOf(steps)
   if (!hub) return { ok: false, message: `This needs the ${appName()} desktop app, which runs the printer hub and keeps the agent credential in your keychain. The entry below shows what it will add.`, ...config }

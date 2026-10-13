@@ -56,6 +56,9 @@ fn main() {
     // mimir cloud's one host, from the same config.
     #[cfg(feature = "pilot")]
     llm::init_cloud(context.config());
+    // The ChatGPT sign-in pages and errors name this edition too.
+    #[cfg(feature = "pilot")]
+    sx_llm::set_app_name(&brand::get().name);
     // Linux: a launch that cannot reach a display hands over to a running app or says why, before the toolkit panics.
     #[cfg(target_os = "linux")]
     display::preflight(&context.config().identifier, &brand::get().name);
@@ -228,6 +231,7 @@ fn main() {
             localai::local_ai_get,
             #[cfg(feature = "pilot")]
             agents::mcp_server_path,
+            agents::mcp_edition_file,
             #[cfg(feature = "pilot")]
             agents::agent_key_store,
             #[cfg(feature = "pilot")]

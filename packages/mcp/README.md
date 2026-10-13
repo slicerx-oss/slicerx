@@ -252,7 +252,7 @@ slicerx-mcp --engine stub call project_open '{"printer":"bambu_p1s","filament":"
 | `--sx-geom-bin <path>` | `SLICERX_MCP_SX_GEOM_BIN` or `SLICERX_SX_GEOM_BIN` | next to `sx`, then `PATH` |
 | `--cloud-api <url>` | `SLICERX_MCP_CLOUD_API`, `SLICERX_CLOUD_API_URL`, or `SLICERX_CONFIG`; token from the keychain item `slicerx-cloud` or `SLICERX_MCP_CLOUD_TOKEN` | off |
 | (environment only) | `SLICERX_MCP_SUPABASE_URL` and `SLICERX_MCP_SUPABASE_ANON_KEY`, or `SLICERX_CONFIG`; token from the keychain item `slicerx-sxlock` or `SLICERX_MCP_SXLOCK_TOKEN` | locked projects off |
-| (environment only) | `SLICERX_CONFIG`: tool text, results and errors name the app by the edition's `brand.name`, and the `sx` it runs reads the same file | SlicerX |
+| (environment only) | `SLICERX_CONFIG`: tool text, results and errors name the app by the edition's `brand.name`, `slicerx_make_model` takes its `brand.colors`, and the `sx` it runs reads the same file | SlicerX |
 | `--sx-bin <path>` | `SLICERX_MCP_SX_BIN` or `SLICERX_SX_BIN` | `sx` on `PATH` |
 | `--printers demo\|link\|off` | `SLICERX_MCP_PRINTERS` | `demo` |
 | `--link-url`, `--link-state-dir` | `SLICERX_MCP_LINK_URL`, `SLICERX_MCP_LINK_STATE_DIR`, `SLICERX_MCP_LINK_CODE`, `SLICERX_MCP_LINK_HUB_KEY`, `SLICERX_MCP_LINK_KEY` (a partner app key, read once and removed from the environment; see docs/integrators/partner-app-key.md) | `ws://127.0.0.1:47615`, the hub's default state directory, none, `hub-key.pub` from the state directory. The server checks the hub's signed hello against the key before it sends anything and pairs with a proof, never the code itself. |

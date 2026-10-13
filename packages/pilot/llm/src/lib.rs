@@ -46,6 +46,19 @@ pub use keys::{
 
 use keys::{ApiKey, Provider};
 
+static APP_NAME: OnceLock<String> = OnceLock::new();
+
+/// Sets the app's name in the pages and messages people read (the ChatGPT sign-in pages and errors): `SlicerX`, or a
+/// white-label edition's own. Once, at start.
+pub fn set_app_name(name: &str) {
+    let _ = APP_NAME.set(name.to_owned());
+}
+
+/// The app's name in pages and messages: `SlicerX` unless the app set its own.
+pub fn app_name() -> &'static str {
+    APP_NAME.get().map_or("SlicerX", String::as_str)
+}
+
 /// Largest provider error body read to build [`Error::Http`].
 const MAX_ERROR_BODY: usize = 64 * 1024;
 

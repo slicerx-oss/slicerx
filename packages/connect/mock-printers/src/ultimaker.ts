@@ -51,6 +51,9 @@ export async function startUltiMaker(m: MockMachine, opts: { authorizeAfter?: nu
     }
     if (p === '/api/v1/print_job') { const j = job(); return j ? { json: j } : { status: 404, json: { message: 'No print job' } } }
     if (p === '/api/v1/auth/request' && req.method === 'POST') {
+      // The touchscreen prompt shows these two; the login is the id and key alone.
+      const asked = new URLSearchParams(req.body.toString('utf8'))
+      m.log.push(`pair request application=${asked.get('application') ?? ''} user=${asked.get('user') ?? ''}`)
       const id = randomBytes(16).toString('hex')
       const key = randomBytes(32).toString('hex')
       pairs.set(id, { key, checks: 0 })
@@ -80,6 +83,7 @@ export async function startUltiMaker(m: MockMachine, opts: { authorizeAfter?: nu
     }
     if (p === '/cluster-api/v1/print_jobs/' && req.method === 'POST') {
       const f = await readFilePart(req)
+      m.log.push(`job owner=${String((await req.form()).get('owner') ?? '')}`)
       m.upload(f.name, f.data)
       m.start(f.name)
       return { status: 201, json: { uuid: 'job-1' } }
