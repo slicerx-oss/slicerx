@@ -1,1 +1,0 @@
-Show me on a strike opens the toolpaths at its layer and centers the view on it | test-program | 2026-10-13 | https://github.com/slicerx-oss/slicerx/issues/972 | fails intermittently on desktop shards in the merge queue (e2e/slice-block-show.spec.ts:58), kicking queued pull requests; fix in progress
