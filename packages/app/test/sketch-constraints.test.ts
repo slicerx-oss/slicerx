@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { historyFiles, parseHistories, type History, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
 import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver } from '../src/cad/sketch-constraints'
+import { DEFAULT_UNITS, formatLength } from '../src/cad/units'
 import { fromLoops, rectangle, type Entity } from '../src/cad/sketch-model'
 import { boxMesh } from '../src/plate/mesh-ops'
 
@@ -180,5 +181,18 @@ describe('constraints in the project file', () => {
     expect(Math.hypot(m.dims[0]!.to[0] - m.dims[0]!.from[0], m.dims[0]!.to[1] - m.dims[0]!.from[1])).toBeCloseTo(8)
     // the diameter's value sits past the rim, clear of the fixed center
     expect(Math.hypot(...m.dims[0]!.at!)).toBeGreaterThan(4)
+  })
+
+  it('writes dimension values in the display unit', () => {
+    const circle: Entity = { kind: 'circle', center: [0, 0], diameterMm: 12.7 }
+    const cons = [
+      { type: 'diameter', circle: { e: 0, seg: 0 }, value: 12.7 },
+      { type: 'radius', circle: { e: 0, seg: 0 }, value: 6.35 },
+      { type: 'length', line: { e: 1, seg: 1 }, value: 25.4 },
+    ] as const
+    const inches = sketchMarks([circle, ...square()], cons, (mm) => formatLength(mm, { ...DEFAULT_UNITS, length: 'in' }))
+    expect(inches.dims.map((d) => d.label)).toEqual(['\u23000.500', 'R0.250', '1.000'])
+    const halves = sketchMarks([circle, ...square()], cons, (mm) => formatLength(mm, { ...DEFAULT_UNITS, length: 'in', inchFraction: 16 }))
+    expect(halves.dims.map((d) => d.label)).toEqual(['\u23001/2', 'R1/4', '1'])
   })
 })
