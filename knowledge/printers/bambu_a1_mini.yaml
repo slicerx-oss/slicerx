@@ -72,7 +72,7 @@ pilot_notes:
   - "Build volume is 180 mm on each axis. Check part fit before slicing and suggest splitting or scaling."
   - "Bed maxes at 80 C. Cap bed temperature at 80 for PETG and use Textured PEI or SuperTack."
   - "Open frame. Block ABS, ASA, PC, nylon and fiber grades."
-  - "AMS lite limits apply: no soft TPU, no third party CF or GF, no absorbent PVA in the AMS."
+  - "AMS lite limits apply: no soft TPU, no third party CF or GF, no absorbent PVA in the AMS. Bambu's own TPU for AMS is the exception: Bambu sells it as AMS lite compatible."
   - "The default process profile has no elephant foot compensation (0), unlike the A1 (0.075)."
 common_issues:
   - symptom: "Nozzle clumping alarm mid print"
@@ -92,4 +92,4 @@ disagreements:
       - {claim: "10000 mm/s2", src: [bambu_store_a1_mini]}
       - {claim: "20000 mm/s2 in the Orca machine profile", src: ["orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"]}
     resolution: "Use 10000 as the hardware figure."
-src: [bambu_store_a1_mini, "orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"]
+src: [bambu_store_a1_mini, bambu_store_tpu_for_ams, "orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"]
