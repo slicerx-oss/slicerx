@@ -17,7 +17,7 @@ import { listen } from './http-util.ts'
 import { MockMachine, type CameraFrame, type Fault } from './machine.ts'
 import { MOCK_MOONRAKER_LOGIN, startMoonraker, type MoonrakerControl } from './moonraker.ts'
 import { startOctoPrint } from './octoprint.ts'
-import { startSnapmakerLuban, type LubanExtra } from './snapmaker.ts'
+import { startSnapmakerLuban, type LubanEnclosure, type LubanExtra } from './snapmaker.ts'
 import { startPrusaLink, type PrusaStorage } from './prusalink.ts'
 import { startUltiMaker } from './ultimaker.ts'
 import { MOCK_HA_TOKEN, startHomeAssistant, startSpoolman } from './services.ts'
@@ -310,15 +310,18 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.remainingMemory !== undefined) elegooExtra.remainingMemory = b.remainingMemory
       return { json: { remainingMemory: elegooExtra.remainingMemory } }
     }
-    // POST /snapmaker {drop?, decline?, forget?}: the Snapmaker 2.0 fake drops the next `drop` status
-    // requests with a 401, answers pairing prompts with a refusal, or forgets every token.
+    // POST /snapmaker {drop?, decline?, forget?, enclosure?}: the Snapmaker 2.0 fake drops the next `drop` status
+    // requests with a 401, answers pairing prompts with a refusal, or forgets every token. `enclosure` changes what
+    // the enclosure reports ({ready?, led?, fan?}), or with null takes the endpoint away (404).
     if (req.path === '/snapmaker' && req.method === 'POST') {
       if (!lubanExtra) return { status: 404 }
-      const b = req.json() as { drop?: number; decline?: boolean; forget?: boolean }
+      const b = req.json() as { drop?: number; decline?: boolean; forget?: boolean; enclosure?: Partial<LubanEnclosure> | null }
       if (b.drop !== undefined) lubanExtra.drop = b.drop
       if (b.decline !== undefined) lubanExtra.decline = b.decline
       if (b.forget) lubanExtra.forget()
-      return { json: { drop: lubanExtra.drop, decline: lubanExtra.decline } }
+      if (b.enclosure === null) lubanExtra.enclosure = null
+      else if (b.enclosure) lubanExtra.enclosure = { ...(lubanExtra.enclosure ?? { ready: false, led: 0, fan: 0 }), ...b.enclosure }
+      return { json: { drop: lubanExtra.drop, decline: lubanExtra.decline, enclosure: lubanExtra.enclosure } }
     }
     // POST /anycubic {cloud?, rotate?}: the Anycubic fake turns LAN Mode off (cloud: true), or changes its broker
     // login as a restart does (rotate: true), which drops the connected clients.

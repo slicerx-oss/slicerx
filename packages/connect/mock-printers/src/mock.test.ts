@@ -325,15 +325,26 @@ test('PrusaLink: lifecycle, telemetry, the spec 409s, faults and the camera', as
   }
 })
 
-test('PrusaLink: a second upload while one is landing finds the storage busy', async () => {
+test('PrusaLink: a second upload while one is landing finds the storage busy, and the status shows the transfer', async () => {
   const mocks = await startMocks({ only: ['prusalink'], state: 'idle' })
   try {
+    const status = async () => json(await fetch(url(mocks, 'prusalink', '/api/v1/status')))
+    assert.equal((await status()).transfer, undefined, 'no transfer while nothing arrives')
     await post(mocks, '/slow', { mock: 'prusalink', uploadMs: 300 })
     const put = (n: string) => fetch(url(mocks, 'prusalink', `/api/v1/files/usb/${n}`), { method: 'PUT', body: 'G28\n' }).then((r) => r.status)
     const first = put('a.gcode')
     await new Promise((r) => setTimeout(r, 50))
     assert.equal(await put('b.gcode'), 409)
+    // The spec's StatusTransfer: id and time_transferring always, progress in percent.
+    const t = (await status()).transfer
+    assert.deepEqual([typeof t?.id, typeof t?.time_transferring], ['number', 'number'])
+    assert.ok(t.progress > 0 && t.progress < 100, `progress ${t.progress}`)
+    assert.equal((await status()).printer.state, 'IDLE')
     assert.equal(await first, 201)
+    assert.equal((await status()).transfer, undefined, 'gone once the file landed')
+    // `/api/v1/info` carries the name and location set on the printer.
+    const info = await json(await fetch(url(mocks, 'prusalink', '/api/v1/info')))
+    assert.deepEqual([info.name, info.location, info.serial], ['Bay 3', 'Workshop', 'CZPXMOCK0001'])
   } finally {
     await mocks.stop()
   }
@@ -466,6 +477,15 @@ test('Snapmaker 2.0: lifecycle, the runout and door flags, offline hangs, no cam
     assert.equal((await status()).status, 'IDLE')
     // The 2.0 machines have no camera.
     assert.equal((await post(mocks, '/camera', { mock: 'snapmaker-luban', frame: 'hand' })).status, 400)
+    // The enclosure: none attached at first, then its light and exhaust fan as Luban switches them; it needs the
+    // token, and without the endpoint it answers 404.
+    const enclosure = async () => json(await fetch(u(`/api/v1/enclosure?token=${token}`)))
+    assert.equal((await enclosure()).isReady, false)
+    assert.equal((await fetch(u('/api/v1/enclosure?token=nope'))).status, 401)
+    await post(mocks, '/snapmaker', { enclosure: { ready: true, led: 100 } })
+    assert.deepEqual(await enclosure(), { isReady: true, isDoorEnabled: true, led: 100, fan: 0 })
+    await post(mocks, '/snapmaker', { enclosure: null })
+    assert.equal((await fetch(u(`/api/v1/enclosure?token=${token}`))).status, 404)
   } finally {
     await mocks.stop()
   }
