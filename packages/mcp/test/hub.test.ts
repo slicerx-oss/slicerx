@@ -259,6 +259,8 @@ describe('--app through a scripted hub', () => {
 
   it('needs printers through sx-link', async () => {
     await expect(createContext({ engine: 'stub', policy: DEFAULT_POLICY, printers: 'demo', app: 'required' })).rejects.toThrow(/--app needs printers through sx-link/)
+  })
+})
 
 describe('the mimir cloud share setting through a scripted hub', () => {
   const link = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
