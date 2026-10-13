@@ -649,7 +649,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .plate-tools-group > .slice-look { padding: 4px; }
 .plate-tools-group > .slice-look .sx-seg > button { height: 30px; padding: 0 16px; }
 /* The grip keeps its place at the bar's end and shows on hover or focus, so no button moves when it appears. */
-.plate-tools-grip { flex: none; display: grid; grid-template-columns: repeat(3, 3px); gap: 3px; place-content: center; width: 22px; height: 32px; margin-left: 2px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); cursor: grab; touch-action: none; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+.plate-tools-grip { flex: none; display: grid; grid-template-columns: repeat(2, 3px); gap: 3px; place-content: center; width: 22px; height: 32px; margin-left: 2px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); cursor: grab; touch-action: none; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
 .plate-tools-grip i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
 .plate-tools-group:hover .plate-tools-grip, .plate-tools-grip:focus-visible, .plate-tools-group[data-dragging] .plate-tools-grip { opacity: 1; }
 .plate-tools-grip:hover { color: var(--fg); background: var(--ink-3); }
