@@ -43,7 +43,7 @@ async function fakeApp(tools: Record<string, (args: Record<string, unknown>) => 
         res.end(JSON.stringify(body))
       }
       if (req.headers.authorization !== `Bearer ${TOKEN}`) return reply(401, { ok: false, error: { code: 'unauthorized', message: 'a valid bearer token is required' } })
-      if (req.url === '/v1/health') return reply(200, { ok: true, result: { app: 'SlicerX', pageReady: true } })
+      if (req.url === '/v1/health') return reply(200, { ok: true, result: { app: 'SlicerX', pageReady: true, keychain: BRIDGE_KEYCHAIN } })
       const { tool, args } = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { tool: string; args: Record<string, unknown> }
       seen.push({ tool, args, auth: req.headers.authorization, host: req.headers.host })
       const fn = tools[tool]
@@ -71,6 +71,9 @@ async function connect(file: string): Promise<(name: string, args?: Record<strin
 }
 
 const text = (r: CallToolResult) => (r.content[0] as { text: string }).text
+
+/** What a bridge build's health says about its keychain items (keychain.rs in the desktop shell). */
+const BRIDGE_KEYCHAIN = { identifier: 'app.slicerx.desktop.agent-bridge', shipping: false, services: ['slicerx-printers.app.slicerx.desktop.agent-bridge', 'slicerx-mimir-cloud-token.app.slicerx.desktop.agent-bridge'] }
 
 describe('running-app MCP server', () => {
   it('lists the same tool set on every platform', async () => {
@@ -108,6 +111,14 @@ describe('running-app MCP server', () => {
     const denied = await call('app_state')
     expect(denied.isError).toBe(true)
     expect(denied.structuredContent).toEqual({ error: { code: 'unauthorized', message: 'a valid bearer token is required' } })
+  })
+
+  it('reads back the keychain names a bridge build keeps its credentials under', async () => {
+    const { file } = await fakeApp({})
+    const r = await (await connect(file))('app_health')
+    expect(r.isError).toBeFalsy()
+    const health = JSON.parse(text(r)) as { keychain: typeof BRIDGE_KEYCHAIN }
+    expect(health.keychain).toEqual(BRIDGE_KEYCHAIN)
   })
 
   it('says the app is not running when there is no connection file or nothing listens', async () => {

@@ -36,7 +36,7 @@ import { mimirQuotaTools } from './mimir-quota'
 
 export { createSlicerxServer, SERVER_NAME, SERVER_VERSION, serverTools, type ServerContext } from './server'
 export { startHttp, type HttpOptions } from './http'
-export { AGENT_CLIENTS, agentKeyRef, installSteps, serverEnv, SERVER_ID, type AgentClient, type AgentClientId, type InstallInput, type InstallStep } from './agents'
+export { AGENT_CLIENTS, agentKeyRef, installSteps, keychainService, serverEnv, SERVER_ID, SHIPPING_APP_IDENTIFIER, type AgentClient, type AgentClientId, type InstallInput, type InstallStep } from './agents'
 export { CLOUD_NOT_CONFIGURED, cloudFromEnv, type CloudOptions } from './cloud'
 export { editionColorsFromEnv, editionNameFromEnv } from './edition'
 // The app's name in tool text and messages: an app that runs the server in its own process sets its edition's name.

@@ -56,7 +56,9 @@ pub async fn link_start(app: tauri::AppHandle, state: State<'_, Bridge>) -> Resu
     let data = app.path().app_data_dir().ok();
     // Printer codes go to the keychain; on Windows, one it refuses is sealed with DPAPI in the app's data
     // folder instead of lasting only until the app closes (vault.rs).
-    let keychain: Arc<dyn sx_connect::SecretStore> = Arc::new(KeychainSecrets::new("slicerx-printers"));
+    let keychain: Arc<dyn sx_connect::SecretStore> = Arc::new(KeychainSecrets::new(
+        &crate::keychain::service(crate::keychain::PRINTERS),
+    ));
     let secrets: Arc<dyn sx_connect::SecretStore> = match &data {
         Some(d) => Arc::new(crate::vault::KeychainOrFile::new(keychain, d.join("vault"))),
         None => keychain,

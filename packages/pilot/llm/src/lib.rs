@@ -41,7 +41,7 @@ pub use error::{Error, Result};
 pub use keys::{
     ANTHROPIC_KEY_ENV, ANTHROPIC_KEYCHAIN_ACCOUNT, ANTHROPIC_KEYCHAIN_SERVICE, KeySource,
     LOCAL_KEYCHAIN_ACCOUNT, LOCAL_KEYCHAIN_SERVICE, OPENAI_KEY_ENV, OPENAI_KEYCHAIN_ACCOUNT,
-    OPENAI_KEYCHAIN_SERVICE, SystemKeySource,
+    OPENAI_KEYCHAIN_SERVICE, SystemKeySource, keychain_service, set_keychain_service,
 };
 
 use keys::{ApiKey, Provider};

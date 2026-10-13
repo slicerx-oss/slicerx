@@ -22,6 +22,7 @@ mod files;
 mod firewall;
 mod gpu;
 mod header;
+mod keychain;
 mod launch;
 mod link;
 #[cfg(feature = "pilot")]
@@ -55,6 +56,10 @@ fn main() {
     // Crash reports say which version crashed, even when an update lands before the next launch sends them.
     crash::set_version(&context.package_info().version.to_string());
     brand::init(context.config());
+    // Keychain names: the shipping app keeps its own, any other identifier (a test build) gets names of its own.
+    keychain::init(&context.config().identifier);
+    #[cfg(feature = "pilot")]
+    sx_llm::set_keychain_service(keychain::service);
     // mimir cloud's one host, from the same config.
     #[cfg(feature = "pilot")]
     llm::init_cloud(context.config());
@@ -235,6 +240,7 @@ fn main() {
             agents::mcp_server_path,
             #[cfg(feature = "pilot")]
             agents::mcp_edition_file,
+            keychain::keychain_names,
             #[cfg(feature = "pilot")]
             agents::agent_key_store,
             #[cfg(feature = "pilot")]
