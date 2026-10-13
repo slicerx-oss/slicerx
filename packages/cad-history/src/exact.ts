@@ -176,6 +176,16 @@ export async function exactStep(call: Call, s: Step, parts: ExactPart[], fellBac
         out[s.part] = await fromSolid(call, part!, acc.smb)
         return out.filter((_, i) => !p.with.includes(i))
       }
+      case 'edge.fillet': {
+        const b = solid(part)
+        if (!b || !part) return null
+        // the edges in the part's own coordinates; the kernel finds each by its faces' keys, then by place
+        const inv = invert(s.transform)
+        const edges = p.edges.map((e) => ({ a: point(inv, e.a), b: point(inv, e.b), ...(e.center ? { center: point(inv, e.center) } : {}), ...(e.keys ? { keys: e.keys } : {}) }))
+        const r = await call('brep.fillet', { body: b, edges, radiusMm: p.radiusMm, save: true })
+        out[s.part] = await fromSolid(call, part, saved(r))
+        return out
+      }
       case 'plane.cut': {
         const b = solid(part)
         if (!b || !part) return null
