@@ -7,10 +7,17 @@
 use std::path::{Path, PathBuf};
 
 const COMMIT: &str = "c9c5979f04cea8c38213004d4f04df0dcfb40d05";
+// written by scripts/fetch-smlib.sh once swap-routines.sh has put our routines in the source
+const READY: &str = ".ready-2";
 
 fn kernel_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("SX_SMLIB_DIR") {
-        return Some(PathBuf::from(d));
+        let d = PathBuf::from(d);
+        assert!(
+            d.join(READY).exists(),
+            "SX_SMLIB_DIR has no {READY}: use the directory packages/brep/scripts/fetch-smlib.sh prints"
+        );
+        return Some(d);
     }
     let cache = std::env::var_os("SX_SMLIB_CACHE")
         .map(PathBuf::from)
@@ -21,7 +28,7 @@ fn kernel_dir() -> Option<PathBuf> {
                 .map(|c| c.join("slicerx").join("smlib"))
         })?;
     let d = cache.join(COMMIT);
-    d.join(".complete").exists().then_some(d)
+    d.join(READY).exists().then_some(d)
 }
 
 fn main() {
@@ -29,6 +36,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SX_SMLIB_CACHE");
     println!("cargo:rerun-if-env-changed=SX_BREP_REQUIRE");
     println!("cargo:rerun-if-changed=cpp");
+    println!("cargo:rerun-if-changed=scripts/swap-routines.sh");
     println!("cargo::rustc-check-cfg=cfg(sx_brep_kernel)");
     let dir = kernel_dir().filter(|d| d.join("source/SMLib/inc").is_dir());
     let Some(dir) = dir else {
@@ -74,11 +82,20 @@ fn main() {
         b
     };
     let (sm_inc, api_inc) = (sm.join("inc"), api.join("inc"));
-    build([&api_inc, &sm_inc])
+    let mut api_build = build([&api_inc, &sm_inc]);
+    api_build
         .define("SM_API_EXPORTS", None)
         .files(sources(&api))
-        .file("cpp/sx_brep.cpp")
-        .compile("sx_brep");
-    build([&sm_inc, &api_inc]).files(sources(&sm)).compile("smlib");
+        .file("cpp/sx_brep.cpp");
+    // tests/routines.rs, with the routine-probe feature
+    if std::env::var_os("CARGO_FEATURE_ROUTINE_PROBE").is_some() {
+        api_build.file("cpp/routine_probe.cpp");
+    }
+    api_build.compile("sx_brep");
+    // our versions of the routines swap-routines.sh takes out build with the kernel
+    build([&sm_inc, &api_inc])
+        .files(sources(&sm))
+        .file("cpp/routines.cpp")
+        .compile("smlib");
     println!("cargo:rustc-cfg=sx_brep_kernel");
 }
