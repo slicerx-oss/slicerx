@@ -209,11 +209,27 @@ function geometryKey(s: AppState, shown: ShownTower | null): string {
   return towerKey + '|' + s.plate.map((p) => `${p.id}:${p.handle.id}:${p.printable === false ? 'x' : ''}${JSON.stringify(p.slotOverrides ?? {})}:${(p.volumes ?? []).map((v) => `${v.id}${v.role}${v.local.join()}`).join(';')}`).join('|') + `#${colors}#${JSON.stringify(activeMeta(s)?.settings.slotMap ?? {})}`
 }
 
+/** Whether the last way focus moved was the Tab key, rather than a press (a pointer, or a script after a key). */
+let tabbed = false
+let tabWatch = false
+function watchTab(): void {
+  if (tabWatch) return
+  tabWatch = true
+  window.addEventListener('keydown', (e) => void (e.key === 'Tab' && (tabbed = true)), true)
+  window.addEventListener('pointerdown', () => void (tabbed = false), true)
+}
+
 function makeCanvas(stage: HTMLElement, label: string): HTMLCanvasElement {
   const c = document.createElement('canvas')
   c.className = 'vp-canvas'
   c.tabIndex = 0
   c.setAttribute('aria-label', label)
+  // The view shows that it has focus only when Tab brought it there: a faint inner edge (app.css). A click, the plate
+  // keys or a script focusing it leave it plain, as the browser's own focus ring would not.
+  watchTab()
+  c.addEventListener('focus', () => c.toggleAttribute('data-tab-focus', tabbed))
+  c.addEventListener('blur', () => c.removeAttribute('data-tab-focus'))
+  c.addEventListener('pointerdown', () => c.removeAttribute('data-tab-focus'))
   stage.appendChild(c)
   return c
 }
