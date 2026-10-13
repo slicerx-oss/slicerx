@@ -5635,6 +5635,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spade",
+ "sx-brep",
  "sx-i-overlay",
  "thiserror 2.0.21",
  "ttf-parser",
