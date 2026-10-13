@@ -46,6 +46,8 @@ export function StepRow(props: {
   madeBy?: boolean | undefined
   /** This step works on the one face picked in Model. */
   usedBy?: boolean | undefined
+  /** The number shown: the design timeline's in the tree, so the tree and the strip agree. */
+  n?: number | undefined
 }) {
   const { step: s, index, skipped, busy, editing } = props
   const name = stepName(s, useLengthWords())
@@ -90,12 +92,12 @@ export function StepRow(props: {
         {...tab}
         onClick={props.onView}
       >
-        {index + 1}
+        {props.n ?? index + 1}
       </button>
       {renaming ? (
         <RenameField
           value={s.label ?? name}
-          label={`Name of step ${index + 1}`}
+          label={`Name of step ${props.n ?? index + 1}`}
           onDone={(text) => {
             setRenaming(false)
             if (text !== null) props.onRename?.(text)
