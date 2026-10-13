@@ -14,10 +14,10 @@
 -- alter role mimir_session_reader with login password '<secret>'.
 --
 -- Registration keys are deployment steps too. An edition with no key registers nothing.
--- Set one: update public.mimir_limits set register_key_hash = public.mimir_token_hash('<key>')
---   where edition = 'slicerx';
--- Rotate: move the current hash to register_key_prev_hash, set the new one, ship builds
--- with the new key, then clear register_key_prev_hash once the old builds are gone.
+-- `pnpm --filter @slicerx/store mimir:register-key` sets one from the environment, sending
+-- only its sha256 (public.mimir_token_hash). --rotate moves the current hash to
+-- register_key_prev_hash, so builds with the old key still register; ship builds with the new
+-- key, then --clear-previous once the old builds are gone.
 
 -- Caps per edition, in micro-dollars per Melbourne day.
 create table public.mimir_limits (

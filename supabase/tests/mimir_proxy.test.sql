@@ -9,7 +9,7 @@
 -- `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(86);
+select plan(87);
 
 create temp table t (k text primary key, v text) on commit drop;
 grant all on t to anon, authenticated, service_role, mimir_session_reader;
@@ -26,6 +26,8 @@ begin
 end;
 $$;
 grant execute on function pg_temp.reg(text, text) to service_role;
+-- the deploy step (packages/store scripts/mimir-register-key.ts) hashes the key the same way
+select is(public.mimir_token_hash('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'a registration key hashes to its sha256 hex');
 
 -- Clients see nothing -----------------------------------------------------------------
 set local role anon;
