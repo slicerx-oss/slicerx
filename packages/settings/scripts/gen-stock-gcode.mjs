@@ -59,17 +59,56 @@ function git(dir, ...args) {
   return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', maxBuffer: 1 << 30 })
 }
 
-/** Every version of a file: [commit time, blob] from newest to oldest. */
-function versions(dir, path) {
+/**
+ * Every version of a file that has lived at any of `paths`: [commit time, blob] from newest to oldest. A commit that
+ * moves the file deletes one path and adds another, and the added one is its version.
+ */
+function versions(dir, paths) {
   const out = []
-  const log = git(dir, 'log', '--format=%ct', '--raw', '--no-abbrev', '--no-renames', 'HEAD', '--', path)
+  const log = git(dir, 'log', '--format=%ct', '--raw', '--no-abbrev', '--no-renames', 'HEAD', '--', ...paths)
   let time = 0
   for (const line of log.split('\n')) {
     if (/^\d+$/.test(line)) time = Number(line)
     const m = /^:\d+ \d+ [0-9a-f]+ ([0-9a-f]+) ([AMD])\t/.exec(line)
-    if (m) out.push([time, m[2] === 'D' ? null : m[1]])
+    if (!m) continue
+    const blob = m[2] === 'D' ? null : m[1]
+    const last = out[out.length - 1]
+    if (last && last[0] === time) {
+      if (blob) last[1] = blob
+    } else out.push([time, blob])
   }
   return out
+}
+
+/**
+ * Every path a preset name has had under a vendor's machine folder in the clone's history. Some vendors keep their
+ * presets in a folder per printer family (`machine/ECC/<name>.json`), so a name is looked up anywhere below it.
+ */
+function machinePaths(dir, base) {
+  const byName = new Map()
+  const log = git(dir, 'log', '--format=', '--name-only', '--no-renames', 'HEAD', '--', base)
+  for (const path of log.split('\n')) {
+    if (!path.startsWith(base) || !path.endsWith('.json')) continue
+    const name = path.slice(path.lastIndexOf('/') + 1, -'.json'.length)
+    if (!byName.has(name)) byName.set(name, new Set())
+    byName.get(name).add(path)
+  }
+  return byName
+}
+
+/** Every preset file below a vendor's machine folder of an installed app, by preset name. */
+function installedMachinePaths(root) {
+  const byName = new Map()
+  const walk = (d) => {
+    if (!existsSync(d)) return
+    for (const name of readdirSync(d).sort()) {
+      const path = join(d, name)
+      if (statSync(path).isDirectory()) walk(path)
+      else if (name.endsWith('.json') && !byName.has(name.slice(0, -'.json'.length))) byName.set(name.slice(0, -'.json'.length), path)
+    }
+  }
+  walk(root)
+  return byName
 }
 
 const blobCache = new Map()
@@ -92,9 +131,10 @@ const textOf = (v) => (typeof v === 'string' ? v : Array.isArray(v) && typeof v[
 
 function machineFingerprints(dir, vendor, profiles) {
   const base = `resources/profiles/${vendor}/machine/`
+  const paths = machinePaths(dir, base)
   const fileVersions = new Map()
   const vers = (name) => {
-    if (!fileVersions.has(name)) fileVersions.set(name, versions(dir, `${base}${name}.json`))
+    if (!fileVersions.has(name)) fileVersions.set(name, versions(dir, [...(paths.get(name) ?? [`${base}${name}.json`])]))
     return fileVersions.get(name)
   }
   // The file's content at a time: its newest version no later than it.
@@ -161,13 +201,14 @@ function filamentFingerprints(dir, vendor) {
 
 /** The machine presets of an installed app's profiles directory: one version of each, resolved as above. */
 function installedMachineFingerprints(dir, vendor, profiles) {
+  const files = installedMachinePaths(join(dir, vendor, 'machine'))
   const cache = new Map()
   const at = (name) => {
     if (!cache.has(name)) {
-      const file = join(dir, vendor, 'machine', `${name}.json`)
+      const file = files.get(name)
       let j = null
       try {
-        j = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
+        j = file ? JSON.parse(readFileSync(file, 'utf8')) : null
       } catch {
         j = null
       }
