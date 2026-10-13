@@ -11,6 +11,7 @@ import { isCadTool, selectedIds, set, useApp } from '../../state/store'
 import { bounds, decompose, sizeOf, type Vec3 } from '../../plate/transform'
 import { ObjectActions } from '../prepare/object-actions'
 import { ObjectTransform } from '../prepare/object-transform'
+import { fixedLength } from '../../cad/units'
 import { HistoryTree } from './history-tree'
 import { Timeline } from './timeline'
 import { BottomPanel } from '../../shell/bottom-panel'
@@ -80,11 +81,17 @@ const fmt = (n: number) => String(Math.round(n * 10) / 10)
 function TransformLine() {
   const entry = useApp((s) => s.plate.find((p) => p.id === s.selection))
   const { origin, frame } = useShownOrigin()
+  const units = useApp((s) => s.units)
   if (!entry) return null
   const p = decompose(entry.transform).position.map((v, i) => v - (origin[i] ?? 0))
+  // Model shows the display unit at its precision; Slice keeps mm
+  const model = frame === 'grid'
+  const f = (v: number | undefined) => (model ? fixedLength(v ?? 0, units) : fmt(v ?? 0))
+  const text = `X ${f(p[0])} Y ${f(p[1])} Z ${f(p[2])} ${model ? units.length : 'mm'}`
+  // a long line ends in an ellipsis inside the panel; the tooltip has all of it
   return (
-    <span className="sx-small sx-muted design-tf-line" data-testid="model-transform-summary" data-frame={frame}>
-      X {fmt(p[0] ?? 0)} Y {fmt(p[1] ?? 0)} Z {fmt(p[2] ?? 0)} mm
+    <span className="sx-small sx-muted design-tf-line" data-testid="model-transform-summary" data-frame={frame} {...tipAttrs({ title: 'Position', body: text })}>
+      {text}
     </span>
   )
 }

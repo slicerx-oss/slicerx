@@ -49,12 +49,12 @@ describe('measure readout', () => {
     expect(rows[0]).toEqual({ label: 'Distance', value: '12.35 mm', copy: '12.346' })
     expect(rows[1]?.value).toBe('12.00 mm')
     expect(rows[4]?.value).toContain('parallel')
-    expect(readout({ radiusMm: 2.5, diameterMm: 5, areaMm2: 0 }).map((r) => r.value)).toEqual(['2.500 mm', '5.000 mm'])
+    expect(readout({ radiusMm: 2.5, diameterMm: 5, areaMm2: 0 }).map((r) => r.value)).toEqual(['2.50 mm', '5.00 mm'])
   })
 
   it('names features with their own size and marks them in the view', () => {
-    expect(describeFeature({ kind: 'edge', a: [0, 0, 0], b: [3, 4, 0] })).toBe('Edge, 5.000 mm')
-    expect(describeFeature({ kind: 'circle', center: [0, 0, 0], axis: [0, 0, 1], radius: 4, sweepDeg: 360 })).toBe('Circle, diameter 8.000 mm')
+    expect(describeFeature({ kind: 'edge', a: [0, 0, 0], b: [3, 4, 0] })).toBe('Edge, 5.00 mm')
+    expect(describeFeature({ kind: 'circle', center: [0, 0, 0], axis: [0, 0, 1], radius: 4, sweepDeg: 360 })).toBe('Circle, diameter 8.00 mm')
     expect(describeFeature({ kind: 'plane', point: [1, 2, 0], normal: [0, 0, 1], areaMm2: 0 })).toBe('Bed')
     expect(featurePoints({ kind: 'edge', a: [0, 0, 0], b: [3, 4, 0] })).toHaveLength(2)
   })
