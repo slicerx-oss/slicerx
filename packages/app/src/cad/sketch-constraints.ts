@@ -313,11 +313,12 @@ function crossing(a: V2, b: V2, c: V2, d: V2): V2 | null {
 /**
  * How one value constraint is drawn, with `value` as its text (the measured value for a driven one), or null when
  * what it names is gone. Diameters go across a circle at 45 degrees, clear of the axes, with the value on a leader
- * past the rim; lengths and distances run beside what they measure when set off.
+ * past the rim; lengths and distances run beside what they measure when set off. `length` writes a value in the
+ * display unit.
  */
-export function dimMark(sketch: readonly Entity[], c: SketchConstraint, value: number, of: number): SketchDim | null {
+export function dimMark(sketch: readonly Entity[], c: SketchConstraint, value: number, of: number, length: (mm: number) => string = mmText): SketchDim | null {
   const off = 'offset' in c && typeof c.offset === 'number' ? c.offset : 0
-  const text = c.type === 'angle' ? `${mmText(value)}\u00b0` : c.type === 'diameter' ? `\u2300${mmText(value)}` : c.type === 'radius' ? `R${mmText(value)}` : mmText(value)
+  const text = c.type === 'angle' ? `${mmText(value)}\u00b0` : c.type === 'diameter' ? `\u2300${length(value)}` : c.type === 'radius' ? `R${length(value)}` : length(value)
   const label = 'driven' in c && c.driven ? `(${text})` : text
   const d = Math.SQRT1_2
   switch (c.type) {
@@ -407,9 +408,9 @@ export function dimMark(sketch: readonly Entity[], c: SketchConstraint, value: n
 /**
  * What the sketch draws for its constraints: a dimension for each value (driven ones in parentheses), a mark on
  * each fixed point, and a glyph for each constraint without a value. `measure` gives a driven dimension's value as
- * drawn.
+ * drawn, `length` writes a value in the display unit.
  */
-export function sketchMarks(sketch: readonly Entity[], constraints: readonly SketchConstraint[], measure?: (c: SketchConstraint) => number | null): { dims: SketchDim[]; fixed: V2[]; glyphs: SketchGlyph[] } {
+export function sketchMarks(sketch: readonly Entity[], constraints: readonly SketchConstraint[], measure?: (c: SketchConstraint) => number | null, length: (mm: number) => string = mmText): { dims: SketchDim[]; fixed: V2[]; glyphs: SketchGlyph[] } {
   const dims: SketchDim[] = []
   const fixed: V2[] = []
   constraints.forEach((c, i) => {
@@ -420,7 +421,7 @@ export function sketchMarks(sketch: readonly Entity[], constraints: readonly Ske
     }
     if (!('value' in c)) return
     const v = c.driven ? (measure?.(c) ?? c.value) : c.value
-    const m = dimMark(sketch, c, v, i)
+    const m = dimMark(sketch, c, v, i, length)
     if (m) dims.push(m)
   })
   return { dims, fixed, glyphs: glyphsOf(sketch, constraints) }
