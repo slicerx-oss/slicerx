@@ -35,6 +35,15 @@ Example: slicerx-mcp call project_open '{"printer":"bambu_a1"}' \
 With --app the design calls edit the project open in the app, each step in its history:
          slicerx-mcp call --app design_new '{"name":"Clip"}' design_list
 
+slicerx-mcp --mimir-cloud-status prints mimir cloud's status in the open app as one JSON
+object and exits: {"cloud", "enabled", "signed_in", "needs_sign_in", "quota", "quota_error"}.
+quota is today's use in US dollars ({"day", "edition", "open", "install": {"used_usd",
+"cap_usd", "left_usd"}, "network": {"used_usd", "cap_usd"}, "resets"}), or null while mimir
+does not run on mimir cloud. It reads the app link through sx-link (it sets --printers link)
+and never prints a key or a token. When sx-link or the app does not answer it prints
+{"error": {"code", "message"}} and exits with code 1. The MCP tool
+slicerx_mimir_cloud_status returns the same object.
+
 Transport
   --http                   Serve streamable HTTP on /mcp instead of stdio
   --host <addr>            HTTP bind address (default 127.0.0.1)
@@ -94,6 +103,9 @@ function env(name: string): string | undefined {
 
 const flag = (name: string): boolean => ['1', 'true', 'yes'].includes((env(name) ?? '').toLowerCase())
 
+/** Set by --mimir-cloud-status: a failure prints {"error": {code, message}} on stdout, so a client always reads JSON. */
+let jsonErrors = false
+
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -121,13 +133,17 @@ async function main(): Promise<void> {
       policy: { type: 'string' },
       log: { type: 'string' },
       'profiles-dir': { type: 'string' },
+      'mimir-cloud-status': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
     },
     strict: true,
   })
   if (values.help) return void process.stdout.write(HELP)
-  const calls = positionals[0] === 'call' ? parseCalls(positionals.slice(1)) : undefined
+  const status = values['mimir-cloud-status'] === true
+  jsonErrors = status
+  if (status && positionals.length) throw new Error('--mimir-cloud-status runs on its own, without call or other tools')
+  const calls = status ? [{ name: 'slicerx_mimir_cloud_status', args: {} }] : positionals[0] === 'call' ? parseCalls(positionals.slice(1)) : undefined
   if (!calls && positionals.length) throw new Error(`Unknown argument ${positionals[0]}. See slicerx-mcp --help.`)
   if (values.version) return void process.stdout.write(`${SERVER_VERSION}\n`)
   // Command lines are visible to every local user (ps), so a secret never goes there.
@@ -145,7 +161,8 @@ async function main(): Promise<void> {
   const app = values.app ?? flag('APP')
   const noApp = values['no-app'] ?? flag('NO_APP')
   if (app && noApp) throw new Error('--app and --no-app cannot both be set')
-  const printers = values.printers ?? env('PRINTERS') ?? (app ? 'link' : 'demo')
+  const printers = values.printers ?? env('PRINTERS') ?? (app || status ? 'link' : 'demo')
+  if (status && printers !== 'link') throw new Error(`--mimir-cloud-status reads the open app through sx-link, so --printers must be link, not ${printers}`)
   if (app && printers !== 'link') throw new Error(`--app works through sx-link, so --printers must be link, not ${printers}`)
   if (printers !== 'demo' && printers !== 'link' && printers !== 'off') throw new Error(`--printers must be demo, link or off, not ${printers}`)
   const envDirs = env('ALLOW_DIR')?.split(':').filter(Boolean)
@@ -186,7 +203,7 @@ async function main(): Promise<void> {
 
   if (calls) {
     try {
-      return await runCalls(createSlicerxServer(ctx), calls)
+      return await runCalls(createSlicerxServer(ctx), calls, status)
     } finally {
       // The sx-link connection is an open socket, so Node would keep running after the last call. Closing it lets the
       // process end on its own, with the exit code runCalls set.
@@ -276,7 +293,7 @@ function parseCalls(words: string[]): { name: string; args: Record<string, unkno
 }
 
 /** Runs the calls through an in-process MCP client, the way any client calls the server, one JSON line each. */
-async function runCalls(server: ReturnType<typeof createSlicerxServer>, calls: { name: string; args: Record<string, unknown> }[]): Promise<void> {
+async function runCalls(server: ReturnType<typeof createSlicerxServer>, calls: { name: string; args: Record<string, unknown> }[], bare = false): Promise<void> {
   const [a, b] = InMemoryTransport.createLinkedPair()
   const client = new Client({ name: 'slicerx-mcp call', version: SERVER_VERSION })
   await Promise.all([server.connect(a), client.connect(b)])
@@ -285,6 +302,12 @@ async function runCalls(server: ReturnType<typeof createSlicerxServer>, calls: {
       const r = (await client.callTool({ name: c.name, arguments: c.args })) as CallToolResult
       // The server's refusals already read plainly (sdk-errors.ts).
       const text = r.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
+      if (bare) {
+        // One flag, one tool: its output alone, or its error as {code, message}.
+        process.stdout.write(`${JSON.stringify(r.isError ? { error: refusal(text) } : ((r.structuredContent as { output?: unknown } | undefined)?.output ?? null))}\n`)
+        if (r.isError) process.exitCode = 1
+        return
+      }
       process.stdout.write(`${JSON.stringify({ tool: c.name, ok: r.isError !== true, text, output: r.structuredContent ?? null })}\n`)
       if (r.isError) {
         process.exitCode = 1
@@ -294,6 +317,12 @@ async function runCalls(server: ReturnType<typeof createSlicerxServer>, calls: {
   } finally {
     await client.close()
   }
+}
+
+/** A tool's error text ("Error: <code>: <message>") as a code and a message. */
+function refusal(text: string): { code: string; message: string } {
+  const m = /^Error: ([a-z_]+): ([\s\S]*)$/.exec(text)
+  return m ? { code: m[1]!, message: m[2]! } : { code: 'internal_error', message: text.replace(/^Error: /, '') }
 }
 
 /** Writes a fresh file only the current user can read. Never follows a link left at the path. */
@@ -315,7 +344,9 @@ function writeSecretFile(path: string, secret: string): void {
 }
 
 main().catch((e: unknown) => {
-  process.stderr.write(`slicerx-mcp: ${plainSdkText(e instanceof Error ? e.message : String(e))}\n`)
+  const message = plainSdkText(e instanceof Error ? e.message : String(e))
+  if (jsonErrors) process.stdout.write(`${JSON.stringify({ error: { code: 'not_configured', message } })}\n`)
+  process.stderr.write(`slicerx-mcp: ${message}\n`)
   process.exit(1)
 })
 

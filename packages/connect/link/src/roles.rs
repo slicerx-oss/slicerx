@@ -145,6 +145,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("mimir.quota", LinkClass::Read),
     // Whether mimir cloud keeps this install's sessions, and whether the person read the notice.
     ("mimir.share", LinkClass::Read),
+    // mimir cloud at a glance: offered, in use, signed in, and today's use while in use. No key or token.
+    ("mimir.status", LinkClass::Read),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -358,6 +360,7 @@ mod tests {
             ("mimir.session", LinkClass::Read),
             ("mimir.quota", LinkClass::Read),
             ("mimir.share", LinkClass::Read),
+            ("mimir.status", LinkClass::Read),
         ];
         assert_eq!(APP_LINK_METHODS, pinned);
         for (m, _) in APP_LINK_METHODS {
