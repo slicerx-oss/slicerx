@@ -14,11 +14,23 @@
   --ink-4: #3c3f50;
   --line: #44475a;
   --line-soft: #3c3e4f;
-  /* the surface ladder: page, card, field, each one step off the last */
-  --bg: var(--ink-1);
-  --panel: var(--ink-2);
-  --panel-2: var(--ink-3);
-  --panel-line: var(--line-soft);
+  /* surfaces, by role: the page, cards on it, floating surfaces (toolbars, the composer), menus and dialogs. Dark
+     steps cards 7% and fields 14% toward the text color (the owner's medium step); light keeps its inks for now,
+     below under [data-scheme="light"] */
+  --surface-page: var(--ink-1);
+  --surface-card: color-mix(in srgb, var(--ink-1), var(--fg) 7%);
+  --surface-line: var(--line);
+  --surface-float: color-mix(in srgb, var(--surface-card) 92%, transparent);
+  --surface-menu: color-mix(in srgb, var(--field-bg) 94%, transparent);
+  --surface-dialog: color-mix(in srgb, var(--surface-card) 94%, transparent);
+  /* fields: inputs, selects, segmented tracks and number boxes, one step above the card they sit on */
+  --field-bg: color-mix(in srgb, var(--ink-1), var(--fg) 14%);
+  --field-line: var(--line);
+  /* control states: a selected segment stands clear of its track; disabled stays at half opacity, focus the accent ring */
+  --control-selected: color-mix(in srgb, var(--ink-1), var(--fg) 30%);
+  --control-selected-line: color-mix(in srgb, var(--fg) 45%, transparent);
+  /* the person's message in the chat sits on the card step */
+  --chat-bubble: var(--surface-card);
 
   /* text */
   --fg: #f8f8f2;
@@ -65,7 +77,7 @@
   --green-tint: color-mix(in srgb, var(--green) 12%, transparent);
   --orange-tint: color-mix(in srgb, var(--orange) 13%, transparent);
   --red-tint: color-mix(in srgb, var(--red) 13%, transparent);
-  --overlay: color-mix(in srgb, var(--ink-1) 92%, transparent);
+  --overlay: var(--surface-float);
 
   /* type */
   --f-display: "Unbounded Variable", "Unbounded", "Arial Black", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -170,4 +182,18 @@
   --stage-aol: color-mix(in srgb, var(--accent) 40%, black);
   --stage-pill: #2d2834;
   --stage-grid: #8b8395;
+}
+
+/* light keeps its earlier surfaces until its own pass (applyTheme sets data-scheme) */
+:root[data-scheme="light"] {
+  --surface-card: var(--ink-2);
+  --surface-line: var(--line-soft);
+  --surface-float: color-mix(in srgb, var(--ink-1) 92%, transparent);
+  --surface-menu: color-mix(in srgb, var(--ink-3) 90%, transparent);
+  --surface-dialog: color-mix(in srgb, var(--ink-2) 92%, transparent);
+  --field-bg: var(--ink-2);
+  --field-line: var(--line-soft);
+  --control-selected: var(--ink-4);
+  --control-selected-line: var(--line);
+  --chat-bubble: var(--ink-3);
 }

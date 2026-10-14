@@ -257,6 +257,8 @@ export function applyTheme(theme: Theme, el?: HTMLElement): void {
   // Studio colors of an earlier theme must not linger when this one sets none.
   for (const k of Object.values(SCENE_VARS)) if (!(k in vars)) target.style.removeProperty(k)
   target.style.setProperty('color-scheme', theme.scheme)
+  // the surface tokens key on it (tokens.css): light-dark() in a custom property does not follow the scheme
+  target.dataset['scheme'] = theme.scheme
   target.dataset['sxTheme'] = theme.name
   target.dispatchEvent(new CustomEvent<Theme>(THEME_EVENT, { detail: theme, bubbles: true }))
 }
@@ -268,6 +270,7 @@ export function clearTheme(el?: HTMLElement): void {
   for (const k of Object.keys(themeToVars(subban))) target.style.removeProperty(k)
   for (const k of Object.values(SCENE_VARS)) target.style.removeProperty(k)
   target.style.removeProperty('color-scheme')
+  delete target.dataset['scheme']
   delete target.dataset['sxTheme']
 }
 
