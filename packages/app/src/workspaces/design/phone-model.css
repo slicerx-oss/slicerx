@@ -92,6 +92,10 @@
 
 /* The tool sheet sits on the bar, without a scrim: the view above it still takes taps. It folds to its header. */
 :root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side] { bottom: calc(var(--pbar-top-gap, var(--pbar-h)) + var(--s-1) + var(--kb-lift, 0px)); left: max(var(--s-2), env(safe-area-inset-left, 0px)); right: max(var(--s-2), env(safe-area-inset-right, 0px)); max-height: 44dvh; border-radius: var(--r-lg); z-index: calc(var(--z-hud) + 2); }
+/* an opened sketch sheet shows the drawing's controls whole above its footer (--sheet-fit, measured), up to the room
+   between the top bar and the phone's bar */
+:root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side]:has(.sketch-show) { max-height: max(44dvh, min(var(--sheet-fit, 0px), calc(100dvh - var(--h-bar) - var(--pbar-top-gap, var(--pbar-h)) - var(--kb-lift, 0px) - var(--s-1) * 2))); }
+:root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side]:has(.sketch-show) .cad-footer { padding-bottom: var(--s-2); }
 :root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side]:not(.sheet-open) { visibility: hidden; transform: translateY(calc(100% + var(--pbar-top-gap, var(--pbar-h)) + 24px)); transition: transform 200ms var(--ease), visibility 0s linear 200ms; }
 :root[data-phone] .pane.sheet.sheet-docked.sheet-folded.sx-rail[data-side] { height: auto !important; overflow: hidden; }
 /* folded: the handle and the header only, so a panel's summary in the header stays in view */
