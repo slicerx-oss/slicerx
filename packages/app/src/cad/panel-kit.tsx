@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Pieces every modeling tool panel shares: probe mode for the view, the panel frame and a number field.
 import type { PickEvent } from '@slicerx/viewport'
-import { Block, Button, Field, Input, VectorField, type Axis } from '@slicerx/ui'
+import { Block, Button, Field, Icon, Input, VectorField, type Axis } from '@slicerx/ui'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
@@ -11,6 +11,8 @@ import { stepName } from '@slicerx/cad-history'
 import { currentValues, typedNumber } from './value-table'
 import { fromMmText, lengthText, toMmText } from './units'
 import { useLength } from './use-units'
+import { usePhoneLayout } from '../lib/phone-layout'
+import { touchWords } from './touch-words'
 
 /** A typed number: plain, or arithmetic over the project's named values (`wall * 2`). NaN when it does not read. */
 export const num = (s: string) => typedNumber(s)
@@ -88,6 +90,19 @@ export function Vec({ id, label, ariaLabel, unit, axes, values, onChange }: { id
   const set = (i: number, v: number) => onChange[i]?.(String(length ? len.toMm(v) : v))
   const mm = values.map((v) => (Number.isFinite(num(v)) ? num(v) : 0))
   return <VectorField id={id} label={label} {...(ariaLabel ? { ariaLabel } : {})} unit={length ? len.unit : unit} axes={axes} values={length ? mm.map(len.show) : mm} parse={length ? len.parse : num} {...(length && len.digits !== undefined ? { digits: len.digits } : {})} onCommit={set} onPreview={set} />
+}
+
+/** A tool's line about what to pick in the view: mouse words on a desktop, a finger's words on a phone. */
+export function PointerHint({ text }: { text: string }) {
+  const phone = usePhoneLayout()
+  const words = phone ? touchWords(text) : text
+  // a line that only asked for a key leaves nothing for a finger
+  if (!words) return null
+  return (
+    <p className="cad-hint">
+      <Icon name={phone ? 'info' : 'mouse-left'} size={15} /> {words}
+    </p>
+  )
 }
 
 export function Shell({ title, aside, children }: { title: string; aside?: string; children: ReactNode }) {

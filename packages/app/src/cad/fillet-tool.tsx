@@ -21,7 +21,7 @@ import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, typ
 import { followed } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe, ToolFooter } from './panel-kit'
+import { close, errorText, num, Num, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
 import { follow, useDraft, useDraftObject, type Now } from './park'
 import { takeFilletKind } from './start-hint'
 import { useLengthWords } from './use-units'
@@ -241,7 +241,7 @@ export function FilletTool() {
   return (
     <Shell title="Fillet and chamfer" aside={edit ? `Editing step ${edit.index + 1}` : n ? `${n} ${n === 1 ? 'edge' : 'edges'}` : 'No edge yet'}>
       <Seg label="Edge shape" size="sm" full value={kind} onChange={setKind} options={[{ value: 'fillet', label: 'Fillet' }, { value: 'chamfer', label: 'Chamfer' }]} />
-      <p className="cad-hint"><Icon name="mouse-left" size={15} /> {n ? 'Shift and click to add or remove an edge.' : 'Click an edge between two flat faces. Shift and click adds more.'}</p>
+      <PointerHint text={n ? 'Shift and click to add or remove an edge.' : 'Click an edge between two flat faces. Shift and click adds more.'} />
       <div className="cad-pair">
         <Num id="edge-size" label={kind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={size} onChange={setSize} onEnter={() => void apply()} />
         {kind === 'chamfer' ? <Num id="edge-size2" label="Other face, if different" unit="mm" value={size2} onChange={setSize2} onEnter={() => void apply()} /> : null}

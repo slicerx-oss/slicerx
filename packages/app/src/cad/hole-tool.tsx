@@ -18,7 +18,7 @@ import { holeSpecFor, THREADS, type Head, type Purpose, type Thread } from './ho
 import { applyHole } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe, ToolFooter } from './panel-kit'
+import { close, errorText, num, Num, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 
 interface Picked {
@@ -111,7 +111,7 @@ export function HoleTool() {
   const h = picked?.hole
   return (
     <Shell title="Hole" aside={edit ? `Editing step ${edit.index + 1}` : h ? `${mm(h.diameterMm)}, ${h.through ? 'through' : `${mm(h.depthMm)} deep`}` : 'No hole yet'}>
-      <p className="cad-hint"><Icon name="mouse-left" size={15} /> {h ? 'Click another hole to change that one instead.' : 'Click the wall of a round hole.'}</p>
+      <PointerHint text={h ? 'Click another hole to change that one instead.' : 'Click the wall of a round hole.'} />
       <Seg
         label="What the hole is for"
         size="sm"

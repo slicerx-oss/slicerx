@@ -16,7 +16,7 @@ import { edgeLines } from './edges'
 import { applyThread } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe, ToolFooter } from './panel-kit'
+import { close, errorText, num, Num, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 import { threadSpecFor } from './thread-spec'
 
@@ -117,7 +117,7 @@ export function ThreadTool() {
   const t = target
   return (
     <Shell title="Thread" aside={edit ? `Editing step ${edit.index + 1}` : t ? `${t.internal ? 'Hole' : 'Rod'} ${mm(t.diameterMm)}, ${mm(t.lengthMm)} long` : 'Nothing picked yet'}>
-      <p className="cad-hint"><Icon name="mouse-left" size={15} /> {t ? 'Click another hole or rod to thread that one instead.' : 'Click the wall of a round hole, or the side of a rod or boss.'}</p>
+      <PointerHint text={t ? 'Click another hole or rod to thread that one instead.' : 'Click the wall of a round hole, or the side of a rod or boss.'} />
       {sizes.length ? (
         <div className="cad-row">
           <span>Size</span>
