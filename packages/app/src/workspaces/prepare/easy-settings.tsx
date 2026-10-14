@@ -183,7 +183,7 @@ export function EasySettingsPanel() {
           </Chip>
         ) : null}
       </div>
-      <Seg<Goal> label="Goal" full className="mt6 goal-seg goal-tiles" value={shownGoal} options={tiles} onChange={(g) => !scoped && g !== 'custom' && pickGoal(g)} />
+      <Seg<Goal> label="Goal" full className="goal-seg goal-tiles" value={shownGoal} options={tiles} onChange={(g) => !scoped && g !== 'custom' && pickGoal(g)} />
 
       <div className="srow" {...settingTipAttrs('layer_height', '.srow')}>
         <div className="srow-h">
