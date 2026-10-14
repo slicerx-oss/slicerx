@@ -22,8 +22,16 @@
 .pbar-wrap > * { pointer-events: auto; }
 .hud-top .pundo, .hud-top .phandles { flex: none; }
 :root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-top { flex-wrap: nowrap; }
-:root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-top > .hud-col:first-child { min-width: 0; flex: 1 1 auto; }
-:root[data-phone] .studio[data-model-mode="design"] .select-pill { max-width: 100%; }
+:root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-top > .hud-col:first-child { min-width: 0; flex: 1 1 0; }
+/* the pill stays inside its column on a narrow phone: its name and "made by" shorten, the buttons keep their size */
+:root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-top > .hud-col:first-child > .hud-row { min-width: 0; max-width: 100%; }
+/* the view buttons' column is one button wide; undo and redo under it reach left past it, below the pill's rows */
+:root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-top > .hud-col.end { flex: none; width: 44px; align-items: flex-end; }
+:root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-top > .hud-col.end > * { flex: none; }
+:root[data-phone] .studio[data-model-mode="design"] .select-pill { max-width: 100%; min-width: 0; }
+:root[data-phone] .studio[data-model-mode="design"] .select-pill-kinds, :root[data-phone] .studio[data-model-mode="design"] .select-pill-clear { flex: none; }
+:root[data-phone] .studio[data-model-mode="design"] .select-pill-readout { flex: 0 1 auto; }
+:root[data-phone] .studio[data-model-mode="design"] .select-pill-made { flex: 0 1 auto; min-width: 0; }
 .pbar { display: grid; height: var(--pbar-h); padding: 6px; border-radius: var(--r-lg); box-shadow: var(--shadow-float), var(--lift-edge); }
 .pbar-slots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; height: 52px; }
 .pbar-slots[hidden] { display: none; }
