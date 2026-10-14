@@ -66,13 +66,23 @@ export function namespaceSvg(text, prefix) {
     .replace(/href="#([^"]+)"/g, (_, id) => `href="#${ids.get(id) ?? id}"`)
 }
 
+export function scopeCss(css, selector) {
+  return css.replace(/(^|[{}])([^{}]+)(?=\{)/g, (match, lead, rules) => {
+    if (/^\s*(?:@|from\b|to\b|[\d.]+%)/.test(rules)) return match
+    return lead + rules.split(',').map((rule) => {
+      if (/\.sxs(?![\w-])|svg\.ti/.test(rule)) return rule.replace(/\.sxs(?![\w-])/g, `${selector}.sxs`).replaceAll('svg.ti', `${selector}.ti`)
+      return `${selector} ${rule.trim()}`
+    }).join(',')
+  })
+}
+
 function documentSvg(id, scheme, width, height, cls, body, label, vars) {
   const prefix = `${id}-${scheme}-${width}`
   const selector = `svg[data-sx-asset="${id}"][data-sx-variant="${scheme}"][data-sx-size="${width}"]`
   body = body.replace(/<style>([\s\S]*?)<\/style>/g, (_, css) => {
     const names = new Set([...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]))
     css = css.replace(/(@keyframes\s+|animation-name:)([\w-]+)/g, (match, lead, name) => names.has(name) ? `${lead}${prefix}-${name}` : match)
-    return `<style>${css.replace(/\.sxs(?![\w-])/g, `${selector}.sxs`).replace(/\.sxs-([\w-]+)/g, `${selector} .sxs-$1`).replaceAll('svg.ti', `${selector}.ti`)}</style>`
+    return `<style>${scopeCss(css, selector)}</style>`
   })
   return `<svg xmlns="http://www.w3.org/2000/svg" class="${cls}" data-sx-asset="${xml(id)}" data-sx-variant="${scheme}" data-sx-size="${width}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(label)}"><title>${xml(label)}</title>${namespaceSvg(fallbacks(body, vars), prefix)}</svg>\n`
 }
@@ -88,6 +98,7 @@ export async function exportAssets(dest) {
       const file = `${kind}s/${scheme}/${id}-${size}.svg`
       let body, cls
       if (kind === 'tool-icon') {
+        if (typeof table[id][size] !== 'string') throw new Error(`Missing ${size}px drawing: ${id}`)
         body = `<style>${iconCss}</style>${table[id][size]}`
         cls = 'ti'
       } else {

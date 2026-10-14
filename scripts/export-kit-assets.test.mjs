@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { exportAssets, fallbacks, namespaceSvg } from './export-kit-assets.mjs'
+import { exportAssets, fallbacks, namespaceSvg, scopeCss } from './export-kit-assets.mjs'
 import { TOOL_ICONS } from '../packages/ui/src/icons/tool-icons.ts'
 import { DEMOS, SETTING_DEMOS } from '../packages/app/src/lib/demos.ts'
 
@@ -41,6 +41,11 @@ test('nested fallbacks preserve overrides and reject missing or cyclic tokens', 
   assert.throws(() => fallbacks('var(--absent)', {}), /Missing default/)
   assert.throws(() => fallbacks('var(--a)', { '--a': 'var(--a)' }), /Circular/)
   assert.equal(namespaceSvg('<g id="a"/><use href="#a"/><path fill="url(#a)"/>', 'one'), '<g id="one-a"/><use href="#one-a"/><path fill="url(#one-a)"/>')
+})
+
+test('nested readout selectors stay within one SVG, including reduced-motion rules', () => {
+  const css = '.sxs-rows .sxs-cut{fill:red}@media (prefers-reduced-motion:reduce){.sxs .s-a{animation-play-state:paused}}@keyframes a{0%,100%{opacity:1}}'
+  assert.equal(scopeCss(css, 'svg.one'), 'svg.one .sxs-rows .sxs-cut{fill:red}@media (prefers-reduced-motion:reduce){svg.one.sxs .s-a{animation-play-state:paused}}@keyframes a{0%,100%{opacity:1}}')
 })
 
 test('the packaging CLI includes assets without building packages', () => {
