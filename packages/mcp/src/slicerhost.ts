@@ -39,7 +39,7 @@ export interface NodeSlicerHost extends SlicerHost {
   files(sliceId: string): { gcodePath?: string; previewPath?: string } | undefined
 }
 
-function positionsFromParts(parts: MeshPart[]): Float32Array {
+export function positionsFromParts(parts: readonly MeshPart[]): Float32Array {
   const out: number[] = []
   for (const p of parts) for (const i of p.indices) out.push(p.positions[i * 3] ?? 0, p.positions[i * 3 + 1] ?? 0, p.positions[i * 3 + 2] ?? 0)
   return new Float32Array(out)

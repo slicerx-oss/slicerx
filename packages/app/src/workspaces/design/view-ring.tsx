@@ -6,7 +6,7 @@
 // command bar. Delete stays in More: a flick that lands one slice over must never remove a part.
 //
 // Agents do the same through MCP: each verb names its tool. Drop to bed names slicerx_project_move, since every
-// object a client places already sits on the bed.
+// object a client places already sits on the bed. The verbs under More name theirs in MORE_AGENT_TOOLS.
 import { ContextMenu, MenuItems, RadialMenu, type MenuEntry, type RingItem } from '@slicerx/ui'
 import { useStore } from 'zustand'
 import { startFillet } from '../../cad/start-hint'
@@ -42,7 +42,7 @@ export const RING_VERBS: Readonly<Record<RingKind, readonly RingVerb[]>> = {
     { id: 'duplicate', label: 'Duplicate', icon: 'duplicate', agent: 'slicerx_project_duplicate' },
     { id: 'drop', label: 'Drop to bed', icon: 'arrow-down', agent: 'slicerx_project_move' },
     { id: 'rename', label: 'Rename', icon: 'rename', agent: 'slicerx_project_rename' },
-    { id: 'lock', label: 'Lock', icon: 'lock', agent: 'view' },
+    { id: 'lock', label: 'Lock', icon: 'lock', agent: 'slicerx_project_lock' },
   ],
   face: [
     { id: 'push', label: 'Push and pull', icon: 'push-pull', agent: 'slicerx_geom_push_pull', modeling: true },
@@ -65,6 +65,17 @@ export const RING_VERBS: Readonly<Record<RingKind, readonly RingVerb[]>> = {
     { id: 'all', label: 'Select all', icon: 'select-all', agent: 'view' },
     { id: 'paste', label: 'Paste', icon: 'paste', agent: 'view' },
   ],
+}
+
+/** The MCP tool for each verb under More that is not on a ring, by its id there. */
+export const MORE_AGENT_TOOLS: Readonly<Record<string, string>> = {
+  printable: 'slicerx_project_printable',
+  split: 'slicerx_project_split_objects',
+  parts: 'slicerx_project_split_parts',
+  center: 'slicerx_project_center',
+  delete: 'slicerx_project_remove_object',
+  shape: 'slicerx_geom_extrude',
+  svg: 'slicerx_geom_extrude',
 }
 
 export function ViewRing() {

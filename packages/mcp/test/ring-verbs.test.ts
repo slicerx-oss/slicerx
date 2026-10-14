@@ -1,15 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The model ring's verbs over MCP, as a client does them: duplicate, rename and lay on a face, each read back from
-// slicerx_project_show, and with the real engine the request it sliced.
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+// The model ring's verbs over MCP, as a client does them: duplicate, rename, lay on a face, lock, leave out of the
+// print, center, and split to objects or parts, each read back from slicerx_project_show, and with the real engine
+// the request it sliced. Nothing here sends anything to a printer.
+import { execFile } from 'node:child_process'
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { downRotation } from '../src/placement'
 import { boxStl, connect, data, noSx, noSxGeom, sxBin, sxTimeout, type Harness } from './helpers'
 
-type Obj = { id: string; name: string; bbox_mm: number[]; plates: number[]; rotate: number[]; scale: number[]; position: number[] | null; settings: Record<string, unknown>; volumes: { id: string; role: string }[] }
-type Project = { objects: Obj[]; plates: { index: number; items: { objectId: string; copies: number }[]; placements: { id: string; centerMm: number[] }[] }[]; height_ranges: { objects?: string[] }[] }
+const run = promisify(execFile)
+
+type Obj = { id: string; name: string; bbox_mm: number[]; parts: number; plates: number[]; rotate: number[]; scale: number[]; position: number[] | null; locked: boolean; printable: boolean; settings: Record<string, unknown>; volumes: { id: string; role: string }[] }
+type Project = {
+  objects: Obj[]
+  bed: { widthMm: number; depthMm: number; originMm: number[] }
+  plates: { index: number; items: { objectId: string; copies: number }[]; placements: { id: string; centerMm: number[]; printable?: false }[] }[]
+  height_ranges: { objects?: string[] }[]
+}
 type Res<T> = { ok: boolean; summary: string; output: T; error?: { code: string; message: string } }
 
 async function call<T = { project: Project }>(h: Harness, name: string, args: Record<string, unknown> = {}): Promise<Res<T>> {
@@ -26,6 +37,16 @@ async function project(opts: Parameters<typeof connect>[0] = {}): Promise<Harnes
   await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
   await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'block.stl') })
   return h
+}
+
+/** Two separate blocks in one STL: 20 x 10 x 10 mm at the origin, and 10 x 10 x 10 mm from x 30. */
+function twoBlocks(): Buffer {
+  const a = boxStl(20, 10, 10)
+  const b = boxStl(10, 10, 10)
+  for (let t = 0; t < 12; t++) for (let k = 0; k < 3; k++) b.writeFloatLE(b.readFloatLE(84 + t * 50 + 12 + k * 12) + 30, 84 + t * 50 + 12 + k * 12)
+  const out = Buffer.concat([a, b.subarray(84)])
+  out.writeUInt32LE(24, 80)
+  return out
 }
 
 function lastRequest(h: Harness): { plate: { objects: { id: string; transform: number[]; settings?: Record<string, unknown> }[] } } {
@@ -160,4 +181,182 @@ describe('the model ring verbs', () => {
     },
     sxTimeout,
   )
+})
+
+describe('the ring verbs under More, and Lock', () => {
+  it('locks an object, so the tools that would move it refuse until it is unlocked', async () => {
+    const h = await project()
+    await call(h, 'slicerx_project_plate_add')
+    const locked = await call(h, 'slicerx_project_lock', { object: 'obj-1' })
+    expect(locked.ok).toBe(true)
+    expect(locked.output.project.objects[0]).toMatchObject({ id: 'obj-1', locked: true })
+    const refused = [
+      ['slicerx_project_move', { object: 'obj-1', x: 50, y: 50 }],
+      ['slicerx_project_rotate', { object: 'obj-1', rotate: [0, 0, 45] }],
+      ['slicerx_project_scale', { object: 'obj-1', scale: 2 }],
+      ['slicerx_project_lay_on_face', { object: 'obj-1', normal: [1, 0, 0] }],
+      ['slicerx_project_center', { object: 'obj-1' }],
+      ['slicerx_project_move_to_plate', { object: 'obj-1', plate: 2 }],
+      ['slicerx_cut', { objectId: 'obj-1', printerModel: 'A1 mini', mode: 'split', planeZ: 5 }],
+    ] as const
+    for (const [tool, args] of refused) {
+      const r = await call(h, tool, args)
+      expect(r.ok, tool).toBe(false)
+      expect(r.error?.message ?? r.summary, tool).toMatch(/is locked\. Unlock it first with slicerx_project_lock/)
+    }
+    // Nothing moved or cut; a rename is still fine.
+    let p = await show(h)
+    expect(p.objects).toHaveLength(1)
+    expect(p.objects[0]).toMatchObject({ rotate: [0, 0, 0], scale: [1, 1, 1], position: null, plates: [1] })
+    expect((await call(h, 'slicerx_project_rename', { object: 'obj-1', name: 'Base' })).ok).toBe(true)
+
+    const free = await call(h, 'slicerx_project_lock', { object: 'Base', locked: false })
+    expect(free.output.project.objects[0]?.locked).toBe(false)
+    expect((await call(h, 'slicerx_project_move', { object: 'Base', x: 50, y: 60 })).ok).toBe(true)
+    p = await show(h)
+    expect(p.objects[0]?.position).toEqual([50, 60])
+  })
+
+  it('keeps a locked object on its plate when another is arranged', async () => {
+    const h = await project()
+    writeFileSync(join(h.dir, 'small.stl'), boxStl(10, 10, 10))
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'small.stl') })
+    await call(h, 'slicerx_project_lock', { object: 'obj-1' })
+    const arranged = await call(h, 'slicerx_arrange', { objectId: 'obj-2', count: 4 })
+    expect(arranged.ok, arranged.summary).toBe(true)
+    const p = await show(h)
+    expect(p.plates[0]?.items).toEqual([
+      { objectId: 'obj-2', copies: 4 },
+      { objectId: 'obj-1', copies: 1 },
+    ])
+    // Arranging the locked one itself is refused.
+    const own = await call(h, 'slicerx_arrange', { objectId: 'obj-1', count: 2 })
+    expect(own.ok).toBe(false)
+    expect((await show(h)).plates[0]?.items).toContainEqual({ objectId: 'obj-1', copies: 1 })
+  })
+
+  it('leaves an object out of the print where it sits, and the slice without it', async () => {
+    const h = await project()
+    writeFileSync(join(h.dir, 'small.stl'), boxStl(10, 10, 10))
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'small.stl') })
+    const grams = async (): Promise<number> => {
+      const r = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+      expect(r.ok, r.error?.message ?? r.summary).toBe(true)
+      return r.output.total.grams
+    }
+    const both = await grams()
+    const out = await call(h, 'slicerx_project_printable', { object: 'obj-2', printable: false })
+    expect(out.ok).toBe(true)
+    expect(out.output.project.objects.map((o) => [o.id, o.printable])).toEqual([['obj-1', true], ['obj-2', false]])
+    // Still on the plate, in its place in the rows.
+    const placements = out.output.project.plates[0]?.placements ?? []
+    expect(placements.map((x) => [x.id, x.printable])).toEqual([['obj-1-1', undefined], ['obj-2-1', false]])
+    // The slice leaves it out: less filament, the same as the block alone.
+    const left = await grams()
+    expect(left).toBeLessThan(both)
+    await call(h, 'slicerx_project_remove_object', { object: 'obj-2' })
+    expect(await grams()).toBe(left)
+
+    // With every object left out, the slice says why.
+    await call(h, 'slicerx_project_printable', { object: 'obj-1', printable: false })
+    const none = await call(h, 'slicerx_slice')
+    expect(none.ok).toBe(false)
+    expect(JSON.stringify(none)).toMatch(/Every object on plate 1 is left out of the print/)
+    const back = await call(h, 'slicerx_project_printable', { object: 'obj-1', printable: true })
+    expect(back.output.project.objects[0]?.printable).toBe(true)
+    expect(await grams()).toBe(left)
+  })
+
+  it('centers an object on the bed and keeps it there', async () => {
+    const h = await project()
+    const p0 = await show(h)
+    const mid = [p0.bed.originMm[0]! + p0.bed.widthMm / 2, p0.bed.originMm[1]! + p0.bed.depthMm / 2]
+    await call(h, 'slicerx_project_move', { object: 'obj-1', x: 20, y: 30 })
+    const c = await call<{ position: number[]; project: Project }>(h, 'slicerx_project_center', { object: 'obj-1' })
+    expect(c.ok).toBe(true)
+    expect(c.output.position).toEqual(mid)
+    expect(c.output.project.objects[0]?.position).toEqual(mid)
+    expect(c.output.project.plates[0]?.placements[0]?.centerMm).toEqual(mid)
+  })
+
+  it('splits an object of two bodies to objects, each left where it was with the source settings', async () => {
+    const h = await project()
+    writeFileSync(join(h.dir, 'pair.stl'), twoBlocks())
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'pair.stl'), copies: 2 })
+    await call(h, 'slicerx_project_object_settings', { object: 'obj-2', set: { wall_loops: 5 } })
+    await call(h, 'slicerx_project_height_ranges', { ranges: [{ z_from_mm: 2, z_to_mm: 4, settings: { wall_loops: 2 }, objects: ['obj-2'] }] })
+    await call(h, 'slicerx_project_move', { object: 'obj-2', x: 100, y: 100 })
+    const before = (await show(h)).objects[1]
+    expect(before?.bbox_mm).toEqual([40, 10, 10])
+
+    const split = await call<{ objects: string[]; project: Project }>(h, 'slicerx_project_split_objects', { object: 'obj-2' })
+    expect(split.ok, split.error?.message).toBe(true)
+    expect(split.output.objects).toEqual(['obj-3', 'obj-4'])
+    const p = await show(h)
+    expect(p.objects.map((o) => [o.id, o.name, o.bbox_mm, o.settings, o.plates])).toEqual([
+      ['obj-1', 'block.stl', [30, 20, 10], {}, [1]],
+      ['obj-3', 'pair.stl 1', [20, 10, 10], { wall_loops: 5 }, [1]],
+      ['obj-4', 'pair.stl 2', [10, 10, 10], { wall_loops: 5 }, [1]],
+    ])
+    // The pair spanned x 80 to 120 around 100: the big block sat at 80 to 100, the small one at 110 to 120.
+    expect(p.objects[1]?.position).toEqual([90, 100])
+    expect(p.objects[2]?.position).toEqual([115, 100])
+    expect(p.plates[0]?.items).toEqual([
+      { objectId: 'obj-1', copies: 1 },
+      { objectId: 'obj-3', copies: 2 },
+      { objectId: 'obj-4', copies: 2 },
+    ])
+    expect(p.height_ranges[0]?.objects).toEqual(['obj-3', 'obj-4'])
+
+    const one = await call(h, 'slicerx_project_split_objects', { object: 'obj-4' })
+    expect(one.ok).toBe(false)
+    expect(one.error?.message).toMatch(/one piece; there is nothing to split/)
+  })
+
+  it('splits an object of two bodies to parts, keeping its id, place and size', async () => {
+    const h = await project()
+    writeFileSync(join(h.dir, 'pair.stl'), twoBlocks())
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'pair.stl') })
+    await call(h, 'slicerx_project_rotate', { object: 'obj-2', rotate: [0, 0, 90] })
+    const split = await call<{ parts: number; project: Project }>(h, 'slicerx_project_split_parts', { object: 'pair.stl' })
+    expect(split.ok, split.error?.message).toBe(true)
+    expect(split.output.parts).toBe(2)
+    expect((await show(h)).objects[1]).toMatchObject({ id: 'obj-2', parts: 2, rotate: [0, 0, 90], bbox_mm: [10, 40, 10] })
+    const again = await call(h, 'slicerx_project_split_parts', { object: 'obj-2' })
+    expect(again.ok).toBe(false)
+    expect(again.error?.message).toMatch(/nothing to split/)
+  })
+})
+
+describe('the ring verbs from a shell', () => {
+  it('runs split, lock, center and printable through slicerx-mcp call, each read back', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'slicerx-mcp-ring-'))
+    writeFileSync(join(dir, 'pair.stl'), twoBlocks())
+    const calls = [
+      ['project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' }],
+      ['project_add_model', { model: join(dir, 'pair.stl') }],
+      ['project_split_objects', { object: 'obj-1' }],
+      ['project_lock', { object: 'obj-2' }],
+      ['project_center', { object: 'obj-3' }],
+      ['project_printable', { object: 'obj-3', printable: false }],
+      ['project_show', {}],
+      // Last, since call stops at the first refusal: the locked one cannot be centered.
+      ['project_center', { object: 'obj-2' }],
+    ] as const
+    const args = ['--import', 'tsx', 'src/cli.ts', '--engine', 'stub', '--no-app', '--printers', 'off', '--allow-dir', dir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles'), 'call', ...calls.flatMap(([t, a]) => [t, JSON.stringify(a)])]
+    const res = await run(process.execPath, args, { cwd: resolve(__dirname, '..'), env: { ...process.env, HOME: dir } }).then(
+      (r) => ({ ...r, code: 0 }),
+      (e: { stdout: string; stderr: string; code: number }) => e,
+    )
+    expect(res.code, res.stderr).toBe(1)
+    const lines = res.stdout.trim().split('\n').map((l) => JSON.parse(l) as { tool: string; ok: boolean; text: string; output: Res<Project> })
+    expect(lines.map((l) => [l.tool, l.ok])).toEqual(calls.map(([t], k) => [`slicerx_${t}`, k < calls.length - 1]))
+    expect(lines.at(-1)?.text).toMatch(/pair\.stl 1 is locked/)
+    const shown = lines[6]!.output.output
+    expect(shown.objects.map((o) => [o.id, o.name, o.locked, o.printable])).toEqual([
+      ['obj-2', 'pair.stl 1', true, true],
+      ['obj-3', 'pair.stl 2', false, false],
+    ])
+    expect(shown.objects[1]?.position).toEqual([shown.bed.originMm[0]! + shown.bed.widthMm / 2, shown.bed.originMm[1]! + shown.bed.depthMm / 2])
+  }, 60_000)
 })

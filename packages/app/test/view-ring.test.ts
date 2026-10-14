@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ringTarget } from '../src/plate/view-ring'
-import { RING_VERBS } from '../src/workspaces/design/view-ring'
+import { MORE_AGENT_TOOLS, RING_VERBS } from '../src/workspaces/design/view-ring'
 
 const face = (triangle: number) => ({ kind: 'face' as const, objectId: 'o1', partIndex: 0, triangle, point: [0, 0, 0] as [number, number, number] })
 
@@ -31,5 +31,7 @@ describe('the view ring', () => {
         expect(v.agent, v.id).toMatch(/^(slicerx_[a-z_]+|view)$/)
         if (v.agent !== 'view') expect(tools.has(v.agent), `${v.id}: ${v.agent}`).toBe(true)
       }
+    // and for every verb under More that is not on a ring
+    for (const [id, tool] of Object.entries(MORE_AGENT_TOOLS)) expect(tools.has(tool), `${id}: ${tool}`).toBe(true)
   })
 })

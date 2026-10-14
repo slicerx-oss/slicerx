@@ -10,10 +10,10 @@ import type { ProfileCatalog } from './profiles'
 import { isGcodeKey, SHIPPED_GCODE_SOURCES } from './config'
 import { ToolInputError } from './models'
 import { defaultConfig, sameValue, toSchemaValue } from './settings'
-import type { NodeSlicerHost } from './slicerhost'
+import { positionsFromParts, type NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
 import { bedArea, boxRows, describeBed, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
-import { boxPositions, cylinderPositions, spherePositions } from './mesh'
+import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
 
 /** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
 export interface ProjectVolume {
@@ -50,6 +50,10 @@ interface Entry {
   /** The object's own settings, over the project's and the plate's. */
   settings?: Record<string, SettingValue>
   volumes?: ProjectVolume[]
+  /** Locked, as Lock does in the app: it is not moved, turned, scaled, cut or taken to another plate until unlocked. */
+  locked?: true
+  /** Left out of the print, as in the app: it keeps its place on the plate, and the slice leaves it out. */
+  printable?: false
 }
 
 /** Where one copy sits on its plate. */
@@ -66,6 +70,8 @@ export interface Placement {
   manual: boolean
   /** Set when the copy reaches past the rim of a round bed; the slice refuses it until it is moved. */
   offBed?: true
+  /** Set when its object is left out of the print: it keeps its place, and the slice leaves it out. */
+  printable?: false
 }
 
 export interface ProjectSettings {
@@ -138,6 +144,7 @@ export class McpProject implements PilotProject {
   setRotation(objectId: string, rotate: [number, number, number]): void {
     const e = this.entries.get(objectId)
     if (!e) throw new Error(`No object ${objectId}`)
+    unlocked(e)
     e.rotate = rotate
     if (e.meshId) e.obj = { ...e.obj, bboxMm: this.placedBounds(e as Entry & { meshId: string }).size }
   }
@@ -150,8 +157,30 @@ export class McpProject implements PilotProject {
     return this.layout.map((p) => ({ ...p, items: p.items.map((i) => ({ ...i })) }))
   }
 
+  /**
+   * A new layout (arrange). A locked object stays on the plates it was on, with its copies: a layout that leaves it out
+   * keeps it where it was, and one that moves it or changes its copies is refused.
+   */
   setPlates(plates: ProjectPlate[]): void {
-    this.layout = plates.map((p) => ({ ...p, items: p.items.map((i) => ({ ...i })) }))
+    const locked = [...this.entries.values()].filter((e) => e.locked)
+    const where = (layout: readonly ProjectPlate[], id: string): string =>
+      JSON.stringify(layout.flatMap((p) => p.items.filter((i) => i.objectId === id).map((i) => [p.index, i.copies])))
+    for (const e of locked) {
+      const asked = where(plates, e.obj.id)
+      if (asked !== '[]' && asked !== where(this.layout, e.obj.id)) unlocked(e)
+    }
+    const ids = new Set(locked.map((e) => e.obj.id))
+    const kept = this.layout.flatMap((p) => p.items.filter((i) => ids.has(i.objectId)).map((i) => ({ index: p.index, item: { ...i } })))
+    this.layout = plates.map((p) => ({ ...p, items: p.items.filter((i) => !ids.has(i.objectId)).map((i) => ({ ...i })) }))
+    for (const k of kept) {
+      let plate = this.layout.find((p) => p.index === k.index)
+      if (!plate) {
+        plate = { index: k.index, items: [] }
+        this.layout.push(plate)
+        this.layout.sort((a, b) => a.index - b.index)
+      }
+      plate.items.push(k.item)
+    }
   }
 
   overrides(): Record<string, SettingValue> {
@@ -291,7 +320,7 @@ export class McpProject implements PilotProject {
         if (e.settings && Object.keys(e.settings).length) o.settings = { ...e.settings }
         if (e.volumes?.length) o.volumes = e.volumes.map((v) => ({ name: v.name, role: v.role, mesh: v.meshId, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
         objects.push(o)
-        placements.push({ id, objectId: item.objectId, copy: c + 1, centerMm: [at[0] + w / 2, at[1] + d / 2], sizeMm: placed.size, manual: Boolean(e.position) })
+        placements.push({ id, objectId: item.objectId, copy: c + 1, centerMm: [at[0] + w / 2, at[1] + d / 2], sizeMm: placed.size, manual: Boolean(e.position), ...(e.printable === false ? { printable: false as const } : {}) })
       }
     }
     const spots = bed.circle ? roundRows(feet, bed.circle) : boxRows(feet, bed)
@@ -312,9 +341,13 @@ export class McpProject implements PilotProject {
     return { objects, placements }
   }
 
+  /** The plate as the slice gets it: every copy where it sits, without the objects left out of the print. */
   async plate(plateIndex: number): Promise<Plate> {
     const bed = this.bed(plateIndex)
-    return { bed: { widthMm: bed.widthMm, depthMm: bed.depthMm, heightMm: bed.heightMm, ...(bed.circle ? { round: true } : {}) }, objects: this.layoutPlate(plateIndex).objects }
+    const { objects, placements } = this.layoutPlate(plateIndex)
+    const printed = objects.filter((_o, k) => placements[k]?.printable !== false)
+    if (printed.length === 0 && objects.length > 0) throw new ToolInputError(`Every object on plate ${plateIndex} is left out of the print. slicerx_project_printable puts one back.`)
+    return { bed: { widthMm: bed.widthMm, depthMm: bed.depthMm, heightMm: bed.heightMm, ...(bed.circle ? { round: true } : {}) }, objects: printed }
   }
 
   /** Where every copy of a plate sits, as the slice will place it. */
@@ -327,6 +360,12 @@ export class McpProject implements PilotProject {
    * loaded, so it slices; a replacement that keeps an object's id keeps its rotation, scale, place, settings and volumes.
    */
   async replaceObjects(ids: string[], replacements: ProjectObject[]): Promise<void> {
+    // A mesh swapped in place (a repair, a hollow) keeps a locked object where it is; a cut into parts does not.
+    for (const id of ids) {
+      const e = this.entries.get(id)
+      const inPlace = replacements.length === 1 && replacements[0]?.id === id
+      if (e && !inPlace) unlocked(e)
+    }
     const loaded = await Promise.all(
       replacements.map(async (r): Promise<Entry> => {
         const parts = r.mesh ? await r.mesh() : []
@@ -367,7 +406,7 @@ export class McpProject implements PilotProject {
 
   /** Puts an object's footprint center at (x, y) on the bed, or back in the rows with null. */
   move(objectId: string, position: [number, number] | null): string {
-    const e = this.entry(objectId)
+    const e = unlocked(this.entry(objectId))
     if (position) e.position = position
     else delete e.position
     return e.obj.id
@@ -375,7 +414,7 @@ export class McpProject implements PilotProject {
 
   /** Scale per axis, 1 as modeled; [1, 1, 1] clears it. */
   setScale(objectId: string, scale: [number, number, number]): string {
-    const e = this.entry(objectId)
+    const e = unlocked(this.entry(objectId))
     if (scale.every((v) => v === 1)) delete e.scale
     else e.scale = scale
     this.refreshBox(e)
@@ -489,7 +528,7 @@ export class McpProject implements PilotProject {
 
   /** Moves every copy of an object to one plate. */
   moveToPlate(objectId: string, index: number): void {
-    const e = this.entry(objectId)
+    const e = unlocked(this.entry(objectId))
     const target = this.layout.find((p) => p.index === index)
     if (!target) throw new ToolInputError(`No plate ${index}. slicerx_project_plate_add makes one.`)
     let copies = 0
@@ -534,6 +573,94 @@ export class McpProject implements PilotProject {
     return ids
   }
 
+  /** Locks or unlocks an object, as Lock on the ring does. */
+  setLocked(objectId: string, locked: boolean): string {
+    const e = this.entry(objectId)
+    if (locked) e.locked = true
+    else delete e.locked
+    return e.obj.id
+  }
+
+  /** Puts an object in the print or leaves it out, as Leave out of the print does in the app. It keeps its place. */
+  setPrintable(objectId: string, printable: boolean): string {
+    const e = this.entry(objectId)
+    if (printable) delete e.printable
+    else e.printable = false
+    return e.obj.id
+  }
+
+  /** Centers an object's footprint on its plate's bed, as Center on the bed does; it stays there. */
+  center(objectId: string): { id: string; position: [number, number] } {
+    const e = unlocked(this.entry(objectId))
+    const plate = this.layout.find((p) => p.items.some((i) => i.objectId === e.obj.id))?.index ?? 1
+    const bed = this.bed(plate)
+    const position: [number, number] = bed.circle ? [round2(bed.circle.cx), round2(bed.circle.cy)] : [round2(bed.x0 + bed.widthMm / 2), round2(bed.y0 + bed.depthMm / 2)]
+    e.position = position
+    return { id: e.obj.id, position }
+  }
+
+  /** The separate bodies of an object's mesh, as modeled. */
+  private bodies(e: Entry & { meshId: string }): Float32Array[] {
+    return splitBodies(positionsFromParts(this.host.parts(e.meshId)))
+  }
+
+  /**
+   * Split to parts: each separate body becomes a part of the same object, as Split to parts does in the app. The
+   * object keeps its id, place, rotation, scale, settings and volumes. Returns the part count.
+   */
+  async splitParts(objectId: string): Promise<{ id: string; parts: number }> {
+    const e = this.entry(objectId)
+    const bodies = this.bodies(e)
+    if (bodies.length <= (e.parts ?? 1)) throw new ToolInputError(`${e.obj.name} is one piece; there is nothing to split.`)
+    const handle = await this.host.loadParts(e.obj.name, bodies.map((positions, k) => ({ name: `${e.obj.name} part ${k + 1}`, slot: 1, positions, indices: Uint32Array.from({ length: positions.length / 3 }, (_, v) => v) })))
+    e.meshId = handle.id
+    e.parts = bodies.length
+    e.obj = { ...e.obj, triangles: handle.triangles, mesh: async () => this.host.parts(handle.id) }
+    return { id: e.obj.id, parts: bodies.length }
+  }
+
+  /**
+   * Split to objects: each separate body becomes an object of its own, named after the source with a number, as Split
+   * to objects does in the app. Each keeps the source's rotation, scale, settings, volumes, lock and print state, on
+   * the same plates with the same copies; a source a client placed leaves each piece where it was. Height ranges for
+   * the source cover the pieces. The source goes. Returns the new ids.
+   */
+  async splitObjects(objectId: string): Promise<string[]> {
+    const e = this.entry(objectId)
+    const bodies = this.bodies(e)
+    if (bodies.length < 2) throw new ToolInputError(`${e.obj.name} is one piece; there is nothing to split.`)
+    const src = this.placedBounds(e)
+    const mid = (b: { size: [number, number, number]; min: [number, number, number] }, k: 0 | 1): number => b.min[k] + b.size[k] / 2
+    const made: Entry[] = []
+    for (const [k, positions] of bodies.entries()) {
+      const id = `obj-${this.nextId++}`
+      const name = `${e.obj.name} ${k + 1}`
+      const handle = await this.host.loadParts(name, [{ name, slot: 1, positions, indices: Uint32Array.from({ length: positions.length / 3 }, (_, v) => v) }])
+      const piece: Entry = { obj: { id, name, bboxMm: handle.bboxMm, triangles: handle.triangles, mesh: async () => this.host.parts(handle.id) }, meshId: handle.id }
+      if (e.rotate) piece.rotate = [...e.rotate]
+      if (e.scale) piece.scale = [...e.scale]
+      if (e.settings) piece.settings = { ...e.settings }
+      if (e.volumes) piece.volumes = e.volumes.map((v) => ({ ...v, id: `vol-${this.nextVolume++}`, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
+      if (e.locked) piece.locked = true
+      if (e.printable === false) piece.printable = false
+      const at = this.placedBounds(piece as Entry & { meshId: string })
+      if (e.position) piece.position = [round2(e.position[0] + mid(at, 0) - mid(src, 0)), round2(e.position[1] + mid(at, 1) - mid(src, 1))]
+      piece.obj = { ...piece.obj, bboxMm: at.size.map(round2) as [number, number, number] }
+      made.push(piece)
+    }
+    const ids = made.map((m) => m.obj.id)
+    // The pieces take the source's place in the list, so the objects keep their order.
+    const order = [...this.entries.entries()]
+    this.entries.clear()
+    for (const [id, x] of order) {
+      if (id !== e.obj.id) this.entries.set(id, x)
+      else for (const m of made) this.entries.set(m.obj.id, m)
+    }
+    for (const p of this.layout) p.items = p.items.flatMap((i) => (i.objectId === e.obj.id ? ids.map((id) => ({ objectId: id, copies: i.copies })) : [i]))
+    this.ranges = this.ranges.map((r) => (r.objects?.includes(e.obj.id) ? { ...r, objects: r.objects.flatMap((o) => (o === e.obj.id ? ids : [o])) } : r))
+    return ids
+  }
+
   /** An object's id, rotation and scale, for turning a face of its mesh as modeled. */
   pose(objectId: string): { id: string; rotate: [number, number, number]; scale: [number, number, number] } {
     const e = this.entry(objectId)
@@ -572,6 +699,8 @@ export class McpProject implements PilotProject {
           rotate: e?.rotate ?? [0, 0, 0],
           scale: e?.scale ?? [1, 1, 1],
           position: e?.position ?? null,
+          locked: Boolean(e?.locked),
+          printable: e?.printable !== false,
           settings: e?.settings ?? {},
           volumes: (e?.volumes ?? []).map((v) => ({ id: v.id, name: v.name, role: v.role, shape: v.shape, ...(v.settings ? { settings: v.settings } : {}) })),
         }
@@ -591,6 +720,12 @@ export class McpProject implements PilotProject {
       return []
     }
   }
+}
+
+/** The entry, when it is not locked; a locked one is refused with how to unlock it. */
+function unlocked<E extends Entry>(e: E): E {
+  if (e.locked) throw new ToolInputError(`${e.obj.name} is locked. Unlock it first with slicerx_project_lock (locked: false).`)
+  return e
 }
 
 function addItem(plate: ProjectPlate, objectId: string, copies: number): void {
