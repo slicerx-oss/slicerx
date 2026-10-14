@@ -543,8 +543,12 @@ export interface AppState {
   parked: Parked | null
   /** A setting the command bar is sending the person to: Expert settings scroll to it, or Printer settings search for it. */
   settingFocus: { key: string; label: string } | null
-  /** The settings tab open in Advanced and Expert (expert-settings.tsx). Not saved. */
+  /** The settings tab open in Advanced and Expert (expert-settings.tsx). */
   settingsTab: SettingIntent
+  /** Sections of the settings tabs opened (true) or closed (false) by hand, by "tab/section"; the rest take their default. */
+  settingsSections: Record<string, boolean>
+  /** Settings pinned above the tabs, in pin order. */
+  settingsPins: string[]
   /** The printer bridge (sx-link) connection, and a counter that changes whenever the host's printers do. */
   /** `hubKey`: the key of the connected hub. `presentedKey`: after a hub mismatch, the key the program on the port proved. */
   /** `reconnecting`: a desktop bridge whose connection dropped, coming back on its own (`attempt` counts from 1). */
@@ -830,7 +834,9 @@ export const appStore = createStore<AppState>()(() => ({
   subPicks: [],
   parked: null,
   settingFocus: null,
-  settingsTab: 'quality',
+  settingsTab: (prefs.settingsTab ?? 'quality') as SettingIntent,
+  settingsSections: prefs.settingsSections ?? {},
+  settingsPins: prefs.settingsPins ?? [],
   bridgeStatus: { state: 'off' },
   linkEpoch: 0,
   connectedApps: [],
@@ -863,7 +869,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
 
 // the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
 const setup0 = appStore.getState().setup
@@ -929,6 +935,9 @@ appStore.subscribe((s, prev) => {
       sendChoices: s.sendChoices as Prefs['sendChoices'],
       dryMarks: s.dryMarks,
       activePresets: s.activePresets as Prefs['activePresets'],
+      settingsTab: s.settingsTab,
+      settingsSections: s.settingsSections,
+      settingsPins: s.settingsPins,
     })
   }
 })

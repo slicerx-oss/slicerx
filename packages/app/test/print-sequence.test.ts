@@ -202,8 +202,12 @@ describe('one print sequence for the plate', () => {
     flushSync(() => root.render(createElement(ExpertSettings)))
     expect(row()).not.toBeNull()
     expect(el.textContent!.split(note).length - 1).toBe(1)
-    // Unchanged, the row is hidden below Expert, and the note shows under the panel instead.
+    // Unchanged, the row is an Advanced row of the Output tab; on another tab the note shows under the panel instead.
     set({ overrides: {} })
+    flushSync(() => root.render(createElement(ExpertSettings)))
+    expect(row()).not.toBeNull()
+    expect(el.textContent!.split(note).length - 1).toBe(1)
+    set({ settingsTab: 'quality' })
     flushSync(() => root.render(createElement(ExpertSettings)))
     expect(document.getElementById('set-print_sequence')).toBeNull()
     expect(el.textContent).toContain(note)

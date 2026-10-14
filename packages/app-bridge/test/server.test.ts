@@ -122,6 +122,26 @@ describe('running-app MCP server', () => {
     expect(seen).toHaveLength(3)
   })
 
+  it('arranges the print settings panel and reads it back', async () => {
+    let view = { tab: 'quality', sections: [{ id: 'walls', open: true }], pins: [] as { key: string }[] }
+    const { file, seen } = await fakeApp({
+      settings_view: (a) => {
+        view = { tab: String(a['tab'] ?? view.tab), sections: [{ id: 'touch', open: true }], pins: ((a['pin'] as string[]) ?? []).map((key) => ({ key })) }
+        return view
+      },
+      state: () => ({ settings: view }),
+    })
+    const call = await connect(file)
+    const set = await call('app_settings_view', { tab: 'supports', open: ['touch'], pin: ['seam_position'] })
+    expect(set.isError).toBeFalsy()
+    expect(set.structuredContent).toMatchObject({ tab: 'supports', pins: [{ key: 'seam_position' }] })
+    expect((await call('app_state')).structuredContent).toMatchObject({ settings: { tab: 'supports', sections: [{ id: 'touch', open: true }] } })
+    expect(seen.map((x) => [x.tool, x.args])).toEqual([['settings_view', { tab: 'supports', open: ['touch'], pin: ['seam_position'] }], ['state', {}]])
+    // a malformed list never reaches the app
+    expect((await call('app_settings_view', { open: 'touch' })).isError).toBe(true)
+    expect(seen).toHaveLength(2)
+  })
+
   it('reports the app\'s refusals and a wrong token as errors', async () => {
     const { file } = await fakeApp({
       click: () => {

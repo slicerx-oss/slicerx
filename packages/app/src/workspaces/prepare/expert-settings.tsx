@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The Advanced and Expert tiers (packages/settings/docs/tiers.md). Advanced lists 82 process keys
-// grouped by what they are for; Expert keeps those groups and puts the other 291 behind search,
-// with a "more" link per group. Edits are plate overrides on top of Easy mode; saved profiles are
-// never written from here.
+// The Advanced and Expert tiers (packages/settings/docs/tiers.md): tabs of named sections that fold to a summary line.
+// Advanced lists 42 process keys; Expert adds the rest behind a "more" link per section, and a search reaches every
+// one. Edits are plate overrides on top of Easy mode; saved profiles are never written from here.
 import type { SettingDef, SettingIntent, SettingValue } from '@slicerx/contracts'
 import { EASY_MAP } from '@slicerx/settings'
-import { Icon, LinkButton, Seg, Switch, tipAttrs, type IconName } from '@slicerx/ui'
+import { Icon, keepInPlace, LinkButton, Seg, Switch, tipAttrs, type IconName } from '@slicerx/ui'
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { PrimeTowerRow } from './prime-tower-row'
 import { isWideText, MmOrPercentSetting, TextSetting } from './setting-rows'
 import './settings-tabs.css'
-import { formatValue, isVisible, resolveConfig, SETTINGS } from '../../adapters/settings'
+import { formatValue, resolveConfig, SETTINGS } from '../../adapters/settings'
 import { presetOwnValue } from '../../adapters/config'
 import { useFilamentCount } from '../../filament/count'
 import { fuzzyScore } from '../../commands/fuzzy'
@@ -19,38 +19,21 @@ import { effectiveMode, useLayout } from '../../first-run/look'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { variesPerObject } from '../../plate/plate-wide'
 import { setPlateSettings } from '../../plate/plates'
+import { objectOverrides, sourceId } from '../../plate/object-settings'
+import { selectObject } from '../../plate/select'
 import { ownKeys, scopeValue, setScoped } from '../../plate/scope'
 import { plateSequence } from '../../plate/plate-sequence'
-import { get, markStale, set, useApp, type PlateMeta, type SettingsMode } from '../../state/store'
+import { get, markStale, set, useApp, type PlateMeta } from '../../state/store'
 import { appName } from '../../edition'
 import { useScope } from './scope-bar'
 
-export const EDITABLE = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floats', 'ints', 'percents', 'floatOrPercent'])
+import { fixMatch } from './setting-fixes'
+import { buildTabs, EDITABLE_PROCESS, offeredTabs, sectionHasRows, sectionOpen, sectionRows, type ViewSection, type ViewTab } from './settings-view'
 
-/**
- * The process panel also lists switches held as a list (one per extruder), text settings and the speeds and
- * accelerations that are a number or a percent (setting-rows.tsx). The printer dialog and the object modifiers keep to
- * EDITABLE: the printer's text settings include its network address and credentials.
- */
-export const PROCESS_EDITABLE: ReadonlySet<string> = new Set([...EDITABLE, 'bools', 'string', 'floatsOrPercents'])
-
-/** The intents in the order the panel shows them. Output (G-code and file keys) is Expert only. */
-export const INTENTS: readonly { id: SettingIntent; label: string; icon: IconName; blurb: string }[] = [
-  { id: 'quality', label: 'Quality', icon: 'tab-quality', blurb: 'Surfaces, walls, seams and dimensional accuracy' },
-  { id: 'strength', label: 'Strength', icon: 'tab-strength', blurb: 'Shells and infill' },
-  { id: 'speed', label: 'Speed', icon: 'tab-speed', blurb: 'How fast each feature prints' },
-  { id: 'supports', label: 'Supports', icon: 'support', blurb: 'Where supports go and how they touch the part' },
-  { id: 'adhesion', label: 'Adhesion', icon: 'tab-adhesion', blurb: 'Brim, skirt and raft' },
-  { id: 'multicolor', label: 'Color', icon: 'tab-color', blurb: 'Prime tower, flushing and which filament prints what' },
-  { id: 'effects', label: 'Surface', icon: 'tab-surface', blurb: 'Ironing, fuzzy skin and spiral vase' },
-  { id: 'output', label: 'Output and print order', icon: 'tab-output', blurb: 'Print order, G-code and file options' },
-]
+export { EDITABLE, PROCESS_EDITABLE, INTENTS, visibleLevels } from './settings-view'
 
 /** Units as a person reads them; a temperature difference is still in degrees Celsius. */
 const UNIT_TEXT: Readonly<Record<string, string>> = { C: '°C', 'delta-C': '°C', deg: '°', mm3: 'mm³', 'mm3/s': 'mm³/s', 'mm3/s2': 'mm³/s²', 'mm/s2': 'mm/s²' }
-
-/** Settings the prime tower row's atlas line sets: they are not listed as rows. */
-const ATLAS_KEYS = new Set(['prime_tower_auto_position', 'wipe_tower_x', 'wipe_tower_y'])
 
 /** A switch setting's value as on or off: engine values come as booleans, numbers or strings. */
 function on(v: SettingValue | undefined): boolean {
@@ -114,7 +97,13 @@ export interface FieldScope {
   locked?: string
 }
 
-export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 'set', note, scoped }: { def: SettingDef; value: SettingValue | undefined; overridden: boolean; onSet?: (key: string, value: SettingValue | undefined) => void; idPrefix?: string; note?: ReactNode; scoped?: FieldScope }) {
+/** A row's pin: pinned rows also show above the settings tabs. */
+export interface FieldPin {
+  on: boolean
+  toggle: () => void
+}
+
+export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 'set', note, scoped, pin, chips }: { def: SettingDef; value: SettingValue | undefined; overridden: boolean; onSet?: (key: string, value: SettingValue | undefined) => void; idPrefix?: string; note?: ReactNode; scoped?: FieldScope; pin?: FieldPin; chips?: ReactNode }) {
   const id = `${idPrefix}-${def.key}`
   const setOverride = onSet
   const mixed = scoped?.source === 'mixed'
@@ -217,6 +206,12 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
           {note}
         </p>
       ) : null}
+      {/* The pin sits in the gutter left of the row, out of the grid, so showing it never moves the row. */}
+      {pin ? (
+        <button type="button" className="row-pin" data-testid="slice-setting-pin" data-key={def.key} aria-pressed={pin.on} aria-label={pin.on ? `Unpin ${def.label}` : `Pin ${def.label}`} {...tipAttrs({ title: pin.on ? 'Unpin' : 'Pin', body: 'Pinned settings show above the tabs.' })} onClick={pin.toggle}>
+          <Icon name="pin" size={11} />
+        </button>
+      ) : null}
       {overridden ? (
         <button type="button" className="reset" data-testid="slice-setting-reset" data-key={def.key} onClick={() => setOverride(def.key, undefined)} aria-label={`Reset ${def.label}`} {...tipAttrs({ title: 'Reset', body: scoped ? 'Go back to the plate\'s value.' : 'Go back to the Easy value.' })}>
           <Icon name="rotate" />
@@ -224,6 +219,8 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
       ) : (
         <span className="reset" aria-hidden="true" />
       )}
+      {/* After the reset, so the reset keeps its place on the row's first line. */}
+      {chips ? <p className="obj-chips">{chips}</p> : null}
     </li>
   )
 }
@@ -292,30 +289,30 @@ function ChoiceRow({ name, config, overrides }: { name: string; config: Record<s
   )
 }
 
-/**
- * Schema levels shown for an app settings mode: Simple shows simple, Advanced adds advanced, Expert adds expert
- * and Developer adds develop.
- */
-export function visibleLevels(mode: SettingsMode, _layout?: unknown): ReadonlySet<SettingDef['mode']> {
-  if (mode === 'developer') return new Set(['simple', 'advanced', 'expert', 'develop'])
-  if (mode === 'expert') return new Set(['simple', 'advanced', 'expert'])
-  if (mode === 'advanced') return new Set(['simple', 'advanced'])
-  return new Set(['simple'])
+/** The nearest ancestor that scrolls: the sidebar pane. */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY
+    if (y === 'auto' || y === 'scroll') return p
+  }
+  return null
 }
 
-interface Group {
-  intent: (typeof INTENTS)[number]
-  /** Advanced keys, always listed. */
-  shown: SettingDef[]
-  /** Expert keys of this intent, listed when the group is opened or a search matches. */
-  more: SettingDef[]
+/** A short line of a section's values, the first few choices and numbers, then the first switch that is on. */
+function summaryOf(defs: readonly SettingDef[], config: Record<string, SettingValue>): string {
+  const vals = defs.filter((d) => d.type !== 'bool').slice(0, 3).map((d) => formatValue(d, config[d.key]))
+  const onSw = defs.find((d) => d.type === 'bool' && on(config[d.key]))
+  return [...vals, ...(onSw ? [(onSw.label ?? onSw.key).toLowerCase()] : [])].join(', ')
 }
+
+const words = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 export function ExpertSettings() {
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
   const [query, setQuery] = useState('')
-  const [opened, setOpened] = useState<Set<SettingIntent>>(new Set())
+  const [changedOnly, setChangedOnly] = useState(false)
+  const [moreOpen, setMoreOpen] = useState<Set<string>>(new Set())
   // The command bar can send someone to a setting: search for it and bring it into view.
   const focus = useApp((s) => s.settingFocus)
   useEffect(() => {
@@ -331,7 +328,6 @@ export function ExpertSettings() {
   const layout = useLayout()
   const mode = effectiveMode(useApp((s) => s.settingsMode), layout)
   const expert = mode === 'expert' || mode === 'developer'
-  const levels = useMemo(() => visibleLevels(mode), [mode])
   const q = useDeferredValue(query.trim())
   const filamentCount = useFilamentCount()
   const config = useMemo(() => resolveConfig(easy, overrides), [easy, overrides])
@@ -343,172 +339,307 @@ export function ExpertSettings() {
   const objectSettings = useApp((s) => s.objectSettings)
   const scoped = scope.kind !== 'plate'
   const own = useMemo(() => ownKeys({ plate, objectSettings }, scope), [plate, objectSettings, scope])
-  const field = (def: SettingDef) => {
+  const changed = useMemo(() => (key: string) => key in overrides || own.has(key), [overrides, own])
+  const savedSections = useApp((s) => s.settingsSections)
+  const pins = useApp((s) => s.settingsPins)
+  const togglePin = (key: string) => set((s) => ({ settingsPins: s.settingsPins.includes(key) ? s.settingsPins.filter((k) => k !== key) : [...s.settingsPins, key].slice(-24) }))
+  // Objects that print a setting with their own value: a chip on the plate's row says which, and picks the object.
+  const objectValues = useMemo(() => {
+    const out = new Map<string, { id: string; name: string; value: SettingValue }[]>()
+    const seen = new Set<string>()
+    for (const e of plate) {
+      if (seen.has(sourceId(e))) continue
+      seen.add(sourceId(e))
+      for (const [k, v] of Object.entries(objectOverrides({ objectSettings }, e))) out.set(k, [...(out.get(k) ?? []), { id: e.id, name: e.name, value: v }])
+    }
+    return out
+  }, [plate, objectSettings])
+  const chipsFor = (def: SettingDef): ReactNode => {
+    const list = scoped ? undefined : objectValues.get(def.key)
+    if (!list?.length) return null
+    return (
+      <>
+        {list.slice(0, 2).map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            className="obj-chip"
+            data-testid="slice-setting-object-chip"
+            data-object={o.id}
+            {...tipAttrs({ title: o.name, body: `${o.name} prints with its own ${def.label?.toLowerCase() ?? def.key}. Select it to edit.` })}
+            onClick={() => {
+              selectObject(o.id, false)
+              set({ settingsScope: 'objects' })
+            }}
+          >
+            <span className="obj-chip-name">{o.name}</span> {formatValue(def, o.value)}
+          </button>
+        ))}
+        {list.length > 2 ? <span className="obj-chip-more">{list.length - 2} more</span> : null}
+      </>
+    )
+  }
+  const field = (def: SettingDef, o: { idPrefix?: string; note?: ReactNode } = {}) => {
+    const pin = { on: pins.includes(def.key), toggle: () => togglePin(def.key) }
+    const key = `${o.idPrefix ?? 'set'}-${def.key}`
+    const extra = { ...(o.idPrefix ? { idPrefix: o.idPrefix } : {}), ...(o.note ? { note: o.note } : {}) }
     if (scoped) {
       const sv = scopeValue({ plate, objectSettings }, config, def.key, scope)
       const locked = variesPerObject(def) ? undefined : 'Set for the whole plate'
-      return <Field key={def.key} def={def} value={sv.value} overridden={!locked && sv.source !== 'plate'} onSet={(k, v) => setScoped(get(), scope, k, v)} scoped={{ source: sv.source, plateValue: sv.plateValue, ...(locked ? { locked } : {}) }} />
+      return <Field key={key} def={def} value={sv.value} overridden={!locked && sv.source !== 'plate'} onSet={(k, v) => setScoped(get(), scope, k, v)} scoped={{ source: sv.source, plateValue: sv.plateValue, ...(locked ? { locked } : {}) }} {...extra} pin={pin} />
     }
     // The prime tower is one switch with atlas's placement under it (prime-tower-row.tsx).
-    return def.key === 'enable_prime_tower' ? (
-      <PrimeTowerRow key={def.key} enabled={on(config[def.key])} onEnable={(v) => setOverride(def.key, v)} />
-    ) : def.key === 'print_sequence' ? (
-      <Field key={def.key} def={def} value={config[def.key]} overridden={def.key in overrides} onSet={setSequence} note={seqNote} />
-    ) : (
-      <Field key={def.key} def={def} value={config[def.key]} overridden={def.key in overrides} />
-    )
+    if (def.key === 'enable_prime_tower' && !o.idPrefix) return <PrimeTowerRow key={key} enabled={on(config[def.key])} onEnable={(v) => setOverride(def.key, v)} />
+    const chips = chipsFor(def)
+    if (def.key === 'print_sequence') return <Field key={key} def={def} value={config[def.key]} overridden={def.key in overrides} onSet={setSequence} {...extra} note={o.note ?? seqNote} pin={pin} chips={chips} />
+    return <Field key={key} def={def} value={config[def.key]} overridden={def.key in overrides} {...extra} pin={pin} chips={chips} />
   }
-  const editable = useMemo(() => SETTINGS.filter((d) => PROCESS_EDITABLE.has(d.type) && d.section === 'process'), [])
-  const matches = (def: SettingDef) => !q || fuzzyScore(q, def.label) >= 0 || fuzzyScore(q, def.key) >= 0
-  const groups = useMemo((): Group[] => {
-    const out: Group[] = INTENTS.map((intent) => ({ intent, shown: [], more: [] }))
-    for (const def of editable) {
-      const changed = def.key in overrides || own.has(def.key)
-      // Profile keys show nowhere, and multi-color keys only with two or more filaments (a key the person already changed stays listed).
-      if (!changed && !isVisible(def, { filamentCount })) continue
-      // The tower's place is atlas's, under the Prime tower switch (prime-tower-row.tsx), not a row of its own.
-      if (ATLAS_KEYS.has(def.key)) continue
-      // Print sequence (all together or one object at a time) is print order: it heads Output, not Surface.
-      const intent = def.key === 'print_sequence' ? 'output' : def.intent
-      const g = out.find((x) => x.intent.id === intent)
-      if (!g) continue
-      if (def.key === 'print_sequence' && (def.mode === 'simple' || def.mode === 'advanced' || (expert && levels.has(def.mode)))) {
-        g.shown.push(def)
-        continue
-      }
-      // Simple keys are the Easy controls above; they are listed once changed by hand, or when a search asks for them
-      // (the command palette jumps here with the setting's name as the search).
-      if (def.mode === 'simple' && !changed && !q) continue
-      if (def.mode === 'advanced' || def.mode === 'simple') g.shown.push(def)
-      // A changed key above the mode stays listed under the Expert divider, so a change is never hidden by the mode.
-      else if ((changed && def.mode !== 'hidden') || (expert && levels.has(def.mode))) g.more.push(def)
-    }
-    // The prime tower switch heads the Color tab, with atlas's placement under it, and print sequence heads Output.
-    for (const g of out) {
-      for (const key of ['enable_prime_tower', 'print_sequence']) {
-        const i = g.shown.findIndex((d) => d.key === key)
-        if (i > 0) g.shown.unshift(...g.shown.splice(i, 1))
-      }
-    }
-    return out
-  }, [editable, overrides, own, filamentCount, expert, levels, q])
-  const visible = groups
-    .map((g) => {
-      const open = Boolean(q) || opened.has(g.intent.id)
-      const shown = g.shown.filter(matches)
-      const kept = (d: SettingDef) => d.key in overrides || own.has(d.key)
-      const more = (open ? g.more : g.more.filter(kept)).filter(matches)
-      return { ...g, open, shown, more, hidden: open ? 0 : g.more.length - g.more.filter(kept).length }
-    })
-    .filter((g) => g.shown.length || g.more.length || (!q && g.hidden))
-  const count = visible.reduce((n, g) => n + g.shown.length + g.more.length, 0)
-  // The tabs: one per group, Color only with two or more filaments. A search looks through every tab.
-  const tabs = INTENTS.filter((i) => i.id !== 'multicolor' || filamentCount >= 2)
+  const searching = Boolean(q)
+  const tabsAll = useMemo(() => buildTabs({ mode, changed, filamentCount, searching }), [mode, changed, filamentCount, searching])
+  /** Why a row matched a search: its name, or a problem it helps with. */
+  const matchOf = (def: SettingDef): { fix: string | null } | null => {
+    if (!q) return { fix: null }
+    if (fuzzyScore(q, def.label ?? '') >= 0 || fuzzyScore(q, def.key) >= 0) return { fix: null }
+    const fix = fixMatch(def.key, q)
+    return fix ? { fix } : null
+  }
+  const offered = offeredTabs(filamentCount)
+  const tabs = tabsAll.filter((t) => offered.some((o) => o.id === t.intent.id))
   const stored = useApp((s) => s.settingsTab)
-  const tab = tabs.some((t) => t.id === stored) ? stored : 'quality'
-  const shownGroups = q ? visible : visible.filter((g) => g.intent.id === tab)
+  const tabId = offered.some((t) => t.id === stored) ? stored : 'quality'
+  const tab = tabs.find((t) => t.intent.id === tabId)!
+  const totalChanged = tabsAll.reduce((n, t) => n + t.sections.reduce((m, s) => m + [...s.shown, ...s.more].filter((d) => changed(d.key)).length, 0), 0)
+  const tabChanged = (t: ViewTab) => t.sections.reduce((n, s) => n + [...s.shown, ...s.more].filter((d) => changed(d.key)).length, 0)
+  const flat = searching || changedOnly
+  // A search or the Changed chip lists matching rows from every tab, grouped by tab and section.
+  const found = flat
+    ? tabs
+        .map((t) => ({
+          t,
+          sections: t.sections
+            .map((s) => {
+              const pick = (d: SettingDef) => (changedOnly ? changed(d.key) : true) && matchOf(d) !== null
+              // In any mode a search reaches the Expert rows too; develop rows only in Developer.
+              return { s, shown: s.shown.filter(pick), more: s.more.filter(pick) }
+            })
+            .filter((x) => x.shown.length || x.more.length),
+        }))
+        .filter((x) => x.sections.length)
+    : []
+  const count = found.reduce((n, x) => n + x.sections.reduce((m, s) => m + s.shown.length + s.more.length, 0), 0)
+
+  // Every press of a tab or a section header is held in place app wide (keepInPlace in @slicerx/ui). A tab picked under
+  // a stuck tab row also shows the new tab from its start, with the row where it is, and the hold restarts from there.
+  // Slack under the panel lets the pane scroll that far when the new tab is short.
+  const slack = useRef<HTMLDivElement>(null)
+  const sentinel = useRef<HTMLDivElement>(null)
+  const tabBar = useRef<HTMLDivElement>(null)
+  const showTab = (el: HTMLElement | null, change: () => void) => {
+    const scroller = scrollParent(el)
+    const bar = tabBar.current?.getBoundingClientRect().top
+    const at = sentinel.current?.getBoundingClientRect().top
+    const stuck = el && scroller && bar !== undefined && at !== undefined && at < bar - 1
+    if (!stuck) return change()
+    const want = scroller.scrollTop + at - bar
+    flushSync(change)
+    const max = scroller.scrollHeight - scroller.clientHeight
+    if (slack.current && want > max) slack.current.style.height = `${(parseFloat(slack.current.style.height) || 0) + want - max}px`
+    scroller.scrollTop = want
+    keepInPlace(el)
+  }
+  // The slack shrinks as the person scrolls up, so it is never more than what keeps the view still.
+  useEffect(() => {
+    const scroller = scrollParent(slack.current)
+    if (!scroller || !slack.current) return
+    const onScroll = () => {
+      const el = slack.current
+      if (el) {
+        const h = parseFloat(el.style.height) || 0
+        // Only the part of the slack on screen holds the view; the rest goes.
+        if (h > 0) el.style.height = `${Math.min(h, Math.max(0, scroller.getBoundingClientRect().bottom - el.getBoundingClientRect().top))}px`
+      }
+      if (tabBar.current && sentinel.current) tabBar.current.dataset.stuck = String(sentinel.current.getBoundingClientRect().top < tabBar.current.getBoundingClientRect().top - 1)
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const openTab = (id: SettingIntent, el: HTMLElement | null) =>
+    showTab(el, () => {
+      setQuery('')
+      setChangedOnly(false)
+      set({ settingsTab: id })
+    })
   const onTabKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
     const by = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
-    const to = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : by ? (i + by + tabs.length) % tabs.length : -1
+    const to = e.key === 'Home' ? 0 : e.key === 'End' ? offered.length - 1 : by ? (i + by + offered.length) % offered.length : -1
     if (to < 0) return
     e.preventDefault()
-    const next = tabs[to]!
-    set({ settingsTab: next.id })
-    document.getElementById(`set-tab-${next.id}`)?.focus()
+    const next = offered[to]!
+    openTab(next.id, e.currentTarget)
+    document.getElementById(`set-tab-${next.id}`)?.focus({ preventScroll: true })
   }
   // A row that scrolls sideways (a phone) keeps the open tab in view, by its own scroll only: the page never moves.
   const tabRow = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const row = tabRow.current
-    const on = row?.querySelector<HTMLElement>('[aria-selected="true"]')
-    if (!row || !on || row.scrollWidth <= row.clientWidth) return
-    if (on.offsetLeft < row.scrollLeft) row.scrollLeft = on.offsetLeft
-    else if (on.offsetLeft + on.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = on.offsetLeft + on.offsetWidth - row.clientWidth
-  }, [tab])
-  const toggle = (id: SettingIntent) =>
-    setOpened((s) => {
-      const next = new Set(s)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+    const sel = row?.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (!row || !sel || row.scrollWidth <= row.clientWidth) return
+    if (sel.offsetLeft < row.scrollLeft) row.scrollLeft = sel.offsetLeft
+    else if (sel.offsetLeft + sel.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = sel.offsetLeft + sel.offsetWidth - row.clientWidth
+  }, [tabId])
+  const toggleSection = (s: ViewSection, open: boolean) => set((st) => ({ settingsSections: { ...st.settingsSections, [s.key]: !open } }))
+  const toggleMore = (key: string) =>
+    setMoreOpen((m) => {
+      const next = new Set(m)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
+
+  const pinned = pins.map((k) => EDITABLE_PROCESS.find((d) => d.key === k)).filter((d): d is SettingDef => Boolean(d))
+  const visibleSections = tab.sections.filter((s) => sectionHasRows(s, { mode, changed }))
+  const rowCount = visibleSections.reduce((n, s) => n + s.shown.length + sectionRows(s, { mode, changed, moreOpen: true }).more.length + (s.choices && !scoped ? 2 : 0), 0)
+  const searchable = EDITABLE_PROCESS.filter((d) => d.mode !== 'hidden' && (d.mode !== 'develop' || mode === 'developer')).length
   return (
     <div id="expert-panel" className="expert tiers" data-mode={mode}>
+      {pinned.length ? (
+        <section className="set-pins expert-group" aria-label="Pinned settings" data-testid="slice-settings-pins">
+          <h4>
+            <span className="tier-h">
+              <Icon name="pin" size={14} />
+              Pinned
+            </span>
+          </h4>
+          <ul>{pinned.map((d) => field(d, { idPrefix: 'pin' }))}</ul>
+        </section>
+      ) : null}
       <div className="search-in">
         <Icon name="search" />
         <label className="sr-only" htmlFor="expert-search">
           Search settings
         </label>
-        <input id="expert-search" className="bare" placeholder={expert ? `Search all ${editable.length} process settings` : `Search ${groups.reduce((n, g) => n + g.shown.length, 0)} advanced settings`} value={query} onChange={(e) => setQuery(e.currentTarget.value)} />
+        <input id="expert-search" className="bare" placeholder={`Search ${searchable} settings or a problem, like stringing`} value={query} onChange={(e) => setQuery(e.currentTarget.value)} />
       </div>
-      <div className="set-tabs" role="tablist" aria-label="Setting groups" ref={tabRow}>
-        {tabs.map((t, i) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            id={`set-tab-${t.id}`}
-            data-testid={`slice-settings-tab-${t.id}`}
-            className="set-tab"
-            data-tab={t.id}
-            aria-selected={!q && t.id === tab}
-            aria-controls="set-tab-panel"
-            aria-label={t.label}
-            tabIndex={t.id === tab ? 0 : -1}
-            {...tipAttrs({ title: t.label, body: t.blurb })}
-            onClick={() => {
-              setQuery('')
-              set({ settingsTab: t.id })
-            }}
-            onKeyDown={(e) => onTabKey(e, i)}
-          >
-            <Icon name={t.icon} size={18} />
-          </button>
-        ))}
+      <div className="expert-opts">
+        <button type="button" className="set-changed" data-testid="slice-settings-changed" aria-pressed={changedOnly} disabled={!totalChanged && !changedOnly} onClick={() => setChangedOnly((v) => !v)}>
+          <span className="dot" aria-hidden="true" />
+          {totalChanged} changed
+        </button>
+        <span className="sx-small sx-muted">{scoped ? `${scopeName} only, over the plate` : flat ? (searching ? `${count} found in every tab${expert ? '' : ', Expert too'}` : 'Your changes in every tab') : 'Plate: every object'}</span>
       </div>
-      {/* The open tab names itself in its heading; a search says how many it found across the tabs. */}
-      {q ? (
-        <div className="expert-opts">
-          <span className="sx-mono sx-small sx-dim">{count} found</span>
-          <span className="sx-small sx-muted">{expert ? 'In every tab, the expert settings too.' : 'In every tab. Expert adds the rest.'}</span>
+      <div ref={sentinel} aria-hidden="true" />
+      <div className="set-tabs-bar" ref={tabBar} hidden={flat}>
+        <div className="set-tabs" role="tablist" aria-label="Setting groups" ref={tabRow}>
+          {offered.map((t, i) => {
+            const n = tabChanged(tabsAll.find((x) => x.intent.id === t.id)!)
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`set-tab-${t.id}`}
+                data-testid={`slice-settings-tab-${t.id}`}
+                className="set-tab"
+                data-tab={t.id}
+                aria-selected={!flat && t.id === tabId}
+                aria-controls="set-tab-panel"
+                aria-label={n ? `${t.label}, ${words(n, 'change')}` : t.label}
+                tabIndex={t.id === tabId ? 0 : -1}
+                {...tipAttrs({ title: t.label, body: n ? `${t.blurb}. ${words(n, 'setting')} changed.` : t.blurb })}
+                onClick={(e) => openTab(t.id, e.currentTarget)}
+                onKeyDown={(e) => onTabKey(e, i)}
+              >
+                <Icon name={t.icon} size={18} />
+                {n ? <span className="set-tab-count" data-testid="slice-settings-tab-count">{n}</span> : null}
+              </button>
+            )
+          })}
         </div>
-      ) : null}
-      {q && visible.length === 0 ? <p className="sx-muted sx-small">No setting matches "{query}"</p> : null}
-      <div id="set-tab-panel" role="tabpanel" aria-labelledby={q ? undefined : `set-tab-${tab}`} aria-label={q ? 'Search results' : undefined}>
-      {shownGroups.map((g) => (
-        <section key={g.intent.id} className="expert-group tier-group" data-intent={g.intent.id} aria-label={g.intent.label}>
-          <h4>
-            <span className="tier-h">
-              <Icon name={g.intent.icon} size={14} />
-              {g.intent.label}
-            </span>
-            <span className="sx-mono">{g.shown.length + g.more.length}</span>
-          </h4>
-          {!q ? <p className="tier-blurb">{g.intent.blurb}</p> : null}
-          <ul>
-            {g.intent.id === 'quality' && !q && !scoped ? (
-              <>
-                <ChoiceRow name="overhangSlowdown" config={config} overrides={overrides} />
-                <ChoiceRow name="unsupportedOverhangs" config={config} overrides={overrides} />
-              </>
-            ) : null}
-            {g.shown.map(field)}
-            {g.more.length && g.shown.length ? <li className="tier-divider" aria-hidden="true">Expert</li> : null}
-            {g.more.map(field)}
-          </ul>
-          {expert && !q && g.hidden + (g.open ? g.more.length : 0) > 0 ? (
-            <button type="button" className="tier-more" aria-expanded={g.open} onClick={() => toggle(g.intent.id)}>
-              <Icon name={g.open ? 'chevron-up' : 'chevron-down'} size={14} />
-              {g.open ? 'Fewer' : `${g.hidden} more`}
-            </button>
-          ) : null}
-        </section>
-      ))}
       </div>
-      {/* Print sequence is an Expert row; below Expert, unless changed, the note still shows when the plate prints otherwise. */}
-      {!expert && seqNote && !groups.some((g) => g.more.some((d) => d.key === 'print_sequence')) ? <p className="app-note">{seqNote}</p> : null}
+      {flat && !count ? <p className="sx-muted sx-small">{changedOnly ? 'Nothing changed yet.' : `No setting matches "${query}"`}</p> : null}
+      <div id="set-tab-panel" role="tabpanel" aria-labelledby={flat ? undefined : `set-tab-${tabId}`} aria-label={flat ? (searching ? 'Search results' : 'Changed settings') : undefined}>
+        {flat
+          ? found.map(({ t, sections }) => (
+              <section key={t.intent.id} className="expert-group tier-group" data-intent={t.intent.id} aria-label={t.intent.label}>
+                <h4>
+                  <span className="tier-h">
+                    <Icon name={t.intent.icon} size={14} />
+                    {t.intent.label}
+                  </span>
+                  <span className="sx-mono">{sections.reduce((n, s) => n + s.shown.length + s.more.length, 0)}</span>
+                </h4>
+                {sections.map(({ s, shown, more }) => (
+                  <div key={s.id} className="set-sec" data-section={s.key}>
+                    <div className="set-sec-sub">{s.label}</div>
+                    <ul>
+                      {shown.map((d) => field(d, { note: fixNote(d) }))}
+                      {more.length ? <li className="tier-divider" aria-hidden="true">Expert</li> : null}
+                      {more.map((d) => field(d, { note: fixNote(d) }))}
+                    </ul>
+                  </div>
+                ))}
+              </section>
+            ))
+          : (
+              <section key={tab.intent.id} className="expert-group tier-group" data-intent={tab.intent.id} aria-label={tab.intent.label}>
+                <h4>
+                  <span className="tier-h">
+                    <Icon name={tab.intent.icon} size={14} />
+                    {tab.intent.label}
+                  </span>
+                  <span className="sx-small">{`${words(rowCount, 'setting')} in ${words(visibleSections.length, 'section')}`}</span>
+                </h4>
+                {visibleSections.map((s) => {
+                  const open = sectionOpen(savedSections, tab, s, { mode, changed })
+                  const rows = sectionRows(s, { mode, changed, moreOpen: moreOpen.has(s.key) })
+                  const all = [...s.shown, ...rows.more]
+                  const n = [...s.shown, ...s.more].filter((d) => changed(d.key)).length
+                  const listed = open ? rows : { shown: s.shown.filter((d) => changed(d.key)), more: rows.more.filter((d) => changed(d.key)), hidden: 0 }
+                  const choices = s.choices && !scoped && open
+                  return (
+                    <div key={s.key} className="set-sec" data-section={s.key} data-open={open}>
+                      <button type="button" className="set-sec-h" data-testid="slice-settings-section" data-section={s.key} aria-expanded={open} onClick={() => toggleSection(s, open)}>
+                        <Icon name="chevron-right" size={14} className="chev" />
+                        <span className="t">{s.label}</span>
+                        <span className="n">{n ? `${n} changed` : ''}</span>
+                        <span className="sum">{summaryOf(all, config)}</span>
+                      </button>
+                      {choices || listed.shown.length || listed.more.length ? (
+                        <ul>
+                          {choices ? (
+                            <>
+                              <ChoiceRow name="overhangSlowdown" config={config} overrides={overrides} />
+                              <ChoiceRow name="unsupportedOverhangs" config={config} overrides={overrides} />
+                            </>
+                          ) : null}
+                          {listed.shown.map((d) => field(d))}
+                          {listed.more.length ? <li className="tier-divider" aria-hidden="true">Expert</li> : null}
+                          {listed.more.map((d) => field(d))}
+                        </ul>
+                      ) : null}
+                      {open && expert && (rows.hidden > 0 || moreOpen.has(s.key)) ? (
+                        <button type="button" className="tier-more" aria-expanded={moreOpen.has(s.key)} onClick={() => toggleMore(s.key)}>
+                          <Icon name={moreOpen.has(s.key) ? 'chevron-up' : 'chevron-down'} size={14} />
+                          {moreOpen.has(s.key) ? 'Fewer' : `${rows.hidden} more`}
+                        </button>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </section>
+            )}
+      </div>
+      {/* Print sequence's note still shows when its row is not listed and the plate prints otherwise. */}
+      {seqNote && !(tabId === 'output' && !flat) ? <p className="app-note">{seqNote}</p> : null}
       {scoped ? <p className="app-note">Changes apply to {scopeName} only, over the plate's settings.</p> : null}
-      <p className="app-note" hidden={scoped}>Changes apply to this plate. Saved profiles stay as they are. {Object.keys(overrides).length ? `${Object.keys(overrides).length} changed: ${Object.keys(overrides).slice(0, 3).map((k) => { const d = SETTINGS.find((x) => x.key === k); return `${d?.label ?? k} ${formatValue(d, config[k])}` }).join(', ')}` : ''}</p>
+      <p className="app-note" hidden={scoped}>Changes apply to this plate. Saved profiles stay as they are.</p>
+      <div ref={slack} className="set-slack" aria-hidden="true" />
     </div>
   )
+
+  function fixNote(d: SettingDef): ReactNode {
+    const m = matchOf(d)
+    return m?.fix ? `Helps with ${m.fix}` : undefined
+  }
 }
