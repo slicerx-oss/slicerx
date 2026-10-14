@@ -5,6 +5,7 @@
 #![cfg(feature = "formats")]
 #![allow(clippy::float_cmp, reason = "the test meshes sit on whole millimeters")]
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use sx_geom::format::{Layout, PartKind, Project, read_3mf};
 
@@ -322,4 +323,81 @@ fn the_cli_without_an_output_folder_gives_meshes_as_numbers() {
         assert_eq!(p["indices"].as_array().expect("indices").len(), 12 * 3);
         assert!(p.get("stlBase64").is_none() && p.get("positionsOut").is_none());
     }
+}
+
+/// Bambu Studio's multi-plate project: plates listed in their own order (not the build's), several objects on one
+/// plate, empty plates between full ones, and each plate's picture named by its number.
+#[test]
+fn bambu_plates_keep_their_order_names_objects_and_pictures() {
+    let obj = |id: u32| BOX.replace(r#"id="1""#, &format!(r#"id="{id}""#));
+    let ids = [2u32, 3, 7, 23, 30];
+    let resources: String = ids.iter().map(|&i| obj(i)).collect();
+    let build = ids.iter().fold(String::new(), |mut out, i| {
+        let _ = write!(
+            out,
+            r#"<item objectid="{i}" transform="1 0 0 0 1 0 0 0 1 {i} 0 0"/>"#
+        );
+        out
+    });
+    let plate = |n: u32, name: &str, objects: &[u32]| {
+        let inst = objects.iter().fold(String::new(), |mut out, o| {
+            let _ = write!(
+                out,
+                r#"<model_instance><metadata key="object_id" value="{o}"/><metadata key="instance_id" value="0"/></model_instance>"#
+            );
+            out
+        });
+        format!(
+            r#"<plate><metadata key="plater_id" value="{n}"/><metadata key="plater_name" value="{name}"/><metadata key="locked" value="false"/><metadata key="thumbnail_file" value="Metadata/plate_{n}.png"/>{inst}</plate>"#
+        )
+    };
+    let cfg = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><config>{}{}{}{}{}</config>"#,
+        plate(1, "Box Bottom", &[23]),
+        plate(2, "Connectors", &[7]),
+        plate(3, "Insert Button", &[]),
+        plate(4, "Token Top", &[30]),
+        plate(5, "Colored Buttons", &[2, 3]),
+    );
+    let main = model(&resources, &build);
+    let p = read_3mf(&zip_of(&[
+        ("3D/3dmodel.model", main.as_bytes()),
+        ("Metadata/model_settings.config", cfg.as_bytes()),
+    ]))
+    .expect("reads");
+    assert_eq!(p.layout, Layout::Bambu);
+    let plates: Vec<(u32, &str, Vec<u32>)> = p
+        .plates
+        .iter()
+        .map(|pl| (pl.id, pl.name.as_str(), pl.objects.clone()))
+        .collect();
+    assert_eq!(
+        plates,
+        vec![
+            (1, "Box Bottom", vec![23]),
+            (2, "Connectors", vec![7]),
+            (3, "Insert Button", vec![]),
+            (4, "Token Top", vec![30]),
+            (5, "Colored Buttons", vec![2, 3]),
+        ]
+    );
+    for pl in &p.plates {
+        let thumb = pl.settings.iter().find(|(k, _)| k == "thumbnail_file");
+        assert_eq!(
+            thumb.map(|(_, v)| v.as_str()),
+            Some(format!("Metadata/plate_{}.png", pl.id).as_str())
+        );
+    }
+    // each build item on the plate that lists it, in the build's order
+    let on: Vec<(u32, Option<u32>)> = p.objects.iter().map(|o| (o.id, o.plate)).collect();
+    assert_eq!(
+        on,
+        vec![
+            (2, Some(5)),
+            (3, Some(5)),
+            (7, Some(2)),
+            (23, Some(1)),
+            (30, Some(4))
+        ]
+    );
 }
