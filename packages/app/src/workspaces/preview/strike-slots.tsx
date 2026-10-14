@@ -6,7 +6,6 @@ import { collisionsOf } from '../../plate/heimdall'
 import { useApp } from '../../state/store'
 
 const marks = () => import('./strike-marks')
-const LazyStrip = lazy(() => marks().then((m) => ({ default: m.StripStrikes })))
 const LazyTrack = lazy(() => marks().then((m) => ({ default: m.TrackStrikes })))
 const LazyTime = lazy(() => marks().then((m) => ({ default: m.TimeStrikes })))
 const LazyMoves = lazy(() => marks().then((m) => ({ default: m.MoveStrikes })))
@@ -23,7 +22,6 @@ function slot<P extends object>(Inner: ComponentType<P>) {
   }
 }
 
-export const StripStrikes = slot<ComponentProps<typeof LazyStrip>>(LazyStrip)
 export const TrackStrikes = slot<ComponentProps<typeof LazyTrack>>(LazyTrack)
 export const TimeStrikes = slot<ComponentProps<typeof LazyTime>>(LazyTime)
 export const MoveStrikes = slot<ComponentProps<typeof LazyMoves>>(LazyMoves)

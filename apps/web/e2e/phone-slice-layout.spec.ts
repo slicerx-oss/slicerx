@@ -11,7 +11,7 @@ type Sx = { setState(p: unknown): void }
 /** The boxes of the controls laid over and under the 3D view. */
 async function controls(page: Page): Promise<Box[]> {
   return page.locator('.vp').evaluate((vp) => {
-    const sel = ['.hud-top .hud-col > *', '.slice-look', '.plate-tools', '.lstrip', '.hud-bl > *', '.dock', '.slice-float']
+    const sel = ['.hud-top .hud-col > *', '.slice-look', '.plate-tools', '.hud-bl > *', '.dock', '.slice-float']
     return sel.flatMap((s) =>
       [...vp.querySelectorAll<HTMLElement>(s)]
         .filter((el) => getComputedStyle(el).opacity !== '0' && getComputedStyle(el).visibility !== 'hidden')

@@ -82,7 +82,7 @@ async function postToast(page: Page, text: string): Promise<Box> {
 /** The boxes of every visible control in the viewport a toast must not cover. */
 async function controls(page: Page): Promise<{ name: string; box: Box }[]> {
   return page.locator('.vp').evaluate((vp) => {
-    const sel = ['.hud-bl > *', '.dock', '.lstrip', '.plate-tools', '.slice-look', '.hud-top .hud-col > *']
+    const sel = ['.hud-bl > *', '.dock', '.plate-tools', '.slice-look', '.hud-top .hud-col > *']
     return sel.flatMap((s) =>
       [...vp.querySelectorAll<HTMLElement>(s)]
         .map((el) => ({ name: `${s} ${el.className}`, r: el.getBoundingClientRect() }))
@@ -98,7 +98,7 @@ async function clearOfControls(page: Page, toast: Box): Promise<void> {
   expect(hits).toEqual([])
 }
 
-test('a toast sits above the plate bar, over the viewport, on no control', { tag: '@gpu' }, async ({ page, isMobile }) => {
+test('a toast sits above the plate bar, over the viewport, on no control', { tag: '@gpu' }, async ({ page }) => {
   await open(page)
   await openProject(page)
   const toast = await postToast(page, 'Saved the plate.')
@@ -107,23 +107,15 @@ test('a toast sits above the plate bar, over the viewport, on no control', { tag
   const bar = (await page.locator('.vp > .hud-bl').boundingBox())!
   expect(toast.y + toast.height).toBeLessThanOrEqual(bar.y + 1)
   const vp = (await page.locator('.vp').boundingBox())!
-  const slider = page.locator('.vp .lstrip').first()
-  if (isMobile && (await slider.count())) {
-    // Left of the layer slider, inside the viewport.
-    const box = (await slider.boundingBox())!
-    expect(toast.x).toBeGreaterThanOrEqual(vp.x)
-    expect(toast.x + toast.width).toBeLessThanOrEqual(box.x)
-  } else {
-    // Centered over the viewport (within a pixel of rounding).
-    expect(Math.abs(toast.x + toast.width / 2 - (vp.x + vp.width / 2))).toBeLessThanOrEqual(1)
-    // Still centered after the side pane changes width: the viewport moved, the stack follows.
-    await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ paneSizes: { 'slicerx:prepare-left': 300 } }))
-    await expect.poll(async () => {
-      const t = await postToast(page, 'Saved the plate again.')
-      const v = (await page.locator('.vp').boundingBox())!
-      return Math.round(Math.abs(t.x + t.width / 2 - (v.x + v.width / 2)))
-    }).toBeLessThanOrEqual(1)
-  }
+  // Centered over the viewport (within a pixel of rounding).
+  expect(Math.abs(toast.x + toast.width / 2 - (vp.x + vp.width / 2))).toBeLessThanOrEqual(1)
+  // Still centered after the side pane changes width: the viewport moved, the stack follows.
+  await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ paneSizes: { 'slicerx:prepare-left': 300 } }))
+  await expect.poll(async () => {
+    const t = await postToast(page, 'Saved the plate again.')
+    const v = (await page.locator('.vp').boundingBox())!
+    return Math.round(Math.abs(t.x + t.width / 2 - (v.x + v.width / 2)))
+  }).toBeLessThanOrEqual(1)
 })
 
 test('on a phone, a toast floats above an open sheet and leaves it where it is', async ({ page, isMobile }) => {
@@ -157,30 +149,6 @@ test('with the toolpaths showing, a toast clears the playback panel, the layer s
   // On a phone, slicing scrolled the page down to the Slice button; the viewport is at the top.
   await page.evaluate(() => window.scrollTo(0, 0))
   await clearOfControls(page, await postToast(page, 'Saved the plate.'))
-})
-
-test('with the toolpaths showing, the plate bar stops short of the layer slider', { tag: '@gpu' }, async ({ page, isMobile }) => {
-  test.skip(isMobile, 'A phone stacks the plate bar under the view, apart from the slider')
-  test.slow()
-  await open(page)
-  await openProject(page)
-  // a second plate, so the bar holds more than one chip and Add plate
-  await page.getByRole('button', { name: 'Add plate' }).first().click()
-  await page.getByRole('list', { name: 'Plates' }).locator('.plate-card').first().click()
-  await slice(page)
-  const strip = page.locator('.vp .lstrip').first()
-  await expect(strip).toBeVisible()
-  await expect
-    .poll(async () => {
-      const bar = (await page.locator('.vp > .hud-bl').boundingBox())!
-      const s = (await strip.boundingBox())!
-      return Math.round(s.x - (bar.x + bar.width))
-    })
-    .toBeGreaterThanOrEqual(0)
-  // and nothing in it reaches under the slider
-  for (const box of await page.locator('.vp > .hud-bl > *').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right))) {
-    expect(box).toBeLessThanOrEqual((await strip.boundingBox())!.x)
-  }
 })
 
 test('away from the plate tab, toasts keep their place at the window bottom', { tag: '@gpu' }, async ({ page }) => {
