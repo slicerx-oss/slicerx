@@ -30,6 +30,7 @@ import { appLookTools } from './app-look'
 import { mimirAskTools } from './mimir-ask'
 import { appPlateTools } from './app-plates'
 import { appValueTools } from './app-values'
+import { appHistoryTools } from './app-history'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
 import { cadFiles, geomEngine, geomTools, findSxGeom } from './geom'
 import { createMcpSetupHost } from './setup'
@@ -185,13 +186,14 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const mimir = [...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName()), ...mimirTabTools(appLink, productName())]
   // The app's plates, and showing one of them as its plate picker does.
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
+  const history = appHistoryTools(appLink, productName())
   // Two view preferences from Settings: Frame the view and Toolbar size.
   const look = appLookTools(appLink, productName())
   // A client's dimension sheets go to the person through the open app, while the link is in use.
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
   // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...look, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,

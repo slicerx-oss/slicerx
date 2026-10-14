@@ -65,6 +65,16 @@ Resources:
 - `slicerx://knowledge/{kind}/{id}`: every knowledge entry as YAML with sources.
 - `slicerx://pilot/skills`: the mimir skill catalog.
 
+### Undo and redo in the open project
+
+`slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.
+
+Pass that revision to `slicerx_app_undo` or `slicerx_app_redo` to take one step in the same history. Their responses include `changed` and the resulting state and revision. A new edit clears Redo. A stale revision returns `busy` without changing anything; read history again before deciding what to undo. Active loading, a live edit, an open object tool or a history replay also returns `busy`.
+
+These commands require the app link and an edit grant. They can reverse the person's last recorded edit as well as a command's edit. They affect only edits recorded by the toolbar, including transforms, plate edits, design changes and filament setup; they do not undo preferences, network actions or printing. `slicerx_design_undo` remains the separate command that removes a design's last feature.
+
+From the command line, use `slicerx-mcp --printers link call app_history`, then `slicerx-mcp --printers link call app_undo '{"revision":"<revision from the read>"}'`. `app_redo` takes the same argument. The app stays the source of the history; these commands do not fall back to a separate server project.
+
 ### Errors and progress
 
 A refused call has `isError: true`, text of the form `Error: <code>: <message>`, and `structuredContent.error` with the same `code` and `message`. The codes are stable, so a client can branch on them: `invalid_input`, `file_not_found`, `path_not_allowed`, `unsupported_format`, `invalid_model`, `no_such_plate`, `download_failed`, `urls_disabled`, `unknown_profile`, `invalid_settings`, `engine_unavailable`, `slice_failed`, `preflight_blocked`, `project_gcode_review`, `printer_needed`, `project_settings_unused`, `sequence_clearance`, `not_configured`, `auth_failed`, `not_invited`, `quota_exceeded`, `rate_limited`, `service_error`, `not_found`, `not_supported`, `busy` (the open app is in use or asking the person; call again shortly) and `internal_error`, and for locked projects `sxlock_` followed by the format's reason (`sxlock_wrong_account`, `sxlock_offline`, `sxlock_missing_scope` and the rest). `docs/integrators/quickstart.md` says what each means.
