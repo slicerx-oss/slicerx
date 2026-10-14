@@ -5,10 +5,10 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement, createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CursorPills, nextPill, type CursorPillsHandle } from '../src/cad/cursor-pills'
+import { CursorPills, nextPill, placePills, type CursorPillsHandle } from '../src/cad/cursor-pills'
 import { emptyDraft, fieldsFor, liveValues, type Draft } from '../src/cad/sketch-model'
 import { appState } from '../src/agent-bridge/page'
-import { Choice } from '../src/cad/panel-kit'
+import { Card, Num } from '../src/cad/panel-kit'
 import { get } from '../src/state/store'
 import { lookAtSketch, provideSketchLook, setSketchMode, sketchMode, sketchModeText, solidCard, surfaceOf } from '../src/cad/sketch-mode'
 
@@ -128,6 +128,9 @@ describe('cursor pills', () => {
     const angle = screen.getByRole('textbox', { name: 'Angle °' }) as HTMLInputElement
     expect(document.activeElement).toBe(length)
     expect(angle.placeholder).toBe('45.0')
+    // typed and live read apart: the group is in typing mode, and only the pill with typed text is marked typed
+    expect(screen.getByTestId('sketch-pills').hasAttribute('data-typing')).toBe(true)
+    expect(screen.getAllByTestId('sketch-pill').map((p) => p.hasAttribute('data-typed'))).toEqual([true, false])
     fireEvent.change(length, { target: { value: '25' } })
     expect(onChange).toHaveBeenLastCalledWith(['25', ''])
     fireEvent.keyDown(length, { key: 'Tab' })
@@ -137,25 +140,58 @@ describe('cursor pills', () => {
     fireEvent.keyDown(length, { key: 'Escape' })
     expect(onCancel).toHaveBeenCalledOnce()
   })
+
+  it('keep Tab in a single pill instead of sending focus out of the view', () => {
+    const onFocus = vi.fn()
+    const ref = createRef<CursorPillsHandle>()
+    render(createElement(CursorPills, { ...props, ref, fields: [{ label: 'Radius', unit: 'mm' }], focus: 0, editing: ['3'], onFocus }))
+    act(() => ref.current!.show(10, 10, ['2.00'], null))
+    const radius = screen.getByRole('textbox', { name: 'Radius mm' })
+    // fireEvent returns false when the default was prevented
+    expect(fireEvent.keyDown(radius, { key: 'Tab' })).toBe(false)
+    expect(onFocus).not.toHaveBeenCalled()
+  })
 })
 
 describe('the panel pieces the sketch adds to', () => {
-  it('puts a choice glyph before its word, under the same accessible name', () => {
-    render(
-      createElement(Choice, {
-        id: 't-result',
-        label: 'Result',
-        value: 'join',
-        onChange: () => {},
-        options: [
-          { value: 'join', label: 'Join', glyph: createElement('svg', { 'data-glyph': 'join' }) },
-          { value: 'cut', label: 'Cut', glyph: createElement('svg', { 'data-glyph': 'cut' }) },
-        ],
-      }),
-    )
-    const join = screen.getByRole('radio', { name: 'Join' })
-    expect(join.querySelector('[data-glyph="join"]')).not.toBeNull()
-    expect(join.textContent).toBe('Join')
+  it('names what a card is doing after its title, keeping the title as its name', () => {
+    render(createElement(Card, { title: 'Drawing', sub: 'Line', testId: 'sketch-drawing' }))
+    const card = screen.getByRole('region', { name: 'Drawing' })
+    expect(card.querySelector('h4')!.textContent).toBe('Drawing · Line')
+    expect(screen.getByTestId('sketch-drawing-sub').textContent).toBe(' · Line')
+  })
+
+  it("puts a number field's unit inside it, so the label keeps one line", () => {
+    render(createElement(Num, { id: 't-dist', label: 'Distance', unit: 'mm', unitIn: true, value: '5', onChange: () => {} }))
+    const field = screen.getByRole('textbox', { name: 'Distance mm' })
+    expect(field.closest('.sx-inputwrap')!.querySelector('.sx-inputwrap-unit')!.textContent).toBe('mm')
+    expect(document.querySelector('label[for="t-dist"]')!.textContent).toBe('Distance')
+  })
+})
+
+describe('where the pills sit', () => {
+  const view = { left: 300, top: 120, right: 1110, bottom: 855 }
+  const w = 220
+  const h = 26
+  const covers = (p: { left: number; top: number }, x: number, y: number) => x >= p.left && x <= p.left + w && y >= p.top && y <= p.top + h
+  it('sits below and right of the cursor, clear of it', () => {
+    expect(placePills(500, 400, w, h, view)).toEqual({ left: 516, top: 416 })
+  })
+  it("flips to the cursor's left near the right edge and above it near the bottom, staying in the view", () => {
+    const p = placePills(1050, 840, w, h, view)
+    expect(p).toEqual({ left: 1050 - 16 - w, top: 840 - 16 - h })
+    expect(covers(p, 1050, 840)).toBe(false)
+  })
+  it('never covers the point being placed anywhere in the view', () => {
+    for (let x = view.left; x <= view.right; x += 37)
+      for (let y = view.top; y <= view.bottom; y += 41) {
+        const p = placePills(x, y, w, h, view)
+        expect(p.left).toBeGreaterThanOrEqual(view.left)
+        expect(p.left + w).toBeLessThanOrEqual(view.right)
+        expect(p.top).toBeGreaterThanOrEqual(view.top)
+        expect(p.top + h).toBeLessThanOrEqual(view.bottom)
+        expect(covers(p, x, y)).toBe(false)
+      }
   })
 })
 
