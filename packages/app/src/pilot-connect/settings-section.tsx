@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Settings > mimir: the shared mimir setup, agents, mimir cloud's saved chats switch, and turning mimir off.
+// Settings > mimir: the shared mimir setup, agents, the integrations it can use, mimir cloud's saved chats switch, and turning mimir off.
+import { pluginLoads, type PluginLoad } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Button, SwitchRow } from '@slicerx/ui'
-import { useState } from 'react'
+import { Button, Pill, SwitchRow, type PillState } from '@slicerx/ui'
+import { useEffect, useState } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
+import { hostSlices } from '../state/model-mode'
 import { pilotState, set, useApp } from '../state/store'
 import { bridgeConnector } from '../link/connector'
 import { AgentPanel } from './agent-panel'
@@ -87,6 +89,53 @@ function CloudShare() {
   )
 }
 
+const LOAD_STATE: Record<PluginLoad['state'], { state: PillState; word: string }> = {
+  ready: { state: 'ok', word: 'Connected' },
+  loading: { state: 'run', word: 'Loading' },
+  off: { state: 'off', word: 'Off' },
+  error: { state: 'bad', word: 'Error' },
+}
+
+/** Settings > mimir: the integrations mimir can use and whether each is on, read only. A host that only models has none. */
+function Integrations() {
+  const host = useHost()
+  const printers = host.printers
+  const [loads, setLoads] = useState<PluginLoad[] | null>(null)
+  useEffect(() => {
+    if (!printers) return
+    let live = true
+    void Promise.all([printers.plugins().catch(() => []), printers.list().catch(() => [])]).then(([m, p]) => {
+      if (live) setLoads(pluginLoads(m, p))
+    })
+    return () => {
+      live = false
+    }
+  }, [printers])
+  if (!printers || !hostSlices()) return null
+  return (
+    <div data-testid="mimir-integrations">
+      <h4 id="pcs-int-h" className="set-sub">
+        Integrations
+      </h4>
+      {loads?.length === 0 ? <p className="sx-small sx-muted">No integrations installed.</p> : null}
+      <ul className="tok-list" aria-labelledby="pcs-int-h">
+        {(loads ?? []).map((l) => {
+          const st = LOAD_STATE[l.state]
+          return (
+            <li key={l.id}>
+              <span className="min0">
+                <b>{l.name}</b>
+                {l.detail && l.detail !== l.name ? <small className="sx-muted">{l.detail}</small> : null}
+              </span>
+              <Pill state={st.state}>{st.word}</Pill>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 /** Settings > mimir: connect, or turn it off. */
 export function PilotSettingsSection() {
   const host = useHost()
@@ -101,6 +150,7 @@ export function PilotSettingsSection() {
       <MimirSetup place="settings" idPrefix="pcs" />
       {/* an outside agent reaches mimir through a hub: the one the desktop app runs, or one this page is paired with */}
       {bridgeConnector()?.automatic === true || bridgeOn ? <AgentPanel idPrefix="pcs-ag" /> : null}
+      <Integrations />
       <CloudShare />
       {off ? <p className="sx-small sx-muted">{ASSISTANT_NAME} is off. Connect above to turn it back on.</p> : null}
       {!off ? (

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // mimir runtime, tools, permissions and the LLM transport.
+import type { PluginManifest, PrinterInfo } from './printers'
 
 export const PERMISSION_CLASSES = ['read', 'slice', 'queue', 'start', 'profile', 'printer_config', 'share'] as const
 export type PermissionClass = (typeof PERMISSION_CLASSES)[number]
@@ -188,6 +189,15 @@ export interface PluginLoad {
   detail?: string
   state: 'loading' | 'ready' | 'off' | 'error'
   tools: number
+}
+
+/** Each plugin as mimir sees it: a printer plugin with no printers assigned is off, and its detail names the printers it drives. */
+export function pluginLoads(manifests: PluginManifest[], printers: Pick<PrinterInfo, 'name' | 'plugin'>[]): PluginLoad[] {
+  return manifests.map((m) => {
+    const assigned = printers.filter((p) => p.plugin === m.id)
+    const detail = m.kind === 'printer' ? (assigned.length ? assigned.map((p) => p.name).join(', ') : 'No printers assigned') : m.name
+    return { id: m.id, name: m.name, detail, state: m.kind === 'printer' && assigned.length === 0 ? 'off' : 'ready', tools: m.tools.length }
+  })
 }
 
 // ---------------------------------------------------------------------------
