@@ -86,6 +86,14 @@ export class ToastClock {
     if (this.holds.size === 0 && !this.timer) this.run()
   }
 
+  /** Makes the time left at least `ms`, for a line that joins the card later and needs its own reading time. */
+  extend(ms: number): void {
+    const running = this.timer !== null
+    if (running) this.hold('extend')
+    this.left = Math.max(this.left, ms)
+    if (running) this.release('extend')
+  }
+
   stop(): void {
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
@@ -98,10 +106,11 @@ export class ToastClock {
 }
 
 /**
- * Mount once near the root. Toasts render bottom center and announce through role status. A toast's time starts once
- * it is on screen, so a page busy when it was posted does not eat into it, it lasts as long as its text takes to read
- * (readingTime), and it waits while it is hovered or focused, so nobody has to beat its timer to read it or press its
- * button (WCAG 2.2.1).
+ * Mount once near the root. Toasts render bottom center, as one card with a line each, and announce through role
+ * status. The card has one time: it starts once the card is on screen, so a page busy when a line was posted does not
+ * eat into it, it lasts as long as its longest line takes to read (readingTime), and a line that joins later gets its
+ * own reading time. It waits while the card is hovered or focused, so nobody has to beat its timer to read it, open
+ * Details or press a button (WCAG 2.2.1).
  */
 export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max?: number }) {
   const [toasts, setToasts] = useState<ToastRecord[]>([])
@@ -110,13 +119,24 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
   // While a toast shows its details, the card keeps its top edge where it was, so it grows down and nothing above moves.
   const [anchor, setAnchor] = useState<number | null>(null)
   const next = useRef(1)
-  const clocks = useRef(new Map<number, ToastClock>())
+  const card = useRef<ToastClock | null>(null)
   const holds = useRef(new Set<string>())
   const stack = useRef<HTMLDivElement>(null)
+  const clear = useCallback(() => {
+    card.current?.stop()
+    card.current = null
+    setToasts([])
+    setOpen(new Set())
+  }, [])
   const drop = useCallback((id: number) => {
-    clocks.current.get(id)?.stop()
-    clocks.current.delete(id)
-    setToasts((list) => list.filter((t) => t.id !== id))
+    setToasts((list) => {
+      const left = list.filter((t) => t.id !== id)
+      if (left.length === 0) {
+        card.current?.stop()
+        card.current = null
+      }
+      return left
+    })
     setOpen((o) => (o.has(id) ? new Set([...o].filter((x) => x !== id)) : o))
   }, [])
   const toast = useCallback(
@@ -124,21 +144,23 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
       const id = next.current++
       const tone = options?.tone ?? 'plain'
       setToasts((list) => [...list, { id, message, tone, ...(options?.action ? { action: options.action } : {}) }].slice(-max))
-      clocks.current.set(id, new ToastClock(readingTime(message, tone, options?.duration), () => drop(id), ['unseen', ...[...holds.current].map((h) => `away:${h}`)]))
+      const ms = readingTime(message, tone, options?.duration)
+      if (card.current) card.current.extend(ms)
+      else card.current = new ToastClock(ms, clear, ['unseen', ...[...holds.current].map((h) => `away:${h}`)])
     },
-    [max, drop],
+    [max, clear],
   )
   const hide = useMemo<ToastHold>(
     () => ({
       hold(why) {
         if (holds.current.has(why)) return
         holds.current.add(why)
-        clocks.current.forEach((c) => c.hold(`away:${why}`))
+        card.current?.hold(`away:${why}`)
         setHeld(true)
       },
       release(why) {
         if (!holds.current.delete(why)) return
-        clocks.current.forEach((c) => c.release(`away:${why}`))
+        card.current?.release(`away:${why}`)
         setHeld(holds.current.size > 0)
       },
     }),
@@ -153,30 +175,35 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
   useEffect(() => {
     if (open.size === 0) setAnchor(null)
   }, [open])
-  useEffect(() => {
-    const all = clocks.current
-    return () => all.forEach((c) => c.stop())
-  }, [])
+  useEffect(() => () => card.current?.stop(), [])
   const value = useMemo(() => toast, [toast])
   return (
     <ToastContext.Provider value={value}>
       <ToastHoldContext.Provider value={hide}>
         {children}
-        <div ref={stack} className="sx-toasts" role="status" aria-live="polite" data-held={held ? '' : undefined} data-testid="toasts" style={anchor === null ? undefined : { top: anchor, bottom: 'auto' }}>
+        <div
+          ref={stack}
+          className="sx-toasts"
+          role="status"
+          aria-live="polite"
+          data-held={held ? '' : undefined}
+          data-testid="toasts"
+          style={anchor === null ? undefined : { top: anchor, bottom: 'auto' }}
+          onPointerEnter={() => card.current?.hold('pointer')}
+          onPointerLeave={() => card.current?.release('pointer')}
+          onFocus={() => card.current?.hold('focus')}
+          onBlur={(e: FocusEvent<HTMLDivElement>) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) card.current?.release('focus')
+          }}
+        >
           {toasts.map((t) => (
             <ToastItem
               key={t.id}
-              clock={clocks.current.get(t.id)}
+              clock={card.current ?? undefined}
               className="sx-toast"
               data-testid="toast"
               data-tone={t.tone === 'plain' ? undefined : t.tone}
               data-expanded={open.has(t.id) ? '' : undefined}
-              onPointerEnter={() => clocks.current.get(t.id)?.hold('pointer')}
-              onPointerLeave={() => clocks.current.get(t.id)?.release('pointer')}
-              onFocus={() => clocks.current.get(t.id)?.hold('focus')}
-              onBlur={(e: FocusEvent<HTMLDivElement>) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) clocks.current.get(t.id)?.release('focus')
-              }}
             >
               {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
               <ToastText message={t.message} expanded={open.has(t.id)} onDetails={() => details(t.id)} />
