@@ -380,7 +380,8 @@ test('Show chips: one row when the four fit the real width, two by two when not,
       b.style.width = was
       return w
     })
-    const oneRow = label.getBoundingClientRect().width + parseFloat(getComputedStyle(show).columnGap) + need.reduce((a, b) => a + b, 0) + gap * 3
+    // the columns are equal: one row takes four of the widest chip and three gaps, beside the label
+    const oneRow = label.getBoundingClientRect().width + parseFloat(getComputedStyle(show).columnGap) + Math.max(...need) * 4 + gap * 3
     const tops = new Set(chips.map((b) => Math.round(b.getBoundingClientRect().top)))
     return {
       width: show.getBoundingClientRect().width,
