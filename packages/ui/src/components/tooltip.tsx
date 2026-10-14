@@ -59,6 +59,36 @@ export interface TooltipHostProps {
 
 type Side = 'top' | 'bottom' | 'left' | 'right'
 
+/** Keys that move focus by themselves: Tab, and the arrows and Home and End of a roving toolbar or list. */
+const NAV_KEYS = new Set(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])
+/** How long after such a key a focus change still counts as the key's doing. */
+const NAV_WINDOW = 400
+
+/**
+ * Tells a focus the keyboard moved (Tab, arrows) from one handed back by a closing popover or menu (Enter, Space, Esc,
+ * a click) or set by code. Only the first shows a tip: focus returning to the button that opened a popover would
+ * otherwise bring its tip back over the page.
+ */
+export function focusIntent(now: () => number = () => performance.now()) {
+  let navAt = -Infinity
+  return {
+    /** A key went down. */
+    key(key: string): void {
+      navAt = NAV_KEYS.has(key) ? now() : -Infinity
+    },
+    /** A pointer went down. */
+    pointer(): void {
+      navAt = -Infinity
+    },
+    /** Focus arrived. True when the keyboard moved it; each key moves focus once. */
+    focus(): boolean {
+      const ok = now() - navAt <= NAV_WINDOW
+      navAt = -Infinity
+      return ok
+    },
+  }
+}
+
 function anchorOf(target: EventTarget | null): HTMLElement | null {
   return target instanceof Element ? (target.closest(SELECTOR) as HTMLElement | null) : null
 }
@@ -267,14 +297,17 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       if (s.hover === a) s.hover = null
       leave()
     }
+    const intent = focusIntent()
     const focusIn = (e: FocusEvent) => {
+      const moved = intent.focus()
       const a = anchorOf(e.target)
       // A click that focuses a field is not a request for its tip; text fields match :focus-visible either way.
-      if (!a || s.down || !(e.target as HTMLElement).matches(':focus-visible')) return
+      if (!a || s.down || !moved || !(e.target as HTMLElement).matches(':focus-visible')) return
       schedule(a, TIP_TIMING.focus)
     }
     const focusOut = () => leave()
     const down = (e: PointerEvent) => {
+      intent.pointer()
       if (e.pointerType === 'touch') {
         // A touch has no hover: holding for half a second shows the tip above the finger until release.
         const a = anchorOf(e.target)
@@ -335,6 +368,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       if (s.touchShown && anchorOf(e.target)) e.preventDefault()
     }
     const key = (e: KeyboardEvent) => {
+      intent.key(e.key)
       if (e.key === 'Escape' && s.current) {
         // Esc closes the tip first; the dialog under it stays open.
         if (s.current.closest('dialog')) e.preventDefault()
