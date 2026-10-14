@@ -53,11 +53,6 @@ test('a line takes a typed length and angle, Tab moving between the pills', asyn
   await expect(pills.locator('[data-label="Length"]')).toContainText('5.00')
   await expect(pills.locator('[data-label="Angle"]')).toContainText('0.0')
   await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
-  // Tab from the view moves the focus to the angle and back
-  await page.locator('body').press('Tab')
-  await expect(pills.locator('[data-label="Angle"]')).toHaveAttribute('data-focus', '')
-  await page.locator('body').press('Tab')
-  await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
   // typing edits the focused pill; Tab goes on to the angle
   await page.locator('body').press('2')
   const length = pills.getByRole('textbox', { name: 'Length mm' })
@@ -310,16 +305,24 @@ test('the pills stay in the view and off the point; typed numbers read apart; Ta
   // the angle still shows the live value as its hint
   await expect(pills.getByRole('textbox', { name: 'Angle °' })).toHaveAttribute('placeholder', '0.0')
   await frame('5-typed')
-  // Tab goes to the angle and round again, never out of the pills
+  // Tab goes to the angle, Shift+Tab back
   await length.press('Tab')
   const angle = pills.getByRole('textbox', { name: 'Angle °' })
   await expect(angle).toBeFocused()
-  await angle.press('Tab')
+  await angle.press('Shift+Tab')
   await expect(length).toBeFocused()
   await length.press('Tab')
   await angle.fill('30')
+  // the pills hold still while typing, wherever the cursor goes
+  const held = await pills.boundingBox()
+  await sketchAtScreen(page, 'hover', [5, 0], [mid[0] - 200, mid[1] - 120])
+  expect(await pills.boundingBox()).toEqual(held)
   await frame('6-tab-angle')
-  // Esc drops what was typed and goes back to the live numbers, the line still waiting, and typing starts over at Length
+  // Esc clears the typed angle first (it follows the cursor again), then in the empty pill ends typing: back to the
+  // live numbers, the line still waiting, and typing starts over at Length
+  await angle.press('Escape')
+  await expect(angle).toHaveValue('')
+  await expect(pills).toHaveAttribute('data-typing', '')
   await angle.press('Escape')
   await expect(pills).not.toHaveAttribute('data-typing')
   await expect(pills.locator('[data-label="Length"]')).toContainText('5.00')

@@ -22,6 +22,7 @@ import { openModelFiles } from '../../state/actions'
 import { isCadTool, set, toast, useApp } from '../../state/store'
 import { setSheet, sheets } from '../../shell/pane'
 import { requestFinish, useCanFinish, useSketchInUse } from '../../cad/sketches'
+import { useSketchMode } from '../../cad/sketch-mode'
 import { startFillet } from '../../cad/start-hint'
 import { SHAPES } from '../prepare/object-actions'
 import { useHistoryCounts } from '../prepare/plate-toolbar'
@@ -83,6 +84,8 @@ export function PhoneShelf({ sheetKeys }: { sheetKeys: PhoneSheets }) {
   const openSheet = useStore(sheets, (s) => s.open)
   const sketching = usePhoneSketchUsed()
   const canFinish = useCanFinish()
+  // one primary at a time: Finish sketch while drawing, the panel's Extrude once the profile can make a solid
+  const sketchMode = useSketchMode()
   const inUse = useSketchInUse()
   const [menu, setMenu] = useState<Slot | null>(null)
   const tools = availableTools({ modeling, drawing })
@@ -154,7 +157,7 @@ export function PhoneShelf({ sheetKeys }: { sheetKeys: PhoneSheets }) {
         <div className="pbar-sketch" ref={slotRef} data-testid="phone-sketch-bar" />
         {sketching ? (
           <div className="pbar-sketch-end">
-            <Button size="sm" variant="primary" icon="check" data-testid="sketch-finish" disabled={!canFinish} onClick={requestFinish}>
+            <Button size="sm" variant={sketchMode?.ready ? 'default' : 'primary'} icon="check" data-testid="sketch-finish" disabled={!canFinish} onClick={requestFinish}>
               Finish sketch
             </Button>
           </div>

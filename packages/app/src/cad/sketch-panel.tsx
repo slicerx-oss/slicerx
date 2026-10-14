@@ -39,8 +39,8 @@ import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, 
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { goesIntoFace } from './extrude-direction'
-import { CursorPills, nextPill, type CursorPillsHandle } from './cursor-pills'
-import { provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
+import { CursorPills, type CursorPillsHandle } from './cursor-pills'
+import { applyReason, profileState, provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
 import { Actions, Card, Choice, close, type ChoiceOption, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { formatLength, fraction, parseLength, type UnitPrefs } from './units'
@@ -176,6 +176,21 @@ export interface SketchLook {
   constraints: boolean
 }
 let sessionLook: SketchLook = { grid: true, snap: true, step: '1', section: false, profiles: true, points: true, dimensions: true, constraints: true }
+
+/** The sketch as one undo step holds it. */
+interface SketchSnap {
+  sketch: Entity[]
+  constraints: SketchConstraint[]
+}
+/** Undo steps kept while a sketch is open. */
+const HISTORY_STEPS = 200
+/** Drag frames closer than this, ms, belong to one drag and one undo step. */
+const DRAG_GAP_MS = 400
+
+/** A key pressed inside the tool panel, where its own controls take Enter. */
+const inPanel = (t: Element | null): boolean => !!t?.closest('.sx-block.cad')
+/** Enter acts on the sketch only from the view; Esc from anywhere but a field. */
+const enterHere = (e: KeyboardEvent, t: Element | null): boolean => e.key !== 'Enter' || !inPanel(t)
 
 /** Pixels around the cursor that count for snaps and picks. */
 const SNAP_PX = 8
@@ -373,6 +388,23 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const view = cameraBus()?.cad
   const [sketch, setSketch] = useDraft<Entity[]>('sketch', init?.sketch ?? [])
   const [constraints, setConstraints] = useDraft<SketchConstraint[]>('constraints', init?.constraints ?? [])
+  // The sketch's own undo and redo: each drawn, typed, edited or deleted change is a step; the solver settling a change
+  // and the frames of one point drag fold into the step that started them.
+  const hist = useRef<{ past: SketchSnap[]; future: SketchSnap[]; cur: SketchSnap; restoring: boolean }>({ past: [], future: [], cur: { sketch, constraints }, restoring: false })
+  const mergeNext = useRef(false)
+  useEffect(() => {
+    const h = hist.current
+    const now = { sketch, constraints }
+    if (JSON.stringify(h.cur) === JSON.stringify(now)) return
+    if (!h.restoring && !mergeNext.current) {
+      h.past.push(h.cur)
+      if (h.past.length > HISTORY_STEPS) h.past.shift()
+      h.future = []
+    }
+    h.cur = now
+    h.restoring = false
+    mergeNext.current = false
+  }, [sketch, constraints])
   const [solved, setSolved] = useState<{ solved: Solved; map: SolverMap } | null>(null)
   const [draft, setDraft] = useDraft<Draft>('draft', emptyDraft(init ? 'select' : 'line'))
   const [selected, setSelected] = useDraft<{ e: number; seg: number } | null>('selected', init?.axis ?? null)
@@ -407,6 +439,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // Mirror waits for its line, a round pattern for its center
   const [pending, setPending] = useState<{ kind: 'mirror' | 'round'; e: number } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [askPlane, setAskPlane] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   // the dimension tool's picks so far, and its value field once the value is placed (or a kept one is edited)
   const [dimPicks, setDimPicks] = useState<DimPick[]>([])
@@ -447,8 +480,57 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // What the hover path reads without a render.
   // landed: the clicks of the shape being drawn and what each snapped to, for the constraints it leaves
   // dims and glyphs: what the view shows, to read its picks by
-  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, pending, copies, pillFocus, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null })
-  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, pending, copies, pillFocus, solved: solved?.solved ?? null }
+  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, pending, copies, pillFocus, typed, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null })
+  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, pending, copies, pillFocus, typed, solved: solved?.solved ?? null }
+
+  // The typed numbers as the point they stand for, the cursor filling in a pill left empty; null while nothing is typed
+  // or the numbers can't make a point (the pills then say why on Enter).
+  const typedAt = (d: Draft, typedText: readonly string[] | null, cursor: V2): V2 | null => {
+    if (!typedText || !typedText.some((v) => v.trim() !== '')) return null
+    const kinds = fieldsFor(d)
+    const u = get().units
+    const values = typedText.map((v, i) => {
+      if (v.trim() === '') return null
+      try {
+        return kinds[i]?.unit === 'mm' ? parseLength(v, u, currentValues()) : num(v)
+      } catch {
+        return NaN
+      }
+    })
+    if (values.some((v) => v !== null && !Number.isFinite(v))) return null
+    const p = typedPoint(d, values, cursor)
+    return typeof p === 'string' ? null : p
+  }
+
+  // Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z (or Ctrl+Y) inside the sketch: the drawing a step back or on, the line in progress
+  // dropped, nothing of the model touched.
+  const stepHistory = (dir: 'undo' | 'redo'): void => {
+    const h = hist.current
+    const snap = (dir === 'undo' ? h.past : h.future).pop()
+    if (!snap) return
+    ;(dir === 'undo' ? h.future : h.past).push(h.cur)
+    h.restoring = true
+    const l = live.current
+    l.sketch = snap.sketch
+    l.constraints = snap.constraints
+    l.landed = []
+    l.draft = emptyDraft(l.draft.tool)
+    setSketch(snap.sketch)
+    setConstraints(snap.constraints)
+    setDraft(l.draft)
+    setTyped(null)
+    setSelected(null)
+    setPickedCon(null)
+    view?.setSketchCursor(null)
+  }
+
+  // typed numbers move the preview as they are typed, before the cursor moves
+  useEffect(() => {
+    const l = live.current
+    if (!typed || !view || !drawingTool(l.draft.tool)) return
+    const at = typedAt(l.draft, typed, l.cursor)
+    if (at) view.setSketchCursor({ path: preview(l.draft, at, { sides: l.sides }, l.sketch), at, guide: null })
+  }, [typed, view])
 
   // The live numbers beside the cursor for the tool's next step, or the step's readout when it takes no typed number.
   const showPills = (d: Draft, at: V2, screen: readonly [number, number], snapName: string | null): void => {
@@ -504,7 +586,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           setSolved({ solved: s, map })
           if ((s.status === 'ok' || s.status === 'redundant') && solver.constraints.length) {
             const next = fromSolver(sketch, s, map)
-            if (JSON.stringify(next) !== JSON.stringify(sketch)) setSketch(next)
+            if (JSON.stringify(next) !== JSON.stringify(sketch)) {
+              mergeNext.current = true
+              setSketch(next)
+            }
           }
         },
         (e: unknown) => !ac.signal.aborted && setNote(errorText(e)),
@@ -704,8 +789,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   // a point drag pulls it toward the cursor as far as the constraints let it
   const dragAbort = useRef<AbortController | null>(null)
+  const lastDrag = useRef(0)
   const dragTo = (ref: HandleRef, to: V2): void => {
     const l = live.current
+    // the frames of one drag are one undo step
+    const t = performance.now()
+    if (t - lastDrag.current < DRAG_GAP_MS) mergeNext.current = true
+    lastDrag.current = t
     const moved = moveHandle(l.sketch, ref, to)
     const key = ref.at === 'start' ? `${ref.e}:start` : ref.at === 'to' ? `${ref.e}:to:${ref.seg}` : ref.at === 'center' ? `${ref.e}:center` : null
     if (!l.constraints.length || key === null) return setSketch(moved)
@@ -723,6 +813,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         (s) => {
           if (ac.signal.aborted) return
           const next = met(s) ? fromSolver(moved, s, map) : moved
+          mergeNext.current = true
           l.sketch = next
           setSketch(next)
         },
@@ -840,7 +931,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         l.cursor = s.at
         l.screen = ev.screen
         if (ev.kind === 'hover') {
-          view.setSketchCursor({ path: preview(l.draft, s.at, { sides: l.sides }, l.sketch), at: s.at, guide: 'guide' in s && s.guide ? s.guide : null })
+          // typed numbers hold the preview to them; the cursor only fills what is left empty
+          const held = typedAt(l.draft, l.typed, s.at)
+          view.setSketchCursor({ path: preview(l.draft, held ?? s.at, { sides: l.sides }, l.sketch), at: held ?? s.at, guide: held ? null : 'guide' in s && s.guide ? s.guide : null })
           const r = readoutRef.current
           if (r) {
             const u = readoutUnits(get().units)
@@ -902,6 +995,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
+      if (e.defaultPrevented) return
       // a focused tool radio or checkbox takes no text, so keys still reach the sketch
       const typing = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
       if (typing) return
@@ -928,6 +1022,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         setPending(null)
         return
       }
+      // typed numbers left in the pills (Tab took focus out of them): Enter places the point, Esc drops them
+      if (l.typed && (e.key === 'Enter' || e.key === 'Escape') && !e.metaKey && !e.ctrlKey && !e.altKey && enterHere(e, t)) {
+        e.preventDefault()
+        if (e.key === 'Enter') commitRef.current()
+        else setTyped(null)
+        return
+      }
       if (l.pickedCon !== null && l.draft.tool === 'select' && !featureOnly && (e.key === 'Delete' || e.key === 'Backspace' || e.key === 'Enter')) {
         // a picked dimension or constraint: Delete removes it, Enter opens a dimension's value
         e.preventDefault()
@@ -939,20 +1040,15 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         setPickedCon(null)
         return
       }
-      if (l.draft.tool === 'dimension' && (e.key === 'Escape' || e.key === 'Enter')) {
-        // the picks go; Enter does not finish the sketch from here
+      if (l.draft.tool === 'dimension' && (e.key === 'Escape' || e.key === 'Enter') && enterHere(e, t)) {
+        // the picks go; with none, Esc leaves the tool for Select
         e.preventDefault()
+        if (e.key === 'Escape' && !l.dimPicks.length && !l.dimField) pickRef.current('select')
         dropDim()
         view?.setSketchCursor(null)
         return
       }
       const kinds = drawingTool(l.draft.tool) && !featureOnly ? fieldsFor(l.draft) : []
-      // Tab moves between the cursor pills, from the view; in the panel it moves between its controls as usual
-      if (e.key === 'Tab' && kinds.length > 1 && !e.altKey && !e.metaKey && !e.ctrlKey && (t === document.body || t instanceof HTMLCanvasElement)) {
-        e.preventDefault()
-        setPillFocus((f) => nextPill(f, kinds.length, e.shiftKey))
-        return
-      }
       if (/^[0-9.\-]$/.test(e.key) && kinds.length && !e.metaKey && !e.ctrlKey) {
         // a number goes into the focused pill; the others keep following the cursor until typed in
         e.preventDefault()
@@ -968,37 +1064,80 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           setSketch(next)
           setSelected(null)
         }
-      } else if (e.key === 'Escape' || e.key === 'Enter') {
+      } else if ((e.key === 'Escape' || e.key === 'Enter') && !e.metaKey && !e.ctrlKey && !e.altKey && enterHere(e, t)) {
+        // Esc steps back one level at a time: the segment being drawn, then the tool (to Select), then the pick. It
+        // never closes the sketch; Cancel does. A bare Enter ends the line being drawn and nothing more: Finish sketch
+        // is its button or Ctrl/Cmd+Enter.
         if (l.draft.points.length) {
-          // the line being drawn ends; the tool's own Esc and Enter wait for the next press
           e.preventDefault()
           setDraft(emptyDraft(l.draft.tool))
           view?.setSketchCursor(null)
-        } else if (e.key === 'Enter' && l.sketch.length && !featureOnly) {
+        } else if (e.key === 'Escape') {
           e.preventDefault()
-          finishRef.current()
+          if (l.draft.tool !== 'select') pickRef.current('select')
+          else if (l.selected || l.pickedCon !== null) {
+            setSelected(null)
+            setPickedCon(null)
+          }
         }
       }
     }
+    // Undo, redo and Finish sketch go first, ahead of the plate's own keys: inside a sketch, Ctrl/Cmd+Z steps the
+    // drawing back, not the model.
+    const onModKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || featureOnly) return
+      const t = e.target as HTMLElement | null
+      const field = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.isContentEditable)
+      const k = e.key.toLowerCase()
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        e.stopPropagation()
+        finishRef.current()
+        return
+      }
+      if (field || document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      const redo = (k === 'z' && e.shiftKey) || (k === 'y' && !e.shiftKey)
+      if (!redo && !(k === 'z' && !e.shiftKey)) return
+      e.preventDefault()
+      e.stopPropagation()
+      stepHistory(redo ? 'redo' : 'undo')
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onModKey, true)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onModKey, true)
+    }
   }, [view])
 
+  // Enter in the pills: the point the typed numbers give, placed like a click there with no snap, so the next segment
+  // starts from it. Numbers that can't make a point change nothing and say why.
   const commitField = () => {
-    if (!typed) return
-    const kinds = fieldsFor(draft)
-    const read = (v: string, i: number) => (kinds[i]?.unit === 'mm' ? parseLength(v, units, currentValues()) : num(v))
-    const values = typed.map((v, i) => (v.trim() === '' ? null : read(v, i)))
-    if (values.some((v) => Number.isNaN(v))) return setNote('Type numbers only.')
-    const p = typedPoint(draft, values, live.current.cursor)
+    const l = live.current
+    const text = l.typed
+    if (!text) return
+    const kinds = fieldsFor(l.draft)
+    const read = (v: string, i: number) => {
+      try {
+        return kinds[i]?.unit === 'mm' ? parseLength(v, get().units, currentValues()) : num(v)
+      } catch {
+        return NaN
+      }
+    }
+    const values = text.map((v, i) => (v.trim() === '' ? null : read(v, i)))
+    if (values.some((v) => v !== null && !Number.isFinite(v))) return setNote('Type numbers only.')
+    const p = typedPoint(l.draft, values, l.cursor)
     if (typeof p === 'string') return setNote(p)
     setNote(null)
-    const r = click(sketch, draft, p, { sides: sidesN })
-    setSketch(r.sketch)
-    setDraft(r.draft)
-    setTyped(null)
+    apply(click(l.sketch, l.draft, p, { sides: l.sides }), { at: p, kind: null }, false)
+    setPillFocus(0)
+    // the preview starts from the new point at once, before the cursor moves again
+    view?.setSketchCursor({ path: preview(live.current.draft, l.cursor, { sides: l.sides }, live.current.sketch), at: l.cursor, guide: null })
   }
+  const commitRef = useRef(commitField)
+  commitRef.current = commitField
 
+  const pickRef = useRef<(t: DrawTool) => void>(() => undefined)
   const pickTool = (t: DrawTool) => {
     if (VARIANTS[familyOf(t)]) lastVariant[familyOf(t)] = t
     setDraft(emptyDraft(t))
@@ -1009,6 +1148,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     view?.setSketchCursor(null)
     if (t !== 'select') setSelected(null)
   }
+  pickRef.current = pickTool
 
   const look = () => {
     const ext = extent(sketch)
@@ -1021,9 +1161,6 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   lookRef.current = look
   // the view's camera buttons get Look at the sketch, and its mode pill says where and with what the sketch draws
   const name = toolName(draft.tool)
-  useEffect(() => {
-    if (!featureOnly) setSketchMode({ on: surfaceOf(plane, init !== undefined), label: plane.label, tool: name })
-  }, [featureOnly, plane, init, name])
   useEffect(() => (featureOnly ? undefined : () => setSketchMode(null)), [featureOnly])
   useEffect(() => (featureOnly ? undefined : provideSketchLook(() => lookRef.current())), [featureOnly])
 
@@ -1093,6 +1230,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // Flip says where the extrusion goes now; the engine's flip is relative to the operation
   const intoFace = goesIntoFace(flip, op)
   const loops = toLoops(sketch)
+  const loopsKey = useMemo(() => toLoops(sketch), [sketch])
   // A sketch step opened from the history saves into its place; the steps after it run again.
   const saveSketch = async (params: Parameters<typeof saveEdit>[1]) => {
     await saveEdit(host.slicer, params)
@@ -1100,9 +1238,17 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }
   // a step of a body opened from its history saves into its place; a finished sketch makes a new step on it
   const stepEdit = init !== undefined && !init.from
-  const ready = sketch.length > 0 && check?.ok === true && draft.points.length === 0 && issues.length === 0
+  // What the drawing is as a profile, and why Extrude or Revolve can't run yet; the footer shows the reason under it.
+  const closedProfiles = useMemo(() => profileRings(sketch).length, [sketch])
+  const profile = profileState({ drawn: sketch.length > 0, closedProfiles, checked: check !== null, ok: check?.ok === true, issues })
+  const reason = applyReason({ profile, drawing: draft.points.length > 0, checked: check !== null, ...(issues[0] ? { firstIssue: issues[0].message } : {}), finish, axis: !!axis, op, target: !!target })
+  const ready = reason === null
+  // the view's mode pill and the app's read-back: where and with what the sketch draws, and what it is as a profile
+  useEffect(() => {
+    if (!featureOnly) setSketchMode({ on: surfaceOf(plane, init !== undefined), label: plane.label, tool: name, profile, dof: solved ? solved.solved.dof : null, ready, reason, loops: loopsKey })
+  }, [featureOnly, plane, init, name, profile, solved, ready, reason, loopsKey])
   const go = async () => {
-    if (!ready || (op !== 'new' && !target)) return
+    if (!ready) return
     setBusy(true)
     setNote(null)
     try {
@@ -1188,7 +1334,6 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const words = (t: string) => (phone ? touchWords(t) : t)
   // On a desktop the panel has two cards, drawing and then the solid, which stays folded with the reason until the
   // sketch has a closed profile. A phone keeps its one sheet of controls.
-  const closedProfiles = useMemo(() => profileRings(sketch).length, [sketch])
   const card = phone ? { open: true, reason: null } : solidCard({ featureOnly, closedProfiles, issues, drawn: sketch.length > 0 || draft.points.length > 0 })
   const [lenFmt, lenUnit] = readoutUnits(units)
   const dof = solved ? (
@@ -1200,10 +1345,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const idle = words(pending ? 'Esc stops.' : idleText(draft.tool))
   // On a phone the sheet folds to its header once drawing starts, so the view has the room; the header then shows the
   // tool and the sketch's state, with a button to open the sheet again. Finish sketch stays in the bar below either way.
+  // It folds once, at the sketch's first point; after that only the button folds or opens it, so a sheet opened by hand
+  // stays open while the next shapes are drawn.
   const drawingNow = draft.points.length > 0
+  const foldedOnce = useRef(false)
   useEffect(() => {
-    if (phone && drawingNow) fold?.setFolded(true)
-    // only as drawing starts; the person opens it again with the button
+    if (!phone || !drawingNow || foldedOnce.current) return
+    foldedOnce.current = true
+    fold?.setFolded(true)
   }, [phone, drawingNow])
   const summary =
     phone && fold?.slot && !featureOnly
@@ -1347,7 +1496,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             </Button>
           </div>
           {distanceField}
-          {extentKind === 'twoSides' ? <Num id="sk-dist2" label="Other side" unit="mm" unitIn value={distance2} onChange={setDistance2} /> : <Num id="sk-taper" label="Draft" unit="°" unitIn value={taper} onChange={setTaper} />}
+          {extentKind === 'twoSides' ? <Num id="sk-dist2" label="Other side" unit="mm" unitIn value={distance2} onChange={setDistance2} onEnter={() => void go()} /> : <Num id="sk-taper" label="Draft" unit="°" unitIn value={taper} onChange={setTaper} onEnter={() => void go()} />}
           <PatternSection value={patternFields} onChange={setPatternFields} />
         </>
       ) : (
@@ -1357,6 +1506,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         </>
       )}
       <Choice id="sk-result" label="Result" value={op} onChange={setOperation} options={RESULTS.map((o) => (o.value === 'new' ? o : { ...o, disabled: !canInto }))} />
+      {canInto ? null : <Note testId="sketch-result-reason">{featureOnly ? 'Join and Cut need a body on the plate.' : 'Join and Cut need a body: sketch on one of its faces.'}</Note>}
       {featureOnly && op !== 'new' ? (
         <Row label={op === 'join' ? 'Join to' : 'Cut from'} htmlFor="sk-into" wide>
           <Select
@@ -1380,13 +1530,28 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     </>
   )
   // Other plane sits in the header beside the face being sketched on, on a phone too, so the footer holds only Cancel and the primary
+  // with something drawn, Other plane asks first: the drawing belongs to this plane and would go
   const change = featureOnly ? null : (
-    <Button size="sm" className="tp-pill" data-testid="sketch-other-plane" onClick={onRestart} disabled={busy} tip={{ title: 'Sketch on another plane or face' }}>
+    <Button size="sm" className="tp-pill" data-testid="sketch-other-plane" aria-expanded={sketch.length ? askPlane : undefined} onClick={() => (sketch.length ? setAskPlane(!askPlane) : onRestart())} disabled={busy} tip={{ title: 'Sketch on another plane or face' }}>
       Other plane
     </Button>
   )
+  const planeAsk = askPlane && sketch.length ? (
+    <div className="cad-issues" role="group" aria-label="Other plane" data-testid="sketch-plane-ask">
+      <Message text="Another plane starts a new sketch, and this drawing goes. Finish sketch first to keep it." />
+      <div className="cad-row sketch-loop-actions">
+        <Button size="sm" className="tp-pill" data-testid="sketch-plane-keep" onClick={() => setAskPlane(false)}>
+          Keep drawing
+        </Button>
+        <Button size="sm" className="tp-pill" data-testid="sketch-plane-drop" onClick={onRestart}>
+          Drop it and pick a plane
+        </Button>
+      </div>
+    </div>
+  ) : null
   return (
     <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label} {...(change ? { action: change } : {})}>
+      {planeAsk}
       {featureOnly ? (
         <>
           {messages}
@@ -1426,7 +1591,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         verbs={['Extrude', 'Revolve']}
         onApply={go}
         busy={busy}
-        disabled={!ready || (op !== 'new' && !target)}
+        disabled={!ready}
+        reason={reason}
+        // one primary at a time: Finish sketch while drawing, Extrude once the profile can make a solid
+        primary={ready || featureOnly}
+        keys={false}
       />
       {featureOnly || !drawingTool(draft.tool) ? null : (
         <CursorPills
@@ -1439,8 +1608,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           onFocus={setPillFocus}
           onChange={setTyped}
           onCommit={commitField}
-          // Esc drops what was typed and starts again from the first pill
-          onCancel={() => (setTyped(null), setPillFocus(0))}
+          // Esc in an empty pill ends typing and starts again from the first pill
+          onCancel={() => (setTyped(null), setPillFocus(0), view?.canvas?.focus())}
+          // Tab past the ends goes back to the view, the typed numbers kept for Enter there, and on through the page
+          onLeave={() => view?.canvas?.focus()}
         />
       )}
       {dimField
