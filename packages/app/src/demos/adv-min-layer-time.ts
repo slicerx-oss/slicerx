@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Minimum layer time: a small tip printed fast has no time to cool and slumps; slowed down, it stays crisp and takes longer.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'aml',
+  readout: {rows: ["1 s","5 s"],w: 52},
+  css: ".sxs .aml-s{animation-timing-function:steps(1,end)}.sxs .aml-a{animation-name:aml-a}@keyframes aml-a{0%{opacity:1}45.7%{opacity:0}94.3%{opacity:1}100%{opacity:1}}.sxs .aml-b{animation-name:aml-b}@keyframes aml-b{0%{opacity:0}45.7%{opacity:1}94.3%{opacity:0}100%{opacity:0}}.sxs .aml-h{animation-name:aml-h}@keyframes aml-h{0%{translate:0 0px}45.7%{translate:0 -14px}94.3%{translate:0 0px}100%{translate:0 0px}}.sxs .aml-t{transform-box:fill-box;transform-origin:left;animation-name:aml-t;animation-timing-function:cubic-bezier(.65,0,.35,1)}@keyframes aml-t{0%{scale:0.35 1}44.3%{scale:0.35 1}54.3%{scale:0.75 1}92.9%{scale:0.75 1}98.6%{scale:0.35 1}100%{scale:0.35 1}}",
+  body: "<path class=\"s-cy s-ol\" d=\"M110.4 111.8V117A25.7 14.8 0 0 0 161.8 117V111.8A25.7 14.8 0 0 1 110.4 111.8Z\"/><ellipse class=\"s-f1 s-ol\" cx=\"136.1\" cy=\"111.8\" rx=\"25.7\" ry=\"14.8\"/><g class=\"aml-a aml-s s-a\"><path class=\"s-cf\" style=\"stroke:var(--stage-cut,#ff5555);stroke-width:1.4\" d=\"M111.9 117L145.2 81L160.4 117Z\"/></g><g class=\"aml-b aml-s s-a\"><path class=\"s-g1 s-aol\" d=\"M111.9 117L136.1 61L160.4 117Z\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-aml\" x=\"198.6\" y=\"96\"/><clipPath id=\"aml-hw\"><rect x=\"204.6\" y=\"88\" width=\"42\" height=\"16\"/></clipPath><g clip-path=\"url(#aml-hw)\"><g class=\"aml-h aml-s s-a\"><use href=\"#sxs-rows-aml\" x=\"198.6\" y=\"96\"/></g></g></g><g transform=\"translate(198.6 114)\"><rect class=\"sxs-pill\" x=\"0\" y=\"-7\" width=\"64\" height=\"14\" rx=\"7\"/><g style=\"fill:none;stroke:var(--stage-pill-text,#f8f8f2);stroke-width:1.2\"><circle cx=\"9\" r=\"3.6\"/><path d=\"M9-1.8V0h1.6\"/></g><rect x=\"17\" y=\"-2\" width=\"40\" height=\"4\" rx=\"2\" style=\"fill:rgb(255 255 255/.18)\"/><rect class=\"aml-t s-a\" x=\"17\" y=\"-2\" width=\"40\" height=\"4\" rx=\"2\" style=\"fill:var(--stage-a1,#c9a6fb)\"/></g>",
+}
