@@ -5,7 +5,6 @@
 // a body with curved faces gets the voxel wall, and the toast says so (sx-geom shell.rs). The wall takes named
 // values (values.ts).
 import type { PickEvent } from '@slicerx/viewport'
-import { Icon } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { pickFace, type OpenFace } from '../geom/cad'
 import { toGeom } from '../geom/client'
@@ -17,7 +16,7 @@ import { applyShell } from './holes'
 import { keyOfTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
+import { close, errorText, Message, num, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 
 interface Picked {
@@ -115,10 +114,8 @@ export function ShellTool() {
   return (
     <Shell title="Shell" aside={edit ? `Editing step ${edit.index + 1}` : n ? `${n} open face${n === 1 ? '' : 's'}` : target ? 'Closed all round' : 'Nothing picked yet'}>
       <PointerHint text="Click the flat faces to leave open; click one again to close it." />
-      <div className="cad-pair">
-        <Num id="shell-wall" label="Wall" unit="mm" value={wall} onChange={setWall} onEnter={() => void apply()} />
-      </div>
-      {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
+      <Num id="shell-wall" label="Wall" unit="mm" value={wall} onChange={setWall} onEnter={() => void apply()} />
+      {note ? <Message text={note} /> : null}
       <ToolFooter verb="Make shell" onApply={apply} busy={busy} disabled={!ready} />
     </Shell>
   )

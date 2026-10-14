@@ -6,7 +6,7 @@
 import { patternCopies, patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent } from '@slicerx/viewport'
-import { Button, Field, Icon, Input, Seg, Select, Switch } from '@slicerx/ui'
+import { Button, Input, Select, Switch } from '@slicerx/ui'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { featureAt, measure, pickFace, shapeProfile, type FaceFrame, type Feature, type FreeShape, type Measurement, type Polygon, type Shape, type Vec3 } from '../geom/cad'
 import { toGeom } from '../geom/client'
@@ -19,7 +19,7 @@ import { cancelEdit, editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { sessionFonts } from './history/record'
 import { applyArray, applyExtrude, arraySpec, extrudeParams, type ExtrudeInput, BED_FRAME, describeFeature, featurePoints, loopsOf, previewArray, readout, type ArrayKind } from './cad-ops'
-import { close, errorText, num, Num, pickWords, Shell, useProbe, Vec, ToolFooter, PointerHint } from './panel-kit'
+import { Actions, Choice, close, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, Vec, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { SvgFileField } from './svg-file'
 import { KIND_NAMES, dimensionText, keepDimension, keepableKinds, removeDimension, type ObjectPick } from './dimensions'
@@ -235,22 +235,21 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
     <Shell title={textOnly ? 'Text on a face' : 'Shape on a face'} aside={edit ? `Editing step ${edit.index + 1}` : face ? face.label : 'No face yet'}>
       {!face ? <PointerHint text={`Click a flat face, or the bed, where the ${textOnly ? 'text' : 'shape'} goes.`} /> : null}
       {!textOnly ? (
-        <Field htmlFor="cad-shape" label="Shape">
-          <Select id="cad-shape" value={type} onChange={(e) => setType(e.target.value as ShapeType)}>
+        <Row label="Shape" htmlFor="cad-shape">
+          <Select id="cad-shape" size="sm" value={type} onChange={(e) => setType(e.target.value as ShapeType)}>
             {(Object.keys(SHAPE_NAMES) as ShapeType[]).map((t) => (
               <option key={t} value={t}>{SHAPE_NAMES[t]}</option>
             ))}
           </Select>
-        </Field>
+        </Row>
       ) : null}
       {type === 'text' ? (
         <>
-          <Field htmlFor="cad-text" label="Text">
-            <Input id="cad-text" value={text} maxLength={80} onChange={(e) => setText(e.target.value)} />
-          </Field>
-          <div className="cad-pair">
-            <Num id="cad-size" label="Letter height" unit="mm" value={size} onChange={setSize} />
-            <Field htmlFor="cad-font" label="Font" hint={font ? font.name : 'Built in'}>
+          <Row label="Text" htmlFor="cad-text" wide>
+            <Input id="cad-text" size="sm" value={text} maxLength={80} onChange={(e) => setText(e.target.value)} />
+          </Row>
+          <Num id="cad-size" label="Letter height" unit="mm" value={size} onChange={setSize} />
+          <Row label={<>Font <span className="tp-aside">{font ? font.name : 'Built in'}</span></>} wide>
               <label className="cad-file">
                 <input
                   id="cad-font"
@@ -261,19 +260,19 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
                     if (f) void readFont(f).then((base64) => setFont({ name: f.name, base64 }), (err: unknown) => setNote(errorText(err)))
                   }}
                 />
-                <span>Choose a TTF or OTF</span>
+                <span>Choose a TTF or OTF file</span>
               </label>
-            </Field>
-          </div>
+          </Row>
           {localFontsAvailable() ? (
             installed === null ? (
               <Button size="sm" variant="ghost" icon="text" onClick={() => void listLocalFonts().then((list) => (list.length ? setInstalled(list) : setNote('No installed fonts were offered. Choose a TTF or OTF file instead.')))}>
                 Use an installed font
               </Button>
             ) : (
-              <Field htmlFor="cad-installed" label="Installed font">
+              <Row label="Installed font" htmlFor="cad-installed" wide>
                 <Select
                   id="cad-installed"
+                  size="sm"
                   value={font?.name ?? ''}
                   onChange={(e) => {
                     const c = installed.find((f) => f.family === e.target.value)
@@ -288,7 +287,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
                     </option>
                   ))}
                 </Select>
-              </Field>
+              </Row>
             )
           ) : null}
         </>
@@ -296,44 +295,39 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
         <>
           <SvgFileField id="cad-svg" file={svg} onFile={(f) => { setSvg(f); setNote(null) }} onError={setNote} />
           <Num id="cad-w" label="Width" unit="mm" value={width} onChange={setWidth} />
-          <p className="cad-hint">All fill colors become one outline, centered on the position, the top of the artwork along the face's up direction.</p>
+          <Note>All fill colors become one outline, centered on the position, the top of the artwork along the face's up direction.</Note>
         </>
       ) : type === 'circle' ? (
         <Num id="cad-dia" label="Diameter" unit="mm" value={diameter} onChange={setDiameter} />
       ) : type === 'polygon' ? (
-        <div className="cad-pair">
+        <>
           <Num id="cad-sides" label="Sides" unit="" value={sides} onChange={setSides} />
           <Num id="cad-dia" label="Across flats" unit="mm" value={diameter} onChange={setDiameter} />
-        </div>
+        </>
       ) : (
         <>
-          <div className="cad-pair">
-            <Num id="cad-w" label={first} unit="mm" value={width} onChange={setWidth} />
-            <Num id="cad-h" label={second} unit="mm" value={height} onChange={setHeight} />
-          </div>
+          <Num id="cad-w" label={first} unit="mm" value={width} onChange={setWidth} />
+          <Num id="cad-h" label={second} unit="mm" value={height} onChange={setHeight} />
           {type === 'rectangle' ? <Num id="cad-corner" label="Corner radius" unit="mm" value={corner} onChange={setCorner} /> : null}
         </>
       )}
       <Vec id="cad" label="Center" ariaLabel="Shape center" unit="mm" axes={['x', 'y']} values={[x, y]} onChange={[setX, setY]} />
       <Num id="cad-turn" label="Turn" unit={'°'} value={turn} onChange={setTurn} />
-      <div className="cad-row">
-        <span>Result</span>
-        <Seg
-          label="Result"
-          size="sm"
-          value={op}
-          onChange={setOperation}
-          options={[
-            { value: 'join', label: 'Join', disabled: !face?.target },
-            { value: 'cut', label: 'Cut', disabled: !face?.target },
-            { value: 'new', label: 'New body' },
-          ]}
-        />
-      </div>
+      <Choice
+        id="cad-result"
+        label="Result"
+        value={op}
+        onChange={setOperation}
+        options={[
+          { value: 'join', label: 'Join', disabled: !face?.target },
+          { value: 'cut', label: 'Cut', disabled: !face?.target },
+          { value: 'new', label: 'New body' },
+        ]}
+      />
       <Num id="cad-dist" label={op === 'cut' ? 'Depth into the face' : 'Height off the face'} unit="mm" value={distance} onChange={setDistance} />
       <PatternSection value={patternFields} onChange={setPatternFields} />
-      {note || (face && problem) ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note ?? problem}</p> : null}
-      <ToolFooter verb={op === 'cut' ? 'Cut' : op === 'join' ? 'Join' : 'Add body'} onApply={apply} busy={busy} disabled={!face || problem !== null} />
+      {note || (face && problem) ? <Message text={(note ?? problem)!} /> : null}
+      <ToolFooter verb={op === 'cut' ? 'Cut' : op === 'join' ? 'Join' : 'Add body'} verbs={['Cut', 'Join', 'Add body']} onApply={apply} busy={busy} disabled={!face || problem !== null} />
     </Shell>
   )
 }
@@ -407,7 +401,7 @@ function ArrayTool() {
   const problem = !entry ? 'Select the object to copy.' : typeof spec === 'string' ? spec : null
   return (
     <Shell title="Array" aside={entry ? entry.name : 'Nothing selected'}>
-      <Seg label="Array type" size="sm" full value={kind} onChange={setKind} options={[{ value: 'linear', label: 'Line' }, { value: 'grid', label: 'Grid' }, { value: 'circular', label: 'Circle' }]} />
+      <Choice id="arr-kind" label="Array type" bare value={kind} onChange={setKind} options={[{ value: 'linear', label: 'Line' }, { value: 'grid', label: 'Grid' }, { value: 'circular', label: 'Circle' }]} />
       {kind === 'linear' ? (
         <>
           <Num id="arr-count" label="Copies, the original included" unit="" value={count} onChange={setCount} />
@@ -415,41 +409,32 @@ function ArrayTool() {
         </>
       ) : kind === 'grid' ? (
         <>
-          <div className="cad-pair">
-            <Num id="arr-count" label="Columns" unit="" value={count} onChange={setCount} />
-            <Num id="arr-rows" label="Rows" unit="" value={rows} onChange={setRows} />
-          </div>
-          <div className="cad-pair">
-            <Num id="arr-sx" label="Column spacing" unit="mm" value={sx} onChange={setSx} />
-            <Num id="arr-gy" label="Row spacing" unit="mm" value={gy} onChange={setGy} />
-          </div>
+          <Num id="arr-count" label="Columns" unit="" value={count} onChange={setCount} />
+          <Num id="arr-rows" label="Rows" unit="" value={rows} onChange={setRows} />
+          <Num id="arr-sx" label="Column spacing" unit="mm" value={sx} onChange={setSx} />
+          <Num id="arr-gy" label="Row spacing" unit="mm" value={gy} onChange={setGy} />
         </>
       ) : (
         <>
-          <div className="cad-pair">
-            <Num id="arr-count" label="Copies" unit="" value={count} onChange={setCount} />
-            <Num id="arr-angle" label="Over" unit={'°'} value={angle} onChange={setAngle} />
-          </div>
+          <Num id="arr-count" label="Copies" unit="" value={count} onChange={setCount} />
+          <Num id="arr-angle" label="Over" unit={'°'} value={angle} onChange={setAngle} />
           <Vec id="arr-c" label="Center" ariaLabel="Array center" unit="mm" axes={['x', 'y']} values={[cx, cy]} onChange={[setCx, setCy]} />
-          <div className="cad-row">
-            <label htmlFor="arr-rotate">Turn each copy to face the center</label>
+          <Row label="Turn each copy to face the center" htmlFor="arr-rotate">
             <Switch id="arr-rotate" checked={rotate} onChange={setRotate} label="Turn each copy to face the center" />
-          </div>
+          </Row>
         </>
       )}
-      <div className="cad-row">
-        <span>Result</span>
-        <Seg label="Result" size="sm" value={merge} onChange={setMerge} options={[{ value: 'copies', label: 'Copies' }, { value: 'merged', label: 'One object' }]} />
-      </div>
+      <Choice id="arr-result" label="Result" value={merge} onChange={setMerge} options={[{ value: 'copies', label: 'Copies' }, { value: 'merged', label: 'One object' }]} />
       {problem || note ? (
-        <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note ?? problem}</p>
+        <Message text={(note ?? problem)!} />
       ) : preview ? (
-        <p className={preview.overlapping ? 'cad-note' : 'cad-hint'} role="status">
-          <Icon name={preview.overlapping ? 'alert' : 'grid'} size={14} />{' '}
-          {preview.overlapping ? (merge === 'merged' ? `${preview.count} copies that overlap: they fuse into one piece.` : `${preview.count} copies that overlap. Widen the spacing, or merge them into one object.`) : `${preview.count} copies, outlined on the bed.`}
-        </p>
+        preview.overlapping ? (
+          <Message text={merge === 'merged' ? `${preview.count} copies that overlap: they fuse into one piece.` : `${preview.count} copies that overlap. Widen the spacing, or merge them into one object.`} />
+        ) : (
+          <Note status>{`${preview.count} copies, outlined on the bed.`}</Note>
+        )
       ) : null}
-      <ToolFooter verb={merge === 'merged' ? 'Merge copies' : 'Make copies'} onApply={apply} busy={busy} disabled={problem !== null} />
+      <ToolFooter verb={merge === 'merged' ? 'Merge copies' : 'Make copies'} verbs={['Merge copies', 'Make copies']} onApply={apply} busy={busy} disabled={problem !== null} />
     </Shell>
   )
 }
@@ -543,9 +528,7 @@ function MeasureTool() {
   }
   return (
     <Shell title="Measure" aside={picks.length === 2 ? 'Between two picks' : picks.length === 1 ? 'One pick' : 'Nothing picked'}>
-      <p className="cad-hint">
-        <Icon name="mouse-left" size={15} /> {picks.length === 0 ? 'Click a corner, an edge, a hole or a face. The bed counts too.' : picks.length === 1 ? 'Click a second one for the distance and the angle between them.' : 'Click again to start a new measurement.'}
-      </p>
+      <PointerHint text={picks.length === 0 ? 'Click a corner, an edge, a hole or a face. The bed counts too.' : picks.length === 1 ? 'Click a second one for the distance and the angle between them.' : 'Click again to start a new measurement.'} />
       {picks.length ? (
         <ol className="cad-picks">
           {picks.map((f, i) => (
@@ -568,18 +551,19 @@ function MeasureTool() {
         </dl>
       ) : null}
       {keepKind && !onBed ? (
-        <div className="cad-row">
-          {kinds.length > 1 ? <Seg label="Dimension to keep" size="sm" value={keepKind} onChange={setKind} options={kinds.map((k) => ({ value: k, label: KIND_NAMES[k] }))} /> : <span>{KIND_NAMES[keepKind]}</span>}
-          <Button size="sm" variant="ghost" icon="pin" data-tip="cad.keepDimension" onClick={() => void keep()} disabled={keeping}>Keep this dimension</Button>
-        </div>
+        <>
+          {kinds.length > 1 ? <Choice id="dim-kind" label="Dimension to keep" value={keepKind} onChange={setKind} options={kinds.map((k) => ({ value: k, label: KIND_NAMES[k] }))} /> : null}
+          <Row label={kinds.length > 1 ? '' : KIND_NAMES[keepKind]}>
+            <Button size="sm" variant="ghost" icon="pin" data-tip="cad.keepDimension" onClick={() => void keep()} disabled={keeping}>Keep this dimension</Button>
+          </Row>
+        </>
       ) : onBed && kinds.length ? (
-        <p className="cad-hint"><Icon name="info" size={15} /> A dimension to the bed cannot be kept. Pick places on objects to keep one.</p>
+        <Note>A dimension to the bed cannot be kept. Pick places on objects to keep one.</Note>
       ) : null}
-      {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-      <div className="cad-row">
-        <label htmlFor="dim-show">Show all kept dimensions</label>
+      {note ? <Message text={note} /> : null}
+      <Row label="Show all kept dimensions" htmlFor="dim-show">
         <Switch id="dim-show" checked={showAll} onChange={(v) => set({ showDimensions: v })} label="Show all kept dimensions" />
-      </div>
+      </Row>
       {kept.length ? (
         <ul className="cad-kept" aria-label="Kept dimensions">
           {kept.map(({ d, owner }) => {
@@ -594,10 +578,9 @@ function MeasureTool() {
           })}
         </ul>
       ) : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={clear} disabled={picks.length === 0}>Clear</Button>
+      <Actions quiet={<Button variant="ghost" onClick={clear} disabled={picks.length === 0}>Clear</Button>}>
         <Button variant="primary" onClick={close}>Done</Button>
-      </div>
+      </Actions>
     </Shell>
   )
 }

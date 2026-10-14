@@ -4,8 +4,7 @@
 // face), a grid (columns and rows along the face), a circle (copies round a point of the face, over a sweep), or a
 // pattern at points a step already has, kept whole until another mode is picked. Sizes take named values. pattern.ts
 // reads the fields.
-import { Seg } from '@slicerx/ui'
-import { Num } from './panel-kit'
+import { Choice, Note, Num } from './panel-kit'
 import { copyCount, type Pattern, type PatternFields } from '@slicerx/cad-history'
 
 const DEFAULTS: Record<Exclude<PatternFields['kind'], 'points'>, PatternFields> = {
@@ -29,12 +28,10 @@ export function PatternSection({ value, onChange }: { value: PatternFields; onCh
   const set = (k: string, v: string) => onChange({ ...value, [k]: v } as PatternFields)
   return (
     <>
-      <div className="cad-row">
-        <span>Pattern</span>
-        <Seg
-          label="Pattern"
-          size="sm"
-          value={value.kind}
+      <Choice
+        id="pat-kind"
+        label="Pattern"
+        value={value.kind}
           onChange={(k) => k !== 'points' && onChange(DEFAULTS[k])}
           options={[
             { value: 'none', label: 'None' },
@@ -43,29 +40,28 @@ export function PatternSection({ value, onChange }: { value: PatternFields; onCh
             { value: 'circle', label: 'Circle' },
             ...(value.kind === 'points' ? [{ value: 'points' as const, label: 'Points' }] : []),
           ]}
-        />
-      </div>
-      {value.kind === 'points' ? <p className="cad-hint">{`Points, ${copyCount(value.pattern)} copies (edit the points from the sketch)`}</p> : null}
+      />
+      {value.kind === 'points' ? <Note>{`Points, ${copyCount(value.pattern)} copies (edit the points from the sketch)`}</Note> : null}
       {value.kind === 'line' ? (
-        <div className="cad-pair">
+        <>
           <Num id="pat-count" label="Copies" unit="" value={value.count} onChange={(v) => set('count', v)} />
           <Num id="pat-step" label="Spacing" unit="mm" value={value.step} onChange={(v) => set('step', v)} />
           <Num id="pat-angle" label="Direction" unit="°" value={value.angle} onChange={(v) => set('angle', v)} />
-        </div>
+        </>
       ) : value.kind === 'grid' ? (
-        <div className="cad-pair">
+        <>
           <Num id="pat-count" label="Columns" unit="" value={value.count} onChange={(v) => set('count', v)} />
           <Num id="pat-step" label="Column spacing" unit="mm" value={value.step} onChange={(v) => set('step', v)} />
           <Num id="pat-count2" label="Rows" unit="" value={value.count2} onChange={(v) => set('count2', v)} />
           <Num id="pat-step2" label="Row spacing" unit="mm" value={value.step2} onChange={(v) => set('step2', v)} />
-        </div>
+        </>
       ) : value.kind === 'circle' ? (
-        <div className="cad-pair">
+        <>
           <Num id="pat-count" label="Copies" unit="" value={value.count} onChange={(v) => set('count', v)} />
           <Num id="pat-sweep" label="Over" unit="°" value={value.sweep} onChange={(v) => set('sweep', v)} />
           <Num id="pat-cx" label="Center X" unit="mm" value={value.centerX} onChange={(v) => set('centerX', v)} />
           <Num id="pat-cy" label="Center Y" unit="mm" value={value.centerY} onChange={(v) => set('centerY', v)} />
-        </div>
+        </>
       ) : null}
     </>
   )
