@@ -8,14 +8,16 @@ set -euo pipefail
 src=$(cd "$(dirname "$0")" && pwd)
 CI_HOME=${SX_CI_HOME:-$HOME/ci}
 mkdir -p "$CI_HOME/bin" "$CI_HOME/logs" "$CI_HOME/state"
+# A machine that is already set up keeps its own settings: the branch the CI repo serves comes from ci.env.
+[ -f "$CI_HOME/ci.env" ] && . "$CI_HOME/ci.env"
 [ -d "$CI_HOME/slicerx.git" ] || git init -q --bare "$CI_HOME/slicerx.git"
-git -C "$CI_HOME/slicerx.git" symbolic-ref HEAD "${SX_CI_BRANCH:-refs/heads/wip/2026-10-01-checkpoint}"
+git -C "$CI_HOME/slicerx.git" symbolic-ref HEAD "${SX_CI_BRANCH:-refs/heads/main}"
 for f in run.sh worker.sh nightly.sh remote.sh heavy.sh; do install -m 755 "$src/$f" "$CI_HOME/bin/$f"; done
 install -m 755 "$src/post-receive" "$CI_HOME/slicerx.git/hooks/post-receive"
 if [ ! -f "$CI_HOME/ci.env" ]; then
   cat > "$CI_HOME/ci.env" <<'EOF'
 # CI settings for this machine. Not in the repo: paths, hosts and the notify command are local.
-# SX_CI_BRANCH=refs/heads/wip/2026-10-01-checkpoint
+# SX_CI_BRANCH=refs/heads/main
 # SX_CI_NODE_BIN=/opt/homebrew/opt/node@24/bin
 # SX_CI_NOTIFY=$HOME/ci/bin/notify.sh        # gets the summary text as its one argument
 # SX_CI_BENCH=1                               # only on the speed benchmark's reference machine
@@ -26,4 +28,4 @@ if [ ! -f "$CI_HOME/ci.env" ]; then
 EOF
 fi
 echo "CI home: $CI_HOME"
-echo "push to: $(hostname -s):$CI_HOME/slicerx.git (branch ${SX_CI_BRANCH:-wip/2026-10-01-checkpoint})"
+echo "push to: $(hostname -s):$CI_HOME/slicerx.git (branch ${SX_CI_BRANCH:-refs/heads/main})"
