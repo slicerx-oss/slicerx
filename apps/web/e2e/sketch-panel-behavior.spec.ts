@@ -296,6 +296,38 @@ test('the solid card lines its controls up on one right edge', async ({ page, is
   for (const e of edges) expect(Math.abs(e.gap), e.what).toBeLessThanOrEqual(1)
 })
 
+for (const width of [1100, 1440]) {
+  test(`at ${width} the drawing card's header says its state whole, for every tool`, async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Modeling tools are desktop only')
+    await page.setViewportSize({ width, height: 900 })
+    await openStudio(page)
+    const id = await freshBox(page)
+    await command(page, 'Sketch on the bed or a face')
+    // at 1100 the side panes start folded
+    const open = page.getByRole('button', { name: 'Open Tool and transform' })
+    if (await open.isVisible()) await open.click()
+    await expect(toolPanel(page)).toContainText('the bed or a flat face to sketch on')
+    await pick(page, await facePick(page, id, [0, 0, 1]))
+    await expect(toolPanel(page)).toContainText('A face of')
+    await page.locator('body').press('r')
+    await sketchAt(page, 'click', [-3, -3])
+    await sketchAt(page, 'click', [3, 3])
+    const dof = page.getByTestId('sketch-dof')
+    await expect(dof).toHaveText('4 DOF left')
+    await expect(dof).toHaveAttribute('data-tip-title', '4 degrees of freedom left')
+    const head = page.getByTestId('sketch-drawing').locator('.tp-card-h')
+    const families = toolPanel(page).getByRole('radiogroup', { name: 'Drawing tool' })
+    for (const name of ['Line', 'Rectangle', 'Circle', 'Arc', 'Polygon', 'Slot', 'Trim', 'Dimension']) {
+      await families.getByRole('radio', { name }).click()
+      const cut = await head.evaluate((h) => [...h.querySelectorAll<HTMLElement>('h4, .tp-card-state')].filter((e) => e.scrollWidth > e.clientWidth + 0.5).map((e) => e.textContent))
+      expect(cut, `${name} at ${width}`).toEqual([])
+      // and the two never overlap
+      const [t, st] = await head.evaluate((h) => [h.querySelector('h4')!.getBoundingClientRect().right, h.querySelector('.tp-card-state')!.getBoundingClientRect().left])
+      expect(t!, `${name} at ${width}`).toBeLessThanOrEqual(st! + 0.5)
+    }
+  })
+}
+
 test('Other plane asks before it drops a drawing', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Modeling tools are desktop only')
   await sketchOnTop(page)

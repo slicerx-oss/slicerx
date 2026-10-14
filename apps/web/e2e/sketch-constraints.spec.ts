@@ -20,7 +20,10 @@ test('a circle drawn on a face has three degrees of freedom left', async ({ page
   await sketchAt(page, 'click', [2, 1])
   await sketchAt(page, 'click', [6, 1])
   const dof = panel.getByTestId('sketch-dof')
-  await expect(dof).toHaveText('3 degrees of freedom left')
+  await expect(dof).toHaveText('3 DOF left')
+  // the whole line is its tooltip and its accessible name
+  await expect(dof).toHaveAttribute('data-tip-title', '3 degrees of freedom left')
+  await expect(dof).toHaveAccessibleName('3 degrees of freedom left')
   await expect(dof).toHaveAttribute('data-dof', '3')
 })
 
@@ -48,7 +51,7 @@ test('a circle with its center fixed and a diameter is fully constrained', async
   await expect(panel).toContainText('Click the center, then the rim.')
   await sketchAt(page, 'click', [2, 1])
   await sketchAt(page, 'click', [6, 1])
-  await expect(panel.getByTestId('sketch-dof')).toHaveText('3 degrees of freedom left')
+  await expect(panel.getByTestId('sketch-dof')).toHaveText('3 DOF left')
   await expect(panel.getByRole('button', { name: 'Extrude', exact: true })).toBeEnabled()
   await panel.getByRole('button', { name: 'Extrude', exact: true }).click()
   await expect(panel).toHaveCount(0)
@@ -58,7 +61,7 @@ test('a circle with its center fixed and a diameter is fully constrained', async
   ])
   await page.getByRole('button', { name: /^Edit / }).first().click()
   const dof = toolPanel(page).getByTestId('sketch-dof')
-  await expect(dof).toHaveText('Fully constrained')
+  await expect(dof).toHaveText('Defined')
   await expect(dof).toHaveAttribute('data-tone', 'done')
 })
 
@@ -74,7 +77,7 @@ test('sketch dimensions read in the display unit', async ({ page, isMobile }) =>
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
   await sketchAt(page, 'click', [2, 1])
   await sketchAt(page, 'click', [6, 1])
-  await expect(panel.getByTestId('sketch-dof')).toHaveText('3 degrees of freedom left')
+  await expect(panel.getByTestId('sketch-dof')).toHaveText('3 DOF left')
   await panel.getByRole('button', { name: 'Extrude', exact: true }).click()
   await expect(panel).toHaveCount(0)
   await constrain(page, [{ type: 'diameter', circle: { e: 0, seg: 0 }, value: 12.7 }])

@@ -501,7 +501,7 @@ Ids that tests read for their text:
 | `model-select-object` | In the readout, the object the faces or edges are on: selects that object alone |
 | `model-select-made-by` | The step that made the one face picked: opens it; `data-step` is its index, or `base` for "from the original mesh" |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
-| `sketch-dof` | The drawing card's status from the solver, in its header: "Fully defined", the degrees of freedom left, or a conflict; `data-dof` is the count |
+| `sketch-dof` | The drawing card's status from the solver, in its header in short ("Defined", "4 DOF left", "Over-defined", "Not solved"), the whole line in its tooltip and accessible name; `data-dof` is the count |
 | `sketch-drawing` | The sketch panel's drawing card: the tools, grid and snap, what shows, and the picked loop's actions; `sketch-drawing-sub` is the tool's name after the card's title ("Drawing · Line") |
 | `sketch-grid-snap` | The row with Grid's switch and Snap's step (Off first), two separate controls; Section has its own row |
 | `sketch-summary`, `sketch-sheet-toggle` | Phone: the docked sheet's header while sketching, with the tool and the sketch's state, and the button that folds or opens the sheet (`aria-expanded`); the sheet folds once, at the sketch's first point, and stays as the button leaves it after that |

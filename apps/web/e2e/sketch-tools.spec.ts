@@ -26,7 +26,7 @@ test('keys and the variant row draw a circle, a 3-point rectangle, a pentagon, a
   await expect(panel).toContainText('The bed')
   const families = panel.getByRole('radiogroup', { name: 'Drawing tool' })
   const variants = panel.getByRole('radiogroup', { name: 'Draw it by' })
-  const dof = panel.getByRole('status').filter({ hasText: /degrees of freedom|defined/ })
+  const dof = panel.getByRole('status').filter({ hasText: /DOF left|Defined/ })
   // each shape changes the freedom count; waiting on it keeps the next step from racing the last render
   const line = panel.getByTestId('sketch-dof')
   const freedom = async () => ((await line.count()) ? Number(await line.getAttribute('data-dof')) : -1)

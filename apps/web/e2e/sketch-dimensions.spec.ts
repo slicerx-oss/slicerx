@@ -95,7 +95,7 @@ test('D dimensions a rectangle until it is fully defined, and the extrude follow
   await dimension([[0, 0], start], [start[0] / 2, -4], 'Horizontal', '10')
   await expect.poll(freedom).toBe(1)
   await dimension([[0, 0], (await corners(page))[0]!], [-4, start[1] / 2], 'Vertical', '10')
-  await expect(dof).toHaveText('Fully constrained')
+  await expect(dof).toHaveText('Defined')
   await expect(dof).toHaveAttribute('data-tone', 'done')
   await expect.poll(async () => (await scene(page))?.paths.filter((p) => p.tone !== 'soft').map((p) => p.tone)).toEqual(['defined', 'defined', 'defined', 'defined'])
   expect(await corners(page)).toEqual([[10, 10], [35, 10], [35, 22], [10, 22]])
@@ -103,7 +103,10 @@ test('D dimensions a rectangle until it is fully defined, and the extrude follow
   // the top's length is already set: kept, driven, in parentheses, and the sketch stays fully defined
   await dimension([await segMid(page, 2)], [22, 26], 'Length', '30')
   await expect.poll(async () => (await scene(page))?.dims?.map((d) => d.label)).toContain('(25)')
-  await expect(dof).toHaveText('Fully constrained, 1 driven')
+  await expect(dof).toHaveText('Defined')
+  await expect(dof).toHaveAccessibleName('Fully constrained, 1 driven')
+  // the header says it whole at the panel's width, the driven count in the tooltip
+  expect(await dof.evaluate((el) => el.parentElement!.scrollWidth <= el.parentElement!.clientWidth)).toBe(true)
   // picked with Select, Delete takes it off
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Select' }).click()
   const driven = ((await scene(page))?.dims ?? []).findIndex((d) => d.label === '(25)')
@@ -121,7 +124,7 @@ test('D dimensions a rectangle until it is fully defined, and the extrude follow
   // opened again from the history: a press on the width's value picks it, a second opens it
   await page.getByRole('button', { name: /^Edit / }).first().click()
   const again = toolPanel(page)
-  await expect(again.getByTestId('sketch-dof')).toHaveText('Fully constrained')
+  await expect(again.getByTestId('sketch-dof')).toHaveText('Defined')
   const width = ((await scene(page))?.dims ?? []).findIndex((d) => d.label === '25')
   expect(width).toBeGreaterThanOrEqual(0)
   // real presses on the value as drawn, so the view finds the label under the pointer itself
