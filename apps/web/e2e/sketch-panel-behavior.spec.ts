@@ -317,9 +317,13 @@ for (const height of [844, 700, 600]) {
     await expect(sheet).toContainText('Tap an origin plane')
     await emit(page, 'pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, originPlane: 'xy' })
     const toggle = page.getByTestId('sketch-sheet-toggle')
-    // the first point folds it; the button opens it again
+    // the first point folds it, and focus on a field the fold hides moves to the sheet's button; the button opens it again
+    await sheet.locator('#sk-grid').focus()
     await phoneClick(page, [-10, -10])
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(toggle).toBeFocused()
+    // no Transform under a sketch on a phone: the sheet is the sketch's
+    await expect(sheet.locator('[data-section="transform"]')).toHaveCount(0)
     await toggle.tap()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     // a closed square, so the solid settings are all there

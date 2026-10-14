@@ -177,6 +177,11 @@ export interface SketchLook {
 }
 let sessionLook: SketchLook = { grid: true, snap: true, step: '1', section: false, profiles: true, points: true, dimensions: true, constraints: true }
 
+/** How far an on-screen keyboard covers the bottom of the window, px: the layout height below the visible part. */
+export function keyboardLift(innerHeight: number, vv: { height: number; offsetTop: number }): number {
+  return Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))
+}
+
 /** The sketch as one undo step holds it. */
 interface SketchSnap {
   sketch: Entity[]
@@ -1363,6 +1368,32 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     foldedOnce.current = true
     fold?.setFolded(true)
   }, [phone, drawingNow])
+  // Folding hides the sheet's body: focus inside it moves to the sheet's button, so it is never lost on a hidden field.
+  const folded = fold?.folded ?? false
+  useEffect(() => {
+    const slot = fold?.slot
+    if (!folded || !slot) return
+    const body = slot.closest('.pane')?.querySelector('.sx-rail-body')
+    if (body?.contains(document.activeElement)) slot.querySelector<HTMLElement>('[data-testid="sketch-sheet-toggle"]')?.focus()
+  }, [folded, fold?.slot])
+  // A phone's on-screen keyboard: the sheet lifts above it, and the focused field scrolls into view in the sheet.
+  useEffect(() => {
+    const vv = typeof window === 'undefined' ? null : window.visualViewport
+    const rail = fold?.slot?.closest<HTMLElement>('.pane')
+    if (!phone || !vv || !rail) return
+    const fit = () => {
+      rail.style.setProperty('--kb-lift', `${keyboardLift(window.innerHeight, vv)}px`)
+      const a = document.activeElement
+      if (a instanceof HTMLElement && rail.contains(a)) a.scrollIntoView({ block: 'nearest' })
+    }
+    vv.addEventListener('resize', fit)
+    vv.addEventListener('scroll', fit)
+    return () => {
+      vv.removeEventListener('resize', fit)
+      vv.removeEventListener('scroll', fit)
+      rail.style.removeProperty('--kb-lift')
+    }
+  }, [phone, fold?.slot])
   const summary =
     phone && fold?.slot && !featureOnly
       ? createPortal(
