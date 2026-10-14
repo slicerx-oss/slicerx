@@ -3,8 +3,12 @@
 // Settings > Look and feel > Toolbar size: Large by default, stored with the rest of the look, a bad value falling
 // back to Large, and the row's Seg writing it. The ribbon reads it as its icon size.
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { Host } from '@slicerx/contracts'
+import { builtinTools } from '@slicerx/pilot'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { builtinCommands } from '../src/commands/builtin'
+import { NEUTRAL, setCurrentEdition } from '../src/edition'
 import { ToolbarGroup } from '../src/shell/appearance-settings'
 import { DEFAULT_APPEARANCE, loadPrefs, savePrefs } from '../src/state/prefs'
 import { get, set } from '../src/state/store'
@@ -57,5 +61,24 @@ describe('model framing', () => {
     expect(loadPrefs().appearance?.modelFraming).toBe('open')
     localStorage.setItem(KEY, JSON.stringify({ appearance: { modelFraming: 'sometimes' } }))
     expect(loadPrefs().appearance?.modelFraming).toBe('selection')
+  })
+
+  it('mimir sets it through the app.model_framing_* tools and reads the choice back', async () => {
+    setCurrentEdition(NEUTRAL)
+    // the tools mimir may call: the enabled commands, as a call to a disabled one is refused
+    const tools = () => builtinTools({ planner: undefined, commands: builtinCommands({} as Host, []).filter((c) => (c.enabled ? c.enabled() : true)) })
+    const named = (n: string) => tools().find((t) => t.name === n)
+    expect(named('app.model_framing_selection')).toBeUndefined()
+    const open = named('app.model_framing_open')!
+    expect(open.permission).toBe('read')
+    const out = await open.run({} as never, {} as never)
+    expect(out.output).toEqual({ modelFraming: 'open' })
+    expect(get().appearance.modelFraming).toBe('open')
+    expect(named('app.model_framing_open')).toBeUndefined()
+    expect((await named('app.model_framing_selection')!.run({} as never, {} as never)).output).toEqual({ modelFraming: 'selection' })
+    // an edition without Model offers neither
+    setCurrentEdition({ ...NEUTRAL, features: { ...NEUTRAL.features, cad: false } })
+    expect(tools().filter((t) => t.name.startsWith('app.model_framing'))).toEqual([])
+    setCurrentEdition(NEUTRAL)
   })
 })
