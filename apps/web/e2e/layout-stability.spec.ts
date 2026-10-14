@@ -467,12 +467,27 @@ test.describe('controls never move when pressed', () => {
       await composer.getByRole('textbox').fill(ask)
       await composer.getByRole('button', { name: 'Send' }).click()
       await page.getByTestId('mimir-choice').nth(i).getByRole('button', { name: 'Yes, that one' }).click()
-      await page.getByTestId('mimir-sheet-build').click()
+      // the sheet waits on its record in the chat: pressing Confirm sizes and build moves nothing on the record
+      const rec = page.locator('[data-testid="mimir-sheet-record"]').nth(i)
+      const confirm = rec.getByTestId('mimir-sheet-confirm')
+      await expect(confirm).toHaveText('Confirm sizes and build')
+      const parts = [confirm, rec.getByTestId('mimir-sheet-cancel'), rec.getByTestId('mimir-sheet-status'), rec.locator('.sheet-rec-rows')]
+      const at = () => Promise.all(parts.map(async (l) => (await l.boundingBox())!))
+      const was = await at()
+      await confirm.hover()
+      await page.mouse.down()
+      await page.waitForTimeout(150)
+      const held = await at()
+      held.forEach((n, k) => {
+        const o = was[k]!
+        expect(Math.max(Math.abs(n.x - o.x), Math.abs(n.y - o.y), Math.abs(n.width - o.width), Math.abs(n.height - o.height)), `record part ${k} while Confirm is held`).toBeLessThanOrEqual(LIMIT)
+      })
+      await page.mouse.up()
       await expect(page.getByTestId('mimir-transcript').locator('[data-lookup-id]')).toHaveCount(i + 1)
     }
     await expect(cards).toHaveCount(2)
     await expect(page.locator('.mimir-lookup-more')).toBeVisible()
-    // the build opened the timeline for a moment; it shuts once the pointer is away
+    // the timeline stays shut once the pointer is away from the view's bottom band
     await page.mouse.move(700, 300)
     await expect(timeline).toBeHidden({ timeout: 15_000 })
     await viewAtRest(page)
