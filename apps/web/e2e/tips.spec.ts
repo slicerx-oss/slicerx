@@ -243,3 +243,8 @@ test('Advanced rows from initial layer speed to support angle play their own loo
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['initial_layer_speed', 'brfs'], ['initial_layer_infill_speed', 'brfi'], ['slow_down_layers', 'brsl'], ['spiral_mode', 'brvm'], ['spiral_mode_smooth', 'brvo'], ['spiral_starting_flow_ratio', 'brva'], ['spiral_finishing_flow_ratio', 'brvf'], ['support_speed', 'brus'], ['support_interface_speed', 'brui'], ['support_type', 'brty'], ['support_critical_regions_only', 'brcr'], ['support_threshold_angle', 'brth'], ['support_angle', 'brsn']])
 })
+
+test('Advanced rows from support base pattern to tree support branch angle play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['support_base_pattern', 'brbp'], ['support_base_pattern_spacing', 'brbs'], ['support_interface_pattern', 'brip'], ['support_bottom_interface_spacing', 'brbi'], ['support_expansion', 'brex'], ['support_ironing', 'btsi'], ['support_ironing_flow', 'btsf'], ['support_ironing_pattern', 'btsp'], ['support_ironing_spacing', 'btss'], ['support_object_first_layer_gap', 'btsg'], ['support_on_build_plate_only', 'btsb'], ['support_remove_small_overhang', 'btsr'], ['tree_support_branch_angle', 'btta']])
+})
