@@ -35,6 +35,8 @@ async function addBox(page: Page): Promise<string> {
   await expect.poll(async () => (await state(page)).plate.length).toBe(1)
   const id = (await state(page)).plate[0]!.id
   await setState(page, { selection: id, selectedIds: [id] })
+  // Model frames a new part and then the selection, each an eased camera move: measure screen points once it stops
+  await page.waitForFunction(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)
   return id
 }
 
@@ -51,7 +53,12 @@ function screenOf(page: Page, at: [number, number, number]): Promise<{ x: number
 
 /** The middle of an object's box, bed mm. */
 function middleOf(page: Page, id: string): Promise<[number, number, number]> {
-  return page.evaluate((id) => {
+  return pointIn(page, id, [0.5, 0.5, 0.5])
+}
+
+/** A point of an object's box, bed mm, as fractions of its size from the low corner. */
+function pointIn(page: Page, id: string, f: [number, number, number]): Promise<[number, number, number]> {
+  return page.evaluate(([id, f]) => {
     type E = { id: string; transform: number[]; parts: { positions: Float32Array }[] }
     const e = (window as unknown as { __sx: { getState(): { plate: E[] } } }).__sx.getState().plate.find((p) => p.id === id)!
     const m = e.transform
@@ -66,8 +73,8 @@ function middleOf(page: Page, id: string): Promise<[number, number, number]> {
           hi[k] = Math.max(hi[k]!, w[k]!)
         }
       }
-    return [0, 1, 2].map((k) => (lo[k]! + hi[k]!) / 2) as [number, number, number]
-  }, id)
+    return [0, 1, 2].map((k) => lo[k]! + (hi[k]! - lo[k]!) * f[k]!) as [number, number, number]
+  }, [id, f] as const)
 }
 
 /** One finger: down at `from`, through `to` in steps, then up; `hold` ms before moving. */
@@ -124,10 +131,11 @@ test.describe('Model on a phone', () => {
     const id = await addBox(page)
     await expect(page.getByTestId('phone-handle-move')).toHaveAttribute('aria-checked', 'true')
     const cdp = await page.context().newCDPSession(page)
-    // a drag that starts on the model itself turns the view and leaves the model where it is
+    // a drag that starts on the model itself turns the view and leaves the model where it is. Framed, the model's
+    // middle is the move arrows' origin, so the drag starts on the low X and Y side, away from all three arrows.
     const before = (await state(page)).plate[0]!.transform.join(',')
-    const mid = await screenOf(page, await middleOf(page, id))
-    await finger(cdp, mid, { x: mid.x + 60, y: mid.y + 10 })
+    const body = await screenOf(page, await pointIn(page, id, [0.2, 0.2, 0.5]))
+    await finger(cdp, body, { x: body.x + 60, y: body.y + 10 })
     await page.waitForTimeout(300)
     expect((await state(page)).plate[0]!.transform.join(',')).toBe(before)
     // the X arrow: from the model's middle along X, most of the way to its tip
