@@ -445,6 +445,245 @@ const skinDensity = () => zag('bqnd', { ...Z0, hiSkin: 1, skin: 2 }, { ...Z0, hi
 const skinDepth = () => zag('bqnp', { ...Z0, hiSkin: 1, depth: 2.6 }, { ...Z0, hiSkin: 1, depth: 6 }, ['2 mm', '5 mm'], 'Skin infill depth: how far the dense skin reaches in from the walls before the core starts.')
 const skinWidth = () => zag('bqnw', { ...Z0, hiSkin: 1, sw: 1 }, { ...Z0, hiSkin: 1, sw: 2 }, ['0.4 mm', '0.6 mm'], 'Skin line width: the lines along the walls of a locked zag fill print thinner or wider.')
 
+// ========== Advanced loops, second half, batch B: skirt to support interface pattern ==========
+const dash = (d, c, w, da = '2 2') => `<path class="s-n" stroke-dasharray="${da}"${st(c, w)} d="${d}"/>`
+
+// ---------- skirt ----------
+const SKP = box([4, 4, 0], [16, 12, 7])
+const skirtRing = (z) => rect(0, 0, 20, 16, z)
+function skirtHeight() {
+  const id = 'brkh', ring = (n) => pd('', Array.from({ length: n }, (_, k) => skirtRing(0.2 + k * 0.7)).join(''), A1, 1.6)
+  return staged(id, [ring(1), ring(4)], ['1 layer', '4 layers'], 'Skirt height: the skirt rises this many layers, a low fence that also shields the part from drafts.', { extra: SKP, w: 72, x: 204 })
+}
+function skirtStart() {
+  // a round skirt; the start mark moves round it
+  const id = 'brka', c = [12, 9, 0.2], R = 11
+  const at = (deg) => { const a = (deg * Math.PI) / 180; return [c[0] + R * Math.cos(a), c[1] + R * Math.sin(a), 0.2] }
+  const mark = (deg) => ellipse(disc(...at(deg), 1.3), 's-g1 s-aol')
+  return staged(id, [mark(0), mark(90), mark(180)], ['0°', '90°', '180°'], 'Skirt start angle: where on the skirt the nozzle starts printing, as an angle around the part.', { extra: pd('', circ(...c, R, 36), A1, 1.6) + box([7, 4, 0], [17, 14, 7]) })
+}
+function skirtType() {
+  const id = 'brkt', A = box([0, 3, 0], [8, 11, 7]), B = box([14, -1, 0], [22, 7, 7])
+  return staged(id, [pd('', rect(-3, -4, 25, 14, 0.2), A1, 1.6), pd('', rect(-2.5, 0.5, 10.5, 13.5, 0.2) + rect(11.5, -3.5, 24.5, 9.5, 0.2), A1, 1.6)], ['Combined', 'Per object'], 'Skirt type: one skirt around all the parts, or one around each part.', { extra: A + B, w: 84, x: 196 })
+}
+
+// ---------- sleipnir limits: a quarter round in layers set by sleipnir ----------
+/** the outer stair of a quarter round at the given layer heights (mm, scaled for the stage) */
+function stairs(hs, hi = -1, X = 22, Y = 12, H = 14) {
+  const tot = hs.reduce((a, b) => a + b, 0), zs = [0]
+  for (const h of hs) zs.push(zs.at(-1) + (h / tot) * H)
+  const xr = (z) => X * Math.sqrt(Math.max(0, 1 - (z / H) ** 2))
+  const xs = zs.map((z, k) => (k < zs.length - 1 ? xr(z) : 0))
+  const front = [[0, Y, 0], [X, Y, 0]]
+  for (let k = 0; k < hs.length; k++) front.push([xs[k], Y, zs[k + 1]], [xs[k + 1], Y, zs[k + 1]])
+  front.push([0, Y, H])
+  let bris = '', tre = ''
+  for (let k = 0; k < hs.length; k++) {
+    bris += rel([[xs[k], Y, zs[k]], [xs[k], 0, zs[k]], [xs[k], 0, zs[k + 1]], [xs[k], Y, zs[k + 1]]])
+    if (xs[k + 1] < xs[k]) tre += rel([[xs[k + 1], 0, zs[k + 1]], [xs[k], 0, zs[k + 1]], [xs[k], Y, zs[k + 1]], [xs[k + 1], Y, zs[k + 1]]])
+  }
+  const band = hi < 0 ? '' : `<path class="s-g1 s-aol" d="${rel([[0, Y, zs[hi]], [xs[hi], Y, zs[hi]], [xs[hi], Y, zs[hi + 1]], [0, Y, zs[hi + 1]]])}"/>`
+  return `<path class="s-f2 s-ol" d="${rel(front)}"/><path class="s-f3 s-ol" d="${bris}"/><path class="s-f1 s-ol" d="${tre}"/>${band}`
+}
+const mark = (z0, z1, x = -2) => pd('', rel([[x, 12, z0], [x, 12, z1]], false), A1, 3.2) + pd('', rel([[x - 1, 12, z0], [x + 1, 12, z0]], false) + rel([[x - 1, 12, z1], [x + 1, 12, z1]], false), A2, 1.6)
+function sl(id, a, b, rowsT, about, w = 64) { return staged(id, [a, b], rowsT, about, { w, x: 200 }) }
+const slMax = () => sl('brlx', stairs([4, 4, 3, 2, 1, 1], 0), stairs([2.6, 2.6, 2.6, 2.2, 1.5, 1, 1], 0), ['0.32 mm', '0.24 mm'], 'Thickest layer: sleipnir never lays a layer thicker than this, even on steep walls; a lower limit costs time.', 72)
+const slMin = () => sl('brln', stairs([4, 3.5, 3, 2, 1.6], 4), stairs([4, 3.5, 3, 2, 1, 0.6, 0.4, 0.3, 0.3], 8), ['0.12 mm', '0.06 mm'], 'Thinnest layer: the finest layer sleipnir uses near flat tops; lower is smoother there but slower.', 72)
+const slStep = () => sl('brlr', stairs([4, 4, 4, 1, 1, 1, 1]), stairs([4, 3.2, 2.5, 1.9, 1.4, 1, 0.8]), ['100 %', '25 %'], 'Step ratio: how much one layer may differ from the next; a low ratio blends thick into thin without a visible jump.')
+const slSmooth = () => sl('brls', stairs([3.5, 2, 3.4, 1.4, 2.6, 1, 1.8, 0.8]), stairs([3.2, 2.9, 2.6, 2.2, 1.9, 1.5, 1.2, 0.9]), ['Off', 'On'], 'Smoothing: averages each layer with its neighbors so the heights change evenly instead of jumping.')
+const slRadius = () => sl('brlo', stairs([3.5, 2.4, 3, 1.6, 2.4, 1.2, 1.6, 0.9]), stairs([3.1, 2.9, 2.6, 2.3, 1.9, 1.6, 1.2, 0.9]), ['1 mm', '5 mm'], 'Smoothing radius: how far up and down the heights are averaged; a wider radius gives a gentler change.')
+
+// ---------- slicing mode: a cross section of btwo overlapping shapes and one with a hole ----------
+function slicingMode() {
+  const id = 'brsm', z = 0.3
+  const a = [[0, 2, z], [12, 2, z], [12, 12, z], [0, 12, z]], b = [[7, -3, z], [19, -3, z], [19, 7, z], [7, 7, z]], ov = [[7, 2, z], [12, 2, z], [12, 7, z], [7, 7, z]]
+  const fill = (ps, cls = 's-g1 s-aol') => `<path class="${cls}" d="${rel(ps)}"/>`
+  const hole = [[22, 4, z], [27, 4, z], [27, 9, z], [22, 9, z]], shell = [[20, 2, z], [29, 2, z], [29, 11, z], [20, 11, z]]
+  const base = fill(a) + fill(b), withHole = `<path class="s-g1 s-aol" fill-rule="evenodd" d="${rel(shell)}${rel(hole)}"/>`
+  return staged(id, [base + withHole, base + fill(ov, 's-hole') + withHole, base + fill(shell)], ['Regular', 'Even-odd', 'Close holes'], 'Slicing mode: regular joins overlapping shapes; even-odd leaves the overlap hollow; close holes fills every hole.', { w: 94, x: 188 })
+}
+
+// ---------- slow down for curled perimeters: an overhang's edge curling up ----------
+function curlWalls() {
+  const id = 'brcw', B = box([0, 4, 0], [8, 12, 12]) + box([8, 4, 9], [20, 12, 12])
+  const curl = `<path class="s-n"${st(CUT, 2.4)} d="M${iso(20, 12, 12).join(' ')}Q${iso(22, 12, 13.5).join(' ')} ${iso(21, 12, 15).join(' ')}"/>` + dash(rel([[20, 12, 12], [20, 4, 12]], false), CUT, 1.4)
+  return staged(id, [curl, ''], ['Off', 'On'], 'Slow down for curled perimeters: where an overhang\'s edge would curl up, the walls print slower so it lies flat and the nozzle does not catch it.', { extra: B })
+}
+
+// ---------- solid infill direction ----------
+const SLAB = box([0, 0, 0], [26, 18, 2])
+function solidDir() {
+  const id = 'brsd', L = (deg) => pd('', hatchAt(0.6, 0.6, 25.4, 17.4, deg, 1.3, 2.1), A2, 1.3)
+  return staged(id, [L(45), L(0)], ['45°', '0°'], 'Solid infill direction: the angle the solid infill lines start at.', { extra: SLAB })
+}
+function solidRotate() {
+  // three layers in turn, each turned by the template
+  const id = 'brsr', L = (deg) => pd('', hatchAt(0.6, 0.6, 25.4, 17.4, deg, 1.3, 2.1), A2, 1.3)
+  return staged(id, [L(0), L(60), L(120)], ['0°', '60°', '120°'], 'Solid infill rotation template: each layer turns its solid lines by the next angle in the list.', { extra: SLAB })
+}
+
+// ---------- speed by role: a layer's toolpaths; the tip's own role prints slow, then fast ----------
+const roles = (Z) => ({
+  outer: rect(0, 0, 26, 18, Z, 0.7),
+  inner: rect(0, 0, 26, 18, Z, 1.7),
+  sparse: hatchAt(2.7, 2.7, 12.6, 15.3, 45, 2.4, Z) + hatchAt(2.7, 2.7, 12.6, 15.3, -45, 2.4, Z),
+  solid: hatch(14.2, 23.3, 3, 15.3, 1, Z),
+  gap: rel(zig(12.9, 13.7, 2.8, 15.2, 0.9, Z), false),
+  small: circ(7.6, 9, Z, 1.7, 16),
+  travel: `M${iso(4, 4, Z).join(' ')}Q${iso(10, 6, Z + 7).join(' ')} ${iso(19, 13, Z).join(' ')}`,
+})
+const RZ = 2.1, ROLE = roles(RZ)
+const bads = (Z) => ({
+  outer: `<path class="s-n"${st(CUT, 1.3)} d="${rel(Array.from({ length: 7 }, (_, i) => [4 + i * 2.8, 18.6 + (i % 2 ? 0.5 : -0.2), Z]), false)}"/>`,
+  small: ellipse(disc(7.6, 9, Z, 2.4), 's-cf s-cl'),
+  solid: pd('', rel([[15, 6, Z], [20, 6.5, Z]], false) + rel([[16, 11, Z], [22, 10.4, Z]], false), CUT, 1.6),
+  travel: dots([[8, 6, Z + 1], [12, 8, Z + 1.8], [15, 10.5, Z + 1]], 's-cf s-cl', 0.6),
+  first: dash(rel([[0, 18, 0], [26, 18, 1.2], [26, 0, 0]], false), CUT, 1.4),
+})
+function speedRole(id, role, rowsT, about, { bad, badSlow = false, first = false, timeShare = [1, 0.45] } = {}) {
+  const Z = first ? 0.7 : RZ, R = roles(Z)
+  const others = Object.keys(R).filter((k) => k !== role && k !== 'travel' && (k !== 'gap' || role === 'sparse')).map((k) => R[k]).join('')
+  const hi = (cls) => role === 'travel' ? dash(R.travel, A2, 2.2, '3 2.5').replace('<path class="s-n"', `<path class="${cls} s-a s-n"`) : pd(cls, R[role], A2, role === 'outer' || role === 'inner' ? 2.4 : 1.8, true)
+  const tb = timebar(id, 0, 0, [[0, timeShare[0]], [1.7, timeShare[0]], [1.95, timeShare[1]], [3.3, timeShare[1]], [3.45, timeShare[0]]])
+  // one copy of the role's lines, printed slowly, then again quickly; the travel is dashed, so it fades in
+  const K = role === 'travel'
+    ? [[0.4, op(0)], [0.8, op(1)], [1.55, op(1)], [1.65, op(0)], [1.95, op(0)], [2.1, op(1)], [3.2, op(1)], [3.35, op(0)]]
+    : [[0.3, 'stroke-dashoffset:101'], [1.45, 'stroke-dashoffset:0'], [1.6, op(1)], [1.65, `${op(0)};stroke-dashoffset:0`], [1.85, `${op(0)};stroke-dashoffset:101`], [1.9, `stroke-dashoffset:101;${op(1)}`], [2.35, 'stroke-dashoffset:0'], [3.2, op(1)], [3.35, op(0)]]
+  const css = `.${id}-a{animation-name:${id}-a}` + kf(`${id}-a`, K) + tb.css + (bad ? fade(`${id}-x`, badSlow ? 1 : 2.4, badSlow ? 1.6 : 3.2, 0.1) : '')
+  const b = bad ? g(`${id}-x`, bads(Z)[bad]) : ''
+  return staged(id, [badSlow ? b : '', badSlow ? '' : b], rowsT, about, { css, extra: box([0, 0, 0], [26, 18, Z - 0.1]) + pd('', others, T3, 1.1) + hi(`${id}-a`), w: 74, x: 204, after: tb.svg.replace('translate(0 0)', 'translate(214 58)') })
+}
+const MS = (a, b) => [`${a} mm/s`, `${b} mm/s`]
+const outerWallSpeed = () => speedRole('bros', 'outer', MS(60, 200), 'Outer wall speed: the outer wall prints slowly for a clean surface; fast saves time but rings after corners.', { bad: 'outer' })
+const innerWallSpeed = () => speedRole('bris', 'inner', MS(100, 300), 'Inner wall speed: the walls hidden inside can run faster than the outer wall to save time.')
+const sparseSpeed = () => speedRole('brps', 'sparse', MS(100, 300), 'Sparse infill speed: the infill inside the part, usually the fastest printing move.')
+const solidSpeed = () => speedRole('brds', 'solid', MS(100, 250), 'Internal solid infill speed: solid layers inside the part, under the top and over the bottom.', { timeShare: [1, 0.55] })
+const topSpeed = () => speedRole('brts', 'solid', MS(60, 200), 'Top surface speed: the visible top layer; slower lays smoother lines, too fast leaves rough streaks.', { bad: 'solid' })
+const gapSpeed = () => speedRole('brgs', 'gap', MS(30, 100), 'Gap infill speed: the short zigzags that fill narrow gaps between walls.', { timeShare: [0.6, 0.4] })
+const smallSpeed = () => speedRole('brss', 'small', ['50 %', '100 %'], 'Small perimeter speed: small holes and pins print slower so they have time to cool and keep their shape.', { bad: 'small', timeShare: [0.6, 0.45] })
+const travelSpeed = () => speedRole('brvs', 'travel', MS(100, 500), 'Travel speed: moves that do not print; slow travel leaves time to ooze along the way.', { bad: 'travel', badSlow: true, timeShare: [0.9, 0.5] })
+const firstSpeed = () => speedRole('brfs', 'outer', MS(30, 80), 'First layer speed: the first layer prints slowly so it sticks; too fast and a corner lifts off the bed.', { bad: 'first', first: true })
+const firstInfillSpeed = () => speedRole('brfi', 'sparse', MS(40, 100), 'First layer infill speed: the infill of the first layer, slower than usual so it bonds to the bed.', { first: true })
+const firstTravelSpeed = () => speedRole('brft', 'travel', MS(100, 300), 'First layer travel speed: travel on the first layer, gentler so the nozzle does not knock fresh lines loose.', { first: true, timeShare: [0.8, 0.55] })
+function smallThreshold() {
+  // btwo holes; the threshold decides which counts as small and prints slow
+  const id = 'brsh', base = box([0, 0, 0], [26, 18, 2]) + pd('', ROLE.outer + ROLE.inner + ROLE.solid, T3, 1.1)
+  const sm = circ(7.6, 9, RZ, 1.7, 16), lg = circ(7.6, 9, RZ, 4.2, 28)
+  return staged(id, [pd('', sm, A2, 2.6) + pd('', lg, T3, 1), pd('', sm + lg, A2, 2.6)], ['2 mm', '5 mm'], 'Small perimeter threshold: holes with a radius under this count as small and print at the small perimeter speed.', { extra: base })
+}
+function slowLayers() {
+  // a stack of layers; the first ones print slower, ramping up to full speed
+  const id = 'brsl', B = box([0, 0, 0], [24, 12, 12])
+  const band = (k, o) => `<polygon class="s-g1" style="opacity:${o}" points="${[[0, 12, k * 1.5], [24, 12, k * 1.5], [24, 12, k * 1.5 + 1.5], [0, 12, k * 1.5 + 1.5]].map((p) => iso(...p).join(',')).join(' ')}"/>`
+  let lines = ''
+  for (let k = 1; k < 8; k++) lines += rel([[0, 12, k * 1.5], [24, 12, k * 1.5]], false)
+  return staged(id, [band(0, 0.9), band(0, 0.9) + band(1, 0.7) + band(2, 0.5) + band(3, 0.3)], ['0 layers', '3 layers'], 'Slow down layers: the first layers after the first one ramp up to full speed, which helps the bottom stick and stay flat.', { extra: B + pd('', lines, T3, 1), after: '', w: 72, x: 204 })
+}
+
+// ---------- support: a ledge off a post, support under it ----------
+const POST = box([0, 4, 0], [6, 12, 14]), LEDGE = box([6, 4, 10], [24, 12, 14])
+const cols = (x0, x1, z1, sp = 2, y = 12, z0 = 0) => { let d = ''; for (let x = x0; x <= x1 + 1e-6; x += sp) d += rel([[x, y, z0], [x, y, z1]], false); return d }
+const COLS = pd('', cols(8, 23, 9.4), A2, 1.8) + pd('', rel([[8, 12, 9.4], [23, 12, 9.4]], false), A2, 2.4)
+const tree = (tips) => {
+  const y = 10, fork = [16, y, 5]
+  let d = rel([[16, y, 0], fork], false)
+  for (const t of tips) d += `M${iso(...fork).join(' ')}Q${iso((16 + t) / 2, y, 8.5).join(' ')} ${iso(t, y, 10).join(' ')}`
+  return pd('', d, A2, 3.2)
+}
+function supportType() {
+  return staged('brty', [POST + COLS + LEDGE, POST + tree([10.5, 16, 21.5]) + LEDGE], ['Normal', 'Tree'], 'Support type: normal support stands in straight columns under the whole overhang; tree support grows branches that touch only where needed.', { w: 72, x: 204 })
+}
+function supportCritical() {
+  const id = 'brcr', tail = box([24, 7, 12.6], [30, 9, 14])
+  return staged(id, [POST + COLS + pd('', cols(25, 29, 12, 2, 9), A2, 1.8) + LEDGE + tail, POST + pd('', cols(25, 29, 12, 2, 9), A2, 1.8) + LEDGE + tail], ['Off', 'On'], 'Support critical areas only: support goes only under sharp tails and small cantilevers, not under every overhang.')
+}
+function supportThreshold() {
+  // the overhang's underside tilts flatter; once it is flatter than the threshold, support appears
+  const id = 'brth', T = 4, H = 8
+  const ov = (deg) => {
+    const L = H / Math.tan((deg * Math.PI) / 180), zb = 14 - T - H, x1 = 6 + L
+    const front = `<polygon class="s-f2 s-ol" points="${[[6, 12, zb], [x1, 12, 14 - T], [x1, 12, 14], [6, 12, 14]].map((p) => iso(...p).join(',')).join(' ')}"/>`
+    const end = `<polygon class="s-f3 s-ol" points="${[[x1, 4, 14 - T], [x1, 12, 14 - T], [x1, 12, 14], [x1, 4, 14]].map((p) => iso(...p).join(',')).join(' ')}"/>`
+    const top = `<polygon class="s-f1 s-ol" points="${[[6, 4, 14], [x1, 4, 14], [x1, 12, 14], [6, 12, 14]].map((p) => iso(...p).join(',')).join(' ')}"/>`
+    let sup = ''
+    if (deg < 30) for (let x = 8; x < x1 - 0.5; x += 2) sup += rel([[x, 12, 0], [x, 12, zb + ((x - 6) / L) * H - 0.6]], false)
+    return (sup ? pd('', sup, A2, 1.8) : '') + front + end + top
+  }
+  const post = box([0, 4, 0], [6, 12, 14])
+  return staged(id, [post + ov(60), post + ov(40), post + ov(20)], ['60°', '40°', '20°'], 'Support threshold angle: overhangs flatter than this angle get support; steeper ones print without it. Here the threshold is 30°.', { w: 64, x: 212 })
+}
+// support seen from above: a block of support with its top pattern
+const SB = box([2, 0, 0], [24, 16, 6])
+const top = (d, c = A2, w = 1.4) => pd('', d, c, w)
+function supportAngle() {
+  return staged('brsn', [SB + top(hatchAt(2.6, 0.6, 23.4, 15.4, 0, 2, 6.1)), SB + top(hatchAt(2.6, 0.6, 23.4, 15.4, 45, 2, 6.1))], ['0°', '45°'], 'Support pattern angle: turns the support lines on the bed, for example so they run across a part\'s long edge.')
+}
+function supportBase() {
+  const grid = hatchAt(2.6, 0.6, 23.4, 15.4, 0, 2.4, 6.1) + hatchAt(2.6, 0.6, 23.4, 15.4, 90, 2.4, 6.1)
+  return staged('brbp', [SB + top(hatchAt(2.6, 0.6, 23.4, 15.4, 0, 2.4, 6.1)), SB + top(grid)], ['Rectilinear', 'Rectilinear grid'], 'Support base pattern: the pattern inside the support; a grid is stiffer, plain lines snap off more easily.', { w: 116, x: 172 })
+}
+function supportBaseSpacing() {
+  return staged('brbs', [SB + top(hatchAt(2.6, 0.6, 23.4, 15.4, 0, 1.4, 6.1)), SB + top(hatchAt(2.6, 0.6, 23.4, 15.4, 0, 3.2, 6.1))], ['1 mm', '3 mm'], 'Support base spacing: the gap between support lines; wider uses less filament and comes off easier, but holds less.')
+}
+function supportInterfacePattern() {
+  let rings = ''
+  for (let i = 0.6; i < 7.6; i += 1.4) rings += rect(2, 0, 24, 16, 6.1, i)
+  return staged('brip', [SB + top(hatchAt(2.6, 0.6, 23.4, 15.4, 0, 1, 6.1)), SB + top(rings)], ['Rectilinear', 'Concentric'], 'Support interface pattern: the line pattern of the layers the part rests on.', { w: 96, x: 188 })
+}
+function supportBottomSpacing() {
+  // support landing on a part: the interface lines on the part's top, the support columns rising from them
+  const part = box([2, 0, 0], [24, 16, 4]), up = pd('', cols(5, 21, 11, 2, 13.4, 4.2), T3, 1.4)
+  const iface = (sp) => pd('', hatch(4.4, 21.6, 2.4, 13.6, sp, 4.1), A2, 1.4)
+  return staged('brbi', [part + iface(0.8) + up, part + iface(2.2) + up], ['0 mm', '1.5 mm'], 'Bottom interface spacing: the gap between the interface lines where support stands on the part; wider is easier to remove.', { w: 72, x: 204 })
+}
+function supportExpansion() {
+  const S = (e) => pd('', cols(8 - e, 23 + e, 9.4), A2, 1.8) + pd('', rel([[8 - e, 12, 9.4], [23 + e, 12, 9.4]], false), A2, 2.4)
+  return staged('brex', [POST + S(-1.2) + LEDGE, POST + S(0) + LEDGE, POST + S(2.5) + LEDGE], ['-1 mm', '0 mm', '2 mm'], 'Support expansion: grows the support past the overhang\'s edge, or shrinks it inside.')
+}
+
+// support speeds: the support under the ledge prints slow, then fast; the tip's own part is lit
+function supportSpeedLoop(id, part, rowsT, about, timeShare = [1, 0.5]) {
+  const tail = box([24, 7, 12.6], [30, 9, 14])
+  const lit = { body: pd(`${id}-a`, cols(8, 23, 9.4), A2, 1.8, true), face: pd(`${id}-a`, rel([[8, 12, 9.4], [23, 12, 9.4], [23, 4, 9.4]], false), A2, 2.6, true), small: pd(`${id}-a`, cols(26, 28, 12.4, 2, 9), A2, 1.8, true) }
+  const dim = { body: cols(8, 23, 9.4), face: rel([[8, 12, 9.4], [23, 12, 9.4]], false), small: cols(26, 28, 12.4, 2, 9) }
+  const rest = pd('', Object.keys(dim).filter((k) => k !== part).map((k) => dim[k]).join(''), T3, 1.4)
+  const tb = timebar(id, 0, 0, [[0, timeShare[0]], [1.7, timeShare[0]], [1.95, timeShare[1]], [3.3, timeShare[1]], [3.45, timeShare[0]]])
+  const K = [[0.3, 'stroke-dashoffset:101'], [1.45, 'stroke-dashoffset:0'], [1.6, op(1)], [1.65, `${op(0)};stroke-dashoffset:0`], [1.85, `${op(0)};stroke-dashoffset:101`], [1.9, `stroke-dashoffset:101;${op(1)}`], [2.35, 'stroke-dashoffset:0'], [3.2, op(1)], [3.35, op(0)]]
+  return staged(id, ['', ''], rowsT, about, { css: `.${id}-a{animation-name:${id}-a}` + kf(`${id}-a`, K) + tb.css, extra: POST + rest + lit[part] + LEDGE + tail, w: 74, x: 204, after: tb.svg.replace('translate(0 0)', 'translate(214 58)') })
+}
+const supportSpeed = () => supportSpeedLoop('brus', 'body', ['80 mm/s', '150 mm/s'], 'Support speed: the support prints fast, since its surface does not show.')
+const supportIfaceSpeed = () => supportSpeedLoop('brui', 'face', ['40 mm/s', '100 mm/s'], 'Support interface speed: the dense layer right under the part; slower gives a cleaner underside.', [0.7, 0.4])
+const smallSupportSpeed = () => supportSpeedLoop('bruo', 'small', ['50 %', '100 %'], 'Small support perimeter speed: thin support columns, such as the one under the tail, print slower so they stay standing.', [0.6, 0.4])
+
+// ---------- spiral vase: a round wall as stacked loops, or one rising spiral ----------
+const VC = [12, 9], VT = 6, VH = 12
+const helixPts = (n = 16, flare = 0, from = 0, to = 1) => {
+  const ps = [], N = VT * n
+  for (let i = Math.round(from * N); i <= Math.round(to * N); i++) {
+    const u = i / N, z = 0.6 + u * VH, r = 7 + flare * u, a = (i / n) * 2 * Math.PI + Math.PI / 2
+    ps.push([VC[0] + r * Math.cos(a), VC[1] + r * Math.sin(a), z])
+  }
+  return ps
+}
+const BOTTOM = ellipse(disc(VC[0], VC[1], 0.6, 7), 's-f1 s-ol')
+const stack = (flare = 0) => { let d = ''; for (let k = 0; k < VT; k++) d += circ(VC[0], VC[1], 0.6 + (k + 1) * (VH / VT), 7 + (flare * (k + 1)) / VT, 20); return d }
+const seams = (flare = 0) => dots(Array.from({ length: VT }, (_, k) => [VC[0], VC[1] + 7 + (flare * (k + 1)) / VT, 0.6 + (k + 1) * (VH / VT)]), 's-cf s-cl', 0.8)
+function spiralMode() {
+  const id = 'brvm'
+  return staged(id, [pd('', stack(), T3, 2) + seams(), pd(`${id}-k`, rel(helixPts(), false), A2, 2.2, true)], ['Off', 'On'], 'Spiral vase: off, every layer is its own loop with a seam; on, one wall rises in a single spiral with no seam.', { extra: BOTTOM, css: draw(`${id}-k`, 1.9, 3) })
+}
+function spiralSmooth() {
+  const id = 'brvo', fl = 4
+  return staged(id, [pd('', rel(helixPts(8, fl), false), T3, 2) + dots(helixPts(8, fl).filter((_, i) => i % 8 === 0).slice(1, -1), 's-cf s-cl', 0.7), pd('', rel(helixPts(16, fl), false), A2, 2.2)], ['Off', 'On'], 'Smooth spiral: on a flaring wall the spiral\'s sideways steps leave small kinks; smoothing removes them.', { extra: BOTTOM })
+}
+function spiralEnd(id, start, rowsT, about) {
+  const a = start ? helixPts(16, 0, 0, 1 / VT) : helixPts(16, 0, 1 - 1 / VT, 1), rest = start ? helixPts(16, 0, 1 / VT, 1) : helixPts(16, 0, 0, 1 - 1 / VT)
+  const thin = `<path class="s-n" stroke-dasharray="2 2"${st(CUT, 1.2)} d="${rel(a, false)}"/>`
+  return staged(id, [thin, pd('', rel(a, false), A2, 2.2)], rowsT, about, { extra: BOTTOM + pd('', rel(rest, false), T3, 2) })
+}
+const spiralStart = () => spiralEnd('brva', true, ['0', '0.5'], 'Spiral starting flow: the first loop ramps up from this flow; at 0 the first loop can come out thin.')
+const spiralFinish = () => spiralEnd('brvf', false, ['0', '0.5'], 'Spiral finishing flow: the last loop tapers down to this flow; at 0 the top edge can come out thin.')
+
 /** Advanced, second half, by the file name the export uses. */
 export const LOOPS = {
   'adv-pressure-advance': pressureAdvance,
@@ -477,4 +716,19 @@ export const LOOPS = {
   'adv-scarf-joint-flow-ratio': scarfFlow,
   'adv-scarf-angle-threshold': scarfThreshold,
   'adv-seam-position': seamPosition,
+  'adv-seam-gap': seamGap,
+  'adv-staggered-inner-seams': seamStagger,
+  'adv-wipe-on-loops': wipeOnLoops,
+  'adv-wipe-before-external-loop': wipeBefore,
+  'adv-skeleton-infill-density': skeletonDensity,
+  'adv-skeleton-infill-line-width': skeletonWidth,
+  'adv-skin-infill-density': skinDensity,
+  'adv-skin-infill-depth': skinDepth,
+  'adv-skin-infill-line-width': skinWidth,
+  'adv-skirt-height': skirtHeight,
+  'adv-skirt-start-angle': skirtStart,
+  'adv-skirt-type': skirtType,
+  'adv-smart-layer-max-height': slMax,
+  'adv-smart-layer-min-height': slMin,
+  'adv-smart-layer-max-step-ratio': slStep,
 }
