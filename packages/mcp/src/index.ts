@@ -29,6 +29,7 @@ import { appSheetTools } from './app-sheet'
 import { appLookTools } from './app-look'
 import { mimirAskTools } from './mimir-ask'
 import { appPlateTools } from './app-plates'
+import { appValueTools } from './app-values'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
 import { cadFiles, geomEngine, geomTools, findSxGeom } from './geom'
 import { createMcpSetupHost } from './setup'
@@ -183,7 +184,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const localAi = localAiTools(opts.localAi)
   const mimir = [...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName()), ...mimirTabTools(appLink, productName())]
   // The app's plates, and showing one of them as its plate picker does.
-  const plates = appPlateTools(appLink, productName())
+  const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   // Two view preferences from Settings: Frame the view and Toolbar size.
   const look = appLookTools(appLink, productName())
   // A client's dimension sheets go to the person through the open app, while the link is in use.
