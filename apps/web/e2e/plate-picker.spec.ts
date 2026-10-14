@@ -215,4 +215,32 @@ test.describe('the plate picker', () => {
     await shutPlateSheet(page)
     expect(await pickerBoxes(page)).toEqual(raised)
   })
+
+  test('the toasts wait out of sight while the sheet is open, and Details opens a line in place without moving the card top', async ({ page }) => {
+    await openPlateProject(page, SMALL_3)
+    await viewSized(page)
+    type Store = { setState(p: { toast: { id: number; text: string; tone?: string } }): void }
+    const post = (id: number, text: string) => page.evaluate(([i, t]) => (window as unknown as { __sx: Store }).__sx.setState({ toast: { id: i as number, text: t as string, tone: 'info' } }), [id, text] as const)
+    await post(9001, 'First note for the card. With more to read behind Details, long enough to wrap onto a second line when it opens in place.')
+    await post(9002, 'Second note.')
+    const card = page.getByTestId('toasts')
+    const lines = card.getByTestId('toast')
+    await expect(lines).toHaveCount(2)
+    // One card, a line each.
+    for (const l of await lines.all()) expect((await l.boundingBox())!.height).toBeLessThanOrEqual(44)
+    await plateSheet(page)
+    await expect(card).toBeHidden()
+    await shutPlateSheet(page)
+    await expect(card).toBeVisible()
+    await expect(lines).toHaveCount(2)
+    // Details grows the card down: its top edge stays, and the line shows its whole text.
+    const top = (await card.boundingBox())!.y
+    const first = lines.filter({ hasText: 'First note' })
+    await first.getByTestId('toast-details').click()
+    await expect(first).toHaveAttribute('data-expanded', '')
+    await expect(first.locator('.sx-toast-more')).toBeVisible()
+    expect(Math.round((await card.boundingBox())!.y)).toBe(Math.round(top))
+    await first.getByRole('button', { name: 'Less' }).click()
+    await expect(first.locator('.sx-toast-more')).toBeHidden()
+  })
 })

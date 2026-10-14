@@ -4,7 +4,7 @@
 // and the next plate. The plate opens a sheet of every plate as thumbnails, with a search and a Not sliced filter, and
 // the plate's settings and Add plate. Every width is fixed, so nothing moves as plates or slices change: names are cut
 // in the middle to fit, with the full name in the tooltip. Shift+[ and Shift+] step through the plates.
-import { Button, Icon, Kbd, keymapFor, Seg, tipAttrs, useDismiss } from '@slicerx/ui'
+import { Button, Icon, Kbd, keymapFor, Seg, tipAttrs, useDismiss, useHideToasts } from '@slicerx/ui'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react'
 import { useLookChoice } from '../../first-run/look'
 import { formatShortcut } from '../../lib/keys'
@@ -97,6 +97,8 @@ export function PlatePicker() {
   const ref = useRef<HTMLDivElement>(null)
   const close = useCallback(() => setOpen(false), [])
   useDismiss(ref, open, close)
+  // The grid covers where the toasts sit: they wait out of sight, time stopped, until it shuts.
+  useHideToasts(open, 'plate-grid')
   const cur = rows.find((r) => r.shown) ?? rows[0]
   if (!cur) return null
   const i = cur.number - 1
@@ -138,7 +140,7 @@ export function PlatePicker() {
             </span>
           </span>
           <MidText className="pp-name" text={sub} />
-          <Icon name="chevron-down" size={14} />
+          <Icon name="chevron-up" size={14} />
         </button>
         <button
           type="button"
