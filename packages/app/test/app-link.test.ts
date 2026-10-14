@@ -271,6 +271,80 @@ describe('the preview over the link', () => {
   })
 })
 
+describe('the plates over the link', () => {
+  const three = () => {
+    toolStore.setState({ tool: 'move' })
+    set({
+      workspace: 'prepare',
+      modelMode: 'slice',
+      slice: { status: 'idle' },
+      preview: null,
+      plate: [{ id: 'obj_1', name: 'Box', parts: [box], transform: moved } as never],
+      activePlate: 'p1',
+      plates: [
+        { id: 'p1', name: 'Plate 1', objects: [], settings: {} },
+        { id: 'p2', name: 'Deck box shell, front half', objects: [{ id: 'obj_2', name: 'Shell', parts: [box], transform: moved } as never], settings: {} },
+        { id: 'p3', name: 'Plate 3', objects: [], settings: {} },
+      ],
+    })
+  }
+
+  it('list every plate with its number, name, objects and slice, the shown one marked', async () => {
+    three()
+    expect(await runCall('plates.list', {})).toEqual({
+      shown: 1,
+      count: 3,
+      plates: [
+        { number: 1, id: 'p1', name: 'Plate 1', objects: 1, slice: 'not-sliced', shown: true },
+        { number: 2, id: 'p2', name: 'Deck box shell, front half', objects: 1, slice: 'not-sliced', shown: false },
+        { number: 3, id: 'p3', name: 'Plate 3', objects: 0, slice: 'empty', shown: false },
+      ],
+    })
+  })
+
+  it('step to the next and previous plate as the picker does, stopping at the ends, and read the plates back', async () => {
+    three()
+    expect(await runCall('plates.show', { step: 'next' })).toMatchObject({ shown: 2 })
+    expect(get().activePlate).toBe('p2')
+    expect(await runCall('plates.show', { step: 'next' })).toMatchObject({ shown: 3 })
+    const end = (await runCall('plates.show', { step: 'next' }).catch((x: unknown) => x)) as LinkError
+    expect(end.code).toBe('not_found')
+    expect(get().activePlate).toBe('p3')
+    expect(await runCall('plates.show', { plate: 1 })).toMatchObject({ shown: 1 })
+    const first = (await runCall('plates.show', { step: 'previous' }).catch((x: unknown) => x)) as LinkError
+    expect(first.code).toBe('not_found')
+    expect(await runCall('plates.show', { plate: 'p2' })).toMatchObject({ shown: 2, plates: [{ shown: false }, { shown: true, objects: 1 }, { shown: false }] })
+    // The plate shown before keeps its objects: showing a plate changes the view, never the project.
+    expect((await runCall('plates.list', {})) as { plates: { objects: number }[] }).toMatchObject({ plates: [{ objects: 1 }, { objects: 1 }, { objects: 0 }] })
+  })
+
+  it('refuse a bad argument or a plate that is not there, and show nothing', async () => {
+    three()
+    for (const args of [{}, { plate: 1, step: 'next' }, { step: 'last' }, { plate: true }]) {
+      const e = (await runCall('plates.show', args).catch((x: unknown) => x)) as LinkError
+      expect(e.code, JSON.stringify(args)).toBe('invalid_input')
+    }
+    for (const args of [{ plate: 4 }, { plate: 0 }, { plate: 1.5 }, { plate: 'p9' }]) {
+      const e = (await runCall('plates.show', args).catch((x: unknown) => x)) as LinkError
+      expect(e.code, JSON.stringify(args)).toBe('not_found')
+    }
+    expect(get().activePlate).toBe('p1')
+  })
+
+  it('never interrupts the person: busy in Model or while a paint, brim or face tool is open', async () => {
+    three()
+    set({ modelMode: 'design' })
+    expect(((await runCall('plates.show', { step: 'next' }).catch((x: unknown) => x)) as LinkError).code).toBe('busy')
+    set({ modelMode: 'slice' })
+    toolStore.setState({ tool: 'paint' })
+    expect(((await runCall('plates.show', { plate: 2 }).catch((x: unknown) => x)) as LinkError).code).toBe('busy')
+    toolStore.setState({ tool: 'move' })
+    expect(get().activePlate).toBe('p1')
+    // Reading the plates is never busy.
+    set({ modelMode: 'design' })
+    expect(await runCall('plates.list', {})).toMatchObject({ shown: 1, count: 3 })
+  })
+})
 describe('hosting the link', () => {
   it('answers the hub\'s calls and passes errors on with their code', async () => {
     const f = fakeLink()
