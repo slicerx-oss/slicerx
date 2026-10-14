@@ -12,10 +12,10 @@
 .sketch-driven { color: var(--dim); }
 /* The sketch palette: Look at, grid and snap, section, and what the sketch shows. */
 /* Sketch is a dense panel (UI spec 2d): its display settings are one group, 8 px apart inside, Grid and Section side
-   by side, and the Show chips on one row, so Distance and Draft stay in view at 900 px tall */
+   by side, and the Show chips on one row where the pane has room, so Distance and Draft stay in view at 900 px tall;
+   a pane too narrow for them (280 px) wraps the last chips rather than pass the edge */
 .sketch-palette { display: grid; gap: var(--s-2); padding: var(--s-3) 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .sketch-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--s-4); }
-.sketch-palette .tp-chips { flex-wrap: nowrap; }
 .sketch-palette .tp-chip { padding: 0 6px; font-size: var(--fs-xs); white-space: nowrap; }
 .sketch-palette > .sx-btn { justify-self: start; }
 
