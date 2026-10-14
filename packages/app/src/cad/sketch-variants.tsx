@@ -41,15 +41,20 @@ export interface SketchVariantsProps {
   /** The polygon's side count, as typed. */
   sides: string
   onSides: (v: string) => void
+  /** Keep the row with nothing in it: the phone bar, where the row also holds Finish sketch at its end. */
+  reserve?: boolean
 }
 
 /**
- * The second row of the picker: the family's ways to draw, or nothing when it has one way, the row keeping its height.
- * The tool's name is in the Drawing card's header, and on a phone in the sheet's summary just above the tool strip.
+ * The second row of the picker: the family's ways to draw. A family with one way has no row at all in the panel, so
+ * it takes no room; picking a family with ways shows it below the tools. On the phone bar the row stays (`reserve`),
+ * since Finish sketch sits at its end. The tool's name is in the Drawing card's header, and on a phone in the sheet's
+ * summary just above the tool strip.
  */
-export function SketchVariants({ tool, onPick, sides, onSides }: SketchVariantsProps) {
+export function SketchVariants({ tool, onPick, sides, onSides, reserve = false }: SketchVariantsProps) {
   const family = familyOf(tool)
   const ways = VARIANTS[family]
+  if (!ways && family !== 'polygon' && !reserve) return null
   return (
     <div className="sketch-variants">
       {ways ? (

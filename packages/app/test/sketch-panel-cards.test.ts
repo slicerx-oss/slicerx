@@ -240,11 +240,12 @@ describe('the panel pieces the sketch adds to', () => {
     expect(screen.getByTestId('sketch-drawing-sub').textContent).toBe(' · Line')
   })
 
-  it("puts a number field's unit inside it, so the label keeps one line", () => {
-    render(createElement(Num, { id: 't-dist', label: 'Distance', unit: 'mm', unitIn: true, value: '5', onChange: () => {} }))
-    const field = screen.getByRole('textbox', { name: 'Distance mm' })
-    expect(field.closest('.sx-inputwrap')!.querySelector('.sx-inputwrap-unit')!.textContent).toBe('mm')
-    expect(document.querySelector('label[for="t-dist"]')!.textContent).toBe('Distance')
+  it("writes a number field's unit beside its label, the field holding only the number", () => {
+    render(createElement(Num, { id: 't-dist', label: 'Distance', unit: 'mm', value: '5', onChange: () => {} }))
+    const field = screen.getByRole('textbox', { name: 'Distance mm' }) as HTMLInputElement
+    expect(field.value).toBe('5')
+    expect(field.closest('.sx-inputwrap')?.querySelector('.sx-inputwrap-unit') ?? null).toBeNull()
+    expect(document.querySelector('label[for="t-dist"]')!.textContent).toBe('Distance mm')
   })
 })
 
