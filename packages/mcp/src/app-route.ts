@@ -32,6 +32,15 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.shell',
   'geom.info',
   'geom.measure',
+  'geom.cut',
+  'geom.split',
+  'geom.mirror',
+  'geom.array',
+  'geom.repair',
+  'geom.hollow',
+  'geom.emboss',
+  'geom.build',
+  'geom.subtract',
 ])
 
 /** Moving, turning and scaling objects, which run on the app's shown plate when the object is not this server's. */

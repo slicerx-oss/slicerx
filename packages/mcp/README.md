@@ -87,6 +87,18 @@ slicerx-mcp --app call geom_info '{"design":"<id>"}' geom_measure '{"design":"<i
 
 Use the design id from `design_list` and face points from `geom_faces`. The example picks describe a tray with its floor at Z = 0 to 1 mm and its top at Z = 8 mm.
 
+### Mesh modeling in the open project
+
+With `--app`, `geom_cut`, `geom_split`, `geom_mirror`, `geom_array`, `geom_repair`, `geom_hollow`, `geom_emboss`, `geom_build` and `geom_subtract` operate on a design from the open app. Each records a history step and returns the body's parts, bounds, volume and resulting step. `design_steps` reads the history, and `design_undo` takes the step back. An edit grant is required.
+
+```sh
+slicerx-mcp --app call design_list
+slicerx-mcp --app call geom_array '{"design":"<id>","spec":{"kind":"linear","count":3,"step":[25,0,0]},"merge":false}' design_steps '{"design":"<id>"}'
+slicerx-mcp --app call geom_cut '{"design":"<id>","part":0,"plane":{"axis":"z","at":4},"keep":"both"}'
+```
+
+Use the id from `design_list`; coordinates and distances are in mm. Array with `merge:false` adds separate parts to the same body. Cut and split can produce multiple parts. A design cut or split does not add connectors. A design repair uses the app's defaults, and a design hollow takes only wall thickness. Unsupported options are refused before editing. Model file calls retain the server's file policy and local engine behavior.
+
 ### Errors and progress
 
 A refused call has `isError: true`, text of the form `Error: <code>: <message>`, and `structuredContent.error` with the same `code` and `message`. The codes are stable, so a client can branch on them: `invalid_input`, `file_not_found`, `path_not_allowed`, `unsupported_format`, `invalid_model`, `no_such_plate`, `download_failed`, `urls_disabled`, `unknown_profile`, `invalid_settings`, `engine_unavailable`, `slice_failed`, `preflight_blocked`, `project_gcode_review`, `printer_needed`, `project_settings_unused`, `sequence_clearance`, `not_configured`, `auth_failed`, `not_invited`, `quota_exceeded`, `rate_limited`, `service_error`, `not_found`, `not_supported`, `busy` (the open app is in use or asking the person; call again shortly) and `internal_error`, and for locked projects `sxlock_` followed by the format's reason (`sxlock_wrong_account`, `sxlock_offline`, `sxlock_missing_scope` and the rest). `docs/integrators/quickstart.md` says what each means.
