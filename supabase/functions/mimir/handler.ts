@@ -190,11 +190,11 @@ async function readBody(req: Request, max = MAX_BODY_BYTES): Promise<string | nu
   return new TextDecoder().decode(all)
 }
 
-// what a saved chat keeps: the request without image data, its system prompt and tool list
+// what a saved chat keeps: the request without the data of pictures and PDFs, its system prompt and tool list
 // apart (saved once per distinct text, under prompt.hash), and the reply with every tool call in full
 export async function transcript(body: Obj, reply: StreamTap['reply'], usage: StreamTap['usage']): Promise<{ kept: Obj; prompt: Obj; hash: string }> {
   const req = JSON.parse(
-    JSON.stringify(body, (k, v) => (k === 'data' && typeof v === 'string' ? `[image, ${v.length} base64 chars]` : v)),
+    JSON.stringify(body, (k, v) => (k === 'data' && typeof v === 'string' ? `[file, ${v.length} base64 chars]` : v)),
   ) as Obj
   delete req['cache_control']
   const prompt = { system: req['system'] ?? null, tools: req['tools'] ?? null }
@@ -243,7 +243,10 @@ async function messages(req: Request, env: Env): Promise<Response> {
   }
   let call: string
   try {
-    call = await reserve(s.promptEstimate)
+    // a PDF's pages cost more than its bytes can say (a short file can hold many pages), so it is counted exactly first
+    const prompt = s.documents > 0 ? await countTokens(env, s.body, who.key) : s.promptEstimate
+    if (prompt === null) return fail(503, 'provider_busy', 'mimir could not size this PDF right now. Try again in a moment.')
+    call = await reserve(prompt)
   } catch (e) {
     // the byte count overstates most prompts; when it is what hit a cap, count exactly and try once more
     const exact = e instanceof RpcError && DAILY_CAPS.has(e.hint) ? await countTokens(env, s.body, who.key) : null

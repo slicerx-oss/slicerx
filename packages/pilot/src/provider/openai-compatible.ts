@@ -31,9 +31,17 @@ function messageList(req: LlmRequest): Obj[] {
     if (m.role !== 'tool') flush()
     switch (m.role) {
       case 'system':
-      case 'user':
         out.push({ role: m.role, content: m.content })
         break
+      case 'user': {
+        // pictures as image parts; local servers read no PDFs, so the runtime refuses those before a call, and any that
+        // got here are named instead of sent
+        const skipped = (m.documents ?? []).map((d) => d.name)
+        const text = skipped.length ? `${m.content}\n\n(Not sent, this model reads no PDFs: ${skipped.join(', ')}.)` : m.content
+        const parts = (m.images ?? []).map((i) => ({ type: 'image_url', image_url: { url: `data:${i.mime};base64,${i.data}` } }))
+        out.push({ role: 'user', content: parts.length ? [...parts, { type: 'text', text }] : text })
+        break
+      }
       case 'assistant': {
         const calls = (m.toolCalls ?? []).map((c) => ({ id: c.id, type: 'function', function: { name: encodeToolName(c.name), arguments: c.arguments } }))
         out.push({ role: 'assistant', content: m.content || (calls.length ? null : ''), ...(calls.length ? { tool_calls: calls } : {}) })

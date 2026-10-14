@@ -77,7 +77,7 @@ export function Composer({ attachments, onSend, running = false, onStop, sendOff
         </div>
       ) : null}
       <div className="composer-row">
-        <Button size="sm" variant="ghost" icon="plus" type="button" aria-label="Attach an image" tip="pilot.attach" data-testid="mimir-attach" onClick={() => file.current?.click()} />
+        <Button size="sm" variant="ghost" icon="plus" type="button" aria-label="Attach a file" tip="pilot.attach" data-testid="mimir-attach" onClick={() => file.current?.click()} />
         <input
           ref={file}
           type="file"

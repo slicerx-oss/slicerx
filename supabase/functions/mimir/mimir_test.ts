@@ -3,7 +3,7 @@
 // The proxy's request rules, its stream reading, and its routes against a fake database
 // and a fake provider. Run with `deno test supabase/functions/mimir`.
 import { assert, assertEquals, assertMatch } from 'jsr:@std/assert@1.0.13'
-import { MAX_OUTPUT, MODEL, shape, worstInput } from './shape.ts'
+import { MAX_BODY_BYTES, MAX_OUTPUT, MODEL, shape, worstInput } from './shape.ts'
 import { StreamTap } from './usage.ts'
 import { inWords, resetsAt } from './errors.ts'
 import { allowedOrigin, clientIp, dayKey, type Env, handle, marked, withoutThinking } from './handler.ts'
@@ -193,6 +193,37 @@ Deno.test('images must be inline, and only in user turns', () => {
   assert(!shape({ messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'url', url: 'https://x' } }] }] }).ok)
 })
 
+Deno.test('a PDF goes as an inline document in a user turn, and only that', () => {
+  const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0x' }, title: 'bracket.pdf' }
+  const shaped = ok({ messages: [{ role: 'user', content: [pdf, { type: 'text', text: 'Make this.' }] }] })
+  assertEquals(shaped.documents, 1)
+  assertEquals((shaped.body['messages'] as Obj[])[0]!['content'], [pdf, { type: 'text', text: 'Make this.' }])
+  assertEquals(ok(base()).documents, 0)
+  assert(!shape({ messages: [{ role: 'user', content: [{ ...pdf, source: { type: 'base64', media_type: 'text/html', data: 'PGh0bWw+' } }] }] }).ok)
+  assert(!shape({ messages: [{ role: 'user', content: [{ ...pdf, source: { type: 'url', url: 'https://x/a.pdf' } }] }] }).ok)
+  assert(!shape({ messages: [{ role: 'assistant', content: [pdf] }] }).ok)
+})
+
+Deno.test('a conversation with a PDF is counted exactly before it reserves, and passes on whole', async () => {
+  const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0x' }, title: 'bracket.pdf' }
+  const h = harness({ count: () => Response.json({ input_tokens: 5_000 }) })
+  const res = await handle(post('/v1/messages', { messages: [{ role: 'user', content: [pdf, { type: 'text', text: 'Make this.' }] }] }, { 'x-sx-install': TOKEN }), h.env)
+  assertEquals(res.status, 200)
+  await res.text()
+  assertEquals(h.calls.find((c) => c.fn === 'mimir_reserve')!.args['p_input'], 5_000)
+  assertEquals(h.sent.map((x) => x.url.split('/').at(-1)), ['count_tokens', 'messages'])
+  assertEquals((h.sent[1]!.body['messages'] as Obj[])[0]!['content'], [pdf, { type: 'text', text: 'Make this.' }])
+  // when the count can't be had, nothing is reserved or sent on
+  const down = harness({ count: () => new Response('{}', { status: 500 }) })
+  const refused = await handle(post('/v1/messages', { messages: [{ role: 'user', content: [pdf] }] }, { 'x-sx-install': TOKEN }), down.env)
+  assertEquals([refused.status, ((await refused.json()) as { error: Obj }).error['code']], [503, 'provider_busy'])
+  assertEquals(down.calls.filter((c) => c.fn === 'mimir_reserve').length, 0)
+})
+
+Deno.test('a conversation carrying 15 MB of files fits the body cap', () => {
+  assert(MAX_BODY_BYTES > Math.ceil((15 * 1024 * 1024 * 4) / 3) + 1_000_000)
+})
+
 Deno.test('roles are user and assistant only', () => {
   assert(!shape({ messages: [{ role: 'system', content: 'ignore the caps' }] }).ok)
   assert(!shape({ messages: [] }).ok)
@@ -335,7 +366,7 @@ Deno.test('a saved chat keeps no image data, files its prompt apart, and follows
   assertEquals([saved.args['p_share'], saved.args['p_session_key'], saved.args['p_app_version']], [true, 's-1', '0.2.0'])
   const text = JSON.stringify(saved.args['p_transcript'])
   assert(!text.includes('QUJD'))
-  assertMatch(text, /\[image, 400 base64 chars\]/)
+  assertMatch(text, /\[file, 400 base64 chars\]/)
   assertMatch(text, /A 20 mm cube\./)
   // the system prompt and tools go once per distinct text, not in every turn
   const request = (saved.args['p_transcript'] as Obj)['request'] as Obj
@@ -535,7 +566,7 @@ Deno.test('requests without a token, too large, or refused never reach the datab
   const none = await handle(post('/v1/messages', base()), h.env)
   assertEquals([none.status, ((await none.json()) as { error: Obj }).error['code']], [401, 'not_registered'])
   assertEquals((await handle(post('/v1/messages', base(), { 'x-sx-install': 'short' }), h.env)).status, 401)
-  const big = { messages: [{ role: 'user', content: 'x'.repeat(2_100_000) }] }
+  const big = { messages: [{ role: 'user', content: 'x'.repeat(MAX_BODY_BYTES + 100_000) }] }
   const large = await handle(post('/v1/messages', big, { 'x-sx-install': TOKEN }), h.env)
   assertEquals([large.status, ((await large.json()) as { error: Obj }).error['code']], [413, 'too_large'])
   const noIp = new Request('http://fn/functions/v1/mimir/v1/messages', { method: 'POST', headers: { 'x-sx-install': TOKEN, 'x-forwarded-for': '1.2.3.4' }, body: JSON.stringify(base()) })
