@@ -31,7 +31,8 @@ const engine = engineModules(
 
 /** The engine modules' memory, which only grows; each answer says how big it is, so the page can end a worker that holds a lot. */
 const memories = new Set<WebAssembly.Memory>()
-const memoryBytes = (): number => [...memories].reduce((n, m) => n + m.buffer.byteLength, 0)
+let loadedBrep: BrepModule | null = null
+const memoryBytes = (): number => [...memories].reduce((n, m) => n + m.buffer.byteLength, loadedBrep?.memoryBytes() ?? 0)
 
 function call(x: GeomExports, op: string, request: unknown): unknown {
   memories.add(x.memory)
@@ -53,7 +54,10 @@ let brep: Promise<BrepModule> | null = null
 
 /** The B-rep kernel, loaded on the first brep.<op> call; a load that failed is tried again on the next call. */
 function brepKernel(): Promise<BrepModule> {
-  return (brep ??= loadBrep().catch((err: unknown) => {
+  return (brep ??= loadBrep().then((module) => {
+    loadedBrep = module
+    return module
+  }).catch((err: unknown) => {
     brep = null
     const message = err instanceof Error ? err.message : String(err)
     self.postMessage({ loadError: { module: 'brep', message } })
