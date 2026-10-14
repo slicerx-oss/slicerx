@@ -137,8 +137,9 @@ test('D dimensions a rectangle until it is fully defined, and the extrude follow
   await expect(again.getByTestId('sketch-dof')).toHaveText('Defined')
   const width = ((await scene(page))?.dims ?? []).findIndex((d) => d.label === '25')
   expect(width).toBeGreaterThanOrEqual(0)
-  // real presses on the value as drawn, so the view finds the label under the pointer itself
-  const label = await page.evaluate((i) => {
+  // real presses on the value as drawn, so the view finds the label under the pointer itself, once the camera has
+  // stopped turning square on to the reopened sketch (a spot read while it eases moves before the second press)
+  const labelAt = () => page.evaluate((i) => {
     const vp = (window as unknown as { __vp: { sketchLayer: { scene: { frame: { origin: number[]; u: number[]; v: number[] }; dims: { from: V2; to: V2; at?: V2 }[] } }; toScreen(p: number[]): [number, number] } }).__vp
     const s = vp.sketchLayer.scene
     const d = s.dims[i]!
@@ -146,6 +147,17 @@ test('D dimensions a rectangle until it is fully defined, and the extrude follow
     const f = s.frame
     return vp.toScreen([0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * x + f.v[k]! * y))
   }, width)
+  let label = await labelAt()
+  let since = Date.now()
+  await expect.poll(async () => {
+    const again = await labelAt()
+    // two reads inside one frame always agree, so a read counts only once the one before it is far enough back
+    if (Date.now() - since < 600) return false
+    const still = Math.hypot(again[0] - label[0], again[1] - label[1]) < 0.5
+    label = again
+    since = Date.now()
+    return still
+  }, { intervals: [700] }).toBe(true)
   await page.mouse.click(label[0], label[1])
   await expect.poll(async () => ((await scene(page))?.dims as { picked?: boolean }[] | undefined)?.[width]?.picked).toBe(true)
   await page.mouse.click(label[0], label[1])
