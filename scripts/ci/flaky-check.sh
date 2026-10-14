@@ -9,6 +9,8 @@
 #   flaky-check.sh report                list both lists with ages and deadlines; overdue flaky entries are marked
 #   flaky-check.sh retried <file>        fail when a test named in <file> (one per line) passed only on a retry and
 #                                        is on neither list
+#   flaky-check.sh failed <file>         fail unless every test named in <file> (one per line) failed and counts as
+#                                        quarantined; a line starting with ! (an error outside any test) always fails
 #
 # flaky.d/<issue>-<slug>.txt:      name | owner | added | deadline | issue | why   (deadline: at most a day after added)
 # quarantine.d/<issue>-<slug>.txt: name | owner | added | issue | why
@@ -17,6 +19,8 @@
 # A name is a substring of the test name as the run reports it. A flaky entry whose deadline has passed counts as
 # quarantined from the next day on (status prints quarantined, report marks it overdue), so an unfixed flake stops
 # failing runs without anyone editing a file, and still shows in every report until someone fixes it.
+# An entry added more than SX_QUARANTINE_MAX_DAYS days ago (14 by default) is stale: lint and report warn about it,
+# naming the entry, its age and its issue, so a quarantine never turns into a permanent skip. It does not fail lint.
 # FLAKY_DIR picks another directory holding flaky.d and quarantine.d; FLAKY_TODAY (YYYY-MM-DD) replaces today's date.
 set -uo pipefail
 
@@ -24,6 +28,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 dir=${FLAKY_DIR:-$here}
 today=${FLAKY_TODAY:-$(date +%F)}
 max_days=${SX_FLAKY_MAX_DAYS:-1}
+stale_days=${SX_QUARANTINE_MAX_DAYS:-14}
 issue_re='^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[0-9]+$'
 date_re='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
 
@@ -69,7 +74,17 @@ check_file() {
   fi
 }
 
+# warn_stale <entry> <added> <issue>: a loud warning, not an error, for an entry older than stale_days
+warn_stale() {
+  local age; age=$(days_between "$2" "$today")
+  [ "$age" -gt "$stale_days" ] || return 0
+  stale=$((stale + 1))
+  echo "flaky-check: STALE $1 is $age days old (limit $stale_days), issue $3: fix the test or delete the entry" >&2
+  echo "::warning title=Stale quarantine entry::$1 is $age days old (limit $stale_days), issue $3. Fix the test or delete the entry."
+}
+
 lint() {
+  stale=0
   local line n f file name owner added deadline issue why
   for old in flaky.txt quarantine.txt; do
     [ -e "$dir/$old" ] && err "scripts/ci/$old is gone: each entry is now a file in ${old%.txt}.d/ (see scripts/ci/README.md)"
@@ -83,6 +98,7 @@ lint() {
     [ -n "$owner" ] || err "$f has no owner"
     valid_date "$added" || err "$f needs a date added as YYYY-MM-DD, got \"$added\""
     [[ $issue =~ $issue_re ]] || err "$f needs an issue link (https://github.com/<org>/<repo>/issues/<n>), got \"$issue\""
+    valid_date "$added" && warn_stale "$f" "$added" "$issue"
   done < <(files "$quar_d")
   while IFS= read -r file; do
     check_file "$file" flaky.d || continue
@@ -99,6 +115,7 @@ lint() {
       [ "$n" -le "$max_days" ] || err "$f has a deadline $n days after it was added; the limit is $max_days"
     fi
     [[ $issue =~ $issue_re ]] || err "$f needs an issue link (https://github.com/<org>/<repo>/issues/<n>), got \"$issue\""
+    valid_date "$added" && warn_stale "$f" "$added" "$issue"
     if entries "$quar_d" | cut -d'|' -f1 | sed 's/[[:space:]]*$//' | grep -qxF -- "$name"; then
       err "$f is on both flaky.d and quarantine.d"
     fi
@@ -107,7 +124,7 @@ lint() {
   while IFS= read -r name; do err "\"$name\" has more than one entry file"; done < <(
     { entries "$flaky_d"; entries "$quar_d"; } | cut -d'|' -f1 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sort | uniq -d)
   [ "$errors" = 0 ] || return 1
-  echo "flaky-check: lists ok ($(entries "$flaky_d" | wc -l | tr -d ' ') flaky, $(entries "$quar_d" | wc -l | tr -d ' ') quarantined)"
+  echo "flaky-check: lists ok ($(entries "$flaky_d" | wc -l | tr -d ' ') flaky, $(entries "$quar_d" | wc -l | tr -d ' ') quarantined, $stale stale)"
 }
 
 status() { # test name -> quarantined | flaky | none
@@ -130,7 +147,7 @@ status() { # test name -> quarantined | flaky | none
 }
 
 report() {
-  local line name owner added deadline issue age left
+  local line name owner added deadline issue age left mark
   echo "Flaky (passed on the rerun; fix by the deadline or it counts as quarantined), today $today:"
   while IFS= read -r line; do
     IFS='|' read -r name owner added deadline issue _ <<< "$line"
@@ -138,7 +155,8 @@ report() {
     age=$(valid_date "$added" && days_between "$added" "$today" || echo '?')
     left=$(valid_date "$deadline" && days_between "$today" "$deadline" || echo '?')
     if [ "$left" != '?' ] && [ "$left" -lt 0 ]; then
-      echo "  OVERDUE $name | $(trim "$owner") | ${age}d old, deadline passed $((-left))d ago, now quarantined | $(trim "$issue")"
+      mark=""; [ "$age" != '?' ] && [ "$age" -gt "$stale_days" ] && mark="STALE "
+      echo "  ${mark}OVERDUE $name | $(trim "$owner") | ${age}d old, deadline passed $((-left))d ago, now quarantined | $(trim "$issue")"
     else echo "  $name | $(trim "$owner") | ${age}d old, deadline $deadline | $(trim "$issue")"; fi
   done < <(entries "$flaky_d")
   echo "Quarantined (failures counted, not failed on):"
@@ -146,7 +164,8 @@ report() {
     IFS='|' read -r name owner added issue _ <<< "$line"
     added=$(trim "$added")
     age=$(valid_date "$added" && days_between "$added" "$today" || echo '?')
-    echo "  $(trim "$name") | $(trim "$owner") | ${age}d old | $(trim "$issue")"
+    mark=""; [ "$age" != '?' ] && [ "$age" -gt "$stale_days" ] && mark="STALE "
+    echo "  $mark$(trim "$name") | $(trim "$owner") | ${age}d old | $(trim "$issue")"
   done < <(entries "$quar_d")
 }
 
@@ -165,10 +184,28 @@ retried() { # a file of test names that passed only on a retry
   return $bad
 }
 
+failed() { # a file of tests that failed on every try; passes only when each counts as quarantined
+  local file=$1 test bad=0
+  [ -f "$file" ] || { echo "flaky-check: no failures recorded"; return 0; }
+  while IFS= read -r test; do
+    [ -n "$test" ] || continue
+    case $test in '!'*)
+      # an error outside any test (a file that did not load, a hook, an unhandled error): no list can excuse it
+      echo "::error title=Error outside a test::${test#!}"; bad=1; continue ;;
+    esac
+    if [ "$(status "$test")" = quarantined ]; then
+      echo "flaky-check: failed, quarantined and counted: $test"
+      echo "::warning title=Quarantined test failed::$test"
+    else echo "::error title=Failed test::$test"; bad=1; fi
+  done < "$file"
+  return $bad
+}
+
 case ${1:-} in
   lint) lint ;;
   status) [ $# -ge 2 ] || { echo "usage: flaky-check.sh status <test name>" >&2; exit 2; }; status "$2" ;;
   report) report ;;
   retried) [ $# -ge 2 ] || { echo "usage: flaky-check.sh retried <file>" >&2; exit 2; }; retried "$2" ;;
-  *) echo "usage: flaky-check.sh lint|status <name>|report|retried <file>" >&2; exit 2 ;;
+  failed) [ $# -ge 2 ] || { echo "usage: flaky-check.sh failed <file>" >&2; exit 2; }; failed "$2" ;;
+  *) echo "usage: flaky-check.sh lint|status <name>|report|retried <file>|failed <file>" >&2; exit 2 ;;
 esac

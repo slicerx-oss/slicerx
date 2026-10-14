@@ -158,11 +158,15 @@ Files, all in `scripts/ci/`:
   entry never touches another's lines, so two pull requests listing different tests do not conflict.
 - `quarantine.d/`: tests whose failures are counted, not failed on, one file per test as above, holding
   `name | owner | added | issue | why`. Nothing is skipped silently: every entry has an owner, a date and a link to its
-  issue.
+  issue. An entry in either folder added more than 14 days ago (`SX_QUARANTINE_MAX_DAYS`) is stale: `lint` prints a
+  `::warning` naming the entry, its age and its issue on every run, and `report` marks it STALE, so a quarantine never
+  turns into a permanent skip. A stale entry does not fail the run.
 - `flaky-check.sh`: `lint` fails on an entry without an owner, a valid date, a deadline within a day, or an issue link
   (`https://github.com/<org>/<repo>/issues/<n>`), on a file with more or less than one entry line, a file not named for
   its issue, a test listed twice, or a leftover `flaky.txt` or `quarantine.txt`; `status <name>` prints quarantined,
-  flaky or none; `report` lists both folders with ages and deadlines; `retried <file>` is the pull request check below. A name is a substring of the test
+  flaky or none; `report` lists both folders with ages and deadlines; `retried <file>` and `failed <file>` are the pull
+  request checks below (`failed` passes only when every test in the file counts as quarantined, and always fails on a
+  line starting with `!`, an error outside any test). A name is a substring of the test
   name as the run reports it (`path/to/file.test.ts > suite > test`, a cargo test path, or a Playwright title).
 - `cargo-retry.sh <cargo test arguments>`: `cargo test --no-fail-fast` with the one rerun by exact name below, for a
   CI job; it appends the tests that passed only on the rerun to the file in `SX_FLAKY_OUT`.
@@ -179,7 +183,10 @@ Pull requests (`ci.yml`, the `web` job): `pr-test.sh` runs each package's tests,
 and the reporter in `vitest-flaky-reporter.mjs`, which
 annotates each test that passed only on a retry, and the next step fails the job unless `flaky.d/` or
 `quarantine.d/` lists it, so a retry cannot hide a flake: the pull request that meets one adds the entry (owner, a
-deadline a day out, an issue) or fixes the test. The e2e shards (`ci.yml`, `e2e-shard`) hold to the same rule with
+deadline a day out, an issue) or fixes the test. The reporter also names each test that failed on every try. When a
+package's run fails, `pr-test.sh` lets it pass only when every failure is a named test that counts as quarantined
+(`flaky-check.sh failed`); a run that failed without naming a test, or with an error outside any test (a file that did
+not load, a hook, an unhandled error), stays a failure. The e2e shards (`ci.yml`, `e2e-shard`) hold to the same rule with
 Playwright's `--retries=1`: `playwright-results.mjs` reads the JSON report, a test that passed only on the retry must be
 on either list, and a test that failed both times fails the job unless it counts as quarantined. The desktop shell's
 tests (in `rust tests (core)`) run through `cargo-retry.sh`: a failing run reruns its failing tests once by exact name,
