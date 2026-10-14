@@ -1369,6 +1369,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       data-tone={dofTone(solved.solved)}
       aria-label={`${dofText(solved.solved)}${driven ? `, ${driven} driven` : ''}`}
       data-tip-title={dofText(solved.solved)}
+      data-tip-demo="still-sketch-status"
       {...(driven ? { 'data-tip-body': `${driven} driven: the other constraints already set ${driven === 1 ? 'this size' : 'these sizes'}, so ${driven === 1 ? 'it shows' : 'they show'} in parentheses and changes nothing.` } : {})}
     >
       {dofShort(solved.solved)}
