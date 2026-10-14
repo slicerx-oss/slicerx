@@ -393,8 +393,8 @@ test('Model controls show their stills: the tree, the picks, measure, named valu
   await sketchAt(page, 'click', [2, 1])
   await sketchAt(page, 'click', [6, 1])
   await shows(panel.getByTestId('sketch-dof'), 'still-sketch-status')
-  await page.keyboard.press('Escape')
-  await page.keyboard.press('Escape')
+  // Esc steps a sketch back and never closes it; Cancel does
+  await panel.getByTestId('model-tool-cancel').click()
   await expect(panel).toHaveCount(0)
   // Hollow and Repair mesh need a selection
   await page.evaluate((id) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ selection: id, selectedIds: [id] }), id)
