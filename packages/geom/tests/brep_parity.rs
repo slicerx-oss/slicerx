@@ -859,3 +859,166 @@ fn face_keys_carry_over_to_the_mesh_path() {
         .count();
     assert!(on_top >= 2, "{on_top} triangles on the top");
 }
+
+/// A triangle of `m` under `at`, facing `n`, as a pick on the face would give it.
+fn triangle_at(m: &Value, at: [f64; 3], n: [f64; 3]) -> u64 {
+    let p: Vec<f64> = m["positions"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    let ix: Vec<usize> = m["indices"].as_array().unwrap().iter().map(|v| usize::try_from(v.as_u64().unwrap()).unwrap()).collect();
+    let v = |i: usize| [p[3 * i], p[3 * i + 1], p[3 * i + 2]];
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    (0..ix.len() / 3)
+        .find(|&t| {
+            let [a, b, c] = [v(ix[3 * t]), v(ix[3 * t + 1]), v(ix[3 * t + 2])];
+            let nn = cross(sub(b, a), sub(c, a));
+            let l = dot(nn, nn).sqrt();
+            l > 0.0
+                && dot(nn, n) / l > 0.999_999
+                && (dot(sub(at, a), nn) / l).abs() < 1e-6
+                && [(a, b), (b, c), (c, a)].iter().all(|&(x, y)| dot(cross(sub(y, x), sub(at, x)), nn) >= 0.0)
+        })
+        .map(|t| t as u64)
+        .expect("a triangle under the point")
+}
+
+/// A push on the kernel and the same push on the body's mesh: the new body, the kernel's reply and the mesh's.
+fn push_both(body: &Value, at: [f64; 3], n: [f64; 3], d: f64) -> (Value, Value, Value) {
+    let r = call(
+        "brep.push",
+        &json!({ "body": body, "at": at, "normal": n, "distanceMm": d, "save": true }),
+    );
+    let b = json!({ "smb": r["bodySmb"].as_str().expect("bodySmb") });
+    let m = mesh(body);
+    let t = triangle_at(&m, at, n);
+    let on_mesh = call(
+        "face.push",
+        &json!({ "mesh": { "mesh": m }, "triangle": t, "at": at, "distanceMm": d }),
+    );
+    (b, r, on_mesh)
+}
+
+fn faces_of(body: &Value) -> u64 {
+    call("brep.info", &json!({ "body": body }))["faces"].as_u64().expect("faces")
+}
+
+#[test]
+fn push_and_pull_flat_faces() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let c = cube();
+    let plate = made(
+        "extrude",
+        json!({
+            "frame": { "origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1] },
+            "polygons": [{ "outer": { "points": [[0, 0], [30, 0], [30, 20], [0, 20]] }, "holes": [{ "center": [15, 10], "diameterMm": 6 }] }],
+            "fromMm": 0, "toMm": 4
+        }),
+    );
+    let peg = made(
+        "primitive",
+        json!({ "type": "cylinder", "diameterMm": 20, "heightMm": 10, "frame": { "origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1] } }),
+    );
+    let slot = made(
+        "extrude",
+        json!({ "frame": { "origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1] }, "polygons": [{ "outer": { "start": [-10, -5], "segments": [
+            { "to": [10, -5] }, { "to": [10, 5], "center": [10, 0], "sweepDeg": 180 },
+            { "to": [-10, 5] }, { "to": [-10, -5], "center": [-10, 0], "sweepDeg": 180 }
+        ] } }], "fromMm": 0, "toMm": 4 }),
+    );
+    let up = [0.0, 0.0, 1.0];
+    // name, body, at, normal, distance, exact volume, bounds, mesh tolerance, faces after (0: not counted)
+    let cases = [
+        ("pull a top", &c, [5.0, 5.0, 20.0], up, 5.0, 10_000.0, [0.0; 3], [20.0, 20.0, 25.0], 0.0, 6),
+        ("push a top", &c, [5.0, 5.0, 20.0], up, -5.0, 6000.0, [0.0; 3], [20.0, 20.0, 15.0], 0.0, 6),
+        ("pull a side", &c, [20.0, 5.0, 5.0], [1.0, 0.0, 0.0], 5.0, 10_000.0, [0.0; 3], [25.0, 20.0, 20.0], 0.0, 6),
+        ("pull a bottom", &c, [5.0, 5.0, 0.0], [0.0, 0.0, -1.0], 3.0, 9200.0, [0.0, 0.0, -3.0], [20.0; 3], 0.0, 6),
+        (
+            "pull a top with a hole",
+            &plate,
+            [2.0, 2.0, 4.0],
+            up,
+            6.0,
+            (600.0 - 9.0 * PI) * 10.0,
+            [0.0; 3],
+            [30.0, 20.0, 10.0],
+            ARC_TOL,
+            0,
+        ),
+        ("pull a round top", &peg, [3.0, 3.0, 10.0], up, 5.0, PI * 100.0 * 15.0, [-10.0, -10.0, 0.0], [10.0, 10.0, 15.0], ARC_TOL, 3),
+        ("push a slot top", &slot, [0.0, 0.0, 4.0], up, -2.0, (200.0 + PI * 25.0) * 2.0, [-15.0, -5.0, 0.0], [15.0, 5.0, 2.0], ARC_TOL, 0),
+    ];
+    for (name, body, at, n, d, want, min, max, tol, faces) in cases {
+        let (b, r, on_mesh) = push_both(body, at, n, d);
+        check(name, &brep_solid(&b), 0.0, &mesh_solid(&on_mesh["mesh"]), tol, want, min, max);
+        assert_eq!(r["reached"], true, "{name}: {r}");
+        if faces > 0 {
+            assert_eq!(faces_of(&b), faces, "{name}: faces on one plane are one face");
+        }
+        // the face it moved, as the mesh path reports it: the same frame
+        let moved = &on_mesh["moved"]["frame"];
+        for k in ["origin", "normal", "u", "v"] {
+            let (a, m) = (triple(&r["frame"][k]), triple(&moved[k]));
+            assert!((0..3).all(|i| (a[i] - m[i]).abs() < 1e-3), "{name}: frame {k} {a:?} against the mesh's {m:?}");
+        }
+    }
+}
+
+#[test]
+fn push_a_floor_through_and_by_key() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    // a 10 x 10 pocket 15 deep in the cube, its floor at z 5, pushed down through the bottom
+    let face = json!({ "origin": [10, 10, 20], "u": [1, 0, 0], "v": [0, 1, 0], "normal": [0, 0, 1] });
+    let cup = made(
+        "extrude",
+        json!({ "frame": face, "polygons": [{ "outer": { "points": [[-5, -5], [5, -5], [5, 5], [-5, 5]] } }], "fromMm": -15, "toMm": 0, "target": cube(), "operation": "cut" }),
+    );
+    let (b, r, on_mesh) = push_both(&cup, [10.0, 10.0, 5.0], [0.0, 0.0, 1.0], -5.0);
+    check("push a floor through", &brep_solid(&b), 0.0, &mesh_solid(&on_mesh["mesh"]), 0.0, 6000.0, [0.0; 3], [20.0; 3]);
+    // no face is left where it moved to
+    assert_eq!(r["reached"], false, "{r}");
+
+    // keys: the box's faces keep theirs, the moved top gets the push's own, and the key finds the face anywhere
+    let body = made("box", json!({ "min": [0, 0, 0], "max": [20, 20, 20], "keySalt": 5 }));
+    let keyed = |b: &Value, axis: usize, sign: f64| {
+        call("brep.tessellate", &json!({ "body": b }))["faces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["surface"]["kind"] == "plane" && f["surface"]["normal"][axis].as_f64() == Some(sign))
+            .map(|f| f["key"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    let (top, side, bottom) = (keyed(&body, 2, 1.0), keyed(&body, 0, 1.0), keyed(&body, 2, -1.0));
+    // given far from where the face is, as after an earlier step changed
+    let r = call(
+        "brep.push",
+        &json!({ "body": body, "at": [5, 5, 40], "normal": [0, 0, 1], "faceKey": top[0], "distanceMm": 5, "keySalt": 7, "save": true }),
+    );
+    assert_eq!(r["faceKey"].as_u64(), Some(top[0]), "{r}");
+    let b = json!({ "smb": r["bodySmb"].as_str().unwrap() });
+    assert!(near(brep_solid(&b).volume, 10_000.0));
+    assert_eq!(keyed(&b, 2, -1.0), bottom, "the bottom keeps its key");
+    assert_eq!(keyed(&b, 0, 1.0), side, "the side keeps its key, one face with the piece the pull added");
+    let new_top = keyed(&b, 2, 1.0);
+    assert!(new_top.len() == 1 && new_top[0] != top[0] && new_top[0] != 0, "the moved top is the push's own: {new_top:?}");
+
+    // what the mesh path refuses, the kernel refuses
+    for (req, says) in [
+        (json!({ "at": [5, 5, 20], "normal": [0, 0, 1], "distanceMm": 0 }), "distanceMm"),
+        (json!({ "at": [5, 5, 20], "normal": [0, 0, 1], "distanceMm": -20 }), "the cut removes the whole body"),
+        (json!({ "at": [5, 5, 21], "normal": [0, 0, 1], "distanceMm": 2 }), "no flat face there"),
+    ] {
+        let mut req = req;
+        req["body"] = cube();
+        sx_geom::json::allow_brep_text(true);
+        let e = sx_geom::json::call("brep.push", &req.to_string()).expect_err("refused").to_string();
+        assert!(e.contains(says), "{e}");
+    }
+    let peg = made("cylinder", json!({ "origin": [0, 0, 0], "axis": [0, 0, 1], "diameterMm": 10, "heightMm": 10 }));
+    let e = sx_geom::json::call("brep.push", &json!({ "body": peg, "at": [5, 0, 5], "normal": [1, 0, 0], "distanceMm": 2 }).to_string()).expect_err("a round face").to_string();
+    assert!(e.contains("no flat face"), "{e}");
+}

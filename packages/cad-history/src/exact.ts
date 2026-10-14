@@ -5,10 +5,14 @@
 // carry it, and a solid from anywhere else is never read. A step the kernel has no version of, or whose part has no
 // solid, returns null and the mesh path runs it; so does a step the kernel fails, with a note. The mesh each step
 // leaves is the solid's tessellation, with the solid's faces and keys.
-import type { FaceFrame, FreeShape, Shape, Vec2, Vec3 } from './types'
+import type { FaceFrame, FreeShape, MovedFace, Polygon, Shape, Vec2, Vec3 } from './types'
 import { direction, invert, point, type HistoryMesh, type Mat4, type PaintTexts, type PrimitiveSpec, type Step, type StepParams } from './model'
 
 export type Call = (op: string, request: unknown) => Promise<unknown>
+
+/** What a push on exact solids tells the replay: the face it moved (world), the key it found the face by, and
+ * whether a face is left where it moved to. */
+export type Pushed = (moved: MovedFace, faceKey: number, reached: boolean) => void
 
 /** A part as replay carries it. */
 export interface ExactPart {
@@ -107,6 +111,32 @@ function reversed(start: Vec2, segments: Piece[]): Piece[] {
     const g = segments[i]!
     return { to: ends[i]!, ...(g.center ? { center: g.center, sweepDeg: -g.sweepDeg! } : {}) }
   })
+}
+
+/** A kernel loop as a ring of points, each arc in pieces of at most 5 degrees. */
+function ring(l: Loop): Vec2[] {
+  if ('points' in l) return l.points
+  if ('center' in l) {
+    const r = l.diameterMm / 2
+    return Array.from({ length: 72 }, (_, i): Vec2 => [l.center[0] + r * Math.cos((i * Math.PI) / 36), l.center[1] + r * Math.sin((i * Math.PI) / 36)])
+  }
+  const out: Vec2[] = []
+  let from = l.start
+  for (const g of l.segments) {
+    out.push(from)
+    if (g.center) {
+      const [cx, cy] = g.center
+      const a0 = Math.atan2(from[1] - cy, from[0] - cx)
+      const r = Math.hypot(from[0] - cx, from[1] - cy)
+      const n = Math.max(1, Math.ceil(Math.abs(g.sweepDeg!) / 5))
+      for (let k = 1; k < n; k++) {
+        const a = a0 + (((g.sweepDeg! * k) / n) * Math.PI) / 180
+        out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)])
+      }
+    }
+    from = g.to
+  }
+  return out
 }
 
 /** A slot or a rounded rectangle as lines and arcs, counterclockwise, centered on the origin. */
@@ -280,7 +310,7 @@ export function fits(spec: PrimitiveSpec, positions: ArrayLike<number>, indices:
  * The parts after step `s` on exact solids, or null when the mesh path should run it. Kernel failures come back as
  * null too, with `fellBack` told; an answer that is the step's real result (a plane that misses) throws ExactBroken.
  */
-export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: () => void, solids: Solids = { keep: false, made: () => {} }): Promise<ExactPart[] | null> {
+export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: () => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}): Promise<ExactPart[] | null> {
   const p = s.params
   let parts = given
   const frame = rigidFrame(s.transform)
@@ -308,6 +338,23 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
     const target = parts[s.part]
     const out = parts.slice()
     switch (p.op) {
+      case 'face.push': {
+        const b = solid(target)
+        if (b === null || !target) return null
+        // the face in the part's own coordinates; the kernel finds it by its key, then under the point
+        const inv = invert(s.transform)
+        const n = direction(inv, p.normal)
+        const l = Math.hypot(...n) || 1
+        const r = (await call('brep.push', { body: b, at: point(inv, p.at), normal: [n[0] / l, n[1] / l, n[2] / l], distanceMm: p.distanceMm, ...(p.faceKey ? { faceKey: p.faceKey } : {}), ...kept })) as { frame: FaceFrame; polygons: Profile[]; faceKey: number; reached: boolean }
+        out[s.part] = await part(target, r)
+        // the face it moved, in world at the step's transform, its outline in the face's frame
+        const f = r.frame
+        const normal = direction(s.transform, f.normal)
+        const u = direction(s.transform, f.u)
+        const outline: Polygon[] = r.polygons.map((q) => ({ outer: ring(q.outer), holes: q.holes.map(ring) }))
+        pushed({ frame: { origin: point(s.transform, f.origin), normal, u, v: cross(normal, u) }, outline, distanceMm: p.distanceMm }, r.faceKey, r.reached)
+        return out
+      }
       case 'shape.extrude': {
         const op = p.spec.operation ?? 'new'
         if (!p.frame || p.pattern || !('type' in p.shape)) return null
