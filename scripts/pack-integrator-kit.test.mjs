@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
-import { hostPlatform, parseSums, platformOf, writePackageManifest } from './pack-integrator-kit.mjs'
+import { hostPlatform, parseSums, platformOf, writePackageManifest, kitPackages } from './pack-integrator-kit.mjs'
 
 const script = resolve(import.meta.dirname, 'pack-integrator-kit.mjs')
 
@@ -98,6 +98,28 @@ test('stable package names and manifest follow upgrades with distinct package ve
       }
       assert.equal(manifest.packages[0].file, 'slicerx-viewport.tgz')
       assert.equal(manifest.packages[0].version, version)
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+
+test('kit metadata comes from the actual workspace package folders', () => {
+  const packages = kitPackages()
+  assert.deepEqual(packages.map((p) => p.name), ['@slicerx/viewport', '@slicerx/embed', '@slicerx/mcp'])
+  for (const p of packages) assert.match(p.version, /^\d+\.\d+\.\d+/)
+})
+
+test('the manifest guide is copied and included by the embedding packages', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'sx-kit-docs-'))
+  try {
+    execFileSync(process.execPath, [resolve(import.meta.dirname, 'copy-integrator-docs.mjs'), tmp])
+    const guide = readFileSync(join(tmp, 'kit-manifest.md'), 'utf8')
+    assert.match(guide, /schemaVersion: 1/)
+    assert.match(readFileSync(join(tmp, 'quickstart.md'), 'utf8'), /\(kit-manifest\.md\)/)
+    for (const p of kitPackages().filter((p) => p.name !== '@slicerx/viewport')) {
+      assert.ok(p.files.includes('kit-manifest.md'), `${p.name} must pack the linked guide`)
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true })
