@@ -117,6 +117,9 @@ export function solidCard(s: { featureOnly: boolean; closedProfiles: number; iss
  */
 export type ProfileState = 'none' | 'open' | 'invalid' | 'valid'
 
+/** The reason while the engine's check of a change is still on its way, a tenth of a second. */
+export const CHECKING = 'Checking the sketch.'
+
 export function profileState(s: { drawn: boolean; closedProfiles: number; checked: boolean; ok: boolean; issues: readonly unknown[] }): ProfileState {
   if (!s.drawn) return 'none'
   if (s.closedProfiles === 0) return 'open'
@@ -142,7 +145,7 @@ export function applyReason(s: {
   if (s.profile === 'none') return 'Draw a closed outline to make a solid.'
   if (s.profile === 'open') return 'Close the outline to make a solid.'
   if (s.profile === 'invalid') return s.firstIssue ?? 'The outline needs fixing before it can make a solid.'
-  if (!s.checked) return 'Checking the sketch.'
+  if (!s.checked) return CHECKING
   if (s.finish === 'revolve' && !s.axis) return 'Pick a straight line of the sketch as the axis.'
   if (s.op !== 'new' && !s.target) return s.op === 'join' ? 'Pick a body to join to.' : 'Pick a body to cut from.'
   return null
