@@ -198,6 +198,8 @@ export function fitScale(part: readonly PilotSheetSolid[], dims: readonly PilotD
 }
 
 const BADGE_R = 10
+/** Points around a callout's rim, for keeping it off the part. */
+const RIM: readonly P2[] = Array.from({ length: 8 }, (_, i) => [Math.cos((i * Math.PI) / 4), Math.sin((i * Math.PI) / 4)] as P2)
 
 /**
  * One view of the sheet, fitted in a w x h cell at `scale` pixels per mm (or its own fit when absent): the visible
@@ -255,6 +257,10 @@ export function drawView(part: readonly PilotSheetSolid[], dims: readonly PilotD
     let uy = r.push[1] / pl
     const m = S(r.mid)
     const clash = (b: P2): boolean => placed.some((p) => Math.hypot(p[0] - b[0], p[1] - b[1]) < 2 * BADGE_R + 3)
+    // a callout never sits on the part: its center and its rim stay off it, and it stays in the cell
+    const onPart = (b: P2): boolean => inside(b) || RIM.some(([cx, cy]) => inside([b[0] + cx * (BADGE_R + 2), b[1] + cy * (BADGE_R + 2)]))
+    const inCell = (b: P2): boolean => b[0] >= BADGE_R + 2 && b[0] <= w - BADGE_R - 2 && b[1] >= BADGE_R + 2 && b[1] <= h - BADGE_R - 2
+    const free = (b: P2): boolean => !clash(b) && !onPart(b) && inCell(b)
     const leads = inside(m) && (ux !== 0 || uy !== 0)
     let badge: P2
     if (leads) {
@@ -266,14 +272,15 @@ export function drawView(part: readonly PilotSheetSolid[], dims: readonly PilotD
       }
       if (exit(-ux, -uy) < exit(ux, uy) - 1) [ux, uy] = [-ux, -uy]
       const reach = exit(ux, uy) + BADGE_R + 6
-      const at = (k: number): P2 => [m[0] + ux * reach - uy * k, m[1] + uy * reach + ux * k]
+      const at = (k: number, out: number): P2 => [m[0] + ux * (reach + out) - uy * k, m[1] + uy * (reach + out) + ux * k]
       // a callout already there: beside it along the outline, then the other side, then further out
       const steps = [0, 1, -1, 2, -2, 3, -3].map((i) => i * (2 * BADGE_R + 5))
-      badge = at(steps.find((k) => !clash(at(k))) ?? 0)
+      const tries = [0, 8, 16, 24, 32].flatMap((out) => steps.map((k) => at(k, out)))
+      badge = tries.find(free) ?? tries.find((b) => !clash(b)) ?? at(0, 0)
     } else {
       badge = [m[0] + ux * (BADGE_R + 3), m[1] + uy * (BADGE_R + 3)]
-      // apart from the callouts already placed, then inside the cell
-      for (let tries = 0; tries < 12 && clash(badge); tries++) badge = [badge[0] + ux * 8 + (ux === 0 && uy === 0 ? 8 : 0), badge[1] + uy * 8]
+      // apart from the callouts already placed and off the part, then inside the cell
+      for (let tries = 0; tries < 12 && (clash(badge) || onPart(badge)); tries++) badge = [badge[0] + ux * 8 + (ux === 0 && uy === 0 ? 8 : 0), badge[1] + uy * 8]
     }
     badge = [r1(Math.min(w - BADGE_R - 2, Math.max(BADGE_R + 2, badge[0]))), r1(Math.min(h - BADGE_R - 2, Math.max(BADGE_R + 2, badge[1])))]
     placed.push(badge)

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The dimension sheet in the mimir tab, laid out as a drawing: while a sheet waits, the view becomes a drawing sheet
-// (front, right, top and iso, with a numbered callout for each size) and a panel docked on the right lists the sizes by
-// number. Nothing builds until Build. After the build the panel comes back from the sheet's record, and editing a tied
-// row there edits the step it set. Picking a callout picks its row and the other way round.
+// (front, right, top and iso, with a numbered callout for each size) and the sheet's record in the chat is where the
+// sizes are typed, row numbers matching the callouts. Nothing builds until the record's build button. After the build
+// a panel docked on the right comes back from the record, and editing a tied row there edits the step it set. Picking
+// a callout picks its row and the other way round.
 import type { PilotDim, PilotSheet } from '@slicerx/contracts'
 import { Button, Icon, ScrubNumber, tipAttrs, type IconName } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -33,9 +34,11 @@ export function sourceHost(url: string | undefined): string | null {
 
 /** The row's field id, for focusing it from a callout. */
 const fieldId = (sheetId: string, key: string): string => `mimir-sheet-${sheetId}-${key}`
+/** The same row's field on the sheet's record in the chat (sheet-record.tsx in the pilot UI). */
+const recordId = (sheetId: string, key: string): string => `sheet-rec-${sheetId}-${key}`
 
 function focusRow(sheetId: string, key: string): void {
-  const el = document.getElementById(fieldId(sheetId, key))
+  const el = document.getElementById(fieldId(sheetId, key)) ?? document.getElementById(recordId(sheetId, key))
   el?.focus()
   el?.scrollIntoView({ block: 'nearest' })
 }
@@ -43,7 +46,7 @@ function focusRow(sheetId: string, key: string): void {
 /** Room around a view's drawing for its view label and callouts, in px. */
 const PAD = 24
 
-/** The drawing: four views in a 2 x 2 frame, the flat ones at one scale. Its units and state are in the caption. */
+/** The drawing: four views in a 2 x 2 frame, the flat ones at one scale, its title, units and state on the frame's bottom edge. */
 function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: string | null; onPick: (key: string) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const [cell, setCell] = useState<{ w: number; h: number } | null>(null)
@@ -68,6 +71,10 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
   }, [cell, part, sheet.dims, sheet.views])
   return (
     <div className="mimir-drawing" data-testid="mimir-sheet-drawing">
+      <div className="mimir-drawing-card">
+      <div className="mimir-drawing-head">
+        <span className="mimir-drawing-title sx-mono">Drawing, four views</span>
+      </div>
       <div ref={ref} className="mimir-drawing-grid">
         {views?.map(({ v, drawn }) => (
           <div key={v} className="mimir-drawing-cell" data-view={v}>
@@ -113,6 +120,12 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
             <span className="mimir-drawing-label sx-mono">{VIEWS[v].label}</span>
           </div>
         ))}
+      </div>
+      <div className="mimir-drawing-strip sx-mono" data-testid="mimir-drawing-status">
+        <span>{sheet.title}</span>
+        <span>mm</span>
+        <span>Not built yet</span>
+      </div>
       </div>
     </div>
   )
@@ -292,6 +305,25 @@ export function MimirSheet() {
   const mode = useSheetUi(sheetMode)
   const [editing, setEditing] = useState<string | null>(null)
   useEffect(() => setEditing(null), [shown?.sheet.id])
+  // while the drawing is up, the record's rows are the fields: a focused row lights its callout
+  const sheetId = shown?.sheet.id
+  useEffect(() => {
+    if (!sheetId) return
+    const prefix = recordId(sheetId, '')
+    const on = (e: FocusEvent) => {
+      const id = (e.target as HTMLElement | null)?.id ?? ''
+      if (id.startsWith(prefix)) setEditing(id.slice(prefix.length))
+    }
+    const off = (e: FocusEvent) => {
+      if ((e.target as HTMLElement | null)?.id?.startsWith(prefix)) setEditing(null)
+    }
+    document.addEventListener('focusin', on)
+    document.addEventListener('focusout', off)
+    return () => {
+      document.removeEventListener('focusin', on)
+      document.removeEventListener('focusout', off)
+    }
+  }, [sheetId])
   // the view's own menus give way to the drawing; the timeline and lookups stop at the panel
   useEffect(() => {
     const vp = document.querySelector<HTMLElement>('.studio > .vp')
@@ -306,8 +338,7 @@ export function MimirSheet() {
   const drawing = mode === 'confirm' && (shown.sheet.part?.length ?? 0) > 0
   return (
     <>
-      {drawing ? <SheetDrawing sheet={shown.sheet} editing={editing} onPick={(k) => focusRow(shown.sheet.id, k)} /> : null}
-      <SheetPanel sheet={shown.sheet} mode={mode} editing={editing} setEditing={setEditing} />
+      {drawing ? <SheetDrawing sheet={shown.sheet} editing={editing} onPick={(k) => focusRow(shown.sheet.id, k)} /> : <SheetPanel sheet={shown.sheet} mode={mode} editing={editing} setEditing={setEditing} />}
     </>
   )
 }

@@ -58,7 +58,7 @@ test.describe('the dimension sheet', () => {
     await expect(page.locator('.studio > .vp')).toHaveAttribute('data-mimir-sheet', 'drawing')
     await expect(page.getByTestId('mimir-caption')).toHaveText('Drawing, four views')
     // the units and state sit in the top bar beside the caption, off the views
-    await expect(page.getByTestId('mimir-drawing-status')).toHaveText('mmNot built yet')
+    await expect(page.getByTestId('mimir-drawing-status')).toHaveText('Backplate sizesmmNot built yet')
     // the record in the chat numbers its rows as the callouts, and its button builds
     const rec = page.getByTestId('mimir-sheet-record')
     await expect(rec.locator('.sheet-rec-n')).toHaveText(['1', '2', '3', '4', '5', '6', '7'])
