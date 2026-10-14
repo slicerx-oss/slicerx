@@ -9,7 +9,8 @@ import { useLookChoice } from '../../first-run/look'
 import { set, useApp } from '../../state/store'
 import { layerFromInput } from './layer-step'
 
-export function LayerJump({ top, n, layerZ, onJump }: { top: number; n: number; layerZ: ArrayLike<number>; onJump: (layer: number) => void }) {
+/** `short` reads "Layer 3/304" for a narrow bar, else "Layer 3 of 304". */
+export function LayerJump({ top, n, layerZ, short, onJump }: { top: number; n: number; layerZ: ArrayLike<number>; short?: boolean; onJump: (layer: number) => void }) {
   const open = useApp((s) => s.layerJump)
   const choice = useLookChoice()
   const chord = keymapFor(choice.id, choice.overrides?.keys ?? {})['preview.jumpToLayer'] ?? undefined
@@ -69,10 +70,11 @@ export function LayerJump({ top, n, layerZ, onJump }: { top: number; n: number; 
             onBlur={close}
           />
         ) : null}
-      </span>{' '}
+      </span>
+      {short ? null : ' '}
       {/* hidden under the open field, so no digit shows past its edge and nothing moves */}
       <span className="dock-jump-of" style={open ? { visibility: 'hidden' } : undefined}>
-        of {n}
+        {short ? `/${n}` : `of ${n}`}
       </span>
     </span>
   )

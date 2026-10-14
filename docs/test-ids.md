@@ -554,7 +554,8 @@ Ids that tests read for their text:
 | `cut-conn-tol-source` | Where the cut connector tolerance comes from |
 | `pv-change`, `pv-purge` | Preview: the tool change and the purge at the playhead |
 | `pv-layer-jump` | Preview: the jump to a layer field over the layer number |
-| `pv-show-toolhead`, `pv-show-gantry` | Preview: the playback bar's Show toolhead and Show gantry checkboxes |
+| `pv-show-toolhead`, `pv-show-gantry` | Preview: the playback bar's Show toolhead and Show gantry checkboxes (icon toggles on a folded bar, still checkboxes) |
+| `layer-pins` | Preview: the pause, color change and custom G-code pins over the playback bar's Layer slider |
 | `preview-drawer` | Preview: the playback bar under the view; `data-mode` is `slim` while it is shut to its transport row, and its `edge-tab-bottom` opens the sliders |
 | `plate-tools-group` | The plate toolbar with the view switch under it; `data-moved` is set once the person dragged it |
 | `plate-tools-grip` | The grip at the toolbar's end that drags the group (the arrow keys move it too) |

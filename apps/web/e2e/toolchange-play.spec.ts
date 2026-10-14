@@ -55,7 +55,13 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   // a 60 Hz one. The plain window opens once playback is warmed up, after WARM_UP drawn frames and a second after Play
   // (the first frames after Play come at an uneven pace, with many short intervals, which would pull the plain median
   // down), and only in the last 10 s of print time before the change (about five seconds).
-  await page.getByRole('radio', { name: '2 times real time' }).click()
+  // a segmented control on a wide bar, one menu button on a folded one
+  const seg = page.getByRole('radio', { name: '2 times real time' })
+  if (await seg.isVisible()) await seg.click()
+  else {
+    await page.getByRole('button', { name: /^Playback speed/ }).click()
+    await page.getByRole('menuitemcheckbox', { name: '2x' }).click()
+  }
   await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), Math.max(0, info.first!.start - 20))
   const result = await page.evaluate(async ({ from, until, warmUp }) => {
     const w = window as unknown as { __pv: Hook; __vp: { stats(): { frames: number } } }
