@@ -9,6 +9,7 @@
 //! sx schema [request | result]
 //! sx --version
 //! sx metadata <project.3mf>
+//! sx call [server options] <tool> [json] [<tool> [json] ...]
 //! sx bench --config <bench.json> [--runs 15] [--warmup 3] [--threads N]
 //!          [--append <results.jsonl>] [--change <text>] [--ab <baseline sx>]
 //!          [--write-baseline] [--json]
@@ -44,6 +45,7 @@
 mod fingerprint;
 #[cfg(feature = "stock-gcode")]
 mod stock;
+mod tool_call;
 
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -75,6 +77,7 @@ fn main() -> ExitCode {
         Some("metadata") => cmd_metadata(&args[1..]),
         Some("bench") => cmd_bench(&args[1..]),
         Some("time") => cmd_time(&args[1..]),
+        Some("call") => tool_call::run(&args[1..]),
         // Which engine this is, for a host checking the binary it ships or finds.
         Some("--version" | "-V") => {
             println!("sx {}", env!("CARGO_PKG_VERSION"));
@@ -82,7 +85,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
+                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
             );
             return ExitCode::from(2);
         }

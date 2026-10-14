@@ -234,6 +234,8 @@ The browser build has no keychain, so it cannot hold a per-agent credential. The
 
 `slicerx-mcp call` runs tools without a client, in order and in one process, so a project the first calls build is there for the next. It prints one JSON line per call (`tool`, `ok`, `text`, `output`) and stops with exit code 1 at the first call that fails. Tool names may leave out the `slicerx_` prefix; the JSON after a name is its arguments.
 
+The native CLI also exposes these commands as `sx call`, with the same arguments, permissions and output. It needs Node.js 24+ and this package installed in the project, or `SLICERX_MCP_CLI` pointing to its built `dist/cli.js`. It uses the calling `sx` binary for slicing and a neighboring `sx-geom` for geometry unless explicitly configured. See [the native CLI guide](../core/cli/README.md#tool-commands) for runtime discovery and examples.
+
 ```sh
 slicerx-mcp --engine stub call project_open '{"printer":"bambu_p1s","filament":"pla"}' \
   project_add_filament '{"type":"PETG","color":"#ff5500"}' \
