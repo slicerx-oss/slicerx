@@ -1273,3 +1273,257 @@ fn push_a_floor_through_and_by_key() {
     .to_string();
     assert!(e.contains("no flat face"), "{e}");
 }
+
+/// The body's tessellation with its faces, as the app hands it to the mesh path's hole tool.
+fn faced(body: &Value) -> Value {
+    let t = call("brep.tessellate", &json!({ "body": body }));
+    let table: Vec<Value> = t["faces"]
+        .as_array()
+        .expect("faces")
+        .iter()
+        .map(|f| f["surface"].clone())
+        .collect();
+    json!({ "mesh": { "positions": t["positions"], "indices": t["indices"], "faces": { "ids": t["faceIds"], "table": table } } })
+}
+
+/// A hole made another size on the kernel and on the body's mesh: the new body, the kernel's reply and the mesh's.
+fn hole_both(body: &Value, hole: &Value, spec: &Value) -> (Value, Value, Value) {
+    let reply = call(
+        "brep.hole",
+        &json!({ "body": body, "hole": hole, "spec": spec, "save": true }),
+    );
+    let after = json!({ "smb": reply["bodySmb"].as_str().expect("bodySmb") });
+    let on_mesh = call(
+        "hole.apply",
+        &json!({ "mesh": faced(body), "hole": hole, "spec": spec }),
+    );
+    (after, reply, on_mesh)
+}
+
+/// The faces that read as cylinders, as the hole tool and Measure read them.
+fn cylinders(body: &Value) -> usize {
+    call("brep.tessellate", &json!({ "body": body }))["faces"]
+        .as_array()
+        .expect("faces")
+        .iter()
+        .filter(|f| f["surface"]["kind"] == "cylinder")
+        .count()
+}
+
+#[test]
+#[allow(clippy::too_many_lines, reason = "one row per case")]
+fn holes_on_cylinder_faces() {
+    if !sx_brep::KERNEL {
+        return;
+    }
+    let up = json!({ "origin": [0, 0, 0], "u": [1, 0, 0], "normal": [0, 0, 1] });
+    // a 30 x 20 x 5 plate with a 6 mm hole through it at (15, 10)
+    let plate = made(
+        "extrude",
+        json!({ "frame": up, "polygons": [{ "outer": { "points": [[0, 0], [30, 0], [30, 20], [0, 20]] }, "holes": [{ "center": [15, 10], "diameterMm": 6 }] }], "fromMm": 0, "toMm": 5 }),
+    );
+    // a 6 mm hole 8 deep into the cube's top
+    let blind = made(
+        "extrude",
+        json!({ "frame": { "origin": [10, 10, 20], "u": [1, 0, 0], "normal": [0, 0, 1] }, "polygons": [{ "outer": { "center": [0, 0], "diameterMm": 6 } }], "fromMm": -8, "toMm": 0, "target": cube(), "operation": "cut" }),
+    );
+    // a 6 mm hole along x through the cube's side
+    let side = made(
+        "subtract",
+        json!({ "body": cube(), "solids": [{ "type": "cylinder", "origin": [-1, 10, 10], "axis": [1, 0, 0], "diameterMm": 6, "heightMm": 22 }] }),
+    );
+    let through =
+        json!({ "entry": [15, 10, 5], "axis": [0, 0, 1], "diameterMm": 6, "depthMm": 5, "through": true });
+    let below =
+        json!({ "entry": [15, 10, 0], "axis": [0, 0, -1], "diameterMm": 6, "depthMm": 5, "through": true });
+    let floor =
+        json!({ "entry": [10, 10, 20], "axis": [0, 0, 1], "diameterMm": 6, "depthMm": 8, "through": false });
+    let across =
+        json!({ "entry": [20, 10, 10], "axis": [1, 0, 0], "diameterMm": 6, "depthMm": 20, "through": true });
+    let disc = |r: f64, h: f64| PI * r * r * h;
+    let frustum = |r0: f64, r1: f64, h: f64| PI * h / 3.0 * (r0 * r0 + r0 * r1 + r1 * r1);
+    let (pv, cv) = (3000.0, 8000.0);
+    let (p0, p1) = ([0.0; 3], [30.0, 20.0, 5.0]);
+    // name, body, hole, spec, exact volume, bounds, cylinder faces after
+    let cases = [
+        (
+            "widen a through hole",
+            &plate,
+            &through,
+            json!({ "diameterMm": 8 }),
+            pv - disc(4.0, 5.0),
+            p0,
+            p1,
+            1,
+        ),
+        (
+            "narrow a through hole",
+            &plate,
+            &through,
+            json!({ "diameterMm": 3.4 }),
+            pv - disc(1.7, 5.0),
+            p0,
+            p1,
+            1,
+        ),
+        (
+            "counterbore",
+            &plate,
+            &through,
+            json!({ "diameterMm": 3.4, "counterbore": { "diameterMm": 6.5, "depthMm": 3 } }),
+            pv - disc(1.7, 2.0) - disc(3.25, 3.0),
+            p0,
+            p1,
+            2,
+        ),
+        (
+            "countersink",
+            &plate,
+            &through,
+            json!({ "diameterMm": 3.4, "countersink": { "diameterMm": 6.5 } }),
+            pv - disc(1.7, 5.0 - 1.55) - frustum(1.7, 3.25, 1.55),
+            p0,
+            p1,
+            1,
+        ),
+        (
+            "countersink from below",
+            &plate,
+            &below,
+            json!({ "diameterMm": 3.4, "countersink": { "diameterMm": 6.5 } }),
+            pv - disc(1.7, 5.0 - 1.55) - frustum(1.7, 3.25, 1.55),
+            p0,
+            p1,
+            1,
+        ),
+        (
+            "same size, counterbored",
+            &plate,
+            &through,
+            json!({ "diameterMm": 6, "counterbore": { "diameterMm": 10, "depthMm": 2 } }),
+            pv - disc(3.0, 3.0) - disc(5.0, 2.0),
+            p0,
+            p1,
+            2,
+        ),
+        (
+            "blind hole shallower",
+            &blind,
+            &floor,
+            json!({ "diameterMm": 4, "depthMm": 5 }),
+            cv - disc(2.0, 5.0),
+            [0.0; 3],
+            [20.0; 3],
+            1,
+        ),
+        (
+            "blind hole deeper",
+            &blind,
+            &floor,
+            json!({ "diameterMm": 6, "depthMm": 12 }),
+            cv - disc(3.0, 12.0),
+            [0.0; 3],
+            [20.0; 3],
+            1,
+        ),
+        (
+            "widen a side hole",
+            &side,
+            &across,
+            json!({ "diameterMm": 8 }),
+            cv - disc(4.0, 20.0),
+            [0.0; 3],
+            [20.0; 3],
+            1,
+        ),
+    ];
+    for (name, body, hole, spec, want, min, max, rounds) in cases {
+        let (after, reply, on_mesh) = hole_both(body, hole, &spec);
+        check(
+            name,
+            &brep_solid(&after),
+            0.0,
+            &mesh_solid(&on_mesh["mesh"]),
+            ARC_TOL,
+            want,
+            min,
+            max,
+        );
+        // the hole found where the step said, and the new one's walls are cylinders a later step can find
+        let found = &reply["hole"];
+        assert!(
+            near(
+                found["depthMm"].as_f64().unwrap(),
+                hole["depthMm"].as_f64().unwrap()
+            ) && found["through"] == hole["through"],
+            "{name}: {found}"
+        );
+        assert_eq!(cylinders(&after), rounds, "{name}: cylinder faces");
+    }
+
+    // the plate made 3 thicker below since the hole was picked: the hole is found again 8 deep, and narrowed
+    let thick = json!({ "smb": call("brep.push", &json!({ "body": plate, "at": [2, 2, 0], "normal": [0, 0, -1], "distanceMm": 3, "save": true }))["bodySmb"] });
+    let (after, reply, on_mesh) = hole_both(&thick, &through, &json!({ "diameterMm": 4 }));
+    assert!(near(reply["hole"]["depthMm"].as_f64().unwrap(), 8.0), "{reply}");
+    check(
+        "a hole the part grew around",
+        &brep_solid(&after),
+        0.0,
+        &mesh_solid(&on_mesh["mesh"]),
+        ARC_TOL,
+        600.0 * 8.0 - disc(2.0, 8.0),
+        [0.0, 0.0, -3.0],
+        [30.0, 20.0, 5.0],
+    );
+    // a hole made by this op is a hole the next one finds: back to 6 mm, the plate as it was
+    let wide =
+        json!({ "entry": [15, 10, 5], "axis": [0, 0, 1], "diameterMm": 8, "depthMm": 5, "through": true });
+    let (w, _, _) = hole_both(&plate, &through, &json!({ "diameterMm": 8 }));
+    let (back, _, _) = hole_both(&w, &wide, &json!({ "diameterMm": 6 }));
+    assert!(
+        near(brep_solid(&back).volume, pv - disc(3.0, 5.0)),
+        "back to 6 mm"
+    );
+    assert_eq!(faces_of(&back), 7, "the plate's six faces and its wall");
+
+    // what the mesh path refuses, the kernel refuses
+    let peg = made(
+        "cylinder",
+        json!({ "origin": [0, 0, 0], "axis": [0, 0, 1], "diameterMm": 10, "heightMm": 10 }),
+    );
+    let boss =
+        json!({ "entry": [0, 0, 10], "axis": [0, 0, 1], "diameterMm": 10, "depthMm": 10, "through": true });
+    for (body, hole, spec, says) in [
+        (
+            &plate,
+            &json!({ "entry": [15, 10, 5], "axis": [0, 0, 1], "diameterMm": 5, "depthMm": 5, "through": true }),
+            json!({ "diameterMm": 4 }),
+            "not there any more",
+        ),
+        (&peg, &boss, json!({ "diameterMm": 4 }), "round hole"),
+        (
+            &plate,
+            &through,
+            json!({ "diameterMm": 3, "counterbore": { "diameterMm": 2, "depthMm": 1 } }),
+            "above the hole's diameter",
+        ),
+        (
+            &plate,
+            &through,
+            json!({ "diameterMm": 3, "countersink": { "diameterMm": 20 } }),
+            "deeper than the hole",
+        ),
+    ] {
+        sx_geom::json::allow_brep_text(true);
+        let req = json!({ "body": body, "hole": hole, "spec": spec });
+        let e = sx_geom::json::call("brep.hole", &req.to_string())
+            .expect_err("refused")
+            .to_string();
+        assert!(e.contains(says), "{e}");
+        let m = sx_geom::json::call(
+            "hole.apply",
+            &json!({ "mesh": faced(body), "hole": hole, "spec": spec }).to_string(),
+        );
+        assert!(m.is_err(), "the mesh path refuses it too: {hole} {spec}");
+    }
+}
