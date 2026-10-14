@@ -263,3 +263,8 @@ test('Expert rows for a switch list, a text template and a number or percent pla
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['slowdown_for_curled_perimeters', 'brcw'], ['solid_infill_rotate_template', 'brsr'], ['small_perimeter_speed', 'brss']])
 })
+
+test('Advanced rows from wipe speed to z offset play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['wipe_speed', 'bwws'], ['wipe_tower_rotation_angle', 'bwtr'], ['wipe_tower_extra_spacing', 'bwts'], ['wipe_tower_extra_flow', 'bwtf'], ['wipe_tower_max_purge_speed', 'bwtm'], ['wipe_tower_no_sparse_layers', 'bwtn'], ['wipe_tower_wall_type', 'bwtw'], ['wipe_tower_filament', 'bwtl'], ['wipe_tower_bridging', 'bwtb'], ['xy_contour_compensation', 'bwxc'], ['xy_hole_compensation', 'bwxh']])
+})
