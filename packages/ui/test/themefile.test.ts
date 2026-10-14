@@ -249,7 +249,7 @@ describe('the bundled files', () => {
     expect(families.find((f) => f.id === 'catppuccin')?.light[0]?.flavor).toBe('Latte')
   })
   it('Subban light is the Nocturne Bright palette', () => {
-    expect(slicerxLight).toMatchObject({ background: '#f7f7f9', text: '#2d2834', accent: '#7542bd', isDark: false, family: 'subban' })
+    expect(slicerxLight).toMatchObject({ background: '#fbf8ff', text: '#2d2834', accent: '#7542bd', isDark: false, family: 'subban' })
     expect(slicerxLight.ansi.slice(1, 7)).toEqual(['#c33c3c', '#168452', '#8a6a00', '#276fa9', '#b3316d', '#008494'])
     expect(slicerxLight.waiting).toBe('#9a5a16')
   })

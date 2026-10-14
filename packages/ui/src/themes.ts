@@ -12,7 +12,7 @@ const lightFile = validateThemeFile(subbanLightFile)
 if (!lightFile.ok) throw new Error(`Bundled theme is invalid: ${lightFile.errors.join(' ')}`)
 const light: ThemeFile = lightFile.theme
 
-/** Subban light: Subban's palette meanings on a neutral gray canvas, purple only for actions and selection. Text reaches 4.5:1 and glyph colors 3:1. */
+/** Subban light: Subban's palette meanings on a pale violet canvas. Text reaches 4.5:1 and glyph colors 3:1. */
 export const subbanLight = createTheme({
   name: 'subban-light',
   scheme: 'light',
