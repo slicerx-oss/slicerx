@@ -370,6 +370,12 @@ export interface ToolFooterProps {
   repeat?: boolean
   /** Other actions: on their own line above Cancel and Apply. An action for the whole tool goes in Shell's `action`. */
   extra?: ReactNode
+  /** Why Apply is off, shown over the buttons while it is (a disabled action always says why). */
+  reason?: string | null
+  /** Apply is the panel's primary action; false while another control is (the sketch's Finish sketch). */
+  primary?: boolean
+  /** Enter in the panel and Esc close or apply the tool; false for a tool that steps its own keys (the sketch). */
+  keys?: boolean
 }
 
 /** Is the key for a control that uses Enter itself: a multi-line field, a button, a list. */
@@ -380,7 +386,7 @@ const ownsEnter = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagN
  * tools made for runs of the same feature, Apply and repeat (in the menu on Apply) runs it and stays open for the next
  * pick.
  */
-export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy = false, repeat = false, extra }: ToolFooterProps) {
+export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy = false, repeat = false, extra, reason = null, primary = true, keys = true }: ToolFooterProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [running, setRunning] = useState(false)
   const [menu, setMenu] = useState(false)
@@ -398,6 +404,7 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
   const latest = useRef(go)
   latest.current = go
   useEffect(() => {
+    if (!keys) return
     const panel = ref.current?.closest('.sx-block.cad')
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return
@@ -412,7 +419,7 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [keys])
   // the panel fades out above the footer while there is more of it below
   const [more, setMore] = useState(false)
   useEffect(() => {
@@ -452,6 +459,11 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
   return (
     <div ref={ref} className="cad-actions cad-footer tp-actions" {...(more ? { 'data-more': '' } : {})}>
       {extra ? <div className="tp-actions-extra">{extra}</div> : null}
+      {disabled && !working && reason ? (
+        <p className="tp-card-reason" role="status" data-testid="model-tool-reason">
+          {reason}
+        </p>
+      ) : null}
       <div className="tp-actions-main">
         <span className="tp-actions-start">
           <Button variant="ghost" data-testid="model-tool-cancel" onClick={close} disabled={working} tip={{ title: 'Close the tool', key: 'Esc' }}>
@@ -461,7 +473,7 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
         <span className="tp-actions-end">
           {repeat ? (
             <SplitButton
-              variant="primary"
+              variant={primary ? 'primary' : 'default'}
               data-testid="model-tool-apply"
               onClick={() => void go(false)}
               disabled={off}
@@ -475,7 +487,7 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
               {label}
             </SplitButton>
           ) : (
-            <Button variant="primary" data-testid="model-tool-apply" onClick={() => void go(false)} disabled={off} tip={{ title: verb, key: 'Enter' }}>
+            <Button variant={primary ? 'primary' : 'default'} data-testid="model-tool-apply" onClick={() => void go(false)} disabled={off} tip={{ title: verb, key: 'Enter' }}>
               {label}
             </Button>
           )}

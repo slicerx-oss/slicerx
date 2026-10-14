@@ -77,7 +77,11 @@ function warning(w: SliceWarning): Record<string, unknown> {
 /** The open sketch as the view's mode pill shows it, or null. */
 function sketchState(): Record<string, unknown> | null {
   const m = sketchMode()
-  return m ? { on: m.on, label: m.label, tool: m.tool, mode: sketchModeText(m) } : null
+  if (!m) return null
+  // what the drawing is as a profile, how defined it is, whether Extrude or Revolve can run (and why not), and the
+  // loops as drawn, so a client checks the sketch the way the panel does
+  const more = m.profile === undefined ? {} : { profile: m.profile, dof: m.dof ?? null, ready: m.ready ?? false, reason: m.reason ?? null, loops: m.loops ?? [] }
+  return { on: m.on, label: m.label, tool: m.tool, mode: sketchModeText(m), ...more }
 }
 
 /** The app as an agent reads it: the tab, the plate with each object's parts and warnings, the printer and filament, and slicing. */
