@@ -4,7 +4,8 @@
 // (ribbon-layout.ts holds what goes where). Settings > Look and feel > Toolbar size picks 32, 24 or 16 px icons; at 16
 // the names become tips. Every tab's row has the same height, so changing tabs, pressing or hovering moves nothing.
 // A ribbon without room for its names (a narrow window, or the mimir panel beside it) drops them, the way Small does.
-// After the groups, the next slot offers the tools for what is picked; undo and redo sit at the end of the tab row.
+// Undo and redo sit at the end of the tab row. What is picked shows in the groups themselves: a tool that cannot take
+// the pick is off, with the reason in its tip.
 // On a phone the shelf (shelf.tsx) stays.
 import { Button, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator } from '@slicerx/ui'
 import { ToolIcon, type ToolIconName } from '@slicerx/ui/tool-icons'
@@ -25,7 +26,7 @@ import { startFillet } from '../../cad/start-hint'
 import { openSketch, requestFinish, useCanFinish, useSketchDraw, useSketchInUse } from '../../cad/sketches'
 import { shownSketches } from './finished-sketches'
 import { DRAW_FAMILY, ribbonGroups, ribbonTabs, TOOLBAR_ICON, type RibbonAction, type RibbonItem, type RibbonMenu, type RibbonTab } from './ribbon-layout'
-import { availableTools, nextSlot, pickWords, type DialogTool, type NextEntry, type NextPick, type ShelfTool } from './shelf-tools'
+import { availableTools, pickOff, type DialogTool, type NextPick, type ShelfTool } from './shelf-tools'
 import { nextPick } from './shelf'
 import './ribbon.css'
 
@@ -44,12 +45,10 @@ const SHAPE_ICON: Record<string, ToolIconName> = { box: 'cube', cylinder: 'cylin
 /**
  * 'icons' when the ribbon with names does not fit its width, so every tool stays in view; back to names once the width
  * it needed is there again. The widest tab seen at this size decides, so a tab change never changes the ribbon's height,
- * and only a change of size decides, never a press, so nothing moves under the pointer. The next slot shows only when
- * it fits beside the tools; it never pushes them to icons.
+ * and only a change of size decides, never a press, so nothing moves under the pointer.
  */
-function useRibbonFit(ref: RefObject<HTMLDivElement | null>, row: RefObject<HTMLDivElement | null>, key: string): { fit: 'labels' | 'icons'; nextRoom: boolean } {
+function useRibbonFit(ref: RefObject<HTMLDivElement | null>, row: RefObject<HTMLDivElement | null>, key: string): 'labels' | 'icons' {
   const [fit, setFit] = useState<'labels' | 'icons'>('labels')
-  const [nextRoom, setNextRoom] = useState(true)
   const need = useRef(0)
   useLayoutEffect(() => {
     const el = ref.current
@@ -63,12 +62,7 @@ function useRibbonFit(ref: RefObject<HTMLDivElement | null>, row: RefObject<HTML
       const room = el.clientWidth - pad
       const left = r.getBoundingClientRect().left
       let tools = 0
-      let next = 0
-      for (const g of r.children) {
-        const box = g.getBoundingClientRect()
-        if (g.classList.contains('rb-next')) next = box.width + parseFloat(getComputedStyle(g).marginLeft)
-        else tools = Math.max(tools, box.right - left)
-      }
+      for (const g of r.children) tools = Math.max(tools, g.getBoundingClientRect().right - left)
       setFit((f) => {
         if (f === 'labels' && tools > room + 1) {
           need.current = Math.max(need.current, tools)
@@ -77,7 +71,6 @@ function useRibbonFit(ref: RefObject<HTMLDivElement | null>, row: RefObject<HTML
         if (f === 'labels') need.current = Math.max(need.current, tools)
         return f === 'icons' && room >= need.current ? 'labels' : f
       })
-      setNextRoom(tools + next <= room + 1)
     }
     const watch = new ResizeObserver(check)
     watch.observe(el)
@@ -93,7 +86,7 @@ function useRibbonFit(ref: RefObject<HTMLDivElement | null>, row: RefObject<HTML
       kids.disconnect()
     }
   }, [ref, row, key])
-  return { fit, nextRoom }
+  return fit
 }
 
 /** One ribbon button: the icon, its name under it (a tip at Small), pressed and off states. */
@@ -147,7 +140,7 @@ export function Ribbon() {
   const tools = availableTools({ modeling, drawing })
   const tabs = ribbonTabs(modeling)
   const [tab, setTab] = useState<RibbonTab>('solid')
-  const { fit, nextRoom } = useRibbonFit(bodyRef, rowRef, sizeSetting)
+  const fit = useRibbonFit(bodyRef, rowRef, sizeSetting)
   const size = fit === 'icons' && sizeSetting !== 'small' ? 'small' : sizeSetting
   const px = fit === 'icons' ? 16 : iconPx
   const hasSel = useApp((s) => s.selection !== null)
@@ -195,7 +188,10 @@ export function Ribbon() {
     if (t.run === 'orient') return command(t.command)
     if (t.tool) openTool(t.tool)
   }
-  const toolOff = (t: ShelfTool): string | false => (t.needsSelection && !hasSel ? 'Select an object first.' : t.modeling && engine === 'loading' ? 'The modeling tools are loading.' : false)
+  // what is picked, so a tool that takes one at a time is off for more, saying why
+  const [kind, countText] = pickKey.split(':')
+  const pick: NextPick | null = pickKey ? { kind: kind as NextPick['kind'], count: Number(countText) } : null
+  const toolOff = (t: ShelfTool): string | false => (t.needsSelection && !hasSel ? 'Select an object first.' : t.modeling && engine === 'loading' ? 'The modeling tools are loading.' : (pickOff(t, pick) ?? false))
 
   const actionOff = (id: RibbonAction): string | false => {
     if (DRAW_FAMILY[id] || id === 'look') return draw ? false : 'Start a sketch first.'
@@ -288,41 +284,11 @@ export function Ribbon() {
     )
   }
 
-  // The next slot: what to do with the pick, how many are picked, and which tools take that many.
-  const [kind, countText] = pickKey.split(':')
-  const pick: NextPick | null = pickKey ? { kind: kind as NextPick['kind'], count: Number(countText) } : null
-  const next = tab === 'sketch' ? [] : nextSlot(tools, pick)
-  const words = pick ? pickWords(pick) : ''
-  const nextButton = (e: NextEntry) => {
-    const label = e.chamfer ? 'Chamfer' : (e.tool.short ?? e.tool.label)
-    const off = Boolean(e.off) || Boolean(toolOff(e.tool))
-    return (
-      <button
-        key={e.chamfer ? 'chamfer' : e.tool.id}
-        type="button"
-        className="rb-btn"
-        data-next-tool={e.chamfer ? 'chamfer' : e.tool.id}
-        data-testid="model-shelf-next-tool"
-        data-tip-title={`Next for ${words} · ${e.chamfer ? 'Chamfer' : e.tool.label}`}
-        data-tip-body={e.off ?? `Shown because ${words === '1 object' ? 'an object is' : words.startsWith('1 ') ? `a ${words.slice(2)} is` : `${words} are`} picked: a tool that works on ${words.startsWith('1 ') ? 'it' : 'them'}.`}
-        aria-label={e.chamfer ? 'Chamfer' : e.tool.label}
-        aria-disabled={off || undefined}
-        onClick={() => {
-          if (off) return
-          if (e.chamfer) startFillet('chamfer')
-          choose(e.tool)
-        }}
-      >
-        <ToolIcon name={e.chamfer ? 'chamfer' : e.tool.toolIcon} size={px} />
-        <span className="rb-label">{label}</span>
-      </button>
-    )
-  }
   const dialog = objectTool === 'simplify' || objectTool === 'hollow' || objectTool === 'hole' ? (objectTool as DialogTool) : null
   const groups = ribbonGroups(tab, tools, modeling)
 
   return (
-    <div className="ribbon sx-overlay" data-size={size} data-setting={sizeSetting} data-fit={fit} data-tab={tab} role="toolbar" aria-label="Model tools" data-testid="model-shelf" aria-busy={engine === 'loading' || undefined}>
+    <div className="ribbon" data-size={size} data-setting={sizeSetting} data-fit={fit} data-tab={tab} role="toolbar" aria-label="Model tools" data-testid="model-shelf" aria-busy={engine === 'loading' || undefined}>
       <div className="rb-tabs">
         <div className="rb-tablist" role="tablist" aria-label="Ribbon tabs">
           {tabs.map((t) => (
@@ -344,20 +310,6 @@ export function Ribbon() {
             <div className="rb-glabel" aria-hidden="true">{g.label}</div>
           </div>
         ))}
-        {next.length ? (
-          <div className="rb-grp rb-next" data-testid="model-shelf-next" data-tip-avoid=".rb-next" data-room={nextRoom ? undefined : 'no'} aria-hidden={nextRoom ? undefined : true} aria-label={`For ${words}`} role="group">
-            <div className="rb-tools">
-              {pick && (pick.kind !== 'object' || pick.count > 1) ? (
-                <span className="rb-pick" data-testid="model-shelf-next-count" aria-label={words} data-tip-title={words}>
-                  <b>{pick.count}</b>
-                  <span>{words.slice(String(pick.count).length + 1)}</span>
-                </span>
-              ) : null}
-              {next.map(nextButton)}
-            </div>
-            <div className="rb-glabel" aria-hidden="true">For {words}</div>
-          </div>
-        ) : null}
         </div>
       </div>
       <ViewRing />

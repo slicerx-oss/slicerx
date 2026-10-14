@@ -176,6 +176,15 @@ export class CameraRig {
     return { pos: target.clone().addScaledVector(dir, d), target }
   }
 
+  /** The pose that frames `box` from the current angle with room around it: the share of the free area the opening
+   * product view gives the model (about 60 percent of the height), so a framed part is the biggest thing in view. */
+  framed(box: Box3): { pos: Vector3; target: Vector3 } {
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize()
+    const { fw, fh } = this.free
+    const f = fitDistance(this.camera, box, dir, 0.6 * fh, 0.72 * fw)
+    return { pos: f.target.clone().addScaledVector(dir, f.distance), target: f.target }
+  }
+
   /** The pose that moves the view sideways to look at `target`, keeping the angle and the distance (so the zoom level stays). */
   centerOn(target: Vector3): { pos: Vector3; target: Vector3 } {
     const delta = target.clone().sub(this.controls.target)

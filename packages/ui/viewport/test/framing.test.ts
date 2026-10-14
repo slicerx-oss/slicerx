@@ -106,3 +106,25 @@ describe('the side views', () => {
     expect(pose.target.y).toBeCloseTo(30, 6)
   })
 })
+
+describe('framed: Model frames a part from the current angle with room around it', () => {
+  it('keeps the angle and gives a 20 mm part about 60 percent of the height, inside the view', () => {
+    const w = 886
+    const h = 674
+    const { camera, rig } = setup(w, h, NO_INSETS)
+    const before = camera.position.clone().normalize()
+    const part = new Box3(new Vector3(90, 0, 90), new Vector3(110, 20, 110))
+    const pose = rig.framed(part)
+    expect(pose.pos.clone().sub(pose.target).normalize().dot(before)).toBeGreaterThan(0.999)
+    camera.position.copy(pose.pos)
+    camera.lookAt(pose.target)
+    camera.updateProjectionMatrix()
+    camera.updateMatrixWorld(true)
+    const ys = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ((1 - new Vector3(i & 1 ? 110 : 90, i & 2 ? 20 : 0, i & 4 ? 110 : 90).project(camera).y) / 2) * h)
+    const share = (Math.max(...ys) - Math.min(...ys)) / h
+    expect(share).toBeGreaterThan(0.5)
+    expect(share).toBeLessThan(0.7)
+    expect(Math.min(...ys)).toBeGreaterThan(0)
+    expect(Math.max(...ys)).toBeLessThan(h)
+  })
+})

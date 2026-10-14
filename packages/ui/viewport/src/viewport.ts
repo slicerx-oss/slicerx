@@ -2847,6 +2847,18 @@ class ViewportImpl implements Viewport {
     this.frameBox(box, opts.animate ?? true)
   }
 
+  /** Frames the selection (every object with none) from the current angle, with room around it. */
+  frameSelection(opts: { animate?: boolean } = {}): void {
+    const box = new Box3()
+    this.stage.scene.updateMatrixWorld(true)
+    const sel = this.selection.map((id) => this.objects.get(id)).filter((o): o is ObjectEntry => !!o)
+    for (const o of sel.length ? sel : [...this.objects.values()]) box.expandByObject(o.group)
+    if (box.isEmpty()) return
+    this.rig.preset = null
+    this.rig.go(this.rig.framed(box), opts.animate ?? true, performance.now())
+    this.invalidate()
+  }
+
   /**
    * Eases the camera so the bed point (x, y, z in mm) is at the center of the view, keeping the angle and zoom.
    * With the system's reduced motion setting on, or `animate: false`, the camera jumps.
