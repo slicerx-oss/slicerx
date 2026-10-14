@@ -36,6 +36,24 @@ fn numbers(v: &Value) -> Vec<f64> {
         .collect()
 }
 
+fn worst_error(v: &Value) -> f64 {
+    let values = numbers(v);
+    assert!(!values.is_empty(), "missing error measurements");
+    assert!(
+        values.iter().all(|value| value.is_finite()),
+        "nonfinite error measurement: {v}"
+    );
+    values.into_iter().map(f64::abs).fold(0.0, f64::max)
+}
+
+#[test]
+fn error_checks_do_not_hide_invalid_measurements() {
+    for invalid in [serde_json::json!([null]), serde_json::json!([])] {
+        assert!(std::panic::catch_unwind(|| worst_error(&invalid)).is_err());
+    }
+    assert!((worst_error(&serde_json::json!([-0.5, 0.2])) - 0.5).abs() < f64::EPSILON);
+}
+
 #[test]
 fn matches_the_original_routines() {
     if !sx_brep::KERNEL {
@@ -104,12 +122,15 @@ fn residuals_are_zero() {
         return;
     }
     let ours = probe();
+    let mut checked = 0;
     for (key, v) in ours.as_object().expect("an object") {
         if let Some(name) = key.strip_prefix("check.") {
-            let worst = numbers(v).into_iter().fold(0.0, f64::max);
+            let worst = worst_error(v);
             assert!(worst <= 1e-9, "{name}: {worst}");
+            checked += 1;
         }
     }
+    assert!(checked > 0, "probe returned no residual checks");
 }
 
 // Adaptive integration may take other steps than the original and still be right, so ours is held to the exact
@@ -122,15 +143,18 @@ fn meets_the_requested_accuracy() {
     }
     let ours = probe();
     let mut bad = Vec::new();
+    let mut checked = 0;
     for (key, v) in ours.as_object().expect("an object") {
         if let Some(name) = key.strip_prefix("accuracy.") {
-            let worst = numbers(v).into_iter().fold(0.0, f64::max);
+            let worst = worst_error(v);
+            checked += 1;
             let allowed = if name.starts_with("ode.") { 4.0 } else { 1.0 };
             if worst > allowed {
                 bad.push(format!("{name}: {worst:e} of the accuracy asked for"));
             }
         }
     }
+    assert!(checked > 0, "probe returned no accuracy checks");
     assert!(bad.is_empty(), "{} cases miss:\n{}", bad.len(), bad.join("\n"));
 }
 
