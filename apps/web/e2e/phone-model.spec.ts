@@ -286,7 +286,9 @@ test.describe('Model on a phone', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
 
-  test('the slow 3D notice is one short line with Details, and it can be closed', async ({ page }) => {
+  // The slow 3D notice itself sits in a phone's top bar (layout-stability covers it); this is the toast it uses on a
+  // desktop, which other short notes with a reason share, at a phone's width.
+  test('a toast with Details is one short line, and it can be closed', async ({ page }) => {
     await openModel(page)
     await page.evaluate(() => (window as unknown as { __sx: { setState(s: unknown): void } }).__sx.setState({ toast: { id: Date.now(), text: 'The 3D view will be slow here.', tone: 'info', details: 'Hardware acceleration looks off in this browser. Turn it on in the browser settings and reload.' } }))
     const toast = page.getByTestId('toast').filter({ hasText: 'The 3D view will be slow here.' }).last()
