@@ -2,7 +2,7 @@
 /* Copyright (C) 2026 The SlicerX contributors */
 /* The assistant's docked panel: a column on the right of the workspace that pushes the content over. */
 .app[data-mimir="open"] .sx-main { padding-right: var(--mimir-w, 380px); }
-.mimir-dock { position: absolute; top: 0; right: 0; bottom: 0; width: var(--mimir-w, 380px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); border-left: 1px solid var(--line-soft); background: var(--bg); z-index: 5; }
+.mimir-dock { position: absolute; top: 0; right: 0; bottom: 0; width: var(--mimir-w, 380px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); border-left: 1px solid var(--line-soft); background: var(--surface-page); z-index: 5; }
 .mimir-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line-soft); }
 .mimir-mark { display: inline-flex; color: var(--purple); }
 .mimir-mark .sx-ic { width: 18px; height: 18px; }
@@ -17,7 +17,7 @@
 .mimir-dock.sx-pilot .term-body { flex: 1; height: auto; min-height: 0; }
 /* One column: .sx-pilot's three (rail, chat, inspector) would leave the dock 248 px of chat.
    The theme's colors replace the terminal palette. Both classes, so this outranks .sx-pilot's own palette on the same element. */
-.mimir-dock.sx-pilot { --t-bg: var(--bg); --t-bar: var(--ink-2); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); --t-bubble: var(--panel-2); grid-template-columns: minmax(0, 1fr); }
+.mimir-dock.sx-pilot { --t-bg: var(--surface-page); --t-bar: var(--ink-2); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); --t-bubble: var(--chat-bubble); grid-template-columns: minmax(0, 1fr); }
 .mimir-dock > .mimir-head { grid-row: 1; }
 .mimir-dock > .cg-compact { grid-row: 2; }
 .mimir-dock > .term, .mimir-dock > .mimir-more, .mimir-dock > .ws-loading { grid-row: 3; }
@@ -41,6 +41,3 @@
   .mimir-dock { width: 100%; --mimir-w: 100%; }
 }
 .sx-pilot-dock .pc-notice { margin: var(--s-3); }
-/* the surface ladder at the owner's medium step (U1), chat only for now: see mimir.css */
-.mimir-dock { --panel: color-mix(in srgb, var(--ink-1), var(--fg) 7%); --panel-2: color-mix(in srgb, var(--ink-1), var(--fg) 14%); --panel-line: var(--line); }
-.mimir-dock.sx-pilot { --t-bubble: var(--panel); --field-bg: var(--panel-2); }
