@@ -452,6 +452,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [pending, setPending] = useState<{ kind: 'mirror' | 'round'; e: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [askPlane, setAskPlane] = useState(false)
+  // the Other plane question is the newest thing open, so Esc answers it first (Keep drawing) before the ladder
+  const askOpen = useRef(false)
   const [note, setNote] = useState<string | null>(null)
   // the dimension tool's picks so far, and its value field once the value is placed (or a kept one is edited)
   const [dimPicks, setDimPicks] = useState<DimPick[]>([])
@@ -1101,6 +1103,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       // Esc steps the sketch back before the view or anything else sees it (onKey's ladder), unless a menu or dialog
       // is open to take it
       if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !featureOnly && !document.querySelector('[role="menu"], [role="dialog"][aria-modal="true"]')) {
+        if (askOpen.current) {
+          e.preventDefault()
+          e.stopPropagation()
+          setAskPlane(false)
+          document.querySelector<HTMLElement>('[data-section="cad-tool"] [data-testid="sketch-other-plane"]')?.focus()
+          return
+        }
         onKey(e)
         if (e.defaultPrevented) e.stopPropagation()
         return
@@ -1625,6 +1634,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       Other plane
     </Button>
   )
+  askOpen.current = askPlane && sketch.length > 0
   const planeAsk = askPlane && sketch.length ? (
     <div className="cad-issues" role="group" aria-label="Other plane" data-testid="sketch-plane-ask">
       <Message text="Another plane starts a new sketch, and this drawing goes. Finish sketch first to keep it." />
