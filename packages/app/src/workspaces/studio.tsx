@@ -230,7 +230,7 @@ export function Studio() {
         </Suspense>
       ) : null}
       {mimir ? null : design ? (
-        <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280} tab={{ panel: 'model-tree', shutFully: true }} sheetTab={!phone}>
+        <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={240} tab={{ panel: 'model-tree', shutFully: true }} sheetTab={!phone}>
           <Suspense fallback={<Loading />}>
             <DesignLeft />
           </Suspense>
@@ -342,7 +342,7 @@ export function Studio() {
       </section>
 
       {mimir ? null : design ? (
-        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={312} tab={{ panel: 'model-inspector', shutFully: true }} docked={phone} sheetTab={!phone}>
+        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={280} tab={{ panel: 'model-inspector', shutFully: true }} docked={phone} sheetTab={!phone}>
           <Suspense fallback={<Loading />}>
             <DesignRight />
           </Suspense>

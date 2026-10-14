@@ -81,10 +81,9 @@
   --ti-hi: rgba(255, 255, 255, 0.42);
   --ti-sh: rgba(12, 10, 26, 0.13);
   --ti-sh3: rgba(12, 10, 26, 0.08);
-  /* the ribbon's selected and hover states: dark a rounded accent border with a soft glow, light a tinted backdrop */
-  --rib-sel-bg: color-mix(in srgb, var(--accent) 13%, transparent);
-  --rib-sel-bd: color-mix(in srgb, var(--accent) 62%, transparent);
-  --rib-sel-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent), 0 0 14px -1px color-mix(in srgb, var(--accent) 42%, transparent);
+  /* the ribbon's selected and hover states: selected is a filled segment one step up the surface ladder, no glow */
+  --rib-sel-bg: var(--ink-3);
+  --rib-sel-bd: var(--line);
   --rib-hover-bg: color-mix(in srgb, var(--fg) 5%, transparent);
 
   /* type */
@@ -203,8 +202,5 @@
   --ti-hi: rgba(255, 255, 255, 0.85);
   --ti-sh: rgba(40, 28, 78, 0.09);
   --ti-sh3: rgba(40, 28, 78, 0.06);
-  --rib-sel-bg: color-mix(in srgb, var(--accent) 10%, transparent);
-  --rib-sel-bd: color-mix(in srgb, var(--accent) 22%, transparent);
-  --rib-sel-glow: none;
   --rib-hover-bg: color-mix(in srgb, var(--fg) 4.5%, transparent);
 }
