@@ -304,6 +304,42 @@ fn from_gl(gl: &MeshGL64) -> TriMesh {
     TriMesh::new(positions, triangles)
 }
 
+/// validates the mesh representation stored by clients, after returning to its local frame.
+#[allow(clippy::cast_possible_truncation, reason = "mesh storage uses f32 positions")]
+pub(crate) fn storage_mesh(mesh: &TriMesh) -> Result<TriMesh> {
+    let mut out = mesh.clone();
+    for point in &mut out.positions {
+        *point = point.map(|v| f64::from(v as f32));
+    }
+    let refuse = |reason| {
+        Error::geometry(
+            "boolean",
+            format!("the result is unsafe at mesh storage precision ({reason}); change the cut or placement"),
+        )
+    };
+    out.validate("boolean")?;
+    if out.is_empty() {
+        return Ok(out);
+    }
+    if out.triangles.iter().any(|&t| {
+        let [a, b, c] = out.corners(t);
+        crate::vec3::len(crate::vec3::tri_normal(a, b, c)) <= 0.0
+    }) {
+        return Err(refuse("collapsed triangles"));
+    }
+    if !out.edge_report().is_watertight() {
+        return Err(refuse("open or non-manifold edges"));
+    }
+    let solid = Manifold::from_mesh_gl64(&to_gl(&out));
+    if solid.status() != MfError::NoError {
+        return Err(refuse("invalid topology"));
+    }
+    if solid.has_self_intersections() {
+        return Err(refuse("intersecting faces"));
+    }
+    Ok(out)
+}
+
 /// a boolean's result with its flat faces filled again (remesh.rs), for results people see
 pub fn tidy(mut out: TriMesh, report: &mut BooleanReport) -> TriMesh {
     out = crate::remesh::tidy_flat(&out, &crate::remesh::RemeshOptions::default());
