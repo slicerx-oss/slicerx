@@ -658,3 +658,26 @@ async fn the_agent_code_remembers_only_so_many_agents() {
     let r = call(&mut ws, 1, "pair", pp).await;
     assert_eq!(code(&r), "too_many", "{r}");
 }
+
+/// A remembered client that closes its connection hears the hub close it back, so a client process can end. The hub
+/// used to keep a sender for the connection (to close it on a revoke) after it ended, so it never answered the close.
+#[tokio::test]
+async fn a_remembered_client_that_closes_hears_the_hub_close_back() {
+    let link = hub().await;
+    let (mut agent, _, key) = remembered_agent(&link, "Claude Code").await;
+    agent.close(None).await.unwrap();
+    let end = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(m) = agent.next().await {
+            if m.is_err() || matches!(m, Ok(Message::Close(_))) {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(
+        end.is_ok(),
+        "the hub never closed the remembered client's connection"
+    );
+    // The same key still pairs afterwards.
+    let _again = reconnect(&link, &key).await;
+}
