@@ -9,6 +9,7 @@ import { setMotionPreference, TIP_TIMING, TooltipHost } from '@slicerx/ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import schema from '@slicerx/settings/schema.json'
 import { DEMOS, SETTING_DEMOS } from '../src/lib/demos'
 import { loadTips, resolveTip } from '../src/lib/tip-host'
 import { OPTION_TIPS, TIPS } from '../src/lib/tips'
@@ -153,7 +154,7 @@ describe('demo loops', () => {
   })
 
   it('has every settings, model tool and advanced loop, each with a sentence and a module under 8 KB', async () => {
-    const ids = ['layer-height', 'strength', 'infill-density', 'wall-loops', 'speed', 'speed-quality', 'speed-balanced', 'speed-fast', 'speed-fastest', 'supports', 'supports-off', 'supports-auto', 'supports-painted', 'enable-support', 'brim', 'brim-type', 'history-suppress', 'history-view', 'history-earlier', 'history-later', 'keep-dimension', 'mirror-x', 'mirror-y', 'mirror-z', 'print-sequence', 'whole-loop', 'drop-to-bed', 'round-corners', 'brim-ears', 'move', 'lay-on-face', 'rotate', 'scale', 'adv-acceleration', 'adv-jerk', 'adv-flow-ratio', 'adv-flow-ratio-outer', 'adv-flow-ratio-inner', 'adv-flow-ratio-infill', 'adv-flow-ratio-top', 'adv-flow-ratio-first', 'adv-fuzzy-skin', 'adv-fuzzy-skin-distance', 'adv-avoid-crossing', 'adv-bridge-sag', 'adv-bridge-angle', 'adv-infill-direction', 'adv-draft-shield', 'adv-elephant-foot', 'adv-internal-bridge', 'adv-ironing', 'adv-make-printable', 'adv-min-layer-time', 'adv-nozzle-temperature', 'adv-brim-ears-detect', 'adv-counterbore', 'adv-narrow-solid', 'adv-arc-fitting', 'adv-overhang-walls', 'adv-fan-layer-time', 'adv-flush-infill', 'adv-infill-anchor', 'adv-combine-infill', 'adv-infill-overlap', 'adv-interlocking', 'adv-lightning', 'adv-min-feature', 'adv-polyhole', 'adv-precise-wall', 'adv-painted-interlock', 'adv-ooze', 'adv-overhang-speed', 'adv-overhang-fan', 'adv-overhang-reverse', 'adv-part-fan', 'adv-precise-z', 'adv-part-roles', 'adv-tower-spot', 'adv-path-resolution', 'adv-top-density']
+    const ids = ['layer-height', 'strength', 'infill-density', 'wall-loops', 'speed', 'speed-quality', 'speed-balanced', 'speed-fast', 'speed-fastest', 'supports', 'supports-off', 'supports-auto', 'supports-painted', 'enable-support', 'brim', 'brim-type', 'history-suppress', 'history-view', 'history-earlier', 'history-later', 'keep-dimension', 'mirror-x', 'mirror-y', 'mirror-z', 'print-sequence', 'whole-loop', 'drop-to-bed', 'round-corners', 'brim-ears', 'move', 'lay-on-face', 'rotate', 'scale', 'adv-acceleration', 'adv-jerk', 'adv-flow-ratio', 'adv-flow-ratio-outer', 'adv-flow-ratio-inner', 'adv-flow-ratio-infill', 'adv-flow-ratio-top', 'adv-flow-ratio-first', 'adv-fuzzy-skin', 'adv-fuzzy-skin-distance', 'adv-avoid-crossing', 'adv-bridge-sag', 'adv-bridge-angle', 'adv-infill-direction', 'adv-draft-shield', 'adv-elephant-foot', 'adv-internal-bridge', 'adv-ironing', 'adv-make-printable', 'adv-min-layer-time', 'adv-nozzle-temperature', 'adv-brim-ears-detect', 'adv-counterbore', 'adv-narrow-solid', 'adv-arc-fitting', 'adv-overhang-walls', 'adv-fan-layer-time', 'adv-flush-infill', 'adv-infill-anchor', 'adv-combine-infill', 'adv-infill-overlap', 'adv-interlocking', 'adv-lightning', 'adv-min-feature', 'adv-polyhole', 'adv-precise-wall', 'adv-painted-interlock', 'adv-ooze', 'adv-overhang-speed', 'adv-overhang-fan', 'adv-overhang-reverse', 'adv-part-fan', 'adv-precise-z', 'adv-part-roles', 'adv-tower-spot', 'adv-path-resolution', 'adv-top-density', 'adv-pressure-advance', 'adv-prime-tower', 'adv-prime-tower-width', 'adv-prime-tower-infill-gap', 'adv-prime-volume', 'adv-prime-tower-brim-width', 'adv-raft-contact-distance', 'adv-raft-expansion', 'adv-raft-first-layer-density', 'adv-raft-first-layer-expansion', 'adv-extrusion-rate-smoothing', 'adv-rate-smoothing-segment-length', 'adv-rate-smoothing-outer-wall', 'adv-retraction-length', 'adv-retraction-speed']
     const seen = new Map<string, string>()
     for (const id of ids) {
       const d = DEMOS[id]
@@ -179,6 +180,11 @@ describe('demo loops', () => {
       const t = TIPS[k] as { demo?: string }
       expect(t.demo && DEMOS[t.demo], k).toBeDefined()
     }
+  })
+
+  it('maps only setting keys the settings schema has', () => {
+    const keys = new Set(schema.settings.map((d) => d.key))
+    for (const k of Object.keys(SETTING_DEMOS)) expect(keys.has(k), k).toBe(true)
   })
 
   it('shares a loop between tools that do the same thing', () => {
