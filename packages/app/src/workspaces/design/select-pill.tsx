@@ -58,7 +58,7 @@ export function SelectPill() {
               data-kind={k}
               aria-pressed={filter.includes(k)}
               aria-label={PICK_LABEL[k].label}
-              {...tipAttrs({ title: PICK_LABEL[k].label, body: `${PICK_LABEL[k].tip}. Shift adds or drops it.`, ...(key ? { key } : {}) })}
+              {...tipAttrs({ title: PICK_LABEL[k].label, body: `${PICK_LABEL[k].tip}. Shift adds or drops it.`, demo: `still-pick-${k}`, ...(key ? { key } : {}) })}
               onClick={(e) => setPickKind(k, e.shiftKey ? 'toggle' : 'only')}
             >
               <Icon name={ICON[k]} size={16} />

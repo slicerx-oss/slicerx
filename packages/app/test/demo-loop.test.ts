@@ -196,6 +196,35 @@ describe('demo loops', () => {
     expect(SETTING_DEMOS['interlocking_beam']).toBe('adv-interlocking')
   })
 
+  it('has the second batch of stills, and the Model tools and controls that show them', async () => {
+    const stills = ['still-line-width-support', 'still-line-width-bridge', 'still-model-tree', 'still-timeline', 'still-pick-object', 'still-pick-face', 'still-pick-edge', 'still-sketch-status', 'still-named-values', 'still-hollow', 'still-repair', 'still-measure']
+    const owner = new Map<string, string>()
+    for (const [name, d] of Object.entries(DEMOS)) {
+      if (!d.stage || [...owner.values()].some((n) => DEMOS[n] === d)) continue
+      const { id } = await d.stage()
+      expect(owner.get(id), `${name} shares ${id}`).toBeUndefined()
+      owner.set(id, name)
+    }
+    for (const id of stills) {
+      const d = DEMOS[id]
+      expect(d?.body?.length, id).toBeGreaterThan(20)
+      const tool = await d!.stage!()
+      expect(tool.css, id).toBe('')
+      expect(owner.get(tool.id), id).toBe(id)
+      expect(statSync(join(import.meta.dirname, '../src/demos', `${id}.ts`)).size, id).toBeLessThanOrEqual(8 * 1024)
+    }
+    expect(SETTING_DEMOS['support_line_width']).toBe('still-line-width-support')
+    expect(SETTING_DEMOS['bridge_line_width']).toBe('still-line-width-bridge')
+    // the shelf names each tool's demo by the tool's id
+    for (const [tool, still] of [['measure', 'still-measure'], ['values', 'still-named-values']] as const) expect(DEMOS[tool], tool).toBe(DEMOS[still])
+    // an anchor with a title and no sentence of its own takes the still's
+    anchor.setAttribute('data-tip-title', 'Measure')
+    anchor.setAttribute('data-tip-demo', 'measure')
+    const t = resolveTip(anchor, {})
+    expect(t?.demo).toBe(DEMOS['still-measure'])
+    expect(t?.body).toBe(DEMOS['still-measure']?.body)
+  })
+
   it('points each settings row and choice at its own loop', () => {
     for (const id of Object.values(SETTING_DEMOS)) expect(DEMOS[id], id).toBeDefined()
     expect(SETTING_DEMOS['sparse_infill_density']).toBe('infill-density')

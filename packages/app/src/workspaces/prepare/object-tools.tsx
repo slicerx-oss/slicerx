@@ -40,7 +40,7 @@ export function ToolsMenu({ open, onClose, align = 'end', at }: { open: boolean;
       {tools.map((t, i) => (
         <Fragment key={t.id}>
           {i > 0 && tools[i - 1]!.menu !== t.menu ? <MenuSeparator /> : null}
-          <MenuItem icon={t.icon} data-testid={`objects-tool-${t.id}`} {...(t.tip ? { 'data-tip': t.tip } : {})} disabled={t.needsSelection && !hasSel} onClick={() => choose(t)}>
+          <MenuItem icon={t.icon} data-testid={`objects-tool-${t.id}`} {...(t.tip ? { 'data-tip': t.tip } : t.still ? { 'data-tip-title': t.label, 'data-tip-demo': t.still } : {})} disabled={t.needsSelection && !hasSel} onClick={() => choose(t)}>
             {t.label}
           </MenuItem>
         </Fragment>

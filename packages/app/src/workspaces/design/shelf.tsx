@@ -170,7 +170,7 @@ export function Shelf() {
                   </button>
                   <Menu open={menu === e.menu} onClose={() => setMenu(null)} label={MENU_LABEL[e.menu].label}>
                     {e.tools.map((t) => (
-                      <MenuItem key={t.id} icon={t.icon} disabled={off(t)} onClick={() => choose(t)}>
+                      <MenuItem key={t.id} icon={t.icon} {...(t.still ? { 'data-tip-title': t.label, 'data-tip-demo': t.still } : {})} disabled={off(t)} onClick={() => choose(t)}>
                         {t.label}
                       </MenuItem>
                     ))}

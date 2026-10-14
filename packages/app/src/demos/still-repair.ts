@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Repair mesh: repair closes open edges and turns flipped faces to point outward, so the mesh slices as a closed solid.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'urep',
+  css: "",
+  body: "<polygon class=\"s-f2 s-ol\" points=\"37.6,85.5 67.9,103 67.9,71.5 37.6,54\"/><polygon class=\"s-f3 s-ol\" points=\"98.3,85.5 67.9,103 67.9,71.5 98.3,54\"/><polygon class=\"s-f1 s-ol\" points=\"67.9,36.5 98.3,54 67.9,71.5 37.6,54\"/><path class=\"s-wire\" style=\"stroke-opacity:.9\" d=\"M37.6 85.5l30.3-14M98.3 85.5l-30.4-14M67.9 36.5l0 35\"/><polygon class=\"s-hole\" points=\"67.9,36.5 98.3,54 67.9,71.5\"/><path class=\"s-n\" style=\"stroke:var(--stage-cut,#ff5555);stroke-width:1.8\" d=\"M67.9 36.5l30.4 17.5-30.4 17.5z\"/><polygon class=\"s-cf s-cl\" points=\"98.3,85.5 67.9,103 67.9,71.5\"/><rect class=\"sxs-pill\" x=\"40.4\" y=\"143\" width=\"55\" height=\"18\" rx=\"9\"/><text x=\"49.4\" y=\"155.7\">Before</text><polygon class=\"s-f2 s-ol\" points=\"197.6,85.5 227.9,103 227.9,71.5 197.6,54\"/><polygon class=\"s-f3 s-ol\" points=\"258.3,85.5 227.9,103 227.9,71.5 258.3,54\"/><polygon class=\"s-f1 s-ol\" points=\"227.9,36.5 258.3,54 227.9,71.5 197.6,54\"/><path class=\"s-wire\" style=\"stroke-opacity:.9\" d=\"M197.6 85.5l30.3-14M258.3 85.5l-30.4-14M227.9 36.5l0 35\"/><polygon class=\"s-af s-al\" points=\"227.9,36.5 258.3,54 227.9,71.5\" style=\"stroke-width:1.2\"/><rect class=\"sxs-pill\" x=\"203.4\" y=\"143\" width=\"49\" height=\"18\" rx=\"9\"/><text x=\"212.4\" y=\"155.7\">After</text><path class=\"s-n\" style=\"stroke:var(--stage-a1,#c9a6fb);stroke-width:1.2\" d=\"M77.9 53.8L112 56M78.3 86.7L112 98\"/><rect class=\"sxs-pill\" x=\"112\" y=\"47\" width=\"79\" height=\"18\" rx=\"9\"/><text x=\"121\" y=\"59.7\">Open edges</text><rect class=\"sxs-pill\" x=\"112\" y=\"89\" width=\"91\" height=\"18\" rx=\"9\"/><text x=\"121\" y=\"101.7\">Flipped face</text>",
+}
