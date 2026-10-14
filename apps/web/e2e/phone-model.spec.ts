@@ -223,7 +223,13 @@ test.describe('Model on a phone', () => {
     await expect(families.getByRole('radio', { name: 'Rectangle' })).toHaveAttribute('aria-checked', 'true')
     await expect(bar.getByRole('radiogroup', { name: 'Draw it by' })).toBeVisible()
     expect((await families.boundingBox())!).toEqual(row)
-    for (const b of await families.getByRole('radio').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(b).toBeGreaterThanOrEqual(44)
+    for (const b of await families.getByRole('radio').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))) {
+      expect(b.width).toBeGreaterThanOrEqual(44)
+      expect(b.height).toBeGreaterThanOrEqual(44)
+    }
+    // the row scrolls inside the bar instead of running off the screen
+    const rowBox = (await families.boundingBox())!
+    expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(page.viewportSize()!.width)
     // the hint speaks of taps
     await expect(page.locator('.sketch-hint')).toContainText('Tap')
     await expect(page.locator('.sketch-hint')).not.toContainText(/click/i)
