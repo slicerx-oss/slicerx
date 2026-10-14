@@ -93,11 +93,15 @@ export function PhoneShelf({ sheetKeys }: { sheetKeys: PhoneSheets }) {
   useEffect(() => () => setPhoneSketchSlot(null), [])
   // The tool sheet sits on the bar wherever the shell puts the view: the bar's top, as a gap above the screen's bottom.
   const barRef = useRef<HTMLDivElement>(null)
+  const placeBar = () => {
+    const el = barRef.current
+    if (el) document.documentElement.style.setProperty('--pbar-top-gap', `${Math.round(window.innerHeight - el.getBoundingClientRect().top)}px`)
+  }
   useLayoutEffect(() => {
     const el = barRef.current
     if (!el) return
     const root = document.documentElement
-    const place = () => root.style.setProperty('--pbar-top-gap', `${Math.round(window.innerHeight - el.getBoundingClientRect().top)}px`)
+    const place = placeBar
     place()
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place)
     ro?.observe(el)
@@ -108,6 +112,9 @@ export function PhoneShelf({ sheetKeys }: { sheetKeys: PhoneSheets }) {
       root.style.removeProperty('--pbar-top-gap')
     }
   }, [])
+  // The sketch's rows make the bar taller in the same render: measured here, before paint, so the sheet never sits on
+  // the bar's top row while the size observer waits for a frame (slow on a busy phone).
+  useLayoutEffect(placeBar, [sketching])
 
   // A tool that opens shows its panel in the Edit sheet, low over the view; the sheet goes again when the tool closes,
   // unless the person opened it themselves.
