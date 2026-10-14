@@ -100,7 +100,7 @@ try {
   }
   const summarize = (name, d) => {
     if (!d) return undefined
-    if (name === 'app_state') return { tab: d.tab, objects: d.plate?.objects?.map((o) => o.name), slicing: d.slicing?.status, dialogs: d.dialogs?.map((x) => x.title) }
+    if (name === 'app_state') return { tab: d.tab, objects: d.plate?.objects?.map((o) => o.name), slicing: d.slicing?.status, dialogs: d.dialogs?.map((x) => x.title), selection: d.selection?.objects?.map((o) => o.id), tool: d.tool?.view, open: d.panels?.open, camera: d.camera && { elevationDeg: d.camera.elevationDeg, lastView: d.camera.lastView } }
     if (name === 'app_slice') return { status: d.status, layers: d.layers, timeS: d.timeS, filamentG: d.filamentG, warnings: d.warnings?.length }
     if ('entries' in d) return { marker: d.marker, entries: d.entries.length, last: d.entries.at(-1) }
     return d
@@ -154,6 +154,43 @@ try {
   await expectOk('app_open_file', { path: file, timeoutMs: 120000 }, (d) => (d.state?.plate?.objects?.length ?? 0) > 0)
   await expectOk('app_element', { testid: 'object-row' }, (d) => d.matches?.length > 0)
   await expectOk('app_screenshot', { path: join(out, '02-opened.png') })
+
+  // The UI state read back after the client's own clicks and keys: the selection, the tool, the panels, the camera.
+  const stateUntil = async (name, ok, ms = 4000) => {
+    let d = null
+    for (const end = Date.now() + ms; ; ) {
+      d = (await call('app_state')).data ?? null
+      if ((d && ok(d)) || Date.now() > end) break
+      await sleep(200)
+    }
+    const pass = Boolean(d && ok(d))
+    record(name, pass, pass ? undefined : summarize('app_state', d))
+    return d
+  }
+  await expectOk('app_click', { testid: 'object-row' })
+  await stateUntil('app_state selection after a click on the object row', (d) => d.selection?.objects?.length === 1 && d.selection.primary === d.plate.objects[0]?.id)
+  await expectOk('app_press_key', { key: 'r' })
+  await stateUntil('app_state tool after R', (d) => d.tool?.view === 'rotate')
+  await expectOk('app_press_key', { key: 'm' })
+  await stateUntil('app_state tool after M', (d) => d.tool?.view === 'move' && d.tool.moveArrows === true)
+  await stateUntil('app_state camera pose', (d) => d.camera?.distanceMm > 0 && d.camera.targetMm?.length === 3)
+  await expectOk('app_press_key', { key: '1' })
+  await stateUntil('app_state camera after 1 (top view)', (d) => d.camera?.lastView === 'top' && d.camera.elevationDeg > 80)
+  await expectOk('app_press_key', { key: '7' })
+  await stateUntil('app_state camera after 7 (iso view)', (d) => d.camera?.lastView === 'iso' && d.camera.elevationDeg < 80)
+  const panes = (await call('app_state')).data?.panels?.panes ?? []
+  const left = panes.find((p) => p.side === 'left')
+  record('app_state panels list the edge panels', panes.length > 0 && Boolean(left), panes)
+  if (left) {
+    await expectOk('app_click', { testid: 'edge-tab-left' })
+    await stateUntil(`app_state panels after the ${left.panel} tab`, (d) => d.panels?.panes?.find((p) => p.side === 'left')?.open === !left.open)
+    await expectOk('app_click', { testid: 'edge-tab-left' })
+    await stateUntil(`app_state panels after the ${left.panel} tab again`, (d) => d.panels?.panes?.find((p) => p.side === 'left')?.open === left.open)
+  }
+  await expectOk('app_click', { testid: 'open-settings' })
+  await stateUntil('app_state panels with Settings open', (d) => d.panels?.open?.includes('settings'))
+  await expectOk('app_press_key', { key: 'Escape' })
+  await stateUntil('app_state panels with Settings shut', (d) => !d.panels?.open?.includes('settings'))
   const sliced = await expectOk('app_slice', { timeoutMs: 600000 }, (d) => d.status === 'done' && d.layers > 0)
   await expectOk('app_export_gcode', {}, (d) => d.bytes > 0 && existsSync(d.path))
   await expectOk('app_screenshot', { path: join(out, '03-sliced.png') })
