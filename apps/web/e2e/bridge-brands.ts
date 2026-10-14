@@ -167,6 +167,8 @@ function flows(p: BrandPrinter): void {
       await printersTab(page)
       const card = tile(page, p, 'Ready')
       await expect(card).toContainText('No camera')
+      // And that the camera guard is off for it, in words on the tile.
+      await expect(card).toContainText("The camera guard can't watch this printer.")
       // No empty-plate picture to take, and the hub refuses one.
       await card.getByRole('button', { name: `${p.name} options` }).click()
       const menu = page.getByRole('menu', { name: `${p.name} options` })
@@ -176,7 +178,7 @@ function flows(p: BrandPrinter): void {
       const watch = (hub.admin as unknown as { watch: { plateClear(id: string): Promise<unknown> } }).watch
       await expect(watch.plateClear(p.id)).rejects.toThrow(/no camera/)
       // The live view says it in words.
-      await expect((await liveView(page, p)).getByTestId('ph-placeholder')).toContainText('This printer has no camera.')
+      await expect((await liveView(page, p)).getByTestId('ph-no-camera')).toHaveText("This printer has no camera, so the camera guard can't watch it.")
     })
   }
 
@@ -349,6 +351,7 @@ function cameraTrip(p: BrandPrinter): void {
     await printersTab(page)
     await expect(tile(page, p, 'Ready')).toBeVisible({ timeout: 30_000 })
     await expect(tile(page, p)).not.toContainText('No camera')
+    await expect(tile(page, p)).not.toContainText("The camera guard can't watch this printer.")
   })
 
   test('the camera guard pauses for a hand, brings its card up on Printers, and Resume works', async ({ page }) => {
