@@ -24,7 +24,7 @@ import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js'
 const PKG = resolve(__dirname, '..')
 
 /** Demo tools that answer for real with no arguments on any machine: reads, plus opening an empty project. */
-const RUN_FOR_REAL = ['printer_list', 'slicerx_fleet_overview', 'spool_inventory', 'slicerx_project_open', 'project_show', 'slicerx_get_policy', 'list_fleets', 'slicerx_list_profiles', 'pending_approvals', 'slicerx_theme_get']
+const RUN_FOR_REAL = ['printer_list', 'slicerx_fleet_overview', 'spool_inventory', 'slicerx_project_open', 'project_show', 'slicerx_get_policy', 'list_fleets', 'slicerx_list_profiles', 'pending_approvals', 'slicerx_theme_get', 'integrations_list']
 
 /** Tools with no arguments to reject that may still run in the sweep: they change only the in-memory project. */
 const IN_MEMORY_EDITS = new Set(['slicerx_project_plate_add'])
