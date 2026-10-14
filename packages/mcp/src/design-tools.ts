@@ -208,7 +208,7 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     source: 'command',
     permission: 'slice',
     description:
-      `Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. Every step lands in the design's editable history, the same one ${productName()} keeps for a person, so slicerx_design_save writes a 3MF that opens with every step editable. Start empty (the first step makes a body) or from an STL. Units are mm, Z up, the bed at Z = 0.`,
+      `Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. Every step lands in the design's editable history, the same one ${productName()} keeps for a person, so slicerx_design_save writes a 3MF that opens with every step editable. Start empty (the first step makes a body) or from an STL. Units are mm, Z up, the bed at Z = 0.`,
     input: z.object({
       name: z.string().min(1).max(120).default('Design'),
       from: z.string().min(1).optional().describe('Start from this model: an STL path, URL or sample: name. Absent: an empty design'),

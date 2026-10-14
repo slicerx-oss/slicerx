@@ -8,7 +8,7 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type HoleSpec, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost } from '@slicerx/cad-history'
@@ -833,5 +833,128 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     },
   })
 
-  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell] as PilotTool<never>[]
+  /** A hole as the engine finds it (hole.find), the same object the app's hole step keeps. */
+  interface FoundHole {
+    entry: V3
+    axis: V3
+    diameterMm: number
+    depthMm: number
+    through: boolean
+  }
+  // no -0 in a read-back: it prints as 0 but compares unequal in a client's checks
+  const r3 = (v: number): number => Math.round(v * 1000) / 1000 || 0
+  const asHole = (v: Record<string, unknown>): FoundHole => {
+    const h = v as unknown as FoundHole
+    return { entry: h.entry, axis: h.axis, diameterMm: h.diameterMm, depthMm: h.depthMm, through: h.through }
+  }
+  /** An engine refusal of a pick, in the tool's words: what is there instead of a hole. */
+  const pickError = (err: unknown): unknown => {
+    const m = /^(?:sx-geom: )?hole: (.*)$/s.exec(err instanceof Error ? err.message : String(err))
+    return m ? new ToolInputError(`pick: ${m[1]}`, 'invalid_input') : err
+  }
+  const findHole = async (run: (req: Record<string, unknown>) => Promise<Record<string, unknown>>, req: Record<string, unknown>): Promise<FoundHole> => {
+    try {
+      return asHole(await run(req))
+    } catch (err) {
+      throw pickError(err)
+    }
+  }
+  /** The hole read back for a client: where it starts, which way is out of it, its size and how it ends. */
+  const readHole = (h: FoundHole): Record<string, unknown> => ({ center: h.entry.map(r3), axis: h.axis.map(r3), diameterMm: r3(h.diameterMm), depthMm: r3(h.depthMm), kind: h.through ? 'through' : 'blind' })
+  type HeadIn = { counterbore?: { diameter_mm: number; depth_mm: number } | undefined; countersink?: { diameter_mm: number; angle_deg: number } | undefined }
+  /**
+   * The hole as made, from the narrowest hole on the old one's axis line (its shaft), measured from the old entry so a
+   * counterbore or a countersink does not shorten it, with the head the spec asked for.
+   */
+  const readMade = (before: FoundHole, shaft: FoundHole, i: HeadIn): Record<string, unknown> => {
+    // the shaft may be found from either end (a countersunk one only from its flat end): its far end is the one
+    // farther from the old entry
+    const ends = [shaft.entry, sub(shaft.entry, shaft.axis.map((c) => c * shaft.depthMm) as V3)]
+    const far = ends.reduce((a, b) => (dot(sub(before.entry, b), before.axis) > dot(sub(before.entry, a), before.axis) ? b : a))
+    const head = i.counterbore
+      ? { head: 'counterbore', counterbore: { diameterMm: i.counterbore.diameter_mm, depthMm: i.counterbore.depth_mm } }
+      : i.countersink
+        ? { head: 'countersink', countersink: { diameterMm: i.countersink.diameter_mm, angleDeg: i.countersink.angle_deg } }
+        : { head: 'none' }
+    return { ...readHole({ ...before, diameterMm: shaft.diameterMm, depthMm: dot(sub(before.entry, far), before.axis), through: shaft.through }), ...head }
+  }
+
+  const holeTool = defineTool({
+    name: 'geom.hole',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description:
+      'Make a round hole in a model or a design another size, as the hole tool does: a new diameter, a blind hole\'s depth, and a counterbore or a countersink at its entry. Pick the hole by a point on its wall ("face", with the wall\'s normal pointing into the hole when the point is on an edge) or by "center" and "axis", a point on its axis line (its center on the face it starts at, say) and the axis either way round; a hole with a counterbore already is found by its shaft. Returns the hole as found before the change and as made after it (center, axis, diameterMm, depthMm, kind through or blind, head); a pick with no hole says what face is there. With "design" it adds the same hole step the app records, so it replays and edits like one made by hand; with a model it writes the new STL.',
+    input: z.object({
+      model: modelOrDesign,
+      design: designArg.optional(),
+      part: partArg.describe('With a design: the part the hole is in (default: the part picked, or the first part with a hole on that axis)'),
+      face: faceRef.optional().describe('A point on the hole\'s wall: {"at":[x,y,z]} (with "normal" on an edge) or {"triangle":n}'),
+      center: vec3.optional().describe('With axis: a point on the hole\'s axis line, mm, such as its center on the face it starts at; the end nearest it is the entry'),
+      axis: vec3.optional().describe('With center: the hole\'s axis, either way round'),
+      diameter_mm: z.number().positive().max(10_000).optional().describe('The new diameter; the hole keeps its own when left out'),
+      depth_mm: z.number().positive().max(10_000).optional().describe('A blind hole\'s new depth from its entry; a through hole stays through'),
+      counterbore: z.object({ diameter_mm: z.number().positive().max(10_000), depth_mm: z.number().positive().max(10_000) }).optional().describe('A counterbore at the entry for a screw head: wider than the hole, less deep'),
+      countersink: z.object({ diameter_mm: z.number().positive().max(10_000), angle_deg: z.number().min(30).max(150).default(90) }).optional().describe('A countersink at the entry for a flat head: its diameter on the face, and the cone\'s full angle (90 for most metric screws)'),
+      label: z.string().min(1).max(120).optional().describe('With a design: the step\'s name in the history, such as "M3 clearance"; default "Hole <diameter> mm"'),
+    }),
+    async run(i) {
+      oneOf(i)
+      if (i.face && (i.center || i.axis)) throw new ToolInputError('pick: give "face" (a point on the wall) or "center" and "axis", not both')
+      if (!i.face && !(i.center && i.axis)) throw new ToolInputError('pick: give "face" (a point on the hole\'s wall) or "center" and "axis" (a point on its axis line and the axis)')
+      if (i.diameter_mm === undefined && i.depth_mm === undefined && !i.counterbore && !i.countersink) throw new ToolInputError('give what the hole becomes: diameter_mm, depth_mm, counterbore or countersink')
+      if (i.counterbore && i.countersink) throw new ToolInputError('a hole takes a counterbore or a countersink, not both')
+      const spec = (h: FoundHole) => plain<HoleSpec>({
+        diameterMm: i.diameter_mm ?? h.diameterMm,
+        depthMm: i.depth_mm,
+        counterbore: i.counterbore && { diameterMm: i.counterbore.diameter_mm, depthMm: i.counterbore.depth_mm },
+        countersink: i.countersink && { diameterMm: i.countersink.diameter_mm, angleDeg: i.countersink.angle_deg },
+      })
+      const verb = (h: FoundHole, s: HoleSpec) => `Made the ${r3(h.diameterMm)} mm hole ${r3(s.diameterMm)} mm${s.counterbore ? ' with a counterbore' : s.countersink ? ' with a countersink' : ''}`
+      const onAxis = (h: FoundHole) => ({ at: h.entry, axis: h.axis })
+      if (i.design) {
+        const d = designOf(i.design)
+        const find = (part: number, req: Record<string, unknown>) => findHole((r) => engine('hole.find', r), { mesh: item(d, part), ...req })
+        let part: number
+        let before: FoundHole
+        if (i.face) {
+          const f = pickIn(d, i.face)
+          part = f.part
+          before = await find(part, { triangle: f.triangle, at: f.at })
+        } else {
+          // the first part with a hole on that line; with none, the most telling refusal (a round face there that is not a hole)
+          const tries = i.part !== undefined ? [i.part] : d.parts.map((_, k) => k)
+          const misses: unknown[] = []
+          let hit: { part: number; hole: FoundHole } | null = null
+          for (const k of tries) {
+            try {
+              hit = { part: k, hole: await find(k, { at: i.center, axis: i.axis }) }
+              break
+            } catch (err) {
+              misses.push(pickError(err))
+            }
+          }
+          if (!hit) throw misses.find((e) => !/on that axis line/.test(e instanceof Error ? e.message : '')) ?? misses[0] ?? new ToolInputError('part: the design has no parts')
+          part = hit.part
+          before = hit.hole
+        }
+        const s = spec(before)
+        await designs().add(d, part, plain<StepParams>({ op: 'hole.apply', hole: before, spec: s, label: i.label ?? `Hole ${Math.round(s.diameterMm * 100) / 100} mm` }))
+        const after = readMade(before, await find(part, onAxis(before)), i)
+        const out = stepOut(d, verb(before, s))
+        return { summary: out.summary, output: { ...out.output, part, before: readHole(before), after } }
+      }
+      const stlPath = await path(i.model!)
+      const find = (mesh: string, req: Record<string, unknown>) => findHole((r) => call('hole.find', r), { mesh: { stlPath: mesh }, ...req })
+      const before = i.face ? await find(stlPath, await pick(stlPath, i.face)) : await find(stlPath, { at: i.center, axis: i.axis })
+      const s = spec(before)
+      const out = await call('hole.apply', { mesh: { stlPath }, hole: before, spec: s })
+      const made = (out['mesh'] as { stlPath?: string } | undefined)?.stlPath
+      const after = made ? readMade(before, await find(made, onAxis(before)), i) : undefined
+      return { summary: verb(before, s), output: { ...out, before: readHole(before), ...(after ? { after } : {}) } }
+    },
+  })
+
+  return [faces, facePick, edgePick, sketchCheck, sketchSolve, sketchEdit, sketch, extrude, revolve, push, boolean, fillet, chamfer, info, measure, shell, holeTool] as PilotTool<never>[]
 }

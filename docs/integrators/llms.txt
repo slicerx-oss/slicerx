@@ -14,6 +14,7 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 - [engine-path.md](engine-path.md): Path B with the sx engine instead of the MCP server for slicing: Prepare tools in the viewport, the plate as a slice request, settings, exit codes and the preview
 - [whats-new-0.1.5.md](whats-new-0.1.5.md): what engine 0.1.5 changed for integrators, and what is not in it yet
 - [mimir-cloud.md](mimir-cloud.md): mimir cloud for an app with its own mimir chat: register with the edition's key, the Messages API allowlist (pinned model, thinking and server tool blocks passed back, base64 images, size limits), quota in millionths of a dollar, forget, sharing headers, refusals (never auto-retry a 429) and a fake server for tests
+- [holes.md](holes.md): `slicerx_geom_hole`, making a round hole another size (diameter, depth, counterbore or countersink) on a design or an STL, picked by its axis or its wall, with the hole read back before and after
 - [quickstart.md](quickstart.md): the reference for the server options, tools, settings layers, result fields, progress, token scopes and error codes
 - [updates.md](updates.md): staying current: build from desktop-v or engine-v release tags, read each release's "For editions and integrations" section, and watch the urgent and integrators labels between releases
 

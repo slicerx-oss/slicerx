@@ -22,6 +22,7 @@ const WORDS: Record<string, Words | null> = {
   'geom.fillet': { doing: 'Rounding the edges', done: 'Rounded the edges', caption: 'Fillet' },
   'geom.chamfer': { doing: 'Beveling the edges', done: 'Beveled the edges', caption: 'Chamfer' },
   'geom.boolean': { doing: 'Combining the bodies', done: 'Combined the bodies' },
+  'geom.hole': { doing: 'Sizing the hole', done: 'Sized the hole', caption: 'Hole' },
   'geom.measure': { doing: 'Measuring', done: 'Measured' },
   'geom.info': { doing: 'Checking the part', done: 'Checked the part' },
   'design.undo': { doing: 'Undoing the last step', done: 'Undid the last step' },
