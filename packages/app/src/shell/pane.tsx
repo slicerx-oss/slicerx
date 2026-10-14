@@ -52,8 +52,11 @@ export function setSheet(key: string, open: boolean): void {
   sheets.setState((s) => ({ open: open ? key : s.open === key ? null : s.open }))
 }
 
-/** A sheet's handle: a drag down of more than 80 px closes it, a shorter one springs back. */
-function SheetHandle({ sheet, onClose }: { sheet: () => HTMLElement | null; onClose: () => void }) {
+/**
+ * A sheet's handle: a drag down of more than 80 px closes it, a shorter one springs back. A docked sheet's handle folds
+ * it to its header instead (a tap or a drag down) and opens it again (a tap or a drag up).
+ */
+function SheetHandle({ sheet, onClose, onFold }: { sheet: () => HTMLElement | null; onClose: () => void; onFold?: (down: boolean | null) => void }) {
   const start = useRef<number | null>(null)
   const move = (e: PointerEvent<HTMLDivElement>) => {
     if (start.current === null) return
@@ -65,7 +68,8 @@ function SheetHandle({ sheet, onClose }: { sheet: () => HTMLElement | null; onCl
     const dy = e.clientY - start.current
     start.current = null
     sheet()?.style.removeProperty('transform')
-    if (dy > 80) onClose()
+    if (onFold) onFold(Math.abs(dy) < 8 ? null : dy > 0)
+    else if (dy > 80) onClose()
   }
   return (
     <div
@@ -88,7 +92,12 @@ function useChord(action: 'panel.left' | 'panel.right'): string | undefined {
   return keymapFor(choice.id, choice.overrides?.keys ?? {})[action] ?? undefined
 }
 
-export function SidePane({ side, ws, label, sections, children, footer, pinned, headExtra, width, tab, attention }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; pinned?: ReactNode; headExtra?: ReactNode; width?: number; tab?: PaneTab; attention?: boolean }) {
+/**
+ * `docked`: on a phone the sheet sits low over the view without a scrim, so the view above it still takes taps (a tool
+ * panel that waits for a pick), and its handle folds it to its header. `sheetTab: false`: on a phone the sheet has no
+ * tab on the screen edge; something else opens it (Model's bar).
+ */
+export function SidePane({ side, ws, label, sections, children, footer, pinned, headExtra, width, tab, attention, docked, sheetTab = true }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; pinned?: ReactNode; headExtra?: ReactNode; width?: number; tab?: PaneTab; attention?: boolean; docked?: boolean; sheetTab?: boolean }) {
   const wide = useMediaQuery('(min-width: 1280px)')
   const compact = useCompactLayout()
   const open = useApp((s) => railOpen(s.rails, ws, side, wide))
@@ -99,6 +108,10 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
   const sheet = tab !== undefined && compact
   const sheetKey = `${ws}:${side}`
   const sheetOpen = useStore(sheets, (s) => s.open === sheetKey)
+  const dock = sheet && docked === true
+  // a docked sheet folded to its header; it opens unfolded each time
+  const [folded, setFolded] = useState(false)
+  if (folded && !sheetOpen) setFolded(false)
   const dragging = useApp((s) => s.dragging)
   const bodyRef = useRef<HTMLDivElement>(null)
   const railRef = useRef<HTMLElement>(null)
@@ -114,13 +127,14 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
     el.inert = sheet && !sheetOpen
     if (!sheet || !sheetOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
+      // a docked sheet holds a tool, whose own Escape (cancel) goes first
+      if (e.key !== 'Escape' || e.defaultPrevented || dock) return
       e.preventDefault()
       setSheet(sheetKey, false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sheet, sheetOpen, sheetKey])
+  }, [sheet, sheetOpen, sheetKey, dock])
   // An open sheet takes its content's height (up to its 70% cap) and holds it, so a section opening inside scrolls
   // there instead of growing the sheet upward under the finger. Content that lands late (a lazy panel) may still size
   // it until the first press or key inside; from then on it holds.
@@ -173,13 +187,13 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
       items={compact || open || full ? [] : sections.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
       onSelect={onSelect}
       dropActive={dragging && side === 'right' && ws === 'prepare'}
-      className={['pane', resizing ? 'resizing' : '', edgeTab ? 'edged' : '', full ? 'shuts' : '', sheet ? 'sheet' : '', sheet && sheetOpen ? 'sheet-open' : ''].filter(Boolean).join(' ')}
+      className={['pane', resizing ? 'resizing' : '', edgeTab ? 'edged' : '', full ? 'shuts' : '', sheet ? 'sheet' : '', sheet && sheetOpen ? 'sheet-open' : '', dock ? 'sheet-docked' : '', dock && folded ? 'sheet-folded' : ''].filter(Boolean).join(' ')}
       railRef={railRef}
       style={{ '--w-side': `${side === 'right' ? size - 24 : size}px` } as CSSProperties}
       {...(tab ? { toggle: false, peekOnHover: false } : {})}
       {...(compact
         ? sheet
-          ? { edge: <SheetHandle sheet={() => railRef.current} onClose={() => setSheet(sheetKey, false)} /> }
+          ? { edge: <SheetHandle sheet={() => railRef.current} onClose={() => setSheet(sheetKey, false)} {...(dock ? { onFold: (down: boolean | null) => setFolded((f) => (down === null ? !f : down)) } : {})} /> }
           : {}
         : {
             edge: (
@@ -222,8 +236,8 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
       {rail}
       {createPortal(
         <>
-          {sheetOpen ? <div className="sheet-scrim" aria-hidden="true" onClick={() => setSheet(sheetKey, false)} /> : null}
-          <EdgeTab side={side} open={sheetOpen} onToggle={() => setSheet(sheetKey, !sheetOpen)} label={label} panel={tab.panel} controls={bodyId} attention={attention ?? false} className="sheet-tab" />
+          {sheetOpen && !dock ? <div className="sheet-scrim" aria-hidden="true" onClick={() => setSheet(sheetKey, false)} /> : null}
+          {sheetTab ? <EdgeTab side={side} open={sheetOpen} onToggle={() => setSheet(sheetKey, !sheetOpen)} label={label} panel={tab.panel} controls={bodyId} attention={attention ?? false} className="sheet-tab" /> : null}
         </>,
         document.body,
       )}

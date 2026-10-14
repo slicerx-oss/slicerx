@@ -447,6 +447,13 @@ Ids that tests read for their text:
 | `model-shelf-next-tool` | A tool in the next slot; `data-next-tool` names it (`chamfer` for the fillet tool's other shape). One that cannot take that many picks is `aria-disabled`, with the reason in its tip |
 | `model-shelf-next-count` | The next slot's chip: what is picked and how many (its `aria-label`, such as `1 face`, `3 edges` or `1 round face`); none for a single object |
 | `model-export` | The shelf's Export menu button, only on a host that cannot slice (the CAD-only browser build): STL, OBJ and the project file |
+| `phone-add`, `phone-sketch`, `phone-tools`, `phone-edit`, `phone-tree`, `phone-more` | Model's bar along the view's bottom on a phone: Add, Sketch, Tools, Edit, Tree and More |
+| `phone-tools-menu` | The menu that Tools opens on a phone: the shelf's tools in a list |
+| `phone-sketch-bar` | The phone bar's sketch rows (the drawing tools and Finish sketch), shown while a sketch is open |
+| `phone-timeline` | The timeline strip above the phone bar; shown only when the timeline has steps |
+| `phone-undo`, `phone-redo` | Undo and redo at the view's top right on a phone |
+| `phone-handles` | Move, Rotate and Scale under the selection pill on a phone |
+| `phone-handle-<kind>` | One of those handles; `<kind>` is `move`, `rotate` or `scale` |
 | `model-select-pill` | Model's selection pill at the top left of the view |
 | `model-select-filter` | A pick filter button in the pill; `data-kind` is `object`, `face` or `edge`, and `aria-pressed` says whether it is on |
 | `model-select-readout` | What is picked, in words ("1 face on Box") |

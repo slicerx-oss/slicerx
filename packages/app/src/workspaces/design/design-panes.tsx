@@ -142,10 +142,15 @@ function MultiSelection() {
 }
 
 export { Shelf } from './shelf'
+export { PhoneHandles, PhoneShelf, PhoneUndo } from './phone-shelf'
 export { SelectPill } from './select-pill'
 
-/** The timeline in its bottom panel. A step that breaks after an edit asks for attention. */
-export function DesignTimeline() {
+/**
+ * The timeline in its bottom panel. A step that breaks after an edit asks for attention. On a phone it is a strip above
+ * Model's bar instead, shown once there is something in it.
+ */
+export function DesignTimeline({ phone = false }: { phone?: boolean }) {
+  const items = useApp((s) => s.timeline.items.length)
   const broken = useApp((s) => {
     const e = s.historyEdit?.original ?? s.plate.find((p) => p.id === s.selection)
     return e?.history?.steps.filter((st) => st.broken !== undefined && !st.suppressed).length ?? 0
@@ -156,6 +161,12 @@ export function DesignTimeline() {
     if (broken > last.current) setAttention((n) => n + 1)
     last.current = broken
   }, [broken])
+  if (phone)
+    return items ? (
+      <div className="ptl sx-overlay" data-testid="phone-timeline" role="group" aria-label="Timeline">
+        <Timeline />
+      </div>
+    ) : null
   return (
     <BottomPanel label="Timeline" memory="prepare-design:timeline" panel="model-timeline" attention={attention}>
       <Timeline />
