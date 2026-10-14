@@ -680,12 +680,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* The plate picker (plate-picker.tsx): one row of fixed widths at the foot of the view. The previous and next buttons
    and the plate between them never change size, whatever the plate's name, number or slice. */
 .plate-picker-wrap { position: relative; flex: none; width: min(440px, 100%); }
-.plate-picker { display: flex; align-items: center; gap: 4px; height: 44px; padding: 3px; border-radius: var(--r-md); }
-.pp-step { flex: none; display: grid; place-items: center; width: 32px; height: 36px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); cursor: pointer; }
+.plate-picker { display: flex; align-items: center; gap: 4px; height: calc(var(--h-md) + 8px); padding: 3px; border-radius: var(--r-md); box-shadow: var(--shadow-float), var(--lift-edge); }
+.pp-step { flex: none; display: grid; place-items: center; width: 32px; height: var(--h-md); padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); cursor: pointer; }
 .pp-step:hover:not(:disabled) { background: var(--ink-3); }
 .pp-step:disabled { color: var(--dim); opacity: 0.45; cursor: default; }
 .pp-step:focus-visible, .pp-main:focus-visible, .pp-card:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
-.pp-main { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 3px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-1); color: var(--fg); font: var(--fw-medium) calc(12.5px * var(--text-scale)) var(--f-body); white-space: nowrap; cursor: pointer; text-align: left; }
+.pp-main { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: var(--h-md); padding: 0 8px 0 3px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-1); color: var(--fg); font: var(--fw-medium) calc(12.5px * var(--text-scale)) var(--f-body); white-space: nowrap; cursor: pointer; text-align: left; }
 .pp-main:hover { border-color: var(--muted); }
 .pp-main[aria-expanded="true"] { border-color: var(--accent); }
 .pp-main > .sx-ic { flex: none; color: var(--muted); transition: transform var(--t-fast) var(--ease); }
@@ -700,7 +700,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .pp-name { flex: 1 1 0; color: var(--muted); }
 .pp-of { font-weight: var(--fw-semibold); }
 /* The sheet of every plate opens above the picker, up to 400 px tall and never into the toolbar's lane at the top. */
-.pp-sheet { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: var(--z-menu); width: min(620px, calc(100cqw - 24px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; padding: 8px; border-radius: var(--r-md); box-shadow: var(--shadow-pop); background: color-mix(in srgb, var(--ink-1) 96%, transparent); }
+.pp-sheet { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: var(--z-menu); width: min(620px, calc(100cqw - 24px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; padding: 8px; border-radius: var(--r-md); box-shadow: var(--shadow-pop), var(--lift-edge); background: color-mix(in srgb, var(--ink-1) 96%, transparent); }
 .pp-find { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pp-search { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-0); color: var(--muted); }
 .pp-search:focus-within { border-color: var(--accent); box-shadow: var(--focus-field); }

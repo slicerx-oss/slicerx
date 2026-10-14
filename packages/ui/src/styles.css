@@ -447,26 +447,26 @@ button { cursor: pointer; }
 /* toasts */
 .sx-toasts { position: fixed; left: var(--overlay-center, 50%); top: var(--overlay-top, auto); bottom: var(--overlay-bottom, calc(var(--toast-floor) + env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; gap: 0; align-items: stretch; width: max-content; max-width: var(--overlay-width, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
 /* The toasts up at once read as one card, a line each, with one time that waits while the pointer is on the card. */
-.sx-toasts:not(:empty) { pointer-events: auto; padding: 4px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-4) 90%, transparent); box-shadow: var(--shadow-float); }
+.sx-toasts:not(:empty) { pointer-events: auto; padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-4) 90%, transparent); box-shadow: var(--shadow-float), var(--lift-edge); }
 /* Out of sight, time stopped, while something covers their place (the plate grid). */
 .sx-toasts[data-held] { visibility: hidden; }
-.sx-toast { pointer-events: none; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 8px 4px 14px; font-size: var(--fs-md); max-width: 100%; animation: sx-toast-in var(--t-slow) var(--ease); }
-.sx-toast + .sx-toast { border-top: 1px solid var(--line-soft); }
+.sx-toast { pointer-events: none; display: flex; align-items: center; gap: 10px; min-height: var(--h-sm); font-size: var(--fs-md); max-width: 100%; animation: sx-toast-in var(--t-slow) var(--ease); }
+.sx-toast + .sx-toast { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
 .sx-toast button, .sx-toast a { pointer-events: auto; }
 .sx-toast .sx-ic { width: 16px; height: 16px; flex: none; }
-/* A line is its first sentence, cut to fit; Details shows the rest in place, below it, so nothing above moves. */
-.sx-toast-text { flex: 1 1 auto; min-width: 0; max-width: 56ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* A line is its first sentence, wrapped to two lines at most; Details shows the rest in place, below it, so nothing above moves. */
+.sx-toast-text { flex: 1 1 auto; min-width: 0; max-width: 56ch; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; }
 .sx-toast-more { display: none; }
 .sx-toast[data-expanded] { align-items: flex-start; }
 .sx-toast[data-expanded] > .sx-ic { margin-top: 6px; }
-.sx-toast[data-expanded] .sx-toast-text { padding: 5px 0; white-space: normal; max-height: 9.5em; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; }
+.sx-toast[data-expanded] .sx-toast-text { display: block; padding: 5px 0; max-height: 9.5em; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; }
 .sx-toast[data-expanded] .sx-toast-more { display: inline; }
-.sx-toast-details, .sx-toast-action { flex: none; }
+.sx-toast-details, .sx-toast-action, .sx-toast-dismiss { flex: none; }
 .sx-toast-details::after { content: attr(data-label); }
-.sx-toast[data-tone="ok"] .sx-ic { color: var(--green); }
-.sx-toast[data-tone="warn"] .sx-ic { color: var(--orange); }
-.sx-toast[data-tone="error"] .sx-ic { color: var(--red); }
-.sx-toast[data-tone="info"] .sx-ic { color: var(--cyan); }
+.sx-toast[data-tone="ok"] > .sx-ic { color: var(--green); }
+.sx-toast[data-tone="warn"] > .sx-ic { color: var(--orange); }
+.sx-toast[data-tone="error"] > .sx-ic { color: var(--red); }
+.sx-toast[data-tone="info"] > .sx-ic { color: var(--cyan); }
 @keyframes sx-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* phone width */
