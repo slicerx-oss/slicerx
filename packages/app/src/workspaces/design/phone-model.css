@@ -57,8 +57,11 @@
 /* Finish sketch at the end of the second row, which keeps its room whatever the family */
 .pbar-sketch-end { position: absolute; right: 6px; bottom: 6px; height: 40px; display: flex; align-items: center; }
 .pbar-sketch-end .sx-btn { height: 40px; }
-.pbar[data-sketch] .sketch-variants { margin-right: 136px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.pbar-sketch .sketch-tools { width: 100%; height: 48px; }
+.pbar[data-sketch] .sketch-variants { margin-right: 136px; min-width: 0; overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 calc(100% - 16px), transparent); }
+/* the nine families stay a finger wide and the row scrolls, faded at its edges */
+.pbar-sketch .sketch-tools { width: 100%; height: 48px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 12px), transparent); }
+.pbar-sketch .sketch-tools::-webkit-scrollbar { display: none; }
+.pbar-sketch .sketch-tools.sx-seg > button { flex: 1 0 44px; min-width: 44px; }
 .pbar-sketch .sketch-tools .sx-seg-opt, .pbar-sketch .sketch-tools button { min-height: 44px; }
 .pbar-sketch .sketch-variants { min-height: 40px; margin-top: 0; margin-bottom: 0; margin-left: 0; }
 .pbar-sketch .sketch-variants button { min-height: 36px; }
