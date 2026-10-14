@@ -1163,21 +1163,23 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           ) : null}
           <div className="sketch-palette" role="group" aria-label="Sketch palette">
             <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
-            <div className="sketch-toggles">
+            <Row label="Grid" htmlFor="sk-grid">
               <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
-              <label htmlFor="sk-grid">Grid</label>
-              <Switch id="sk-snap" checked={pal.snap} onChange={(on) => setPal({ snap: on })} label="Snap" />
-              <label htmlFor="sk-snap">Snap</label>
-              <Select id="sk-step" size="sm" aria-label="Snap step" value={pal.step} onChange={(e) => setPal({ step: e.target.value })}>
+            </Row>
+            {/* one control for snapping: Off or the step, so the closed select shows when snapping is off */}
+            <Row label="Snap to grid" htmlFor="sk-step" className="sketch-snap">
+              <Select id="sk-step" size="sm" value={pal.snap ? pal.step : 'off'} onChange={(e) => setPal(e.target.value === 'off' ? { snap: false } : { snap: true, step: e.target.value })}>
+                <option value="off">Off</option>
                 {gridSteps(units, pal.step).map((g) => (
                   <option key={g.value} value={g.value}>{g.label}</option>
                 ))}
               </Select>
-            </div>
-            <div className="sketch-toggles" data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">
-              <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
-              <label htmlFor="sk-section">Section</label>
-            </div>
+            </Row>
+            <Row label="Section" htmlFor="sk-section" className="sketch-section">
+              <span className="sketch-tip" data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">
+                <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
+              </span>
+            </Row>
             <fieldset className="sketch-show">
               <legend>Show</legend>
               {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (

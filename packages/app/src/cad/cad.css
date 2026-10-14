@@ -35,6 +35,8 @@
 .cad-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
 /* a tool's own actions stay on screen at the foot of the sidebar while the panel scrolls above them */
 .cad-footer { position: sticky; bottom: 0; z-index: 3; margin: 0 -18px -16px; padding: 10px 18px 16px; background: var(--ink-1); border-top: 1px solid var(--line-soft); }
+/* a control scrolled into view (by focus, a click or a script) stops clear of the sticky footer, never under it */
+.sx-rail-body:has(.cad-footer) { scroll-padding-bottom: 96px; }
 .cad-footer[data-more]::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 28px; background: linear-gradient(to bottom, transparent, var(--ink-1)); pointer-events: none; }
 /* A tool's number: the body font with even figures, the unit once beside the label. */
 .cad-num { font-variant-numeric: tabular-nums; }
@@ -175,3 +177,6 @@
 @supports selector(::-webkit-scrollbar) {
   .sx-rail-body .cad-footer, .sx-rail-pin .cad-footer { margin-right: -12px; padding-right: 12px; }
 }
+/* Sketch: Snap to grid is one inline row, a single compact select at the right edge (Off or the step) */
+.tp-row.sketch-snap > .sx-selectwrap { width: var(--w-ctl); }
+.tp-row > .sketch-tip { display: flex; justify-self: end; }

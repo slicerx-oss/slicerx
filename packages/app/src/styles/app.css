@@ -614,7 +614,13 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .plate-tools .sx-btn[aria-pressed="true"] { color: var(--fg); background: var(--accent-tint); box-shadow: inset 0 -2px 0 var(--accent); }
 .plate-tools-sep { width: 1px; height: 20px; background: var(--line-soft); margin: 0 4px; }
 .plate-tools[data-placement="left-of-viewport"] .plate-tools-sep { width: 20px; height: 1px; margin: 4px 0; }
-.tf { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--line-soft); }
+.tf { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--line-soft); container-type: inline-size; }
+/* spec 2b: narrower than the label plus three 64 px cells (an 84 px label, an 8 px gap, 192 px), each X, Y, Z row
+   stacks its label 4 px above a full-width control, so values keep their room in a 280 px panel */
+@container (max-width: 283px) {
+  .tf-row.sx-vector { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .tf { gap: 12px; }
+}
 .tf-row:not(.sx-vector) { display: grid; grid-template-columns: 84px repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
 .tf-name { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; font: var(--fw-medium) var(--fs-md)/1.15 var(--f-body); color: var(--muted); }
 .tf-name small { font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--dim); }
