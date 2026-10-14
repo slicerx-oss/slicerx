@@ -8,7 +8,7 @@ import { Button, Seg, Select, SwitchRow } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
 import { formatShortcut } from '../lib/keys'
-import { AccentGroup, AccessibilityGroup, SetRow, TextGroup, ToolbarGroup } from '../shell/appearance-settings'
+import { AccentGroup, AccessibilityGroup, SetRow, setAppearance, TextGroup, ToolbarGroup } from '../shell/appearance-settings'
 import { AUTO_SLICE_DETAIL, AUTO_SLICE_MODES, autoSliceFields, autoSliceMode } from '../state/auto-slice-mode'
 import { MULTI_BODY_DETAIL, MULTI_BODY_MODES } from '../state/multi-body'
 import { ThemeSettingsSection } from '../shell/theme-settings'
@@ -46,6 +46,11 @@ function ElectricityFields() {
   )
 }
 
+const FRAMING_DETAIL = {
+  selection: 'Model frames the part when it opens or one is added, and the selection each time it changes.',
+  open: 'Model frames the part when it opens or one is added. Picking leaves the camera where it is.',
+} as const
+
 export function LookSettingsSection() {
   const choice = useLookChoice()
   const firstRun = useApp((s) => s.firstRun)
@@ -55,6 +60,7 @@ export function LookSettingsSection() {
   const slices = hostSlices()
   // Changing it never moves the session you are in; it applies from the next launch.
   const openIn = useApp((s) => s.modelModeDefault)
+  const framing = useApp((s) => s.appearance.modelFraming)
   const custom = Boolean(choice.overrides && Object.keys(choice.overrides).length)
   const go = (fn: () => void) => {
     set({ settingsOpen: false, settingsSection: null })
@@ -82,22 +88,40 @@ export function LookSettingsSection() {
       <TextGroup />
       <ToolbarGroup />
       <AccessibilityGroup />
-      {modeling && slices ? (
+      {modeling ? (
         <div className="set-group">
           <h4>Workspace</h4>
-          <div className="set-seg-row">
+          {slices ? (
+            <div className="set-seg-row">
+              <span className="set-seg-text">
+                <span>Open models in</span>
+                <small>The tab the plate opens in. {formatShortcut('Mod+E')} switches any time.</small>
+              </span>
+              <Seg
+                size="sm"
+                label="Open models in"
+                value={openIn}
+                onChange={(v) => set({ modelModeDefault: v })}
+                options={[
+                  { value: 'slice', label: 'Slicing' },
+                  { value: 'design', label: 'Model' },
+                ]}
+              />
+            </div>
+          ) : null}
+          <div className="set-seg-row" data-testid="set-model-framing">
             <span className="set-seg-text">
-              <span>Open models in</span>
-              <small>The tab the plate opens in. {formatShortcut('Mod+E')} switches any time.</small>
+              <span>Frame the view</span>
+              <small>{FRAMING_DETAIL[framing]}</small>
             </span>
             <Seg
               size="sm"
-              label="Open models in"
-              value={openIn}
-              onChange={(v) => set({ modelModeDefault: v })}
+              label="Frame the view"
+              value={framing}
+              onChange={(v) => setAppearance('modelFraming', v)}
               options={[
-                { value: 'slice', label: 'Slicing' },
-                { value: 'design', label: 'Model' },
+                { value: 'selection', label: 'Always' },
+                { value: 'open', label: 'On open and add' },
               ]}
             />
           </div>

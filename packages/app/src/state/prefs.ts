@@ -360,9 +360,11 @@ export interface Appearance {
   accent: 'theme' | 'blue' | 'cyan' | 'green' | 'pink' | 'orange'
   /** The Model ribbon's icon size: Large 32 px, Medium 24 px, Small 16 px with the names as tips. */
   toolbarSize: 'large' | 'medium' | 'small'
+  /** When Model frames the view: on every selection change outside a tool, or only when Model opens or an object is added. */
+  modelFraming: 'selection' | 'open'
 }
 
-export const DEFAULT_APPEARANCE: Appearance = { textSize: 'default', fontWeight: 'regular', contrast: 'standard', colorVision: 'standard', density: 'comfortable', accent: 'theme', toolbarSize: 'large' }
+export const DEFAULT_APPEARANCE: Appearance = { textSize: 'default', fontWeight: 'regular', contrast: 'standard', colorVision: 'standard', density: 'comfortable', accent: 'theme', toolbarSize: 'large', modelFraming: 'selection' }
 
 /** Each field on its own. The old toolpath palette switch becomes red-green color vision. */
 function appearance(v: unknown, colorblindToolpaths: boolean): Appearance {
@@ -376,6 +378,7 @@ function appearance(v: unknown, colorblindToolpaths: boolean): Appearance {
     density: oneOf(r['density'], ['compact', 'comfortable', 'roomy'] as const) ?? d.density,
     accent: oneOf(r['accent'], ['theme', 'blue', 'cyan', 'green', 'pink', 'orange'] as const) ?? d.accent,
     toolbarSize: oneOf(r['toolbarSize'], ['large', 'medium', 'small'] as const) ?? d.toolbarSize,
+    modelFraming: oneOf(r['modelFraming'], ['selection', 'open'] as const) ?? d.modelFraming,
   }
 }
 
