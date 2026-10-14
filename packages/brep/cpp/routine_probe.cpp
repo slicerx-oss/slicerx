@@ -28,6 +28,8 @@ using sxj::Value;
 
 namespace {
 
+constexpr double pi = 3.14159265358979323846;
+
 Value out = Value::object();
 
 void put(const std::string& name, const std::vector<double>& v)
@@ -510,7 +512,7 @@ void integrator_cases()
     };
     std::vector<F> fs{{"exp", [](double x) { return std::exp(x); }, 0, 1, std::exp(1.0) - 1},
                       {"x4", [](double x) { return x * x * x * x; }, 0, 2, 32.0 / 5},
-                      {"sin", [](double x) { return std::sin(x); }, 0, M_PI, 2},
+                      {"sin", [](double x) { return std::sin(x); }, 0, pi, 2},
                       {"runge", [](double x) { return 1 / (1 + x * x); }, -5, 5, 2 * std::atan(5.0)},
                       {"reversed", [](double x) { return std::exp(x); }, 1, 0, 1 - std::exp(1.0)},
                       {"large", [](double x) { return 1e6 * std::cos(x); }, 0, 1, 1e6 * std::sin(1.0)}};
@@ -621,8 +623,8 @@ void property_cases()
         int shape;
         double volume, area;
     };
-    for (S c : {S{"sphere", 0, 36 * M_PI, 36 * M_PI}, S{"cone", 1, 7 * M_PI, M_PI * (5 + 3 * std::sqrt(10.0))},
-                S{"torus", 2, 10 * M_PI * M_PI, 20 * M_PI * M_PI}, S{"cylinder", 3, 20 * M_PI, 28 * M_PI}}) {
+    for (S c : {S{"sphere", 0, 36 * pi, 36 * pi}, S{"cone", 1, 7 * pi, pi * (5 + 3 * std::sqrt(10.0))},
+                S{"torus", 2, 10 * pi * pi, 20 * pi * pi}, S{"cylinder", 3, 20 * pi, 28 * pi}}) {
         SmBrep* b = nullptr;
         if (c.shape == 0) SmApiCreateSphere(SmVector3d(1, 2, 3), 3, b);
         else if (c.shape == 1) SmApiCreateCone(SmVector3d(0, 0, 0), 2, 1, 3, b);
