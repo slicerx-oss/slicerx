@@ -123,16 +123,18 @@ test('the solid card opens on a closed profile, and nothing above it moves', asy
   await expect(solid.locator('.tp-card-reason')).not.toHaveText('Draw a closed outline to make a solid.')
   expect(await top(page, 'sketch-solid')).toBe(solidY)
 
-  // a closed rectangle opens it below, the drawing card where it was
-  const drawing = await page.getByTestId('sketch-drawing').boundingBox()
+  // a closed rectangle opens it below, the drawing card where it was (Rectangle's ways row is already there)
   await page.locator('body').press('r')
+  await expect(panel.locator('.sketch-variants')).toHaveCount(1)
+  const drawing = await page.getByTestId('sketch-drawing').boundingBox()
+  const solidAt = await top(page, 'sketch-solid')
   await sketchAt(page, 'click', [-3, -3])
   await sketchAt(page, 'click', [3, 3])
   await expect(solid).not.toHaveAttribute('data-muted')
   await expect(solid.locator('.tp-card-reason')).toHaveCount(0)
   await expect(solid.getByRole('radiogroup', { name: 'Result' })).toBeVisible()
   expect(await page.getByTestId('sketch-drawing').boundingBox()).toEqual(drawing)
-  expect(await top(page, 'sketch-solid')).toBe(solidY)
+  expect(await top(page, 'sketch-solid')).toBe(solidAt)
   // Extrude or Revolve heads the open card; Direction and Result are words, with no marks
   await expect(solid.getByRole('radiogroup', { name: 'Finish with' }).getByRole('radio', { name: 'Extrude' })).toHaveAttribute('aria-checked', 'true')
   for (const [group, names] of [['Direction', ['One side', 'Symmetric', 'Two sides']], ['Result', ['Join', 'Cut', 'New body']]] as const)
