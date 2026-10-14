@@ -88,12 +88,13 @@ test.describe('the dimension sheet', () => {
     await page.screenshot({ path: test.info().outputPath('mimir-sheet-dark.png') })
 
     // a callout focuses its row on the record, and the focused row lights its measurement in the drawing
-    const fixed = ['mimir-sheet-confirm', 'mimir-sheet-cancel']
-    const before = await boxes(page, fixed)
     const row = rec.locator('.sheet-rec-row[data-dim="case_allowance"]')
     const field = row.locator('input')
     await page.locator('[data-testid="mimir-sheet-callout"][data-key="case_allowance"]').first().click()
     await expect(field).toBeFocused()
+    // from here on the record's buttons hold still while its rows and status change
+    const fixed = ['mimir-sheet-confirm', 'mimir-sheet-cancel']
+    const before = await boxes(page, fixed)
     await expect(page.locator('[data-testid="mimir-sheet-callout"][data-key="case_allowance"][data-on]')).toHaveCount(2)
     await expect(page.locator('.mimir-dim[data-key="case_allowance"][data-on]')).toHaveCount(2)
     // the case room is measured over the part, so its callout sits on a leader
