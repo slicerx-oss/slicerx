@@ -246,7 +246,7 @@ app's 213 test files fail per seed, all known and listed there, so a nightly run
 
 `require-green.sh <commit>` reads the commit's check-runs from GitHub (read only) and requires every check in
 `required-checks.txt` to be success or skipped. A check still pending, or not yet reported, is waited for up to
-`SX_GREEN_WAIT` seconds (default 600) and then counts as not green. `apps/desktop/release/publish.sh` runs it before it
+`SX_GREEN_WAIT` seconds (default 3600, an hour: a push to main takes 35 to 43 minutes to turn every required check green) and then counts as not green. `apps/desktop/release/publish.sh` runs it before it
 builds or publishes anything. `SX_PUBLISH_CHECK_ONLY=1 publish.sh ...` (or `require-green.sh --dry-run <commit>`) only
 reports. `SX_PUBLISH_ALLOW_RED=1` lets a red commit through with a loud warning: for an owner-approved emergency only.
 Keep `required-checks.txt` in step with the jobs in `ci.yml`.
