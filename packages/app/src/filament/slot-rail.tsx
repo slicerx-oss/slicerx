@@ -186,7 +186,7 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
                     data-parts={n}
                     data-mismatch={m ? 'true' : undefined}
                     data-empty={none ? 'true' : undefined}
-                    {...tipAttrs(none ? { title: `${s.label} is empty`, body: 'Load a spool on the printer, or click to set what this project prints with here.' } : { title: `${s.label} ${slotWords(s)}${lefts ? `, ${lefts}` : ''}`, body: m ? mismatchText(m) : `Click to print ${what} with it. Right-click to change what it holds.` })}
+                    {...tipAttrs(none ? { title: `${s.label} is empty`, body: 'Load a spool on the printer, or click to set what this project prints with here.' } : { title: `${s.label} ${slotWords(s)}${lefts ? `, ${lefts}` : ''}`, body: m ? mismatchText(m) : `${n ? '' : 'Not used. '}Click to print ${what} with it. Right-click to change what it holds.` })}
                     onPointerEnter={() => set({ hoverSlot: s.index })}
                     onFocus={() => set({ hoverSlot: s.index })}
                     onBlur={() => set({ hoverSlot: null })}
