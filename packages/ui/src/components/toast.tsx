@@ -239,9 +239,9 @@ function ToastText({ message, expanded, onDetails }: { message: ReactNode; expan
         {rest ? <span className="sx-toast-more"> {rest}</span> : null}
       </span>
       {rest ? (
-        <Button size="sm" variant="ghost" className="sx-toast-details" data-testid="toast-details" aria-expanded={expanded} onClick={onDetails}>
-          {expanded ? 'Less' : 'Details'}
-        </Button>
+        // The label is drawn from data-label, so a toast's text (what it announces, and what a client reads) stays its
+        // message.
+        <Button size="sm" variant="ghost" className="sx-toast-details" data-testid="toast-details" data-label={expanded ? 'Less' : 'Details'} aria-label={expanded ? 'Less' : 'Details'} aria-expanded={expanded} onClick={onDetails} />
       ) : null}
     </>
   )
