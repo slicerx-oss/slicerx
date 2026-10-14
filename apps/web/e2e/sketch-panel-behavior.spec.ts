@@ -349,6 +349,8 @@ for (const height of [844, 700, 600]) {
     await expect(sheet.locator('[data-section="transform"]')).toHaveCount(0)
     await toggle.tap()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // a line in progress: the reason Extrude is off is said in a finger's words
+    await expect(sheet.getByTestId('model-tool-reason')).toHaveText('End the shape being drawn first (press and hold).')
     // a closed square, so the solid settings are all there
     await phoneClick(page, [10, -10])
     await phoneClick(page, [10, 10])

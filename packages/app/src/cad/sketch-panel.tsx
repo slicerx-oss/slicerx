@@ -1642,7 +1642,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         busy={busy}
         disabled={!ready}
         // the check's tenth of a second is no reason to show: the line would only blink and move the settings above
-        reason={check === null && reason === CHECKING ? null : reason}
+        reason={check === null && reason === CHECKING ? null : phone && reason ? reason.replace('(Esc or a right click)', '(press and hold)') : reason}
         // one primary at a time: Finish sketch while drawing, Extrude once the profile can make a solid
         primary={ready || featureOnly}
         // the sketch steps its own Esc and Enter; Extrude or Revolve from a finished sketch is a plain tool
