@@ -5,7 +5,7 @@
 // @slicerx/mcp) into one folder, built, as npm would publish them, with the credit kit
 // (docs/integrators/credit-kit) beside them. Use it for a build that is not on npm yet:
 //   node scripts/pack-integrator-kit.mjs ~/slicerx-kit
-//   npm install ~/slicerx-kit/slicerx-viewport-0.1.4.tgz ~/slicerx-kit/slicerx-embed-0.1.4.tgz ~/slicerx-kit/slicerx-mcp-0.1.4.tgz
+//   npm install ~/slicerx-kit/slicerx-viewport.tgz ~/slicerx-kit/slicerx-embed.tgz ~/slicerx-kit/slicerx-mcp.tgz
 //
 // With --engine it also lays out the prebuilt engine (sx, sx-geom and sx-link, libslicerx and its header) for
 // macOS, Windows and Linux, from an engine release's archives, each checked against the release's SHA256SUMS.txt:
@@ -119,16 +119,33 @@ function flag(args, name) {
   return i >= 0 ? args[i + 1] : undefined
 }
 
+// stable copies work on platforms where extracting symlinks needs extra privileges.
+export function writePackageManifest(dest, packages) {
+  const entries = packages.map(({ name, version }) => {
+    const stem = name.replace('@', '').replace('/', '-')
+    const archive = `${stem}-${version}.tgz`
+    const file = `${stem}.tgz`
+    const bytes = readFileSync(join(dest, archive))
+    writeFileSync(join(dest, file), bytes)
+    return { name, version, file, archive, sha256: createHash('sha256').update(bytes).digest('hex') }
+  })
+  const manifest = { schemaVersion: 1, packages: entries }
+  writeFileSync(join(dest, 'kit-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+  return manifest
+}
+
 function packPackages(dest) {
   const packages = ['@slicerx/viewport', '@slicerx/embed', '@slicerx/mcp']
-  for (const f of readdirSync(dest)) if (/^slicerx-(viewport|embed|mcp)-.*\.tgz$/.test(f)) rmSync(join(dest, f))
+  for (const f of readdirSync(dest)) if (/^slicerx-(viewport|embed|mcp)(?:-.*)?\.tgz$/.test(f)) rmSync(join(dest, f))
   const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   for (const p of packages) {
     // pack runs each package's prepack, which builds it.
     execFileSync(pnpm, ['--filter', p, 'pack', '--pack-destination', dest], { stdio: ['ignore', 'ignore', 'inherit'], shell: process.platform === 'win32' })
   }
-  const order = (f) => packages.findIndex((p) => f.startsWith(p.replace('@', '').replace('/', '-')))
-  const files = readdirSync(dest).filter((f) => f.endsWith('.tgz')).sort((a, b) => order(a) - order(b))
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const metadata = packages.map((name) => JSON.parse(readFileSync(join(root, 'packages', name.split('/')[1], 'package.json'), 'utf8')))
+  const manifest = writePackageManifest(dest, metadata)
+  const files = manifest.packages.map((p) => p.file)
   // the credit kit is for people, so it sits beside the tarballs rather than in node_modules
   const credit = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'integrators', 'credit-kit')
   rmSync(join(dest, 'credit-kit'), { recursive: true, force: true })

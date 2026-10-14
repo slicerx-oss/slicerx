@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
-import { hostPlatform, parseSums, platformOf } from './pack-integrator-kit.mjs'
+import { hostPlatform, parseSums, platformOf, writePackageManifest } from './pack-integrator-kit.mjs'
 
 const script = resolve(import.meta.dirname, 'pack-integrator-kit.mjs')
 
@@ -69,6 +69,36 @@ test('lays out a folder of engine archives per platform and refuses one that doe
     const noTag = spawnSync(process.execPath, [script, join(tmp, 'kit3'), '--engine-only'], { encoding: 'utf8' })
     assert.equal(noTag.status, 1)
     assert.match(noTag.stderr, /--engine-only needs --engine/)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+
+test('stable package names and manifest follow upgrades with distinct package versions', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'sx-kit-names-'))
+  try {
+    for (const version of ['0.1.0', '0.1.4']) {
+      const packages = ['viewport', 'embed', 'mcp'].map((part) => ({
+        name: `@slicerx/${part}`, version: part === 'mcp' ? '0.1.5' : version,
+      }))
+      for (const p of packages) {
+        const stem = p.name.replace('@', '').replace('/', '-')
+        writeFileSync(join(tmp, `${stem}-${p.version}.tgz`), `${p.name}@${p.version}`)
+      }
+      writePackageManifest(tmp, packages)
+      const manifest = JSON.parse(readFileSync(join(tmp, 'kit-manifest.json'), 'utf8'))
+      assert.equal(manifest.schemaVersion, 1)
+      assert.equal(manifest.packages.length, 3)
+      for (const p of manifest.packages) {
+        const bytes = readFileSync(join(tmp, p.file))
+        assert.equal(bytes.toString(), `${p.name}@${p.version}`)
+        assert.deepEqual(bytes, readFileSync(join(tmp, p.archive)))
+        assert.equal(createHash('sha256').update(bytes).digest('hex'), p.sha256)
+      }
+      assert.equal(manifest.packages[0].file, 'slicerx-viewport.tgz')
+      assert.equal(manifest.packages[0].version, version)
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
