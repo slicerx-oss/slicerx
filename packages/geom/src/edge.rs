@@ -1209,24 +1209,49 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         return Err(Error::invalid("edges", "pick at least one edge"));
     }
     let faces = Faces::new(mesh);
-    // A straight edge with its faces' keys is found between those faces first, then by place as before.
-    let mut notes = Vec::new();
+    for e in edges {
+        if let Some(keys) = e.keys {
+            let identities = mesh.faces.as_ref().ok_or_else(|| {
+                Error::invalid(
+                    "faceReference",
+                    "the face reference is missing; repair the reference before editing",
+                )
+            })?;
+            for key in keys {
+                crate::faces::resolve_key(mesh, identities, key)?;
+            }
+        }
+    }
+    // stored keys must resolve uniquely; only an unkeyed pick may use its place.
     let found: Vec<EdgeRef> = edges
         .iter()
         .enumerate()
         .map(|(i, e)| match relocate(mesh, e) {
-            Some((r, split)) => {
-                if split {
-                    notes.push(format!(
-                        "edge {} was split in two; rounded its longer part",
-                        i + 1
-                    ));
+            Some((_, true)) => Err(Error::invalid(
+                "faceReference",
+                format!("edge {} was split; repair the reference before editing", i + 1),
+            )),
+            Some((r, false)) => Ok(r),
+            None if e.keys.is_some() => {
+                let same_rim = e.center.is_some()
+                    && keys_at(mesh, e)
+                        .zip(e.keys)
+                        .is_some_and(|(a, b)| a == b || a == [b[1], b[0]]);
+                if same_rim {
+                    Ok(*e)
+                } else {
+                    Err(Error::invalid(
+                        "faceReference",
+                        format!(
+                            "edge {} has a missing face reference; repair the reference before editing",
+                            i + 1
+                        ),
+                    ))
                 }
-                r
             }
-            None => keyed(mesh, e),
+            None => Ok(keyed(mesh, e)),
         })
-        .collect();
+        .collect::<Result<_>>()?;
     let edges = found.as_slice();
     // Round edges get their own tools; the straight ones go on as before, numbered as the request numbers them.
     let mut rims = Vec::new();
@@ -1309,7 +1334,6 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
     }
     let mut out = Tools {
         refs: found.clone(),
-        notes: std::mem::take(&mut notes),
         ..Tools::default()
     };
     for &(n, ref r) in &rims {
@@ -1772,14 +1796,24 @@ mod tests {
     }
 
     #[test]
-    fn an_edge_is_found_by_its_faces_keys_after_it_moved() {
+    fn a_moved_edge_on_a_split_face_requires_repair() {
         let m = slotted(20.0);
         // The edge where the top meets the slot's near wall.
         let e = keyed(&m, &pick(&m, [0.0, 0.0, 1.0], [19.9, 15.0, 20.0]).edge);
         assert!(e.keys.is_some());
         assert!((e.a[0] - 20.0).abs() < 1e-9 && (e.b[0] - 20.0).abs() < 1e-9);
-        // The slot moved 5 mm: the edge is found by its faces, its old place is empty.
+        // the top key still names two fragments, even though this pair meets once.
         let moved = slotted(25.0);
+        let error = apply(&moved, &[e], chamfer(1.0), &BooleanOptions::default()).unwrap_err();
+        assert!(error.to_string().contains("split") && error.to_string().contains("repair"));
+    }
+
+    #[test]
+    fn an_edge_is_found_by_unique_faces_after_it_moved() {
+        let mut m = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
+        crate::faces::with_key_salt(Some(1), || crate::faces::base_keys(&mut m));
+        let e = keyed(&m, &pick(&m, [0.0, 0.0, 1.0], [39.9, 15.0, 20.0]).edge);
+        let moved = crate::xform::transformed(&m, &crate::xform::translation([5.0, 0.0, 0.0]));
         let r = apply(&moved, &[e], chamfer(1.0), &BooleanOptions::default()).unwrap();
         assert!(r.report.watertight && r.notes.is_empty());
         assert!(
@@ -1787,14 +1821,14 @@ mod tests {
             "{}",
             r.report.volume_change_mm3
         );
-        assert!((r.refs[0].a[0] - 25.0).abs() < 1e-9 && r.refs[0].keys == e.keys);
+        assert!((r.refs[0].a[0] - 45.0).abs() < 1e-9 && r.refs[0].keys == e.keys);
         let by_place = EdgeRef { keys: None, ..e };
         let err = apply(&moved, &[by_place], chamfer(1.0), &BooleanOptions::default()).unwrap_err();
         assert!(err.to_string().contains("no sharp edge"), "{err}");
     }
 
     #[test]
-    fn an_edge_split_in_two_is_found_by_its_longer_run_and_says_so() {
+    fn a_split_keyed_edge_requires_repair() {
         let mut b = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
         crate::faces::with_key_salt(Some(1), || crate::faces::base_keys(&mut b));
         // The top front edge, picked before a notch cut it in two.
@@ -1806,18 +1840,23 @@ mod tests {
                 .unwrap()
                 .0
         });
-        let r = apply(&m, &[e], chamfer(1.0), &BooleanOptions::default()).unwrap();
-        assert!(r.notes[0].contains("split in two"), "{:?}", r.notes);
-        let (lo, hi) = (
-            r.refs[0].a[0].min(r.refs[0].b[0]),
-            r.refs[0].a[0].max(r.refs[0].b[0]),
-        );
-        assert!((lo - 14.0).abs() < 1e-9 && (hi - 40.0).abs() < 1e-9, "{lo} {hi}");
-        assert!(
-            (r.report.volume_change_mm3 + 13.0).abs() < 1e-6,
-            "{}",
-            r.report.volume_change_mm3
-        );
+        let error = apply(&m, &[e], chamfer(1.0), &BooleanOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("split") && error.contains("repair"), "{error}");
+    }
+
+    #[test]
+    fn a_missing_edge_key_requires_repair_instead_of_using_its_old_place() {
+        let m = slotted(20.0);
+        let e = EdgeRef {
+            keys: Some([1, 2]),
+            ..pick(&m, [0.0, 0.0, 1.0], [19.9, 15.0, 20.0]).edge
+        };
+        let error = apply(&m, &[e], chamfer(1.0), &BooleanOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("missing") && error.contains("repair"), "{error}");
     }
 
     #[test]
@@ -2047,6 +2086,21 @@ mod tests {
         );
         let err = run(&m, &[p.edge], fillet(1.0)).unwrap_err().to_string();
         assert!(err.contains("curved"), "{err}");
+    }
+
+    #[test]
+    fn a_round_edge_with_a_split_face_key_requires_repair() {
+        let mut plate = build::cylinder(&Frame::WORLD, 10.0, 0.0, 5.0, 64);
+        crate::faces::with_key_salt(Some(18), || crate::faces::base_keys(&mut plate));
+        let selected = keyed(&plate, &pick(&plate, [0.0, 0.0, 1.0], [9.9, 0.0, 5.0]).edge);
+        let keys = selected.keys.unwrap();
+        let faces = plate.faces.as_mut().unwrap();
+        let other = faces.keys.iter_mut().find(|key| !keys.contains(key)).unwrap();
+        *other = keys[0];
+        let error = apply(&plate, &[selected], fillet(1.0), &BooleanOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("split") && error.contains("repair"), "{error}");
     }
 
     #[test]

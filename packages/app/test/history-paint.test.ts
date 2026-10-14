@@ -6,7 +6,7 @@
 // on stored meshes and paint steps come back from the project file. The engine here is a stand-in that answers
 // `paint.select` and `repair` the way sx-geom does; the real op's results are tested in sx-geom.
 import { describe, expect, it } from 'vitest'
-import { PAINT_DROPPED, clearReplayCache, historyFiles, mainNumber, parseHistories, replayHistory, stepName, withNumber, type History, type HistoryMesh, type PaintTarget, type StepParams } from '@slicerx/cad-history'
+import { PAINT_DROPPED, HISTORY_VERSION, clearReplayCache, historyFiles, mainNumber, parseHistories, replayHistory, stepName, withNumber, type History, type HistoryMesh, type PaintTarget, type StepParams } from '@slicerx/cad-history'
 import { stepIcon } from '../src/cad/history/step-icon'
 import { boxMesh } from '../src/plate/mesh-ops'
 
@@ -43,6 +43,16 @@ const step = (id: string, params: StepParams) => ({ id, part: 0, transform: T, p
 const paint = (target: PaintTarget, state = 2, layer: 'color' | 'seam' = 'color'): StepParams => ({ op: 'paint', layer, state, target })
 
 describe('a paint step on replay', () => {
+  it('does not paint a neighboring face when the stored seed key is missing', async () => {
+    clearReplayCache()
+    const e = engine()
+    const history: History = { version: HISTORY_VERSION, base: [boxMesh(20, 20, 10)], steps: [step('missing', paint({ kind: 'seed', point: [10, 10, 10], faceKey: 123 }))] }
+    const r = await replayHistory(e.call, { history })
+    expect(r.status[0]).toMatchObject({ state: 'broken', message: expect.stringMatching(/missing.*repair/i) })
+    expect(r.parts[0]?.paint).toBeUndefined()
+    expect(e.asked.some((a) => a.op === 'paint.select')).toBe(false)
+  })
+
   it('paints its target again through the engine and keeps the paint on the part', async () => {
     clearReplayCache()
     const e = engine()
@@ -65,7 +75,7 @@ describe('a paint step on replay', () => {
       base: [boxMesh(20, 20, 10)],
       steps: [
         step('p1', paint({ kind: 'direction', direction: 'bottom' })),
-        step('p2', paint({ kind: 'seed', point: [10, 10, 10], faceKey: 123 }, 4)),
+        step('p2', paint({ kind: 'seed', point: [10, 10, 10] }, 4)),
         step('p3', paint({ kind: 'direction', direction: 'bottom' }, 1, 'seam')),
         step('p4', paint({ kind: 'direction', direction: 'bottom' }, 0)),
       ],
