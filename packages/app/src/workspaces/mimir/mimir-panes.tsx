@@ -23,6 +23,7 @@ import { usePaneSize } from '../../shell/pane'
 import { get, setCamera, useApp } from '../../state/store'
 import { openUsage } from '../../pilot-connect/usage-open'
 import { useMimirLink } from './connection'
+import { MimirFilamentPick } from './filament-pick'
 import './mimir.css'
 
 /** The chat column's width: 420 px to start, 340 px at least and half the window at most. */
@@ -178,6 +179,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
               <UsageLinkContext.Provider value={openUsage}>
                 <TranscriptView transcript={transcript} showThinking={false} approvals={handlers} words={stepWords} />
               </UsageLinkContext.Provider>
+              <MimirFilamentPick transcript={transcript} running={run.running} />
             </div>
           )}
         </div>

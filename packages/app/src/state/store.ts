@@ -184,6 +184,8 @@ export interface ProfileInfo {
   limits: { nozzleMaxC?: number; bedMaxC?: number }
   /** Each slot's filament preset id (`GFA00`), empty for a slot without a shipped preset; Bambu printers read it per tray. */
   filamentIds?: string[]
+  /** The print profile's material (the maker's default filament type), which auto-picked spools match first. */
+  materialType?: string
   /** The layer height and walls each goal gives on this printer and nozzle, which the Goal tiles show. */
   goalValues?: Record<EasyGoal, Record<string, SettingValue>>
 }

@@ -58,6 +58,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | --- | --- |
 | `mimir-chat` | The chat column on the left of the mimir tab; a dropped image joins the message |
 | `mimir-transcript` | The conversation in the chat |
+| `mimir-filament` | Under a finished run in the chat, the loaded spools: a click picks the spool the part prints with |
 | `mimir-model-switch` | Auto's one line when a run moves to another model (Using Sonnet 5.5 for this one.) |
 | `mimir-composer` | The message box pinned at the foot of the chat |
 | `mimir-attach` | The composer's attach button, which opens the image picker |
@@ -128,10 +129,14 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-machine-status` | The printer's status: Ready, Printing, Paused, Error, Offline or Export only |
 | `slice-mode-chip` | The settings mode chip in the Slice pane title |
 | `slice-mode-chip-<mode>` | An item in its menu: `slice-mode-chip-simple`, `slice-mode-chip-advanced`, `slice-mode-chip-expert`, `slice-mode-chip-developer` |
-| `slice-filament-rail` | The filament rail: one ring per slot, grouped by unit |
-| `slice-filament-slot` | A slot's ring, with `data-slot`, `data-used` and `data-mismatch`; click edits it, Alt-click selects the objects on it |
-| `slice-filament-slot-line` | The line under the rail: the hovered or focused slot, else the first in use |
-| `slice-filament-foot` | Under that line: what a click on a ring does and Add filament, or, with `data-from="printer"`, where the printer's slots come from and how to change or add one |
+| `slice-filament-rail` | The Filament section's spools: every slot the printer has loaded (or the project holds), grouped by unit |
+| `slice-filament-slot` | A spool, with `data-slot`, `data-used`, `data-parts` (parts on the shown plate), `data-mismatch` and `data-empty`; `aria-pressed` when the target prints with it. A click moves the target to it, Alt-click selects the objects on it, right-click opens its menu |
+| `slice-filament-edit` | Edit filament, in a spool's menu: what the slot holds |
+| `slice-filament-target` | Under the spools: what a click moves (`data-kind` objects, plate or filament) |
+| `slice-filament-target-*` | With two or more filaments in use and nothing selected, the option that picks the filament to move, by slot |
+| `slice-filament-slot-line` | The line under the spools: the hovered or focused spool, else the one the target prints with |
+| `slice-filament-note` | Why the target prints with its spool, or that it is another material than the profile's (`data-other`) |
+| `slice-filament-foot` | The section's last line: how to change a filament and Add filament, or, with `data-from="printer"`, where the printer's slots come from and how to change or add one |
 | `slice-filament-add` | Add filament: adds the next filament and opens it (no printer reports the slots) |
 | `slice-filament-foot-reset` | Reset to printer, in the line under the rail (the printer's slots, one changed here) |
 | `slice-filament-total` | Grams and filament changes from the last slice, in the Filament header |

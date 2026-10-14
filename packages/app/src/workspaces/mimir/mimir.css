@@ -126,3 +126,6 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mimir-sheet-hint[data-bad] { color: var(--red); }
 .mimir-sheet-foot { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line-soft); }
 .mimir-sheet-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-sm); }
+/* The spool pick under a finished run: flat, like the closing card. */
+.mimir-filament { display: grid; gap: var(--s-2); padding-top: var(--s-4); border-top: 1px solid var(--line-soft); }
+.mimir-filament h3 { margin: 0; font: var(--fw-semibold) var(--fs-md) var(--f-body); color: var(--fg); }

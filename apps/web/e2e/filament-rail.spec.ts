@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The filament rail in the Slice sidebar: hovering a slot picks its filament out in the viewport, Alt-click selects
-// the objects on it, a slot that differs from the printer's carries a dot and a way back, the rail scrolls inside the
-// card when it overflows, and it fits a phone. Under the rail, every mode says what a click does and offers Add filament,
-// or, when the printer fills the slots in, says why there is no add and how to change one.
+// The Filament section's spools in the Slice sidebar: every loaded spool shows, the ones in use have an edge and a part
+// count, a click moves the selection (or the plate, or the parts on one filament) to that spool without moving
+// anything on screen, hovering a spool picks its filament out in the viewport, Alt-click selects the objects on it, a
+// slot that differs from the printer's carries a dot and a way back, and a full section wraps inside the card. Under
+// the spools, every mode says how to change a filament and offers Add filament, or, when the printer fills the slots
+// in, says where they come from.
 import { type Page } from '@playwright/test'
 import { expect, openSheet, plateReady, test } from './fixtures'
 
-type Sx = { getState(): { selectedIds: string[]; plate: { id: string }[]; hoverSlot: number | null }; setState(p: unknown): void }
+type Sx = { getState(): { selectedIds: string[]; plate: { id: string; slotOverrides?: Record<string, number>; handle: { parts: { name: string; slot: number }[] } }[]; hoverSlot: number | null; printerSlots: { material?: string; color?: string }[] }; setState(p: unknown): void }
 const sx = (page: Page, p: unknown) => page.evaluate((x) => (window as unknown as { __sx: Sx }).__sx.setState(x), p)
 
 async function open(page: Page, prefs: Record<string, unknown> = {}): Promise<void> {
@@ -51,9 +53,92 @@ test('Alt-click selects every object on that filament and says so', async ({ pag
   await expect(page.getByTestId('toast').filter({ hasText: /^Selected 1 object on PLA / })).toBeVisible()
   const picked = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().selectedIds)
   expect(picked).toHaveLength(1)
-  // A plain click edits the slot.
-  await slot(page, 1).click()
+  // A plain click moves the selection to that spool; the slot's menu edits what it holds.
+  await slot(page, 1).click({ button: 'right' })
+  await page.getByTestId('slice-filament-edit').click()
   await expect(page.getByRole('dialog', { name: /Filament 1/ })).toBeVisible()
+})
+
+/** The slot each part of each object prints in, as the plate holds it. */
+const partSlots = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.map((e) => e.handle.parts.map((p) => e.slotOverrides?.[p.name] ?? p.slot)))
+/** A loaded spool nothing on the plate prints with. */
+async function freeSpool(page: Page): Promise<number> {
+  const n = await page.locator('[data-testid="slice-filament-slot"][data-parts="0"]:not([data-empty])').first().getAttribute('data-slot')
+  return Number(n)
+}
+
+test('every loaded spool shows; the ones in use carry an edge and a part count', async ({ page }) => {
+  await open(page)
+  const loaded = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().printerSlots.length)
+  expect(loaded).toBeGreaterThan(1)
+  await expect(page.getByTestId('slice-filament-slot')).toHaveCount(loaded)
+  const used = page.locator('[data-testid="slice-filament-slot"]:not([data-parts="0"])').first()
+  await expect(used.locator('.spool-count')).toHaveText(/^\d+$/)
+  const edge = await used.evaluate((el) => getComputedStyle(el).boxShadow)
+  expect(edge).toMatch(/inset/)
+  const idle = page.locator('[data-testid="slice-filament-slot"][data-parts="0"]').first()
+  expect(await idle.evaluate((el) => getComputedStyle(el).boxShadow)).not.toMatch(/inset/)
+  // in use and not in use keep one size
+  const [a, b] = [await used.boundingBox(), await idle.boundingBox()]
+  expect(a!.width).toBeCloseTo(b!.width, 1)
+  expect(a!.height).toBeCloseTo(b!.height, 1)
+})
+
+test('a click moves the plate to that spool, says so, and moves nothing on screen', async ({ page }) => {
+  await open(page)
+  // every part on filament 1 and nothing selected: one filament in use, so the click moves the whole plate
+  await page.evaluate(() => {
+    const w = window as unknown as { __sx: Sx }
+    w.__sx.setState({ selection: null, selectedIds: [], plate: w.__sx.getState().plate.map((e) => ({ ...e, slotOverrides: Object.fromEntries(e.handle.parts.map((p) => [p.name, 1])) })) })
+  })
+  await expect(page.getByTestId('slice-filament-target')).toHaveAttribute('data-kind', 'plate')
+  const to = await freeSpool(page)
+  const boxes = async () => page.locator('[data-section="filament"] .slot-rail-wrap, [data-testid="slice-filament-slot"], [data-testid="slice-filament-target"], [data-testid="slice-filament-slot-line"], [data-testid="slice-filament-note"], [data-testid="slice-filament-foot"]').evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 2) / 2) }))
+  const at = await boxes()
+  await slot(page, to).click()
+  await expect(slot(page, to)).toHaveAttribute('aria-pressed', 'true')
+  await expect(slot(page, to)).not.toHaveAttribute('data-parts', '0')
+  expect((await partSlots(page)).flat().every((n) => n === to)).toBe(true)
+  await expect(page.getByTestId('slice-filament-note')).toHaveText(/^You picked \w+\.$|on a \w+ profile: the slice uses/)
+  expect(await boxes()).toEqual(at)
+})
+
+test('with something selected, a click moves only the selection', async ({ page }) => {
+  await open(page)
+  const id = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate[0]!.id)
+  await sx(page, { selection: id, selectedIds: [id] })
+  await expect(page.getByTestId('slice-filament-target')).toHaveAttribute('data-kind', 'objects')
+  const to = await freeSpool(page)
+  await slot(page, to).click()
+  expect((await partSlots(page))[0]!.every((n) => n === to)).toBe(true)
+})
+
+test('with two filaments in use and nothing selected, the row under the spools picks which one moves', async ({ page }) => {
+  await open(page)
+  const id = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate[0]!.id)
+  const parts = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate[0]!.handle.parts.map((p) => p.name))
+  test.skip(parts.length < 2, 'needs an object of two parts')
+  // the second part on another spool: two filaments in use
+  await sx(page, { selection: null, selectedIds: [] })
+  const first = (await partSlots(page))[0]![0]!
+  const other = await freeSpool(page)
+  await page.evaluate(([oid, part, n]) => {
+    const w = window as unknown as { __sx: Sx & { getState(): { plate: unknown[] } } }
+    const plate = w.__sx.getState().plate as { id: string; slotOverrides?: Record<string, number> }[]
+    w.__sx.setState({ plate: plate.map((e) => (e.id === oid ? { ...e, slotOverrides: { ...e.slotOverrides, [part as string]: n } } : e)) })
+  }, [id, parts[1]!, other] as const)
+  await expect(page.getByTestId('slice-filament-target')).toHaveAttribute('data-kind', 'filament')
+  const pick = page.getByTestId(`slice-filament-target-${other}`)
+  await expect(pick).toHaveAttribute('aria-checked', 'false')
+  const at = await pick.boundingBox()
+  await pick.click()
+  await expect(pick).toHaveAttribute('aria-checked', 'true')
+  expect(await pick.boundingBox()).toEqual(at)
+  const third = Number(await page.locator('[data-testid="slice-filament-slot"][data-parts="0"]:not([data-empty])').first().getAttribute('data-slot'))
+  await slot(page, third).click()
+  const now = (await partSlots(page))[0]!
+  expect(now[1]).toBe(third)
+  expect(now.filter((n) => n === first).length).toBeGreaterThan(0)
 })
 
 test('a slot set to another filament than the printer holds shows a dot, says why, and goes back to the printer', async ({ page }) => {
@@ -83,17 +168,15 @@ test('the context menu offers the printer filament, by mouse and by keyboard', a
   await expect(slot(page, 2)).not.toHaveAttribute('data-mismatch', 'true')
 })
 
-test('the menu holds Calibrate, Flush volumes, Swap colors, Reset to printer and Show unused slots', async ({ page }) => {
+test('the menu holds Calibrate, Flush volumes, Swap colors and Reset to printer', async ({ page }) => {
   await open(page)
-  const all = await page.getByTestId('slice-filament-slot').count()
   await page.getByTestId('slice-filament-menu').click()
   await expect(page.getByTestId('slice-filament-calibrate')).toBeVisible()
   await expect(page.getByTestId('slice-filament-flush')).toBeVisible()
   await expect(page.getByTestId('slice-filament-swap')).toBeVisible()
-  // Nothing edited: no reset.
+  // Nothing edited: no reset. Every spool shows already, so there is no switch for unused ones.
   await expect(page.getByTestId('slice-filament-reset')).toHaveCount(0)
-  await page.getByRole('menuitemcheckbox', { name: 'Show unused slots' }).click()
-  await expect.poll(() => page.getByTestId('slice-filament-slot').count()).toBeGreaterThan(all)
+  await expect(page.getByRole('menuitemcheckbox', { name: 'Show unused slots' })).toHaveCount(0)
   await expect(page.locator('[data-testid="slice-filament-slot"][data-used="false"]').first()).toBeVisible()
 })
 
@@ -127,10 +210,11 @@ test('the Filament options menu sits on top of the nozzle rows under it', async 
   // the short rail puts something under the menu at both widths, so the check above is not empty
   if (!isMobile) expect(hits.under.length).toBeGreaterThan(0)
   expect(hits.under.every(Boolean)).toBe(true)
-  // the menu still works where it overlaps a rack button
-  const unused = menu.getByRole('menuitemcheckbox', { name: 'Show unused slots' })
-  await unused.click()
-  await expect(unused).toHaveAttribute('aria-checked', 'true')
+  // the menu still works where it overlaps a rack button: the click lands on the menu, not the rack under it
+  const rack = await racks.first().inputValue()
+  await menu.getByTestId('slice-filament-calibrate').click()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { calibrationOpen: boolean } } }).__sx.getState().calibrationOpen)).toBe(true)
+  expect(await racks.first().inputValue()).toBe(rack)
 })
 
 test('Swap colors opens from the menu and swaps the two filaments on the plate', async ({ page }) => {
@@ -145,16 +229,19 @@ test('Swap colors opens from the menu and swaps the two filaments on the plate',
   await expect(swap).not.toContainText('prints as')
 })
 
-test('a full rail scrolls inside the card, never the page, at any width', async ({ page }) => {
+test('a full section wraps inside the card, never the page, at any width', async ({ page }) => {
   await open(page, { printerId: null })
   const setup = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [i + 1, { type: 'PLA', brand: '', color: ['#ff0000', '#00ff00', '#0000ff', '#ffffff'][i % 4] }]))
-  await sx(page, { slotSetup: setup, showUnusedSlots: true })
+  await sx(page, { slotSetup: setup })
   await expect(page.getByTestId('slice-filament-slot')).toHaveCount(16)
   const rail = page.getByTestId('slice-filament-rail')
   const box = await rail.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
-  expect(box.scroll).toBeGreaterThan(box.client)
+  expect(box.scroll).toBeLessThanOrEqual(box.client)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
-  // The last ring is reached by scrolling the rail.
+  // Four to a row: the fifth starts the second row under the first.
+  const [one, five] = [await slot(page, 1).boundingBox(), await slot(page, 5).boundingBox()]
+  expect(five!.x).toBeCloseTo(one!.x, 0)
+  expect(five!.y).toBeGreaterThan(one!.y)
   await slot(page, 16).scrollIntoViewIfNeeded()
   await expect(slot(page, 16)).toBeInViewport()
 })
@@ -174,7 +261,7 @@ const UNCONNECTED = { handPrinters: [{ id: 'e2e-desk-a1', name: 'Desk A1', profi
 for (const settingsMode of ['simple', 'expert'] as const) {
   test(`Add filament shows in ${settingsMode === 'simple' ? 'Simple' : 'Expert'}, opens the new filament, and moves nothing`, async ({ page }) => {
     await open(page, { ...UNCONNECTED, settingsMode })
-    await lineReads(page, /^Click a filament to change it\.$/)
+    await lineReads(page, /^Right-click a filament to change it\.$/)
     const add = page.getByTestId('slice-filament-add')
     await expect(add).toHaveText('Add filament')
     const count = await page.getByTestId('slice-filament-slot').count()
@@ -195,7 +282,7 @@ for (const settingsMode of ['simple', 'expert'] as const) {
 test("with the printer's slots, the rail says where they come from, has no add, and resets to the printer", async ({ page }) => {
   await open(page)
   await expect(foot(page)).toHaveAttribute('data-from', 'printer')
-  await lineReads(page, /^From the printer('s \w+)?\. Click a slot to change it\.$/)
+  await lineReads(page, /^From the printer('s \w+)?\. Right-click a spool to change it\.$/)
   await expect(page.getByTestId('slice-filament-add')).toHaveCount(0)
   await expect(page.getByTestId('slice-filament-foot-reset')).toHaveCount(0)
   // A slot changed here offers the way back, in place.
@@ -299,3 +386,37 @@ test('shots: the rail, a slot picked out in the view, its menu and a mismatch, l
     await slot(page, 1).blur()
   }
 })
+
+// Filament pick F1 for review at the two desktop sizes, light and dark: the section as it opens, then with a part on
+// a second spool, so the edge and count show on two and the row under the spools picks which filament moves.
+for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }]) {
+  test(`shots: filament pick at ${size.width}x${size.height}, light and dark`, async ({ page, isMobile }, info) => {
+    test.skip(!process.env['SX_SHOTS'] || isMobile, 'SX_SHOTS=1, desktop')
+    const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+    await page.setViewportSize(size)
+    await open(page)
+    const block = page.locator('[data-section="filament"]')
+    const shoot = async (name: string) => {
+      for (const scheme of ['dark', 'light'] as const) {
+        await sx(page, { scheme, themeFollowsSystem: false, hoverSlot: null })
+        await expect(page.locator('html')).toHaveAttribute('data-sx-theme', new RegExp(scheme))
+        await block.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+        await page.mouse.move(0, 0)
+        await page.waitForTimeout(500)
+        await block.screenshot({ path: `${dir}/f1-${name}-${scheme}-${size.width}.png` })
+        await page.screenshot({ path: `${dir}/f1-page-${name}-${scheme}-${size.width}.png` })
+      }
+    }
+    await sx(page, { selection: null, selectedIds: [] })
+    await shoot('one')
+    const parts = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate[0]!.handle.parts.map((p) => p.name))
+    const other = await freeSpool(page)
+    const id = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate[0]!.id)
+    await page.evaluate(([oid, part, n]) => {
+      const w = window as unknown as { __sx: Sx }
+      const plate = w.__sx.getState().plate
+      w.__sx.setState({ plate: plate.map((e) => (e.id === oid ? { ...e, slotOverrides: { ...e.slotOverrides, [part as string]: n } } : e)) })
+    }, [id, parts[parts.length - 1]!, other] as const)
+    await shoot('two')
+  })
+}

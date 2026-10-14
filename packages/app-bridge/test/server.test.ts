@@ -97,6 +97,31 @@ describe('running-app MCP server', () => {
     expect(seen).toEqual([{ tool: 'click', args: { testid: 'vault-tab' }, auth: `Bearer ${TOKEN}`, host: expect.stringMatching(/^127\.0\.0\.1:\d+$/) }])
   })
 
+  it('reads the loaded spools and moves a part to one, reading the move back', async () => {
+    // A stand-in Filament section: two spools, a cube on A1.
+    let on = 1
+    const spools = () => ({ material: 'PLA', target: { kind: 'plate', slot: on }, spools: [1, 2].map((slot) => ({ slot, label: `A${slot}`, type: 'PLA', loaded: true, inUse: on === slot ? 1 : 0, parts: on === slot ? ['Cube'] : [] })) })
+    const { file, seen } = await fakeApp({
+      spools,
+      move_to_spool: (a) => {
+        if (a['spool'] !== 'A2' && a['spool'] !== 2) throw new Error('no spool')
+        on = 2
+        return { moved: 1, spool: 2, ...spools() }
+      },
+    })
+    const call = await connect(file)
+    const before = await call('app_spools')
+    expect(before.structuredContent).toMatchObject({ spools: [{ label: 'A1', inUse: 1 }, { label: 'A2', inUse: 0 }] })
+    const moved = await call('app_move_to_spool', { spool: 'A2', object: 'Cube' })
+    expect(moved.isError).toBeFalsy()
+    expect(moved.structuredContent).toMatchObject({ moved: 1, spools: [{ label: 'A1', inUse: 0 }, { label: 'A2', inUse: 1, parts: ['Cube'] }] })
+    expect(seen.map((x) => [x.tool, x.args])).toEqual([['spools', {}], ['move_to_spool', { spool: 'A2', object: 'Cube' }]])
+    // a spool number works too, and arguments out of range never reach the app
+    expect((await call('app_move_to_spool', { spool: 2, plate: true })).isError).toBeFalsy()
+    expect((await call('app_move_to_spool', { spool: 99 })).isError).toBe(true)
+    expect(seen).toHaveLength(3)
+  })
+
   it('reports the app\'s refusals and a wrong token as errors', async () => {
     const { file } = await fakeApp({
       click: () => {
