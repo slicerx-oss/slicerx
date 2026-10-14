@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The dimension tool (D): a rectangle dimensioned until it is fully defined turns the defined color, one more
-// dimension that would over-define it is kept driven, a dimension changed later moves the extrude with it, and a
-// picked constraint glyph deletes.
+// The dimension tool (D): a rectangle dimensioned until it is fully defined turns the defined color (a valid profile
+// either way, so it can extrude before and after), one more dimension that would over-define it is kept driven, a
+// dimension changed later moves the extrude with it, and a picked constraint glyph deletes.
 import { type Page } from '@playwright/test'
 import { command, openStudio, pick, sketchAt, toolPanel } from './cad-helpers'
 import { expect, test } from './fixtures'
@@ -61,6 +61,13 @@ test('D dimensions a rectangle until it is fully defined, and the extrude follow
   await sketchAt(page, 'click', [10, 10])
   await sketchAt(page, 'click', [30, 20])
   await expect.poll(freedom).toBe(4)
+  // free to move and resize, and still a valid closed profile: the freedoms left say nothing about whether it can extrude
+  const state = () => page.evaluate(() => {
+    const s = (window as unknown as { __sketch: () => { profile?: string; ready?: boolean; reason?: string | null } | null }).__sketch()
+    return { profile: s?.profile, ready: s?.ready, reason: s?.reason ?? null }
+  })
+  await expect.poll(state).toEqual({ profile: 'valid', ready: true, reason: null })
+  await expect(panel.getByTestId('model-tool-apply')).toHaveAttribute('data-variant', 'primary')
 
   await page.locator('body').press('d')
   await expect(panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Dimension' })).toHaveAttribute('aria-checked', 'true')
@@ -97,6 +104,9 @@ test('D dimensions a rectangle until it is fully defined, and the extrude follow
   await dimension([[0, 0], (await corners(page))[0]!], [-4, start[1] / 2], 'Vertical', '10')
   await expect(dof).toHaveText('Defined')
   await expect(dof).toHaveAttribute('data-tone', 'done')
+  // fully constrained is the same valid profile, no more and no less ready
+  await expect.poll(state).toEqual({ profile: 'valid', ready: true, reason: null })
+  await expect(panel.getByTestId('model-tool-apply')).toHaveAttribute('data-variant', 'primary')
   await expect.poll(async () => (await scene(page))?.paths.filter((p) => p.tone !== 'soft').map((p) => p.tone)).toEqual(['defined', 'defined', 'defined', 'defined'])
   expect(await corners(page)).toEqual([[10, 10], [35, 10], [35, 22], [10, 22]])
 
