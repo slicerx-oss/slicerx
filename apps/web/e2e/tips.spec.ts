@@ -93,6 +93,9 @@ test('a tip with a loop holds its size while the loop loads, waits on its finish
   await expect(tip).toHaveAttribute('data-ready', 'true')
   // The box is there at once, at the stage's size, so the tip is the same height before and after the loop draws.
   await expect(stage).toBeVisible()
+  // The tip scales in from 98% (sx-tip-in), so it is measured once that has finished: a box read mid-entrance is 2%
+  // smaller and reads as a tip that grew.
+  await tip.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
   const first = (await tip.boundingBox())!
   await expect(stage.locator('svg.sxs')).toBeVisible()
   // It plays from the media stage on.
