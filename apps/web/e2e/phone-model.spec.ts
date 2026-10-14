@@ -149,6 +149,8 @@ test.describe('Model on a phone', () => {
   test('a finger held on the model opens the ring menu', async ({ page }) => {
     await openModel(page)
     const id = await addBox(page)
+    // nothing selected, so no move arrow starts under the finger: a hold on a handle drags it instead
+    await setState(page, { selection: null, selectedIds: [] })
     const cdp = await page.context().newCDPSession(page)
     const mid = await screenOf(page, await middleOf(page, id))
     await finger(cdp, mid, mid, 800, 1)
@@ -170,8 +172,9 @@ test.describe('Model on a phone', () => {
     await page.getByTestId('phone-edit').tap()
     await expect(page.getByTestId('model-inspector')).toBeInViewport()
     await expect(page.locator('.sheet-scrim')).toHaveCount(0)
+    // the sheet slides up for 200 ms; measure it once it is in place
+    await expect.poll(async () => { const b = (await page.locator('aside.sheet-docked').boundingBox())!; return b.y + b.height }).toBeLessThanOrEqual(bar.y + 0.5)
     const sheet = (await page.locator('aside.sheet-docked').boundingBox())!
-    expect(sheet.y + sheet.height).toBeLessThanOrEqual(bar.y + 0.5)
     // the view above it still takes a tap
     const at = await screenOf(page, await middleOf(page, id))
     if (at.y < sheet.y) {
@@ -207,6 +210,8 @@ test.describe('Model on a phone', () => {
     await setState(page, { plate: [], selection: null, selectedIds: [] })
     await page.getByTestId('phone-sketch').tap()
     await expect(page.getByTestId('phone-sketch')).toHaveAttribute('aria-pressed', 'true')
+    // the panel takes picks once it is up
+    await expect(page.getByRole('complementary', { name: 'Tool and transform' })).toContainText('Tap an origin plane')
     await page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, originPlane: 'xy' }))
     const bar = page.getByTestId('phone-sketch-bar')
     const families = bar.getByRole('radiogroup', { name: 'Drawing tool' })
