@@ -3,6 +3,8 @@
 // The sketch's live numbers beside the cursor: small pills for the drawing tool's next step (X and Y for a first point,
 // length and angle for a line, width and height for a rectangle). One pill has focus; typing a number edits it, Tab
 // moves to the next, Enter places the point and Esc drops what was typed. A pill left empty takes the cursor's value.
+// The pills stay inside the view and never over the point being placed: below and right of the cursor, or flipped to
+// the other side near an edge. While a number is typed the group turns to edit fields, so typed and live read apart.
 //
 // Speed: the hover path moves the pills and writes their numbers through `show`, without a React render. React renders
 // when the tool, the focus or the typed text changes.
@@ -22,6 +24,8 @@ export interface CursorPillsHandle {
 
 export interface CursorPillsProps {
   fields: readonly PillField[]
+  /** The view's box in client px, which the pills stay inside. */
+  area?: () => { left: number; top: number; right: number; bottom: number } | null
   /** A tool step with no number to type shows its readout in one pill instead ("Chord 12.00 mm"). */
   text?: boolean
   /** The pill typing goes to. */
@@ -36,11 +40,36 @@ export interface CursorPillsProps {
 
 /** Where the pills sit from the cursor, px: below and to the right, clear of the pointer. */
 const OFFSET = 16
+/** How close to the view's edge the pills may come, px. */
+const INSET = 4
+
+interface Box {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+/**
+ * The pills' top left for a cursor at `x`, `y`: OFFSET below and right of it, or the same distance above or left when
+ * that side would leave `area`, then held inside it. A view too small for both sides keeps the pills inside and clear
+ * of the cursor's row first.
+ */
+export function placePills(x: number, y: number, w: number, h: number, area: Box | null): { left: number; top: number } {
+  let left = x + OFFSET
+  let top = y + OFFSET
+  if (!area) return { left, top }
+  if (left + w > area.right - INSET) left = x - OFFSET - w
+  if (top + h > area.bottom - INSET) top = y - OFFSET - h
+  left = Math.max(area.left + INSET, Math.min(left, area.right - INSET - w))
+  top = Math.max(area.top + INSET, Math.min(top, area.bottom - INSET - h))
+  return { left, top }
+}
 
 /** The next pill for Tab (or the one before for Shift+Tab), round the ends. */
 export const nextPill = (focus: number, count: number, back = false): number => (count <= 0 ? 0 : (focus + (back ? count - 1 : 1)) % count)
 
-export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(function CursorPills({ fields, text = false, focus, editing, onFocus, onChange, onCommit, onCancel }, ref) {
+export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(function CursorPills({ fields, area, text = false, focus, editing, onFocus, onChange, onCommit, onCancel }, ref) {
   const box = useRef<HTMLDivElement | null>(null)
   const values = useRef<(HTMLElement | null)[]>([])
   const inputs = useRef<(HTMLInputElement | null)[]>([])
@@ -57,8 +86,9 @@ export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(funct
       return
     }
     el.hidden = false
-    el.style.left = `${Math.round(l.x + OFFSET)}px`
-    el.style.top = `${Math.round(l.y + OFFSET)}px`
+    const at = placePills(l.x, l.y, el.offsetWidth, el.offsetHeight, area?.() ?? null)
+    el.style.left = `${Math.round(at.left)}px`
+    el.style.top = `${Math.round(at.top)}px`
     l.values.forEach((v, i) => {
       const out = values.current[i]
       if (out && out.textContent !== v) out.textContent = v
@@ -103,9 +133,10 @@ export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(funct
     } else if (e.key === 'Escape') {
       e.preventDefault()
       onCancel()
-    } else if (e.key === 'Tab' && fields.length > 1) {
+    } else if (e.key === 'Tab') {
+      // Tab stays in the pills: the next one, or the only one
       e.preventDefault()
-      onFocus(nextPill(i, fields.length, e.shiftKey))
+      if (fields.length > 1) onFocus(nextPill(i, fields.length, e.shiftKey))
     }
   }
 
@@ -117,7 +148,7 @@ export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(funct
         </span>
       ) : (
         fields.map((f, i) => (
-          <label key={f.label} className="sketch-pill" data-testid="sketch-pill" data-label={f.label} {...(i === focus ? { 'data-focus': '' } : {})}>
+          <label key={f.label} className="sketch-pill" data-testid="sketch-pill" data-label={f.label} {...(i === focus ? { 'data-focus': '' } : {})} {...(typing && (editing[i] ?? '') !== '' ? { 'data-typed': '' } : {})}>
             <span className="sketch-pill-label">{f.label}</span>
             {typing ? (
               <input

@@ -66,8 +66,8 @@ export interface CameraBus {
   cad?: CadView
 }
 
-/** The parts of the 3D view the modeling tools drive directly. */
-export type CadView = Pick<Viewport, 'setPush' | 'setSketch' | 'setSketchCursor' | 'lookAtPlane' | 'setOriginPlanes' | 'setFinishedSketches' | 'setSection' | 'setDimensions' | 'setProbeHover' | 'setEdgePreview' | 'on'>
+/** The parts of the 3D view the modeling tools drive directly, and its canvas, which overlays such as the sketch pills stay inside. */
+export type CadView = Pick<Viewport, 'setPush' | 'setSketch' | 'setSketchCursor' | 'lookAtPlane' | 'setOriginPlanes' | 'setFinishedSketches' | 'setSection' | 'setDimensions' | 'setProbeHover' | 'setEdgePreview' | 'on'> & Partial<Pick<Viewport, 'canvas'>>
 
 let camera: CameraBus | null = null
 

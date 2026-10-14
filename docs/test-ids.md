@@ -44,6 +44,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `settings-back` | On a phone, All settings at the top of a section, back to `settings-list` |
 | `settings-nav-<section>` | A section in Settings' list: `settings-nav-pilot` (mimir), `settings-nav-look` and so on |
 | `toast-action` | The button on a toast (Undo and the like) |
+| `toast-details`, `toast-close` | On a toast with details (the slow 3D view notice): Details opens the rest under the line (`aria-expanded`), and the close button dismisses it |
 | `dialog-close` | The close button of a dialog |
 | `frame-close` | The close button of a full window frame (creator page editor, upload) |
 | `unsaved-dialog` | Save changes first? |
@@ -501,11 +502,13 @@ Ids that tests read for their text:
 | `model-select-made-by` | The step that made the one face picked: opens it; `data-step` is its index, or `base` for "from the original mesh" |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
 | `sketch-dof` | The drawing card's status from the solver, in its header: "Fully defined", the degrees of freedom left, or a conflict; `data-dof` is the count |
-| `sketch-drawing` | The sketch panel's drawing card: the tools, grid and snap, what shows, and the picked loop's actions |
+| `sketch-drawing` | The sketch panel's drawing card: the tools, grid and snap, what shows, and the picked loop's actions; `sketch-drawing-sub` is the tool's name after the card's title ("Drawing · Line") |
+| `sketch-grid-snap` | The row with Grid's switch and Snap's step (Off first), two separate controls; Section has its own row |
+| `sketch-summary`, `sketch-sheet-toggle` | Phone: the docked sheet's header while sketching, with the tool and the sketch's state, and the button that folds or opens the sheet (`aria-expanded`); the sheet folds as drawing starts |
 | `sketch-solid` | The sketch panel's solid card; it has `data-muted` until the sketch has a closed profile, with its `.tp-card-reason` line on why it can't make a solid yet (the first problem the check found, or what's missing) |
-| `sketch-flip` | Flip beside Distance: `aria-pressed` when the extrusion goes the other way from its default for the result |
+| `sketch-flip` | Flip at the right of Direction's label line: `aria-pressed` when the extrusion goes the other way from its default for the result |
 | `sketch-picked` | With Select, the picked curve and its size ("Line, 20.00 mm") |
-| `sketch-pills`, `sketch-pill` | The live numbers beside the cursor in the view while a drawing tool is on (group "Exact size"); each pill has `data-label` (X, Y, Length, Angle...) and the focused one `data-focus`; typing edits it, with inputs named by label and unit |
+| `sketch-pills`, `sketch-pill` | The live numbers beside the cursor in the view while a drawing tool is on (group "Exact size"); each pill has `data-label` (X, Y, Length, Angle...) and the focused one `data-focus`; typing edits it, with inputs named by label and unit, the group gets `data-typing` and a pill with typed text `data-typed`; the group stays inside the view and off the cursor's point |
 | `sketch-look` | Look at the sketch, among the view's camera buttons while a sketch is open |
 | `sketch-finish` | The shelf's Finish sketch button while a sketch is open: the sketch goes in the timeline without a solid |
 | `sketch-ctx` | A finished sketch's menu, from the timeline strip or the Model tree |
@@ -529,7 +532,6 @@ Ids that tests read for their text:
 | `model-tool-apply`, `model-tool-cancel`, `model-tool-more`, `model-tool-repeat` | A tool's footer: Apply (Enter) runs it and closes, Cancel (Esc) closes; on Hole, Fillet and Thread, More (the menu half of Apply) opens Apply and repeat, which runs it and stays open |
 | `model-tool-state` | A tool panel's state on the right of its header: "No hole yet", "1 edge" |
 | `sketch-other-plane` | Sketch: Other plane, in the header after the plane's name; starts the sketch over on another plane or face |
-| `sketch-variant-one` | Sketch: the family's name in the variant row when it has one way to draw it (Select, Line, Dimension); text, not a control |
 | `cad-font-system`, `cad-font-file` | Text on a face: where the font comes from, the built-in or an installed font, or a TTF or OTF file |
 | `model-inspector-multi` | The inspector with two or more objects selected |
 | `model-multi-size` | The size the selected objects take together |
