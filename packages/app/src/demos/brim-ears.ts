@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Brim ears: two corners clicked for an ear each, then the first ear removed with a right click.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'be',
+  css: ".sxs .be-a,.sxs .be-b{transform-box:fill-box;transform-origin:center}.sxs .be-a{animation-name:be-a}@keyframes be-a{0%{opacity:0;scale:.3}14.3%{opacity:0;scale:.3}20%{opacity:1;scale:1}62.9%{opacity:1;stroke:var(--stage-a1,#c9a6fb)}64.3%{stroke:var(--stage-cut,#ff5555);fill:var(--stage-cut,#ff5555)}71.4%{opacity:0;stroke:var(--stage-cut,#ff5555)}100%{opacity:0;stroke:var(--stage-cut,#ff5555)}}.sxs .be-b{animation-name:be-b}@keyframes be-b{0%{opacity:0;scale:.3}40%{opacity:0;scale:.3}45.7%{opacity:1;scale:1}90%{opacity:1}95.7%{opacity:0}100%{opacity:0}}.sxs .be-p{animation-name:be-p}@keyframes be-p{0%{translate:0 0;animation-timing-function:cubic-bezier(.65,0,.35,1)}17.1%{translate:0 0;animation-timing-function:cubic-bezier(.65,0,.35,1)}32.9%{translate:30.3px -17.5px}45.7%{translate:30.3px -17.5px;animation-timing-function:cubic-bezier(.65,0,.35,1)}57.1%{translate:0 0}100%{translate:0 0}}.sxs .be-r{animation-delay:.9s}.sxs .be-q{animation-delay:1.7s;stroke:var(--stage-cut,#ff5555)}",
+  body: "<ellipse class=\"be-a s-a s-af\" cx=\"145.2\" cy=\"139.8\" rx=\"15\" ry=\"8.7\" style=\"stroke:var(--stage-a1,#c9a6fb);stroke-width:1.6\"/><ellipse class=\"be-b s-a s-af\" cx=\"175.5\" cy=\"122.3\" rx=\"15\" ry=\"8.7\" style=\"stroke:var(--stage-a1,#c9a6fb);stroke-width:1.6\"/><polygon class=\"s-f2 s-ol\" points=\"96.7,111.8 145.2,139.8 145.2,108.3 96.7,80.3\"/><polygon class=\"s-f3 s-ol\" points=\"175.5,122.3 145.2,139.8 145.2,108.3 175.5,90.8\"/><polygon class=\"s-f1 s-ol\" points=\"127,62.8 175.5,90.8 145.2,108.3 96.7,80.3\"/><g class=\"be-p s-a\"><circle class=\"sxs-rip s-a\" cx=\"145.2\" cy=\"139.8\" r=\"9\"/><use href=\"#sxs-ptr\" x=\"145.2\" y=\"139.8\"/><circle class=\"sxs-rip be-r s-a\" cx=\"145.2\" cy=\"139.8\" r=\"9\"/><circle class=\"sxs-rip be-q s-a\" cx=\"145.2\" cy=\"139.8\" r=\"9\"/></g>",
+}
