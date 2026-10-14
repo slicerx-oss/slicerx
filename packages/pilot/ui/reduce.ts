@@ -30,6 +30,8 @@ export interface ToolRowModel {
   state: 'running' | 'ok' | 'bad'
   summary: string | undefined
   display: ToolDisplay[]
+  /** The tool's structured result, for cards built from it (a created part). */
+  output?: unknown
   progress: { line: string; fraction: number | undefined }[]
   ms: number | undefined
   untrusted: boolean
@@ -332,6 +334,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
         state: event.ok ? 'ok' : 'bad',
         summary: event.summary,
         display: event.display ?? [],
+        ...(event.output !== undefined ? { output: event.output } : {}),
         ms: event.ms,
         untrusted: event.untrusted === true,
       }))

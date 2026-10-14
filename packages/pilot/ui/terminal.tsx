@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import { useContext, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { Button, Icon, Seg } from '@slicerx/ui'
 import type { Transcript } from './reduce'
+import { followUps, lastPart } from './part'
+import { FollowUpChips, PartLookContext, type PartHandlers } from './part-card'
 import { TranscriptView, type ApprovalHandlers } from './transcript-view'
 import type { ReplaySpeed } from './use-pilot-run'
 import { ASSISTANT_NAME } from '../src/name'
@@ -37,6 +39,8 @@ export interface TerminalProps {
   announcement: string
   /** The prompt's placeholder; the default names the slicer jobs. */
   placeholder?: string
+  /** Cards for the parts a reply makes, with next steps for the newest; without it a created part is a tool row. */
+  parts?: PartHandlers
 }
 
 const SPEEDS = [
@@ -70,6 +74,10 @@ export function Terminal(p: TerminalProps) {
   }
 
   const active = p.running || p.replaying
+  const look = useContext(PartLookContext)
+  // the starters only while the thread is empty; after a reply that made a part, its next steps may take their place
+  const part = p.parts && look.chips === 'prompt' ? lastPart(p.transcript) : null
+  const empty = p.transcript.turns.length === 0
   return (
     <section className="term" aria-label={`${ASSISTANT_NAME} terminal`}>
       <div className="term-bar">
@@ -122,7 +130,7 @@ export function Terminal(p: TerminalProps) {
       >
         <div className="term-out">
           {p.transcript.turns.length === 0 ? <div className="meta-ln">{p.emptyNote}</div> : null}
-          <TranscriptView transcript={p.transcript} showThinking={p.showThinking} approvals={p.approvals} />
+          <TranscriptView transcript={p.transcript} showThinking={p.showThinking} approvals={p.approvals} {...(p.parts ? { parts: { ...p.parts, onRun: (m: string) => { stick.current = true; p.onRun(m) } } } : {})} />
         </div>
       </div>
       <form className="term-in" autoComplete="off" onSubmit={submit}>
@@ -144,13 +152,17 @@ export function Terminal(p: TerminalProps) {
             </Button>
           )}
         </div>
-        <div className="chips" role="group" aria-label="Suggestions">
-          {p.suggestions.map((s) => (
-            <button key={s.id} type="button" className="sugg" onClick={s.onSelect}>
-              {s.label}
-            </button>
-          ))}
-        </div>
+        {part && !p.running ? (
+          <FollowUpChips items={followUps(part)} onRun={(m) => { stick.current = true; p.onRun(m) }} place="prompt" />
+        ) : !p.parts || empty ? (
+          <div className="chips" role="group" aria-label="Suggestions">
+            {p.suggestions.map((s) => (
+              <button key={s.id} type="button" className="sugg" onClick={s.onSelect}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </form>
       <div className="vh" aria-live="polite">
         {p.announcement}
