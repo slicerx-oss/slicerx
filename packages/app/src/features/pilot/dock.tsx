@@ -8,10 +8,11 @@ import { SKILL_INFO } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Inspector, Terminal, UsageLinkContext, usePilotRun, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
 import '@slicerx/pilot/ui/pilot.css'
-import { Button, Icon, LinkButton } from '@slicerx/ui'
+import { Button, Icon, LinkButton, Menu, MenuAnchor, MenuItem } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useHasFeature } from '../../features'
 import { useInMimir } from '../../state/model-mode'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import { matchShortcut } from '../../lib/keys'
 import { useFleet } from '../../lib/queries'
 import { openSettings, pilotState, set, useApp } from '../../state/store'
@@ -74,6 +75,7 @@ function DockRun(p: {
 }) {
   const { pilot, sessionId, prompt, setAnnouncement } = p
   const run = usePilotRun(pilot, sessionId)
+  const phone = usePhoneLayout()
   const { reset } = run
   useEffect(() => reset(), [sessionId, reset])
   const status = run.transcript.status
@@ -143,18 +145,56 @@ function DockRun(p: {
       />
       </UsageLinkContext.Provider>
       )}
-      <div className="mimir-foot">
-        <LinkButton icon="plus" onClick={p.onNewSession}>
-          New conversation
-        </LinkButton>
-        <LinkButton icon={p.more ? 'arrow-left' : 'skill'} expanded={p.more} aria-controls="mimir-more" onClick={() => p.setMore(!p.more)}>
-          {p.more ? 'Back to the conversation' : 'Skills and permissions'}
-        </LinkButton>
-        <LinkButton icon="plugin" onClick={() => openSettings('pilot')}>
-          Connect an AI agent
-        </LinkButton>
-      </div>
+      {phone ? (
+        <PhoneFoot more={p.more} setMore={p.setMore} onNewSession={p.onNewSession} />
+      ) : (
+        <div className="mimir-foot">
+          <LinkButton icon="plus" onClick={p.onNewSession}>
+            New conversation
+          </LinkButton>
+          <LinkButton icon={p.more ? 'arrow-left' : 'skill'} expanded={p.more} aria-controls="mimir-more" onClick={() => p.setMore(!p.more)}>
+            {p.more ? 'Back to the conversation' : 'Skills and permissions'}
+          </LinkButton>
+          <LinkButton icon="plugin" onClick={() => openSettings('pilot')}>
+            Connect an AI agent
+          </LinkButton>
+        </div>
+      )}
     </>
+  )
+}
+
+/**
+ * The same three links on a phone, where they sit in one row above the conversation: New conversation keeps its
+ * label, and the other two are in a More menu, so the row fits a 360 px screen with nothing cut off.
+ */
+function PhoneFoot(p: { more: boolean; setMore: (v: boolean) => void; onNewSession: () => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mimir-foot">
+      <LinkButton icon="plus" onClick={p.onNewSession}>
+        New conversation
+      </LinkButton>
+      <MenuAnchor className="mimir-foot-more">
+        <Button
+          variant="ghost"
+          icon="more"
+          aria-label="More"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          data-testid="mimir-foot-more"
+          onClick={() => setOpen(!open)}
+        />
+        <Menu open={open} onClose={() => setOpen(false)} label="More" align="end" testId="mimir-foot-menu">
+          <MenuItem icon={p.more ? 'arrow-left' : 'skill'} aria-controls="mimir-more" onClick={() => (setOpen(false), p.setMore(!p.more))}>
+            {p.more ? 'Back to the conversation' : 'Skills and permissions'}
+          </MenuItem>
+          <MenuItem icon="plugin" onClick={() => (setOpen(false), openSettings('pilot'))}>
+            Connect an AI agent
+          </MenuItem>
+        </Menu>
+      </MenuAnchor>
+    </div>
   )
 }
 
