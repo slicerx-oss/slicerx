@@ -120,6 +120,7 @@ button { cursor: pointer; }
   transition: border-color var(--t-fast) var(--ease);
 }
 .sx-input::placeholder, .sx-textarea::placeholder { color: var(--dim); }
+.sx-input:disabled, .sx-select:disabled, .sx-textarea:disabled { background: var(--field-disabled-bg); border-color: var(--field-disabled-line); color: var(--dim); cursor: not-allowed; }
 .sx-input:hover, .sx-select:hover, .sx-textarea:hover { border-color: var(--line); }
 .sx-input:focus-visible, .sx-select:focus-visible, .sx-textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-field); }
 .sx-input[data-mono], .sx-textarea[data-mono] { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
@@ -145,6 +146,7 @@ button { cursor: pointer; }
 .sx-vector-label { display: flex; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; font: var(--fw-medium) var(--fs-md)/1.15 var(--f-body); color: var(--muted); }
 .sx-vector-label small { font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--dim); }
 .sx-vector-box, .sx-scrub[data-boxed] { height: var(--h-sm); border: 1px solid var(--field-line); border-radius: var(--r-sm); background: var(--field-bg); transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.sx-vector-box:has(input:disabled) { background: var(--field-disabled-bg); border-color: var(--field-disabled-line); }
 .sx-vector-box { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); min-width: 0; }
 .sx-vector-box:hover, .sx-scrub[data-boxed]:hover { border-color: var(--line); }
 .sx-scrub { position: relative; display: flex; align-items: center; gap: 2px; min-width: 0; padding: 0 8px; }
@@ -195,8 +197,8 @@ button { cursor: pointer; }
 .sx-seg[data-mono] > button { font: var(--fw-medium) var(--fs-xs) var(--f-mono); }
 
 /* switch */
-.sx-switch { width: 36px; height: 20px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--ink-3); position: relative; padding: 0; flex: none; transition: background var(--t-base) var(--ease), border-color var(--t-base) var(--ease); }
-.sx-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); transition: transform var(--t-base) var(--ease), background var(--t-base) var(--ease); }
+.sx-switch { width: 36px; height: 20px; border-radius: var(--r-pill); border: 1px solid var(--field-line); background: var(--switch-track); position: relative; padding: 0; flex: none; transition: background var(--t-base) var(--ease), border-color var(--t-base) var(--ease); }
+.sx-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--switch-knob); transition: transform var(--t-base) var(--ease), background var(--t-base) var(--ease); }
 .sx-switch[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 30%, var(--ink-3)); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 .sx-switch[aria-checked="true"]::after { transform: translateX(16px); background: var(--fg); }
 .sx-switch[data-tone="green"][aria-checked="true"] { background: color-mix(in srgb, var(--green) 28%, var(--ink-3)); border-color: color-mix(in srgb, var(--green) 55%, transparent); }

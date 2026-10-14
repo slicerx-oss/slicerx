@@ -31,6 +31,12 @@
   --control-selected-line: color-mix(in srgb, var(--fg) 45%, transparent);
   /* the person's message in the chat sits on the card step */
   --chat-bubble: var(--surface-card);
+  /* a disabled field reads apart from an enabled one; dark keeps today's look */
+  --field-disabled-bg: var(--field-bg);
+  --field-disabled-line: var(--field-line);
+  /* a switch that is off: its track and knob */
+  --switch-track: var(--ink-3);
+  --switch-knob: var(--muted);
 
   /* text */
   --fg: #f8f8f2;
@@ -184,16 +190,23 @@
   --stage-grid: #8b8395;
 }
 
-/* light keeps its earlier surfaces until its own pass (applyTheme sets data-scheme) */
+/* light: neutral surfaces with a slight cool bias, so purple alone marks actions and selection. Cards sit one step
+   darker than the page; fields are brighter than anything around them with a clear line, so an enabled field never
+   reads as disabled; a disabled field drops to the gray step with a faint line; a selected segment takes an accent
+   tint and line, well apart from its white track (applyTheme sets data-scheme) */
 :root[data-scheme="light"] {
   --surface-card: var(--ink-2);
-  --surface-line: var(--line-soft);
-  --surface-float: color-mix(in srgb, var(--ink-1) 92%, transparent);
-  --surface-menu: color-mix(in srgb, var(--ink-3) 90%, transparent);
-  --surface-dialog: color-mix(in srgb, var(--ink-2) 92%, transparent);
-  --field-bg: var(--ink-2);
-  --field-line: var(--line-soft);
-  --control-selected: var(--ink-4);
-  --control-selected-line: var(--line);
+  --surface-line: rgba(0, 0, 0, 0.12);
+  --surface-float: color-mix(in srgb, #ffffff 92%, transparent);
+  --surface-menu: color-mix(in srgb, #ffffff 96%, transparent);
+  --surface-dialog: color-mix(in srgb, #ffffff 96%, transparent);
+  --field-bg: #ffffff;
+  --field-line: color-mix(in srgb, var(--fg) 26%, var(--ink-0));
+  --field-disabled-bg: var(--ink-3);
+  --field-disabled-line: var(--line-soft);
+  --control-selected: color-mix(in srgb, var(--accent) 13%, #ffffff);
+  --control-selected-line: color-mix(in srgb, var(--accent) 50%, transparent);
   --chat-bubble: var(--ink-3);
+  --switch-track: #ffffff;
+  --switch-knob: color-mix(in srgb, var(--fg) 55%, var(--ink-0));
 }

@@ -166,7 +166,7 @@ test('the theme step: every theme as a card, the mode and flavors apply at once 
   // Subban light is the Nocturne Bright palette.
   await page.getByTestId('theme-subban').click()
   await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'subban-light')
-  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ink-0').trim())).toBe('#fbf8ff')
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ink-0').trim())).toBe('#f7f7f9')
 
   // The quick reading options apply at once.
   const easy = page.getByRole('region', { name: 'Easier to read' })
