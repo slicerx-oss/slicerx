@@ -22,7 +22,7 @@ import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
 import { startFillet } from '../../cad/start-hint'
 import { requestFinish, useCanFinish, useSketchInUse } from '../../cad/sketches'
-import { availableTools, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
+import { availableTools, menuEntryTipAttrs, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, toolTipAttrs, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
 
 /**
  * 'icons' when the labeled shelf does not fit its own width, so every tool stays in view; back to labels once the
@@ -113,7 +113,7 @@ export function Shelf() {
   const off = (t: ShelfTool) => Boolean(t.needsSelection && !hasSel) || (Boolean(t.modeling) && engine === 'loading')
   const groupName = (id: ShelfGroup) => SHELF_GROUPS.find((g) => g.id === id)?.label ?? ''
   // A tool's tip shows its demo loop when it has one (lib/demos.ts, by the tool's id).
-  const tip = (t: ShelfTool) => ({ ...(t.tip ? { 'data-tip': t.tip } : { 'data-tip-title': `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}` }), 'data-tip-demo': t.id })
+  const tip = (t: ShelfTool) => toolTipAttrs(t, `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}`)
   const toolButton = (t: ShelfTool, extra: { className?: string } = {}) => (
     <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} data-tool={t.id} data-testid="model-shelf-tool" {...tip(t)} aria-label={t.label} aria-pressed={t.tool !== undefined && pressedTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
       <Icon name={t.icon} />
@@ -170,7 +170,7 @@ export function Shelf() {
                   </button>
                   <Menu open={menu === e.menu} onClose={() => setMenu(null)} label={MENU_LABEL[e.menu].label}>
                     {e.tools.map((t) => (
-                      <MenuItem key={t.id} icon={t.icon} {...(t.still ? { 'data-tip-title': t.label, 'data-tip-demo': t.still } : {})} disabled={off(t)} onClick={() => choose(t)}>
+                      <MenuItem key={t.id} icon={t.icon} {...menuEntryTipAttrs(t)} disabled={off(t)} onClick={() => choose(t)}>
                         {t.label}
                       </MenuItem>
                     ))}

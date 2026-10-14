@@ -73,6 +73,17 @@ export const SHELF_GROUPS: readonly { id: ShelfGroup; label: string }[] = [
   { id: 'utility', label: 'Inspect' },
 ]
 
+/** The tip attributes a tool's button carries, for the shelf and the ribbon alike: its registry tip (or `title` when it
+ *  has none) and its demo, which is the still it names or else the loop under its id (lib/demos.ts). */
+export function toolTipAttrs(t: ShelfTool, title?: string): Record<string, string> {
+  return { ...(t.tip ? { 'data-tip': t.tip } : title ? { 'data-tip-title': title } : {}), 'data-tip-demo': t.still ?? t.id }
+}
+
+/** The tip attributes of a tool's entry in a menu: the still it names, with its own name as the title, or none. */
+export function menuEntryTipAttrs(t: ShelfTool): Record<string, string> {
+  return t.still ? { 'data-tip-title': t.label, 'data-tip-demo': t.still } : {}
+}
+
 /** Shelf order inside each group, by id; menus sit where their first entry would. */
 const SHELF_ORDER = ['sketch', 'add', 'face', 'push', 'fillet', 'shell', 'subtract', 'cut', 'array', 'holefit', 'thread', 'mesh', 'measure', 'values']
 

@@ -26,7 +26,7 @@ import { startFillet } from '../../cad/start-hint'
 import { openSketch, requestFinish, useCanFinish, useSketchDraw, useSketchInUse } from '../../cad/sketches'
 import { shownSketches } from './finished-sketches'
 import { DRAW_FAMILY, ribbonGroups, ribbonTabs, TOOLBAR_ICON, type RibbonAction, type RibbonItem, type RibbonMenu, type RibbonTab } from './ribbon-layout'
-import { availableTools, pickOff, type DialogTool, type NextPick, type ShelfTool } from './shelf-tools'
+import { availableTools, menuEntryTipAttrs, pickOff, toolTipAttrs, type DialogTool, type NextPick, type ShelfTool } from './shelf-tools'
 import { nextPick } from './shelf'
 import './ribbon.css'
 
@@ -247,7 +247,7 @@ export function Ribbon() {
     }
     if (id === 'face') {
       return tools.filter((t) => t.shelf?.menu === 'face').map((t) => (
-        <MenuItem key={t.id} iconNode={<ToolIcon name={t.toolIcon} size={16} />} disabled={Boolean(toolOff(t))} onClick={() => choose(t)}>
+        <MenuItem key={t.id} iconNode={<ToolIcon name={t.toolIcon} size={16} />} {...menuEntryTipAttrs(t)} disabled={Boolean(toolOff(t))} onClick={() => choose(t)}>
           {t.label}
         </MenuItem>
       ))
@@ -267,7 +267,7 @@ export function Ribbon() {
       const t = tools.find((x) => x.id === it.id)
       if (!t) return null
       return (
-        <RibbonButton key={key} icon={t.toolIcon} size={px} label={t.short ?? t.label} pressed={t.tool !== undefined && pressedTool === t.tool} off={toolOff(t)} testId="model-shelf-tool" data={{ 'data-tool': t.id, ...(t.tip ? { 'data-tip': t.tip } : {}) }} onClick={() => choose(t)} />
+        <RibbonButton key={key} icon={t.toolIcon} size={px} label={t.short ?? t.label} pressed={t.tool !== undefined && pressedTool === t.tool} off={toolOff(t)} testId="model-shelf-tool" data={{ 'data-tool': t.id, ...toolTipAttrs(t) }} onClick={() => choose(t)} />
       )
     }
     if (it.kind === 'action') {

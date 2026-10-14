@@ -372,12 +372,10 @@ test('Model controls show their stills: the tree, the picks, measure, named valu
   for (const k of ['object', 'face', 'edge'] as const) await shows(page.locator(`[data-testid="model-select-filter"][data-kind="${k}"]`), `still-pick-${k}`)
   await shows(page.locator('[data-testid="model-shelf-tool"][data-tool="measure"]'), 'still-measure')
   await shows(page.locator('[data-testid="model-shelf-tool"][data-tool="values"]'), 'still-named-values')
-  // the mesh menu's entries, each in its own tip
-  const mesh = page.getByTestId('model-shelf').getByRole('button', { name: 'Mesh' })
-  for (const [entry, still] of [['Hollow', 'still-hollow'], ['Repair mesh', 'still-repair']] as const) {
-    await mesh.click()
-    await shows(page.getByRole('menuitem', { name: entry }), still)
-    await page.keyboard.press('Escape')
+  // Hollow and Repair mesh sit on the ribbon's Mesh tab
+  await page.getByTestId('ribbon-tab-mesh').click()
+  for (const [tool, still] of [['hollow', 'still-hollow'], ['repair', 'still-repair']] as const) {
+    await shows(page.locator(`[data-testid="model-shelf-tool"][data-tool="${tool}"]`), still)
   }
   // the timeline marker, once there is a step to roll back
   await pushTop(page, id, 5)
