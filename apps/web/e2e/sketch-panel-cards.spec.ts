@@ -145,9 +145,11 @@ test('the solid card opens on a closed profile, and nothing above it moves', asy
     }
 })
 
-test('at 1440 by 900 Distance and Draft show above the footer with the solid card open', async ({ page, isMobile }) => {
+// 960 px tall, not 900: the Model ribbon with its default large icons is 112 px tall, so at 900 the Solid card's fields
+// start under the footer's fade and scroll into reach (sketch-panel-behavior's footer test covers 900 px and shorter)
+test('at 1440 by 960 Distance and Draft show above the footer with the solid card open', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Modeling tools are desktop only')
-  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setViewportSize({ width: 1440, height: 960 })
   await sketchOnTop(page)
   await page.locator('body').press('r')
   await sketchAt(page, 'click', [-3, -3])
