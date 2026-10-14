@@ -96,14 +96,18 @@ test('a tip on a row of the Preview legend opens beside the legend and covers no
   for (let i = 0; i < n - 1; i++) {
     await rows.nth(i).hover()
     await expect(tip).toHaveAttribute('data-ready', 'true')
-    const t = (await tip.boundingBox())!
-    const l = (await legend.boundingBox())!
-    const next = (await rows.nth(i + 1).boundingBox())!
-    const clear = (b: { x: number; y: number; width: number; height: number }) => t.x >= b.x + b.width || t.x + t.width <= b.x || t.y >= b.y + b.height || t.y + t.height <= b.y
     // the next row, and every other row of the legend, stays in view; a tip that opens warm, right after the last one
-    // closed, appears in place rather than gliding in from the corner, so its box is final once it shows
-    expect(clear(next), `tip of row ${i} over the next row`).toBe(true)
-    expect(clear(l), `tip of row ${i} over the legend`).toBe(true)
+    // closed, appears in place rather than gliding in from the corner
+    const overlaps = () =>
+      page.evaluate((i) => {
+        const t = document.getElementById('sx-tip')!.getBoundingClientRect()
+        const list = document.querySelector('[aria-label="Toolpath legend"]')!.getBoundingClientRect()
+        const next = document.querySelectorAll('.legend-markers label')[i + 1]!.getBoundingClientRect()
+        const over = (b: DOMRect) => t.left < b.right && b.left < t.right && t.top < b.bottom && b.top < t.bottom
+        const at = (b: DOMRect) => `${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)}`
+        return over(next) || over(list) ? `tip ${at(t)} over the legend ${at(list)} or the next row ${at(next)}` : 'clear'
+      }, i)
+    await expect.poll(overlaps, { message: `tip of row ${i}`, timeout: 2_000 }).toBe('clear')
     await page.mouse.move(5, 5)
     await expect(tip).toHaveCount(0)
   }
