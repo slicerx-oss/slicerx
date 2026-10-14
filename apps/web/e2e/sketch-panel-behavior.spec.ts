@@ -179,13 +179,30 @@ test('Finish sketch and Extrude stay apart: one primary, Ctrl/Cmd+Enter finishes
   await expect(extrude).not.toHaveAttribute('data-variant', 'primary')
   await expect(panel.getByTestId('model-tool-reason')).toHaveText('Draw a closed outline to make a solid.')
   await expect(finish).toHaveAttribute('data-tip-key', /Enter$/)
-  // a closed rectangle: Extrude takes the primary, Finish sketch steps back
+  // a closed rectangle: Extrude takes the primary, Finish sketch steps back, and no frame shows both as primary
+  await page.evaluate(() => {
+    const w = window as unknown as { __both: number; __watch: boolean }
+    w.__both = 0
+    w.__watch = true
+    const tick = () => {
+      const both = document.querySelectorAll('[data-testid="sketch-finish"][data-variant="primary"], [data-section="cad-tool"] [data-testid="model-tool-apply"][data-variant="primary"]').length === 2
+      if (both) w.__both++
+      if (w.__watch) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
   await page.locator('body').press('r')
   await sketchAt(page, 'click', [-3, -3])
   await sketchAt(page, 'click', [3, 3])
   await expect(extrude).toBeEnabled()
   await expect(extrude).toHaveAttribute('data-variant', 'primary')
   await expect(finish).not.toHaveAttribute('data-variant', 'primary')
+  await page.waitForTimeout(300)
+  expect(await page.evaluate(() => {
+    const w = window as unknown as { __both: number; __watch: boolean }
+    w.__watch = false
+    return w.__both
+  })).toBe(0)
   await expect(panel.getByTestId('model-tool-reason')).toHaveCount(0)
   // a bare Enter in the view, twice, neither finishes nor extrudes
   const timeline = await page.evaluate(() => (window as unknown as { __sx: { getState(): { timeline: { items: unknown[] } } } }).__sx.getState().timeline.items.length)
