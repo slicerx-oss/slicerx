@@ -35,6 +35,8 @@ export interface TerminalProps {
   /** Shown when the session has no turns yet. */
   emptyNote: string
   announcement: string
+  /** The prompt's placeholder; the default names the slicer jobs. */
+  placeholder?: string
 }
 
 const SPEEDS = [
@@ -131,7 +133,7 @@ export function Terminal(p: TerminalProps) {
           <label htmlFor={inputId} className="vh">
             Ask {ASSISTANT_NAME}
           </label>
-          <input id={inputId} type="text" placeholder={`Ask ${ASSISTANT_NAME} to plan, slice, diagnose or tune`} spellCheck={false} value={text} onChange={(e) => setText(e.currentTarget.value)} />
+          <input id={inputId} type="text" placeholder={p.placeholder ?? `Ask ${ASSISTANT_NAME} to plan, slice, diagnose or tune`} spellCheck={false} value={text} onChange={(e) => setText(e.currentTarget.value)} />
           {p.running ? (
             <Button size="sm" onClick={p.onStop}>
               Stop

@@ -404,6 +404,12 @@ export interface Pilot {
   /** Answers a dimension sheet: the values as the person left them, or null when they canceled it. Runtimes without sheets leave it out. */
   answerSheet?(sheetId: string, values: Record<string, number> | null): Promise<void>
   /**
+   * Picks a conversation back up after a reload: the person's messages and the replies, in order, become the session's
+   * history, so the next message has its context. Does nothing for a session that already has history. Runtimes
+   * without history leave it out.
+   */
+  resume?(sessionId: string, turns: readonly { user: string; reply: string }[]): void
+  /**
    * Live settings evaluation. Emits a `settings_diff` right away from
    * deterministic code (no model call), then an optional short narration.
    */
