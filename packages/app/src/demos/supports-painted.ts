@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Supports, Painted: support painted on the outer half of the ledge, and a tree grows only there.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'sn',
+  css: ".sxs .sn-p{animation-name:sn-p}@keyframes sn-p{0%{stroke-dashoffset:100;opacity:0}14.3%{stroke-dashoffset:100;opacity:0}15.4%{stroke-dashoffset:96;opacity:1}40%{stroke-dashoffset:0}91.4%{opacity:1}97.1%{opacity:0}100%{opacity:0}}.sxs .sn-m{animation-name:sn-m}@keyframes sn-m{0%{translate:0 0;opacity:0}7.1%{translate:0 0;opacity:0}14.3%{translate:0 0;opacity:1}40%{translate:24.2px 13.9px;opacity:1}42.9%{translate:24.2px 13.9px;opacity:1}48.6%{translate:24.2px 13.9px;opacity:0}100%{translate:24.2px 13.9px;opacity:0}}.sxs .sn-t{animation-name:sn-t}@keyframes sn-t{0%{stroke-dashoffset:100;opacity:0}45.7%{stroke-dashoffset:100;opacity:0}46.9%{stroke-dashoffset:96;opacity:1}68.6%{stroke-dashoffset:0}91.4%{opacity:1}97.1%{opacity:0}100%{opacity:0}}",
+  body: "<polygon class=\"s-f2 s-ol\" points=\"87.6,103 108.8,115.3 108.8,59.3 87.6,47\"/><polygon class=\"s-f3 s-ol\" points=\"133.1,101.3 108.8,115.3 108.8,59.3 133.1,45.3\"/><polygon class=\"s-f1 s-ol\" points=\"111.9,33 133.1,45.3 108.8,59.3 87.6,47\"/><path class=\"sn-t s-a s-n\" pathLength=\"100\" style=\"stroke-dasharray:100;stroke:var(--stage-a2,#a57ae8);stroke-width:3.2\" d=\"M151.3 132.8l0-17.5M151.3 115.3Q146.7 100.4 142.2 85.5M151.3 115.3Q155.8 105.6 160.4 96\"/><polygon class=\"s-f2 s-ol\" points=\"108.8,73.3 160.4,103 160.4,89 108.8,59.3\"/><polygon class=\"s-f3 s-ol\" points=\"184.6,89 160.4,103 160.4,89 184.6,75\"/><polygon class=\"s-f1 s-ol\" points=\"133.1,45.3 184.6,75 160.4,89 108.8,59.3\"/><path class=\"sn-p s-a s-n\" pathLength=\"100\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:4.5;stroke-dasharray:100\" d=\"M133.1 84.5L157.3 98.4\"/><g class=\"sn-m s-a\"><circle class=\"sxs-rip s-a\" cx=\"135.1\" cy=\"86.5\" r=\"9\"/><use href=\"#sxs-ptr\" x=\"135.1\" y=\"86.5\"/></g>",
+}
