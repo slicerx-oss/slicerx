@@ -77,6 +77,14 @@ function addRoom(box: HTMLElement, px: number): void {
   e.spacer.style.height = `${e.px}px`
 }
 
+/** Takes away all the room added at the end of `box`. */
+function dropRoom(box: HTMLElement): void {
+  const e = added.get(box)
+  if (!e) return
+  e.spacer.remove()
+  added.delete(box)
+}
+
 /** Corrections one press may make. A layout that keeps moving past this is not settling, and holding on would cost the page. */
 export const MAX_CORRECTIONS = 120
 
@@ -137,7 +145,18 @@ export function keepInPlace(el: Element, ms = 450): void {
         stuck = true
         return
       }
-      if (want > max) addRoom(box, Math.ceil(want - max) + 1)
+      if (want > max) {
+        // Room lengthens the scroll of a box with a set height. A box sized by its content (the Slice sidebar's pinned
+        // top, up to its cap) would grow by the room instead, leaving an empty band and pushing what is under it
+        // down: that box shrinks with its content, and the control moves with it.
+        const h = box.clientHeight
+        addRoom(box, Math.ceil(want - max) + 1)
+        if (box.clientHeight > h + 0.5) {
+          dropRoom(box)
+          stuck = true
+          return
+        }
+      }
       box.scrollTop = want
       // A control that the scroll does not move (fixed, or drawn over the page) cannot be held this way: stop, rather
       // than add room and scroll again on every change it makes.
