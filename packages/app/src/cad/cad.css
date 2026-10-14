@@ -32,6 +32,8 @@
 /* a tool's own actions stay on screen at the foot of the sidebar while the panel scrolls above them */
 .cad-footer { position: sticky; bottom: 0; z-index: 3; margin: 0 -18px -16px; padding: 10px 18px 16px; background: var(--ink-1); border-top: 1px solid var(--line-soft); }
 .cad-footer[data-more]::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 24px; background: linear-gradient(to bottom, transparent, var(--ink-1)); pointer-events: none; }
+/* a control scrolled into view (a Tab, a find) stops above the sticky footer and its fade, never under them */
+.sx-rail-body:has(.cad-footer) { scroll-padding-bottom: 88px; }
 /* A tool's number: the body font with even figures, the unit once beside the label. */
 .cad-num { font-variant-numeric: tabular-nums; }
 .cad-num-unit { margin-left: 4px; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--dim); }
