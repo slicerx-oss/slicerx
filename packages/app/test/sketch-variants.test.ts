@@ -16,13 +16,13 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-function row(tool: DrawTool, onPick = vi.fn()): HTMLElement {
+function row(tool: DrawTool, onPick = vi.fn(), reserve = true): HTMLElement {
   const box = document.createElement('div')
   document.body.append(box)
   const root = createRoot(box)
   roots.push(root)
-  flushSync(() => root.render(createElement(SketchVariants, { tool, onPick, sides: '6', onSides: () => {} })))
-  return box.querySelector('.sketch-variants')!
+  flushSync(() => root.render(createElement(SketchVariants, { tool, onPick, sides: '6', onSides: () => {}, reserve })))
+  return box.querySelector('.sketch-variants') ?? box
 }
 
 describe('sketch variant row', () => {
@@ -43,6 +43,16 @@ describe('sketch variant row', () => {
       expect(el.childElementCount).toBe(0)
     }
     expect(familyName('line')).toBe('Line')
+  })
+
+  it('has no row at all in the panel for a family with one way, and shows it for one with ways', () => {
+    for (const f of ['select', 'line', 'dimension'] as DrawTool[]) {
+      const box = row(f, vi.fn(), false)
+      expect(box.querySelector('.sketch-variants')).toBeNull()
+      expect(box.childElementCount).toBe(0)
+    }
+    expect(row('circle', vi.fn(), false).querySelector('[role="radiogroup"]')).not.toBeNull()
+    expect(row('arc', vi.fn(), false).querySelector('[role="radiogroup"]')).not.toBeNull()
   })
 
   it('keeps each variant in its family and the polygon sides beside its ways', () => {

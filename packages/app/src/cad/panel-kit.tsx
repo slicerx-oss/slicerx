@@ -121,10 +121,9 @@ export function Row({ label, unit, htmlFor, labelId, wide = false, className, te
   )
 }
 
-/** A typed number for a tool: plain or an expression over named values, the unit once beside the label, or with
- * `unitIn` inside the field after the number, so the label keeps one line. A length (unit mm) shows in the display unit
- * while `value` stays mm text (cad/units.ts). */
-export function Num({ id, label, unit, unitIn = false, value, onChange, onEnter }: { id: string; label: string; unit: string; unitIn?: boolean; value: string; onChange: (v: string) => void; onEnter?: () => void }) {
+/** A typed number for a tool: plain or an expression over named values, the unit once beside the label (the field
+ * holds only the number). A length (unit mm) shows in the display unit while `value` stays mm text (cad/units.ts). */
+export function Num({ id, label, unit, value, onChange, onEnter }: { id: string; label: string; unit: string; value: string; onChange: (v: string) => void; onEnter?: () => void }) {
   const units = useApp((s) => s.units)
   const shown = unit === 'mm' && units.length !== 'mm'
   // what the person typed, kept while `value` is still what it gave
@@ -136,11 +135,9 @@ export function Num({ id, label, unit, unitIn = false, value, onChange, onEnter 
     setDraft({ text: t, gave })
     onChange(gave)
   }
-  const unitText = shown ? units.length : unit
-  const inside = unitIn && unitText ? { unit: unitText, 'aria-label': `${label} ${unitText}` } : {}
   return (
-    <Row label={label} unit={unitIn ? undefined : unitText} htmlFor={id}>
-      <Input id={id} size="sm" className="cad-num tp-num" inputMode="decimal" value={text} {...inside} onChange={(e) => change(e.target.value)} {...(onEnter ? { onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), onEnter()) } : {})} />
+    <Row label={label} unit={shown ? units.length : unit} htmlFor={id}>
+      <Input id={id} size="sm" className="cad-num tp-num" inputMode="decimal" value={text} onChange={(e) => change(e.target.value)} {...(onEnter ? { onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), onEnter()) } : {})} />
     </Row>
   )
 }
