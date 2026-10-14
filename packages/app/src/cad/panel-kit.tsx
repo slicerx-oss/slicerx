@@ -192,7 +192,8 @@ export function PointerHint({ text }: { text: string }) {
 /**
  * One of a few values, under its label across the panel's width, that never runs past the right edge: on one line
  * when every option fits, with a long label on two lines inside a segment of fixed height, and past three options or
- * when even two lines would cut a word, as icons with tooltips (when every option has one) or a select. Which one
+ * when even two lines would cut a word, as icons with tooltips (when every option has one), else on one line with the
+ * narrow padding when that fits, else a select. Which one
  * depends only on the width and the words, never on the value, so pressing an option moves nothing.
  */
 export function Choice<V extends string>({ id, label, ariaLabel, bare = false, value, onChange, options }: ChoiceProps<V>) {
