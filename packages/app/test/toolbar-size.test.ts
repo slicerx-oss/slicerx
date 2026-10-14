@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Settings > Look and feel > Toolbar size: Large by default, stored with the rest of the look, a bad value falling
+// back to Large, and the row's Seg writing it. The ribbon reads it as its icon size.
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { createElement } from 'react'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ToolbarGroup } from '../src/shell/appearance-settings'
+import { DEFAULT_APPEARANCE, loadPrefs, savePrefs } from '../src/state/prefs'
+import { get, set } from '../src/state/store'
+import { TOOLBAR_ICON } from '../src/workspaces/design/ribbon-layout'
+
+const KEY = 'slicerx.prefs.v1'
+
+beforeEach(() => {
+  localStorage.clear()
+  set({ appearance: DEFAULT_APPEARANCE })
+})
+afterEach(() => cleanup())
+
+describe('toolbar size', () => {
+  it('is Large by default, with 32 px icons', () => {
+    expect(DEFAULT_APPEARANCE.toolbarSize).toBe('large')
+    expect(loadPrefs().appearance?.toolbarSize ?? DEFAULT_APPEARANCE.toolbarSize).toBe('large')
+    expect(TOOLBAR_ICON).toEqual({ large: 32, medium: 24, small: 16 })
+  })
+
+  it('keeps a stored size and drops a bad one', () => {
+    localStorage.setItem(KEY, JSON.stringify({ appearance: { toolbarSize: 'small' } }))
+    expect(loadPrefs().appearance?.toolbarSize).toBe('small')
+    localStorage.setItem(KEY, JSON.stringify({ appearance: { toolbarSize: 'huge' } }))
+    expect(loadPrefs().appearance?.toolbarSize).toBe('large')
+    localStorage.setItem(KEY, JSON.stringify({ appearance: { textSize: 'large' } }))
+    expect(loadPrefs().appearance).toMatchObject({ textSize: 'large', toolbarSize: 'large' })
+  })
+
+  it('round-trips through the stored look', () => {
+    savePrefs({ ...loadPrefs(), appearance: { ...DEFAULT_APPEARANCE, toolbarSize: 'medium' } })
+    expect(loadPrefs().appearance?.toolbarSize).toBe('medium')
+  })
+
+  it('the Look and feel row sets it and says what it does', () => {
+    render(createElement(ToolbarGroup))
+    expect(screen.getByTestId('set-toolbar-size').textContent).toContain('32 px')
+    fireEvent.click(screen.getByRole('radio', { name: 'Small' }))
+    expect(get().appearance.toolbarSize).toBe('small')
+    expect(screen.getByTestId('set-toolbar-size').textContent).toContain('Hover one for its name')
+    fireEvent.click(screen.getByRole('radio', { name: 'Medium' }))
+    expect(get().appearance.toolbarSize).toBe('medium')
+  })
+})

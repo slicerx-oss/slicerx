@@ -1,0 +1,56 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* Model's ribbon: a tab row, then one row of groups at a height set by the toolbar size alone, so a tab change, a
+   press or a hover never moves anything. Selected and hover come from the --rib-* tokens: in dark a rounded accent
+   border with a soft glow, in light a tinted backdrop. */
+.ribbon { --rb-h: 83px; display: flex; flex-direction: column; margin: 8px 8px 0; border-radius: var(--r-lg); min-width: 0; box-shadow: var(--shadow-float), var(--lift-edge); }
+.ribbon[data-size="medium"] { --rb-h: 74px; }
+.ribbon[data-size="small"] { --rb-h: 36px; }
+.rb-tabs { display: flex; align-items: center; height: 28px; padding: 0 6px 0 6px; border-bottom: 1px solid var(--line-soft); }
+.rb-tablist { display: flex; align-items: stretch; height: 100%; }
+.rb-tab { position: relative; height: 100%; padding: 0 12px; border: 0; background: none; color: var(--muted); font: var(--fw-medium) var(--fs-sm) var(--f-body); cursor: pointer; }
+.rb-tab:hover { color: var(--fg); }
+.rb-tab[aria-selected="true"] { color: var(--fg); }
+.rb-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 1px; background: var(--accent); }
+.rb-tab:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); border-radius: var(--r-sm); }
+.rb-quick { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.rb-quick .sx-btn { height: 24px; min-height: 24px; }
+.rb-body { display: flex; align-items: stretch; height: var(--rb-h); padding: 3px 6px 2px; overflow: hidden; min-width: 0; }
+.rb-row { position: relative; display: flex; align-items: stretch; flex: none; }
+.rb-grp { position: relative; display: flex; flex-direction: column; align-items: center; padding: 0 6px; flex: none; }
+.rb-grp + .rb-grp::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 1px; background: var(--line-soft); }
+.rb-tools { display: flex; align-items: flex-start; gap: 4px; flex: 1; min-height: 0; }
+.rb-glabel { height: 13px; font: var(--fw-medium) 10.5px/13px var(--f-body); color: var(--dim); white-space: nowrap; letter-spacing: 0.01em; }
+.rb-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 50px; max-width: 94px; padding: 3px 5px 2px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--fg); cursor: pointer; transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s; }
+.rb-btn svg.ti { flex: none; }
+.rb-label { overflow: hidden; max-width: 84px; font: var(--fw-medium) 11px/1.2 var(--f-body); text-align: center; white-space: nowrap; text-overflow: ellipsis; }
+.rb-label .sx-ic { display: inline-block; width: 9px; height: 9px; margin-left: 2px; vertical-align: 0; color: var(--muted); }
+.rb-btn:hover:not([aria-disabled="true"]) { background: var(--rib-hover-bg); }
+.rb-btn[aria-pressed="true"], .rb-btn[aria-expanded="true"] { background: var(--rib-sel-bg); border-color: var(--rib-sel-bd); box-shadow: var(--rib-sel-glow); }
+.rb-btn[aria-disabled="true"] { cursor: default; }
+.rb-btn[aria-disabled="true"] svg.ti { opacity: 0.4; filter: saturate(0.4); }
+.rb-btn[aria-disabled="true"] .rb-label { color: var(--dim); }
+.rb-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.ribbon[data-size="medium"] .rb-btn { min-width: 44px; }
+.ribbon[data-size="medium"] .rb-label { font-size: 10.5px; }
+/* Small: icons only, their names in the tips; the groups keep their hairlines */
+.ribbon[data-size="small"] .rb-label, .ribbon[data-size="small"] .rb-glabel { display: none; }
+.ribbon[data-size="small"] .rb-btn { min-width: 0; padding: 5px; border-radius: 7px; }
+.ribbon[data-size="small"] .rb-tools { align-items: center; gap: 2px; }
+.ribbon[data-size="small"] .rb-grp + .rb-grp::before { top: 5px; bottom: 5px; }
+/* The next slot reads as a suggestion: a faint accent ground at the end of the row. */
+.rb-next { margin-left: 8px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 6%, transparent); animation: rb-next-in 120ms linear; }
+.rb-grp.rb-next::before { display: none; }
+/* no room beside the tools: kept out of the row (still measured) rather than squeezing them to icons */
+.rb-next[data-room="no"] { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; }
+@keyframes rb-next-in { from { opacity: 0; } to { opacity: 1; } }
+.rb-pick { display: inline-flex; align-items: center; gap: 4px; align-self: center; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--cyan) 55%, transparent); color: var(--fg); font: var(--fw-medium) var(--fs-xs) var(--f-body); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rb-pick b { font-weight: var(--fw-semibold); }
+.ribbon[data-size="small"] .rb-pick > span { display: none; }
+@media (max-width: 900px) {
+  .rb-next { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rb-btn { transition: none; }
+  .rb-next { animation: none; }
+}

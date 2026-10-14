@@ -11,6 +11,7 @@
     "./theme": "./src/theme-entry.ts",
     "./theme-bundle": "./src/theme-bundle.ts",
     "./icons": "./src/icons-entry.ts",
+    "./tool-icons": "./src/icons/tool-icon.tsx",
     "./app-mark": "./src/icons/app-mark.tsx",
     "./maker-tile": "./src/components/maker-tile.tsx",
     "./look": "./src/look-entry.ts",
@@ -19,6 +20,8 @@
   },
   "scripts": {
     "gen:icons": "node scripts/gen-icons.mjs",
+    "gen:tool-icons": "node scripts/gen-tool-icons.mjs",
+    "snap:tool-icons": "node scripts/snap-tool-icons.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

@@ -4,6 +4,7 @@
    the sx- prefix so page styles never collide. Import once per app: "@slicerx/ui/styles.css". */
 @import "./tokens.css";
 @import "./kit.css";
+@import "./icons/tool-icons.css";
 
 /* base */
 *, *::before, *::after { box-sizing: border-box; }

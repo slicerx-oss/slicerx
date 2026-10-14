@@ -6,6 +6,7 @@ import { Icon, Seg, Select, Switch, tipAttrs, type IconName } from '@slicerx/ui'
 import { bodyPx, MONO_FONTS, UI_FONTS } from '@slicerx/ui/theme'
 import type { ReactNode } from 'react'
 import { useEdition } from '../edition'
+import { usePhoneLayout } from '../lib/phone-layout'
 import type { Appearance } from '../state/prefs'
 import { get, set, useApp } from '../state/store'
 import './theme-settings.css'
@@ -63,6 +64,44 @@ export function TextSizeSeg({ full, short }: { full?: boolean; short?: boolean }
     { value: 'larger', label: 'Larger' },
   ]
   return <Seg label="Text size" size="sm" full={Boolean(full)} value={size} onChange={(v) => setAppearance('textSize', v)} options={options} />
+}
+
+export function ToolbarSizeSeg() {
+  const size = useApp((s) => s.appearance.toolbarSize)
+  return (
+    <Seg
+      label="Toolbar size"
+      size="sm"
+      value={size}
+      onChange={(v) => setAppearance('toolbarSize', v)}
+      options={[
+        { value: 'large', label: 'Large' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'small', label: 'Small' },
+      ]}
+    />
+  )
+}
+
+const TOOLBAR_DETAIL: Record<Appearance['toolbarSize'], string> = {
+  large: 'Model tools at 32 px with their names.',
+  medium: 'Model tools at 24 px with their names.',
+  small: 'Model tools at 16 px. Hover one for its name.',
+}
+
+/** Settings > Look and feel > Toolbar: the Model ribbon's icon size. */
+export function ToolbarGroup() {
+  const size = useApp((s) => s.appearance.toolbarSize)
+  // a phone keeps its own Model shelf
+  if (usePhoneLayout()) return null
+  return (
+    <div className="set-group">
+      <h4>Toolbar</h4>
+      <SetRow icon="shapes" label="Toolbar size" detail={TOOLBAR_DETAIL[size]} id="set-toolbar-size">
+        <ToolbarSizeSeg />
+      </SetRow>
+    </div>
+  )
 }
 
 export function ColorVisionSeg({ full }: { full?: boolean }) {

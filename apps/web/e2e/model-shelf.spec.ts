@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Model's shelf: four groups set apart by hairlines with no group labels, Measure and Values as icons by undo and
-// redo, and a next slot with the tools for the picked object that appears with the pick. Checked at the widths the
-// plan names: labels drop at 1100 px, the next slot hides at 900 px, and nothing in the bar overlaps. Wherever the
-// labeled shelf does not fit (the mimir panel open beside it at 1440 px), it drops its labels too, so no tool is out of view.
+// Model's ribbon: the Solid tab's four groups (Create, Modify, Inspect, Output) set apart by hairlines, and a next
+// slot with the tools for the picked object that appears with the pick at the end of the row. Checked at the widths
+// the plan names: the names drop where the row does not fit, the next slot hides at 900 px, and nothing in the bar
+// overlaps. Wherever the named ribbon does not fit (the mimir panel open beside it at 1440 px), it drops its names
+// too, so no tool is out of view.
 import { type Page } from '@playwright/test'
 import { command, facePick, freshBox, openStudio, pick } from './cad-helpers'
 import { expect, test } from './fixtures'
@@ -23,7 +24,7 @@ async function noOverlap(page: Page): Promise<void> {
   expect(overlaps).toBe(0)
 }
 
-test.describe('Model shelf', () => {
+test.describe('Model ribbon', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop widths')
 
   test('groups, utility icons, and the next slot for a picked object', async ({ page }) => {
@@ -31,8 +32,8 @@ test.describe('Model shelf', () => {
     await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ selection: null, selectedIds: [] }))
     await page.locator('.sx-tab[data-mode="design"]').click()
     const shelf = page.getByTestId('model-shelf')
-    await expect(shelf.locator('.shelf-grp')).toHaveCount(4)
-    await expect(shelf.locator('.shelf-icon[data-tool="measure"] > span')).toBeHidden()
+    await expect(shelf.locator('.rb-grp')).toHaveCount(4)
+    expect(await shelf.locator('.rb-glabel').allTextContents()).toEqual(['Create', 'Modify', 'Inspect', 'Output'])
     await expect(page.getByTestId('model-shelf-next')).toHaveCount(0)
     await freshBox(page)
     await page.locator('.dtree-name', { hasText: 'Box' }).click()
@@ -44,14 +45,14 @@ test.describe('Model shelf', () => {
     expect(await shelf.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0)
     for (const [width, labels, nextShown] of [[1100, false, true], [900, false, false]] as const) {
       await page.setViewportSize({ width, height: 800 })
-      await expect(shelf.locator('[data-tool="push"] > span')).toBeVisible({ visible: labels })
+      await expect(shelf.locator('[data-tool="push"] .rb-label')).toBeVisible({ visible: labels })
       await expect(next).toBeVisible({ visible: nextShown })
       await noOverlap(page)
     }
   })
 })
 
-test.describe('Model shelf next slot for faces and edges', () => {
+test.describe('Model ribbon next slot for faces and edges', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop widths')
 
   test('counts the picks and turns off the tools that cannot take that many', async ({ page }) => {
@@ -113,7 +114,7 @@ test.describe('Model shelf next slot for faces and edges', () => {
   })
 })
 
-test.describe('Model shelf beside the mimir panel', () => {
+test.describe('Model ribbon beside the mimir panel', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop widths')
 
   test('with the mimir panel open at 1440 px, every tool stays in view, and the labels come back when it closes', async ({ page }) => {
@@ -138,6 +139,6 @@ test.describe('Model shelf beside the mimir panel', () => {
     await expect(dock).toHaveCount(0)
     await expect(shelf).toHaveAttribute('data-fit', 'labels')
     expect(await fits()).toEqual({ scrolls: false, out: [] })
-    await expect(shelf.locator('.shelf-tool > span').first()).toBeVisible()
+    await expect(shelf.locator('.rb-btn .rb-label').first()).toBeVisible()
   })
 })

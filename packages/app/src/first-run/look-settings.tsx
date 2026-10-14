@@ -8,7 +8,7 @@ import { Button, Seg, Select, SwitchRow } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
 import { formatShortcut } from '../lib/keys'
-import { AccentGroup, AccessibilityGroup, SetRow, TextGroup } from '../shell/appearance-settings'
+import { AccentGroup, AccessibilityGroup, SetRow, TextGroup, ToolbarGroup } from '../shell/appearance-settings'
 import { AUTO_SLICE_DETAIL, AUTO_SLICE_MODES, autoSliceFields, autoSliceMode } from '../state/auto-slice-mode'
 import { MULTI_BODY_DETAIL, MULTI_BODY_MODES } from '../state/multi-body'
 import { ThemeSettingsSection } from '../shell/theme-settings'
@@ -80,6 +80,7 @@ export function LookSettingsSection() {
       <ThemeSettingsSection />
       <AccentGroup />
       <TextGroup />
+      <ToolbarGroup />
       <AccessibilityGroup />
       {modeling && slices ? (
         <div className="set-group">

@@ -143,3 +143,36 @@ export function useSketchInUse(): string | null {
     () => inUse,
   )
 }
+
+/** The open sketch editor's drawing tools, for the ribbon's Sketch tab: the family in use, and what its buttons do. */
+export interface SketchDraw {
+  /** The draw family in use: select, line, rect, circle, arc, polygon, slot, trim or dimension. */
+  family: string
+  pick(family: string): void
+  look(): void
+  /** Mirror for the selected loop; null when no loop is selected. */
+  mirror: (() => void) | null
+  mirroring: boolean
+}
+
+let draw: SketchDraw | null = null
+const drawListeners = new Set<() => void>()
+
+/** Registers the open editor's drawing tools; returns the unregister. */
+export function provideDraw(d: SketchDraw): () => void {
+  draw = d
+  for (const l of drawListeners) l()
+  return () => {
+    if (draw !== d) return
+    draw = null
+    for (const l of drawListeners) l()
+  }
+}
+
+/** The open sketch editor's drawing tools, or null while nobody is sketching. */
+export function useSketchDraw(): SketchDraw | null {
+  return useSyncExternalStore(
+    (l) => (drawListeners.add(l), () => void drawListeners.delete(l)),
+    () => draw,
+  )
+}
