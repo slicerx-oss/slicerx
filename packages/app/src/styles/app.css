@@ -144,8 +144,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .vp-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 /* No ring around the whole view: the browser counts any key pressed in it (the plate keys) as keyboard focus. Only focus
    that Tab brought gets a faint inner edge (viewport-host.tsx). */
-.vp-canvas:focus, .vp-canvas:focus-visible { outline: none; }
-.vp-canvas[data-tab-focus]:focus { outline: 1px solid color-mix(in srgb, var(--fg) 28%, transparent); outline-offset: -1px; }
+.vp-canvas:focus { outline: none; }
+.vp-canvas:focus-visible { outline: var(--vp-tab-edge, none); outline-offset: -1px; }
+.vp-canvas[data-tab-focus] { --vp-tab-edge: 1px solid color-mix(in srgb, var(--fg) 28%, transparent); }
 .hud { position: absolute; z-index: 2; pointer-events: none; }
 .hud > * { pointer-events: auto; }
 /* A menu opened from the HUD goes over Preview's dock (z-index 3), which on a phone reaches up under it. */
