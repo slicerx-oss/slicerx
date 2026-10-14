@@ -63,7 +63,7 @@ export interface ImportedPlate {
   nozzleMap?: number[]
   objects: ImportedObject[]
   /** Pause, color change and custom G-code from Metadata/custom_gcode_per_layer.xml. Untrusted: custom text is checked before it is used. */
-  marks?: { z: number; kind: 'pause' | 'color_change' | 'custom'; gcode?: string }[]
+  marks?: { z: number; kind: 'pause' | 'color_change' | 'custom'; gcode?: string; slot?: number }[]
 }
 
 export interface ImportedProject {
@@ -735,7 +735,8 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
           const z = Number(l.getAttribute('top_z'))
           const type = Number(l.getAttribute('type'))
           if (!Number.isFinite(z) || z <= 0) continue
-          if (type === 0) marks.push({ z, kind: 'color_change' })
+          const slot = Number(l.getAttribute('extruder'))
+          if (type === 0) marks.push({ z, kind: 'color_change', ...(Number.isInteger(slot) && slot >= 1 && slot <= 64 ? { slot } : {}) })
           else if (type === 1) marks.push({ z, kind: 'pause' })
           else if (type === 4) marks.push({ z, kind: 'custom', gcode: l.getAttribute('extra') ?? l.getAttribute('gcode') ?? '' })
         }
