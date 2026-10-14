@@ -43,7 +43,7 @@ export function WatchDot({ watch }: { watch: Watch }) {
 /** Starter chips where the host only models (the browser build): parts and questions, nothing that slices or prints. */
 export const CAD_CHIPS: readonly { id: string; label: string; prompt: string }[] = [
   { id: 'design', label: 'Design a part', prompt: '40 mm L bracket, two M3 holes, 3 mm thick' },
-  { id: 'color', label: 'Make a multi-color model', prompt: 'Build me a SlicerX logo in SlicerX black and X pink' },
+  { id: 'color', label: 'Make a multi-color model', prompt: 'Build me a keychain that says MAKE in white letters on a black tag' },
   { id: 'measure', label: 'Measure the parts', prompt: 'How big is each part in this design?' },
   { id: 'material', label: 'Recommend a material', prompt: 'What should I print a car phone mount in? It sits on the dashboard in summer.' },
 ]
