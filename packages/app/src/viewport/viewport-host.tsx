@@ -523,10 +523,11 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (first || s.look !== prev.look || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode) vp.setRenderMode(modelLook(s))
         if (!first && s.cameraSeq !== prev.cameraSeq) vp.view(s.camera, { animate: true })
         // Model frames the part so it is the biggest thing on screen: the whole model when Model opens or an object
-        // is added, the selection when it changes outside a tool (keeping the angle).
+        // is added, the selection when it changes outside a tool (keeping the angle), unless Settings keeps the
+        // camera still on a pick.
         if (!first && designing(s) && s.cameraSeq === prev.cameraSeq) {
           if (!designing(prev) || s.plate.length > prev.plate.length) vp.view('iso', { animate: true })
-          else if (s.objectTool === null && (s.selection !== prev.selection || s.selectedIds !== prev.selectedIds)) {
+          else if (s.appearance.modelFraming === 'selection' && s.objectTool === null && (s.selection !== prev.selection || s.selectedIds !== prev.selectedIds)) {
             const now = selectedIds(s)
             if (now.length > 0 && now.join() !== selectedIds(prev).join()) (vp as unknown as Viewport).frameSelection?.({ animate: true })
           }
