@@ -136,7 +136,9 @@ function Backdrop({ row }: { row: FleetRow }) {
   return (
     <div className="ph-quiet" data-testid="ph-placeholder">
       {last ? <img className="ph-cam ph-cam-old" src={last} alt={`Last picture from ${row.name}`} /> : picture ? <img className="ph-printer" src={picture} alt="" /> : <Icon name="huginn" size={64} className="cam-raven" style={{ width: 64, height: 64 }} />}
-      <p className="sx-small sx-muted">This printer has no camera.</p>
+      <p className="sx-small sx-muted" data-testid="ph-no-camera">
+        This printer has no camera, so the camera guard can&apos;t watch it.
+      </p>
     </div>
   )
 }

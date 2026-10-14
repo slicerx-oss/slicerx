@@ -10,7 +10,7 @@ import type { Readable } from 'node:stream'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { connectLink } from '@slicerx/link-client'
 import { MOCK_ACCESS_CODE, MOCK_SERIAL, startMocks, type RunningMocks } from '@slicerx/mock-printers'
-import { connect, data } from './helpers'
+import { connect, data, text } from './helpers'
 
 // Runs only when SX_LINK_BIN names a built sx-link, with a throwaway state directory and file
 // secrets, so a test never touches the real hub state or the keychain.
@@ -82,6 +82,24 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
     await expect.poll(async () => (await read()).state, { timeout: 10_000 }).toBe('printing')
     expect(typeof (await read()).live?.layerZMm).toBe('number')
     await post('/set', { mock: 'snapmaker-luban', state: 'idle' })
+  })
+
+  it('says the camera guard cannot watch the Snapmaker 2.0, which has no camera, in printer_status and printer_list', async () => {
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    type Status = { output: { cameraAvailable: boolean; cameraGuard?: string } }
+    const res = await h.call('slicerx_printer_status', { printerId: 'bay-8' })
+    const st = data<Status>(res)
+    expect(st.output.cameraAvailable).toBe(false)
+    expect(st.output.cameraGuard).toBe('no_camera')
+    expect(text(res)).toContain("the camera guard can't watch it")
+    type Row = { id: string; cameraGuard?: string }
+    const rows = data<{ output: Row[] }>(await h.call('slicerx_printer_list', {})).output
+    expect(rows.find((r) => r.id === 'bay-8')?.cameraGuard).toBe('no_camera')
+    // Each printer that answers carries the field, read back the same way from its own status.
+    for (const id of ['bay-7', 'bay-9']) {
+      const own = data<Status>(await h.call('slicerx_printer_status', { printerId: id })).output
+      expect(rows.find((r) => r.id === id)?.cameraGuard).toBe(own.cameraAvailable ? 'can_watch' : 'no_camera')
+    }
   })
 
   it("reads the exact grams left in a Bambu Lab printer's AMS slots", async () => {

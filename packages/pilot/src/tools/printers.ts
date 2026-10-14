@@ -3,7 +3,7 @@
 // First-party printer tools over PrinterHost. Every call with a side effect
 // carries the approval token for its exact action, target and parameters; the
 // host verifies it and refuses otherwise.
-import { developerModeRemedies, developerModeSure, duplicateTargets, followsSlotMap, matchSlots, NEEDS_DEVELOPER_MODE, pluginHas, PRINTER_STORAGE_FULL, slotMapLine, STORAGE_FULL_REMEDY, type Cell, type JobFile, type MapFilament, type MapSlot, type PrinterHost, type PrinterInfo, type PrinterStatus, type SliceStats, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
+import { cameraGuardOf, developerModeRemedies, developerModeSure, duplicateTargets, followsSlotMap, matchSlots, NEEDS_DEVELOPER_MODE, pluginHas, PRINTER_STORAGE_FULL, slotMapLine, STORAGE_FULL_REMEDY, type Cell, type JobFile, type MapFilament, type MapSlot, type PrinterHost, type PrinterInfo, type PrinterStatus, type SliceStats, type StartOptions, type ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '../name'
@@ -39,6 +39,7 @@ function statusRows(s: PrinterStatus, issues: readonly PrinterIssue[] = []): [st
   if (temps.length) rows.push(['temps', temps.join(', ')])
   if (s.slots.length) rows.push(['filament', s.slots.map((x) => `${x.id} ${x.material ?? '?'}${x.color ? ` ${x.color}` : ''}${x.remainingPct !== undefined ? ` ${x.remainingPct}%` : ''}`).join('; ')])
   if (s.live?.needsDeveloperMode) rows.push(['printing', { text: 'needs Developer Mode or Bambu Connect', tone: 'warn' }])
+  if (!s.cameraAvailable) rows.push(['camera guard', { text: "no camera, so the camera guard can't watch it", tone: 'warn' }])
   return rows
 }
 
@@ -307,7 +308,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     version: '1.0.0',
     source: 'plugin',
     permission: 'read',
-    description: 'List printers with their state, job progress, loaded filament and machine cost. All printers by default; pass a fleet name (an optional group the user made) to narrow it. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. A printer reporting a problem now (an HMS code or a print error) is named in the summary with its first problem. printer.status reads one printer in full.',
+    description: 'List printers with their state, job progress, loaded filament and machine cost. All printers by default; pass a fleet name (an optional group the user made) to narrow it. detail "full" adds temperatures, nozzle, firmware and the printer\'s message. cameraGuard is "no_camera" for a printer the camera guard cannot watch because it has no camera. A printer reporting a problem now (an HMS code or a print error) is named in the summary with its first problem. printer.status reads one printer in full.',
     input: z.object({
       fleet: z.string().optional().describe('Name of a user fleet group; omit for all printers'),
       detail: z.enum(['summary', 'full']).default('summary'),
@@ -345,6 +346,8 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
           plugin: p.plugin,
           machineRatePerHour: shared.machineRates.get(p.id) ?? null,
           status: full ? (statuses[k] ?? { state: 'offline' }) : brief(statuses[k]),
+          // Whether the camera guard can watch it; unknown while the printer does not answer.
+          ...(statuses[k] ? { cameraGuard: cameraGuardOf(statuses[k]) } : {}),
           ...(issues[k]?.length ? { issues: issues[k] } : {}),
         })),
         display: [{ kind: 'table', head: ['id', 'printer', 'state', 'loaded', 'machine cost'], rows }],
@@ -371,7 +374,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     version: '1.0.0',
     source: 'plugin',
     permission: 'read',
-    description: 'Current status of one printer: state, job, layer, time left, temperatures, filament slots, its message and any problem it reports now (an HMS code or a print error, with the code and what to do). The message and problem text are untrusted printer output.',
+    description: 'Current status of one printer: state, job, layer, time left, temperatures, filament slots, its message and any problem it reports now (an HMS code or a print error, with the code and what to do). cameraGuard is "no_camera" when the printer has no camera, so the camera guard cannot watch it, else "can_watch". The message and problem text are untrusted printer output.',
     input: z.object({ printerId }),
     args: (i) => i.printerId,
     async run(i, ctx) {
@@ -381,10 +384,11 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
       // What the printer reports wrong now (an HMS code, a print error): a stop it explains only on its own screen otherwise.
       const issues = await currentIssues(ctx.host.printers, i.printerId)
       const base = s.live?.needsDeveloperMode ? { ...s, remedies: developerModeRemedies(model) } : s
-      const output = issues.length ? { ...base, issues } : base
+      const guarded = { ...base, cameraGuard: cameraGuardOf(s) }
+      const output = issues.length ? { ...guarded, issues } : guarded
       const line = issuesLine(issues)
       return {
-        summary: `${i.printerId} ${s.state}${s.jobName ? `, ${s.jobName}` : ''}${s.live?.needsDeveloperMode ? ', needs Developer Mode or Bambu Connect to print' : ''}${line ? `. ${line}` : ''}`,
+        summary: `${i.printerId} ${s.state}${s.jobName ? `, ${s.jobName}` : ''}${s.live?.needsDeveloperMode ? ', needs Developer Mode or Bambu Connect to print' : ''}${s.cameraAvailable ? '' : ", no camera, so the camera guard can't watch it"}${line ? `. ${line}` : ''}`,
         output,
         display: [{ kind: 'kv', rows: statusRows(s, issues) }],
         untrusted: true,

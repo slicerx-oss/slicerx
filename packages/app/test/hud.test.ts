@@ -330,7 +330,7 @@ describe('device view of a printer with less', () => {
     const { host } = fakeHost(false)
     await show(MK4S, host)
     expect(button('Show filament')).toBeUndefined()
-    expect(q('[data-testid=ph-placeholder]')?.textContent).toContain('This printer has no camera.')
+    expect(q('[data-testid=ph-placeholder]')?.textContent).toContain("This printer has no camera, so the camera guard can't watch it.")
     expect(q('video')).toBeNull()
     expect([...button('Show temperatures and fans')!.querySelectorAll('.ph-mini')]).toHaveLength(2)
     await click(button('Show temperatures and fans'))

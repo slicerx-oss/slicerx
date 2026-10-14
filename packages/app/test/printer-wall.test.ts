@@ -181,6 +181,8 @@ describe('Printers page', () => {
     expect(away.dataset['breathe']).toBe('slow')
     expect(away.querySelector('button')!.textContent).toBe('Try again')
     expect(idle('Atlas').textContent).toBe('No camera')
+    // Said in words on the tile: the guard has no camera to check this printer with.
+    expect(el.querySelector('.pcard[aria-label^="Atlas"] .cam-idle-detail')?.textContent).toBe("The camera guard can't watch this printer.")
     expect(idle('Garage').textContent).toBe('No connection')
     expect(el.querySelector('.pcard[aria-label^="Atlas"] .cam-idle[data-connecting]')).toBeNull()
     expect(el.querySelector('.pcard[aria-label^="Atlas"] .wall-slot[data-active]')).toBeNull()
