@@ -152,8 +152,9 @@ test('a 120-character file name stays on one line in the objects list and Print,
   for (const sel of ['[data-testid="object-name"]', '[data-testid="slice-machine-printer"] .printer-name']) {
     expect(await inside(sel), sel).toEqual({ oneLine: true, fits: true })
   }
-  // The plate chip names the plate, not the object, and the view has no size chip: the scale tool has the size.
-  await expect(page.getByTestId('plate-chip')).toHaveText('Plate 1')
+  // The plate picker names the plate, not the object, and the view has no size chip: the scale tool has the size.
+  await expect(page.getByTestId('plate-picker-current')).toContainText('Plate 1')
+  await expect(page.getByTestId('plate-picker-current')).not.toContainText('CHAINSAW')
   await expect(page.locator('.vp .dims')).toHaveCount(0)
   // The export-only printer's footer action and the summary's Export name the printer without its project.
   await expect(page.getByTestId('slice-machine-printer')).toContainText('H2D 0.4')
@@ -165,7 +166,7 @@ test('a 120-character file name stays on one line in the objects list and Print,
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
 })
 
-test('on a phone, the plate chip names the plate only, whatever the object is called', async ({ page, isMobile }) => {
+test('on a phone, the plate picker names the plate only, whatever the object is called', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Phone width')
   await page.addInitScript(() => {
     if (sessionStorage.getItem('sx-e2e')) return
@@ -174,7 +175,7 @@ test('on a phone, the plate chip names the plate only, whatever the object is ca
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' } }))
   })
   await page.goto('./')
-  await expect(page.getByTestId('plate-chip')).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByTestId('plate-picker-current')).toBeVisible({ timeout: 120_000 })
   // The starter is on the plate before its name changes.
   await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: unknown[] } } }).__sx.getState().plate.length), { timeout: 120_000 }).toBeGreaterThan(0)
   await page.evaluate(() => {
@@ -182,6 +183,7 @@ test('on a phone, the plate chip names the plate only, whatever the object is ca
     const [o, ...rest] = sx.getState().plate
     sx.setState({ plate: [{ ...o, name: `${'Very_long_model_name_from_a_marketplace_download_'.repeat(2)}v2.stl` }, ...rest] })
   })
-  await expect(page.getByTestId('plate-chip')).toHaveText('Plate 1')
-  await expect.poll(() => page.getByTestId('plate-chip').evaluate((el) => el.getBoundingClientRect().right <= innerWidth)).toBe(true)
+  await expect(page.getByTestId('plate-picker-current').locator('.pp-no')).toHaveText('Plate 1')
+  await expect(page.getByTestId('plate-picker-current')).not.toContainText('Very_long')
+  await expect.poll(() => page.getByTestId('plate-picker').evaluate((el) => el.getBoundingClientRect().right <= innerWidth)).toBe(true)
 })
