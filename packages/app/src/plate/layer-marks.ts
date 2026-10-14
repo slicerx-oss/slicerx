@@ -66,7 +66,11 @@ export function addMark(z: number, kind: MarkKind, gcode?: string, plateId: stri
   return mark
 }
 
-/** Points a color change at another filament slot. The G-code stays the same; the slot is what the pin and the file show. */
+/**
+ * Points a color change at another filament slot. The slot is a note saved with the project: the engine is not sent
+ * it and the G-code stays the same (the profile's color change G-code, a pause for a manual swap), so a finished slice
+ * stays current (slice-inputs.ts leaves slot-only edits out).
+ */
 export function setMarkSlot(id: string, slot: number, plateId: string = get().activePlate): void {
   set((s) => ({ layerMarks: { ...s.layerMarks, [plateId]: marksFor(plateId).map((m) => (m.id === id && m.kind === 'color_change' ? { ...m, slot } : m)) } }))
 }

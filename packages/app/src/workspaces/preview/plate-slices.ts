@@ -4,6 +4,7 @@
 // again, marked stale when anything the slice read has changed since. So switching plates in Preview flips
 // between finished slices instead of starting over, the way Bambu Studio's multi-plate preview does.
 import { INPUTS } from '../../state/auto-slice'
+import { printed } from '../../state/slice-inputs'
 import { appStore, type AppState, type SliceState } from '../../state/store'
 
 /** Most plates whose slices are kept besides the one in view; the oldest is let go first. */
@@ -31,7 +32,8 @@ function inputsOf(s: AppState): Inputs {
 }
 
 function same(a: Inputs, b: Inputs): boolean {
-  return Object.keys(a).every((k) => a[k as keyof Inputs] === b[k as keyof Inputs])
+  // a color change's slot is a note, so a slot-only edit leaves the slice current
+  return Object.keys(a).every((k) => a[k as keyof Inputs] === b[k as keyof Inputs] || (k === 'layerMarks' && printed(a[k] as AppState['layerMarks']) === printed(b[k] as AppState['layerMarks'])))
 }
 
 /** Whether a plate other than the one in view has a slice kept, and if it is still current with the settings of now. */
