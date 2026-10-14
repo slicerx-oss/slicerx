@@ -558,15 +558,17 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .set-sub { margin: 8px 0 0; font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); color: var(--muted); }
 /* Rows of a Settings section (Controls' mouse buttons, tool keys and switches): the label on the left, the control
    at the right edge, one row height and one gap. Each kind of control has one width, so a column of them starts and
-   ends at one x. */
+   ends at one x: a segmented choice 216 px, a compact select the control column (--w-ctl, 96 px). */
 .set-rows { display: grid; gap: var(--s-1); }
 .set-rows > .set-sub { margin-bottom: var(--s-1); }
 .set-rows > .fr-mouse-row, .set-rows > .sx-switchrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: 36px; }
 .set-rows > .fr-mouse-row > :first-child { flex: 1; min-width: 0; font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--fg); }
 .set-rows > .fr-mouse-row > .sx-seg { flex: none; display: flex; width: 216px; }
 .set-rows > .fr-mouse-row > .sx-seg > button { flex: 1; }
-.set-rows > .fr-mouse-row > .sx-selectwrap { flex: none; width: 216px; }
+.set-rows > .fr-mouse-row > .sx-selectwrap { flex: none; width: var(--w-ctl); }
 .set-rows > .fr-mouse-row > .sx-selectwrap > select { width: 100%; }
+/* A tool key reads as a keycap: the keycap radius and type (the spec's radius and type scales). */
+.fr-mouse-row .sx-select.ctl-key { border-radius: var(--r-xs); font: var(--fw-medium) var(--fs-xs) var(--f-mono); }
 .set-rows > .sx-switchrow:has(small) { align-items: flex-start; padding-block: var(--s-1); }
 .set-rows > .sx-btn { justify-self: start; }
 .acct-who, .dev-list li, .tok-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
