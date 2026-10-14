@@ -103,6 +103,13 @@ const PICK_LIMITS: Readonly<Record<string, Partial<Record<PickKind, { max: numbe
   thread: { round: { max: 1, why: 'Pick one hole or peg at a time.' } },
 }
 
+/** Why a tool cannot take the current pick (too many of a kind it takes one at a time), or null when it can. */
+export function pickOff(tool: ShelfTool, pick: NextPick | null): string | null {
+  if (!pick || !tool.accepts?.includes(pick.kind)) return null
+  const limit = PICK_LIMITS[tool.id]?.[pick.kind]
+  return limit && pick.count > limit.max ? limit.why : null
+}
+
 /**
  * The next slot for a pick: its tools in order, each off with a reason when it cannot take that many. Edges also get
  * Chamfer, the fillet tool's other shape. Nothing for no pick.
