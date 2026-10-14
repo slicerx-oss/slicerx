@@ -13,6 +13,7 @@ import schema from '@slicerx/settings/schema.json'
 import { DEMOS, SETTING_DEMOS } from '../src/lib/demos'
 import { loadTips, resolveTip } from '../src/lib/tip-host'
 import { OPTION_TIPS, TIPS } from '../src/lib/tips'
+import { MARKERS } from '../src/workspaces/preview/markers'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -223,6 +224,21 @@ describe('demo loops', () => {
     const t = resolveTip(anchor, {})
     expect(t?.demo).toBe(DEMOS['still-measure'])
     expect(t?.body).toBe(DEMOS['still-measure']?.body)
+  })
+
+  it('gives each Preview legend marker its own loop, each with a sentence, an id no other loop uses and a module under 8 KB', async () => {
+    const seen = new Set<string>()
+    for (const m of MARKERS) {
+      const d = DEMOS[m.demo]
+      expect(d?.stage, m.kind).toBeTypeOf('function')
+      expect(d?.body?.length, m.kind).toBeGreaterThan(10)
+      const tool = await d!.stage!()
+      expect(tool.id, m.kind).toMatch(/^p/)
+      expect(seen.has(tool.id), `${m.kind} shares ${tool.id}`).toBe(false)
+      seen.add(tool.id)
+      expect(statSync(join(import.meta.dirname, '../src/demos', `${m.demo}.ts`)).size, m.demo).toBeLessThanOrEqual(8 * 1024)
+    }
+    expect(seen.size).toBe(6)
   })
 
   it('points each settings row and choice at its own loop', () => {
