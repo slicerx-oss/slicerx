@@ -5,3 +5,4 @@
 export { installCapture, redact, safeUrl, type Capture, type Entry, type LogKind } from './capture'
 export { BridgeError, click, fill, pressKey, refusal, testids, waitFor } from './dom'
 export { appState, createPageBridge, exportCommands, sliceSummary, type PageBridge } from './page'
+export { cameraState, NOT_PANELS, OPEN_PANELS, panelState, selectionState, toolState, uiState } from './ui-state'

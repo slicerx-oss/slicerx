@@ -32,6 +32,18 @@ export function setRotateSpace(rotateSpace: 'world' | 'local'): void {
   toolStore.setState({ rotateSpace })
 }
 
+/** The camera as the 3D view reports it. */
+export interface CameraPose {
+  /** Orbit center in bed coordinates, mm. */
+  target: [number, number, number]
+  /** 0 looks from the front of the bed, 90 from the right side. */
+  azimuthDeg: number
+  /** Angle above the bed plane. */
+  elevationDeg: number
+  distanceMm: number
+  projection?: 'perspective' | 'orthographic'
+}
+
 /** Viewport calls the app drives directly. Optional: the 2D fallback has none of them. */
 export interface CameraBus {
   view?(preset: 'iso' | 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'fit' | 'bed', opts?: { animate?: boolean }): void
@@ -41,6 +53,8 @@ export interface CameraBus {
   zoomBy?(factor: number, opts?: { animate?: boolean }): void
   focusBedPoint?(x: number, y: number, z: number, opts?: { animate?: boolean }): void
   toggleProjection?(): unknown
+  /** Where the camera is: its orbit center (bed mm), angles and distance, and the projection when the view has one. */
+  pose?(): CameraPose
   arrange?(opts?: { animate?: boolean; gapMm?: number }): Record<string, number[]>
   /** Modeling guides (lines, outlines, end points) in bed coordinates. */
   guides?(guides: Guides): void

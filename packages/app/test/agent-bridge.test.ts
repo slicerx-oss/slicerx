@@ -5,7 +5,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MeshHandle, SliceResult } from '@slicerx/contracts'
 import { registerCommand } from '../src/commands/registry'
-import { appState, createPageBridge, exportCommands, installCapture, redact, safeUrl, sliceSummary, type Capture } from '../src/agent-bridge'
+import { appState, createPageBridge, exportCommands, installCapture, NOT_PANELS, OPEN_PANELS, redact, safeUrl, sliceSummary, uiState, type Capture } from '../src/agent-bridge'
+import { closeViewRing, openViewRing } from '../src/plate/view-ring'
+import { setCameraBus, setTool, toolStore } from '../src/plate/tools'
 import { click, elements, fill, find, images, pressKey, refusal, testids, waitFor } from '../src/agent-bridge/dom'
 import { get, set, type PlateEntry } from '../src/state/store'
 
@@ -323,6 +325,117 @@ describe('the state an agent reads', () => {
     await expect(bridge.handle('export_info', {})).resolves.toMatchObject({ id: '7' })
     set({ slice: { status: 'done', result: result(), stale: true } })
     await expect(bridge.handle('export_info', {})).rejects.toMatchObject({ code: 'refused', message: expect.stringMatching(/changed after the last slice/) })
+  })
+})
+
+describe('the UI state an agent reads', () => {
+  const pick = (kind: 'face' | 'edge', triangle: number) => ({ kind, objectId: 'cube', partIndex: 0, triangle, point: [1.234, 2, 3.005] as [number, number, number] })
+  const edgeTab = (panel: string, side: string, open: boolean): string => `<button class="sx-edge-tab" data-panel="${panel}" data-side="${side}" aria-expanded="${open}"></button>`
+  beforeEach(() =>
+    set({
+      workspace: 'prepare',
+      plate: [entry('cube', { name: 'Cube' }), entry('peg', { name: 'Peg' })],
+      selection: null,
+      selectedIds: [],
+      subPicks: [],
+      pickFilter: ['object'],
+      objectTool: null,
+      parked: null,
+      settingsOpen: false,
+      commandOpen: false,
+      expertOpen: false,
+      setup: null,
+      camera: 'iso',
+    }),
+  )
+  afterEach(() => {
+    setCameraBus(null)
+    closeViewRing()
+    toolStore.setState({ tool: 'move', rotateSpace: 'world', moveArrows: false })
+  })
+
+  it('reads back nothing selected, the default tool, no panel and no camera before the 3D view starts', () => {
+    expect(uiState(get(), document)).toEqual({
+      selection: { primary: null, objects: [], pickFilter: ['object'], picks: [] },
+      tool: { view: 'move', rotateSpace: 'world', moveArrows: false, object: null, parked: null },
+      panels: { panes: [], open: [], ring: null },
+      camera: null,
+    })
+  })
+
+  it('reads back the selection with its names, and the faces picked on it', () => {
+    set({ selection: 'peg', selectedIds: ['cube', 'peg'], pickFilter: ['face', 'edge'], subPicks: [pick('face', 4), { ...pick('edge', 9), round: true }] })
+    expect(uiState(get(), document)['selection']).toEqual({
+      primary: 'peg',
+      objects: [
+        { id: 'cube', name: 'Cube' },
+        { id: 'peg', name: 'Peg' },
+      ],
+      pickFilter: ['face', 'edge'],
+      picks: [
+        { kind: 'face', objectId: 'cube', part: 0, triangle: 4, pointMm: [1.23, 2, 3.01] },
+        { kind: 'edge', objectId: 'cube', part: 0, triangle: 9, pointMm: [1.23, 2, 3.01], round: true },
+      ],
+    })
+    // A stale list without the primary reads as the primary alone, as the app treats it.
+    set({ selection: 'peg', selectedIds: ['cube'] })
+    expect((uiState(get(), document)['selection'] as { objects: unknown[] }).objects).toEqual([{ id: 'peg', name: 'Peg' }])
+  })
+
+  it('reads back the 3D view tool a person picked, and the object tool open or parked', () => {
+    setTool('rotate', true)
+    toolStore.setState({ rotateSpace: 'local' })
+    set({ objectTool: 'cut' })
+    expect(uiState(get(), document)['tool']).toEqual({ view: 'rotate', rotateSpace: 'local', moveArrows: false, object: 'cut', parked: null })
+    setTool('move', true)
+    set({ objectTool: null, parked: { tool: 'fillet', objectId: 'cube', fields: {} } })
+    expect(uiState(get(), document)['tool']).toEqual({ view: 'move', rotateSpace: 'local', moveArrows: true, object: null, parked: 'fillet' })
+  })
+
+  it('reads back the edge panels as on screen, the windows open and the ring menu', () => {
+    document.body.innerHTML = edgeTab('model-tree', 'left', true) + edgeTab('slice-summary', 'right', false) + '<button class="sx-edge-tab" data-side="bottom" aria-expanded="true"></button>'
+    set({ settingsOpen: true, expertOpen: true, setup: { step: 'printer' } as never })
+    openViewRing({ x: 10, y: 20 }, { kind: 'face', objectId: 'cube', count: 2 })
+    expect(uiState(get(), document)['panels']).toEqual({
+      panes: [
+        { panel: 'model-tree', side: 'left', open: true },
+        { panel: 'slice-summary', side: 'right', open: false },
+        { panel: 'bottom', side: 'bottom', open: true },
+      ],
+      open: ['settings', 'expert', 'setup'],
+      ring: { target: 'face', objectId: 'cube', list: false },
+    })
+    openViewRing({ x: 0, y: 0 }, { kind: 'empty' })
+    expect((uiState(get(), document)['panels'] as { ring: unknown }).ring).toEqual({ target: 'empty', list: false })
+  })
+
+  it('names every open flag of the store as a panel or says why it is not one', () => {
+    const flags = Object.keys(get()).filter((k) => /Open$/.test(k) && typeof (get() as unknown as Record<string, unknown>)[k] === 'boolean')
+    const named = new Set<string>([...Object.values(OPEN_PANELS), ...NOT_PANELS])
+    expect(flags.filter((k) => !named.has(k))).toEqual([])
+  })
+
+  it('reads back where the camera is, rounded, with the last view picked', () => {
+    setCameraBus({ pose: () => ({ target: [128.004, 127.996, 5], azimuthDeg: 44.96, elevationDeg: 30.04, distanceMm: 412.345, projection: 'orthographic' }) })
+    set({ camera: 'top' })
+    expect(uiState(get(), document)['camera']).toEqual({ targetMm: [128, 128, 5], azimuthDeg: 45, elevationDeg: 30, distanceMm: 412.3, projection: 'orthographic', lastView: 'top' })
+  })
+
+  it('comes back from the state tool with the rest of the app state', async () => {
+    capture = installCapture(window)
+    const bridge = createPageBridge(capture)
+    set({ selection: 'cube', selectedIds: ['cube'], commandOpen: true })
+    setTool('scale', true)
+    setCameraBus({ pose: () => ({ target: [0, 0, 0], azimuthDeg: 0, elevationDeg: 90, distanceMm: 300 }) })
+    const state = (await bridge.handle('state', {})) as Record<string, unknown>
+    expect(state).toMatchObject({
+      tab: 'prepare',
+      selection: { primary: 'cube', objects: [{ id: 'cube', name: 'Cube' }] },
+      tool: { view: 'scale' },
+      panels: { open: ['command'] },
+      camera: { targetMm: [0, 0, 0], azimuthDeg: 0, elevationDeg: 90, distanceMm: 300, lastView: 'iso' },
+    })
+    expect(state['camera']).not.toHaveProperty('projection')
   })
 })
 
