@@ -162,3 +162,30 @@ test('each Simple setting, each of its choices and each plate tool opens its own
   await plays(tools.getByRole('button', { name: 'Scale', exact: true }), 'Resize the model', 'sc')
   await plays(tools.getByRole('button', { name: 'Lay on face', exact: true }), 'Pick a face', 'lf')
 })
+
+test('an Advanced setting row opens the loop of its drawing and plays it', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await page.addInitScript(() => {
+    localStorage.setItem('slicerx.debug', '1')
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', printerId: 'bay-1', pilot: { mode: 'off' } }))
+  })
+  await page.goto('./')
+  await plateReady(page)
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ expertOpen: true }))
+  const tip = page.locator('#sx-tip')
+  const stage = tip.locator('.sx-stage')
+  // setting key, its name to search for (the settings sit behind tabs), then the class prefix of the loop its row shows
+  for (const [key, name, loopId] of [['print_flow_ratio', 'Print flow ratio', 'afr'], ['fuzzy_skin', 'Fuzzy skin', 'afz'], ['ironing_type', 'Ironing type', 'air'], ['draft_shield', 'Draft shield', 'ads'], ['elefant_foot_compensation', 'Elephant foot', 'aef']] as const) {
+    await page.locator('#expert-search').fill(name)
+    const row = page.locator(`li[data-key="${key}"]`).first()
+    await row.scrollIntoViewIfNeeded()
+    await row.locator('label').first().hover()
+    await expect(stage.locator('svg.sxs'), key).toBeVisible()
+    await expect(stage).toHaveAttribute('data-play', 'true')
+    await expect(stage.locator(`[class*="${loopId}-"]`).first(), key).toBeAttached()
+    await page.mouse.move(5, 5)
+    await expect(tip).toHaveCount(0)
+  }
+})
