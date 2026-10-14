@@ -18,10 +18,19 @@
 /* The flavor pill sits on the card's name row, left of the check on the picked card. */
 .th-flavors { position: absolute; right: 7px; bottom: 6px; }
 .th-cell[data-on] .th-flavors { right: 28px; }
+/* the open menu sits over the cards after this one */
+.th-cell:has(.th-pill[aria-expanded="true"]) { z-index: 3; }
 .th-cell:has(.th-flavors) .th-name { padding-right: 96px; }
 .th-cell[data-on]:has(.th-flavors) .th-name { padding-right: 116px; }
+/* a narrow card (two columns on a phone) keeps its name: the pill moves onto the preview's top right corner */
+.th-cell { container-type: inline-size; }
+@container (max-width: 210px) {
+  .th-flavors, .th-cell[data-on] .th-flavors { right: 11px; bottom: auto; top: 11px; }
+  .th-cell:has(.th-flavors) .th-name, .th-cell[data-on]:has(.th-flavors) .th-name { padding-right: 22px; }
+}
 .th-pill { display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 5px 0 8px; font: var(--fw-medium) var(--fs-xs) var(--f-body); color: var(--muted); white-space: nowrap; cursor: pointer; background: var(--ink-1); border: 1px solid var(--line); border-radius: var(--r-pill); transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
-.th-pill:hover, .th-pill[aria-expanded="true"] { color: var(--fg); border-color: var(--accent); }
+.th-pill[data-static] { padding: 0 8px; cursor: default; }
+button.th-pill:hover, .th-pill[aria-expanded="true"] { color: var(--fg); border-color: var(--accent); }
 .th-pill:focus-visible { outline: none; box-shadow: var(--focus-field); border-color: var(--accent); }
 .th-check { position: absolute; right: 9px; bottom: 9px; color: var(--accent); }
 .th-remove { position: absolute; top: 4px; right: 4px; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
@@ -39,8 +48,6 @@
 .th-note { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font: var(--fs-sm) var(--f-body); color: var(--orange); }
 .th-note[data-ok] { color: var(--green); }
 .th-note[data-ok] li:not(:first-child) { color: var(--orange); }
-.th-flavor { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.th-flavor-label { font: var(--fw-medium) var(--fs-sm) var(--f-body); color: var(--muted); }
 .th-fonts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .th-font { display: grid; gap: 4px; font: var(--fs-sm) var(--f-body); color: var(--muted); }
 .th-font .sx-select { width: 100%; }

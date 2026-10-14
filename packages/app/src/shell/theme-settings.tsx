@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The theme picker: one card per theme showing the mode in use (both side by side under System),
-// the mode (System, Light, Dark), a flavor choice for themes with more than one dark variant, and
+// the mode (System, Light, Dark), a flavor pill on themes with more than one dark variant, and
 // theme import and export. Used by Settings > Look and feel and by the first-run theme step.
 import { Button, Icon, Menu, MenuAnchor, MenuItem, Seg } from '@slicerx/ui'
 import { derivePalette, familyId, pickFamily, serializeTheme, themeFamilies, themeForScheme, type ThemeFamily, type ThemeFile } from '@slicerx/ui/theme'
@@ -96,23 +96,30 @@ export function familySubLabel(f: ThemeFamily, active: boolean, darkId: string):
   return ''
 }
 
-/** The flavor pill on a card with several dark flavors: the flavor in use, or how many, and a menu to pick one. */
-function FlavorPill({ family, label, darkId }: { family: ThemeFamily; label: string; darkId: string }) {
+/** The flavor pill on a card with several dark flavors: the flavor showing, and in Dark or System a menu to pick the dark one. Light has one flavor, so it only names it. */
+function FlavorPill({ family, darkId, lightOnly }: { family: ThemeFamily; darkId: string; lightOnly: boolean }) {
   const [open, setOpen] = useState(false)
-  const current = family.dark.some((t) => t.id === darkId) ? darkId : null
+  const light = family.light[0]
+  if (lightOnly && light) {
+    return (
+      <span className="th-flavors">
+        <span className="th-pill" data-static="" aria-label={`${family.name} flavor`}>{light.flavor ?? light.name}</span>
+      </span>
+    )
+  }
+  const dark = family.dark.find((t) => t.id === darkId) ?? family.dark[0]
   return (
     <MenuAnchor className="th-flavors">
       <button type="button" className="th-pill" aria-haspopup="menu" aria-expanded={open} aria-label={`${family.name} flavors`} onClick={() => setOpen(!open)}>
-        <span>{label}</span>
+        <span>{dark?.flavor ?? dark?.name}</span>
         <Icon name="chevron-down" size={12} />
       </button>
       <Menu open={open} onClose={() => setOpen(false)} label={`${family.name} flavors`} align="end">
         {family.dark.map((t) => (
-          <MenuItem key={t.id} checked={t.id === current} onClick={() => (setOpen(false), pickThemeFamily(family, t.id))}>
+          <MenuItem key={t.id} checked={t.id === dark?.id} onClick={() => (setOpen(false), pickThemeFamily(family, t.id))}>
             {t.flavor ?? t.name}
           </MenuItem>
         ))}
-        {family.light[0] ? <MenuItem disabled>{family.light[0].flavor ?? family.light[0].name} is the light mode</MenuItem> : null}
       </Menu>
     </MenuAnchor>
   )
@@ -122,7 +129,6 @@ function FlavorPill({ family, label, darkId }: { family: ThemeFamily; label: str
 export function ThemePicker({ minWidth = 168 }: { minWidth?: number }) {
   const { scheme, ids, families, active, owned } = useThemeState()
   const follow = useApp((s) => s.themeFollowsSystem)
-  const activeFamily = families.find((f) => f.id === active)
   return (
     <>
       <div className="th-grid" role="radiogroup" aria-label="Theme" style={{ ['--th-min' as string]: `${minWidth}px` }}>
@@ -149,25 +155,12 @@ export function ThemePicker({ minWidth = 168 }: { minWidth?: number }) {
                 </span>
                 {on ? <Icon name="check" size={14} className="th-check" /> : null}
               </button>
-              {flavors ? <FlavorPill family={f} label={sub} darkId={ids.dark} /> : null}
+              {flavors ? <FlavorPill family={f} darkId={ids.dark} lightOnly={!follow && scheme === 'light'} /> : null}
               {mine.length ? <Button className="th-remove" variant="ghost" size="sm" icon="close" aria-label={`Remove ${f.name}`} tip="theme.remove" onClick={() => mine.forEach((t) => removeUserTheme(t.id))} /> : null}
             </span>
           )
         })}
       </div>
-      {activeFamily && activeFamily.dark.length > 1 ? (
-        <div className="th-flavor">
-          <span className="th-flavor-label">Dark flavor</span>
-          <Seg
-            label="Dark flavor"
-            size="sm"
-            value={activeFamily.dark.some((t) => t.id === ids.dark) ? ids.dark : (activeFamily.dark[0]?.id ?? '')}
-            onChange={(id) => pickThemeFamily(activeFamily, id)}
-            options={activeFamily.dark.map((t) => ({ value: t.id, label: t.flavor ?? t.name }))}
-          />
-          {activeFamily.light[0] ? <small className="sx-muted">{activeFamily.light[0].flavor ?? activeFamily.light[0].name} is the light mode.</small> : null}
-        </div>
-      ) : null}
     </>
   )
 }
