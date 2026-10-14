@@ -22,7 +22,7 @@ import { usePrinter } from '../lib/use-printer'
 import { useRightAttention } from '../lib/right-attention'
 import { ViewportHost } from '../viewport/viewport-host'
 import { ZoneLegend } from './zone-legend'
-import { PrepareLeft, PrepareObjects, SlicePinned, SliceBlock } from './prepare/prepare-panes'
+import { PrepareLeft, PrepareObjects, SliceBlock } from './prepare/prepare-panes'
 import { LayerDock, Legend } from './preview/preview-hud'
 import { PreviewLeft, PreviewRight } from './preview/preview-panes'
 import { useGcodeView } from './preview/gcode-file'
@@ -235,7 +235,7 @@ export function Studio() {
           </Suspense>
         </SidePane>
       ) : (
-        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} tab={{ panel: 'slice-sidebar' }} {...(compact ? {} : { pinned: <SlicePinned /> })} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})} {...(layout.modeSelector === 'sidebar' ? { headExtra: <ModeChip layout={layout} /> } : {})}>
+        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} tab={{ panel: 'slice-sidebar' }} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})} {...(layout.modeSelector === 'sidebar' ? { headExtra: <ModeChip layout={layout} /> } : {})}>
           <PrepareLeft layout={layout} />
         </SidePane>
       )}

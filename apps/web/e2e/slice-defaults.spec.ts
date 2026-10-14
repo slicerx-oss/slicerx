@@ -121,22 +121,25 @@ test.describe('Slice tab defaults', () => {
     }
   })
 
-  test('the pinned printer and filaments end on a row edge, never through a row', async ({ page }) => {
+  test('printer and filament controls stay reachable at shorter window heights', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await open(page, 'open')
     await slice(page)
+    const pane = page.locator('aside.pane[data-side="left"]')
+    const body = pane.locator('.sx-rail-body')
+    const footer = pane.locator('.sx-rail-foot')
     for (const size of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }, { width: 1440, height: 700 }]) {
       await page.setViewportSize(size)
-      // The pinned top refits when the pane's size changes, in the same pass that sizes the view's canvas: measure once
-      // the view has its new size, not after a fixed wait a busy page can outlast.
       await viewSized(page)
-      const cut = await page.evaluate(() => {
-        const pin = document.querySelector('aside.pane[data-side="left"] .sx-rail-pin')!
-        const bottom = pin.getBoundingClientRect().bottom
-        const rows = '.machine-card, .sx-block-h, .slot-rail-wrap, .rail-foot, .sx-switchrow, .nozzle-row'
-        return Array.from(pin.querySelectorAll(rows)).map((r) => r.getBoundingClientRect()).filter((r) => r.height > 0 && r.top < bottom - 1 && r.bottom > bottom + 1).length
-      })
-      expect(cut, `${size.width}x${size.height}`).toBe(0)
+      const footerBefore = await footer.boundingBox()
+      for (const control of [page.getByTestId('slice-machine-plate'), page.getByTestId('slice-filament-slot').last(), page.getByRole('radiogroup', { name: 'Supports' })]) {
+        await control.scrollIntoViewIfNeeded()
+        await expect(control).toBeInViewport()
+        expect(await footer.boundingBox()).toEqual(footerBefore)
+      }
+      await body.evaluate((el) => el.scrollTo(0, 0))
+      await expect(page.getByTestId('slice-machine-card')).toBeInViewport()
+      await expect(footer).toBeInViewport()
     }
   })
 

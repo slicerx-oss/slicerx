@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The Slice sidebar fits: in Simple at 1440 x 900 nothing in it scrolls, with or without a slice and with several
-// objects, since the objects sit in the right pane. The printer and filaments stay pinned while Advanced scrolls.
+// objects, since the objects sit in the right pane. Advanced scrolls the printer, filaments and settings together above the fixed action footer.
 import { type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
 import { expect, sliceCount, sliced, test } from './fixtures'
@@ -26,9 +26,9 @@ test.describe('the Slice sidebar at 1440 x 900', () => {
   test('Simple fits without scrolling, before and after a slice and with more objects', async ({ page }) => {
     test.slow()
     await openStudio(page, { settingsMode: 'simple' })
-    const pin = left(page).locator('.sx-rail-pin')
-    await expect(pin.getByTestId('slice-machine-card')).toBeVisible()
-    await expect(pin.locator('[data-section="filament"]')).toBeVisible()
+    const body = left(page).locator('.sx-rail-body')
+    await expect(body.getByTestId('slice-machine-card')).toBeVisible()
+    await expect(body.locator('[data-section="filament"]')).toBeVisible()
     // The objects are in the right pane, not the sidebar.
     await expect(left(page).getByTestId('objects-list')).toHaveCount(0)
     await expect(page.getByTestId('slice-summary').getByTestId('objects-list')).toBeVisible()
@@ -43,12 +43,18 @@ test.describe('the Slice sidebar at 1440 x 900', () => {
     expect(await overflow(page)).toBeLessThanOrEqual(1)
   })
 
-  test('Advanced scrolls its settings under a pinned printer and filament', async ({ page }) => {
+  test('Advanced scrolls the printer and settings together above a fixed footer', async ({ page }) => {
     await openStudio(page)
     const card = page.getByTestId('slice-machine-card')
     const before = await card.boundingBox()
+    const footer = left(page).locator('.sx-rail-foot')
+    const footerBefore = await footer.boundingBox()
     expect(await overflow(page)).toBeGreaterThan(0)
     await left(page).locator('.sx-rail-body').evaluate((el) => el.scrollTo(0, el.scrollHeight))
+    await expect(card).not.toBeInViewport()
+    expect(await footer.boundingBox()).toEqual(footerBefore)
+    await expect(footer).toBeInViewport()
+    await left(page).locator('.sx-rail-body').evaluate((el) => el.scrollTo(0, 0))
     await expect(card).toBeInViewport()
     expect((await card.boundingBox())?.y).toBe(before?.y)
   })
