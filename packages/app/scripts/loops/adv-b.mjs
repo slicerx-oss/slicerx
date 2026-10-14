@@ -973,6 +973,99 @@ function zOffset() {
   return staged(id, [sec(8, 1.6, 0) + nz(0.6) + pd('', rel([[3, 16, 0.1], [21, 16, 0.1]], false), CUT, 1.6), sec(5.5, 3, 0) + nz(1.8), sec(3.6, 3.6, 3) + nz(4.2) + dots([[6, 16, 0], [12, 16, 0], [18, 16, 0]], 's-cf s-cl', 0.8)], ['-0.1 mm', '0 mm', '+0.15 mm'], 'Z offset: the nozzle too close squashes the first lines and scrapes; too far and they stay round and do not stick.', { extra: bed, w: 76, x: 200 })
 }
 
+// ========== Advanced stills, second half: structure and location, no motion ==========
+const polyS = (cls, ps) => `<polygon class="${cls}" points="${ps.map((p) => iso(...p).join(',')).join(' ')}"/>`
+const dashS = (d, c, w, da = '3 2.5') => `<path class="s-n" stroke-dasharray="${da}"${st(c, w)} d="${d}"/>`
+const still = (id, about, body) => ({ id, about, css: '', body })
+
+// solid layers: a block cut open, its sparse layers and the chosen solid ones
+function solidLayers() {
+  const B = box([0, 0, 0], [24, 12, 15])
+  let sparse = ''
+  for (let k = 0; k < 6; k++) {
+    const z = k * 2.5
+    if (k === 0 || k === 5) continue
+    sparse += hatchAt(0.4, 0, 23.6, 0.01, 0, 1, 0).length ? '' : ''
+  }
+  // the front face as bands: solid at the bottom and top, one chosen layer solid in the middle, sparse between
+  const band = (z0, z1, cls) => polyS(cls, [[0, 12, z0], [24, 12, z0], [24, 12, z1], [0, 12, z1]])
+  let d = ''
+  for (const [z0, z1] of [[2.5, 6.5], [8.5, 12.5]]) for (let x = 1; x < 24; x += 2.4) d += rel([[x, 12, z0], [x + 1.2, 12, z1]], false) + rel([[x + 1.2, 12, z0], [x, 12, z1]], false)
+  return still('bqs1', 'Solid layers: a block cut open; the bottom, top and one chosen layer in between print solid, the rest sparse.', B + band(0, 2.5, 's-g1 s-aol') + band(6.5, 8.5, 's-g1 s-aol') + band(12.5, 15, 's-g1 s-aol') + pd('', d, T3, 1))
+}
+
+// infill patterns: four small slabs side by side, each showing one pattern
+function infillPatterns() {
+  const tile = (x0, y0, d) => box([x0, y0, 0], [x0 + 9, y0 + 9, 2]) + pd('', d, A2, 1.2)
+  const z = 2.05
+  const wave = (x0, y0) => { let d = ''; for (let k = 0; k < 4; k++) { const ps = []; for (let i = 0; i <= 12; i++) ps.push([x0 + 0.6 + (i / 12) * 7.8, y0 + 1.3 + k * 2.2 + 0.6 * Math.sin((i / 12) * 4 * Math.PI), z]); d += rel(ps, false) } return d }
+  const tri = (x0, y0) => hatchAt(x0 + 0.5, y0 + 0.5, x0 + 8.5, y0 + 8.5, 0, 2.2, z) + hatchAt(x0 + 0.5, y0 + 0.5, x0 + 8.5, y0 + 8.5, 60, 2.2, z) + hatchAt(x0 + 0.5, y0 + 0.5, x0 + 8.5, y0 + 8.5, 120, 2.2, z)
+  const body = tile(-2, 12, hatchAt(-1.5, 12.5, 6.5, 20.5, 45, 1.6, z)) + tile(10, 12, hatchAt(10.5, 12.5, 18.5, 20.5, 45, 2.2, z) + hatchAt(10.5, 12.5, 18.5, 20.5, -45, 2.2, z)) + tile(-2, 0, tri(-2, 0)) + tile(10, 0, wave(10, 0))
+  return still('bqs2', 'Infill patterns: lines, grid, triangles and a gyroid-like wave, each on its own tile.', body)
+}
+
+// support interface: a cut through support under a ledge, the dense layers touching the part above and below
+function supportInterface() {
+  const base = box([0, 0, 0], [26, 12, 3]), top = box([0, 0, 13], [26, 12, 16])
+  let cols = ''
+  for (let x = 3; x < 24; x += 2.5) cols += rel([[x, 12, 4.4], [x, 12, 11.4]], false)
+  const iface = (z0, z1) => polyS('s-g1 s-aol', [[2, 12, z0], [24, 12, z0], [24, 12, z1], [2, 12, z1]])
+  return still('bqs3', 'Support interface: a cut through support between two parts of a print; the dense interface layers touch the part above and, at the bottom, the part below.', base + iface(3, 4.4) + pd('', cols, A2, 1.6) + iface(11.4, 13) + top)
+}
+
+// shrinkage: the model scaled up (dashed) and the part after it cools back to size
+function shrinkage() {
+  const out = (e, z1) => rel([[2 - e, 14 + e, 0], [22 + e, 14 + e, 0], [22 + e, 14 + e, z1], [2 - e, 14 + e, z1], [2 - e, 14 + e, 0]], false) + rel([[22 + e, 14 + e, 0], [22 + e, 2 - e, 0], [22 + e, 2 - e, z1], [22 + e, 14 + e, z1]], false) + rel([[2 - e, 14 + e, z1], [2 - e, 2 - e, z1], [22 + e, 2 - e, z1]], false)
+  return still('bqs4', 'Shrinkage: the part is printed slightly larger (dashed) so it shrinks back to the model\'s size as it cools.', box([2, 2, 0], [22, 14, 10]) + dashS(out(1.2, 11.2), A1, 1.6))
+}
+
+// bed and clearance: the printable area, an excluded corner, and the toolhead's clearance around a printed part
+function bedClearance() {
+  const bed = box([-4, -4, -0.8], [26, 18, 0])
+  let ex = ''
+  for (let i = 1; i < 6; i++) ex += rel([[-4 + i * 1.4, -4, 0.05], [-4, -4 + i * 1.4, 0.05]], false)
+  const excl = pd('', rect(-4, -4, 4, 4, 0.05), CUT, 1.4) + pd('', ex, CUT, 1)
+  const part = box([13, 6, 0], [19, 12, 8])
+  const clearance = `<path class="s-ghost" style="stroke:var(${A1})" d="${circ(16, 9, 8.05, 8, 36)}"/>`
+  const head = box([14, 7, 10], [18, 11, 15], { l: 's-g2', r: 's-g3', t: 's-g1', ol: 's-aol' })
+  const lid = dashS(rel([[-4, 18, 18], [26, 18, 18], [26, -4, 18]], false), T3, 1.2)
+  return still('bqs5', 'Bed and clearance: the printable area on the bed, an excluded corner, and the room the toolhead needs around a finished part when printing one object at a time.', bed + excl + part + clearance + head)
+}
+
+// extruder type: direct drive with the motor on the toolhead, Bowden with the motor on the frame and a tube
+function extruderType() {
+  const motor = (x, y, z) => box([x - 2.5, y - 2.5, z], [x + 2.5, y + 2.5, z + 4], { l: 's-g2', r: 's-g3', t: 's-g1', ol: 's-aol' })
+  const head = (x, y) => box([x - 2, y - 2, 4], [x + 2, y + 2, 8]) + `<polygon class="s-f2 s-ol" points="${[[x, y, 1.2], [x - 1.2, y + 1.2, 4], [x + 1.2, y - 1.2, 4]].map((p) => iso(...p).join(',')).join(' ')}"/>`
+  const tube = pd('', `M${iso(22, 2, 12).join(' ')}C${iso(22, 2, 20).join(' ')} ${iso(18, 10, 18).join(' ')} ${iso(18, 10, 8).join(' ')}`, A2, 2.4)
+  return still('bqs6', 'Extruder type: direct drive carries the motor on the toolhead; Bowden keeps it on the frame and pushes filament through a long tube.', head(2, 12) + motor(2, 12, 8) + head(18, 10) + box([20, 0, 0], [24, 4, 8]) + motor(22, 2, 8) + tube)
+}
+
+// limits graph: speed over a move on a card, the cap line flattening the peak
+function limitsGraph() {
+  const card = box([-6, 6, 0], [30, 6.6, 14])
+  const gp = (x, z) => [x, 6.6, z]
+  const want = [[-4, 1.5], [6, 12], [18, 12], [28, 1.5]].map(([x, z]) => gp(x, z))
+  const got = [[-4, 1.5], [3.3, 8.5], [20.7, 8.5], [28, 1.5]].map(([x, z]) => gp(x, z))
+  return still('bqs7', 'Machine limits: the speed a move asks for (dashed) and what the printer allows; the cap flattens the peak and the ramps follow the acceleration limit.', card + dashS(rel(want, false), T3, 1.6) + pd('', rel([gp(-4, 8.5), gp(28, 8.5)], false), CUT, 1.2) + pd('', rel(got, false), A2, 2.4))
+}
+
+// one nozzle, many filaments: four spools feeding one toolhead
+function oneNozzle() {
+  const spool = (x, y) => cyl(x, y, 12, 14.5, 2.6)
+  let body = '', tubes = ''
+  const ys = [-4, 2, 8, 14]
+  for (const y of ys) { body += spool(-2, y); tubes += `M${iso(-2, y, 12).join(' ')}C${iso(4, y, 10).join(' ')} ${iso(12, 6, 12).join(' ')} ${iso(16, 6, 8).join(' ')}` }
+  const head = box([14, 4, 4], [18, 8, 8]) + `<polygon class="s-f2 s-ol" points="${[[16, 6, 1.2], [14.8, 7.2, 4], [17.2, 4.8, 4]].map((p) => iso(...p).join(',')).join(' ')}"/>`
+  return still('bqs8', 'One nozzle, many filaments: several filaments share one nozzle, loading one at a time and purging between colors.', pd('', tubes, A2, 1.6) + head + body)
+}
+
+// top surface density: btwo top surfaces, sparse lines with pinholes and solid
+function topDensity() {
+  const z = 2.05, A = box([-4, 2, 0], [10, 16, 2]), B = box([14, -2, 0], [28, 12, 2])
+  const holes = [[0, 6], [5, 11], [2, 13], [7, 5]].map(([x, y]) => ellipse(disc(x, y, z, 0.7), 's-hole')).join('')
+  return still('bqs9', 'Top surface density: at low density the top lines sit apart and leave pinholes; at full density the surface is closed.', A + pd('', hatch(-3.4, 9.4, 2.8, 15.2, 1.8, z), A2, 1.2) + holes + B + pd('', hatch(14.6, 27.4, -1.2, 11.2, 0.9, z), A2, 1.2))
+}
+
 /** Advanced, second half, by the file name the export uses. */
 export const LOOPS = {
   'adv-pressure-advance': pressureAdvance,
@@ -1110,4 +1203,12 @@ export const LOOPS = {
   'adv-z-hop': zHop,
   'adv-z-hop-types': zHopType,
   'adv-z-offset': zOffset,
+  'adv-solid-layers': solidLayers,
+  'adv-infill-patterns': infillPatterns,
+  'adv-support-interface': supportInterface,
+  'adv-shrinkage': shrinkage,
+  'adv-bed-clearance': bedClearance,
+  'adv-extruder-type': extruderType,
+  'adv-limits-graph': limitsGraph,
+  'adv-one-nozzle': oneNozzle,
 }
