@@ -446,6 +446,15 @@ button { cursor: pointer; }
 .sx-toast { pointer-events: none; background: color-mix(in srgb, var(--ink-4) 90%, transparent); border: 1px solid var(--line); padding: 9px 14px; border-radius: var(--r-md); font-size: var(--fs-md); box-shadow: var(--shadow-float); display: flex; align-items: center; gap: 10px; max-width: 100%; animation: sx-toast-in var(--t-slow) var(--ease); }
 .sx-toast button, .sx-toast a { pointer-events: auto; }
 .sx-toast .sx-ic { width: 16px; height: 16px; flex: none; }
+/* A toast is one line: its first sentence, cut to fit, with the rest behind Details. */
+.sx-toast-text { min-width: 0; max-width: 56ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sx-toast-more { display: none; }
+.sx-toast-details, .sx-toast-action { flex: none; }
+/* Two or more toasts up at once read as one card, one line each, instead of a stack of cards. */
+.sx-toasts:has(> .sx-toast + .sx-toast) { gap: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-4) 90%, transparent); box-shadow: var(--shadow-float); }
+.sx-toasts:has(> .sx-toast + .sx-toast) > .sx-toast { width: 100%; padding: 4px 8px 4px 14px; min-height: 36px; border: 0; border-radius: 0; background: none; box-shadow: none; animation: none; }
+.sx-toasts:has(> .sx-toast + .sx-toast) > .sx-toast + .sx-toast { border-top: 1px solid var(--line-soft); }
+.sx-toasts:has(> .sx-toast + .sx-toast) .sx-toast-text { flex: 1 1 auto; }
 .sx-toast[data-tone="ok"] .sx-ic { color: var(--green); }
 .sx-toast[data-tone="warn"] .sx-ic { color: var(--orange); }
 .sx-toast[data-tone="error"] .sx-ic { color: var(--red); }

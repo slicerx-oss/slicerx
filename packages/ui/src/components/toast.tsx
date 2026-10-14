@@ -138,7 +138,7 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
             }}
           >
             {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
-            <span>{t.message}</span>
+            <ToastText message={t.message} />
             {t.action ? (
               <Button size="sm" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
                 {t.action.label}
@@ -148,6 +148,33 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
         ))}
       </div>
     </ToastContext.Provider>
+  )
+}
+
+/**
+ * The first sentence of a string message, and the rest. A toast shows only its first sentence on one line; the rest
+ * stays in the text (and the announcement) behind Details.
+ */
+export function splitLead(message: ReactNode): { lead: ReactNode; rest: string } {
+  if (typeof message !== 'string') return { lead: message, rest: '' }
+  const m = /^(.+?[.!?])\s+(\S[\s\S]*)$/.exec(message)
+  return m ? { lead: m[1], rest: m[2] ?? '' } : { lead: message, rest: '' }
+}
+
+function ToastText({ message }: { message: ReactNode }) {
+  const { lead, rest } = splitLead(message)
+  return (
+    <>
+      <span className="sx-toast-text">
+        <span className="sx-toast-lead">{lead}</span>
+        {rest ? <span className="sx-toast-more"> {rest}</span> : null}
+      </span>
+      {rest ? (
+        <Button size="sm" variant="ghost" className="sx-toast-details" data-testid="toast-details">
+          Details
+        </Button>
+      ) : null}
+    </>
   )
 }
 
