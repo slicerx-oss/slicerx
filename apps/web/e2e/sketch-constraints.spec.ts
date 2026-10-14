@@ -15,7 +15,7 @@ test('a circle drawn on a face has three degrees of freedom left', async ({ page
   await pick(page, await facePick(page, id, [0, 0, 1]))
   await expect(panel).toContainText('A face of')
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
-  await expect(panel).toContainText('Click the center, then a point on the rim.')
+  await expect(panel).toContainText('Click the center, then the rim.')
   // off the origin, which would hold the center
   await sketchAt(page, 'click', [2, 1])
   await sketchAt(page, 'click', [6, 1])
@@ -45,7 +45,7 @@ test('a circle with its center fixed and a diameter is fully constrained', async
   await pick(page, await facePick(page, id, [0, 0, 1]))
   await expect(panel).toContainText('A face of')
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
-  await expect(panel).toContainText('Click the center, then a point on the rim.')
+  await expect(panel).toContainText('Click the center, then the rim.')
   await sketchAt(page, 'click', [2, 1])
   await sketchAt(page, 'click', [6, 1])
   await expect(panel.getByTestId('sketch-dof')).toHaveText('3 degrees of freedom left')
