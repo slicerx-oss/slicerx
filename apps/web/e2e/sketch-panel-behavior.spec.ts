@@ -383,6 +383,23 @@ for (const height of [844, 700, 600]) {
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     // a line in progress: the reason Extrude is off is said in a finger's words
     await expect(sheet.getByTestId('model-tool-reason')).toHaveText('End the shape being drawn first (press and hold).')
+    // opened, the drawing's controls show whole down to the Show chips, clear of the footer and its fade, and the sheet
+    // stays below the top bar
+    await expect.poll(() => sheet.evaluate((el) => {
+      const body = el.querySelector('.sx-rail-body')!
+      const foot = body.querySelector('.cad-footer')!
+      const fade = parseFloat(getComputedStyle(foot, '::before').height) || 24
+      return body.querySelector('.sketch-show')!.getBoundingClientRect().bottom + body.scrollTop <= foot.getBoundingClientRect().top - fade + 0.5
+    })).toBe(true)
+    // the chips end on the panel's right edge, with the Snap menu
+    const edges = await sheet.evaluate((el) => {
+      const chips = [...el.querySelectorAll('.sketch-show button')].map((b) => b.getBoundingClientRect().right)
+      return { chips: Math.max(...chips), snap: el.querySelector('#sk-grid')!.closest('.tp-row, .sx-field, div')!.getBoundingClientRect().right }
+    })
+    expect(edges.chips).toBeLessThanOrEqual(edges.snap + 0.5)
+    const top = (await page.locator('.topbar, header').first().boundingBox())!
+    expect((await sheet.boundingBox())!.y).toBeGreaterThanOrEqual(top.y + top.height)
+    await page.screenshot({ path: test.info().outputPath(`sheet-open-${height}.png`) })
     // a closed square, so the solid settings are all there
     await phoneClick(page, [10, -10])
     await phoneClick(page, [10, 10])

@@ -1412,6 +1412,33 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       rail.style.removeProperty('--kb-lift')
     }
   }, [phone, fold?.slot])
+  // Opened on a phone, the sheet is tall enough to show the drawing's controls whole, through the Show chips, above its
+  // footer; the solid's settings below them scroll. The CSS caps it at the room between the top bar and the phone's bar.
+  useEffect(() => {
+    const rail = fold?.slot?.closest<HTMLElement>('.pane')
+    const body = rail?.querySelector<HTMLElement>('.sx-rail-body')
+    if (!phone || !rail || !body || folded || featureOnly) return
+    const fit = () => {
+      const show = body.querySelector('.sketch-show')
+      const foot = body.querySelector<HTMLElement>('.cad-footer')
+      if (!show || !foot) return rail.style.removeProperty('--sheet-fit')
+      // the chips' bottom at the top of the scroll, and the footer's top with the fade above it
+      const chips = show.getBoundingClientRect().bottom + body.scrollTop
+      // the fade shows only while more is below, so its room is kept either way (24 px, as cad.css draws it)
+      const fade = parseFloat(getComputedStyle(foot, '::before').height) || 24
+      const short = chips - (foot.getBoundingClientRect().top - fade)
+      rail.style.setProperty('--sheet-fit', `${Math.ceil(rail.getBoundingClientRect().height + short)}px`)
+    }
+    fit()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit)
+    for (const el of body.children) ro?.observe(el)
+    window.addEventListener('resize', fit)
+    return () => {
+      ro?.disconnect()
+      window.removeEventListener('resize', fit)
+      rail.style.removeProperty('--sheet-fit')
+    }
+  }, [phone, fold?.slot, folded, featureOnly])
   const summary =
     phone && fold?.slot && !featureOnly
       ? createPortal(
