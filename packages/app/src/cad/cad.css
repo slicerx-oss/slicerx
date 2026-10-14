@@ -238,6 +238,7 @@
 .sketch-pill-unit { color: var(--dim); }
 .sketch-pill-input { width: 7ch; height: 18px; padding: 0 2px; border: 0; border-radius: var(--r-xs); background: var(--ink-3); color: var(--fg); font-size: var(--fs-xs); text-align: right; outline: none; }
 .sketch-pill-input::placeholder { color: var(--dim); }
+.sketch-pill-input:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 /* typing: the pills turn to edit fields, so a typed number reads apart from the live one; a typed pill takes the accent */
 .sketch-pills[data-typing] .sketch-pill { background: var(--ink-2); color: var(--fg); }
 .sketch-pills[data-typing] .sketch-pill-input { background: var(--ink-3); box-shadow: inset 0 -2px 0 var(--accent); }
