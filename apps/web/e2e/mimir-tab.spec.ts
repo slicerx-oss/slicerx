@@ -341,9 +341,9 @@ test.describe('the mimir tab', () => {
     await composer.getByRole('textbox').fill('Can you make a box with a lid?')
     await composer.getByRole('button', { name: 'Send' }).click()
     // no pick while the run waits on the sizes
-    await expect(page.getByTestId('mimir-sheet-build')).toBeVisible()
+    await expect(page.getByTestId('mimir-sheet-confirm')).toBeVisible()
     await expect(page.getByTestId('mimir-filament')).toHaveCount(0)
-    await page.getByTestId('mimir-sheet-build').click()
+    await page.getByTestId('mimir-sheet-confirm').click()
     await expect(page.getByTestId('mimir-transcript')).toContainText('Done: the box and its lid', { timeout: 30_000 })
     const pick = page.getByTestId('mimir-filament')
     await expect(pick).toBeVisible()
