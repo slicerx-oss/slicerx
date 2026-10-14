@@ -346,6 +346,8 @@ class ViewportImpl implements Viewport {
   // pointer turns solid at once, every model is solid while one is dragged or the slice is out of date.
   private toolpathLook = { on: false, stale: false }
   private solidId: string | null = null
+  private resizeTimer: ReturnType<typeof setTimeout> | null = null
+  private bufferRatio = 0
   private width = 1
   private height = 1
   private insets: Insets = NO_INSETS
@@ -509,7 +511,7 @@ class ViewportImpl implements Viewport {
     if (opts.controls) this.setControls(opts.controls)
     if (opts.theme) this.setTheme(opts.theme)
 
-    this.ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this.resize()) : null
+    this.ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this.scheduleResize()) : null
     this.ro?.observe(canvas)
     this.io =
       typeof IntersectionObserver !== 'undefined'
@@ -946,16 +948,28 @@ class ViewportImpl implements Viewport {
     }
   }
 
+  private scheduleResize(): void {
+    if (this.disposed) return
+    if (this.resizeTimer !== null) clearTimeout(this.resizeTimer)
+    // CSS follows the pane while it moves; allocate the buffer once the motion settles.
+    this.resizeTimer = setTimeout(() => {
+      this.resizeTimer = null
+      this.resize()
+    }, 100)
+  }
+
   private resize(): void {
     if (this.disposed) return
     const w = Math.max(1, this.canvas.clientWidth)
     const h = Math.max(1, this.canvas.clientHeight)
     const dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1
     if (this.frames === 0 || this.pr > 1 || !this.adaptive) this.pr = Math.min(dpr, this.maxPr)
+    if (w === this.width && h === this.height && this.pr === this.bufferRatio) return
     this.width = w
     this.height = h
-    this.renderer.setPixelRatio(this.pr)
-    this.renderer.setSize(w, h, false)
+    this.bufferRatio = this.pr
+    // Set all three together: setPixelRatio also resets the drawing buffer.
+    this.renderer.setDrawingBufferSize(w, h, this.pr)
     this.pipeline.setSize(w, h, this.pr)
     setEdgeResolution(w * this.pr, h * this.pr)
     setSketchResolution(w * this.pr, h * this.pr)
@@ -968,8 +982,7 @@ class ViewportImpl implements Viewport {
     this.camera.aspect = w / h
     this.applyInset()
     shared.gmin.value = this.pr >= 1.5 ? 6.5 : 4
-    // Sizing the canvas clears it. The observer runs before the page paints, so drawing now keeps the old picture
-    // from going blank for a frame when a panel or bar beside the view changes size.
+    // Sizing the canvas clears it. Draw immediately so the new buffer is never presented blank.
     if (this.frames > 0 && this.canRun()) this.renderFrame(this.aoLevel, false)
     this.invalidate()
   }
@@ -4137,6 +4150,7 @@ class ViewportImpl implements Viewport {
     this.raf = 0
     for (const c of this.cleanups) c()
     this.ro?.disconnect()
+    if (this.resizeTimer !== null) clearTimeout(this.resizeTimer)
     this.io?.disconnect()
     this.controls.dispose()
     for (const o of this.objects.values()) disposeObject(o)
