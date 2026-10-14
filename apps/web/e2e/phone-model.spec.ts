@@ -289,11 +289,15 @@ test.describe('Model on a phone', () => {
     await page.evaluate(() => (window as unknown as { __sx: { setState(s: unknown): void } }).__sx.setState({ toast: { id: Date.now(), text: 'The 3D view will be slow here.', tone: 'info', details: 'Hardware acceleration looks off in this browser. Turn it on in the browser settings and reload.' } }))
     const toast = page.getByTestId('toast').filter({ hasText: 'The 3D view will be slow here.' }).last()
     await expect(toast).toBeVisible()
-    await expect(toast).not.toContainText('browser settings')
+    // the reason waits behind Details
+    const details = toast.locator('.sx-toast-details')
+    await expect(details).toBeHidden()
     // one line on a 390 px screen
     expect((await toast.boundingBox())!.height).toBeLessThan(64)
     await toast.getByTestId('toast-details').tap()
-    await expect(toast).toContainText('Turn it on in the browser settings and reload.')
+    await expect(toast.getByTestId('toast-details')).toHaveAttribute('aria-expanded', 'true')
+    await expect(details).toBeVisible()
+    await expect(details).toHaveText('Hardware acceleration looks off in this browser. Turn it on in the browser settings and reload.')
     await page.screenshot({ path: test.info().outputPath('phone-notice-details.png') })
     await toast.getByTestId('toast-close').tap()
     await expect(toast).toHaveCount(0)
