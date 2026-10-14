@@ -366,6 +366,9 @@
 .sx-pilot .sheet-rec-foot .lookup-rec-s{min-width:0;color:var(--t-mute);text-decoration:none}
 .sx-pilot .sheet-rec-foot .lookup-rec-s[data-assumed]{color:var(--orange)}
 .sx-pilot .sheet-rec-foot .sx-btn{flex:none}
+/* the status keeps two lines' room while the sheet waits, so the record never changes height under the chat's scroll */
+.sx-pilot .sheet-rec-foot .lookup-rec-s{flex:1;padding-top:5px;line-height:18px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.sx-pilot .sheet-rec-foot:has(.sx-btn[data-testid="mimir-sheet-confirm"]) .lookup-rec-s{min-height:41px;box-sizing:border-box}
 .sx-pilot .sheet-rec-foot .lookup-rec-s{flex:1;padding-top:5px;line-height:18px}
 /* part card: the part a reply made, flat in the transcript like the choice card. Air around it from the turn's gap. */
 .sx-pilot .part-card{display:flex;flex-direction:column;gap:var(--s-2);padding:var(--s-3) var(--s-4);border:1px solid var(--surface-line);border-radius:var(--r-md);background:var(--surface-card);max-width:68ch}

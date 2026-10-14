@@ -221,8 +221,8 @@ test.describe('the mimir tab', () => {
     await page.getByTestId('mimir-sheet-confirm').click()
     await expect(sheet).toContainText('Confirmed as shown')
     const card = page.getByTestId('mimir-lookup-card')
-    // The build opens the timeline for a moment to show the new steps. A click on its tab then keeps it open (the
-    // person did not open it, so the click means keep it), and the next click closes it.
+    // The pointer in the band along the view's bottom opens the timeline for a moment. A click on its tab then keeps it
+    // open (the person did not open it, so the click means keep it), and the next click closes it.
     const timeline = page.locator('.bpanel-body')
     const tab = page.getByTestId('edge-tab-bottom')
     const press = async () => {
@@ -230,6 +230,8 @@ test.describe('the mimir tab', () => {
       await page.mouse.click(t.x + t.width / 2, t.y + t.height / 2)
       await page.mouse.move(700, 300)
     }
+    const view = (await page.locator('.studio > .vp').boundingBox())!
+    await page.mouse.move(view.x + view.width / 2, view.y + view.height - 12)
     await expect(timeline).toBeVisible()
     await press()
     // past the attention window and the close delay
