@@ -361,3 +361,41 @@ test('the pills stay in the view and off the point; typed numbers read apart; Ta
   await sketchAt(page, 'click', [0, 6])
   await expect(page.getByTestId('sketch-picked')).toHaveText('Line, 12.00 mm')
 })
+
+test('Show chips: one row when the four fit the real width, two by two when not, never clipped or shrunk', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Modeling tools are desktop only')
+  await sketchOnTop(page)
+  const m = await page.evaluate(() => {
+    const show = document.querySelector('.sketch-show') as HTMLElement
+    const chips = [...show.querySelectorAll<HTMLElement>('.tp-chip')]
+    const label = show.querySelector('.tp-label') as HTMLElement
+    const gap = parseFloat(getComputedStyle(show.querySelector('.tp-chips')!).columnGap)
+    // what each chip needs, measured in place
+    const need = chips.map((b) => {
+      const was = b.style.width
+      b.style.width = 'max-content'
+      const w = b.getBoundingClientRect().width
+      b.style.width = was
+      return w
+    })
+    const oneRow = label.getBoundingClientRect().width + parseFloat(getComputedStyle(show).columnGap) + need.reduce((a, b) => a + b, 0) + gap * 3
+    const tops = new Set(chips.map((b) => Math.round(b.getBoundingClientRect().top)))
+    return {
+      width: show.getBoundingClientRect().width,
+      oneRow,
+      rows: tops.size,
+      clipped: chips.filter((b) => b.scrollWidth > b.clientWidth + 0.5).map((b) => b.textContent),
+      heights: chips.map((b) => b.getBoundingClientRect().height),
+      font: parseFloat(getComputedStyle(chips[0]!).fontSize),
+      pressed: chips.map((b) => b.getAttribute('aria-pressed')),
+      // the compact control height token, as the look and feel sets it (28 px at the default density)
+      token: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--h-sm')),
+    }
+  })
+  expect(m.rows).toBe(m.oneRow <= m.width ? 1 : 2)
+  expect(m.clipped).toEqual([])
+  for (const h of m.heights) expect(h).toBe(m.token)
+  expect(m.font).toBeGreaterThanOrEqual(12)
+  expect(m.pressed).toEqual(['true', 'true', 'true', 'true'])
+  test.info().annotations.push({ type: 'chips', description: `row ${m.width}px, one row needs ${m.oneRow.toFixed(1)}px: ${m.rows} rows` })
+})
