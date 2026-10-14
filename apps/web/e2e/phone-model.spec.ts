@@ -252,6 +252,52 @@ test.describe('Model on a phone', () => {
     const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.getAttribute('data-testid'), { x: marker.x + marker.width / 2 + 16, y: marker.y + marker.height / 2 })
     expect(hit).toBe('tl-marker')
   })
+
+  test('drawing folds the sheet to the tool and its state, with a button to open it, and Finish sketch in reach', async ({ page }) => {
+    await openModel(page)
+    await setState(page, { plate: [], selection: null, selectedIds: [] })
+    await page.getByTestId('phone-sketch').tap()
+    const sheet = page.getByRole('complementary', { name: 'Tool and transform' })
+    await expect(sheet).toContainText('Tap an origin plane')
+    await page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, originPlane: 'xy' }))
+    // no box repeats the tool; the sheet's header, just above the tool strip, names it and sums up the sketch
+    await expect(page.getByTestId('phone-sketch-bar').getByTestId('sketch-variant-one')).toHaveCount(0)
+    const summary = page.getByTestId('sketch-summary')
+    await expect(summary).toContainText('Line')
+    const toggle = page.getByTestId('sketch-sheet-toggle')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const open = (await sheet.boundingBox())!
+    await page.screenshot({ path: test.info().outputPath('phone-sheet-open.png') })
+    // the first point folds the sheet to its header: the view gets the room, the summary and Finish sketch stay
+    await page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('sketch', { kind: 'click', at: [-10, -10], mmPerPx: 0.2, screen: [200, 300], shift: false, alt: false }))
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect.poll(async () => (await sheet.boundingBox())!.height).toBeLessThan(open.height / 2)
+    await expect(summary).toBeInViewport()
+    await expect(page.getByTestId('sketch-finish')).toBeInViewport()
+    await page.screenshot({ path: test.info().outputPath('phone-sheet-folded.png') })
+    // the button opens it again, and Finish sketch is still there
+    await toggle.tap()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.locator('#sk-grid')).toBeInViewport()
+    await expect(page.getByTestId('sketch-finish')).toBeInViewport()
+    await toggle.tap()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('the slow 3D notice is one short line with Details, and it can be closed', async ({ page }) => {
+    await openModel(page)
+    await page.evaluate(() => (window as unknown as { __sx: { setState(s: unknown): void } }).__sx.setState({ toast: { id: Date.now(), text: 'The 3D view will be slow here.', tone: 'info', details: 'Hardware acceleration looks off in this browser. Turn it on in the browser settings and reload.' } }))
+    const toast = page.getByTestId('toast').filter({ hasText: 'The 3D view will be slow here.' }).last()
+    await expect(toast).toBeVisible()
+    await expect(toast).not.toContainText('browser settings')
+    // one line on a 390 px screen
+    expect((await toast.boundingBox())!.height).toBeLessThan(64)
+    await toast.getByTestId('toast-details').tap()
+    await expect(toast).toContainText('Turn it on in the browser settings and reload.')
+    await page.screenshot({ path: test.info().outputPath('phone-notice-details.png') })
+    await toast.getByTestId('toast-close').tap()
+    await expect(toast).toHaveCount(0)
+  })
 })
 
 test('a desktop window keeps the ribbon and has no phone bar', async ({ page, isMobile }) => {
