@@ -30,11 +30,6 @@
 .mimir-chat[data-resizing] { user-select: none; }
 .mimir-chat[data-drop]::after { content: ""; position: absolute; inset: 6px; border: 1px dashed var(--purple); border-radius: var(--r-md); background: color-mix(in srgb, var(--purple) 6%, transparent); pointer-events: none; }
 .studio[data-model-mode="mimir"] > .vp { order: 1; }
-.mimir-caption-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-/* the drawing's units and state, a quiet tag beside its caption */
-.mimir-caption-tag { display: inline-flex; align-items: center; height: 24px; border: 1px solid var(--line-soft); border-radius: var(--r-xs); background: var(--ink-0); font-size: 11px; color: var(--muted); white-space: nowrap; }
-.mimir-caption-tag > span { padding: 0 8px; }
-.mimir-caption-tag > span + span { border-left: 1px solid var(--line-soft); }
 .mimir-caption { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--fg); white-space: nowrap; }
 /* Lookup cards: a band at the view's bottom left, lifted (they float over the view). The band keeps clear of what
    runs along the bottom edge: the timeline's edge tab, the model size pill and the strip that opens the timeline when
@@ -64,13 +59,25 @@
 /* The dimension sheet (owner pick B, a drawing): while a sheet waits the view becomes a drawing sheet with four views,
    and a flat panel docked on the right lists the sizes by callout number. The caption and the timeline stay over the
    drawing; the view's menus give way, and the timeline and lookups stop at the panel. */
+.studio, .mimir-chat { --callout-fill: light-dark(#2d2f3d, #1d1e27); }
 .studio > .vp { --mimir-sheet-w: 372px; --sheet-part: light-dark(#c4c8d6, #c9ccdb); --sheet-part-dark: light-dark(#6e7387, #444759); }
-.vp[data-mimir-sheet] .bpanel, .vp[data-mimir-sheet] .mimir-lookups { right: calc(var(--mimir-sheet-w) + 12px); }
-.vp[data-mimir-sheet] .mimir-lookups { max-width: calc(100% - var(--mimir-sheet-w) - 24px); }
-.vp[data-mimir-sheet="drawing"] .mimir-lookups { visibility: hidden; }
-.vp[data-mimir-sheet="drawing"] .hud-top .hud-row > :not(.mimir-caption, .mimir-caption-row), .vp[data-mimir-sheet] .hud-top .hud-col.end { visibility: hidden; }
-.mimir-drawing { position: absolute; inset: 0 var(--mimir-sheet-w) 0 0; z-index: 1; background-color: var(--ink-0); }
-.mimir-drawing-grid { position: absolute; left: 12px; right: 12px; top: 52px; bottom: 56px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; border: 1px solid var(--line); border-radius: var(--r-xs); overflow: hidden; }
+.vp[data-mimir-sheet="panel"] .bpanel, .vp[data-mimir-sheet="panel"] .mimir-lookups { right: calc(var(--mimir-sheet-w) + 12px); }
+.vp[data-mimir-sheet="panel"] .mimir-lookups { max-width: calc(100% - var(--mimir-sheet-w) - 24px); }
+.vp[data-mimir-sheet="drawing"] :is(.mimir-lookups, .dims) { visibility: hidden; }
+.vp[data-mimir-sheet="drawing"] .hud-top, .vp[data-mimir-sheet] .hud-top .hud-col.end { visibility: hidden; }
+/* While the sheet waits the sizes are typed on its record in the chat, so the drawing has the whole view: a card on
+   the page tone with its title pill, the four views and the title strip on its bottom edge. It keeps clear of the
+   strip along the view's bottom that opens the timeline (56 px). */
+.mimir-drawing { position: absolute; inset: 0; z-index: 1; display: flex; padding: 12px 16px 56px; background-color: var(--ink-0); }
+.mimir-drawing-card { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--ink-2); overflow: hidden; }
+.mimir-drawing-head { display: flex; align-items: center; flex: none; height: 48px; padding: 0 12px; }
+.mimir-drawing-title { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--ink-1); font-size: var(--fs-sm); color: var(--fg); }
+.mimir-drawing-grid { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; border-top: 1px solid var(--line-soft); }
+/* the title, units and state on the card's bottom edge, like a print drawing's title strip */
+.mimir-drawing-strip { display: flex; flex: none; height: 28px; border-top: 1px solid var(--line-soft); background: var(--ink-1); font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+.mimir-drawing-strip > span { display: flex; align-items: center; padding: 0 12px; }
+.mimir-drawing-strip > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.mimir-drawing-strip > span + span { border-left: 1px solid var(--line-soft); }
 .mimir-drawing-cell { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .mimir-drawing-cell:nth-child(2n) { border-right: 0; }
 .mimir-drawing-cell:nth-child(n + 3) { border-bottom: 0; }
@@ -84,9 +91,10 @@
 .mimir-dim[data-on] line, .mimir-dim[data-on] polyline { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: none; }
 .mimir-dim[data-on] .mimir-dim-arrow { fill: var(--accent); }
 .mimir-callout { cursor: pointer; }
-.mimir-callout circle { fill: var(--ink-1); stroke: var(--muted); stroke-width: 1.5; }
-.mimir-callout text { fill: var(--fg); font: var(--fw-bold) 11.5px var(--f-body); font-variant-numeric: tabular-nums; text-anchor: middle; dominant-baseline: central; }
-.mimir-callout[data-source="guess"] circle { stroke: var(--orange); stroke-dasharray: 3 2.2; }
+.mimir-callout circle { fill: var(--callout-fill); stroke: var(--muted); stroke-width: 1.5; }
+.mimir-callout text { fill: #fff; font: var(--fw-bold) 11.5px var(--f-body); font-variant-numeric: tabular-nums; text-anchor: middle; dominant-baseline: central; }
+.mimir-callout[data-source="guess"] circle { fill: var(--ink-0); stroke: var(--orange); stroke-dasharray: 3 2.2; }
+.mimir-callout[data-source="guess"] text { fill: var(--orange); }
 .mimir-callout[data-source="lookup"] circle { stroke: var(--cyan); }
 .mimir-callout[data-source="asked"] circle { stroke: var(--purple); }
 .mimir-callout[data-source="photo"] circle { stroke: var(--pink); }
@@ -150,3 +158,5 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 /* the composer is a field in dark, one step above the cards; light keeps its float until its own pass */
 .mimir-chat .composer { background: var(--field-bg); border-color: var(--field-line); }
 :root[data-scheme="light"] .mimir-chat .composer { background: var(--overlay); border-color: var(--line-soft); }
+/* the watermark stays with the empty chat, never behind a conversation */
+.mimir-stage:has(.mimir-turns) .mimir-ravens { display: none; }

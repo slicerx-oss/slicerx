@@ -112,6 +112,16 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     const el = body.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [transcript])
+  // and when the chat itself gets shorter, as it does under a phone's drawing
+  useEffect(() => {
+    const el = body.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   // On mimir cloud, the first chat waits for the person to read what is sent and kept.
   const notice = useCloudNoticeDue()
   // A file dragged anywhere over the chat can be dropped onto the message.
@@ -255,22 +265,9 @@ export function MimirCaption() {
   }, [])
   const step = useStepCaption()
   const drawing = useSheetUi((s) => sheetMode(s) === 'confirm' && (s.shown?.sheet.part?.length ?? 0) > 0)
-  if (drawing) {
-    return (
-      <div className="mimir-caption-row">
-        <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
-          Drawing, four views
-        </div>
-        <span className="mimir-caption-tag sx-mono" data-testid="mimir-drawing-status">
-          <span>mm</span>
-          <span>Not built yet</span>
-        </span>
-      </div>
-    )
-  }
   return (
     <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
-      {step ?? captionFor(preset)}
+      {drawing ? 'Drawing, four views' : (step ?? captionFor(preset))}
     </div>
   )
 }

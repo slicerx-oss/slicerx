@@ -124,7 +124,7 @@ export function boxPart(v: Record<string, number>) {
 }
 
 /** A placeholder source: scripted lookups are examples, never real pages. */
-const EXAMPLE_SOURCE = { title: 'Example spec sheet (scripted)', url: 'https://example.com/thermostat-specs' }
+const EXAMPLE_SOURCE = { title: 'Example spec sheet', url: 'https://example.com/thermostat-specs' }
 
 const backplate: ScriptStep[] = [
   {
@@ -309,7 +309,7 @@ function lastCall(messages: readonly LlmMessage[]): string | null {
 }
 
 const PHONES = { iphone: { name: 'iPhone 15', w: 71.6, t: 7.8 }, pixel: { name: 'Pixel 8', w: 70.8, t: 8.9 } } as const
-const PHONE_SOURCE = { title: 'Example phone specs (scripted)', url: 'https://example.com/phone-specs' }
+const PHONE_SOURCE = { title: 'Example phone specs', url: 'https://example.com/phone-specs' }
 
 /** One step's reply, as a script step gives it. */
 type StepData = Exclude<ScriptStep, (messages: LlmMessage[]) => unknown>
