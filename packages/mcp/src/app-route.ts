@@ -28,6 +28,7 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.boolean',
   'geom.fillet',
   'geom.chamfer',
+  'geom.hole',
 ])
 
 /** Moving, turning and scaling objects, which run on the app's shown plate when the object is not this server's. */

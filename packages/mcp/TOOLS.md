@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-168 tools.
+169 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -21,7 +21,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_delete_fleet` | Delete a fleet | fleets | read, ungated | Delete a fleet. |
 | `slicerx_design_edit_step` |  |  | slice | Edit one step of a design and replay the steps after it, as editing a step in SlicerX's history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. |
 | `slicerx_design_list` |  |  | read | The designs open on this server, with their parts, sizes and step counts. |
-| `slicerx_design_new` |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
+| `slicerx_design_new` |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
 | `slicerx_design_open` |  |  | read | Open the objects of any 3MF project (SlicerX, Bambu Studio, Orca) as designs, one per object. |
 | `slicerx_design_redo` |  |  | slice | Put back the step slicerx_design_undo last removed. |
 | `slicerx_design_roll` |  |  | slice | Move the timeline marker, rolling the whole design back to how it was after that many items (0 is before everything; leave marker out for the end), as dragging the marker in SlicerX does. |
@@ -52,6 +52,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_geom_face_pick` |  |  | read | Pick a flat face of a model or a design: returns its sketch frame (origin, normal, u, v in mm), its outline in that frame, area and bounds. |
 | `slicerx_geom_faces` |  |  | read | List the flat faces of a model or a design, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center; for a design also its part, its face key and the step that made it. |
 | `slicerx_geom_fillet` |  |  | slice | Round straight edges where two flat faces meet, with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. |
+| `slicerx_geom_hole` |  |  | slice | Make a round hole in a model or a design another size, as the hole tool does: a new diameter, a blind hole's depth, and a counterbore or a countersink at its entry. |
 | `slicerx_geom_hollow` |  |  | slice | Hollow a solid model to a shell of a given wall thickness, with optional drain holes so resin or trapped material can leave. |
 | `slicerx_geom_info` |  |  | read | Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. |
 | `slicerx_geom_layers_plan` |  |  | read | Plan variable layer heights (sleipnir) for a model: thinner layers where the shape needs detail, thicker where it does not, within the nozzle-based limits. |

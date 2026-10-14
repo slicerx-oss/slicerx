@@ -73,7 +73,7 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
   it('lists the CAD tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['faces', 'face_pick', 'edge_pick', 'sketch_check', 'sketch_solve', 'sketch_edit', 'extrude', 'revolve', 'push_pull', 'boolean', 'fillet', 'chamfer', 'info', 'measure', 'shell', 'hole']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('extrudes a rectangle, then cuts a hole into its top face', async () => {
@@ -138,6 +138,30 @@ describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
 
     const tooBig = await h.call('slicerx_geom_fillet', { model, edges: [edge.edge], radius_mm: 50 })
     expect(tooBig.isError).toBe(true)
+  })
+
+  it('makes a hole in an STL another size, picked by its axis or its wall, and reads it back', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    const body = data<{ output: MeshOut }>(await h.call('slicerx_geom_extrude', { shape: rect, placement: place, distance_mm: 5 })).output.mesh.stlPath
+    const drilled = await h.call('slicerx_geom_extrude', { shape: { type: 'circle', diameterMm: 6 }, frame: { origin: [15, 10, 5], normal: [0, 0, 1] }, distance_mm: 5, operation: 'cut', target: body })
+    const model = data<{ output: MeshOut }>(drilled).output.mesh.stlPath
+    type Read = { center: V3; axis: V3; diameterMm: number; depthMm: number; kind: string; head?: string }
+
+    const r = await h.call('slicerx_geom_hole', { model, center: [15, 10, 5], axis: [0, 0, 1], diameter_mm: 3.4, countersink: { diameter_mm: 6.5 } })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const out = data<{ output: MeshOut & { before: Read; after: Read } }>(r).output
+    expect(out.before).toEqual({ center: [15, 10, 5], axis: [0, 0, 1], diameterMm: 6, depthMm: 5, kind: 'through' })
+    expect(out.after).toMatchObject({ center: [15, 10, 5], diameterMm: 3.4, depthMm: 5, kind: 'through', head: 'countersink', countersink: { diameterMm: 6.5, angleDeg: 90 } })
+    expect(out.watertight).toBe(true)
+    expect(out.mesh.stlPath).not.toBe(model)
+
+    // a point on the wall picks the same hole; a point on the top face is not a hole
+    const wall = await h.call('slicerx_geom_hole', { model, face: { at: [18, 10, 2.5], normal: [-1, 0, 0] }, diameter_mm: 8 })
+    expect(wall.isError, JSON.stringify(wall.content)).toBeFalsy()
+    expect(data<{ output: { before: Read; after: Read } }>(wall).output.after).toMatchObject({ diameterMm: 8, kind: 'through', head: 'none' })
+    const flat = await h.call('slicerx_geom_hole', { model, face: { at: [5, 5, 5] }, diameter_mm: 8 })
+    expect(flat.isError).toBe(true)
+    expect(JSON.stringify(flat.content)).toMatch(/the pick is on a flat face/)
   })
 
   it('runs union, subtract and intersect', async () => {
