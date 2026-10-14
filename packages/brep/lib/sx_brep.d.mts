@@ -10,6 +10,8 @@ export interface SxBrepModuleOptions {
 }
 
 export interface SxBrepModule {
+  /** Replaced by Emscripten when the heap grows. Read it again for each measurement. */
+  HEAPU8: Uint8Array
   _sx_brep_call(op: number, request: number): number
   _sx_brep_free(reply: number): void
   _free(ptr: number): void
