@@ -37,6 +37,11 @@ function runGeom(bin: string, op: string, request: unknown, outDir: string | und
     child.stderr.setEncoding('utf8').on('data', (d: string) => (stderr += d))
     child.on('error', reject)
     child.on('close', (code) => {
+      if (child.killed) {
+        const error = new Error(`sx-geom ${op} exceeded its execution deadline (${timeoutMs} ms). Retry the operation.`)
+        error.name = 'AbortError'
+        return reject(error)
+      }
       let parsed: unknown
       try {
         parsed = JSON.parse(stdout)
