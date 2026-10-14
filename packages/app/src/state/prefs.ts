@@ -76,6 +76,10 @@ export interface Prefs {
   activePresets?: { printer?: string; filament?: string; process?: string } | undefined
   sendChoices?: Record<string, Record<string, boolean>> | undefined
   dryMarks?: Record<string, { at: number; spool: string }> | undefined
+  /** The print settings view: the open tab, sections opened or closed by hand ("tab/section"), and pinned keys. */
+  settingsTab?: string | undefined
+  settingsSections?: Record<string, boolean> | undefined
+  settingsPins?: string[] | undefined
   presetSync?: { deleted: { id: string; at: number }[]; changes: { at: number; id: string; name: string; kind: 'printer' | 'filament' | 'process'; action: 'added' | 'updated' | 'removed'; keys?: string[]; conflict?: boolean }[]; lastAt: number } | undefined
   printerNozzles?: Record<string, number> | undefined
   printerExtruders?: Record<string, ExtruderNozzle[]> | undefined
@@ -329,6 +333,9 @@ export function normalizePrefs(v: unknown): Prefs {
     noPrinter: or(bool(r['noPrinter']), false),
     activePresets: or(isRec(r['activePresets']) ? { ...opt2('printer', str(r['activePresets']['printer'], 80)), ...opt2('filament', str(r['activePresets']['filament'], 80)), ...opt2('process', str(r['activePresets']['process'], 80)) } : undefined, {}),
     sendChoices: or(record(r['sendChoices'], (k) => k.length <= 80, (x) => record(x, (k) => SEND_KEYS.includes(k), bool)), {}),
+    ...opt('settingsTab', oneOf(r['settingsTab'], ['quality', 'strength', 'speed', 'supports', 'adhesion', 'multicolor', 'effects', 'output'] as const)),
+    settingsSections: or(record(r['settingsSections'], (k) => /^[a-z]{1,20}\/[a-z]{1,20}$/.test(k), bool), {}),
+    settingsPins: or(list(r['settingsPins'], 24, (x) => (typeof x === 'string' && /^[a-z0-9_]{1,80}$/.test(x) ? x : undefined)), []),
     dryMarks: or(record(r['dryMarks'], (k) => k.length <= 120, (x) => (isRec(x) && num(x['at'], 0) !== undefined && str(x['spool'], 200) !== undefined ? { at: x['at'] as number, spool: x['spool'] as string } : undefined)), {}),
     presetSync: or(presetSync(r['presetSync']), { deleted: [], changes: [], lastAt: 0 }),
     printerNozzles: or(record(r['printerNozzles'], (k) => k.length <= 80, (x) => num(x, 0.1, 2)), {}),
