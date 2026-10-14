@@ -9,10 +9,10 @@ const process = SETTINGS.filter((d) => d.section === 'process')
 const count = (mode: string): number => process.filter((d) => d.mode === mode).length
 
 describe('process tiers', () => {
-  it('keeps Simple to the keys the controls drive and Advanced near 80', () => {
+  it('keeps Simple to the keys the controls drive and Advanced to the short set (44 rows with the two choices)', () => {
     expect(process.filter((d) => d.mode === 'simple').map((d) => d.key).sort()).toEqual(['brim_type', 'enable_support', 'layer_height', 'smart_layer', 'sparse_infill_density', 'wall_loops'])
-    expect(count('advanced')).toBeGreaterThanOrEqual(70)
-    expect(count('advanced')).toBeLessThanOrEqual(90)
+    expect(count('advanced')).toBeGreaterThanOrEqual(40)
+    expect(count('advanced')).toBeLessThanOrEqual(50)
     expect(count('expert')).toBeGreaterThan(count('advanced'))
   })
   it('hides profile keys from every tier', () => {
@@ -34,12 +34,13 @@ describe('process tiers', () => {
     expect(settingsForTier('process', 'advanced', { filamentCount: 1 }).some((d) => d.intent === 'multicolor')).toBe(false)
     expect(settingsForTier('process', 'advanced', { filamentCount: 2 }).some((d) => d.intent === 'multicolor')).toBe(true)
   })
-  it('puts fuzzy skin under Effects, the six sleipnir tuning keys under Expert, and shell mm in Advanced', () => {
+  it('puts fuzzy skin under Effects, the six sleipnir tuning keys under Expert, and shells in Advanced', () => {
     expect(settingDef('fuzzy_skin')).toMatchObject({ mode: 'advanced', intent: 'effects' })
     expect(settingDef('fuzzy_skin_noise_type')).toMatchObject({ mode: 'expert', intent: 'effects' })
     for (const k of ['smart_layer_min_height', 'smart_layer_max_height', 'smart_layer_smoothing', 'smart_layer_smoothing_radius', 'smart_layer_max_step_ratio']) expect(settingDef(k)?.mode, k).toBe('expert')
     expect(settingDef('top_shell_thickness')?.mode).toBe('advanced')
-    expect(settingDef('top_shell_layers')?.mode).toBe('expert')
+    // shell layers moved up with the short Advanced set: two of the other slicers show them in Simple
+    expect(settingDef('top_shell_layers')?.mode).toBe('advanced')
     expect(settingDef('support_type')?.mode).toBe('advanced')
   })
   it('tiers are cumulative', () => {
