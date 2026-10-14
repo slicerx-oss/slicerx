@@ -97,26 +97,26 @@ interface Plane {
   fresh?: boolean
 }
 
-/** What each tool wants clicked, in order: one line each, so the hint keeps one height and nothing below it moves. */
+/** What each tool wants clicked, in order: one line each in the 280 px pane, so the hint keeps one height and nothing below it moves. */
 const HINTS: Record<DrawTool, string> = {
   select: 'Click to pick, drag a point to move.',
-  line: 'Click points, drag off an end for an arc.',
+  line: 'Click points, drag an end for arcs.',
   rect: 'Click two opposite corners.',
-  rect3: "Click an edge's ends, then the width.",
+  rect3: 'Click two corners, then the width.',
   rectCenter: 'Click the center, then a corner.',
   circle: 'Click the center, then the rim.',
   circle2: 'Click the two ends of a diameter.',
-  arc: 'Click the start, the end, then the arc.',
+  arc: 'Click the start, end, then the arc.',
   arcCenter: 'Click the center, the start, the end.',
-  arcTangent: 'Click an open end, then where it ends.',
+  arcTangent: 'Click an open end, then the end.',
   polygon: 'Click the center, then a corner.',
-  polygonOut: 'Click the center, then an edge middle.',
+  polygonOut: 'Click the center, then mid-edge.',
   polygonEdge: "Click an edge's ends, then its side.",
-  slot: 'Click both arc centers, then the width.',
+  slot: 'Click both centers, then the width.',
   slotOverall: 'Click the two ends, then the width.',
   slotCenter: 'Click the center, an end, the width.',
   dimension: 'Click a line, circle or two points.',
-  trim: 'Click the piece of a curve to take off.',
+  trim: 'Click a piece of a curve to remove.',
   extend: 'Click near the open end of a line.',
 }
 
@@ -131,7 +131,7 @@ const IDLE: Partial<Record<DrawTool, string>> = {
 const idleText = (t: DrawTool): string => IDLE[t] ?? 'Type a number to give exact sizes.'
 
 /** What Mirror and a round Pattern wait for, in place of the tool's hint; Esc stops either, on the line under it. */
-const PENDING_HINTS = { mirror: 'Click the straight line to mirror across.', round: 'Click the point to pattern round.' }
+const PENDING_HINTS = { mirror: 'Click the line to mirror across.', round: 'Click the point to pattern round.' }
 
 const hintText = (t: DrawTool): string => HINTS[t]
 
