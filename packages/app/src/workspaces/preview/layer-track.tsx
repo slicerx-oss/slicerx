@@ -14,30 +14,69 @@ import { toast, useApp } from '../../state/store'
 import { TrackStrikes } from './strike-slots'
 
 const EMPTY: LayerMark[] = []
-/** Pins nearer than this many pixels on the track take the next lane up, so each keeps its own hit area. */
-const PIN_GAP = 20
+/** Pins in one lane keep their centers this many pixels apart, so heads and their rings never touch. */
+const PIN_GAP = 26
+/** A pin in another lane keeps its center this far from a head, so no stem runs through another lane's head. */
+const PIN_CLEAR = 17
 /** Lanes over the track; the bar keeps room for this many, so a new pin never moves anything. */
 export const PIN_LANES = 3
 /** Half the layer slider's thumb: the first and last layers sit this far in from the track's ends. */
 const THUMB_R = 6.5
 
+/** The foot of a moved pin's stem steps back to its layer at one of these heights over the track's center, in px. */
+const ELBOW_TOP = 7
+const ELBOW_LOW = 2
+
 /**
- * The lane of each pin, given its share along the track and the track length in px: 0 just over the track, then one
- * up per crowded neighbor, up to `lanes`. A pin with every lane taken goes where the last pin is furthest back.
+ * The lane of each pin, how far its head sits right of its layer, and the height its stem steps back at, given its
+ * share along the track and the track length in px: lane 0 just over the track, then one up per crowded neighbor, up
+ * to `lanes`; a pin with every lane taken goes where the last pin is furthest back. A head that would sit on another
+ * pin's stem, or a stem that would run through another lane's head, moves right; its stem then steps back left to its
+ * layer just above the track. Heads keep the order of their layers, and in a crowd the head furthest right steps back
+ * lowest, so the feet nest and no two stems cross.
  */
-export function pinLanes(shares: readonly number[], trackPx: number, lanes = PIN_LANES): number[] {
-  if (trackPx <= 0) return shares.map(() => 0)
+export function pinLayout(shares: readonly number[], trackPx: number, lanes = PIN_LANES): { lane: number; off: number; elbow: number }[] {
+  const out = shares.map(() => ({ lane: 0, off: 0, elbow: ELBOW_TOP }))
+  if (trackPx <= 0) return out
   const order = shares.map((_, i) => i).sort((a, b) => shares[a]! - shares[b]!)
   const last: number[] = []
-  const out = new Array<number>(shares.length).fill(0)
+  const heads: { lane: number; x: number }[] = []
+  // runs of pins whose feet overlap: a pin whose layer is left of an earlier head, or within a stem's width of it, joins
+  const runs: number[][] = []
+  let right = -Infinity
   for (const i of order) {
     const at = shares[i]! * trackPx
     let lane = last.findIndex((l) => at - l >= PIN_GAP)
     if (lane < 0) lane = last.length < lanes ? last.length : last.indexOf(Math.min(...last))
-    last[lane] = at
-    out[i] = lane
+    // never left of an earlier head, so the heads keep their layers' order
+    let x = Math.max(at, right)
+    for (let moved = true; moved; ) {
+      moved = false
+      for (const h of heads) {
+        const gap = h.lane === lane ? PIN_GAP : PIN_CLEAR
+        // a hair under the gap, so a head already pushed to it never counts as too near again
+        if (Math.abs(x - h.x) < gap - 0.01) (x = h.x + gap), (moved = true)
+      }
+    }
+    if (at < right + 2 && runs.length) runs[runs.length - 1]!.push(i)
+    else runs.push([i])
+    right = Math.max(right, x)
+    heads.push({ lane, x })
+    last[lane] = x
+    out[i] = { lane, off: Math.round((x - at) * 10) / 10, elbow: ELBOW_TOP }
+  }
+  // in each run the moved heads step back one under another, the first highest
+  for (const run of runs) {
+    const moved = run.filter((i) => out[i]!.off > 0)
+    const step = moved.length > 1 ? Math.min(2.5, (ELBOW_TOP - ELBOW_LOW) / (moved.length - 1)) : 0
+    moved.forEach((i, k) => (out[i]!.elbow = ELBOW_TOP - k * step))
   }
   return out
+}
+
+/** The lane of each pin (see pinLayout). */
+export function pinLanes(shares: readonly number[], trackPx: number, lanes = PIN_LANES): number[] {
+  return pinLayout(shares, trackPx, lanes).map((p) => p.lane)
 }
 
 /** The layer slot nearest a point on the track: a mark always lands on a layer, never between two. */
@@ -89,7 +128,7 @@ function LayerPins({ x, layerZ, track, onPick }: { x: (layer: number) => number;
   const marks = useApp((s) => s.layerMarks[plateId]) ?? EMPTY
   const colors = useSlotColors()
   const layers = marks.map((m) => layerOf(m, layerZ))
-  const lanes = pinLanes(layers.map((l) => x(l)), useSpan(track))
+  const pins = pinLayout(layers.map((l) => x(l)), useSpan(track))
   const pick = (e: MouseEvent<HTMLButtonElement>, layer: number) => {
     e.preventDefault()
     e.stopPropagation()
@@ -108,11 +147,11 @@ function LayerPins({ x, layerZ, track, onPick }: { x: (layer: number) => number;
             type="button"
             className="layer-mark"
             data-kind={m.kind}
-            data-lane={lanes[i]}
+            data-lane={pins[i]!.lane}
             data-swatch={color ? '' : undefined}
             // the tip opens above the pin, so it never covers the Moves track under it
             data-tip-side="top"
-            style={{ left: `${x(layer) * 100}%`, ...(lanes[i] ? ({ '--lane': lanes[i] } as CSSProperties) : {}), ...(color ? ({ '--c': color } as CSSProperties) : {}) }}
+            style={{ left: pins[i]!.off ? `calc(${x(layer) * 100}% + ${pins[i]!.off}px)` : `${x(layer) * 100}%`, ...(pins[i]!.lane ? ({ '--lane': pins[i]!.lane } as CSSProperties) : {}), ...(pins[i]!.off ? ({ '--off': `${pins[i]!.off}px`, '--jog': `${pins[i]!.elbow}px` } as CSSProperties) : {}), ...(color ? ({ '--c': color } as CSSProperties) : {}) }}
             aria-label={`Layer ${layer}, ${MARK_LABEL[m.kind]}`}
             {...tipAttrs({ title: `Layer ${layer}, ${MARK_LABEL[m.kind]}`, body })}
             onPointerDown={(e) => e.stopPropagation()}
@@ -120,6 +159,8 @@ function LayerPins({ x, layerZ, track, onPick }: { x: (layer: number) => number;
             onContextMenu={(e) => pick(e, layer)}
           >
             {color ? null : <Icon name={ICON[m.kind]} size={12} />}
+            {/* the foot of the stem: down to the track, stepping back left to the layer when the head sits right of it */}
+            <span className="layer-mark-leg" aria-hidden="true" />
           </button>
         )
       })}

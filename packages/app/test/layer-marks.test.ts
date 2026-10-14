@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { beforeEach, describe, expect, it } from 'vitest'
 import { addMark, customGcodeProblem, layerGcodeByHeight, marksFor, nextSlot, removeMark, setMarkSlot } from '../src/plate/layer-marks'
-import { layerAtPoint, layerOf, pinLanes } from '../src/workspaces/preview/layer-track'
+import { layerAtPoint, layerOf, pinLanes, pinLayout } from '../src/workspaces/preview/layer-track'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 describe('layer marks', () => {
@@ -87,6 +87,60 @@ describe('pin lanes', () => {
     expect(pinLanes([0.3, 0.31, 0.32, 0.6], 200)).toEqual([0, 1, 2, 0])
     // order on the track decides, not the order of the marks
     expect(pinLanes([0.55, 0.5], 200)).toEqual([1, 0])
+  })
+})
+
+describe('pin heads clear of other stems', () => {
+  it('moves a crowded head right of its layer, so no stem runs through a head in another lane', () => {
+    // 60, 62, 64 and 120 px: the second and third step up and right, 17 px clear of each head under them
+    expect(pinLayout([0.3, 0.31, 0.32, 0.6], 200)).toEqual([
+      { lane: 0, off: 0, elbow: 7 },
+      // each moved head in the crowd steps back lower than the one before, so the feet nest
+      { lane: 1, off: 15, elbow: 7 },
+      { lane: 2, off: 30, elbow: 4.5 },
+      { lane: 0, off: 0, elbow: 7 },
+    ])
+  })
+  it('never crosses two stems or runs a stem through a head', () => {
+    // each stem as 2 px boxes in px over the track's center: up from the track at the layer, along at the elbow, up to
+    // the head; a head is 16 px square on top of its stem
+    type Box = [number, number, number, number]
+    const overlap = (a: Box, b: Box) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+    const sets = [[19, 20, 21, 149], [4, 19, 20, 21, 119, 249], [10, 11, 12, 13], [0, 3, 30, 31, 33, 300], [50, 52, 60, 70]]
+    for (const px of [200, 300, 449, 700])
+      for (const layers of sets) {
+        const shares = layers.map((l) => l / 303)
+        const parts = pinLayout(shares, px).map((p, i) => {
+          const at = shares[i]! * px
+          const hx = at + p.off
+          const foot = 11 + p.lane * 18
+          const stem: Box[] = [[hx - 1, p.elbow, hx + 1, foot], [at - 1, 0, at + 1, p.elbow + 2]]
+          if (p.off) stem.push([at - 1, p.elbow, hx + 1, p.elbow + 2])
+          return { at, head: [hx - 8, foot, hx + 8, foot + 16] as Box, stem }
+        })
+        for (const [i, a] of parts.entries())
+          for (const [j, b] of parts.entries()) {
+            if (i === j) continue
+            // layers closer than the 2 px line share it where they meet the track, under the elbows
+            const shared = Math.abs(a.at - b.at) < 2
+            for (const s of a.stem) {
+              expect(overlap(s, b.head), `${layers} at ${px}: stem ${i} through head ${j}`).toBe(false)
+              for (const t of b.stem) if (!(shared && Math.min(s[3], t[3]) <= 9.5)) expect(overlap(s, t), `${layers} at ${px}: stems ${i} and ${j}`).toBe(false)
+            }
+          }
+      }
+  })
+  it('settles on any track length', () => {
+    // a head pushed to exactly the gap once counted as too near again and moved forever
+    for (let px = 1; px < 600; px += 0.37) expect(pinLayout([19, 20, 21, 149].map((l) => l / 303), px)).toHaveLength(4)
+  })
+  it('keeps heads in one lane 26 px apart when every lane is taken', () => {
+    const at = [0.3, 0.31, 0.32, 0.33].map((s) => s * 200)
+    const pins = pinLayout([0.3, 0.31, 0.32, 0.33], 200)
+    const x = pins.map((p, i) => at[i]! + p.off)
+    expect(pins[3]!.lane).toBe(0)
+    expect(x[3]! - x[0]!).toBeGreaterThanOrEqual(26)
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) expect(Math.abs(x[i]! - x[j]!)).toBeGreaterThanOrEqual(pins[i]!.lane === pins[j]!.lane ? 26 : 17)
   })
 })
 
