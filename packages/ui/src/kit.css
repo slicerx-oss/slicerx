@@ -33,8 +33,9 @@
    right border is that line; a primary button has no visible border, so its menu half draws one. A focused half's
    ring sits over its neighbour. The corner rules carry .sx-btn so they outrank the sized button's own radius
    (.sx-btn[data-size]), which otherwise rounded the inner corners too. */
-.sx-split { display: inline-flex; align-items: stretch; }
-.sx-split[data-full] { display: flex; width: 100%; }
+/* the split is also its menu's anchor, whose inline-block would otherwise win and drop the two halves to their baselines */
+.sx-split, .sx-split.sx-menu-anchor { display: inline-flex; align-items: stretch; }
+.sx-split[data-full], .sx-split.sx-menu-anchor[data-full] { display: flex; width: 100%; }
 .sx-split[data-full] > .sx-split-main { flex: 1; }
 .sx-split > .sx-btn.sx-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .sx-split > .sx-btn.sx-split-menu { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; padding: 0; width: var(--h-md); }
