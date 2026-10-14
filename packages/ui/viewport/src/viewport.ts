@@ -183,6 +183,11 @@ export function createViewport(canvas: HTMLCanvasElement, opts: ViewportOptions 
   return new ViewportImpl(canvas, opts)
 }
 
+/** How far from a move arrow or a rotate ring, in screen pixels, a press still takes it: a mouse is exact, a finger is not. */
+const HANDLE_REACH_PX = 7
+const TOUCH_REACH_PX = 22
+const handleReach = (e: { pointerType?: string }): number => (e.pointerType === 'touch' ? TOUCH_REACH_PX : HANDLE_REACH_PX)
+
 /** A touch held still this long, ms, within this many pixels, opens the menu a right click would. */
 const LONG_PRESS_MS = 500
 const LONG_PRESS_SLOP_PX = 8
@@ -1913,12 +1918,12 @@ class ViewportImpl implements Viewport {
     this.moveArrows.show(true)
   }
 
-  private arrowUnder(ray: Raycaster): ArrowAxis | null {
+  private arrowUnder(ray: Raycaster, px = HANDLE_REACH_PX): ArrowAxis | null {
     const t = this.moveTarget()
     if (!t) return null
     const { o, d } = this.bedRay(ray)
     const l = this.arrowLayout(t)
-    const reach = 7 * this.mmPerPx(l.origin)
+    const reach = px * this.mmPerPx(l.origin)
     let best: ArrowAxis | null = null
     let bestD = reach
     for (const id of ['x', 'y', 'z'] as const) {
@@ -1941,7 +1946,7 @@ class ViewportImpl implements Viewport {
 
   private arrowDown(ray: Raycaster, e: PointerEvent): boolean {
     const t = this.moveTarget()
-    const axis = t ? this.arrowUnder(ray) : null
+    const axis = t ? this.arrowUnder(ray, handleReach(e)) : null
     if (!t || !axis) return false
     const { o, d } = this.bedRay(ray)
     const { origin } = this.arrowLayout(t)
@@ -2089,13 +2094,13 @@ class ViewportImpl implements Viewport {
     this.rotRings.show(true)
   }
 
-  private ringUnder(ray: Raycaster): RingAxis | null {
+  private ringUnder(ray: Raycaster, px = HANDLE_REACH_PX): RingAxis | null {
     const t = this.rotateTarget()
     if (!t) return null
     const { o, d } = this.bedRay(ray)
     const l = this.ringLayout(t)
     const axes = this.ringAxesOf(t)
-    return pickRing(o, d, l.center, (['x', 'y', 'z'] as const).map((id) => ({ id, axis: axes[id] })), l.radius, 7 * this.mmPerPx(l.center))
+    return pickRing(o, d, l.center, (['x', 'y', 'z'] as const).map((id) => ({ id, axis: axes[id] })), l.radius, px * this.mmPerPx(l.center))
   }
 
   private ringHover(ray: Raycaster): void {
@@ -2108,7 +2113,7 @@ class ViewportImpl implements Viewport {
 
   private rotDown(ray: Raycaster, e: PointerEvent): boolean {
     const t = this.rotateTarget()
-    const axis = t ? this.ringUnder(ray) : null
+    const axis = t ? this.ringUnder(ray, handleReach(e)) : null
     if (!t || !axis) return false
     const { o, d } = this.bedRay(ray)
     const l = this.ringLayout(t)
@@ -3228,6 +3233,8 @@ class ViewportImpl implements Viewport {
       if (this.tool === 'move') {
         setRay(e)
         if (this.arrowDown(ray, e)) {
+          // a finger held on a handle drags it; it is not a press for the menu
+          stopPress()
           el.setPointerCapture(e.pointerId)
           e.stopPropagation()
           return
@@ -3236,6 +3243,8 @@ class ViewportImpl implements Viewport {
       if (this.tool === 'rotate') {
         setRay(e)
         if (this.rotDown(ray, e)) {
+          // a finger held on a handle drags it; it is not a press for the menu
+          stopPress()
           el.setPointerCapture(e.pointerId)
           e.stopPropagation()
           return
@@ -3245,6 +3254,8 @@ class ViewportImpl implements Viewport {
         this.keys = { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey, alt: e.altKey }
         setRay(e)
         if (this.scaleDown(ray)) {
+          // a finger held on a handle drags it; it is not a press for the menu
+          stopPress()
           el.setPointerCapture(e.pointerId)
           e.stopPropagation()
         }
