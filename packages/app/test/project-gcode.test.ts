@@ -3,6 +3,7 @@
 // A Bambu Lab A1 project's own printer G-code, from a project made from SlicerX's A1 profile: stock text slices with
 // no question, changed text waits for the person, who picks the project's G-code or the profile's.
 import { beforeEach, describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import type { Host, SettingValue, SliceRequest } from '@slicerx/contracts'
 import { resolveConfig } from '../src/adapters/config'
 import { readProject } from '../src/export/import3mf'
@@ -11,6 +12,7 @@ import { slicePlate, trustOptions } from '../src/state/actions'
 import { profileReady } from '../src/state/profile-sync'
 import { answerProjectGcode, reviewOpenedGcode } from '../src/state/project-gcode'
 import { get, set } from '../src/state/store'
+import { reviewImportedScripts } from '../src/project/script-review'
 
 const handle = { id: 'a', hash: 'a', name: 'a', triangles: 1, bboxMm: [10, 10, 10], openEdges: 0, parts: [{ name: 'a', slot: 1, triangles: 1 }] }
 const entry = { id: 'a', name: 'a', handle, parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] } as never
@@ -43,7 +45,7 @@ const until = async (ok: () => boolean): Promise<void> => {
 }
 
 beforeEach(async () => {
-  set({ printerModel: { id: 'bambu-a1', vendor: 'Bambu Lab', model: 'A1' }, plate: [entry], overrides: {}, vouchedGcode: {}, projectGcode: null, resume: null, calibration: {}, layerMarks: {}, slice: { status: 'idle' } })
+  set({ printerModel: { id: 'bambu-a1', vendor: 'Bambu Lab', model: 'A1' }, plate: [entry], overrides: {}, vouchedGcode: {}, projectGcode: null, projectScriptReviews: null, resume: null, calibration: {}, layerMarks: {}, slice: { status: 'idle' } })
   await profileReady()
   const cfg = resolveConfig(get().easy, {}) as Record<string, SettingValue>
   stockStart = String(cfg['machine_start_gcode'])
@@ -51,6 +53,27 @@ beforeEach(async () => {
 })
 
 describe("a project's own printer G-code", () => {
+  it.skipIf(!process.env['SLICERX_TEST_SX_BIN'])('carries a real engine cosmetic match into the slice without person approval', async () => {
+    const selected = { model: 'bambu-a1', firmware: 'marlin' }
+    const text = '  M400 U1 ; pause\r\n'
+    const settings = { printer_model: 'Bambu Lab A1', gcode_flavor: 'marlin', machine_pause_gcode: text }
+    const { host, requests } = capture()
+    host.slicer.reviewScripts = async (inputs) => JSON.parse(execFileSync(process.env['SLICERX_TEST_SX_BIN']!, ['review-script', '-', '--batch'], {
+      input: JSON.stringify(inputs), encoding: 'utf8', timeout: 30000, windowsHide: true,
+    }))
+    const records = await reviewImportedScripts(host.slicer, settings, selected)
+    expect(records[0]!.review.decision).toBe('cosmetic')
+    set({ projectScriptReviews: { source: 'pause.3mf', records } })
+    expect(await reviewOpenedGcode('pause.3mf', settings)).toBe(0)
+    expect(get().vouchedGcode).toEqual({})
+    await slicePlate(host)
+    expect(requests).toHaveLength(1)
+    expect((requests[0]!.config as Record<string, unknown>).machine_pause_gcode).toBe(text)
+    expect(requests[0]!.options?.trustedGcode).toBe(true)
+    expect(trustOptions({ ...get(), overrides: { ...get().overrides, gcode_flavor: 'klipper' } }).trustedGcode).toBeUndefined()
+    expect(trustOptions({ ...get(), overrides: { ...get().overrides, machine_pause_gcode: `${text}\nM500` } }).trustedGcode).toBeUndefined()
+  })
+
   it('slices the stock A1 start G-code, M211, M500 and M18 included, with no question', async () => {
     expect(stockStart).toMatch(/^M211 X0 Y0 Z0/m)
     expect(stockStart).toMatch(/^\s*M500/m)

@@ -35,9 +35,10 @@ function read(req) {
   })
 }
 
-function run(args, key) {
+function run(args, key, input) {
   return new Promise((resolve) => {
-    const child = spawn(sx, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(sx, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true })
+    if (input !== undefined) child.stdin.end(input)
     if (key) running.set(key, child)
     const out = []
     const err = []
@@ -56,12 +57,16 @@ const message = (stderr) => stderr.trim().split('\n').pop()?.replace(/^sx (slice
 async function handle(req, res) {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
   if (url.pathname === '/healthz') return send(res, 200, 'ok')
-  const m = /^\/s\/([^/]+)\/(meshes|slices|metadata)(?:\/([^/]+))?(?:\/(gcode|preview))?$/.exec(url.pathname)
+  const m = /^\/s\/([^/]+)\/(meshes|slices|metadata|script-review)(?:\/([^/]+))?(?:\/(gcode|preview))?$/.exec(url.pathname)
   if (!m || !safe(m[1]) || (m[3] && !safe(decodeURIComponent(m[3])))) return send(res, 404, 'not found')
   const [, session, kind, rawId, file] = m
   const id = rawId ? decodeURIComponent(rawId) : ''
   const dir = join(root, session)
   mkdirSync(dir, { recursive: true })
+  if (kind === 'script-review' && req.method === 'POST') {
+    const r = await run(['review-script', '-', '--batch'], undefined, await read(req))
+    return r.code === 0 ? send(res, 200, r.stdout, 'application/json') : send(res, 422, message(r.stderr))
+  }
   if (kind === 'meshes' && req.method === 'PUT' && id) {
     writeFileSync(join(dir, `${id}.sxmp`), await read(req))
     return send(res, 204, '')

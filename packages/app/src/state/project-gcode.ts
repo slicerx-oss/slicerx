@@ -8,6 +8,7 @@ import type { SettingValue } from '@slicerx/contracts'
 import type { GcodeChange } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { slotConfig } from '../filament/slot-config'
+import { recognizedScript } from '../project/script-review'
 import { get, set, toast } from './store'
 
 export type GcodeChoice = 'project' | 'profile'
@@ -19,6 +20,10 @@ export async function reviewOpenedGcode(source: string, settings: Record<string,
   const s = get()
   const profile = s.profile
   const review = reviewProjectGcode({ project, profile: { ...resolveConfig(s.easy, s.overrides), ...slotConfig(s) }, model: profile?.printerId, limits: profile?.limits })
+  const recognized = new Set(Object.entries(project).filter(([key, value]) => recognizedScript(key, value, profile?.printerId, s.overrides, s.projectScriptReviews?.records ?? [])).map(([key]) => key))
+  const kept = gcodeValues(review.changes.filter((change) => recognized.has(change.key)))
+  if (Object.keys(kept).length) set((s) => ({ overrides: { ...s.overrides, ...kept } }))
+  review.changes = review.changes.filter((change) => !recognized.has(change.key))
   if (review.changes.length === 0) {
     set({ projectGcode: null })
     return 0

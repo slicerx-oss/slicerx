@@ -77,6 +77,11 @@ async function addProjectShown(
   if (wasEmpty && (get().projectSettings || get().projectPrinter)) mine(() => clearProject())
   // What the person had before this project, so clearing it later puts their values back.
   const overridesBefore = get().overrides
+  const beforeImport = get()
+  const selectedFlavor = resolveConfig(beforeImport.easy, beforeImport.overrides).gcode_flavor
+  const scriptTarget = beforeImport.printerId && beforeImport.printerId !== 'project-printer' && beforeImport.profile && typeof selectedFlavor === 'string'
+    ? { model: beforeImport.profile.printerId, firmware: selectedFlavor }
+    : null
   // A plain 3MF's objects that touch or overlap are one model's parts: they open as one object with those parts.
   const joins = !own && !hasSettings ? await joinTouching(project.plates, name) : []
   // Every object goes to the engine now, side by side, while the printer is switched: a mesh does not depend on it.
@@ -195,6 +200,11 @@ async function addProjectShown(
   // next fresh plate has it back (lib/sleipnir-default.ts).
   if (wasEmpty && !own) mine(() => set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const, easyTouched: [...s.easyTouched] })))
   let note: string | null = null
+  if (wasEmpty && hasSettings && !geometryOnly) {
+    const { reviewImportedScripts } = await import('../project/script-review')
+    const records = await reviewImportedScripts(host.slicer, project.settings, scriptTarget)
+    mine(() => set({ projectScriptReviews: { source: name, records } }))
+  }
   if (pp) {
     // Another slicer's project: its settings on top of its own printer's profile, or what suits the current printer.
     const r = mine(() => pp.applyProjectSettings(name, project.settings, match))

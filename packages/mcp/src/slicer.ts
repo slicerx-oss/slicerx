@@ -5,7 +5,7 @@
 // before the core ships.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import type { HeightRange, SettingValue, VolumeRole } from '@slicerx/contracts'
+import type { HeightRange, SettingValue, VolumeRole, ScriptReviewInput, ScriptReview } from '@slicerx/contracts'
 import { readStl } from './mesh'
 import { ToolInputError } from './models'
 
@@ -78,6 +78,8 @@ export interface SliceSummary {
 export interface SlicerBackend {
   readonly kind: 'sx' | 'stub'
   slice(job: SliceJob): Promise<SliceSummary>
+  reviewScript?(input: ScriptReviewInput): Promise<ScriptReview>
+  reviewScripts?(inputs: ScriptReviewInput[]): Promise<ScriptReview[]>
 }
 
 export function formatDuration(s: number): string {

@@ -579,3 +579,5 @@ Check each of these and tell the user the result:
 - `@slicerx/*` versions are pinned exactly.
 
 A complete working example is `examples/integrator-sample` in the SlicerX repository: an app called Spoolhouse that does all of the above, with its own brand.
+
+For cosmetic stock-script recognition, use `slicerx_review_script`, native `sx review-script`, or the browser host's `reviewScripts`. All use the engine's versioned catalog and parser. Supply an explicitly selected model and firmware and all imported identity declarations. Keep the returned decision, reason, stock version, fingerprint and ignored differences together. Do not infer authorization from the imported printer name, omit conflicting declarations, or treat M500 as generally allowed. MCP slicing accepts `script_printer: { model, firmware }`; native slicing accepts `--script-printer <model-id> --script-firmware <flavor>`. Read `script_reviews` on success or refusal. A `review` decision requires the existing review flow; it does not authorize changing the script or starting a printer.

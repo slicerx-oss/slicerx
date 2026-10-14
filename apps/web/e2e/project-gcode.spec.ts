@@ -11,7 +11,7 @@ import { projectZip } from './project-zip'
 const START = 'G28\nM500 ; keep my offsets\nG1 Z5 F3000\n'
 const A1_MINI = { id: 'e2e-a1-mini', name: 'Desk A1 mini', profileId: 'bambu-a1-mini', vendor: 'Bambu Lab', model: 'A1 mini', nozzleCount: 1 }
 
-async function open(page: Page): Promise<void> {
+async function open(page: Page, settings: Record<string, unknown> = { machine_start_gcode: START }): Promise<void> {
   interceptFileDialogs(page)
   await page.addInitScript((a1) => {
     if (sessionStorage.getItem('sx-e2e')) return
@@ -24,9 +24,28 @@ async function open(page: Page): Promise<void> {
   await plateReady(page)
   await expect(page.locator('[data-section="printer"] .printer-name')).toContainText('A1 mini')
   const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
-  await chooser.setFiles({ name: 'bracket.sx3mf', mimeType: 'model/3mf', buffer: projectZip({ machine_start_gcode: START }, {}, [90, 90]) })
+  await chooser.setFiles({ name: 'bracket.sx3mf', mimeType: 'model/3mf', buffer: projectZip(settings, {}, [90, 90]) })
   await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
 }
+
+test('a cosmetic stock script keeps its text and slices without person approval', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Runs at desktop width')
+  const text = '  M400 U1 ; pause\r\n'
+  await open(page, { printer_model: 'Bambu Lab A1 mini', gcode_flavor: 'marlin', machine_pause_gcode: text })
+  const read = () => page.evaluate(() => {
+    const state = (window as unknown as { __sx: { getState(): {
+      overrides: Record<string, unknown>; vouchedGcode: Record<string, unknown>;
+      projectScriptReviews: { records: { review: { decision: string } }[] } | null;
+    } } }).__sx.getState()
+    return { text: state.overrides.machine_pause_gcode, vouched: state.vouchedGcode.machine_pause_gcode, decision: state.projectScriptReviews?.records[0]?.review.decision }
+  })
+  await expect.poll(read).toEqual({ text, vouched: undefined, decision: 'cosmetic' })
+  const before = await sliceCount(page)
+  await page.getByRole('button', { name: 'Slice plate' }).click()
+  await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByTestId('project-gcode-dialog')).toBeHidden()
+  expect(await read()).toEqual({ text, vouched: undefined, decision: 'cosmetic' })
+})
 
 test("a project's own G-code asks in one line, with the differences folded until opened", async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')

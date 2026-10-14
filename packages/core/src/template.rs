@@ -1065,6 +1065,11 @@ pub fn render(template: &str, ctx: &Context<'_>) -> Result<String, String> {
     Ok(out)
 }
 
+/// checks template syntax without evaluating expressions or changing state.
+pub(crate) fn validate(template: &str) -> Result<(), String> {
+    parse_text(template).map(|_| ())
+}
+
 fn exec(nodes: &[Node2], run: &mut Run<'_, '_>, out: &mut String) -> Result<(), String> {
     for n in nodes {
         match n {

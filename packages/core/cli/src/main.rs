@@ -7,8 +7,11 @@
 //! sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]
 //! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]
 //! sx schema [request | result]
+//! script recognition: --script-printer <model-id> --script-firmware <flavor>
 //! sx --version
 //! sx metadata <project.3mf>
+//! sx canonical-script <file | -> [--batch]
+//! sx review-script <request.json | -> [--batch]
 //! sx bench --config <bench.json> [--runs 15] [--warmup 3] [--threads N]
 //!          [--append <results.jsonl>] [--change <text>] [--ab <baseline sx>]
 //!          [--write-baseline] [--json]
@@ -75,6 +78,8 @@ fn main() -> ExitCode {
         Some("metadata") => cmd_metadata(&args[1..]),
         Some("bench") => cmd_bench(&args[1..]),
         Some("time") => cmd_time(&args[1..]),
+        Some("canonical-script") => cmd_canonical_script(&args[1..]),
+        Some("review-script") => cmd_review_script(&args[1..]),
         // Which engine this is, for a host checking the binary it ships or finds.
         Some("--version" | "-V") => {
             println!("sx {}", env!("CARGO_PKG_VERSION"));
@@ -82,7 +87,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
+                "usage: sx --version\n       sx metadata <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }
@@ -107,9 +112,86 @@ fn has(args: &[String], name: &str) -> bool {
     args.iter().any(|a| a == name)
 }
 
+fn script_target(args: &[String]) -> Res<Option<sx_core::script_review::Identity>> {
+    match (flag(args, "--script-printer"), flag(args, "--script-firmware")) {
+        (None, None) if !has(args, "--script-printer") && !has(args, "--script-firmware") => Ok(None),
+        (Some(model), Some(firmware)) if !model.trim().is_empty() && !firmware.trim().is_empty() => {
+            Ok(Some(sx_core::script_review::Identity {
+                model: model.into(),
+                firmware: firmware.into(),
+            }))
+        }
+        _ => Err(
+            "script review requires both --script-printer <model-id> and --script-firmware <flavor>".into(),
+        ),
+    }
+}
+
 const EXIT_SLICE: u8 = 1;
 const EXIT_USAGE: u8 = 2;
 const EXIT_INPUT: u8 = 3;
+
+fn cmd_review_script(args: &[String]) -> Res<ExitCode> {
+    let batch = args.len() == 2 && args.get(1).is_some_and(|s| s == "--batch");
+    let Some(path) = args.first().filter(|_| args.len() == 1 || batch) else {
+        return Err("usage: sx review-script <request.json | -> [--batch]".into());
+    };
+    let text = if path == "-" {
+        std::io::read_to_string(std::io::stdin())?
+    } else {
+        std::fs::read_to_string(path)?
+    };
+    if batch {
+        let inputs: Vec<sx_core::script_review::ReviewInput> = serde_json::from_str(&text)?;
+        let results = inputs
+            .iter()
+            .map(sx_core::script_review::review_known)
+            .collect::<Result<Vec<_>, _>>()?;
+        println!("{}", serde_json::to_string(&results)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    let input: sx_core::script_review::ReviewInput = serde_json::from_str(&text)?;
+    let result = sx_core::script_review::review_known(&input)?;
+    println!("{}", serde_json::to_string(&result)?);
+    Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_canonical_script(args: &[String]) -> Res<ExitCode> {
+    let batch = args.len() == 2 && args.get(1).is_some_and(|s| s == "--batch");
+    let Some(path) = args.first().filter(|_| args.len() == 1 || batch) else {
+        return Err("usage: sx canonical-script <file | -> [--batch]".into());
+    };
+    let text = if path == "-" {
+        std::io::read_to_string(std::io::stdin())?
+    } else {
+        std::fs::read_to_string(path)?
+    };
+    if batch {
+        let texts: Vec<String> = serde_json::from_str(&text)?;
+        let results: Vec<Value> = texts
+            .iter()
+            .map(|text| match sx_core::script_canonical::canonicalize(text) {
+                Ok(result) => serde_json::to_value(result).unwrap_or(Value::Null),
+                Err(reason) => json!({"version": 1, "error": "script_review_required", "reason": reason}),
+            })
+            .collect();
+        println!("{}", serde_json::to_string(&results)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    match sx_core::script_canonical::canonicalize(&text) {
+        Ok(result) => {
+            println!("{}", serde_json::to_string(&result)?);
+            Ok(ExitCode::SUCCESS)
+        }
+        Err(reason) => {
+            println!(
+                "{}",
+                json!({"version": 1, "error": "script_review_required", "reason": reason})
+            );
+            Ok(ExitCode::from(EXIT_INPUT))
+        }
+    }
+}
 
 fn cmd_schema(args: &[String]) -> ExitCode {
     match args.first().map_or("request", String::as_str) {
@@ -365,9 +447,43 @@ fn cmd_request(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(EXIT_INPUT, format!("request: {e}")),
     };
+    let mut script_reviews = Vec::<Value>::new();
+    let selected = match script_target(args) {
+        Ok(selected) => selected,
+        Err(e) => return fail(EXIT_USAGE, e.to_string()),
+    };
     #[cfg(feature = "stock-gcode")]
     if let Some(config) = req.config.as_object() {
-        req.options.stock_gcode_keys = stock::stock_keys(config);
+        if let Some(selected) = selected.as_ref() {
+            let mut checked = config.clone();
+            if let Some(flavor) = req
+                .options
+                .flavor
+                .as_ref()
+                .filter(|flavor| *flavor != &selected.firmware)
+            {
+                checked.insert("gcode_flavor".into(), Value::String(flavor.clone()));
+            }
+            match stock::reviewed_keys(&checked, selected) {
+                Ok((keys, reviews)) => {
+                    req.options.stock_gcode_keys = keys;
+                    script_reviews = reviews;
+                }
+                Err(e) => return fail(EXIT_INPUT, e),
+            }
+        } else {
+            req.options.stock_gcode_keys = stock::stock_keys(config);
+        }
+    }
+    #[cfg(not(feature = "stock-gcode"))]
+    if selected.is_some() {
+        return fail(
+            EXIT_INPUT,
+            "stock script review is unavailable in this build".into(),
+        );
+    }
+    if !script_reviews.is_empty() {
+        eprintln!("sx: script_reviews: {}", serde_json::json!(script_reviews));
     }
     report_options(&mut req, args);
     let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
@@ -411,6 +527,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
         Ok(v) => v,
         Err(e) => return fail(EXIT_SLICE, e.to_string()),
     };
+    if !script_reviews.is_empty() {
+        out["script_reviews"] = serde_json::json!(script_reviews);
+    }
     if let Some(dir) = flag(args, "--out-dir") {
         let dir = Path::new(dir);
         let files = [
@@ -732,7 +851,19 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     }
     #[cfg(feature = "stock-gcode")]
     {
-        config.trusted_gcode_keys = stock::stock_keys(&config.raw);
+        if let Some(selected) = script_target(args)? {
+            let (keys, reviews) = stock::reviewed_keys(&config.raw, &selected)?;
+            config.trusted_gcode_keys = keys;
+            if !reviews.is_empty() {
+                eprintln!("sx: script_reviews: {}", serde_json::json!(reviews));
+            }
+        } else {
+            config.trusted_gcode_keys = stock::stock_keys(&config.raw);
+        }
+    }
+    #[cfg(not(feature = "stock-gcode"))]
+    if script_target(args)?.is_some() {
+        return Err("stock script review is unavailable in this build".into());
     }
     // The same limits every entry point applies: settings past the nozzle and machine limits are lowered.
     let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());

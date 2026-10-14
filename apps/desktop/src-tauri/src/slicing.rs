@@ -15,6 +15,17 @@ use sx_core::{Error, Mesh};
 use tauri::State;
 use tauri::ipc::{Channel, InvokeBody, Request, Response};
 
+#[tauri::command]
+pub async fn review_scripts(
+    inputs: Vec<sx_core::script_review::ReviewInput>,
+) -> Result<Vec<sx_core::script_review::Review>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        inputs.iter().map(sx_core::script_review::review_known).collect()
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 /// Gives the engine the memory Windows has available, before the first slice; Linux and macOS
 /// read their own figure inside the engine, so there it changes nothing.
 pub fn give_available_memory() {

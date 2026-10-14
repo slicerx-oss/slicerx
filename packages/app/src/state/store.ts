@@ -498,6 +498,8 @@ export interface AppState {
    * the profile's (`asking` while the dialog is open). Until then the plate slices with the profile's.
    */
   projectGcode: { source: string; changes: import('@slicerx/settings').GcodeChange[]; asking: boolean } | null
+  /** Engine review read-back for original imported scripts; this is not a person's approval. */
+  projectScriptReviews: { source: string; records: import('../project/script-review').ProjectScriptReview[] } | null
   /**
    * Setting keys an opened project brought (print settings, part and modifier settings). A slice the engine refuses
    * over one of them drops that key, says so, and slices again, so one bad value in a file never blocks the plate.
@@ -623,6 +625,7 @@ export interface ProjectPrinter {
   source: string
   previousPrinterId: string | null
   gcodeKeys: string[]
+  recognizedGcodeKeys?: string[]
   parked: Record<string, SettingValue> | null
 }
 
@@ -812,6 +815,7 @@ export const appStore = createStore<AppState>()(() => ({
   projectsDialog: null,
   unsavedPrompt: null,
   projectGcode: null,
+  projectScriptReviews: null,
   projectSettings: null,
   projectImport: null,
   projectPrinter: null,

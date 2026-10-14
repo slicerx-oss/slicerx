@@ -1808,6 +1808,20 @@ pub const RESULT_SCHEMA: &str = r#"{
   "properties": {
     "schemaVersion": { "const": 1 },
     "engine": { "enum": ["sx", "orca"] },
+    "script_reviews": {
+      "type": "array", "description": "Native CLI stock-script reviews for an explicitly selected printer and firmware",
+      "items": {
+        "type": "object", "required": ["key", "schemaVersion", "decision", "reason", "identity", "source", "stockVersion", "fingerprint", "ignored"],
+        "properties": {
+          "key": { "type": "string" }, "slot": { "type": "integer", "minimum": 0 },
+          "schemaVersion": { "const": 1 }, "decision": { "enum": ["exact", "cosmetic", "review"] },
+          "reason": { "type": "string" },
+          "identity": { "type": ["object", "null"], "properties": { "model": { "type": "string" }, "firmware": { "type": "string" } }, "required": ["model", "firmware"] },
+          "source": { "type": ["string", "null"] }, "stockVersion": { "type": ["string", "null"] }, "fingerprint": { "type": ["string", "null"] },
+          "ignored": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
     "layerCount": { "type": "integer", "minimum": 0 },
     "layerZ": { "type": "array", "items": { "type": "number" } },
     "layerTimeS": { "type": "array", "items": { "type": "number" } },

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Script review regression</title>
+<script type="module">
+  import { createWasmSlicer } from '../src/pool.ts'
+  window.reviewHostPromise = createWasmSlicer({ wasm: '/script-review.wasm', workers: 1, warmUp: false })
+</script>
+</html>

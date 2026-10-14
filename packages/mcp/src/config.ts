@@ -4,8 +4,8 @@
 // then each profile in order, then the user's preset files, then a filament per slot,
 // then overrides.
 // Shared by the file tools and cloud slicing.
-import type { SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerName, printerProfile, reviewProjectGcode, type GcodeChange, type GcodeKept } from '@slicerx/settings'
+import type { SettingValue, ScriptReview } from '@slicerx/contracts'
+import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerName, printerProfile, reviewProjectGcode, scriptDeclarations, type GcodeChange, type GcodeKept } from '@slicerx/settings'
 import type { DataStore } from './data'
 import type { PresetLayer } from './presets'
 import { ToolInputError } from './models'
@@ -52,6 +52,8 @@ export interface SlotLayer {
 }
 
 export interface ExtraLayers {
+  /** Internal engine results bound to the exact imported text, never tool arguments. */
+  scriptReviews?: { key: string; slot?: number; text: string; review: ScriptReview }[]
   /**
    * A project file's own settings, applied first. `model` is the printer model the project was saved for (`bambu-a1`),
    * which its G-code is compared with when no printer profile names one.
@@ -78,7 +80,7 @@ export function setSlot(list: readonly unknown[], slot: number, value: unknown, 
  * The printer model the slice is for: the last printer layer's, in the order the layers merge (profiles, then preset
  * files). Undefined when no layer names a printer, or the last one is not one of the printer models.
  */
-function slicePrinter(profiles: ProfileCatalog, names: string[], presets: PresetLayer[]): { printerId: string; nozzle?: number } | undefined {
+export function slicePrinter(profiles: ProfileCatalog, names: string[], presets: PresetLayer[]): { printerId: string; nozzle?: number } | undefined {
   let printer: { printerId: string; nozzle?: number } | undefined
   for (const name of names) {
     if (profiles.find(name)?.section !== 'printer') continue
@@ -137,7 +139,7 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   const errors = validateConfig(store, typed).filter((i) => i.severity === 'error' || i.code === 'unknown_key')
   if (errors.length > 0) throw new ToolInputError(`Invalid overrides:\n${errors.map((i) => `- ${i.message}`).join('\n')}`, 'invalid_settings')
   Object.assign(explicit, typed)
-  const { kept, replaced } = extra.project ? projectGcode(store, profiles, names, extra.project, explicit) : { kept: [], replaced: [] }
+  const { kept, replaced } = extra.project ? projectGcode(store, profiles, names, extra.project, explicit, extra.scriptReviews) : { kept: [], replaced: [] }
   // A preset file's G-code inherited from a shipped profile is that profile's text; only its own G-code is untrusted.
   // The project's G-code that is left is stock text, which projectGcode checked.
   const untrusted = (extra.presets ?? []).some((l) => l.customGcode) || Object.keys(typed).some(isGcodeKey) || Object.keys(extra.project?.config ?? {}).some((k) => isGcodeKey(k) && !GCODE_TEXT_KEYS.includes(k))
@@ -148,11 +150,12 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
  * The refusal for a project whose G-code is not the printer's stock text. The message is one plain sentence and what
  * to do; the per-script counts, flagged lines and diffs are in the details, for a client to show behind a toggle.
  */
-function projectGcodeReview(project: string, printer: { id: string | undefined; name: string | undefined }, changes: GcodeChange[]): ToolInputError {
+function projectGcodeReview(project: string, printer: { id: string | undefined; name: string | undefined }, changes: GcodeChange[], scriptReviews: ExtraLayers['scriptReviews'] = []): ToolInputError {
   const summary = projectGcodeSummary(project, printer.name)
   return new ToolInputError(projectGcodeMessage(summary), 'project_gcode_review', {
     project,
     summary,
+    ...(scriptReviews.length ? { script_reviews: scriptReviews.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}),
     ...(printer.id ? { printer: printer.id } : {}),
     approvable: changes.every((c) => c.approvable),
     changes: changes.map((c) => ({ key: c.key, ...(c.slot !== undefined ? { slot: c.slot } : {}), label: c.label, added: c.added, removed: c.removed, approvable: c.approvable, fingerprint: c.fingerprint, flags: c.flags, diff: c.unified })),
@@ -178,7 +181,7 @@ function printerNeeded(project: string): ToolInputError {
  * Compares the G-code settings a project brings with what the printer profile would use. Stock text stays; anything
  * else is replaced with the profile's (`gcode: "profile"`) or refused with the diff (`"review"`, the default).
  */
-function projectGcode(store: DataStore, profiles: ProfileCatalog, names: string[], project: NonNullable<ExtraLayers['project']>, explicit: Record<string, SettingValue>): { kept: GcodeKept[]; replaced: string[] } {
+function projectGcode(store: DataStore, profiles: ProfileCatalog, names: string[], project: NonNullable<ExtraLayers['project']>, explicit: Record<string, SettingValue>, scriptReviews: ExtraLayers['scriptReviews'] = []): { kept: GcodeKept[]; replaced: string[] } {
   // Only keys whose value is still the project's: a later profile, preset or override replaces the project's text.
   const own = Object.fromEntries(Object.entries(project.config).filter(([k, v]) => GCODE_TEXT_KEYS.includes(k) && explicit[k] === v))
   if (Object.keys(own).length === 0) return { kept: [], replaced: [] }
@@ -193,6 +196,22 @@ function projectGcode(store: DataStore, profiles: ProfileCatalog, names: string[
   const reference = Object.fromEntries(Object.keys(own).map((k) => [k, layered[k] ?? shipped[k] ?? defaults[k]]))
   const limits = model ? printerProfile(model)?.limits : undefined
   const review = reviewProjectGcode({ project: own, profile: reference, model, limits: { nozzleMaxC: limits?.hotendMaxTemp, bedMaxC: limits?.bedMaxTemp } })
+  const verified = new Set(Object.entries(own).filter(([key, value]) => {
+    if ((Array.isArray(value) ? value : [value]).some((text) => typeof text !== 'string')) return false
+    const entries = (Array.isArray(value) ? value : [value]).map((text, slot) => ({ text, slot: Array.isArray(value) ? slot : undefined })).filter(({ text }) => typeof text === 'string' && text.trim())
+    const flavors = Array.isArray(explicit.gcode_flavor) ? explicit.gcode_flavor : [explicit.gcode_flavor]
+    return flavors.length > 0 && entries.length > 0 && entries.every(({ text, slot }) => scriptReviews.some((proof) => {
+      const identity = proof.review.identity
+      if (!identity || (model && identity.model !== model)) return false
+      if (scriptDeclarations(explicit, identity).some((declared) => declared.model !== identity.model || declared.firmware !== identity.firmware)) return false
+      return proof.key === key && proof.slot === slot && proof.text === text && flavors.every((flavor) => identity.firmware === flavor) && proof.review.source && proof.review.stockVersion && proof.review.fingerprint && ['exact', 'cosmetic'].includes(proof.review.decision)
+    }))
+  }).map(([key]) => key))
+  for (const change of review.changes.filter((change) => verified.has(change.key))) {
+    const proof = scriptReviews.find((p) => p.key === change.key && p.slot === change.slot && p.text === change.text)!
+    review.kept.push({ key: change.key, ...(change.slot === undefined ? {} : { slot: change.slot }), label: change.label, match: 'stock', message: `matches ${proof.review.source} ${proof.review.stockVersion} stock for the selected printer` })
+  }
+  review.changes = review.changes.filter((change) => !verified.has(change.key))
   if (review.changes.length === 0) return { kept: review.kept, replaced: [] }
   if ((project.gcode ?? 'review') === 'review') {
     // Nothing to compare with but the engine's generic G-code, against which nearly every line reads as added.
@@ -200,7 +219,7 @@ function projectGcode(store: DataStore, profiles: ProfileCatalog, names: string[
     // The printer it was compared with: the model when SlicerX knows it, else the printer profile named in the call.
     const named = names.map((n) => profiles.get(n)).filter((p) => p?.section === 'printer').pop()
     const known = model && printerProfile(model) ? model : undefined
-    throw projectGcodeReview(project.name, { id: known ?? machine?.id ?? named?.id ?? model, name: known ? printerName(known) : (machine ?? named)?.name }, review.changes)
+    throw projectGcodeReview(project.name, { id: known ?? machine?.id ?? named?.id ?? model, name: known ? printerName(known) : (machine ?? named)?.name }, review.changes, scriptReviews)
   }
   const replaced = [...new Set(review.changes.map((c) => c.key))]
   for (const k of replaced) {

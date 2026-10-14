@@ -341,6 +341,13 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       if (r.type !== 'metadata') throw new Error('Project metadata failed')
       return r.info as ProjectMetadata
     },
+    async reviewScripts(inputs) {
+      if (inputs.length === 0) return []
+      const w = await firstWorker()
+      const r = await w.call((call) => ({ type: 'reviewScripts', call, inputs }))
+      if (r.type !== 'reviewScripts') throw new Error('Script review failed')
+      return r.reviews
+    },
     async slice(req: SliceRequest, o?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal }): Promise<SliceResult> {
       const started = performance.now()
       // Options the engine reads: the dialect, sleipnir tops, resume, height ranges and per-layer G-code.

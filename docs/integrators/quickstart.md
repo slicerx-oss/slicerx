@@ -341,6 +341,16 @@ See [embedding.md](../embedding.md#project-g-code) for the details and an exampl
 - Progress per layer.
 - The stub engine slices STL files only.
 
+## Versioned stock-script review
+
+`slicerx_review_script` compares a script without changing it. Pass `selected: { model, firmware }`, the setting `key`, its original `text`, and every imported identity in `declared`. The native equivalent is `sx review-script request.json`; `--batch` accepts an array. The browser host exposes `reviewScripts(inputs)` through the same engine parser.
+
+The result includes `decision` (`exact`, `cosmetic`, or `review`), `reason`, `identity`, `source`, `stockVersion`, `fingerprint`, and `ignored`. Recognition requires a known stock version for the selected model and firmware. Imported names alone do not authorize cosmetic recognition. Conflicting identities, unknown firmware, unsupported syntax, changed numbers or control flow, and inserted or moved commands require review. An M500 is accepted only as part of the matching stock script.
+
+For MCP slicing, select a machine profile explicitly or pass `script_printer: { model, firmware }`. Native slicing accepts the paired `--script-printer <model-id> --script-firmware <flavor>` flags, including with `--request`. Both return `script_reviews`; native slicing also writes those records to stderr. Recognition retains the original script. A review result does not authorize an automatic substitution or printer start. Show the reason and use the existing explicit profile-script choice when requested.
+
+The open app exposes its imported-script review through app-link `app.info`, as `script_review_source` and `script_reviews`. These describe the original import. They are separate from a person's G-code approval. Recognition is checked again against the current complete script value, printer model and firmware before granting stock trust; changing any of those invalidates the result. Selecting a printer from the imported file does not establish the explicit selection required for cosmetic recognition.
+
 ## Licenses
 
 The SlicerX code, `@slicerx/embed` included, is Apache-2.0. `@slicerx/mcp` also bundles the stock printer and filament profile data, which is AGPL-3.0-or-later (and LGPL-3.0-or-later for the UltiMaker data), so its package license says so. If you ship that data, your users are entitled to its source. [licensing.md](../licensing.md) has the details and says how to leave the profiles out.

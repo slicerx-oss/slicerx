@@ -188,6 +188,8 @@ mod rotation;
     reason = "polyline arithmetic over points of the ring being cut, indices bounded by its length"
 )]
 mod scarf;
+pub mod script_canonical;
+pub mod script_review;
 mod seam;
 #[allow(
     clippy::indexing_slicing,
