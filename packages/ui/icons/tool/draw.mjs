@@ -85,6 +85,9 @@ function halve(m, at, gap) {
   return g
 }
 
+/** the shared cut mark at 16: a 2 row accent band across the whole box at row y, drawn under what comes after */
+const cutBand = (g, y) => { for (let i = 1; i <= 14; i++) put(g, [[i, y], [i, y + 1]], i === 1 || i === 14 ? 'd' : 'a'); for (let i = 2; i <= 13; i++) put(g, [[i, y - 1], [i, y + 2]], 'd') }
+
 const V = {}, G = {}
 
 // ---------- Solid · Create ----------
@@ -131,16 +134,14 @@ V.revolve = (c) => {
     `<path class="a1" d="M${x1} ${r2(d.cy - h * 1.3)}L${r2(x1 + h)} ${r2(d.cy + h * 0.4)}L${r2(x1 - h)} ${r2(d.cy + h * 0.4)}Z"/>`
 }
 G.revolve = () => {
+  // the cylinder, and one 2 px accent turn round its front with its head up at the right
   const g = grid()
-  cyl16(g, 7.5, 2.5, 10.5, 3.5)
-  // the turn: the front half of a wider ring round the middle, its head up at the right
-  for (let x = 1; x <= 13; x++) {
-    const t = (x + 0.5 - 7.5) / 6.5
-    if (Math.abs(t) <= 1) put(g, [[x, Math.round(7 + 2.6 * Math.sqrt(1 - t * t))]], 'l')
+  cyl16(g, 7.5, 3.5, 11.5, 4)
+  for (let x = 2; x <= 12; x++) {
+    const t = (x + 0.5 - 7.5) / 5.5, y = 8 + Math.round(2.5 * Math.sqrt(Math.max(0, 1 - t * t)))
+    put(g, [[x, y], [x, y + 1]], 'l')
   }
-  put(g, [[1, 7], [1, 6]], 'l')
-  glyph(g, 12, 4, [' a ', 'aaa'])
-  put(g, [[13, 6]], 'l')
+  glyph(g, 11, 4, ['  a', ' aa', 'aaa', ' aa'])
   return g
 }
 V['box-shape'] = (c) => cyl(c, 6, 1, 0, 4.5, 1.8) + c.abox([0, 2.2, 0], [4, 6.2, 3.6])
@@ -172,9 +173,9 @@ G.cone = () => {
 }
 V['on-face'] = (c) => cube(c, 5) + c.poly('a2', ...onLeft(6, [[1.4, 1.2], [4.6, 1.2], [4.6, 3.8], [1.4, 3.8]]))
 G['on-face'] = () => {
+  // the block with its picked face in the accent
   const g = grid(), q = Q(8, 8.5)
-  solid(g, boxFaces(q, [0, 0, 0], [6, 6, 6]))
-  fill(g, [q(1.2, 6, 1.2), q(4.4, 6, 1.2), q(4.4, 6, 4.6), q(1.2, 6, 4.6)], 'b')
+  solid(g, boxFaces(q, [0, 0, 0], [6, 6, 6], ['1', 'b', '3']))
   return g
 }
 V['shape-face'] = (c) => cube(c, 3.6) + cyl(c, 3, 3, 3.6, 5, 1.9, true)
@@ -279,9 +280,10 @@ V['thread-bolt'] = (c) => {
   return s
 }
 G['thread-bolt'] = () => {
+  // a wide standoff, the thread as three accent turns across its front
   const g = grid()
-  cyl16(g, 7.5, 2.5, 12, 3.5)
-  for (const y0 of [5, 8, 11]) for (let x = 5; x <= 10; x++) put(g, [[x, y0 + Math.round((x - 5) / 3)]], 'l')
+  cyl16(g, 7.5, 2.5, 11.5, 5)
+  for (const y0 of [4, 7, 10]) for (let x = 3; x <= 10; x++) put(g, [[x, y0 + Math.floor((x - 3) / 4)]], 'l')
   return g
 }
 V['subtract-shape'] = (c) => {
@@ -290,18 +292,18 @@ V['subtract-shape'] = (c) => {
   return cube(c, 5) + c.poly('hl', ...circ(Y)) + c.poly('a1', ...circ(Y + 2.4))
 }
 G['subtract-shape'] = () => {
-  const g = grid()
-  solid(g, boxFaces(Q(9, 7.5), [0, 0, 0], [6, 6, 6]))
-  stamp(g, 4, 8, [' hhh', 'hhhh', 'hhhh', 'hhh '])
-  glyph(g, 2, 11, ['aaa', 'aaa', 'aa '])
+  // the block with a round hole through its left face, the cut wall in the accent
+  const g = grid(), q = Q(8, 8.5)
+  solid(g, boxFaces(q, [0, 0, 0], [6, 6, 6]))
+  stamp(g, 3, 7, ['  bbb ', ' bhhhb', 'bhhhhb', 'bhhhhb', 'bhhhb ', ' bbb  '])
   return g
 }
 V.cut = (c) => c.box([0, 0, 0], [6, 6, 2.4]) + c.poly('a1 faint2', [-1.4, -1.4, 2.4], [7.4, -1.4, 2.4], [7.4, 7.4, 2.4], [-1.4, 7.4, 2.4]) + c.box([0, 0, 3.6], [6, 6, 5.8])
 G.cut = () => {
-  const g = grid(), q = Q(8, 10)
-  solid(g, boxFaces(q, [0.5, 0.5, 0], [5.5, 5.5, 2]))
-  plane16(g, 1, 14, 8)
-  solid(g, boxFaces(q, [0.5, 0.5, 4], [5.5, 5.5, 6.5]))
+  // the shared cut mark: a thin accent plane through the middle of the body, a pixel wider on each side
+  const g = grid()
+  solid(g, boxFaces(Q(8, 8.5), [0, 0, 0], [6, 6, 6]))
+  cutBand(g, 8)
   return g
 }
 V['array-linear'] = (c) => {
@@ -310,11 +312,11 @@ V['array-linear'] = (c) => {
   return s
 }
 G['array-linear'] = () => {
-  const g = grid()
-  solid(g, boxFaces(Q(4, 9), [0, 0, 0], [10, 3, 1]))
-  cyl16(g, 3.5, 4, 7.5, 1.5)
-  cyl16(g, 7.5, 6, 9.5, 1.5, ACC, 'd')
-  cyl16(g, 11.5, 8, 11.5, 1.5, ACC, 'd')
+  // one block and its two copies along a row, the copies in the accent
+  const g = grid(), q = Q(4, 8)
+  solid(g, boxFaces(q, [0, 0, 0], [3, 3, 3]))
+  solid(g, boxFaces(q, [4, 0, 0], [7, 3, 3], ACC), 'd')
+  solid(g, boxFaces(q, [8, 0, 0], [11, 3, 3], ACC), 'd')
   return g
 }
 V.merge = (c) => c.box([0, 0, 0], [4, 4, 4.5]) + c.abox([2.6, 2.6, 0], [6.6, 6.6, 3.2])
@@ -451,11 +453,10 @@ G.orient = () => {
 }
 V['mesh-cut'] = (c) => moundSlab(c, 0, 1.4) + c.poly('a1 faint2', [-1.2, -1.2, 1.4], [7.7, -1.2, 1.4], [7.7, 7.7, 1.4], [-1.2, 7.7, 1.4]) + moundSlab(c, 1.4, 3, 1.2)
 G['mesh-cut'] = () => {
+  // the shared cut mark through the mound
   const g = grid()
-  solid(g, moundFaces(Q(8, 10), undefined, { H: 2.2, T0: 1.1, T1: 5.9 }))
-  plane16(g, 1, 14, 8)
-  const r = Q(8, 7.5)
-  solid(g, [[[r(1.5, 5.5, 0), r(5.5, 5.5, 0), r(4.6, 4.6, 2.2), r(2.4, 4.6, 2.2)], '2'], [[r(5.5, 1.5, 0), r(5.5, 5.5, 0), r(4.6, 4.6, 2.2), r(4.6, 2.4, 2.2)], '3'], [[r(2.4, 2.4, 2.2), r(4.6, 2.4, 2.2), r(4.6, 4.6, 2.2), r(2.4, 4.6, 2.2)], '1']])
+  solid(g, moundFaces(Q(8, 8.5)))
+  cutBand(g, 9)
   return g
 }
 V['mesh-split'] = (c) => {
