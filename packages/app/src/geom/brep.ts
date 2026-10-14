@@ -13,19 +13,31 @@ export interface BrepModule {
 export function brepModule(m: SxBrepModule): BrepModule {
   return {
     call(op, request) {
-      const o = m.stringToNewUTF8(op)
-      const r = m.stringToNewUTF8(JSON.stringify(request ?? {}))
+      const json = JSON.stringify(request ?? {})
+      if (json === undefined) throw new Error('brep: request is not JSON')
+      let o = 0
+      let r = 0
+      let p = 0
       try {
-        const p = m._sx_brep_call(o, r)
+        o = m.stringToNewUTF8(op)
+        if (!o) throw new Error('brep: out of memory')
+        r = m.stringToNewUTF8(json)
+        if (!r) throw new Error('brep: out of memory')
+        p = m._sx_brep_call(o, r)
         if (!p) throw new Error('brep: out of memory')
-        const text = m.UTF8ToString(p)
-        m._sx_brep_free(p)
-        const reply = JSON.parse(text) as { error?: string }
+        const reply = JSON.parse(m.UTF8ToString(p)) as { error?: string }
         if (typeof reply.error === 'string') throw new Error(reply.error)
         return reply
       } finally {
-        m._free(o)
-        m._free(r)
+        try {
+          if (p) m._sx_brep_free(p)
+        } finally {
+          try {
+            if (r) m._free(r)
+          } finally {
+            if (o) m._free(o)
+          }
+        }
       }
     },
   }
