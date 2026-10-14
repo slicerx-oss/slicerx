@@ -600,7 +600,14 @@ class ViewportImpl implements Viewport {
     this.toolpaths.set(warmupBuffers())
     this.toolpaths.warmNozzle(true)
     root.visible = true
-    await this.renderer.compileAsync(this.stage.scene, this.camera).catch(() => {
+    // Compiled for the pipeline's own target, as every frame draws: the canvas would give the sRGB output variant of
+    // each program, which no frame uses, and the first preview frame would compile the linear ones all over again.
+    // compileAsync builds the programs in the call, so the target goes back at once.
+    const target = this.renderer.getRenderTarget()
+    this.renderer.setRenderTarget(this.pipeline.main)
+    const compiled = this.renderer.compileAsync(this.stage.scene, this.camera)
+    this.renderer.setRenderTarget(target)
+    await compiled.catch(() => {
       // Best effort: if it fails, the first real preview frame compiles the shaders instead.
     })
     if (this.disposed) return clock.stop()
