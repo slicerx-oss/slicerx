@@ -220,3 +220,8 @@ test('Advanced rows from prime tower to extrusion rate smoothing play their own 
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['prime_tower_width', 'bqpw'], ['prime_tower_infill_gap', 'bqpg'], ['prime_tower_brim_width', 'bqpb'], ['raft_contact_distance', 'bqrc'], ['raft_expansion', 'bqre'], ['raft_first_layer_density', 'bqrd'], ['raft_first_layer_expansion', 'bqrx'], ['max_volumetric_extrusion_rate_slope', 'bqrs'], ['max_volumetric_extrusion_rate_slope_segment_length', 'bqrg'], ['extrusion_rate_smoothing_external_perimeter_only', 'bqro']])
 })
+
+test('Advanced rows from deretraction speed to seam position play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['seam_slope_type', 'bqsc'], ['seam_slope_min_length', 'bqsl'], ['seam_slope_steps', 'bqss'], ['seam_slope_start_height', 'bqsh'], ['seam_slope_entire_loop', 'bqsx'], ['scarf_joint_flow_ratio', 'bqsf'], ['scarf_angle_threshold', 'bqsa'], ['seam_position', 'bqsp']])
+})
