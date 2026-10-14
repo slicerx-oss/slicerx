@@ -3,7 +3,7 @@
 // The plate tabs: mimir, Design and Slice share one viewport, so switching never rebuilds the scene; the panes around
 // it change with the mode. mimir and Design show the same design; mimir puts the chat beside it in place of the panes. Slice shows the slice in place (toolpaths by default), with the layer dock and the slice summary.
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { RenderMenu, ViewMenu } from './view-menus'
+import { RenderMenu, SketchLookButton, ViewMenu } from './view-menus'
 import { useLayout, useLookChoice } from '../first-run/look'
 import { registerCommands } from '../commands/registry'
 import { history } from '../plate/history'
@@ -278,6 +278,7 @@ export function Studio() {
           </div>
           <div className="hud-col end">
             {design && phone ? <RenderMenu /> : null}
+            {design && !phone ? <SketchLookButton /> : null}
             <ViewMenu />
             {design && phone ? (
               <Suspense fallback={null}>

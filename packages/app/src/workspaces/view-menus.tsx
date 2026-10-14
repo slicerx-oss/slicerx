@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { useModelMode } from '../state/model-mode'
 import { pickColorMode, setCamera, useApp, type CameraView, type ColorMode, type PrepareLook } from '../state/store'
 import { set } from '../state/store'
+import { lookAtSketch, useSketchLook } from '../cad/sketch-mode'
 
 const LOOKS: { value: PrepareLook; label: string; icon: IconName }[] = [
   { value: 'studio', label: 'Studio', icon: 'cube' },
@@ -55,6 +56,13 @@ export function RenderMenu() {
       </Menu>
     </MenuAnchor>
   )
+}
+
+/** While a sketch is open, the camera buttons start with Look at the sketch: the view square onto its plane. */
+export function SketchLookButton() {
+  const on = useSketchLook()
+  if (!on) return null
+  return <Button variant="ghost" size="sm" icon="top-view" data-testid="sketch-look" aria-label="Look at the sketch" tip="sketch.look" onClick={() => lookAtSketch()} />
 }
 
 export function ViewMenu() {

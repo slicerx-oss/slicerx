@@ -721,6 +721,49 @@ export function readout(draft: Draft, p: V2, f: (mm: number) => string = (v) => 
   }
 }
 
+/**
+ * The cursor's live numbers for the tool's next step, one for each of `fieldsFor(draft)` in the same order and units:
+ * X and Y for a first point, length and angle for a line, width and height for a rectangle, and so on. Lengths are in
+ * mm and angles in degrees from 0 up to 360. Null where the cursor gives no number yet (an arc through a straight line).
+ */
+export function liveValues(draft: Draft, p: V2): (number | null)[] {
+  if (!fieldsFor(draft).length) return []
+  const n = draft.points.length
+  const a = draft.points[0]
+  if (n === 0 || !a) return [p[0], p[1]]
+  const b = draft.points[1]
+  const ang = (from: V2, to: V2): number => (Math.atan2(to[1] - from[1], to[0] - from[0]) / DEG + 360) % 360
+  switch (draft.tool) {
+    case 'rect':
+      return [Math.abs(p[0] - a[0]), Math.abs(p[1] - a[1])]
+    case 'rectCenter':
+      return [2 * Math.abs(p[0] - a[0]), 2 * Math.abs(p[1] - a[1])]
+    case 'circle':
+      return [2 * dist(a, p)]
+    case 'circle2':
+    case 'polygon':
+    case 'polygonOut':
+      return [dist(a, p)]
+    case 'arcCenter':
+      if (n === 2 && b) {
+        const arc = arcCenter(a, b, p)
+        const s = arc ? arcThrough(b, arc.through, arc.to) : null
+        return [s ? Math.abs(s.sweep / DEG) : null]
+      }
+      return [dist(a, p), ang(a, p)]
+    case 'arc':
+      if (n === 2 && b) return [arcThrough(a, p, b)?.r ?? null]
+      break
+    case 'rect3':
+    case 'slot':
+    case 'slotOverall':
+    case 'slotCenter':
+      if (n === 2 && b) return [(draft.tool === 'rect3' ? 1 : 2) * Math.abs(offsetFrom(a, b, p))]
+      break
+  }
+  return [dist(a, p), ang(a, p)]
+}
+
 /** A closed ring of points (an offset outline) as a chain of lines. Null for fewer than three points. */
 export function polylineToChain(points: readonly V2[]): Chain | null {
   if (points.length < 3) return null
