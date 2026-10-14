@@ -148,10 +148,12 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         <Button size="sm" variant="ghost" icon="plus" aria-label="New conversation" tip="pilot.newChat" onClick={() => setSessionId(newSessionId())} />
       </header>
       <div className="mimir-stage">
-        {/* The battle ravens: a faint, still watermark behind the whole conversation. */}
-        <div className="mimir-ravens" data-testid="mimir-ravens" aria-hidden="true">
-          <RavenMark />
-        </div>
+        {/* The battle ravens: a faint, still watermark while the chat is empty; never behind a reply. */}
+        {transcript.turns.length === 0 ? (
+          <div className="mimir-ravens" data-testid="mimir-ravens" aria-hidden="true">
+            <RavenMark />
+          </div>
+        ) : null}
         <div
           ref={body}
           className="mimir-transcript"

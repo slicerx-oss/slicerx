@@ -14,6 +14,11 @@
   --ink-4: #3c3f50;
   --line: #44475a;
   --line-soft: #3c3e4f;
+  /* the surface ladder: page, card, field, each one step off the last */
+  --bg: var(--ink-1);
+  --panel: var(--ink-2);
+  --panel-2: var(--ink-3);
+  --panel-line: var(--line-soft);
 
   /* text */
   --fg: #f8f8f2;
@@ -134,3 +139,10 @@
   --z-tip: 65;
   --z-palette: 70;
 }
+
+/* Surface step strengths while the owner picks one (mock only; the pick replaces the ladder above). Each step mixes
+   toward the text color, so it lightens in dark and darkens in light by the same amount. */
+html[data-surface-step] { --bg: var(--ink-1); --panel-line: var(--line); }
+html[data-surface-step="subtle"] { --panel: color-mix(in srgb, var(--ink-1), var(--fg) 4%); --panel-2: color-mix(in srgb, var(--ink-1), var(--fg) 8%); }
+html[data-surface-step="medium"] { --panel: color-mix(in srgb, var(--ink-1), var(--fg) 7%); --panel-2: color-mix(in srgb, var(--ink-1), var(--fg) 14%); }
+html[data-surface-step="strong"] { --panel: color-mix(in srgb, var(--ink-1), var(--fg) 11%); --panel-2: color-mix(in srgb, var(--ink-1), var(--fg) 22%); }

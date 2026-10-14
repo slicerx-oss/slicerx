@@ -3,8 +3,8 @@
 /* The mimir tab: the chat column on the left, the design's view on the right. The composer and the caption float, so
    they are lifted (.sx-overlay); everything inside the transcript is flat. */
 /* the pilot styles' own grid and terminal colors give way to the column's */
-.mimir-chat.sx-pilot { --t-bg: var(--ink-1); --t-fg: var(--fg); --t-bubble: var(--ink-3); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); grid-template-columns: minmax(0, 1fr); }
-.mimir-chat { position: relative; order: 0; flex: none; width: var(--w-chat, 420px); min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-1); border-right: 1px solid var(--line-soft); }
+.mimir-chat.sx-pilot { --t-bg: var(--bg); --t-fg: var(--fg); --t-bubble: var(--panel-2); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); grid-template-columns: minmax(0, 1fr); }
+.mimir-chat { position: relative; order: 0; flex: none; width: var(--w-chat, 420px); min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--bg); border-right: 1px solid var(--line-soft); }
 .mimir-chat[hidden] { display: none; }
 .mimir-chat-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
 .mimir-chat-mark { display: inline-flex; color: var(--purple); }
@@ -17,8 +17,8 @@
 .mimir-transcript { min-height: 0; overflow: auto; padding: var(--s-4) var(--s-3); }
 .mimir-stage { position: relative; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); container-type: size; --mark: min(66cqw, 400px); }
 .mimir-stage > .mimir-transcript { position: relative; z-index: 1; min-height: 0; }
-/* The battle ravens: a still, single-color watermark centered behind the conversation, about 4% so it reads as
-   texture in either theme. It stays for the whole conversation and never moves. */
+/* The battle ravens: a still, single-color watermark centered behind the empty chat, about 4% so it reads as
+   texture in either theme. It goes once the conversation starts, so nothing shows behind the replies. */
 .mimir-ravens { position: absolute; left: 50%; top: 50%; z-index: 0; width: var(--mark); aspect-ratio: 1; transform: translate(-50%, -50%); color: light-dark(color-mix(in srgb, var(--fg) 5%, transparent), color-mix(in srgb, var(--fg) 4%, transparent)); pointer-events: none; }
 .mimir-ravens .sx-raven-mark { width: 100%; height: 100%; }
 /* the empty state sits under the ring, at reading width */
@@ -144,3 +144,6 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-sheet-foot .sx-btn { min-height: 44px; }
 :root[data-phone] .mimir-chat .composer-text { height: 40px; font-size: 16px; }
 :root[data-phone] .mimir-chat .composer .sx-btn { width: 44px; height: 44px; }
+/* surface steps (mock only): the bubble sits on the card step and the composer on the field step */
+html[data-surface-step] .mimir-chat.sx-pilot { --t-bubble: var(--panel); }
+html[data-surface-step] .mimir-chat .composer { background: var(--panel-2); border-color: var(--panel-line); }

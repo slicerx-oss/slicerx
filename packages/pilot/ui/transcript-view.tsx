@@ -9,7 +9,7 @@ import { SheetRecord } from './sheet-record'
 import { Citations } from './citations'
 import { Diff } from './diff'
 import { ErrorLine, ModelLine, PermLine, PlanList, PluginsLoading } from './notes'
-import { createdPart, followUps, lastPart } from './part'
+import { createdPart, followUps, lastPart, madePart } from './part'
 import { FollowUpChips, PartCard, PartLookContext, type PartHandlers } from './part-card'
 import type { Block, Transcript } from './reduce'
 import { Say } from './say'
@@ -101,7 +101,8 @@ export function TranscriptView({ transcript, showThinking, approvals, words, par
         <Fragment key={t.id}>
           {t.user !== null ? <Bubble text={t.user} where={t.where} attachments={t.attachments} /> : null}
           <PilotTurn>
-            {t.blocks.map((b) => (
+            {/* the part card already shows what happened, so the turn's permission line is dropped */}
+            {(parts && madePart(t) ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks).map((b) => (
               <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} />
             ))}
             {part && t === last ? <FollowUpChips items={followUps(part)} onRun={parts?.onRun} place="reply" /> : null}
