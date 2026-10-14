@@ -18,7 +18,8 @@ export function SliceLookSwitch() {
         options={[
           { value: 'solid', label: 'Solid', title: 'Solid: the models alone' },
           { value: 'print', label: 'Layer lines', title: 'Layer lines: the models with their layer height drawn on them' },
-          { value: 'toolpaths', label: 'Toolpaths', title: 'Toolpaths: the sliced paths in place of the models; the one under the pointer shows as the model' },
+          // norn's loop rides here: a click on a toolpath opens the setting that made it
+          { value: 'toolpaths', label: 'Toolpaths', tip: { title: 'Toolpaths', body: 'The sliced paths in place of the models; the one under the pointer shows as the model. Click a path to change the setting that made it.', demo: 'norn' } },
         ]}
       />
     </div>
