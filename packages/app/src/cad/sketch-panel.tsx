@@ -1000,7 +1000,6 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
-      if (e.defaultPrevented) return
       // a focused tool radio or checkbox takes no text, so keys still reach the sketch
       const typing = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
       if (typing) return

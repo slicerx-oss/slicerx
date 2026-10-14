@@ -93,7 +93,7 @@ test('a sketch on XZ finishes into the timeline, then extrudes from its menu', a
   await expect(page.locator('.tl-chip[data-kind="sketch"]')).toContainText('Sketch 1')
 })
 
-test('Enter finishes the sketch, and undo takes the finished sketch back out', async ({ page, isMobile }) => {
+test('Ctrl/Cmd+Enter finishes the sketch, a bare Enter does not, and undo takes the finished sketch back out', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Modeling tools are desktop only')
   await openStudio(page)
   await page.locator('.sx-tab[data-mode="design"]').click()
@@ -107,7 +107,11 @@ test('Enter finishes the sketch, and undo takes the finished sketch back out', a
   await sketchAt(page, 'click', [106, 100])
   // the circle is drawn before Enter, as a person would see it
   await expect(panel.getByRole('status').filter({ hasText: 'degrees of freedom' })).toBeVisible()
+  // a bare Enter keeps the sketch open: a second one would otherwise close it by surprise
   await page.locator('body').press('Enter')
+  await expect(panel).toContainText('The bed')
+  expect((await sx(page)).items.filter((i) => i.kind === 'sketch').length).toBe(0)
+  await page.locator('body').press('ControlOrMeta+Enter')
   await expect.poll(async () => (await sx(page)).items.filter((i) => i.kind === 'sketch').length).toBe(1)
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(async () => (await sx(page)).items.filter((i) => i.kind === 'sketch').length).toBe(0)
