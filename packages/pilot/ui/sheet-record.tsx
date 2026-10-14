@@ -35,6 +35,7 @@ export function SheetRecord({
   values,
   onEdit,
   onConfirm,
+  onCancel,
   onOpen,
 }: {
   sheet: PilotSheet
@@ -46,6 +47,7 @@ export function SheetRecord({
   values?: Record<string, number> | undefined
   onEdit?: ((sheetId: string, key: string, value: number) => void) | undefined
   onConfirm?: ((sheetId: string, values: Record<string, number>) => Promise<void>) | undefined
+  onCancel?: ((sheetId: string) => Promise<void>) | undefined
   onOpen?: ((sheetId: string) => void) | undefined
 }) {
   const [sent, setSent] = useState(false)
@@ -100,9 +102,9 @@ export function SheetRecord({
                 <span
                   className="sheet-rec-field"
                   onKeyDown={(e) => {
-                    // Enter on a guess left as it is keeps it, the same as typing it in
-                    const v = Number((e.target as HTMLInputElement).value)
-                    if (e.key === 'Enter' && guess && v === used) onEdit(sheet.id, d.key, used)
+                    // Enter on a guess left as it is keeps it, the same as typing it in; an empty or partial entry keeps nothing
+                    const text = (e.target as HTMLInputElement).value.trim()
+                    if (e.key === 'Enter' && guess && text !== '' && Number(text.replace(',', '.')) === used) onEdit(sheet.id, d.key, used)
                   }}
                 >
                   <ScrubNumber
@@ -131,6 +133,20 @@ export function SheetRecord({
         <span className="lookup-rec-s" data-assumed={!answer && assumed.length ? '' : undefined} data-testid="mimir-sheet-status">
           {status}
         </span>
+        {canConfirm && onCancel ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={sent}
+            data-testid="mimir-sheet-cancel"
+            onClick={() => {
+              setSent(true)
+              void onCancel(sheet.id).catch(() => setSent(false))
+            }}
+          >
+            Cancel
+          </Button>
+        ) : null}
         {canConfirm ? (
           <Button
             size="sm"

@@ -78,7 +78,9 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-choice` | A choice card in the conversation; `data-picked` holds the picked answer's id once there is one |
 | `mimir-sheet-record` | A dimension sheet as it stays in the conversation: a numbered row per size (the number is its callout), guesses marked (`data-guess`), each row `data-dim` with its key; while it waits in the tab its rows are fields |
 | `mimir-sheet-source` | The page the looked-up sizes came from, once in the record's header |
-| `mimir-sheet-confirm` | Check sizes and build 3D, on a sheet still waiting; it confirms the sheet with the record's values |
+| `mimir-sheet-confirm` | Confirm sizes and build, on a sheet still waiting; it confirms the sheet with the record's values |
+| `mimir-sheet-status` | The record's status beside its buttons: the assumed values (`data-assumed`) while guesses remain, then whether it was confirmed or canceled |
+| `mimir-sizes-pill` | Sizes, floating over the chat while a waiting sheet's record is scrolled out of view; it scrolls the record back and focuses the first assumed size |
 | `mimir-sheet-open` | On a built sheet's record in the tab: Edit sizes, once its rows drive the built steps |
 | `mimir-sheet-drawing` | The drawing that covers the view while a sheet waits: front, right, top and iso, with callouts |
 | `mimir-sheet-callout` | A numbered callout on the drawing (`data-key` is its row); clicking it picks the row |
@@ -86,7 +88,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-sheet-row` | One size in the panel (`data-key`, `data-guess` while an unchanged guess, `data-on` while edited) |
 | `mimir-sheet-hint` | The panel's two-line hint: the edited row's note and range, or a step edit's result |
 | `mimir-sheet-build` | Build: confirms the sheet with the panel's values |
-| `mimir-sheet-cancel` | Cancel: answers the sheet as not confirmed, so nothing builds |
+| `mimir-sheet-cancel` | Cancel, quiet, on the waiting record (or the panel when a sheet has no drawing): answers the sheet as not confirmed, so nothing builds |
 | `mimir-sheet-close` | Done: puts the panel away after the build |
 | `mimir-ravens` | The battle ravens watermark behind the conversation; `data-shown` while no model answers in the tab |
 | `mimir-split` | Holds the chat's resize edge (`role="separator"`), 340 px to half the window |

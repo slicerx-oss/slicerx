@@ -100,6 +100,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(),
       onConfirmSheet: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve(),
       onEditSheet: (_sheetId, key, value) => setDraft(key, value),
+      onCancelSheet: (sheetId) => pilot.answerSheet?.(sheetId, null) ?? Promise.resolve(),
       onOpenSheet: openSheet,
       sheetValues: draft,
     }),

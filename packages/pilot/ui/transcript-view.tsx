@@ -26,6 +26,8 @@ export interface ApprovalHandlers {
   onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
   /** Confirms a dimension sheet with its values; without it a sheet waits for another surface to answer it. */
   onConfirmSheet?: ((sheetId: string, values: Record<string, number>) => Promise<void>) | undefined
+  /** Answers a waiting sheet as not confirmed, so nothing builds. */
+  onCancelSheet?: ((sheetId: string) => Promise<void>) | undefined
   /** Brings a built sheet's panel back, where a tied row edits its step. */
   onOpenSheet?: ((sheetId: string) => void) | undefined
   /** A size typed on a waiting sheet's record; with it the record's rows are fields. */
@@ -76,7 +78,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
     case 'lookup':
       return <LookupRecord lookup={block.lookup} />
     case 'sheet':
-      return <SheetRecord sheet={block.sheet} answer={block.answer} bound={block.bound !== undefined} actionable={!block.replay} values={approvals.sheetValues} onEdit={block.replay ? undefined : approvals.onEditSheet} onConfirm={approvals.onConfirmSheet} onOpen={approvals.onOpenSheet} />
+      return <SheetRecord sheet={block.sheet} answer={block.answer} bound={block.bound !== undefined} actionable={!block.replay} values={approvals.sheetValues} onEdit={block.replay ? undefined : approvals.onEditSheet} onConfirm={approvals.onConfirmSheet} onCancel={approvals.onCancelSheet} onOpen={approvals.onOpenSheet} />
     case 'choice':
       return <ChoiceCard askId={block.askId} title={block.title} question={block.question} choices={block.choices} picked={block.picked} actionable={!block.replay} onChoose={approvals.onChoose} />
     case 'summary':

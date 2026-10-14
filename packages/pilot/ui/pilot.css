@@ -361,10 +361,12 @@
 .sx-pilot .lookup-rec-f dd{margin:0;color:var(--t-fg);font-variant-numeric:tabular-nums}
 .sx-pilot .lookup-rec-s{color:var(--cyan);font-size:12.5px;text-decoration:none;justify-self:start}
 .sx-pilot .lookup-rec-s:hover{text-decoration:underline}
-.sx-pilot .sheet-rec-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px}
+/* buttons hold the top line, so a status that wraps or shortens never moves them */
+.sx-pilot .sheet-rec-foot{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:28px}
 .sx-pilot .sheet-rec-foot .lookup-rec-s{min-width:0;color:var(--t-mute);text-decoration:none}
 .sx-pilot .sheet-rec-foot .lookup-rec-s[data-assumed]{color:var(--orange)}
 .sx-pilot .sheet-rec-foot .sx-btn{flex:none}
+.sx-pilot .sheet-rec-foot .lookup-rec-s{flex:1;padding-top:5px;line-height:18px}
 /* part card: the part a reply made, flat in the transcript like the choice card. Air around it from the turn's gap. */
 .sx-pilot .part-card{display:flex;flex-direction:column;gap:var(--s-2);padding:var(--s-3) var(--s-4);border:1px solid var(--surface-line);border-radius:var(--r-md);background:var(--surface-card);max-width:68ch}
 .sx-pilot .part-row{display:flex;align-items:center;gap:var(--s-3)}
