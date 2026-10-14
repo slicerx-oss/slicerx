@@ -199,26 +199,86 @@ export function plateKey(objects: readonly PlateEntry[], width: number, height: 
   return `${width}x${height}|${objects.map((e) => `${e.id}:${e.parts.map((p) => meshId(p.positions)).join('.')}:${e.transform.map((n) => n.toFixed(3)).join(',')}:${e.colors.join(',')}:${e.printable === false ? 0 : 1}`).join('|')}`
 }
 
-/** Pictures kept, newest last; the oldest go past KEEP. */
-const KEEP = 96
-const pictures = new Map<string, string | null>()
-const waiting = new Map<string, { objects: readonly PlateEntry[]; width: number; height: number; done: Set<() => void> }>()
-let running = false
+/**
+ * The pictures kept, as PNG blobs behind object URLs, least recently used first. It holds at most `cap` pictures and
+ * `budget` bytes of PNG, whichever comes first; a picture that goes has its URL revoked. A picture in use is read on
+ * every draw of its tile, which keeps it at the recent end.
+ */
+export class PictureCache {
+  private entries = new Map<string, { url: string | null; bytes: number }>()
+  private total = 0
+  constructor(
+    readonly cap: number,
+    readonly budget: number,
+    private readonly revoke: (url: string) => void = (u) => URL.revokeObjectURL(u),
+  ) {}
 
-function keep(key: string, url: string | null): void {
-  pictures.set(key, url)
-  while (pictures.size > KEEP) pictures.delete(pictures.keys().next().value as string)
+  get size(): number {
+    return this.entries.size
+  }
+
+  get bytes(): number {
+    return this.total
+  }
+
+  has(key: string): boolean {
+    return this.entries.has(key)
+  }
+
+  /** The picture's URL (null: nothing to draw), marked as just used; undefined when it is not kept. */
+  get(key: string): string | null | undefined {
+    const e = this.entries.get(key)
+    if (!e) return undefined
+    this.entries.delete(key)
+    this.entries.set(key, e)
+    return e.url
+  }
+
+  set(key: string, url: string | null, bytes: number): void {
+    const old = this.entries.get(key)
+    if (old) this.drop(key, old)
+    this.entries.set(key, { url, bytes })
+    this.total += bytes
+    while (this.entries.size > this.cap || (this.total > this.budget && this.entries.size > 1)) {
+      const [k, e] = this.entries.entries().next().value as [string, { url: string | null; bytes: number }]
+      this.drop(k, e)
+    }
+  }
+
+  private drop(key: string, e: { url: string | null; bytes: number }): void {
+    this.entries.delete(key)
+    this.total -= e.bytes
+    if (e.url) this.revoke(e.url)
+  }
 }
 
-/** The plate's picture as a data URL when it is drawn, else undefined (it is queued; `ready` runs once it is). */
-export function platePicture(objects: readonly PlateEntry[], width: number, height: number, ready: () => void): string | null | undefined {
+/** 48 pictures or 4 MB of PNG: about three times a big project's grid. */
+export const PICTURE_CAP = 48
+export const PICTURE_BUDGET = 4 * 1024 * 1024
+const pictures = new PictureCache(PICTURE_CAP, PICTURE_BUDGET)
+type Job = { objects: readonly PlateEntry[]; width: number; height: number; done: Set<() => void> }
+const waiting = new Map<string, Job>()
+let running = false
+
+/** How much the kept pictures hold, for a check from the console or a test. */
+export function pictureCacheStats(): { pictures: number; bytes: number; cap: number; budget: number } {
+  return { pictures: pictures.size, bytes: pictures.bytes, cap: PICTURE_CAP, budget: PICTURE_BUDGET }
+}
+
+/**
+ * The plate's picture URL when it is drawn, null when there is nothing to draw, else undefined. With `queue`, a
+ * picture not drawn yet joins the queue and `ready` runs once it is; without, nothing is queued (a tile out of view).
+ * Returns a function that stops waiting, for a tile that leaves the view: a queued picture nobody waits for is skipped.
+ */
+export function platePicture(objects: readonly PlateEntry[], width: number, height: number, ready: () => void, queue = true): { url: string | null | undefined; cancel: () => void } {
   const key = plateKey(objects, width, height)
-  if (pictures.has(key)) return pictures.get(key)
+  const url = pictures.get(key)
+  if (url !== undefined || !queue) return { url, cancel: () => undefined }
   const w = waiting.get(key)
   if (w) w.done.add(ready)
   else waiting.set(key, { objects, width, height, done: new Set([ready]) })
   pump()
-  return undefined
+  return { url: undefined, cancel: () => void waiting.get(key)?.done.delete(ready) }
 }
 
 const idle = (fn: () => void): void => {
@@ -227,31 +287,42 @@ const idle = (fn: () => void): void => {
   else setTimeout(fn, 16)
 }
 
+function pngOf(data: Uint8ClampedArray, width: number, height: number): Promise<Blob | null> {
+  if (typeof document === 'undefined') return Promise.resolve(null)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return Promise.resolve(null)
+  ctx.putImageData(new ImageData(data as Uint8ClampedArray<ArrayBuffer>, width, height), 0, 0)
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'))
+}
+
 function pump(): void {
-  if (running || waiting.size === 0) return
+  if (running) return
+  // Pictures whose tiles all left the view are not drawn.
+  for (const [k, j] of waiting) if (j.done.size === 0) waiting.delete(k)
+  if (waiting.size === 0) return
   running = true
   idle(() => {
-    const [key, job] = waiting.entries().next().value as [string, { objects: readonly PlateEntry[]; width: number; height: number; done: Set<() => void> }]
+    const [key, job] = waiting.entries().next().value as [string, Job]
     waiting.delete(key)
-    let url: string | null = null
-    try {
-      const data = rasterPlate(job.objects, job.width, job.height)
-      if (data && typeof document !== 'undefined') {
-        const canvas = document.createElement('canvas')
-        canvas.width = job.width
-        canvas.height = job.height
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          ctx.putImageData(new ImageData(data as Uint8ClampedArray<ArrayBuffer>, job.width, job.height), 0, 0)
-          url = canvas.toDataURL('image/png')
-        }
-      }
-    } catch {
-      url = null
+    const finish = (url: string | null, bytes: number) => {
+      pictures.set(key, url, bytes)
+      for (const f of job.done) f()
+      running = false
+      pump()
     }
-    keep(key, url)
-    for (const f of job.done) f()
-    running = false
-    pump()
+    let data: Uint8ClampedArray | null = null
+    try {
+      data = rasterPlate(job.objects, job.width, job.height)
+    } catch {
+      data = null
+    }
+    if (!data) return finish(null, 0)
+    pngOf(data, job.width, job.height).then(
+      (blob) => (blob ? finish(URL.createObjectURL(blob), blob.size) : finish(null, 0)),
+      () => finish(null, 0),
+    )
   })
 }
