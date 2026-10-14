@@ -32,6 +32,9 @@ async function visibleControls(page: Page): Promise<string[]> {
       // A setup note's answer (It's dry on the drying note) is not a standing control: the note shows once the settings
       // plan loads, which can land before or after the count, and answering it hides it.
       if (el.closest('.setup-notes')) continue
+      // The slow 3D view notice in a phone's top bar is a status, not a settings control: it shows only where the
+      // browser draws without the GPU, as CI does, so counting it would make the total depend on the machine.
+      if (el.closest('.sx-view-notice')) continue
       // Hover-revealed controls (opacity 0 on the control or a parent) are not on screen.
       let hidden = false
       for (let p: Element | null = el; p; p = p.parentElement) if (Number(getComputedStyle(p).opacity) === 0) hidden = true
