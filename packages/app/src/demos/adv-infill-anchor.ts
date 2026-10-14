@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Infill anchor: each infill line runs a short way along the wall before it turns, so it holds to the wall.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'aan',
+  readout: {rows: ["0 mm","2.5 mm"],w: 60},
+  css: ".sxs .aan-s{animation-timing-function:steps(1,end)}.sxs .aan-a{animation-name:aan-a}@keyframes aan-a{0%{opacity:1}45.7%{opacity:0}94.3%{opacity:1}100%{opacity:1}}.sxs .aan-b{animation-name:aan-b}@keyframes aan-b{0%{opacity:0}45.7%{opacity:1}94.3%{opacity:0}100%{opacity:0}}.sxs .aan-h{animation-name:aan-h}@keyframes aan-h{0%{translate:0 0px}45.7%{translate:0 -14px}94.3%{translate:0 0px}100%{translate:0 0px}}",
+  body: "<polygon class=\"s-f2 s-ol\" points=\"75.5,110 154.3,155.5 154.3,146.8 75.5,101.3\"/><polygon class=\"s-f3 s-ol\" points=\"202.8,127.5 154.3,155.5 154.3,146.8 202.8,118.8\"/><polygon class=\"s-f1 s-ol\" points=\"124,73.3 202.8,118.8 154.3,146.8 75.5,101.3\"/><path class=\"s-n\" style=\"stroke:var(--stage-t3,#6c7086);stroke-width:1.8\" d=\"M124 78.5l69.7 40.3-39.4 22.7-69.7-40.2z\"/><g class=\"aan-a aan-s s-a\"><path class=\"s-n\" style=\"stroke:var(--stage-t2,#9da1b6);stroke-width:1.4\" d=\"M131.6 86.4l-33.4 19.2M143.7 93.4l-33.3 19.2M155.8 100.4l-33.3 19.2M168 107.4l-33.4 19.2M180.1 114.4l-33.4 19.2\"/><path class=\"s-n\" style=\"stroke:var(--stage-cut,#ff5555);stroke-width:3.4\" style=\"stroke-linecap:round\" d=\"M131.6 86.4h0M98.2 105.6h0M143.7 93.4h0M110.4 112.6h0M155.8 100.4h0M122.5 119.6h0M168 107.4h0M134.6 126.6h0M180.1 114.4h0M146.7 133.6h0\"/></g><g class=\"aan-b aan-s s-a\"><path class=\"s-n\" style=\"stroke:var(--stage-a1,#c9a6fb);stroke-width:1.4\" d=\"M133.7 85.2l0 0-37.6 21.7 7.3 4.2M138.5 88l7.3 4.2-37.6 21.7 0 0M157.9 99.2l0 0-37.5 21.7 7.2 4.2M162.8 101.9l7.3 4.3-37.6 21.7 0 0M182.2 113.2l0 0-37.6 21.7 7.3 4.1\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-aan\" x=\"218.8\" y=\"124.8\"/><clipPath id=\"aan-hw\"><rect x=\"224.8\" y=\"116.8\" width=\"50\" height=\"16\"/></clipPath><g clip-path=\"url(#aan-hw)\"><g class=\"aan-h aan-s s-a\"><use href=\"#sxs-rows-aan\" x=\"218.8\" y=\"124.8\"/></g></g></g>",
+}
