@@ -49,6 +49,47 @@ async function thumbX(page: Page, layer: number): Promise<number> {
 }
 
 /** Boxes of the bar's controls and of what sits above it, leaving out the pins and the layer slider's own thumb. */
+/** Every pin's head, and its stem as the boxes it is drawn with: the line under the head, then the foot's two edges. */
+async function pinParts(page: Page): Promise<{ head: Box; stem: Box[]; foot: number }[]> {
+  return page.locator('.layer-mark:not(.strike-mark)').evaluateAll((els) =>
+    els.map((el) => {
+      const h = el.getBoundingClientRect()
+      const leg = el.querySelector('.layer-mark-leg')!.getBoundingClientRect()
+      const line = parseFloat(getComputedStyle(el, '::after').height)
+      const box = (x: number, y: number, width: number, height: number) => ({ x, y, width, height })
+      return {
+        head: box(h.x, h.y, h.width, h.height),
+        stem: [box(h.x + h.width / 2 - 1, h.bottom, 2, line), box(leg.x, leg.y, leg.width, 2), box(leg.x, leg.y, 2, leg.height)],
+        foot: leg.x + 1,
+      }
+    }),
+  )
+}
+type Box = { x: number; y: number; width: number; height: number }
+/** The space between two boxes: negative when they overlap on both axes. */
+const apart = (a: Box, b: Box) => Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width), a.y - (b.y + b.height), b.y - (a.y + a.height))
+
+/**
+ * No stem runs through another pin's head, no two stems cross, and heads keep 2 px apart. Marks on layers closer than a
+ * stem's 2 px width share one line where they meet the track, so their feet may touch there, low under the elbows.
+ */
+async function expectPinsClear(page: Page): Promise<void> {
+  const parts = await pinParts(page)
+  const track = (await page.locator('#pv-layer').boundingBox())!
+  const low = track.y + track.height / 2 - 9.5
+  for (const [i, p] of parts.entries())
+    for (const [j, q] of parts.entries()) {
+      if (i === j) continue
+      const shared = Math.abs(p.foot - q.foot) < 2
+      for (const s of p.stem) {
+        expect(apart(s, q.head), `stem ${i} against head ${j}`).toBeGreaterThan(0)
+        // where two such feet meet, the top of the overlap is low over the track
+        for (const t of q.stem) if (!(shared && Math.max(s.y, t.y) >= low)) expect(apart(s, t), `stems ${i} and ${j}`).toBeGreaterThan(0)
+      }
+      if (i < j) expect(apart(p.head, q.head), `heads ${i} and ${j}`).toBeGreaterThanOrEqual(2 - 0.01)
+    }
+}
+
 async function staticBoxes(page: Page): Promise<Record<string, string>> {
   return page.evaluate(() => {
     const out: Record<string, string> = {}
@@ -85,8 +126,8 @@ test.describe('layer pins', () => {
       expect(Math.abs(b.x + b.width / 2 - (await thumbX(page, layer)))).toBeLessThan(1.01)
       // the head is above the track, and its stem reaches down to the track's line
       expect(b.y + b.height).toBeLessThanOrEqual(track.y + 0.5)
-      const stem = await pin.evaluate((el) => parseFloat(getComputedStyle(el, '::after').height))
-      expect(b.y + b.height + stem).toBeGreaterThanOrEqual(track.y + track.height / 2 - 2)
+      const foot = (await pin.locator('.layer-mark-leg').boundingBox())!
+      expect(foot.y + foot.height).toBeGreaterThanOrEqual(track.y + track.height / 2 - 2)
       // never over the Moves track, and clear of the Time track's thumb
       expect(b.y + b.height).toBeLessThan(moves.y)
       expect(b.y).toBeGreaterThanOrEqual(time.y + time.height)
@@ -108,6 +149,11 @@ test.describe('layer pins', () => {
     for (let i = 0; i < 2; i++) expect(boxes[i + 1]!.y + boxes[i + 1]!.height).toBeLessThanOrEqual(boxes[i]!.y)
     const time = (await page.locator('#pv-time').boundingBox())!
     expect(boxes[2]!.y).toBeGreaterThanOrEqual(time.y + time.height)
+    await expectPinsClear(page)
+    // a pin just left of the crowd and two far ones: still no stem through a head, and heads apart
+    await marks(page, [[5, 'pause'], [20, 'color_change'], [21, 'pause'], [22, 'custom'], [120, 'custom'], [250, 'color_change']])
+    await expectPinsClear(page)
+    await marks(page, [[20, 'pause'], [21, 'color_change'], [22, 'custom'], [150, 'pause']])
     // each one is its own click
     await pins.nth(2).click()
     await expect.poll(() => layerHi(page)).toBe(22)

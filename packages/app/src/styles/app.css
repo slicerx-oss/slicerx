@@ -977,17 +977,20 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .dock-toggle:has(> input:focus-visible) { box-shadow: var(--focus-field); }
 
 /* Layer slider marks: pause, color change and custom G-code as pins over the track, each on a stem down to its layer.
-   Pins closer than their hit area step up into lanes (pinLanes). The Layer row keeps a band for three lanes whether
+   Pins closer than their hit area step up into lanes (pinLayout). The Layer row keeps a band for three lanes whether
    or not there are pins, so adding one, or the layer changing, moves nothing; the band clears the Time track's thumb. */
 .layer-track { display: flex; align-items: center; gap: 8px; min-width: 0; height: 18px; }
 .layer-track-rail { position: relative; flex: 1; min-width: 0; height: 18px; }
 .dock-row:has(> .layer-track) { padding-top: 52px; }
 /* inset by half the thumb, so a share of 0 or 1 is the thumb's center at the first or last layer */
 .layer-marks { position: absolute; left: 6.5px; right: 6.5px; bottom: 50%; height: 0; pointer-events: none; }
-.layer-mark { --pin: var(--ink-3); --stem: calc(11px + var(--lane, 0) * 18px); position: absolute; bottom: var(--stem); transform: translateX(-50%); width: 16px; height: 16px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--pin); color: var(--muted); cursor: pointer; pointer-events: auto; box-shadow: 0 0 0 2px var(--ink-1); }
+.layer-mark { --pin: var(--ink-3); --stem: calc(11px + var(--lane, 0) * 18px); --jog: 7px; position: absolute; bottom: var(--stem); transform: translateX(-50%); width: 16px; height: 16px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--pin); color: var(--muted); cursor: pointer; pointer-events: auto; box-shadow: 0 0 0 2px var(--ink-1); }
 /* the hit area, 28 px, a little short at the foot so the slider's thumb stays easy to grab */
 .layer-mark::before { content: ""; position: absolute; inset: -6px -6px -3px; border-radius: 14px; }
-.layer-mark::after { content: ""; position: absolute; left: 50%; top: 100%; width: 2px; height: calc(var(--stem) - 1px); margin-left: -1px; background: var(--stem-c, var(--muted)); pointer-events: none; }
+.layer-mark::after { content: ""; position: absolute; left: 50%; top: 100%; width: 2px; height: calc(var(--stem) - var(--jog)); margin-left: -1px; background: var(--stem-c, var(--muted)); pointer-events: none; }
+/* the stem's foot: a head moved right of its layer (--off) steps back left low over the track, at the height pinLayout
+   gives it (--jog), so no stem runs through another lane's head and no two stems cross */
+.layer-mark-leg { position: absolute; left: calc(50% - 1px - var(--off, 0px)); top: calc(100% + var(--stem) - var(--jog) - 2px); width: calc(var(--off, 0px) + 2px); height: calc(var(--jog) + 1px); border: 0 solid var(--stem-c, var(--muted)); border-width: 2px 0 0 2px; pointer-events: none; }
 .layer-mark[data-kind="pause"] { --pin: var(--accent); --stem-c: var(--accent); color: var(--ink-1); }
 .layer-mark[data-kind="color_change"] { --stem-c: var(--fg); color: var(--fg); box-shadow: 0 0 0 2px var(--ink-1), inset 0 0 0 1.5px var(--fg); }
 .layer-mark[data-kind="color_change"][data-swatch] { --pin: var(--c); box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 3.5px var(--fg); }
@@ -1014,7 +1017,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .strike-fixes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .strike-fixes b { font: var(--fw-semibold) calc(12.5px * var(--text-scale)) var(--f-body); color: var(--fg); }
 .strike-fixes p { margin: 2px 0 0; font-size: calc(12px * var(--text-scale)); color: var(--muted); line-height: 1.45; }
-.layer-mark.strike-mark { --stem-c: var(--red); color: var(--red); background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); }
+.layer-mark.strike-mark { --jog: 1px; --stem-c: var(--red); color: var(--red); background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); }
 .layer-mark.strike-mark[data-severity="close"] { --stem-c: var(--orange); color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
 .strike-rail { position: relative; min-width: 0; }
 /* a block slider, so the rail is the slider's 18 px and not a text line's height */
