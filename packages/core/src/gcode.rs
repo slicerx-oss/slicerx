@@ -1908,24 +1908,24 @@ fn emit_layer(
     // start of the layer lifts at once before it (`insert_timelapse_gcode` on a Bambu Lab printer). Without a
     // lift the nozzle moves straight to the new height.
     // `retract_lift_enforce` reads the role of the last extrusion other than gap fill, from the layer before on.
-    let mut last_fill: Option<Feature> = (lift_enforce(&rc) != LiftEnforce::All)
-        .then(|| {
-            let at = out.layers.iter().position(|x| std::ptr::eq(x, l))?;
-            out.layers
-                .get(at.checked_sub(1)?)?
-                .paths
-                .iter()
-                .rev()
-                .map(|p| p.feature)
-                .find(|f| *f != Feature::GapFill)
-        })
-        .flatten();
+    let mut last_fill = l.below_fill;
     let mut pending_lift = (retracts
         && lift_ok
         && lift_allowed(&rc, l.index == 0, last_fill)
         && l.lift_z <= 0.0
         && !layer_gcode.iter().any(|g| g.layer == l.index))
     .then(|| Lift::of_layer_change(&rc));
+    let entry_z = l.enter_z.filter(|v| v.is_finite()).filter(|_| {
+        !(resume_first
+            || crate::timelapse::moves_z(&before)
+            || crate::timelapse::moves_z(&after)
+            || lapse == Some(crate::timelapse::Spot::LayerChange) && crate::timelapse::moves_z(&lapse_body))
+    });
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "layer z in thousandths fits in i64"
+    )]
+    let entry_z = entry_z.map(|v| (f64::from(v) * 1000.0).round() as i64);
     // A lift made before custom G-code that the next travel keeps and comes down from.
     let mut pending_drop = false;
     if pending_lift.is_none() {
@@ -1995,8 +1995,7 @@ fn emit_layer(
     } else {
         start_at.or(layer_wiped.as_ref().map(|w| w.end)).or(l.enter_from)
     };
-    // Where the nozzle really is when the layer starts, for the travel round the keep-out zones: the end of the
-    // layer below's last path, which `enter_from` (its last point stored) is not when its paths were reordered.
+    // the physical start for routing, including a layer-change wipe
     let mut zone_from: Option<Point> = if spiral && !l.spiral_start {
         cursor
     } else {
@@ -2076,7 +2075,8 @@ fn emit_layer(
     blocks.retain(|(_, t)| !t.is_empty());
     for (_, text) in blocks.iter().filter(|(s, _)| *s == crate::timelapse::Spot::Start) {
         if pending_lift.take().is_some() {
-            write_eager_lift(b, &rc, Lift::of_block(&rc), cursor, z, hop, z_feed);
+            let (kind, from_z, rise) = transition_lift_span(Lift::of_block(&rc), entry_z, z, hop);
+            write_eager_lift(b, &rc, kind, cursor, from_z, rise, z_feed);
             pending_drop = true;
         }
         push_lines(b, text);
@@ -2158,8 +2158,12 @@ fn emit_layer(
             // Orca retracts and lifts at once before the block (`GCode::retract` with `apply_instantly`); the
             // travel after it keeps the height and comes down at the path.
             if lift_ok && retracted && !pending_drop {
-                pending_lift = None;
-                write_eager_lift(b, &rc, Lift::of_block(&rc), cursor, z, hop, z_feed);
+                let (kind, from_z, rise) = if pending_lift.take().is_some() {
+                    transition_lift_span(Lift::of_block(&rc), entry_z, z, hop)
+                } else {
+                    (Lift::of_block(&rc), z, hop)
+                };
+                write_eager_lift(b, &rc, kind, cursor, from_z, rise, z_feed);
                 pending_drop = true;
             }
             push_lines(b, text);
@@ -2236,6 +2240,7 @@ fn emit_layer(
                     speed_feed,
                 ) {
                     speed_feed = w.feed;
+                    cursor = Some(w.end);
                 }
                 retracted = true;
                 retracted_by = tc;
@@ -2250,8 +2255,12 @@ fn emit_layer(
                 && style.active(retract)
                 && lift_allowed(&rc, l.index == 0, last_fill)
             {
-                pending_lift = None;
-                write_eager_lift(b, &rc, Lift::Spiral, cursor, z, hop, z_feed);
+                let (kind, from_z, rise) = if pending_lift.take().is_some() {
+                    transition_lift_span(Lift::Spiral, entry_z, z, hop)
+                } else {
+                    (Lift::Spiral, z, hop)
+                };
+                write_eager_lift(b, &rc, kind, cursor, from_z, rise, z_feed);
                 pending_drop = true;
             }
             match (from, ctx.as_mut()) {
@@ -2524,68 +2533,77 @@ fn emit_layer(
         first_path = false;
         // Travel.
         let dist = cursor.map_or(f64::INFINITY, |cur| cur.dist_mm(start));
-        // Combing and the internal-region test, when the profile asks for either.
-        let plan = match (cursor, travel_layout.as_ref()) {
-            (Some(cur), Some(lay)) => {
-                let limit = match detour {
-                    Detour::Mm(v) => v,
-                    Detour::Percent(p) => dist * p / 100.0,
-                };
-                Some(lay.plan(cur, start, comb, limit))
-            }
-            _ => None,
+        let travel_plan = |cursor: Option<Point>, travel_from: Option<Point>| {
+            let dist = cursor.map_or(f64::INFINITY, |cur| cur.dist_mm(start));
+            // Combing and the internal-region test, when the profile asks for either.
+            let plan = match (cursor, travel_layout.as_ref()) {
+                (Some(cur), Some(lay)) => {
+                    let limit = match detour {
+                        Detour::Mm(v) => v,
+                        Detour::Percent(p) => dist * p / 100.0,
+                    };
+                    Some(lay.plan(cur, start, comb, limit))
+                }
+                _ => None,
+            };
+            // Round the keep-out zones, leg by leg, or over them: the same router the collision check asks. A travel
+            // routed round a zone leaves the part, so the retraction rule below reads it as any travel out of it.
+            let mut zone_lift: Option<i64> = None;
+            let mut blocked = false;
+            let plan = match (travel_from, zone_router.as_ref()) {
+                (Some(cur), Some(zr))
+                    if cur != start && feature != Some(Feature::Custom) && p.feature != Feature::Custom =>
+                {
+                    // The planned route starts at `cursor`; from anywhere else the travel goes straight.
+                    let legs = match plan.as_ref() {
+                        Some(p) if Some(cur) == cursor => p.route.clone(),
+                        _ => vec![start],
+                    };
+                    let mut from = cur;
+                    let mut routed: Vec<Point> = Vec::with_capacity(legs.len());
+                    let mut around = false;
+                    for q in legs {
+                        match zr.route([from.x_mm(), from.y_mm()], [q.x_mm(), q.y_mm()], f64::from(l.z)) {
+                            crate::zoneroute::Route::Around(way) => {
+                                around = true;
+                                let k = way.len().saturating_sub(1);
+                                routed.extend(way.iter().take(k).map(|w| Point::from_mm(w[0], w[1])));
+                                routed.push(q);
+                            }
+                            crate::zoneroute::Route::Lift(h) => {
+                                #[allow(
+                                    clippy::cast_possible_truncation,
+                                    reason = "a lift of a few mm in thousandths"
+                                )]
+                                let h = (h * 1000.0).round() as i64;
+                                zone_lift = Some(zone_lift.map_or(h, |v| v.max(h)));
+                                routed.push(q);
+                            }
+                            crate::zoneroute::Route::Clear => routed.push(q),
+                            crate::zoneroute::Route::Blocked => {
+                                blocked = true;
+                                routed.push(q);
+                            }
+                        }
+                        from = q;
+                    }
+                    if around || zone_lift.is_some() {
+                        Some(crate::travel::Plan {
+                            route: routed,
+                            internal: false,
+                        })
+                    } else {
+                        plan
+                    }
+                }
+                _ => plan,
+            };
+            (plan, zone_lift, blocked)
         };
-        // Round the keep-out zones, leg by leg, or over them: the same router the collision check asks. A travel
-        // routed round a zone leaves the part, so the retraction rule below reads it as any travel out of it.
-        let mut zone_lift: Option<i64> = None;
-        // Only while the nozzle is where the layer started: a change or custom G-code before the first path leaves it
-        // unknown (`cursor` None), and the first travel of the layer uses it up.
+        // the first route may start at the previous layer's physical endpoint.
         let travel_from = cursor.and_then(|c| zone_from.take().or(Some(c)));
         zone_from = None;
-        let plan = match (travel_from, zone_router.as_ref()) {
-            (Some(cur), Some(zr))
-                if cur != start && feature != Some(Feature::Custom) && p.feature != Feature::Custom =>
-            {
-                // The planned route starts at `cursor`; from anywhere else the travel goes straight.
-                let legs = match plan.as_ref() {
-                    Some(p) if Some(cur) == cursor => p.route.clone(),
-                    _ => vec![start],
-                };
-                let mut from = cur;
-                let mut routed: Vec<Point> = Vec::with_capacity(legs.len());
-                let mut around = false;
-                for q in legs {
-                    match zr.route([from.x_mm(), from.y_mm()], [q.x_mm(), q.y_mm()], f64::from(l.z)) {
-                        crate::zoneroute::Route::Around(way) => {
-                            around = true;
-                            let k = way.len().saturating_sub(1);
-                            routed.extend(way.iter().take(k).map(|w| Point::from_mm(w[0], w[1])));
-                            routed.push(q);
-                        }
-                        crate::zoneroute::Route::Lift(h) => {
-                            #[allow(
-                                clippy::cast_possible_truncation,
-                                reason = "a lift of a few mm in thousandths"
-                            )]
-                            let h = (h * 1000.0).round() as i64;
-                            zone_lift = Some(zone_lift.map_or(h, |v| v.max(h)));
-                            routed.push(q);
-                        }
-                        crate::zoneroute::Route::Clear | crate::zoneroute::Route::Blocked => routed.push(q),
-                    }
-                    from = q;
-                }
-                if around || zone_lift.is_some() {
-                    Some(crate::travel::Plan {
-                        route: routed,
-                        internal: false,
-                    })
-                } else {
-                    plan
-                }
-            }
-            _ => plan,
-        };
+        let (mut plan, mut zone_lift, _) = travel_plan(cursor, travel_from);
         // Orca's rule (GCode::needs_retraction): leaving an outer or overhang wall always retracts; a travel to
         // anything but a wall needs none when it stays inside an internal region of the layer and sparse infill is on.
         let left_outer = matches!(feature, Some(Feature::OuterWall | Feature::OverhangWall));
@@ -2652,7 +2670,12 @@ fn emit_layer(
         if let Some(kind) = pending_lift.take() {
             match cursor.filter(|&from| from != start) {
                 Some(from) => {
-                    lift_on_travel = write_lift(b, &rc, kind, from, start, z, hop, travel_feed, z_feed);
+                    let (kind, from_z, rise) = transition_lift_span(kind, entry_z, z, hop);
+                    let first = plan
+                        .as_ref()
+                        .and_then(|p| p.route.first().copied())
+                        .unwrap_or(start);
+                    lift_on_travel = write_lift(b, &rc, kind, from, first, from_z, rise, travel_feed, z_feed);
                     lifted = true;
                 }
                 None => write_normal_lift(b, z, z_feed),
@@ -2660,6 +2683,7 @@ fn emit_layer(
         }
         if need_retract {
             let at = cursor.unwrap_or(start);
+            let wipe_begin = b.len();
             if let Some(w) = retract_wiping(
                 b,
                 style,
@@ -2668,7 +2692,17 @@ fn emit_layer(
                 (retract, retract_feed),
                 speed_feed,
             ) {
-                speed_feed = w.feed;
+                // a wipe changes the route's origin; refuse a wipe with no safe exit.
+                let (next_plan, next_lift, blocked) = travel_plan(Some(w.end), Some(w.end));
+                if blocked {
+                    b.truncate(wipe_begin);
+                    retract_move(b, style, -retract, retract_feed);
+                } else {
+                    cursor = Some(w.end);
+                    speed_feed = w.feed;
+                    plan = next_plan;
+                    zone_lift = next_lift;
+                }
             }
             retracted = true;
             retracted_by = retract;
@@ -3523,7 +3557,7 @@ const LOOP_WIPE_MM: f64 = 0.1;
 
 /// The point [`LOOP_WIPE_MM`] into the part from `end`, the last point of the closed loop
 /// `pts`: to the left of the way it was going for a counterclockwise loop, to the right for a clockwise one.
-fn inward_wipe_point(pts: &[Point], end: Point) -> Option<Point> {
+pub(crate) fn inward_wipe_point(pts: &[Point], end: Point) -> Option<Point> {
     let before = pts.iter().rev().skip(1).find(|q| q.dist_mm(end) > 0.02)?;
     let (dx, dy) = (end.x_mm() - before.x_mm(), end.y_mm() - before.y_mm());
     let len = dx.m_hypot(dy);
@@ -3688,6 +3722,17 @@ enum Lift {
     Spiral,
 }
 
+// a transition lift climbs from the physical entry to the new layer plus its hop.
+fn transition_lift_span(kind: Lift, entry: Option<i64>, z: i64, hop: i64) -> (Lift, i64, i64) {
+    if kind == Lift::Normal {
+        return (kind, z, hop);
+    }
+    match entry.filter(|&from| from < z + hop) {
+        Some(from) => (kind, from, z + hop - from),
+        None => (Lift::Normal, z, hop),
+    }
+}
+
 impl Lift {
     /// The lift of a travel that retracts (Orca `GCode::needs_retraction`): Auto Lift spirals when the travel's
     /// start crosses an overhang (`over`) and slopes otherwise, the others are their own kind
@@ -3729,25 +3774,33 @@ fn write_normal_lift(b: &mut Vec<u8>, z_to: i64, z_feed: i64) {
     b.push(b'\n');
 }
 
-/// The radius of a spiral lift of `hop_mm` (Orca `GCodeWriter`: one turn at the `travel_slope` angle).
+// one turn rises by hop_mm at the requested angle from horizontal.
 fn spiral_radius(rc: &PrintConfig, hop_mm: f64) -> f64 {
     let slope = crate::motion::raw_f(rc, "travel_slope")
+        .filter(|a| (1.0..=90.0).contains(a))
         .unwrap_or(3.0)
         .to_radians();
-    hop_mm / (std::f64::consts::TAU * slope.m_atan())
+    hop_mm / (std::f64::consts::TAU * slope.m_tan())
 }
 
 /// Whether the turn of a spiral lift from `from` around the point `ij` (mm) away stays on the printable area.
 /// Orca leaves this check as a to-do (`GCodeWriter::travel_to_xyz`), so a part near the edge sends the nozzle
 /// past it, which Klipper refuses as a move out of range. The center must be on the bed and the circle clear
-/// of every edge; an unknown bed always fits.
+/// of every edge and excluded zone; an unknown bed skips only the perimeter check.
 fn spiral_fits(rc: &PrintConfig, from: Point, ij: [f64; 2]) -> bool {
+    let r = ij[0].m_hypot(ij[1]);
+    // a vertical lift must not become an arc whose rounded center is its start.
+    if !r.is_finite() || r < 0.001 {
+        return false;
+    }
+    let (cx, cy) = (from.x_mm() + ij[0], from.y_mm() + ij[1]);
+    if !crate::zoneroute::circle_clear(rc, [cx, cy], r) {
+        return false;
+    }
     let bed = &rc.printable_area;
     if bed.len() < 3 {
         return true;
     }
-    let (cx, cy) = (from.x_mm() + ij[0], from.y_mm() + ij[1]);
-    let r = ij[0].m_hypot(ij[1]);
     let mut inside = false;
     for (a, b) in bed.iter().zip(bed.iter().cycle().skip(1)) {
         let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
@@ -3898,7 +3951,7 @@ fn write_lift(
             }
             None
         }
-        Lift::Slope if len > 0.0 => match slope_point(rc, from, to) {
+        Lift::Slope if len > 0.0 => match slope_point(rc, from, to, hop) {
             Some(mid) => {
                 // The ramp is part of the travel and runs at the travel speed.
                 b.extend_from_slice(b"G1");
@@ -4070,14 +4123,15 @@ fn slope_kind(cfg: &PrintConfig) -> bool {
     (kind.contains("Slope") || kind.contains("Auto")) && cfg.z_hop > 0.0
 }
 
-fn slope_point(cfg: &PrintConfig, from: Point, to: Point) -> Option<Point> {
+fn slope_point(cfg: &PrintConfig, from: Point, to: Point, rise: i64) -> Option<Point> {
     if !slope_kind(cfg) {
         return None;
     }
     let angle = crate::motion::raw_f(cfg, "travel_slope")
         .filter(|a| *a > 0.5 && *a < 90.0)
         .unwrap_or(3.0);
-    let run = cfg.z_hop / angle.to_radians().m_tan();
+    #[allow(clippy::cast_precision_loss, reason = "rise in thousandths")]
+    let run = (rise as f64 / 1000.0) / angle.to_radians().m_tan();
     let dist = from.dist_mm(to);
     if dist <= run + 0.01 {
         return None;
@@ -4469,6 +4523,626 @@ mod tests {
 
     fn near(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9
+    }
+
+    fn wipe_route_output(firmware: bool, blocked: bool) -> String {
+        let mut value = serde_json::json!({
+            "wipe": true, "wipe_distance": 2.0, "retract_before_wipe": 100,
+            "retraction_length": 0.8, "retraction_minimum_travel": 1.0,
+            "retract_when_changing_layer": false, "z_hop": 0,
+            "use_firmware_retraction": firmware,
+            "bed_exclude_area": ["100x100", "120x100", "120x110", "100x110"]
+        });
+        if blocked {
+            value["head_wrap_detect_zone"] =
+                serde_json::json!([[99.2, 99.4], [99.8, 99.4], [99.8, 100.5], [99.2, 100.5]]);
+            value["printable_area"] =
+                serde_json::json!([[0.0, 0.0], [256.0, 0.0], [256.0, 105.0], [0.0, 105.0]]);
+        }
+        let cfg = PrintConfig::from_value(&value).unwrap();
+        let path = |start, end| crate::output::PathInfo {
+            start,
+            end,
+            tool: 1,
+            feature: Feature::OuterWall,
+            speed_mm_s: 30.0,
+            width_mm: 0.4,
+            flow: 1.0,
+            dz: 0.0,
+            overhang_fan: false,
+            owner: crate::preview::OBJECT_NONE,
+        };
+        let out = SliceOutput {
+            first_layer: 1,
+            layer_count: 3,
+            layer_height: 0.2,
+            tool_count: 1,
+            layers: vec![LayerPaths {
+                index: 1,
+                local: 1,
+                z: 0.4,
+                height: 0.2,
+                start_tool: 1,
+                points: vec![
+                    Point::from_mm(99.0, 101.0),
+                    Point::from_mm(99.0, 99.0),
+                    Point::from_mm(121.0, 99.0),
+                    Point::from_mm(123.0, 99.0),
+                ],
+                paths: vec![path(0, 2), path(2, 4)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut bytes = Vec::new();
+        emit_gcode(&out, &cfg, GcodeFlavor::Marlin2, &mut bytes).unwrap();
+        String::from_utf8(bytes).unwrap()
+    }
+
+    fn assert_wipe_travels_clear(text: &str, zones: &[Vec<[f64; 2]>]) {
+        let mut xy = [0.0, 0.0];
+        let mut checked = 0;
+        for line in text.lines() {
+            if !(line.starts_with("G0 ") || line.starts_with("G1 ")) {
+                continue;
+            }
+            let mut next = xy;
+            for (i, key) in ['X', 'Y'].into_iter().enumerate() {
+                if let Some(v) = line
+                    .split_whitespace()
+                    .find_map(|w| w.strip_prefix(key)?.parse::<f64>().ok())
+                {
+                    next[i] = v;
+                }
+            }
+            if line.starts_with("G0 ") && next.iter().zip(xy).any(|(a, b)| (a - b).abs() > 1e-6) {
+                for zone in zones {
+                    assert!(
+                        crate::preflight::travel_meets(zone, xy, next, 0.0, 0.01).is_none(),
+                        "travel crosses the zone: {xy:?} to {next:?}"
+                    );
+                }
+                checked += 1;
+            }
+            xy = next;
+        }
+        assert!(checked > 0, "fixture must emit travel");
+    }
+
+    #[test]
+    fn travel_routes_start_where_the_wipe_ended() {
+        for firmware in [false, true] {
+            let text = wipe_route_output(firmware, false);
+            assert!(text.contains(";WIPE_END"), "fixture must wipe before travel");
+            assert_wipe_travels_clear(
+                &text,
+                &[vec![
+                    [100.0, 100.0],
+                    [120.0, 100.0],
+                    [120.0, 110.0],
+                    [100.0, 110.0],
+                ]],
+            );
+        }
+    }
+
+    #[test]
+    fn a_wipe_with_no_safe_exit_keeps_the_original_travel() {
+        for firmware in [false, true] {
+            let text = wipe_route_output(firmware, true);
+            assert!(
+                !text.contains(";WIPE_START"),
+                "blocked wipe must be omitted: {text}"
+            );
+            assert!(
+                text.contains(if firmware { "G10" } else { "E-0.8" }),
+                "plain retraction must remain: {text}"
+            );
+            assert_wipe_travels_clear(
+                &text,
+                &[
+                    vec![[100.0, 100.0], [120.0, 100.0], [120.0, 110.0], [100.0, 110.0]],
+                    vec![[99.2, 99.4], [99.8, 99.4], [99.8, 100.5], [99.2, 100.5]],
+                ],
+            );
+        }
+    }
+
+    #[test]
+    fn spiral_lift_radius_gives_the_requested_angle() {
+        for angle in [1.0_f64, 3.0, 15.0, 30.0, 45.0, 60.0, 89.0] {
+            let mut rc = PrintConfig::default();
+            rc.raw.insert("travel_slope".into(), serde_json::json!([angle]));
+            let rise = 4.0;
+            let radius = spiral_radius(&rc, rise);
+            let actual = (rise / (std::f64::consts::TAU * radius)).m_atan().to_degrees();
+            assert!(near(actual, angle), "requested {angle}, got {actual}");
+        }
+    }
+
+    #[test]
+    fn a_helical_lift_keeps_its_angle_after_gcode_rounding() {
+        let mut rc = PrintConfig::default();
+        rc.raw.insert("travel_slope".into(), serde_json::json!([45]));
+        rc.raw
+            .insert("enable_arc_fitting".into(), serde_json::json!(true));
+        let mut b = Vec::new();
+        write_lift(
+            &mut b,
+            &rc,
+            Lift::Spiral,
+            Point::from_mm(100.0, 100.0),
+            Point::from_mm(120.0, 100.0),
+            200,
+            4000,
+            18000,
+            600,
+        );
+        let text = String::from_utf8(b).unwrap();
+        let line = text.lines().find(|l| l.starts_with("G3 ")).unwrap();
+        let word = |key: char| {
+            line.split_whitespace()
+                .find_map(|w| w.strip_prefix(key)?.parse::<f64>().ok())
+                .unwrap()
+        };
+        let radius = word('I').m_hypot(word('J'));
+        let actual = ((word('Z') - 0.2) / (std::f64::consts::TAU * radius))
+            .m_atan()
+            .to_degrees();
+        assert!((actual - 45.0).abs() < 0.1, "{text}: {actual}");
+    }
+
+    #[test]
+    fn vertical_or_unrepresentable_spirals_lift_straight_up() {
+        let mut rc = PrintConfig::default();
+        rc.printable_area.clear();
+        for arc in [false, true] {
+            rc.raw.insert("enable_arc_fitting".into(), serde_json::json!(arc));
+            for angle in [89.9, 90.0] {
+                rc.raw.insert("travel_slope".into(), serde_json::json!(angle));
+                let from = Point::from_mm(100.0, 100.0);
+                let mut b = Vec::new();
+                write_lift(
+                    &mut b,
+                    &rc,
+                    Lift::Spiral,
+                    from,
+                    Point::from_mm(120.0, 100.0),
+                    200,
+                    400,
+                    18000,
+                    600,
+                );
+                assert_eq!(b, b"G1 Z0.6 F600\n");
+                b.clear();
+                write_eager_lift(&mut b, &rc, Lift::Spiral, Some(from), 200, 400, 600);
+                assert_eq!(b, b"G1 Z0.6 F600\n");
+            }
+        }
+        for angle in [0.0, -1.0, 91.0] {
+            rc.raw.insert("travel_slope".into(), serde_json::json!(angle));
+            assert!(near(
+                spiral_radius(&rc, 0.4),
+                spiral_radius(&PrintConfig::default(), 0.4)
+            ));
+        }
+    }
+
+    #[test]
+    fn spiral_lifts_do_not_sweep_through_excluded_bed_areas() {
+        for arc in [false, true] {
+            for known_bed in [false, true] {
+                let mut rc = PrintConfig::default();
+                if !known_bed {
+                    rc.printable_area.clear();
+                }
+                rc.raw.insert("enable_arc_fitting".into(), serde_json::json!(arc));
+                rc.raw.insert(
+                    "bed_exclude_area".into(),
+                    serde_json::json!(["100.6x100.6", "102.6x100.6", "102.6x102.6", "100.6x102.6"]),
+                );
+                let from = Point::from_mm(100.0, 100.0);
+                let mut b = Vec::new();
+                write_lift(
+                    &mut b,
+                    &rc,
+                    Lift::Spiral,
+                    from,
+                    Point::from_mm(120.0, 100.0),
+                    200,
+                    400,
+                    18000,
+                    600,
+                );
+                assert_eq!(String::from_utf8_lossy(&b), "G1 Z0.6 F600\n");
+                b.clear();
+                write_eager_lift(&mut b, &rc, Lift::Spiral, Some(from), 200, 400, 600);
+                assert_eq!(String::from_utf8_lossy(&b), "G1 Z0.6 F600\n");
+                rc.raw.insert(
+                    "bed_exclude_area".into(),
+                    serde_json::json!(["10x10", "20x10", "20x20", "10x20"]),
+                );
+                b.clear();
+                write_eager_lift(&mut b, &rc, Lift::Spiral, Some(from), 200, 400, 600);
+                assert_ne!(String::from_utf8_lossy(&b), "G1 Z0.6 F600\n");
+            }
+        }
+    }
+
+    #[test]
+    fn a_layer_lift_returns_to_the_inward_loop_wipe_endpoint() {
+        for enabled in [false, true] {
+            let cfg = PrintConfig::from_value(&serde_json::json!({
+                "wipe_on_loops": enabled, "wipe": false, "gcode_comments": true,
+                "retraction_length": 0.8, "retract_when_changing_layer": true,
+                "z_hop": 0.4, "retract_lift_above": 0, "z_hop_types": "Spiral Lift",
+                "enable_arc_fitting": false
+            }))
+            .unwrap();
+            let layer = |index, x: f64| LayerPaths {
+                index,
+                local: index,
+                z: if index == 1 { 0.4 } else { 0.6 },
+                height: 0.2,
+                start_tool: 1,
+                points: vec![
+                    Point::from_mm(x, 30.0),
+                    Point::from_mm(x + 2.0, 30.0),
+                    Point::from_mm(x + 2.0, 32.0),
+                    Point::from_mm(x, 32.0),
+                    Point::from_mm(x, 30.0),
+                ],
+                paths: vec![crate::output::PathInfo {
+                    start: 0,
+                    end: 5,
+                    tool: 1,
+                    feature: Feature::OuterWall,
+                    speed_mm_s: 30.0,
+                    width_mm: 0.4,
+                    flow: 1.0,
+                    dz: 0.0,
+                    overhang_fan: false,
+                    owner: crate::preview::OBJECT_NONE,
+                }],
+                ..Default::default()
+            };
+            let first = layer(1, 30.0);
+            let mut second = layer(2, 40.0);
+            second.enter_from = first.end_point(&cfg);
+            second.enter_z = Some(first.z);
+            let out = SliceOutput {
+                first_layer: 1,
+                layer_count: 4,
+                layer_height: 0.2,
+                tool_count: 1,
+                layers: vec![first, second],
+                ..Default::default()
+            };
+            let mut bytes = Vec::new();
+            emit_gcode(&out, &cfg, GcodeFlavor::Marlin2, &mut bytes).unwrap();
+            let text = String::from_utf8(bytes).unwrap();
+            let mut xy = [0.0_f64; 2];
+            let mut origin = None;
+            let mut checked = 0;
+            for line in text.lines() {
+                if line == ";spiral lift Z" {
+                    origin = Some(xy);
+                }
+                if !(line.starts_with("G0 ") || line.starts_with("G1 ")) {
+                    continue;
+                }
+                if line.starts_with("G0 ")
+                    && let Some(at) = origin.take()
+                {
+                    assert!(
+                        (xy[0] - at[0]).abs() < 0.002 && (xy[1] - at[1]).abs() < 0.002,
+                        "layer lift ended at {xy:?}, but began at the inward wipe {at:?}"
+                    );
+                    checked += 1;
+                }
+                for (i, key) in ['X', 'Y'].into_iter().enumerate() {
+                    if let Some(v) = line
+                        .split_whitespace()
+                        .find_map(|w| w.strip_prefix(key)?.parse::<f64>().ok())
+                    {
+                        xy[i] = v;
+                    }
+                }
+            }
+            assert_eq!(checked, 1, "fixture must make one layer-transition spiral");
+        }
+    }
+
+    #[test]
+    fn transition_slopes_follow_the_first_detour_leg() {
+        let cfg = PrintConfig::from_value(&serde_json::json!({
+            "wipe_on_loops": false, "wipe": false, "gcode_comments": true,
+            "retraction_length": 0.8, "retract_when_changing_layer": true,
+            "z_hop": 0.4, "retract_lift_above": 0, "z_hop_types": "Slope Lift",
+            "travel_slope": 3,
+            "bed_exclude_area": ["100x100", "120x100", "120x110", "100x110"]
+        }))
+        .unwrap();
+        let layer = |index, x: f64| LayerPaths {
+            index,
+            local: index,
+            z: if index == 1 { 0.4 } else { 0.6 },
+            height: 0.2,
+            start_tool: 1,
+            points: vec![Point::from_mm(x, 103.0), Point::from_mm(x, 105.0)],
+            paths: vec![crate::output::PathInfo {
+                start: 0,
+                end: 2,
+                tool: 1,
+                feature: Feature::OuterWall,
+                speed_mm_s: 30.0,
+                width_mm: 0.4,
+                flow: 1.0,
+                dz: 0.0,
+                overhang_fan: false,
+                owner: crate::preview::OBJECT_NONE,
+            }],
+            ..Default::default()
+        };
+        let first = layer(1, 99.0);
+        let mut second = layer(2, 121.0);
+        second.enter_from = first.points.last().copied();
+        second.enter_z = Some(first.z);
+        let out = SliceOutput {
+            first_layer: 1,
+            layer_count: 4,
+            layer_height: 0.2,
+            tool_count: 1,
+            layers: vec![first, second],
+            ..Default::default()
+        };
+        let mut bytes = Vec::new();
+        emit_gcode(&out, &cfg, GcodeFlavor::Marlin2, &mut bytes).unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        let zone = vec![[100.0, 100.0], [120.0, 100.0], [120.0, 110.0], [100.0, 110.0]];
+        let mut xy = [0.0_f64; 2];
+        let mut checked = 0;
+        for line in text.lines() {
+            if !(line.starts_with("G0 ") || line.starts_with("G1 ")) {
+                continue;
+            }
+            let word = |key: char| {
+                line.split_whitespace()
+                    .find_map(|w| w.strip_prefix(key)?.parse::<f64>().ok())
+            };
+            let next = [word('X').unwrap_or(xy[0]), word('Y').unwrap_or(xy[1])];
+            if word('E').is_none() && next.iter().zip(xy).any(|(a, b)| (a - b).abs() > 1e-6) {
+                assert!(
+                    crate::preflight::travel_meets(&zone, xy, next, 0.0, 0.01).is_none(),
+                    "slope travel crosses excluded zone: {xy:?} to {next:?}: {line}"
+                );
+                checked += 1;
+            }
+            xy = next;
+        }
+        assert!(checked >= 4, "fixture must emit detour legs: {text}");
+    }
+
+    #[test]
+    fn layer_transition_slopes_use_the_physical_rise() {
+        for rise in [0.2_f32, 0.4] {
+            let cfg = PrintConfig::from_value(&serde_json::json!({
+                "wipe_on_loops": false, "wipe": false, "gcode_comments": true,
+                "retraction_length": 0.8, "retract_when_changing_layer": true,
+                "z_hop": 0.4, "retract_lift_above": 0, "z_hop_types": "Slope Lift",
+                "enable_arc_fitting": false, "travel_slope": 45,
+                "enable_wrapping_detection": false, "wrapping_detection_gcode": "; wrapping check\n"
+            }))
+            .unwrap();
+            let layer = |index, x: f64| LayerPaths {
+                index,
+                local: index,
+                z: if index == 1 { 0.4 } else { 0.4 + rise },
+                height: 0.2,
+                start_tool: 1,
+                points: vec![
+                    Point::from_mm(x, 30.0),
+                    Point::from_mm(x + 2.0, 30.0),
+                    Point::from_mm(x + 2.0, 32.0),
+                    Point::from_mm(x, 32.0),
+                    Point::from_mm(x, 30.0),
+                ],
+                paths: vec![crate::output::PathInfo {
+                    start: 0,
+                    end: 5,
+                    tool: 1,
+                    feature: Feature::OuterWall,
+                    speed_mm_s: 30.0,
+                    width_mm: 0.4,
+                    flow: 1.0,
+                    dz: 0.0,
+                    overhang_fan: false,
+                    owner: crate::preview::OBJECT_NONE,
+                }],
+                ..Default::default()
+            };
+            let first = layer(1, 30.0);
+            let mut second = layer(2, 40.0);
+            second.enter_from = first.points.last().copied();
+            second.enter_z = Some(first.z);
+            let out = SliceOutput {
+                first_layer: 1,
+                layer_count: 4,
+                layer_height: 0.2,
+                tool_count: 1,
+                layers: vec![first, second],
+                ..Default::default()
+            };
+            let mut bytes = Vec::new();
+            emit_gcode(&out, &cfg, GcodeFlavor::Marlin2, &mut bytes).unwrap();
+            let text = String::from_utf8(bytes).unwrap();
+            let mut xyz = [0.0_f64; 3];
+            let mut checked = 0;
+            for line in text.lines() {
+                let op = line.split_whitespace().next().unwrap_or("");
+                if !matches!(op, "G0" | "G1") {
+                    continue;
+                }
+                let word = |key: char| {
+                    line.split_whitespace()
+                        .find_map(|w| w.strip_prefix(key)?.parse::<f64>().ok())
+                };
+                let next = [
+                    word('X').unwrap_or(xyz[0]),
+                    word('Y').unwrap_or(xyz[1]),
+                    word('Z').unwrap_or(xyz[2]),
+                ];
+                let run = (next[0] - xyz[0]).m_hypot(next[1] - xyz[1]);
+                let dz = next[2] - xyz[2];
+                if run > 0.01 && dz > 0.01 && word('E').is_none() {
+                    let angle = (dz / run).m_atan().to_degrees();
+                    assert!((angle - 45.0).abs() < 0.5, "slope angle {angle}: {line}");
+                    checked += 1;
+                }
+                xyz = next;
+            }
+            assert_eq!(checked, 1, "fixture must emit one transition slope: {text}");
+        }
+    }
+
+    #[test]
+    fn layer_transition_spirals_use_the_physical_rise() {
+        for (arc, eager) in [(true, false), (false, false), (true, true), (false, true)] {
+            let cfg = PrintConfig::from_value(&serde_json::json!({
+                "wipe_on_loops": false, "wipe": false, "gcode_comments": true,
+                "retraction_length": 0.8, "retract_when_changing_layer": true,
+                "z_hop": 0.4, "retract_lift_above": 0, "z_hop_types": "Spiral Lift",
+                "enable_arc_fitting": arc, "travel_slope": 45,
+                "enable_wrapping_detection": eager, "wrapping_detection_gcode": "; wrapping check\n"
+            }))
+            .unwrap();
+            let layer = |index, x: f64| LayerPaths {
+                index,
+                local: index,
+                z: if index == 1 { 0.4 } else { 0.6 },
+                height: 0.2,
+                start_tool: 1,
+                points: vec![
+                    Point::from_mm(x, 30.0),
+                    Point::from_mm(x + 2.0, 30.0),
+                    Point::from_mm(x + 2.0, 32.0),
+                    Point::from_mm(x, 32.0),
+                    Point::from_mm(x, 30.0),
+                ],
+                paths: vec![crate::output::PathInfo {
+                    start: 0,
+                    end: 5,
+                    tool: 1,
+                    feature: Feature::OuterWall,
+                    speed_mm_s: 30.0,
+                    width_mm: 0.4,
+                    flow: 1.0,
+                    dz: 0.0,
+                    overhang_fan: false,
+                    owner: crate::preview::OBJECT_NONE,
+                }],
+                ..Default::default()
+            };
+            let first = layer(1, 30.0);
+            let mut second = layer(2, 40.0);
+            second.enter_from = first.points.last().copied();
+            second.enter_z = Some(first.z);
+            let out = SliceOutput {
+                first_layer: 1,
+                layer_count: 4,
+                layer_height: 0.2,
+                tool_count: 1,
+                layers: vec![first, second],
+                ..Default::default()
+            };
+            let mut bytes = Vec::new();
+            emit_gcode(&out, &cfg, GcodeFlavor::Marlin2, &mut bytes).unwrap();
+            let text = String::from_utf8(bytes).unwrap();
+            let mut xyz = [0.0_f64; 3];
+            let mut segmented = None;
+            let mut checked = 0;
+            for line in text.lines() {
+                if line == ";spiral lift Z" {
+                    segmented = Some((xyz[2], 0.0_f64));
+                }
+                let op = line.split_whitespace().next().unwrap_or("");
+                if !matches!(op, "G0" | "G1" | "G2" | "G3") {
+                    continue;
+                }
+                let word = |key: char| {
+                    line.split_whitespace()
+                        .find_map(|w| w.strip_prefix(key)?.parse::<f64>().ok())
+                };
+                if op == "G0"
+                    && let Some((start_z, length)) = segmented.take()
+                {
+                    let angle = ((xyz[2] - start_z) / length).m_atan().to_degrees();
+                    assert!((angle - 45.0).abs() < 3.0, "segmented angle {angle}: {text}");
+                    checked += 1;
+                }
+                let next = [
+                    word('X').unwrap_or(xyz[0]),
+                    word('Y').unwrap_or(xyz[1]),
+                    word('Z').unwrap_or(xyz[2]),
+                ];
+                if matches!(op, "G2" | "G3") && line.contains("spiral lift Z") {
+                    let radius = word('I').unwrap_or(0.0).m_hypot(word('J').unwrap_or(0.0));
+                    let angle = ((next[2] - xyz[2]) / (std::f64::consts::TAU * radius))
+                        .m_atan()
+                        .to_degrees();
+                    assert!((angle - 45.0).abs() < 0.5, "arc angle {angle}: {line}");
+                    checked += 1;
+                }
+                if let Some((_, length)) = segmented.as_mut() {
+                    *length += (next[0] - xyz[0]).m_hypot(next[1] - xyz[1]);
+                }
+                xyz = next;
+            }
+            assert_eq!(checked, 1, "fixture must emit one transition spiral: {text}");
+            for resume in [false, true] {
+                let mut unknown = cfg.clone();
+                if !resume {
+                    unknown.raw.insert(
+                        "before_layer_change_gcode".into(),
+                        serde_json::json!("G1 Z0.45\n"),
+                    );
+                }
+                let opts = EmitOptions {
+                    resume_from_layer: resume.then_some(2),
+                    resume_z_mm: resume.then_some(5.0),
+                    ..Default::default()
+                };
+                let mut bytes = Vec::new();
+                emit_gcode_with(&out, &unknown, GcodeFlavor::Marlin2, &opts, &mut bytes).unwrap();
+                let text = String::from_utf8(bytes).unwrap();
+                assert!(
+                    !text.contains("spiral lift Z"),
+                    "unknown entry emitted a spiral: {text}"
+                );
+                assert!(
+                    text.lines().any(|line| line.starts_with("G1 Z1 ")),
+                    "unknown entry lost its lift target: {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_larger_transition_spiral_rechecks_excluded_zone_clearance() {
+        let rc = PrintConfig::from_value(&serde_json::json!({
+            "travel_slope": 45, "enable_arc_fitting": true, "nozzle_diameter": [0.4],
+            "bed_exclude_area": ["99.9x100.56", "100.1x100.56", "100.1x101", "99.9x101"]
+        }))
+        .unwrap();
+        let from = Point::from_mm(100.0, 100.0);
+        let to = Point::from_mm(120.0, 100.0);
+        let mut bytes = Vec::new();
+        write_lift(&mut bytes, &rc, Lift::Spiral, from, to, 400, 400, 18000, 600);
+        assert!(String::from_utf8_lossy(&bytes).contains("G3 "));
+        bytes.clear();
+        let (kind, start, rise) = transition_lift_span(Lift::Spiral, Some(200), 400, 400);
+        write_lift(&mut bytes, &rc, kind, from, to, start, rise, 18000, 600);
+        assert_eq!(bytes, b"G1 Z0.8 F600\n");
     }
 
     #[test]

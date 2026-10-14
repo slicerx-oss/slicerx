@@ -2493,3 +2493,74 @@ fn remapped_variant_temperatures_keep_material_limits() {
     };
     assert!(error.to_string().contains("PTFE-lined"), "{error}");
 }
+
+#[test]
+fn spiral_lifts_start_and_finish_above_the_wipe_endpoint() {
+    for tool_changes in [false, true] {
+        let mut c = base_config();
+        if tool_changes {
+            c["sparse_infill_filament_id"] = json!(2);
+            c["filament_diameter"] = json!([1.75, 1.75]);
+            c["nozzle_temperature"] = json!([220, 220]);
+            c["retract_length_toolchange"] = json!([0.8, 0.8]);
+        }
+        c["z_hop"] = json!(0.4);
+        c["retract_lift_above"] = json!(0);
+        c["z_hop_types"] = json!("Spiral Lift");
+        c["enable_arc_fitting"] = json!(false);
+        c["printer_model"] = json!("generic");
+        c["wipe"] = json!(true);
+        c["wipe_distance"] = json!(2.0);
+        c["retract_when_changing_layer"] = json!(false);
+        c["gcode_comments"] = json!(true);
+        let run = two_objects(c, json!({}));
+        let g = text(&run);
+        let lines: Vec<&str> = g.lines().collect();
+        let word = |line: &str, key: char| -> Option<f64> {
+            line.split(';')
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .find_map(|w| w.strip_prefix(key).and_then(|v| v.parse().ok()))
+        };
+        let mut xy = [0.0, 0.0];
+        let mut wiped = false;
+        let mut checked = 0;
+        for (i, line) in lines.iter().enumerate() {
+            if line.starts_with(";WIPE_END") {
+                wiped = true;
+            }
+            if line.starts_with(";spiral lift Z") && wiped {
+                let end = lines[i + 1..]
+                    .iter()
+                    .filter(|l| ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|cmd| l.starts_with(cmd)))
+                    .skip_while(|l| l.starts_with("G1 F"))
+                    .take_while(|l| l.starts_with("G1 X") && l.contains(" Z") && !l.contains(" E"))
+                    .last()
+                    .expect("segmented spiral");
+                let finish = [word(end, 'X').unwrap(), word(end, 'Y').unwrap()];
+                assert_eq!(
+                    finish,
+                    xy,
+                    "lift at line {} must return above its wipe: {:?}",
+                    i + 1,
+                    &lines[i.saturating_sub(12)..(i + 10).min(lines.len())]
+                );
+                checked += 1;
+                wiped = false;
+            }
+            if line.starts_with("G0 ") || line.starts_with(";TYPE:") {
+                wiped = false;
+            }
+            if line.starts_with("G0 ") || line.starts_with("G1 ") {
+                for (k, key) in ['X', 'Y'].into_iter().enumerate() {
+                    if let Some(v) = word(line, key) {
+                        xy[k] = v;
+                    }
+                }
+            }
+        }
+        assert!(checked > 5, "must exercise repeated wiped travels");
+        validated(&run);
+    }
+}

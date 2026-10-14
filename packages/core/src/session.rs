@@ -12,7 +12,7 @@ use crate::geom::SCALE;
 use crate::geom::{Polygon, mm};
 use crate::infill::{self, Dir, Family, Spans};
 use crate::layers::LayerPlan;
-use crate::output::{LayerPaths, SliceOutput, SliceWarning, Stage, StageMicros, WarningCode};
+use crate::output::{Feature, LayerPaths, SliceOutput, SliceWarning, Stage, StageMicros, WarningCode};
 use crate::par::Init as _;
 use crate::paths::{self, ToolWork};
 use crate::perimeters::{self, Shapes};
@@ -3157,17 +3157,25 @@ impl SliceSession {
         &self,
         config: &PrintConfig,
         top: u32,
-    ) -> Result<(Option<crate::geom::Point>, crate::output::WipeTail)> {
+    ) -> Result<(
+        Option<crate::geom::Point>,
+        crate::output::WipeTail,
+        Option<Feature>,
+    )> {
         const STEP: u32 = 8;
         let lo = top.saturating_sub(STEP);
         let out = self.slice_object_range_now(config, lo..top, &crate::NoProgress)?;
         if let Some(l) = out.layers.iter().rev().find(|l| !l.paths.is_empty()) {
-            return Ok((l.points.last().copied(), l.wipe_tail()));
+            return Ok((
+                l.end_point(out.config_at(config, l.cfg)),
+                l.wipe_tail(),
+                l.last_fill().or(l.below_fill),
+            ));
         }
         Ok(out
             .layers
             .first()
-            .map(|l| (l.enter_from, l.below_wipe.clone()))
+            .map(|l| (l.enter_from, l.below_wipe.clone(), l.below_fill))
             .unwrap_or_default())
     }
 
@@ -3575,21 +3583,40 @@ impl SliceSession {
             return Err(Error::Cancelled);
         }
         progress.report(Stage::Paths, 1.0);
+        let end_of = |l: &LayerPaths| {
+            let cfg = usize::from(l.cfg)
+                .checked_sub(1)
+                .and_then(|i| configs.get(i))
+                .unwrap_or(config);
+            l.end_point(cfg)
+        };
         let mut below_end = None;
+        let mut below_z = None;
+        let mut below_fill = None;
         let mut below_wipe = crate::output::WipeTail::default();
         if layers.start < asked.start && !out_layers.is_empty() {
             let below = out_layers.remove(0);
-            below_end = below.points.last().copied();
+            below_end = end_of(&below);
+            below_z = Some(below.z);
             below_wipe = below.wipe_tail();
+            below_fill = below.last_fill();
             // An empty layer below leaves the nozzle where the last layer with paths ended, as one range over
             // the whole plate carries it up.
-            if below.paths.is_empty() && layers.start > 0 {
-                (below_end, below_wipe) = self.end_below(config, layers.start)?;
+            if (below.paths.is_empty() || below_fill.is_none()) && layers.start > 0 {
+                let (end, wipe, fill) = self.end_below(config, layers.start)?;
+                if below.paths.is_empty() {
+                    (below_end, below_wipe) = (end, wipe);
+                }
+                below_fill = below_fill.or(fill);
             }
         }
         for l in &mut out_layers {
             l.enter_from = below_end;
-            below_end = l.points.last().copied().or(below_end);
+            l.enter_z = below_z;
+            below_z = Some(l.z);
+            l.below_fill = below_fill;
+            below_fill = l.last_fill().or(below_fill);
+            below_end = end_of(l).or(below_end);
             let tail = l.wipe_tail();
             l.below_wipe = if tail.points.is_empty() {
                 below_wipe.clone()

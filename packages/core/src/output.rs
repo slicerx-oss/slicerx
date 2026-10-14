@@ -206,9 +206,13 @@ pub struct LayerPaths {
     /// retracts only when it is long enough, as any other travel. None for the first layer and when
     /// the layer below is not known.
     pub enter_from: Option<Point>,
+    /// the previous emitted layer height, including empty layers, in mm
+    pub(crate) enter_z: Option<f32>,
     /// the last path of the layer below, for the wipe of the layer change retraction; empty when the
     /// layer below is not known
     pub below_wipe: WipeTail,
+    /// the last non-gap extrusion below this layer, for surface-specific lift rules
+    pub(crate) below_fill: Option<Feature>,
     /// The layer's regions, kept when the profile plans travels (`reduce_crossing_wall`,
     /// `reduce_infill_retraction`).
     pub(crate) areas: Option<Box<LayerAreas>>,
@@ -290,9 +294,37 @@ impl LayerPaths {
         self.points.get(p.start as usize..p.end as usize).unwrap_or(&[])
     }
 
+    pub(crate) fn last_fill(&self) -> Option<Feature> {
+        self.paths
+            .iter()
+            .rev()
+            .find(|p| p.feature != Feature::GapFill && !self.path_points(p).is_empty())
+            .map(|p| p.feature)
+    }
+
+    fn last_nonempty_path(&self) -> Option<&PathInfo> {
+        self.paths.iter().rev().find(|p| !self.path_points(p).is_empty())
+    }
+
+    /// the endpoint in print order, which can differ from point storage order
+    pub(crate) fn end_point(&self, config: &crate::config::PrintConfig) -> Option<Point> {
+        let p = self.last_nonempty_path()?;
+        let pts = self.path_points(p);
+        let end = *pts.last()?;
+        if !self.spiral
+            && p.feature == Feature::OuterWall
+            && pts.len() > 3
+            && crate::gcode::is_loop(pts)
+            && crate::firmware::truthy(config, "wipe_on_loops")
+        {
+            return crate::gcode::inward_wipe_point(pts, end).or(Some(end));
+        }
+        Some(end)
+    }
+
     /// the last path, as the writer leaves the nozzle at the layer's end
     pub(crate) fn wipe_tail(&self) -> WipeTail {
-        self.paths.last().map_or_else(WipeTail::default, |p| {
+        self.last_nonempty_path().map_or_else(WipeTail::default, |p| {
             let pts = self.path_points(p);
             WipeTail {
                 points: pts.to_vec(),
@@ -464,5 +496,50 @@ mod support_area_tests {
         };
         assert!(a.holds(Point::new(10_000, 10_000), Point::new(90_000, 90_000)));
         assert!(!a.holds(Point::new(10_000, 10_000), Point::new(210_000, 10_000)));
+    }
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn layer_handoff_follows_print_order_and_skips_empty_paths() {
+        let path = |start, end| PathInfo {
+            start,
+            end,
+            tool: 1,
+            feature: Feature::OuterWall,
+            speed_mm_s: 40.0,
+            width_mm: 0.4,
+            flow: 1.0,
+            dz: 0.0,
+            overhang_fan: false,
+            owner: 0,
+        };
+        let mut layer = LayerPaths {
+            points: vec![
+                Point::new(0, 0),
+                Point::new(1000, 0),
+                Point::new(30000, 0),
+                Point::new(31000, 0),
+            ],
+            paths: vec![path(2, 4), path(0, 2), path(4, 4)],
+            ..Default::default()
+        };
+        assert_eq!(
+            layer.end_point(&crate::config::PrintConfig::default()),
+            Some(Point::new(1000, 0))
+        );
+        assert_eq!(layer.wipe_tail().points, layer.points[..2]);
+        layer.paths.reverse();
+        assert_eq!(
+            layer.end_point(&crate::config::PrintConfig::default()),
+            Some(Point::new(31000, 0))
+        );
+        assert_eq!(layer.wipe_tail().points, layer.points[2..]);
+        layer.paths.clear();
+        assert_eq!(layer.end_point(&crate::config::PrintConfig::default()), None);
+        assert_eq!(layer.wipe_tail(), WipeTail::default());
     }
 }

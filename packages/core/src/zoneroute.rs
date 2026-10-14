@@ -92,6 +92,14 @@ fn inside(poly: &[Pt], p: Pt) -> bool {
     c
 }
 
+/// a lift's swept disk must stay clear of the printer's excluded zones
+pub(crate) fn circle_clear(cfg: &crate::config::PrintConfig, center: Pt, radius: f64) -> bool {
+    let clearance = radius + cfg.nozzle_diameter.max(0.0);
+    crate::collide::plate::zones(cfg)
+        .iter()
+        .all(|(_, zone)| !inside(zone, center) && edge_dist(zone, center) > clearance)
+}
+
 /// `zone` grown by `by` mm, as one ring (the outer contour of the grown shape).
 fn grown(zone: &[Pt], by: f64) -> Option<Vec<Pt>> {
     use crate::geom::{SCALE, mm};

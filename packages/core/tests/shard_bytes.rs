@@ -174,3 +174,61 @@ fn by_object_ranges_end_at_the_plates_top() {
         Ok(if id == "tall" { tall.clone() } else { short.clone() })
     });
 }
+
+#[test]
+fn surface_lift_rules_do_not_depend_on_shard_boundaries() {
+    let mesh = wedge(20.0, 20.0, 2.0, 4.0);
+    for mode in ["Top Only", "Top and Bottom"] {
+        let req = request(
+            &[("w", [128.0, 128.0])],
+            &json!({
+                "layer_height": 0.2,
+                "z_hop": [0.4],
+                "z_hop_types": ["Normal Lift"],
+                "retract_lift_enforce": [mode],
+                "retract_when_changing_layer": ["1"],
+                "wipe": ["0"],
+            }),
+        );
+        same_bytes_every_way(&req, &|_: &str| Ok(mesh.clone()));
+        let mut mixed = request(&[("l", [80.0, 128.0]), ("r", [170.0, 128.0])], &req.config);
+        mixed.plate.objects[1]
+            .settings
+            .insert("wall_loops".into(), json!(3));
+        same_bytes_every_way(&mixed, &|_: &str| Ok(mesh.clone()));
+    }
+}
+
+#[test]
+fn layer_handoffs_follow_the_last_printed_path() {
+    let mesh = wedge(40.0, 30.0, 2.0, 4.0);
+    let req = request(
+        &[("w", [128.0, 128.0])],
+        &json!({"z_hop": [0.4], "z_hop_types": ["Spiral Lift"], "wipe": ["0"]}),
+    );
+    let (config, _) = api::request_config_checked(&req).unwrap();
+    let plate = api::build_plate(&req, &|_: &str| Ok(mesh.clone())).unwrap();
+    let session = api::build_session(&req, &plate, &config).unwrap();
+    let (out, _) = api::slice_shard(
+        &req,
+        &session,
+        &config,
+        0..session.layer_count(),
+        &sx_core::NoProgress,
+        &mut Vec::new(),
+    )
+    .unwrap();
+    let mut reordered = 0;
+    for pair in out.layers.windows(2) {
+        let previous = &pair[0];
+        let end = previous
+            .paths
+            .iter()
+            .rev()
+            .find_map(|p| previous.path_points(p).last().copied());
+        assert_eq!(pair[1].enter_from, end, "layer {}", pair[1].index);
+        reordered += usize::from(end != previous.points.last().copied());
+    }
+    assert!(reordered > 0, "fixture must reorder paths");
+    same_bytes_every_way(&req, &|_: &str| Ok(mesh.clone()));
+}

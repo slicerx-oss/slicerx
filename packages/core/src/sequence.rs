@@ -250,29 +250,60 @@ fn slice_interleaved(
 ) -> Result<SliceOutput> {
     let lo = layers.start.saturating_sub(1);
     let mut out = slice_interleaved_from(session, config, lo..layers.end, progress)?;
+    let configs = &out.configs;
+    let end_of = |l: &crate::output::LayerPaths| {
+        let cfg = usize::from(l.cfg)
+            .checked_sub(1)
+            .and_then(|i| configs.get(i))
+            .unwrap_or(config);
+        l.end_point(cfg)
+    };
     let mut below_end = None;
+    let mut below_z = None;
+    let mut below_fill = None;
     let mut below_wipe = crate::output::WipeTail::default();
     if lo < layers.start && !out.layers.is_empty() {
         let below = out.layers.remove(0);
-        below_end = below.points.last().copied();
+        below_end = end_of(&below);
+        below_z = Some(below.z);
         below_wipe = below.wipe_tail();
+        below_fill = below.last_fill();
         // An empty layer below leaves the nozzle where the last layer with paths ended, as one range over the
         // whole plate carries it up.
-        if below.paths.is_empty() && lo > 0 {
+        if (below.paths.is_empty() || below_fill.is_none()) && lo > 0 {
             let under = slice_interleaved(session, config, lo.saturating_sub(8)..lo, &crate::NoProgress)?;
-            (below_end, below_wipe) = under
+            let (end, wipe, fill) = under
                 .layers
                 .iter()
                 .rev()
                 .find(|l| !l.paths.is_empty())
-                .map(|l| (l.points.last().copied(), l.wipe_tail()))
-                .or_else(|| under.layers.first().map(|l| (l.enter_from, l.below_wipe.clone())))
+                .map(|l| {
+                    (
+                        l.end_point(under.config_at(config, l.cfg)),
+                        l.wipe_tail(),
+                        l.last_fill().or(l.below_fill),
+                    )
+                })
+                .or_else(|| {
+                    under
+                        .layers
+                        .first()
+                        .map(|l| (l.enter_from, l.below_wipe.clone(), l.below_fill))
+                })
                 .unwrap_or_default();
+            if below.paths.is_empty() {
+                (below_end, below_wipe) = (end, wipe);
+            }
+            below_fill = below_fill.or(fill);
         }
     }
     for l in &mut out.layers {
         l.enter_from = below_end;
-        below_end = l.points.last().copied().or(below_end);
+        l.enter_z = below_z;
+        below_z = Some(l.z);
+        l.below_fill = below_fill;
+        below_fill = l.last_fill().or(below_fill);
+        below_end = end_of(l).or(below_end);
         let tail = l.wipe_tail();
         l.below_wipe = if tail.points.is_empty() {
             below_wipe.clone()

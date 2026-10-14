@@ -374,3 +374,130 @@ fn a_range_starting_over_empty_layers_lifts_for_the_time_lapse_as_one_range_does
         );
     }
 }
+
+#[test]
+fn inward_loop_wipes_keep_layer_lifts_closed_across_ranges() {
+    let mesh = box_mesh(1.0);
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"id": "a", "mesh": "x", "transform": [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 118.0, 118.0, 0.0, 1.0]}]},
+        "config": {
+            "layer_height": 0.2, "initial_layer_print_height": 0.2, "wall_loops": 1,
+            "sparse_infill_density": 0, "top_shell_layers": 0, "bottom_shell_layers": 0,
+            "top_shell_thickness": 0, "bottom_shell_thickness": 0, "brim_width": 0, "skirt_loops": 0,
+            "wipe_on_loops": true, "wipe": false, "gcode_comments": true,
+            "retraction_length": 0.8, "retract_when_changing_layer": true,
+            "z_hop": 0.4, "retract_lift_above": 0, "z_hop_types": "Spiral Lift", "enable_arc_fitting": false
+        },
+        "options": {"flavor": "marlin2"}
+    }))
+    .unwrap();
+    let m = mesh.clone();
+    let one = api::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+    let text = String::from_utf8_lossy(&one.gcode);
+    let mut xy = [0.0_f64; 2];
+    let mut origin = None;
+    let mut checked = 0;
+    for line in text.lines() {
+        if line == ";spiral lift Z" {
+            origin = Some(xy);
+        }
+        if !(line.starts_with("G0 ") || line.starts_with("G1 ")) {
+            continue;
+        }
+        if line.starts_with("G0 ")
+            && let Some(at) = origin.take()
+        {
+            assert!(
+                (xy[0] - at[0]).abs() < 0.002 && (xy[1] - at[1]).abs() < 0.002,
+                "lift ended at {xy:?}, but began at {at:?}"
+            );
+            checked += 1;
+        }
+        for (i, key) in ['X', 'Y'].into_iter().enumerate() {
+            if let Some(v) = line
+                .split_whitespace()
+                .find_map(|w| w.strip_prefix(key)?.parse::<f64>().ok())
+            {
+                xy[i] = v;
+            }
+        }
+    }
+    assert!(
+        checked >= 3,
+        "fixture must exercise layer-transition spirals: {checked}"
+    );
+    for shards in [4, 8] {
+        let (preview, file) = sharded_with_file(&req, &mesh, shards);
+        assert!(file == one.gcode, "{shards} ranges changed the file");
+        assert!(preview == one.preview, "{shards} ranges changed the preview");
+    }
+}
+
+#[test]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "independent output measurement with a half-degree tolerance"
+)]
+fn transition_spiral_angles_survive_empty_layers_and_ranges() {
+    let mesh = gapped_mesh();
+    for sequence in ["by layer", "by object"] {
+        let at = |x: f64| {
+            [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, x, 100.0, 0.0, 1.0,
+            ]
+        };
+        let req: SliceRequest = serde_json::from_value(json!({
+            "plate": {"objects": [
+                {"id": "a", "mesh": "x", "transform": at(50.0)},
+                {"id": "b", "mesh": "x", "transform": at(150.0)}
+            ]},
+            "config": {
+                "layer_height": 0.2, "initial_layer_print_height": 0.2,
+                "wall_loops": 1, "sparse_infill_density": 0, "top_shell_layers": 0,
+                "bottom_shell_layers": 0, "top_shell_thickness": 0, "bottom_shell_thickness": 0,
+                "brim_width": 0, "skirt_loops": 0, "enable_support": false,
+                "wipe": false, "gcode_comments": true, "retraction_length": 0.8,
+                "retract_when_changing_layer": true, "z_hop": 0.4, "retract_lift_above": 0,
+                "z_hop_types": "Spiral Lift", "travel_slope": 45, "enable_arc_fitting": true,
+                "print_sequence": sequence
+            },
+            "options": {"flavor": "marlin2"}
+        }))
+        .unwrap();
+        let m = mesh.clone();
+        let one = api::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+        let text = String::from_utf8_lossy(&one.gcode);
+        let mut z = 0.0_f64;
+        let mut checked = 0;
+        for line in text.lines() {
+            let op = line.split_whitespace().next().unwrap_or("");
+            if !matches!(op, "G0" | "G1" | "G2" | "G3") {
+                continue;
+            }
+            let word = |key: char| {
+                line.split_whitespace()
+                    .find_map(|w| w.strip_prefix(key)?.parse::<f64>().ok())
+            };
+            let next_z = word('Z').unwrap_or(z);
+            if op == "G3" && line.contains("spiral lift Z") {
+                let radius = word('I').unwrap_or(0.0).hypot(word('J').unwrap_or(0.0));
+                let angle = ((next_z - z) / (std::f64::consts::TAU * radius))
+                    .atan()
+                    .to_degrees();
+                assert!((angle - 45.0).abs() < 0.5, "{sequence}: {angle}: {line}");
+                checked += 1;
+            }
+            z = next_z;
+        }
+        assert!(checked >= 6, "fixture must exercise multiple spirals: {checked}");
+        for shards in [4, one.report.layer_count + 3] {
+            let (preview, file) = sharded_with_file(&req, &mesh, shards);
+            assert!(file == one.gcode, "{sequence}: {shards} ranges changed the file");
+            assert!(
+                preview == one.preview,
+                "{sequence}: {shards} ranges changed the preview"
+            );
+        }
+    }
+}
