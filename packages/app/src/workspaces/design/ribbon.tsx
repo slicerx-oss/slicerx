@@ -91,13 +91,15 @@ function useRibbonFit(ref: RefObject<HTMLDivElement | null>, row: RefObject<HTML
 }
 
 /** One ribbon button: the icon, its name under it (a tip at Small), pressed and off states. */
-function RibbonButton({ icon, size, label, tip, pressed, off, menu, testId, data, onClick }: {
+function RibbonButton({ icon, size, label, tip, pressed, off, primary, menu, testId, data, onClick }: {
   icon: ToolIconName
   size: 32 | 24 | 16
   label: string
   tip?: string | undefined
   pressed?: boolean | undefined
   off?: boolean | string | undefined
+  /** The one primary action on screen, in the primary button's look. */
+  primary?: boolean | undefined
   menu?: { open: boolean } | undefined
   testId?: string | undefined
   data?: Record<string, string> | undefined
@@ -109,6 +111,7 @@ function RibbonButton({ icon, size, label, tip, pressed, off, menu, testId, data
       type="button"
       className="rb-btn"
       data-testid={testId}
+      data-variant={primary ? 'primary' : undefined}
       {...data}
       aria-label={label}
       aria-pressed={menu ? undefined : pressed === undefined ? undefined : pressed}
@@ -157,6 +160,8 @@ export function Ribbon() {
   const [menu, setMenu] = useState<RibbonMenu | null>(null)
   const canFinish = useCanFinish()
   const draw = useSketchDraw()
+  // one primary at a time: Finish sketch while the drawing can't make a solid yet, then Extrude in the panel
+  const finishPrimary = canFinish && draw !== null && !draw.ready
   // an Extrude or Revolve from a finished sketch runs in the sketch tool, but nobody is sketching
   const pressedTool = useSketchInUse() !== null && objectTool === 'sketch' ? null : objectTool
 
@@ -272,7 +277,7 @@ export function Ribbon() {
       )
     }
     if (it.kind === 'action') {
-      return <RibbonButton key={key} icon={it.icon} size={px} label={it.label} tip={it.tip} pressed={actionPressed(it.id)} off={actionOff(it.id)} testId={it.id === 'finish' ? 'sketch-finish' : `ribbon-${it.id}`} data={it.id === 'finish' ? { 'data-action': it.id, 'data-tip-key': `${modKey()}Enter` } : { 'data-action': it.id }} onClick={() => doAction(it.id)} />
+      return <RibbonButton key={key} icon={it.icon} size={px} label={it.label} tip={it.tip} pressed={actionPressed(it.id)} off={actionOff(it.id)} primary={it.id === 'finish' && finishPrimary} testId={it.id === 'finish' ? 'sketch-finish' : `ribbon-${it.id}`} data={it.id === 'finish' ? { 'data-action': it.id, 'data-tip-key': `${modKey()}Enter` } : { 'data-action': it.id }} onClick={() => doAction(it.id)} />
     }
     const pressed = it.id === 'face' && tools.some((t) => t.shelf?.menu === 'face' && t.tool !== undefined && pressedTool === t.tool)
     return (

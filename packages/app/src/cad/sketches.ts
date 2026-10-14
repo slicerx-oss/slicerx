@@ -153,6 +153,8 @@ export interface SketchDraw {
   /** Mirror for the selected loop; null when no loop is selected. */
   mirror: (() => void) | null
   mirroring: boolean
+  /** A valid profile can make the solid: Extrude is the panel's primary, so Finish sketch is a plain button. */
+  ready: boolean
 }
 
 let draw: SketchDraw | null = null
