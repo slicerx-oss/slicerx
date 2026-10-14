@@ -162,7 +162,7 @@ test('at 1440 by 900 Distance and Draft show above the footer with the solid car
     expect(b.y + b.height).toBeLessThanOrEqual(footer.y - 24)
   }
   // the units sit beside the labels, each on one line, and the fields hold only the numbers
-  for (const [id, text] of [['sk-dist', 'Distance mm'], ['sk-taper', 'Draft °']]) {
+  for (const [id, text] of [['sk-dist', 'Distance mm'], ['sk-taper', 'Draft °']] as const) {
     const label = panel.locator(`label[for="${id}"]`)
     await expect(label).toHaveText(text)
     expect((await label.boundingBox())!.height).toBeLessThan(22)
