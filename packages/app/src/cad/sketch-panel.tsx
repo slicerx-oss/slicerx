@@ -89,10 +89,10 @@ interface Plane {
   fresh?: boolean
 }
 
-/** What each tool wants clicked, in order. */
+/** What each tool wants clicked, in order: two lines at most, so the hint's box is two lines tall. */
 const HINTS: Record<DrawTool, string> = {
-  select: 'Click a line to pick it, drag a point to move it. Delete removes it, X makes it construction.',
-  line: 'Click point after point, or drag from the end for a tangent arc. Click the first point to close, right click to stop.',
+  select: 'Click a line to pick it, drag a point to move it. Delete removes it.',
+  line: 'Click point after point, or drag from the end for an arc. Right click stops.',
   rect: 'Click two opposite corners.',
   rect3: 'Click the two ends of one edge, then out to the width.',
   rectCenter: 'Click the center, then a corner.',
@@ -107,17 +107,26 @@ const HINTS: Record<DrawTool, string> = {
   slot: 'Click the two arc centers, then out to the width.',
   slotOverall: 'Click the two ends, then out to the width.',
   slotCenter: 'Click the center, an arc center, then out to the width.',
-  dimension: 'Click a line, a circle or two points, then where the value goes. Type the size and press Enter.',
-  trim: 'Click the piece of a curve to take off. It goes back to the nearest crossings.',
-  extend: 'Click near the open end of a line or arc to run it on to the next curve.',
+  dimension: 'Click a line, a circle or two points, then where the value goes.',
+  trim: 'Click the piece of a curve to take off.',
+  extend: 'Click near the open end of a line or arc.',
 }
+
+/** The line under the hint while nothing is being drawn: what else the tool takes. The live sizes take its place. */
+const IDLE: Partial<Record<DrawTool, string>> = {
+  select: 'X makes a picked line construction.',
+  dimension: 'Type the size and press Enter.',
+  trim: 'It goes back to the nearest crossings.',
+  extend: 'It runs on to the next curve.',
+}
+const idleText = (t: DrawTool): string => IDLE[t] ?? 'Type a number to give exact sizes.'
 
 /** What Mirror and a round Pattern wait for, in place of the tool's hint. */
 const PENDING_HINTS = { mirror: 'Click the straight line to mirror across. Esc stops.', round: 'Click the point to pattern round. Esc stops.' }
 
-const hintText = (t: DrawTool): string => `${HINTS[t]}${t !== 'select' && t !== 'dimension' && t !== 'trim' && t !== 'extend' ? ' Type a number to give exact sizes.' : ''}`
-// the longest hint sizes the hint's box, so picking a tool moves nothing below it
-const HINT_SIZER = (Object.keys(HINTS) as DrawTool[]).map(hintText).reduce((a, b) => (b.length > a.length ? b : a))
+const hintText = (t: DrawTool): string => HINTS[t]
+// every hint, laid over each other unseen: the tallest sets the box, so picking a tool moves nothing below it
+const ALL_HINTS = [...new Set([...Object.values(HINTS), ...Object.values(PENDING_HINTS)])]
 
 /** Fusion's keys for the sketch tools it gives one. */
 const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle', d: 'dimension', t: 'trim' }
@@ -1137,11 +1146,17 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           </PhonePicker>
           <p className="cad-hint sketch-hint" role="status">
             <Icon name={phone ? 'info' : 'mouse-left'} size={15} />{' '}
-            <span className="sketch-hint-text" data-sizer={phone ? touchWords(HINT_SIZER) : HINT_SIZER}>
+            <span className="sketch-hint-text">
+              {ALL_HINTS.map((h) => (
+                <span key={h} className="sketch-hint-sizer" aria-hidden="true">
+                  {words(h)}
+                </span>
+              ))}
               <span>{words(pending ? PENDING_HINTS[pending.kind] : hintText(draft.tool))}</span>
             </span>
           </p>
-          <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" /></p>
+          {/* the live sizes while drawing; between shapes, what else the tool takes */}
+          <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" data-idle={pending ? '' : words(idleText(draft.tool))} /></p>
           {solved ? (
             <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)} {...(driven ? { 'data-tip-title': 'Driven dimensions', 'data-tip-body': 'The other constraints already set these sizes, so they show in parentheses and change nothing.' } : {})}>
               {dofText(solved.solved)}
