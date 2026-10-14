@@ -816,7 +816,13 @@ export function ViewportHost({ layers }: { layers: boolean }) {
           }),
         )
       }
-      offs.push(vp.on('degrade', (e) => toast(e.message, 'info')))
+      // A phone keeps the notice in the top bar (top-bar.tsx): a toast there landed over mimir's conversation.
+      offs.push(
+        vp.on('degrade', (e) => {
+          set({ viewNotice: e.message })
+          if (!isPhoneLayout()) toast(e.message, 'info')
+        }),
+      )
       offs.push(vp.on('error', (e) => toast(e.message, 'error')))
     })
     return () => {

@@ -34,6 +34,11 @@
 :root[data-phone] .sx-appbar-phone .sx-appbar-right { gap: 0; }
 :root[data-phone] .sx-appbar-phone .sx-appbar-right > .sx-btn { width: 44px; height: 44px; padding: 0; justify-content: center; }
 :root[data-phone] .sx-appbar-phone .sx-appbar-right > .sx-btn .sx-ic { width: 20px; height: 20px; }
+:root[data-phone] .sx-view-notice > .sx-btn { width: 44px; height: 44px; padding: 0; justify-content: center; color: var(--orange); }
+:root[data-phone] .sx-view-notice > .sx-btn .sx-ic { width: 20px; height: 20px; }
+/* the slow-graphics notice the icon opens: the full text, at body size, inside the screen's gutters */
+:root[data-phone] .sx-view-notice-pop { width: min(320px, calc(100vw - 2 * var(--gutter))); padding: var(--s-3) var(--s-4); }
+:root[data-phone] .sx-view-notice-pop p { margin: 0; color: var(--fg); font-size: var(--fs-body); line-height: 1.45; }
 
 /* The tab bar: equal cells, icon over label. The current tab changes color and draws a bar on its top edge, which is
    absolutely placed, so no tab changes size or moves when pressed. */
