@@ -169,5 +169,3 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 /* the composer is a field in dark, one step above the cards; light keeps its float until its own pass */
 .mimir-chat .composer { background: var(--field-bg); border-color: var(--field-line); }
 :root[data-scheme="light"] .mimir-chat .composer { background: var(--overlay); border-color: var(--line-soft); }
-/* the watermark stays with the empty chat, never behind a conversation */
-.mimir-stage:has(.mimir-turns) .mimir-ravens { display: none; }
