@@ -20,7 +20,7 @@ Turns the infill and the fixed bridge angles with the model when you rotate it o
 
 - Type: boolean
 - Default: off
-- Tier: Advanced, strength
+- Tier: Expert, strength
 - Changing it redoes: perimeters
 - mimir class: edit (may change in a plate override)
 
@@ -46,7 +46,7 @@ Turns the infill and the fixed bridge angles with the model when you rotate it o
 - Default: 3
 - Recommended range: 0 to 50
 - Orca limits: 0 to none
-- Tier: Expert, strength
+- Tier: Advanced, strength
 - Changing it redoes: surfaces
 - Easy mode: Set by the Detail control. Derived: ceil(bottom shell thickness / layer height).
 - mimir class: edit (may change in a plate override)
@@ -78,7 +78,7 @@ How densely the bottom surface is filled, in percent. 100 % gives a solid bottom
 - Default: 100
 - Recommended range: 10 to 100
 - Used only when: Bottom shell layers (`bottom_shell_layers`) is above 0
-- Tier: Advanced, strength
+- Tier: Expert, strength
 - Changing it redoes: surfaces
 - mimir class: read (not in the catalog: never written)
 
@@ -203,7 +203,7 @@ Shortens the gyroid's waves along the height at low densities (below about 30 %)
 - Type: millimeters or percent (string such as "0.42" or "110%")
 - Default: "20"
 - Used only when: Infill density (`sparse_infill_density`) is above 0; and Infill pattern (`sparse_infill_pattern`) is not "line"
-- Tier: Advanced, strength
+- Tier: Expert, strength
 - Changing it redoes: infill
 - mimir class: read (not in the catalog: never written)
 
@@ -243,7 +243,7 @@ The tallest combined sparse infill layer, in mm or as a percent of the nozzle di
 - Default: 45
 - Recommended range: 0 to 360
 - Used only when: Infill density (`sparse_infill_density`) is above 0
-- Tier: Advanced, strength
+- Tier: Expert, strength
 - Changing it redoes: infill
 - mimir class: read (not in the catalog: never written)
 
@@ -339,7 +339,7 @@ On parts printed in more than one filament, gives each filament region its own s
 - Type: enum
 - Default: "monotonic"
 - Values: `monotonic` (Monotonic), `monotonicline` (Monotonic line), `rectilinear` (Rectilinear), `alignedrectilinear` (Aligned rectilinear), `concentric` (Concentric), `hilbertcurve` (Hilbert curve), `archimedeanchords` (Archimedean chords), `octagramspiral` (Octagram spiral)
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: infill
 - mimir class: edit (may change in a plate override)
 
@@ -590,7 +590,7 @@ How far the solid infill on the first and the topmost layer reaches into the wal
 - Type: percent (a number, 15 means 15%)
 - Unit: %
 - Default: 25
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
@@ -616,7 +616,7 @@ How far the solid infill on the first and the topmost layer reaches into the wal
 - Default: 4
 - Recommended range: 0 to 50
 - Orca limits: 0 to none
-- Tier: Expert, strength
+- Tier: Advanced, strength
 - Changing it redoes: surfaces
 - Easy mode: Set by the Detail control. Derived: ceil(top shell thickness / layer height).
 - mimir class: edit (may change in a plate override)
@@ -648,7 +648,7 @@ How densely the top surface is filled, in percent. 100 % gives a solid, smooth t
 - Default: 100
 - Recommended range: 0 to 100
 - Used only when: Top shell layers (`top_shell_layers`) is above 0
-- Tier: Advanced, strength
+- Tier: Expert, strength
 - Changing it redoes: surfaces
 - mimir class: read (not in the catalog: never written)
 

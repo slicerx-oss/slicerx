@@ -106,7 +106,7 @@
 - Type: enum
 - Default: "disabled"
 - Values: `disabled` (Off), `enabled` (On)
-- Tier: Advanced, adhesion
+- Tier: Expert, adhesion
 - Changing it redoes: paths
 - mimir class: edit (may change in a plate override)
 
@@ -119,7 +119,7 @@
 - Default: 0
 - Recommended range: 0 to no maximum
 - Used only when: Skirt loops (`skirt_loops`) is above 0
-- Tier: Advanced, adhesion
+- Tier: Expert, adhesion
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -131,7 +131,7 @@
 - Unit: mm
 - Default: 0.1
 - Recommended range: 0 to no maximum
-- Tier: Advanced, adhesion
+- Tier: Expert, adhesion
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -143,7 +143,7 @@
 - Unit: mm
 - Default: 1.5
 - Recommended range: 0 to no maximum
-- Tier: Advanced, adhesion
+- Tier: Expert, adhesion
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -203,7 +203,7 @@
 - Default: 2
 - Recommended range: 0 to 60
 - Used only when: Skirt loops (`skirt_loops`) is above 0
-- Tier: Advanced, adhesion
+- Tier: Expert, adhesion
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -264,7 +264,7 @@
 - Type: enum
 - Default: "combined"
 - Values: `combined` (Combined), `perobject` (Per object)
-- Tier: Advanced, adhesion
+- Tier: Expert, adhesion
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -322,6 +322,6 @@
 - Default: 3
 - Recommended range: 0 to no maximum
 - Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"; and Tree support auto brim (`tree_support_auto_brim`) is off
-- Tier: Advanced, adhesion
+- Tier: Expert, adhesion
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)

@@ -205,7 +205,7 @@ Runs the wrapping detection G-code on every layer, on printers that can detect f
 - Type: enum
 - Default: "by layer"
 - Values: `by layer` (By layer), `by object` (By object)
-- Tier: Expert, effects
+- Tier: Advanced, output
 - Changing it redoes: paths
 - mimir class: edit (may change in a plate override)
 

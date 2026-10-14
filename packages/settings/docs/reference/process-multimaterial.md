@@ -102,7 +102,7 @@
 
 - Type: boolean
 - Default: off
-- Tier: Advanced, multicolor, shown with two or more filaments
+- Tier: Expert, multicolor, shown with two or more filaments
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
@@ -126,7 +126,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Type: boolean
 - Default: on
 - Used only when: Prime tower (`enable_prime_tower`) is on
-- Tier: Advanced, multicolor, shown with two or more filaments
+- Tier: Expert, multicolor, shown with two or more filaments
 - Changing it redoes: paths
 - mimir class: edit (may change in a plate override)
 
@@ -140,7 +140,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Recommended range: -1 to no maximum
 - Values: `-1`
 - Used only when: Prime tower (`enable_prime_tower`) is on
-- Tier: Advanced, multicolor, shown with two or more filaments
+- Tier: Expert, multicolor, shown with two or more filaments
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -243,7 +243,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Default: -5
 - Recommended range: -1500 to 1500
 - Used only when: Ooze prevention (`ooze_prevention`) is on
-- Tier: Advanced, multicolor, shown with two or more filaments
+- Tier: Expert, multicolor, shown with two or more filaments
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
@@ -369,7 +369,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Default: 100
 - Recommended range: 100 to 300
 - Used only when: Prime tower (`enable_prime_tower`) is on
-- Tier: Advanced, multicolor, shown with two or more filaments
+- Tier: Expert, multicolor, shown with two or more filaments
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -414,7 +414,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Type: boolean
 - Default: off
 - Used only when: Prime tower (`enable_prime_tower`) is on
-- Tier: Advanced, multicolor, shown with two or more filaments
+- Tier: Expert, multicolor, shown with two or more filaments
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -438,7 +438,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Unit: degrees
 - Default: 0
 - Used only when: Prime tower (`enable_prime_tower`) is on
-- Tier: Advanced, multicolor, shown with two or more filaments
+- Tier: Expert, multicolor, shown with two or more filaments
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 

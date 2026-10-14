@@ -81,7 +81,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 - Default: "default"
 - Values: `default` (Default), `rectilinear` (Rectilinear), `rectilinear-grid` (Rectilinear grid), `honeycomb` (Honeycomb), `lightning` (Lightning), `hollow` (Hollow)
 - Used only when: Enable support (`enable_support`) is on
-- Tier: Advanced, supports
+- Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -129,7 +129,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 
 - Type: boolean
 - Default: off
-- Tier: Advanced, supports
+- Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -155,7 +155,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 - Recommended range: -1 to no maximum
 - Values: `-1`
 - Used only when: Enable support (`enable_support`) is on
-- Tier: Advanced, supports
+- Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -187,7 +187,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 - Default: "auto"
 - Values: `auto` (Default), `rectilinear` (Rectilinear), `concentric` (Concentric), `rectilinear_interlaced` (Rectilinear interlaced), `grid` (Grid)
 - Used only when: Enable support (`enable_support`) is on; and Enable support (`enable_support`) is on
-- Tier: Advanced, supports
+- Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -356,7 +356,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 - Default: 40
 - Recommended range: 0 to 60
 - Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"
-- Tier: Advanced, supports
+- Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -381,7 +381,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 - Default: 5
 - Recommended range: 1 to 10
 - Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"
-- Tier: Advanced, supports
+- Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -443,7 +443,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 - Default: 0.8
 - Recommended range: 0.1 to 100
 - Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"
-- Tier: Advanced, supports
+- Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -467,7 +467,7 @@ The pattern inside the support. Lightning grows thin branches that hold up only 
 - Default: 0
 - Recommended range: 0 to 2
 - Used only when: Enable support (`enable_support`) is on; and Support type (`support_type`) is one of "tree(auto)", "tree(manual)"
-- Tier: Advanced, supports
+- Tier: Expert, supports
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 

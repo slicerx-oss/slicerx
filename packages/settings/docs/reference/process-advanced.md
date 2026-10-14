@@ -78,7 +78,7 @@ Applies extrusion rate smoothing only to outer walls and overhangs, where speed 
 
 - Type: boolean
 - Default: off
-- Tier: Advanced, strength
+- Tier: Expert, strength
 - Changing it redoes: contours
 - mimir class: read (not in the catalog: never written)
 
@@ -160,7 +160,7 @@ Limits how fast the volumetric flow may change, in mm3/s per second, so sudden s
 - Unit: mm3/s2
 - Default: 0
 - Recommended range: 0 to no maximum
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
@@ -235,7 +235,7 @@ How far painted colors reach in from the outside of the part, in mm. The inside 
 - Type: number
 - Default: 1
 - Recommended range: 0.01 to 2
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 

@@ -83,7 +83,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 - Type: enum
 - Default: "none"
 - Values: `none` (None), `partiallybridge` (Partially bridge), `sacrificiallayer` (Sacrificial layer)
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: edit (may change in a plate override)
 

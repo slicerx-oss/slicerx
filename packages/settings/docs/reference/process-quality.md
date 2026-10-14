@@ -70,7 +70,7 @@ Which small internal bridges are dropped so solid infill prints straight over th
 
 - Type: boolean
 - Default: off
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: edit (may change in a plate override)
 
@@ -83,7 +83,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Type: enum
 - Default: "disabled"
 - Values: `disabled` (Off), `external_bridge_only` (Over external bridges), `internal_bridge_only` (Over internal bridges), `apply_to_all` (Over all bridges)
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
@@ -114,7 +114,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 - Type: boolean
 - Default: off
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: contours
 - mimir class: edit (may change in a plate override)
 
@@ -160,7 +160,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Recommended range: 0.1 to 2
 - Orca limits: 0 to 1000
 - Automatic: The value 0 means automatic and is always allowed.
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: perimeters
 - mimir class: edit (may change in a plate override)
 
@@ -202,7 +202,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Orca limits: 0 to 1000
 - Automatic: The value 0 means automatic and is always allowed.
 - Used only when: Wall loops (`wall_loops`) is above 0
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: perimeters
 - mimir class: edit (may change in a plate override)
 
@@ -380,7 +380,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Recommended range: 0.1 to 2
 - Orca limits: 0 to 1000
 - Automatic: The value 0 means automatic and is always allowed.
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: edit (may change in a plate override)
 - Effect: higher: Wider lines print faster and bond better. lower: Narrower lines resolve finer detail
@@ -464,7 +464,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Type: boolean
 - Default: off
 - Used only when: Wall loops (`wall_loops`) is above 0
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: perimeters
 - mimir class: edit (may change in a plate override)
 
@@ -479,7 +479,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Orca limits: 0 to 1000
 - Automatic: The value 0 means automatic and is always allowed.
 - Used only when: Wall loops (`wall_loops`) is above 0
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: perimeters
 - mimir class: edit (may change in a plate override)
 
@@ -561,7 +561,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Unit: mm
 - Default: "10%"
 - Recommended range: 0 to no maximum
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: paths
 - mimir class: edit (may change in a plate override)
 
@@ -583,7 +583,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 - Type: boolean
 - Default: off
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
@@ -787,7 +787,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Orca limits: 0 to 1000
 - Automatic: The value 0 means automatic and is always allowed.
 - Used only when: Infill density (`sparse_infill_density`) is above 0
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: perimeters
 - mimir class: edit (may change in a plate override)
 
@@ -835,7 +835,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Orca limits: 0 to 1000
 - Automatic: The value 0 means automatic and is always allowed.
 - Used only when: Top shell layers (`top_shell_layers`) is above 0
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: perimeters
 - mimir class: edit (may change in a plate override)
 
@@ -879,7 +879,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Type: enum
 - Default: "ccw"
 - Values: `ccw` (Counterclockwise), `cw` (Clockwise)
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
@@ -1032,7 +1032,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Default: 0
 - Recommended range: -0.5 to 0.5
 - Orca limits: none to none
-- Tier: Advanced, quality
+- Tier: Expert, quality
 - Changing it redoes: contours
 - mimir class: edit (may change in a plate override)
 - Effect: higher: Outer contours print larger. lower: Outer contours print smaller
