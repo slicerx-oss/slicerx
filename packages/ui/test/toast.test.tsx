@@ -191,6 +191,25 @@ describe('toasts on screen', () => {
     expect(shown()).toBe(0)
   })
 
+  it('waits while keyboard focus is anywhere in the card, and runs on once it leaves', () => {
+    act(() => post('Saved'))
+    act(() => post(NOZZLE_NOTE, { action: { label: 'Change printer', run: () => {} } }))
+    act(() => void vi.advanceTimersByTime(20))
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    act(() => host.querySelector<HTMLButtonElement>('[data-testid=toast-details]')!.focus())
+    act(() => void vi.advanceTimersByTime(60_000))
+    expect(shown()).toBe(2)
+    // Moving between the card's own buttons keeps it.
+    act(() => host.querySelector<HTMLButtonElement>('[data-testid=toast-action]')!.focus())
+    act(() => void vi.advanceTimersByTime(60_000))
+    expect(shown()).toBe(2)
+    act(() => outside.focus())
+    act(() => void vi.advanceTimersByTime(readingTime(NOZZLE_NOTE)))
+    expect(shown()).toBe(0)
+    outside.remove()
+  })
+
   it('shows the first sentence, and Details opens the rest in place with the card top held', () => {
     act(() => post(NOZZLE_NOTE))
     const stack = host.querySelector<HTMLElement>('[data-testid=toasts]')!
