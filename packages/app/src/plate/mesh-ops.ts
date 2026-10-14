@@ -3,11 +3,28 @@
 // Mesh edits the app does itself: split into connected pieces, merge objects into one, and the
 // basic primitives. Pure, on the contracts' MeshPart buffers (mm, Z up). Booleans (negative
 // volumes) need sx-geom and are not here.
-import type { MeshPart, PrimitiveSpec } from '@slicerx/contracts'
+import type { MeshPart, PartPaint, PrimitiveSpec } from '@slicerx/contracts'
 import { apply, identity, multiply, type Mat4, type Vec3 } from './transform'
 
 /** Groups triangles that share a vertex position (welded to 1 um) into connected pieces. */
 export function components(part: MeshPart): MeshPart[] {
+  return componentPieces(part).map((p) => p.part)
+}
+
+/** Keeps triangle paint on the same faces after splitting or reordering them. */
+export function remapPaint(paint: PartPaint | undefined, triangles: readonly number[]): PartPaint | undefined {
+  if (!paint) return undefined
+  const out: PartPaint = {}
+  for (const layer of ['color', 'seam', 'support', 'fuzzy'] as const) {
+    const old = paint[layer]
+    if (!old) continue
+    const next = Object.fromEntries(triangles.flatMap((t, i) => old[t] === undefined ? [] : [[i, old[t]]]))
+    if (Object.keys(next).length) out[layer] = next
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+function componentPieces(part: MeshPart): { part: MeshPart; triangles: number[] }[] {
   const pos = part.positions
   const idx = part.indices
   const vcount = pos.length / 3
@@ -48,8 +65,8 @@ export function components(part: MeshPart): MeshPart[] {
     if (!g) groups.set(root, (g = []))
     g.push(t)
   }
-  if (groups.size <= 1) return [part]
-  const out: MeshPart[] = []
+  if (groups.size <= 1) return [{ part, triangles: Array.from({ length: idx.length / 3 }, (_, i) => i) }]
+  const out: { part: MeshPart; triangles: number[] }[] = []
   let n = 0
   for (const tris of groups.values()) {
     const remap = new Map<number, number>()
@@ -67,10 +84,12 @@ export function components(part: MeshPart): MeshPart[] {
         ix.push(nv)
       }
     }
-    out.push({ name: `${part.name} ${++n}`, slot: part.slot, positions: new Float32Array(p), indices: new Uint32Array(ix) })
+    const triangles = tris.map((t) => t / 3)
+    const paint = remapPaint(part.paint, triangles)
+    out.push({ part: { name: `${part.name} ${++n}`, slot: part.slot, positions: new Float32Array(p), indices: new Uint32Array(ix), ...(paint ? { paint } : {}) }, triangles })
   }
   // Biggest piece first, so the main body keeps the first name.
-  return out.sort((a, b) => b.indices.length - a.indices.length)
+  return out.sort((a, b) => b.part.indices.length - a.part.indices.length)
 }
 
 /** Every connected piece of every part, as parts. */
@@ -79,8 +98,8 @@ export function splitToParts(parts: readonly MeshPart[]): MeshPart[] {
 }
 
 /** The connected pieces of the parts, each with the index of the part it came from. */
-export function splitPieces(parts: readonly MeshPart[]): { part: MeshPart; from: number }[] {
-  return parts.flatMap((p, from) => components(p).map((part) => ({ part, from })))
+export function splitPieces(parts: readonly MeshPart[]): { part: MeshPart; from: number; triangles: number[] }[] {
+  return parts.flatMap((p, from) => componentPieces(p).map((piece) => ({ ...piece, from })))
 }
 
 function boundsOf(parts: readonly MeshPart[]): { min: Vec3; max: Vec3 } {
@@ -101,7 +120,19 @@ function shift(part: MeshPart, d: Vec3): MeshPart {
     p[i + 1] = (part.positions[i + 1] ?? 0) + d[1]
     p[i + 2] = (part.positions[i + 2] ?? 0) + d[2]
   }
-  return { ...part, positions: p }
+  const at = (v: Vec3): Vec3 => [v[0] + d[0], v[1] + d[1], v[2] + d[2]]
+  const { primitive: spec, faces, ...rest } = part
+  const moved = spec ? movedPrimitive(spec, translation(d)) : null
+  const table = faces?.table.map((surface) => {
+    switch (surface.kind) {
+      case 'plane': return { ...surface, offset: surface.offset + surface.normal.reduce((n, v, i) => n + v * d[i]!, 0) }
+      case 'cylinder': return { ...surface, origin: at(surface.origin) }
+      case 'cone': return { ...surface, apex: at(surface.apex) }
+      case 'sphere': return { ...surface, center: at(surface.center) }
+      default: return surface
+    }
+  })
+  return { ...rest, positions: p, ...(moved ? { primitive: moved } : {}), ...(faces && table ? { faces: { ...faces, table } } : {}) }
 }
 
 function translation(d: Vec3): Mat4 {
@@ -113,6 +144,9 @@ function translation(d: Vec3): Mat4 {
 }
 
 export interface SplitObject {
+  /** Source triangle indexes and the shift from source coordinates into this piece. */
+  triangles: number[]
+  offset: Vec3
   parts: MeshPart[]
   /** The piece's transform: the source transform, moved so the piece stays where it was. */
   transform: Mat4
@@ -127,10 +161,10 @@ export interface SplitObject {
 export function splitToObjects(parts: readonly MeshPart[], transform: Mat4): SplitObject[] {
   const pieces = splitPieces(parts)
   if (pieces.length <= 1) return []
-  return pieces.map(({ part: piece, from }) => {
+  return pieces.map(({ part: piece, from, triangles }) => {
     const b = boundsOf([piece])
     const c: Vec3 = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, 0]
-    return { parts: [shift(piece, [-c[0], -c[1], 0])], transform: multiply(transform, translation(c)), from }
+    return { parts: [shift(piece, [-c[0], -c[1], 0])], transform: multiply(transform, translation(c)), from, triangles, offset: [-c[0], -c[1], 0] }
   })
 }
 

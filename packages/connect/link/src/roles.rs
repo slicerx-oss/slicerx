@@ -113,6 +113,11 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("project.move", LinkClass::Edit),
     ("project.rotate", LinkClass::Edit),
     ("project.scale", LinkClass::Edit),
+    ("project.lock", LinkClass::Edit),
+    ("project.printable", LinkClass::Edit),
+    ("project.center", LinkClass::Edit),
+    ("project.split_objects", LinkClass::Edit),
+    ("project.split_parts", LinkClass::Edit),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
@@ -368,6 +373,11 @@ mod tests {
         ("project.move", LinkClass::Edit),
         ("project.rotate", LinkClass::Edit),
         ("project.scale", LinkClass::Edit),
+        ("project.lock", LinkClass::Edit),
+        ("project.printable", LinkClass::Edit),
+        ("project.center", LinkClass::Edit),
+        ("project.split_objects", LinkClass::Edit),
+        ("project.split_parts", LinkClass::Edit),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
         ("plates.list", LinkClass::Read),
@@ -436,7 +446,8 @@ mod tests {
                 assert!(
                     mesh_repair
                         || !m.to_ascii_lowercase().contains(word)
-                        || (*m == "values.remove" && word == "remove"),
+                        || (*m == "values.remove" && word == "remove")
+                        || (*m == "project.printable" && word == "print"),
                     "{m} looks like something a person keeps ({word})"
                 );
             }
@@ -445,6 +456,10 @@ mod tests {
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("project.printable"), Some(LinkClass::Edit));
+        for m in ["printer.print", "printer.start", "printer.upload"] {
+            assert_eq!(link_class(m), None, "{m} is not an app metadata edit");
+        }
         for m in ["design.open", "design.save"] {
             assert_eq!(link_class(m), None, "{m} reads or writes files");
         }

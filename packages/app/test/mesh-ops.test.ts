@@ -26,6 +26,16 @@ function joined(a: MeshPart, b: MeshPart): MeshPart {
 }
 
 describe('mesh operations', () => {
+  it('recenters primitive frames and cached face surfaces with split pieces', () => {
+    const transform = compose({ position: [30, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
+    const part = bake(primitive('box', 4), transform)
+    part.faces = { ids: new Uint32Array(part.indices.length / 3), table: [{ kind: 'plane', normal: [1, 0, 0], offset: 32 }] }
+    const pieces = splitToObjects([primitive('box', 10), part], compose({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }))
+    expect(pieces[1]!.parts[0]!.primitive!.frame.origin).toEqual([0, 0, 0])
+    expect(pieces[1]!.parts[0]!.faces!.table[0]).toEqual({ kind: 'plane', normal: [1, 0, 0], offset: 2 })
+    expect(pieces[1]!.transform[12]).toBe(30)
+  })
+
   it('primitives are closed, outward and stand on the bed', () => {
     expect(volume(boxMesh(10, 20, 30))).toBeCloseTo(6000)
     expect(volume(cylinderMesh(20, 10, 96))).toBeCloseTo(Math.PI * 100 * 10, -1)

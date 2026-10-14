@@ -4,13 +4,13 @@
 // finished slice stale. The math lives in ./transform.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { get, markStale, selectedIds, set, toast, type PlateEntry } from '../state/store'
-import { bake, mergeParts, primitive, splitPieces, splitToObjects, type PrimitiveShape } from './mesh-ops'
+import { bake, mergeParts, primitive, type PrimitiveShape } from './mesh-ops'
 import { arrange, ARRANGE_DEFAULTS, fillCount, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { quietly } from './history'
 import { selectedEntry } from './select'
 import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, modelOrigin, scaleToSize, setScale, withTrs, type Box, type Mat4, type Trs, type Vec3 } from './transform'
-import { brandAccent, objectPalette } from '../edition'
+import { brandAccent } from '../edition'
 import { cadShown, modelMode } from '../state/model-mode'
 
 // selection lives in ./select (light, loads with the shell); these names stay importable from here
@@ -280,53 +280,23 @@ type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> 
 let objSeq = 0
 const newObjectId = () => `obj_${Date.now().toString(36)}${(++objSeq).toString(36)}`
 
-/** Per-part colors for parts made from the source's parts: `from[i]` is the source part piece i came from. */
-function colorsFor(src: Pick<PlateEntry, 'colors' | 'parts'>, from: readonly number[]): string[] {
-  return from.map((i) => src.colors[i] ?? src.colors[0] ?? objectPalette()[((src.parts[i]?.slot ?? 1) - 1) % 6]!)
-}
-
-/** Split to parts: each connected piece becomes a part of the same object. Returns the new part count. */
-export async function splitSelectedToParts(host: Loader): Promise<number> {
+async function splitSelection(host: Loader, mode: 'parts' | 'objects'): Promise<number> {
   const src = selectedEntry()
   if (!src) return 0
-  const pieces = splitPieces(src.parts)
-  const parts = pieces.map((x) => x.part)
-  if (parts.length <= src.parts.length) {
-    toast('This object is one piece; there is nothing to split.', 'info')
+  const { SplitError, splitObject } = await import('./split-edit')
+  try {
+    const result = await splitObject(host, src.id, mode)
+    return mode === 'parts' ? result.parts : result.ids.length
+  } catch (error) {
+    if (!(error instanceof SplitError)) throw error
+    toast(error.message, 'info')
     return 0
   }
-  const handle = await host.loadParts(src.name, parts)
-  // Splitting ends a CAD history: the parts are the new start.
-  const history = src.history ? (await import('../cad/history/record')).endHistory(src, parts, 'the object was split into parts.') : undefined
-  const { history: _h, ...plain } = src
-  const cur = get().plate
-  set({ plate: cur.map((p) => (p.id === src.id ? { ...plain, handle, parts, colors: colorsFor(src, pieces.map((x) => x.from)), ...(history ? { history } : {}) } : p)) })
-  markStale()
-  return parts.length
 }
 
-/** Split to objects: each connected piece becomes its own object, left where it was. */
-export async function splitSelectedToObjects(host: Loader): Promise<number> {
-  const src = selectedEntry()
-  if (!src) return 0
-  const pieces = splitToObjects(src.parts, src.transform)
-  if (pieces.length === 0) {
-    toast('This object is one piece; there is nothing to split.', 'info')
-    return 0
-  }
-  const entries: PlateEntry[] = await Promise.all(
-    pieces.map(async (piece, i) => {
-      const name = `${src.name} ${i + 1}`
-      const handle = await host.loadParts(name, piece.parts)
-      return { id: newObjectId(), name, handle, parts: piece.parts, colors: colorsFor(src, [piece.from]), transform: piece.transform, ...(src.source ? { source: src.source } : {}) }
-    }),
-  )
-  const cur = get().plate
-  const at = cur.findIndex((p) => p.id === src.id)
-  set({ plate: [...cur.slice(0, at), ...entries, ...cur.slice(at + 1)], selection: entries[0]?.id ?? null, selectedIds: entries.map((e) => e.id) })
-  markStale()
-  return entries.length
-}
+/** Split the selection through the same atomic operation used by clients. */
+export const splitSelectedToParts = (host: Loader): Promise<number> => splitSelection(host, 'parts')
+export const splitSelectedToObjects = (host: Loader): Promise<number> => splitSelection(host, 'objects')
 
 /** Merge the selected objects into the first one, as parts. */
 export async function mergeSelected(host: Loader): Promise<boolean> {

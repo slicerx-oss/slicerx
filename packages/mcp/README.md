@@ -105,6 +105,20 @@ A refused call has `isError: true`, text of the form `Error: <code>: <message>`,
 
 `slicerx_slice_file`, `slicerx_estimate_file` and `slicerx_local_ai_setup` send MCP progress notifications (`notifications/progress`, progress from 0 to 1 with a message per stage) when the request carries a `progressToken`.
 
+### Live object edits
+
+With the app link enabled, a configured client credential (`SLICERX_MCP_LINK_KEY_REF`) and an edit grant, use `--app` to lock an object, include or exclude it from the print, center it, or split it into parts or objects. Partner app keys cannot edit the open project.
+
+```sh
+slicerx-mcp --printers link --app call project_lock '{"object":"obj_1","locked":false}' project_printable '{"object":"obj_1","printable":false}' project_center '{"object":"obj_1"}'
+slicerx-mcp --printers link --app call project_split_parts '{"object":"obj_1"}'
+slicerx-mcp --printers link --app call project_split_objects '{"object":"obj_1"}'
+```
+
+Each call targets one concrete object on the shown plate; give a copy's id to change that copy. Replies include object ids, lock and print state, per-part slots and settings, bounds, transforms, volumes and paint counts. Split replies also give the new ids and part count. The direct app link's `plate.list` reads the same object state. Move, rotate and scale also return their resulting objects through MCP and the CLI.
+
+Splits retain world positions, print overrides, volumes, paint, kept measurements and brim ears. They end the target's CAD history with the resulting parts as its new base. Other copies keep their original geometry; when their source is split, one remaining copy becomes their source. An active history edit, rolled-back timeline, or concurrent target change refuses the operation. Locked objects must be unlocked before centering or splitting. Toolbar Undo restores each change; setting an existing lock or print state does not add an Undo step.
+
 ## Permissions
 
 The policy file gives each class of action one of three modes:
@@ -309,7 +323,7 @@ Use the design and step ids from `design_list` and `design_steps`. A null bindin
 | `--sx-bin <path>` | `SLICERX_MCP_SX_BIN` or `SLICERX_SX_BIN` | `sx` on `PATH` |
 | `--printers demo\|link\|off` | `SLICERX_MCP_PRINTERS` | `demo` |
 | `--link-url`, `--link-state-dir` | `SLICERX_MCP_LINK_URL`, `SLICERX_MCP_LINK_STATE_DIR`, `SLICERX_MCP_LINK_CODE`, `SLICERX_MCP_LINK_HUB_KEY`, `SLICERX_MCP_LINK_KEY` (a partner app key, read once and removed from the environment; see docs/integrators/partner-app-key.md) | `ws://127.0.0.1:47615` (or `ws://127.0.0.1:<port>` when a test or dev run sets `SX_TEST_HUB_PORT`, as sx-link and the app's test builds read it), the hub's default state directory, none, `hub-key.pub` from the state directory. The server checks the hub's signed hello against the key before it sends anything and pairs with a proof, never the code itself. |
-| `--no-app` | `SLICERX_MCP_NO_APP=1` | Off. With `--printers link`, the design tools (`design.*` and the `geom.*` tools given a design) run on the project open in the SlicerX app while its app link answers: the person turned it on in Settings, Agents and allowed this agent. Their steps land in the app's history and undo, and the first reply says so. `slicerx_project_move`, `_rotate` and `_scale` on an object the server's own project does not have move it on the app's shown plate, each one undo step there. When the link is off or the app is closed they run on the server's own designs. `--no-app` keeps them on the server always. Opening and saving 3MF files stay on the server. |
+| `--no-app` | `SLICERX_MCP_NO_APP=1` | Off. With `--printers link`, the design tools (`design.*` and the `geom.*` tools given a design) run on the project open in the SlicerX app while its app link answers: the person turned it on in Settings, Agents and allowed this agent. Their steps land in the app's history and undo, and the first reply says so. `slicerx_project_move`, `_rotate`, `_scale`, `_lock`, `_printable`, `_center`, `_split_objects` and `_split_parts` on an object the server's own project does not have move it on the app's shown plate, each one undo step there. When the link is off or the app is closed they run on the server's own designs. `--no-app` keeps them on the server always. Opening and saving 3MF files stay on the server. |
 | `--app` | `SLICERX_MCP_APP=1` | Off. The design tools and `slicerx_project_move`, `_rotate` and `_scale` run only on the project open in the app, never on the server's own: sets `--printers link`, and while the link does not answer a design call fails with `not_configured` and says why (the link is off, the app is closed, this client is not allowed, or sx-link is older than the link). For scripts that must edit the app's project: `slicerx-mcp call --app design_new '{"name":"Clip"}' design_list`. |
 | `--policy <file>` | `SLICERX_MCP_POLICY` | `~/.config/slicerx/mcp-policy.json` if present, else the defaults |
 | `--log <file>` | `SLICERX_MCP_LOG` | `<out-dir>/actions.jsonl` |

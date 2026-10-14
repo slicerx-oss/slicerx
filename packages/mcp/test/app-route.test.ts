@@ -192,7 +192,7 @@ describe('design tools with --app', () => {
 
 describe('plate edits over the app link', () => {
   // Stand-ins for the server's project tools: here they answer from the server's own project.
-  const here = ['project.move', 'project.rotate', 'project.scale', 'project.object_settings'].map((name) => ({ name, run: vi.fn(async () => ({ summary: `${name} here` })) }))
+  const here = [...APP_PROJECT_TOOLS, 'project.object_settings'].map((name) => ({ name, run: vi.fn(async () => ({ summary: `${name} here` })) }))
   const route = (call: AppLinkCaller['call'], opts: RouteOptions) => {
     const tools = routeToApp(here as never, { call }, 'SlicerX', opts)
     return (name: string, input: Record<string, unknown>) => tools.find((t) => t.name === name)!.run(input as never, {} as never)
@@ -200,7 +200,7 @@ describe('plate edits over the app link', () => {
   const app = vi.fn(async (method: string) => ({ summary: `ran ${method}`, output: { objects: [{ id: 'obj_1' }] } }))
 
   it('move, turn and scale an object the server does not have on the app\'s plate, with no note', async () => {
-    expect([...APP_PROJECT_TOOLS]).toEqual(['project.move', 'project.rotate', 'project.scale'])
+    expect([...APP_PROJECT_TOOLS]).toEqual(['project.move', 'project.rotate', 'project.scale', 'project.lock', 'project.printable', 'project.center', 'project.split_objects', 'project.split_parts'])
     const run = route(app as AppLinkCaller['call'], { serverHas: (o) => o === 'Bracket' })
     const out = await run('project.move', { object: 'Box', x: 50, y: 60 })
     expect(app).toHaveBeenCalledWith('project.move', { object: 'Box', x: 50, y: 60 })
@@ -211,6 +211,18 @@ describe('plate edits over the app link', () => {
     expect((await run('project.rotate', { object: 'Bracket', rotate: [0, 0, 90] })).summary).toBe('project.rotate here')
     expect((await run('project.object_settings', { object: 'Box', settings: {} })).summary).toBe('project.object_settings here')
     expect(app).not.toHaveBeenCalled()
+  })
+
+  it('routes lock, print inclusion, centering and splits with their state read-back', async () => {
+    for (const name of ['project.lock', 'project.printable', 'project.center', 'project.split_objects', 'project.split_parts']) {
+      const call = vi.fn(async () => ({ summary: name, output: { objects: [{ id: 'copy', locked: true, printable: false, parts: 2 }] } }))
+      const args = { object: 'copy' }
+      expect((await route(call as AppLinkCaller['call'], { required: true })(name, args)).output).toMatchObject({ objects: [{ id: 'copy', locked: true, printable: false, parts: 2 }], in: 'app' })
+      expect(call).toHaveBeenCalledWith(name, args)
+      call.mockClear()
+      expect((await route(call as AppLinkCaller['call'], { serverHas: () => true })(name, args)).summary).toBe(name + ' here')
+      expect(call).not.toHaveBeenCalled()
+    }
   })
 
   it('run here while the link is off, and with --app refuse instead', async () => {
