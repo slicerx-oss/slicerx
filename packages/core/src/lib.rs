@@ -189,6 +189,7 @@ mod rotation;
 )]
 mod scarf;
 pub mod script_canonical;
+pub mod script_replacement;
 pub mod script_review;
 mod seam;
 #[allow(

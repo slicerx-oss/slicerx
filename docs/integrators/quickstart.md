@@ -351,6 +351,8 @@ For MCP slicing, select a machine profile explicitly or pass `script_printer: { 
 
 The open app exposes its imported-script review through app-link `app.info`, as `script_review_source` and `script_reviews`. These describe the original import. They are separate from a person's G-code approval. Recognition is checked again against the current complete script value, printer model and firmware before granting stock trust; changing any of those invalidates the result. Selecting a printer from the imported file does not establish the explicit selection required for cosmetic recognition.
 
+`slicerx_prepare_script_replacement` and `sx prepare-script-replacement request.json` prepare the same inspectable record. Supply `selected`, `declared`, `key`, `original` and candidate `replacement` text. The candidate must match versioned stock for the selected target. A `prepared` result retains both exact texts, their fingerprints, both engine reviews, and a line diff that preserves line endings. A `review` result gives the candidate's refusal reason. Preparation does not modify a project or apply the candidate. A later explicit application must recheck the current original text and target; this record is not a reusable trust grant. The new application and replacement UI workflow remains pending.
+
 ## Licenses
 
 The SlicerX code, `@slicerx/embed` included, is Apache-2.0. `@slicerx/mcp` also bundles the stock printer and filament profile data, which is AGPL-3.0-or-later (and LGPL-3.0-or-later for the UltiMaker data), so its package license says so. If you ship that data, your users are entitled to its source. [licensing.md](../licensing.md) has the details and says how to leave the profiles out.

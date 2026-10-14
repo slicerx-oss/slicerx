@@ -80,6 +80,7 @@ fn main() -> ExitCode {
         Some("time") => cmd_time(&args[1..]),
         Some("canonical-script") => cmd_canonical_script(&args[1..]),
         Some("review-script") => cmd_review_script(&args[1..]),
+        Some("prepare-script-replacement") => cmd_prepare_script_replacement(&args[1..]),
         // Which engine this is, for a host checking the binary it ships or finds.
         Some("--version" | "-V") => {
             println!("sx {}", env!("CARGO_PKG_VERSION"));
@@ -87,7 +88,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx metadata <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
+                "usage: sx --version\n       sx metadata <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }
@@ -153,6 +154,31 @@ fn cmd_review_script(args: &[String]) -> Res<ExitCode> {
     let input: sx_core::script_review::ReviewInput = serde_json::from_str(&text)?;
     let result = sx_core::script_review::review_known(&input)?;
     println!("{}", serde_json::to_string(&result)?);
+    Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_prepare_script_replacement(args: &[String]) -> Res<ExitCode> {
+    let batch = args.len() == 2 && args.get(1).is_some_and(|s| s == "--batch");
+    let Some(path) = args.first().filter(|_| args.len() == 1 || batch) else {
+        return Err("usage: sx prepare-script-replacement <request.json | -> [--batch]".into());
+    };
+    let text = if path == "-" {
+        std::io::read_to_string(std::io::stdin())?
+    } else {
+        std::fs::read_to_string(path)?
+    };
+    if batch {
+        let inputs: Vec<sx_core::script_replacement::ReplacementInput> = serde_json::from_str(&text)?;
+        let results = inputs
+            .iter()
+            .map(sx_core::script_replacement::prepare_known)
+            .collect::<Result<Vec<_>, _>>()?;
+        println!("{}", serde_json::to_string(&results)?);
+    } else {
+        let input = serde_json::from_str(&text)?;
+        let result = sx_core::script_replacement::prepare_known(&input)?;
+        println!("{}", serde_json::to_string(&result)?);
+    }
     Ok(ExitCode::SUCCESS)
 }
 

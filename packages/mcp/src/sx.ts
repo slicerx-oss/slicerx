@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { accessSync, constants, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, delimiter, extname, join } from 'node:path'
-import type { SettingValue, ScriptReview, ScriptReviewInput } from '@slicerx/contracts'
+import type { SettingValue, ScriptReview, ScriptReviewInput, ScriptReplacement } from '@slicerx/contracts'
 import { collisionError } from './collide'
 import { ToolInputError } from './models'
 import type { SlicerBackend, SliceSummary } from './slicer'
@@ -175,6 +175,14 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
     reviewScripts,
     async reviewScript(input) {
       return (await reviewScripts([input]))[0]!
+    },
+    async prepareScriptReplacement(input) {
+      const result = await run(bin, ['prepare-script-replacement', '-'], Math.min(timeoutMs, 30_000), JSON.stringify(input))
+      if (result.code !== 0) throw new ToolInputError('The engine could not prepare the stock-script replacement', 'engine_unavailable')
+      let record: ScriptReplacement
+      try { record = JSON.parse(result.stdout) } catch { throw new ToolInputError('The engine returned an unreadable replacement record', 'engine_unavailable') }
+      if (!record || record.schemaVersion !== 1 || !['prepared', 'review'].includes(record.decision) || typeof record.reason !== 'string' || record.key !== input.key || record.original !== input.original || record.replacement !== input.replacement || !Array.isArray(record.diff)) throw new ToolInputError('The engine returned an unsupported replacement record', 'engine_unavailable')
+      return record
     },
     kind: 'sx',
     async slice(job) {
