@@ -289,3 +289,67 @@ test('Other plane asks before it drops a drawing', async ({ page, isMobile }) =>
   await panel.getByTestId('sketch-plane-drop').click()
   await expect(panel).toContainText('Click an origin plane')
 })
+
+/** Model on a phone, CAD only, with the view ready. */
+async function openPhoneModel(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.debug', '1')
+    localStorage.setItem('slicerx.e2e.cadOnly', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' } }))
+  })
+  await page.goto('./')
+  await page.locator('html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: 120_000 })
+}
+
+const emit = (page: Page, e: string, p: unknown) => page.evaluate(({ e, p }) => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit(e, p), { e, p })
+const phoneClick = (page: Page, at: [number, number]) => emit(page, 'sketch', { kind: 'click', at, mmPerPx: 0.2, screen: [200, 300], shift: false, alt: false })
+
+for (const height of [844, 700, 600]) {
+  test(`a phone at 390 by ${height}: the opened sheet reaches every control and stays open while drawing`, async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'Phone sheet')
+    await page.setViewportSize({ width: 390, height })
+    await openPhoneModel(page)
+    await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
+    await page.getByTestId('phone-sketch').tap()
+    const sheet = page.getByRole('complementary', { name: 'Tool and transform' })
+    await expect(sheet).toContainText('Tap an origin plane')
+    await emit(page, 'pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, originPlane: 'xy' })
+    const toggle = page.getByTestId('sketch-sheet-toggle')
+    // the first point folds it; the button opens it again
+    await phoneClick(page, [-10, -10])
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await toggle.tap()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // a closed square, so the solid settings are all there
+    await phoneClick(page, [10, -10])
+    await phoneClick(page, [10, 10])
+    await phoneClick(page, [-10, 10])
+    await phoneClick(page, [-10, -10])
+    // drawing on does not fold it again
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const bar = (await page.locator('.pbar').boundingBox())!
+    const footer = sheet.locator('.cad-footer')
+    const body = sheet.locator('.sx-rail-body')
+    const ids = ['#sk-grid', '#sk-step', '#sk-section', '#sk-show-profiles', '#sk-show-points', '#sk-show-dimensions', '#sk-show-constraints', '#sk-dist', '#sk-taper', '[data-testid="sketch-flip"]']
+    for (const id of ids) {
+      const c = sheet.locator(id).first()
+      await c.scrollIntoViewIfNeeded()
+      const [b, sb, f] = [(await c.boundingBox())!, (await body.boundingBox())!, (await footer.boundingBox())!]
+      // inside the sheet's scroll box, above its footer and the bar, on the screen
+      expect(b.y, `${id} top at ${height}`).toBeGreaterThanOrEqual(sb.y - 1)
+      expect(b.y + b.height, `${id} under the footer at ${height}`).toBeLessThanOrEqual(f.y + 1)
+      expect(b.y + b.height, `${id} under the bar at ${height}`).toBeLessThanOrEqual(bar.y + 1)
+      expect(b.y).toBeGreaterThanOrEqual(0)
+    }
+    // the last setting scrolls fully clear of the footer
+    await body.evaluate((el) => (el.scrollTop = el.scrollHeight))
+    const last = sheet.locator('.tp-note').last()
+    const [lb, fb] = [(await last.boundingBox())!, (await footer.boundingBox())!]
+    expect(lb.y + lb.height).toBeLessThanOrEqual(fb.y + 1)
+    await page.screenshot({ path: test.info().outputPath(`phone-sheet-${height}.png`) })
+    // a chip at a finger's size
+    expect((await sheet.locator('#sk-show-points').boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  })
+}
