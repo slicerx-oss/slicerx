@@ -389,19 +389,19 @@
 .sx-pilot .follow-chip .sx-ic{width:14px;height:14px;color:var(--purple)}
 /* a sheet: the source once in the header, a numbered row per size (the number is its callout in the drawing), values at the right */
 .sx-pilot .sheet-rec-head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
-.sx-pilot .sheet-rec-head .lookup-rec-t{min-width:0}
+.sx-pilot .sheet-rec-head .lookup-rec-t{flex:none;min-width:0}
 .sx-pilot .sheet-rec-head .lookup-rec-t>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sx-pilot .sheet-rec-src{display:inline-flex;align-items:center;gap:5px;flex:none;max-width:60%;height:22px;padding:0 8px;border:1px solid var(--line-soft);border-radius:var(--r-pill);font-size:12px;color:var(--t-sub);text-decoration:none;white-space:nowrap}
+.sx-pilot .sheet-rec-src{display:inline-flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;height:22px;padding:0 8px;border:1px solid var(--line-soft);border-radius:var(--r-pill);font-size:12px;color:var(--t-sub);text-decoration:none;white-space:nowrap}
 .sx-pilot .sheet-rec-src>span{overflow:hidden;text-overflow:ellipsis}
 .sx-pilot .sheet-rec-src .sx-ic{flex:none;width:13px;height:13px}
 .sx-pilot a.sheet-rec-src:hover{border-color:var(--line);color:var(--t-fg)}
 .sx-pilot .sheet-rec-rows{display:flex;flex-direction:column;margin:0;padding:0;list-style:none}
 .sx-pilot .sheet-rec-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:32px}
-.sx-pilot .sheet-rec-n{display:grid;place-items:center;width:22px;height:22px;box-sizing:border-box;border:1.5px solid var(--muted);border-radius:50%;background:var(--ink-1);color:var(--t-fg);font-size:11.5px;font-weight:var(--fw-bold);font-variant-numeric:tabular-nums}
+.sx-pilot .sheet-rec-n{display:grid;place-items:center;width:22px;height:22px;box-sizing:border-box;border:1.5px solid var(--muted);border-radius:50%;background:var(--callout-fill,light-dark(#2d2f3d,#1d1e27));color:#fff;font-size:11.5px;font-weight:var(--fw-bold);font-variant-numeric:tabular-nums}
 .sx-pilot .sheet-rec-row[data-source="lookup"] .sheet-rec-n{border-color:var(--cyan)}
 .sx-pilot .sheet-rec-row[data-source="asked"] .sheet-rec-n{border-color:var(--purple)}
 .sx-pilot .sheet-rec-row[data-source="photo"] .sheet-rec-n{border-color:var(--pink)}
-.sx-pilot .sheet-rec-row[data-source="guess"] .sheet-rec-n{border-color:var(--orange);border-style:dashed}
+.sx-pilot .sheet-rec-row[data-source="guess"] .sheet-rec-n{border-color:var(--orange);border-style:dashed;background:transparent;color:var(--orange)}
 .sx-pilot .sheet-rec-label{display:flex;align-items:baseline;gap:6px;min-width:0;color:var(--t-sub);overflow:hidden;white-space:nowrap}
 .sx-pilot .sheet-rec-tag{flex:none;font-size:11.5px;color:var(--t-mute)}
 .sx-pilot .sheet-rec-row[data-guess] .sheet-rec-tag{padding:0 6px;border:1px dashed color-mix(in srgb,var(--orange) 70%,var(--line));border-radius:var(--r-pill);color:var(--orange)}
