@@ -3,6 +3,7 @@
 /* The Goal tiles: icon, label and what the goal gives, with the Edited chip in the label row and the estimate under them. */
 .goal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
 .goal-custom { cursor: help; }
+.sx-seg.goal-seg.goal-tiles { margin-top: var(--s-1); }
 .sx-seg.goal-seg.goal-tiles > button { height: auto; min-height: 60px; padding: 7px 4px 6px; gap: 2px; white-space: normal; }
 .sx-seg.goal-seg.goal-tiles > button .sx-ic { width: 18px; height: 18px; margin-bottom: 2px; }
 .goal-tiles .goal-name { line-height: 1.2; }
