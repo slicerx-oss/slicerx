@@ -748,7 +748,8 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     let out = sx_core::slice(&plate, &config, &SliceOptions::default())?;
     let mut gcode = Vec::new();
     let stats = sx_core::emit_gcode(&out, &config, config.gcode_flavor, &mut gcode)?;
-    let gcode = sx_core::firmware::finalize_with_config(&gcode, None, Some(&config));
+    let (gcode, timing) = sx_core::firmware::finalize_timed(&gcode, None, Some(&config));
+    let time_s = sx_core::firmware::footer_time(&gcode).unwrap_or(stats.time_s);
     // The name `filename_format` gives the file, from the model's file name.
     let names = sx_core::outname::NameInfo {
         objects: vec![
@@ -775,7 +776,12 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     } else {
         gcode
     };
-    let sxpv = sx_core::preview_buffers(&out);
+    let mut sxpv = sx_core::preview_buffers(&out);
+    if !timing.layer_s.is_empty() {
+        #[allow(clippy::cast_possible_truncation, reason = "seconds of a layer")]
+        let layer_s: Vec<f32> = timing.layer_s.iter().map(|&t| t as f32).collect();
+        sx_core::preview::set_layer_times(&mut sxpv, &layer_s);
+    }
     let ms = t.elapsed().as_secs_f64() * 1000.0;
     // G-code goes to the file, or to stdout without `-o` (`-o -` too), so stdout
     // never carries anything else; the summary below goes to stderr.
@@ -797,7 +803,7 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         out.layer_count,
         ms,
         gcode.len(),
-        stats.time_s,
+        time_s,
         stats.filament_mm.iter().map(|v| v.round()).collect::<Vec<_>>(),
         stats.tool_changes
     );

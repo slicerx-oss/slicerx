@@ -88,6 +88,111 @@ fn slice_stdout_is_only_gcode() {
 }
 
 #[test]
+fn plain_slice_summary_uses_final_file_time() {
+    let dir = std::env::temp_dir().join(format!("sx-cli-final-time-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = dir.join("config.json");
+    let target = dir.join("slice.gcode");
+    for numbered in [false, true] {
+        let settings = serde_json::json!({
+            "machine_start_gcode": "G4 S120",
+            "gcode_add_line_number": numbered,
+        });
+        std::fs::write(&config, settings.to_string()).unwrap();
+        let mut command = sx();
+        command.args(["slice", &fixture("cube.stl"), "--config"]);
+        command.arg(&config);
+        if numbered {
+            command.arg("-o").arg(&target);
+        }
+        let out = command.output().unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        let gcode = if numbered {
+            assert!(out.stdout.is_empty());
+            std::fs::read(&target).unwrap()
+        } else {
+            out.stdout
+        };
+        let total = sx_core::firmware::footer_time(&gcode).expect("final file estimate");
+        assert!(total >= 120.0, "start wait is included: {total}");
+        assert!(
+            stderr.contains(&format!(", {total:.0} s estimated,")),
+            "summary differs from final file ({total} s): {stderr}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn plain_slice_preview_includes_end_wait() {
+    let dir = std::env::temp_dir().join(format!("sx-cli-preview-time-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = dir.join("config.json");
+    let preview = dir.join("slice.sxpv");
+    let mut runs = Vec::new();
+    for wait in [0, 120] {
+        let settings = serde_json::json!({"machine_end_gcode": format!("M104 S0\nM140 S0\nG4 S{wait}")});
+        std::fs::write(&config, settings.to_string()).unwrap();
+        let out = sx()
+            .args(["slice", &fixture("cube.stl"), "--config"])
+            .arg(&config)
+            .arg("--preview")
+            .arg(&preview)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let total = sx_core::firmware::footer_time(&out.stdout).expect("final file estimate");
+        let bytes = std::fs::read(&preview).unwrap();
+        let info = sx_core::preview::read_info(&bytes).unwrap();
+        let times: Vec<f32> = (0..info.layers)
+            .map(|i| {
+                let at = info.layer_time + i * 4;
+                f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+            })
+            .collect();
+        runs.push((total, times));
+    }
+    let (plain_total, plain) = runs.first().unwrap();
+    let (wait_total, waited) = runs.get(1).unwrap();
+    assert_eq!(plain.len(), waited.len());
+    assert!(plain.len() > 1);
+    assert!((wait_total - plain_total - 120.0).abs() < 1.0);
+    assert!(
+        (waited.last().unwrap() - plain.last().unwrap() - 120.0).abs() < 0.001,
+        "preview omitted end wait: {plain:?} -> {waited:?}"
+    );
+    assert_eq!(&plain[..plain.len() - 1], &waited[..waited.len() - 1]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn plain_slice_first_layer_headers_agree() {
+    let dir = std::env::temp_dir().join(format!("sx-cli-first-layer-time-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = dir.join("config.json");
+    let settings = serde_json::json!({
+        "gcode_flavor": "bambu",
+        "machine_start_gcode": "G4 S120",
+    });
+    std::fs::write(&config, settings.to_string()).unwrap();
+    let out = sx()
+        .args(["slice", &fixture("cube.stl"), "--config"])
+        .arg(&config)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let gcode = String::from_utf8(out.stdout).unwrap();
+    let first: Vec<&str> = gcode
+        .lines()
+        .filter(|s| s.starts_with("; estimated first layer printing time (normal mode) = "))
+        .collect();
+    assert_eq!(first.len(), 2, "header and footer: {first:?}");
+    assert_eq!(first.first(), first.last(), "header and footer disagree");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn metadata_of_a_plain_3mf_is_empty() {
     let path = format!("{}/../bench/models/x-mark-2color.3mf", env!("CARGO_MANIFEST_DIR"));
     let out = sx().args(["metadata", &path]).output().unwrap();
