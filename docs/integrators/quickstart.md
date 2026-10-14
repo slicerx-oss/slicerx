@@ -11,7 +11,7 @@ Everything in this guide runs locally with no SlicerX account and no token, exce
 
 ## Before you start
 
-Install the packages in your app, and get the `sx` engine from an [engine release](https://github.com/slicerx-oss/slicerx/releases) (the archive for your platform has it in `bin/`; `SHA256SUMS.txt` has the checksums):
+The npm packages are not published yet: use the source-kit command below to build and install the tarballs with the engine. The following npm command is for use after publication:
 
 ```sh
 npm install @slicerx/mcp@0.1.0 @slicerx/embed@0.1.0 react@19 react-dom@19 three@0.186
