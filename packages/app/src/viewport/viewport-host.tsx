@@ -838,8 +838,10 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       // A phone keeps the notice in the top bar (top-bar.tsx): a toast there landed over mimir's conversation.
       offs.push(
         vp.on('degrade', (e) => {
-          set({ viewNotice: e.message })
-          if (!isPhoneLayout()) toast(e.message, 'info')
+          // the toast shows the first sentence on one line, with the reason behind Details
+          const text = e.details ? `${e.message} ${e.details}` : e.message
+          set({ viewNotice: text })
+          if (!isPhoneLayout()) toast(text, 'info')
         }),
       )
       offs.push(vp.on('error', (e) => toast(e.message, 'error')))

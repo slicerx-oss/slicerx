@@ -421,11 +421,12 @@ class ViewportImpl implements Viewport {
     this.gpu = gpu.name
     this.weak = gpu.weak
     if (gpu.software) {
-      const message = gpu.fromShell
-        ? `This computer has no graphics driver for 3D, so it is drawn on the processor (${gpu.name}) and the 3D view will be slow.`
-        : 'Hardware acceleration looks off in this browser, so the 3D view will be slow. Turn it on in the browser settings and reload.'
+      // one short line, with the reason and the fix behind Details
+      const note = gpu.fromShell
+        ? { message: 'The 3D view will be slow here.', details: `This computer has no graphics driver for 3D, so the view is drawn on the processor (${gpu.name}).` }
+        : { message: 'The 3D view will be slow here.', details: 'Hardware acceleration looks off in this browser. Turn it on in the browser settings and reload.' }
       // Listeners attach after construction, so tell them on the next turn.
-      setTimeout(() => this.emit('degrade', { message }), 0)
+      setTimeout(() => this.emit('degrade', note), 0)
     }
     this.quality = opts.quality ?? (this.weak ? 'low' : 'high')
     this.adaptive = opts.adaptive ?? true
