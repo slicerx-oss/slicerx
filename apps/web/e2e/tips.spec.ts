@@ -221,6 +221,12 @@ async function rowsPlay(page: Page, rows: readonly (readonly [key: string, loopI
   }
 }
 
+// Don't slow down outer walls is a filament setting, so it has no row in this panel; the unit test covers its loop
+test('Bridge speed and internal bridge speed rows play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['bridge_speed', 'abg'], ['internal_bridge_speed', 'aib']])
+})
+
 test('Advanced rows from prime tower to extrusion rate smoothing play their own loops', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['prime_tower_width', 'bqpw'], ['prime_tower_infill_gap', 'bqpg'], ['prime_tower_brim_width', 'bqpb'], ['raft_contact_distance', 'bqrc'], ['raft_expansion', 'bqre'], ['raft_first_layer_density', 'bqrd'], ['raft_first_layer_expansion', 'bqrx'], ['max_volumetric_extrusion_rate_slope', 'bqrs'], ['max_volumetric_extrusion_rate_slope_segment_length', 'bqrg'], ['extrusion_rate_smoothing_external_perimeter_only', 'bqro']])
