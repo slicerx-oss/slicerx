@@ -6,7 +6,7 @@
 import { PERMISSION_LABELS, type ApprovalRequest, type PermissionMode, type PermissionPolicy } from '@slicerx/contracts'
 import { SKILL_INFO } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Inspector, Terminal, transcriptTurns, UsageLinkContext, usePilotRun, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
+import { Inspector, Terminal, transcriptTurns, UsageLinkContext, useAttachments, usePilotRun, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
 import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, LinkButton, Menu, MenuAnchor, MenuItem } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -100,6 +100,7 @@ function DockRun(p: {
 }) {
   const { pilot, sessionId, prompt, setAnnouncement } = p
   const run = usePilotRun(pilot, sessionId)
+  const attachments = useAttachments()
   const { reset, restore } = run
   useEffect(() => reset(), [sessionId, reset])
   // the conversation from before a reload, shown as it was and given back to the runtime as context
@@ -204,8 +205,9 @@ function DockRun(p: {
         canReplay={false}
         onReplay={() => undefined}
         onPause={() => run.setPaused(!run.paused)}
-        onRun={(m) => run.run(m)}
+        onRun={(m, files) => run.run(m, files?.length ? { attachments: files } : {})}
         onStop={run.cancel}
+        attachments={attachments}
         suggestions={chips((m) => run.run(m))}
         approvals={approvals}
         emptyNote={empty}

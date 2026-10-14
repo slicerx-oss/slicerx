@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
+import type { PilotAttachment } from '@slicerx/contracts'
 import { Button, Icon, Seg } from '@slicerx/ui'
+import { AttachButton, AttachedFiles, dragHasFiles, type Attachments } from './attachments'
 import type { Transcript } from './reduce'
 import type { PartHandlers } from './part-card'
 import { TranscriptView, type ApprovalHandlers } from './transcript-view'
@@ -31,7 +33,8 @@ export interface TerminalProps {
   canReplay: boolean
   onReplay: () => void
   onPause: () => void
-  onRun: (message: string) => void
+  /** Sends a message, with the files the person attached when `attachments` is given. */
+  onRun: (message: string, attachments?: PilotAttachment[]) => void
   onStop: () => void
   suggestions: Suggestion[]
   approvals: ApprovalHandlers
@@ -40,6 +43,8 @@ export interface TerminalProps {
   announcement: string
   /** The prompt's placeholder; the default is "Ask mimir". */
   placeholder?: string
+  /** The files on the message being written. With it, the prompt has an attach button and takes dropped files. */
+  attachments?: Attachments
   /** Cards for the parts replies make, each with its next steps; a step selects its part, then sends. Without it a created part is a tool row. */
   parts?: PartHandlers
 }
@@ -56,6 +61,7 @@ export function Terminal(p: TerminalProps) {
   const inputId = `${ids}-input`
   const thinkingId = `${ids}-thinking`
   const [text, setText] = useState('')
+  const [dropping, setDropping] = useState(false)
   const body = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -68,10 +74,14 @@ export function Terminal(p: TerminalProps) {
   const submit = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault()
     const msg = text.trim()
-    if (!msg) return
+    const files = p.attachments?.list ?? []
+    if (!msg && !files.length) return
     setText('')
     stick.current = true
-    p.onRun(msg)
+    if (files.length) {
+      p.onRun(msg, files)
+      p.attachments?.clear()
+    } else p.onRun(msg)
   }
 
   const active = p.running || p.replaying
@@ -134,11 +144,37 @@ export function Terminal(p: TerminalProps) {
           <TranscriptView transcript={p.transcript} showThinking={p.showThinking} approvals={p.approvals} {...(p.parts ? { parts: { ...p.parts, onRun: (m: string, id: string) => { stick.current = true; p.parts?.onSelect?.(id); p.onRun(m) } } } : {})} />
         </div>
       </div>
-      <form className="term-in" autoComplete="off" onSubmit={submit}>
+      <form
+        className="term-in"
+        autoComplete="off"
+        onSubmit={submit}
+        data-drop={dropping || undefined}
+        {...(p.attachments
+          ? {
+              onDragOver: (e: DragEvent<HTMLFormElement>) => {
+                if (!dragHasFiles(e)) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+                setDropping(true)
+              },
+              onDragLeave: (e: DragEvent<HTMLFormElement>) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false)
+              },
+              onDrop: (e: DragEvent<HTMLFormElement>) => {
+                if (!dragHasFiles(e)) return
+                e.preventDefault()
+                setDropping(false)
+                void p.attachments?.add(Array.from(e.dataTransfer.files))
+              },
+            }
+          : {})}
+      >
+        {p.attachments ? <AttachedFiles attachments={p.attachments} /> : null}
         <div className="in-row">
           <span className="pg" aria-hidden="true">
             {'❯'}
           </span>
+          {p.attachments ? <AttachButton attachments={p.attachments} /> : null}
           <label htmlFor={inputId} className="vh">
             Ask {ASSISTANT_NAME}
           </label>
@@ -148,7 +184,7 @@ export function Terminal(p: TerminalProps) {
               Stop
             </Button>
           ) : (
-            <Button size="sm" type="submit" variant={text.trim() ? 'primary' : 'default'}>
+            <Button size="sm" type="submit" variant={text.trim() || p.attachments?.list.length ? 'primary' : 'default'}>
               Run
             </Button>
           )}
