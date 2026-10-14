@@ -2,11 +2,15 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The agent bridge's page side: what it records (console, network, toasts, dialogs) and never keeps, how it finds and
 // uses controls by test id, what it refuses, and the state and slice summary it reads.
+import { render } from '@testing-library/react'
+import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MeshHandle, SliceResult } from '@slicerx/contracts'
 import { registerCommand } from '../src/commands/registry'
 import { appState, createPageBridge, exportCommands, installCapture, NOT_PANELS, OPEN_PANELS, redact, safeUrl, sliceSummary, uiState, type Capture } from '../src/agent-bridge'
+import { FramingRow } from '../src/first-run/look-settings'
 import { closeViewRing, openViewRing } from '../src/plate/view-ring'
+import { DEFAULT_APPEARANCE } from '../src/state/prefs'
 import { setCameraBus, setTool, toolStore } from '../src/plate/tools'
 import { click, elements, fill, find, images, pressKey, refusal, testids, waitFor } from '../src/agent-bridge/dom'
 import { get, set, type PlateEntry } from '../src/state/store'
@@ -316,6 +320,20 @@ describe('the state an agent reads', () => {
     await expect(bridge.handle('export_info', {})).rejects.toMatchObject({ code: 'not_ready' })
     // The Slice command is not registered in this test, so the refusal comes back at once instead of a wait.
     await expect(bridge.handle('slice', {})).rejects.toMatchObject({ code: 'not_ready' })
+  })
+
+  it('sets Frame the view the way a client does, by its option, and reads the choice back from the state', async () => {
+    set({ appearance: DEFAULT_APPEARANCE })
+    const view = render(createElement(FramingRow))
+    capture = installCapture(window)
+    const bridge = createPageBridge(capture)
+    expect(((await bridge.handle('state', {})) as Record<string, unknown>)['modelFraming']).toBe('selection')
+    await bridge.handle('click', { testid: 'set-model-framing-open' })
+    expect(((await bridge.handle('state', {})) as Record<string, unknown>)['modelFraming']).toBe('open')
+    expect(get().appearance.modelFraming).toBe('open')
+    await bridge.handle('click', { testid: 'set-model-framing-selection' })
+    expect(((await bridge.handle('state', {})) as Record<string, unknown>)['modelFraming']).toBe('selection')
+    view.unmount()
   })
 
   it('refuses to export a slice the plate has changed since', async () => {

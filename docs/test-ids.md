@@ -127,6 +127,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `set-precision` | The Precision row in Settings |
 | `set-toolbar-size` | The Toolbar size row in Settings, Look and feel: Large, Medium or Small (desktop only) |
 | `set-model-framing` | The Frame the view row in Settings, Look and feel, Workspace: Always or On open and add (editions with Model) |
+| `set-model-framing-<choice>` | Frame the view's two options: `set-model-framing-selection` (Always), `set-model-framing-open` (On open and add) |
 | `set-precision-pick` | Precision of shown lengths, a select: `d0` to `d4` decimals, `f16`, `f32`, `f64` inch fractions |
 | `theme-<family>` | A theme card in setup's theme step and in Settings, Look and feel: `theme-subban`, `theme-dracula` and so on |
 

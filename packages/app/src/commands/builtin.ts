@@ -117,6 +117,14 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     { id: 'toggle-right', title: 'Toggle the right sidebar', section: 'view', keywords: ['panel', 'collapse', 'rail'], shortcut: 'Mod+Alt+B', run: () => toggleRail('right') },
     { id: 'toggle-bottom', title: 'Show or hide the bottom panel', section: 'view', keywords: ['panel', 'timeline', 'collapse'], workspace: 'prepare', run: () => void toggleEdge('bottom') },
   )
+  // Settings > Look and feel > Frame the view; each answers with the choice now in place, so a caller reads it back
+  const framings: ['selection' | 'open', string][] = [['selection', 'Always'], ['open', 'On open and add']]
+  for (const [framing, label] of framings) {
+    out.push({ id: `model-framing-${framing}`, title: `Frame the view: ${label}`, section: 'view', keywords: ['camera', 'frame', 'zoom', 'selection', 'model'], tool: { permission: 'read' }, enabled: () => editionHasCad(currentEdition()) && get().appearance.modelFraming !== framing, run: () => {
+      set({ appearance: { ...get().appearance, modelFraming: framing } })
+      return { modelFraming: get().appearance.modelFraming }
+    } })
+  }
   const looks: [PrepareLook, string][] = [['studio', 'Studio'], ['clay', 'Clay'], ['xray', 'X-ray'], ['overhang', 'Overhang heat map'], ['filament', 'Filament colors']]
   for (const [look, label] of looks) {
     out.push({ id: `look-${look}`, title: `Show plate as ${label}`, section: 'view', keywords: ['render', 'material', 'look'], workspace: 'prepare', run: () => { setWorkspace('prepare'); set({ look }) } })
