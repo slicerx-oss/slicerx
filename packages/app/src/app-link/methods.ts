@@ -14,6 +14,8 @@ import { listSessions, readSession } from './sessions'
 import { toolStore } from '../plate/tools'
 import { get, pilotState, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
 import { slicePanes } from '../lib/slice-panes'
+import { findPlate, plateRows, stepTarget } from '../plate/plate-step'
+import { switchPlate } from '../plate/plates'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -27,6 +29,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
+  // The plates with their slice states, and showing one (by number or id, or the next or previous): like the
+  // preview, showing a plate changes only what the window shows, never the project.
+  'plates.list': 'read',
+  'plates.show': 'read',
   // The design tools (@slicerx/mcp/toolset), run here on the plate's design host.
   'design.new': 'edit',
   'design.list': 'read',
@@ -161,6 +167,42 @@ function setPreview(args: Record<string, unknown>) {
   return previewState()
 }
 
+/** The project's plates in order, the one in view marked, as the plate picker shows them. */
+function platesState() {
+  const rows = plateRows()
+  return {
+    shown: rows.find((r) => r.shown)?.number ?? 1,
+    count: rows.length,
+    plates: rows.map((r) => ({ number: r.number, id: r.id, name: r.name, objects: r.objects, slice: r.state, shown: r.shown })),
+  }
+}
+
+/**
+ * Shows one plate, as the plate picker does: `plate` (its number from 1, or its id) or `step` ('next' or 'previous';
+ * stepping stops at the first and last plate). Like the preview, it answers busy unless the window is on Slice with no
+ * paint, brim or face tool open, and it changes only what the window shows. Answers with the plates read back.
+ */
+function showPlate(args: Record<string, unknown>) {
+  const s = get()
+  if (s.workspace !== 'prepare' || s.modelMode !== 'slice' || BUSY_TOOLS.includes(toolStore.getState().tool)) {
+    throw new LinkError('busy', 'the person is working elsewhere in the window; plates change only while Slice is open and no tool is in use')
+  }
+  const { plate, step } = args
+  if ((plate === undefined) === (step === undefined)) throw new LinkError('invalid_input', 'give plate (a number from 1, or an id) or step (next or previous), not both')
+  let id: string | undefined
+  if (step !== undefined) {
+    if (step !== 'next' && step !== 'previous') throw new LinkError('invalid_input', 'step is next or previous')
+    id = stepTarget(s.plates, s.activePlate, step === 'next' ? 1 : -1) ?? undefined
+    if (!id) throw new LinkError('not_found', step === 'next' ? 'this is the last plate' : 'this is the first plate')
+  } else {
+    if (typeof plate !== 'number' && typeof plate !== 'string') throw new LinkError('invalid_input', 'plate is a number from 1, or an id from plates.list')
+    id = findPlate(s.plates, plate)
+    if (!id) throw new LinkError('not_found', `no plate ${String(plate)}; the project has ${s.plates.length} (plates.list lists them)`)
+  }
+  switchPlate(id)
+  return platesState()
+}
+
 /**
  * The bed the plate is laid out on, in the plate's coordinates (its front left corner at 0, 0): a round bed (a delta)
  * by its diameter and middle, any other by its width and depth. Objects' minMm and maxMm read against it.
@@ -197,6 +239,8 @@ const HANDLERS: Record<string, Handler> = {
   'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client.name),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
+  'plates.list': () => platesState(),
+  'plates.show': (args) => showPlate(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),

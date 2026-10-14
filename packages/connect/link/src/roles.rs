@@ -114,6 +114,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
     ("preview.set", LinkClass::Read),
+    // The project's plates with their slice states, and showing one of them (by number, or the next or previous).
+    // Read: showing a plate changes only what the window shows, never the project.
+    ("plates.list", LinkClass::Read),
+    ("plates.show", LinkClass::Read),
     // The design tools, run in the app on its plate, each step a history step the person can undo.
     // Opening and saving files stay with the server and the person.
     ("design.new", LinkClass::Edit),
@@ -338,6 +342,8 @@ mod tests {
             ("project.scale", LinkClass::Edit),
             ("preview.get", LinkClass::Read),
             ("preview.set", LinkClass::Read),
+            ("plates.list", LinkClass::Read),
+            ("plates.show", LinkClass::Read),
             ("design.new", LinkClass::Edit),
             ("design.list", LinkClass::Read),
             ("design.steps", LinkClass::Read),
