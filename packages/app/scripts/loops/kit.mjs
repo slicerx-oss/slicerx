@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Shared helpers for the loop batches: compact relative paths, stepped and drawn-in keyframes, theme colors and the
 // time bar. Built on stage.mjs.
-import { iso, kf, r1, rowFrames, run } from './stage.mjs'
+import { hud, iso, kf, r1, rowFrames, run } from './stage.mjs'
 
 export const op = (v) => `opacity:${v}`
 export const num = (v) => String(r1(v)).replace(/^(-?)0\./, '$1.')
@@ -40,3 +40,20 @@ export function timebar(id, x, y, steps) {
   return { css, svg }
 }
 
+
+/** Two states: A over [0, t), B over [t, 3.3), back to A. */
+export const TWO = [0, 1.6, 3.3]
+/** The readout rows stepping with TWO. */
+export const rows2 = (id, t = TWO) => `.sxs .${id}-h{animation-name:${id}-h}` + rowFrames(`${id}-h`, [[0, 0], [t[1], 1], [t[2], 0]])
+/** Stepped CSS for two still states, A then B. */
+export const twoCss = (id, t = TWO) => [steps(id), vis(`${id}-a`, 0, t[1], t[2]), vis(`${id}-b`, t[1], t[2])].join('')
+/** One state's group: `${id}-${k}`, stepped. */
+export const stateG = (id, k, inner) => `<g class="${id}-${k} ${id}-s s-a">${inner}</g>`
+/** A polygon through mm points. */
+export const poly = (cls, ps, extra = '') => `<polygon class="${cls}" points="${ps.map((q) => iso(...q).join(',')).join(' ')}"${extra}/>`
+/** A stroked path with no fill. */
+export const bead = (cls, d, c = A1, w = 2.6, extra = '') => `<path class="${cls}${cls ? ' s-a ' : ''}s-n" style="stroke:var(${c});stroke-width:${w}${extra}" d="${d}"/>`
+/** The readout pill (stepped with the loop's states) at (x, y). */
+export const pill = (id, x, y, w) => hud(id, r1(x), r1(y), { w }, `${id}-h ${id}-s`, '')
+/** Time bar steps between two shares on TWO. */
+export const timeTwo = (a, b, t = TWO) => [[0, a], [t[1] - 0.05, a], [t[1] + 0.3, b], [t[2] - 0.05, b], [t[2] + 0.15, a]]
