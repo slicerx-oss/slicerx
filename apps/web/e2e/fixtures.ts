@@ -150,7 +150,7 @@ export { expect }
 
 /** A top tab by its id (`model`, `prepare` for Slice, `library`, `printers`). The look can rename a tab, so specs do not type its label. */
 export function tab(page: Page, id: string): Locator {
-  return page.locator(`.sx-tab[data-tab="${id}"]`)
+  return page.locator(`:is(.sx-tab, .phone-tab)[data-tab="${id}"]`)
 }
 
 /** Opens a top tab by its id. On a narrow window the tabs past Model and Slice live in More. */

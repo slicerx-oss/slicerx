@@ -12,7 +12,7 @@ async function open(page: Page, workspace: string): Promise<void> {
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: ws, pilot: { mode: 'off' } }))
   }, workspace)
   await page.goto('./')
-  await expect(page.locator('.sx-tab[aria-current=page]')).toBeVisible()
+  await expect(page.locator(':is(.sx-tab, .phone-tab)[aria-current=page]')).toBeVisible()
   await viewportReady(page)
 }
 
@@ -75,6 +75,6 @@ test('a phone\'s Slice, with its settings sheet open, shows 26 controls or fewer
 
 test('a saved Preview tab opens Slice, with no Preview tab in the bar', async ({ page }) => {
   await open(page, 'preview')
-  await expect(page.locator('.sx-tab[aria-current=page]')).toHaveText('Slice')
-  await expect(page.locator('.sx-tab', { hasText: 'Preview' })).toHaveCount(0)
+  await expect(page.locator(':is(.sx-tab, .phone-tab)[aria-current=page]')).toHaveText('Slice')
+  await expect(page.locator(':is(.sx-tab, .phone-tab)', { hasText: 'Preview' })).toHaveCount(0)
 })

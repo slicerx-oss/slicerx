@@ -35,7 +35,7 @@ test('a workspace whose code failed to download comes back after one reload', as
 
 type Sx = { setState(p: unknown): void }
 
-test('a workspace whose code never downloads says so once, in the workspace, with no toast over it', async ({ page }) => {
+test('a workspace whose code never downloads says so once, in the workspace, with no toast over it', async ({ page, isMobile }) => {
   await page.addInitScript(() => {
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
   })
@@ -48,9 +48,9 @@ test('a workspace whose code never downloads says so once, in the workspace, wit
   // The toast waits a moment for the workspace, then stays away.
   await page.waitForTimeout(1_500)
   await expect(page.getByTestId('toast')).toHaveCount(0)
-  // The message fills the window down to the gutter, on a phone too, where the frame grows with its content.
+  // The message fills the window down to the gutter; a phone has no gutter, and the frame is the whole screen.
   const frame = (await page.locator('.sx-frame').boundingBox())!
-  expect(Math.round(page.viewportSize()!.height - (frame.y + frame.height))).toBe(16)
+  expect(Math.round(page.viewportSize()!.height - (frame.y + frame.height))).toBe(isMobile ? 0 : 16)
 })
 
 test('a dialog whose code did not download leaves the workspace up and says so in a toast', async ({ page }) => {
