@@ -104,6 +104,8 @@ export function appState(s: AppState): Record<string, unknown> {
     filament: resolveSlots(s).map((r) => ({ slot: r.index, used: r.used, type: r.type, brand: r.brand, color: r.color, source: r.source })),
     slicing: sliceSummary(s),
     setupOpen: s.setup !== null,
+    // The 3D view's standing notice (drawn without hardware acceleration); a phone shows it in the top bar, not as a toast.
+    ...(s.viewNotice ? { viewNotice: s.viewNotice } : {}),
     unsavedPrompt: s.unsavedPrompt?.what ?? null,
     multiBodyPrompt: s.multiBodyPrompt,
     // The printer bridge: off, connecting, on, reconnecting (after a dropped connection, with the try it is on) or error.

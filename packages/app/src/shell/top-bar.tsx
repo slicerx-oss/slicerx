@@ -5,7 +5,7 @@
 // then the tabs drop their labels, then Vault and Printers move into a More menu at the end of the tabs, and Model
 // and Slice drop theirs last.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { AppBar, Button, Icon, keymapFor, Menu, MenuAnchor, MenuItem, SearchButton, Tabs, tipAttrs, type TabSpec } from '@slicerx/ui'
+import { AppBar, Button, Icon, keymapFor, Menu, MenuAnchor, MenuItem, Popover, SearchButton, Tabs, tipAttrs, type TabSpec } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { formatShortcut } from '../lib/keys'
 import { toggleDock, useDockOpen } from '../features/pilot/dock-state'
@@ -120,6 +120,7 @@ export function TopBar() {
         className="sx-appbar-phone"
         right={
           <>
+            <ViewNotice />
             <Button variant="ghost" icon="search" aria-label="Search" data-testid="phone-search" onClick={() => set({ commandOpen: true })} />
             <Button variant="ghost" icon="settings" tip="nav.settings" aria-label="Settings" data-testid="open-settings" onClick={() => openSettings()} />
           </>
@@ -168,6 +169,33 @@ export function TopBar() {
         )}
       </div>
     </AppBar>
+  )
+}
+
+/**
+ * On a phone, the 3D view's standing notice (slow graphics) as one warning icon before Search. A tap opens the full
+ * text under it. A toast for it covered mimir's conversation, and it holds for the whole visit, so it lives in the bar.
+ */
+function ViewNotice() {
+  const notice = useApp((s) => s.viewNotice)
+  const [open, setOpen] = useState(false)
+  if (!notice) return null
+  return (
+    <MenuAnchor className="sx-view-notice">
+      <Button
+        variant="ghost"
+        icon="alert"
+        aria-label="3D view is slow"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-testid="phone-view-notice"
+        {...tipAttrs({ title: notice })}
+        onClick={() => setOpen(!open)}
+      />
+      <Popover open={open} onClose={() => setOpen(false)} label="3D view is slow" align="end" className="sx-view-notice-pop">
+        <p data-testid="phone-view-notice-text">{notice}</p>
+      </Popover>
+    </MenuAnchor>
   )
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { OVERLAY_GAP, overlayBottom, TOAST_ROOM, toastPlace } from '../src/lib/overlay-offset'
+import { CHAT_LANE_MIN, OVERLAY_GAP, overlayBottom, TOAST_ROOM, toastPlace } from '../src/lib/overlay-offset'
 
 const rect = (top: number, height: number, width = 100) => ({ top, bottom: top + height, height, width, left: 0, right: width, x: 0, y: top, toJSON: () => ({}) }) as DOMRectReadOnly
 
@@ -67,5 +67,21 @@ describe('where toasts sit', () => {
     const vp = box(420, 68, 690, 760)
     const place = toastPlace(vp, { bottom: [box(570, 760, 300, 40)] }, 860)
     expect(place).toMatchObject({ center: 420 + 345, width: 690 - 2 * OVERLAY_GAP })
+  })
+
+  it('keeps off a chat pane lying over the viewport', () => {
+    // 1100 wide: the mimir dock floats over the right of the view, 380 px wide
+    const vp = box(17, 121, 1066, 734)
+    const dock = box(703, 69, 380, 786)
+    const place = toastPlace(vp, { bottom: [box(29, 800, 300, 40)], chat: [dock] }, 900)
+    expect(place).toEqual({ bottom: 900 - 800 + OVERLAY_GAP, center: Math.round((17 + OVERLAY_GAP + 703 - OVERLAY_GAP) / 2), width: 703 - OVERLAY_GAP - 17 - OVERLAY_GAP })
+    // a pane beside the view, not over it, changes nothing
+    expect(toastPlace(vp, { bottom: [box(29, 800, 300, 40)], chat: [box(1100, 69, 380, 786)] }, 900)).toEqual(toastPlace(vp, { bottom: [box(29, 800, 300, 40)] }, 900))
+  })
+
+  it('a chat pane that covers the whole view leaves the lane as it was', () => {
+    const vp = box(0, 52, 700, 800)
+    const place = toastPlace(vp, { bottom: [], chat: [box(0, 52, 700 - CHAT_LANE_MIN + 1, 800)] }, 852)
+    expect(place).toMatchObject({ center: 350, width: 700 - 2 * OVERLAY_GAP })
   })
 })

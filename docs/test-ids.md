@@ -33,6 +33,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `toast` | A toast on screen; `data-tone` is ok, info, warn or error |
 | `open-settings` | Settings in the top bar |
 | `phone-search` | Search in a phone's top bar, which opens the command bar |
+| `phone-view-notice` | A warning icon in a phone's top bar, before Search, shown only while the 3D view is drawn without hardware acceleration; it opens the full notice, `phone-view-notice-text`. A phone shows this instead of the toast a desktop gets |
+| `phone-view-notice-text` | The notice `phone-view-notice` opens |
 | `settings-list` | On a phone, Settings opens on this list of sections; each row is `settings-nav-<section>` |
 | `settings-back` | On a phone, All settings at the top of a section, back to `settings-list` |
 | `settings-nav-<section>` | A section in Settings' list: `settings-nav-pilot` (mimir), `settings-nav-look` and so on |

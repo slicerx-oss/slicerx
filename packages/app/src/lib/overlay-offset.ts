@@ -12,6 +12,9 @@ export const OVERLAY_GAP = 8
 /** Room a toast needs, px: less than this between the controls and the stack takes another place. */
 export const TOAST_ROOM = 64
 
+/** The narrowest lane a chat pane may leave a toast, px: a pane that leaves less covers the view, and is not counted. */
+export const CHAT_LANE_MIN = 200
+
 /** The viewport's controls, by where they sit. */
 export interface OverlayBoxes {
   /** Along the bottom edge: the plate bar and the playback bar. The toast sits above them. */
@@ -22,6 +25,11 @@ export interface OverlayBoxes {
   side?: readonly DOMRectReadOnly[]
   /** Down the left side (the color legend): the toast keeps to the room right of them. */
   left?: readonly DOMRectReadOnly[]
+  /**
+   * Chat panes lying over the viewport (the mimir dock on a window too narrow to give it its own column): a toast is
+   * never on the conversation, so it keeps to the room beside them, on the side away from the pane.
+   */
+  chat?: readonly DOMRectReadOnly[]
 }
 
 /** Where the toast stack goes, in window px. `bottom` or `top` is the stack's edge, `center` and `width` its lane. */
@@ -43,8 +51,16 @@ export function toastPlace(viewport: DOMRectReadOnly, boxes: OverlayBoxes, windo
   const ceiling = (boxes.top ?? []).filter(shown).reduce((max, r) => Math.max(max, r.bottom), visTop)
   const side = (boxes.side ?? []).filter(shown)
   const lefts = (boxes.left ?? []).filter(shown)
-  const left = lefts.length ? Math.max(...lefts.map((r) => r.right)) + OVERLAY_GAP : viewport.left + OVERLAY_GAP
-  const right = side.length ? Math.min(...side.map((r) => r.left)) - OVERLAY_GAP : viewport.right - OVERLAY_GAP
+  let left = lefts.length ? Math.max(...lefts.map((r) => r.right)) + OVERLAY_GAP : viewport.left + OVERLAY_GAP
+  let right = side.length ? Math.min(...side.map((r) => r.left)) - OVERLAY_GAP : viewport.right - OVERLAY_GAP
+  // A chat pane over the viewport takes its side of the lane: a pane in the right half ends the lane at its left edge.
+  const mid = (viewport.left + viewport.right) / 2
+  const chats = (boxes.chat ?? []).filter((r) => shown(r) && r.left < viewport.right && r.right > viewport.left && r.top < floor && r.bottom > ceiling)
+  if (chats.length) {
+    const l = Math.max(left, ...chats.filter((r) => r.left < mid).map((r) => r.right + OVERLAY_GAP))
+    const r = Math.min(right, ...chats.filter((c) => c.left >= mid).map((c) => c.left - OVERLAY_GAP))
+    if (r - l >= CHAT_LANE_MIN) [left, right] = [l, r]
+  }
   // the lane always has a width: a long toast wraps inside the viewport, never past the window edge or over a pane
   const lane = { center: Math.round((left + right) / 2), width: Math.max(0, Math.round(right - left)) }
   if (floor - ceiling - 2 * OVERLAY_GAP >= TOAST_ROOM) return { bottom: Math.max(0, Math.round(windowHeight - floor + OVERLAY_GAP)), ...lane }
@@ -65,13 +81,15 @@ export interface OverlaySelectors {
   /** Beside the viewport rather than in it, rising over its bottom (a phone's open sheet): the toast keeps above them. */
   cover?: string
   left?: string
+  /** Chat panes anywhere in the page (the mimir dock): where one lies over the viewport, the toast keeps beside it. */
+  chat?: string
 }
 
 const VARS = ['--overlay-bottom', '--overlay-top', '--overlay-center', '--overlay-width'] as const
 
 /** Keeps the toast offsets current while `viewport` is mounted. Unmounting puts the defaults back. */
 export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, selectors: OverlaySelectors = { bottom: '.hud-bl, .dock' }): void {
-  const { bottom, top, side, cover, left } = selectors
+  const { bottom, top, side, cover, left, chat } = selectors
   useEffect(() => {
     const vp = viewport.current
     if (!vp || typeof ResizeObserver === 'undefined') return
@@ -83,7 +101,7 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
     const measure = () => {
       frame = 0
       const covers = vp.parentElement ? boxes(cover, vp.parentElement) : []
-      const place = toastPlace(vp.getBoundingClientRect(), { bottom: [...boxes(bottom), ...covers], top: boxes(top), side: boxes(side), left: boxes(left) }, window.innerHeight)
+      const place = toastPlace(vp.getBoundingClientRect(), { bottom: [...boxes(bottom), ...covers], top: boxes(top), side: boxes(side), left: boxes(left), chat: boxes(chat, document) }, window.innerHeight)
       // The layer readouts change every frame while the print plays; the root's style changes only when the place does.
       const key = JSON.stringify(place)
       if (key === last) return
@@ -120,6 +138,17 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
     const slides = new MutationObserver(queue)
     if (cover && studio) for (const el of Array.from(studio.children)) if (el !== vp) slides.observe(el, { attributes: true, attributeFilter: ['class', 'style'] })
     if (cover) studio?.addEventListener('transitionend', queue)
+    // A chat pane opens, shuts or is resized outside the viewport's tree: the app root's data-mimir flips, and the
+    // pane itself is watched for size while it is up.
+    const app = chat ? vp.closest('.app') : null
+    const chats = new MutationObserver(() => {
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>(chat ?? ''))) ro.observe(el)
+      queue()
+    })
+    if (app) {
+      chats.observe(app, { attributes: true, attributeFilter: ['data-mimir'] })
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>(chat ?? ''))) ro.observe(el)
+    }
     window.addEventListener('resize', queue)
     // On a phone the page scrolls and the viewport with it.
     window.addEventListener('scroll', queue, { passive: true })
@@ -129,10 +158,11 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
       ro.disconnect()
       mo.disconnect()
       slides.disconnect()
+      chats.disconnect()
       studio?.removeEventListener('transitionend', queue)
       window.removeEventListener('resize', queue)
       window.removeEventListener('scroll', queue)
       for (const v of VARS) root.style.removeProperty(v)
     }
-  }, [viewport, bottom, top, side, cover, left])
+  }, [viewport, bottom, top, side, cover, left, chat])
 }
