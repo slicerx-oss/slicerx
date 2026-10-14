@@ -303,10 +303,11 @@ export function setSketchResolution(width: number, height: number): void {
   curveRes.set(width, height)
 }
 
-// the sketch plane's wash and border, as alpha over the scene; a light studio washes the tint out, so it gets more
-export const PLANE_FILL = 0.045
+// the sketch plane's wash and border, as alpha over the scene: a faint wash, so the tint never competes with the real
+// face, and a firm border that carries the frame; a light studio washes the border out, so it gets a firmer one
+export const PLANE_FILL = 0.03
 export const PLANE_EDGE = 0.6
-export const PLANE_FILL_LIGHT = 0.12
+export const PLANE_FILL_LIGHT = 0.05
 export const PLANE_EDGE_LIGHT = 0.95
 
 // tones drawn thin: the faint grid and projected edges
