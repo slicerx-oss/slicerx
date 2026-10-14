@@ -28,6 +28,8 @@ export interface ShelfTool {
   modeling?: boolean
   /** Hidden when Settings turns the drawing tools off. */
   drawing?: boolean
+  /** A still its menu entry's tip shows, by demo id (a shelf button's tip always names its id). */
+  still?: string
   /** Its place on the shelf: a group, or a menu inside one. No shelf place: Slice's menu only. */
   shelf?: { group: ShelfGroup; menu?: 'face' | 'mesh' }
   /** Its place in the Tools menu: the section (separators between) and the order in it. */
@@ -54,8 +56,8 @@ export const SHELF_TOOLS: readonly ShelfTool[] = [
   { id: 'shape', label: 'Shape on a face', icon: 'on-face', tool: 'shape', modeling: true, drawing: true, shelf: { group: 'create', menu: 'face' }, menu: 2, command: 'object-shape' },
   { id: 'facetext', label: 'Text on a face', icon: 'text', tool: 'facetext', modeling: true, drawing: true, shelf: { group: 'create', menu: 'face' }, menu: 2, command: 'object-text' },
   { id: 'subtract', label: 'Subtract a shape', short: 'Subtract', icon: 'subtract-shape', tool: 'hole', needsSelection: true, drawing: true, shelf: { group: 'shape' }, menu: 2, command: 'object-subtract' },
-  { id: 'hollow', label: 'Hollow', icon: 'hollow', tool: 'hollow', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-hollow' },
-  { id: 'repair', label: 'Repair mesh', icon: 'repair-mesh', run: 'repair', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-repair' },
+  { id: 'hollow', label: 'Hollow', icon: 'hollow', tool: 'hollow', still: 'still-hollow', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-hollow' },
+  { id: 'repair', label: 'Repair mesh', icon: 'repair-mesh', run: 'repair', still: 'still-repair', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-repair' },
   { id: 'simplify', label: 'Simplify mesh', icon: 'simplify-mesh', tool: 'simplify', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-simplify' },
 ]
 

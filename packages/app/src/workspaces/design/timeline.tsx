@@ -104,6 +104,8 @@ export function Timeline() {
       role="slider"
       tabIndex={0}
       data-testid="tl-marker"
+      data-tip-title="Timeline marker"
+      data-tip-demo="still-timeline"
       aria-label="Roll the design back"
       aria-valuemin={0}
       aria-valuemax={end}

@@ -1115,7 +1115,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           {/* the live sizes while drawing; between shapes, what else the tool takes */}
           <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" data-idle={words(pending ? 'Esc stops.' : idleText(draft.tool))} /></p>
           {solved ? (
-            <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)} {...(driven ? { 'data-tip-title': 'Driven dimensions', 'data-tip-body': 'The other constraints already set these sizes, so they show in parentheses and change nothing.' } : {})}>
+            <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)} data-tip-demo="still-sketch-status" {...(driven ? { 'data-tip-title': 'Driven dimensions', 'data-tip-body': 'The other constraints already set these sizes, so they show in parentheses and change nothing.' } : { 'data-tip-title': 'Sketch status' })}>
               {dofText(solved.solved)}
               {driven ? <span className="sketch-driven">, {driven} driven</span> : null}
             </p>
