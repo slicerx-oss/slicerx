@@ -230,3 +230,8 @@ test('Advanced rows from seam gap to smart layer max step ratio play their own l
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['seam_gap', 'bqsg'], ['staggered_inner_seams', 'bqsi'], ['wipe_on_loops', 'bqwl'], ['wipe_before_external_loop', 'bqwb'], ['skeleton_infill_density', 'bqkd'], ['skeleton_infill_line_width', 'bqkw'], ['skin_infill_density', 'bqnd'], ['skin_infill_depth', 'bqnp'], ['skin_infill_line_width', 'bqnw'], ['skirt_height', 'brkh'], ['skirt_start_angle', 'brka'], ['skirt_type', 'brkt'], ['smart_layer_max_height', 'brlx'], ['smart_layer_min_height', 'brln'], ['smart_layer_max_step_ratio', 'brlr']])
 })
+
+test('Advanced rows from smart layer smoothing to travel speed play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['smart_layer_smoothing', 'brls'], ['smart_layer_smoothing_radius', 'brlo'], ['slicing_mode', 'brsm'], ['solid_infill_direction', 'brsd'], ['outer_wall_speed', 'bros'], ['inner_wall_speed', 'bris'], ['sparse_infill_speed', 'brps'], ['internal_solid_infill_speed', 'brds'], ['top_surface_speed', 'brts'], ['gap_infill_speed', 'brgs'], ['small_perimeter_threshold', 'brsh'], ['travel_speed', 'brvs']])
+})
