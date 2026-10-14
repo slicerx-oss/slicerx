@@ -343,9 +343,17 @@ test('a first setup quit partway records the onboarding version, and the next la
   await fresh(page, isMobile)
   const stored = async () => JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as { firstRun?: Record<string, unknown> }
   await expect.poll(async () => (await stored()).firstRun).toMatchObject({ completedAt: null, step: 'printer', version: 4 })
-  // Quitting here and opening the app again: no setup by itself; Settings still offers to finish it.
+  // Quitting here and opening the app again: no setup by itself; Settings still offers to finish it. A quit ends the
+  // tab's session; a plain reload keeps it and comes back to setup on purpose.
+  // slicerx.debug puts the store on window as __sx for the check below
+  await page.evaluate(() => {
+    sessionStorage.clear()
+    localStorage.setItem('slicerx.debug', '1')
+  })
   await page.reload()
   await page.locator('html[data-sx-ready]').waitFor({ state: 'attached' })
+  // setup is lazy, so no .fr yet proves nothing on its own: the store says whether it is open
+  expect(await page.evaluate(() => (window as unknown as { __sx: { getState(): { setup: unknown } } }).__sx.getState().setup)).toBeNull()
   await expect(page.locator('.fr')).toHaveCount(0)
   expect((await stored()).firstRun).toMatchObject({ completedAt: null, step: 'printer', version: 4 })
 })
