@@ -6,7 +6,7 @@ import { useMemo, type ReactElement } from 'react'
 import { FlatList, StyleSheet, View } from 'react-native'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
-import { Bubble, Citations, Diff, ErrorLine, PermLine, PlanList, PluginsLoading, Say, Summary, Think, ToolGroup, Who } from './blocks'
+import { Bubble, Citations, Diff, ErrorLine, PermLine, PlanList, Say, Summary, Think, ToolGroup, Who } from './blocks'
 import type { Block, Transcript } from './model'
 import { t } from '../theme'
 
@@ -41,8 +41,6 @@ export function TranscriptList({ transcript, onApprove, onDeny, onRetry, empty }
 
   const renderBlock = (b: Block, replay: boolean): ReactElement | null => {
     switch (b.kind) {
-      case 'plugins':
-        return <PluginsLoading plugins={b.plugins} />
       case 'think':
         return <Think text={b.text} ms={b.ms} />
       case 'say':

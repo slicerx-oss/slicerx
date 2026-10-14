@@ -50,7 +50,7 @@ function compact(turn: Turn, user: { text: string; attachments: string[] } | und
       default: {
         // Kinds the chat added later (questions, lookups) keep their own fields, minus anything long.
         const { id: _id, ...rest } = b as { id: string; kind: string } & Record<string, unknown>
-        if (b.kind === 'think' || b.kind === 'plugins' || b.kind === 'perm') break
+        if (b.kind === 'think' || b.kind === 'perm') break
         out.push(JSON.parse(JSON.stringify(rest, (_k, v: unknown) => (typeof v === 'string' ? cut(v, 1_000) : v))) as Record<string, unknown>)
       }
     }

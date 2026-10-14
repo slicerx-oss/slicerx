@@ -43,7 +43,6 @@ export interface ApprovalResolution {
 }
 
 export type Block =
-  | { kind: 'plugins'; id: string; plugins: PluginLoad[] }
   | { kind: 'think'; id: string; text: string; ms: number | null }
   | { kind: 'say'; id: string; text: string; streaming: boolean }
   | { kind: 'plan'; id: string; steps: string[] }
@@ -70,6 +69,8 @@ export interface Turn {
   /** Files the person added to the message. */
   attachments: PilotAttachment[]
   blocks: Block[]
+  /** The plugins (integrations) this reply called a tool of, by id, in first-use order. */
+  used?: string[]
   /** Blocks came from a saved log, so approvals in it are not actionable. */
   replay: boolean
 }
@@ -276,16 +277,9 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       if (t && (t.blocks.length > 0 || s.status !== 'running')) s = startTurn(s, {}, now)
       return { ...s, status: 'running', model: event.model, clockStart: s.clockStart ?? now }
     }
-    case 'plugins': {
-      s = { ...s, plugins: event.plugins }
-      const existing = lastTurn(s)?.blocks.findLastIndex((b) => b.kind === 'plugins') ?? -1
-      if (existing >= 0) {
-        return withLastTurn(s, (t) => ({ ...t, blocks: t.blocks.map((b, i) => (i === existing && b.kind === 'plugins' ? { ...b, plugins: event.plugins } : b)) }))
-      }
-      // Only a first load is worth a line; later runs report plugins that are already up.
-      if (!event.plugins.some((p) => p.state === 'loading')) return s
-      return append(s, (id) => ({ kind: 'plugins', id, plugins: event.plugins }), false)
-    }
+    // Integration status lives in Settings, not in the replies; the list is kept for the inspector and the used pill.
+    case 'plugins':
+      return { ...s, plugins: event.plugins }
     case 'thinking': {
       const b = lastBlock(s)
       if (b && b.kind === 'think' && b.ms === null) return replaceLastBlock(s, { ...b, text: b.text + event.delta })
@@ -322,6 +316,9 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
         untrusted: false,
       }
       s = { ...s, meter: { ...s.meter, toolCalls: s.meter.toolCalls + 1, steps: s.meter.steps + 1 } }
+      // a plugin tool is named `<plugin>.<tool>`
+      const plugin = event.source === 'plugin' ? event.tool.split('.')[0] : undefined
+      if (plugin && !lastTurn(s)?.used?.includes(plugin)) s = withLastTurn(s, (t) => ({ ...t, used: [...(t.used ?? []), plugin] }))
       const b = lastBlock(s)
       // Consecutive calls share one group; anything in between starts a new one.
       if (b && b.kind === 'tools') return replaceLastBlock(s, { ...b, rows: [...b.rows, row] })

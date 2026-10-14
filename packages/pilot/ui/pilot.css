@@ -99,13 +99,9 @@
 .sx-pilot .plan li::marker{color:var(--t-mute);font:500 13px var(--f-mono)}
 
 /* plugins loading at run start */
-.sx-pilot .plugs{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:14px}
-.sx-pilot .plug{display:inline-flex;align-items:center;gap:6px;color:var(--t-sub)}
-.sx-pilot .plug .pst{display:inline-grid;place-items:center;width:14px;height:14px;font:500 12px var(--f-mono);color:var(--cyan)}
-.sx-pilot .plug .pst .sx-ic{width:13px;height:13px;color:var(--green)}
-.sx-pilot .plug.off,.sx-pilot .plug.error{color:var(--t-mute)}
-.sx-pilot .plug .poff{font:500 11.5px var(--f-mono);color:var(--t-chrome)}
-.sx-pilot .plug.error .pst .sx-ic{color:var(--red)}
+/* the integrations a reply used: one small pill with a tick */
+.sx-pilot .used-pill{display:inline-flex;align-items:center;gap:4px;padding:1px 8px 1px 6px;border:1px solid var(--line-soft);border-radius:999px;font-size:12px;color:var(--t-sub)}
+.sx-pilot .used-pill .sx-ic{width:12px;height:12px;color:var(--green)}
 
 /* tool activity: compact rows, one group per run of calls, each row opens to its output */
 .sx-pilot .tools{border:1px solid var(--line-soft);border-radius:12px;background:color-mix(in srgb,var(--ink-2) 55%,var(--t-bg));overflow:hidden}
