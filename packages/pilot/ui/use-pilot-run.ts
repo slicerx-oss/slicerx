@@ -5,7 +5,7 @@
 // once per animation frame, so a fast token stream costs one React render per frame.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Pilot, PilotAttachment, PilotContext, PilotEvent, PilotMachine } from '@slicerx/contracts'
-import { emptyTranscript, reduceTranscript, setReplaying, startTurn, type Transcript } from './reduce'
+import { emptyTranscript, reduceTranscript, restoredTranscript, setReplaying, startTurn, type Transcript } from './reduce'
 import { motionReduced } from '@slicerx/ui'
 
 export type ReplaySpeed = '1' | '2' | 'instant'
@@ -25,6 +25,8 @@ export interface PilotRun {
   cancel: () => void
   setPaused: (paused: boolean) => void
   replay: (events: readonly PilotEvent[], speed: () => ReplaySpeed) => void
+  /** Shows a transcript kept from before a reload, at once; the next run continues it. */
+  restore: (transcript: Transcript) => void
   reset: () => void
 }
 
@@ -284,6 +286,20 @@ export function usePilotRun(pilot: Pilot, sessionId: string, opts: { context?: P
     setReplayingState(false)
   }, [stopLive, stopReplay])
 
+  const restore = useCallback(
+    (t: Transcript) => {
+      stopReplay()
+      if (controller.current) stopLive()
+      queue.current = []
+      events.current = []
+      model.current = restoredTranscript(t)
+      setTranscript(model.current)
+      setRunning(false)
+      setReplayingState(false)
+    },
+    [stopLive, stopReplay],
+  )
+
   const log = useCallback(() => events.current, [])
 
   useEffect(() => {
@@ -299,5 +315,5 @@ export function usePilotRun(pilot: Pilot, sessionId: string, opts: { context?: P
     }
   }, [])
 
-  return { transcript, running, replaying, paused, log, run, switchMachine, cancel, setPaused, replay, reset }
+  return { transcript, running, replaying, paused, log, run, switchMachine, cancel, setPaused, replay, restore, reset }
 }

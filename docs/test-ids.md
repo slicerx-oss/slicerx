@@ -353,6 +353,7 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 | Test id | Control |
 | --- | --- |
 | `mimir-share` | Save my chats to improve mimir (on by default during alpha; off saves nothing) |
+| `mimir-share-caption` | The caption under it, saying what the switch does in its current state |
 | `danger-mimir-forget` | Delete my saved chats (asks first) |
 | `danger-mimir-forget-confirm` | Delete in the inline confirm: removes every saved chat from this computer |
 | `mimir-cloud-notice` | The notice before the first chat on mimir cloud (mimir tab and dock) |
