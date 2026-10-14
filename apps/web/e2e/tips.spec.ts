@@ -177,14 +177,16 @@ test('an Advanced setting row opens the loop of its drawing and plays it', async
   const tip = page.locator('#sx-tip')
   const stage = tip.locator('.sx-stage')
   // setting key, its name to search for (the settings sit behind tabs), then the class prefix of the loop its row shows
-  for (const [key, name, loopId] of [['print_flow_ratio', 'Print flow ratio', 'afr'], ['fuzzy_skin', 'Fuzzy skin', 'afz'], ['ironing_type', 'Ironing type', 'air'], ['draft_shield', 'Draft shield', 'ads'], ['elefant_foot_compensation', 'Elephant foot', 'aef'], ['enable_arc_fitting', 'Arc fitting', 'aaf'], ['hole_to_polyhole', 'polyholes', 'aph']] as const) {
+  for (const [key, name, loopId] of [['print_flow_ratio', 'Print flow ratio', 'afr'], ['fuzzy_skin', 'Fuzzy skin', 'afz'], ['ironing_type', 'Ironing type', 'air'], ['draft_shield', 'Draft shield', 'ads'], ['elefant_foot_compensation', 'Elephant foot', 'aef'], ['enable_arc_fitting', 'Arc fitting', 'aaf'], ['hole_to_polyhole', 'polyholes', 'aph'], ['top_surface_density', 'Top surface density', null]] as const) {
     await page.locator('#expert-search').fill(name)
     const row = page.locator(`li[data-key="${key}"]`).first()
     await row.scrollIntoViewIfNeeded()
     await row.locator('label').first().hover()
     await expect(stage.locator('svg.sxs'), key).toBeVisible()
     await expect(stage).toHaveAttribute('data-play', 'true')
-    await expect(stage.locator(`[class*="${loopId}-"]`).first(), key).toBeAttached()
+    // a still has nothing that moves, so it is told apart by its label instead of a loop's classes
+    if (loopId) await expect(stage.locator(`[class*="${loopId}-"]`).first(), key).toBeAttached()
+    else await expect(stage, key).toHaveAttribute('aria-label', /pinholes/)
     await page.mouse.move(5, 5)
     await expect(tip).toHaveCount(0)
   }
