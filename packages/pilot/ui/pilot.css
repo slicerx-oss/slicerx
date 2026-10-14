@@ -343,6 +343,10 @@
 .sx-pilot .att-x:hover{background:var(--ink-3);color:var(--fg)}
 .sx-pilot .att-x .sx-ic{width:12px;height:12px}
 
+/* the terminal prompt's files sit above its row, left aligned like the composer's */
+.sx-pilot .term-in .att-row{justify-content:flex-start;margin-bottom:8px}
+.sx-pilot .term-in .composer-note{margin-bottom:8px;padding:0 4px}
+.sx-pilot .term-in[data-drop] .in-row{border-color:color-mix(in srgb,var(--purple) 60%,var(--line-soft))}
 /* composer: floats at the foot of the chat, so it is lifted (.sx-overlay) */
 .sx-pilot .composer{display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:var(--r-md)}
 .sx-pilot .composer .att-row{justify-content:flex-start;padding:2px 2px 0}
