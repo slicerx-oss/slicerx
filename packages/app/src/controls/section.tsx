@@ -4,7 +4,7 @@
 // buttons and wheel, then a searchable shortcut list where any key can be changed, cleared or put back.
 // Changes are stored next to the look choice and apply at once.
 import type { LookAndFeelChoice } from '@slicerx/contracts'
-import { Button, Select, Seg, Switch, tipAttrs } from '@slicerx/ui'
+import { Button, Select, Seg, SettingRow, Switch, tipAttrs } from '@slicerx/ui'
 import { controlsPreset, withGizmo, withRemap, type ButtonRemap, type GizmoOverrides, type ModKey } from '@slicerx/viewport'
 import { useEffect, useMemo, useState } from 'react'
 import { controlOverrides, controlsFor, withControlOverrides, type ControlOverrides } from '../first-run/controls'
@@ -47,26 +47,21 @@ function Mouse({ choice, onChange }: { choice: LookAndFeelChoice; onChange: (c: 
         Mouse
       </h4>
       {(['left', 'middle', 'right'] as const).map((b) => (
-        <div className="fr-mouse-row" key={b}>
-          <span>{BUTTON_LABELS[b]} drag</span>
-          <Seg label={`${BUTTON_LABELS[b]} drag`} size="sm" value={plainAction(map, b)} options={REMAP_OPTIONS} onChange={(v) => setButton(b, v)} />
-        </div>
+        <SettingRow key={b} bare className="ctl-row" label={<span>{BUTTON_LABELS[b]} drag</span>} control={<Seg label={`${BUTTON_LABELS[b]} drag`} size="sm" full value={plainAction(map, b)} options={REMAP_OPTIONS} onChange={(v) => setButton(b, v)} />} />
       ))}
-      <div className="sx-switchrow">
-        <label htmlFor="ctl-invert">Invert zoom</label>
-        <Switch id="ctl-invert" checked={map.wheel.invert} onChange={(v) => update({ invert: v })} />
-      </div>
-      <div className="sx-switchrow">
-        <label htmlFor="ctl-cursor">Zoom to cursor</label>
-        <Switch id="ctl-cursor" checked={map.wheel.zoomToCursor} onChange={(v) => update({ zoomToCursor: v })} />
-      </div>
-      <div className="sx-switchrow">
-        <label htmlFor="ctl-free">
-          Free camera
-          <small>Orbit around the point under the cursor instead of the plate.</small>
-        </label>
-        <Switch id="ctl-free" checked={map.freeCamera} onChange={(v) => update({ freeCamera: v })} />
-      </div>
+      <SettingRow bare className="ctl-row" label={<label htmlFor="ctl-invert">Invert zoom</label>} control={<Switch id="ctl-invert" checked={map.wheel.invert} onChange={(v) => update({ invert: v })} />} />
+      <SettingRow bare className="ctl-row" label={<label htmlFor="ctl-cursor">Zoom to cursor</label>} control={<Switch id="ctl-cursor" checked={map.wheel.zoomToCursor} onChange={(v) => update({ zoomToCursor: v })} />} />
+      <SettingRow
+        bare
+        className="ctl-row"
+        label={
+          <label htmlFor="ctl-free">
+            Free camera
+            <small>Orbit around the point under the cursor instead of the plate.</small>
+          </label>
+        }
+        control={<Switch id="ctl-free" checked={map.freeCamera} onChange={(v) => update({ freeCamera: v })} />}
+      />
       {changed ? (
         <Button size="sm" variant="ghost" onClick={() => onChange(withControlOverrides(choice, {}))}>
           Mouse back to the preset
@@ -121,22 +116,31 @@ function Gizmo({ choice, onChange }: { choice: LookAndFeelChoice; onChange: (c: 
       <h4 id="ctl-gizmo" className="set-sub">
         Move, rotate, scale and paint keys
       </h4>
+      {/* Every binding reads Ctrl or Command the same way on each platform, so the other key of the pair works too. */}
+      <p className="sx-small sx-muted set-hint">{isMac() ? 'Command also accepts Control.' : typeof navigator !== 'undefined' && /Linux/.test(navigator.platform) ? 'Ctrl also accepts the Super key.' : 'Ctrl also accepts the Windows key.'}</p>
       {GIZMO_ROWS.map((r) => {
         const cur = getKey(map, r.path) ?? 'none'
         const id = `gz-${r.path.join('-')}`
         return (
-          <div className="fr-mouse-row" key={id}>
-            <label htmlFor={id} {...tipAttrs(r.hint ? { title: r.label ?? r.hint, body: r.hint } : undefined)}>
-              {r.label}
-            </label>
-            <Select id={id} size="sm" className="ctl-key" value={cur} onChange={(e) => set(r.path, e.target.value as ModKey | 'none')}>
-              {MOD_OPTIONS.filter((m) => r.optional || m.value !== 'none').map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </Select>
-          </div>
+          <SettingRow
+            key={id}
+            bare
+            className="ctl-row"
+            label={
+              <label htmlFor={id} {...tipAttrs(r.hint ? { title: r.label ?? r.hint, body: r.hint } : undefined)}>
+                {r.label}
+              </label>
+            }
+            control={
+              <Select id={id} size="sm" className="ctl-key" value={cur} onChange={(e) => set(r.path, e.target.value as ModKey | 'none')}>
+                {MOD_OPTIONS.filter((m) => r.optional || m.value !== 'none').map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </Select>
+            }
+          />
         )
       })}
       {changed ? (

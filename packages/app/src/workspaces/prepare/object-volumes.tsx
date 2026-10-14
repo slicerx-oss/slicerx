@@ -3,7 +3,7 @@
 // Volumes of the selected object: negative volumes (cut away), support blockers and support enforcers.
 // Add one from a shape or from another object on the plate, list them under the object, and move and
 // size the one you pick.
-import { Button, LinkButton, Select, VectorField } from '@slicerx/ui'
+import { Button, LinkButton, Select, tipAttrs, VectorField } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
 import { useHost } from '../../host'
 import { copyVolume } from '../../plate/clipboard'
@@ -21,6 +21,7 @@ import { effectiveMode, useLayout } from '../../first-run/look'
 import './object-volumes.css'
 
 const ROLES = Object.keys(ROLE_LABEL) as VolumeRole[]
+const ROLE_SHORT: Record<VolumeRole, string> = { negative: 'Negative', support_blocker: 'Blocker', support_enforcer: 'Enforcer', modifier: 'Modifier' }
 const SHAPES: { value: PrimitiveShape; label: string }[] = [
   { value: 'box', label: 'Box' },
   { value: 'cylinder', label: 'Cylinder' },
@@ -138,7 +139,8 @@ export function ObjectVolumes() {
         ))}
       </ul>
       <div className="vol-add">
-        <Select id="vol-role" size="sm" aria-label="Volume type" value={role} onChange={(e) => setRole(e.target.value as VolumeRole)}>
+        {/* Closed, the type reads by its short name so the row fits the card; the menu and the tooltip say it in full. */}
+        <Select id="vol-role" size="sm" aria-label="Volume type" face={ROLE_SHORT[role]} wrap={tipAttrs({ title: ROLE_LABEL[role] })} value={role} onChange={(e) => setRole(e.target.value as VolumeRole)}>
           {ROLES.map((r) => (
             <option key={r} value={r}>
               {ROLE_LABEL[r]}

@@ -20,28 +20,30 @@
 
 /* The tab row stays at the top of the pane while its tab scrolls under it. Stuck, it floats over the rows: frosted
    glass and a soft shadow; nothing in it changes size. */
-.set-tabs-bar { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * var(--s-3)); padding: var(--s-1) var(--s-3); background: color-mix(in srgb, var(--ink-1) 82%, transparent); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); transition: box-shadow var(--t-fast) var(--ease); }
+.set-tabs-bar { position: sticky; top: 0; z-index: 3; padding: var(--s-1) 0; background: color-mix(in srgb, var(--ink-1) 82%, transparent); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); transition: box-shadow var(--t-fast) var(--ease); }
 .set-tabs-bar[data-stuck="true"] { box-shadow: var(--shadow-float); }
 .set-tabs-bar[hidden] { display: none; }
 .set-tabs-bar .set-tabs { margin: 0; }
 .set-tab { position: relative; }
 /* A tab's change count sits on its corner, out of the flow. */
-.set-tab-count { position: absolute; top: 3px; right: calc(50% - 19px); min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--purple); color: var(--ink-0); font: var(--fw-semibold) 10px/15px var(--f-body); font-variant-numeric: tabular-nums; text-align: center; pointer-events: none; }
+.set-tab-count { position: absolute; top: 3px; right: calc(50% - 19px); min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--purple); color: var(--ink-0); font: var(--fw-semibold) var(--fs-xs)/15px var(--f-body); font-variant-numeric: tabular-nums; text-align: center; pointer-events: none; }
 
-/* Sections: a header that folds the rows to one line with a summary; changed rows stay listed under a closed one. */
-.set-sec { border-top: 1px solid var(--line-soft); }
-.set-sec:first-of-type { border-top: 0; }
-.set-sec-h { display: grid; grid-template-columns: 14px auto auto minmax(0, 1fr); align-items: center; gap: 6px; width: 100%; height: 34px; padding: 0; border: 0; background: none; color: var(--fg); font: var(--fw-semibold) var(--fs-sm) var(--f-body); text-align: left; cursor: pointer; }
-.set-sec-h .chev { color: var(--dim); transition: transform var(--t-fast) var(--ease); }
-.set-sec-h[aria-expanded="true"] .chev { transform: rotate(90deg); }
-.set-sec-h .n { color: var(--purple); font: var(--fw-medium) var(--fs-xs) var(--f-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.set-sec-h .sum { min-width: 0; overflow: hidden; color: var(--dim); font: var(--fw-regular) var(--fs-xs) var(--f-body); white-space: nowrap; text-overflow: ellipsis; text-align: right; }
-.set-sec-h[aria-expanded="true"] .sum { visibility: hidden; }
-.set-sec-h:hover .t { color: var(--accent); }
-.set-sec-h:focus-visible { outline: var(--focus-ring); outline-offset: -2px; border-radius: var(--r-sm); }
-.set-sec > ul { list-style: none; margin: 0 0 var(--s-2); padding: 0; }
-.set-sec .tier-more { margin: 0 0 var(--s-2); }
-.set-sec-sub { padding: 8px 0 2px; color: var(--muted); font: var(--fw-semibold) var(--fs-xs) var(--f-body); }
+/* Print settings sections (pset-, apart from the Settings dialog's set-sec): a header that folds the rows to one line
+   with a summary; changed rows stay listed under a closed one. The header's chevron sits in the rows' mark rail, so a
+   section's name starts at the labels' x. One separator per section. */
+.pset-sec { border-top: 1px solid var(--line-soft); }
+.pset-sec:first-of-type { border-top: 0; }
+.pset-sec-h { display: grid; grid-template-columns: var(--w-mark) auto auto minmax(0, 1fr); align-items: center; column-gap: var(--s-3); width: 100%; height: var(--h-md); padding: 0; border: 0; background: none; color: var(--fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); text-align: left; cursor: pointer; }
+.pset-sec-h .chev { width: var(--w-mark); height: var(--w-mark); color: var(--dim); transition: transform var(--t-fast) var(--ease); }
+.pset-sec-h[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.pset-sec-h .n { color: var(--purple); font: var(--fw-medium) var(--fs-xs) var(--f-body); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pset-sec-h .sum { min-width: 0; overflow: hidden; color: var(--dim); font: var(--fw-regular) var(--fs-sm) var(--f-body); white-space: nowrap; text-overflow: ellipsis; text-align: right; }
+.pset-sec-h[aria-expanded="true"] .sum { visibility: hidden; }
+.pset-sec-h:hover .t { color: var(--accent); }
+.pset-sec-h:focus-visible { outline: var(--focus-ring); outline-offset: -2px; border-radius: var(--r-sm); }
+.pset-sec > ul { list-style: none; margin: 0 0 var(--s-2); padding: 0; }
+.pset-sec .tier-more { margin: 0 0 var(--s-2) calc(var(--w-mark) + var(--s-3)); }
+.pset-sec-sub { padding: var(--s-2) 0 0 calc(var(--w-mark) + var(--s-3)); color: var(--muted); font: var(--fw-semibold) var(--fs-sm) var(--f-body); }
 .tier-group > h4 .sx-small { font: var(--fw-regular) var(--fs-xs) var(--f-body); letter-spacing: 0; text-transform: none; color: var(--dim); }
 
 /* Changed: a chip that lists only edits, across every tab. */
@@ -55,10 +57,9 @@
 .set-pins { margin-bottom: var(--s-2); }
 .set-pins > ul { list-style: none; margin: 0; padding: 0; }
 
-/* A row's pin, in the card's padding left of the row (never over the label): shown on hover or focus, and always on a pinned row. */
-.expert .field { position: relative; }
-.row-pin { position: absolute; top: 10px; left: calc(-1 * var(--s-3)); display: grid; place-items: center; width: var(--s-3); height: 14px; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--dim); cursor: pointer; opacity: 0; }
-.field:hover > .row-pin, .row-pin:focus-visible, .row-pin[aria-pressed="true"] { opacity: 1; }
+/* A row's pin, in the row's mark rail (never over the label): shown on hover or focus, and always on a pinned row. */
+.row-pin { display: grid; place-items: center; width: var(--w-mark); height: 14px; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--dim); cursor: pointer; opacity: 0; }
+.field:hover .row-pin, .row-pin:focus-visible, .row-pin[aria-pressed="true"] { opacity: 1; }
 .row-pin svg { width: 10px; height: 10px; }
 .row-pin:hover { color: var(--fg); }
 .row-pin[aria-pressed="true"] { color: var(--accent); }
@@ -66,11 +67,11 @@
 @media (pointer: coarse) { .row-pin { display: none; } }
 
 /* Objects that print a plate row with their own value. */
-.obj-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; }
+.obj-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; }
 .obj-chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--ink-2); color: var(--muted); font: var(--fw-medium) var(--fs-xs) var(--f-body); font-variant-numeric: tabular-nums; cursor: pointer; }
 .obj-chip:hover { color: var(--fg); border-color: var(--accent); }
 .obj-chip-name { color: var(--fg); max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .obj-chip-more { color: var(--dim); font-size: var(--fs-xs); }
 
 .set-slack { height: 0; }
-@media (prefers-reduced-motion: reduce) { .set-sec-h .chev, .set-tabs-bar { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .pset-sec-h .chev, .set-tabs-bar { transition: none; } }

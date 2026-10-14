@@ -55,13 +55,14 @@ a { color: var(--purple); }
 .sname small { display: block; font: var(--fw-medium) calc(11px * var(--text-scale)) var(--f-mono); color: var(--dim); }
 .mini { height: 26px; border-radius: 6px; border: 1px solid var(--line-soft); background: var(--ink-2); color: var(--fg); font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-body); padding: 0 6px; max-width: 100%; }
 .mini:hover { border-color: var(--line); }
+.field .mini:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-field); }
 .srow { margin-top: 12px; }
 /* Simple keeps its two core rows in view without shrinking their controls. */
 .srow[data-compact] { margin-top: var(--s-2); }
 .srow-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
 .srow-h label { font: var(--fw-medium) calc(13px * var(--text-scale)) var(--f-body); }
 .srow-h output { font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-mono); color: var(--purple); }
-.ticks { display: flex; justify-content: space-between; font: var(--fw-medium) calc(10.5px * var(--text-scale)) var(--f-mono); color: var(--dim); margin-top: 3px; }
+.ticks { display: flex; justify-content: space-between; font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--dim); margin-top: 3px; }
 .support-line { margin: 10px 0 0; font: var(--fw-medium) var(--fs-sm)/1.5 var(--f-body); color: var(--muted); display: flex; gap: 8px; align-items: flex-start; }
 .support-line .sx-ic { width: 15px; height: 15px; margin-top: 2px; color: var(--orange); }
 .support-line.ok .sx-ic { color: var(--green); }
@@ -74,24 +75,35 @@ a { color: var(--purple); }
 .search-in.grow { flex: 1; min-width: 0; }
 input.bare { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; color: var(--fg); font-size: calc(13px * var(--text-scale)); }
 input.bare::placeholder { color: var(--dim); }
-.expert-group h4 { display: flex; justify-content: space-between; margin: 16px 0 4px; font: var(--fw-semibold) calc(11px * var(--text-scale))/1.2 var(--f-body); letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+.expert-group h4 { display: flex; justify-content: space-between; margin: var(--s-4) 0 var(--s-1); font: var(--fw-semibold) var(--fs-xs)/1.2 var(--f-body); letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
 .expert-group ul { list-style: none; margin: 0; padding: 0; }
-/* A settings row: the label, the control, then the reset button. Every row ends in the same reset column, so every
-   control ends at one right edge, and each kind of control has one width: a select 132 px, a number field 72 px, a
-   switch its own. A number's unit sits beside the label (the number fields rule). One height for every row. */
-.field { display: grid; grid-template-columns: minmax(0, 1fr) auto 22px; gap: 6px var(--s-2); align-items: center; min-height: 40px; padding: 6px 0; border-top: 1px dashed var(--line-soft); }
-.field label { font-size: calc(13px * var(--text-scale)); color: var(--muted); min-width: 0; }
-.field .key { display: block; font: var(--fw-medium) calc(10.5px * var(--text-scale)) var(--f-mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A Print settings row (Field, on the kit's SettingRow): mark rail, label, control, reset rail. Each kind of control
+   has one width (a number field --w-num, a select --w-sel, a marked choice --w-seg, a switch its own) and every one
+   ends at the row's right edge. A number's unit sits beside the label (the number fields rule). No line between rows:
+   one separator per section. */
+.field label { font-size: var(--fs-md); color: var(--muted); min-width: 0; }
+.field .key { display: block; font: var(--fw-medium) var(--fs-sm) var(--f-mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .field.changed label { color: var(--fg); }
-.field.changed label::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--purple); margin-right: 6px; vertical-align: 1px; }
-.field .field-unit { margin-left: var(--s-1); font-size: var(--fs-xs); color: var(--dim); white-space: nowrap; }
-.field > .mini { height: 28px; }
-.field > input.num { justify-self: end; width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
-.field > select.mini { width: 132px; }
-.field > .sx-switch { justify-self: end; }
-/* The reset button stays level with its control, so a note under the row adds no empty line after it. */
-.field > .reset { grid-column: -2; grid-row: 1; }
-.field[data-wide] > .reset { grid-row: 2; }
+.field .field-unit { margin-left: var(--s-1); font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; }
+.field > .mini { background: var(--field-bg); border-color: var(--field-line); }
+.field > input.num { width: var(--w-num); height: var(--h-sm); text-align: right; font-variant-numeric: tabular-nums; }
+.field > .sx-selectwrap { width: var(--w-sel); }
+.field > .sx-selectwrap > .sx-select, .field > .sx-selectwrap > .sx-select-face { font: var(--fw-medium) var(--fs-sm) var(--f-body); font-variant-numeric: tabular-nums; }
+.field > .sx-seg.tier-seg { width: var(--w-seg); }
+/* A marked choice (three options or more) keeps the control column only while its label keeps 120 px: the rails, the
+   gaps and the 216 px choice take 286 px, so under 406 px every such row puts the choice under its label, from the
+   label's x to the right edge, all of them at once (a segmented control with three options is full width by nature). */
+.expert { container: pset / inline-size; }
+@container pset (max-width: 405px) {
+  .field:has(> .tier-seg) > :nth-child(2) { grid-column: 2 / -1; }
+  .field:has(> .tier-seg) > :nth-child(3) { grid-row: 2; grid-column: 2 / 4; justify-self: stretch; }
+  .field:has(> .tier-seg) > :nth-child(4) { grid-row: 2; }
+  .field > .sx-seg.tier-seg { width: auto; }
+}
+.field > .tier-seg > button { min-width: 0; padding: 0 var(--s-1); }
+.field > p { margin: 0; }
+/* The pin shares the mark rail with the changed dot: on hover or focus, and on a pinned row, the pin shows instead. */
+.field .sx-setrow-mark:has(.row-pin[aria-pressed="true"]) > .sx-setrow-dot, .field:hover .sx-setrow-mark:has(.row-pin) > .sx-setrow-dot, .field .sx-setrow-mark:has(.row-pin:focus-visible) > .sx-setrow-dot { visibility: hidden; }
 .check { width: 16px; height: 16px; accent-color: var(--purple); }
 .reset { width: 22px; height: 22px; border: 0; border-radius: 6px; background: none; color: var(--dim); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .reset .sx-ic { width: 14px; height: 14px; }
@@ -413,23 +425,14 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .tier-group h4 .tier-h { display: inline-flex; align-items: center; gap: 6px; }
 .tier-group h4 .tier-h .sx-ic { width: 14px; height: 14px; color: var(--muted); }
 .tier-blurb { margin: 0 0 2px; font: var(--fs-xs)/1.4 var(--f-body); color: var(--dim); }
-.tier-divider { padding: 8px 0 2px; font: var(--fw-semibold) calc(10px * var(--text-scale)) var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); border-top: 1px dashed var(--line-soft); }
+/* The Expert rows of a section, under a quiet caption at the labels' x. */
+.tier-divider { padding: var(--s-2) 0 var(--s-1) calc(var(--w-mark) + var(--s-3)); font: var(--fw-semibold) var(--fs-xs) var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
 .tier-more { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; border: 0; background: none; padding: 2px 0; color: var(--muted); font: var(--fw-medium) var(--fs-xs) var(--f-body); cursor: pointer; }
 .tier-more:hover { color: var(--fg); }
-.field[data-wide] { grid-template-columns: minmax(0, 1fr) 22px; }
-.field[data-wide] label { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; }
-.field[data-wide] label .key { display: inline; min-width: 0; }
-/* A segmented choice takes the row under its label, from the label's edge to the controls' right edge, its options
-   sharing that width. */
-.field[data-wide] .tier-seg { grid-column: 1; }
-.field[data-wide] .tier-seg > button { min-width: 0; }
-/* A text setting: the control column's width (--w-ctl) at the right edge, or, for a template or prose, the row under
-   its label like a segmented choice. A number-or-percent setting: its unit toggle, then the number field at the edge
-   every number field ends at. */
-.field > input.text { justify-self: end; width: var(--w-ctl); font-variant-numeric: tabular-nums; }
-.field[data-wide] > input.text.wide { grid-column: 1; justify-self: stretch; width: 100%; }
-.field > .mm-or-pct { justify-self: end; display: inline-flex; align-items: center; gap: var(--s-2); }
-.mm-or-pct > input.num { width: 72px; height: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+.field > input.text { width: var(--w-ctl); height: var(--h-sm); font-variant-numeric: tabular-nums; }
+.field[data-stack] > input.text.wide { width: 100%; }
+.field > .mm-or-pct { display: inline-flex; align-items: center; gap: var(--s-2); }
+.mm-or-pct > input.num { width: var(--w-num); height: var(--h-sm); background: var(--field-bg); border-color: var(--field-line); text-align: right; font-variant-numeric: tabular-nums; }
 .mm-or-pct .unit-seg > button { height: 22px; padding: 0 var(--s-2); }
 .seg-mark { display: inline-flex; align-items: center; gap: 5px; }
 .seg-mark .sx-ic { width: 15px; height: 15px; color: var(--cyan); }
@@ -539,9 +542,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
    short window the dialog fits the window: the header and the footer stay put and only the body scrolls, with its
    scrollbar lane kept so a long section and a short one start at the same x */
 .settings-dialog[open] { display: flex; flex-direction: column; height: min(720px, calc(100dvh - 2 * var(--gutter))); overflow: hidden; }
-.settings-dialog .sx-dialog-h, .settings-dialog .sx-dialog-foot { flex: none; }
-.settings-dialog .sx-dialog-body { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.settings-dialog .sx-dialog-foot { padding-top: 12px; border-top: 1px solid var(--line-soft); }
+/* One right edge for the dialog: the 24 px content gutter, and the header and footer keep the body's scrollbar lane
+   (scrollbar-gutter on a clipped box), so the close button and the footer end where the rows' controls end. */
+.settings-dialog .sx-dialog-h, .settings-dialog .sx-dialog-foot { flex: none; overflow: hidden; scrollbar-gutter: stable; }
+.settings-dialog .sx-dialog-h { padding: var(--s-4) var(--s-5) var(--s-1); }
+.settings-dialog .sx-dialog-body { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: var(--s-2) var(--s-5) var(--s-5); }
+.settings-dialog .sx-dialog-foot { padding: var(--s-3) var(--s-5) var(--s-5); border-top: 1px solid var(--line-soft); }
 .settings { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; min-height: 320px; }
 .settings-nav { display: grid; align-content: start; gap: 2px; }
 /* The nav and the section scroll together in the dialog's body, so the nav stays at the top while a long section scrolls. */
@@ -556,21 +562,20 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* The grid's gap spaces a section's paragraphs; their default margins would add to it. */
 .set-sec > p { margin: 0; }
 .set-sub { margin: 8px 0 0; font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); color: var(--muted); }
-/* Rows of a Settings section (Controls' mouse buttons, tool keys and switches): the label on the left, the control
-   at the right edge, one row height and one gap. Each kind of control has one width, so a column of them starts and
-   ends at one x: a segmented choice 216 px, a compact select the control column (--w-ctl, 96 px). */
-.set-rows { display: grid; gap: var(--s-1); }
+/* Rows of a Settings section (Controls' mouse buttons, tool keys and switches) are the kit's SettingRow, bare: no
+   rail holds anything here, so the label starts at the section's edge and every control ends at the content's right
+   edge, where the dialog's close button and footer end too. A segmented choice is --w-seg wide, a tool key --w-ctl. */
+.set-rows { display: grid; }
 .set-rows > .set-sub { margin-bottom: var(--s-1); }
-.set-rows > .fr-mouse-row, .set-rows > .sx-switchrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: 36px; }
-.set-rows > .fr-mouse-row > :first-child { flex: 1; min-width: 0; font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--fg); }
-.set-rows > .fr-mouse-row > .sx-seg { flex: none; display: flex; width: 216px; }
-.set-rows > .fr-mouse-row > .sx-seg > button { flex: 1; }
-.set-rows > .fr-mouse-row > .sx-selectwrap { flex: none; width: var(--w-ctl); }
-.set-rows > .fr-mouse-row > .sx-selectwrap > select { width: 100%; }
-/* A tool key reads as a keycap: the keycap radius and type (the spec's radius and type scales). */
-.fr-mouse-row .sx-select.ctl-key { border-radius: var(--r-xs); font: var(--fw-medium) var(--fs-xs) var(--f-mono); }
-.set-rows > .sx-switchrow:has(small) { align-items: flex-start; padding-block: var(--s-1); }
-.set-rows > .sx-btn { justify-self: start; }
+.set-rows > .set-hint { margin: 0 0 var(--s-1); }
+.set-rows > .sx-setrow > :first-child { font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--fg); }
+.set-rows > .sx-setrow > .sx-seg { width: var(--w-seg); }
+.set-rows > .sx-setrow > .sx-selectwrap { width: var(--w-ctl); }
+.set-rows label small { display: block; font: var(--fw-regular) var(--fs-sm) var(--f-body); color: var(--dim); }
+.set-rows label { cursor: pointer; }
+/* A tool key reads as a keycap (the keycap radius and type) and still as a select: the chevron, hover, focus and its menu. */
+.ctl-row .sx-select.ctl-key { border-radius: var(--r-xs); font: var(--fw-medium) var(--fs-xs) var(--f-mono); }
+.set-rows > .sx-btn { justify-self: start; margin-top: var(--s-1); }
 .acct-who, .dev-list li, .tok-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .acct-who .min0, .dev-list .min0, .tok-list .min0 { display: grid; gap: 2px; }
 .dev-list, .tok-list { list-style: none; margin: 0; padding: 0; display: grid; }
@@ -818,8 +823,13 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .vol-dot { width: 10px; height: 10px; border-radius: 50%; }
 .vol-name { all: unset; cursor: pointer; font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vol-fields { display: grid; gap: 4px; padding: 4px 0 4px 16px; }
-.vol-add { display: flex; gap: 6px; align-items: center; }
-.vol-add .sx-select { min-width: 0; flex: 1; }
+/* The add row: the volume type takes the flexible width, the shape its own, and Add ends at the card's right content
+   edge, in line with the Objects header's actions. Both selects open a menu, so both keep their chevron. */
+.vol-add { display: flex; gap: var(--s-2); align-items: center; }
+.vol-add > .sx-selectwrap { flex: none; min-width: 0; }
+.vol-add > .sx-selectwrap:first-child { flex: 1 1 0; }
+.vol-add > .sx-btn { flex: none; margin-left: auto; }
+.vol-add .sx-select, .vol-add .sx-select-face { font: var(--fw-medium) var(--fs-sm) var(--f-body); }
 
 /* User presets */
 .preset-import { display: flex; gap: 10px; align-items: center; margin: 8px 0; }
@@ -1108,9 +1118,13 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
    with a header strip. Printer and filament fold to a summary line (shell/fold.ts). */
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .sx-rail-body { background: var(--ink-0); }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .sx-rail-body::after { background: linear-gradient(to bottom, transparent, var(--ink-0)); }
-.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2) var(--s-2) 56px; }
-.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block { padding: 0 var(--s-3) var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
-.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h { min-height: 40px; margin: 0 calc(-1 * var(--s-3)) var(--s-3); padding: 6px var(--s-3); background: var(--ink-2); border-bottom: 1px solid var(--line-soft); border-radius: calc(var(--r-md) - 1px) calc(var(--r-md) - 1px) 0 0; }
+/* One inset system: the pane gutter (16, less the scrollbar lane on the right), then a card's 1 px border and its 12 px
+   inset, so card content sits 29 px in from both pane edges. No negative margins: the header strip spans the card and
+   the card's other children take the inset. */
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2) calc(var(--gutter) - var(--w-scrollbar, 0px)) 56px var(--gutter); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block { padding: 0 0 var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block:not(.machine-card) > :not(.sx-block-h) { margin-inline: var(--s-3); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h { min-height: 40px; margin: 0 0 var(--s-3); padding: var(--s-1) var(--s-3); background: var(--ink-2); border-radius: calc(var(--r-md) - 1px) calc(var(--r-md) - 1px) 0 0; }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block[data-collapsed] { padding-bottom: 0; }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block[data-collapsed] > .sx-block-h { margin-bottom: 0; border-bottom-color: transparent; border-radius: calc(var(--r-md) - 1px); }
 .sec-sum { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: var(--fw-regular) var(--fs-xs) var(--f-body); color: var(--muted); }

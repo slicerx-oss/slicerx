@@ -91,9 +91,9 @@ describe('a switch held as a list', () => {
 })
 
 describe('a text setting', () => {
-  it('takes a template across the row, and stores what was typed', () => {
+  it('stacks a template under its label, across the row, and stores what was typed', () => {
     const { li, sets } = row('solid_infill_rotate_template', '')
-    expect(li.hasAttribute('data-wide')).toBe(true)
+    expect(li.hasAttribute('data-stack')).toBe(true)
     const input = li.querySelector<HTMLInputElement>('input.text')!
     expect(input.classList.contains('wide')).toBe(true)
     // Its unit (degrees) is written beside the label.
@@ -113,7 +113,7 @@ describe('a text setting', () => {
 
   it('keeps a short value at the control column width', () => {
     const { li, sets } = row('extra_solid_infills', '')
-    expect(li.hasAttribute('data-wide')).toBe(false)
+    expect(li.hasAttribute('data-stack')).toBe(false)
     const input = li.querySelector<HTMLInputElement>('input.text')!
     expect(input.classList.contains('wide')).toBe(false)
     typeIn(input, '5#2')

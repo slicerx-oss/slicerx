@@ -108,7 +108,7 @@
 :root[data-phone] .settings-list-about { color: var(--muted) !important; }
 :root[data-phone] .settings-body { gap: var(--s-5); }
 /* rows and fields in a section get full touch size */
-:root[data-phone] .settings-body .sx-switchrow { min-height: 44px; }
+:root[data-phone] .settings-body .sx-switchrow, :root[data-phone] .settings-body .set-rows > .sx-setrow { min-height: var(--h-lg); }
 :root[data-phone] .settings-body .sx-btn { min-height: 44px; }
 :root[data-phone] .settings-body .sx-input, :root[data-phone] .settings-body select { min-height: 44px; font-size: 16px; }
 
