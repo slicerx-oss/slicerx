@@ -58,7 +58,10 @@ export function SheetRecord({
   // a guess is assumed until its row is typed in or kept with Enter, or the sheet is confirmed
   const assumed = answer?.confirmed ? [] : sheet.dims.filter((d) => d.source === 'guess' && (answer !== null || !(values && d.key in values)))
   const status = !answer && assumed.length
-    ? `${assumed.length} assumed value${assumed.length === 1 ? '' : 's'}: ${assumed.map((d) => `${d.label.toLowerCase()} ${valueOf(d.key, d.value)} ${unitText(d.unit)}`).join(', ')}`
+    ? `${assumed.length} assumed value${assumed.length === 1 ? '' : 's'}: ${assumed
+        .slice(0, 2)
+        .map((d) => `${d.label.toLowerCase()} ${valueOf(d.key, d.value)} ${unitText(d.unit)}`)
+        .join(', ')}${assumed.length > 2 ? ` and ${assumed.length - 2} more` : ''}`
     : !answer ? 'Waiting for you to confirm' : !answer.confirmed ? 'Canceled, nothing built' : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
   return (
     <div className="lookup-rec sheet-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record">
