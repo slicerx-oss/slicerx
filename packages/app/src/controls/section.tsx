@@ -42,7 +42,7 @@ function Mouse({ choice, onChange }: { choice: LookAndFeelChoice; onChange: (c: 
   }
   const changed = Boolean(Object.keys(o).length)
   return (
-    <section aria-labelledby="ctl-mouse">
+    <section className="set-rows" aria-labelledby="ctl-mouse">
       <h4 id="ctl-mouse" className="set-sub">
         Mouse
       </h4>
@@ -117,7 +117,7 @@ function Gizmo({ choice, onChange }: { choice: LookAndFeelChoice; onChange: (c: 
   }
   const changed = Boolean(o.gizmo && Object.keys(o.gizmo).length)
   return (
-    <section aria-labelledby="ctl-gizmo">
+    <section className="set-rows" aria-labelledby="ctl-gizmo">
       <h4 id="ctl-gizmo" className="set-sub">
         Move, rotate, scale and paint keys
       </h4>
