@@ -21,10 +21,12 @@ import {
   MaxEquation,
   Mesh,
   MeshBasicMaterial,
+  NearestFilter,
   OneMinusSrcAlphaFactor,
   Points,
   PointsMaterial,
   ShapeUtils,
+  SRGBColorSpace,
   SrcAlphaFactor,
   Vector2,
   Sprite,
@@ -275,6 +277,8 @@ const LIGHT_TONE: Partial<Record<SketchTone, string>> = {
   axis: '#d9731c',
   construction: '#e07b12',
 }
+// a picked constraint glyph on a light studio: darker than the shared selected gold, since a glyph's strokes are 1 px
+const LIGHT_GLYPH_PICKED = '#8f6a00'
 
 /** Room for the line being drawn: an arc preview needs the most points. */
 const CURSOR_POINTS = 256
@@ -328,6 +332,7 @@ export class SketchLayer {
   private readonly guide: Line
   private readonly guidePos = new Float32Array(6)
   scene: SketchScene | null = null
+  private light = false
 
   constructor() {
     this.group.name = 'sketch'
@@ -481,7 +486,7 @@ export class SketchLayer {
       })
     }
     for (const [i, g] of (scene.glyphs ?? []).entries()) {
-      const sprite = makeGlyph(g.kind, g.picked)
+      const sprite = makeGlyph(g.kind, g.picked, this.light)
       if (!sprite) continue
       // up and to the right of the spot, side by side when several share it
       sprite.center.set(-0.25 - g.slot * 1.15, -0.25)
@@ -638,6 +643,10 @@ export class SketchLayer {
 
   /** Darker curves, points and snap marker on a light studio, so they read on it. */
   setLight(light: boolean): void {
+    const was = this.light
+    this.light = light
+    // the glyphs are drawn into textures, so they redraw in the new colors
+    if (was !== light && this.scene?.glyphs?.length) this.set(this.scene)
     for (const [tone, t] of Object.entries(TONE) as [SketchTone, { color: string }][]) {
       if (tone === 'soft') continue
       this.mats.get(tone)?.color.set(light ? (LIGHT_TONE[tone] ?? t.color) : t.color)
@@ -761,80 +770,121 @@ export class DimensionLayer {
   }
 }
 
-// each glyph drawn on a 40 px tile, as the plan's table has them
-const GLYPHS: Record<SketchGlyphKind, (c: CanvasRenderingContext2D) => void> = {
-  coincident: (c) => disc(c, 20, 20, 6),
-  horizontal: (c) => lines(c, [[10, 20, 30, 20]]),
-  vertical: (c) => lines(c, [[20, 10, 20, 30]]),
-  parallel: (c) => lines(c, [[11, 29, 19, 11], [21, 29, 29, 11]]),
-  perpendicular: (c) => lines(c, [[10, 29, 30, 29], [20, 29, 20, 10]]),
-  tangent: (c) => {
-    lines(c, [[8, 31, 32, 31]])
-    ring(c, 20, 21, 9)
+// constraint glyphs drawn by the pixel on a 16 px grid, as the tool icons are: l line, o node ring, w node center
+type GlyphGrid = string[][]
+const GLYPH_PX = 16
+const blank = (): GlyphGrid => Array.from({ length: GLYPH_PX }, () => Array<string>(GLYPH_PX).fill('.'))
+const put = (g: GlyphGrid, x0: number, y0: number, x1: number, y1: number, ch = 'l') => {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y]![x] = ch
+}
+const pnode = (g: GlyphGrid, x: number, y: number, n: number) => {
+  put(g, x, y, x + n - 1, y + n - 1, 'o')
+  put(g, x + 1, y + 1, x + n - 2, y + n - 2, 'w')
+}
+const stamp = (g: GlyphGrid, x: number, y: number, rows: readonly string[]) => rows.forEach((r, j) => [...r].forEach((c, i) => c !== '.' && (g[y + j]![x + i] = 'l')))
+const C6 = ['.XXXX.', 'XXXXXX', 'XX..XX', 'XX..XX', 'XXXXXX', '.XXXX.']
+const C8 = ['..XXXX..', '.XXXXXX.', 'XX....XX', 'XX....XX', 'XX....XX', 'XX....XX', '.XXXXXX.', '..XXXX..']
+const C12 = ['....XXXX....', '..XXXXXXXX..', '.XXX....XXX.', '.XX......XX.', 'XX........XX', 'XX........XX', 'XX........XX', 'XX........XX', '.XX......XX.', '.XXX....XXX.', '..XXXXXXXX..', '....XXXX....']
+const GLYPHS: Record<SketchGlyphKind, (g: GlyphGrid) => void> = {
+  coincident: (g) => pnode(g, 5, 5, 6),
+  horizontal: (g) => put(g, 3, 7, 12, 8),
+  vertical: (g) => put(g, 7, 3, 8, 12),
+  parallel: (g) => {
+    for (let r = 3; r <= 12; r++) {
+      const x = 3 + Math.floor((12 - r) / 2)
+      put(g, x, r, x + 1, r)
+      put(g, x + 5, r, x + 6, r)
+    }
   },
-  equal: (c) => lines(c, [[11, 16, 29, 16], [11, 25, 29, 25]]),
-  midpoint: (c) => {
-    lines(c, [[8, 29, 32, 29]])
-    c.beginPath()
-    c.moveTo(20, 11)
-    c.lineTo(28, 25)
-    c.lineTo(12, 25)
-    c.closePath()
-    c.fill()
+  perpendicular: (g) => {
+    put(g, 3, 11, 12, 12)
+    put(g, 7, 3, 8, 10)
   },
-  concentric: (c) => {
-    ring(c, 20, 20, 5)
-    ring(c, 20, 20, 11)
+  tangent: (g) => {
+    stamp(g, 4, 3, C8)
+    put(g, 2, 11, 13, 12)
   },
-  collinear: (c) => {
-    c.setLineDash([5, 4])
-    lines(c, [[7, 20, 33, 20]])
-    c.setLineDash([])
+  equal: (g) => {
+    put(g, 3, 5, 12, 6)
+    put(g, 3, 9, 12, 10)
   },
-  symmetric: (c) => {
-    lines(c, [[13, 10, 13, 30], [27, 10, 27, 30]])
-    c.setLineDash([3, 3])
-    lines(c, [[20, 8, 20, 32]])
-    c.setLineDash([])
+  midpoint: (g) => {
+    put(g, 2, 7, 13, 8)
+    pnode(g, 5, 5, 6)
+  },
+  concentric: (g) => {
+    stamp(g, 2, 2, C12)
+    stamp(g, 5, 5, C6)
+  },
+  collinear: (g) => {
+    put(g, 2, 7, 4, 8)
+    put(g, 6, 7, 9, 8)
+    put(g, 11, 7, 13, 8)
+  },
+  symmetric: (g) => {
+    put(g, 3, 4, 4, 11)
+    put(g, 11, 4, 12, 11)
+    put(g, 7, 3, 8, 4)
+    put(g, 7, 7, 8, 8)
+    put(g, 7, 11, 8, 12)
   },
 }
 
-function lines(c: CanvasRenderingContext2D, ls: readonly (readonly [number, number, number, number])[]): void {
-  c.beginPath()
-  for (const [a, b, x, y] of ls) {
-    c.moveTo(a, b)
-    c.lineTo(x, y)
+/**
+ * A constraint glyph's pixels, rows of 16: l line, o node ring, w node center, h halo, . empty. The halo is every empty
+ * pixel within 1 px of the glyph, so it reads over lines and faces with no tile. A picked glyph keeps the same pixels.
+ */
+export function glyphPixels(kind: SketchGlyphKind): string[] {
+  const g = blank()
+  GLYPHS[kind](g)
+  const lit = (x: number, y: number) => (g[y]?.[x] ?? '.') !== '.' && g[y]![x] !== 'h'
+  for (let y = 0; y < GLYPH_PX; y++)
+    for (let x = 0; x < GLYPH_PX; x++) {
+      if (g[y]![x] !== '.') continue
+      near: for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (lit(x + dx, y + dy)) {
+        g[y]![x] = 'h'
+        break near
+      }
+    }
+  return g.map((r) => r.join(''))
+}
+
+/**
+ * A glyph's colors by pixel letter: the line takes the defined color. Picked on a dark studio, line and halo swap, so
+ * dark strokes sit in a gold outline; on a light studio the line takes the darker gold instead.
+ */
+export function glyphInk(picked = false, light = false): Record<'l' | 'o' | 'w' | 'h', string> {
+  if (picked && !light) return { l: '#191a21', o: '#191a21', w: '#ffffff', h: TONE.selected.color }
+  return {
+    l: picked ? LIGHT_GLYPH_PICKED : light ? LIGHT_TONE.defined! : TONE.defined.color,
+    o: light ? '#282a36' : '#191a21',
+    w: '#ffffff',
+    h: light ? 'rgba(255, 255, 255, 0.85)' : 'rgba(25, 26, 33, 0.85)',
   }
-  c.stroke()
 }
 
-function ring(c: CanvasRenderingContext2D, x: number, y: number, r: number): void {
-  c.beginPath()
-  c.arc(x, y, r, 0, Math.PI * 2)
-  c.stroke()
-}
-
-function disc(c: CanvasRenderingContext2D, x: number, y: number, r: number): void {
-  c.beginPath()
-  c.arc(x, y, r, 0, Math.PI * 2)
-  c.fill()
-}
-
-function makeGlyph(kind: SketchGlyphKind, picked = false): Sprite | null {
+function makeGlyph(kind: SketchGlyphKind, picked = false, light = false): Sprite | null {
   if (typeof document === 'undefined') return null
+  // one texel per device pixel, sampled nearest, so the pixel drawing stays crisp
+  const s = Math.max(1, Math.round(globalThis.devicePixelRatio ?? 1))
   const cv = document.createElement('canvas')
-  cv.width = cv.height = 40
+  cv.width = cv.height = GLYPH_PX * s
   const c = cv.getContext('2d')
   if (!c) return null
-  c.fillStyle = picked ? '#f1fa8c' : 'rgba(30, 31, 41, 0.9)'
-  c.beginPath()
-  c.roundRect?.(0, 0, 40, 40, 8)
-  c.fill()
-  c.strokeStyle = c.fillStyle = picked ? '#1e1f29' : '#f8f8f2'
-  c.lineWidth = 3
-  c.lineCap = 'round'
-  GLYPHS[kind](c)
-  const sprite = new Sprite(new SpriteMaterial({ map: new CanvasTexture(cv), depthTest: false, sizeAttenuation: false, transparent: true, toneMapped: false, ...KEEP_ALPHA }))
+  const ink: Record<string, string> = glyphInk(picked, light)
+  glyphPixels(kind).forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      if (ch === '.') return
+      c.fillStyle = ink[ch]!
+      c.fillRect(x * s, y * s, s, s)
+    }),
+  )
+  const map = new CanvasTexture(cv)
+  map.magFilter = map.minFilter = NearestFilter
+  map.generateMipmaps = false
+  // the canvas holds sRGB colors; left linear, the output pass would lighten every one
+  map.colorSpace = SRGBColorSpace
+  const sprite = new Sprite(new SpriteMaterial({ map, depthTest: false, sizeAttenuation: false, transparent: true, toneMapped: false, ...KEEP_ALPHA }))
   sprite.renderOrder = 15
   sprite.raycast = () => {}
   sprite.userData['glyph'] = kind
