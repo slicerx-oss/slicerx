@@ -24,6 +24,8 @@ export interface TerminalProps {
   showSpeed: boolean
   speed: ReplaySpeed
   onSpeed: (speed: ReplaySpeed) => void
+  /** Draw the title bar with its controls (default). A host that puts these controls in its own header turns it off. */
+  bar?: boolean
   showThinking: boolean
   onShowThinking: (show: boolean) => void
   canReplay: boolean
@@ -77,43 +79,45 @@ export function Terminal(p: TerminalProps) {
   const empty = p.transcript.turns.length === 0
   return (
     <section className="term" aria-label={`${ASSISTANT_NAME} terminal`}>
-      <div className="term-bar">
-        <div className="dots" aria-hidden="true">
-          <i />
-          <i />
-          <i />
+      {p.bar === false ? null : (
+        <div className="term-bar">
+          <div className="dots" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
+          <div className="term-title">
+            {ASSISTANT_NAME} - <b>{p.sessionTitle}</b> - zsh
+          </div>
+          <div className="ctrl">
+            <button className="ibtn" type="button" title="Replay this run" aria-label="Replay this run" disabled={!p.canReplay} onClick={p.onReplay}>
+              <Icon name="rotate" />
+            </button>
+            <button
+              className="ibtn"
+              type="button"
+              title={p.paused ? 'Resume' : 'Pause'}
+              aria-label={p.paused ? 'Resume' : 'Pause'}
+              aria-pressed={p.paused}
+              disabled={!active}
+              onClick={p.onPause}
+            >
+              <Icon name={p.paused ? 'play' : 'pause'} />
+            </button>
+            {p.showSpeed ? (
+              <>
+                <span className="sep" aria-hidden="true" />
+                <Seg<ReplaySpeed> label="Playback speed" size="sm" mono value={p.speed} onChange={p.onSpeed} options={SPEEDS} />
+              </>
+            ) : null}
+            <label className="pp-switch" htmlFor={thinkingId}>
+              <input type="checkbox" id={thinkingId} checked={p.showThinking} onChange={(e) => p.onShowThinking(e.currentTarget.checked)} />
+              <span className="trk" aria-hidden="true" />
+              Show thinking
+            </label>
+          </div>
         </div>
-        <div className="term-title">
-          {ASSISTANT_NAME} - <b>{p.sessionTitle}</b> - zsh
-        </div>
-        <div className="ctrl">
-          <button className="ibtn" type="button" title="Replay this run" aria-label="Replay this run" disabled={!p.canReplay} onClick={p.onReplay}>
-            <Icon name="rotate" />
-          </button>
-          <button
-            className="ibtn"
-            type="button"
-            title={p.paused ? 'Resume' : 'Pause'}
-            aria-label={p.paused ? 'Resume' : 'Pause'}
-            aria-pressed={p.paused}
-            disabled={!active}
-            onClick={p.onPause}
-          >
-            <Icon name={p.paused ? 'play' : 'pause'} />
-          </button>
-          {p.showSpeed ? (
-            <>
-              <span className="sep" aria-hidden="true" />
-              <Seg<ReplaySpeed> label="Playback speed" size="sm" mono value={p.speed} onChange={p.onSpeed} options={SPEEDS} />
-            </>
-          ) : null}
-          <label className="pp-switch" htmlFor={thinkingId}>
-            <input type="checkbox" id={thinkingId} checked={p.showThinking} onChange={(e) => p.onShowThinking(e.currentTarget.checked)} />
-            <span className="trk" aria-hidden="true" />
-            Show thinking
-          </label>
-        </div>
-      </div>
+      )}
       <div
         className="term-body"
         ref={body}

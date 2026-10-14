@@ -2,7 +2,7 @@
 /* Copyright (C) 2026 The SlicerX contributors */
 /* The assistant's docked panel: a column on the right of the workspace that pushes the content over. */
 .app[data-mimir="open"] .sx-main { padding-right: var(--mimir-w, 380px); }
-.mimir-dock { position: absolute; top: 0; right: 0; bottom: 0; width: var(--mimir-w, 380px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); border-left: 1px solid var(--line-soft); background: var(--surface-page); z-index: 5; }
+.mimir-dock { position: absolute; top: 0; right: 0; bottom: 0; width: var(--mimir-w, 380px); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); border-left: 1px solid var(--line-soft); background: var(--surface-page); z-index: 5; }
 .mimir-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line-soft); }
 .mimir-mark { display: inline-flex; color: var(--purple); }
 .mimir-mark .sx-ic { width: 18px; height: 18px; }
@@ -19,10 +19,17 @@
    The theme's colors replace the terminal palette. Both classes, so this outranks .sx-pilot's own palette on the same element. */
 .mimir-dock.sx-pilot { --t-bg: var(--surface-page); --t-bar: var(--ink-2); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); --t-bubble: var(--chat-bubble); grid-template-columns: minmax(0, 1fr); }
 .mimir-dock > .mimir-head { grid-row: 1; }
-.mimir-dock > .cg-compact { grid-row: 2; }
-.mimir-dock > .term, .mimir-dock > .mimir-more, .mimir-dock > .ws-loading { grid-row: 3; }
-.mimir-dock > .mimir-foot { grid-row: 4; }
-.mimir-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px; border-top: 1px solid var(--line-soft); font-size: var(--fs-sm); }
+/* The conversation's controls (dock.tsx DockBar): one row under the header, New conversation and Pause at the left,
+   More at the right. It replaces the terminal's own bar, which the dock does not draw. */
+.mimir-dock > .mimir-foot { grid-row: 2; }
+.mimir-dock > .cg-compact { grid-row: 3; }
+.mimir-dock > .term, .mimir-dock > .mimir-more, .mimir-dock > .ws-loading { grid-row: 4; }
+.mimir-foot { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--s-2); min-height: 40px; padding: 0 var(--s-2) 0 var(--s-4); border-bottom: 1px solid var(--line-soft); font-size: var(--fs-sm); }
+.mimir-foot > .sx-linkbtn { flex: none; white-space: nowrap; }
+.mimir-foot-more { margin-left: auto; }
+/* the row's icon buttons: one square size, and More's three dots drawn at Pause's weight (thin dots read as a divider) */
+.mimir-foot-pause, .mimir-foot-more > .sx-btn { width: 34px; padding: 0; justify-content: center; }
+:root:not([data-phone]) .mimir-foot-more > .sx-btn .sx-ic { stroke-width: 3.5; }
 .mimir-more { min-height: 0; overflow: auto; }
 .mimir-dock > .pc-notice { grid-row: 2 / 5; align-self: start; max-height: calc(100% - 2 * var(--s-3)); min-height: 0; overflow: auto; }
 .mimir-dock > .mimir-connect { grid-row: 2 / 5; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--s-3); padding: 12px; }
