@@ -31,7 +31,7 @@
 .cad-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
 /* a tool's own actions stay on screen at the foot of the sidebar while the panel scrolls above them */
 .cad-footer { position: sticky; bottom: 0; z-index: 3; margin: 0 -18px -16px; padding: 10px 18px 16px; background: var(--ink-1); border-top: 1px solid var(--line-soft); }
-.cad-footer[data-more]::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 28px; background: linear-gradient(to bottom, transparent, var(--ink-1)); pointer-events: none; }
+.cad-footer[data-more]::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 24px; background: linear-gradient(to bottom, transparent, var(--ink-1)); pointer-events: none; }
 /* A tool's number: the body font with even figures, the unit once beside the label. */
 .cad-num { font-variant-numeric: tabular-nums; }
 .cad-num-unit { margin-left: 4px; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--dim); }
@@ -53,7 +53,9 @@
 .sketch-corner-actions { flex-wrap: wrap; justify-content: flex-start; gap: 4px; }
 .cad-issues li { display: flex; gap: 6px; align-items: flex-start; }
 .cad-issues .sx-ic { flex: none; margin-top: 2px; color: var(--red); }
-.sketch-readout { min-height: 1.4em; color: var(--fg); }
+.sketch-readout { min-height: 1.35em; padding-left: 19px; color: var(--fg); }
+/* between shapes the readout's line says what else the tool takes, in the hint's own words and color */
+.sketch-readout > span:empty::before { content: attr(data-idle); font-family: var(--f-body); color: var(--muted); }
 .sketch-field { position: fixed; z-index: 30; display: flex; gap: 6px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-1) 92%, transparent); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); }
 .sketch-field label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); color: var(--muted); }
 .sketch-field input { width: 84px; }
@@ -86,14 +88,14 @@
 .sketch-into { min-width: 160px; }
 /* the ways to draw a sketch tool family: the row keeps its height when the family has none */
 .sketch-hint-text { display: grid; }
-.sketch-hint-text::before { content: attr(data-sizer); visibility: hidden; grid-area: 1 / 1; }
 .sketch-hint-text > span { grid-area: 1 / 1; align-self: start; }
+.sketch-hint-text > .sketch-hint-sizer { visibility: hidden; }
 /* the reserved room sits evenly above and below a short hint, with the icon beside it */
 .sketch-hint { align-items: flex-start; }
 .sketch-hint .sx-ic { margin-top: 1px; }
 /* eight tools share the row: icons only, so the buttons may shrink to their icon */
 .sx-seg.sketch-tools[data-size] > button { min-width: 0; padding: 0 4px; }
-.sketch-variants { display: flex; align-items: center; gap: 8px; min-height: var(--h-sm); }
+.sketch-variants { display: flex; align-items: center; gap: 8px; min-height: var(--h-md); }
 /* mirror, construction and delete for the picked loop, packed from the left so all three fit the rail */
 .sketch-loop-actions { justify-content: flex-start; gap: 2px; }
 .sketch-variants > .sx-seg:not([data-full]) { flex: 1; }

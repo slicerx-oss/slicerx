@@ -418,6 +418,8 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(check)
     ro?.observe(scroller)
     if (scroller.firstElementChild) ro?.observe(scroller.firstElementChild)
+    const panel = el.closest('.sx-block')
+    if (panel) ro?.observe(panel)
     return () => {
       scroller.removeEventListener('scroll', check)
       ro?.disconnect()
