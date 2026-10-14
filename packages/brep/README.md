@@ -9,6 +9,8 @@ sh packages/brep/scripts/fetch-smlib.sh
 SX_BREP_REQUIRE=1 cargo test -p sx-brep --release
 ```
 
+CI runs the required-kernel suite on Linux and macOS. `kernel_detection` checks both the detection flag and a real `count` call; with `SX_BREP_REQUIRE=1`, a stand-in build cannot pass. The same environment must be present when building and when running the tests.
+
 A first build compiles about 230 C++ files (about 450 CPU seconds, one minute on 8 cores).
 
 ## Our routines in the kernel

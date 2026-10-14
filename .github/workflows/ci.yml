@@ -480,7 +480,11 @@ jobs:
   brep:
     needs: detect
     if: needs.detect.outputs.brep == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
       SX_BREP_REQUIRE: '1'
@@ -493,7 +497,7 @@ jobs:
           key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: brep
+          key: brep-${{ runner.os }}
       - run: sh packages/brep/scripts/fetch-smlib.sh
       - run: cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings
       - run: cargo test -p sx-brep --release --features routine-probe
