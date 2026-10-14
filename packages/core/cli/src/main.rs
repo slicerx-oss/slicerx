@@ -426,6 +426,53 @@ fn report_options(req: &mut sx_core::api::SliceRequest, args: &[String]) {
     }
 }
 
+fn review_config_scripts(
+    config: &serde_json::Map<String, Value>,
+    selected: Option<&sx_core::script_review::Identity>,
+    effective_flavor: Option<&str>,
+) -> Res<(Vec<String>, Vec<Value>)> {
+    #[cfg(feature = "stock-gcode")]
+    {
+        let result = if let Some(selected) = selected {
+            let checked = if let Some(flavor) = effective_flavor.filter(|flavor| *flavor != selected.firmware)
+            {
+                let mut checked = config.clone();
+                checked.insert("gcode_flavor".into(), Value::String(flavor.into()));
+                std::borrow::Cow::Owned(checked)
+            } else {
+                std::borrow::Cow::Borrowed(config)
+            };
+            stock::reviewed_keys(checked.as_ref(), selected)?
+        } else {
+            (stock::stock_keys(config), Vec::new())
+        };
+        if !result.1.is_empty() {
+            eprintln!("sx: script_reviews: {}", serde_json::json!(result.1));
+        }
+        Ok(result)
+    }
+    #[cfg(not(feature = "stock-gcode"))]
+    {
+        let _ = (config, effective_flavor);
+        if selected.is_some() {
+            return Err("stock script review is unavailable in this build".into());
+        }
+        Ok((Vec::new(), Vec::new()))
+    }
+}
+
+fn review_request_scripts(
+    req: &mut sx_core::api::SliceRequest,
+    selected: Option<&sx_core::script_review::Identity>,
+) -> Res<Vec<Value>> {
+    let Some(config) = req.config.as_object() else {
+        return Ok(Vec::new());
+    };
+    let (keys, reviews) = review_config_scripts(config, selected, req.options.flavor.as_deref())?;
+    req.options.stock_gcode_keys = keys;
+    Ok(reviews)
+}
+
 fn cmd_request(args: &[String]) -> ExitCode {
     use sx_core::api;
     let fail = |code: u8, msg: String| {
@@ -447,44 +494,14 @@ fn cmd_request(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(EXIT_INPUT, format!("request: {e}")),
     };
-    let mut script_reviews = Vec::<Value>::new();
     let selected = match script_target(args) {
         Ok(selected) => selected,
         Err(e) => return fail(EXIT_USAGE, e.to_string()),
     };
-    #[cfg(feature = "stock-gcode")]
-    if let Some(config) = req.config.as_object() {
-        if let Some(selected) = selected.as_ref() {
-            let mut checked = config.clone();
-            if let Some(flavor) = req
-                .options
-                .flavor
-                .as_ref()
-                .filter(|flavor| *flavor != &selected.firmware)
-            {
-                checked.insert("gcode_flavor".into(), Value::String(flavor.clone()));
-            }
-            match stock::reviewed_keys(&checked, selected) {
-                Ok((keys, reviews)) => {
-                    req.options.stock_gcode_keys = keys;
-                    script_reviews = reviews;
-                }
-                Err(e) => return fail(EXIT_INPUT, e),
-            }
-        } else {
-            req.options.stock_gcode_keys = stock::stock_keys(config);
-        }
-    }
-    #[cfg(not(feature = "stock-gcode"))]
-    if selected.is_some() {
-        return fail(
-            EXIT_INPUT,
-            "stock script review is unavailable in this build".into(),
-        );
-    }
-    if !script_reviews.is_empty() {
-        eprintln!("sx: script_reviews: {}", serde_json::json!(script_reviews));
-    }
+    let script_reviews = match review_request_scripts(&mut req, selected.as_ref()) {
+        Ok(reviews) => reviews,
+        Err(e) => return fail(EXIT_INPUT, e.to_string()),
+    };
     report_options(&mut req, args);
     let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
     let cache = match split_projects(&mut req, &base, &paths, &painted) {
@@ -849,22 +866,7 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         eprintln!("sx slice: --strict: {}", report.lines().join("; "));
         return Ok(ExitCode::from(EXIT_INPUT));
     }
-    #[cfg(feature = "stock-gcode")]
-    {
-        if let Some(selected) = script_target(args)? {
-            let (keys, reviews) = stock::reviewed_keys(&config.raw, &selected)?;
-            config.trusted_gcode_keys = keys;
-            if !reviews.is_empty() {
-                eprintln!("sx: script_reviews: {}", serde_json::json!(reviews));
-            }
-        } else {
-            config.trusted_gcode_keys = stock::stock_keys(&config.raw);
-        }
-    }
-    #[cfg(not(feature = "stock-gcode"))]
-    if script_target(args)?.is_some() {
-        return Err("stock script review is unavailable in this build".into());
-    }
+    config.trusted_gcode_keys = review_config_scripts(&config.raw, script_target(args)?.as_ref(), None)?.0;
     // The same limits every entry point applies: settings past the nozzle and machine limits are lowered.
     let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());
     if sx_core::preflight::blocks(&issues) {

@@ -138,21 +138,22 @@ pub fn reviewed_keys(
             let models = t["names"][name]
                 .as_array()
                 .or_else(|| t["names"][without_nozzle(name)].as_array());
-            let models: Vec<String> = models
-                .map(|models| {
-                    models
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(str::to_owned)
-                        .collect()
-                })
-                .unwrap_or_else(|| {
+            let models: Vec<String> = models.map_or_else(
+                || {
                     if t["models"].get(name).is_some() {
                         vec![name.to_owned()]
                     } else {
                         vec![format!("unknown:{name}")]
                     }
-                });
+                },
+                |models| {
+                    models
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                },
+            );
             declared.extend(models.into_iter().map(|model| Identity {
                 model,
                 firmware: firmware.into(),
