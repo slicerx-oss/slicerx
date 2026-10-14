@@ -1048,6 +1048,7 @@ pub fn map_from_gcode(gcode: &[u8], cfg: &crate::config::PrintConfig) -> Option<
     }
     let mut c = cfg.clone();
     c.raw.insert("filament_map".into(), serde_json::Value::Array(map));
+    let _ = c.refresh_variants().ok()?;
     Some(c)
 }
 

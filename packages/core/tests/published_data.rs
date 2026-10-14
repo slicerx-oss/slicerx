@@ -13,6 +13,14 @@ fn data_copies_match_the_settings_schema() {
     let update = std::env::var_os("SX_UPDATE_CORE_DATA").is_some();
     for (file, built) in [
         (
+            "variant_process_keys.txt",
+            include_str!(concat!(env!("OUT_DIR"), "/variant_process_keys.txt")),
+        ),
+        (
+            "variant_filament_keys.txt",
+            include_str!(concat!(env!("OUT_DIR"), "/variant_filament_keys.txt")),
+        ),
+        (
             "percent_keys.txt",
             include_str!(concat!(env!("OUT_DIR"), "/percent_keys.txt")),
         ),

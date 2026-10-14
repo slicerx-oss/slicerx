@@ -123,7 +123,13 @@ pub fn emit_gcode_with(
 ) -> Result<GcodeStats> {
     // The filament map the slice was planned with goes into the settings the G-code is written from
     // (the change G-code reads `filament_map`, the configuration block lists it).
-    let mapped = out.filament_map.as_ref().map(|m| m.apply(config));
+    let mut mapped = out.filament_map.as_ref().map(|m| m.apply(config));
+    if mapped.is_none() && !config.variant_sources.is_empty() {
+        mapped = Some(config.clone());
+    }
+    if let Some(c) = mapped.as_mut() {
+        let _ = c.refresh_variants()?;
+    }
     let config = mapped.as_ref().unwrap_or(config);
     // Nothing leaves the engine that reaches off the bed, into an excluded area or over the height.
     let found = crate::preflight::check_toolpaths(out, config);

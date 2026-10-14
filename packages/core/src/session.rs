@@ -1031,7 +1031,9 @@ impl SliceSession {
         let Some(map) = map else {
             return Self::build_plate(plate, config, tops, ranges);
         };
-        let mut session = Self::build_plate(plate, &map.apply(config), tops, ranges)?;
+        let mut mapped = map.apply(config);
+        let _ = mapped.refresh_variants()?;
+        let mut session = Self::build_plate(plate, &mapped, tops, ranges)?;
         for f in &mut session.followers {
             f.nozzle_map = Some(map.clone());
         }
@@ -1986,7 +1988,10 @@ impl SliceSession {
         layers: Range<u32>,
         progress: &dyn Progress,
     ) -> Result<SliceOutput> {
-        let mapped = self.mapped_config(config);
+        let mut mapped = self.mapped_config(config);
+        if !mapped.variant_sources.is_empty() {
+            let _ = mapped.to_mut().refresh_variants()?;
+        }
         let config = mapped.as_ref();
         let mut out = if self.followers.is_empty() && self.instances.is_empty() {
             self.slice_object_range(config, layers, progress)?

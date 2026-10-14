@@ -42,6 +42,22 @@ fn main() {
             keys.dedup();
             write(&out.join(file), keys.join("\n").as_bytes());
         }
+        for section in ["process", "filament"] {
+            let mut keys: Vec<&str> = parsed["settings"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .filter(|d| d["section"].as_str() == Some(section))
+                .filter_map(|d| d["key"].as_str())
+                .collect();
+            keys.sort_unstable();
+            keys.dedup();
+            write(
+                &out.join(format!("variant_{section}_keys.txt")),
+                keys.join("\n").as_bytes(),
+            );
+        }
         copy(&settings.join("defaults.json"), &out.join("defaults.json"));
         copy(
             &settings.join("engine-choices.json"),
@@ -50,6 +66,8 @@ fn main() {
         copy(&settings.join("prusa-map.json"), &out.join("prusa-map.json"));
     } else {
         for file in [
+            "variant_process_keys.txt",
+            "variant_filament_keys.txt",
             "percent_keys.txt",
             "int_keys.txt",
             "defaults.json",

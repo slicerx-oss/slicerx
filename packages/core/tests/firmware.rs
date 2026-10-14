@@ -2407,3 +2407,89 @@ fn contact_angle(g: &str) -> Option<i64> {
     }
     hist.iter().max_by_key(|(_, n)| **n).map(|(a, _)| *a)
 }
+
+#[test]
+fn automatic_nozzle_mapping_refreshes_filament_variant_temperatures() {
+    let config = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab H2D",
+        "nozzle_diameter": [0.4, 0.4],
+        "physical_extruder_map": [1, 0],
+        "master_extruder_id": 2,
+        "single_extruder_multi_material": true,
+        "sparse_infill_filament_id": 2,
+        "filament_settings_id": ["one", "two"],
+        "filament_self_index": [1, 1, 2, 2],
+        "filament_extruder_variant": [
+            "Direct Drive Standard", "Direct Drive High Flow",
+            "Direct Drive Standard", "Direct Drive High Flow"
+        ],
+        "extruder_type": ["Direct Drive", "Direct Drive"],
+        "nozzle_volume_type": ["Standard", "High Flow"],
+        "filament_map": [1, 2],
+        "nozzle_temperature": [211, 231, 222, 242],
+        "filament_diameter": [1.75, 1.75],
+        "machine_start_gcode": "; selected {filament_map[0]} {filament_map[1]} {nozzle_temperature[0]} {nozzle_temperature[1]}"
+    });
+    let gcode = cube_on(config, 1);
+    assert_eq!(
+        gcode.lines().find(|line| line.starts_with("; selected ")),
+        Some("; selected 2 1 231 222")
+    );
+}
+
+fn remapped_variant_run(temperature: f64, limits: Value) -> sx_core::Result<sx_core::api::SliceRun> {
+    let bytes = std::fs::read(format!("{}/packages/core/cli/tests/fixtures/cube.stl", root())).unwrap();
+    let mesh = Arc::new(Mesh::load(&bytes, "cube.stl").unwrap());
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"id": "a", "name": "cube", "mesh": "c", "slotOverrides": {"cube.stl": 1}}]},
+        "config": {
+            "gcode_flavor": "marlin",
+            "printer_model": "Bambu Lab H2D",
+            "nozzle_diameter": [0.4, 0.4],
+            "physical_extruder_map": [1, 0],
+            "master_extruder_id": 2,
+            "single_extruder_multi_material": true,
+            "sparse_infill_filament_id": 2,
+            "filament_settings_id": ["one", "two"],
+            "filament_self_index": [1, 1, 2, 2],
+            "filament_extruder_variant": [
+                "Direct Drive Standard", "Direct Drive High Flow",
+                "Direct Drive Standard", "Direct Drive High Flow"
+            ],
+            "extruder_type": ["Direct Drive", "Direct Drive"],
+            "nozzle_volume_type": ["Standard", "High Flow"],
+            "filament_map": [1, 1],
+            "nozzle_temperature": [211, temperature, 222, 242],
+            "filament_diameter": [1.75, 1.75],
+            "machine_start_gcode": "; selected {nozzle_temperature[0]} {nozzle_temperature[1]}"
+        },
+        "options": {"trustedGcode": true, "machineLimits": limits}
+    }))
+    .unwrap();
+    common::run_request(&req, &move |_: &str| Ok(mesh.clone()))
+}
+
+#[test]
+fn remapped_variant_temperatures_keep_machine_clamps_and_warnings() {
+    let run = remapped_variant_run(480.0, json!({"nozzleMaxC": 250})).unwrap();
+    let gcode = String::from_utf8(run.gcode).unwrap();
+    assert_eq!(
+        gcode.lines().find(|line| line.starts_with("; selected ")),
+        Some("; selected 250 222")
+    );
+    assert!(
+        run.report
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("480 C") && w.message.contains("250 C"))
+    );
+}
+
+#[test]
+fn remapped_variant_temperatures_keep_material_limits() {
+    let Err(error) = remapped_variant_run(280.0, json!({"nozzleMaxC": 300, "ptfeLined": true})) else {
+        panic!("remapped variant exceeded the material limit");
+    };
+    assert!(error.to_string().contains("PTFE-lined"), "{error}");
+}

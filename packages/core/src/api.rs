@@ -1438,8 +1438,16 @@ fn run_prepared_timed(
     timer: &Timer,
 ) -> Result<SliceRun> {
     let (config, config_issues, config_report) = request_config_report(req)?;
-    let (config, config_issues) = with_lone_settings(config, config_issues, &prepared.lone_settings)?;
+    let (mut config, mut config_issues) = with_lone_settings(config, config_issues, &prepared.lone_settings)?;
     let session = &prepared.session;
+    if !config.variant_sources.is_empty() {
+        config = session.mapped_config(&config).into_owned();
+        for issue in config.refresh_variants()? {
+            if !config_issues.contains(&issue) {
+                config_issues.push(issue);
+            }
+        }
+    }
     let n = session.layer_count();
     let shards = req.options.shards.unwrap_or(1).clamp(1, n.max(1));
     let want_gcode = req.options.emit_gcode.unwrap_or(true);
