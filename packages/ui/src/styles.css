@@ -378,6 +378,8 @@ button { cursor: pointer; }
 .sx-rail-body, .sx-rail-pin { scrollbar-gutter: stable; }
 @supports selector(::-webkit-scrollbar) {
   .sx-rail-body, .sx-rail-pin { scrollbar-width: auto; scrollbar-color: auto; }
+  /* the 6 px lane comes out of a block's right padding, so a panel's content keeps its width (a field still fits -123.4) */
+  .sx-rail-body .sx-block, .sx-rail-pin .sx-block { padding-right: 12px; }
   .sx-rail-body::-webkit-scrollbar, .sx-rail-pin::-webkit-scrollbar { width: 6px; height: 6px; background: transparent; }
   .sx-rail-body::-webkit-scrollbar-button, .sx-rail-pin::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
   .sx-rail-body::-webkit-scrollbar-track, .sx-rail-pin::-webkit-scrollbar-track { background: transparent; }
