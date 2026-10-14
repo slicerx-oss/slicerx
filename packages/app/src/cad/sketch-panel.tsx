@@ -1610,8 +1610,12 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           onCommit={commitField}
           // Esc in an empty pill ends typing and starts again from the first pill
           onCancel={() => (setTyped(null), setPillFocus(0), view?.canvas?.focus())}
-          // Tab past the ends goes back to the view, the typed numbers kept for Enter there, and on through the page
-          onLeave={() => view?.canvas?.focus()}
+          // Tab past the last pill goes on to the panel, Shift+Tab before the first back to the view; the typed numbers
+          // stay for Enter in the view
+          onLeave={(back) => {
+            const first = back ? null : document.querySelector<HTMLElement>('[data-section="cad-tool"] :is(button, input, select, [tabindex="0"]):not(:disabled)')
+            ;(first ?? view?.canvas)?.focus()
+          }}
         />
       )}
       {dimField

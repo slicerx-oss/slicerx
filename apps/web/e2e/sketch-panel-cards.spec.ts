@@ -316,7 +316,9 @@ test('the pills stay in the view and off the point; typed numbers read apart; Ta
   // the pills hold still while typing, wherever the cursor goes
   const held = await pills.boundingBox()
   await sketchAtScreen(page, 'hover', [5, 0], [mid[0] - 200, mid[1] - 120])
-  expect(await pills.boundingBox()).toEqual(held)
+  // the snap's name may come and go beside them; the pills' own corner stays put
+  const now = (await pills.boundingBox())!
+  expect([now.x, now.y]).toEqual([held!.x, held!.y])
   await frame('6-tab-angle')
   // Esc clears the typed angle first (it follows the cursor again), then in the empty pill ends typing: back to the
   // live numbers, the line still waiting, and typing starts over at Length
