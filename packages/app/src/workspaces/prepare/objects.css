@@ -39,9 +39,12 @@
 .obj-tree .part-pick:hover { background: var(--ink-3); }
 .obj-tree .part-pick[aria-pressed="true"] { color: var(--accent); background: var(--accent-tint); }
 .obj-tree .part-role { flex: none; color: var(--muted); }
-.part-slot { display: grid; place-items: center; padding: 2px; border: 0; border-radius: var(--r-sm); background: none; cursor: pointer; }
+.part-slot { flex: none; display: flex; align-items: center; gap: 4px; padding: 2px 4px 2px 2px; border: 0; border-radius: var(--r-sm); background: none; cursor: pointer; }
 .part-slot:hover { background: var(--ink-3); }
 .part-slot:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+/* Two digits fit in full, and the badge is as wide for 1 as for 10. */
+.part-slot-n { box-sizing: content-box; min-width: 2ch; text-align: right; font-family: var(--f-mono); font-size: 11px; font-weight: 600; line-height: 1; color: var(--muted); overflow: visible; }
+.part-slot[data-unassigned] .part-slot-n, .part-slot-warn { color: var(--orange); }
 .obj-tree .obj-order { display: flex; align-items: center; gap: 2px; }
 .objs-empty { display: grid; gap: 2px; padding: 6px 0; }
 .objs-empty p { margin: 0; }
