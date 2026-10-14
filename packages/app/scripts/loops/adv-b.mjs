@@ -831,6 +831,148 @@ function transitionFilter() {
   return staged('bttf', [pd('', walls(12, 3, 26, 4), A2, 1.8) + dots([[14.5, 7.4, WZ2], [17.5, 7.4, WZ2], [20.5, 7.4, WZ2], [23.5, 7.4, WZ2]], 's-cf s-cl', 0.5), pd('', walls(12, 3, 26), A2, 1.8)], ['5 %', '25 %'], 'Wall transition filter: a margin that stops walls switching back and forth between one line and two, so there are fewer starts and stops.', { extra: WEDGE })
 }
 
+// ========== Advanced loops, second half, batch D: bed temperatures to z offset ==========
+const dashD = (d, c, w, da = '2 2') => `<path class="s-n" stroke-dasharray="${da}"${st(c, w)} d="${d}"/>`
+const polyD = (cls, ps) => `<polygon class="${cls}" points="${ps.map((p) => iso(...p).join(',')).join(' ')}"/>`
+
+// ---------- warping: a tall part on the plate; cold, its corner lifts; warm, it stays down ----------
+function warp(id, rowsT, about, { chamber = false, texture = false } = {}) {
+  // the plate as a thin slab; textured plates get a dotted top
+  const plate = box([-4, -4, -0.8], [26, 20, 0]) + (texture ? pd('', hatch(-3, 25, -3, 19, 2, 0.02, false), T3, 1, false).replace('s-n"', 's-n" stroke-dasharray="0.1 3"') : '')
+  const lift = `.${id}-w{animation-name:${id}-w;transform-box:fill-box;transform-origin:0 100%}` + kf(`${id}-w`, [[0.3, 'rotate:0deg'], [1.1, 'rotate:-4deg'], [1.6, 'rotate:-4deg'], [1.7, 'rotate:0deg']])
+  const part = g(`${id}-w`, box([4, 4, 0], [18, 12, 14]))
+  const gap = pd('', rel([[4, 12, 0], [18, 12, 0], [18, 4, 0]], false), CUT, 1.4).replace('s-n"', 's-n s-ghost"')
+  // the chamber: an enclosure's edges around the plate in the warm state
+  const box3 = chamber ? pd('', rel([[-4, 20, 0], [-4, 20, 22], [26, 20, 22], [26, 20, 0]], false) + rel([[26, 20, 22], [26, -4, 22], [26, -4, 0]], false) + rel([[-4, 20, 22], [-4, -4, 22], [26, -4, 22]], false), A1, 1.4).replace('s-n"', 's-n" stroke-dasharray="3 2.5"') : ''
+  const heat = (c) => pd('', `M${iso(0, 20, 1).join(' ')}q3 -6 0 -12M${iso(10, 20, 1).join(' ')}q3 -6 0 -12M${iso(22, 18, 1).join(' ')}q3 -6 0 -12`.replace(/M/g, 'M'), c, 1.6)
+  return staged(id, [gap, box3 + heat(A1)], rowsT, about, { css: lift, extra: plate, after: part, w: 112, x: 178 })
+}
+const chamberTemp = () => warp('bwch', ['Chamber off', 'Chamber 50 °C'], 'Chamber temperature: in a cold room a tall ABS or ASA part warps and its corner lifts; a warm chamber keeps it down.', { chamber: true })
+const coolPlate = () => warp('bwcp', ['Cool plate 20 °C', 'Cool plate 35 °C'], 'Cool Plate temperature: too cold and the part\'s corner lifts as it shrinks; warm enough and it stays stuck.')
+const engPlate = () => warp('bwep', ['Eng plate 25 °C', 'Eng plate 45 °C'], 'Engineering Plate temperature: too cold and the corner lifts; warm enough and it stays stuck.')
+const hotPlate = () => warp('bwhp', ['High temp 30 °C', 'High temp 60 °C'], 'High Temp plate or smooth PEI temperature: too cold and the corner lifts; warm enough and it stays stuck.')
+const superTack = () => warp('bwst', ['SuperTack 20 °C', 'SuperTack 35 °C'], 'SuperTack plate temperature: too cold and the corner lifts; warm enough and it stays stuck.')
+const texturedCool = () => warp('bwtc', ['Textured cool 20 °C', 'Textured cool 40 °C'], 'Textured Cool Plate temperature: too cold and the corner lifts; warm enough and it stays stuck.', { texture: true })
+const texturedPlate = () => warp('bwtp', ['Textured PEI 25 °C', 'Textured PEI 55 °C'], 'Textured PEI temperature: too cold and the corner lifts; warm enough and it stays stuck.', { texture: true })
+
+// ---------- wave overhangs: rings growing out from the supported edge of a ledge ----------
+const WP = box([0, 2, 0], [8, 14, 9]), WZD = 9
+const arc = (r) => { const ps = []; for (let k = 0; k <= 12; k++) { const a = -Math.PI / 2 + (k / 12) * Math.PI; ps.push([8 + r * Math.cos(a), 8 + r * Math.sin(a), WZD]) } return rel(ps, false) }
+const rings = (sp, n, start = 0.6) => Array.from({ length: n }, (_, i) => arc(start + i * sp)).join('')
+const sag = `<path class="s-n"${st(CUT, 2)} d="M${iso(8, 14, WZD).join(' ')}Q${iso(14, 14, WZD - 5).join(' ')} ${iso(19, 10, WZD - 3).join(' ')}"/>` + `<path class="s-ghost" d="${rel([[8, 2, WZD], [18, 2, WZD], [18, 14, WZD], [8, 14, WZD]], false)}"/>`
+function wave(id, s0, s1, rowsT, about, opts = {}) {
+  return staged(id, [s0, s1], rowsT, about, { extra: WP, ...opts })
+}
+const W = (sp, n, w = 1.6, cls = '', start) => pd(cls, rings(sp, n, start), A2, w, !!cls)
+const waveOn = () => wave('bwvo', sag, W(1.2, 9, 1.6, 'bwvo-r'), ['Off', 'On'], 'Wave overhangs: rings grow out from the supported edge, each resting on the last, so a flat overhang prints without support.', { css: draw('bwvo-r', 1.9, 3) })
+const waveSpacing = () => wave('bwvs', W(0.8, 13), W(1.8, 6), ['0.25 mm', '0.5 mm'], 'Wave line spacing: how far each ring grows past the last; closer rings hold better and take longer.', { w: 72, x: 204 })
+const waveOverlap = () => wave('bwvl', W(1.2, 9, 1.6, '', 0.6) + dots([[8.2, 8, WZD]], 's-cf s-cl', 0.8), W(1.2, 9, 1.6, '', -0.6), ['0 mm', '0.1 mm'], 'Wave perimeter overlap: how far the first ring reaches back over the layer below to anchor itself.')
+function waveSpeed() {
+  // one set of rings, laid quickly, then slowly; too fast and the outer rings droop
+  const id = 'bwvp', tb = timebar(id, 0, 0, [[0, 0.35], [1.7, 0.35], [2, 0.9], [3.3, 0.9], [3.45, 0.35]])
+  const K = [[0.3, 'stroke-dashoffset:101'], [0.8, 'stroke-dashoffset:0'], [1.6, op(1)], [1.65, `${op(0)};stroke-dashoffset:0`], [1.9, `${op(0)};stroke-dashoffset:101`], [1.95, op(1)], [3.1, 'stroke-dashoffset:0'], [3.2, op(1)], [3.35, op(0)]]
+  return wave(id, pd('', `M${iso(18, 8, WZD).join(' ')}q4 6 -1 10`, CUT, 1.6), '', ['10 mm/s', '2 mm/s'], 'Wave print speed: very slow, so each ring sets before the next one leans on it; too fast and the rings droop.', { css: `.${id}-a{animation-name:${id}-a}` + kf(`${id}-a`, K) + tb.css, w: 72, x: 204, extra: WP + W(1.2, 9, 1.6, `${id}-a`), after: tb.svg.replace('translate(0 0)', 'translate(214 58)') })
+}
+const waveFlow = () => wave('bwvf', W(1.2, 9, 0.8), W(1.2, 9, 2.2), ['0.08 mm³', '0.16 mm³'], 'Wave flow: plastic per mm of ring; more gives sturdier rings.', { w: 80, x: 198 })
+const waveIter = () => wave('bwvi', W(1.2, 4) + `<path class="s-ghost" d="${arc(6.6)}"/>`, W(1.2, 9), ['4 rings', 'No limit'], 'Wave max rings: the most rings an overhang may get; the rest of the overhang prints the usual way.', { w: 80, x: 198 })
+
+// ---------- wipe: the nozzle moves back along the line it just printed while it retracts ----------
+const WSD = box([0, 0, 0], [26, 14, 2]), LZ = 2.15
+const LINE = pd('', rel([[2, 7, LZ], [22, 7, LZ]], false), T3, 3)
+const blob = ellipse(disc(22, 7, LZ, 1.4), 's-cf s-cl') + `<path class="s-n"${st(CUT, 1.2)} d="M${iso(22, 7, LZ).join(' ')}q10 -3 22 6"/>`
+const back = (d, cls = '') => pd(cls, rel([[22, 7.6, LZ + 0.4], [22 - d, 7.6, LZ + 0.4]], false), A2, 2, !!cls)
+function wipeOn() {
+  return staged('bwwo', [blob, back(5, 'bwwo-b')], ['Off', 'On'], 'Wipe: the nozzle moves back over the line it just printed while it retracts, which wipes off ooze before the travel.', { extra: WSD + LINE, css: draw('bwwo-b', 1.95, 2.6) })
+}
+const wipeDistance = () => staged('bwwd', [back(2), back(8)], ['1 mm', '4 mm'], 'Wipe distance: how far the nozzle moves back along the last line while it wipes.', { extra: WSD + LINE })
+function wipeSpeed() {
+  const id = 'bwws', tb = timebar(id, 0, 0, [[0, 0.8], [1.7, 0.8], [2, 0.4], [3.3, 0.4], [3.45, 0.8]])
+  return staged(id, [back(6, `${id}-a`), back(6, `${id}-b`)], ['40 %', '80 %'], 'Wipe speed: how fast the wipe moves, as a share of the travel speed.', { extra: WSD + LINE, css: draw(`${id}-a`, 0.3, 1.4, 1.6) + draw(`${id}-b`, 1.95, 2.4) + tb.css, after: tb.svg.replace('translate(0 0)', 'translate(214 58)') })
+}
+function retractBeforeWipe() {
+  // ticks mark where the filament pulls back: all at the end, or half there and half along the wipe
+  const tick = (x) => pd('', rel([[x, 7.6, LZ + 0.4], [x, 7.6, LZ + 2.4]], false), A1, 1.8)
+  return staged('bwrb', [back(6) + tick(22) + tick(21.6) + tick(21.2) + tick(20.8), back(6) + tick(22) + tick(21.6) + tick(19) + tick(16.4)], ['100 %', '50 %'], 'Retract before wipe: how much of the retraction happens at once before the wipe; the rest happens while the nozzle wipes.', { extra: WSD + LINE })
+}
+
+// ---------- prime tower details ----------
+const PARTD = box([0, 4, 0], [10, 14, 6]) + accentBox([0, 4, 6], [10, 14, 10])
+/** a square tower turned `deg` about z, with zigzag purge lines on top */
+function rtower(deg, { h = 10, w = 8, sp = 1.4, lw = 1.6, cx = 19, cy = 3, lines = true } = {}) {
+  const a = (deg * Math.PI) / 180, R = (x, y) => [cx + x * Math.cos(a) - y * Math.sin(a), cy + x * Math.sin(a) + y * Math.cos(a)]
+  const c = [R(-w / 2, -w / 2), R(w / 2, -w / 2), R(w / 2, w / 2), R(-w / 2, w / 2)]
+  // the btwo faces toward the viewer: the ones whose outward normal points to +x or +y
+  let faces = ''
+  for (let i = 0; i < 4; i++) {
+    const p = c[i], q = c[(i + 1) % 4], nx = q[1] - p[1], ny = -(q[0] - p[0])
+    if (nx + ny > 0.01) faces += polyD(nx > ny ? 's-f3 s-ol' : 's-f2 s-ol', [[...p, 0], [...q, 0], [...q, h], [...p, h]])
+  }
+  let zz = ''
+  if (lines) { const l = []; let k = 0; for (let y = -w / 2 + 0.7; y < w / 2 - 0.5; y += sp, k++) { const e = [R(-w / 2 + 0.7, y), R(w / 2 - 0.7, y)]; l.push(...(k % 2 ? [e[1], e[0]] : e)) } zz = pd('', rel(l.map(([x, y]) => [x, y, h + 0.05]), false), A2, lw) }
+  return faces + polyD('s-f1 s-ol', c.map(([x, y]) => [x, y, h])) + zz
+}
+const towerRotation = () => staged('bwtr', [PARTD + rtower(0), PARTD + rtower(30)], ['0°', '30°'], 'Prime tower rotation: turns the tower on the bed, which can fit a long tower into the free space better.')
+const towerSpacing = () => staged('bwts', [PARTD + rtower(0, { sp: 1.2 }), PARTD + rtower(0, { sp: 2.2 })], ['100 %', '180 %'], 'Prime tower line spacing: wider spacing uses less filament on each tower layer.')
+const towerFlow = () => staged('bwtf', [PARTD + rtower(0, { lw: 1.2 }), PARTD + rtower(0, { lw: 2.8 })], ['100 %', '150 %'], 'Prime tower extra flow: thicker purge lines purge faster and make a sturdier tower.')
+function towerPurgeSpeed() {
+  const id = 'bwtm', tb = timebar(id, 0, 0, [[0, 0.9], [1.7, 0.9], [2, 0.5], [3.3, 0.5], [3.45, 0.9]])
+  return staged(id, [PARTD + rtower(0), PARTD + rtower(0)], ['45 mm/s', '90 mm/s'], 'Prime tower purge speed: the fastest the tower prints while purging; faster saves time, within the filament\'s flow limit.', { css: tb.css, after: tb.svg.replace('translate(0 0)', 'translate(214 58)') })
+}
+function towerNoSparse() {
+  // with no tool change on the upper layers the tower stops, and the nozzle drops back down to it
+  const drop = `<path class="s-n" stroke-dasharray="2 2"${st(A1, 1.6)} d="M${iso(19, 3, 18).join(' ')}V${iso(19, 3, 10.4)[1]}"/>`
+  return staged('bwtn', [PARTD + rtower(0, { h: 16 }), PARTD + rtower(0, { h: 10 }) + drop], ['Off', 'On'], 'No sparse layers: the tower skips layers with no tool change, which saves filament; the nozzle then drops down to it, so keep the space above clear.')
+}
+function towerWall() {
+  const cone = polyD('s-f2 s-ol', [[14, 7, 0], [24, 7, 0], [22, 5, 10], [16, 5, 10]]) + polyD('s-f3 s-ol', [[24, -3, 0], [24, 7, 0], [22, 5, 10], [22, -1, 10]]) + polyD('s-f1 s-ol', [[16, -1, 10], [22, -1, 10], [22, 5, 10], [16, 5, 10]])
+  const ribs = rtower(0, { lines: false }) + pd('', rel([[23, 3, 0], [26, 3, 0], [23, 3, 9]], false) + rel([[19, 7, 0], [19, 10, 0], [19, 7, 9]], false), A2, 2.2)
+  return staged('bwtw', [PARTD + rtower(0, { lines: false }), PARTD + cone, PARTD + ribs], ['Rectangle', 'Cone', 'Rib'], 'Prime tower wall: a plain box, a cone that widens at the base, or ribs that brace the sides; cones and ribs keep tall, narrow towers standing.', { w: 88, x: 194 })
+}
+function towerFilament() {
+  const outline = (c) => pd('', rel([[15, 7, 10.05], [23, 7, 10.05], [23, -1, 10.05], [15, -1, 10.05], [15, 7, 10.05]], false), c, 2.4)
+  return staged('bwtl', [PARTD + rtower(0) + outline(T3), PARTD + rtower(0) + outline(A1).replace('stroke-width:2.4', 'stroke-width:3.2')], ['Auto', 'Filament 2'], 'Prime tower filament: which filament prints the tower\'s outline; auto picks an available one that is not soluble.', { w: 84, x: 196 })
+}
+function towerBridging() {
+  // a sparse tower layer: lines span the gaps, at most this long
+  const span = (n) => { let d = ''; for (let i = 0; i < n; i++) { const y = -0.4 + ((i + 0.5) * 7.6) / n; d += rel([[15.6, y, 10.05], [22.4, y, 10.05]], false) } return d }
+  return staged('bwtb', [PARTD + rtower(0, { lines: false }) + pd('', span(4), A2, 1.6), PARTD + rtower(0, { lines: false }) + pd('', span(2), A2, 1.6)], ['10 mm', '20 mm'], 'Prime tower bridging: the longest unsupported span in the tower\'s sparse layers; longer spans save filament.')
+}
+
+// ---------- xy compensation: printed outlines against the model ----------
+function xyContour() {
+  const id = 'bwxc', model = `<path class="s-ghost" style="stroke:var(${A1})" d="${rect(2, 2, 22, 14, 3.1)}"/>`
+  return staged(id, [box([1.4, 1.4, 0], [22.6, 14.6, 3]) + pd('', rect(1.4, 1.4, 22.6, 14.6, 3.05), CUT, 1.8) + model, box([2, 2, 0], [22, 14, 3]) + model], ['0 mm', '-0.05 mm'], 'XY contour compensation: when parts print a little too large, a small negative value shrinks the outside back to size.', { w: 80, x: 198 })
+}
+function xyHole() {
+  const id = 'bwxh', B = box([0, 0, 0], [24, 16, 4]), pin = cyl(12, 8, 4, 12, 2.4)
+  const hole = (r, c) => `<path class="s-hole" d="${circ(12, 8, 4.05, r, 20)}"/>` + pd('', circ(12, 8, 4.05, r, 20), c, 1.6)
+  return staged(id, [B + hole(1.9, CUT) + g('', `<g transform="translate(0 -10)">${pin}</g>`), B + hole(2.8, A2) + pin], ['0 mm', '+0.1 mm'], 'XY hole compensation: holes print a little small, so a pin does not go in; a positive value opens them up to fit.', { w: 80, x: 198 })
+}
+
+// ---------- z hop ----------
+const ZB = box([0, 0, 0], [26, 14, 4]), ZA = [3, 7, 4.2], ZC = [23, 7, 4.2]
+function zHop() {
+  const id = 'bwzh', hop = (h) => pd('', rel([ZA, [3, 7, 4.2 + h], [23, 7, 4.2 + h], ZC], false), A2, 2)
+  return staged(id, [hop(1.5) + pd('', `M${iso(13, 7, 4.2).join(' ')}q-2 -8 3 -10`, CUT, 1.6), hop(5)], ['0.2 mm', '0.6 mm'], 'Z hop: how far the nozzle lifts before a travel so it does not drag across the print; higher clears curled edges.', { extra: ZB, w: 72, x: 204 })
+}
+function zHopType() {
+  const id = 'bwzt'
+  const normal = rel([ZA, [3, 7, 9], [23, 7, 9], ZC], false), slope = rel([ZA, [9, 7, 9], [23, 7, 9], ZC], false)
+  let sp = [ZA]
+  for (let i = 1; i <= 16; i++) { const a = (i / 16) * 2 * Math.PI; sp.push([3 + 1.6 * Math.sin(a), 7 + 1.6 * (1 - Math.cos(a)), 4.2 + (4.8 * i) / 16]) }
+  sp.push([23, 7, 9], ZC)
+  return staged(id, [pd('', normal, A2, 2), pd('', slope, A2, 2), pd('', rel(sp, false), A2, 2)], ['Normal', 'Slope', 'Spiral'], 'Z hop type: normal lifts straight up, slope lifts while it moves, spiral circles up, which can reduce strings.', { extra: ZB, w: 72, x: 204 })
+}
+
+// ---------- z offset: three first-layer lines seen end on, the nozzle above ----------
+function zOffset() {
+  const id = 'bwzo', bed = box([-2, 0, -1], [28, 16, 0])
+  // the lines' cross sections as ellipses on the front face, squashed, right, round
+  const sec = (rx, ry, lift, c = 's-g1 s-aol') => [6, 12, 18].map((x) => { const [px, py] = iso(x, 16, 0); return `<ellipse class="${c}" cx="${px}" cy="${r1(py - ry - lift)}" rx="${rx}" ry="${ry}"/>` }).join('')
+  const nz = (z) => nozzle(23, 16, z)
+  return staged(id, [sec(8, 1.6, 0) + nz(0.6) + pd('', rel([[3, 16, 0.1], [21, 16, 0.1]], false), CUT, 1.6), sec(5.5, 3, 0) + nz(1.8), sec(3.6, 3.6, 3) + nz(4.2) + dots([[6, 16, 0], [12, 16, 0], [18, 16, 0]], 's-cf s-cl', 0.8)], ['-0.1 mm', '0 mm', '+0.15 mm'], 'Z offset: the nozzle too close squashes the first lines and scrapes; too far and they stay round and do not stick.', { extra: bed, w: 76, x: 200 })
+}
+
 /** Advanced, second half, by the file name the export uses. */
 export const LOOPS = {
   'adv-pressure-advance': pressureAdvance,
@@ -938,4 +1080,19 @@ export const LOOPS = {
   'adv-wall-transition-length': transitionLength,
   'adv-wall-transition-angle': transitionAngle,
   'adv-wall-transition-filter-deviation': transitionFilter,
+  'adv-chamber-temperature': chamberTemp,
+  'adv-cool-plate-temp': coolPlate,
+  'adv-eng-plate-temp': engPlate,
+  'adv-hot-plate-temp': hotPlate,
+  'adv-supertack-plate-temp': superTack,
+  'adv-textured-cool-plate-temp': texturedCool,
+  'adv-textured-plate-temp': texturedPlate,
+  'adv-wave-overhangs': waveOn,
+  'adv-wave-overhang-line-spacing': waveSpacing,
+  'adv-wave-overhang-perimeter-overlap': waveOverlap,
+  'adv-wave-overhang-print-speed': waveSpeed,
+  'adv-wave-overhang-flow': waveFlow,
+  'adv-wave-overhang-max-iterations': waveIter,
+  'adv-wipe': wipeOn,
+  'adv-wipe-distance': wipeDistance,
 }
