@@ -133,3 +133,8 @@
 .pc-forget > * { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: 0; visibility: hidden; }
 .pc-forget [role='alertdialog'] > span { flex-basis: 100%; }
 .pc-forget > [data-on] { visibility: visible; }
+
+/* the save switch's caption: on and off stacked in one cell, the current one shown */
+.pc-share-cap { display: grid; }
+.pc-share-cap > span { grid-area: 1 / 1; visibility: hidden; }
+.pc-share-cap > span[data-on] { visibility: visible; }

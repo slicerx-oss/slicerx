@@ -263,6 +263,8 @@ export function createEvalSlicer(project: () => PilotProject | undefined): Slice
 // Environment
 
 export interface EvalEnvOptions {
+  /** 'cad' builds mimir as the browser build that only models does. */
+  scope?: 'full' | 'cad'
   client: LlmClient
   machine: PilotMachine
   objects: EvalObject[]
@@ -345,6 +347,7 @@ export function createEvalEnv(opts: EvalEnvOptions) {
     machineRates: { 'bay-1': 0.34, 'bay-2': 0.21, 'bay-3': 0.18, 'bay-4': 0.26, 'bay-5': 0.3 },
     project: () => project,
     ...(opts.tools ? { tools: opts.tools } : {}),
+    ...(opts.scope ? { scope: opts.scope } : {}),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     now: () => {
       clock += 1

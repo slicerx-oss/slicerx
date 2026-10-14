@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/pilot. See README.md for the public API.
-export { createPilot, type CreatePilotOptions, type PilotHost } from './runtime'
+export { createPilot, RUNTIME_NOTES, type CreatePilotOptions, type PilotHost } from './runtime'
 export { ASSISTANT_NAME } from './name'
 export { HUGINN, MODEL_AUTOMATIC, MODEL_AUTOMATIC_LABEL, modelFor, MUNINN, tierForPrompt, type Tier } from './models'
 export { defineSkill, defineTool, toolSpec, type AgentWork, type ApprovalPlan, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset } from './tool'

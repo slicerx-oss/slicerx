@@ -17,6 +17,13 @@ import './connect.css'
 
 type Forget = { step: 'idle' } | { step: 'confirm' } | { step: 'busy' } | { step: 'done'; note: string }
 
+/** The caption under the save switch, saying what its state means now. */
+export function shareCaption(on: boolean): string {
+  return on
+    ? `On: free ${ASSISTANT_NAME} chats are saved for 30 days to improve it. Your own key or local model never saves anything.`
+    : 'Off: nothing new is saved. Your own key or local model never saves anything.'
+}
+
 /** Settings > mimir: whether free mimir saves chats, and deleting the ones it saved. Only where the cloud runs. */
 function CloudShare() {
   const edition = useEdition()
@@ -41,7 +48,17 @@ function CloudShare() {
         id="mimir-share"
         testId="mimir-share"
         label={`Save my chats to improve ${ASSISTANT_NAME}`}
-        detail="Turned off, nothing new is saved. Your own key or local model never saves anything."
+        detail={
+          // both captions share one grid cell, so the row keeps its height when the switch flips
+          <span className="pc-share-cap" data-testid="mimir-share-caption">
+            <span data-on={share || undefined} aria-hidden={!share || undefined}>
+              {shareCaption(true)}
+            </span>
+            <span data-on={!share || undefined} aria-hidden={share || undefined}>
+              {shareCaption(false)}
+            </span>
+          </span>
+        }
         checked={share}
         onChange={(v) => set({ mimirShare: v })}
       />

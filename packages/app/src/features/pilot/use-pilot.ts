@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A Pilot built on this host and the same tool registry the command bar uses. Without a model
 // provider it runs the built-in demo model, so the panel still works.
-import { DEFAULT_POLICY, type ApprovalHost, type Host, type LlmTransport, type Pilot, type PilotConfig, type PrinterHost } from '@slicerx/contracts'
+import { DEFAULT_POLICY, type ApprovalHost, type CommandSpec, type Host, type LlmTransport, type Pilot, type PilotConfig, type PrinterHost } from '@slicerx/contracts'
 import { createCombinedPlanner, createDemoClient, createPilot, DEFAULT_CONFIG, type CreatePilotOptions, type KnowledgeBase } from '@slicerx/pilot'
 import { useEffect, useState } from 'react'
 import { listCommands } from '../../commands/registry'
@@ -13,9 +13,15 @@ import { geom } from '../../geom/client'
 import { guardedPrinters } from '../../plate/guard'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
+import { hostSlices } from '../../state/model-mode'
 import { get } from '../../state/store'
 import { bundledKb } from './kb'
 import { appProject, pilotSlicer } from './project'
+
+/** Commands that slice, print or change slicer settings, which a host that only models leaves out of mimir's tools. */
+export function modelingCommands(commands: readonly CommandSpec[]): CommandSpec[] {
+  return commands.filter((c) => c.section !== 'slice' && c.section !== 'printers' && c.section !== 'settings' && c.id !== 'mode-slice' && !c.id.startsWith('layer-'))
+}
 
 /**
  * What the docked Pilot runs with. Its printer calls go through the same preflight and bed-clear card as the Print
@@ -27,11 +33,14 @@ export function dockPilotOptions(host: Host, parts: { printers: PrinterHost; llm
   // The same geometry engine as the object tools (cut, repair, hollow), in its worker.
   const shapes = { run: (op: string, input: unknown, signal?: AbortSignal) => geom().call(op, input, signal) }
   const { printers, llm, approvals, config, kb } = parts
+  // the browser build only models: mimir there has the part and knowledge tools, no printers, and says so
+  const slices = hostSlices()
   return {
     host: { printers: guardedPrinters(host) ?? printers, slicer: pilotSlicer(host), geom: shapes, llm, approvals, projectExport: projectExportHost(host) },
     config,
     policy: DEFAULT_POLICY,
-    commands: [...listCommands()],
+    commands: slices ? [...listCommands()] : modelingCommands(listCommands()),
+    ...(slices ? {} : { scope: 'cad' as const }),
     kb,
     planner: createCombinedPlanner(kb),
     project,

@@ -44,6 +44,7 @@ import { GENERIC_BED } from '../adapters/generic-bed'
 import { loadUserThemes } from '../theme/load'
 import { DEFAULT_APPEARANCE, DEFAULT_PLAYBACK_SPEED, hasStoredPrefs, loadPrefs, MULTI_BODY_DEFAULT, savePrefs, type Appearance, type HandPrinter, type MultiBodyPref, type PrinterBay, type Prefs } from './prefs'
 import type { DryMark } from '../filament/dry-marks'
+import { noteSetupOpen, setupOpenAtReload } from '../first-run/onboarding'
 
 
 
@@ -653,6 +654,8 @@ export type SetupStep = 'welcome' | 'theme' | 'look' | 'open' | 'mimir' | 'cad' 
 export const DEFAULT_ELECTRICITY = { pricePerKwh: 0.15, symbol: '$' }
 
 const firstLaunch = !hasStoredPrefs()
+// setup that was open when this tab reloaded opens again on the step it was on
+const setupAtReload = firstLaunch ? null : setupOpenAtReload()
 const prefs = loadPrefs()
 const freshEasy = (easy: EasySettings): EasySettings => ({ ...easy, varyLayerHeight: freshVary({ easy, easyTouched: prefs.easyTouched ?? [], goal: prefs.goal }) })
 
@@ -755,8 +758,8 @@ export const appStore = createStore<AppState>()(() => ({
   queue: (prefs.queue ?? []) as QueueItem[],
   moreOpen: {},
   firstRun: (prefs.firstRun ?? null) as FirstRunState | null,
-  // Setup opens by itself only on an install that has never stored anything.
-  setup: firstLaunch ? { step: 'welcome' } : null,
+  // Setup opens by itself only on an install that has never stored anything, or again after a reload in the middle of it.
+  setup: firstLaunch ? { step: 'welcome' } : setupAtReload ? { step: setupAtReload } : null,
   crashReports: prefs.crashReports ?? false,
   mimirShare: prefs.mimirShare ?? true,
   mimirNotice: prefs.mimirNotice ?? null,
@@ -847,6 +850,12 @@ function alwaysAutoSliceDefault(): boolean {
 
 
 const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+
+// the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
+noteSetupOpen(appStore.getState().setup?.step ?? null)
+appStore.subscribe((s, prev) => {
+  if (s.setup !== prev.setup && (s.setup === null || prev.setup === null)) noteSetupOpen(s.setup?.step ?? null)
+})
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {

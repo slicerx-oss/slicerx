@@ -48,6 +48,8 @@ export {
   elapsedMs,
   runningTools,
   pendingApprovals,
+  restoredTranscript,
+  transcriptTurns,
 } from './reduce'
 export type { Transcript, Turn, Block, BlockKind, ToolRowModel, ApprovalResolution, Meter, RunStatus } from './reduce'
 export { fmtDuration, fmtTokens, fmtSeconds, fmtClock, fmtCountdown, fmtWhen, segs, argTokens } from './format'

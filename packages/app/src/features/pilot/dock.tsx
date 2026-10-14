@@ -6,15 +6,16 @@
 import { PERMISSION_LABELS, type ApprovalRequest, type PermissionMode, type PermissionPolicy } from '@slicerx/contracts'
 import { SKILL_INFO } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Inspector, Terminal, UsageLinkContext, usePilotRun, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
+import { Inspector, Terminal, transcriptTurns, UsageLinkContext, usePilotRun, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
 import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, LinkButton } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useHasFeature } from '../../features'
-import { useInMimir } from '../../state/model-mode'
+import { hostSlices, useInMimir } from '../../state/model-mode'
 import { matchShortcut } from '../../lib/keys'
 import { useFleet } from '../../lib/queries'
 import { openSettings, pilotState, set, useApp } from '../../state/store'
+import { clearDockChat, saveDockChat, savedDockChat } from './dock-chat'
 import { closeDock, toggleDock, useDockOpen } from './dock-state'
 import { watchOf, type Watch } from './watch'
 import { usePilot } from './use-pilot'
@@ -39,22 +40,44 @@ export function WatchDot({ watch }: { watch: Watch }) {
   return <span className="mimir-watch" data-attention={watch.attention ? true : undefined} role="img" aria-label={label} />
 }
 
-/** Starter chips: the first six skills with an example prompt. The rest are listed under Skills and permissions. */
-function chips(run: (text: string) => void): Suggestion[] {
+/** Starter chips where the host only models (the browser build): parts and questions, nothing that slices or prints. */
+export const CAD_CHIPS: readonly { id: string; label: string; prompt: string }[] = [
+  { id: 'design', label: 'Design a part', prompt: '40 mm L bracket, two M3 holes, 3 mm thick' },
+  { id: 'color', label: 'Make a multi-color model', prompt: 'Build me a SlicerX logo in SlicerX black and X pink' },
+  { id: 'measure', label: 'Measure the parts', prompt: 'How big is each part in this design?' },
+  { id: 'material', label: 'Recommend a material', prompt: 'What should I print a car phone mount in? It sits on the dashboard in summer.' },
+]
+
+/** The skills a host that only models lists under Skills and permissions. */
+const CAD_SKILLS: ReadonlySet<string> = new Set(['text_to_part', 'make_model', 'knowledge_answer', 'material_recommend'])
+
+/** Starter chips: the first six skills with an example prompt (the rest are listed under Skills and permissions), or the modeling ones. */
+export function chips(run: (text: string) => void, slices = hostSlices()): Suggestion[] {
+  if (!slices) return CAD_CHIPS.map((c) => ({ id: c.id, label: c.label, onSelect: () => run(c.prompt) }))
   return SKILL_INFO.filter((s) => s.example).slice(0, 6).map((s) => ({ id: s.name, label: s.title ?? s.name, onSelect: () => run(s.example) }))
+}
+
+/** What the empty chat says: about prints where the host slices, about parts where it only models. */
+export function emptyNote(watching: Watch, slices = hostSlices()): string {
+  if (!slices) return `Describe a part and ${ASSISTANT_NAME} models it, or ask a material or printing question. Or pick one below.`
+  return watching.attention ? `Something looked off on ${watching.names.join(', ')}. Ask what ${ASSISTANT_NAME} saw.` : watching.names.length ? `Watching ${watching.names.join(', ')}. Ask how the print is going, or pick a skill.` : 'Ask about a print, a failure or a setting, or pick a skill below.'
 }
 
 function DockBody() {
   const pilot = usePilot()
   const prompt = useApp((s) => s.pilotPrompt)
-  const [sessionId, setSessionId] = useState(() => `s_${Date.now().toString(36)}`)
+  // a reload picks the last conversation back up
+  const [sessionId, setSessionId] = useState(() => savedDockChat()?.sessionId ?? `s_${Date.now().toString(36)}`)
   const [showThinking, setShowThinking] = useState(false)
   const [more, setMore] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const [policy, setPolicyState] = useState<PermissionPolicy | null>(null)
   const watching = useWatching()
   if (!pilot) return <Loading />
-  return <DockRun pilot={pilot} sessionId={sessionId} onNewSession={() => setSessionId(`s_${Date.now().toString(36)}`)} prompt={prompt} showThinking={showThinking} setShowThinking={setShowThinking} more={more} setMore={setMore} announcement={announcement} setAnnouncement={setAnnouncement} policy={policy ?? pilot.policy()} setPolicy={setPolicyState} watching={watching} />
+  return <DockRun pilot={pilot} sessionId={sessionId} onNewSession={() => {
+    clearDockChat()
+    setSessionId(`s_${Date.now().toString(36)}`)
+  }} prompt={prompt} showThinking={showThinking} setShowThinking={setShowThinking} more={more} setMore={setMore} announcement={announcement} setAnnouncement={setAnnouncement} policy={policy ?? pilot.policy()} setPolicy={setPolicyState} watching={watching} />
 }
 
 function DockRun(p: {
@@ -74,9 +97,38 @@ function DockRun(p: {
 }) {
   const { pilot, sessionId, prompt, setAnnouncement } = p
   const run = usePilotRun(pilot, sessionId)
-  const { reset } = run
+  const { reset, restore } = run
   useEffect(() => reset(), [sessionId, reset])
+  // the conversation from before a reload, shown as it was and given back to the runtime as context
+  const restored = useRef(false)
+  const shown = useRef(run.transcript)
+  shown.current = run.transcript
+  useEffect(() => {
+    if (restored.current) return
+    restored.current = true
+    const saved = savedDockChat()
+    if (!saved || saved.sessionId !== sessionId) return
+    restore(saved.transcript)
+    shown.current = saved.transcript
+    pilot.resume?.(sessionId, transcriptTurns(saved.transcript))
+  }, [sessionId, restore, pilot])
+  // a runtime made again (signing in makes a new one) picks up the conversation on screen; one with history ignores it
+  const madeFor = useRef(pilot)
+  useEffect(() => {
+    if (madeFor.current === pilot) return
+    madeFor.current = pilot
+    const turns = transcriptTurns(shown.current)
+    if (turns.length) pilot.resume?.(sessionId, turns)
+  }, [pilot, sessionId])
   const status = run.transcript.status
+  // kept each time a run ends, the transcript as it stands then
+  const was = useRef(status)
+  useEffect(() => {
+    const ended = was.current === 'running' && status !== 'running'
+    was.current = status
+    if (ended) saveDockChat(sessionId, run.transcript)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
   const prev = useRef(status)
   useEffect(() => {
     if (prev.current === status) return
@@ -110,13 +162,14 @@ function DockRun(p: {
     setAnnouncement(`${PERMISSION_LABELS[cls].title}: ${MODE_WORD[mode]}. Applies from the next step ${ASSISTANT_NAME} takes.`)
   }
   const first = run.transcript.turns.find((t) => t.user)?.user ?? null
-  const empty = p.watching.attention ? `Something looked off on ${p.watching.names.join(', ')}. Ask what ${ASSISTANT_NAME} saw.` : p.watching.names.length ? `Watching ${p.watching.names.join(', ')}. Ask how the print is going, or pick a skill.` : 'Ask about a print, a failure or a setting, or pick a skill below.'
+  const empty = emptyNote(p.watching)
+  const slices = hostSlices()
   return (
     <>
       {p.more ? null : <ChatGptCard compact />}
       {p.more ? (
         <div id="mimir-more" className="mimir-more">
-          <Inspector transcript={run.transcript} paused={run.paused} skills={SKILL_INFO} plugins={run.transcript.plugins ?? []} policy={p.policy} onPolicy={onPolicy} />
+          <Inspector transcript={run.transcript} paused={run.paused} skills={slices ? SKILL_INFO : SKILL_INFO.filter((s) => CAD_SKILLS.has(s.name))} plugins={run.transcript.plugins ?? []} policy={p.policy} onPolicy={onPolicy} />
         </div>
       ) : (
       <UsageLinkContext.Provider value={openUsage}>
@@ -140,6 +193,7 @@ function DockRun(p: {
         approvals={approvals}
         emptyNote={empty}
         announcement={p.announcement}
+        {...(slices ? {} : { placeholder: `Describe a part or ask ${ASSISTANT_NAME}` })}
       />
       </UsageLinkContext.Provider>
       )}
@@ -167,7 +221,7 @@ function ConnectStep() {
   return (
     <div className="mimir-connect">
       <p className="sx-small sx-muted">
-        {waiting ? `Connect a model and ${ASSISTANT_NAME} answers "${waiting}".` : `Connect a model and ${ASSISTANT_NAME} answers questions about your prints and suggests changes you approve.`} Nothing is sent until you connect.
+        {waiting ? `Connect a model and ${ASSISTANT_NAME} answers "${waiting}".` : hostSlices() ? `Connect a model and ${ASSISTANT_NAME} answers questions about your prints and suggests changes you approve.` : `Connect a model and ${ASSISTANT_NAME} models parts from a description and answers printing questions.`} Nothing is sent until you connect.
       </p>
       <MimirSetup place="panel" idPrefix="mimir-ms" />
       <p className="sx-small sx-muted">

@@ -36,3 +36,34 @@ export function onboardingRerun(stage: string, fr: FirstRunState | null): { sinc
   return RERUN_ALL_STAGES.includes(stage) ? {} : { since: seen }
 }
 
+
+const OPEN_KEY = 'sx-setup-open'
+const OPEN_STEPS: readonly string[] = ['welcome', ...SETUP_STEPS]
+
+function tabStore(): Storage | null {
+  try {
+    return globalThis.sessionStorage ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Notes the step setup shows, or that it closed, for the tab's session: a reload in the middle of setup comes back to it. */
+export function noteSetupOpen(step: string | null): void {
+  try {
+    if (step && OPEN_STEPS.includes(step)) tabStore()?.setItem(OPEN_KEY, step)
+    else tabStore()?.removeItem(OPEN_KEY)
+  } catch {
+    // storage refused: a reload leaves setup, as before
+  }
+}
+
+/** The step setup was on when this tab reloaded, or null when it was not open. */
+export function setupOpenAtReload(): 'welcome' | SetupStep | null {
+  try {
+    const step = tabStore()?.getItem(OPEN_KEY)
+    return step && OPEN_STEPS.includes(step) ? (step as 'welcome' | SetupStep) : null
+  } catch {
+    return null
+  }
+}

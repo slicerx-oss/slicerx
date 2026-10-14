@@ -3,7 +3,7 @@
 // mimir before a model is connected to the tab: the real runtime with a client that plays scripted turns in place of
 // a model. Each message picks the script whose words it matches; the script streams text and makes real tool calls,
 // which run through the same tools a model would call. When the real agent arrives, only the client changes.
-import { DEFAULT_CONFIG, askTool, createPilot, createScriptedClient, lookupTool, sheetBindTool, sheetTool, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
+import { DEFAULT_CONFIG, RUNTIME_NOTES, askTool, createPilot, createScriptedClient, lookupTool, sheetBindTool, sheetTool, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type Pilot, type PrinterHost, type SessionStore } from '@slicerx/contracts'
 
 export interface MimirScript {
@@ -50,7 +50,8 @@ export function scriptRouter(scripts: readonly MimirScript[], opts: { delayMs?: 
       // A new message starts its script; the tool rounds that follow it continue the same one.
       // A sheet the person canceled ends the script: nothing builds from sizes nobody confirmed.
       if (current !== null && canceledSheet(req.messages.at(-1))) current = createScriptedClient(CANCELED, { delayMs: opts.delayMs ?? 0 })
-      else if (current === null || req.messages.at(-1)?.role === 'user') {
+      // the runtime asking for a reply is not a new message: the script carries on
+      else if (current === null || (req.messages.at(-1)?.role === 'user' && !RUNTIME_NOTES.has(lastUser(req.messages)))) {
         const script = scripts.find((s) => s.match.test(lastUser(req.messages)))
         current = createScriptedClient(script?.steps ?? UNKNOWN, { delayMs: opts.delayMs ?? 0, callDelayMs: opts.callDelayMs ?? 0 })
         runs++

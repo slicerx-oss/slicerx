@@ -109,6 +109,24 @@ export function setReplaying(state: Transcript, replaying: boolean): Transcript 
   return state.replaying === replaying ? state : { ...state, replaying }
 }
 
+/**
+ * A transcript brought back after a reload, as it was when its last run ended. It is history now: cards in it can no
+ * longer be answered and nothing is streaming.
+ */
+export function restoredTranscript(t: Transcript): Transcript {
+  const turns = t.turns.map((turn) => ({
+    ...turn,
+    replay: true,
+    blocks: turn.blocks.map((b): Block => (b.kind === 'approval' || b.kind === 'choice' || b.kind === 'sheet' ? { ...b, replay: true } : b.kind === 'say' ? { ...b, streaming: false } : b)),
+  }))
+  return { ...t, turns, status: t.status === 'running' ? 'stopped' : t.status, clockStart: null, replaying: false }
+}
+
+/** Each message the person sent and mimir's words in reply, for picking the conversation back up. */
+export function transcriptTurns(t: Transcript): { user: string; reply: string }[] {
+  return t.turns.flatMap((turn) => (turn.user === null ? [] : [{ user: turn.user, reply: turn.blocks.flatMap((b) => (b.kind === 'say' ? [b.text] : [])).join('\n').trim() }]))
+}
+
 /** Opens a new turn: the person's bubble (when there is a message) and an empty mimir reply under it. */
 export function startTurn(state: Transcript, opts: { user?: string | null; where?: string | null; attachments?: PilotAttachment[] }, now: number): Transcript {
   const seq = state.seq + 1

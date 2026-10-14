@@ -13,6 +13,7 @@ import { isPhoneLayout } from '../lib/phone-layout'
 import { get, set, useApp, type AppState } from '../state/store'
 import { Footer } from './frame'
 import { useLookChoice } from './look'
+import { noteSetupOpen } from './onboarding'
 import { initialFlow, normalizeStep, outcome, progress, progressRecord, reduceFlow, setupSteps, stepLabel, type FlowState, type SetupStep } from './model'
 import { hostSlices } from '../state/model-mode'
 import { MimirStep, mimirOnFinish, type MimirChoice } from './mimir-step'
@@ -85,6 +86,7 @@ export function FirstRun() {
     rootRef.current?.querySelector<HTMLElement>('.fr-body')?.scrollTo({ top: 0 })
     if (!flow.closed) {
       set({ firstRun: progressRecord(flow, get().firstRun) })
+      noteSetupOpen(flow.step)
     }
     // flow.look is read for a first record only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
