@@ -67,8 +67,10 @@ sh packages/brep/scripts/build-wasm.sh
 
 | File | Bytes | gzip | SHA-256 |
 | --- | --- | --- | --- |
-| `lib/sx_brep.wasm` | 3,258,490 | 1,284,621 | `dcfb958ace7911657a9484919fc8894457a72f47784f951565888ba5c2a6e867` |
-| `lib/sx_brep.mjs` | 63,340 | | `ecda0a5fb31873ad175525b589c3fc45c98ed0aa967b23186df002eb0997760c` |
+| `lib/sx_brep.wasm` | 3,259,520 | 1,288,899 | `37a7b36b7a22e9329c06ed68f76ad52416c2c69311c58ea708705d6de52caa9a` |
+| `lib/sx_brep.mjs` | 63,340 | 17,861 | `ecda0a5fb31873ad175525b589c3fc45c98ed0aa967b23186df002eb0997760c` |
+
+Gzip sizes use Node zlib at level 9, matching the web bundle gate. The previous WASM was 1,288,185 bytes by the same method; this build adds 714 bytes and remains below the 1,400,000-byte ceiling.
 
 ## Licenses
 
