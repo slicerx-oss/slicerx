@@ -15,7 +15,8 @@ const png = (name = 'thermostat.png', bytes = 2048) => new File([new Uint8Array(
 describe('the limits', () => {
   it('takes images up to 10 MB, four to a message', () => {
     expect(attachProblem({ name: 'a.png', type: 'image/png', size: 1000 }, 0)).toBeNull()
-    expect(attachProblem({ name: 'a.pdf', type: 'application/pdf', size: 1000 }, 0)).toMatch(/isn't an image/)
+    expect(attachProblem({ name: 'a.pdf', type: 'application/pdf', size: 1000 }, 0)).toBeNull()
+    expect(attachProblem({ name: 'a.txt', type: 'text/plain', size: 10 }, 0)).toMatch(/isn't an image or a PDF/)
     expect(attachProblem({ name: 'a.png', type: 'image/png', size: ATTACH_LIMITS.maxBytes + 1 }, 0)).toMatch(/over 10 MB/)
     expect(attachProblem({ name: 'a.png', type: 'image/png', size: 1000 }, ATTACH_LIMITS.maxCount)).toMatch(/up to 4/)
   })
@@ -53,6 +54,18 @@ describe('the composer', () => {
     expect(sent.map((a) => a.name)).toEqual(['b.png'])
     // the box is empty again
     expect(screen.queryAllByTestId('mimir-attachment')).toHaveLength(0)
+  })
+
+  it('takes a PDF drawing, shown with a file icon instead of a thumbnail', async () => {
+    const { container } = render(<Harness onSend={vi.fn()} />)
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['%PDF-1.4'], 'bracket.pdf', { type: 'application/pdf' })] } })
+    })
+    await waitFor(() => expect(screen.getAllByTestId('mimir-attachment')).toHaveLength(1))
+    const chip = screen.getByTestId('mimir-attachment')
+    expect(chip.textContent).toContain('bracket.pdf')
+    expect(chip.querySelector('img')).toBeNull()
+    expect(chip.querySelector('.att-doc')).not.toBeNull()
   })
 
   it('says why a file was left out', async () => {

@@ -8,7 +8,8 @@
 export const MODEL = 'claude-haiku-5-5'
 export const MAX_OUTPUT = 8192
 export const MAX_SEARCHES = 3
-export const MAX_BODY_BYTES = 2_000_000
+// a conversation may carry up to 15 MB of the person's pictures and PDFs (20 MB as base64), plus its text
+export const MAX_BODY_BYTES = 24_000_000
 const MAX_MESSAGES = 400
 const MAX_TOOLS = 128
 const MAX_BREAKPOINTS = 4
@@ -22,7 +23,8 @@ const CONTEXT_TOKENS = 1_000_000
 
 type Obj = Record<string, unknown>
 export type Shaped =
-  | { ok: true; body: Obj; promptEstimate: number; maxOutput: number; maxSearches: number }
+  /** `documents`: the request carries a PDF, whose cost bytes can't bound, so it is counted exactly before the call. */
+  | { ok: true; body: Obj; promptEstimate: number; maxOutput: number; maxSearches: number; documents: number }
   | { ok: false; error: string }
 
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -71,6 +73,22 @@ function imageBlock(b: Obj): Obj {
   return out
 }
 
+// the document blocks shape built: PDFs the person attached, base64 only
+const DOCUMENTS = new WeakSet<Obj>()
+
+function documentBlock(b: Obj): Obj {
+  const src = b['source']
+  // base64 only: a url source would have the provider fetch it for us
+  if (!isObj(src) || src['type'] !== 'base64' || src['media_type'] !== 'application/pdf' || typeof src['data'] !== 'string') {
+    refuse('documents must be base64 PDFs')
+  }
+  const out: Obj = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: (src as Obj)['data'] } }
+  if (typeof b['title'] === 'string') out['title'] = (b['title'] as string).slice(0, 200)
+  cachePoint(b, out)
+  DOCUMENTS.add(out)
+  return out
+}
+
 function toolResultContent(c: unknown): unknown {
   if (typeof c === 'string') return c
   if (!Array.isArray(c)) refuse('bad tool result')
@@ -87,6 +105,7 @@ function block(b: unknown, role: string): Obj {
   const t = b['type']
   if (t === 'text') return textBlock(b)
   if (t === 'image' && role === 'user') return imageBlock(b)
+  if (t === 'document' && role === 'user') return documentBlock(b)
   if (t === 'tool_result' && role === 'user') {
     if (typeof b['tool_use_id'] !== 'string') refuse('a tool result needs its tool_use_id')
     const out: Obj = { type: 'tool_result', tool_use_id: b['tool_use_id'], content: toolResultContent(b['content'] ?? '') }
@@ -239,6 +258,12 @@ function estimate(body: Obj): number {
   return new TextEncoder().encode(text).length + images * IMAGE_TOKENS + TOOL_OVERHEAD
 }
 
+function documentsIn(body: Obj): number {
+  let n = 0
+  for (const m of body['messages'] as Obj[]) if (Array.isArray(m['content'])) for (const b of m['content'] as Obj[]) if (DOCUMENTS.has(b)) n++
+  return n
+}
+
 /**
  * The most prompt tokens a call can bill: one pass at the prompt without web search, and
  * with it one more pass per search, each carrying the reply so far and every search's
@@ -267,7 +292,7 @@ export function shape(raw: unknown): Shaped {
     body['thinking'] = { type: 'adaptive' }
     body['output_config'] = { effort: 'medium' }
     placeCache(body)
-    return { ok: true, body, promptEstimate: estimate(body), maxOutput, maxSearches: t.searches }
+    return { ok: true, body, promptEstimate: estimate(body), maxOutput, maxSearches: t.searches, documents: documentsIn(body) }
   } catch (e) {
     if (e instanceof Refused) return { ok: false, error: e.message }
     throw e
