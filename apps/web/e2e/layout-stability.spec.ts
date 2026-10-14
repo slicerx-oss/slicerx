@@ -26,6 +26,76 @@ const CONTROLS = [
 const LIMIT = 0.5
 const MAX_PER_SCREEN = 40
 
+/** mimir cloud against a stub on the page's own origin, answering every message with one line; returns the dock once the answer shows. */
+async function mimirChat(page: Page): Promise<Locator> {
+  const reply = 'A 20 mm cube is easy. I put one on the grid at the origin.'
+  await page.route('**/functions/v1/mimir/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    const at = path.slice(path.indexOf('/mimir') + '/mimir'.length)
+    if (at === '/quota') return route.fulfill({ json: { edition: 'slicerx-web', day: '2026-10-13', install_used: 0, install_cap: 250000, ip_used: 0, ip_cap: 1000000, edition_open: true } })
+    if (at !== '/v1/messages') return route.fulfill({ status: 404, json: {} })
+    const ev = (type: string, data: object) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`
+    const body = [
+      ev('message_start', { message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', content: [], stop_reason: null, usage: { input_tokens: 12, output_tokens: 1 } } }),
+      ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }),
+      ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: reply } }),
+      ev('content_block_stop', { index: 0 }),
+      ev('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 9 } }),
+      ev('message_stop', {}),
+    ].join('')
+    return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body })
+  })
+  await page.addInitScript(() => {
+    localStorage.setItem('slicerx.debug', '1')
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('sx-mimir-dock', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'on', provider: 'mimir-cloud' } }))
+  })
+  await page.goto('./')
+  await viewportReady(page)
+  await page.evaluate((token) => {
+    const w = window as unknown as { __sxMimirCloud(h: unknown, base: string): void; __sxBrowserMimirCloud(base: string, token: string): unknown }
+    const base = `${location.origin}/functions/v1/mimir`
+    w.__sxMimirCloud(w.__sxBrowserMimirCloud(base, token), base)
+  }, 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJlMmUifQ.c2ln')
+  await sx(page, { pilotPrompt: 'a 20 mm cube' })
+  await page.getByTestId('mimir-notice-ok').click()
+  const dock = page.locator('.mimir-dock')
+  await expect(dock.getByText(reply)).toBeVisible({ timeout: 30_000 })
+  return dock
+}
+
+/** Turns Show thinking on and off from the dock's More menu; what moved among the boxes `sel` matches. */
+async function thinkingMoves(page: Page, sel: string): Promise<Moved[]> {
+  const boxes = () => page.locator(sel).evaluateAll((els) => els.map((e) => {
+    const r = e.getBoundingClientRect()
+    return { x: r.x, y: r.y, w: r.width, h: r.height }
+  }))
+  const moved: Moved[] = []
+  for (const on of [true, false]) {
+    const before = await boxes()
+    await page.getByTestId('mimir-foot-more').click()
+    const item = page.getByTestId('mimir-foot-menu').getByTestId('mimir-foot-thinking')
+    await expect(item).toHaveAttribute('aria-checked', String(!on))
+    await item.click()
+    await expect(page.getByTestId('mimir-foot-menu')).toHaveCount(0)
+    await page.waitForTimeout(350)
+    const after = await boxes()
+    expect(after.length).toBe(before.length)
+    after.forEach((n, i) => {
+      const o = before[i]!
+      const d = { dx: n.x - o.x, dy: n.y - o.y, dw: n.w - o.w, dh: n.h - o.h }
+      if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control: `Show thinking ${on ? 'on' : 'off'}`, what: `item ${i}`, ...d })
+    })
+    await page.getByTestId('mimir-foot-more').click()
+    await expect(page.getByTestId('mimir-foot-thinking')).toHaveAttribute('aria-checked', String(on))
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('mimir-foot-menu')).toHaveCount(0)
+  }
+  return moved
+}
+
 async function open(page: Page, prefs: Record<string, unknown>): Promise<void> {
   await page.addInitScript((p) => {
     localStorage.setItem('slicerx.debug', '1')
@@ -543,43 +613,8 @@ test.describe('controls never move when pressed', () => {
   })
 
   test('mimir on a phone: the slow-graphics notice keeps off the chat, and Show thinking moves nothing', async ({ page, isMobile }, info) => {
-    test.skip(!isMobile, 'Phone only: a desktop keeps the toast and the terminal bar')
-    // mimir cloud against a stub on the page's own origin, answering every message with one line
-    const reply = 'A 20 mm cube is easy. I put one on the grid at the origin.'
-    await page.route('**/functions/v1/mimir/**', async (route) => {
-      const path = new URL(route.request().url()).pathname
-      const at = path.slice(path.indexOf('/mimir') + '/mimir'.length)
-      if (at === '/quota') return route.fulfill({ json: { edition: 'slicerx-web', day: '2026-10-13', install_used: 0, install_cap: 250000, ip_used: 0, ip_cap: 1000000, edition_open: true } })
-      if (at !== '/v1/messages') return route.fulfill({ status: 404, json: {} })
-      const ev = (type: string, data: object) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`
-      const body = [
-        ev('message_start', { message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', content: [], stop_reason: null, usage: { input_tokens: 12, output_tokens: 1 } } }),
-        ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }),
-        ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: reply } }),
-        ev('content_block_stop', { index: 0 }),
-        ev('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 9 } }),
-        ev('message_stop', {}),
-      ].join('')
-      return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body })
-    })
-    await page.addInitScript(() => {
-      localStorage.setItem('slicerx.debug', '1')
-      if (sessionStorage.getItem('sx-e2e')) return
-      sessionStorage.setItem('sx-e2e', '1')
-      localStorage.setItem('sx-mimir-dock', '1')
-      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'on', provider: 'mimir-cloud' } }))
-    })
-    await page.goto('./')
-    await viewportReady(page)
-    await page.evaluate((token) => {
-      const w = window as unknown as { __sxMimirCloud(h: unknown, base: string): void; __sxBrowserMimirCloud(base: string, token: string): unknown }
-      const base = `${location.origin}/functions/v1/mimir`
-      w.__sxMimirCloud(w.__sxBrowserMimirCloud(base, token), base)
-    }, 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJlMmUifQ.c2ln')
-    await sx(page, { pilotPrompt: 'a 20 mm cube' })
-    await page.getByTestId('mimir-notice-ok').click()
-    const dock = page.locator('.mimir-dock')
-    await expect(dock.getByText(reply)).toBeVisible({ timeout: 30_000 })
+    test.skip(!isMobile, 'Phone only: a desktop keeps the toast beside the dock (covered below)')
+    const dock = await mimirChat(page)
 
     // The viewport's own slow-graphics event: a phone shows a warning icon in the top bar, never a toast.
     const text = 'Hardware acceleration looks off in this browser, so the 3D view will be slow. Turn it on in the browser settings and reload.'
@@ -611,32 +646,42 @@ test.describe('controls never move when pressed', () => {
     const pause = page.getByTestId('mimir-foot-pause')
     await expect(pause).toBeVisible()
     expect(Math.min(...Object.values((await pause.boundingBox())!).slice(2))).toBeGreaterThanOrEqual(44)
-    const boxes = () => page.locator('.sx-appbar .sx-btn, .sx-appbar .sx-projname, .mimir-dock > .mimir-foot > *, .mimir-dock .term-body, .mimir-dock .term-in, .phone-tab').evaluateAll((els) => els.map((e) => {
-      const r = e.getBoundingClientRect()
-      return { x: r.x, y: r.y, w: r.width, h: r.height }
-    }))
-    const moved: Moved[] = []
-    for (const on of [true, false]) {
-      const before = await boxes()
-      await page.getByTestId('mimir-foot-more').click()
-      const item = page.getByTestId('mimir-foot-menu').getByTestId('mimir-foot-thinking')
-      await expect(item).toHaveAttribute('aria-checked', String(!on))
-      await item.click()
-      await expect(page.getByTestId('mimir-foot-menu')).toHaveCount(0)
-      await page.waitForTimeout(350)
-      const after = await boxes()
-      expect(after.length).toBe(before.length)
-      after.forEach((n, i) => {
-        const o = before[i]!
-        const d = { dx: n.x - o.x, dy: n.y - o.y, dw: n.w - o.w, dh: n.h - o.h }
-        if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control: `Show thinking ${on ? 'on' : 'off'}`, what: `item ${i}`, ...d })
-      })
-      await page.getByTestId('mimir-foot-more').click()
-      await expect(page.getByTestId('mimir-foot-thinking')).toHaveAttribute('aria-checked', String(on))
-      await page.keyboard.press('Escape')
-      await expect(page.getByTestId('mimir-foot-menu')).toHaveCount(0)
-    }
+    const moved = await thinkingMoves(page, '.sx-appbar .sx-btn, .sx-appbar .sx-projname, .mimir-dock > .mimir-foot > *, .mimir-dock .term-body, .mimir-dock .term-in, .phone-tab')
     await page.screenshot({ path: info.outputPath('phone-mimir-header.png') })
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
+  test('the mimir dock on a desktop: two header rows, and Show thinking moves nothing', async ({ page, isMobile }, info) => {
+    test.skip(isMobile, 'Desktop only: a phone has its own header row (covered above)')
+    const dock = await mimirChat(page)
+    // The panel header, then one row of conversation controls: no terminal bar, no links under the composer.
+    await expect(dock.locator('.term-bar')).toHaveCount(0)
+    await expect(dock.getByRole('button', { name: 'Replay this run' })).toHaveCount(0)
+    const head = (await dock.locator('> .mimir-head').boundingBox())!
+    const row = (await dock.locator('> .mimir-foot').boundingBox())!
+    const chat = (await dock.locator('.term-body').boundingBox())!
+    expect(Math.abs(row.y - (head.y + head.height))).toBeLessThanOrEqual(1)
+    expect(chat.y).toBeGreaterThanOrEqual(row.y + row.height - 1)
+    // Pause sits beside New conversation, More at the row's right end
+    const fresh = (await dock.getByRole('button', { name: 'New conversation' }).boundingBox())!
+    const pause = (await page.getByTestId('mimir-foot-pause').boundingBox())!
+    const more = (await page.getByTestId('mimir-foot-more').boundingBox())!
+    expect(pause.x).toBeGreaterThan(fresh.x + fresh.width)
+    expect(pause.x - (fresh.x + fresh.width)).toBeLessThanOrEqual(16)
+    expect(more.x).toBeGreaterThan(pause.x + pause.width)
+    expect(row.x + row.width - (more.x + more.width)).toBeLessThanOrEqual(16)
+    for (const b of [fresh, pause, more]) expect(b.y + b.height).toBeLessThanOrEqual(row.y + row.height + 0.5)
+    // Skills and permissions and Connect an AI agent are in More with Show thinking
+    await page.getByTestId('mimir-foot-more').click()
+    const menu = page.getByTestId('mimir-foot-menu')
+    await expect(menu.getByRole('menuitem', { name: 'Skills and permissions' })).toBeVisible()
+    await expect(menu.getByRole('menuitemcheckbox', { name: 'Show thinking' })).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: 'Connect an AI agent' })).toBeVisible()
+    await page.screenshot({ path: info.outputPath('desktop-mimir-more.png') })
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    const moved = await thinkingMoves(page, '.sx-appbar .sx-btn, .mimir-dock > .mimir-head > *, .mimir-dock > .mimir-foot > *, .mimir-dock .term-body, .mimir-dock .term-in')
     report(info, moved)
     expect(moved).toEqual([])
   })

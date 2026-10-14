@@ -100,7 +100,6 @@ function DockRun(p: {
 }) {
   const { pilot, sessionId, prompt, setAnnouncement } = p
   const run = usePilotRun(pilot, sessionId)
-  const phone = usePhoneLayout()
   const { reset, restore } = run
   useEffect(() => reset(), [sessionId, reset])
   // the conversation from before a reload, shown as it was and given back to the runtime as context
@@ -169,9 +168,20 @@ function DockRun(p: {
   const empty = emptyNote(p.watching)
   const slices = hostSlices()
   const host = useHost()
+  const phone = usePhoneLayout()
   const parts = useMemo(() => partHandlers(host.slicer, phone), [host, phone])
   return (
     <>
+      <DockBar
+        more={p.more}
+        setMore={p.setMore}
+        onNewSession={p.onNewSession}
+        showThinking={p.showThinking}
+        setShowThinking={p.setShowThinking}
+        paused={run.paused}
+        active={run.running || run.replaying}
+        onPause={() => run.setPaused(!run.paused)}
+      />
       {p.more ? null : <ChatGptCard compact />}
       {p.more ? (
         <div id="mimir-more" className="mimir-more">
@@ -188,6 +198,7 @@ function DockRun(p: {
         showSpeed={false}
         speed="1"
         onSpeed={() => undefined}
+        bar={false}
         showThinking={p.showThinking}
         onShowThinking={p.setShowThinking}
         canReplay={false}
@@ -203,41 +214,18 @@ function DockRun(p: {
       />
       </UsageLinkContext.Provider>
       )}
-      {phone ? (
-        <PhoneFoot
-          more={p.more}
-          setMore={p.setMore}
-          onNewSession={p.onNewSession}
-          showThinking={p.showThinking}
-          setShowThinking={p.setShowThinking}
-          paused={run.paused}
-          active={run.running || run.replaying}
-          onPause={() => run.setPaused(!run.paused)}
-        />
-      ) : (
-        <div className="mimir-foot">
-          <LinkButton icon="plus" onClick={p.onNewSession}>
-            New conversation
-          </LinkButton>
-          <LinkButton icon={p.more ? 'arrow-left' : 'skill'} expanded={p.more} aria-controls="mimir-more" onClick={() => p.setMore(!p.more)}>
-            {p.more ? 'Back to the conversation' : 'Skills and permissions'}
-          </LinkButton>
-          <LinkButton icon="plugin" onClick={() => openSettings('pilot')}>
-            Connect an AI agent
-          </LinkButton>
-        </div>
-      )}
     </>
   )
 }
 
 /**
- * The same three links on a phone, where they sit in one row above the conversation: New conversation keeps its
- * label, and the other two are in a More menu, so the row fits a 360 px screen with nothing cut off. The terminal's own
- * bar is not drawn on a phone (phone-shell.css), so this row also takes its controls: Pause beside More, and Show
- * thinking as a switch in the menu. Replay stays on the desktop: the dock never has a run to replay.
+ * The conversation's one row of controls, under the panel header on a desktop and alone at the top on a phone (where
+ * the tab names mimir): New conversation keeps its label, Pause sits beside it, and the rest are in a More menu, so the
+ * row fits a 360 px screen with nothing cut off. It replaces the terminal's own bar in the dock, so Show thinking is a
+ * checkable item in the menu. Replay stays in the full workspace: the dock's run log holds only mimir's side of the
+ * conversation, so a replay would show answers without their questions.
  */
-function PhoneFoot(p: {
+function DockBar(p: {
   more: boolean
   setMore: (v: boolean) => void
   onNewSession: () => void
