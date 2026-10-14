@@ -961,6 +961,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 
 /* A narrow bar: one control row, the speed one button showing the rate, one width for every rate. */
 .dock[data-narrow] .dock-h { gap: 12px; }
+/* Folded, the readout stays one line so the bar keeps its height: the buttons keep their size, the Z goes first (the
+   Layer row shows it too), then the layer time, and anything longer is cut at the bar's edge. */
+.dock[data-narrow] > .dock-h > :not(.dock-read) { flex-shrink: 0; }
+.dock[data-narrow] .dock-read { min-width: 0; overflow: hidden; white-space: nowrap; }
+@container dock (max-width: 600px) { .dock[data-narrow] .dock-z { display: none; } }
+@container dock (max-width: 480px) { .dock[data-narrow] .dock-lt { display: none; } }
 .dock-speed-btn { display: inline-flex; align-items: center; justify-content: space-between; gap: 4px; width: 60px; height: 26px; padding: 0 6px 0 8px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: none; color: var(--fg); font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-mono); cursor: pointer; }
 .dock-speed-btn:hover, .dock-speed-btn[aria-expanded="true"] { background: var(--ink-3); border-color: var(--line); }
 .dock-speed-btn:focus-visible { outline: none; box-shadow: var(--focus-field); }
