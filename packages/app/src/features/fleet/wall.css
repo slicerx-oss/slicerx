@@ -45,6 +45,9 @@
 .wall-cam { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0; background: color-mix(in srgb, var(--ink-0) 55%, black); }
 .wall-still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .wall-still[data-old] { filter: grayscale(0.6) brightness(0.6); }
+/* Light: the camera ground is the card step, so the idle lines (--dim, --muted) read at 4.5:1 or more; the dark wash
+   left them near 1.5:1. A picture covers it either way. */
+:root[data-scheme="light"] .wall-cam { background: var(--surface-card); }
 .wall-cam .cam-idle-line[data-tip-title] { position: relative; z-index: 2; cursor: default; }
 .wall-float { position: absolute; display: inline-flex; align-items: center; padding: 5px 10px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-0) 72%, transparent); box-shadow: var(--shadow-float); backdrop-filter: var(--lift-glass); -webkit-backdrop-filter: var(--lift-glass); }
 .wall-pill { left: 10px; top: 10px; }
