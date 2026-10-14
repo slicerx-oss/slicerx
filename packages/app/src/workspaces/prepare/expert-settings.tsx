@@ -90,7 +90,7 @@ export function offeredValues(def: Pick<SettingDef, 'enumValues' | 'enumLabels' 
 
 function optionTipAttrs(key: string, value: unknown): Record<string, string> {
   const tip = OPTION_TIPS[`${key}.${String(value ?? '')}`]
-  return tip ? { 'data-tip-title': tip.title, 'data-tip-body': tip.body } : {}
+  return tip ? tipAttrs(tip) : {}
 }
 
 /** Named marks for the values that carry one: aegis in the wall generator, shown as a segmented picker. */
@@ -125,7 +125,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
       const icon = marks[v]
       const tip = OPTION_TIPS[`${def.key}.${v}`]
       // The option keeps its own name; its tip has the name as title and the longer copy under it.
-      return { value: v, label: icon ? <span className="seg-mark"><Icon name={icon} size={15} />{label}</span> : label, ...(tip ? { tip: { title: tip.title, body: tip.body } } : {}) }
+      return { value: v, label: icon ? <span className="seg-mark"><Icon name={icon} size={15} />{label}</span> : label, ...(tip ? { tip: { title: tip.title, body: tip.body, ...(tip.demo ? { demo: tip.demo } : {}) } } : {}) }
     })
     control = <Seg label={def.label ?? def.key} size="sm" full value={String(scalar ?? '')} options={locked ? options.map((o) => ({ ...o, disabled: true })) : options} onChange={(v) => setOverride(def.key, v)} className="tier-seg" />
   } else if (def.type === 'enum') {

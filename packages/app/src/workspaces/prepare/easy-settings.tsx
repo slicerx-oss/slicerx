@@ -199,7 +199,7 @@ export function EasySettingsPanel() {
             aria-haspopup="menu"
             aria-expanded={pickerOpen}
             aria-labelledby="easy-layer-label easy-layer"
-            {...(sleipnirShown ? { 'data-tip-title': sleipnirTip?.title ?? '', 'data-tip-body': sleipnirTip?.body ?? '' } : {})}
+            {...(sleipnirShown ? tipAttrs(sleipnirTip) : {})}
             onClick={() => setPickerOpen(!pickerOpen)}
           >
             {layerMixed ? 'Mixed' : sleipnirShown ? <span className="seg-mark mark-sleipnir"><Icon name="sleipnir" size={15} />{SLEIPNIR}</span> : `${layer} mm`}
@@ -213,7 +213,7 @@ export function EasySettingsPanel() {
             {scoped ? null : (
               <>
                 <MenuSeparator />
-                <MenuItem checked={chosen === SLEIPNIR} onClick={() => choose(SLEIPNIR)} data-tip-title={sleipnirTip?.title} data-tip-body={sleipnirTip?.body}>
+                <MenuItem checked={chosen === SLEIPNIR} onClick={() => choose(SLEIPNIR)} {...tipAttrs(sleipnirTip)}>
                   <span className="seg-mark mark-sleipnir"><Icon name="sleipnir" size={15} />{SLEIPNIR}</span>
                   <br />
                   <small>{SLEIPNIR_LINE}</small>

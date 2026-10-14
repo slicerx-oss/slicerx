@@ -5,7 +5,7 @@
 // A shelf without room for its labels (a narrow window, or the mimir panel open beside it) drops them. The tools come from shelf-tools.ts, the same list as the Tools menu in Slice.
 // Modeling tools wait while the full geometry engine loads. A host that cannot slice ends the shelf with Export, the
 // only way out for a model there.
-import { Button, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator } from '@slicerx/ui'
+import { Button, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { getCommand, isEnabled, runCommand } from '../../commands/registry'
 import { editionHasCad, useEdition } from '../../edition'
@@ -74,6 +74,14 @@ const EXPORTS = [
 
 const MENU_LABEL = { face: { label: 'On a face', icon: 'on-face' }, mesh: { label: 'Mesh', icon: 'mesh-menu' } } as const
 
+/** The shelf's menus' tips, each with its demo loop. A tip stays shut while its menu is open. */
+const MENU_TIPS = {
+  add: { title: 'Create · Add', body: 'Add a box, cylinder or other shape, as a new object or a part of the selected one.' },
+  face: { title: 'Create · On a face', body: 'Put a shape, text or an SVG outline on a face, then add it or cut it in.' },
+  mesh: { title: 'Mesh', body: 'Hollow, repair or simplify a mesh.' },
+} as const
+const menuTip = (id: keyof typeof MENU_TIPS) => tipAttrs({ ...MENU_TIPS[id], demo: id })
+
 export function Shelf() {
   const shelfRef = useRef<HTMLDivElement>(null)
   const fit = useShelfFit(shelfRef)
@@ -104,7 +112,8 @@ export function Shelf() {
   }
   const off = (t: ShelfTool) => Boolean(t.needsSelection && !hasSel) || (Boolean(t.modeling) && engine === 'loading')
   const groupName = (id: ShelfGroup) => SHELF_GROUPS.find((g) => g.id === id)?.label ?? ''
-  const tip = (t: ShelfTool) => (t.tip ? { 'data-tip': t.tip } : { 'data-tip-title': `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}` })
+  // A tool's tip shows its demo loop when it has one (lib/demos.ts, by the tool's id).
+  const tip = (t: ShelfTool) => ({ ...(t.tip ? { 'data-tip': t.tip } : { 'data-tip-title': `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}` }), 'data-tip-demo': t.id })
   const toolButton = (t: ShelfTool, extra: { className?: string } = {}) => (
     <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} data-tool={t.id} data-testid="model-shelf-tool" {...tip(t)} aria-label={t.label} aria-pressed={t.tool !== undefined && pressedTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
       <Icon name={t.icon} />
@@ -154,7 +163,7 @@ export function Shelf() {
                 toolButton(e.tool)
               ) : (
                 <MenuAnchor key={e.menu}>
-                  <button type="button" className="shelf-tool" aria-label={MENU_LABEL[e.menu].label} aria-haspopup="menu" aria-expanded={menu === e.menu} aria-pressed={e.tools.some((t) => t.tool !== undefined && pressedTool === t.tool)} onClick={() => setMenu(menu === e.menu ? null : e.menu)}>
+                  <button type="button" className="shelf-tool" aria-label={MENU_LABEL[e.menu].label} {...menuTip(e.menu)} aria-haspopup="menu" aria-expanded={menu === e.menu} aria-pressed={e.tools.some((t) => t.tool !== undefined && pressedTool === t.tool)} onClick={() => setMenu(menu === e.menu ? null : e.menu)}>
                     <Icon name={MENU_LABEL[e.menu].icon} />
                     <span>{MENU_LABEL[e.menu].label}</span>
                     <Icon name="chevron-down" size={12} />
@@ -171,7 +180,7 @@ export function Shelf() {
             )}
             {g.id === 'create' ? (
               <MenuAnchor>
-                <button type="button" className="shelf-tool" aria-label="Add a shape" aria-haspopup="menu" aria-expanded={menu === 'add'} onClick={() => setMenu(menu === 'add' ? null : 'add')}>
+                <button type="button" className="shelf-tool" aria-label="Add a shape" {...menuTip('add')} aria-haspopup="menu" aria-expanded={menu === 'add'} onClick={() => setMenu(menu === 'add' ? null : 'add')}>
                   <Icon name="box-shape" />
                   <span>Add</span>
                   <Icon name="chevron-down" size={12} />

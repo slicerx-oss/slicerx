@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { prefersReducedMotion } from '../tokens'
+import { DemoLoop, type TipDemo } from './demo-loop'
 
 /** What a tip shows. Keys are already formatted for the platform, one chip each. */
 export interface TipContent {
@@ -19,13 +20,15 @@ export interface TipContent {
   meta?: string
   /** Short rows over the body, one per item: a name, a value and a second value, in aligned columns. */
   rows?: readonly TipRow[]
+  /** A demo loop under the text: its poster from the start, the loop itself from the media stage on. */
+  demo?: TipDemo
 }
 
 /** One row of a tip's list: a name, a value, and a quieter value beside it. */
 export type TipRow = readonly [name: string, value: string, aside: string]
 
-/** A registry id, or text for a one-off tip. */
-export type TipSpec = string | { title: string; body?: string; key?: string; reason?: string; rows?: readonly TipRow[] }
+/** A registry id, or text for a one-off tip. `demo` names a demo loop for the app's resolver to add. */
+export type TipSpec = string | { title: string; body?: string; key?: string; reason?: string; rows?: readonly TipRow[]; demo?: string }
 
 /** The data attributes that mark an element as having a tip. Spread onto any element. */
 export function tipAttrs(tip: TipSpec | undefined): Record<string, string> {
@@ -37,6 +40,7 @@ export function tipAttrs(tip: TipSpec | undefined): Record<string, string> {
     ...(tip.key ? { 'data-tip-key': tip.key } : {}),
     ...(tip.reason ? { 'data-tip-reason': tip.reason } : {}),
     ...(tip.rows?.length ? { 'data-tip-rows': JSON.stringify(tip.rows) } : {}),
+    ...(tip.demo ? { 'data-tip-demo': tip.demo } : {}),
   }
 }
 
@@ -397,7 +401,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
 
   // Media stage starts a while after the tip appears.
   useEffect(() => {
-    if (!shown?.content.media || !media) return
+    if (!(shown?.content.media || shown?.content.demo) || !media) return
     const t = window.setTimeout(() => setMediaOn(true), TIP_TIMING.media)
     return () => window.clearTimeout(t)
   }, [shown, media])
@@ -432,6 +436,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       data-side={pos?.side}
       data-warm={shown.warm ? true : undefined}
       data-fig={content.figure ? true : undefined}
+      data-demo={content.demo && media ? true : undefined}
       data-still={shown.still ? true : undefined}
       data-ready={pos ? true : undefined}
       style={{ left: pos?.x ?? 0, top: pos?.y ?? 0 }}
@@ -455,12 +460,13 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
           ))}
         </div>
       ) : null}
-      {content.body ? <p className="sx-tip-body">{content.body}</p> : null}
+      {content.body && !(content.demo?.replacesBody && media) ? <p className="sx-tip-body">{content.body}</p> : null}
       {content.figure ? (
         <div className="sx-tip-fig" aria-hidden="true">
           {content.figure}
         </div>
       ) : null}
+      {content.demo && media ? <DemoLoop demo={content.demo} play={mediaOn && !shown.still} /> : null}
       {content.meta ? <p className="sx-tip-meta">{content.meta}</p> : null}
       {content.media && media ? (
         <div className="sx-tip-media" data-open={mediaOn ? true : undefined} aria-hidden="true">

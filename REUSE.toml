@@ -51,6 +51,13 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = ["The OrcaSlicer contributors", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
+# The tooltip demo loops and their posters: SlicerX's own animations of its procedural models.
+[[annotations]]
+path = ["packages/app/src/demos/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The SlicerX contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
 # The credit kit for products built on SlicerX: badges, the support button, their copy and screenshots.
 # The SlicerX name and logo in them stay trademarks; see TRADEMARK.md.
 [[annotations]]
