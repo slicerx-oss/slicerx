@@ -75,6 +75,14 @@ describe('Connect your AI agent', () => {
       // The keyring crate the desktop app writes with names the account `username` in Secret Service.
       expect(calls[0]).toEqual(['secret-tool', 'lookup', 'service', 'slicerx-agent-cursor', 'username', 'slicerx'])
     }
+    if (process.platform === 'win32') {
+      const calls: string[][] = []
+      expect(readKeychainKey('slicerx-agent-cursor', (cmd, args) => (calls.push([cmd, ...args]), 'key-123\n'))).toBe('key-123')
+      expect(calls[0]![0]).toMatch(/WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/)
+      expect(calls[0]).toContain('-NoProfile')
+      expect(calls[0]).toContain('-NonInteractive')
+      expect(Buffer.from(calls[0]!.at(-1)!, 'base64').toString('utf16le')).toContain("Password('slicerx.slicerx-agent-cursor')")
+    }
   })
 
   it('reads a test build\'s own credential item and never the shipping app\'s', () => {
@@ -104,6 +112,11 @@ describe('Connect your AI agent', () => {
       expect(readKeychainKey('slicerx-agent-cursor', run, 'app.slicerx.desktop.agent-bridge')).toBe('key-123')
       readKeychainKey('slicerx-agent-cursor', run, SHIPPING_APP_IDENTIFIER)
       expect(calls.map((c) => c.find((a) => a.startsWith('slicerx-agent-')))).toEqual(['slicerx-agent-cursor.app.slicerx.desktop.agent-bridge', 'slicerx-agent-cursor'])
+    }
+    if (process.platform === 'win32') {
+      expect(readKeychainKey('slicerx-agent-cursor', run, 'app.slicerx.desktop.agent-bridge')).toBe('key-123')
+      readKeychainKey('slicerx-agent-cursor', run, SHIPPING_APP_IDENTIFIER)
+      expect(calls.map((c) => Buffer.from(c.at(-1)!, 'base64').toString('utf16le').match(/Password\('([^']+)'\)/)?.[1])).toEqual(['slicerx.slicerx-agent-cursor.app.slicerx.desktop.agent-bridge', 'slicerx.slicerx-agent-cursor'])
     }
     expect(() => readKeychainKey('slicerx-agent-cursor', run, 'bad id; rm')).toThrow(/not an app identifier/)
   })
