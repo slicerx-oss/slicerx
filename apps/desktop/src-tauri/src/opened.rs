@@ -163,12 +163,33 @@ fn announce(app: &AppHandle, refs: Vec<FileRef>) {
     }
     let pending = app.state::<Pending>();
     // Held until the webview asks, then the event is for later arrivals; both paths hand over each file once.
-    pending
-        .0
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .extend(refs.iter().cloned());
+    add_pending(
+        &mut pending
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        refs,
+    );
     let _ = app.emit("sx-open-files", ());
+}
+
+/// Adds files to those waiting for the webview, each path once: a file the system hands over twice before the
+/// webview asks opens once.
+fn add_pending(pending: &mut Vec<FileRef>, refs: Vec<FileRef>) {
+    for r in refs {
+        if !pending.iter().any(|p| p.path() == r.path()) {
+            pending.push(r);
+        }
+    }
+}
+
+/// The links among what the deep link plugin passes on, without `file://` URLs. On macOS the plugin passes on every
+/// URL of the system's open event, double-clicked files included, and the app's own handler of that event already
+/// opens them. Taken from the plugin as well, a double-clicked project opened twice, its plates added a second time.
+pub fn links_only<I: IntoIterator<Item = String>>(urls: I) -> Vec<String> {
+    urls.into_iter()
+        .filter(|u| !u.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("file://")))
+        .collect()
 }
 
 /// Handles what the system passed: file paths, `file://` URLs and "Open in" links.
@@ -619,6 +640,42 @@ pub fn vault_link_take(state: State<'_, PendingVault>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deep_links_leave_files_to_the_open_event() {
+        let urls = [
+            "file:///Users/me/SNES%20Deck%20Box.3mf",
+            "FILE:///Users/me/a.stl",
+            "slicerx://open?url=https://example.com/a.stl",
+            "slicerx://vault/x-mark",
+        ];
+        assert_eq!(
+            links_only(urls.iter().map(|u| (*u).to_owned())),
+            vec![
+                "slicerx://open?url=https://example.com/a.stl".to_owned(),
+                "slicerx://vault/x-mark".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_handed_over_twice_waits_once() {
+        let files = OpenFiles::default();
+        let a = files.add(PathBuf::from("/tmp/sx-test-none/SNES Deck Box.3mf"));
+        let again = files.add(PathBuf::from("/tmp/sx-test-none/SNES Deck Box.3mf"));
+        let b = files.add(PathBuf::from("/tmp/sx-test-none/other.3mf"));
+        let mut pending = Vec::new();
+        add_pending(&mut pending, vec![a]);
+        add_pending(&mut pending, vec![again, b]);
+        let paths: Vec<&str> = pending.iter().map(FileRef::path).collect();
+        assert_eq!(
+            paths,
+            vec![
+                "/tmp/sx-test-none/SNES Deck Box.3mf",
+                "/tmp/sx-test-none/other.3mf"
+            ]
+        );
+    }
 
     #[test]
     fn vault_links_name_a_design_by_slug() {
