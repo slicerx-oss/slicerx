@@ -263,8 +263,18 @@ test.describe('the plate picker', () => {
     await shutPlateSheet(page)
     await expect(card).toBeVisible()
     await expect(first).toHaveCount(1)
+    // The card's place is measured from the view's controls a frame or more after the sheet shuts, so under load it
+    // can still move: wait until it holds still for 200 ms before taking its top.
+    let top = -1
+    await expect
+      .poll(async () => {
+        const was = top
+        top = (await card.boundingBox())!.y
+        await page.waitForTimeout(200)
+        return was === top && (await card.boundingBox())!.y === top
+      })
+      .toBe(true)
     // Details grows the card down: its top edge stays, and the line shows its whole text.
-    const top = (await card.boundingBox())!.y
     await first.getByTestId('toast-details').click()
     await expect(first).toHaveAttribute('data-expanded', '')
     await expect(first.locator('.sx-toast-more')).toBeVisible()
