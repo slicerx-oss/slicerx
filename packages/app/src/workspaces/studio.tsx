@@ -11,7 +11,7 @@ import { bindPlateKeys } from '../plate/keys'
 import { pasteFromSystem } from '../plate/paste-system'
 import { plateCommands } from '../plate/commands'
 import { PlateToolbar } from './prepare/plate-toolbar'
-import { PlateList } from './prepare/plate-list'
+import { PlatePicker } from './prepare/plate-picker'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
 import { seedExamplePlate } from '../state/actions'
@@ -63,7 +63,7 @@ const PREVIEW_RIGHT: PaneSection[] = [
  */
 // With the toolpaths, the color legend runs down the left under the top row: the toast keeps to its right.
 // mimir's sizes panel runs down the right while a sheet is up: the toast keeps to its left, off Build and Cancel.
-const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .dock, .bpanel-body', top: '.plate-tools, .slice-look, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel', chat: '.mimir-dock' }
+const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .pp-sheet, .dock, .bpanel-body', top: '.plate-tools, .slice-look, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel', chat: '.mimir-dock' }
 const PHONE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, cover: '.pane.sheet.sheet-open' }
 
 const PLATES_SECTION: PaneSection = { id: 'plates', icon: 'plates', label: 'Plates' }
@@ -123,7 +123,6 @@ export function Studio() {
   const gcodeOn = useGcodeView((s) => s.panel)
   const plate = useApp((s) => s.plate)
   const layout = useLayout()
-  const plateName = useApp((s) => s.plates.find((p) => p.id === s.activePlate)?.name ?? 'Plate 1')
   const manyPlates = useApp((s) => s.plates.length > 1)
   // The look and feel places the settings sidebar, its width, and the primary Slice action.
   const side = layout.sidebar.side
@@ -287,13 +286,8 @@ export function Studio() {
         </div>
 
         <div className="hud hud-bl">
-          {cad || layout.plateList === 'sidebar' ? null : <PlateList layout={layout} />}
-          {/* The plate chip names the plate only; the objects' names and sizes are in the objects list and the scale tool. */}
-          {cad ? null : (
-            <div className="platechip sx-overlay" data-testid="plate-chip">
-              <b>{plateName}</b>
-            </div>
-          )}
+          {/* One row: the previous plate, the plate in view and the next; the plate opens the sheet of every plate. */}
+          {cad ? null : <PlatePicker />}
           {/* Design keeps the size of the design on screen, which its own panels do not show. */}
           {cad && selected ? <ModelSize model={design} /> : null}
         </div>

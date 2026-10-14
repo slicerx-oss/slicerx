@@ -5,6 +5,7 @@
 // machine card unit test, since the web build always has its demo printers.
 import { type Page } from '@playwright/test'
 import { closeSheet, expect, openSheet, plateReady, test } from './fixtures'
+import { addPlateFromPicker, pickPlate } from './plate-project'
 
 const A1_MINI = { id: 'e2e-a1-mini', name: 'Desk A1 mini', profileId: 'bambu-a1-mini', vendor: 'Bambu Lab', model: 'A1 mini', nozzleCount: 1 }
 
@@ -83,18 +84,17 @@ test('the plate type is per plate', async ({ page }) => {
   await open(page, { printerId: 'bay-1' })
   const plate = page.getByTestId('slice-machine-plate')
   const first = (await plate.getAttribute('aria-label')) ?? ''
-  const plates = page.getByRole('list', { name: 'Plates' })
-  // The plate strip is in the view; on a phone the sidebar sheet closes for it and opens again for the card.
+  // The plate picker is in the view; on a phone the sidebar sheet closes for it and opens again for the card.
   await closeSheet(page)
-  await page.getByRole('button', { name: 'Add plate' }).first().click()
+  await addPlateFromPicker(page)
   await openSheet(page)
   await plate.click()
   await page.locator('[data-testid="slice-machine-plate-option"][data-bed-type="smooth-pei"]').click()
   await expect(plate).toHaveAttribute('aria-label', 'Plate: Smooth PEI')
   await closeSheet(page)
-  await plates.locator('.plate-card', { hasText: 'Plate 1' }).click()
+  await pickPlate(page, 1)
   await expect(plate).toHaveAttribute('aria-label', first)
-  await plates.locator('.plate-card', { hasText: 'Plate 2' }).click()
+  await pickPlate(page, 2)
   await expect(plate).toHaveAttribute('aria-label', 'Plate: Smooth PEI')
   // Back to the printer's default.
   await openSheet(page)

@@ -60,12 +60,40 @@ export function footprint(e: PlateEntry): Footprint {
   return out
 }
 
-export function PlateThumb({ objects, bed, size = 44, label }: { objects: readonly PlateEntry[]; bed: Bed; size?: number; label?: string }) {
+/**
+ * The square of the bed a fitted thumbnail shows, in SVG coordinates (y down): the objects' outlines with some room
+ * around them, at least `minMm` wide, so small parts on a big bed still read. Null with nothing on the plate.
+ */
+export function fitBox(objects: readonly PlateEntry[], bed: Pick<Bed, 'widthMm' | 'depthMm'>, minMm = 40): { x: number; y: number; side: number } | null {
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const e of objects) {
+    for (const [x, y] of footprint(e).points) {
+      x0 = Math.min(x0, x)
+      y0 = Math.min(y0, y)
+      x1 = Math.max(x1, x)
+      y1 = Math.max(y1, y)
+    }
+  }
+  if (!Number.isFinite(x0)) return null
+  const side = Math.min(Math.max(bed.widthMm, bed.depthMm), Math.max(minMm, (x1 - x0) * 1.35, (y1 - y0) * 1.35))
+  const cx = (x0 + x1) / 2
+  // Bed y runs up, SVG y down.
+  const cy = Math.max(1, bed.depthMm) - (y0 + y1) / 2
+  return { x: cx - side / 2, y: cy - side / 2, side }
+}
+
+export function PlateThumb({ objects, bed, size = 44, label, fit }: { objects: readonly PlateEntry[]; bed: Bed; size?: number; label?: string; fit?: boolean }) {
   const w = Math.max(1, bed.widthMm)
   const d = Math.max(1, bed.depthMm)
-  const aspect = d / w
+  // Fitted: a square around the objects; otherwise the whole bed at its own aspect.
+  const box = fit ? fitBox(objects, bed) : null
+  const height = box ? size : Math.round(size * (d / w))
+  const view = box ? `${box.x} ${box.y} ${box.side} ${box.side}` : `0 0 ${w} ${d}`
   return (
-    <svg className="plate-thumb" width={size} height={Math.round(size * aspect)} viewBox={`0 0 ${w} ${d}`} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+    <svg className="plate-thumb" data-fit={box ? true : undefined} width={size} height={height} viewBox={view} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
       {bed.round ? <circle cx={w / 2} cy={d / 2} r={Math.min(w, d) / 2} className="plate-thumb-bed" /> : <rect x={0} y={0} width={w} height={d} rx={Math.min(w, d) * 0.04} className="plate-thumb-bed" />}
       {/* Bed y runs up, SVG y down. */}
       <g transform={`translate(0 ${d}) scale(1 -1)`}>

@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
 import { expect, sliced, tab, test, setPartFilament } from './fixtures'
+import { plateSheet, shutPlateSheet } from './plate-project'
 
 type Sx = { getState(): { plate: { name: string }[]; slice: { status: string; stale?: boolean; error?: unknown; result?: { id: string } } }; setState(p: unknown): void }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
@@ -89,12 +90,13 @@ test('a two-color plate keeps its prime tower and the filament order reaches the
 
   // Slot 1 first by default: the first layer ends on filament 2. Slot 2 first: it ends on filament 1.
   expect(before.at(-1)).toBe('T1')
-  await page.getByRole('button', { name: 'Plate settings' }).click()
+  await (await plateSheet(page)).getByRole('button', { name: 'Plate settings' }).click()
   const order = page.getByRole('list', { name: 'Filament order' })
   await expect(order).toBeVisible()
   await order.getByRole('button', { name: 'Print slot 2 earlier' }).click()
   await expect(order.locator('li').first()).toContainText('Slot 2')
   await page.getByRole('group', { name: /settings$/ }).getByRole('button', { name: 'Done' }).click()
+  await shutPlateSheet(page)
   const swapped = await exportGcode()
   expect(swapped).toMatch(/;\s*(?:TYPE|FEATURE):\s*Prime tower/i)
   const after = firstLayerTools(swapped)

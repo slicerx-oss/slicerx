@@ -5,6 +5,7 @@ import { type Page } from '@playwright/test'
 import { addMenu, closeSheet, expect, openSheet, openTransform, panesSettled, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
 import { pressable, steady } from './canvas-press'
 import { expectFileDialog, interceptFileDialogs } from './file-dialog'
+import { addPlateFromPicker, pickPlate, plateSheet, shownPlateSettings, shutPlateSheet } from './plate-project'
 
 /**
  * The G-code the printer runs. Files for Bambu Lab printers open with the header and the full settings (hundreds
@@ -122,15 +123,18 @@ test('plates: add, switch, per-plate sequence, move objects', async ({ page, isM
   test.skip(isMobile, 'Desktop: moving objects between plates uses the selection bar, which a phone does not show')
   await prepare(page)
   const objs = page.locator('.objs > li')
-  await page.getByRole('button', { name: 'Add plate' }).first().click()
-  const plates = page.getByRole('list', { name: 'Plates' })
-  await expect(plates.locator('.plate-card')).toHaveCount(2)
+  await addPlateFromPicker(page)
+  await expect((await plateSheet(page)).locator('.pp-card')).toHaveCount(2)
+  await shutPlateSheet(page)
   await expect(objs).toHaveCount(0)
-  await plates.locator('.plate-card', { hasText: 'Plate 1' }).click()
+  await pickPlate(page, 1)
   await expect(objs).toHaveCount(1)
-  await page.getByRole('button', { name: 'Plate 2 settings' }).click()
-  await page.getByRole('group', { name: 'Plate 2 settings' }).getByLabel('Print sequence').selectOption('by-object')
+  await pickPlate(page, 2)
+  const form = await shownPlateSettings(page, 'Plate 2')
+  await form.getByLabel('Print sequence').selectOption('by-object')
   await page.getByRole('button', { name: 'Done' }).click()
+  await shutPlateSheet(page)
+  await pickPlate(page, 1)
   await openSheet(page)
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
   // Move to plate is on the selection bar under the object list.
@@ -138,15 +142,16 @@ test('plates: add, switch, per-plate sequence, move objects', async ({ page, isM
   await page.getByRole('menuitem', { name: 'Plate 2' }).click()
   await expect(objs).toHaveCount(0)
   await closeSheet(page)
-  await plates.locator('.plate-card', { hasText: 'Plate 2' }).click()
+  await pickPlate(page, 2)
   await expect(objs).toHaveCount(1)
 })
 
-/** Set a plate's type in its plate settings, then close them. */
+/** Set the shown plate's type in its plate settings, then close them. */
 async function setBedType(page: Page, plate: string, value: string): Promise<void> {
-  await page.getByRole('button', { name: `${plate} settings` }).click()
-  await page.getByRole('group', { name: `${plate} settings` }).getByLabel('Bed type').selectOption(value)
+  const form = await shownPlateSettings(page, plate)
+  await form.getByLabel('Bed type').selectOption(value)
   await page.getByRole('button', { name: 'Done' }).click()
+  await shutPlateSheet(page)
 }
 
 test('the printer card shows each plate\'s bed type', async ({ page }) => {
@@ -158,13 +163,12 @@ test('the printer card shows each plate\'s bed type', async ({ page }) => {
   const first = (await plateType.textContent()) ?? ''
   expect(['Textured PEI', 'Smooth PEI', 'Cool plate', 'Engineering plate', 'High temp plate']).toContain(first)
   await expect(card).not.toContainText('unknown')
-  await page.getByRole('button', { name: 'Add plate' }).first().click()
-  const plates = page.getByRole('list', { name: 'Plates' })
+  await addPlateFromPicker(page)
   await setBedType(page, 'Plate 2', 'smooth-pei')
   await expect(plateType).toHaveText('Smooth PEI')
-  await plates.locator('.plate-card', { hasText: 'Plate 1' }).click()
+  await pickPlate(page, 1)
   await expect(plateType).toHaveText(first)
-  await plates.locator('.plate-card', { hasText: 'Plate 2' }).click()
+  await pickPlate(page, 2)
   await expect(plateType).toHaveText('Smooth PEI')
   // Back to the printer's default.
   await setBedType(page, 'Plate 2', '')
@@ -175,7 +179,7 @@ test('the plate box names the longest plate type in its tooltip and keeps the pr
   await prepare(page)
   const plateType = page.getByTestId('slice-machine-plate')
   // The longest plate type in the picker, on the new plate.
-  await page.getByRole('button', { name: 'Add plate' }).first().click()
+  await addPlateFromPicker(page)
   await setBedType(page, 'Plate 2', 'engineering')
   await openSheet(page)
   await expect(page.getByTestId('slice-machine-plate-label')).toHaveText('Engineering plate')

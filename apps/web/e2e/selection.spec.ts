@@ -5,6 +5,7 @@
 import { type Page } from '@playwright/test'
 import { closeSheet, expect, openSheet, openTransform, plateReady, test } from './fixtures'
 import { pressable } from './canvas-press'
+import { addPlateFromPicker, pickPlate } from './plate-project'
 
 type Sx = { getState(): { selection: string | null; selectedIds: string[]; plate: { id: string; printable?: boolean; locked?: boolean }[] } }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
@@ -115,10 +116,10 @@ test('Advanced shows Arrange and Transform on the bar, and Transform opens the n
   await select(page, 0)
   await expect(page.getByTestId('slice-selection-arrange')).toBeVisible()
   // With two plates, Move to plate joins the bar too: the count and the buttons share the row without overlapping.
-  // (On a phone the sheet covers the plate bar's Add plate.)
+  // (On a phone the sheet covers the plate picker.)
   if (!isMobile) {
-    await page.getByRole('button', { name: 'Add plate' }).first().click()
-    await page.getByRole('list', { name: 'Plates' }).locator('.plate-card', { hasText: 'Plate 1' }).click()
+    await addPlateFromPicker(page)
+    await pickPlate(page, 1)
     await select(page, 0)
     await expect(page.getByTestId('slice-selection-move-plate')).toBeVisible()
     const count = (await page.getByTestId('slice-selection-count').locator('xpath=..').boundingBox())!

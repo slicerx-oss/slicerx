@@ -157,10 +157,6 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .hud-col.end { align-items: flex-end; }
 .vp-tag { font-size: calc(11px * var(--text-scale)); color: var(--dim); padding-right: 4px; }
 .hud-bl { left: 12px; bottom: 12px; display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; right: 12px; }
-.platechip { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: var(--r-md); }
-.platechip b { font: var(--fw-semibold) calc(12.5px * var(--text-scale)) var(--f-body); white-space: nowrap; flex: none; }
-/* The chip names the plate only, so it keeps its size. */
-.platechip { flex: none; }
 .hud-bl .dims { flex: none; }
 .dims { padding: 8px 12px; border-radius: var(--r-md); font-size: calc(11.5px * var(--text-scale)); color: var(--muted); }
 .busy { position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 6; overflow: hidden; }
@@ -663,14 +659,51 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .plate-tools[data-placement="left-of-viewport"] .arrange-pop { top: 0; left: calc(100% + 6px); transform: none; }
 
 /* Plates */
-.plate-strip { display: flex; flex-direction: column; gap: 6px; padding: 4px; border-radius: var(--r-md); max-width: min(720px, 100%); }
-.plate-strip.single { flex-direction: row; background: none; border: 0; box-shadow: none; padding: 0; }
-.plate-strip.single::before { display: none; }
-/* The toolbar and the plate strip hold popovers. Their glass sits on a layer behind them, since glass on the bar
-   itself would leave a popover hanging off it nothing to blur. */
-.plate-tools.sx-overlay, .plate-strip.sx-overlay { isolation: isolate; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.plate-strip { position: relative; }
-.plate-tools.sx-overlay::before, .plate-strip.sx-overlay::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); pointer-events: none; }
+/* The toolbar holds popovers. Its glass sits on a layer behind it, since glass on the bar itself would leave a popover
+   hanging off it nothing to blur. */
+.plate-tools.sx-overlay { isolation: isolate; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.plate-tools.sx-overlay::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); pointer-events: none; }
+/* The plate picker (plate-picker.tsx): one row of fixed widths at the foot of the view. The previous and next buttons
+   and the plate between them never change size, whatever the plate's name, number or slice. */
+.plate-picker-wrap { position: relative; flex: none; width: min(440px, 100%); }
+.plate-picker { display: flex; align-items: center; gap: 4px; height: 44px; padding: 3px; border-radius: var(--r-md); }
+.pp-step { flex: none; display: grid; place-items: center; width: 32px; height: 36px; padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); cursor: pointer; }
+.pp-step:hover:not(:disabled) { background: var(--ink-3); }
+.pp-step:disabled { color: var(--dim); opacity: 0.45; cursor: default; }
+.pp-step:focus-visible, .pp-main:focus-visible, .pp-card:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.pp-main { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 3px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-1); color: var(--fg); font: var(--fw-medium) calc(12.5px * var(--text-scale)) var(--f-body); white-space: nowrap; cursor: pointer; text-align: left; }
+.pp-main:hover { border-color: var(--muted); }
+.pp-main[aria-expanded="true"] { border-color: var(--accent); }
+.pp-main > .sx-ic { flex: none; color: var(--muted); }
+.pp-thumb { flex: none; display: grid; place-items: center; width: 28px; height: 28px; overflow: hidden; border-radius: 5px; }
+/* Room for "Plate 99", so the name starts in one place on every plate. */
+.pp-no { flex: none; min-width: 7.2ch; font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+.mid-text { display: block; min-width: 0; overflow: hidden; white-space: nowrap; }
+.pp-name { flex: 1 1 0; color: var(--muted); }
+.pp-of { flex: none; min-width: 5ch; text-align: right; font: calc(11px * var(--text-scale)) var(--f-body); font-variant-numeric: tabular-nums; color: var(--dim); }
+/* The sheet of every plate opens above the picker, up to 400 px tall and never into the toolbar's lane at the top. */
+.pp-sheet { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: var(--z-menu); width: min(640px, calc(100cqw - 24px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; padding: 10px; border-radius: var(--r-md); box-shadow: var(--shadow-pop); background: color-mix(in srgb, var(--ink-1) 96%, transparent); }
+.pp-find { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pp-search { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-0); color: var(--muted); }
+.pp-search:focus-within { border-color: var(--accent); }
+.pp-search-input { flex: 1 1 0; min-width: 0; height: 100%; padding: 0; border: 0; background: none; color: var(--fg); font: calc(12.5px * var(--text-scale)) var(--f-body); outline: none; }
+.pp-search-input::-webkit-search-cancel-button { display: none; }
+.pp-find .sx-seg { flex: none; }
+.pp-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.pp-form > .plate-form { border-top: 0; padding: 4px 2px; }
+.pp-grid { list-style: none; margin: 0; padding: 2px; display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.pp-card { display: grid; justify-items: center; align-content: start; gap: 4px; width: 100%; height: 100px; padding: 8px 6px 6px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--ink-1); color: var(--fg); font: var(--fw-medium) calc(11.5px * var(--text-scale)) var(--f-body); cursor: pointer; }
+.pp-card:hover { border-color: var(--line); }
+.pp-card[aria-current="true"] { border-color: var(--accent); background: var(--accent-tint); }
+.pp-card-thumb { display: grid; place-items: center; width: 44px; height: 44px; overflow: hidden; border-radius: 6px; }
+.pp-card-name { width: 100%; text-align: center; }
+.pp-card-name b { font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+.pp-card-state { font-size: calc(10.5px * var(--text-scale)); color: var(--dim); }
+.pp-card[data-state="sliced"] .pp-card-state { color: var(--green); }
+.pp-card[data-state="stale"] .pp-card-state { color: var(--orange); }
+.pp-none { margin: 24px 0; text-align: center; color: var(--muted); font-size: var(--fs-sm); }
+.pp-foot { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pp-count { flex: 1 1 0; min-width: 0; color: var(--dim); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
 .plate-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .plate-cards > li { display: flex; align-items: center; gap: 2px; position: relative; }
 .plate-card { display: inline-flex; align-items: center; gap: 6px; height: var(--h-sm); padding: 0 8px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--ink-2); color: var(--muted); font: var(--fw-medium) var(--fs-sm) var(--f-body); cursor: pointer; }
@@ -844,11 +877,6 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .more-dot { display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: var(--accent, var(--purple)); vertical-align: middle; }
 
 /* Hover-revealed controls: they stay reachable by keyboard and appear with their neighbor. */
-.plate-strip.single { opacity: 0; transition: opacity 120ms var(--ease); }
-.hud-bl:hover .plate-strip.single, .plate-strip.single:focus-within { opacity: 1; }
-/* On touch there is no hover to show them, so the lone plate's buttons stay on screen, on a row of their own above
-   the chips. */
-@media (hover: none) { .hud-bl .plate-strip.single { opacity: 1; order: -1; flex: 1 0 100%; } }
 .obj .obj-row > .sx-btn { opacity: 0; transition: opacity 120ms var(--ease); }
 .obj:hover .obj-row > .sx-btn, .obj:focus-within .obj-row > .sx-btn, .obj .obj-row > .sx-btn[aria-pressed="true"] { opacity: 1; }
 .about-diag { margin-top: 8px; }

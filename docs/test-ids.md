@@ -521,5 +521,10 @@ Ids that tests read for their text:
 | `preview-drawer` | Preview: the playback bar under the view; `data-mode` is `slim` while it is shut to its transport row, and its `edge-tab-bottom` opens the sliders |
 | `plate-tools-group` | The plate toolbar with the view switch under it; `data-moved` is set once the person dragged it |
 | `plate-tools-grip` | The grip at the toolbar's end that drags the group (the arrow keys move it too) |
-| `plate-chip` | The chip under the bed naming the active plate |
+| `plate-picker` | The plate picker at the foot of Slice's view: the previous plate, the plate in view and the next, one row |
+| `plate-picker-prev`, `plate-picker-next` | The picker's previous and next plate buttons (Shift+[ and Shift+]); disabled at the first and last plate |
+| `plate-picker-current` | The plate in view (thumbnail, `Plate N`, its name cut in the middle with the full name in `data-full`, and `of M`); opens the sheet |
+| `plate-sheet` | The sheet of every plate, opened from the picker; its cards (`.pp-card`) carry `data-state` (`empty`, `not-sliced`, `slicing`, `sliced`, `stale`) |
+| `plate-sheet-search` | The sheet's Find a plate field: words of the name, or a plate number |
+| `plate-sheet-all`, `plate-sheet-not-sliced` | The sheet's All and Not sliced filter |
 | `ph-placeholder` | The phone view's placeholder |

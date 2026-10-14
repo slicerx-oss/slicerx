@@ -6,6 +6,7 @@
 import { expect, type Page } from '@playwright/test'
 import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { plateReady, test } from './fixtures'
+import { plateSheet } from './plate-project'
 import { zip } from './project-zip'
 
 const PLATES: [string, string[]][] = [
@@ -58,11 +59,14 @@ async function openProject(page: Page): Promise<void> {
 test("a Bambu Studio project's plates open in the file's order, each with its name and objects", async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   await openProject(page)
-  const cards = page.getByRole('list', { name: 'Plates' }).locator('.plate-card')
-  await expect(cards).toHaveCount(PLATES.length, { timeout: 60_000 })
-  await expect(cards.locator('.plate-name')).toHaveText(PLATES.map(([name]) => name))
-  await expect(cards.locator('.plate-count')).toHaveText(PLATES.map(([, on]) => String(on.length)))
-  await expect(cards.first().locator('.plate-name')).not.toHaveText('Plate 1')
+  // The plate picker's sheet lists every plate in the file's order, each card named for its plate.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plates.length), { timeout: 60_000 }).toBe(PLATES.length)
+  const cards = (await plateSheet(page)).locator('.pp-card')
+  await expect(cards).toHaveCount(PLATES.length)
+  await expect(cards.locator('.pp-card-name .mid-text')).toHaveText(PLATES.map(([name]) => name))
+  for (const [i, [, on]] of PLATES.entries()) await expect(cards.nth(i)).toHaveAttribute('data-tip-body', new RegExp(`^${on.length} objects?,`))
+  await expect(cards.first().locator('.pp-card-name .mid-text')).not.toHaveText('Plate 1')
+  await expect(page.getByTestId('plate-picker-current')).toContainText('Deck Box Bottom')
   // The store holds each plate's own objects, as the file lists them.
   const got = await page.evaluate(() => {
     const s = (window as unknown as { __sx: Sx }).__sx.getState()
