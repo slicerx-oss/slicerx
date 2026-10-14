@@ -6,13 +6,14 @@
 import type { MarkerKind } from '@slicerx/viewport'
 import { createStore, useStore } from 'zustand'
 
-export const MARKERS: readonly { kind: MarkerKind; label: string; tip: string; fromGcode: boolean }[] = [
-  { kind: 'retractions', label: 'Retractions', tip: 'Where the filament pulls back before a travel.', fromGcode: false },
-  { kind: 'seams', label: 'Seams', tip: 'Where each wall loop starts and ends.', fromGcode: false },
-  { kind: 'lifts', label: 'Z hops', tip: 'Where the nozzle lifts before a travel.', fromGcode: false },
-  { kind: 'wipes', label: 'Wipes', tip: 'Where the nozzle wipes along the path after a retraction.', fromGcode: true },
-  { kind: 'toolChanges', label: 'Tool changes', tip: 'Where the printer changes to another filament or tool.', fromGcode: true },
-  { kind: 'pauses', label: 'Pauses', tip: 'Where the print pauses and waits for you.', fromGcode: true },
+/** `demo` is the tip's loop, which turns that kind on over two small towers. */
+export const MARKERS: readonly { kind: MarkerKind; label: string; tip: string; fromGcode: boolean; demo: string }[] = [
+  { kind: 'retractions', label: 'Retractions', tip: 'Where the filament pulls back before a travel.', fromGcode: false, demo: 'preview-markers-retractions' },
+  { kind: 'seams', label: 'Seams', tip: 'Where each wall loop starts and ends.', fromGcode: false, demo: 'preview-markers-seams' },
+  { kind: 'lifts', label: 'Z hops', tip: 'Where the nozzle lifts before a travel.', fromGcode: false, demo: 'preview-markers-z-hops' },
+  { kind: 'wipes', label: 'Wipes', tip: 'Where the nozzle wipes along the path after a retraction.', fromGcode: true, demo: 'preview-markers-wipes' },
+  { kind: 'toolChanges', label: 'Tool changes', tip: 'Where the printer changes to another filament or tool.', fromGcode: true, demo: 'preview-markers-tool-changes' },
+  { kind: 'pauses', label: 'Pauses', tip: 'Where the print pauses and waits for you.', fromGcode: true, demo: 'preview-markers-pauses' },
 ]
 
 interface MarkerState {

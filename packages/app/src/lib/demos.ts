@@ -296,6 +296,13 @@ const OWN = {
   'still-hollow': demo(() => import('../demos/still-hollow').then((m) => m.loop), 'Hollowing empties the inside and leaves an even wall all around, here 2 mm, which saves material and print time.'),
   'still-repair': demo(() => import('../demos/still-repair').then((m) => m.loop), 'Repair closes open edges and turns flipped faces to point outward, so the mesh slices as a closed solid.'),
   'still-measure': demo(() => import('../demos/still-measure').then((m) => m.loop), 'Pick two places: the panel gives the distance between them and how far apart they are along X, Y and Z.'),
+  // Preview legend markers: each box turns its own kind on over the toolpaths
+  'preview-markers-retractions': demo(() => import('../demos/preview-markers-retractions').then((m) => m.loop), 'Where the filament pulls back before a travel.'),
+  'preview-markers-seams': demo(() => import('../demos/preview-markers-seams').then((m) => m.loop), 'Where each wall loop starts and ends.'),
+  'preview-markers-z-hops': demo(() => import('../demos/preview-markers-z-hops').then((m) => m.loop), 'Where the nozzle lifts before a travel.'),
+  'preview-markers-wipes': demo(() => import('../demos/preview-markers-wipes').then((m) => m.loop), 'Where the nozzle wipes along the path after a retraction.'),
+  'preview-markers-tool-changes': demo(() => import('../demos/preview-markers-tool-changes').then((m) => m.loop), 'Where the printer changes to another filament or tool.'),
+  'preview-markers-pauses': demo(() => import('../demos/preview-markers-pauses').then((m) => m.loop), 'Where the print pauses and waits for you.'),
 } satisfies Record<string, TipDemo>
 
 /** The loops by id; a tool that shares another's loop (a shape, text or SVG on a face; simplify) or shows a still
