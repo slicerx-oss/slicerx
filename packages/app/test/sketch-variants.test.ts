@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The sketch picker's second row: the ways to draw a family as a segmented control, and for a family with one way to
-// draw it, the family's name as a single picked segment that is text, not a control.
+// draw it, an empty row, since the Drawing header (or the phone sheet's summary) names the tool.
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -34,18 +34,13 @@ describe('sketch variant row', () => {
     expect(el.querySelector('[data-testid="sketch-variant-one"]')).toBeNull()
   })
 
-  it('names every family without variants in one static segment, with nothing to focus or press', () => {
+  it('leaves the row empty for every family without variants: no box that looks like a field, nothing to press', () => {
     const single = FAMILIES.map((f) => f.value).filter((f) => !VARIANTS[f])
     expect(single).toEqual(['select', 'line', 'dimension'])
     for (const f of single) {
-      const onPick = vi.fn()
-      const el = row(f as DrawTool, onPick)
-      const one = el.querySelector('[data-testid="sketch-variant-one"]')!
-      expect(one.textContent).toBe(familyName(f))
-      expect(one.getAttribute('role')).toBeNull()
-      expect(el.querySelectorAll('button, [role="radio"], [role="radiogroup"], [tabindex], input')).toHaveLength(0)
-      ;(one.firstElementChild as HTMLElement).click()
-      expect(onPick).not.toHaveBeenCalled()
+      const el = row(f as DrawTool)
+      expect(el.querySelector('[data-testid="sketch-variant-one"]')).toBeNull()
+      expect(el.childElementCount).toBe(0)
     }
     expect(familyName('line')).toBe('Line')
   })

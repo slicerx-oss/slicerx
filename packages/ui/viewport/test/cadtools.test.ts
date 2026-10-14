@@ -130,7 +130,7 @@ describe('sketch layer', () => {
     s.dispose()
   })
 
-  it('frames the sketch plane in the accent, firmer on a light studio', () => {
+  it('frames the sketch plane in the accent with a faint wash and a firm border, firmer on a light studio', () => {
     const s = new SketchLayer()
     s.set({ frame: WALL, paths: [], handles: [], plane: { min: [-20, -10], max: [20, 10] } })
     const plane = s.group.children.filter((o) => o.name === 'sketch-plane') as (Mesh | LineSegments)[]
@@ -139,7 +139,9 @@ describe('sketch layer', () => {
     expect(alpha()).toEqual([PLANE_FILL, PLANE_EDGE])
     s.setLight(true)
     expect(alpha()).toEqual([PLANE_FILL_LIGHT, PLANE_EDGE_LIGHT])
-    expect(PLANE_FILL_LIGHT).toBeGreaterThan(PLANE_FILL)
+    expect(PLANE_EDGE_LIGHT).toBeGreaterThan(PLANE_EDGE)
+    // the wash stays faint in both, well under the border
+    for (const f of [PLANE_FILL, PLANE_FILL_LIGHT]) expect(f).toBeLessThanOrEqual(0.06)
     s.setLight(false)
     expect(alpha()).toEqual([PLANE_FILL, PLANE_EDGE])
     s.dispose()
