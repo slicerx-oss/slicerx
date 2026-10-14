@@ -1,34 +1,24 @@
 {
- "comment": "Tier table for process settings. apply-tiers.mjs writes mode, intent and showWhen into schema.json from this file. simple: the keys the Simple controls drive directly. advanced: the curated list, grouped by intent. hidden: profile keys no user tier shows. Everything else in the process section is expert (develop stays develop).",
+ "comment": "Tier table for process settings. apply-tiers.mjs writes mode, intent and showWhen into schema.json from this file. simple: the keys the Simple controls drive directly. advanced: the curated list, grouped by intent. hidden: profile keys no user tier shows. Everything else in the process section is expert (develop stays develop). intentByKey also holds the keys moved from Advanced to Expert, so they keep their tab.",
  "simple": ["layer_height", "wall_loops", "sparse_infill_density", "enable_support", "brim_type", "smart_layer"],
  "advanced": {
   "quality": [
-   "initial_layer_print_height", "line_width", "outer_wall_line_width", "inner_wall_line_width", "initial_layer_line_width", "sparse_infill_line_width", "top_surface_line_width",
-   "print_flow_ratio", "seam_position", "seam_gap", "seam_slope_conditional", "wall_generator", "wall_sequence", "wall_direction", "precise_outer_wall",
-   "only_one_wall_top", "only_one_wall_first_layer", "elefant_foot_compensation", "xy_contour_compensation", "xy_hole_compensation", "enable_arc_fitting",
-   "thick_bridges", "hole_to_polyhole", "top_surface_pattern", "bottom_surface_pattern", "internal_solid_infill_pattern",
-   "top_bottom_infill_wall_overlap", "max_volumetric_extrusion_rate_slope", "enable_extra_bridge_layer", "counterbore_hole_bridging"
+   "initial_layer_print_height", "seam_position", "wall_generator", "wall_sequence", "precise_outer_wall", "only_one_wall_first_layer",
+   "elefant_foot_compensation", "xy_hole_compensation", "thick_bridges", "top_surface_pattern", "bottom_surface_pattern"
   ],
-  "strength": [
-   "top_shell_thickness", "bottom_shell_thickness", "sparse_infill_pattern", "top_surface_density", "bottom_surface_density", "infill_direction",
-   "infill_anchor_max", "alternate_extra_wall", "interlocking_beam"
-  ],
+  "strength": ["top_shell_thickness", "bottom_shell_thickness", "sparse_infill_pattern", "top_shell_layers", "bottom_shell_layers"],
   "speed": ["outer_wall_speed"],
   "supports": [
-   "support_type", "support_style", "support_threshold_angle", "support_on_build_plate_only", "support_critical_regions_only", "support_object_xy_distance",
-   "support_top_z_distance", "support_bottom_z_distance", "support_interface_top_layers", "support_interface_bottom_layers", "support_base_pattern",
-   "support_interface_pattern", "tree_support_branch_diameter", "tree_support_tip_diameter", "tree_support_branch_angle", "tree_support_wall_count"
+   "support_type", "support_style", "support_threshold_angle", "support_on_build_plate_only", "support_object_xy_distance", "support_top_z_distance",
+   "support_bottom_z_distance", "support_interface_top_layers"
   ],
-  "adhesion": [
-   "brim_width", "brim_object_gap", "skirt_loops", "skirt_distance", "skirt_height", "skirt_type", "min_skirt_length", "raft_layers", "raft_contact_distance",
-   "raft_expansion", "draft_shield", "tree_support_brim_width"
-  ],
+  "adhesion": ["brim_width", "brim_object_gap", "skirt_loops", "skirt_height", "raft_layers"],
   "multicolor": [
-   "enable_prime_tower", "prime_tower_width", "prime_tower_brim_width", "prime_tower_auto_position", "wipe_tower_rotation_angle", "wipe_tower_extra_spacing",
-   "wipe_tower_no_sparse_layers", "flush_into_infill", "flush_into_objects", "flush_into_support", "support_filament", "support_interface_filament",
-   "ooze_prevention", "standby_temperature_delta"
+   "enable_prime_tower", "prime_tower_width", "flush_into_infill", "flush_into_objects", "flush_into_support", "support_filament",
+   "support_interface_filament"
   ],
-  "effects": ["fuzzy_skin", "fuzzy_skin_thickness", "spiral_mode", "ironing_type"]
+  "effects": ["fuzzy_skin", "fuzzy_skin_thickness", "spiral_mode", "ironing_type"],
+  "output": ["print_sequence"]
  },
  "hiddenProcess": [
   "inherits", "print_extruder_id", "print_extruder_variant", "compatible_printers", "compatible_printers_condition", "plugins", "slicing_pipeline_plugin",
@@ -45,14 +35,28 @@
   "support": "supports", "adhesion": "adhesion", "multimaterial": "multicolor", "special": "effects", "gcode": "output", "profile": "output"
  },
  "intentByKey": {
-  "enable_mixed_color_sublayer": "multicolor",
+  "enable_mixed_color_sublayer": "multicolor", "top_color_penetration_layers": "multicolor", "bottom_color_penetration_layers": "multicolor",
   "tree_support_auto_brim": "supports",
   "interlocking_boundary_avoidance": "strength", "interlocking_depth": "strength", "interlocking_beam_layer_count": "strength",
   "interlocking_beam_width": "strength", "interlocking_orientation": "strength",
-  "bridge_no_support": "supports", "combine_brims": "adhesion"
+  "bridge_no_support": "supports", "combine_brims": "adhesion",
+  "line_width": "quality", "outer_wall_line_width": "quality", "inner_wall_line_width": "quality", "initial_layer_line_width": "quality",
+  "sparse_infill_line_width": "quality", "top_surface_line_width": "quality", "print_flow_ratio": "quality", "seam_gap": "quality",
+  "seam_slope_conditional": "quality", "wall_direction": "quality", "only_one_wall_top": "quality", "xy_contour_compensation": "quality",
+  "enable_arc_fitting": "quality", "hole_to_polyhole": "quality", "internal_solid_infill_pattern": "quality",
+  "top_bottom_infill_wall_overlap": "quality", "max_volumetric_extrusion_rate_slope": "quality", "enable_extra_bridge_layer": "quality",
+  "counterbore_hole_bridging": "quality", "top_surface_density": "strength", "bottom_surface_density": "strength", "infill_direction": "strength",
+  "infill_anchor_max": "strength", "alternate_extra_wall": "strength", "interlocking_beam": "strength", "support_critical_regions_only": "supports",
+  "support_interface_bottom_layers": "supports", "support_base_pattern": "supports", "support_interface_pattern": "supports",
+  "tree_support_branch_diameter": "supports", "tree_support_tip_diameter": "supports", "tree_support_branch_angle": "supports",
+  "tree_support_wall_count": "supports", "skirt_distance": "adhesion", "skirt_type": "adhesion", "min_skirt_length": "adhesion",
+  "raft_contact_distance": "adhesion", "raft_expansion": "adhesion", "draft_shield": "adhesion", "tree_support_brim_width": "adhesion",
+  "prime_tower_brim_width": "multicolor", "prime_tower_auto_position": "multicolor", "wipe_tower_rotation_angle": "multicolor",
+  "wipe_tower_extra_spacing": "multicolor", "wipe_tower_no_sparse_layers": "multicolor", "ooze_prevention": "multicolor",
+  "standby_temperature_delta": "multicolor"
  },
  "intentByPrefix": {"ironing_": "effects", "fuzzy_skin": "effects", "spiral_": "effects", "support_ironing": "supports", "mmu_segmented": "multicolor", "wave_overhang": "effects", "zaa_": "quality"},
- "showWhenMulticolorKeys": ["enable_mixed_color_sublayer"],
+ "showWhenMulticolorKeys": ["enable_mixed_color_sublayer", "top_color_penetration_layers", "bottom_color_penetration_layers"],
  "showWhenMulticolorPrefix": ["mmu_segmented"],
  "newKeys": [
   {"key": "wave_overhangs", "type": "bool", "label": "Wave overhangs", "default": false, "intent": "effects"},
