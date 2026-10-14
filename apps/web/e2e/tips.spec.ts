@@ -193,8 +193,8 @@ test('an Advanced setting row opens the loop of its drawing and plays it', async
 })
 
 /** Hovers each setting row in the Expert panel (found by its key) and checks its tip plays the loop with that class
- *  prefix. */
-async function rowsPlay(page: Page, rows: readonly (readonly [key: string, loopId: string])[]): Promise<void> {
+ *  prefix, or for a still (no loop id), shows the figure with that label. */
+async function rowsPlay(page: Page, rows: readonly (readonly [key: string, loopId: string | null, label?: string])[]): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem('slicerx.debug', '1')
     if (sessionStorage.getItem('sx-e2e')) return
@@ -206,14 +206,15 @@ async function rowsPlay(page: Page, rows: readonly (readonly [key: string, loopI
   await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ expertOpen: true }))
   const tip = page.locator('#sx-tip')
   const stage = tip.locator('.sx-stage')
-  for (const [key, loopId] of rows) {
+  for (const [key, loopId, label] of rows) {
     await page.locator('#expert-search').fill(key)
     const row = page.locator(`li[data-key="${key}"]`).first()
     await row.scrollIntoViewIfNeeded()
     await row.locator('label').first().hover()
     await expect(stage.locator('svg.sxs'), key).toBeVisible()
     await expect(stage).toHaveAttribute('data-play', 'true')
-    await expect(stage.locator(`[class*="${loopId}"]`).first(), key).toBeAttached()
+    if (loopId) await expect(stage.locator(`[class*="${loopId}"]`).first(), key).toBeAttached()
+    else await expect(stage, key).toHaveAttribute('aria-label', label ?? '')
     await page.mouse.move(5, 5)
     await expect(tip).toHaveCount(0)
   }
@@ -267,4 +268,9 @@ test('Expert rows for a switch list, a text template and a number or percent pla
 test('Advanced rows from wipe speed to z offset play their own loops', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['wipe_speed', 'bwws'], ['wipe_tower_rotation_angle', 'bwtr'], ['wipe_tower_extra_spacing', 'bwts'], ['wipe_tower_extra_flow', 'bwtf'], ['wipe_tower_max_purge_speed', 'bwtm'], ['wipe_tower_no_sparse_layers', 'bwtn'], ['wipe_tower_wall_type', 'bwtw'], ['wipe_tower_filament', 'bwtl'], ['wipe_tower_bridging', 'bwtb'], ['xy_contour_compensation', 'bwxc'], ['xy_hole_compensation', 'bwxh']])
+})
+
+test('Advanced rows from solid layers to one nozzle show their own stills', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['top_bottom_infill_wall_overlap', null, 'A block cut open; the bottom, top and one chosen layer in between print solid, the rest sparse.'], ['internal_solid_infill_pattern', null, 'Lines, grid, triangles and a gyroid-like wave, each on its own tile.'], ['support_interface_bottom_layers', null, 'A cut through support between two parts of a print; the dense interface layers touch the part above and, at the bottom, the part below.']])
 })
