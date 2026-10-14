@@ -4,7 +4,8 @@
 // message; the chip shows a thumbnail (an icon for a PDF), the name and, while the message is still being written, a
 // remove button. A big picture is scaled down to what the model reads anyway before it is sent.
 import type { PilotAttachment } from '@slicerx/contracts'
-import { Icon, tipAttrs } from '@slicerx/ui'
+import { Button, Icon, tipAttrs } from '@slicerx/ui'
+import { useCallback, useRef, useState } from 'react'
 import { FILE_LIMITS } from '../src/attach'
 
 /** What a message may carry: pictures and PDFs up to 10 MB each, four at most. */
@@ -95,7 +96,7 @@ export function fmtBytes(n: number): string {
 export function AttachmentChip({ attachment: a, onRemove }: { attachment: PilotAttachment; onRemove?: () => void }) {
   return (
     <span className="att-chip" data-testid="mimir-attachment" {...tipAttrs({ title: `${a.name}, ${fmtBytes(a.bytes)}` })}>
-      {a.type === 'application/pdf' ? (
+      {a.type === 'application/pdf' || !a.url.startsWith('data:image/') ? (
         <span className="att-thumb att-doc" aria-hidden="true">
           <Icon name="log" />
         </span>
@@ -110,4 +111,84 @@ export function AttachmentChip({ attachment: a, onRemove }: { attachment: PilotA
       ) : null}
     </span>
   )
+}
+
+/** The files on a message being written, and the last add's problems. Shared by every chat input. */
+export interface Attachments {
+  list: PilotAttachment[]
+  /** What the last add left out, and why. */
+  problems: string[]
+  add: (files: readonly File[]) => Promise<void>
+  remove: (id: string) => void
+  clear: () => void
+}
+
+export function useAttachments(): Attachments {
+  const [list, setList] = useState<PilotAttachment[]>([])
+  const [problems, setProblems] = useState<string[]>([])
+  const count = useRef(0)
+  count.current = list.length
+  const add = useCallback(async (files: readonly File[]) => {
+    const { added, problems: p } = await readAttachments(files, count.current)
+    count.current += added.length
+    setList((l) => [...l, ...added])
+    setProblems(p)
+  }, [])
+  const remove = useCallback((id: string) => {
+    setList((l) => l.filter((a) => a.id !== id))
+    setProblems([])
+  }, [])
+  const clear = useCallback(() => {
+    setList([])
+    setProblems([])
+  }, [])
+  return { list, problems, add, remove, clear }
+}
+
+/** The attach button and its hidden file picker. */
+export function AttachButton({ attachments }: { attachments: Attachments }) {
+  const file = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <Button size="sm" variant="ghost" icon="plus" type="button" aria-label="Attach a file" tip="pilot.attach" data-testid="mimir-attach" onClick={() => file.current?.click()} />
+      <input
+        ref={file}
+        type="file"
+        accept={ATTACH_ACCEPT}
+        multiple
+        hidden
+        data-testid="mimir-attach-input"
+        onChange={(e) => {
+          const files = Array.from(e.currentTarget.files ?? [])
+          e.currentTarget.value = ''
+          void attachments.add(files)
+        }}
+      />
+    </>
+  )
+}
+
+/** The chips of the files on the message, each with a remove button, and why a file was left out. */
+export function AttachedFiles({ attachments }: { attachments: Attachments }) {
+  return (
+    <>
+      {attachments.list.length ? (
+        <div className="att-row" aria-label="Attached">
+          {attachments.list.map((a) => (
+            <AttachmentChip key={a.id} attachment={a} onRemove={() => attachments.remove(a.id)} />
+          ))}
+        </div>
+      ) : null}
+      {attachments.problems.length ? (
+        <div className="composer-note" role="status">
+          {attachments.problems.join(' ')}
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+/** Whether a drag carries files, so a column can take a drop. */
+export function dragHasFiles(e: { dataTransfer: DataTransfer | null }): boolean {
+  return Array.from(e.dataTransfer?.types ?? []).includes('Files')
 }

@@ -6,7 +6,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DEFAULT_POLICY, type Pilot, type PilotAttachment, type PilotEvent } from '@slicerx/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { attachProblem, ATTACH_LIMITS, Bubble, Composer, readAttachments, useAttachments, usePilotRun } from '../ui/index'
+import { attachProblem, ATTACH_LIMITS, Bubble, Composer, emptyTranscript, readAttachments, Terminal, useAttachments, usePilotRun } from '../ui/index'
 
 afterEach(cleanup)
 
@@ -116,5 +116,51 @@ describe('on the turn', () => {
     act(() => run!.run('Can we print it?', { attachments: [att] }))
     await waitFor(() => expect(seen).toEqual([[att]]))
     expect(run!.transcript.turns[0]!.attachments).toEqual([att])
+  })
+})
+
+function TerminalHarness({ onRun }: { onRun: (m: string, files?: PilotAttachment[]) => void }) {
+  const attachments = useAttachments()
+  return (
+    <Terminal
+      sessionTitle="new" transcript={emptyTranscript()} running={false} replaying={false} paused={false} showSpeed={false} speed="1"
+      onSpeed={() => undefined} showThinking={false} onShowThinking={() => undefined} canReplay={false} onReplay={() => undefined}
+      onPause={() => undefined} onRun={onRun} onStop={() => undefined} suggestions={[]} approvals={{ onApprove: async () => undefined, onCancel: async () => undefined }}
+      emptyNote="Ask" announcement="" attachments={attachments}
+    />
+  )
+}
+
+describe('the docked prompt', () => {
+  it('attaches a picture and a PDF, sends them with the text, and empties the row', async () => {
+    const onRun = vi.fn()
+    const { container } = render(<TerminalHarness onRun={onRun} />)
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [png('sketch.png'), new File(['%PDF-1.4'], 'bracket.pdf', { type: 'application/pdf' })] } })
+    })
+    await waitFor(() => expect(screen.getAllByTestId('mimir-attachment')).toHaveLength(2))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask mimir' }), { target: { value: 'Make a bracket for this' } })
+    fireEvent.submit(container.querySelector('form.term-in')!)
+    const [text, files] = onRun.mock.calls[0] as [string, PilotAttachment[]]
+    expect(text).toBe('Make a bracket for this')
+    expect(files.map((f) => [f.name, f.type])).toEqual([['sketch.png', 'image/png'], ['bracket.pdf', 'application/pdf']])
+    expect(screen.queryAllByTestId('mimir-attachment')).toHaveLength(0)
+  })
+
+  it('sends files with no text, and takes a dropped file', async () => {
+    const onRun = vi.fn()
+    const { container } = render(<TerminalHarness onRun={onRun} />)
+    const form = container.querySelector('form.term-in')!
+    await act(async () => {
+      fireEvent.drop(form, { dataTransfer: { types: ['Files'], files: [png('photo.png')] } })
+    })
+    await waitFor(() => expect(screen.getAllByTestId('mimir-attachment')).toHaveLength(1))
+    fireEvent.submit(form)
+    expect((onRun.mock.calls[0] as [string, PilotAttachment[]])[1].map((f) => f.name)).toEqual(['photo.png'])
+  })
+
+  it('has no attach button without attachments', () => {
+    render(<Terminal sessionTitle="new" transcript={emptyTranscript()} running={false} replaying={false} paused={false} showSpeed={false} speed="1" onSpeed={() => undefined} showThinking={false} onShowThinking={() => undefined} canReplay={false} onReplay={() => undefined} onPause={() => undefined} onRun={vi.fn()} onStop={() => undefined} suggestions={[]} approvals={{ onApprove: async () => undefined, onCancel: async () => undefined }} emptyNote="Ask" announcement="" />)
+    expect(screen.queryByTestId('mimir-attach')).toBeNull()
   })
 })

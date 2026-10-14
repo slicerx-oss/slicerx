@@ -5,7 +5,7 @@
 import type { Transcript } from '@slicerx/pilot/ui'
 
 const KEY = 'sx-mimir-dock-chat'
-/** A conversation bigger than this is not kept (photos ride in the turns). */
+/** A conversation bigger than this is not kept. Files on the turns are kept by name only. */
 const MAX_CHARS = 400_000
 
 export interface DockChat {
@@ -36,7 +36,8 @@ export function savedDockChat(): DockChat | null {
 export function saveDockChat(sessionId: string, transcript: Transcript): void {
   if (transcript.status === 'running' || transcript.turns.length === 0) return
   try {
-    const raw = JSON.stringify({ sessionId, transcript })
+    // a file's data stays out of storage; its chip comes back with a plain icon
+    const raw = JSON.stringify({ sessionId, transcript }, (k, v: unknown) => (k === 'url' && typeof v === 'string' && v.startsWith('data:') ? '' : v))
     if (raw.length > MAX_CHARS) store()?.removeItem(KEY)
     else store()?.setItem(KEY, raw)
   } catch {
