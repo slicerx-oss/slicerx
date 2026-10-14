@@ -15,6 +15,11 @@
   --ink-4: #3c3f50;
   --line: #44475a;
   --line-soft: #3c3e4f;
+  /* the surface ladder: page, card, field, each one step off the last */
+  --bg: var(--ink-1);
+  --panel: var(--ink-2);
+  --panel-2: var(--ink-3);
+  --panel-line: var(--line-soft);
 
   /* text */
   --fg: #f8f8f2;
