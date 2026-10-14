@@ -104,6 +104,8 @@
 /* mirror, construction and delete for the picked loop, packed from the left so all three fit the rail */
 .sketch-loop-actions { justify-content: flex-start; gap: 2px; }
 .sketch-variants > .sx-seg:not([data-full]) { flex: 1; }
+/* a family with one way to draw it: its name in a picked-looking segment, the same size as the variant buttons */
+.sketch-variant-one > span { flex: 1; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); background: var(--ink-4); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font: var(--fw-semibold) var(--fs-sm) var(--f-body); cursor: default; user-select: none; }
 .sketch-sides { display: flex; align-items: center; gap: 4px; flex: none; color: var(--dim); }
 .sketch-sides .sx-input { width: 36px; text-align: right; }
 
