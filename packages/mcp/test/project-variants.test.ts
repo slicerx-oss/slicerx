@@ -9,7 +9,7 @@ import { importFlat, selectVariants } from '@slicerx/settings'
 import { describe, expect, it } from 'vitest'
 import { readProjectFile } from '../src/projectfile'
 import { writeZip } from '../src/zip'
-import { connect } from './helpers'
+import { connect, text } from './helpers'
 
 const MODEL = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 128 128 0"/></build></model>`
 
@@ -38,9 +38,9 @@ const SETTINGS = {
   outer_wall_speed: ['200', '500', '500', '210', '500', '500', '500'],
 }
 
-function project(dir: string): string {
+function project(dir: string, settings: Record<string, unknown> = SETTINGS): string {
   const path = join(dir, 'h2d-variants.3mf')
-  writeFileSync(path, writeZip([{ name: '3D/3dmodel.model', data: MODEL }, { name: 'Metadata/project_settings.config', data: JSON.stringify(SETTINGS) }]))
+  writeFileSync(path, writeZip([{ name: '3D/3dmodel.model', data: MODEL }, { name: 'Metadata/project_settings.config', data: JSON.stringify(settings) }]))
   return path
 }
 
@@ -64,5 +64,37 @@ describe('a Bambu Studio 2 project with per-variant values', () => {
     for (const k of ['filament_max_volumetric_speed', 'nozzle_temperature', 'nozzle_temperature_initial_layer', 'hot_plate_temp', 'hot_plate_temp_initial_layer', 'outer_wall_speed']) {
       expect(c[k], k).toEqual(app[k])
     }
+  })
+})
+
+
+describe('explicit project variant identities', () => {
+  const settings = {
+    ...SETTINGS,
+    filament_self_index: ['2', '1', '3', '4', '1', '2', '3', '4'],
+    filament_extruder_variant: ['Direct Drive Standard', 'Direct Drive Standard', 'Direct Drive Standard', 'Direct Drive Standard', 'Direct Drive High Flow', 'Direct Drive High Flow', 'Direct Drive High Flow', 'Direct Drive High Flow'],
+    filament_map: ['2', '1', '2', '1'],
+    nozzle_volume_type: ['Standard', 'High Flow'],
+    filament_max_volumetric_speed: [22, 11, 33, 44, 31, 42, 53, 64],
+    nozzle_temperature: [220, 221, 222, 223],
+    nozzle_temperature_initial_layer: [230, 231, 232, 233],
+  }
+
+  it('reads the mapped flow limits consistently for app and MCP callers', async () => {
+    const h = await connect()
+    const read = readProjectFile(project(h.dir, settings))
+    expect(read.config['filament_max_volumetric_speed']).toEqual([31, 22, 53, 44])
+    expect(importFlat(selectVariants(settings)).config['filament_max_volumetric_speed']).toEqual([31, 22, 53, 44])
+    const result = await h.call('slicerx_inspect_project', { file: project(h.dir, settings) })
+    expect(result.isError, text(result)).toBeFalsy()
+  })
+
+  it('reports an ambiguous variant to the client', async () => {
+    const h = await connect()
+    const bad = { ...settings, filament_extruder_variant: Array.from({ length: 8 }, () => 'Direct Drive Standard') }
+    const result = await h.call('slicerx_inspect_project', { file: project(h.dir, bad) })
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent).toMatchObject({ error: { code: 'invalid_settings' } })
+    expect(text(result)).toMatch(/variant/i)
   })
 })

@@ -36,3 +36,17 @@ describe('project settings', () => {
     expect(JSON.stringify(r.values)).not.toMatch(/rm -rf|secret|M104/)
   })
 })
+
+
+it('takes the explicit mapped filament variant when opening a project', () => {
+  const result = projectSettingChanges({
+    filament_settings_id: ['one', 'two'],
+    filament_self_index: ['2', '1', '2', '1'],
+    filament_extruder_variant: ['Direct Drive High Flow', 'Direct Drive Standard', 'Direct Drive Standard', 'Direct Drive High Flow'],
+    filament_map: ['2', '1'],
+    extruder_type: ['Direct Drive', 'Direct Drive'],
+    nozzle_volume_type: ['Standard', 'High Flow'],
+    filament_max_volumetric_speed: ['42', '11', '22', '31'],
+  }, baseConfig())
+  expect(result.values['filament_max_volumetric_speed']).toEqual([31, 22])
+})
