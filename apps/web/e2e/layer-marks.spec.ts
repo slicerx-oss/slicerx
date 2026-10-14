@@ -161,6 +161,14 @@ test.describe('layer pins', () => {
     await expect(dock.locator('.dock-h2')).toHaveCount(0)
     await expect(dock.getByRole('button', { name: /^Playback speed/ })).toBeVisible()
     expect((await dock.boundingBox())!.height).toBeCloseTo(174, 0)
+    // a smaller window: the readout stays one line, so the folded bar keeps its height
+    await page.setViewportSize({ width: 960, height: 900 })
+    await expect.poll(async () => (await dock.boundingBox())!.width).toBeLessThan(600)
+    await expect.poll(async () => (await dock.boundingBox())!.height).toBeCloseTo(174, 0)
+    const play = (await dock.getByRole('button', { name: 'Play print' }).boundingBox())!
+    const read = (await dock.locator('.dock-read').boundingBox())!
+    expect(read.height).toBeLessThanOrEqual(play.height)
+    expect(play.width).toBeCloseTo(34, 0)
   })
 
   test('a wide bar keeps both control rows and the same pin band', async ({ page }) => {
