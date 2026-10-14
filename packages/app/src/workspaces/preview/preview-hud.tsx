@@ -69,7 +69,7 @@ function MarkerToggles({ hasExtras }: { hasExtras: boolean }) {
         const sw = MARKER_SWATCH[m.kind]
         const n = counts[m.kind]
         return (
-          <label key={m.kind} {...tipAttrs({ title: m.label, body: m.tip })}>
+          <label key={m.kind} {...tipAttrs({ title: m.label, body: m.tip, demo: m.demo })}>
             <input type="checkbox" checked={shown[m.kind]} onChange={(e) => setMarkerShown(m.kind, e.target.checked)} />
             <i className={`mark-key ${sw.shape}`} style={{ background: SCENE[sw.color] }} />
             <span>{m.label}</span>

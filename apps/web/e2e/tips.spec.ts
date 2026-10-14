@@ -227,6 +227,31 @@ test('Bridge speed and internal bridge speed rows play their own loops', async (
   await rowsPlay(page, [['bridge_speed', 'abg'], ['internal_bridge_speed', 'aib']])
 })
 
+test('each marker box in the Preview legend plays its own loop', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.debug', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced' }))
+  })
+  await page.goto('./')
+  await plateReady(page)
+  await page.getByRole('button', { name: 'Slice plate' }).click()
+  const markers = page.locator('.legend-markers')
+  await expect(markers).toBeVisible({ timeout: 40_000 })
+  const tip = page.locator('#sx-tip')
+  const stage = tip.locator('.sx-stage')
+  for (const [label, loopId] of [['Retractions', 'pmr'], ['Seams', 'pms'], ['Z hops', 'pmz'], ['Wipes', 'pmw'], ['Tool changes', 'pmt'], ['Pauses', 'pmp']] as const) {
+    await markers.locator('label', { hasText: label }).hover()
+    await expect(stage.locator('svg.sxs'), label).toBeVisible()
+    await expect(stage).toHaveAttribute('data-play', 'true')
+    await expect(stage.locator(`[class*="${loopId}-"]`).first(), label).toBeAttached()
+    await page.mouse.move(5, 5)
+    await expect(tip).toHaveCount(0)
+  }
+})
+
 test('Advanced rows from prime tower to extrusion rate smoothing play their own loops', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['prime_tower_width', 'bqpw'], ['prime_tower_infill_gap', 'bqpg'], ['prime_tower_brim_width', 'bqpb'], ['raft_contact_distance', 'bqrc'], ['raft_expansion', 'bqre'], ['raft_first_layer_density', 'bqrd'], ['raft_first_layer_expansion', 'bqrx'], ['max_volumetric_extrusion_rate_slope', 'bqrs'], ['max_volumetric_extrusion_rate_slope_segment_length', 'bqrg'], ['extrusion_rate_smoothing_external_perimeter_only', 'bqro']])
