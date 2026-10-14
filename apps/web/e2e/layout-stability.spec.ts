@@ -5,7 +5,7 @@
 // below. Each screen's controls are pressed one by one and measured before and after.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { type Locator, type Page, type TestInfo } from '@playwright/test'
-import { expect, openSheet, plateReady, test } from './fixtures'
+import { expect, openSheet, plateReady, test, viewportReady } from './fixtures'
 import { command, facePick, freshBox, pick } from './cad-helpers'
 
 type Sx = { setState(p: unknown): void }
@@ -540,6 +540,125 @@ test.describe('controls never move when pressed', () => {
     compare('first phone tab', before, await boxes())
     report(info, moved)
     expect(moved).toEqual([])
+  })
+
+  test('mimir on a phone: the slow-graphics notice keeps off the chat, and Show thinking moves nothing', async ({ page, isMobile }, info) => {
+    test.skip(!isMobile, 'Phone only: a desktop keeps the toast and the terminal bar')
+    // mimir cloud against a stub on the page's own origin, answering every message with one line
+    const reply = 'A 20 mm cube is easy. I put one on the grid at the origin.'
+    await page.route('**/functions/v1/mimir/**', async (route) => {
+      const path = new URL(route.request().url()).pathname
+      const at = path.slice(path.indexOf('/mimir') + '/mimir'.length)
+      if (at === '/quota') return route.fulfill({ json: { edition: 'slicerx-web', day: '2026-10-13', install_used: 0, install_cap: 250000, ip_used: 0, ip_cap: 1000000, edition_open: true } })
+      if (at !== '/v1/messages') return route.fulfill({ status: 404, json: {} })
+      const ev = (type: string, data: object) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`
+      const body = [
+        ev('message_start', { message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', content: [], stop_reason: null, usage: { input_tokens: 12, output_tokens: 1 } } }),
+        ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } }),
+        ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: reply } }),
+        ev('content_block_stop', { index: 0 }),
+        ev('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 9 } }),
+        ev('message_stop', {}),
+      ].join('')
+      return route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body })
+    })
+    await page.addInitScript(() => {
+      localStorage.setItem('slicerx.debug', '1')
+      if (sessionStorage.getItem('sx-e2e')) return
+      sessionStorage.setItem('sx-e2e', '1')
+      localStorage.setItem('sx-mimir-dock', '1')
+      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'on', provider: 'mimir-cloud' } }))
+    })
+    await page.goto('./')
+    await viewportReady(page)
+    await page.evaluate((token) => {
+      const w = window as unknown as { __sxMimirCloud(h: unknown, base: string): void; __sxBrowserMimirCloud(base: string, token: string): unknown }
+      const base = `${location.origin}/functions/v1/mimir`
+      w.__sxMimirCloud(w.__sxBrowserMimirCloud(base, token), base)
+    }, 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJlMmUifQ.c2ln')
+    await sx(page, { pilotPrompt: 'a 20 mm cube' })
+    await page.getByTestId('mimir-notice-ok').click()
+    const dock = page.locator('.mimir-dock')
+    await expect(dock.getByText(reply)).toBeVisible({ timeout: 30_000 })
+
+    // The viewport's own slow-graphics event: a phone shows a warning icon in the top bar, never a toast.
+    const text = 'Hardware acceleration looks off in this browser, so the 3D view will be slow. Turn it on in the browser settings and reload.'
+    await page.evaluate((m) => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('degrade', { message: m }), text)
+    const icon = page.locator('.sx-appbar').getByTestId('phone-view-notice')
+    await expect(icon).toBeVisible()
+    const ib = (await icon.boundingBox())!
+    expect(Math.min(ib.width, ib.height)).toBeGreaterThanOrEqual(44)
+    await page.waitForTimeout(400)
+    await expect(page.getByTestId('toast').filter({ hasText: 'Hardware acceleration' })).toHaveCount(0)
+    // nothing floats over the conversation or the composer
+    const chat = (await dock.locator('.term-body').boundingBox())!
+    const composer = (await dock.locator('.term-in').boundingBox())!
+    for (const t of await page.locator('.sx-toast').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0).map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height })))) {
+      for (const a of [chat, composer]) expect(t.x < a.x + a.width && a.x < t.x + t.width && t.y < a.y + a.height && a.y < t.y + t.height).toBe(false)
+    }
+    // a tap opens the whole notice, inside the screen, and a tap elsewhere shuts it
+    await icon.click()
+    const note = page.getByTestId('phone-view-notice-text')
+    await expect(note).toHaveText(text)
+    const nb = (await note.boundingBox())!
+    expect(nb.x).toBeGreaterThanOrEqual(0)
+    expect(nb.x + nb.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+    await page.mouse.click(20, chat.y + chat.height / 2)
+    await expect(note).toHaveCount(0)
+
+    // One header row above the chat: the terminal's bar is gone, Pause sits beside More, Show thinking is in More.
+    await expect(dock.locator('.term-bar')).toBeHidden()
+    const pause = page.getByTestId('mimir-foot-pause')
+    await expect(pause).toBeVisible()
+    expect(Math.min(...Object.values((await pause.boundingBox())!).slice(2))).toBeGreaterThanOrEqual(44)
+    const boxes = () => page.locator('.sx-appbar .sx-btn, .sx-appbar .sx-projname, .mimir-dock > .mimir-foot > *, .mimir-dock .term-body, .mimir-dock .term-in, .phone-tab').evaluateAll((els) => els.map((e) => {
+      const r = e.getBoundingClientRect()
+      return { x: r.x, y: r.y, w: r.width, h: r.height }
+    }))
+    const moved: Moved[] = []
+    for (const on of [true, false]) {
+      const before = await boxes()
+      await page.getByTestId('mimir-foot-more').click()
+      const item = page.getByTestId('mimir-foot-menu').getByTestId('mimir-foot-thinking')
+      await expect(item).toHaveAttribute('aria-checked', String(!on))
+      await item.click()
+      await expect(page.getByTestId('mimir-foot-menu')).toHaveCount(0)
+      await page.waitForTimeout(350)
+      const after = await boxes()
+      expect(after.length).toBe(before.length)
+      after.forEach((n, i) => {
+        const o = before[i]!
+        const d = { dx: n.x - o.x, dy: n.y - o.y, dw: n.w - o.w, dh: n.h - o.h }
+        if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control: `Show thinking ${on ? 'on' : 'off'}`, what: `item ${i}`, ...d })
+      })
+      await page.getByTestId('mimir-foot-more').click()
+      await expect(page.getByTestId('mimir-foot-thinking')).toHaveAttribute('aria-checked', String(on))
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId('mimir-foot-menu')).toHaveCount(0)
+    }
+    await page.screenshot({ path: info.outputPath('phone-mimir-header.png') })
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
+  test('a toast never lands on the mimir dock, beside the view or over it', async ({ page, isMobile }, info) => {
+    test.skip(isMobile, 'Desktop widths; a phone keeps the slow-graphics notice in its top bar (covered above)')
+    const text = 'Hardware acceleration looks off in this browser, so the 3D view will be slow. Turn it on in the browser settings and reload.'
+    await page.addInitScript(() => localStorage.setItem('sx-mimir-dock', '1'))
+    for (const width of [1440, 1100, 1000]) {
+      await page.setViewportSize({ width, height: 900 })
+      await open(page, { pilot: { mode: 'unset' } })
+      const dock = page.locator('.mimir-dock')
+      await expect(dock).toBeVisible()
+      await page.evaluate((t) => (window as unknown as { __sx: Sx }).__sx.setState({ toast: { id: Date.now(), text: t, tone: 'info' } }), text)
+      const toast = page.getByTestId('toast').filter({ hasText: 'Turn it on in the browser settings' }).last()
+      await expect(toast).toBeVisible()
+      const t = await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)).then(() => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } }))
+      const d = (await dock.boundingBox())!
+      const overlaps = t.x < d.x + d.width && d.x < t.x + t.width && t.y < d.y + d.height && d.y < t.y + t.height
+      if (overlaps) await page.screenshot({ path: info.outputPath(`toast-over-dock-${width}.png`) })
+      expect(overlaps, `toast ${JSON.stringify(t)} over the dock ${JSON.stringify(d)} at ${width} px`).toBe(false)
+    }
   })
 
   test('First run, the theme and look steps', async ({ page }, info) => {
