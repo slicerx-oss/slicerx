@@ -357,3 +357,65 @@ for (const height of [844, 700, 600]) {
     expect((await sheet.locator('#sk-show-points').boundingBox())!.height).toBeGreaterThanOrEqual(44)
   })
 }
+
+test.describe('the slow 3D view notice', () => {
+  // a touch screen at desktop width (a tablet): the desktop's toast, with a coarse pointer
+  test.use({ hasTouch: true })
+  test('one toast: Details opens in place, the close mark takes a finger-sized tap, and closed it stays closed', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'A phone keeps the notice in its top bar')
+    await sketchOnTop(page)
+    const reason = 'Hardware acceleration looks off in this browser. Turn it on in the browser settings and reload.'
+    const degrade = () => page.evaluate((r) => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('degrade', { message: 'The 3D view will be slow here.', details: r }), reason)
+    // the view may have said it as it started (this browser draws without a GPU); said again, it is still one card
+    await degrade()
+    await degrade()
+    const notices = page.getByTestId('toast').filter({ hasText: 'The 3D view will be slow here.' })
+    await expect(notices).toHaveCount(1)
+    const t = notices.first()
+    await t.getByTestId('toast-details').click()
+    // Details opens the same card: still one notice, the reason under the line
+    await expect(notices).toHaveCount(1)
+    await expect(t.locator('.sx-toast-more')).toBeVisible()
+    // it keeps clear of the tool panel and its footer
+    const [tb, pb] = [(await t.boundingBox())!, (await toolPanel(page).boundingBox())!]
+    expect(tb.x + tb.width <= pb.x || tb.x >= pb.x + pb.width || tb.y + tb.height <= pb.y || tb.y >= pb.y + pb.height).toBe(true)
+    // the close mark: small to see, 44 px to a finger, and its reach ends before Details
+    const close = t.getByTestId('toast-close')
+    await expect(close).toHaveAccessibleName('Dismiss')
+    // the mark itself is at least the desktop's 28 px; a coarse pointer gets the larger target around it
+    expect((await close.boundingBox())!.height).toBeGreaterThanOrEqual(28)
+    const hit = await close.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      const b = getComputedStyle(el, '::before')
+      const inset = parseFloat(b.top)
+      const d = el.parentElement!.querySelector('[data-testid="toast-details"]')!.getBoundingClientRect()
+      return { w: r.width - 2 * inset, h: r.height - 2 * inset, mark: r.height, reachLeft: r.left + inset, detailsRight: d.right, coarse: matchMedia('(pointer: coarse)').matches }
+    })
+    expect(hit.coarse).toBe(true)
+    expect(hit.w).toBeGreaterThanOrEqual(44)
+    expect(hit.h).toBeGreaterThanOrEqual(44)
+    expect(hit.mark).toBeLessThanOrEqual(32)
+    expect(hit.reachLeft).toBeGreaterThanOrEqual(hit.detailsRight)
+    await page.screenshot({ path: test.info().outputPath('notice-open.png') })
+    await close.click()
+    await expect(notices).toHaveCount(0)
+    // the view says it again (a new view starting): it stays closed
+    await degrade()
+    await page.waitForTimeout(500)
+    await expect(notices).toHaveCount(0)
+  })
+})
+
+test('on a phone the slow view notice is one bar icon with a finger-sized target', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Phone only')
+  await openPhoneModel(page)
+  await emit(page, 'degrade', { message: 'The 3D view will be slow here.', details: 'Hardware acceleration looks off in this browser.' })
+  const icon = page.getByTestId('phone-view-notice')
+  await expect(icon).toBeVisible()
+  const b = (await icon.boundingBox())!
+  expect(b.width).toBeGreaterThanOrEqual(44)
+  expect(b.height).toBeGreaterThanOrEqual(44)
+  await icon.tap()
+  await expect(page.getByTestId('phone-view-notice-text')).toBeVisible()
+  await expect(page.getByTestId('toast').filter({ hasText: 'The 3D view will be slow here.' })).toHaveCount(0)
+})

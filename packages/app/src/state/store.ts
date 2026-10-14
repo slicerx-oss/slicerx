@@ -265,7 +265,7 @@ export interface AppState {
   playbackSpeed: number
   /** Preview playback keeps the camera on the nozzle. */
   followNozzle: boolean
-  toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction } | null
+  toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction; dismissible?: boolean; onDismiss?: () => void } | null
   /** A standing notice about the 3D view (drawn without hardware acceleration), or null. A phone shows it as an icon in the top bar instead of a toast. */
   viewNotice: string | null
   aboutOpen: boolean
@@ -969,8 +969,8 @@ export interface ToastAction {
   run: () => void
 }
 
-export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction): void {
-  set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}) } })
+export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction, close?: { onDismiss?: () => void }): void {
+  set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}), ...(close ? { dismissible: true, ...(close.onDismiss ? { onDismiss: close.onDismiss } : {}) } : {}) } })
 }
 
 /** The selected objects: the multi-selection when it includes the primary, else just the primary. */

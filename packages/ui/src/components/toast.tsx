@@ -16,6 +16,9 @@ export interface ToastOptions {
   action?: { label: string; run: () => void }
   /** Stays on the card until it is dismissed, however long it takes. A warning or an error does by default; information never. */
   persist?: boolean
+  /** A close button at the end, for a notice someone may want gone before its time; `onDismiss` hears it. */
+  dismissible?: boolean
+  onDismiss?: () => void
 }
 
 interface ToastRecord {
@@ -25,6 +28,8 @@ interface ToastRecord {
   /** Stays until dismissed: the card's time never removes it. */
   persist: boolean
   action?: { label: string; run: () => void }
+  dismissible?: boolean
+  onDismiss?: () => void
 }
 
 /** Whether a toast with this tone and option stays until dismissed: a warning or an error does, and so does one that asks to. */
@@ -171,7 +176,7 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
       const id = next.current++
       const tone = options?.tone ?? 'plain'
       const persist = staysUntilDismissed(tone, options?.persist)
-      setToasts((list) => fitCard([...list, { id, message, tone, persist, ...(options?.action ? { action: options.action } : {}) }], max))
+      setToasts((list) => fitCard([...list, { id, message, tone, persist, ...(options?.action ? { action: options.action } : {}), ...(options?.dismissible ? { dismissible: true } : {}), ...(options?.onDismiss ? { onDismiss: options.onDismiss } : {}) }], max))
       // A line that stays has no time to run out, so it neither starts the card's time nor lengthens it.
       if (persist) return
       const ms = readingTime(message, tone, options?.duration)
@@ -237,11 +242,15 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
             >
               {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
               <ToastText message={t.message} expanded={open.has(t.id)} onDetails={() => details(t.id)} />
-              {t.persist ? <Button size="sm" variant="ghost" icon="close" className="sx-toast-dismiss" data-testid="toast-dismiss" aria-label="Dismiss" onClick={() => drop(t.id)} /> : null}
+              {t.persist && !t.dismissible ? <Button size="sm" variant="ghost" icon="close" className="sx-toast-dismiss" data-testid="toast-dismiss" aria-label="Dismiss" onClick={() => drop(t.id)} /> : null}
               {t.action ? (
                 <Button size="sm" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
                   {t.action.label}
                 </Button>
+              ) : null}
+              {t.dismissible ? (
+                // a small mark, with a finger-sized hit area on a touch screen that reaches no further than the gap
+                <Button size="sm" variant="ghost" icon="close" className="sx-toast-close" data-testid="toast-close" aria-label="Dismiss" onClick={() => { t.onDismiss?.(); drop(t.id) }} />
               ) : null}
             </ToastItem>
           ))}
