@@ -5,6 +5,7 @@
 import { Block, Button, Icon, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useHost } from '../../host'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import { openModelFiles } from '../../state/actions'
 import { useShownOrigin } from '../../state/model-mode'
 import { isCadTool, selectedIds, set, useApp } from '../../state/store'
@@ -51,6 +52,10 @@ export function DesignRight() {
   const [transformOpen, setTransformOpen] = useState(false)
   useEffect(() => setTransformOpen(false), [objectTool])
   const line = useTransformText()
+  // A phone's sheet holding a sketch has no Transform under it: a sketch moves no object, and the sheet's room and its
+  // footer belong to the sketch.
+  const phone = usePhoneLayout()
+  const sketchSheet = phone && objectTool === 'sketch'
   return (
     <>
       {isCadTool(objectTool) ? (
@@ -63,7 +68,7 @@ export function DesignRight() {
           <CutPanel />
         </Suspense>
       ) : null}
-      {many ? (
+      {sketchSheet ? null : many ? (
         <MultiSelection />
       ) : toolOpen && selected ? (
         <Block id="model-transform" title="Transform" aside={<TransformLine />} tip={line ? { title: 'Position', body: line.text } : undefined} expanded={transformOpen} onExpandedChange={setTransformOpen} data-section="transform">

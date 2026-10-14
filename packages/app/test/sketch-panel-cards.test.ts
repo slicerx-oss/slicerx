@@ -287,3 +287,13 @@ describe('the read-back', () => {
     expect(appState(get())['sketch']).toBeNull()
   })
 })
+
+describe('the phone keyboard', () => {
+  it('lifts the sheet by what the on-screen keyboard covers, and not at all without one', async () => {
+    const { keyboardLift } = await import('../src/cad/sketch-panel')
+    expect(keyboardLift(844, { height: 844, offsetTop: 0 })).toBe(0)
+    expect(keyboardLift(844, { height: 508, offsetTop: 0 })).toBe(336)
+    expect(keyboardLift(844, { height: 508, offsetTop: 40 })).toBe(296)
+    expect(keyboardLift(844, { height: 900, offsetTop: 0 })).toBe(0)
+  })
+})
