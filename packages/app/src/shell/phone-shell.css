@@ -65,6 +65,8 @@
 /* the conversation's own links sit on one row above it: New conversation, then More with the other two (dock.tsx) */
 :root[data-phone] .mimir-dock > .mimir-foot { grid-row: 1; flex-wrap: nowrap; justify-content: flex-start; gap: var(--s-1); padding: 0 var(--s-1) 0 var(--s-2); border-top: 0; border-bottom: 1px solid var(--line-soft); }
 :root[data-phone] .mimir-dock > .mimir-foot > .sx-linkbtn { flex: none; min-height: 44px; padding: 0 var(--s-2); white-space: nowrap; }
+:root[data-phone] .mimir-foot-pause { flex: none; width: 44px; height: 44px; padding: 0; justify-content: center; margin-left: auto; }
+:root[data-phone] .mimir-foot-pause + .mimir-foot-more { margin-left: 0; }
 :root[data-phone] .mimir-foot-more { margin-left: auto; }
 :root[data-phone] .mimir-foot-more > .sx-btn { width: 44px; height: 44px; padding: 0; justify-content: center; color: var(--fg); }
 :root[data-phone] [data-testid="mimir-foot-menu"] .sx-menu-item { min-height: 44px; }
@@ -73,11 +75,8 @@
 :root[data-phone] .mimir-dock > .pc-notice { grid-row: 1 / 4; margin: var(--s-3); }
 :root[data-phone] .mimir-dock > .mimir-connect { grid-row: 1 / 4; padding: var(--s-4); gap: var(--s-4); }
 :root[data-phone] .mimir-dock .term { border-bottom: 0; }
-:root[data-phone] .mimir-dock .term-bar { min-height: 44px; padding: 0 var(--s-2) 0 var(--s-4); flex-wrap: nowrap; }
-:root[data-phone] .mimir-dock .term-title { display: none; }
-:root[data-phone] .mimir-dock .ctrl { flex: 1; justify-content: flex-end; }
-:root[data-phone] .mimir-dock .ibtn { width: 44px; height: 44px; }
-:root[data-phone] .mimir-dock .pp-switch { min-height: 44px; order: -1; margin-right: auto; padding: 0; }
+/* the terminal's bar is not drawn: Pause is in the row above and Show thinking in its More menu (dock.tsx) */
+:root[data-phone] .mimir-dock .term-bar { display: none; }
 :root[data-phone] .mimir-dock .term-body { padding: var(--s-4) var(--s-4) var(--s-5); }
 :root[data-phone] .mimir-dock .term-in { padding: var(--s-2) var(--s-3) var(--s-3); }
 :root[data-phone] .mimir-dock .in-row { height: 48px; }

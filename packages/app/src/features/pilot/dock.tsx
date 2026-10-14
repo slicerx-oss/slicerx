@@ -204,7 +204,16 @@ function DockRun(p: {
       </UsageLinkContext.Provider>
       )}
       {phone ? (
-        <PhoneFoot more={p.more} setMore={p.setMore} onNewSession={p.onNewSession} />
+        <PhoneFoot
+          more={p.more}
+          setMore={p.setMore}
+          onNewSession={p.onNewSession}
+          showThinking={p.showThinking}
+          setShowThinking={p.setShowThinking}
+          paused={run.paused}
+          active={run.running || run.replaying}
+          onPause={() => run.setPaused(!run.paused)}
+        />
       ) : (
         <div className="mimir-foot">
           <LinkButton icon="plus" onClick={p.onNewSession}>
@@ -224,15 +233,36 @@ function DockRun(p: {
 
 /**
  * The same three links on a phone, where they sit in one row above the conversation: New conversation keeps its
- * label, and the other two are in a More menu, so the row fits a 360 px screen with nothing cut off.
+ * label, and the other two are in a More menu, so the row fits a 360 px screen with nothing cut off. The terminal's own
+ * bar is not drawn on a phone (phone-shell.css), so this row also takes its controls: Pause beside More, and Show
+ * thinking as a switch in the menu. Replay stays on the desktop: the dock never has a run to replay.
  */
-function PhoneFoot(p: { more: boolean; setMore: (v: boolean) => void; onNewSession: () => void }) {
+function PhoneFoot(p: {
+  more: boolean
+  setMore: (v: boolean) => void
+  onNewSession: () => void
+  showThinking: boolean
+  setShowThinking: (v: boolean) => void
+  paused: boolean
+  active: boolean
+  onPause: () => void
+}) {
   const [open, setOpen] = useState(false)
   return (
     <div className="mimir-foot">
       <LinkButton icon="plus" onClick={p.onNewSession}>
         New conversation
       </LinkButton>
+      <Button
+        variant="ghost"
+        className="mimir-foot-pause"
+        icon={p.paused ? 'play' : 'pause'}
+        aria-label={p.paused ? 'Resume' : 'Pause'}
+        aria-pressed={p.paused}
+        disabled={!p.active}
+        data-testid="mimir-foot-pause"
+        onClick={p.onPause}
+      />
       <MenuAnchor className="mimir-foot-more">
         <Button
           variant="ghost"
@@ -246,6 +276,9 @@ function PhoneFoot(p: { more: boolean; setMore: (v: boolean) => void; onNewSessi
         <Menu open={open} onClose={() => setOpen(false)} label="More" align="end" testId="mimir-foot-menu">
           <MenuItem icon={p.more ? 'arrow-left' : 'skill'} aria-controls="mimir-more" onClick={() => (setOpen(false), p.setMore(!p.more))}>
             {p.more ? 'Back to the conversation' : 'Skills and permissions'}
+          </MenuItem>
+          <MenuItem icon="sparkle" checked={p.showThinking} data-testid="mimir-foot-thinking" onClick={() => (setOpen(false), p.setShowThinking(!p.showThinking))}>
+            Show thinking
           </MenuItem>
           <MenuItem icon="plugin" onClick={() => (setOpen(false), openSettings('pilot'))}>
             Connect an AI agent
