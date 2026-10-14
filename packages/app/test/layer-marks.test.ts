@@ -2,7 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { beforeEach, describe, expect, it } from 'vitest'
 import { addMark, customGcodeProblem, layerGcodeByHeight, marksFor, nextSlot, removeMark, setMarkSlot } from '../src/plate/layer-marks'
-import { layerAtPoint, layerOf, pinLanes, pinLayout } from '../src/workspaces/preview/layer-track'
+import { layerAtPoint, layerOf, markName, pinLanes, pinLayout, pinsAt, TOUCH_R, type PinHead } from '../src/workspaces/preview/layer-track'
+import { inputsChanged } from '../src/state/slice-inputs'
+import { startAutoSlice } from '../src/state/auto-slice'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 describe('layer marks', () => {
@@ -94,11 +96,11 @@ describe('pin heads clear of other stems', () => {
   it('moves a crowded head right of its layer, so no stem runs through a head in another lane', () => {
     // 60, 62, 64 and 120 px: the second and third step up and right, 17 px clear of each head under them
     expect(pinLayout([0.3, 0.31, 0.32, 0.6], 200)).toEqual([
-      { lane: 0, off: 0, elbow: 7 },
+      { lane: 0, off: 0, elbow: 7, into: -1 },
       // each moved head in the crowd steps back lower than the one before, so the feet nest
-      { lane: 1, off: 15, elbow: 7 },
-      { lane: 2, off: 30, elbow: 4.5 },
-      { lane: 0, off: 0, elbow: 7 },
+      { lane: 1, off: 15, elbow: 7, into: -1 },
+      { lane: 2, off: 30, elbow: 4.5, into: -1 },
+      { lane: 0, off: 0, elbow: 7, into: -1 },
     ])
   })
   it('never crosses two stems or runs a stem through a head', () => {
@@ -110,13 +112,15 @@ describe('pin heads clear of other stems', () => {
     for (const px of [200, 300, 449, 700])
       for (const layers of sets) {
         const shares = layers.map((l) => l / 303)
-        const parts = pinLayout(shares, px).map((p, i) => {
+        const parts = pinLayout(shares, px).flatMap((p, i) => {
+          // a pin held by another head draws nothing of its own
+          if (p.into >= 0) return []
           const at = shares[i]! * px
           const hx = at + p.off
           const foot = 11 + p.lane * 18
           const stem: Box[] = [[hx - 1, p.elbow, hx + 1, foot], [at - 1, 0, at + 1, p.elbow + 2]]
           if (p.off) stem.push([at - 1, p.elbow, hx + 1, p.elbow + 2])
-          return { at, head: [hx - 8, foot, hx + 8, foot + 16] as Box, stem }
+          return [{ at, head: [hx - 8, foot, hx + 8, foot + 16] as Box, stem }]
         })
         for (const [i, a] of parts.entries())
           for (const [j, b] of parts.entries()) {
@@ -134,22 +138,106 @@ describe('pin heads clear of other stems', () => {
     // a head pushed to exactly the gap once counted as too near again and moved forever
     for (let px = 1; px < 600; px += 0.37) expect(pinLayout([19, 20, 21, 149].map((l) => l / 303), px)).toHaveLength(4)
   })
-  it('keeps heads in one lane 26 px apart when every lane is taken', () => {
-    const at = [0.3, 0.31, 0.32, 0.33].map((s) => s * 200)
-    const pins = pinLayout([0.3, 0.31, 0.32, 0.33], 200)
-    const x = pins.map((p, i) => at[i]! + p.off)
-    expect(pins[3]!.lane).toBe(0)
-    expect(x[3]! - x[0]!).toBeGreaterThanOrEqual(26)
-    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) expect(Math.abs(x[i]! - x[j]!)).toBeGreaterThanOrEqual(pins[i]!.lane === pins[j]!.lane ? 26 : 17)
+})
+
+describe('pins past three lanes', () => {
+  it('share the last head as one "+N" pin, in a fixed order, with no head hidden under another', () => {
+    // five pins 2 px apart: three lanes, then the fourth and fifth join the third head
+    const pins = pinLayout([0.3, 0.31, 0.32, 0.33, 0.34], 200)
+    expect(pins.map((p) => p.into)).toEqual([-1, -1, -1, 2, 2])
+    expect(pins.map((p) => p.lane)).toEqual([0, 1, 2, 2, 2])
+    // a held pin sits where its head is
+    expect(pins[3]!.off).toBe(pins[2]!.off)
+    // with two lanes the third joins the second
+    expect(pinLayout([0.3, 0.31, 0.32], 200, 2).map((p) => p.into)).toEqual([-1, -1, 1])
+    // a pin far enough on starts a lane again
+    expect(pinLayout([0.3, 0.31, 0.32, 0.33, 0.6], 200).map((p) => [p.lane, p.into])).toEqual([[0, -1], [1, -1], [2, -1], [2, 2], [0, -1]])
+  })
+  it('lays out the same whatever order the marks come in, and a pin added further on moves none before it', () => {
+    const shares = [0.3, 0.3, 0.31, 0.5, 0.5]
+    const keys = ['a', 'b', 'c', 'd', 'e']
+    const base = pinLayout(shares, 300, 3, keys)
+    const named = (ps: ReturnType<typeof pinLayout>, ks: string[]) => Object.fromEntries(ps.map((p, k) => [ks[k], { ...p, into: p.into < 0 ? '' : ks[p.into] }]))
+    for (const order of [[4, 3, 2, 1, 0], [2, 0, 4, 1, 3], [1, 0, 3, 2, 4]]) {
+      const ks = order.map((i) => keys[i]!)
+      expect(named(pinLayout(order.map((i) => shares[i]!), 300, 3, ks), ks)).toEqual(named(base, keys))
+    }
+    expect(pinLayout([...shares, 0.9], 300, 3, [...keys, 'f']).slice(0, 5)).toEqual(base)
   })
 })
 
-describe('pin lanes when every lane is taken', () => {
-  it('puts the next pin in the lane whose last pin is furthest back', () => {
-    // four pins 2 px apart: three lanes, then the fourth back in the first
-    expect(pinLanes([0.3, 0.31, 0.32, 0.33], 200)).toEqual([0, 1, 2, 0])
-    // with two lanes the third goes back to the first
-    expect(pinLanes([0.3, 0.31, 0.32], 200, 2)).toEqual([0, 1, 0])
+describe('which pin a pointer picks', () => {
+  // two heads in different lanes 17 px apart and 18 px up, a third in the first lane 17 px clear of the second, as pinLayout places them
+  const heads: PinHead[] = [
+    { x: 100, y: 50, layer: 20, z: 3.75, ids: ['a'] },
+    { x: 117, y: 32, layer: 20, z: 3.7, ids: ['b'] },
+    { x: 134, y: 50, layer: 21, z: 3.95, ids: ['c'] },
+  ]
+  it('a mouse gets the nearest head, so where two hit areas meet only one pin answers', () => {
+    expect(pinsAt(100, 50, heads, false).map((h) => h.ids[0])).toEqual(['a'])
+    expect(pinsAt(110, 40, heads, false).map((h) => h.ids[0])).toEqual(['b'])
+    // exactly halfway between two heads: the lower layer, then the lower height
+    expect(pinsAt(117, 50, heads, false).map((h) => h.ids[0])).toEqual(['a'])
+    expect(pinsAt(108.5, 41, heads, false).map((h) => h.ids[0])).toEqual(['b'])
+  })
+  it('a finger on a head gets that pin; between close heads it gets all of them, nearest first, for a list', () => {
+    for (const h of heads) expect(pinsAt(h.x, h.y, heads, true).map((p) => p.ids[0])).toEqual(h.ids)
+    expect(pinsAt(112, 44, heads, true).map((h) => h.ids[0])).toEqual(['b', 'a'])
+    expect(pinsAt(100, 50 + TOUCH_R + 1, heads, true)).toEqual([])
+  })
+  it('every head pinLayout places is further than a finger from every other, so a tap on one picks only it', () => {
+    for (const px of [120, 200, 340, 700])
+      for (const layers of [[19, 20, 20, 21, 149], [4, 19, 20, 21, 22, 23, 119], [10, 11, 12, 13, 14, 15, 16], [0, 3, 30, 31, 33, 300]]) {
+        const shares = layers.map((l) => l / 303)
+        const heads = pinLayout(shares, px).flatMap((p, i) => (p.into >= 0 ? [] : [{ x: shares[i]! * px + p.off, y: -(19 + p.lane * 18) }]))
+        for (const [i, a] of heads.entries()) for (const b of heads.slice(i + 1)) expect(Math.hypot(a.x - b.x, a.y - b.y), `${layers} at ${px}`).toBeGreaterThan(TOUCH_R)
+      }
+  })
+  it('names a mark by its kind, layer and height', () => {
+    expect(markName({ kind: 'color_change' }, 20, Array.from({ length: 30 }, (_, i) => 0.2 + i * 0.1875))).toBe('Color change at layer 20, 3.76 mm')
+  })
+})
+
+describe('a slot on a color change is a note', () => {
+  beforeEach(() => set({ layerMarks: {}, activePlate: 'plate-1' }))
+
+  it('leaves the slice current, while adding or removing a mark makes it stale', () => {
+    const result = { id: 'r', layerZ: new Float32Array([0.2]) } as never
+    const before = get()
+    const a = addMark(2, 'color_change', undefined, undefined, 2)!
+    const withMark = get()
+    expect(inputsChanged(before, withMark)).toBe(true)
+    setMarkSlot(a.id, 3)
+    expect(inputsChanged(withMark, get())).toBe(false)
+    // with Auto slice on, the slot edit leaves a finished slice as it is; a removed mark stales it
+    set({ autoSlice: true, slice: { status: 'done', result, stale: false } })
+    const stop = startAutoSlice({} as never, 60_000)
+    try {
+      setMarkSlot(a.id, 1)
+      expect(get().slice).toMatchObject({ stale: false })
+      removeMark(a.id)
+      expect(get().slice).toMatchObject({ stale: true })
+    } finally {
+      stop()
+      set({ autoSlice: false, slice: { status: 'idle' } })
+    }
+  })
+})
+
+describe('a right-click on layers of different heights', () => {
+  // a 0.3 mm first layer, then 0.12, then a run of 0.08 (variable layer height)
+  const layerZ = [0.3, 0.42, 0.54, 0.62, 0.7, 0.78, 0.86]
+  const track = { left: 0, width: 13 + 60 }
+  it('lands on a sliced layer and takes its height from the layer list, not a nominal step', () => {
+    const at = (x: number) => layerAtPoint(x, track, layerZ.length)
+    // 10 px per layer slot whatever the height: slots, not millimeters
+    expect([0, 6.5, 16.5, 26.5, 36.5, 66.5, 73].map(at)).toEqual([1, 1, 2, 3, 4, 7, 7])
+    expect(layerZ[at(36.5) - 1]).toBe(0.62)
+    // the first and last layers at the ends, and halfway between two slots goes up
+    expect(at(-20)).toBe(1)
+    expect(at(500)).toBe(layerZ.length)
+    expect(at(6.5 + 15)).toBe(3)
+    expect(at(6.5 + 14.9)).toBe(2)
   })
 })
 

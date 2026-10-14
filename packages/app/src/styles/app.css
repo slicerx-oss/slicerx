@@ -996,6 +996,18 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .layer-mark[data-kind="color_change"][data-swatch] { --pin: var(--c); box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 3.5px var(--fg); }
 .layer-mark[data-kind="custom"] { --pin: var(--ink-2); color: var(--fg); box-shadow: 0 0 0 2px var(--ink-1), inset 0 0 0 1.5px var(--muted); }
 .layer-mark:hover { filter: brightness(1.12); }
+/* the pin whose menu is open */
+.layer-mark[data-selected] { box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 4px var(--accent); }
+.layer-mark:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 4px var(--accent); }
+/* "+N": the marks past three lanes share one pin, which lists them */
+.layer-mark[data-kind="group"] { --pin: var(--ink-2); --stem-c: var(--fg); width: auto; min-width: 16px; padding: 0 3px; border-radius: 8px; color: var(--fg); box-shadow: 0 0 0 2px var(--ink-1), inset 0 0 0 1.5px var(--fg); }
+.layer-mark[data-kind="group"][data-selected] { box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 4px var(--accent); }
+.layer-mark-count { font: var(--fw-semibold) 10px/1 var(--f-mono); letter-spacing: -0.02em; }
+/* the band over the track where pins stand: on a touch screen it takes taps between pins and hands them to the heads
+   near the finger; it stops above the slider's thumb so a scrub still starts on the track */
+.layer-pin-band { position: absolute; left: -6.5px; right: -6.5px; bottom: 7.5px; height: 53px; pointer-events: none; }
+@media (pointer: coarse) { .layer-pin-band { pointer-events: auto; } }
+.lmarks-note { max-width: 240px; margin: 4px 0 0; padding: 4px 10px; font-size: var(--fs-sm); line-height: 1.4; color: var(--muted); }
 /* the + beside the track is taller than it; it overhangs the row instead of growing it */
 .layer-track > .lmarks-add { display: flex; align-items: center; height: 18px; }
 /* readouts keep one width as their digits change, so nothing beside them moves with the layer */
