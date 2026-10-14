@@ -33,7 +33,7 @@
 .rb-btn[data-variant="primary"] { background: var(--accent); border-color: transparent; }
 .rb-btn[data-variant="primary"]:hover:not([aria-disabled="true"]) { background: color-mix(in srgb, var(--accent) 88%, var(--fg)); }
 .rb-btn[data-variant="primary"] .rb-label { color: var(--on-grad); }
-.rb-btn[aria-disabled="true"] svg.ti { opacity: 0.4; filter: saturate(0.4); }
+.rb-btn[aria-disabled="true"] svg.ti { opacity: 0.6; filter: saturate(0.4); }
 .rb-btn[aria-disabled="true"] .rb-label { color: var(--dim); }
 .rb-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
 .ribbon[data-size="medium"] .rb-btn { min-width: 44px; }
