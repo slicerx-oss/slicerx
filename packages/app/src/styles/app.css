@@ -867,9 +867,21 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* The playback bar shows fewer rows as it is dragged shorter. */
 .dock[data-mode="compact"] .dock-row ~ .dock-row, .dock[data-mode="slim"] .dock-row { display: none; }
 .dock[data-mode="slim"] { padding-block: 8px; }
-/* The bar's ^ tab sits on its top edge, centered, over the resize edge: it opens the sliders and shuts the bar to its
-   transport row. The bar grows upward from the foot of the view, so nothing above it moves. */
-.dock > .dock-tab { position: absolute; left: 50%; bottom: 100%; z-index: 1; transform: translateX(-50%); }
+/* The bar's ^ tab sits on its top edge near the right end, over the resize edge: it opens the sliders and shuts the
+   bar to its two rows. Near the right end it keeps clear of the plate chips on the left at any width (they stop
+   short of it, below). The bar grows upward from the foot of the view, so nothing above it moves. */
+.dock > .dock-tab { position: absolute; right: 24px; bottom: 100%; z-index: 1; }
+.studio[data-layers] .vp:has(> .dock .dock-tab) > .hud-bl { right: max(var(--lstrip-room, 12px), 120px); }
+/* Desktop: the transport and speed on the first row; the view checks, the G-code lines and the readout on the second.
+   The slider rows share one set of columns, so the tracks run to the readout column and end together. */
+.dock:not([data-phone]) { container: dock / inline-size; grid-template-columns: 56px minmax(0, 1fr) max-content; column-gap: 12px; }
+.dock:not([data-phone]) > .dock-h { grid-column: 1 / -1; flex-wrap: nowrap; }
+.dock-h2 { gap: 14px; min-width: 0; }
+.dock-h2 .dock-read { min-width: 0; overflow: hidden; white-space: nowrap; }
+.dock:not([data-phone]) .dock-row { grid-column: 1 / -1; grid-template-columns: subgrid; gap: 12px; }
+.dock:not([data-phone]) .dock-row output { min-width: 13ch; }
+@container dock (max-width: 760px) { .dock-h2 .dock-read .hide-sm { display: none; } }
+@container dock (max-width: 600px) { .dock-pre { display: none; } .dock-h2 { gap: 12px; } }
 
 /* Layer slider marks: pause, color change and custom G-code on the track. */
 .layer-track { display: flex; align-items: center; gap: 6px; min-width: 0; }
