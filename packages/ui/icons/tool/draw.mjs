@@ -94,7 +94,9 @@ const V = {}, G = {}
 V.sketch = (c) => {
   const p = (u, v) => c.P(u, v, 0)
   const sq = [p(1.4, 1.4), p(5.6, 1.4), p(5.6, 5.6), p(1.4, 5.6)]
-  return plane(c) + `<path class="sk" d="M${sq.map((q) => q.join(' ')).join('L')}Z"/>` + node(c, ...p(1.4, 5.6)) + node(c, ...p(5.6, 1.4))
+  // the pair snaps together at 24, so it stays mirrored
+  const n = (x, y) => (c.sz === 24 ? node24(c, x, y) : node(c, x, y))
+  return plane(c) + `<path class="sk" d="M${sq.map((q) => q.join(' ')).join('L')}Z"/>` + n(...p(1.4, 5.6)) + n(...p(5.6, 1.4))
 }
 G.sketch = () => {
   const g = grid(), q = Q(8, 8)
@@ -429,13 +431,19 @@ G['simplify-mesh'] = () => {
   return g
 }
 V.hollow = (c) => {
-  const o = { t0: 1.1, t1: 5.4 }, w = 0.55, h = M.h
-  return mound(c, o, 'a1') + c.poly('hl', [o.t0 + w, o.t0 + w, h], [o.t1 - w, o.t0 + w, h], [o.t1 - w, o.t1 - w, h], [o.t0 + w, o.t1 - w, h])
+  // a light rim like the other mesh tops; the cavity's back walls carry the accent over a dark floor
+  const o = c.sz === 32 ? { t0: 1.1, t1: 5.4 } : { t0: 0.8, t1: 5.7 }, w = c.sz === 32 ? 1 : 1.4, h = M.h, d = 1.6
+  const a = o.t0 + w, b = o.t1 - w
+  const open = [[a, a, h], [b, a, h], [b, b, h], [a, b, h]]
+  const id = `ti-hollow-${c.sz}`
+  return mound(c, o, 't1') + c.poly('a2', ...open) + `<clipPath id="${id}"><path d="M${c.pts(...open)}Z"/></clipPath><g clip-path="url(#${id})">` +
+    c.poly('a3 nos', [a, a, h], [a, b, h], [a, b, h - d], [a, a, h - d]) + c.poly('hl nos', [a, a, h - d], [b, a, h - d], [b, b, h - d], [a, b, h - d]) + '</g>'
 }
 G.hollow = () => {
   const g = grid(), q = Q(8, 8.5), B = 7, T0 = 1, T1 = 6, H = 4
-  solid(g, moundFaces(q, ['a', '2', '3'], { B, T0, T1, H }))
+  solid(g, moundFaces(q, ['1', '2', '3'], { B, T0, T1, H }))
   fill(g, [q(T0 + 1, T0 + 1, H), q(T1 - 1, T0 + 1, H), q(T1 - 1, T1 - 1, H), q(T0 + 1, T1 - 1, H)], 'h')
+  put(g, [[6, 7], [7, 7], [8, 7], [9, 7]], 'b')
   return g
 }
 V.orient = (c) => {
@@ -588,15 +596,17 @@ G.dimension = () => {
   return g
 }
 V.mirror = (c) => {
-  const k = c.k
+  // the mirrored copy carries the nodes: what the tool makes
+  const k = c.k, n = (x, y) => (c.sz === 32 ? node(c, x, y) : node24(c, x, y))
   c.mark(3 * k, 5 * k); c.mark(29 * k, 27 * k)
-  return `<path class="lg dash" d="M${16 * k} ${4 * k}V${28 * k}"/><path class="lg" style="stroke-width:1.5px" d="M${13 * k} ${8 * k}L${4 * k} ${24 * k}H${13 * k}Z"/><path class="sk" d="M${19 * k} ${8 * k}L${28 * k} ${24 * k}H${19 * k}Z"/>`
+  return `<path class="lg dash" d="M${16 * k} ${4 * k}V${28 * k}"/><path class="lg" style="stroke-width:1.5px" d="M${13 * k} ${8 * k}L${4 * k} ${24 * k}H${13 * k}Z"/><path class="sk" d="M${19 * k} ${8 * k}L${28 * k} ${24 * k}H${19 * k}Z"/>` + n(19 * k, 8 * k) + n(28 * k, 24 * k) + n(19 * k, 24 * k)
 }
 G.mirror = () => {
   const g = grid()
   for (let j = 1; j <= 14; j += 2) put(g, [[7, j]], 's')
   stamp(g, 1, 3, ['    s', '   ss', '   ss', '  s s', '  s s', ' s  s', ' s  s', 's   s', 'sssss'])
   stamp(g, 9, 3, ['ll    ', 'lll   ', 'llll  ', 'll ll ', 'll  ll', 'll  ll', 'll   l', 'llllll', 'llllll'])
+  nodeAt(g, 9, 3); nodeAt(g, 13, 10)
   return g
 }
 V['look-at'] = (c) => {
@@ -614,6 +624,43 @@ G['look-at'] = () => {
   nodeAt(g, 8, 6)
   return g
 }
+
+// ---------- 24 px: the busiest drawings with fewer, bigger parts ----------
+/** a sketch node at 24 on the nearest half pixel, so its ring lands on whole pixels; placed by its vertex */
+function node24(c, x, y) {
+  c.mark(x, y, 2)
+  x = Math.round(x - 0.5) + 0.5; y = Math.round(y - 0.5) + 0.5
+  return `<path class="nd" d="M${x - 1} ${y - 1}h2v2h-2z"/>`
+}
+/** the measure mark at 24: 2 px, on whole pixels */
+function measure24(c, x, y) {
+  x = Math.round(x); y = Math.round(y)
+  const L = 10, t = 3, x1 = x + L, y1 = y + L / 2
+  c.mark(x, y - t); c.mark(x1, y1 + t)
+  return `<path class="ln" style="stroke-width:2px;stroke-linecap:butt" d="M${x} ${y - t}V${y + t}M${x1} ${y1 - t}V${y1 + t}M${x} ${y}L${x1} ${y1}"/>`
+}
+const at24 = (n, f) => { const big = V[n]; V[n] = (c) => (c.sz === 24 ? f(c) : big(c)) }
+at24('cut', (c) => c.box([0, 0, 0], [6, 6, 2.6]) + c.abox([-1, -1, 2.6], [7, 7, 3.4]) + c.box([0, 0, 3.4], [6, 6, 6]))
+at24('mesh-cut', (c) => moundSlab(c, 0, 1.4) + c.abox([0, 0, 1.4], [6.5, 6.5, 1.85]) + moundSlab(c, 1.4, 3, 0.45))
+at24('array-linear', (c) => c.box([0, 0, 0], [2.6, 2.6, 2.8]) + c.abox([4.6, 0, 0], [7.2, 2.6, 2.8]) + c.abox([9.2, 0, 0], [11.8, 2.6, 2.8]))
+at24('thread-bolt', (c) => {
+  let s = cyl(c, 3, 3, 0, 5.4, 2.6)
+  for (const z of [1.2, 2.7, 4.2]) {
+    const d = c.disc(3, 3, z, 2.6)
+    s += `<path class="ln" style="stroke-width:2px" d="M${r2(d.cx - d.rx)} ${r2(d.cy - 1.4 * c.k)}A${d.rx} ${d.ry} 0 0 0 ${r2(d.cx + d.rx)} ${r2(d.cy + 1.4 * c.k)}"/>`
+  }
+  return s
+})
+at24('shell', (c) => {
+  const X = 7, Y = 7, Z = 4, T = 1.4, F = 3
+  const [a0, a1, b0, b1] = [T, X - T, T, Y - T]
+  const open = c.pts([a0, b0, Z], [a1, b0, Z], [a1, b1, Z], [a0, b1, Z])
+  return c.box([0, 0, 0], [X, Y, Z]) + `<clipPath id="ti-shell-${c.sz}"><path d="M${open}Z"/></clipPath><g clip-path="url(#ti-shell-${c.sz})">` +
+    c.poly('t3', [a0, b0, Z], [a0, b1, Z], [a0, b1, F], [a0, b0, F]) + c.poly('t2', [a0, b0, Z], [a1, b0, Z], [a1, b0, F], [a0, b0, F]) +
+    c.poly('a1', [a0, b0, F], [a1, b0, F], [a1, b1, F], [a0, b1, F]) + `</g><path class="nf out" d="M${open}Z"/>`
+})
+at24('measure', (c) => { const s = cube(c, 4.4); const [x, y] = c.P(0, -1.7, 4.4); return s + measure24(c, x, y) })
+at24('mesh-measure', (c) => { const s = mound(c); const [x, y] = c.P(M.t0, M.t0 - 1.7, M.h); return s + measure24(c, x, y) })
 
 // ---------- the set ----------
 function draw(n, S) {
