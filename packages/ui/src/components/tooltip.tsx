@@ -66,7 +66,7 @@ export interface TooltipHostProps {
   summonKey?: string
 }
 
-type Side = 'top' | 'bottom' | 'left' | 'right'
+export type Side = 'top' | 'bottom' | 'left' | 'right'
 
 /** Keys that move focus by themselves: Tab, and the arrows and Home and End of a roving toolbar or list. */
 const NAV_KEYS = new Set(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])
@@ -146,17 +146,39 @@ function sidePanel(el: HTMLElement): { box: DOMRect; side: Side } | null {
   return { box, side: p.getAttribute('data-side') === 'left' ? 'right' : 'left' }
 }
 
-/** The box the tip is placed against: the anchor's (or its avoid box's), widened to its side panel when it has one. */
-type Rect = Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>
+/** A box on screen. */
+export type Rect = Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>
 
+/** True when a row is one of a list's stacked rows: the list is at least two rows tall and the row spans most of it. */
+export function stackedRow(row: Rect, list: Rect): boolean {
+  return list.height >= row.height * 2 && row.width >= list.width / 2
+}
+
+/**
+ * The stacked list an anchor is a row of (the Preview legend, a menu), when its tip should open beside the list or
+ * above the row, so the rows under it stay in view. An anchor that names its side or its avoid box keeps them.
+ */
+function rowList(el: HTMLElement): HTMLElement | null {
+  if (el.hasAttribute('data-tip-side') || el.hasAttribute('data-tip-avoid')) return null
+  const list = el.parentElement?.closest<HTMLElement>('ul, ol, [role=list], [role=listbox], [role=menu]')
+  return list && stackedRow(el.getBoundingClientRect(), list.getBoundingClientRect()) ? list : null
+}
+
+/** A row's box widened to its list's width, so a tip beside it clears every row. */
+function widen(r: Rect, box: Rect): Rect {
+  const left = Math.min(box.left, r.left)
+  const right = Math.max(box.right, r.right)
+  return { left, right, top: r.top, bottom: r.bottom, width: right - left, height: r.height }
+}
+
+/** The box the tip is placed against: the anchor's (or its avoid box's), widened to its side panel or its list when it has one. */
 function anchorRect(el: HTMLElement): Rect {
   const r = avoidBox(el).getBoundingClientRect()
-  const panel = sidePanel(el)
-  if (!panel) return r
   // the panel's width and anything of the anchor's past it (its edge tab), at the anchor's height
-  const left = Math.min(panel.box.left, r.left)
-  const right = Math.max(panel.box.right, r.right)
-  return { left, right, top: r.top, bottom: r.bottom, width: right - left, height: r.height }
+  const panel = sidePanel(el)
+  if (panel) return widen(r, panel.box)
+  const list = rowList(el)
+  return list ? widen(r, list.getBoundingClientRect()) : r
 }
 
 function sideFor(el: HTMLElement): Side {
@@ -164,6 +186,12 @@ function sideFor(el: HTMLElement): Side {
   if (want === 'top' || want === 'bottom' || want === 'left' || want === 'right') return want
   const panel = sidePanel(el)
   if (panel) return panel.side
+  const list = rowList(el)
+  if (list) {
+    // beside the list, on the side with more room
+    const b = list.getBoundingClientRect()
+    return b.left + b.width / 2 > window.innerWidth / 2 ? 'left' : 'right'
+  }
   const r = avoidBox(el).getBoundingClientRect()
   // A row-wide anchor sits beside the row, on the side with more room.
   if (el.hasAttribute('data-tip-avoid')) return r.left + r.width / 2 > window.innerWidth / 2 ? 'left' : 'right'
@@ -174,13 +202,17 @@ function sideFor(el: HTMLElement): Side {
   return 'bottom'
 }
 
-function place(anchor: Rect, tip: { w: number; h: number }, prefer: Side): { x: number; y: number; side: Side } {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
+/**
+ * Where a tip goes: the preferred side, else the opposite one, else across. A row of a stacked list (`above`) tries
+ * above before below, so the rows under it stay in view when there is no room beside the list.
+ */
+export function place(anchor: Rect, tip: { w: number; h: number }, prefer: Side, view = { w: window.innerWidth, h: window.innerHeight }, above = false): { x: number; y: number; side: Side } {
+  const vw = view.w
+  const vh = view.h
   const fits = (s: Side) =>
     s === 'bottom' ? anchor.bottom + GAP + tip.h <= vh - EDGE : s === 'top' ? anchor.top - GAP - tip.h >= EDGE : s === 'right' ? anchor.right + GAP + tip.w <= vw - EDGE : anchor.left - GAP - tip.w >= EDGE
   const opposite: Record<Side, Side> = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }
-  const cross: Side[] = prefer === 'left' || prefer === 'right' ? ['bottom', 'top'] : ['right', 'left']
+  const cross: Side[] = prefer === 'left' || prefer === 'right' ? (above ? ['top', 'bottom'] : ['bottom', 'top']) : ['right', 'left']
   const side = [prefer, opposite[prefer], ...cross].find(fits) ?? prefer
   let x: number
   let y: number
@@ -451,7 +483,9 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     toTopLayer(el)
     const measure = () => {
       const r = el.getBoundingClientRect()
-      setPos(place(shown.touch ? avoidBox(shown.anchor).getBoundingClientRect() : anchorRect(shown.anchor), { w: r.width, h: r.height }, shown.touch ? 'top' : sideFor(shown.anchor)))
+      const tip = { w: r.width, h: r.height }
+      const view = { w: window.innerWidth, h: window.innerHeight }
+      setPos(shown.touch ? place(avoidBox(shown.anchor).getBoundingClientRect(), tip, 'top', view) : place(anchorRect(shown.anchor), tip, sideFor(shown.anchor), view, rowList(shown.anchor) !== null))
     }
     measure()
     const ro = new ResizeObserver(measure)
