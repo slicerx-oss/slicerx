@@ -58,6 +58,7 @@ mod fm;
 mod memory;
 mod owners;
 mod smallflow;
+mod variants;
 mod zoneroute;
 // The wall generator works on a graph of vector indices and on lengths in nanometers held in `i64`,
 // converted to and from `f64` and the crate's `i32` grid at the edges.

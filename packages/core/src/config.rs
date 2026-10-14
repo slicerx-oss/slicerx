@@ -503,6 +503,9 @@ pub struct PrintConfig {
     /// Every key the config object carried, as given: custom G-code templates read
     /// the profile's other settings from here.
     pub raw: serde_json::Map<String, Value>,
+    /// original tables retained for later nozzle selection.
+    #[doc(hidden)]
+    pub variant_sources: serde_json::Map<String, Value>,
     /// The moment of slicing for the date variables of custom G-code (`year` to `second`): Unix seconds and the
     /// offset of local time from UTC in minutes. Without it, native builds read the system clock in UTC and
     /// WASM builds read 1970.
@@ -646,6 +649,7 @@ impl PrintConfig {
             retraction_speed: 30.0,
             retraction_minimum_travel: 1.0,
             raw: serde_json::Map::new(),
+            variant_sources: serde_json::Map::new(),
             now: None,
             limits: crate::gcode_lint::Limits::default(),
             untrusted_gcode: true,
@@ -739,6 +743,47 @@ impl PrintConfig {
     /// range or per-object override). Keys not in the object keep their
     /// value. Does not run [`Self::check`].
     pub fn apply_value(&mut self, v: &Value) -> Result<()> {
+        let Some(incoming) = v.as_object() else {
+            return self.apply_flat_value(v);
+        };
+        if self.variant_sources.is_empty()
+            && !crate::variants::has_tables(&self.raw)
+            && !crate::variants::has_tables(incoming)
+        {
+            return self.apply_flat_value(v);
+        }
+        let mut next = self.clone();
+        let mut raw = self.raw.clone();
+        raw.extend(incoming.clone());
+        for key in incoming.keys() {
+            next.variant_sources.remove(key);
+        }
+        next.variant_sources.extend(crate::variants::sources(&raw));
+        raw.extend(next.variant_sources.clone());
+        let mut effective = incoming.clone();
+        effective.extend(crate::variants::select(&raw)?);
+        next.apply_flat_value(&Value::Object(effective))?;
+        *self = next;
+        Ok(())
+    }
+
+    pub(crate) fn refresh_variants(&mut self) -> Result<Vec<crate::preflight::Issue>> {
+        if self.variant_sources.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut raw = self.raw.clone();
+        raw.extend(self.variant_sources.clone());
+        self.apply_flat_value(&Value::Object(crate::variants::select(&raw)?))?;
+        self.check()?;
+        let limits = self.limits;
+        let issues = crate::preflight::clamp_config(self, &limits);
+        if crate::preflight::blocks(&issues) {
+            return Err(Error::Blocked(crate::preflight::blocking_text(&issues)));
+        }
+        Ok(issues)
+    }
+
+    fn apply_flat_value(&mut self, v: &Value) -> Result<()> {
         let Value::Object(map) = v else {
             return Err(Error::Config {
                 key: "(root)",

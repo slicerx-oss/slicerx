@@ -871,3 +871,51 @@ fn a_mesh_named_by_several_objects_and_a_volume_slices_for_each() {
     assert!(status.success(), "{err}");
     assert_eq!(v["layerCount"], single["layerCount"]);
 }
+
+#[test]
+fn plain_and_request_slices_select_project_filament_variants() {
+    let dir = std::env::temp_dir().join(format!("sx-cli-variants-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let config = serde_json::json!({
+        "filament_settings_id": ["one"],
+        "filament_self_index": [1, 1],
+        "filament_extruder_variant": ["Direct Drive High Flow", "Direct Drive Standard"],
+        "extruder_type": ["Direct Drive"],
+        "nozzle_volume_type": ["Standard"],
+        "nozzle_temperature": [245, 215],
+        "machine_start_gcode": "; selected {nozzle_temperature[0]}",
+        "layer_height": 0.3
+    });
+    let config_path = dir.join("config.json");
+    std::fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let gcode_path = dir.join("plain.gcode");
+    let out = sx()
+        .args(["slice", &fixture("cube.stl"), "--config"])
+        .arg(&config_path)
+        .arg("-o")
+        .arg(&gcode_path)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let plain = std::fs::read_to_string(&gcode_path).unwrap();
+    assert!(plain.lines().any(|line| line == "; selected 215"));
+
+    let mut req: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture("cube-request.json")).unwrap()).unwrap();
+    req["meshes"]["cube"] = fixture("cube.stl").into();
+    req["config"] = config;
+    req["options"]["strict"] = true.into();
+    let request_path = dir.join("request.json");
+    std::fs::write(&request_path, serde_json::to_vec(&req).unwrap()).unwrap();
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&request_path)
+        .arg("--out-dir")
+        .arg(dir.join("request"))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let gcode = std::fs::read_to_string(dir.join("request/slice.gcode")).unwrap();
+    assert!(gcode.lines().any(|line| line == "; selected 215"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
