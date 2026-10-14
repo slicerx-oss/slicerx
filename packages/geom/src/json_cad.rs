@@ -550,8 +550,12 @@ fn edge_pick_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
 #[cfg(feature = "holes")]
 fn hole_find_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
-    let triangle: u32 = field(req, "triangle")?;
     let at = field(req, "at")?;
+    // a triangle of the hole's wall, or a point on its axis line and the axis
+    if req.get("triangle").is_none() && req.get("axis").is_some() {
+        return to_value(&hole::find_on_axis(&it.world(), at, field(req, "axis")?)?);
+    }
+    let triangle: u32 = field(req, "triangle")?;
     to_value(&hole::find(&it.world(), triangle, at)?)
 }
 

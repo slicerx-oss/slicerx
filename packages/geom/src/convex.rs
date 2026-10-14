@@ -811,7 +811,7 @@ pub fn point_inside_mesh(mesh: &TriMesh, p: V3) -> bool {
     hits % 2 == 1
 }
 
-fn ray_distance(o: V3, d: V3, a: V3, b: V3, c: V3) -> Option<f64> {
+pub(crate) fn ray_distance(o: V3, d: V3, a: V3, b: V3, c: V3) -> Option<f64> {
     let e1 = vec3::sub(b, a);
     let e2 = vec3::sub(c, a);
     let h = vec3::cross(d, e2);
