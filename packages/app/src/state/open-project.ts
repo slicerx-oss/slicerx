@@ -156,12 +156,17 @@ async function addProjectShown(
     return out
   }
   for (const [i, plate] of project.plates.entries()) {
-    if (plate.objects.length === 0) continue
+    // A project opened as the job keeps the file's plates as they are, empty ones too, so plate N here is plate N in the
+    // file. Added to plates the person already has, it brings only the plates with objects on them.
+    if (plate.objects.length === 0 && !wasEmpty) continue
     const made = await entries(plate.objects, loads[i] ?? [])
     markOpenStage('engine')
     if (i > 0) {
       const id = mine(() => addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}) }))
       mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, name: plate.name } : p)) })))
+    } else if (wasEmpty && !/^Plate \d+$/.test(plate.name)) {
+      // The file's first plate is the one the project opens onto, so it takes the file's name as the others do.
+      mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, name: plate.name } : p)) })))
     }
     mine(() => set((s) => ({ plate: [...s.plate, ...made], selection: made[0]?.id ?? s.selection })))
     markOpenStage('objects')

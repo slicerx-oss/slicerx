@@ -52,7 +52,7 @@ beforeEach(async () => {
 describe('clearing the plate after a project', () => {
   it('takes its plates, printer and settings with it, and gives back what the person had', async () => {
     await openModelBytes(host, 'tangela.3mf', tangelaLike(), undefined, { fresh: true })
-    expect(get().plates.map((p) => p.name)).toEqual(['Plate 1', 'Bambu - Charcoal'])
+    expect(get().plates.map((p) => p.name)).toEqual(['Bambu - Marine Blue', 'Bambu - Charcoal'])
     expect(get().projectPrinter).not.toBeNull()
     expect(get().overrides).toMatchObject({ wall_loops: 5, layer_height: 0.16 })
     clearPlate()
