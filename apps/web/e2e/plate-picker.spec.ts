@@ -142,12 +142,12 @@ test.describe('the plate picker', () => {
     await expect(name).toHaveText(/half$/)
     await expect(current(page)).toHaveAttribute('data-tip-title', `Plate 1: ${DECK_BOX_27[0]}`)
     const fits = () => name.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)
-    expect(await fits()).toBe(true)
+    await expect.poll(fits).toBe(true)
     // Through every plate to the last: the controls keep their places, and each name fits its box.
     for (let i = 2; i <= 27; i++) {
       await next(page).click()
       await expect(current(page).locator('.pp-no')).toHaveText(`Plate ${i}`)
-      expect(await fits(), `plate ${i}`).toBe(true)
+      await expect.poll(fits, { message: `plate ${i}` }).toBe(true)
       if (i % 9 === 0 || i === 27) expect(await pickerBoxes(page), `plate ${i}`).toEqual(before)
     }
     await expect(next(page)).toBeDisabled()
@@ -221,21 +221,25 @@ test.describe('the plate picker', () => {
     await viewSized(page)
     type Store = { setState(p: { toast: { id: number; text: string; tone?: string } }): void }
     const post = (id: number, text: string) => page.evaluate(([i, t]) => (window as unknown as { __sx: Store }).__sx.setState({ toast: { id: i as number, text: t as string, tone: 'info' } }), [id, text] as const)
-    await post(9001, 'First note for the card. With more to read behind Details, long enough to wrap onto a second line when it opens in place.')
+    // The project's own open note may still be on the card, so the lines are found by their text. The first note is
+    // long enough that its reading time outlasts the steps below.
+    await post(9001, 'First note for the card. With more to read behind Details, long enough to wrap onto a second line when it opens in place, and longer still so that it stays on the card while the sheet opens and shuts again.')
     await post(9002, 'Second note.')
     const card = page.getByTestId('toasts')
     const lines = card.getByTestId('toast')
-    await expect(lines).toHaveCount(2)
+    const first = lines.filter({ hasText: 'First note' })
+    const second = lines.filter({ hasText: 'Second note.' })
+    await expect(first).toHaveCount(1)
+    await expect(second).toHaveCount(1)
     // One card, a line each.
-    for (const l of await lines.all()) expect((await l.boundingBox())!.height).toBeLessThanOrEqual(44)
+    for (const l of [first, second]) expect((await l.boundingBox())!.height).toBeLessThanOrEqual(44)
     await plateSheet(page)
     await expect(card).toBeHidden()
     await shutPlateSheet(page)
     await expect(card).toBeVisible()
-    await expect(lines).toHaveCount(2)
+    await expect(first).toHaveCount(1)
     // Details grows the card down: its top edge stays, and the line shows its whole text.
     const top = (await card.boundingBox())!.y
-    const first = lines.filter({ hasText: 'First note' })
     await first.getByTestId('toast-details').click()
     await expect(first).toHaveAttribute('data-expanded', '')
     await expect(first.locator('.sx-toast-more')).toBeVisible()

@@ -461,6 +461,7 @@ button { cursor: pointer; }
 .sx-toast[data-expanded] .sx-toast-text { padding: 5px 0; white-space: normal; max-height: 9.5em; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; }
 .sx-toast[data-expanded] .sx-toast-more { display: inline; }
 .sx-toast-details, .sx-toast-action { flex: none; }
+.sx-toast-details::after { content: attr(data-label); }
 .sx-toast[data-tone="ok"] .sx-ic { color: var(--green); }
 .sx-toast[data-tone="warn"] .sx-ic { color: var(--orange); }
 .sx-toast[data-tone="error"] .sx-ic { color: var(--red); }

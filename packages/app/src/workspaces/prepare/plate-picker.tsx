@@ -38,10 +38,18 @@ export function MidText({ text, lead, className, lines = 1 }: { text: string; le
       setFont(f)
     }
     read()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(read)
-    ro.observe(el)
-    return () => ro.disconnect()
+    // A web font that finishes loading after this changes the text's width but not the box's, so it is read again then.
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+    let live = true
+    void fonts?.ready.then(() => { if (live) read() })
+    fonts?.addEventListener?.('loadingdone', read)
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read)
+    ro?.observe(el)
+    return () => {
+      live = false
+      fonts?.removeEventListener?.('loadingdone', read)
+      ro?.disconnect()
+    }
   }, [lead, lines])
   // Before the first measure the whole name shows, clipped by the box; one frame later it is cut to fit.
   const shown = useMemo(() => (width > 0 && font ? fitMiddle(text, width, (t) => textWidth(t, font)) : text), [text, width, font])

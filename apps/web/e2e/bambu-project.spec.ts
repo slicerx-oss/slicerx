@@ -85,7 +85,10 @@ test("an opened project's import report shows in Settings > Presets", async ({ p
   await withStoreHook(page)
   await open(page)
   await openProject(page, INHERITED)
-  await expect(page.getByText(/Settings > Presets lists the 1 setting it did not carry over/)).toBeVisible({ timeout: 30_000 })
+  // The note's first sentence shows; Details opens the rest in place.
+  const note = page.getByTestId('toast').filter({ hasText: /Settings > Presets lists the 1 setting it did not carry over/ })
+  await note.getByTestId('toast-details').click({ timeout: 30_000 })
+  await expect(note.getByText(/Settings > Presets lists the 1 setting it did not carry over/)).toBeVisible()
   await setState(page, { settingsOpen: true, settingsSection: 'presets' })
   const report = page.locator('.imp-report').filter({ hasText: 'Opened a1-mini.3mf' })
   await expect(report.locator('.imp-sum')).toHaveText(/Opened a1-mini\.3mf: 1 setting did not carry over/)
