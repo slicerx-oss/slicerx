@@ -245,3 +245,8 @@ test('Advanced rows from support base pattern to tree support branch angle play 
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['support_base_pattern', 'brbp'], ['support_base_pattern_spacing', 'brbs'], ['support_interface_pattern', 'brip'], ['support_bottom_interface_spacing', 'brbi'], ['support_expansion', 'brex'], ['support_ironing', 'btsi'], ['support_ironing_flow', 'btsf'], ['support_ironing_pattern', 'btsp'], ['support_ironing_spacing', 'btss'], ['support_object_first_layer_gap', 'btsg'], ['support_on_build_plate_only', 'btsb'], ['support_remove_small_overhang', 'btsr'], ['tree_support_branch_angle', 'btta']])
 })
+
+test('Advanced rows from tree support angle slow to wall transition filter deviation play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['tree_support_angle_slow', 'btal'], ['tree_support_branch_diameter', 'bttd'], ['tree_support_branch_diameter_angle', 'bttg'], ['tree_support_branch_distance', 'bttb'], ['tree_support_tip_diameter', 'bttt'], ['tree_support_top_rate', 'bttr'], ['tree_support_wall_count', 'bttw'], ['tree_support_brim_width', 'bttm'], ['wall_sequence', 'btwo'], ['is_infill_first', 'btif'], ['wall_direction', 'btwd'], ['wall_transition_length', 'bttl'], ['wall_transition_angle', 'bttn'], ['wall_transition_filter_deviation', 'bttf']])
+})
