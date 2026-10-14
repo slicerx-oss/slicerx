@@ -20,6 +20,8 @@ import type { Capture, LogKind } from './capture'
 import { BridgeError, click, elements, fill, pressKey, testids, waitFor } from './dom'
 import { loadFaces } from './fonts'
 import { moveSpool, spoolsView } from './spools'
+import { setSettingsView } from './settings'
+import { settingsView } from '../workspaces/prepare/settings-view'
 import { autoSliceMode } from '../state/auto-slice-mode'
 import { cadShown } from '../state/model-mode'
 import { layerView } from '../workspaces/preview/layer-keys'
@@ -113,6 +115,8 @@ export function appState(s: AppState): Record<string, unknown> {
     // Each slot with its label ("A1"), whether the printer has a spool in it and how many parts on this plate print with it.
     filament: resolveSlots(s).map((r) => ({ slot: r.index, label: r.label, used: r.used, inUse: inUse.get(r.index)?.parts ?? 0, loaded: Boolean(s.printerSlots[r.index - 1]?.material || s.printerSlots[r.index - 1]?.color), type: r.type, brand: r.brand, color: r.color, source: r.source })),
     slicing: sliceSummary(s),
+    // The print settings panel: the open tab, its sections and whether each is open, the pins, and the changes.
+    settings: settingsView(s),
     setupOpen: s.setup !== null,
     // The 3D view's standing notice (drawn without hardware acceleration); a phone shows it in the top bar, not as a toast.
     ...(s.viewNotice ? { viewNotice: s.viewNotice } : {}),
@@ -301,6 +305,8 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
     // The Filament section: the spools and what a click on one moves, then that move.
     spools: () => spoolsView(get()),
     move_to_spool: moveSpool,
+    // The print settings panel: open a tab and sections, pin settings.
+    settings_view: setSettingsView,
     fonts: async (a) => ({ faces: await loadFaces(doc.fonts, Array.isArray(a['families']) ? a['families'].filter((x): x is string => typeof x === 'string') : null) }),
   }
 
