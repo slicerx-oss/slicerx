@@ -1,13 +1,19 @@
 # SlicerX integrator kit: instructions for coding agents
 
-## Start here
+## Step 0: ask first, write nothing yet
 
-When the ask is vague ("make me a slicer in my app"), ask which of these they mean before you write anything:
+Your first reply to the developer is questions, not code. Do not create, edit or install anything, and do not write a config, until they have answered. Ask these together in one numbered message, then stop and wait:
 
-- A: their own branded slicer app, which their app opens with a model file. It is an edition (Path A). The license difference: the edition is AGPL as a whole, so they publish its source.
-- B: slicing built into the app they already have (Path B). It embeds the viewport and runs `slicerx-mcp` next to the app. The license difference: the viewport and embed packages are Apache-2.0 and can stay closed, but `slicerx-mcp` runs as its own process and its source is offered.
+1. What is your app and what is it built with (for example Electron or Tauri with React, a web app, or a command-line tool), and what should SlicerX do in it: the 3D viewport, slicing, printers, the settings panel or the whole slicer?
+2. Which platforms do you ship on: Windows, macOS, Linux?
+3. Your brand: the product name, the accent color and the logo file.
+4. Must everything run on the user's computer, or may some of it use the internet? Local is the default and needs no SlicerX account.
+5. Path A or Path B? Give both in one line each, then your recommendation in one line:
+   - A: your own branded slicer app, a separate program your app opens with a model file (an edition). It is AGPL as a whole, so you publish its source.
+   - B: SlicerX parts inside the window you already have: the viewport, the settings panel and slicing, not the whole slicer. The viewport and embed packages are Apache-2.0 and can stay closed; `slicerx-mcp` runs as its own process and its source is offered.
+   - Recommend A for a desktop app: it gets the whole slicer in its own window, which the app opens with a file. Recommend B only when SlicerX has to sit inside their own window and a preview and a slice button are enough.
 
-If they don't know, recommend A for a desktop app that wants the full slicer, and B when all they need is a preview and a slice button. Then follow that path's interview.
+If they are not sure about 5, repeat your recommendation and ask them to confirm it. When they answer, say in one line which path you are taking and why, then go to that path: "Path A" for an edition, "Path B" (steps 1 to 6) to embed, "Path C" to open files in an installed SlicerX. The path's own questions come after these; never ask again what step 0 already answered.
 
 You are a coding agent helping a developer build SlicerX into their app. This file is your starting point. Read it top to bottom before you write code, then follow the steps in order. It works the same for any agent; nothing here depends on one vendor.
 
@@ -64,7 +70,7 @@ This is what the files in this repository say, not legal advice. `NOTICE`, `docs
 
 ## Choose a path
 
-Ask which one fits, with a default: they want their own slicer app, so Path A. If they only add a viewport, slicing or settings to an app they already have, use Path B (steps 1 to 6). If they only want to open files in the SlicerX app the user installed, use Path C. Say which you chose and why in one line.
+Step 0 settles this before anything else. In short: they want their own slicer app, so Path A. If they only add a viewport, slicing or settings to an app they already have, use Path B (steps 1 to 6). If they only want to open files in the SlicerX app the user installed, use Path C. Say which you chose and why in one line.
 
 Settle this before anything else when the user asks for "the slicer inside my app": Path A builds a separate app that their app launches (with a file path as the argument, as in Path C), and it cannot be put inside another app's window. Path B is the only way to show SlicerX parts inside their own window, and it gives the viewport, the settings panel and slicing, not the whole slicer. Tell the user both in two lines and let them choose.
 
@@ -215,7 +221,7 @@ The server needs Node 24 or later. Check with `node --version`.
 
 ## Step 2: connect the SlicerX MCP server to yourself
 
-Do this right after step 1, before the interview, without asking: it changes nothing outside the project. Register the server as your own tool with your client's add command, for example `claude mcp add --scope project slicerx -- node node_modules/@slicerx/mcp/dist/cli.js --allow-dir /abs/models --printers off`, run through the shell. Prefer the add command over writing `.mcp.json` yourself: some clients treat that file as protected and stop to ask. Then confirm the client lists the `slicerx_*` tools; if it needs a restart to load them, say so and carry on with the command-line check below. With the server connected you can list real profile ids, try a slice and build a theme with a contrast check. It is separate from the server the app starts at run time (step 4).
+Do this right after step 1, before the rest of the interview, without asking: it changes nothing outside the project. Register the server as your own tool with your client's add command, for example `claude mcp add --scope project slicerx -- node node_modules/@slicerx/mcp/dist/cli.js --allow-dir /abs/models --printers off`, run through the shell. Prefer the add command over writing `.mcp.json` yourself: some clients treat that file as protected and stop to ask. Then confirm the client lists the `slicerx_*` tools; if it needs a restart to load them, say so and carry on with the command-line check below. With the server connected you can list real profile ids, try a slice and build a theme with a contrast check. It is separate from the server the app starts at run time (step 4).
 
 Register it at project scope (a config file in the project, such as `.mcp.json`, `.cursor/mcp.json` or `.vscode/mcp.json`), never in the user's global settings unless they ask. When your client has a command for it (`claude mcp add`, `codex mcp add`), run the command instead of writing the file: clients often protect their own config files from direct edits. Most clients load a new server only in the next session; register it now, run the command-line check below, and use the tools once they appear.
 
@@ -225,7 +231,7 @@ The server command is the same for every client. After step 1 it is installed in
 node node_modules/@slicerx/mcp/dist/cli.js --allow-dir /absolute/path/to/test/models --printers off
 ```
 
-This step runs before the interview, so install only `@slicerx/mcp` now: in the app folder, run `npm init -y` when there is no `package.json`, then `npm install @slicerx/mcp@0.1.0`, and make an empty `data/models` folder to allow. The interview then adds what the plan needs. Do not skip this because no plan exists yet.
+This step runs before the rest of the interview, so install only `@slicerx/mcp` now: in the app folder, run `npm init -y` when there is no `package.json`, then `npm install @slicerx/mcp@0.1.0`, and make an empty `data/models` folder to allow. The interview then adds what the plan needs. Do not skip this because no plan exists yet.
 
 Add `--sx-bin /absolute/path/to/sx` when the user has the engine. Use absolute paths in client configs. Outside a project, `npx -y @slicerx/mcp@0.1.0` runs the same server as `node node_modules/@slicerx/mcp/dist/cli.js`.
 
@@ -266,9 +272,9 @@ If the client cannot start the server, the usual causes are Node older than 24, 
 
 ## Step 3: interview the user
 
-Ask before you write code. Ask the questions together in one message, and offer a default for each so the user can answer in a few words. Assume the local path: the app slices its own local files with no SlicerX account, and an edition ships with the store, feed, cloud slicing and phone pairing off. Do not ask about accounts, tokens, cloud slicing, the vault or `.sxlock` unless the user brings up cloud, sharing or locked files. If they do, see "Optional: cloud and locked projects" at the end. Do not ask what the project already tells you: read `package.json` and the source tree first and only confirm what you found.
+Ask before you write code, and skip what step 0 already answered (the app, platforms, brand, local or online, and the path). Ask the questions together in one message, and offer a default for each so the user can answer in a few words. Assume the local path: the app slices its own local files with no SlicerX account, and an edition ships with the store, feed, cloud slicing and phone pairing off. Do not ask about accounts, tokens, cloud slicing, the vault or `.sxlock` unless the user brings up cloud, sharing or locked files. If they do, see "Optional: cloud and locked projects" at the end. Do not ask what the project already tells you: read `package.json` and the source tree first and only confirm what you found.
 
-0. Which path: your own edition of the SlicerX app under your name (Path A, the default for a slicer product), SlicerX parts inside an app you already have (Path B), or opening files in an installed SlicerX (Path C)? For Path A ask for the path of their SlicerX clone, the product name, an id, the reverse-DNS app identifier, the brand colors, the logo files (SVG or PNG), the font files for any brand font, the support link and the repository URL where the source will be published; the rest of this interview is for Path B.
+0. The path is settled in step 0. For Path A ask for the path of their SlicerX clone, the product name, an id, the reverse-DNS app identifier, the brand colors, the logo files (SVG or PNG), the font files for any brand font, the support link and the repository URL where the source will be published; the rest of this interview is for Path B.
 1. Which parts of SlicerX do you want? Offer this list:
    - viewport: the 3D view of a model or of the sliced toolpaths
    - slicing: turn a model or a 3MF plate into G-code or a `.gcode.3mf`, with time and filament per slot
