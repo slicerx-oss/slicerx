@@ -490,7 +490,8 @@ Ids that tests read for their text:
 | `model-tree-rename` | The inline name field of an object or a step being renamed |
 | `model-transform-summary` | Transform's position line while a tool is open and Transform is folded |
 | `model-tool-crumb` | A tool's header while a step is being edited: the object, then the step |
-| `model-tool-apply`, `model-tool-cancel`, `model-tool-repeat` | A tool's footer: Apply (Enter) runs it and closes, Cancel (Esc) closes, Apply and repeat (Hole, Fillet, Thread) runs it and stays open |
+| `model-tool-apply`, `model-tool-cancel`, `model-tool-more`, `model-tool-repeat` | A tool's footer: Apply (Enter) runs it and closes, Cancel (Esc) closes; on Hole, Fillet and Thread, More (the menu half of Apply) opens Apply and repeat, which runs it and stays open |
+| `model-tool-state` | A tool panel's state on the right of its header: "No hole yet", "1 edge" |
 | `model-inspector-multi` | The inspector with two or more objects selected |
 | `model-multi-size` | The size the selected objects take together |
 | `model-multi-object` | A selected object in the multi-selection; `data-object-id`; selects it alone |

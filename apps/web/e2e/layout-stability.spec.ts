@@ -6,6 +6,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { type Locator, type Page, type TestInfo } from '@playwright/test'
 import { expect, openSheet, plateReady, test } from './fixtures'
+import { command, facePick, freshBox, pick } from './cad-helpers'
 
 type Sx = { setState(p: unknown): void }
 type Moved = { control: string; what: string; dx: number; dy: number; dw: number; dh: number }
@@ -299,6 +300,60 @@ test.describe('controls never move when pressed', () => {
     await expect(page.getByTestId('phone-sketch-bar').getByRole('radiogroup', { name: 'Drawing tool' })).toBeVisible()
     moved.push(...(await probe(page, 'Sketch tools', page.getByTestId('phone-sketch-bar'))))
     report(info, moved)
+    expect(moved).toEqual([])
+  })
+
+  test('every tool panel in Model, with nothing past its edge', async ({ page, isMobile }, info) => {
+    test.skip(isMobile, 'The tool panels are sheets on a phone; covered at desktop width')
+    test.slow()
+    await open(page, { settingsMode: 'advanced' })
+    await page.locator('.sx-tab[data-mode="design"]').click()
+    await expect(page.getByTestId('model-tree')).toBeVisible()
+    // each tool with what it needs picked first, so its fields and choices are on screen
+    const tools: { title: string; top?: boolean }[] = [
+      { title: 'Fit a hole for a screw or insert', top: true },
+      { title: 'Push or pull a face', top: true },
+      { title: 'Fillet or chamfer edges' },
+      { title: 'Shell: hollow with faces left open', top: true },
+      { title: 'Cut a thread in a hole or on a rod' },
+      { title: 'Cut the selected object with a plane' },
+      { title: 'Array: linear, grid or circular copies' },
+      { title: 'Measure distance, angle and radius' },
+      { title: 'Shape on a face: rectangle, circle, slot or polygon', top: true },
+      { title: 'Sketch on the bed or a face, then extrude or revolve', top: true },
+    ]
+    const moved: Moved[] = []
+    const past: string[] = []
+    for (const t of tools) {
+      const id = await freshBox(page)
+      await sx(page, { selection: id, selectedIds: [id] })
+      await command(page, t.title)
+      const panel = page.locator('[data-section="cad-tool"], [data-section="cut-tool"]').first()
+      await expect(panel).toBeVisible()
+      if (t.top) await pick(page, await facePick(page, id, [0, 0, 1]))
+      await page.waitForTimeout(400)
+      // nothing in the panel runs past its content box: no segment, select or button cut at the right or the left
+      past.push(
+        ...(await panel.evaluate((el) => {
+          const cs = getComputedStyle(el)
+          const r = el.getBoundingClientRect()
+          const left = r.left + parseFloat(cs.paddingLeft) - 1
+          const right = r.right - parseFloat(cs.paddingRight) + 1
+          const name = el.querySelector('h3')?.textContent ?? ''
+          return [...el.querySelectorAll('button, select, input:not([type="file"]), .tp-label')]
+            .filter((c) => {
+              const b = c.getBoundingClientRect()
+              return b.width > 0 && (b.left < left || b.right > right)
+            })
+            .map((c) => `${name}: ${c.tagName.toLowerCase()} "${(c.textContent || c.getAttribute('aria-label') || '').trim().slice(0, 30)}"`)
+        })),
+      )
+      moved.push(...(await probe(page, `${t.title.split(':')[0]} panel`, panel)))
+      await sx(page, { objectTool: null })
+      await expect(panel).toHaveCount(0)
+    }
+    report(info, moved)
+    expect(past).toEqual([])
     expect(moved).toEqual([])
   })
 
