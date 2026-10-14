@@ -60,12 +60,30 @@ describe('the sheet record', () => {
   it('keeps a guess left as it is with Enter, and stops calling it assumed', () => {
     const edits: [string, number][] = []
     const { rerender } = render(<SheetRecord sheet={SHEET} answer={null} actionable onEdit={(_id, k, v) => edits.push([k, v])} onConfirm={async () => undefined} />)
-    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Lean angle, degrees' }), { key: 'Enter' })
+    const lean = screen.getByRole('textbox', { name: 'Lean angle, degrees' })
+    // empty, partial or not a number: refused, so the guess stays assumed
+    for (const typed of ['', ' ', '-', '.', '7o', 'abc']) {
+      fireEvent.change(lean, { target: { value: typed } })
+      fireEvent.keyDown(lean, { key: 'Enter' })
+      fireEvent.blur(lean)
+    }
+    expect(edits).toEqual([])
+    expect(row('lean').hasAttribute('data-guess')).toBe(true)
+    fireEvent.change(lean, { target: { value: '70' } })
+    fireEvent.keyDown(lean, { key: 'Enter' })
     expect(edits).toEqual([['lean', 70]])
     rerender(<SheetRecord sheet={SHEET} answer={null} actionable values={{ lean: 70 }} onEdit={(_id, k, v) => edits.push([k, v])} onConfirm={async () => undefined} />)
     expect(row('lean').hasAttribute('data-guess')).toBe(false)
     expect(row('lean').textContent).toContain('kept')
     expect(screen.getByTestId('mimir-sheet-status').textContent).toBe('Waiting for you to confirm')
+  })
+
+  it('cancels from a quiet Cancel beside the primary, and stops taking either button', async () => {
+    const canceled: string[] = []
+    render(<SheetRecord sheet={SHEET} answer={null} actionable onEdit={() => undefined} onConfirm={async () => undefined} onCancel={async (id) => void canceled.push(id)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(canceled).toEqual([SHEET.id])
+    expect((screen.getByTestId('mimir-sheet-confirm') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('shows the values used once confirmed, and which the person changed', () => {
