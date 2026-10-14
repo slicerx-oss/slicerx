@@ -16,6 +16,9 @@
    phone tab bar yet, the 34 px is the window frame around the view, as before. */
 :root[data-phone] .studio[data-model-mode="design"] > .vp,
 :root[data-phone] .studio[data-model-mode="design"]:has(> .pane.sheet) > .vp { height: calc(100dvh - var(--h-bar) - var(--phone-tabbar-h, 34px)); }
+/* Model fills the shell's main box, which never scrolls under it: clip, not hidden, as the frame does. A sheet folded by
+   hand moved its focused button down past the box, and the browser scrolled the box after it, the bars with it. */
+:root[data-phone] .sx-main:has(.studio[data-model-mode="design"]) { overflow: clip; }
 
 /* The bar: six fixed slots, an icon over its name; a pressed slot fills, nothing changes size. */
 .pbar-wrap { position: absolute; left: 8px; right: 8px; bottom: var(--pbar-gap); z-index: calc(var(--z-hud) + 1); pointer-events: none; }
