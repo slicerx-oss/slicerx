@@ -305,6 +305,18 @@ describe('toasts on screen', () => {
       expect(lines()).toEqual(['Check the nozzle.'])
     })
 
+    it('is the same for an error: it survives the timer and its dismiss button removes it', () => {
+      act(() => post('Saved'))
+      act(() => post('Could not reach the printer.', { tone: 'error' }))
+      act(() => void vi.advanceTimersByTime(20))
+      act(() => void vi.advanceTimersByTime(60_000))
+      expect(lines()).toEqual(['Could not reach the printer.'])
+      act(() => void vi.advanceTimersByTime(10 * 60_000))
+      expect(shown()).toBe(1)
+      act(() => dismiss())
+      expect(shown()).toBe(0)
+    })
+
     it('can be asked to stay, and a warning can be asked not to', () => {
       act(() => post('Saved to the vault', { persist: true }))
       act(() => post('Heads up.', { tone: 'warn', persist: false }))
@@ -340,9 +352,10 @@ describe('toasts and the view under them', () => {
 
 describe('which lines stay', () => {
   const l = (name: string, persist: boolean) => ({ name, persist })
-  it('stays for a warning and for a line that asks, and for no other tone', () => {
+  it('stays for a warning, an error and a line that asks, and for no other tone', () => {
     expect(staysUntilDismissed('warn')).toBe(true)
-    for (const tone of ['plain', 'ok', 'info', 'error'] as const) expect(staysUntilDismissed(tone)).toBe(false)
+    expect(staysUntilDismissed('error')).toBe(true)
+    for (const tone of ['plain', 'ok', 'info'] as const) expect(staysUntilDismissed(tone)).toBe(false)
     expect(staysUntilDismissed('info', true)).toBe(true)
     expect(staysUntilDismissed('warn', false)).toBe(false)
   })
