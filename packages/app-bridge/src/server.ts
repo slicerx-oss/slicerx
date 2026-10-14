@@ -89,7 +89,7 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     {
       title: 'Read the app state',
       description:
-        'What the app shows now: the active tab (prepare, preview, feed for the Vault, printers...), the plate (each object with its parts, filament slot, size, Vault listing and the last slice\'s warnings for it), the printer and nozzle, the filament slots, the slicing status with the last slice summary (time, grams, layers, warnings), which export commands are on (the mesh exports stay off for a Vault design), whether setup or the save prompt is open, the dialogs and toasts on screen, the current log marker, and where the time of the last file open went (lastOpen: milliseconds from the start of the open to the end of each stage, from reading the file to the slice after it), where the time of the last slice went (lastSlice: milliseconds from its start to the end of each stage, from the request to the first frame with its preview, and the time in the engine itself), how long the 3D view took to its first frame (view), and what the geometry engine has answered by operation (geometry, with loadError when a build of the engine did not load).',
+        'What the app shows now: the active tab (prepare, preview, feed for the Vault, printers...), the plate (each object with its parts, filament slot, size, Vault listing and the last slice\'s warnings for it), the printer and nozzle, the filament slots, the slicing status with the last slice summary (time, grams, layers, warnings), the print settings panel (settings: the open tab, its sections and whether each is open, change counts, pins, and the objects with their own values), which export commands are on (the mesh exports stay off for a Vault design), whether setup or the save prompt is open, the dialogs and toasts on screen, the current log marker, and where the time of the last file open went (lastOpen: milliseconds from the start of the open to the end of each stage, from reading the file to the slice after it), where the time of the last slice went (lastSlice: milliseconds from its start to the end of each stage, from the request to the first frame with its preview, and the time in the engine itself), how long the 3D view took to its first frame (view), and what the geometry engine has answered by operation (geometry, with loadError when a build of the engine did not load).',
       inputSchema: {},
       annotations: read,
     },
@@ -261,6 +261,23 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     forward('move_to_spool'),
   )
   server.registerTool(
+    'app_settings_view',
+    {
+      title: 'Arrange the print settings',
+      description:
+        'The print settings panel in Slice (Advanced and Expert modes), as a person arranges it: open a tab (quality, strength, speed, supports, adhesion, multicolor, effects, output; Color only with two or more filaments), open or close sections of that tab by id or name, and pin or unpin settings by key or name (pinned settings show above the tabs). Nothing here changes a setting\'s value. Returns the panel as app_state reads it under settings: the tab, each section with whether it is open and its changed keys, each tab\'s change count, the pins, and the objects that print a setting with their own value.',
+      inputSchema: {
+        tab: z.string().min(1).max(40).optional().describe('The tab to open, by id (quality) or name'),
+        open: z.array(z.string().min(1).max(60)).max(20).optional().describe('Sections of the tab to open, by id (walls) or name'),
+        close: z.array(z.string().min(1).max(60)).max(20).optional().describe('Sections of the tab to close'),
+        pin: z.array(z.string().min(1).max(80)).max(24).optional().describe('Settings to pin, by key (seam_position) or name'),
+        unpin: z.array(z.string().min(1).max(80)).max(24).optional().describe('Settings to unpin'),
+      },
+      annotations: { ...act, idempotentHint: true },
+    },
+    forward('settings_view'),
+  )
+  server.registerTool(
     'app_slice',
     {
       title: 'Slice and wait',
@@ -326,6 +343,7 @@ export const TOOL_NAMES = [
   'app_open_vault_design',
   'app_clear_plate',
   'app_move_to_spool',
+  'app_settings_view',
   'app_slice',
   'app_export_gcode',
   'app_auth_callback',

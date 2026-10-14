@@ -147,6 +147,10 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-filament-swap` | Swap colors, in that menu (two filaments or more); opens the swap in a popover |
 | `slice-filament-use-printer` | Use printer's filament, for a slot that differs from what the printer holds |
 | `slice-settings-tab-<group>` | A print settings tab in Advanced and Expert: `quality`, `strength`, `speed`, `supports`, `adhesion`, `multicolor` (Color, with two or more filaments), `effects` (Surface), `output` |
+| `slice-settings-tab-count` | A tab's count of changed settings, on the tab |
+| `slice-settings-section` | A section header in the open tab, with `data-section` (`tab/section`) and `aria-expanded`; it folds the section to a summary line |
+| `slice-settings-changed` | The changed chip over the tabs: lists only changed settings, from every tab |
+| `slice-settings-pins` | Pinned settings, above the tabs |
 | `slice-tower-atlas` | Under the Prime tower switch in the Color tab: where atlas puts the tower; `data-auto` is `true` while atlas places it, `false` once set by hand (with Place automatically) |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong`; the picked tile's tooltip gives about how long and how much from the last slice, or "Updating the estimate." |
 | `slice-estimate` | The Slice sidebar footer: the estimate line over the main action; `data-stale` while it updates |
@@ -206,6 +210,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-scope-plate`, `slice-scope-object` | The scope pill over Print settings: the plate, or the selection (or the part picked in the tree) |
 | `slice-scope-label` | The selection's name in the pill, with how many settings it has of its own |
 | `slice-setting-row` | A setting's row, with `data-key` and `data-source` (`plate`, `own` or `mixed` in the selection's scope) |
+| `slice-setting-pin` | A row's pin, with `data-key` and `aria-pressed` |
+| `slice-setting-object-chip` | On a plate row, an object that prints the setting with its own value, with `data-object`; a click selects it |
 | `slice-setting-reset` | A row's reset, with `data-key`: back to the Easy value, or in the selection's scope to the plate's |
 | `export-save-project`, `export-locked-project`, `export-gcode-3mf`, `export-all-plates` | Its items (each opens the system's save dialog) |
 
