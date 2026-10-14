@@ -320,7 +320,7 @@ export function LayerDock() {
   )
   const viewOpts = (
     <>
-      <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.' })}>
+      <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.', demo: 'heimdall' })}>
         <input type="checkbox" data-testid="pv-show-toolhead" aria-label="Show toolhead" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
         <span className="dock-pre">Show </span>
         toolhead

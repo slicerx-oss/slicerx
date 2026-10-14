@@ -98,6 +98,18 @@ for (const key of seen) {
     failed = true
   }
 }
+// Tooltip demo loops (packages/app/src/demos) load on a tip's first hover: no startup chunk may carry one's keyframes.
+const demoDir = join(import.meta.dirname, '..', '..', '..', 'packages', 'app', 'src', 'demos')
+const demoIds = readdirSync(demoDir).flatMap((f) => (f.endsWith('.ts') ? [...readFileSync(join(demoDir, f), 'utf8').matchAll(/^  id: '(\w+)'/gm)].map((m) => m[1]) : []))
+for (const key of seen) {
+  const text = readFileSync(join(dist, manifest[key].file), 'utf8')
+  for (const id of demoIds) {
+    if (text.includes(`@keyframes ${id}-`)) {
+      console.error(`bundle-size: the startup chunk ${manifest[key].file} carries the demo loop ${id}`)
+      failed = true
+    }
+  }
+}
 for (const f of files(dist).filter((f) => f.endsWith('.wasm'))) {
   const size = gz(f)
   const budget = isStepReader(f) ? STEP_WASM_KB : isFullGeom(f) ? FULL_GEOM_WASM_KB : isBrep(f) ? BREP_WASM_KB : WASM_KB

@@ -17,6 +17,8 @@ export interface TipEntry {
   action?: boolean
   /** Shown when the control is unavailable. */
   reason?: string
+  /** A demo loop's id (lib/demos.ts). */
+  demo?: string
 }
 
 const a = (title: string, body: string, key: KeyAction, reason?: string): TipEntry => ({ title, body, key, action: true, ...(reason ? { reason } : {}) })
@@ -44,7 +46,7 @@ export const TIPS = {
   'edit.redo': f('Redo', 'Bring back the change you took back.', 'Mod+Shift+Z', 'Nothing to redo.'),
   'view.fit': a('Fit', 'Frame the whole plate in view.', 'view.plate'),
   slice: a('Slice plate', 'Turn this plate into printable toolpaths.', 'slice'),
-  smartLayer: f('sleipnir', 'Change layer height with the shape for smoother surfaces.'),
+  smartLayer: { ...f('sleipnir', 'Change layer height with the shape for smoother surfaces.'), demo: 'sleipnir' },
   'cad.push': f('Push and pull', 'Drag a flat face in or out to cut or add material. Hold Shift for 1 mm steps.'),
   'sketch.enter': f('Sketch', 'Draw a 2D shape on the bed or a flat face.'),
   'cad.svgFace': f('SVG on a face', 'Place an SVG outline on a face or the bed, then join, cut or add it.'),
@@ -105,18 +107,21 @@ export function settingTipAttrs(key: string, avoid = '.field'): Record<string, s
   return { 'data-tip': `${SETTING_TIP}${key}`, 'data-tip-avoid': avoid }
 }
 
-/** Longer copy for one value of an enum setting, keyed `<setting key>.<value>`. Shown on the picker while that value is chosen. */
-export const OPTION_TIPS: Readonly<Record<string, { title: string; body: string }>> = {
+/** Longer copy for one value of an enum setting, keyed `<setting key>.<value>`. Shown on the picker while that value is chosen, with its demo loop (lib/demos.ts). */
+export const OPTION_TIPS: Readonly<Record<string, { title: string; body: string; demo?: string }>> = {
   'wall_generator.aegis': {
     title: 'aegis',
+    demo: 'aegis',
     body: 'aegis varies wall width to fit the part, so thin features print solid and walls stay even, with fewer width changes than Arachne on the shapes we measured.',
   },
   'prime_tower.atlas': {
     title: 'atlas',
+    demo: 'atlas',
     body: "atlas places and sizes the prime tower for you: clear of your objects and the printer's no-go zones, and reshaped when the plate leaves little room. Drag the tower in the view or type a spot to set it by hand; Place automatically hands it back.",
   },
   'smart_layer.sleipnir': {
     title: 'sleipnir',
+    demo: 'sleipnir',
     body: 'sleipnir changes the layer height as the part goes up: thinner layers on curves and slopes where steps would show, and your layer height everywhere else. On multi-color plates it keeps layers fixed where colors change, so it adds no filament changes.',
   },
 }

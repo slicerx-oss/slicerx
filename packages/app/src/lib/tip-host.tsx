@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The app's one tooltip: resolves an anchor's data attributes to copy from the registry (or the
 // one-off text on the element), with the key chip taken from the active look's keymap.
-import { keymapFor, TooltipHost, type KeyAction, type TipContent, type TipRow } from '@slicerx/ui'
+import { keymapFor, TooltipHost, type KeyAction, type TipContent, type TipDemo, type TipRow } from '@slicerx/ui'
 import { useCallback, useEffect } from 'react'
 import { useLookChoice } from '../first-run/look'
 import { useApp } from '../state/store'
@@ -18,29 +18,41 @@ export function chordChips(chord: string | null | undefined): string[] {
 type SettingTip = typeof import('./setting-tip').settingTip
 let settingTip: SettingTip | null = null
 let registry: Readonly<Record<string, TipEntry>> | null = null
+let demos: typeof import('./demos') | null = null
 let loading: Promise<void> | null = null
 
 /**
- * The tip text (the registry, and setting tips with their settings data and figures) loads right after startup
- * instead of with it. The app starts it on mount, well before a first hover can open a tip.
+ * The tip text (the registry, and setting tips with their settings data and figures) and the demo loop list load
+ * right after startup instead of with it; a loop's files load only when a tip first plays it. The app starts it on mount, well before a first hover can open a tip.
  */
 export function loadTips(): Promise<void> {
   loading ??= Promise.all([
     import('./tips').then((m) => (registry = m.TIPS)),
     import('./setting-tip').then((m) => (settingTip = m.settingTip)),
+    import('./demos').then((m) => (demos = m)),
   ]).then(() => undefined)
   return loading
 }
 
 /** Whether the tip text has arrived. */
 export function tipsLoaded(): boolean {
-  return registry !== null && settingTip !== null
+  return registry !== null && settingTip !== null && demos !== null
+}
+
+/** A demo loop by id, once the list has loaded. */
+function demoFor(id: string | null | undefined): TipDemo | undefined {
+  return id ? demos?.DEMOS[id] : undefined
 }
 
 export function resolveTip(el: HTMLElement, map: Readonly<Record<string, string | null>>, developer = false): TipContent | null {
   const id = el.getAttribute('data-tip')
   if (id?.startsWith(SETTING_TIP)) {
-    if (settingTip) return settingTip(id.slice(SETTING_TIP.length), developer)
+    if (settingTip) {
+      const key = id.slice(SETTING_TIP.length)
+      const tip = settingTip(key, developer)
+      const demo = demoFor(el.getAttribute('data-tip-demo') ?? demos?.SETTING_DEMOS[key])
+      return tip && demo ? { ...tip, demo } : tip
+    }
     void loadTips()
     return null
   }
@@ -50,11 +62,12 @@ export function resolveTip(el: HTMLElement, map: Readonly<Record<string, string 
   if (!title) return null
   const fixed = el.getAttribute('data-tip-key')
   const chord = entry?.key ? (entry.action ? map[entry.key as KeyAction] : entry.key) : fixed
-  const body = entry?.body ?? el.getAttribute('data-tip-body') ?? undefined
+  const demo = demoFor(entry?.demo ?? el.getAttribute('data-tip-demo'))
+  const body = entry?.body ?? el.getAttribute('data-tip-body') ?? demo?.body
   const reason = entry?.reason ?? el.getAttribute('data-tip-reason') ?? undefined
   const keys = chordChips(chord)
   const rows = tipRows(el.getAttribute('data-tip-rows'))
-  return { title, ...(body ? { body } : {}), ...(keys.length ? { keys } : {}), ...(reason ? { reason } : {}), ...(rows ? { rows } : {}) }
+  return { title, ...(body ? { body } : {}), ...(keys.length ? { keys } : {}), ...(reason ? { reason } : {}), ...(rows ? { rows } : {}), ...(demo ? { demo } : {}) }
 }
 
 /** A tip's rows from its attribute: three strings each, or none when the attribute is missing or malformed. */

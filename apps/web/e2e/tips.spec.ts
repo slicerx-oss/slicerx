@@ -75,3 +75,38 @@ test('a tip in the settings sidebar opens beside it, level with its control, and
   })
   await beside(aegis, 'aegis varies wall width')
 })
+
+test('a tip with a loop holds its size while the loop loads, waits on its finished frame, then plays, in either theme', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await page.addInitScript(() => {
+    localStorage.setItem('slicerx.debug', '1')
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', printerId: 'bay-1', pilot: { mode: 'off' } }))
+  })
+  await page.goto('./')
+  await plateReady(page)
+  const tip = page.locator('#sx-tip')
+  const stage = tip.locator('.sx-stage')
+  await page.locator('#easy-layer').hover()
+  await expect(tip).toContainText('sleipnir')
+  await expect(tip).toHaveAttribute('data-ready', 'true')
+  // The box is there at once, at the stage's size, so the tip is the same height before and after the loop draws.
+  await expect(stage).toBeVisible()
+  const first = (await tip.boundingBox())!
+  await expect(stage.locator('svg.sxs')).toBeVisible()
+  // It plays from the media stage on.
+  await expect(stage).toHaveAttribute('data-play', 'true')
+  const state = () => stage.locator('.s-a').first().evaluate((el) => getComputedStyle(el).animationPlayState)
+  await expect.poll(state).toBe('running')
+  const later = (await tip.boundingBox())!
+  expect(Math.round(later.height)).toBe(Math.round(first.height))
+  expect(Math.round(later.width)).toBe(Math.round(first.width))
+  // Dark and light follow the theme: the stage's own tokens change with the root's color scheme.
+  const ink = () => stage.evaluate((el) => getComputedStyle(el).getPropertyValue('--stage-t1').trim())
+  const dark = await ink()
+  await page.evaluate(() => document.documentElement.style.setProperty('color-scheme', 'light'))
+  await expect.poll(ink).not.toBe(dark)
+  await page.evaluate(() => document.documentElement.style.removeProperty('color-scheme'))
+  await expect.poll(ink).toBe(dark)
+})

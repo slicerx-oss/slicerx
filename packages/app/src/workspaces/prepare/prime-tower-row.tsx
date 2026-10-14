@@ -18,7 +18,7 @@ export function PrimeTowerRow({ enabled, onEnable }: { enabled: boolean; onEnabl
     <li className="tower-row">
       <SwitchRow id="set-enable_prime_tower" icon="atlas" label="Prime tower" detail="Wipes each new filament on a tower before it prints on the model." checked={enabled} onChange={onEnable} />
       {enabled ? (
-        <p className="tower-place sx-small sx-muted" data-testid="slice-tower-atlas" data-auto={tower.auto ? 'true' : 'false'} {...tipAttrs({ title: ATLAS_TIP.title, body: ATLAS_TIP.body })}>
+        <p className="tower-place sx-small sx-muted" data-testid="slice-tower-atlas" data-auto={tower.auto ? 'true' : 'false'} {...tipAttrs(ATLAS_TIP)}>
           <Icon name="atlas" size={14} />
           <span>
             {tower.auto ? (
@@ -47,7 +47,7 @@ export function PrimeTowerRow({ enabled, onEnable }: { enabled: boolean; onEnabl
         </div>
       ) : null}
       {enabled && note ? (
-        <p className="sx-small sx-muted seg-mark mark-atlas" role="status" {...tipAttrs({ title: ATLAS_TIP.title, body: ATLAS_TIP.body })}>
+        <p className="sx-small sx-muted seg-mark mark-atlas" role="status" {...tipAttrs(ATLAS_TIP)}>
           <Icon name="atlas" size={14} />
           {note}
         </p>
