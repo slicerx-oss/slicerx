@@ -233,6 +233,9 @@ describe('demo loops', () => {
     expect(SETTING_DEMOS['outer_wall_flow_ratio']).toBe('adv-flow-ratio-outer')
     expect(SETTING_DEMOS['fuzzy_skin_point_distance']).toBe('adv-fuzzy-skin-distance')
     expect(SETTING_DEMOS['travel_jerk']).toBe('adv-jerk')
+    expect(SETTING_DEMOS['bridge_speed']).toBe('adv-bridge-sag')
+    expect(SETTING_DEMOS['internal_bridge_speed']).toBe('adv-internal-bridge')
+    expect(SETTING_DEMOS['dont_slow_down_outer_wall']).toBe('adv-outer-wall-speed')
     for (const k of ['tool.move', 'tool.rotate', 'tool.scale', 'tool.placeOnFace', 'tool.brim', 'plate.drop', 'history.suppress', 'history.view', 'history.earlier', 'history.later', 'cad.keepDimension', 'cad.edgeLoop', 'sketch.corners'] as const) {
       const t = TIPS[k] as { demo?: string }
       expect(t.demo && DEMOS[t.demo], k).toBeDefined()
