@@ -423,16 +423,66 @@ test.describe('controls never move when pressed', () => {
     await sx(page, { settingsOpen: true })
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await expect(dialog).toBeVisible()
-    const sections = dialog.locator('.settings-nav button')
     const moved: Moved[] = []
+    // A phone lists the sections and opens each on its own page, with Back to the list.
+    const listed = (await dialog.locator('.settings-list').count()) > 0
+    const sections = dialog.locator(listed ? '.settings-list button[data-testid^="settings-nav-"]' : '.settings-nav button')
     const n = await sections.count()
+    expect(n).toBeGreaterThan(1)
     for (let i = 0; i < n; i++) {
+      const name = ((await sections.nth(i).textContent()) ?? '').trim()
       await sections.nth(i).click()
       await page.waitForTimeout(300)
-      const name = ((await sections.nth(i).textContent()) ?? '').trim()
       moved.push(...(await probe(page, `Settings ${name}`, dialog.locator('.settings-body'))))
+      if (listed) {
+        await dialog.getByTestId('settings-back').click()
+        await expect(dialog.locator('.settings-list')).toBeVisible()
+      }
     }
-    moved.push(...(await probe(page, 'Settings sections', dialog.locator('.settings-nav'))))
+    if (!listed) moved.push(...(await probe(page, 'Settings sections', dialog.locator('.settings-nav'))))
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
+  test('the phone tab bar and the mimir page', async ({ page, isMobile }, info) => {
+    test.skip(!isMobile, 'The tab bar is the phone layout; desktop keeps its tabs in the top bar')
+    await open(page, { pilot: { mode: 'unset' } })
+    const tabs = page.getByTestId('phone-tabs')
+    await expect(tabs).toBeVisible()
+    // Nothing in either bar moves or resizes as the tabs are pressed: the top bar's name and buttons, and every tab.
+    const boxes = () => page.locator('.sx-appbar .sx-projname, .sx-appbar .sx-btn, .phone-tab').evaluateAll((els) => els.map((e) => {
+      const r = e.getBoundingClientRect()
+      return { x: r.x, y: r.y, w: r.width, h: r.height }
+    }))
+    const moved: Moved[] = []
+    const compare = (control: string, a: Awaited<ReturnType<typeof boxes>>, z: Awaited<ReturnType<typeof boxes>>) => {
+      expect(z.length).toBe(a.length)
+      z.forEach((n, i) => {
+        const o = a[i]!
+        const d = { dx: n.x - o.x, dy: n.y - o.y, dw: n.w - o.w, dh: n.h - o.h }
+        if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control, what: `bar item ${i}`, ...d })
+      })
+    }
+    // every tab is a full touch target
+    for (const b of await page.locator('.phone-tab').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(b).toBeGreaterThanOrEqual(44)
+    let before = await boxes()
+    await page.getByTestId('tab-mimir').click()
+    await expect(page.locator('.mimir-dock')).toBeVisible()
+    await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
+    await page.waitForTimeout(350)
+    compare('phone-tab-mimir', before, await boxes())
+    // the page sits between the bars and covers the screen's width
+    const dock = (await page.locator('.mimir-dock').boundingBox())!
+    const bar = (await tabs.boundingBox())!
+    expect(dock.x).toBe(0)
+    expect(dock.width).toBe(page.viewportSize()!.width)
+    expect(dock.y + dock.height).toBeLessThanOrEqual(bar.y + 0.5)
+    moved.push(...(await probe(page, 'phone mimir', page.locator('.mimir-dock'))))
+    before = await boxes()
+    await page.locator('.phone-tab').first().click()
+    await expect(page.locator('.mimir-dock')).toHaveCount(0)
+    await page.waitForTimeout(350)
+    compare('first phone tab', before, await boxes())
     report(info, moved)
     expect(moved).toEqual([])
   })
