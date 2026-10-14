@@ -490,6 +490,10 @@ jobs:
       SX_BREP_REQUIRE: '1'
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: node --test packages/brep/tests/solids-wasm.mjs
       - run: rustup toolchain install
       - uses: actions/cache@v4
         with:
