@@ -40,24 +40,32 @@ describe('the theme cards', () => {
     expect(get().themeIds).toEqual({ dark: 'nord', light: 'nord-light' })
     // the files of the picked theme are kept, so the next start needs no theme bundle
     expect(get().themeCache.map((t) => t.id)).toEqual(['nord', 'nord-light'])
-    expect(screen.queryByRole('radiogroup', { name: 'Dark flavor' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Nord flavors' })).toBeNull()
     fireEvent.click(screen.getByTestId('theme-catppuccin'))
     expect(get().themeIds).toEqual({ dark: 'catppuccin-mocha', light: 'catppuccin-latte' })
     expect(get().themeCache.map((t) => t.id)).toEqual(['catppuccin-mocha', 'catppuccin-latte'])
-    const flavor = screen.getByRole('radiogroup', { name: 'Dark flavor' })
-    fireEvent.click(flavor.querySelector('[role=radio]:nth-child(3)') as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Catppuccin flavors' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Frappe' }))
     expect(get().themeIds.dark).toBe('catppuccin-frappe')
     expect(screen.getByRole('button', { name: 'Catppuccin flavors' }).textContent).toContain('Frappe')
   })
 
-  it('the flavor pill names the flavor count and picks a flavor from its menu', () => {
+  it('the flavor pill names the flavor showing and picks a dark flavor from its menu', () => {
     mount(createElement(ThemePicker))
     const pill = screen.getByRole('button', { name: 'Catppuccin flavors' })
-    expect(pill.textContent).toBe('4 flavors')
+    expect(pill.textContent).toBe('Mocha')
     fireEvent.click(pill)
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Macchiato' }))
     expect(get().themeIds).toEqual({ dark: 'catppuccin-macchiato', light: 'catppuccin-latte' })
     expect(screen.getByRole('button', { name: 'Catppuccin flavors' }).textContent).toBe('Macchiato')
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'Latte' })).toBeNull()
+  })
+
+  it('in Light the pill names Latte and has nothing to pick', () => {
+    set({ scheme: 'light', themeFollowsSystem: false })
+    mount(createElement(ThemePicker))
+    expect(screen.queryByRole('button', { name: 'Catppuccin flavors' })).toBeNull()
+    expect(screen.getByLabelText('Catppuccin flavor').textContent).toBe('Latte')
   })
 
   it('the mode switch sets light, dark or follow system', () => {
