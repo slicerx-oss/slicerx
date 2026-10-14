@@ -22,10 +22,10 @@ const tag = (x, y, text) => {
 }
 /** A thin leader in the accent from a point on the drawing (mm) to a pill's edge (px). */
 const lead = (p, x, y) => `<path class="s-n"${st(A1, 1.2)} d="M${iso(...p).join(' ')}L${r1(x)} ${r1(y)}"/>`
-/** Rows of printed lines seen end on in a section on the plane y = D, each line a stadium: a round-capped stroke
+/** Rows of printed lines seen end on in a section on the plane y = D (or the plane `P` maps (u, z) onto), each line a stadium: a round-capped stroke
  *  dashed once per line. A row is [x, z, n, pitch, width, height] in mm, its first line's left edge at x; `on` lights
  *  the rows in the accent, else they take the part's gray. Each row is its own subpath, so its dashes start on it. */
-function beads(rows, D, on) {
+function beads(rows, D, on, P = (u, z) => iso(u, D, z)) {
   const [ol, fill] = on === 'paint' ? [T3, CY] : on ? ['--stage-aol', A1] : [T3, T2]
   const by = {}
   for (const r of rows) (by[r.slice(3).join()] ??= []).push(r)
@@ -34,7 +34,7 @@ function beads(rows, D, on) {
     const [, , , pitch, w, h] = list[0]
     // the stroke's width across the slanted row, and the dash that with its caps spans one line
     const sw = h * S * C30 - 1.4, dash = w * S - sw, cap = sw / 2 / S
-    const d = list.map(([x, z, n]) => `M${iso(x + cap, D, z + h / 2).join(' ')}L${iso(x + (n - 1) * pitch + w - cap, D, z + h / 2).join(' ')}`).join('')
+    const d = list.map(([x, z, n]) => `M${P(x + cap, z + h / 2).join(' ')}L${P(x + (n - 1) * pitch + w - cap, z + h / 2).join(' ')}`).join('')
     const da = n1(list) ? '' : `;stroke-dasharray:${num(dash)} ${num(pitch * S - dash)}`
     // drawn to scale, so the lines keep their size wherever the stage is drawn
     out += `<path class="s-n" style="vector-effect:none;stroke:var(${ol});stroke-width:${num(sw + 1.4)}${da}" d="${d}"/><path class="s-n" style="vector-effect:none;stroke:var(${fill});stroke-width:${num(sw)}${da}" d="${d}"/>`
@@ -355,3 +355,6 @@ export const STILLS = {
   'still-paint-depth-bottom': ['Painted bottom depth', 'A painted bottom colors this many layers up from the bottom surface, here 3.', (about) => paintDepth('upcb', 'bottom', about)],
 }
 export const LOOPS = Object.fromEntries(Object.entries(STILLS).map(([f, [name, tip, make]]) => [f, () => make(`${name}: ${tip[0].toLowerCase()}${tip.slice(1)}`)]))
+
+// shared with the later batches of stills
+export { C30, CY, still, face, tag, lead, beads, cutPart, xBracket, zBracket, dim, strokes, printed, lines, hatch, at, square, rowAt }
