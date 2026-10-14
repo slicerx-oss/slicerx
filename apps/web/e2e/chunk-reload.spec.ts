@@ -26,7 +26,8 @@ test('a workspace whose code failed to download comes back after one reload', as
   await page.goto('./')
   // The plate loads in the workspace, which only renders once its code arrived.
   await page.locator('html[data-sx-ready="plate"], html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: COLD_START_MS })
-  await expect(page.getByText(/Plate 1\s*Layered X/).first()).toBeVisible()
+  // The plate chip names the plate only, so the workspace is up once it reads Plate 1.
+  await expect(page.getByTestId('plate-chip')).toContainText('Plate 1')
   expect(dropped).toBe(1)
   expect(loads).toBe(2)
   await expect(page.getByText('did not load')).toHaveCount(0)
@@ -74,6 +75,7 @@ test('a dialog whose code did not download leaves the workspace up and says so i
   await expect(toast).toBeVisible()
   await expect(toast.getByRole('button', { name: 'Reload' })).toBeVisible()
   await expect(page.getByRole('heading', { name: /did not load/ })).toHaveCount(0)
-  await expect(page.getByText(/Plate 1\s*Layered X/).first()).toBeVisible()
+  // The plate chip names the plate only, so the workspace is up once it reads Plate 1.
+  await expect(page.getByTestId('plate-chip')).toContainText('Plate 1')
   expect(loads).toBe(2)
 })
