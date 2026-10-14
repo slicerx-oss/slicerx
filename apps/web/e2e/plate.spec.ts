@@ -862,6 +862,11 @@ test('feature tooltips show with their key, hand over quickly, explain a disable
     const raw = JSON.parse(localStorage.getItem('slicerx.prefs.v1') ?? '{}') as Record<string, unknown>
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ ...raw, tooltips: { enabled: false, media: true } }))
   })
+  // The tip text arrives late, as on a busy machine: with tips off it still loads after startup, so ? finds it.
+  await page.route(/\/tips-[^/]+\.js$/, async (route) => {
+    await new Promise((done) => setTimeout(done, 600))
+    await route.continue()
+  })
   await page.reload()
   await expect(move).toBeVisible()
   await move.hover()
