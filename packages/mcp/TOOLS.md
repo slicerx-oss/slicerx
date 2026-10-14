@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-176 tools.
+177 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -79,6 +79,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_home_assistant_call_service` |  |  | start | Call a Home Assistant service, such as turning a printer power plug on or off. |
 | `slicerx_home_assistant_list_entities` |  |  | read | List switches, sensors and lights, such as printer power plugs and enclosure fans. |
 | `slicerx_inspect_project` | Inspect a 3MF project | core | read, ungated | Read a 3MF or .sx3mf project without slicing it: its plates (with names and object counts), the printer, process and filament presets it was saved with, its filament slots (type and color), its support settings (`support`: enable_support, support_* and tree_support_* as the file sets them) and whether it carries print settings. |
+| `slicerx_integrations_list` | List integrations | printers | read, ungated | List the integrations mimir can use, as Settings > mimir shows them: each one with its state (connected or off) and the printers (bays) assigned to it. |
 | `slicerx_kb_filament` |  |  | read | Look up a filament in the knowledge base: temperatures, cooling, plates, drying, nozzle needs, flow, retraction, pressure advance, failure modes, with sources. |
 | `slicerx_kb_intent` |  |  | read | Turn a job request in plain words ("12 strong PETG brackets by Friday") into structured goals (count, part, material, strength, speed, detail, deadline, printers) and setting targets by Orca key with reasons. |
 | `slicerx_kb_printer` |  |  | read | Look up a printer model in the knowledge base: build volume, hotend, bed, enclosure, motion limits, supported materials, profile baseline and notes, with sources. |
