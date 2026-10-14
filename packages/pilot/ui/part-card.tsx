@@ -1,27 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { createContext, useContext } from 'react'
-import { Button, Icon } from '@slicerx/ui'
-import { partLine, partSize, partTitle, type CreatedPart, type FollowUp } from './part'
+import { useId, useState } from 'react'
+import { Button, Icon, VectorField } from '@slicerx/ui'
+import { followUps, partLine, partTitle, sizeRequest, type CreatedPart, type FollowUp } from './part'
 
-/** How the part card and its chips are laid out; one per look the owner picks from. */
-export interface PartLook {
-  icon: 'left' | 'top'
-  actions: 'edit' | 'edit-select'
-  lines: 1 | 2
-  /** Chips under the reply's question, or in the prompt's suggestion row in place of the starters. */
-  chips: 'reply' | 'prompt'
+/** What the card and chips do. Each names the part it was made for, never the current selection. */
+export interface PartHandlers {
+  /** Opens the part for editing: its modeling step, or its own size and placement panel. Without it there is no Edit. */
+  onEdit?: ((id: string) => void) | undefined
+  /** Selects the part on the plate, which highlights it. */
+  onSelect?: ((id: string) => void) | undefined
+  /** Sends a chip's request for that part. */
+  onRun?: ((request: string, id: string) => void) | undefined
+  /** False once the part is gone from the project; the card and chips then say so instead of acting. */
+  has?: ((id: string) => boolean) | undefined
 }
 
-export const DEFAULT_PART_LOOK: PartLook = { icon: 'left', actions: 'edit', lines: 2, chips: 'reply' }
-
-export const PartLookContext = createContext<PartLook>(DEFAULT_PART_LOOK)
-
-/** What the card and chips do: open the part to edit, select it on the plate, send a chip's request. */
-export interface PartHandlers {
-  onEdit?: ((id: string) => void) | undefined
-  onSelect?: ((id: string) => void) | undefined
-  onRun?: ((request: string) => void) | undefined
+/** "The 20 mm cube is no longer in the project, so this step has nothing to change." */
+export function goneNote(p: CreatedPart): string {
+  return `The ${p.name} is no longer in the project, so this step has nothing to change.`
 }
 
 /** A small isometric drawing of the part's bounding shape, its three faces shaded. */
@@ -62,41 +59,111 @@ export function PartGlyph({ part, size }: { part: CreatedPart; size: number }) {
   )
 }
 
-/** The part a reply made: what it is, its size, and Edit (and Select) to take it from there. */
+/** The part a reply made: what it is and its size. The body selects it; Edit opens it for editing. */
 export function PartCard({ part, handlers }: { part: CreatedPart; handlers: PartHandlers }) {
-  const look = useContext(PartLookContext)
+  const [gone, setGone] = useState(false)
   const title = partTitle(part)
+  const act = (fn: ((id: string) => void) | undefined) => () => {
+    if (handlers.has && !handlers.has(part.id)) return setGone(true)
+    setGone(false)
+    fn?.(part.id)
+  }
   return (
-    <div className="part-card" role="group" aria-label={title} data-testid="mimir-part" data-part={part.id} data-icon={look.icon} data-lines={look.lines}>
-      <PartGlyph part={part} size={look.icon === 'top' ? 56 : 40} />
-      <div className="part-text">
-        <span className="part-title">{title}</span>
-        {look.lines === 2 ? <span className="part-sub">{partLine(part)}</span> : <span className="part-sub">{partSize(part)}</span>}
-      </div>
-      <div className="part-acts">
-        {look.actions === 'edit-select' ? (
-          <Button size="sm" variant="ghost" onClick={() => handlers.onSelect?.(part.id)}>
-            Select
+    <div className="part-card" role="group" aria-label={title} data-testid="mimir-part" data-part={part.id}>
+      <div className="part-row">
+        <button type="button" className="part-main" aria-label={`Select the ${part.name}`} onClick={act(handlers.onSelect)}>
+          <PartGlyph part={part} size={40} />
+          <span className="part-text">
+            <span className="part-title">{title}</span>
+            <span className="part-sub">{partLine(part)}</span>
+          </span>
+        </button>
+        {handlers.onEdit ? (
+          <Button size="sm" onClick={act(handlers.onEdit)} aria-label={`Edit the ${part.name}`}>
+            Edit
           </Button>
         ) : null}
-        <Button size="sm" onClick={() => handlers.onEdit?.(part.id)}>
-          Edit
-        </Button>
       </div>
+      {gone ? (
+        <p className="part-gone" role="status">
+          {goneNote(part)}
+        </p>
+      ) : null}
     </div>
   )
 }
 
-/** The next steps for the part, each one sending its request as if typed. */
-export function FollowUpChips({ items, onRun, place }: { items: readonly FollowUp[]; onRun?: ((request: string) => void) | undefined; place: 'reply' | 'prompt' }) {
+/**
+ * The next steps for the part a reply made, bound to that part: an immediate step sends its request, the size step
+ * asks for the new size first. When the part is gone they say so instead of acting.
+ */
+export function FollowUpChips({ part, handlers }: { part: CreatedPart; handlers: PartHandlers }) {
+  const [gone, setGone] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const [size, setSize] = useState<[number, number, number]>(part.sizeMm)
+  const id = useId()
+  const live = (): boolean => {
+    const ok = !handlers.has || handlers.has(part.id)
+    setGone(!ok)
+    if (!ok) setAsking(false)
+    return ok
+  }
+  const pick = (f: FollowUp) => {
+    if (!live()) return
+    if (f.asks === 'size') {
+      setSize(part.sizeMm)
+      return setAsking((a) => !a)
+    }
+    if (f.request) handlers.onRun?.(f.request, part.id)
+  }
+  const changed = size.some((v, i) => Math.abs(v - part.sizeMm[i]!) > 1e-6)
   return (
-    <div className={place === 'reply' ? 'follow follow-reply' : 'chips'} role="group" aria-label="Next steps">
-      {items.map((f) => (
-        <button key={f.id} type="button" className="sugg follow-chip" data-testid="mimir-follow" data-request={f.request} disabled={!onRun} onClick={() => onRun?.(f.request)}>
-          {f.adds ? <Icon name="plus" /> : null}
-          {f.label}
-        </button>
-      ))}
+    <div className="follow" data-part={part.id}>
+      <div className="follow-reply" role="group" aria-label="Next steps">
+        {followUps(part).map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            className="sugg follow-chip"
+            data-testid="mimir-follow"
+            {...(f.request ? { 'data-request': f.request } : {})}
+            {...(f.asks ? { 'aria-expanded': asking, 'aria-controls': `${id}-size` } : {})}
+            disabled={!handlers.onRun}
+            onClick={() => pick(f)}
+          >
+            {f.adds ? <Icon name="plus" /> : null}
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {asking ? (
+        // not a form: Enter in a field sets that axis, and only Resize sends
+        <div id={`${id}-size`} className="follow-size" role="group" aria-label="Change size">
+          <VectorField id={`${id}-xyz`} label="Size" unit="mm" ariaLabel={`New size of the ${part.name}`} values={size} min={0.1} onCommit={(i, v) => setSize((s) => s.map((x, k) => (k === i ? v : x)) as [number, number, number])} />
+          <span className="follow-size-acts">
+            <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                if (!live()) return
+                setAsking(false)
+                // the same size changes nothing, so nothing is sent
+                if (changed) handlers.onRun?.(sizeRequest(part, size), part.id)
+              }}
+            >
+              Resize
+            </Button>
+          </span>
+        </div>
+      ) : null}
+      {gone ? (
+        <p className="part-gone" role="status">
+          {goneNote(part)}
+        </p>
+      ) : null}
     </div>
   )
 }

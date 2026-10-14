@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useContext, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { Button, Icon, Seg } from '@slicerx/ui'
 import type { Transcript } from './reduce'
-import { followUps, lastPart } from './part'
-import { FollowUpChips, PartLookContext, type PartHandlers } from './part-card'
+import type { PartHandlers } from './part-card'
 import { TranscriptView, type ApprovalHandlers } from './transcript-view'
 import type { ReplaySpeed } from './use-pilot-run'
 import { ASSISTANT_NAME } from '../src/name'
@@ -37,9 +36,9 @@ export interface TerminalProps {
   /** Shown when the session has no turns yet. */
   emptyNote: string
   announcement: string
-  /** The prompt's placeholder; the default names the slicer jobs. */
+  /** The prompt's placeholder; the default is "Ask mimir". */
   placeholder?: string
-  /** Cards for the parts a reply makes, with next steps for the newest; without it a created part is a tool row. */
+  /** Cards for the parts replies make, each with its next steps; a step selects its part, then sends. Without it a created part is a tool row. */
   parts?: PartHandlers
 }
 
@@ -74,9 +73,7 @@ export function Terminal(p: TerminalProps) {
   }
 
   const active = p.running || p.replaying
-  const look = useContext(PartLookContext)
-  // the starters only while the thread is empty; after a reply that made a part, its next steps may take their place
-  const part = p.parts && look.chips === 'prompt' ? lastPart(p.transcript) : null
+  // with part cards on, the starters show only while the thread is empty
   const empty = p.transcript.turns.length === 0
   return (
     <section className="term" aria-label={`${ASSISTANT_NAME} terminal`}>
@@ -130,7 +127,7 @@ export function Terminal(p: TerminalProps) {
       >
         <div className="term-out">
           {p.transcript.turns.length === 0 ? <div className="meta-ln">{p.emptyNote}</div> : null}
-          <TranscriptView transcript={p.transcript} showThinking={p.showThinking} approvals={p.approvals} {...(p.parts ? { parts: { ...p.parts, onRun: (m: string) => { stick.current = true; p.onRun(m) } } } : {})} />
+          <TranscriptView transcript={p.transcript} showThinking={p.showThinking} approvals={p.approvals} {...(p.parts ? { parts: { ...p.parts, onRun: (m: string, id: string) => { stick.current = true; p.parts?.onSelect?.(id); p.onRun(m) } } } : {})} />
         </div>
       </div>
       <form className="term-in" autoComplete="off" onSubmit={submit}>
@@ -141,7 +138,7 @@ export function Terminal(p: TerminalProps) {
           <label htmlFor={inputId} className="vh">
             Ask {ASSISTANT_NAME}
           </label>
-          <input id={inputId} type="text" placeholder={p.placeholder ?? `Ask ${ASSISTANT_NAME} to plan, slice, diagnose or tune`} spellCheck={false} value={text} onChange={(e) => setText(e.currentTarget.value)} />
+          <input id={inputId} type="text" placeholder={p.placeholder ?? `Ask ${ASSISTANT_NAME}`} spellCheck={false} value={text} onChange={(e) => setText(e.currentTarget.value)} />
           {p.running ? (
             <Button size="sm" onClick={p.onStop}>
               Stop
@@ -152,9 +149,7 @@ export function Terminal(p: TerminalProps) {
             </Button>
           )}
         </div>
-        {part && !p.running ? (
-          <FollowUpChips items={followUps(part)} onRun={(m) => { stick.current = true; p.onRun(m) }} place="prompt" />
-        ) : !p.parts || empty ? (
+        {!p.parts || empty ? (
           <div className="chips" role="group" aria-label="Suggestions">
             {p.suggestions.map((s) => (
               <button key={s.id} type="button" className="sugg" onClick={s.onSelect}>

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { Fragment, memo, useContext } from 'react'
+import { Fragment, memo } from 'react'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
 import { ChoiceCard } from './choice-card'
@@ -9,8 +9,8 @@ import { SheetRecord } from './sheet-record'
 import { Citations } from './citations'
 import { Diff } from './diff'
 import { ErrorLine, ModelLine, PermLine, PlanList, PluginsLoading } from './notes'
-import { createdPart, followUps, lastPart, madePart } from './part'
-import { FollowUpChips, PartCard, PartLookContext, type PartHandlers } from './part-card'
+import { createdPart, turnPart } from './part'
+import { FollowUpChips, PartCard, type PartHandlers } from './part-card'
 import type { Block, Transcript } from './reduce'
 import { Say } from './say'
 import { Summary } from './summary'
@@ -91,24 +91,26 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
  * to the row's tooltip.
  */
 export function TranscriptView({ transcript, showThinking, approvals, words, parts }: { transcript: Transcript; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords; parts?: PartHandlers }) {
-  const look = useContext(PartLookContext)
-  // the next steps for the part the last reply made sit under that reply, once it has finished
-  const part = parts && look.chips === 'reply' ? lastPart(transcript) : null
   const last = transcript.turns.at(-1)
   return (
     <>
-      {transcript.turns.map((t) => (
-        <Fragment key={t.id}>
-          {t.user !== null ? <Bubble text={t.user} where={t.where} attachments={t.attachments} /> : null}
-          <PilotTurn>
-            {/* the part card already shows what happened, so the turn's permission line is dropped */}
-            {(parts && madePart(t) ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks).map((b) => (
-              <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} />
-            ))}
-            {part && t === last ? <FollowUpChips items={followUps(part)} onRun={parts?.onRun} place="reply" /> : null}
-          </PilotTurn>
-        </Fragment>
-      ))}
+      {transcript.turns.map((t) => {
+        // each reply that made a part keeps its next steps, bound to that part, once the reply has finished
+        const part = parts ? turnPart(t) : null
+        const done = t !== last || transcript.status !== 'running'
+        return (
+          <Fragment key={t.id}>
+            {t.user !== null ? <Bubble text={t.user} where={t.where} attachments={t.attachments} /> : null}
+            <PilotTurn>
+              {/* the part card already shows what happened, so the turn's permission line is dropped */}
+              {(part ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks).map((b) => (
+                <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} />
+              ))}
+              {part && parts && done ? <FollowUpChips part={part} handlers={parts} /> : null}
+            </PilotTurn>
+          </Fragment>
+        )
+      })}
     </>
   )
 }

@@ -368,21 +368,26 @@
 .sx-pilot .sheet-rec-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px}
 .sx-pilot .sheet-rec-foot .lookup-rec-s{color:var(--t-mute);text-decoration:none}
 /* part card: the part a reply made, flat in the transcript like the choice card. Air around it from the turn's gap. */
-.sx-pilot .part-card{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-3) var(--s-4);padding:var(--s-3) var(--s-4);border:1px solid var(--panel-line);border-radius:12px;background:var(--panel);max-width:68ch}
-.sx-pilot .part-card[data-icon=top]{padding:var(--s-4)}
-.sx-pilot .part-card[data-icon=top] .part-glyph{margin-right:calc(100% - 56px)}
+.sx-pilot .part-card{display:flex;flex-direction:column;gap:var(--s-2);padding:var(--s-3) var(--s-4);border:1px solid var(--panel-line);border-radius:var(--r-md);background:var(--panel);max-width:68ch}
+.sx-pilot .part-row{display:flex;align-items:center;gap:var(--s-3)}
+/* the body selects the part: the glyph and the text are one button */
+.sx-pilot .part-main{display:flex;align-items:center;gap:var(--s-4);flex:1;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:var(--r-sm)}
+.sx-pilot .part-main:hover .part-title{color:var(--purple)}
 .sx-pilot .part-glyph{display:block;flex:none}
 .sx-pilot .part-glyph .pg-top{fill:color-mix(in srgb,var(--purple) 70%,var(--ink-1))}
 .sx-pilot .part-glyph .pg-left{fill:color-mix(in srgb,var(--purple) 46%,var(--ink-1))}
 .sx-pilot .part-glyph .pg-right{fill:color-mix(in srgb,var(--purple) 30%,var(--ink-1))}
 .sx-pilot .part-glyph .pg-side{fill:color-mix(in srgb,var(--purple) 40%,var(--ink-1))}
 .sx-pilot .part-glyph polygon,.sx-pilot .part-glyph path,.sx-pilot .part-glyph ellipse{stroke:color-mix(in srgb,var(--purple) 80%,var(--fg));stroke-width:.6;stroke-linejoin:round}
-.sx-pilot .part-text{display:flex;flex-direction:column;gap:2px;flex:1 1 140px;min-width:0}
-.sx-pilot .part-card[data-lines="1"] .part-text{flex-direction:row;align-items:baseline;gap:var(--s-2);flex-wrap:wrap}
+.sx-pilot .part-text{display:flex;flex-direction:column;gap:var(--s-1);flex:1;min-width:0}
 .sx-pilot .part-title{color:var(--t-fg);font:600 15px/1.35 var(--f-body)}
 .sx-pilot .part-sub{color:var(--t-sub);font:400 13.5px/1.35 var(--f-body);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sx-pilot .part-acts{display:flex;gap:var(--s-2);align-items:center;margin-left:auto}
-.sx-pilot .follow-reply{display:flex;flex-wrap:wrap;gap:var(--s-2);margin-top:calc(var(--s-1) * -1)}
+.sx-pilot .part-gone{margin:0;font-size:13px;color:var(--orange)}
+.sx-pilot .follow{display:flex;flex-direction:column;gap:var(--s-3);margin-top:calc(var(--s-1) * -1)}
+.sx-pilot .follow-reply{display:flex;flex-wrap:wrap;gap:var(--s-2)}
+/* the size a resize asks for, under the chips so nothing above moves */
+.sx-pilot .follow-size{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2) var(--s-3)}
+.sx-pilot .follow-size-acts{display:flex;gap:var(--s-2)}
 .sx-pilot .follow-chip{display:inline-flex;align-items:center;gap:6px;height:32px;font-size:13.5px;color:var(--fg);border-color:var(--line)}
 .sx-pilot .follow-chip:hover:not(:disabled){border-color:var(--purple);background:color-mix(in srgb,var(--purple) 8%,transparent)}
 .sx-pilot .follow-chip .sx-ic{width:14px;height:14px;color:var(--purple)}
