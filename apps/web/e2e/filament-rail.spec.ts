@@ -26,6 +26,45 @@ async function open(page: Page, prefs: Record<string, unknown> = {}): Promise<vo
 
 const slot = (page: Page, n: number) => page.locator(`[data-testid="slice-filament-slot"][data-slot="${n}"]`)
 
+/** Room from the bottom of the Filament card to the top of Print settings, in px. */
+const gapToSettings = (page: Page) =>
+  page.evaluate(() => {
+    const f = document.querySelector('[data-section="filament"]')!.getBoundingClientRect()
+    const p = document.querySelector('[data-section="settings"]')!.getBoundingClientRect()
+    return Math.round(p.top - f.bottom)
+  })
+
+test('Print settings sits the same gap under Filament with Filament open or shut, even after the pinned list scrolled', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'A phone scrolls the sheet as one, with nothing pinned')
+  // Two nozzles and their slots fill the pinned top past its cap, so it scrolls.
+  const h2d = { id: 'e2e-h2d', name: 'Two nozzles', profileId: 'bambu-h2d', vendor: 'Bambu Lab', model: 'H2D', nozzleCount: 2 }
+  await open(page, { settingsMode: 'advanced', handPrinters: [h2d], printerId: h2d.id })
+  const toggle = page.locator('[data-section="filament"] .sx-block-toggle')
+  const pin = page.locator('.pane[data-side="left"] .sx-rail-pin')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  const shut = await gapToSettings(page)
+  expect(shut).toBeLessThanOrEqual(24)
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  // Scrolled down the slots, then shut: the pinned top shrinks to the card, and Print settings moves up under it.
+  await pin.evaluate((e) => (e.scrollTop = 40))
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect.poll(() => gapToSettings(page)).toBe(shut)
+  await expect(pin.locator('[data-sx-room]')).toHaveCount(0)
+})
+
+test('the gap under Filament is the same open and shut when the slots fit', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'A phone scrolls the sheet as one, with nothing pinned')
+  await open(page, { settingsMode: 'advanced' })
+  const toggle = page.locator('[data-section="filament"] .sx-block-toggle')
+  const opened = await gapToSettings(page)
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect.poll(() => gapToSettings(page)).toBe(opened)
+})
+
 test('hovering or focusing a slot picks its filament out in the viewport, and leaving clears it', async ({ page, isMobile }) => {
   await open(page)
   const host = page.locator('.vp-stage')

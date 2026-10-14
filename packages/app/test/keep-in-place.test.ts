@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A held control stops correcting the scroll when the correction cannot help: a control the scroll does not move (a
-// modal dialog over the pane), and a layout that never settles, which stops at the cap.
+// modal dialog over the pane), and a layout that never settles, which stops at the cap. Room at the end goes only into a
+// box with a set height: a box sized by its content would grow by it instead.
 import { keepInPlace, MAX_CORRECTIONS } from '@slicerx/ui'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -59,5 +60,46 @@ describe('a held control', () => {
     await churn(t.box, MAX_CORRECTIONS * 3)
     expect(t.writes()).toBeGreaterThan(0)
     expect(t.writes()).toBeLessThanOrEqual(MAX_CORRECTIONS)
+  })
+
+  /** A box whose height is `content` (sized by what is in it) or fixed at `fixed`, with a control that sits 40 px lower once something above it changes. */
+  function sized(opts: { fixed?: number }) {
+    const box = document.createElement('div')
+    box.style.overflowY = 'auto'
+    const room = () => box.querySelector<HTMLElement>('[data-sx-room]')
+    const roomPx = () => parseFloat(room()?.style.height ?? '0') || 0
+    const content = 300
+    const clientHeight = () => opts.fixed ?? content + roomPx()
+    Object.defineProperty(box, 'scrollHeight', { get: () => content + roomPx() })
+    Object.defineProperty(box, 'clientHeight', { get: clientHeight })
+    let scrollTop = 0
+    Object.defineProperty(box, 'scrollTop', {
+      get: () => scrollTop,
+      set: (v: number) => void (scrollTop = Math.max(0, Math.min(v, content + roomPx() - clientHeight()))),
+    })
+    const el = document.createElement('button')
+    el.setAttribute('aria-expanded', 'true')
+    let moved = false
+    el.getBoundingClientRect = () => ({ top: (moved ? 140 : 100) - scrollTop }) as DOMRect
+    box.append(el)
+    document.body.append(box)
+    return { box, el, room, move: () => void (moved = true) }
+  }
+
+  it('adds no room to a box sized by its content, which shrinks with its content instead', async () => {
+    const t = sized({})
+    keepInPlace(t.el, 10_000)
+    t.move()
+    await churn(t.box, 3)
+    expect(t.room()).toBeNull()
+  })
+
+  it('adds room at the end of a box with a set height, so the control holds', async () => {
+    const t = sized({ fixed: 300 })
+    keepInPlace(t.el, 10_000)
+    t.move()
+    await churn(t.box, 3)
+    expect(t.room()).not.toBeNull()
+    expect(t.box.scrollTop).toBe(40)
   })
 })
