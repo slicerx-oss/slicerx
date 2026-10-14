@@ -4,7 +4,7 @@
 // the bottom panel key), Show toolhead starts on and Show gantry off, the plate toolbar drags anywhere in the view and
 // starts at the top again in a new session, and the view shows a quiet edge for focus only when Tab brought it there.
 import { type Page } from '@playwright/test'
-import { expect, sliceCount, sliced, test } from './fixtures'
+import { expect, sliceCount, sliced, test, viewSized } from './fixtures'
 
 type Sx = { getState(): { plate: { name: string }[]; showToolhead: boolean; showGantry: boolean }; setState(p: unknown): void }
 
@@ -127,7 +127,9 @@ test.describe('Slice tab defaults', () => {
     await slice(page)
     for (const size of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }, { width: 1440, height: 700 }]) {
       await page.setViewportSize(size)
-      await page.waitForTimeout(300)
+      // The pinned top refits when the pane's size changes, in the same pass that sizes the view's canvas: measure once
+      // the view has its new size, not after a fixed wait a busy page can outlast.
+      await viewSized(page)
       const cut = await page.evaluate(() => {
         const pin = document.querySelector('aside.pane[data-side="left"] .sx-rail-pin')!
         const bottom = pin.getBoundingClientRect().bottom
