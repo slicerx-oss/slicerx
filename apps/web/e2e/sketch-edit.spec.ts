@@ -58,7 +58,7 @@ test('T trims two crossing rectangles to their outline, and the one profile left
 
   await page.locator('body').press('t')
   await expect(panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Trim' })).toHaveAttribute('aria-checked', 'true')
-  await expect(panel).toContainText('Click the piece of a curve to take off')
+  await expect(panel).toContainText('Click a piece of a curve to remove')
   // a hover shows the piece wide and red; off the curves nothing shows
   await sketchAt(page, 'hover', [20, 18])
   await expect.poll(() => band(page)).toBe('cut')
@@ -110,10 +110,10 @@ test('Extend runs a line on to the next one; Mirror and Pattern add copies of a 
   await panel.getByRole('radio', { name: 'Select' }).click()
   await sketchAt(page, 'click', [22, 20])
   await panel.getByRole('button', { name: 'Mirror', exact: true }).click()
-  await expect(panel).toContainText('Click the straight line to mirror across')
+  await expect(panel).toContainText('Click the line to mirror across')
   await sketchAt(page, 'click', [30, 25])
   await expect.poll(() => profiles(page)).toBe(2)
-  await expect(panel).not.toContainText('Click the straight line to mirror across')
+  await expect(panel).not.toContainText('Click the line to mirror across')
   // the copy's center is at x 40, across the line from the first
   const centers = async () => ((await scene(page))?.profiles ?? []).map((r) => Math.round((r.reduce((t, [x]) => t + x, 0) / r.length) * 100) / 100).sort((a, b) => a - b)
   await expect.poll(centers).toEqual([20, 40])
