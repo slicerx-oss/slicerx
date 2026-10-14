@@ -36,7 +36,8 @@ describe('the sheet record', () => {
     expect(row('lean').textContent).toContain('guess')
     expect(row('lean').hasAttribute('data-guess')).toBe(true)
     expect(row('stand_width').textContent).toContain('you said')
-    expect(screen.getByTestId('mimir-sheet-record').textContent).toContain('Waiting for you to confirm')
+    expect(screen.getByTestId('mimir-sheet-status').textContent).toBe('1 assumed value: lean angle 70 °')
+    expect(screen.getByTestId('mimir-sheet-status').hasAttribute('data-assumed')).toBe(true)
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
@@ -51,8 +52,20 @@ describe('the sheet record', () => {
     rerender(<SheetRecord sheet={SHEET} answer={null} actionable values={{ lean: 65 }} onEdit={(_id, k, v) => edits.push([k, v])} onConfirm={async (_id, v) => void built.push(v)} onOpen={() => undefined} />)
     expect(row('lean').hasAttribute('data-guess')).toBe(false)
     expect(row('lean').textContent).toContain('yours')
-    fireEvent.click(screen.getByRole('button', { name: 'Check sizes and build 3D' }))
+    expect(screen.getByTestId('mimir-sheet-status').textContent).toBe('Waiting for you to confirm')
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm sizes and build' }))
     expect(built).toEqual([{ phone_width: 71.5, lean: 65, stand_width: 70 }])
+  })
+
+  it('keeps a guess left as it is with Enter, and stops calling it assumed', () => {
+    const edits: [string, number][] = []
+    const { rerender } = render(<SheetRecord sheet={SHEET} answer={null} actionable onEdit={(_id, k, v) => edits.push([k, v])} onConfirm={async () => undefined} />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Lean angle, degrees' }), { key: 'Enter' })
+    expect(edits).toEqual([['lean', 70]])
+    rerender(<SheetRecord sheet={SHEET} answer={null} actionable values={{ lean: 70 }} onEdit={(_id, k, v) => edits.push([k, v])} onConfirm={async () => undefined} />)
+    expect(row('lean').hasAttribute('data-guess')).toBe(false)
+    expect(row('lean').textContent).toContain('kept')
+    expect(screen.getByTestId('mimir-sheet-status').textContent).toBe('Waiting for you to confirm')
   })
 
   it('shows the values used once confirmed, and which the person changed', () => {

@@ -62,7 +62,7 @@ test.describe('the dimension sheet', () => {
     // the record in the chat numbers its rows as the callouts, and its button builds
     const rec = page.getByTestId('mimir-sheet-record')
     await expect(rec.locator('.sheet-rec-n')).toHaveText(['1', '2', '3', '4', '5', '6', '7'])
-    await expect(rec.getByTestId('mimir-sheet-confirm')).toHaveText('Check sizes and build 3D')
+    await expect(rec.getByTestId('mimir-sheet-confirm')).toHaveText('Confirm sizes and build')
     await expect(drawing.locator('.mimir-drawing-cell')).toHaveCount(4)
     // six of the seven sizes sit on the stand (the phone's width is the phone's): each in one flat view and the iso
     await expect(page.getByTestId('mimir-sheet-callout')).toHaveCount(12)
