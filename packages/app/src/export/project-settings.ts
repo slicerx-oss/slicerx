@@ -2,14 +2,21 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The print and filament settings a 3MF project carries, turned into changes on top of the current
 // settings. A project file is untrusted (docs/safety.md): only plain numbers, switches and choices are
-// taken. Text fields (G-code), scripts (`post_process`), network and credential keys, and the printer's
-// own settings (its bed and limits) are left for the person's own printer to decide.
+// taken, and the few text settings with a grammar the app checks (the infill angle templates and the
+// extra solid infill layers). Free text, G-code, scripts (`post_process`), network and credential keys,
+// and the printer's own settings (its bed and limits) are left for the person's own printer to decide.
 import type { PrintConfig, SettingValue } from '@slicerx/contracts'
 import { importFlat, sameValue, selectVariants, settingDef } from '@slicerx/settings'
 import type { PlateEntry } from '../state/store'
+import { takenFromFile } from '../lib/setting-text'
 
 // Plain numbers, percents, switches and choices, one or one per extruder or filament (overhang speeds are mm/s or %).
 const TAKEN = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floats', 'ints', 'percents', 'floatOrPercent', 'floatsOrPercents', 'bools', 'enums'])
+
+/** A value a file may set: a plain one, or a text setting with a grammar (infill angle templates, extra solid layers). */
+function taken(def: { type: string; key: string; section: string }, value: unknown): boolean {
+  return TAKEN.has(def.type) || (def.type === 'string' && def.section === 'process' && takenFromFile(def.key, value))
+}
 
 export interface ProjectSettings {
   /** Changes against the current settings, in our keys. */
@@ -28,7 +35,7 @@ export function projectSettingChanges(raw: Record<string, unknown>, current: Pri
   const left: string[] = []
   for (const [key, value] of Object.entries(imported)) {
     const def = settingDef(key)
-    if (!def || def.section === 'printer' || !TAKEN.has(def.type)) {
+    if (!def || def.section === 'printer' || !taken(def, value)) {
       left.push(key)
       continue
     }
@@ -43,7 +50,7 @@ export function modifierSettings(raw: Record<string, string>): Record<string, Se
   const config = importFlat(raw).config as Record<string, SettingValue>
   for (const [key, value] of Object.entries(config)) {
     const def = settingDef(key)
-    if (def && def.section === 'process' && TAKEN.has(def.type)) out[key] = value
+    if (def && def.section === 'process' && taken(def, value)) out[key] = value
   }
   return out
 }
