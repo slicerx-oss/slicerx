@@ -194,8 +194,10 @@ test('away from the plate tab, toasts keep their place at the window bottom', { 
     const bar = (await page.locator('.sx-status').boundingBox())!
     expect(Math.round(bar.y - (toast.y + toast.height))).toBe(8)
   } else {
-    // On a phone the page scrolls, status bar and all; the toast keeps to the window bottom.
-    expect(Math.round(height - (toast.y + toast.height))).toBe(28)
+    // On a phone the toast keeps to the window bottom, above the tab bar when there is one.
+    const tabs = page.getByTestId('phone-tabs')
+    const tabH = (await tabs.isVisible()) ? (await tabs.boundingBox())!.height : 0
+    expect(Math.round(height - (toast.y + toast.height))).toBe(tabH ? Math.round(tabH) + 12 : 28)
   }
 })
 
