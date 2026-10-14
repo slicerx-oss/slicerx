@@ -83,17 +83,20 @@ try {
   const kit = process.env['SPOOLHOUSE_KIT'] ?? join(app, '.kit')
   await step('pack @slicerx/viewport, @slicerx/embed and @slicerx/mcp as npm publishes them', () => {
     if (!process.env['SPOOLHOUSE_KIT']) execFileSync(process.execPath, [join(repo, 'scripts', 'pack-integrator-kit.mjs'), kit], { cwd: repo, stdio: ['ignore', 'ignore', 'inherit'] })
-    const tgz = readdirSync(kit).filter((f) => f.endsWith('.tgz'))
-    assert.equal(tgz.length, 3, `three tarballs in ${kit}`)
+    // the kit's manifest names the three stable tarballs; the versioned copies beside them are the same files
+    const manifest = JSON.parse(readFileSync(join(kit, 'kit-manifest.json'), 'utf8'))
+    const tgz = manifest.packages.map((p) => p.file)
+    assert.deepEqual(tgz.toSorted(), ['slicerx-embed.tgz', 'slicerx-mcp.tgz', 'slicerx-viewport.tgz'], `three packages in ${kit}/kit-manifest.json`)
+    for (const f of tgz) assert.ok(existsSync(join(kit, f)), `${f} in ${kit}`)
     for (const [file, wants] of [['slicerx-embed', ['AGENTS.md', 'llms.txt']], ['slicerx-mcp', ['AGENTS.md', 'llms.txt']]]) {
       const t = tgz.find((f) => f.startsWith(file))
-      const listing = execFileSync('tar', ['tzf', join(kit, t)], { encoding: 'utf8' })
+      const listing = execFileSync('tar', ['tzf', t], { cwd: kit, encoding: 'utf8' })
       for (const w of wants) assert.match(listing, new RegExp(`package/${w.replace('.', '\\.')}`), `${t} ships ${w}`)
     }
   })
 
   await step('npm install the tarballs and the other dependencies', () => {
-    const tgz = readdirSync(kit).filter((f) => f.endsWith('.tgz')).map((f) => join(kit, f))
+    const tgz = JSON.parse(readFileSync(join(kit, 'kit-manifest.json'), 'utf8')).packages.map((p) => join(kit, p.file))
     run(npm, ['install', '--no-audit', '--no-fund', '--loglevel=error', ...tgz])
     run(npx, ['playwright', 'install', 'chromium'], { stdio: ['ignore', 'ignore', 'inherit'] })
   })
