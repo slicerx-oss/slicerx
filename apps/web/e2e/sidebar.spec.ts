@@ -35,6 +35,7 @@ test('the printer row is three boxes, and each other section is its own panel wi
 test('Simple mode keeps the sections open with no fold', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', settingsMode: 'simple', pilot: { mode: 'off' } })))
   await page.goto('./')
+  await openSheet(page)
   await expect(page.locator('.sx-block[data-section="printer"] .mc-row')).toBeVisible()
   await expect(page.locator('#printer-fold, #filament-fold')).toHaveCount(0)
 })

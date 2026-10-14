@@ -4,7 +4,7 @@
 // slices, and the pre-alpha agreement talks about models only. slicerx.e2e.cadOnly turns a test build into that host.
 import { type Page } from '@playwright/test'
 import { command } from './cad-helpers'
-import { appReady, expect, test } from './fixtures'
+import { expect, test, viewportReady } from './fixtures'
 
 type Sx = { getState(): { plate: unknown[]; slice: { status: string } }; setState(p: unknown): void }
 const setState = (page: Page, patch: Record<string, unknown>) => page.evaluate((p) => (window as unknown as { __sx: Sx }).__sx.setState(p), patch)
@@ -22,7 +22,7 @@ async function openCadOnly(page: Page): Promise<void> {
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' } }))
   })
   await page.goto('./')
-  await appReady(page)
+  await viewportReady(page)
   // the example plate, in Model's tree (the Slice objects list never shows here)
   await expect(page.locator('.dtree-name', { hasText: 'Layered X' })).toBeVisible()
 }
