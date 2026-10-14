@@ -449,6 +449,14 @@ EXAMPLE_SESSION_ID=leak-me SX_HEAVY_LOCK=$lock bash "$heavy" env "SX_TEST_TOKEN=
 ok eval '! grep -q "not-a-real-value\|leak-me" "$tmp/rec" "$tmp/history.log" && grep -q "SX_TEST_TOKEN=\[redacted\]" "$tmp/rec" \
   && [ "$(cat "$tmp/seen")" = not-a-real-value ]'
 
+# A machine's <lock>.target-dir names the cargo target for the command, and a CARGO_TARGET_DIR the caller set wins.
+name="the target-dir machine setting sets CARGO_TARGET_DIR unless the caller set one"
+printf '%s\n' "$tmp/shared-target" > "$lock.target-dir"
+(unset CARGO_TARGET_DIR; SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'printf %s "$CARGO_TARGET_DIR" > "$1"' sh "$tmp/td1")
+CARGO_TARGET_DIR=$tmp/own SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'printf %s "$CARGO_TARGET_DIR" > "$1"' sh "$tmp/td2"
+rm -f "$lock.target-dir"
+ok eval '[ "$(cat "$tmp/td1")" = "$tmp/shared-target" ] && [ "$(cat "$tmp/td2")" = "$tmp/own" ]'
+
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
   [ "$side" = msys ] || { echo "cross runs from Git Bash" >&2; exit 2; }

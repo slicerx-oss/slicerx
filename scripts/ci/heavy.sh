@@ -39,6 +39,10 @@
 #                                              job; nothing else is read from the environment)
 #   SX_HEAVY_HISTORY=<file>                    the history log (default history.log beside the lock, or
 #                                              <lock>.history.log for a lock named .*; empty: none)
+#   <lock>.target-dir                          a machine setting: one cargo target directory for every command run
+#                                              under the lock, so worktrees do not each keep a full build (a
+#                                              CARGO_TARGET_DIR the caller set wins); with it, sccache is the
+#                                              RUSTC_WRAPPER when it is installed and none is set
 #
 # Each slot is a directory holding its holder's record (mkdir is atomic; macOS has no flock command): <lock> is the
 # first, <lock>.2 the second, and so on. A slot whose holder has died is taken over, so a crashed job never wedges the
@@ -645,6 +649,17 @@ done
 ran=1 t_run=$SECONDS
 if [ -n "$sx_lc_all" ]; then LC_ALL=${sx_lc_all#1}; else unset LC_ALL; fi
 if [ -n "$sx_lc_collate" ]; then LC_COLLATE=${sx_lc_collate#1}; else unset LC_COLLATE; fi
+# One shared cargo target per machine, when the machine names one beside the lock. Cargo's own lock on the target
+# directory keeps two holders from building into it at once.
+if [ -z "${CARGO_TARGET_DIR:-}" ]; then
+  sx_target=
+  { read -r sx_target < "$lock.target-dir"; } 2> /dev/null
+  sx_target=${sx_target%"$cr"}
+  if [ -n "$sx_target" ]; then
+    export CARGO_TARGET_DIR=$sx_target
+    if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache > /dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
+  fi
+fi
 "$@"
 rc=$?
 [ "$rc" != 75 ] || { echo "heavy.sh: the command exited 75, reported as 1 (75 means heavy.sh gave up)" >&2; rc=1; }

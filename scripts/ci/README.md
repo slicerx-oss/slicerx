@@ -55,6 +55,19 @@ them the commit as a git bundle over ssh and reports their summary. The nightly 
 
 Run by hand: `~/ci/bin/run.sh per-merge <sha>` or `nightly <sha>`.
 
+## Disk
+
+A cargo target per worktree costs several GB each, and a machine that hosts agents ends up with dozens of them. Name
+one shared target beside the lock and every command run under `heavy.sh` builds there:
+
+    echo ~/builds/target-shared > ~/.slicerx-heavy.lock.target-dir
+
+A `CARGO_TARGET_DIR` the caller sets still wins, and `sccache` becomes the `RUSTC_WRAPPER` when it is installed.
+
+When a PR merges, remove its worktree if it is clean (`git worktree remove <dir>`) and delete the local branch. A dirty
+one is left for its owner. Build outputs that are kept (release and tester DMGs, logs) go to an archive machine on a
+weekly schedule: tar each one, check the byte count on the far side, then delete the local copy.
+
 ## One lock for Windows and WSL
 
 On a Windows machine that also builds or runs CI in WSL, both sides must take the same lock, or a Windows build and a
