@@ -64,3 +64,57 @@ const LABELS: Record<string, string> = {
 export function modelLabel(id: string): string {
   return LABELS[id] ?? id
 }
+
+/** What a design request carries that decides its tier: the files on the message, by media type. */
+export interface DesignRequestFiles {
+  type: string
+}
+
+/** Feature words in a design request; each one named counts as a step of the build. */
+const FEATURES: readonly RegExp[] = [
+  /\bholes?\b/,
+  /\bfillet(s|ed)?\b|\brounded (edges?|corners?)\b/,
+  /\bchamfer(s|ed)?\b/,
+  /\bslots?\b/,
+  /\bboss(es)?\b/,
+  /\bribs?\b/,
+  /\bpockets?\b|\brecess(es|ed)?\b/,
+  /\bcut-?outs?\b|\bopenings?\b/,
+  /\bstandoffs?\b/,
+  /\bgrooves?\b|\bchannels?\b/,
+  /\blips?\b/,
+  /\bflanges?\b/,
+  /\blids?\b/,
+  /\bhinges?\b/,
+  /\bsnap(-| )?fits?\b|\bclips?\b/,
+  /\bcounter(bore|sink|sunk)/,
+  /\bshell(ed)?\b|\bhollow(ed)?\b/,
+  /\bvents?\b/,
+  /\btabs?\b/,
+  /\bhandles?\b/,
+  /\bengrav(e|ed|ing)\b|\bemboss(ed)?\b/,
+  /\bstepped\b/,
+]
+
+/** Parts that take many features whatever the wording: teeth, threads and repeated features. */
+const MANY_FEATURES = /\b(gears?|teeth|threads?|threaded|splines?|patterns?|arrays?|knurl(ed)?|lattice|honeycomb)\b/
+
+/** Distinct features a design request names at which Auto builds it on muninn. */
+export const MANY_STEPS = 4
+
+/** How many distinct features a design request names (see FEATURES). */
+export function designSteps(prompt: string): number {
+  const text = prompt.toLowerCase()
+  return FEATURES.filter((f) => f.test(text)).length
+}
+
+/**
+ * The tier a design request starts on in the design tab. Auto stays on huginn unless the message carries a picture or
+ * a PDF drawing to read, or the part takes many steps: a gear, thread or pattern, or `MANY_STEPS` distinct features
+ * named. Tool calls never move a design run, and neither do failed ones: the build stays on the tier it started on.
+ */
+export function designTier(prompt: string, files: readonly DesignRequestFiles[] = []): Tier {
+  if (files.some((f) => f.type.startsWith('image/') || f.type === 'application/pdf')) return MUNINN
+  if (MANY_FEATURES.test(prompt.toLowerCase())) return MUNINN
+  return designSteps(prompt) >= MANY_STEPS ? MUNINN : HUGINN
+}
