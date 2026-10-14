@@ -225,3 +225,8 @@ test('Advanced rows from deretraction speed to seam position play their own loop
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['seam_slope_type', 'bqsc'], ['seam_slope_min_length', 'bqsl'], ['seam_slope_steps', 'bqss'], ['seam_slope_start_height', 'bqsh'], ['seam_slope_entire_loop', 'bqsx'], ['scarf_joint_flow_ratio', 'bqsf'], ['scarf_angle_threshold', 'bqsa'], ['seam_position', 'bqsp']])
 })
+
+test('Advanced rows from seam gap to smart layer max step ratio play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['seam_gap', 'bqsg'], ['staggered_inner_seams', 'bqsi'], ['wipe_on_loops', 'bqwl'], ['wipe_before_external_loop', 'bqwb'], ['skeleton_infill_density', 'bqkd'], ['skeleton_infill_line_width', 'bqkw'], ['skin_infill_density', 'bqnd'], ['skin_infill_depth', 'bqnp'], ['skin_infill_line_width', 'bqnw'], ['skirt_height', 'brkh'], ['skirt_start_angle', 'brka'], ['skirt_type', 'brkt'], ['smart_layer_max_height', 'brlx'], ['smart_layer_min_height', 'brln'], ['smart_layer_max_step_ratio', 'brlr']])
+})
