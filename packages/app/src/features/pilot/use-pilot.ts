@@ -16,6 +16,7 @@ import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { hostSlices } from '../../state/model-mode'
 import { get } from '../../state/store'
 import { bundledKb } from './kb'
+import { dockLogs } from './dock-log'
 import { appProject, pilotSlicer } from './project'
 
 /** Commands that slice, print or change slicer settings, which a host that only models leaves out of mimir's tools. */
@@ -39,6 +40,8 @@ export function dockPilotOptions(host: Host, parts: { printers: PrinterHost; llm
     host: { printers: guardedPrinters(host) ?? printers, slicer: pilotSlicer(host), geom: shapes, llm, approvals, projectExport: projectExportHost(host) },
     config,
     policy: DEFAULT_POLICY,
+    // every event is logged, for the read-back over the app link (mimir.session)
+    store: dockLogs,
     commands: slices ? [...listCommands()] : modelingCommands(listCommands()),
     ...(slices ? {} : { scope: 'cad' as const }),
     kb,
