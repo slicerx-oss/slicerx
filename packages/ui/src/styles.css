@@ -129,8 +129,19 @@ button { cursor: pointer; }
 .sx-input[aria-invalid="true"], .sx-textarea[aria-invalid="true"] { border-color: var(--red); }
 .sx-textarea { height: auto; min-height: 88px; padding: 8px 11px; resize: vertical; line-height: var(--lh-body); }
 .sx-select { appearance: none; padding-right: 30px; }
+/* the chevron sits in the right padding, at every size */
+.sx-select[data-size="sm"] { padding-right: 28px; }
 .sx-selectwrap { position: relative; display: block; }
+.sx-selectwrap > .sx-select { display: block; }
 .sx-selectwrap::after { content: ""; position: absolute; right: 9px; top: 50%; width: 15px; height: 15px; transform: translateY(-50%); pointer-events: none; background: var(--dim); -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><path d='M6.5 9.5L12 15l5.5-5.5'/></svg>") center / contain no-repeat; mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><path d='M6.5 9.5L12 15l5.5-5.5'/></svg>") center / contain no-repeat; }
+/* A select can show a shorter face than its option's text while closed (Print settings' long values); the open menu,
+   the tooltip and the accessible name keep the full text. The face ellipsizes only when even it does not fit. */
+.sx-select[data-face] { color: transparent; }
+.sx-select[data-face] option { color: var(--fg); }
+.sx-select-face { position: absolute; top: 0; bottom: 0; left: 1px; right: 28px; display: flex; align-items: center; padding-left: 7px; overflow: hidden; color: var(--fg); pointer-events: none; }
+.sx-select-face > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sx-select[data-face]:disabled + .sx-select-face { color: var(--dim); }
+.sx-select[data-face]:not([data-size]) + .sx-select-face { right: 30px; padding-left: 10px; }
 .sx-inputwrap { position: relative; display: flex; align-items: center; }
 .sx-inputwrap .sx-input { padding-right: 44px; }
 .sx-inputwrap-unit { position: absolute; right: 11px; font: var(--fw-medium) var(--fs-sm) var(--f-mono); color: var(--dim); pointer-events: none; }
@@ -194,7 +205,7 @@ button { cursor: pointer; }
 .sx-seg > button[aria-checked="true"] { background: var(--control-selected); color: var(--fg); box-shadow: inset 0 0 0 1px var(--control-selected-line); }
 .sx-seg > button[aria-checked="true"] .sx-ic { color: var(--accent); }
 .sx-seg > button .sx-ic { width: 15px; height: 15px; }
-.sx-seg[data-size="sm"] > button { height: 24px; padding: 0 9px; font-size: var(--fs-xs); }
+.sx-seg[data-size="sm"] > button { height: calc(var(--h-sm) - 6px); padding: 0 9px; font-size: var(--fs-xs); }
 .sx-seg[data-mono] > button { font: var(--fw-medium) var(--fs-xs) var(--f-mono); }
 
 /* switch */
@@ -209,6 +220,29 @@ button { cursor: pointer; }
 .sx-switch:disabled { opacity: 0.6; cursor: not-allowed; }
 /* The switch sits level with the label's first line and the label takes the rest of the row, so a detail line that
    changes with the switch never moves it. */
+/* settings row (SettingRow): the mark rail, the label, the control and the reset rail on one grid with one gap. Every
+   control ends at the row's right edge (justify-self: end), so a column of rows shares one right edge whatever the
+   control; every label starts at one x, since a changed dot or a pin sits in the mark rail and never in the label. A
+   bare row (no rails) is the same row for a list with no marks or resets. A stacked row puts a control that is full
+   width by nature under its label. Lines after the four (a note, chips) run from the label's edge to the right edge. */
+.sx-setrow { display: grid; grid-template-columns: var(--w-mark) minmax(0, 1fr) auto var(--w-reset); column-gap: var(--s-3); row-gap: var(--s-1); align-items: center; min-height: var(--h-row); padding-block: var(--s-1); box-sizing: border-box; }
+.sx-setrow > * { grid-row: 1; }
+.sx-setrow > :nth-child(1) { grid-column: 1; }
+.sx-setrow > :nth-child(2) { grid-column: 2; min-width: 0; }
+.sx-setrow > :nth-child(3) { grid-column: 3; justify-self: end; }
+.sx-setrow > :nth-child(4) { grid-column: 4; }
+.sx-setrow > :nth-child(n+5) { grid-row: auto; grid-column: 2 / -1; }
+.sx-setrow[data-stack] > :nth-child(2) { grid-column: 2 / -1; }
+.sx-setrow[data-stack] > :nth-child(3) { grid-row: 2; grid-column: 2 / 4; justify-self: stretch; }
+.sx-setrow[data-stack] > :nth-child(4) { grid-row: 2; }
+.sx-setrow[data-bare] { grid-template-columns: minmax(0, 1fr) auto; }
+.sx-setrow[data-bare] > :nth-child(1) { grid-column: 1; min-width: 0; }
+.sx-setrow[data-bare] > :nth-child(2) { grid-column: 2; justify-self: end; }
+.sx-setrow[data-bare] > :nth-child(n+3) { grid-row: auto; grid-column: 1 / -1; justify-self: stretch; }
+.sx-setrow-mark, .sx-setrow-reset { display: grid; place-items: center; }
+.sx-setrow-mark > * { grid-area: 1 / 1; }
+/* the changed dot: the row differs from where it inherits; its words are for screen readers */
+.sx-setrow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--purple); }
 .sx-switchrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .sx-switchrow > label { flex: 1; min-width: 0; font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--fg); cursor: pointer; }
 .sx-switchrow > :last-child { flex: none; }
@@ -381,7 +415,7 @@ button { cursor: pointer; }
    hovered. Chromium draws ::-webkit-scrollbar only while the standard scrollbar properties are left at auto. */
 .sx-rail-body, .sx-rail-pin { scrollbar-gutter: stable; }
 @supports selector(::-webkit-scrollbar) {
-  .sx-rail-body, .sx-rail-pin { scrollbar-width: auto; scrollbar-color: auto; }
+  .sx-rail-body, .sx-rail-pin { scrollbar-width: auto; scrollbar-color: auto; --w-scrollbar: 6px; }
   /* the 6 px lane comes out of a block's right padding, so a panel's content keeps its width (a field still fits -123.4) */
   .sx-rail-body .sx-block, .sx-rail-pin .sx-block { padding-right: 12px; }
   .sx-rail-body::-webkit-scrollbar, .sx-rail-pin::-webkit-scrollbar { width: 6px; height: 6px; background: transparent; }
