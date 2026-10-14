@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The theme picker: one card per theme with its light and dark modes side by side, the mode
-// (System, Light, Dark), a flavor choice for themes with more than one dark variant, and theme
-// import and export. Used by Settings > Look and feel and by the first-run theme step.
-import { Button, Icon, Seg } from '@slicerx/ui'
+// The theme picker: one card per theme showing the mode in use (both side by side under System),
+// the mode (System, Light, Dark), a flavor choice for themes with more than one dark variant, and
+// theme import and export. Used by Settings > Look and feel and by the first-run theme step.
+import { Button, Icon, Menu, MenuAnchor, MenuItem, Seg } from '@slicerx/ui'
 import { derivePalette, familyId, pickFamily, serializeTheme, themeFamilies, themeForScheme, type ThemeFamily, type ThemeFile } from '@slicerx/ui/theme'
 import { useMemo, useRef, useState } from 'react'
 import { useHost } from '../host'
@@ -96,6 +96,28 @@ export function familySubLabel(f: ThemeFamily, active: boolean, darkId: string):
   return ''
 }
 
+/** The flavor pill on a card with several dark flavors: the flavor in use, or how many, and a menu to pick one. */
+function FlavorPill({ family, label, darkId }: { family: ThemeFamily; label: string; darkId: string }) {
+  const [open, setOpen] = useState(false)
+  const current = family.dark.some((t) => t.id === darkId) ? darkId : null
+  return (
+    <MenuAnchor className="th-flavors">
+      <button type="button" className="th-pill" aria-haspopup="menu" aria-expanded={open} aria-label={`${family.name} flavors`} onClick={() => setOpen(!open)}>
+        <span>{label}</span>
+        <Icon name="chevron-down" size={12} />
+      </button>
+      <Menu open={open} onClose={() => setOpen(false)} label={`${family.name} flavors`} align="end">
+        {family.dark.map((t) => (
+          <MenuItem key={t.id} checked={t.id === current} onClick={() => (setOpen(false), pickThemeFamily(family, t.id))}>
+            {t.flavor ?? t.name}
+          </MenuItem>
+        ))}
+        {family.light[0] ? <MenuItem disabled>{family.light[0].flavor ?? family.light[0].name} is the light mode</MenuItem> : null}
+      </Menu>
+    </MenuAnchor>
+  )
+}
+
 /** The cards, as many columns as fit cards of at least `minWidth` px; phones get two. */
 export function ThemePicker({ minWidth = 168 }: { minWidth?: number }) {
   const { scheme, ids, families, active, owned } = useThemeState()
@@ -109,20 +131,25 @@ export function ThemePicker({ minWidth = 168 }: { minWidth?: number }) {
           const dark = f.dark.find((t) => t.id === ids.dark) ?? f.dark[0]
           const light = f.light.find((t) => t.id === ids.light) ?? f.light[0]
           const sub = familySubLabel(f, on, ids.dark)
+          const flavors = f.dark.length > 1
           const mine = [...f.dark, ...f.light].filter((t) => owned.has(t.id))
+          // Light or Dark shows that mode full width, so themes compare in the mode in use; System shows both.
+          const shown = (follow ? [light, dark] : [scheme === 'dark' ? (dark ?? light) : (light ?? dark)]).filter((t): t is ThemeFile => t !== undefined)
           return (
-            <span key={f.id} className="th-cell">
+            <span key={f.id} className="th-cell" data-on={on ? '' : undefined}>
               <button type="button" role="radio" aria-checked={on} className="th-card" data-on={on ? '' : undefined} data-testid={`theme-${f.id}`} onClick={() => pickThemeFamily(f)}>
-                <span className="th-pair">
-                  {light ? <Preview theme={light} current={on && (follow || scheme === 'light')} /> : null}
-                  {dark ? <Preview theme={dark} current={on && (follow || scheme === 'dark')} /> : null}
+                <span className="th-pair" data-single={shown.length === 1 ? '' : undefined}>
+                  {shown.map((t) => (
+                    <Preview key={t.id} theme={t} current={on && follow && shown.length > 1 && t.isDark === (scheme === 'dark')} />
+                  ))}
                 </span>
                 <span className="th-name">
                   <span>{f.name}</span>
-                  {sub ? <small>{sub}</small> : null}
+                  {sub && !flavors ? <small>{sub}</small> : null}
                 </span>
                 {on ? <Icon name="check" size={14} className="th-check" /> : null}
               </button>
+              {flavors ? <FlavorPill family={f} label={sub} darkId={ids.dark} /> : null}
               {mine.length ? <Button className="th-remove" variant="ghost" size="sm" icon="close" aria-label={`Remove ${f.name}`} tip="theme.remove" onClick={() => mine.forEach((t) => removeUserTheme(t.id))} /> : null}
             </span>
           )

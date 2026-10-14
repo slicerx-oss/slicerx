@@ -14,6 +14,15 @@
 .th-name > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .th-name small { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--fw-regular) var(--fs-xs) var(--f-body); color: var(--dim); white-space: nowrap; }
 .th-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.th-pair[data-single] { grid-template-columns: 1fr; }
+/* The flavor pill sits on the card's name row, left of the check on the picked card. */
+.th-flavors { position: absolute; right: 7px; bottom: 6px; }
+.th-cell[data-on] .th-flavors { right: 28px; }
+.th-cell:has(.th-flavors) .th-name { padding-right: 96px; }
+.th-cell[data-on]:has(.th-flavors) .th-name { padding-right: 116px; }
+.th-pill { display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 5px 0 8px; font: var(--fw-medium) var(--fs-xs) var(--f-body); color: var(--muted); white-space: nowrap; cursor: pointer; background: var(--ink-1); border: 1px solid var(--line); border-radius: var(--r-pill); transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
+.th-pill:hover, .th-pill[aria-expanded="true"] { color: var(--fg); border-color: var(--accent); }
+.th-pill:focus-visible { outline: none; box-shadow: var(--focus-field); border-color: var(--accent); }
 .th-check { position: absolute; right: 9px; bottom: 9px; color: var(--accent); }
 .th-remove { position: absolute; top: 4px; right: 4px; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
 .th-cell:hover .th-remove, .th-remove:focus-visible { opacity: 1; }
@@ -35,7 +44,7 @@
 .th-fonts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .th-font { display: grid; gap: 4px; font: var(--fs-sm) var(--f-body); color: var(--muted); }
 .th-font .sx-select { width: 100%; }
-:root[data-motion="reduced"] .th-card, :root[data-motion="reduced"] .th-remove { transition: none; }
+:root[data-motion="reduced"] .th-card, :root[data-motion="reduced"] .th-remove, :root[data-motion="reduced"] .th-pill { transition: none; }
 
 /* A settings row: the label and its note on the left, the choice on the right; stacked on a phone. */
 .set-seg-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding: var(--s-2) 0; }
