@@ -1,0 +1,1 @@
+a tip in the settings sidebar opens beside it, level with its control | doo-sx | 2026-10-14 | 2026-10-15 | https://github.com/slicerx-oss/slicerx/issues/1096 | the tip sometimes opens over the sidebar (x 381 against its right edge at 421), about 1 run in 5 on main
