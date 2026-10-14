@@ -246,10 +246,10 @@ test.describe('Model on a phone', () => {
   })
 })
 
-test('a desktop window keeps the shelf and has no phone bar', async ({ page, isMobile }) => {
+test('a desktop window keeps the ribbon and has no phone bar', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop only')
   await openModel(page)
-  await expect(page.locator('.shelf')).toHaveCount(1)
+  await expect(page.getByTestId('model-shelf')).toHaveCount(1)
   await expect(page.locator('.pbar')).toHaveCount(0)
   await expect(page.getByTestId('phone-handles')).toHaveCount(0)
 })
