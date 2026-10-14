@@ -19,7 +19,7 @@ import { evaluate, namesIn } from './values'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type SketchTone } from '@slicerx/viewport'
 import { Button, Icon, Seg, Select, Switch } from '@slicerx/ui'
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { usePhoneLayout } from '../lib/phone-layout'
 import { useSheetFold } from '../shell/sheet-fold'
@@ -1352,7 +1352,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const canMirror = draft.tool === 'select' && sel !== undefined && selected !== null
   const mirroring = pending?.kind === 'mirror'
   const mirrorE = selected?.e ?? -1
-  useEffect(() => {
+  // in a layout effect, so the ribbon's Finish sketch and the panel's Extrude trade the primary look in one frame
+  useLayoutEffect(() => {
     if (featureOnly) return undefined
     return provideDraw({
       family,
@@ -1360,8 +1361,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       look: () => drawRef.current.look(),
       mirror: canMirror ? () => setPending((p) => (p?.kind === 'mirror' ? null : { kind: 'mirror', e: mirrorE })) : null,
       mirroring,
+      ready,
     })
-  }, [featureOnly, family, canMirror, mirroring, mirrorE])
+  }, [featureOnly, family, canMirror, mirroring, mirrorE, ready])
   const driven = constraints.filter((c) => isDimension(c) && c.driven).length
   const words = (t: string) => (phone ? touchWords(t) : t)
   // On a desktop the panel has two cards, drawing and then the solid, which stays folded with the reason until the
