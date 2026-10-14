@@ -76,6 +76,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.share': 'read',
   // mimir cloud at a glance: offered, in use, signed in, and today's use when in use; no key or token
   'mimir.status': 'read',
+  // what answers in the mimir tab: a model (which one, and Auto's pair) or the scripted stub, and the tools it has
+  'mimir.tab': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -343,6 +345,7 @@ const HANDLERS: Record<string, Handler> = {
     }
     return { cloud, enabled, needsSignIn, signedIn, quota, quotaError }
   },
+  'mimir.tab': async () => (await import('../workspaces/mimir/session')).tabState(),
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()

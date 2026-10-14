@@ -63,9 +63,9 @@ export function scriptRouter(scripts: readonly MimirScript[], opts: { delayMs?: 
 }
 
 /** A printer host with no printers: the tab's toolset never reaches one. */
-const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown as PrinterHost
+export const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown as PrinterHost
 /** Nothing in the tab asks for an approval; one that did would be refused. */
-const NO_APPROVALS: ApprovalHost = {
+export const NO_APPROVALS: ApprovalHost = {
   register: async () => undefined,
   grant: async () => {
     throw new Error('Approvals are not available in the mimir tab')
