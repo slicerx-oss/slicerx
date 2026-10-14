@@ -236,35 +236,16 @@ describe('reduceTranscript', () => {
     expect(fold([{ type: 'done', stopReason: 'max_steps', ms: 1 }]).status).toBe('stopped')
   })
 
-  it('shows plugins loading once and updates that line in place', () => {
+  it('keeps plugin loading out of the replies and notes the integrations a reply used', () => {
     let s = fold([
-      {
-        type: 'plugins',
-        plugins: [
-          { id: 'moonraker', name: 'Moonraker', state: 'loading', tools: 3 },
-          { id: 'octoprint', name: 'OctoPrint', state: 'loading', tools: 2 },
-        ],
-      },
+      { type: 'plugins', plugins: [{ id: 'moonraker', name: 'Moonraker', state: 'loading', tools: 3 }, { id: 'octoprint', name: 'OctoPrint', state: 'loading', tools: 2 }] },
+      { type: 'plugins', plugins: [{ id: 'moonraker', name: 'Moonraker', state: 'ready', tools: 3 }, { id: 'octoprint', name: 'OctoPrint', state: 'off', tools: 2 }] },
     ])
-    expect(kinds(s)).toEqual(['plugins'])
-    s = fold(
-      [
-        {
-          type: 'plugins',
-          plugins: [
-            { id: 'moonraker', name: 'Moonraker', state: 'ready', tools: 3 },
-            { id: 'octoprint', name: 'OctoPrint', state: 'off', tools: 2 },
-          ],
-        },
-      ],
-      s,
-    )
-    expect(kinds(s)).toEqual(['plugins'])
-    expect(blocks(s)[0]).toMatchObject({ plugins: [{ state: 'ready' }, { state: 'off' }] })
+    expect(kinds(s)).toEqual([])
     expect(s.plugins?.map((p) => p.state)).toEqual(['ready', 'off'])
-    const later = fold([{ type: 'plugins', plugins: [{ id: 'moonraker', name: 'Moonraker', state: 'ready', tools: 3 }] }])
-    expect(kinds(later)).toEqual([])
-    expect(later.plugins).toHaveLength(1)
+    expect(s.turns.at(-1)?.used).toBeUndefined()
+    s = fold([call('c1'), call('c2', 'moonraker.status', 'plugin'), call('c3', 'moonraker.queue', 'plugin')], s)
+    expect(s.turns.at(-1)?.used).toEqual(['moonraker'])
   })
 
   it('merges citations without duplicates', () => {

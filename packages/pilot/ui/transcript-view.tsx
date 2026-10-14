@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { Fragment, memo } from 'react'
-import type { ApprovalRequest } from '@slicerx/contracts'
+import type { ApprovalRequest, PluginLoad } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
 import { ChoiceCard } from './choice-card'
 import { LookupRecord } from './lookup-record'
 import { SheetRecord } from './sheet-record'
 import { Citations } from './citations'
 import { Diff } from './diff'
-import { ErrorLine, ModelLine, PermLine, PlanList, PluginsLoading } from './notes'
+import { ErrorLine, ModelLine, PermLine, PlanList, UsedLine } from './notes'
 import type { Block, Transcript } from './reduce'
 import { Say } from './say'
 import { Summary } from './summary'
@@ -31,8 +31,6 @@ export interface ApprovalHandlers {
 // Unchanged blocks keep their identity in the reducer, so a streaming delta repaints only its own block.
 const BlockView = memo(function BlockView({ block, showThinking, approvals, words }: { block: Block; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords | undefined }) {
   switch (block.kind) {
-    case 'plugins':
-      return <PluginsLoading plugins={block.plugins} />
     case 'think':
       return <Think text={block.text} ms={block.ms} showThinking={showThinking} />
     case 'say':
@@ -73,6 +71,11 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
   }
 })
 
+/** The integrations a reply used, by name; the built-in printer tools (`printer.*`) are no integration and are left out. */
+function usedNames(used: string[] | undefined, plugins: PluginLoad[] | null | undefined): string[] {
+  return (used ?? []).flatMap((id) => plugins?.find((p) => p.id === id)?.name ?? [])
+}
+
 /**
  * Every turn in order. `words` puts tool calls in the person's words ("Sketching the outline"); the tool's own name moves
  * to the row's tooltip.
@@ -87,6 +90,7 @@ export function TranscriptView({ transcript, showThinking, approvals, words }: {
             {t.blocks.map((b) => (
               <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} />
             ))}
+            <UsedLine names={usedNames(t.used, transcript.plugins)} />
           </PilotTurn>
         </Fragment>
       ))}
