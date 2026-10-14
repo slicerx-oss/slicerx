@@ -7,8 +7,8 @@ import { createElement, type ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Actions, Card, Choice, Message, ToolFooter } from '../src/cad/panel-kit'
-import { choiceFit, selectFits, sentence } from '../src/cad/tool-panel'
+import { Actions, Card, Choice, Message, Shell, ToolFooter } from '../src/cad/panel-kit'
+import { choiceFit, choiceMeasure, GLYPH_WIDTH, selectFits, sentence } from '../src/cad/tool-panel'
 import { get, set } from '../src/state/store'
 
 const roots: Root[] = []
@@ -60,9 +60,26 @@ describe('how choices fit', () => {
     expect(choiceFit({ ...short, width: 120 })).not.toBe('line')
   })
 
-  it('puts a select in the control column only when its longest option fits there', () => {
-    expect(selectFits(60)).toBe(true)
-    expect(selectFits(110)).toBe(false)
+  it('puts a select in the 96 px control column only when its longest option fits there', () => {
+    // "Through" in the select's face, with its padding and arrow
+    expect(selectFits(52)).toBe(true)
+    expect(selectFits(58)).toBe(true)
+    expect(selectFits(59)).toBe(false)
+  })
+
+  it('counts a glyph with its label and with the word it sits before', () => {
+    const width = (t: string) => t.length * 7
+    const plain = choiceMeasure(['Two words', 'One'], [false, false], width)
+    const glyphed = choiceMeasure(['Two words', 'One'], [true, false], width)
+    expect(glyphed.labels).toEqual([plain.labels[0]! + GLYPH_WIDTH, plain.labels[1]])
+    // the first word carries the glyph, so a short first word can become the longest
+    expect(plain.words[0]).toBe(5 * 7)
+    expect(glyphed.words[0]).toBe(3 * 7 + GLYPH_WIDTH)
+    expect(glyphed.words[1]).toBe(plain.words[1])
+    // a glyph can tip a set that just fits on one line over to two
+    const fit = (m: { labels: number[]; words: number[] }) => choiceFit({ ...m, width: 200, icons: false })
+    expect(fit(choiceMeasure(['Abcdefghijk', 'Ab'], [false, false], width))).toBe('line')
+    expect(fit(choiceMeasure(['Abcdefghijk', 'Ab'], [true, false], width))).not.toBe('line')
   })
 })
 
@@ -131,6 +148,15 @@ describe('choices in a panel', () => {
     expect(radios.every((r) => r.querySelector('.sx-ic'))).toBe(true)
   })
 
+  it('draws a glyph before the word while the words show', () => {
+    const el = render(createElement(Choice, { id: 'tg', label: 'Finish', value: 'a', onChange: change, options: [{ value: 'a', label: 'Extrude', glyph: 'move' as const }, { value: 'b', label: 'Revolve' }] }))
+    const [first, second] = [...el.querySelectorAll('[role="radio"]')]
+    expect(el.querySelector('.tp-choice')?.getAttribute('data-fit')).toBe('line')
+    expect(first?.querySelector('.sx-ic')).not.toBeNull()
+    expect(first?.textContent).toContain('Extrude')
+    expect(second?.querySelector('.sx-ic')).toBeNull()
+  })
+
   it('a bare choice has no label line', () => {
     const el = render(createElement(Choice, { id: 'tb', label: 'Edge shape', bare: true, value: 'a', onChange: change, options: opts(2) }))
     expect(el.querySelector('.tp-label')).toBeNull()
@@ -183,6 +209,25 @@ describe('the action row', () => {
     const el = render(createElement(Actions, { quiet: createElement('button', { type: 'button' }, 'Clear') }, createElement('button', { type: 'button' }, 'Done')))
     expect(el.querySelector('.tp-actions-start')?.textContent).toBe('Clear')
     expect(el.querySelector('.tp-actions-end')?.textContent).toBe('Done')
+  })
+})
+
+describe('the panel header', () => {
+  // the panel brings itself into view, which the test document can't do
+  Element.prototype.scrollIntoView ??= () => {}
+
+  it('puts the tool action after its state', () => {
+    const action = createElement('button', { type: 'button', 'data-testid': 'act' }, 'Other plane')
+    const el = render(createElement(Shell, { title: 'Sketch', aside: 'A face of Box', action, children: createElement('p', null, 'body') }))
+    const aside = el.querySelector('.sx-block-h .sx-block-aside')!
+    expect([...aside.children].map((c) => c.className)).toEqual(['tp-state', 'tp-head-action'])
+    expect(aside.querySelector('[data-testid="model-tool-state"]')?.textContent).toBe('A face of Box')
+    expect(aside.querySelector('.tp-head-action [data-testid="act"]')?.textContent).toBe('Other plane')
+  })
+
+  it('has no action slot when the tool has none', () => {
+    const el = render(createElement(Shell, { title: 'Hole', aside: 'No hole yet', children: createElement('p', null, 'body') }))
+    expect(el.querySelector('.tp-head-action')).toBeNull()
   })
 })
 
