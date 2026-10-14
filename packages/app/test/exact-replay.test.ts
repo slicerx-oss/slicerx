@@ -179,6 +179,44 @@ it('joins and cuts a sketch on a face into the solid, and a shape that misses br
   expect(m.status[1]).toEqual({ state: 'broken', message: 'The shape no longer reaches the part.' })
 })
 
+it('pushes and pulls a flat face on the kernel, and records the face it moved as the mesh path does', async () => {
+  // the part moved 5 along x since the box: the face goes to the kernel in the part's own coordinates
+  const moved = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1]
+  const pull = step('pull-1', { op: 'face.push', at: [7, 1, 5], normal: [0, 0, 2], distanceMm: 3, faceKey: 9 }, moved)
+  const e = engine()
+  const frame = { origin: [0, 0, 5], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+  const slot = { start: [-5, -2], segments: [{ to: [5, -2] }, { to: [5, 2], center: [5, 0], sweepDeg: 180 }, { to: [-5, 2] }, { to: [-5, -2], center: [-5, 0], sweepDeg: 180 }] }
+  let reply: Record<string, unknown> = { body: 1, bodySmb: 'pushed', faceKey: 9, frame, polygons: [{ outer: slot, holes: [{ center: [0, 0], diameterMm: 2 }] }], reached: true }
+  const push = async (op: string, req: unknown) => {
+    const r = await e.call(op, req)
+    return op === 'brep.push' ? reply : r
+  }
+  const r = await replayHistory(push, { history: history(box, pull), exact: true })
+  expect(r.status[1]).toEqual({ state: 'done' })
+  expect(e.ops()).toEqual(['brep.extrude', 'brep.tessellate', 'brep.push', 'brep.tessellate'])
+  const sent = e.sent[2]!.req
+  expect(sent).toMatchObject({ body: { smb: 'extrude-1' }, at: [2, 1, 5], normal: [0, 0, 1], distanceMm: 3, faceKey: 9 })
+  // the moved face in world, its outline in the face's frame with each arc in pieces of 5 degrees
+  const m = r.moved['pull-1']!
+  expect(m.frame).toEqual({ origin: [5, 0, 5], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] })
+  expect(m.distanceMm).toBe(3)
+  expect(m.outline[0]!.outer.length).toBe(4 + 2 * 35)
+  expect(m.outline[0]!.holes[0]!.length).toBe(72)
+  for (const q of m.outline[0]!.outer) expect(Math.abs(q[1]) <= 2 + 1e-9 && Math.abs(q[0]) <= 7 + 1e-9).toBe(true)
+  expect(r.found).toBeUndefined()
+  // a face found by place gets its key recorded, and one pushed through the part leaves no face where it moved to
+  clearReplayCache()
+  reply = { ...reply, faceKey: 12, reached: false }
+  const through = await replayHistory(push, { history: history(box, step('pull-1', { op: 'face.push', at: [0, 0, 5], normal: [0, 0, 1], distanceMm: -5 })), exact: true })
+  expect(through.found).toEqual({ 'pull-1': { faceKey: 12 } })
+  // the kernel failing sends the push to the mesh, with the note
+  clearReplayCache()
+  const f = engine(['brep.push'])
+  const back = await replayHistory(f.call, { history: history(box, step('pull-1', { op: 'face.push', at: [1, 1, 0], normal: [0, 0, 1], distanceMm: 2 })), exact: true })
+  expect(back.exactFellBack).toEqual(['pull-1'])
+  expect(f.ops().slice(2, 4)).toEqual(['brep.push', 'face.push'])
+})
+
 it('sends slots, rounded rectangles and sketches to the kernel as lines and arcs', async () => {
   const slot = step('slot-1', { ...box.params, shape: { type: 'slot', lengthMm: 30, widthMm: 10 } } as StepParams)
   const e = engine()

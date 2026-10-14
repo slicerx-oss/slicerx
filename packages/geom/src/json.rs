@@ -95,6 +95,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("brep.cut", "brep"),
     ("brep.fillet", "brep"),
     ("brep.chamfer", "brep"),
+    ("brep.push", "brep"),
     ("brep.info", "brep"),
     ("brep.tessellate", "brep"),
     ("brep.save", "brep"),

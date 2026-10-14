@@ -21,6 +21,7 @@
 #include <SmCylinder.h>
 #include <SmFace.h>
 #include <SmLine.h>
+#include <SmLoop.h>
 #include <SmPlane.h>
 #include <SmPointClass.h>
 #include <SmPoly.h>
@@ -472,7 +473,7 @@ SmBrep* sweep_loop(const Value& l, double z0, double z1)
 
 // the flat ruled faces of a taper (its sides, and the pieces an outward one fills each corner's gap with) on exact
 // planes, shared with any face on the same plane, so the edges between faces on one plane can go
-void join_flat_faces(SmBrep* b)
+void join_flat_faces(SmBrep* b, const char* what = "taperDeg")
 {
     SmTArray<SmFace*> fs;
     SmApiGetFaces(b, fs);
@@ -500,11 +501,11 @@ void join_flat_faces(SmBrep* b)
             double c = dot(n, same->first) > 0 ? 1 : -1;
             SmVector3d m(c * same->first.x, c * same->first.y, c * same->first.z);
             SmPlane* pl = nullptr;
-            check(SmPlane::CreateCanonical(cx, SmAxis2Placement(m, -c * same->second), pl), "taperDeg");
-            check(b->ReplaceSurface(fs[i], pl, FALSE), "taperDeg");
+            check(SmPlane::CreateCanonical(cx, SmAxis2Placement(m, -c * same->second), pl), what);
+            check(b->ReplaceSurface(fs[i], pl, FALSE), what);
         }
     }
-    check(b->RemoveTopologicalEdgesAndVertices(), "taperDeg");
+    check(b->RemoveTopologicalEdgesAndVertices(), what);
 }
 
 // one loop from z = 0 to h (below for a negative h), capped, its sides leaning in by deg as they leave z = 0 (out for
@@ -1095,6 +1096,231 @@ SmBrep* key_new_faces(SmBrep* b)
     return b;
 }
 
+// joins t to a copy of a or cuts it out (t is consumed). touches says the result has a face that came only from the
+// tool (else it missed, sat inside a join, or met the body flush) and a join left no piece standing apart
+SmBrep* join_or_cut(SmBrep* a, SmBrep* t, bool join, bool& touches, const char* what)
+{
+    ULONG l0 = lumps(a);
+    SmBrep* c = nullptr;
+    try {
+        c = mark_faces(copy_of(a));
+    } catch (...) {
+        delete t;
+        throw;
+    }
+    SmBrep* m = combine(c, t, join ? "union" : "difference");
+    if (!face_count(m)) {
+        delete m;
+        throw Error(what, "the cut removes the whole body");
+    }
+    touches = unmark_faces(m) && (!join || lumps(m) <= l0);
+    return m;
+}
+
+// --- pushing a flat face
+
+Value xy(double x, double y)
+{
+    Value v = Value::array();
+    v.push(x);
+    v.push(y);
+    return v;
+}
+
+// a flat face's plane, its normal pointing out of the solid; false for a face that is not flat
+bool outward_plane(SmFace* f, SmVector3d& n, double& offset)
+{
+    SmSurface* s = f->GetSurface();
+    SmPoint3d o;
+    if (!s || !s->IsPlanar(1e-6, &o, &n)) return false;
+    n = unit(n, "face");
+    SmTArray<SmEdge*> es;
+    f->GetEdges(es);
+    SmPoint3d p;
+    if (!es.GetSize() || SmApiFaceInternalPoint(f, p) != SM_SUCCESS) return false;
+    const double eps = 1e-3;
+    if (inside(es[0], SmVector3d(p.x + eps * n.x, p.y + eps * n.y, p.z + eps * n.z))) n = SmVector3d(-n.x, -n.y, -n.z);
+    offset = dot(n, SmVector3d(o.x, o.y, o.z));
+    return true;
+}
+
+// the flat face a push names, facing the way it does: by its key first, then the one under at
+SmFace* pushed_face(SmBrep* b, const Value& r, SmVector3d& n)
+{
+    SmVector3d want = unit(v3(r, "normal"), "normal"), where = v3(r, "at");
+    const Value& k = r["faceKey"];
+    unsigned long long key = k.kind == Value::Number && k.n > 0 ? (unsigned long long)k.n : 0;
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    const double tol = 1e-3;
+    std::vector<std::pair<SmFace*, SmVector3d>> keyed, near;
+    for (ULONG i = 0; i < fs.GetSize(); ++i) {
+        bool mine = key && face_key(fs[i]) == key;
+        if (!mine && off_face(fs[i], where) > tol) continue;
+        SmVector3d m;
+        double d = 0;
+        if (!outward_plane(fs[i], m, d) || dot(m, want) < 1 - 1e-6) continue;
+        (mine ? keyed : near).emplace_back(fs[i], m);
+    }
+    // a face split in two since: the one under at, else the mesh path picks the larger part and says so
+    if (keyed.size() > 1) {
+        auto first = std::min_element(keyed.begin(), keyed.end(), [&](const auto& x, const auto& y) { return off_face(x.first, where) < off_face(y.first, where); });
+        if (off_face(first->first, where) > tol) throw Error("faceKey", "the face this step moved was split in two");
+        keyed = {*first};
+    }
+    if (keyed.empty()) keyed = near;
+    if (keyed.empty()) throw Error("at", "no flat face there facing that way");
+    auto best = std::min_element(keyed.begin(), keyed.end(), [&](const auto& x, const auto& y) { return off_face(x.first, where) < off_face(y.first, where); });
+    n = best->second;
+    return best->first;
+}
+
+// a loop of a flat face as lines and arcs in the frame, counterclockwise ({"start", "segments"}, or a circle)
+Value face_loop(SmLoop* l, const Frame& f)
+{
+    auto in2 = [&](const SmVector3d& p) {
+        SmVector3d d(p.x - f.o.x, p.y - f.o.y, p.z - f.o.z);
+        return std::make_pair(dot(d, f.u), dot(d, f.v));
+    };
+    auto mid_of = [](SmEdge* e) {
+        double t0 = 0, t1 = 0;
+        SmPoint3d q;
+        check(SmApiEdgeParameterRange(e, t0, t1), "edge");
+        check(e->GetCurve()->EvaluatePoint((t0 + t1) / 2, q), "edge");
+        return SmVector3d(q.x, q.y, q.z);
+    };
+    SmTArray<SmEdge*> es;
+    l->GetEdges(es);
+    if (!es.GetSize()) throw Error("face", "a loop of the face has no edges");
+    SmAxis2Placement ax;
+    double rad = 0, a0 = 0, a1 = 0;
+    if (es.GetSize() == 1 && es[0]->IsClosed()) {
+        if (!es[0]->GetCurve() || !es[0]->GetCurve()->IsArc(16, 1e-6, ax, rad, a0, a1)) throw Error("face", "a loop of the face is not a circle");
+        SmPoint3d c = ax.GetOrigin();
+        auto cc = in2(SmVector3d(c.x, c.y, c.z));
+        Value v = Value::object();
+        v.set("center", xy(cc.first, cc.second));
+        v.set("diameterMm", 2 * rad);
+        return v;
+    }
+    // the edges chained end to end, whatever order and direction they come in
+    std::vector<SmEdge*> left;
+    for (ULONG i = 0; i < es.GetSize(); ++i) left.push_back(es[i]);
+    SmVector3d start = at(left[0]->GetStartVertex()), cur = start;
+    double scale = 0;
+    for (SmEdge* e : left) scale = std::max(scale, dist(at(e->GetStartVertex()), at(e->GetEndVertex())));
+    const double tol = 1e-6 * std::max(1.0, scale);
+    struct Seg {
+        std::pair<double, double> to;
+        bool arc;
+        std::pair<double, double> c;
+        double sweep;
+    };
+    std::vector<Seg> segs;
+    std::vector<std::pair<double, double>> ring;
+    while (!left.empty()) {
+        auto it = std::find_if(left.begin(), left.end(), [&](SmEdge* e) { return dist(at(e->GetStartVertex()), cur) < tol || dist(at(e->GetEndVertex()), cur) < tol; });
+        if (it == left.end()) throw Error("face", "the face's edges do not close up");
+        SmEdge* e = *it;
+        left.erase(it);
+        SmVector3d to = dist(at(e->GetStartVertex()), cur) < tol ? at(e->GetEndVertex()) : at(e->GetStartVertex());
+        SmVector3d m = mid_of(e);
+        auto p0 = in2(cur), p1 = in2(to), pm = in2(m);
+        ring.push_back(p0);
+        // straight: the middle is on the line between the ends
+        double lx = p1.first - p0.first, ly = p1.second - p0.second, len = std::hypot(lx, ly);
+        double off = len > 0 ? std::fabs((pm.first - p0.first) * ly - (pm.second - p0.second) * lx) / len : 1e30;
+        if (off < tol) {
+            segs.push_back({p1, false, {0, 0}, 0});
+        } else {
+            SmCurve* c = e->GetCurve();
+            if (!c || !c->IsArc(16, 1e-6, ax, rad, a0, a1) || std::fabs(std::fabs(dot(ax.GetZAxis(), f.n)) - 1) > 1e-9)
+                throw Error("face", "an edge of the face is not a line or an arc");
+            SmPoint3d o = ax.GetOrigin();
+            auto cc = in2(SmVector3d(o.x, o.y, o.z));
+            auto ang = [&](const std::pair<double, double>& p) { return std::atan2(p.second - cc.second, p.first - cc.first); };
+            auto ccw = [](double a) { return std::fmod(std::fmod(a, 2 * kPi) + 2 * kPi, 2 * kPi); };
+            double full = ccw(ang(p1) - ang(p0)), part = ccw(ang(pm) - ang(p0));
+            if (full < 1e-12) full = 2 * kPi;
+            // counterclockwise when the middle comes first that way round
+            double sweep = part < full ? full : full - 2 * kPi;
+            segs.push_back({p1, true, cc, sweep * 180 / kPi});
+            ring.push_back(pm);
+        }
+        cur = to;
+    }
+    if (dist(cur, start) > tol) throw Error("face", "the face's edges do not close up");
+    double area = 0;
+    for (size_t i = 0; i < ring.size(); ++i) {
+        const auto &a = ring[i], &b = ring[(i + 1) % ring.size()];
+        area += a.first * b.second - b.first * a.second;
+    }
+    auto s0 = in2(start);
+    std::vector<std::pair<double, double>> ends{s0};
+    for (const auto& g : segs) ends.push_back(g.to);
+    Value v = Value::object(), out = Value::array();
+    v.set("start", xy(s0.first, s0.second));
+    for (size_t k = 0; k < segs.size(); ++k) {
+        // a clockwise loop runs the other way round, each arc swept back
+        size_t i = area < 0 ? segs.size() - 1 - k : k;
+        const Seg& g = segs[i];
+        auto to = area < 0 ? ends[i] : g.to;
+        Value sg = Value::object();
+        sg.set("to", xy(to.first, to.second));
+        if (g.arc) {
+            sg.set("center", xy(g.c.first, g.c.second));
+            sg.set("sweepDeg", area < 0 ? -g.sweep : g.sweep);
+        }
+        out.push(sg);
+    }
+    v.set("segments", out);
+    return v;
+}
+
+// a flat face as an extrude takes it: its frame (at its area's center, u as sx-geom's FaceFrame::for_normal picks
+// it) and one polygon of its loops
+void face_profile(SmFace* fc, const SmVector3d& n, Value& frame, Value& polygons)
+{
+    double area = 0;
+    SmPoint3d c;
+    check(SmApiFaceComputeCentroid(fc, 1e-4, area, c), "face");
+    Frame f;
+    f.o = SmVector3d(c.x, c.y, c.z);
+    f.n = n;
+    f.u = std::fabs(n.z) > 0.9 ? unit(SmVector3d(1 - n.x * n.x, -n.x * n.y, -n.x * n.z), "face") : unit(cross(SmVector3d(0, 0, 1), n), "face");
+    f.v = cross(f.n, f.u);
+    frame = Value::object();
+    frame.set("origin", xyz(f.o));
+    frame.set("normal", xyz(f.n));
+    frame.set("u", xyz(f.u));
+    frame.set("v", xyz(f.v));
+    SmTArray<SmLoop*> all, outer;
+    fc->GetLoops(all);
+    fc->GetOuterLoops(outer);
+    if (outer.GetSize() != 1) throw Error("face", "the face has no single outer loop");
+    Value poly = Value::object(), holes = Value::array();
+    poly.set("outer", face_loop(outer[0], f));
+    for (ULONG i = 0; i < all.GetSize(); ++i)
+        if (all[i] != outer[0]) holes.push(face_loop(all[i], f));
+    poly.set("holes", holes);
+    polygons = Value::array();
+    polygons.push(poly);
+}
+
+// whether some flat face of b faces n with its plane through p, within 0.01 mm and 0.01 degrees, as the mesh
+// path's hasFaceOn reads a push's moved face
+bool face_on(SmBrep* b, const SmVector3d& p, const SmVector3d& n)
+{
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    for (ULONG i = 0; i < fs.GetSize(); ++i) {
+        SmVector3d m;
+        double d = 0;
+        if (outward_plane(fs[i], m, d) && dot(m, n) >= std::cos(0.01 * kPi / 180) && std::fabs(dot(m, p) - d) <= 0.01) return true;
+    }
+    return false;
+}
+
 // --- the ops
 
 Value run(const std::string& op, const Value& r)
@@ -1110,34 +1336,51 @@ Value run(const std::string& op, const Value& r)
         if (!r.has("target")) {
             out.set("body", Value(keep(fresh_keys(extrude(r)))));
         } else {
-            // join or cut into the target. It touches when the result has a face that came only from the tool (else
-            // it missed, sat inside a join, or met the body flush), and a join didn't leave a piece standing apart.
+            // join or cut into the target; a step that misses changes nothing, so it gets no body
             const std::string& o = r["operation"].s;
             if (o != "join" && o != "cut") throw Error("operation", "must be join or cut with a target");
             SmBrep* a = body(r, "target");
-            ULONG l0 = lumps(a);
-            SmBrep* t = fresh_keys(extrude(r));
-            SmBrep* c = nullptr;
-            try {
-                c = mark_faces(copy_of(a));
-            } catch (...) {
-                delete t;
-                throw;
-            }
-            SmBrep* m = combine(c, t, o == "join" ? "union" : "difference");
-            if (!face_count(m)) {
-                delete m;
-                throw Error("extrude", "the cut removes the whole body");
-            }
-            bool touches = unmark_faces(m) && (o != "join" || lumps(m) <= l0);
+            bool touches = false;
+            SmBrep* m = join_or_cut(a, fresh_keys(extrude(r)), o == "join", touches, "extrude");
             out.set("touches", Value(touches));
-            // a step that misses changes nothing, so it gets no body
             if (touches) out.set("body", Value(keep(m)));
             else {
                 delete m;
                 out.set("body", Value());
             }
         }
+    } else if (op == "push") {
+        // a flat face moved along its normal, out (a join) or in (a cut): its outline swept from it and joined or cut,
+        // as the mesh path's face.push does. Faces left on one plane become one
+        double d = num(r, "distanceMm");
+        if (!(std::fabs(d) > 1e-6 && std::fabs(d) <= 10000)) throw Error("distanceMm", "must not be zero (at most 10000 mm)");
+        SmBrep* a = body(r, "body");
+        SmVector3d n;
+        SmFace* f = pushed_face(a, r, n);
+        Value frame, polygons;
+        face_profile(f, n, frame, polygons);
+        out.set("faceKey", Value(face_key(f)));
+        out.set("frame", frame);
+        out.set("polygons", polygons);
+        Value e = Value::object();
+        e.set("frame", frame);
+        e.set("polygons", polygons);
+        e.set("fromMm", Value(d > 0 ? 0.0 : d));
+        e.set("toMm", Value(d > 0 ? d : 0.0));
+        // the tool always meets the body on the face; a floor pushed through leaves no face of its own, so touches
+        // says nothing here
+        bool touches = false;
+        SmBrep* m = join_or_cut(a, fresh_keys(extrude(e)), d > 0, touches, "distanceMm");
+        try {
+            join_flat_faces(m, "face");
+        } catch (...) {
+            delete m;
+            throw;
+        }
+        // no face left where it moved to: it went through the part
+        SmVector3d from = v3(r, "at"), cap(from.x + d * n.x, from.y + d * n.y, from.z + d * n.z);
+        out.set("reached", Value(face_on(m, cap, n)));
+        out.set("body", Value(keep(m)));
     } else if (op == "boolean") {
         SmBrep* a = copy_of(body(r, "a"));
         SmBrep* b = nullptr;

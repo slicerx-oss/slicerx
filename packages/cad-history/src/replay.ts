@@ -236,6 +236,12 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         found.fellBack.push(s.id)
       },
       solids,
+      (m, key, reached) => {
+        // as the mesh path below records a push
+        moved[s.id] = m
+        if (p.op === 'face.push' && key && key !== p.faceKey) found.keys[s.id] = { faceKey: key }
+        if (!reached) gone.add(s.id)
+      },
     )
     if (done) {
       const kept = new Set(done)
