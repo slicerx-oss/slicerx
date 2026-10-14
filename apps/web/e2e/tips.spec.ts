@@ -193,8 +193,8 @@ test('an Advanced setting row opens the loop of its drawing and plays it', async
 })
 
 /** Hovers each setting row in the Expert panel (found by its key) and checks its tip plays the loop with that class
- *  prefix. */
-async function rowsPlay(page: Page, rows: readonly (readonly [key: string, loopId: string])[]): Promise<void> {
+ *  prefix, or for a still (no loop id), shows the figure with that label. */
+async function rowsPlay(page: Page, rows: readonly (readonly [key: string, loopId: string | null, label?: string])[]): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem('slicerx.debug', '1')
     if (sessionStorage.getItem('sx-e2e')) return
@@ -206,14 +206,15 @@ async function rowsPlay(page: Page, rows: readonly (readonly [key: string, loopI
   await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ expertOpen: true }))
   const tip = page.locator('#sx-tip')
   const stage = tip.locator('.sx-stage')
-  for (const [key, loopId] of rows) {
+  for (const [key, loopId, label] of rows) {
     await page.locator('#expert-search').fill(key)
     const row = page.locator(`li[data-key="${key}"]`).first()
     await row.scrollIntoViewIfNeeded()
     await row.locator('label').first().hover()
     await expect(stage.locator('svg.sxs'), key).toBeVisible()
     await expect(stage).toHaveAttribute('data-play', 'true')
-    await expect(stage.locator(`[class*="${loopId}"]`).first(), key).toBeAttached()
+    if (loopId) await expect(stage.locator(`[class*="${loopId}"]`).first(), key).toBeAttached()
+    else await expect(stage, key).toHaveAttribute('aria-label', label ?? '')
     await page.mouse.move(5, 5)
     await expect(tip).toHaveCount(0)
   }
@@ -257,4 +258,49 @@ test('Advanced rows from tree support angle slow to wall transition filter devia
 test('Advanced rows from chamber temperature to wipe distance play their own loops', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['wave_overhangs', 'bwvo'], ['wave_overhang_line_spacing', 'bwvs'], ['wave_overhang_perimeter_overlap', 'bwvl'], ['wave_overhang_print_speed', 'bwvp'], ['wave_overhang_flow_mm3_per_mm', 'bwvf'], ['wave_overhang_max_iterations', 'bwvi']])
+})
+
+// a still is told apart by its figure's label, the sentence under it
+const STILL_TIPS = {
+  'still-line-width': 'Every line in a cut part, seen end on. A line with no width of its own prints at the default, here 0.42 mm.',
+  'still-line-width-outer': 'The outer wall lines, picked out in a cut part, print 0.42 mm wide. Narrower gives finer detail.',
+  'still-line-width-inner': 'The inner wall lines, picked out in a cut part, print 0.45 mm wide.',
+  'still-line-width-sparse': 'The sparse infill lines, picked out in a cut part, print 0.45 mm wide. Wider lines fill faster and make stronger infill.',
+  'still-line-width-solid': 'The solid infill under the top, picked out in a cut part, prints 0.42 mm wide.',
+  'still-line-width-top': 'The top surface lines, picked out in a cut part, print 0.42 mm wide. Narrower lines give a finer top.',
+  'still-line-width-first': 'The first layer lines, picked out in a cut part, print 0.50 mm wide. Wider first lines grip the bed better.',
+  'still-shells-top': 'The solid layers on top of the part: 4 layers of 0.2 mm make a top 0.8 mm thick over the infill.',
+  'still-shells-bottom': 'The solid layers at the bottom of the part: 3 layers of 0.2 mm make a bottom 0.6 mm thick.',
+  'still-first-layer-height': 'The first layer can print thicker than the rest, here 0.3 mm under 0.2 mm layers, which forgives a bed that is not quite level.',
+  'still-surface-pattern-top': 'Top surface patterns, left to right: monotonic, concentric, Hilbert curve and Archimedean chords.',
+  'still-surface-pattern-bottom': 'Bottom surface patterns on the first layer, left to right: monotonic, concentric, Hilbert curve and Archimedean chords.',
+  'still-sparse-pattern': 'Sparse infill patterns at one density, left to right: grid, gyroid, honeycomb and lightning.',
+  'still-skirt-distance': 'The skirt sits this far out from the part or its brim, here 2 mm.',
+  'still-skirt-loops': 'The loops drawn around the parts before the print starts, here 2. They prime the nozzle and show the first layer is level.',
+  'still-skirt-length': 'Skirt loops are added until at least this much filament has gone through the nozzle, here 100 mm.',
+  'still-brim-gap': 'A small gap between the part and its brim, here 0.1 mm, so the brim snaps off cleanly.',
+  'still-raft-layers': 'The part prints on 3 raft layers, which come away after the print.',
+  'still-support-top-gap': 'The gap between the top of the support and the part above it, here 0.2 mm.',
+  'still-support-bottom-gap': 'The gap where support stands on the part below it, here 0.2 mm.',
+  'still-support-xy-gap': 'The sideways gap between support and the wall of the part, here 0.35 mm.',
+  'still-support-interface-layers': 'The dense layers at the top of the support, right under the part, here 3.',
+  'still-support-interface-spacing': 'The gap between the interface lines under the part, here 0.5 mm. Smaller gives a smoother underside.',
+  'still-support-style': 'The same overhang held up by grid, snug, organic and tree slim support, left to right.',
+  'still-one-wall-top': 'The same top with 3 walls and with 1. With one wall the top lines reach almost to the edge.',
+  'still-one-wall-first': 'The first layer with 3 walls and with 1. With one wall the bottom lines reach almost to the edge.',
+  'still-ironing-angle': 'With a fixed angle, ironing runs at that angle, here 0°, instead of along the top lines.',
+  'still-paint-depth-top': 'A painted top colors this many layers down from the top surface, here 3.',
+  'still-paint-depth-bottom': 'A painted bottom colors this many layers up from the bottom surface, here 3.',
+} as const
+/** Setting keys and the still their row shows, as rowsPlay rows. */
+const stills = (rows: readonly (readonly [key: string, still: keyof typeof STILL_TIPS])[]) => rows.map(([key, still]) => [key, null, STILL_TIPS[still]] as const)
+
+test('Slice rows from line width to skirt distance show their own stills', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, stills([['line_width', 'still-line-width'], ['outer_wall_line_width', 'still-line-width-outer'], ['inner_wall_line_width', 'still-line-width-inner'], ['top_surface_line_width', 'still-line-width-top'], ['sparse_infill_line_width', 'still-line-width-sparse'], ['internal_solid_infill_line_width', 'still-line-width-solid'], ['initial_layer_line_width', 'still-line-width-first'], ['top_shell_layers', 'still-shells-top'], ['top_shell_thickness', 'still-shells-top'], ['bottom_shell_layers', 'still-shells-bottom'], ['bottom_shell_thickness', 'still-shells-bottom'], ['initial_layer_print_height', 'still-first-layer-height'], ['top_surface_pattern', 'still-surface-pattern-top'], ['bottom_surface_pattern', 'still-surface-pattern-bottom'], ['sparse_infill_pattern', 'still-sparse-pattern'], ['skirt_distance', 'still-skirt-distance']]))
+})
+
+test('Slice rows from skirt loops to painted depth show their own stills, and interlocking beam plays its loop', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [...stills([['skirt_loops', 'still-skirt-loops'], ['min_skirt_length', 'still-skirt-length'], ['brim_object_gap', 'still-brim-gap'], ['raft_layers', 'still-raft-layers'], ['support_top_z_distance', 'still-support-top-gap'], ['support_bottom_z_distance', 'still-support-bottom-gap'], ['support_object_xy_distance', 'still-support-xy-gap'], ['support_interface_top_layers', 'still-support-interface-layers'], ['support_interface_spacing', 'still-support-interface-spacing'], ['support_style', 'still-support-style'], ['only_one_wall_top', 'still-one-wall-top'], ['only_one_wall_first_layer', 'still-one-wall-first'], ['ironing_angle', 'still-ironing-angle'], ['ironing_angle_fixed', 'still-ironing-angle'], ['top_color_penetration_layers', 'still-paint-depth-top'], ['bottom_color_penetration_layers', 'still-paint-depth-bottom']]), ['interlocking_beam', 'ail']])
 })

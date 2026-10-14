@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Raft layers: the part prints on 3 raft layers, which come away after the print.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'ural',
+  css: "",
+  body: "<polygon class=\"s-g2 s-aol\" points=\"91.3,92.5 172.5,139.4 172.5,135.2 91.3,88.3\"/><polygon class=\"s-g3 s-aol\" points=\"217.4,113.5 172.5,139.4 172.5,135.2 217.4,109.3\"/><polygon class=\"s-g1 s-aol\" points=\"136.1,62.4 217.4,109.3 172.5,135.2 91.3,88.3\"/><polygon class=\"s-g2 s-aol\" points=\"91.3,88.3 172.5,135.2 172.5,131 91.3,84.1\"/><polygon class=\"s-g3 s-aol\" points=\"217.4,109.3 172.5,135.2 172.5,131 217.4,105.1\"/><polygon class=\"s-g1 s-aol\" points=\"136.1,58.2 217.4,105.1 172.5,131 91.3,84.1\"/><polygon class=\"s-g2 s-aol\" points=\"91.3,84.1 172.5,131 172.5,126.8 91.3,79.9\"/><polygon class=\"s-g3 s-aol\" points=\"217.4,105.1 172.5,131 172.5,126.8 217.4,100.9\"/><polygon class=\"s-g1 s-aol\" points=\"136.1,54 217.4,100.9 172.5,126.8 91.3,79.9\"/><path class=\"s-n\" style=\"stroke:var(--stage-aol);stroke-width:1\" d=\"M212.4 99.8l-41.9 24.1M208.4 97.5l-41.8 24.1M204.5 95.2l-41.9 24.2M200.5 92.9l-41.8 24.2M196.6 90.7l-41.8 24.1M192.7 88.4l-41.9 24.1M188.7 86.1l-41.8 24.2M184.8 83.8l-41.9 24.2M180.8 81.6l-41.8 24.1M176.9 79.3l-41.8 24.1M173 77l-41.9 24.2M169 74.7l-41.8 24.2M165.1 72.5l-41.9 24.1M161.1 70.2l-41.8 24.1M157.2 67.9l-41.8 24.2M153.3 65.6l-41.9 24.2M149.3 63.4l-41.8 24.1M145.4 61.1l-41.9 24.1M141.4 58.8l-41.8 24.2M137.5 56.5l-41.8 24.2\"/><polygon class=\"s-f2 s-ol\" points=\"105.8,77.8 172.5,116.3 172.5,86.9 105.8,48.4\"/><polygon class=\"s-f3 s-ol\" points=\"202.8,98.8 172.5,116.3 172.5,86.9 202.8,69.4\"/><polygon class=\"s-f1 s-ol\" points=\"136.1,30.9 202.8,69.4 172.5,86.9 105.8,48.4\"/><path class=\"s-n\" style=\"stroke:var(--stage-a1,#c9a6fb);stroke-width:1.4\" d=\"M175.2 141L177.3 142.2L177.3 129.6L175.2 128.4\"/><rect class=\"sxs-pill\" x=\"185.3\" y=\"126.9\" width=\"67\" height=\"18\" rx=\"9\"/><text x=\"194.3\" y=\"139.6\">3 layers</text>",
+}
