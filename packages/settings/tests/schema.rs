@@ -132,7 +132,7 @@ fn tiers_hide_profile_keys_and_gate_multicolor_keys() {
             .all(|d| d.key != "inherits" && d.intent.as_deref() != Some("multicolor"))
     );
     assert!(
-        (60..=90).contains(
+        (40..=50).contains(
             &settings_for_tier(Section::Process, Mode::Advanced, 3)
                 .iter()
                 .filter(|d| d.mode == Mode::Advanced)

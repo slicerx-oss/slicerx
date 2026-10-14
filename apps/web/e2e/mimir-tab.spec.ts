@@ -352,6 +352,8 @@ test.describe('the mimir tab', () => {
     // the part is selected after the build, so a click moves it; nothing in the card moves
     const slot = Number(await pick.locator('[data-testid="slice-filament-slot"][data-parts="0"]:not([data-empty])').first().getAttribute('data-slot'))
     const free = pick.locator(`[data-testid="slice-filament-slot"][data-slot="${slot}"]`)
+    // the click scrolls its target into view; measure after that scroll, before changing the spool
+    await free.scrollIntoViewIfNeeded()
     const at = await pick.boundingBox()
     await free.click()
     await expect(free).not.toHaveAttribute('data-parts', '0')
