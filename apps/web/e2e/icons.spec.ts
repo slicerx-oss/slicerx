@@ -14,7 +14,7 @@ async function open(page: Page, workspace: 'prepare'): Promise<void> {
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: ws, pilot: { mode: 'off' } }))
   }, workspace)
   await page.goto('./')
-  await expect(page.locator('.sx-tab[aria-current=page]')).toBeVisible()
+  await expect(page.locator(':is(.sx-tab, .phone-tab)[aria-current=page]')).toBeVisible()
   await viewportReady(page)
 }
 
