@@ -48,6 +48,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Fixed
 
+- Windows command-line and MCP clients can read the remembered hub credential saved by the desktop app. App grants still control reads and edits; test editions use their own credential name.
+
 - A call the server refuses before the tool runs (a tool it doesn't have, or arguments the tool's input schema rejects) reads plainly, over stdio and HTTP: "Tool slicerx_x not found" instead of "MCP error -32602: Tool slicerx_x not found". It is still a tool result with `isError`, and requests the protocol refuses are still JSON-RPC errors with their codes.
 - `slicerx-mcp --printers link` as a stdio server now exits when the client closes stdin, after answering the requests it had already read. Before, its sx-link connection kept it running until something stopped it. With no printers or `--printers demo` it already exited.
 - `slicerx-mcp --printers link call ...` now exits once its calls are done: 0 when every call worked, 1 when one failed. Before, it printed the results and then kept running with its sx-link connection open until something stopped it.

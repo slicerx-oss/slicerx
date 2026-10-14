@@ -9,6 +9,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { productName } from '@slicerx/contracts'
 import { keychainService } from './agents'
+import { windowsKeychainCommand } from './windows-keychain'
 
 /** sx-link's default state directory, as `default_state_dir` in packages/connect/link/src/lib.rs. */
 export function hubStateDir(): string | undefined {
@@ -54,22 +55,22 @@ export function linkCodeFrom(o: { argvCode: string | undefined; stateDir: string
 /**
  * A client's own hub credential from the OS keychain, by the item name its config gives
  * (`SLICERX_MCP_LINK_KEY_REF`, account `slicerx`). The "Connect your AI agent" panel stores it
- * there, so no client's config file ever holds a secret. macOS and Linux (Secret Service).
+ * there, so no client's config file ever holds a secret. Uses the platform's credential store.
  * `identifier` is the app that stored it (`SLICERX_MCP_APP_IDENTIFIER`): a test build of the
  * desktop app keeps its items under names of its own (`keychainService`), never the shipping app's.
  */
-export function readKeychainKey(ref: string, run: (cmd: string, args: string[]) => string = (c, a) => execFileSync(c, a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }), identifier?: string): string {
+export function readKeychainKey(ref: string, run: (cmd: string, args: string[]) => string = (c, a) => execFileSync(c, a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, timeout: 30_000 }), identifier?: string): string {
   if (!/^slicerx-agent-[a-z-]+$/.test(ref)) throw new Error(`${ref} is not an agent credential name`)
   if (identifier !== undefined && !/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(identifier)) throw new Error(`${identifier} is not an app identifier`)
   ref = keychainService(ref, identifier)
+  if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw new Error('reading the keychain is not supported on this system yet')
   let out = ''
   try {
     if (process.platform === 'darwin') out = run('security', ['find-generic-password', '-s', ref, '-a', 'slicerx', '-w'])
     // The desktop app writes with the keyring crate, whose Secret Service items carry `service` and `username`.
     else if (process.platform === 'linux') out = run('secret-tool', ['lookup', 'service', ref, 'username', 'slicerx'])
-    else throw new Error('reading the keychain is not supported on this system yet')
-  } catch (e) {
-    if (e instanceof Error && e.message.includes('not supported')) throw e
+    else if (process.platform === 'win32') out = run(...windowsKeychainCommand(ref))
+  } catch {
     throw new Error(`No hub credential in the keychain under ${ref}. Connect this app again from ${productName()} (Settings, Connect your AI agent).`)
   }
   const key = out.trim()

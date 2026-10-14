@@ -42,7 +42,7 @@ export const hub = { code: '', linkUrl: '', port: 0, route: /^$/, controlPort: 0
  * Sets up a bridge file: serial tests at desktop width, the mocks in `mocks` started once for the file (idle, every
  * printer with a camera), a hub on a free loopback port, and `setup` to add the file's printers. Call at the top of the file.
  */
-export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>): void {
+export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>, options: { hostAppLink?: boolean } = {}): void {
   let proc: ChildProcessByStdio<null, Readable, Readable> | undefined
   let stopMocks: (() => Promise<void>) | undefined
   test.skip(!bin && !required, 'SX_LINK_BIN is not set')
@@ -61,7 +61,9 @@ export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>)
     hub.ports = running.ports
     // A throwaway state directory with file secrets: the test never touches the real hub or the keychain.
     hub.stateDir = mkdtempSync(join(tmpdir(), 'sx-link-e2e-'))
-    proc = spawn(bin, ['--port', '0', '--state-dir', hub.stateDir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
+    // A release hub hosts only the desktop origin or one explicitly allowed at startup.
+    const appOrigin = options.hostAppLink ? new URL(testInfo.project.use.baseURL!).origin : undefined
+    proc = spawn(bin, ['--port', '0', '--state-dir', hub.stateDir, '--secrets', 'file', '--no-mdns', ...(appOrigin ? ['--allow-origin', appOrigin] : []), ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     hub.linkUrl = await new Promise<string>((resolve, reject) => {
       proc!.stdout.on('data', (d: Buffer) => {

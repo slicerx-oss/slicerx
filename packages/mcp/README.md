@@ -223,7 +223,7 @@ The panel of that name (desktop and browser) installs this server into an agent 
 
 `input` is `{ server: { command, args }, hubKey, linkUrl? }`: how the agent starts this server (for example `node` and the path of `cli.js` inside the app) and the hub's public key, which is pinned.
 
-No config ever holds a secret. Each agent gets its own hub credential, kept in the OS keychain under `agentKeyRef(client)` (`slicerx-agent-<client>`, account `slicerx`), and the config only names it (`SLICERX_MCP_LINK_KEY_REF`). The server reads it at start: `security` on macOS, `secret-tool` on Linux; Windows is not supported yet. The panel's steps:
+No config ever holds a secret. Each agent gets its own hub credential, kept in the OS keychain under `agentKeyRef(client)` (`slicerx-agent-<client>`, account `slicerx`), and the config only names it (`SLICERX_MCP_LINK_KEY_REF`). The server reads it at start: `security` on macOS, `secret-tool` on Linux, and Windows Credential Manager through the built-in Windows PowerShell on Windows. Windows reads the desktop keyring item `slicerx.<service>` as UTF-16LE; an edition identifier keeps its credential separate. The helper runs without a window or profile and never writes the credential to a file. The panel's steps:
 
 1. Ask the hub for a credential for this agent: a remembered agent client named after it (`clients.create {name, role: "agent"}`, app role only; this call is for connect to add), so it can be revoked on its own in Settings > Devices.
 2. Save it in the keychain under `agentKeyRef(client)` through a desktop command. It is never shown.
