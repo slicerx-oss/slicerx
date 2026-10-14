@@ -15,8 +15,8 @@ use sx_permit::ApprovalBroker;
 const USAGE: &str = "usage:
   sx-link [--port 47615] [--state-dir DIR | --no-state] [--headless] [--secrets keychain|file]
           [--allow-origin ORIGIN] [--inbox-url https://cloud.example] [--no-mdns] [--loopback]
-                                                 without --port, a test or dev run's SX_TEST_HUB_PORT
-                                                 (1024 or above) sets the port, else 47615
+                                                 without --port, 47615 (a test-hub build: the port a
+                                                 test or dev run sets, 1024 or above)
                                                  --loopback keeps every socket on 127.0.0.1 (tests): the
                                                  phone listener, printer discovery and direct video, mDNS off
   sx-link code [--agent|--watch] [--state-dir DIR]
@@ -203,7 +203,7 @@ async fn run(args: Vec<String>) {
             other => fail(&format!("unknown argument {other}")),
         }
     }
-    let port = hub_port(port_flag, std::env::var("SX_TEST_HUB_PORT").ok().as_deref());
+    let port = hub_port(port_flag, test_hub_setting().as_deref());
     // Headless Linux (a Pi, a NAS, Docker) has no keychain: credentials go to a private file in the
     // state directory unless --secrets keychain says otherwise.
     let use_file = match secrets_kind.as_deref() {
@@ -292,6 +292,18 @@ async fn run(args: Vec<String>) {
         println!("agent code (MCP server, scripts): run `sx-link code --agent`");
     }
     wait_for_stop().await;
+}
+
+/// A test or dev run's hub port setting. Only a `test-hub` build reads the variable, so a release sx-link never
+/// carries its name.
+#[cfg(feature = "test-hub")]
+fn test_hub_setting() -> Option<String> {
+    std::env::var("SX_TEST_HUB_PORT").ok()
+}
+
+#[cfg(not(feature = "test-hub"))]
+fn test_hub_setting() -> Option<String> {
+    None
 }
 
 /// The port to listen on: `--port` when given (0 picks a free one), else a test or dev run's `SX_TEST_HUB_PORT`, so
