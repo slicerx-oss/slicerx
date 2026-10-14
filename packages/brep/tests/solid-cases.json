@@ -1,0 +1,171 @@
+[
+  {
+    "name": "bracket",
+    "volume": [1500,-12],
+    "bounds": [30,30,3],
+    "steps": [
+      ["a","box",{"min":[0,0,0],"max":[30,10,3]}],
+      ["b","box",{"min":[0,0,0],"max":[10,30,3]}],
+      ["joined","boolean",{"op":"union","a":"$a","b":"$b"}],
+      ["result","subtract",{"body":"$joined","solids":[{"type":"cylinder","origin":[5,5,0],"axis":[0,0,1],"diameterMm":4,"heightMm":3}]}]
+    ]
+  },
+  {
+    "name": "enclosure-2",
+    "volume": [7152,0],
+    "bounds": [40,30,20],
+    "steps": [
+      ["base","box",{"min":[0,0,0],"max":[40,30,20]}],
+      ["result","subtract",{"body":"$base","solids":[{"type":"box","min":[2,2,2],"max":[38,28,20]}]}]
+    ]
+  },
+  {
+    "name": "enclosure-0.6",
+    "volume": [2321.6640000000007,0],
+    "bounds": [40,30,20],
+    "steps": [
+      ["base","box",{"min":[0,0,0],"max":[40,30,20]}],
+      ["result","subtract",{"body":"$base","solids":[{"type":"box","min":[0.6,0.6,0.6],"max":[39.4,29.4,20]}]}]
+    ]
+  },
+  {
+    "name": "hundred-holes",
+    "volume": [7200,-200],
+    "bounds": [60,60,2],
+    "steps": [
+      ["base","box",{"min":[0,0,0],"max":[60,60,2]}],
+      [
+        "result",
+        "subtract",
+        {
+          "body": "$base",
+          "solids": [
+            {"type":"cylinder","origin":[3,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,3,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,9,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,15,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,21,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,27,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,33,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,39,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,45,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,51,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[3,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[9,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[15,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[21,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[27,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[33,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[39,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[45,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[51,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2},
+            {"type":"cylinder","origin":[57,57,0],"axis":[0,0,1],"diameterMm":2,"heightMm":2}
+          ]
+        }
+      ]
+    ]
+  },
+  {
+    "name": "four-fillets",
+    "volume": [7280,180],
+    "tolerance": 0.0001,
+    "bounds": [20,20,20],
+    "steps": [
+      ["base","box",{"min":[0,0,0],"max":[20,20,20]}],
+      [
+        "result",
+        "fillet",
+        {
+          "body": "$base",
+          "radiusMm": 3,
+          "edges": [
+            {"a":[0,0,20],"b":[0,0,0],"face":[-1,0,0]},
+            {"a":[20,0,20],"b":[20,0,0],"face":[1,0,0]},
+            {"a":[20,20,20],"b":[20,20,0],"face":[1,0,0]},
+            {"a":[0,20,20],"b":[0,20,0],"face":[-1,0,0]}
+          ]
+        }
+      ]
+    ]
+  }
+]

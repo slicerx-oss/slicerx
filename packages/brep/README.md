@@ -18,6 +18,16 @@ A first build compiles about 230 C++ files (about 450 CPU seconds, one minute on
 Operation names are limited to 128 UTF-8 bytes. Requests are limited to 32 MiB of UTF-8 JSON, 64 nested containers and 1,000,000 JSON values. Serialized bodies are limited to 8 MiB before checksum verification or the kernel reader. The native wrapper and browser adapter reject oversized requests before copying them into the kernel. The `sx-geom` CLI also bounds `brep.*` input before JSON parsing, including whitespace. Numeric body handles remain the preferred path for a process or worker that keeps its bodies alive.
 
 The saved-body checksum detects changed text; it is not authentication. These limits bound input parsing, not the time or memory of an arbitrary modeling operation. Native serialized-body input still requires the existing developer opt-in. Worker/process termination and recovery remain necessary for a hard execution deadline.
+## Solid regression fixtures
+
+`tests/solid-cases.json` describes procedural brackets, open enclosures with 2 mm and 0.6 mm walls, a plate with 100 holes, and a cube with four fillets. Each volume is represented as `a + b * pi`, derived from boxes, cylinders and circular fillet segments. The native and committed-WASM tests run the same cases at scales 0.1, 1 and 10, both at the origin and translated by [1000, -700, 350] mm.
+
+```sh
+SX_BREP_REQUIRE=1 cargo test -p sx-brep --release --test solids
+node --test packages/brep/tests/solids-wasm.mjs
+```
+
+Both paths check analytic volume, bounds, manifold status, save/reopen, closed and consistently oriented tessellation, and released body counts. Analytic relative volume tolerance is 1e-6, or 1e-4 for fillets that may use spline surfaces. Tessellation uses a scale-relative 0.01 mm chord and a 15 degree angle; its separate volume tolerance is 0.5 percent. Mesh volume is measured relative to the placement origin to avoid cancellation from large world coordinates. These are correctness tests, not timing benchmarks or proof of complete numerical conditioning.
 
 ## Our routines in the kernel
 
