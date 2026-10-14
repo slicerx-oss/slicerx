@@ -21,6 +21,17 @@ To try a build that is not released yet, run `node scripts/pack-integrator-kit.m
 
 Ship `sx` (or `sx.exe`) with your app and point the server at it. Without it the server falls back to a stub engine that only estimates STL files and writes G-code nobody can print.
 
+## Register the server in your project
+
+For the Codex client, run this from your app's project directory after installing the kit:
+
+```sh
+node node_modules/@slicerx/mcp/dist/cli.js register --client codex --scope project --allow-dir /abs/models --dry-run
+node node_modules/@slicerx/mcp/dist/cli.js register --client codex --scope project --allow-dir /abs/models
+```
+
+The first command prints JSON with the target path and TOML content without writing. The second creates `.codex/config.toml` with absolute paths and printers off. It preserves an existing different file; merge the dry-run content into that file instead. Trust this project in the client and restart it to load the server. Its own `mcp add` command changes user settings and does not support `--scope project`. Other clients have project-specific recipes in [AGENTS.md](AGENTS.md).
+
 ## Drive SlicerX over MCP
 
 Start the server over stdio from your app's main process (Electron's main process, a Node service, anything that can spawn a process):
