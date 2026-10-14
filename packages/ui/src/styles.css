@@ -445,8 +445,8 @@ button { cursor: pointer; }
 
 /* toasts */
 .sx-toasts { position: fixed; left: var(--overlay-center, 50%); top: var(--overlay-top, auto); bottom: var(--overlay-bottom, calc(var(--toast-floor) + env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; gap: 0; align-items: stretch; width: max-content; max-width: var(--overlay-width, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
-/* The toasts up at once read as one card, a line each. Each line keeps its own time, and the card shrinks as lines go. */
-.sx-toasts:not(:empty) { padding: 4px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-4) 90%, transparent); box-shadow: var(--shadow-float); }
+/* The toasts up at once read as one card, a line each, with one time that waits while the pointer is on the card. */
+.sx-toasts:not(:empty) { pointer-events: auto; padding: 4px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-4) 90%, transparent); box-shadow: var(--shadow-float); }
 /* Out of sight, time stopped, while something covers their place (the plate grid). */
 .sx-toasts[data-held] { visibility: hidden; }
 .sx-toast { pointer-events: none; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 8px 4px 14px; font-size: var(--fs-md); max-width: 100%; animation: sx-toast-in var(--t-slow) var(--ease); }
