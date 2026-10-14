@@ -674,29 +674,34 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .pp-main { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 3px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-1); color: var(--fg); font: var(--fw-medium) calc(12.5px * var(--text-scale)) var(--f-body); white-space: nowrap; cursor: pointer; text-align: left; }
 .pp-main:hover { border-color: var(--muted); }
 .pp-main[aria-expanded="true"] { border-color: var(--accent); }
-.pp-main > .sx-ic { flex: none; color: var(--muted); }
+.pp-main > .sx-ic { flex: none; color: var(--muted); transition: transform var(--t-fast) var(--ease); }
+.pp-main[aria-expanded="true"] > .sx-ic { transform: rotate(180deg); }
 .pp-thumb { flex: none; display: grid; place-items: center; width: 28px; height: 28px; overflow: hidden; border-radius: 5px; }
 /* Room for "Plate 99", so the name starts in one place on every plate. */
-.pp-no { flex: none; min-width: 7.2ch; font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+.pp-lead { flex: none; display: inline-grid; font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+.pp-lead > span, .pp-lead::after { grid-area: 1 / 1; }
+.pp-lead::after { content: attr(data-widest); visibility: hidden; }
+.pp-no { font-weight: var(--fw-semibold); }
 .mid-text { display: block; min-width: 0; overflow: hidden; white-space: nowrap; }
 .pp-name { flex: 1 1 0; color: var(--muted); }
-.pp-of { flex: none; min-width: 5ch; text-align: right; font: calc(11px * var(--text-scale)) var(--f-body); font-variant-numeric: tabular-nums; color: var(--dim); }
+.pp-of { font-weight: var(--fw-semibold); }
 /* The sheet of every plate opens above the picker, up to 400 px tall and never into the toolbar's lane at the top. */
-.pp-sheet { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: var(--z-menu); width: min(640px, calc(100cqw - 24px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; padding: 10px; border-radius: var(--r-md); box-shadow: var(--shadow-pop); background: color-mix(in srgb, var(--ink-1) 96%, transparent); }
+.pp-sheet { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: var(--z-menu); width: min(620px, calc(100cqw - 24px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; padding: 8px; border-radius: var(--r-md); box-shadow: var(--shadow-pop); background: color-mix(in srgb, var(--ink-1) 96%, transparent); }
 .pp-find { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pp-search { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-0); color: var(--muted); }
+.pp-search { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-0); color: var(--muted); }
 .pp-search:focus-within { border-color: var(--accent); box-shadow: var(--focus-field); }
 .pp-search-input { flex: 1 1 0; min-width: 0; height: 100%; padding: 0; border: 0; background: none; color: var(--fg); font: calc(12.5px * var(--text-scale)) var(--f-body); outline: none; }
 .pp-search-input::-webkit-search-cancel-button { display: none; }
 .pp-find .sx-seg { flex: none; }
 .pp-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .pp-form > .plate-form { border-top: 0; padding: 4px 2px; }
-.pp-grid { list-style: none; margin: 0; padding: 2px; display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
-.pp-card { display: grid; justify-items: center; align-content: start; gap: 4px; width: 100%; height: 100px; padding: 8px 6px 6px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--ink-1); color: var(--fg); font: var(--fw-medium) calc(11.5px * var(--text-scale)) var(--f-body); cursor: pointer; }
+.pp-grid { list-style: none; margin: 0; padding: 2px; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; }
+.pp-card { display: flex; align-items: center; gap: 8px; width: 100%; height: 48px; padding: 0 8px 0 6px; text-align: left; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--ink-1); color: var(--fg); font: var(--fw-medium) calc(11.5px * var(--text-scale)) var(--f-body); cursor: pointer; }
 .pp-card:hover { border-color: var(--line); }
 .pp-card[aria-current="true"] { border-color: var(--accent); background: var(--accent-tint); }
-.pp-card-thumb { display: grid; place-items: center; width: 44px; height: 44px; overflow: hidden; border-radius: 6px; }
-.pp-card-name { width: 100%; text-align: center; }
+.pp-card-thumb { flex: none; display: grid; place-items: center; width: 32px; height: 32px; overflow: hidden; border-radius: 5px; }
+.pp-card-text { flex: 1 1 0; min-width: 0; display: grid; gap: 1px; }
+.pp-card-name { width: 100%; white-space: nowrap; overflow: hidden; }
 .pp-card-name b { font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
 .pp-card-state { font-size: calc(10.5px * var(--text-scale)); color: var(--dim); }
 .pp-card[data-state="sliced"] .pp-card-state { color: var(--green); }

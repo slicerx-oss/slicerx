@@ -153,13 +153,14 @@ describe('the plate keys', () => {
 describe('the sheet\'s size', () => {
   it('fits every plate, never resizes with a search (it counts all plates), and stops at the room it has', async () => {
     const { sheetHeight } = await import('../src/workspaces/prepare/plate-picker')
-    expect(sheetHeight(1, 640, 400)).toBe(200)
-    expect(sheetHeight(5, 640, 400)).toBe(200)
-    expect(sheetHeight(6, 640, 400)).toBe(308)
-    expect(sheetHeight(27, 640, 400)).toBe(400)
+    expect(sheetHeight(1, 640, 320)).toBe(146)
+    expect(sheetHeight(4, 640, 320)).toBe(146)
+    expect(sheetHeight(5, 640, 320)).toBe(200)
+    expect(sheetHeight(13, 640, 320)).toBe(308)
+    expect(sheetHeight(27, 640, 320)).toBe(320)
     expect(sheetHeight(27, 640, 260)).toBe(260)
     // A phone's narrower sheet has fewer columns, so more rows.
-    expect(sheetHeight(6, 366, 600)).toBe(416)
+    expect(sheetHeight(6, 366, 600)).toBe(254)
     // The plate settings form gets room of its own.
     expect(sheetHeight(1, 640, 400, true)).toBe(320)
   })
