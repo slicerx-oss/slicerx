@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Fan cooling layer time: a layer that prints faster than this gets more fan, up to full on the smallest layers.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'afc',
+  readout: {rows: ["40 %","100 %"],w: 52},
+  css: ".sxs .afc-s{animation-timing-function:steps(1,end)}.sxs .afc-a{animation-name:afc-a}@keyframes afc-a{0%{opacity:1}45.7%{opacity:0}94.3%{opacity:1}100%{opacity:1}}.sxs .afc-b{animation-name:afc-b}@keyframes afc-b{0%{opacity:0}45.7%{opacity:1}94.3%{opacity:0}100%{opacity:0}}.sxs .afc-h{animation-name:afc-h}@keyframes afc-h{0%{translate:0 0px}45.7%{translate:0 -14px}94.3%{translate:0 0px}100%{translate:0 0px}}@keyframes afc-f-r{to{rotate:360deg}}@keyframes afc-g-r{to{rotate:360deg}}",
+  body: "<g class=\"afc-a afc-s s-a\"><polygon class=\"s-f2 s-ol\" points=\"75.5,110 148.2,152 148.2,141.5 75.5,99.5\"/><polygon class=\"s-f3 s-ol\" points=\"196.7,124 148.2,152 148.2,141.5 196.7,113.5\"/><polygon class=\"s-f1 s-ol\" points=\"124,71.5 196.7,113.5 148.2,141.5 75.5,99.5\"/><g class=\"afc-f\" style=\"transform-box:fill-box;transform-origin:center;animation:afc-f-r 1.6s linear infinite\"><circle cx=\"232\" cy=\"52\" r=\"15\" style=\"fill:var(--stage-pill,#16171e);stroke:var(--stage-ol,#1a1b24)\"/><path class=\"s-g1\" d=\"M232 52Q242.7 44.7 245 52ZM232 52Q233 65 225.5 63.3ZM232 52Q220.3 46.4 225.5 40.7Z\"/></g></g><g class=\"afc-b afc-s s-a\"><path class=\"s-cy s-ol\" d=\"M123.2 68V117A12.9 7.4 0 0 0 149 117V68A12.9 7.4 0 0 1 123.2 68Z\"/><ellipse class=\"s-f1 s-ol\" cx=\"136.1\" cy=\"68\" rx=\"12.9\" ry=\"7.4\"/><g class=\"afc-g\" style=\"transform-box:fill-box;transform-origin:center;animation:afc-g-r 0.35s linear infinite\"><circle cx=\"232\" cy=\"52\" r=\"15\" style=\"fill:var(--stage-pill,#16171e);stroke:var(--stage-ol,#1a1b24)\"/><path class=\"s-g1\" d=\"M232 52Q242.7 44.7 245 52ZM232 52Q233 65 225.5 63.3ZM232 52Q220.3 46.4 225.5 40.7Z\"/></g></g><g class=\" s-a\"><use href=\"#sxs-hud-afc\" x=\"212\" y=\"82\"/><clipPath id=\"afc-hw\"><rect x=\"218\" y=\"74\" width=\"42\" height=\"16\"/></clipPath><g clip-path=\"url(#afc-hw)\"><g class=\"afc-h afc-s s-a\"><use href=\"#sxs-rows-afc\" x=\"212\" y=\"82\"/></g></g></g>",
+}
