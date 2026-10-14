@@ -43,7 +43,10 @@ export interface SketchVariantsProps {
   onSides: (v: string) => void
 }
 
-/** The second row of the picker: the family's ways to draw, or its name alone when it has one way. */
+/**
+ * The second row of the picker: the family's ways to draw, or nothing when it has one way, the row keeping its height.
+ * The tool's name is in the Drawing card's header, and on a phone in the sheet's summary just above the tool strip.
+ */
 export function SketchVariants({ tool, onPick, sides, onSides }: SketchVariantsProps) {
   const family = familyOf(tool)
   const ways = VARIANTS[family]
@@ -51,12 +54,7 @@ export function SketchVariants({ tool, onPick, sides, onSides }: SketchVariantsP
     <div className="sketch-variants">
       {ways ? (
         <Seg label="Draw it by" size="sm" full={family !== 'polygon'} value={tool} onChange={onPick} options={ways} />
-      ) : (
-        // one way to draw it: the name as plain text in a picked-looking segment, not a control
-        <div className="sx-seg sketch-variant-one" data-size="sm" data-full data-testid="sketch-variant-one">
-          <span>{familyName(family)}</span>
-        </div>
-      )}
+      ) : null}
       {family === 'polygon' ? (
         <label className="sketch-sides" data-tip-title="Sides" data-tip-body="How many sides the polygon has, 3 to 64.">
           <Icon name="sk-polygon" size={14} />

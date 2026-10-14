@@ -18,6 +18,7 @@ import { useMediaQuery } from '../lib/media'
 import { useCompactLayout } from '../lib/phone-layout'
 import { get, railOpen, set, setRail, useApp, type Side } from '../state/store'
 import { registerEdge } from './edge-keys'
+import { SheetFoldContext } from './sheet-fold'
 import './pane.css'
 
 /** The rows the pinned top may end on: a clipped pinned top ends under one of them, never through one. */
@@ -162,6 +163,8 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
   // a docked sheet folded to its header; it opens unfolded each time
   const [folded, setFolded] = useState(false)
   if (folded && !sheetOpen) setFolded(false)
+  // the header spot where the panel inside puts its summary, which stays in view while folded
+  const [summarySlot, setSummarySlot] = useState<HTMLElement | null>(null)
   const dragging = useApp((s) => s.dragging)
   const bodyRef = useRef<HTMLDivElement>(null)
   const railRef = useRef<HTMLElement>(null)
@@ -188,10 +191,11 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
   // An open sheet takes its content's height (up to its 70% cap) and holds it, so a section opening inside scrolls
   // there instead of growing the sheet upward under the finger. Content that lands late (a lazy panel) may still size
   // it until the first press or key inside; from then on it holds.
+  // A docked sheet folded to its header takes the header's height; opened again it fits its content afresh.
   useLayoutEffect(() => {
     const el = railRef.current
     if (!el || !sheet) return
-    if (!sheetOpen) {
+    if (!sheetOpen || folded) {
       el.style.removeProperty('height')
       return
     }
@@ -216,7 +220,7 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
       el.removeEventListener('pointerdown', hold, true)
       el.removeEventListener('keydown', hold, true)
     }
-  }, [sheet, sheetOpen])
+  }, [sheet, sheetOpen, folded])
   // A sheet closes when its pane goes (switching between Model and Slice).
   useEffect(() => () => setSheet(sheetKey, false), [sheetKey])
   // The right pane's foot fades while there is more below, so a block cut by the edge reads as more to scroll.
@@ -287,7 +291,7 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
           })}
       {...(footer ? { footer } : {})}
       {...(pinned ? { pinned: <PinnedTop>{pinned}</PinnedTop> } : {})}
-      {...(headExtra ? { headExtra } : {})}
+      {...(dock ? { headExtra: <>{headExtra}<span className="sheet-summary-slot" ref={setSummarySlot} /></> } : headExtra ? { headExtra } : {})}
     >
       <div className="pane-body" ref={bodyRef} id={bodyId} {...(tab ? { 'data-testid': tab.panel } : {})}>
         {children}
@@ -299,7 +303,7 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
   // studio, where its panels get their styles.
   return (
     <>
-      {rail}
+      {dock ? <SheetFoldContext.Provider value={{ folded, setFolded, slot: summarySlot }}>{rail}</SheetFoldContext.Provider> : rail}
       {createPortal(
         <>
           {sheetOpen && !dock ? <div className="sheet-scrim" aria-hidden="true" onClick={() => setSheet(sheetKey, false)} /> : null}
