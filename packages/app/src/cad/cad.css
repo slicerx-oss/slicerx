@@ -251,12 +251,19 @@
 .tp-card[data-dense] > .tp-card-h { min-height: var(--h-sm); }
 .tp-card-state > .sketch-finish-with { width: auto; }
 .tp-card > .tp-card-body > .sketch-palette { padding: 0; border: 0; }
-/* Show: the label, then the chips in one row when the four fit, two by two when they don't. The four need about 334 px
-   with the label at 12 px text and 8 px padding (measured in the e2e); the default panel's row has 247, so two by two. */
-.sketch-show { container-type: inline-size; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+/* Show: the label, then the chips in one row when the four fit, two by two when they don't. The row's columns are equal,
+   so one row needs four of the widest chip (Constraints, 81 px at 12 px text and 8 px padding) and three gaps: 348 px of
+   the chips' own column (measured in the e2e). The desktop panel's column has about 200 and a 390 phone's 296, so both
+   go two by two. */
+.sketch-show { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
 .sketch-show > .tp-label { line-height: var(--h-sm); }
-.sketch-palette .sketch-show > .tp-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-1) var(--s-2); }
-@container (min-width: 336px) { .sketch-palette .sketch-show > .tp-chips { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.sketch-show-room { container-type: inline-size; min-width: 0; }
+.sketch-palette .sketch-show-room > .tp-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-1) var(--s-2); }
+@container (min-width: 348px) { .sketch-palette .sketch-show-room > .tp-chips { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* a phone's sheet has no room to spare in height: the chips keep their own widths and wrap only when the four don't
+   fit the column, so a 390 phone keeps them in one row */
+:root[data-phone] .sketch-palette .sketch-show-room > .tp-chips { display: flex; flex-wrap: wrap; gap: var(--s-1); }
+:root[data-phone] .sketch-palette .sketch-show-room > .tp-chips > .tp-chip { flex: none; }
 /* Grid and Snap share a row and stay separate controls; Section has its own row */
 .sketch-grid-snap { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; column-gap: var(--s-2); align-items: center; min-height: var(--tp-row-h); }
 .sketch-grid-snap > .tp-label { white-space: nowrap; }

@@ -1496,12 +1496,15 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         {/* what the sketch shows: filters, so chips */}
         <div className="tp-row sketch-show">
           <span className="tp-label" id="sk-show-label">Show</span>
-          <div className="tp-chips" role="group" aria-labelledby="sk-show-label">
-            {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
-              <button key={k} id={`sk-show-${k}`} type="button" className="tp-chip" aria-pressed={pal[k]} aria-label={`Show ${k}`} onClick={() => setPal({ [k]: !pal[k] })}>
-                {k[0]!.toUpperCase() + k.slice(1)}
-              </button>
-            ))}
+          {/* the chips' own column is what decides one row or two, whatever the label beside it takes */}
+          <div className="sketch-show-room">
+            <div className="tp-chips" role="group" aria-labelledby="sk-show-label">
+              {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
+                <button key={k} id={`sk-show-${k}`} type="button" className="tp-chip" aria-pressed={pal[k]} aria-label={`Show ${k}`} onClick={() => setPal({ [k]: !pal[k] })}>
+                  {k[0]!.toUpperCase() + k.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
