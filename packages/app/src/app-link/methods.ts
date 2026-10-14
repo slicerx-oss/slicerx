@@ -2,11 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // What an agent may do with the open project over the app link, and the page's answer to each. The hub keeps the same
 // list (packages/connect/link/src/roles.rs, APP_LINK_METHODS) and refuses every other name before it reaches here; a
-// test checks the two lists match. Nothing here prints, queues, approves, signs in or changes settings.
+// test checks the two lists match. Nothing here prints, queues, approves or signs in, and the only settings it changes
+// are two view preferences (look.set: Frame the view and Toolbar size), which change how the window behaves, never
+// the project.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { appName, currentEdition } from '../edition'
+import { appName, currentEdition, editionHasCad } from '../edition'
 import { mimirCloudHost, type MimirQuota } from '../pilot-connect/cloud'
 import { bounds } from '../plate/transform'
 import { LinkError } from './methods-error'
@@ -33,6 +35,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // preview, showing a plate changes only what the window shows, never the project.
   'plates.list': 'read',
   'plates.show': 'read',
+  // Settings > Look and feel's view preferences, Frame the view and Toolbar size: like the preview, they change how the
+  // window behaves, never the project.
+  'look.get': 'read',
+  'look.set': 'read',
   // The design tools (@slicerx/mcp/toolset), run here on the plate's design host.
   'design.new': 'edit',
   'design.list': 'read',
@@ -167,6 +173,40 @@ function setPreview(args: Record<string, unknown>) {
   return previewState()
 }
 
+const FRAMINGS = ['selection', 'open'] as const
+const TOOLBAR_SIZES = ['large', 'medium', 'small'] as const
+
+/** The view preferences: Toolbar size, and Frame the view in an edition with Model's modeling tools. */
+function lookState() {
+  const a = get().appearance
+  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}) }
+}
+
+/**
+ * Sets the view preferences the person sets in Settings > Look and feel: `modelFraming` (selection: frame on every
+ * pick, open: only when Model opens or an object is added) and `toolbarSize` (large, medium or small). Both are checked
+ * before either changes, and the answer is the preferences read back. Nothing else in Settings is reachable here.
+ */
+function setLook(args: Record<string, unknown>) {
+  const extra = Object.keys(args).filter((k) => k !== 'modelFraming' && k !== 'toolbarSize')
+  if (extra.length) throw new LinkError('invalid_input', `look.set takes modelFraming and toolbarSize only, not ${extra.join(', ')}`)
+  const { modelFraming, toolbarSize } = args
+  if (modelFraming === undefined && toolbarSize === undefined) throw new LinkError('invalid_input', 'give modelFraming, toolbarSize or both')
+  if (modelFraming !== undefined) {
+    if (!editionHasCad(currentEdition())) throw new LinkError('not_found', `this edition of ${appName()} has no Frame the view setting`)
+    if (!FRAMINGS.includes(modelFraming as (typeof FRAMINGS)[number])) throw new LinkError('invalid_input', `modelFraming is one of ${FRAMINGS.join(', ')}`)
+  }
+  if (toolbarSize !== undefined && !TOOLBAR_SIZES.includes(toolbarSize as (typeof TOOLBAR_SIZES)[number])) throw new LinkError('invalid_input', `toolbarSize is one of ${TOOLBAR_SIZES.join(', ')}`)
+  set({
+    appearance: {
+      ...get().appearance,
+      ...(modelFraming !== undefined ? { modelFraming: modelFraming as (typeof FRAMINGS)[number] } : {}),
+      ...(toolbarSize !== undefined ? { toolbarSize: toolbarSize as (typeof TOOLBAR_SIZES)[number] } : {}),
+    },
+  })
+  return lookState()
+}
+
 /** The project's plates in order, the one in view marked, as the plate picker shows them. */
 function platesState() {
   const rows = plateRows()
@@ -241,6 +281,8 @@ const HANDLERS: Record<string, Handler> = {
   'preview.set': (args) => setPreview(args),
   'plates.list': () => platesState(),
   'plates.show': (args) => showPlate(args),
+  'look.get': () => lookState(),
+  'look.set': (args) => setLook(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),
