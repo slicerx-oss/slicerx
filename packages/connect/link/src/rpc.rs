@@ -561,6 +561,10 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
         let _ = tx.send(reply(&id, out));
     }
     bridge.app_link.closed(conn.id);
+    // A remembered client's connection left a sender in `live_clients` (for revoking it). It goes with the
+    // connection: while it was kept, the writer below never saw its channel end, so the hub never closed the
+    // socket and the client waited on its close for good.
+    crate::hub::lock(&bridge.live_clients).retain(|(_, t)| !t.same_channel(&tx));
     for (_, h) in conn.subs.drain() {
         h.abort();
     }
