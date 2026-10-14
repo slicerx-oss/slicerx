@@ -114,7 +114,8 @@ describe('Show me on a strike that holds Print back', () => {
     const show = el.querySelector<HTMLButtonElement>('[data-testid="slice-block-show"]')
     expect(show?.closest('.app-err')?.textContent).toContain('heimdall found a collision')
     flushSync(() => show!.click())
-    await vi.waitFor(() => expect(get().strikePick).toBe(1))
+    // the jump loads heimdall-jump on first use, which can take over a second on a cold module graph
+    await vi.waitFor(() => expect(get().strikePick).toBe(1), { timeout: 5000 })
     expect(get().layerHi).toBe(hit.layer + 1)
     expect(get().sliceLook).toBe('toolpaths')
   })
