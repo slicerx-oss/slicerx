@@ -7,7 +7,8 @@
 #
 # Reads the commit's check-runs from GitHub (gh api, read only) and requires each check in required-checks.txt to be
 # success or skipped. A check that is still running, or has not appeared yet, is waited for up to
-# SX_GREEN_WAIT seconds (default 600), then counts as not green. If a check was run more than once, the latest run
+# SX_GREEN_WAIT seconds (default 3600: a push to main takes 35 to 43 minutes to turn every required check green), then
+# counts as not green. If a check was run more than once, the latest run
 # counts. Exit 0 when green, 1 when not, 2 on usage or API errors.
 #   --dry-run                  report each check and the verdict, and exit 0 either way
 #   SX_PUBLISH_ALLOW_RED=1     owner-approved emergency only: prints a loud warning and lets a red commit through
@@ -24,7 +25,7 @@ list=${SX_REQUIRED_CHECKS:-$here/required-checks.txt}
 sha=$(git -C "$here" rev-parse --verify "$1^{commit}" 2>/dev/null) || { echo "require-green: unknown commit $1" >&2; exit 2; }
 slug=${2:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}
 [ -n "$slug" ] || { echo "require-green: cannot tell the repository (gh repo view failed)" >&2; exit 2; }
-wait=${SX_GREEN_WAIT:-600}; poll=${SX_GREEN_POLL:-20}
+wait=${SX_GREEN_WAIT:-3600}; poll=${SX_GREEN_POLL:-20}
 required=$(grep -vE '^\s*(#|$)' "$list" | sed 's/[[:space:]]*$//')
 [ -n "$required" ] || { echo "require-green: no required checks in $list" >&2; exit 2; }
 
