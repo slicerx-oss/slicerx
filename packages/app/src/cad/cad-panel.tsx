@@ -19,7 +19,7 @@ import { cancelEdit, editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { sessionFonts } from './history/record'
 import { applyArray, applyExtrude, arraySpec, extrudeParams, type ExtrudeInput, BED_FRAME, describeFeature, featurePoints, loopsOf, previewArray, readout, type ArrayKind } from './cad-ops'
-import { close, errorText, num, Num, pickWords, Shell, useProbe, Vec, ToolFooter } from './panel-kit'
+import { close, errorText, num, Num, pickWords, Shell, useProbe, Vec, ToolFooter, PointerHint } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { SvgFileField } from './svg-file'
 import { KIND_NAMES, dimensionText, keepDimension, keepableKinds, removeDimension, type ObjectPick } from './dimensions'
@@ -233,7 +233,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   const second = type === 'slot' ? 'Width' : 'Height'
   return (
     <Shell title={textOnly ? 'Text on a face' : 'Shape on a face'} aside={edit ? `Editing step ${edit.index + 1}` : face ? face.label : 'No face yet'}>
-      {!face ? <p className="cad-hint"><Icon name="mouse-left" size={15} /> Click a flat face, or the bed, where the {textOnly ? 'text' : 'shape'} goes.</p> : null}
+      {!face ? <PointerHint text={`Click a flat face, or the bed, where the ${textOnly ? 'text' : 'shape'} goes.`} /> : null}
       {!textOnly ? (
         <Field htmlFor="cad-shape" label="Shape">
           <Select id="cad-shape" value={type} onChange={(e) => setType(e.target.value as ShapeType)}>

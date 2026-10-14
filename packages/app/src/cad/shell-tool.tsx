@@ -17,7 +17,7 @@ import { applyShell } from './holes'
 import { keyOfTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
+import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 
 interface Picked {
@@ -114,7 +114,7 @@ export function ShellTool() {
   const n = target?.faces.length ?? 0
   return (
     <Shell title="Shell" aside={edit ? `Editing step ${edit.index + 1}` : n ? `${n} open face${n === 1 ? '' : 's'}` : target ? 'Closed all round' : 'Nothing picked yet'}>
-      <p className="cad-hint"><Icon name="mouse-left" size={15} /> Click the flat faces to leave open; click one again to close it.</p>
+      <PointerHint text="Click the flat faces to leave open; click one again to close it." />
       <div className="cad-pair">
         <Num id="shell-wall" label="Wall" unit="mm" value={wall} onChange={setWall} onEnter={() => void apply()} />
       </div>
