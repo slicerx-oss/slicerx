@@ -253,3 +253,8 @@ test('Advanced rows from tree support angle slow to wall transition filter devia
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['tree_support_angle_slow', 'btal'], ['tree_support_branch_diameter', 'bttd'], ['tree_support_branch_diameter_angle', 'bttg'], ['tree_support_branch_distance', 'bttb'], ['tree_support_tip_diameter', 'bttt'], ['tree_support_top_rate', 'bttr'], ['tree_support_wall_count', 'bttw'], ['tree_support_brim_width', 'bttm'], ['wall_sequence', 'btwo'], ['is_infill_first', 'btif'], ['wall_direction', 'btwd'], ['wall_transition_length', 'bttl'], ['wall_transition_angle', 'bttn'], ['wall_transition_filter_deviation', 'bttf']])
 })
+
+test('Advanced rows from chamber temperature to wipe distance play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['wave_overhangs', 'bwvo'], ['wave_overhang_line_spacing', 'bwvs'], ['wave_overhang_perimeter_overlap', 'bwvl'], ['wave_overhang_print_speed', 'bwvp'], ['wave_overhang_flow_mm3_per_mm', 'bwvf'], ['wave_overhang_max_iterations', 'bwvi']])
+})

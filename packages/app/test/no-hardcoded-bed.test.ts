@@ -9,7 +9,8 @@ import { describe, expect, it } from 'vitest'
 const src = resolve(import.meta.dirname, '../src')
 // The one place the plate types and their names live, and the 3MF writer, which keeps Orca's file names for them
 // next to its plate_N.json names (importing bed-type there splits it out of the startup chunk, 0.2 KB more).
-const ALLOWED = new Set(['plate/bed-type.ts', 'export/threemf.ts'])
+// The tooltip drawings for a plate's own temperature setting name that plate in their readout.
+const ALLOWED = new Set(['plate/bed-type.ts', 'export/threemf.ts', 'demos/adv-hot-plate-temp.ts', 'demos/adv-textured-plate-temp.ts'])
 // A source's path under src with forward slashes, as ALLOWED names it, on Windows too.
 const rel = (path: string) => relative(src, path).split(sep).join('/')
 
