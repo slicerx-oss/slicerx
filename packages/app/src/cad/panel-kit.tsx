@@ -7,7 +7,7 @@
 // sentences, and the action row with the primary action on the right. Probe mode for the view lives here too.
 import type { PickEvent } from '@slicerx/viewport'
 import { Block, Button, Icon, Input, Menu, MenuItem, Seg, Select, SplitButton, VectorField, type Axis, type IconName, type SegOption, type TipSpec } from '@slicerx/ui'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
 import { set, useApp } from '../state/store'
@@ -388,6 +388,9 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
   const [running, setRunning] = useState(false)
   const [menu, setMenu] = useState(false)
   const working = busy || running
+  // the reason the primary is off describes it, so a screen reader reads why along with the button
+  const reasonId = useId()
+  const why = disabled && !working && reason ? reasonId : undefined
   const go = async (stay: boolean) => {
     if (disabled || working) return
     setRunning(true)
@@ -457,13 +460,13 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
     <div ref={ref} className="cad-actions cad-footer tp-actions" {...(more ? { 'data-more': '' } : {})}>
       {extra ? <div className="tp-actions-extra">{extra}</div> : null}
       {disabled && !working && reason ? (
-        <p className="tp-card-reason" role="status" data-testid="model-tool-reason">
+        <p id={reasonId} className="tp-card-reason" role="status" data-testid="model-tool-reason">
           {reason}
         </p>
       ) : null}
       <div className="tp-actions-main">
         <span className="tp-actions-start">
-          <Button variant="ghost" data-testid="model-tool-cancel" onClick={close} disabled={working} tip={{ title: 'Close the tool', key: 'Esc' }}>
+          <Button variant="ghost" data-testid="model-tool-cancel" onClick={close} disabled={working} tip={keys ? { title: 'Close the tool', key: 'Esc' } : { title: 'Close the tool' }}>
             Cancel
           </Button>
         </span>
@@ -474,6 +477,7 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
               data-testid="model-tool-apply"
               onClick={() => void go(false)}
               disabled={off}
+              aria-describedby={why}
               tip={{ title: verb, key: 'Enter' }}
               menuLabel="More ways to apply"
               menuOpen={menu}
@@ -484,7 +488,7 @@ export function ToolFooter({ verb, verbs = [], onApply, disabled = false, busy =
               {label}
             </SplitButton>
           ) : (
-            <Button variant={primary ? 'primary' : 'default'} data-testid="model-tool-apply" onClick={() => void go(false)} disabled={off} tip={{ title: verb, key: 'Enter' }}>
+            <Button variant={primary ? 'primary' : 'default'} data-testid="model-tool-apply" onClick={() => void go(false)} disabled={off} aria-describedby={why} tip={{ title: verb, key: 'Enter' }}>
               {label}
             </Button>
           )}
