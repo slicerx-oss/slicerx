@@ -32,7 +32,7 @@ svg.ti .sk{stroke:var(--ti-sk,var(--ti-a2))}
 svg.ti .skc{stroke:var(--ti-skc,color-mix(in srgb,var(--ti-sk,var(--ti-a2)) 50%,transparent))}
 svg.ti .skf{fill:var(--ti-sk,var(--ti-a2))}
 svg.ti .skcf{fill:var(--ti-skc,color-mix(in srgb,var(--ti-sk,var(--ti-a2)) 50%,transparent))}
-svg.ti .nd{fill:var(--ti-nd,#fff)}
+svg.ti .nd{fill:var(--ti-nd,white)}
 `
 
 /** The key palette the 16 px snap reads colors against, one entry per class a snapped icon uses (the dark default;
