@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The sketch's live numbers beside the cursor: small pills for the drawing tool's next step (X and Y for a first point,
 // length and angle for a line, width and height for a rectangle). One pill has focus; typing a number edits it, Tab
-// moves to the next, Enter places the point and Esc drops what was typed. A pill left empty takes the cursor's value.
+// moves to the next, Enter places the point and Esc drops what was typed (typing then starts again in the first pill).
+// A pill left empty takes the cursor's value.
 // The pills stay inside the view and never over the point being placed: below and right of the cursor, or flipped to
 // the other side near an edge. While a number is typed the group turns to edit fields, so typed and live read apart.
 //

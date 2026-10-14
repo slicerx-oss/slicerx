@@ -1439,7 +1439,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           onFocus={setPillFocus}
           onChange={setTyped}
           onCommit={commitField}
-          onCancel={() => setTyped(null)}
+          // Esc drops what was typed and starts again from the first pill
+          onCancel={() => (setTyped(null), setPillFocus(0))}
         />
       )}
       {dimField
