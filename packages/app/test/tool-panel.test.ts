@@ -55,6 +55,17 @@ describe('how choices fit', () => {
     expect(choiceFit({ labels: [30, 96, 40], words: [30, 96, 40], width: 276, icons: true })).toBe('icons')
   })
 
+  it('keeps a three-way choice a segment with the narrow padding before falling back to a select', () => {
+    // Direction in the 280 px pane: 215 px across three, about 68 px each; Symmetric is 58 px, one word
+    const direction = { labels: [47.25, 57.875, 52.9375], words: [27.6, 57.875, 27.6], width: 215 }
+    expect(choiceFit({ ...direction, icons: false })).toBe('tight')
+    // icons still win when every option has one, and a set that fits the usual way is unchanged
+    expect(choiceFit({ ...direction, icons: true })).toBe('icons')
+    expect(choiceFit({ ...direction, width: 312 - 64, icons: false })).toBe('line')
+    // a label too long even for the narrow padding is still a select
+    expect(choiceFit({ labels: [30, 64, 40], words: [30, 64, 40], width: 215, icons: false })).toBe('select')
+  })
+
   it('takes a narrower panel into account', () => {
     expect(choiceFit({ ...short, width: 160 })).toBe('line')
     expect(choiceFit({ ...short, width: 120 })).not.toBe('line')
