@@ -251,6 +251,56 @@ test.describe('controls never move when pressed', () => {
     expect(moved).toEqual([])
   })
 
+  test('Model on a phone: the bar, the handles and the sketch tools', async ({ page, isMobile }, info) => {
+    test.skip(!isMobile, 'Phone only; the desktop shelf is covered by Model panels')
+    // the browser build that models only, where a phone gets Model
+    await page.addInitScript(() => {
+      localStorage.setItem('slicerx.debug', '1')
+      localStorage.setItem('slicerx.e2e.cadOnly', '1')
+      if (sessionStorage.getItem('sx-e2e')) return
+      sessionStorage.setItem('sx-e2e', '1')
+      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' } }))
+    })
+    await page.goto('./')
+    await page.locator('html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: 120_000 })
+    const slots = () => page.locator('.pbar-slot').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
+    const moved: Moved[] = []
+    // Edit and Tree open their sheets: no slot of the bar moves or changes size
+    for (const id of ['phone-edit', 'phone-tree']) {
+      const before = await slots()
+      await page.getByTestId(id).click()
+      await page.waitForTimeout(350)
+      const after = await slots()
+      before.forEach((b, i) => {
+        const a = after[i]!
+        const d = { dx: a.x - b.x, dy: a.y - b.y, dw: a.width - b.width, dh: a.height - b.height }
+        if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control: `Model bar: ${id}`, what: `slot ${i}`, ...d })
+      })
+      // shut it again: the tree's scrim, or Edit's own slot
+      if (await page.locator('.sheet-scrim').count()) await page.locator('.sheet-scrim').click({ position: { x: 20, y: 20 } })
+      else await page.getByTestId(id).click()
+      await page.waitForTimeout(350)
+    }
+    // the handles, with a box picked
+    await sx(page, { plate: [], selection: null, selectedIds: [] })
+    await page.getByTestId('phone-add').click()
+    await page.getByRole('menu', { name: 'Add' }).getByRole('menuitem', { name: 'Box' }).first().click()
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: unknown[] } } }).__sx.getState().plate.length)).toBe(1)
+    await page.evaluate(() => {
+      const s = (window as unknown as { __sx: { getState(): { plate: { id: string }[] }; setState(p: unknown): void } }).__sx
+      const id = s.getState().plate[0]!.id
+      s.setState({ selection: id, selectedIds: [id] })
+    })
+    moved.push(...(await probe(page, 'Model handles', page.getByTestId('phone-handles'))))
+    // the sketch's two rows in the bar
+    await page.getByTestId('phone-sketch').click()
+    await page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, originPlane: 'xy' }))
+    await expect(page.getByTestId('phone-sketch-bar').getByRole('radiogroup', { name: 'Drawing tool' })).toBeVisible()
+    moved.push(...(await probe(page, 'Sketch tools', page.getByTestId('phone-sketch-bar'))))
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
   test('the mimir tab', async ({ page, isMobile }, info) => {
     test.skip(isMobile, 'Phones have no modeling tabs')
     await open(page, { settingsMode: 'advanced' })

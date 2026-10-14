@@ -1,0 +1,99 @@
+/* SPDX-License-Identifier: Apache-2.0
+   Copyright (C) 2026 The SlicerX contributors */
+/* Model on a phone (html[data-phone]): the view takes the room between the top bar and the tab bar, Model's bar sits
+   along the view's bottom, the timeline strip above it, and the tool sheet above both, low enough that the model
+   stays in view and takes taps. Every control is at least 44 px. Nothing here applies off a phone. */
+:root[data-phone] {
+  /* the bar's height and its gap to the view's bottom edge; the sketch's two rows make it taller */
+  --pbar-h: 64px;
+  --pbar-gap: 8px;
+  --ptl-h: 0px;
+}
+:root[data-phone]:has(.pbar[data-sketch]) { --pbar-h: 104px; }
+:root[data-phone]:has(.ptl) { --ptl-h: 56px; }
+
+/* The view fills the space the shell leaves it; the bar and the strips float over its bottom. Where the shell has no
+   phone tab bar yet, the 34 px is the window frame around the view, as before. */
+:root[data-phone] .studio[data-model-mode="design"] > .vp,
+:root[data-phone] .studio[data-model-mode="design"]:has(> .pane.sheet) > .vp { height: calc(100dvh - var(--h-bar) - var(--phone-tabbar-h, 34px)); }
+
+/* The bar: six fixed slots, an icon over its name; a pressed slot fills, nothing changes size. */
+.pbar-wrap { position: absolute; left: 8px; right: 8px; bottom: var(--pbar-gap); z-index: calc(var(--z-hud) + 1); pointer-events: none; }
+.pbar-wrap > * { pointer-events: auto; }
+.hud-top .pundo, .hud-top .phandles { flex: none; }
+:root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-top { flex-wrap: nowrap; }
+:root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-top > .hud-col:first-child { min-width: 0; flex: 1 1 auto; }
+:root[data-phone] .studio[data-model-mode="design"] .select-pill { max-width: 100%; }
+.pbar { display: grid; height: var(--pbar-h); padding: 6px; border-radius: var(--r-lg); box-shadow: var(--shadow-float), var(--lift-edge); }
+.pbar-slots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; height: 52px; }
+.pbar-slots[hidden] { display: none; }
+.pbar-anchor { display: grid; min-width: 0; }
+.pbar-slot { display: grid; justify-items: center; align-content: center; gap: 2px; min-width: 44px; height: 52px; padding: 0 2px; border: 0; border-radius: var(--r-md); background: none; color: var(--fg); font: var(--fw-medium) var(--fs-xs) var(--f-body); white-space: nowrap; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.pbar-slot > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pbar-slot .sx-ic { color: var(--muted); }
+.pbar-slot[aria-pressed="true"], .pbar-slot[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.pbar-slot[aria-pressed="true"] .sx-ic, .pbar-slot[aria-expanded="true"] .sx-ic { color: var(--accent); }
+.pbar-slot:disabled { color: var(--dim); }
+.pbar-slot:disabled .sx-ic { color: var(--dim); }
+.pbar-slot:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+/* Menus from the bar open upward over the view, wide enough to read. */
+.pbar .sx-menu { min-width: 240px; }
+
+/* The sketch: the panel's two rows of drawing tools (families, then the ways to draw one) with Finish sketch beside. */
+.pbar-sketch:empty { display: none; }
+.pbar[data-sketch] { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; row-gap: 4px; }
+.pbar-sketch { min-width: 0; }
+.sketch-picker-phone { display: grid; grid-template-rows: 48px 40px; gap: 4px; min-width: 0; }
+.pbar { position: relative; }
+/* Finish sketch at the end of the second row, which keeps its room whatever the family */
+.pbar-sketch-end { position: absolute; right: 6px; bottom: 6px; height: 40px; display: flex; align-items: center; }
+.pbar-sketch-end .sx-btn { height: 40px; }
+.pbar[data-sketch] .sketch-variants { padding-right: 136px; }
+.pbar-sketch .sketch-tools { width: 100%; height: 48px; }
+.pbar-sketch .sketch-tools .sx-seg-opt, .pbar-sketch .sketch-tools button { min-height: 44px; }
+.pbar-sketch .sketch-variants { min-height: 40px; margin: 0; }
+.pbar-sketch .sketch-variants button { min-height: 36px; }
+.pbar-sketch .sketch-sides .sx-input { min-height: 36px; width: 56px; }
+
+/* Undo and redo, at the view's top right. */
+.pundo { display: flex; gap: 2px; padding: 2px; border-radius: var(--r-md); }
+:root[data-phone] .hud .pundo .sx-btn[data-icon-only] { width: 44px; height: 44px; border: 0; background: none; }
+
+/* Move, Rotate, Scale under the selection pill. */
+.phandles { border-radius: var(--r-md); padding: 2px; }
+.phandles .sx-seg { height: 44px; }
+.phandles .sx-seg button { min-width: 44px; min-height: 40px; }
+
+/* The timeline strip above the bar, when there is anything in it. */
+.ptl { position: absolute; left: 8px; right: 8px; bottom: calc(var(--pbar-gap) + var(--pbar-h) + 8px); z-index: var(--z-hud); height: 52px; padding: 0 6px; border-radius: var(--r-md); display: flex; align-items: center; }
+.ptl .tl { width: 100%; }
+.ptl .tl-track { padding: 0 2px; }
+.ptl .tl-chip { height: 44px; }
+.ptl .tl-marker { position: relative; height: 44px; }
+/* the marker's hold is wider than its line, so a finger takes it */
+.ptl .tl-marker::after { content: ""; position: absolute; inset: 0 -20px; }
+
+/* The pills along the bottom left (the model size) sit above the timeline and the bar. */
+:root[data-phone] .studio[data-model-mode="design"] > .vp > .hud-bl { bottom: calc(var(--pbar-gap) + var(--pbar-h) + var(--ptl-h) + 8px); }
+/* A toast keeps clear of them too. */
+:root[data-phone] .studio[data-model-mode="design"] > .vp { --toast-floor: calc(var(--pbar-gap) + var(--pbar-h) + var(--ptl-h) + 16px); }
+
+/* The tool sheet sits on the bar, without a scrim: the view above it still takes taps. It folds to its header. */
+:root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side] { bottom: calc(var(--pbar-top-gap, var(--pbar-h)) + 4px); left: 8px; right: 8px; max-height: 44dvh; border-radius: var(--r-lg); z-index: calc(var(--z-hud) + 2); }
+:root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side]:not(.sheet-open) { visibility: hidden; transform: translateY(calc(100% + var(--pbar-top-gap, var(--pbar-h)) + 24px)); transition: transform 200ms var(--ease), visibility 0s linear 200ms; }
+:root[data-phone] .pane.sheet.sheet-docked.sheet-folded.sx-rail[data-side] { height: 52px !important; overflow: hidden; }
+:root[data-phone] .pane.sheet.sheet-docked .sheet-handle { height: 28px; }
+
+/* The tree: rows and their buttons at a finger's size, More always shown. */
+:root[data-phone] .dtree-row { min-height: 44px; }
+:root[data-phone] .dtree-name, :root[data-phone] .dtree-folder-name { height: 44px; }
+:root[data-phone] .dtree-chev { width: 36px; height: 44px; }
+:root[data-phone] .dtree-part { min-height: 44px; }
+:root[data-phone] .dtree-body .cad-step { grid-template-columns: 22px minmax(0, 1fr) 44px; min-height: 44px; }
+:root[data-phone] .cad-step-more-btn { width: 44px; height: 44px; opacity: 1; }
+:root[data-phone] .cad-step-sketch { min-height: 44px; }
+
+/* The selection pill and the view buttons at the top. */
+:root[data-phone] .select-pill { height: 48px; }
+:root[data-phone] .select-pill-kind, :root[data-phone] .select-pill-clear { width: 44px; height: 40px; }
+:root[data-phone] .studio[data-model-mode="design"] .hud-top .sx-btn[data-icon-only] { width: 44px; height: 44px; }
