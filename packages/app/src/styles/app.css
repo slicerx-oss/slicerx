@@ -180,7 +180,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .studio[data-layers] .parked-chip { bottom: 264px; }
 .slice-look { position: absolute; left: 50%; top: 104px; transform: translateX(-50%); z-index: var(--z-hud); border-radius: var(--r-md); padding: 3px; }
 /* With the toolpaths showing, the layer dock takes the bottom: the plate list and chip sit above it, and a floating Slice action moves up under the View menu. */
-.studio[data-layers] .hud-bl { bottom: 216px; right: var(--lstrip-room, 12px); }
+.studio[data-layers] .hud-bl { bottom: 216px; right: 12px; }
 .studio[data-layers] .slice-float { bottom: auto; top: 104px; right: 64px; }
 /* On a phone the toolpath view keeps the layer dock and drops the plate tools and the legend (the color menu still has it); the view grows to make room. */
 @media (max-width: 900px) {
@@ -501,22 +501,6 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .silhouette path { fill: color-mix(in srgb, var(--muted) 55%, var(--ink-3)); stroke: color-mix(in srgb, var(--muted) 55%, var(--ink-3)); stroke-width: 0.3; stroke-linejoin: round; }
 
 .kv-one b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* layer heights along the model, on the viewport's right edge */
-.lstrip { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); z-index: 2; margin: 0; padding: 8px 8px 8px 10px; border-radius: var(--r-md); display: grid; justify-items: center; gap: 4px; font-size: calc(10px * var(--text-scale)); color: var(--dim); }
-.ltrack { position: relative; width: 10px; height: 200px; }
-.lstrip svg { width: 10px; height: 100%; border-radius: 3px; display: block; }
-.lstrip-live .ltrack { cursor: pointer; touch-action: none; }
-.lstrip-live { padding: 8px 12px 8px 12px; }
-.lhandle { position: absolute; left: 50%; width: 32px; height: 20px; margin: -10px 0 0 -16px; padding: 0; border-radius: 10px; border: 1.5px solid var(--purple); background: var(--ink-3); color: var(--fg); cursor: grab; display: grid; place-items: center; touch-action: none; font-size: calc(11px * var(--text-scale)); }
-.lend { min-height: 14px; }
-.lhandle > span { font: var(--fw-medium) calc(11px * var(--text-scale)) var(--f-mono); pointer-events: none; }
-.lhandle em { position: absolute; right: 100%; margin-right: 8px; font: var(--fw-medium) calc(10.5px * var(--text-scale)) var(--f-mono); font-style: normal; color: var(--muted); white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 120ms; }
-.lhandle:hover em, .lhandle:focus-visible em, .lhandle:active em { opacity: 1; }
-.lhandle:active { cursor: grabbing; }
-.lhandle-hi { background: color-mix(in srgb, var(--purple) 28%, var(--ink-3)); }
-.lhandle-hi:active, .lhandle-hi:focus-visible { background: var(--purple); color: var(--ink-1); }
-.lstrip figcaption { color: var(--muted); font-size: calc(10px * var(--text-scale)); max-width: none; white-space: nowrap; text-align: center; line-height: 1.35; }
-@media (max-width: 900px) { .ltrack { height: 130px; } }
 
 /* model library (store feature) */
 .feed-search { display: flex; min-width: 0; }
@@ -903,7 +887,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
    bar to its two rows. Near the right end it keeps clear of the plate chips on the left at any width (they stop
    short of it, below). The bar grows upward from the foot of the view, so nothing above it moves. */
 .dock > .dock-tab { position: absolute; right: 24px; bottom: 100%; z-index: 1; }
-.studio[data-layers] .vp:has(> .dock .dock-tab) > .hud-bl { right: max(var(--lstrip-room, 12px), 120px); }
+.studio[data-layers] .vp:has(> .dock .dock-tab) > .hud-bl { right: 120px; }
 /* Desktop: the transport and speed on the first row; the view checks, the G-code lines and the readout on the second.
    The slider rows share one set of columns, so the tracks run to the readout column and end together. */
 .dock:not([data-phone]) { container: dock / inline-size; grid-template-columns: 56px minmax(0, 1fr) max-content; column-gap: 12px; }
@@ -942,14 +926,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .strike-fixes p { margin: 2px 0 0; font-size: calc(12px * var(--text-scale)); color: var(--muted); line-height: 1.45; }
 .layer-mark.strike-mark { color: var(--red); background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); }
 .layer-mark.strike-mark[data-severity="close"] { color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
-.lstrike { position: absolute; right: calc(100% + 4px); width: 18px; height: 18px; margin-top: -9px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); color: var(--red); cursor: pointer; }
-.lstrike[data-severity="close"] { color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
 .strike-rail { position: relative; min-width: 0; }
 .strike-tick { position: absolute; top: -12px; transform: translateX(-50%); width: 16px; height: 16px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); color: var(--red); cursor: pointer; }
 .strike-tick[data-severity="close"] { color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
 .strike-measure { position: absolute; inset: 0; pointer-events: none; visibility: hidden; }
 /* Strikes too close to tell apart on a narrow rail share one mark with their count. */
-.strike-tick, .lstrike, .layer-mark.strike-mark { overflow: visible; }
+.strike-tick, .layer-mark.strike-mark { overflow: visible; }
 .strike-count { position: absolute; top: -6px; right: -8px; min-width: 13px; height: 13px; padding: 0 3px; border-radius: 7px; background: var(--red); color: var(--ink-1); font-size: calc(9.5px * var(--text-scale)); font-weight: var(--fw-bold); line-height: 13px; text-align: center; font-variant-numeric: tabular-nums; }
 
 
@@ -1049,7 +1031,6 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
   }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .vp-stage { position: relative; inset: auto; grid-row: 1 / 4; grid-column: 1 / -1; min-height: 0; }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .hud-top { position: relative; grid-area: top; inset: auto; margin: 12px 12px 0; }
-  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .lstrip { position: relative; grid-area: side; inset: auto; transform: none; align-self: center; margin: 8px 30px 8px 0; }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .hud-bl { position: relative; grid-area: chips; inset: auto; margin: 0 12px 8px; }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .dock { position: relative; grid-area: dock; inset: auto; margin: 0 12px 8px; }
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .slice-float { position: relative; grid-area: foot; inset: auto; width: auto; margin: 0 12px 12px; border-radius: var(--r-md); background: var(--overlay); box-shadow: var(--shadow-float); }

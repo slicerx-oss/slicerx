@@ -133,8 +133,8 @@ test('captures the open step card art', async ({ page, isMobile }) => {
   await command(page, 'Slice the plate')
   await expect(sliced(page, before)).toBeVisible({ timeout: 180_000 })
   // Line type colors, cut about two thirds up so the walls show.
-  const top = page.getByRole('slider', { name: 'Top layer' })
-  await top.focus()
+  // The Layer slider in the playback bar.
+  await page.locator('#pv-layer').focus()
   for (let i = 0; i < 4; i++) await page.keyboard.press('PageDown')
   await page.evaluate(() => (window as unknown as { __vp: { setColorMode(m: string): void } }).__vp.setColorMode('feature'))
   const head = page.getByRole('checkbox', { name: 'Show toolhead' })
