@@ -64,7 +64,7 @@
 .pbar-sketch .sketch-tools.sx-seg > button { flex: 1 0 44px; min-width: 44px; }
 .pbar-sketch .sketch-tools .sx-seg-opt, .pbar-sketch .sketch-tools button { min-height: 44px; }
 .pbar-sketch .sketch-variants { min-height: 40px; margin-top: 0; margin-bottom: 0; margin-left: 0; }
-.pbar-sketch .sketch-variants button { min-height: 36px; }
+.pbar-sketch .sketch-variants button, .pbar-sketch .sketch-variant-one > span { min-height: 36px; }
 .pbar-sketch .sketch-sides .sx-input { min-height: 36px; width: 56px; }
 
 /* Undo and redo, at the view's top right. */
