@@ -177,7 +177,7 @@ test('an Advanced setting row opens the loop of its drawing and plays it', async
   const tip = page.locator('#sx-tip')
   const stage = tip.locator('.sx-stage')
   // setting key, its name to search for (the settings sit behind tabs), then the class prefix of the loop its row shows
-  for (const [key, name, loopId] of [['print_flow_ratio', 'Print flow ratio', 'afr'], ['fuzzy_skin', 'Fuzzy skin', 'afz'], ['ironing_type', 'Ironing type', 'air'], ['draft_shield', 'Draft shield', 'ads'], ['elefant_foot_compensation', 'Elephant foot', 'aef']] as const) {
+  for (const [key, name, loopId] of [['print_flow_ratio', 'Print flow ratio', 'afr'], ['fuzzy_skin', 'Fuzzy skin', 'afz'], ['ironing_type', 'Ironing type', 'air'], ['draft_shield', 'Draft shield', 'ads'], ['elefant_foot_compensation', 'Elephant foot', 'aef'], ['enable_arc_fitting', 'Arc fitting', 'aaf'], ['hole_to_polyhole', 'polyholes', 'aph']] as const) {
     await page.locator('#expert-search').fill(name)
     const row = page.locator(`li[data-key="${key}"]`).first()
     await row.scrollIntoViewIfNeeded()
