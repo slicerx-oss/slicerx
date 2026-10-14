@@ -872,16 +872,21 @@ const GLYPHS: Record<SketchGlyphKind, (g: GlyphGrid) => void> = {
 }
 
 /**
- * A constraint glyph's pixels, rows of 16: l line, o node ring, w node center, h halo, . empty. The halo is every empty
- * pixel within 1 px of the glyph, so it reads over lines and faces with no tile. A picked glyph keeps the same pixels.
+ * A constraint glyph's pixels, rows of 16: l line, o node ring, w node center, e halo beside a lit pixel, h halo at
+ * a corner only, . empty. The halo is every empty pixel within 1 px of the glyph, so it reads over lines and faces
+ * with no tile. A picked glyph keeps the same pixels.
  */
 export function glyphPixels(kind: SketchGlyphKind): string[] {
   const g = blank()
   GLYPHS[kind](g)
-  const lit = (x: number, y: number) => (g[y]?.[x] ?? '.') !== '.' && g[y]![x] !== 'h'
+  const lit = (x: number, y: number) => 'low'.includes(g[y]?.[x] ?? '.')
   for (let y = 0; y < GLYPH_PX; y++)
     for (let x = 0; x < GLYPH_PX; x++) {
       if (g[y]![x] !== '.') continue
+      if (lit(x - 1, y) || lit(x + 1, y) || lit(x, y - 1) || lit(x, y + 1)) {
+        g[y]![x] = 'e'
+        continue
+      }
       near: for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (lit(x + dx, y + dy)) {
         g[y]![x] = 'h'
         break near
@@ -892,15 +897,18 @@ export function glyphPixels(kind: SketchGlyphKind): string[] {
 
 /**
  * A glyph's colors by pixel letter: the line takes the defined color. Picked on a dark studio, line and halo swap, so
- * dark strokes sit in a gold outline; on a light studio the line takes the darker gold instead.
+ * dark strokes sit in a gold outline. Picked on a light studio, the line takes the darker gold and the halo beside it
+ * turns dark, so the glyph reads as picked without color; its corner halo stays light.
  */
-export function glyphInk(picked = false, light = false): Record<'l' | 'o' | 'w' | 'h', string> {
-  if (picked && !light) return { l: '#191a21', o: '#191a21', w: '#ffffff', h: TONE.selected.color }
+export function glyphInk(picked = false, light = false): Record<'l' | 'o' | 'w' | 'e' | 'h', string> {
+  if (picked && !light) return { l: '#191a21', o: '#191a21', w: '#ffffff', e: TONE.selected.color, h: TONE.selected.color }
+  const h = light ? 'rgba(255, 255, 255, 0.85)' : 'rgba(25, 26, 33, 0.85)'
   return {
     l: picked ? LIGHT_GLYPH_PICKED : light ? LIGHT_TONE.defined! : TONE.defined.color,
     o: light ? '#282a36' : '#191a21',
     w: '#ffffff',
-    h: light ? 'rgba(255, 255, 255, 0.85)' : 'rgba(25, 26, 33, 0.85)',
+    e: picked ? '#282a36' : h,
+    h,
   }
 }
 

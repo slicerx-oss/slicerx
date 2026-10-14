@@ -194,7 +194,7 @@ describe('constraint glyphs', () => {
   // the halo's reach round a lit pixel
   const reach = (rows: string[], x: number, y: number) => {
     let d = Infinity
-    rows.forEach((r, j) => [...r].forEach((ch, i) => ch !== '.' && ch !== 'h' && (d = Math.min(d, Math.max(Math.abs(i - x), Math.abs(j - y))))))
+    rows.forEach((r, j) => [...r].forEach((ch, i) => 'low'.includes(ch) && (d = Math.min(d, Math.max(Math.abs(i - x), Math.abs(j - y))))))
     return d
   }
 
@@ -203,8 +203,8 @@ describe('constraint glyphs', () => {
     for (const k of KINDS) {
       const rows = glyphPixels(k)
       expect(rows, k).toHaveLength(16)
-      for (const r of rows) expect(r, k).toMatch(/^[.lowh]{16}$/)
-      expect(rows.join('').replace(/[.h]/g, '').length, k).toBeGreaterThan(8)
+      for (const r of rows) expect(r, k).toMatch(/^[.lowhe]{16}$/)
+      expect(rows.join('').replace(/[.he]/g, '').length, k).toBeGreaterThan(8)
       // empty corners: the glyph keeps the lines under it visible
       for (const [x, y] of [[0, 0], [15, 0], [0, 15], [15, 15]] as const) expect(rows[y]![x], k).toBe('.')
       seen.add(rows.join('|'))
@@ -218,8 +218,22 @@ describe('constraint glyphs', () => {
       rows.forEach((r, y) =>
         [...r].forEach((ch, x) => {
           const d = reach(rows, x, y)
-          if (ch === 'h') expect(d, `${k} ${x},${y}`).toBeLessThanOrEqual(1)
+          if (ch === 'h' || ch === 'e') expect(d, `${k} ${x},${y}`).toBeLessThanOrEqual(1)
           if (ch === '.') expect(d, `${k} ${x},${y}`).toBeGreaterThan(1)
+        }),
+      )
+    }
+  })
+
+  it('marks the halo beside a lit pixel apart from the corner halo', () => {
+    const lit = (rows: string[], x: number, y: number) => 'low'.includes(rows[y]?.[x] ?? '.')
+    for (const k of KINDS) {
+      const rows = glyphPixels(k)
+      rows.forEach((r, y) =>
+        [...r].forEach((ch, x) => {
+          const side = lit(rows, x - 1, y) || lit(rows, x + 1, y) || lit(rows, x, y - 1) || lit(rows, x, y + 1)
+          if (ch === 'e') expect(side, `${k} ${x},${y}`).toBe(true)
+          if (ch === 'h') expect(side, `${k} ${x},${y}`).toBe(false)
         }),
       )
     }
@@ -232,8 +246,12 @@ describe('constraint glyphs', () => {
     expect(glyphInk(true, false).l).toBe('#191a21')
     expect(glyphInk(true, false).h).toBe('#f1fa8c')
     expect(glyphInk(false, false).h).toBe('rgba(25, 26, 33, 0.85)')
-    // light: the halo is the same picked or not
+    expect(glyphInk(true, false).e).toBe('#f1fa8c')
+    // light: a picked glyph's halo turns dark beside its strokes and stays light at the corners
+    expect(glyphInk(true, true).e).toBe('#282a36')
     expect(glyphInk(true, true).h).toBe(glyphInk(false, true).h)
+    // unpicked, the halo is one color all round
+    for (const light of [false, true]) expect(glyphInk(false, light).e).toBe(glyphInk(false, light).h)
     const layer = new SketchLayer()
     layer.setLight(true)
     const gold = (layer as unknown as { dimPickMat: { color: { getHexString(): string } } }).dimPickMat.color.getHexString()
