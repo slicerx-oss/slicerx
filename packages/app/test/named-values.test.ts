@@ -37,6 +37,17 @@ describe('expressions', () => {
 })
 
 describe('the value table', () => {
+  it('resolves valid names independently of object prototype properties', () => {
+    const r = resolveValues([{ name: 'constructor', expr: '2' }, { name: '__proto__', expr: 'constructor + 1' }, { name: 'toString', expr: '__proto__ * 2' }], {})
+    expect(r.values['constructor']).toBe(2)
+    expect(r.values['__proto__']).toBe(3)
+    expect(r.values['toString']).toBe(6)
+    expect(r.errors).toEqual({})
+    const broken = resolveValues([{ name: '__proto__', expr: '__proto__ + 1' }], {})
+    expect(broken.errors['__proto__']).toMatch(/uses itself/)
+    expect(broken.values['__proto__']).toBeUndefined()
+  })
+
   it('resolves values that use other values, in any order', () => {
     const r = resolveValues([{ name: 'lip', expr: 'wall * 1.5' }, { name: 'wall', expr: '2' }], { clearance: 0.15, nozzle: 0.4 })
     expect(r.values).toMatchObject({ wall: 2, lip: 3, clearance: 0.15, nozzle: 0.4 })

@@ -179,8 +179,8 @@ export function namesIn(text: string): string[] {
 
 /** Every value of the table with the built-ins, and a sentence for each one that does not resolve. */
 export function resolveValues(table: readonly NamedValue[], builtIns: Readonly<Record<string, number>>): { values: Record<string, number>; errors: Record<string, string> } {
-  const values: Record<string, number> = { ...builtIns }
-  const errors: Record<string, string> = {}
+  const values: Record<string, number> = Object.assign(Object.create(null) as Record<string, number>, builtIns)
+  const errors: Record<string, string> = Object.create(null) as Record<string, string>
   const byName = new Map(table.map((v) => [v.name, v.expr]))
   const active = new Set<string>()
   const resolve = (name: string): number | undefined => {

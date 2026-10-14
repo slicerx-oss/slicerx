@@ -9,6 +9,8 @@ import { cadTools, type CadFiles } from './cad'
 import { designTools, type DesignFiles } from './design-tools'
 import { ToolInputError } from './errors'
 
+export { appValueInputs, type AppValuesResult } from './app-values'
+
 const noFiles = (): never => {
   throw new ToolInputError('Model files are for the MCP server; here, give a design instead.', 'not_supported')
 }
