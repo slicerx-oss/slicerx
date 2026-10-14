@@ -174,6 +174,9 @@ export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(funct
                 inputMode="decimal"
                 aria-label={`${f.label} ${f.unit}`}
                 value={editing[i] ?? ''}
+                // the pill's size until the typed text needs more: a long value (1 1/2, 123.456, 6*2+3) grows it
+                // instead of scrolling out of sight
+                style={{ width: `max(7ch, calc(${(editing[i] ?? '').length}ch + 2 * var(--s-1) + 2px))` }}
                 onFocus={() => i !== focus && onFocus(i)}
                 onChange={(e) => onChange(fields.map((_, k) => (k === i ? e.target.value : (editing[k] ?? ''))))}
                 onKeyDown={onKey(i)}
