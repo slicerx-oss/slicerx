@@ -32,6 +32,7 @@ const GENERATORS = [
     run: ['pnpm', '--filter', '@slicerx/ui', 'gen:icons'],
     outputs: ['icon-names', 'icon-startup', 'icon-small', 'icon-paths'].map((f) => `packages/ui/src/icons/${f}.ts`),
   },
+  { name: 'ui gen:tool-icons', run: ['pnpm', '--filter', '@slicerx/ui', 'gen:tool-icons'], outputs: ['packages/ui/src/icons/tool-icons.ts', 'packages/ui/src/icons/tool-icons.css'] },
   { name: 'design sync', run: ['node', 'design/sync.mjs'], outputs: ['design/tokens.css', 'design/icons.js'] },
   { name: 'edition-config neutral', run: ['pnpm', '--filter', '@slicerx/edition-config', 'neutral'], outputs: ['packages/edition-config/src/neutral.generated.ts'] },
 ]

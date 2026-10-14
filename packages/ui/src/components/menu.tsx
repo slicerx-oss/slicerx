@@ -181,6 +181,8 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
 
 export interface MenuItemProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
   icon?: IconName
+  /** A drawn icon of its own in place of a line icon, such as a shaded tool icon at 16 px. */
+  iconNode?: ReactNode
   /** Shortcut or count shown at the right edge in the mono face. */
   aside?: ReactNode
   /** Checkable items render aria-checked and color the icon purple when on. */
@@ -189,7 +191,7 @@ export interface MenuItemProps extends Omit<ButtonHTMLAttributes<HTMLButtonEleme
   children?: ReactNode
 }
 
-export function MenuItem({ icon, aside, checked, tone = 'default', className, children, type = 'button', ...rest }: MenuItemProps) {
+export function MenuItem({ icon, iconNode, aside, checked, tone = 'default', className, children, type = 'button', ...rest }: MenuItemProps) {
   return (
     <button
       type={type}
@@ -200,7 +202,7 @@ export function MenuItem({ icon, aside, checked, tone = 'default', className, ch
       tabIndex={-1}
       {...rest}
     >
-      {icon ? <Icon name={icon} /> : checked !== undefined ? <Icon name="check" data-checkmark={checked ? 'on' : 'off'} /> : null}
+      {iconNode ?? (icon ? <Icon name={icon} /> : checked !== undefined ? <Icon name="check" data-checkmark={checked ? 'on' : 'off'} /> : null)}
       <span>{children}</span>
       {aside !== undefined ? <span className="sx-menu-item-aside">{aside}</span> : null}
     </button>

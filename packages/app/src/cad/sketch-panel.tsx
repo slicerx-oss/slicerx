@@ -30,7 +30,7 @@ import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext, sketchNext } from './history/record'
-import { defaultTarget, finishSketch, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
+import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { flipFor, goesIntoFace } from './extrude-direction'
@@ -1110,6 +1110,23 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
 
   const fields = fieldsFor(draft)
   const sel = selected ? sketch[selected.e] : undefined
+  // the ribbon's Sketch tab drives the same tools; it reads them from here while the editor is open
+  const drawRef = useRef({ pickTool, look })
+  drawRef.current = { pickTool, look }
+  const family = familyOf(draft.tool)
+  const canMirror = draft.tool === 'select' && sel !== undefined && selected !== null
+  const mirroring = pending?.kind === 'mirror'
+  const mirrorE = selected?.e ?? -1
+  useEffect(() => {
+    if (featureOnly) return undefined
+    return provideDraw({
+      family,
+      pick: (f) => drawRef.current.pickTool(lastVariant[f as Family] ?? VARIANTS[f as Family]?.[0]?.value ?? (f as DrawTool)),
+      look: () => drawRef.current.look(),
+      mirror: canMirror ? () => setPending((p) => (p?.kind === 'mirror' ? null : { kind: 'mirror', e: mirrorE })) : null,
+      mirroring,
+    })
+  }, [featureOnly, family, canMirror, mirroring, mirrorE])
   const driven = constraints.filter((c) => isDimension(c) && c.driven).length
   const words = (t: string) => (phone ? touchWords(t) : t)
   return (

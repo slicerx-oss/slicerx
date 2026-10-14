@@ -79,7 +79,7 @@ const DESIGN_TOOL: PaneSection[] = [{ id: 'transform', icon: 'move', label: 'Tra
 const OpeningPicture = lazy(() => import('../project/opening-preview').then((m) => ({ default: m.OpeningPicture })))
 const DesignLeft = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignLeft })))
 const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignRight })))
-const Shelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Shelf })))
+const Ribbon = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Ribbon })))
 const DesignTimeline = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignTimeline })))
 const SelectPill = lazy(() => import('./design/design-panes').then((m) => ({ default: m.SelectPill })))
 const PhoneShelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.PhoneShelf })))
@@ -135,6 +135,7 @@ export function Studio() {
   // On a phone the sidebar is a sheet, so the Slice action floats on the view instead of waiting inside it.
   const compact = useCompactLayout()
   const phone = usePhoneLayout()
+  const ribbonSize = useApp((s) => s.appearance.toolbarSize)
   const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer' && !compact
   const modelMode = useModelMode()
   useBoundValues(true)
@@ -219,10 +220,10 @@ export function Studio() {
 
   return (
     <div className="studio" data-mode="prepare" data-layers={layers || undefined} data-slice={sliceState} data-slices={slicesDone} data-model-mode={cad ? modelMode : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
-      {/* on a phone Model's tools are a bar along the bottom of the view instead */}
+      {/* on a phone Model's tools are a bar along the bottom of the view instead; the ribbon on a desktop */}
       {design && !phone ? (
-        <Suspense fallback={<div className="shelf" aria-hidden="true" />}>
-          <Shelf />
+        <Suspense fallback={<div className="ribbon" data-size={ribbonSize} aria-hidden="true" />}>
+          <Ribbon />
         </Suspense>
       ) : null}
       {/* Once opened, the chat stays mounted and hides on Model and Slice, so a running build carries on. */}

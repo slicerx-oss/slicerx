@@ -355,9 +355,11 @@ export interface Appearance {
   density: 'compact' | 'comfortable' | 'roomy'
   /** The interactive accent: the theme's own, or one of its palette colors. */
   accent: 'theme' | 'blue' | 'cyan' | 'green' | 'pink' | 'orange'
+  /** The Model ribbon's icon size: Large 32 px, Medium 24 px, Small 16 px with the names as tips. */
+  toolbarSize: 'large' | 'medium' | 'small'
 }
 
-export const DEFAULT_APPEARANCE: Appearance = { textSize: 'default', fontWeight: 'regular', contrast: 'standard', colorVision: 'standard', density: 'comfortable', accent: 'theme' }
+export const DEFAULT_APPEARANCE: Appearance = { textSize: 'default', fontWeight: 'regular', contrast: 'standard', colorVision: 'standard', density: 'comfortable', accent: 'theme', toolbarSize: 'large' }
 
 /** Each field on its own. The old toolpath palette switch becomes red-green color vision. */
 function appearance(v: unknown, colorblindToolpaths: boolean): Appearance {
@@ -370,6 +372,7 @@ function appearance(v: unknown, colorblindToolpaths: boolean): Appearance {
     colorVision: oneOf(r['colorVision'], ['standard', 'redgreen', 'blueyellow'] as const) ?? (colorblindToolpaths ? 'redgreen' : d.colorVision),
     density: oneOf(r['density'], ['compact', 'comfortable', 'roomy'] as const) ?? d.density,
     accent: oneOf(r['accent'], ['theme', 'blue', 'cyan', 'green', 'pink', 'orange'] as const) ?? d.accent,
+    toolbarSize: oneOf(r['toolbarSize'], ['large', 'medium', 'small'] as const) ?? d.toolbarSize,
   }
 }
 

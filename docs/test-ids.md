@@ -108,6 +108,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `set-multibody-<mode>` | Files with several bodies in Settings, Slicing and modeling: `set-multibody-ask`, `set-multibody-parts`, `set-multibody-objects` |
 | `set-units-<unit>` | Display units in Settings, Modeling: `set-units-mm`, `set-units-in` |
 | `set-precision` | The Precision row in Settings |
+| `set-toolbar-size` | The Toolbar size row in Settings, Look and feel: Large, Medium or Small (desktop only) |
 | `set-precision-pick` | Precision of shown lengths, a select: `d0` to `d4` decimals, `f16`, `f32`, `f64` inch fractions |
 | `theme-<family>` | A theme card in setup's theme step and in Settings, Look and feel: `theme-subban`, `theme-dracula` and so on |
 
@@ -442,7 +443,10 @@ Ids that tests read for their text:
 | `bug-preview` | Report a bug: what the report sends |
 | `step-note`, `step-bind` | A CAD history step's note and binding |
 | `model-box-select` | The box while a Shift and left drag selects in Model; `data-dir` is `inside` (left to right) or `touch` (right to left) |
-| `model-shelf` | Model's tool shelf |
+| `model-shelf` | Model's tools: the ribbon on a desktop (`data-tab` the open tab, `data-setting` the Toolbar size, `data-size` the size drawn, `data-fit` `labels`, or `icons` when the row ran out of room), the shelf on a phone |
+| `ribbon-tab-<tab>` | A ribbon tab: `solid`, `mesh` or `sketch`; `aria-selected` on the open one |
+| `ribbon-<action>` | A ribbon button that is not a shelf tool: `extrude`, `revolve`, `chamfer`, `merge`, `split`, `look`, `mirror` and the Sketch tab's `draw-<family>` buttons (`draw-line`, `draw-rect` and so on); `aria-pressed` on the drawing tool in use, `aria-disabled` with the reason in its tip |
+| `ribbon-menu-<menu>` | A ribbon menu button: `add` (Add shape) or `face` (On a face) |
 | `model-shelf-tool` | A tool on the shelf; `data-tool` names it |
 | `model-shelf-next` | The shelf's next slot: the tools for what is picked (an object, faces, edges or holes); hidden with nothing picked |
 | `model-shelf-next-tool` | A tool in the next slot; `data-next-tool` names it (`chamfer` for the fillet tool's other shape). One that cannot take that many picks is `aria-disabled`, with the reason in its tip |

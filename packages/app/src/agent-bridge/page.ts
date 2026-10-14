@@ -73,6 +73,8 @@ export function appState(s: AppState): Record<string, unknown> {
     tab: s.workspace,
     // The plate tabs' mode (mimir, design or slice), as the tab bar shows it.
     ...(s.workspace === 'prepare' ? { mode: cadShown() ? s.modelMode : 'slice' } : {}),
+    // Settings > Look and feel > Toolbar size: the Model ribbon's icons at 32, 24 or 16 px.
+    toolbarSize: s.appearance.toolbarSize,
     plate: {
       loading: s.plateLoading,
       active: s.activePlate,
