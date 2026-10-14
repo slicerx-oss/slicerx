@@ -14,6 +14,8 @@ export interface LayerMark {
   kind: MarkKind
   /** The text of a custom mark. */
   gcode?: string
+  /** The filament slot (1-based) a color change goes to, when there is more than one to pick from. */
+  slot?: number
 }
 
 export const MARK_LABEL: Record<MarkKind, string> = { pause: 'Pause', color_change: 'Color change', custom: 'Custom G-code' }
@@ -54,14 +56,25 @@ function write(plateId: string, marks: LayerMark[]): void {
 }
 
 /** Adds a mark at a layer top, replacing one already there (a layer holds one pause or color change, as in Orca). */
-export function addMark(z: number, kind: MarkKind, gcode?: string, plateId: string = get().activePlate): LayerMark | null {
+export function addMark(z: number, kind: MarkKind, gcode?: string, plateId: string = get().activePlate, slot?: number): LayerMark | null {
   if (kind === 'custom') {
     const why = customGcodeProblem(gcode ?? '')
     if (why) throw new Error(why)
   }
-  const mark: LayerMark = { id: markId(), z: Math.round(z * 1e4) / 1e4, kind, ...(kind === 'custom' ? { gcode: gcode!.trim() } : {}) }
+  const mark: LayerMark = { id: markId(), z: Math.round(z * 1e4) / 1e4, kind, ...(kind === 'custom' ? { gcode: gcode!.trim() } : {}), ...(kind === 'color_change' && slot ? { slot } : {}) }
   write(plateId, [...marksFor(plateId).filter((m) => Math.abs(m.z - mark.z) > 1e-6), mark])
   return mark
+}
+
+/** Points a color change at another filament slot. The G-code stays the same; the slot is what the pin and the file show. */
+export function setMarkSlot(id: string, slot: number, plateId: string = get().activePlate): void {
+  set((s) => ({ layerMarks: { ...s.layerMarks, [plateId]: marksFor(plateId).map((m) => (m.id === id && m.kind === 'color_change' ? { ...m, slot } : m)) } }))
+}
+
+/** The slot a new color change at `z` goes to by default: the one after the last color change below it, from slot 1. */
+export function nextSlot(z: number, marks: readonly LayerMark[], slots: number): number {
+  const below = marks.filter((m) => m.kind === 'color_change' && m.z < z - 1e-6 && m.slot).sort((a, b) => b.z - a.z)[0]
+  return ((below?.slot ?? 1) % Math.max(1, slots)) + 1
 }
 
 export function removeMark(id: string, plateId: string = get().activePlate): void {

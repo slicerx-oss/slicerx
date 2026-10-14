@@ -403,7 +403,7 @@ export interface ProjectInput {
   objectSettings?: Record<string, Record<string, unknown>>
   application?: string
   /** Pause, color change and custom G-code marks per plate index (0-based), written as Orca's custom_gcode_per_layer.xml. */
-  layerMarks?: Record<number, { z: number; kind: 'pause' | 'color_change' | 'custom'; gcode?: string }[]>
+  layerMarks?: Record<number, { z: number; kind: 'pause' | 'color_change' | 'custom'; gcode?: string; slot?: number }[]>
   /** Sliced G-code per plate index (0-based), for a .gcode.3mf. */
   gcode?: Record<number, string>
   /**
@@ -449,7 +449,7 @@ function marksXml(marks: ProjectInput['layerMarks']): string {
       const layers = list
         .map((m) => {
           const extra = m.kind === 'custom' ? (m.gcode ?? '') : ''
-          return `<layer top_z="${m.z}" type="${MARK_TYPE[m.kind]}" extruder="1" color="" extra="${esc(extra)}" gcode="${esc(extra)}"/>`
+          return `<layer top_z="${m.z}" type="${MARK_TYPE[m.kind]}" extruder="${m.kind === 'color_change' && m.slot ? m.slot : 1}" color="" extra="${esc(extra)}" gcode="${esc(extra)}"/>`
         })
         .join('\n')
       return `<plate>\n<plate_info id="${Number(i) + 1}"/>\n${layers}\n<mode value="SingleExtruder"/>\n</plate>`
