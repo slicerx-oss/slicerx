@@ -97,7 +97,7 @@ export function HistoryTree() {
         <button type="button" className="dtree-chev" tabIndex={-1} aria-hidden="true" onClick={() => setOpen((m) => ({ ...m, [id]: !isOpen }))}>
           <Icon name={isOpen ? 'chevron-down' : 'chevron-right'} size={14} />
         </button>
-        <button type="button" className="dtree-folder-name" data-tree-row="" onClick={() => setOpen((m) => ({ ...m, [id]: !isOpen }))}>
+        <button type="button" className="dtree-folder-name" data-tree-row="" data-tip-title={name} data-tip-demo="still-model-tree" onClick={() => setOpen((m) => ({ ...m, [id]: !isOpen }))}>
           <Icon name={icon} size={16} />
           <span className="min0">{name}</span>
         </button>

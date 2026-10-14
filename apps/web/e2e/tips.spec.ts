@@ -3,6 +3,7 @@
 // A tip never covers the next thing a person presses: it takes no clicks, and it closes once the pointer leaves its
 // control, even when the pointer crosses the tip on the way.
 import { type Locator, type Page } from '@playwright/test'
+import { command, facePick, freshBox, openStudio, pick, pushTop, sketchAt, toolPanel } from './cad-helpers'
 import { expect, plateReady, test } from './fixtures'
 
 test('the lock button\'s tip closes as the pointer moves to the name under it, and the name takes the click', async ({ page, isMobile }) => {
@@ -306,6 +307,18 @@ const STILL_TIPS = {
   'still-ironing-angle': 'With a fixed angle, ironing runs at that angle, here 0°, instead of along the top lines.',
   'still-paint-depth-top': 'A painted top colors this many layers down from the top surface, here 3.',
   'still-paint-depth-bottom': 'A painted bottom colors this many layers up from the bottom surface, here 3.',
+  'still-line-width-support': 'The support lines, picked out under a ledge, print at the default width when this is 0, here 0.42 mm.',
+  'still-line-width-bridge': 'The bridge lines over the gap, seen end on, print 0.40 mm wide, 100% of a 0.4 mm nozzle.',
+  'still-model-tree': 'Each entry in the tree is one thing in the view: a sketch lies on its plane, a body stands on the plate.',
+  'still-timeline': 'Steps run left to right. Move the marker back and the part shows as it was there; the steps after it are grayed.',
+  'still-pick-object': 'Picking objects takes the whole part.',
+  'still-pick-face': 'Picking faces takes one face of the part.',
+  'still-pick-edge': 'Picking edges takes one edge, where two faces meet.',
+  'still-sketch-status': 'Constraint glyphs sit by the lines they hold. The status line says how much of the sketch can still move.',
+  'still-named-values': 'Name a value once, type its name in a size such as a push and pull distance, and the part follows when the value changes.',
+  'still-hollow': 'Hollowing empties the inside and leaves an even wall all around, here 2 mm, which saves material and print time.',
+  'still-repair': 'Repair closes open edges and turns flipped faces to point outward, so the mesh slices as a closed solid.',
+  'still-measure': 'Pick two places: the panel gives the distance between them and how far apart they are along X, Y and Z.',
 } as const
 /** Setting keys and the still their row shows, as rowsPlay rows. */
 const stills = (rows: readonly (readonly [key: string, still: keyof typeof STILL_TIPS])[]) => rows.map(([key, still]) => [key, null, STILL_TIPS[still]] as const)
@@ -318,4 +331,56 @@ test('Slice rows from line width to skirt distance show their own stills', async
 test('Slice rows from skirt loops to painted depth show their own stills, and interlocking beam plays its loop', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [...stills([['skirt_loops', 'still-skirt-loops'], ['min_skirt_length', 'still-skirt-length'], ['brim_object_gap', 'still-brim-gap'], ['raft_layers', 'still-raft-layers'], ['support_top_z_distance', 'still-support-top-gap'], ['support_bottom_z_distance', 'still-support-bottom-gap'], ['support_object_xy_distance', 'still-support-xy-gap'], ['support_interface_top_layers', 'still-support-interface-layers'], ['support_interface_spacing', 'still-support-interface-spacing'], ['support_style', 'still-support-style'], ['only_one_wall_top', 'still-one-wall-top'], ['only_one_wall_first_layer', 'still-one-wall-first'], ['ironing_angle', 'still-ironing-angle'], ['ironing_angle_fixed', 'still-ironing-angle'], ['top_color_penetration_layers', 'still-paint-depth-top'], ['bottom_color_penetration_layers', 'still-paint-depth-bottom']]), ['interlocking_beam', 'ail']])
+})
+
+test('Support and bridge line width rows show their own stills', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, stills([['support_line_width', 'still-line-width-support'], ['bridge_line_width', 'still-line-width-bridge']]))
+})
+
+test('Model controls show their stills: the tree, the picks, measure, named values, hollow, repair, the timeline marker and the sketch status', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Modeling tools are desktop only')
+  test.setTimeout(120_000)
+  await openStudio(page)
+  const id = await freshBox(page)
+  const tip = page.locator('#sx-tip')
+  const stage = tip.locator('.sx-stage')
+  const shows = async (anchor: Locator, still: keyof typeof STILL_TIPS) => {
+    await anchor.hover()
+    await expect(stage.locator('svg.sxs'), still).toBeVisible()
+    await expect(stage, still).toHaveAttribute('aria-label', STILL_TIPS[still])
+    await page.mouse.move(5, 5)
+    await expect(tip).toHaveCount(0)
+  }
+  // the status line under an open sketch
+  await command(page, 'Sketch on the bed or a face')
+  const panel = toolPanel(page)
+  await expect(panel).toContainText('the bed or a flat face to sketch on')
+  await pick(page, await facePick(page, id, [0, 0, 1]))
+  await expect(panel).toContainText('A face of')
+  await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
+  await sketchAt(page, 'click', [2, 1])
+  await sketchAt(page, 'click', [6, 1])
+  await shows(panel.getByTestId('sketch-dof'), 'still-sketch-status')
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
+  await expect(panel).toHaveCount(0)
+  // Hollow and Repair mesh need a selection
+  await page.evaluate((id) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ selection: id, selectedIds: [id] }), id)
+  await page.locator('.sx-tab[data-mode="design"]').click()
+  await shows(page.locator('.dtree-folder-name', { hasText: 'Bodies' }), 'still-model-tree')
+  for (const k of ['object', 'face', 'edge'] as const) await shows(page.locator(`[data-testid="model-select-filter"][data-kind="${k}"]`), `still-pick-${k}`)
+  await shows(page.locator('[data-testid="model-shelf-tool"][data-tool="measure"]'), 'still-measure')
+  await shows(page.locator('[data-testid="model-shelf-tool"][data-tool="values"]'), 'still-named-values')
+  // the mesh menu's entries, each in its own tip
+  const mesh = page.getByTestId('model-shelf').getByRole('button', { name: 'Mesh' })
+  for (const [entry, still] of [['Hollow', 'still-hollow'], ['Repair mesh', 'still-repair']] as const) {
+    await mesh.click()
+    await shows(page.getByRole('menuitem', { name: entry }), still)
+    await page.keyboard.press('Escape')
+  }
+  // the timeline marker, once there is a step to roll back
+  await pushTop(page, id, 5)
+  await page.getByRole('button', { name: 'Open Timeline' }).click()
+  await shows(page.getByTestId('tl-marker'), 'still-timeline')
 })

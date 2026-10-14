@@ -283,10 +283,24 @@ const OWN = {
   'still-ironing-angle': demo(() => import('../demos/still-ironing-angle').then((m) => m.loop), 'With a fixed angle, ironing runs at that angle, here 0°, instead of along the top lines.'),
   'still-paint-depth-top': demo(() => import('../demos/still-paint-depth-top').then((m) => m.loop), 'A painted top colors this many layers down from the top surface, here 3.'),
   'still-paint-depth-bottom': demo(() => import('../demos/still-paint-depth-bottom').then((m) => m.loop), 'A painted bottom colors this many layers up from the bottom surface, here 3.'),
+  // second batch: support and bridge line widths, and the Model tab's tree, timeline, picks, sketch status and tools
+  'still-line-width-support': demo(() => import('../demos/still-line-width-support').then((m) => m.loop), 'The support lines, picked out under a ledge, print at the default width when this is 0, here 0.42 mm.'),
+  'still-line-width-bridge': demo(() => import('../demos/still-line-width-bridge').then((m) => m.loop), 'The bridge lines over the gap, seen end on, print 0.40 mm wide, 100% of a 0.4 mm nozzle.'),
+  'still-model-tree': demo(() => import('../demos/still-model-tree').then((m) => m.loop), 'Each entry in the tree is one thing in the view: a sketch lies on its plane, a body stands on the plate.'),
+  'still-timeline': demo(() => import('../demos/still-timeline').then((m) => m.loop), 'Steps run left to right. Move the marker back and the part shows as it was there; the steps after it are grayed.'),
+  'still-pick-object': demo(() => import('../demos/still-pick-object').then((m) => m.loop), 'Picking objects takes the whole part.'),
+  'still-pick-face': demo(() => import('../demos/still-pick-face').then((m) => m.loop), 'Picking faces takes one face of the part.'),
+  'still-pick-edge': demo(() => import('../demos/still-pick-edge').then((m) => m.loop), 'Picking edges takes one edge, where two faces meet.'),
+  'still-sketch-status': demo(() => import('../demos/still-sketch-status').then((m) => m.loop), 'Constraint glyphs sit by the lines they hold. The status line says how much of the sketch can still move.'),
+  'still-named-values': demo(() => import('../demos/still-named-values').then((m) => m.loop), 'Name a value once, type its name in a size such as a push and pull distance, and the part follows when the value changes.'),
+  'still-hollow': demo(() => import('../demos/still-hollow').then((m) => m.loop), 'Hollowing empties the inside and leaves an even wall all around, here 2 mm, which saves material and print time.'),
+  'still-repair': demo(() => import('../demos/still-repair').then((m) => m.loop), 'Repair closes open edges and turns flipped faces to point outward, so the mesh slices as a closed solid.'),
+  'still-measure': demo(() => import('../demos/still-measure').then((m) => m.loop), 'Pick two places: the panel gives the distance between them and how far apart they are along X, Y and Z.'),
 } satisfies Record<string, TipDemo>
 
-/** The loops by id; a tool that shares another's loop (a shape, text or SVG on a face; simplify) names it too. */
-export const DEMOS: Readonly<Record<string, TipDemo>> = { ...OWN, facesvg: OWN.face, facetext: OWN.face, shape: OWN.face, simplify: OWN.mesh }
+/** The loops by id; a tool that shares another's loop (a shape, text or SVG on a face; simplify) or shows a still
+ *  (measure, named values) names it too. */
+export const DEMOS: Readonly<Record<string, TipDemo>> = { ...OWN, facesvg: OWN.face, facetext: OWN.face, shape: OWN.face, simplify: OWN.mesh, measure: OWN['still-measure'], values: OWN['still-named-values'] }
 
 /** Settings whose row tip shows a loop, by setting key. */
 export const SETTING_DEMOS: Readonly<Record<string, string>> = {
@@ -655,6 +669,8 @@ export const SETTING_DEMOS: Readonly<Record<string, string>> = {
   sparse_infill_line_width: 'still-line-width-sparse',
   internal_solid_infill_line_width: 'still-line-width-solid',
   initial_layer_line_width: 'still-line-width-first',
+  support_line_width: 'still-line-width-support',
+  bridge_line_width: 'still-line-width-bridge',
   top_shell_layers: 'still-shells-top',
   top_shell_thickness: 'still-shells-top',
   bottom_shell_layers: 'still-shells-bottom',
