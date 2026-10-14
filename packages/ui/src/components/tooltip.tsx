@@ -93,9 +93,38 @@ function avoidBox(el: HTMLElement): HTMLElement {
   return (sel ? (el.closest(sel) as HTMLElement | null) : null) ?? el
 }
 
+/**
+ * The side panel an anchor sits in, when its tip should open beside the panel: over the view, level with the anchor,
+ * so it never covers the panel's next row or control. A panel as wide as half the window (a phone's sheet) has no
+ * room beside it, and an anchor that names its side keeps it.
+ */
+function sidePanel(el: HTMLElement): { box: DOMRect; side: Side } | null {
+  if (el.hasAttribute('data-tip-side') || el.closest('dialog')) return null
+  const p = el.closest('.sx-rail[data-side="left"], .sx-rail[data-side="right"]')
+  if (!p) return null
+  const box = p.getBoundingClientRect()
+  if (box.width >= window.innerWidth / 2) return null
+  return { box, side: p.getAttribute('data-side') === 'left' ? 'right' : 'left' }
+}
+
+/** The box the tip is placed against: the anchor's (or its avoid box's), widened to its side panel when it has one. */
+type Rect = Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>
+
+function anchorRect(el: HTMLElement): Rect {
+  const r = avoidBox(el).getBoundingClientRect()
+  const panel = sidePanel(el)
+  if (!panel) return r
+  // the panel's width and anything of the anchor's past it (its edge tab), at the anchor's height
+  const left = Math.min(panel.box.left, r.left)
+  const right = Math.max(panel.box.right, r.right)
+  return { left, right, top: r.top, bottom: r.bottom, width: right - left, height: r.height }
+}
+
 function sideFor(el: HTMLElement): Side {
   const want = el.getAttribute('data-tip-side')
   if (want === 'top' || want === 'bottom' || want === 'left' || want === 'right') return want
+  const panel = sidePanel(el)
+  if (panel) return panel.side
   const r = avoidBox(el).getBoundingClientRect()
   // A row-wide anchor sits beside the row, on the side with more room.
   if (el.hasAttribute('data-tip-avoid')) return r.left + r.width / 2 > window.innerWidth / 2 ? 'left' : 'right'
@@ -106,7 +135,7 @@ function sideFor(el: HTMLElement): Side {
   return 'bottom'
 }
 
-function place(anchor: DOMRect, tip: { w: number; h: number }, prefer: Side): { x: number; y: number; side: Side } {
+function place(anchor: Rect, tip: { w: number; h: number }, prefer: Side): { x: number; y: number; side: Side } {
   const vw = window.innerWidth
   const vh = window.innerHeight
   const fits = (s: Side) =>
@@ -379,7 +408,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     toTopLayer(el)
     const measure = () => {
       const r = el.getBoundingClientRect()
-      setPos(place(avoidBox(shown.anchor).getBoundingClientRect(), { w: r.width, h: r.height }, shown.touch ? 'top' : sideFor(shown.anchor)))
+      setPos(place(shown.touch ? avoidBox(shown.anchor).getBoundingClientRect() : anchorRect(shown.anchor), { w: r.width, h: r.height }, shown.touch ? 'top' : sideFor(shown.anchor)))
     }
     measure()
     const ro = new ResizeObserver(measure)
