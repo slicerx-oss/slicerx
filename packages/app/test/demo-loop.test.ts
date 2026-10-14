@@ -60,8 +60,11 @@ const hover = (el: Element) => act(() => void el.dispatchEvent(new MouseEvent('p
 const leave = (el: Element) => act(() => void el.dispatchEvent(new MouseEvent('pointerout', { bubbles: true })))
 const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms))
 
-const stage = () => tip()?.querySelector<HTMLElement>('.sx-stage') ?? null
-const settle = () => act(async () => void (await vi.dynamicImportSettled()))
+const stage = () => tip()?.querySelector<HTMLElement>('.sx-demo') ?? null
+// the lazy loop component, then the loop's own module: each import settles in its own round
+const settle = async () => {
+  for (let i = 0; i < 3; i++) await act(async () => void (await vi.dynamicImportSettled()))
+}
 
 describe('tooltip demo loop', () => {
   it('holds the loop\'s place from the first frame, then draws it paused until the media stage', async () => {
