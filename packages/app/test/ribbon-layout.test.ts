@@ -18,7 +18,8 @@ describe('the ribbon layout', () => {
 
   it('places every shelf tool that has a shelf place, and Auto orient in Mesh', () => {
     const where = placed(true)
-    for (const t of SHELF_TOOLS) expect(where.has(t.shelf?.menu ? `menu:${t.shelf.menu}` : `tool:${t.id}`), t.id).toBe(true)
+    // the On a face tools stay in their menu; the old Mesh menu's tools sit on the Mesh tab as buttons
+    for (const t of SHELF_TOOLS) if (t.shelf) expect(where.has(t.shelf.menu === 'face' ? 'menu:face' : `tool:${t.id}`), t.id).toBe(true)
     expect(ribbonGroups('mesh', all, true).flatMap((g) => g.items.map((i) => i.id))).toContain('orient')
   })
 
