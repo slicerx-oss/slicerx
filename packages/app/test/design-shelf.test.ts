@@ -9,7 +9,7 @@ import { fullEngine, resetFullEngine, warmFullEngine } from '../src/geom/full-en
 import { engineModules } from '../src/geom/modules'
 import { get, set } from '../src/state/store'
 import { openTool } from '../src/workspaces/design/open-tool'
-import { availableTools, nextSlot, nextTools, opensDesign, pickWords, SHELF_GROUPS, shelfGroup, SHELF_TOOLS } from '../src/workspaces/design/shelf-tools'
+import { availableTools, nextSlot, nextTools, menuEntryTipAttrs, opensDesign, pickWords, SHELF_GROUPS, shelfGroup, SHELF_TOOLS, toolTipAttrs } from '../src/workspaces/design/shelf-tools'
 import { nextPick } from '../src/workspaces/design/shelf'
 
 const NO_CAD = { ...NEUTRAL, features: { ...NEUTRAL.features, cad: false } }
@@ -31,6 +31,15 @@ describe('the shelf', () => {
     expect(names('fasten')).toEqual(['Hole', 'Thread'])
     expect(names('mesh')).toEqual(['mesh: Hollow, Repair mesh, Simplify mesh'])
     expect(names('utility')).toEqual(['Measure', 'Values'])
+  })
+
+  it('gives every tool a tip with its demo: the still it names, else the loop under its id', () => {
+    const tool = (id: string) => SHELF_TOOLS.find((t) => t.id === id)!
+    expect(toolTipAttrs(tool('push'))).toEqual({ 'data-tip': 'cad.push', 'data-tip-demo': 'push' })
+    expect(toolTipAttrs(tool('measure'), 'Inspect · Measure')).toEqual({ 'data-tip-title': 'Inspect · Measure', 'data-tip-demo': 'measure' })
+    expect(toolTipAttrs(tool('hollow'))).toEqual({ 'data-tip-demo': 'still-hollow' })
+    expect(menuEntryTipAttrs(tool('repair'))).toEqual({ 'data-tip-title': 'Repair mesh', 'data-tip-demo': 'still-repair' })
+    expect(menuEntryTipAttrs(tool('facesvg'))).toEqual({})
   })
 
   it('leaves out the modeling tools in an edition without them, and the drawing tools when Settings turns them off', () => {
