@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Support first layer gap: the sideways gap between support and the part on the first layer, so the two do not fuse.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'btsg',
+  readout: {rows: ["0 mm","0.2 mm"],w: 72},
+  css: ".btsg0{animation-name:btsg0;animation-timing-function:steps(1,end)}@keyframes btsg0{0%{opacity:1}50%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.btsg1{animation-name:btsg1;animation-timing-function:steps(1,end)}@keyframes btsg1{0%{opacity:0}50%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.btsg-h{animation-name:btsg-h;animation-timing-function:steps(1,end)}@keyframes btsg-h{0%{translate:0 0px}50%{translate:0 -14px}98.6%{translate:0 0px}100%{translate:0 0px}}",
+  body: "<g class=\"btsg0 s-a\"><polygon class=\"s-f2 s-ol\" points=\"81.6,106.5 111.9,124 111.9,121.2 81.6,103.7\"/><polygon class=\"s-f3 s-ol\" points=\"148.2,103 111.9,124 111.9,121.2 148.2,100.2\"/><polygon class=\"s-f1 s-ol\" points=\"117.9,82.7 148.2,100.2 111.9,121.2 81.6,103.7\"/><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1.2\" d=\"M147.6 103l35.8 20.7m-3.6 2.1l-35.8-20.7m-3.6 2.1l35.7 20.7m-3.6 2.1l-35.8-20.7m-3.6 2.1l35.8 20.7m-3.7 2l-35.7-20.6m-3.7 2.1l35.8 20.7m-3.7 2.1l-35.7-20.7m-3.7 2.1l35.8 20.7m-3.6 2l-35.8-20.6\"/><path class=\"s-n\" style=\"stroke:var(--stage-cut,#ff5555);stroke-width:2.2\" d=\"M111.9 121.2l36.3-21\"/></g><g class=\"btsg1 s-a\"><polygon class=\"s-f2 s-ol\" points=\"81.6,106.5 111.9,124 111.9,121.2 81.6,103.7\"/><polygon class=\"s-f3 s-ol\" points=\"148.2,103 111.9,124 111.9,121.2 148.2,100.2\"/><polygon class=\"s-f1 s-ol\" points=\"117.9,82.7 148.2,100.2 111.9,121.2 81.6,103.7\"/><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1.2\" d=\"M153.1 106.2l30.3 17.5m-3.6 2.1l-30.3-17.5m-3.7 2.1l30.3 17.5m-3.6 2.1l-30.3-17.5m-3.7 2.1l30.4 17.5m-3.7 2l-30.3-17.4m-3.6 2.1l30.3 17.5m-3.7 2.1l-30.3-17.5m-3.6 2.1l30.3 17.5m-3.6 2l-30.3-17.5\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-btsg\" x=\"204\" y=\"40\"/><clipPath id=\"btsg-hw\"><rect x=\"210\" y=\"32\" width=\"62\" height=\"16\"/></clipPath><g clip-path=\"url(#btsg-hw)\"><g class=\"btsg-h s-a\"><use href=\"#sxs-rows-btsg\" x=\"204\" y=\"40\"/></g></g></g>",
+}
