@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { followsOf, reorderedSteps, bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -179,6 +179,7 @@ function stepRow(d: Design, i: number): Record<string, unknown> {
     name: stepName(s),
     op: s.params.op,
     part: s.part,
+    follows: followsOf(s).map((f) => ({ ...f })),
     ...(n ? { value: { label: n.label, value: n.value, unit: n.unit } } : {}),
     state: s.suppressed ? 'suppressed' : (st?.state ?? 'done'),
     ...(st?.message ? { message: st.message } : {}),
@@ -309,6 +310,44 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     },
   })
 
+  const reorder = defineTool({
+    name: 'design.reorder_step',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: 'Move a feature to a new one-based position in its design history and replay it, as dragging a feature in the app does. Give a stable step id or index from slicerx_design_steps. End-face references that would point forward are detached with their placement kept. Returns the full step order, remaining references, detached references and replay results. Broken steps remain visible for repair; a failed replay that leaves no body is refused. Clears the removed-step redo tail after a change. In the app, toolbar Undo restores the prior order.',
+    input: z.object({
+      design: designArg,
+      step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Stable step id or one-based index'),
+      to: z.number().int().min(1).describe('Final one-based position, within the current step count'),
+    }).strict(),
+    async run(i) {
+      const d = designs.get(i.design)
+      const original = d.history
+      const from = stepIndex(d, i.step)
+      if (typeof i.step === 'string' && d.history.steps[from]!.id !== i.step) throw new ToolInputError('step: give a stable id or one-based index from slicerx_design_steps')
+      if (i.to > d.history.steps.length) throw new ToolInputError('to: must be within the current step count')
+      const moved = { id: d.history.steps[from]!.id, from: from + 1, to: i.to }
+      const steps = from === i.to - 1 ? d.history.steps : await (designs.prepareReorder
+        ? designs.prepareReorder(d, from, i.to - 1)
+        : reorderedSteps(d.history, from, i.to - 1, (history) => replayHistory((op, request) => designs.call(op, request), { history }))).catch((e: unknown) => {
+          throw new ToolInputError(e instanceof Error ? e.message : String(e))
+        })
+      if (designs.get(d.id).history !== original) throw new ToolInputError('The design changed while preparing the reorder. Read its steps and try again.')
+      const detached = d.history.steps.flatMap((s) => followsOf(s).filter((f) => !followsOf(steps.find((n) => n.id === s.id)!).includes(f)).map((f) => ({ step: s.id, followed: f.step, distanceMm: f.distanceMm, ...(f.points ? { points: [...f.points] } : {}) })))
+      if (from !== i.to - 1) {
+        // Work on a draft so a rejected replay cannot change the server's history or redo tail.
+        const draft = { ...d, history: { ...d.history, steps }, redo: [] }
+        await designs.replay(draft)
+        if (!draft.parts.length) throw new ToolInputError('The reordered history leaves no body. The design is unchanged.')
+        Object.assign(d, draft)
+      }
+      const rows = d.history.steps.map((_, k) => stepRow(d, k))
+      const broken = rows.filter((r) => r['state'] === 'broken')
+      return { ok: broken.length === 0, summary: from === i.to - 1 ? 'Feature already at that position' : 'Reordered feature' + (broken.length ? '; remaining features require repair' : ''), output: { ...designSummary(d), moved, detached, steps: rows } }
+    },
+  })
+
   const undo = defineTool({
     name: 'design.undo',
     version: '1.0.0',
@@ -387,5 +426,5 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     },
   })
 
-  return [create, open, list, steps, edit, undo, redo, timeline, roll, save] as PilotTool<never>[]
+  return [create, open, list, steps, edit, reorder, undo, redo, timeline, roll, save] as PilotTool<never>[]
 }

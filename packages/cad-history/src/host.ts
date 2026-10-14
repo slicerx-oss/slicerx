@@ -32,6 +32,8 @@ export interface DesignHost {
   add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string }): Promise<Step>
   /** Replays the design as `d.history` says, after a tool edited, removed or put back steps. */
   replay(d: Design): Promise<void>
+  /** Prepares a reordered history with this host's fonts and geometry replay options. */
+  prepareReorder?(d: Design, from: number, to: number): Promise<Step[]>
   /** The geometry engine the host replays on, for the picks and reads a tool makes on a design (face.pick, edge.pick). */
   call(op: string, request: unknown): Promise<unknown>
   /** A finished sketch of the design timeline by id; only a host with a timeline (the app) has them. */

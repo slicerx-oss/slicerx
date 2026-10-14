@@ -17,6 +17,12 @@ function routed(call: AppLinkCaller['call']) {
 }
 
 describe('design tools over the app link', () => {
+  it('keeps a broken reorder unsuccessful while preserving its read-back', async () => {
+    const output = { steps: [{ state: 'done' }, { state: 'broken' }, { state: 'skipped' }] }
+    const { run } = routed((async () => ({ ok: false, summary: 'Feature requires repair', output })) as AppLinkCaller['call'])
+    expect(await run('design.reorder_step', { design: 'd1', step: 3, to: 2 })).toMatchObject({ ok: false, output: { ...output, in: 'app' } })
+  })
+
   it('route exactly the hub list, never the file tools', () => {
     const names = designToolset(NO_ENGINE_HOST).map((t) => t.name)
     for (const n of APP_DESIGN_TOOLS) expect(names, n).toContain(n)

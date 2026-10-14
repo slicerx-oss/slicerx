@@ -3,7 +3,7 @@
 // The app's design host: a design is an object on the plate, and a step made through the host lands in its history
 // the way a person's edit does, in one store update, undoable and editable in Model's tree and timeline. An empty
 // design waits off the plate until its first step makes a body.
-import { HISTORY_VERSION, appendStep, stepId, type Design, type DesignHost, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
+import { reorderedSteps, HISTORY_VERSION, appendStep, stepId, type Design, type DesignHost, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
@@ -34,13 +34,21 @@ export function appDesignHost(loader: Loader): DesignHost {
 
   const fromEntry = (e: PlateEntry): Design => {
     const history: History = e.history ?? { version: HISTORY_VERSION, base: e.parts, steps: [] }
+    let broken = false
     return {
       id: e.id,
       name: e.name,
       history,
       transform: [...e.transform],
       parts: e.parts,
-      status: history.steps.map((s) => (s.broken !== undefined ? { state: 'broken', message: s.broken } : { state: 'done' })),
+      status: history.steps.map((s) => {
+        if (s.suppressed) return { state: 'suppressed' }
+        if (s.broken !== undefined) {
+          broken = true
+          return { state: 'broken', message: s.broken }
+        }
+        return { state: broken ? 'skipped' : 'done', ...(s.note ? { note: s.note } : {}) }
+      }),
       madeBy: {},
       redo: redo.get(e.id) ?? [],
     }
@@ -89,10 +97,12 @@ export function appDesignHost(loader: Loader): DesignHost {
       return host.get(d.id).history.steps.at(-1)!
     },
 
+    prepareReorder: (d, from, to) => reorderedSteps(d.history, from, to, (history) => runReplay({ history })),
+
     async replay(d) {
-      redo.set(d.id, d.redo)
       if (empty.has(d.id)) {
         empty.set(d.id, { name: d.name, history: d.history, transform: d.transform })
+        redo.set(d.id, d.redo)
         return
       }
       if (d.history.steps.length) await applyHistory(loader, d.id, d.history)
@@ -109,6 +119,7 @@ export function appDesignHost(loader: Loader): DesignHost {
         }
         markStale()
       }
+      redo.set(d.id, d.redo)
       Object.assign(d, host.get(d.id))
     },
 

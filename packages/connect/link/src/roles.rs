@@ -139,6 +139,7 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("design.list", LinkClass::Read),
     ("design.steps", LinkClass::Read),
     ("design.edit_step", LinkClass::Edit),
+    ("design.reorder_step", LinkClass::Edit),
     ("design.undo", LinkClass::Edit),
     ("design.redo", LinkClass::Edit),
     // the design timeline, and moving its marker (rolling the design back or forward)
@@ -392,6 +393,7 @@ mod tests {
         ("design.list", LinkClass::Read),
         ("design.steps", LinkClass::Read),
         ("design.edit_step", LinkClass::Edit),
+        ("design.reorder_step", LinkClass::Edit),
         ("design.undo", LinkClass::Edit),
         ("design.redo", LinkClass::Edit),
         ("design.timeline", LinkClass::Read),
