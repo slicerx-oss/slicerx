@@ -503,7 +503,7 @@ jobs:
       - run: cargo test -p sx-brep --release --features routine-probe
       # the exact solid ops through sx-geom's JSON and CLI, against exact values and the mesh path
       - run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
-      - run: cargo test -p sx-geom --release --features brep --test brep_parity
+      - run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
   # so the specs test what the desktop slices, and no spec needs the WebAssembly slicer. Built once per run beside the
