@@ -93,16 +93,17 @@ describe('edge keys in the history', () => {
   // The edge where the top meets the slot's near wall, as a version 1 step keeps it: by place only.
   const bevel = (keys?: [number, number]) => step('s2', { op: 'edge.chamfer', edges: [{ a: [97, 85, 10], b: [97, 115, 10], face: [0, 0, 1], ...(keys ? { keys } : {}) }], distanceMm: 1 })
 
-  it('get their faces keys on the first replay, and then follow the edge when an earlier step moves it', async () => {
+  it('learns edge keys on first replay and requires repair when a stored face key is split', async () => {
     clearReplayCache()
     const first = await replayHistory(call, { history: history(slot(0), bevel()) })
     expect(first.status.map((s) => s.state)).toEqual(['done', 'done'])
     const keys = first.found?.['s2']?.edgeKeys?.[0]
     expect(keys).toHaveLength(2)
-    // The slot moved 5 mm along x: the chamfer finds its edge by those keys; by place it is gone.
+    // The slot moved 5 mm along x, but the top key names both fragments and cannot select one safely.
     clearReplayCache()
     const moved = await replayHistory(call, { history: history(slot(5), bevel(keys as [number, number])) })
-    expect(moved.status.map((s) => s.state)).toEqual(['done', 'done'])
+    expect(moved.status.map((s) => s.state)).toEqual(['done', 'broken'])
+    expect(moved.status[1]).toMatchObject({ message: expect.stringMatching(/split.*repair/i) })
     clearReplayCache()
     const byPlace = await replayHistory(call, { history: history(slot(5), bevel()) })
     expect(byPlace.status[1]).toMatchObject({ state: 'broken' })

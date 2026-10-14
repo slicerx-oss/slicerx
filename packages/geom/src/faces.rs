@@ -820,3 +820,67 @@ mod tests {
         assert!(kept.check("faces", 4).is_ok());
     }
 }
+
+// a stored key must name one connected face before an edit.
+#[cfg(feature = "cad")]
+pub(crate) fn resolve_key(mesh: &TriMesh, faces: &Faces, key: u64) -> Result<u32> {
+    let matches: Vec<u32> = faces
+        .keys
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &k)| {
+            let id = u32::try_from(i).ok()?;
+            (k == key && faces.ids.contains(&id)).then_some(id)
+        })
+        .collect();
+    if matches.is_empty() {
+        return Err(Error::invalid(
+            "faceReference",
+            "the face reference is missing; repair the reference before editing",
+        ));
+    }
+    if matches.len() != 1 || !connected_face(mesh, faces, matches[0]) {
+        return Err(Error::invalid(
+            "faceReference",
+            "the face reference was split; repair the reference before editing",
+        ));
+    }
+    Ok(matches[0])
+}
+
+// a keyed face must be one region joined across edges, not disconnected fragments.
+#[cfg(feature = "cad")]
+fn connected_face(mesh: &TriMesh, faces: &Faces, face: u32) -> bool {
+    fn root(parent: &[usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            i = parent[i];
+        }
+        i
+    }
+    let mut parent: Vec<usize> = (0..mesh.triangles.len()).collect();
+    let mut edges = HashMap::new();
+    let mut first = None;
+    for (i, t) in mesh
+        .triangles
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| faces.ids[*i] == face)
+    {
+        first.get_or_insert(i);
+        for j in 0..3 {
+            let (a, b) = (t[j], t[(j + 1) % 3]);
+            if let Some(other) = edges.insert((a.min(b), a.max(b)), i) {
+                let (left, right) = (root(&parent, i), root(&parent, other));
+                parent[left] = right;
+            }
+        }
+    }
+    first.is_some_and(|first| {
+        faces
+            .ids
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| **id == face)
+            .all(|(i, _)| root(&parent, i) == root(&parent, first))
+    })
+}

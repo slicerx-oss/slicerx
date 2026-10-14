@@ -75,7 +75,9 @@ Each face of a mesh in a history carries a key that says where the face came fro
 
 A push step keeps the key of the face it moved (`faceKey`), and a shell step the key of each face it opens. On replay a saved push or paint face key must resolve to one face and one connected region. A missing or split reference stops the step and its dependents for repair, preserving the last valid part. It never substitutes a neighbor or the larger split region. Exact reference failures do not fall back to the mesh. Legacy unkeyed picks still use their saved point and learn a key. Exact unions conservatively clear keys on coplanar operand faces that could merge; a later keyed edit requires a new pick even when the faces did not actually merge.
 
-A fillet or chamfer edge keeps the keys of the two faces either side (`keys`, the face `face` faces first). The engine looks for the boundary between those faces first and uses its ends as they are now, then looks by place; a boundary that came apart is rounded along its longest run, and the step says so ("Edge 1 was split in two; rounded its longer part."). Round edges (rims) are still found by place.
+A fillet or chamfer edge keeps the keys of the two faces either side (`keys`, the face `face` faces first). Each key must resolve to one connected face before the engine finds their boundary. Missing or split faces and ambiguous boundaries require repair instead of selecting a fragment or falling back to the mesh. A keyed round rim must still lie on its uniquely resolved faces. Only unkeyed references use their saved geometry alone. Shell openings follow the same unique-face rule.
+
+A mesh push preserves the source keys of the moved cap and extensions of adjacent planar walls. A moved base face therefore still reports the base as its origin, while the push appears among the steps that used it. Suppressing the push can therefore leave a later keyed fillet valid on the original edge, provided both faces still resolve uniquely. Connectivity requires shared edges: regions touching only at a vertex remain separate.
 
 ## Timeline
 

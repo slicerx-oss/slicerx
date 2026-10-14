@@ -91,4 +91,26 @@ test.describe('Exact solids', () => {
       console.log(line)
     }
   })
+
+  test('a missing face reference stops the worker replay for repair on both engines', async ({ page }) => {
+    await openStudio(page, { settingsMode: 'developer' })
+    for (const exact of [false, true]) {
+      const result = await page.evaluate(async ({ baseSteps, exact, transform }) => {
+        const g = (window as unknown as { __geom: { call(op: string, r: unknown): Promise<unknown> } }).__geom
+        type Reply = { parts: { positions: number[]; indices: number[]; faceKeys?: number[] }[]; status: { state: string; message?: string }[]; exactFellBack?: string[] }
+        const history = { version: 2, base: [], steps: baseSteps }
+        const before = await g.call('history.replay', { history, exact }) as Reply
+        const after = await g.call('history.replay', { history: { ...history, steps: [...baseSteps, {
+          id: `missing-${exact}`, part: 0, transform,
+          params: { op: 'face.push', at: [0, 0, 20], normal: [0, 0, 1], distanceMm: 1, faceKey: 1 },
+        }] }, exact }) as Reply
+        return { before, after }
+      }, { baseSteps: steps(`repair-${exact}`, 1), exact, transform: IDENTITY })
+      expect(result.before.status.map((s) => s.state)).toEqual(['done'])
+      expect(result.after.status[1]).toMatchObject({ state: 'broken', message: expect.stringMatching(/missing.*repair/i) })
+      expect(result.after.exactFellBack ?? []).toEqual([])
+      expect(result.after.parts[0]?.positions).toEqual(result.before.parts[0]?.positions)
+      expect(result.after.parts[0]?.indices).toEqual(result.before.parts[0]?.indices)
+    }
+  })
 })
