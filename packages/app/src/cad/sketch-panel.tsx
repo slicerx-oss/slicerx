@@ -13,7 +13,7 @@
 // here snaps, moves the rubber band in its fixed buffer and writes the cursor pills' text nodes; it
 // renders no React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
-import { afterLoopChange, afterReverse, curveStates, dimMark, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
+import { afterLoopChange, afterReverse, curveStates, dimMark, dofShort, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
 import { dimensionFor, isDimension, measured, pointAt, pointHit, type DimPick } from './sketch-dimension'
 import { evaluate, namesIn } from './values'
 import { fieldsOf, PatternSection } from './pattern-fields'
@@ -1360,9 +1360,18 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const card = phone ? { open: true, reason: null } : solidCard({ featureOnly, closedProfiles, issues, drawn: sketch.length > 0 || draft.points.length > 0 })
   const [lenFmt, lenUnit] = readoutUnits(units)
   const dof = solved ? (
-    <span className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)} {...(driven ? { 'data-tip-title': 'Driven dimensions', 'data-tip-body': 'The other constraints already set these sizes, so they show in parentheses and change nothing.' } : {})}>
-      {dofText(solved.solved)}
-      {driven ? <span className="sketch-driven">, {driven} driven</span> : null}
+    // the header's few words; the tooltip and the accessible name carry the whole line
+    <span
+      className="sketch-dof"
+      role="status"
+      data-testid="sketch-dof"
+      data-dof={solved.solved.dof}
+      data-tone={dofTone(solved.solved)}
+      aria-label={`${dofText(solved.solved)}${driven ? `, ${driven} driven` : ''}`}
+      data-tip-title={dofText(solved.solved)}
+      {...(driven ? { 'data-tip-body': `${driven} driven: the other constraints already set ${driven === 1 ? 'this size' : 'these sizes'}, so ${driven === 1 ? 'it shows' : 'they show'} in parentheses and changes nothing.` } : {})}
+    >
+      {dofShort(solved.solved)}
     </span>
   ) : null
   const idle = words(pending ? 'Esc stops.' : idleText(draft.tool))

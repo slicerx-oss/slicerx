@@ -4,7 +4,7 @@
 // colors a solve gives each curve, constraints kept in the project file, and old sketches loading as free geometry.
 import { describe, expect, it } from 'vitest'
 import { historyFiles, parseHistories, type History, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
-import { afterLoopChange, curveStates, dofText, dofTone, fromSolver, sketchMarks, toSolver } from '../src/cad/sketch-constraints'
+import { afterLoopChange, curveStates, dofShort, dofText, dofTone, fromSolver, sketchMarks, toSolver } from '../src/cad/sketch-constraints'
 import { DEFAULT_UNITS, formatLength } from '../src/cad/units'
 import { fromLoops, rectangle, type Entity } from '../src/cad/sketch-model'
 import { boxMesh } from '../src/plate/mesh-ops'
@@ -105,6 +105,11 @@ describe('colors from the solve', () => {
     expect(dofText({ status: 'ok', dof: 3 })).toBe('3 degrees of freedom left')
     expect(dofText({ status: 'redundant', dof: 1 })).toBe('Over-constrained: a constraint repeats another')
     expect(dofText({ status: 'conflict', dof: 0 })).toBe('Over-constrained: some constraints conflict')
+    // the card header's words
+    expect(dofShort({ status: 'ok', dof: 4 })).toBe('4 DOF left')
+    expect(dofShort({ status: 'ok', dof: 0 })).toBe('Defined')
+    expect(dofShort({ status: 'redundant', dof: 1 })).toBe('Over-defined')
+    expect(dofShort({ status: 'failed', dof: 2 })).toBe('Not solved')
     expect([dofTone({ status: 'ok', dof: 0 }), dofTone({ status: 'ok', dof: 2 }), dofTone({ status: 'conflict', dof: 0 }), dofTone({ status: 'redundant', dof: 1 })]).toEqual(['done', 'open', 'warn', 'warn'])
   })
 })

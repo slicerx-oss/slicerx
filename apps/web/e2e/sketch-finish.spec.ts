@@ -106,7 +106,7 @@ test('Ctrl/Cmd+Enter finishes the sketch, a bare Enter does not, and undo takes 
   await sketchAt(page, 'click', [100, 100])
   await sketchAt(page, 'click', [106, 100])
   // the circle is drawn before Enter, as a person would see it
-  await expect(panel.getByRole('status').filter({ hasText: 'degrees of freedom' })).toBeVisible()
+  await expect(panel.getByRole('status').filter({ hasText: 'DOF left' })).toBeVisible()
   // a bare Enter keeps the sketch open: a second one would otherwise close it by surprise
   await page.locator('body').press('Enter')
   await expect(panel).toContainText('The bed')
@@ -132,7 +132,7 @@ test('Join from a finished sketch picks the only body, and the step joins it', a
   await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
   await sketchAt(page, 'click', [0, 4])
   await sketchAt(page, 'click', [3, 4])
-  await expect(panel.getByRole('status').filter({ hasText: 'degrees of freedom' })).toBeVisible()
+  await expect(panel.getByRole('status').filter({ hasText: 'DOF left' })).toBeVisible()
   await page.getByTestId('sketch-finish').click()
   await expect.poll(async () => (await sx(page)).tool).toBe(null)
   await page.getByTestId('model-tree-sketch').click({ button: 'right' })

@@ -208,6 +208,15 @@ export function dofText(solved: Pick<Solved, 'status' | 'dof'> | null): string {
   return `${solved.dof} degree${solved.dof === 1 ? '' : 's'} of freedom left`
 }
 
+/** The same in the few words a card header has room for; the full line is its tooltip. */
+export function dofShort(solved: Pick<Solved, 'status' | 'dof'> | null): string {
+  if (!solved) return ''
+  if (solved.status === 'conflict' || solved.status === 'redundant') return 'Over-defined'
+  if (solved.status === 'failed') return 'Not solved'
+  if (solved.dof === 0) return 'Defined'
+  return `${solved.dof} DOF left`
+}
+
 /** How the status line reads: done when fully constrained, warn when over-constrained or unsolved. */
 export function dofTone(solved: Pick<Solved, 'status' | 'dof'>): 'done' | 'warn' | 'open' {
   if (solved.status !== 'ok') return 'warn'
