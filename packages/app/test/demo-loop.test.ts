@@ -168,6 +168,34 @@ describe('demo loops', () => {
     }
   })
 
+  it('has every Slice settings still, each with a sentence, an id no other loop uses and a module under 8 KB', async () => {
+    const stills = ['still-line-width', 'still-line-width-outer', 'still-line-width-inner', 'still-line-width-sparse', 'still-line-width-solid', 'still-line-width-top', 'still-line-width-first', 'still-shells-top', 'still-shells-bottom', 'still-first-layer-height', 'still-surface-pattern-top', 'still-surface-pattern-bottom', 'still-sparse-pattern', 'still-skirt-distance', 'still-skirt-loops', 'still-skirt-length', 'still-brim-gap', 'still-raft-layers', 'still-support-top-gap', 'still-support-bottom-gap', 'still-support-xy-gap', 'still-support-interface-layers', 'still-support-interface-spacing', 'still-support-style', 'still-one-wall-top', 'still-one-wall-first', 'still-ironing-angle', 'still-paint-depth-top', 'still-paint-depth-bottom']
+    // every loop's id, so a still can't take one an existing loop already has
+    const owner = new Map<string, string>()
+    for (const [name, d] of Object.entries(DEMOS)) {
+      if (!d.stage || [...owner.values()].some((n) => DEMOS[n] === d)) continue
+      const { id } = await d.stage()
+      expect(owner.get(id), `${name} shares ${id}`).toBeUndefined()
+      owner.set(id, name)
+    }
+    for (const id of stills) {
+      const d = DEMOS[id]
+      expect(d?.stage, id).toBeTypeOf('function')
+      expect(d?.body?.length, id).toBeGreaterThan(20)
+      // a still has no keyframes: nothing in it moves
+      const tool = await d!.stage!()
+      expect(tool.css, id).toBe('')
+      expect(owner.get(tool.id), id).toBe(id)
+      expect(statSync(join(import.meta.dirname, '../src/demos', `${id}.ts`)).size, id).toBeLessThanOrEqual(8 * 1024)
+    }
+    // siblings share a drawing, each with its own variant
+    expect(SETTING_DEMOS['top_shell_thickness']).toBe('still-shells-top')
+    expect(SETTING_DEMOS['bottom_shell_layers']).toBe('still-shells-bottom')
+    expect(SETTING_DEMOS['outer_wall_line_width']).toBe('still-line-width-outer')
+    expect(SETTING_DEMOS['support_object_xy_distance']).toBe('still-support-xy-gap')
+    expect(SETTING_DEMOS['interlocking_beam']).toBe('adv-interlocking')
+  })
+
   it('points each settings row and choice at its own loop', () => {
     for (const id of Object.values(SETTING_DEMOS)) expect(DEMOS[id], id).toBeDefined()
     expect(SETTING_DEMOS['sparse_infill_density']).toBe('infill-density')

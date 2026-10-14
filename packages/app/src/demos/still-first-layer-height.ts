@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// First layer height: the first layer can print thicker than the rest, here 0.3 mm under 0.2 mm layers, which forgives a bed that is not quite level.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'uflh',
+  css: "",
+  body: "<polygon class=\"s-f3 s-ol\" points=\"87.6,75 196.7,138 196.7,92.5 87.6,29.5\"/><polygon class=\"s-f3 s-ol\" points=\"221,124 196.7,138 196.7,92.5 221,78.5\"/><polygon class=\"s-f1 s-ol\" points=\"111.9,15.5 221,78.5 196.7,92.5 87.6,29.5\"/><g transform=\"matrix(3.031 1.75 0 -3.5 87.6 75)\"><rect class=\"s-hole\" x=\"0\" y=\"0\" width=\"36\" height=\"13\"/></g><path class=\"s-n\" style=\"vector-effect:none;stroke:var(--stage-aol);stroke-width:9.1;stroke-dasharray:3.5 8\" d=\"M91 71.7L193.4 130.8\"/><path class=\"s-n\" style=\"vector-effect:none;stroke:var(--stage-a1,#c9a6fb);stroke-width:7.7;stroke-dasharray:3.5 8\" d=\"M91 71.7L193.4 130.8\"/><path class=\"s-n\" style=\"vector-effect:none;stroke:var(--stage-t3,#6c7086);stroke-width:6.1;stroke-dasharray:5.1 5.4\" d=\"M89.6 62.2L194.7 122.8M89.6 55.2L194.7 115.8M89.6 48.2L194.7 108.8M89.6 41.2L194.7 101.8M89.6 34.2L194.7 94.8\"/><path class=\"s-n\" style=\"vector-effect:none;stroke:var(--stage-t2,#9da1b6);stroke-width:4.7;stroke-dasharray:5.1 5.4\" d=\"M89.6 62.2L194.7 122.8M89.6 55.2L194.7 115.8M89.6 48.2L194.7 108.8M89.6 41.2L194.7 101.8M89.6 34.2L194.7 94.8\"/><path class=\"s-n\" style=\"stroke:var(--stage-a1,#c9a6fb);stroke-width:1.2\" d=\"M190.7 129.3L226 140\"/><rect class=\"sxs-pill\" x=\"226\" y=\"131\" width=\"55\" height=\"18\" rx=\"9\"/><text x=\"235\" y=\"143.7\">0.3 mm</text><path class=\"s-n\" style=\"stroke:var(--stage-a1,#c9a6fb);stroke-width:1.2\" d=\"M190.7 99.5L226 70\"/><rect class=\"sxs-pill\" x=\"226\" y=\"61\" width=\"55\" height=\"18\" rx=\"9\"/><text x=\"235\" y=\"73.7\">0.2 mm</text>",
+}
