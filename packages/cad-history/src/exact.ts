@@ -341,7 +341,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
       case 'face.push': {
         const b = solid(target)
         if (b === null || !target) return null
-        // the face in the part's own coordinates; the kernel finds it by its key, then under the point
+        // the face in the part's own coordinates; a missing or ambiguous key requires repair
         const inv = invert(s.transform)
         const n = direction(inv, p.normal)
         const l = Math.hypot(...n) || 1
@@ -452,6 +452,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
     }
   } catch (e) {
     if (e instanceof ExactBroken || (e as { name?: string }).name === 'AbortError') throw e
+    if (e instanceof Error && /^(?:brep: )?faceReference:/.test(e.message)) throw new ExactBroken(e.message)
     fellBack()
     return null
   }

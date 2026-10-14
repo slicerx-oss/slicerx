@@ -280,11 +280,12 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
     if (!part) throw new Broken('The part this step works on is gone.')
     switch (p.op) {
       case 'face.push': {
-        // By the face's key first, then by where it was.
+        // a saved key never falls back to a nearby face
         const byKey = p.faceKey ? findByKey(part, s.transform, p.faceKey, p.at) : null
+        if (p.faceKey && !byKey) throw new Broken('Missing face; pick the face again to repair this step.')
+        if (byKey?.split) throw new Broken('Ambiguous face; pick the face again to repair this step.')
         const triangle = byKey ? byKey.triangle : findTriangle(part, s.transform, p.at, p.normal)
         if (triangle < 0) throw new Broken('The face this step moved is gone.')
-        if (byKey?.split) found.notes[s.id] = 'The face this step moved was split in two; picked the larger part.'
         const key = keyOfTriangle(part, triangle)
         if (key && key !== p.faceKey) found.keys[s.id] = { faceKey: key }
         const r = (await call('face.push', { mesh: item(part), triangle, at: byKey ? byKey.at : p.at, distanceMm: p.distanceMm })) as { mesh: Flat; moved: MovedFace }
@@ -368,7 +369,9 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         let target = p.target
         if (target.kind === 'seed' && target.faceKey) {
           const byKey = findByKey(part, s.transform, target.faceKey, target.point)
-          if (byKey) target = { ...target, point: byKey.at }
+          if (!byKey) throw new Broken('Missing face; pick the face again to repair this step.')
+          if (byKey.split) throw new Broken('Ambiguous face; pick the face again to repair this step.')
+          target = { ...target, point: byKey.at }
         }
         const texts = part.paint?.[p.layer] ?? {}
         let r: { changed: Record<string, string> }

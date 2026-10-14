@@ -121,7 +121,7 @@ export type StepState = 'done' | 'broken' | 'skipped' | 'suppressed'
 export interface StepStatus {
   state: StepState
   message?: string
-  /** A step that went through but found its face another way than it was saved: "split in two; picked the larger". */
+  /** A nonfatal note from a completed step. */
   note?: string
 }
 
@@ -225,8 +225,8 @@ export function faceKeyAt(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'fac
 
 /**
  * The face with key `key`, found again on a mesh an earlier step changed: a triangle of it nearest the world
- * point `at` and a point on that triangle. A face split in two (or more) is found by its larger part, and `split`
- * says so. Null when no face has the key.
+ * point `at` and a point on that triangle. Multiple faces or disconnected regions return `split` with
+ * no triangle. Null when no face has the key; callers must require repair in either case.
  */
 export function findByKey(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'faces'>, t: Mat4, key: number, at: Vec3): { triangle: number; at: Vec3; split: boolean } | null {
   const f = mesh.faces
@@ -249,29 +249,20 @@ export function findByKey(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'fac
     parent.set(root(b), root(a))
     parent.set(root(c), root(a))
   }
-  const area = new Map<number, number>()
+  const regions = new Set(tris.map((k) => root(ix[3 * k]!)))
+  const faces = new Set(tris.map((k) => f.ids[k]))
+  if (regions.size > 1 || faces.size > 1) return { triangle: -1, at, split: true }
   const corners = (k: number) => [0, 1, 2].map((j) => point(t, p, 3 * ix[3 * k + j]!)) as [Vec3, Vec3, Vec3]
-  for (const k of tris) {
-    const [a, b, c] = corners(k)
-    const e1: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
-    const e2: Vec3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
-    const r = root(ix[3 * k]!)
-    area.set(r, (area.get(r) ?? 0) + Math.hypot(e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]) / 2)
-  }
-  let largest = -1
-  let most = -1
-  for (const [r, a] of area) if (a > most) [largest, most] = [r, a]
   let best = -1
   let bestD = Infinity
   let bestAt: Vec3 = at
   for (const k of tris) {
-    if (root(ix[3 * k]!) !== largest) continue
     const [a, b, c] = corners(k)
     const m: Vec3 = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3]
     const d = Math.hypot(m[0] - at[0], m[1] - at[1], m[2] - at[2])
     if (d < bestD) [best, bestD, bestAt] = [k, d, m]
   }
-  return best < 0 ? null : { triangle: best, at: bestAt, split: area.size > 1 }
+  return best < 0 ? null : { triangle: best, at: bestAt, split: false }
 }
 
 /**

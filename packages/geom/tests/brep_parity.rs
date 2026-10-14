@@ -1217,7 +1217,7 @@ fn push_a_floor_through_and_by_key() {
             .map(|f| f["key"].as_u64().unwrap())
             .collect::<Vec<_>>()
     };
-    let (top, side, bottom) = (keyed(&body, 2, 1.0), keyed(&body, 0, 1.0), keyed(&body, 2, -1.0));
+    let (top, bottom) = (keyed(&body, 2, 1.0), keyed(&body, 2, -1.0));
     // given far from where the face is, as after an earlier step changed
     let r = call(
         "brep.push",
@@ -1229,8 +1229,8 @@ fn push_a_floor_through_and_by_key() {
     assert_eq!(keyed(&b, 2, -1.0), bottom, "the bottom keeps its key");
     assert_eq!(
         keyed(&b, 0, 1.0),
-        side,
-        "the side keeps its key, one face with the piece the pull added"
+        vec![0],
+        "a side merged with the pull requires a new pick"
     );
     let new_top = keyed(&b, 2, 1.0);
     assert!(

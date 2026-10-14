@@ -3,8 +3,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // History file version 2 (docs/cad-history.md, "Face keys"): a step names the face it works on by the face's key,
 // which stays the same when an earlier step changes, and finds it by place only when it has no key. A step from a
-// version 1 file gets its key on its first replay. A face split in two is found by its larger part, and the step
-// says so. A file from a newer SlicerX opens without its history and says why. Runs against the geometry engine
+// version 1 file gets its key on its first replay. A face split in two stops for repair. A file from a newer SlicerX opens without its history and says why. Runs against the geometry engine
 // (live wasm when built, recorded replies otherwise).
 import { describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
@@ -70,6 +69,7 @@ describe('face keys in the history', () => {
     expect(r.found?.['s2']).toEqual({ faceKey: key })
   })
 
+  // the case name also identifies its recorded engine fixture; it now asserts refusal
   it('find a face split in two by its larger part, and say so', async () => {
     clearReplayCache()
     const slot = step('s1', { op: 'shape.extrude', frame: frame(10), shape: { type: 'rectangle', widthMm: 4, heightMm: 40 }, placement: { center: [-8, 0], rotationDeg: 0 }, spec: { distanceMm: 3, operation: 'cut' } })
@@ -81,9 +81,9 @@ describe('face keys in the history', () => {
     const push = step('s2', { op: 'face.push', at: [85, 100, 10], normal: [0, 0, 1], distanceMm: 2, faceKey: top! })
     clearReplayCache()
     const r = await replayHistory(call, { history: history(slot, push) })
-    expect(r.status[1]).toMatchObject({ state: 'done', note: expect.stringMatching(/split in two; picked the larger/) })
-    // The larger part (from x 94 to 120) went up; the smaller one (80 to 90) stayed.
-    expect(topIn(r.parts[0]!, 94, 120)).toBeCloseTo(12, 6)
+    expect(r.status[1]).toMatchObject({ state: 'broken', message: expect.stringMatching(/Ambiguous face.*repair/) })
+    // neither region moved
+    expect(topIn(r.parts[0]!, 94, 120)).toBeCloseTo(10, 6)
     expect(topIn(r.parts[0]!, 80, 90)).toBeCloseTo(10, 6)
   })
 })
