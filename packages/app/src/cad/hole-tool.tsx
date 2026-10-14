@@ -114,15 +114,15 @@ export function HoleTool() {
       <PointerHint text={h ? 'Click another hole to change that one instead.' : 'Click the wall of a round hole.'} />
       <Choice
         id="hole-purpose"
-        label="Hole for"
+        label="Kind"
         ariaLabel="What the hole is for"
         value={purpose}
         onChange={setPurpose}
         options={[
-          { value: 'clearance', label: 'Screw passes' },
-          { value: 'tap', label: 'Screw threads in' },
+          { value: 'clearance', label: 'Through' },
+          { value: 'tap', label: 'Tapped' },
           { value: 'insert', label: 'Insert' },
-          { value: 'custom', label: 'Size' },
+          { value: 'custom', label: 'Custom' },
         ]}
       />
       {purpose === 'custom' ? (

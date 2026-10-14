@@ -6,7 +6,7 @@
 import { patternCopies, patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent } from '@slicerx/viewport'
-import { Button, Input, Select, Switch } from '@slicerx/ui'
+import { Button, Input, Seg, Select, Switch } from '@slicerx/ui'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { featureAt, measure, pickFace, shapeProfile, type FaceFrame, type Feature, type FreeShape, type Measurement, type Polygon, type Shape, type Vec3 } from '../geom/cad'
 import { toGeom } from '../geom/client'
@@ -110,6 +110,13 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   })
   const [svg, setSvg] = useDraft<{ name: string; text: string } | null>('svg', edit?.svg ?? null)
   const [installed, setInstalled] = useState<FontChoice[] | null>(null)
+  // where the font comes from: the built-in one or an installed one, or a file of the person's own
+  const [fontFrom, setFontFrom] = useState<'system' | 'file'>(() => (font && /\.(ttf|otf)$/i.test(font.name) ? 'file' : 'system'))
+  // the installed fonts are asked for on a click, which the browser needs before it shares them
+  const loadInstalled = () => {
+    if (installed !== null || !localFontsAvailable()) return
+    void listLocalFonts().then((list) => (list.length ? setInstalled(list) : setNote('No installed fonts were offered. Pick Custom TTF file instead.')))
+  }
   const [x, setX] = useDraft('x', v('x', '0'))
   const [y, setY] = useDraft('y', v('y', '0'))
   const [turn, setTurn] = useDraft('turn', v('turn', '0'))
@@ -235,7 +242,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
     <Shell title={textOnly ? 'Text on a face' : 'Shape on a face'} aside={edit ? `Editing step ${edit.index + 1}` : face ? face.label : 'No face yet'}>
       {!face ? <PointerHint text={`Click a flat face, or the bed, where the ${textOnly ? 'text' : 'shape'} goes.`} /> : null}
       {!textOnly ? (
-        <Row label="Shape" htmlFor="cad-shape">
+        <Row label="Shape" htmlFor="cad-shape" wide>
           <Select id="cad-shape" size="sm" value={type} onChange={(e) => setType(e.target.value as ShapeType)}>
             {(Object.keys(SHAPE_NAMES) as ShapeType[]).map((t) => (
               <option key={t} value={t}>{SHAPE_NAMES[t]}</option>
@@ -249,7 +256,22 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
             <Input id="cad-text" size="sm" value={text} maxLength={80} onChange={(e) => setText(e.target.value)} />
           </Row>
           <Num id="cad-size" label="Letter height" unit="mm" value={size} onChange={setSize} />
-          <Row label={<>Font <span className="tp-aside">{font ? font.name : 'Built in'}</span></>} wide>
+          <Row label="Font" labelId="cad-font-label" wide>
+            <Seg
+              label="Font source"
+              full
+              value={fontFrom}
+              onChange={(v) => {
+                setFontFrom(v)
+                setFont(null)
+                if (v === 'system') loadInstalled()
+              }}
+              options={[
+                { value: 'system', label: 'Built-in or installed', testId: 'cad-font-system' },
+                { value: 'file', label: 'Custom TTF file', testId: 'cad-font-file' },
+              ]}
+            />
+            {fontFrom === 'file' ? (
               <label className="cad-file">
                 <input
                   id="cad-font"
@@ -260,36 +282,29 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
                     if (f) void readFont(f).then((base64) => setFont({ name: f.name, base64 }), (err: unknown) => setNote(errorText(err)))
                   }}
                 />
-                <span>Choose a TTF or OTF file</span>
+                <span>{font ? font.name : 'Choose a TTF or OTF file'}</span>
               </label>
-          </Row>
-          {localFontsAvailable() ? (
-            installed === null ? (
-              <Button size="sm" variant="ghost" icon="text" onClick={() => void listLocalFonts().then((list) => (list.length ? setInstalled(list) : setNote('No installed fonts were offered. Choose a TTF or OTF file instead.')))}>
-                Use an installed font
-              </Button>
             ) : (
-              <Row label="Installed font" htmlFor="cad-installed" wide>
-                <Select
-                  id="cad-installed"
-                  size="sm"
-                  value={font?.name ?? ''}
-                  onChange={(e) => {
-                    const c = installed.find((f) => f.family === e.target.value)
-                    if (c) void fontBase64(c).then((base64) => setFont({ name: c.family, base64 }), (err: unknown) => setNote(errorText(err)))
-                    else setFont(null)
-                  }}
-                >
-                  <option value="">Built in</option>
-                  {installed.map((f) => (
-                    <option key={f.family} value={f.family}>
-                      {f.family}
-                    </option>
-                  ))}
-                </Select>
-              </Row>
-            )
-          ) : null}
+              <Select
+                id="cad-installed"
+                aria-label="Font"
+                value={font?.name ?? ''}
+                onPointerDown={loadInstalled}
+                onChange={(e) => {
+                  const c = installed?.find((f) => f.family === e.target.value)
+                  if (c) void fontBase64(c).then((base64) => setFont({ name: c.family, base64 }), (err: unknown) => setNote(errorText(err)))
+                  else setFont(null)
+                }}
+              >
+                <option value="">Built in</option>
+                {(installed ?? []).map((f) => (
+                  <option key={f.family} value={f.family}>
+                    {f.family}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Row>
         </>
       ) : type === 'svg' ? (
         <>
@@ -554,7 +569,7 @@ function MeasureTool() {
         <>
           {kinds.length > 1 ? <Choice id="dim-kind" label="Dimension to keep" value={keepKind} onChange={setKind} options={kinds.map((k) => ({ value: k, label: KIND_NAMES[k] }))} /> : null}
           <Row label={kinds.length > 1 ? '' : KIND_NAMES[keepKind]}>
-            <Button size="sm" variant="ghost" icon="pin" data-tip="cad.keepDimension" onClick={() => void keep()} disabled={keeping}>Keep this dimension</Button>
+            <Button size="sm" className="tp-pill" icon="pin" data-tip="cad.keepDimension" onClick={() => void keep()} disabled={keeping}>Keep this dimension</Button>
           </Row>
         </>
       ) : onBed && kinds.length ? (
@@ -572,7 +587,7 @@ function MeasureTool() {
               <li key={d.id} data-lost={text === 'Lost' ? true : undefined}>
                 <span>{KIND_NAMES[d.kind]}{showAll ? `, ${owner}` : ''}</span>
                 <span className="sx-mono">{text === 'Lost' ? `Lost: ${results[d.id]?.message ?? 'the place it was kept on is gone.'}` : text}</span>
-                <Button size="sm" variant="ghost" icon="delete" aria-label={`Remove the ${KIND_NAMES[d.kind].toLowerCase()}`} onClick={() => removeDimension(d.id)}>Remove</Button>
+                <Button size="sm" className="tp-pill" icon="delete" aria-label={`Remove the ${KIND_NAMES[d.kind].toLowerCase()}`} onClick={() => removeDimension(d.id)}>Remove</Button>
               </li>
             )
           })}

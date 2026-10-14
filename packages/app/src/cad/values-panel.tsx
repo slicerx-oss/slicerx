@@ -32,17 +32,15 @@ function Row({ name, expr }: { name: string; expr: string }) {
     }
   }
   return (
-    <li className="cad-value">
-      <label>
-        <span className="sx-mono">{name}</span>
+    <li className="tp-value">
+      <span className="tp-eq">
+        <label className="sx-mono tp-value-name" htmlFor={`value-${name}`}>{name}</label>
+        <span className="tp-eq-sign" aria-hidden="true">=</span>
         <Input id={`value-${name}`} mono aria-label={`${name} is`} value={text} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && apply()} />
-      </label>
-      <span className="sx-small sx-muted" data-testid={`value-${name}`}>
-        {table.errors[name] ? <><Icon name="alert" size={13} /> {table.errors[name]}</> : value !== undefined ? `= ${mm(value)}${used ? `, ${used} step${used === 1 ? '' : 's'}` : ''}` : null}
       </span>
       <Button
         size="sm"
-        variant="ghost"
+        className="tp-pill"
         icon="delete"
         aria-label={`Remove ${name}`}
         onClick={() => {
@@ -53,6 +51,9 @@ function Row({ name, expr }: { name: string; expr: string }) {
           }
         }}
       />
+      <span className="sx-small sx-muted tp-value-result" data-testid={`value-${name}`}>
+        {table.errors[name] ? <><Icon name="alert" size={13} /> {table.errors[name]}</> : value !== undefined ? `= ${mm(value)}${used ? `, ${used} step${used === 1 ? '' : 's'}` : ''}` : null}
+      </span>
       {note ? <Message text={note} /> : null}
     </li>
   )
@@ -79,19 +80,23 @@ export function ValuesPanel() {
   return (
     <Shell title="Named values" aside={values.length === 1 ? '1 value' : `${values.length} values`}>
       <Note>Type a name in any size, or a sum such as <span className="sx-mono">wall * 2 + clearance</span>. Steps typed with a name follow it when it changes. Values are in mm unless you type a unit, such as <span className="sx-mono">1/8 in</span>.</Note>
-      <ul className="cad-values">
+      <ul className="tp-values" aria-label="Named values">
         {values.map((v) => (
           <Row key={`${v.name}=${v.expr}`} name={v.name} expr={v.expr} />
         ))}
         {Object.entries(fixed).map(([n, v]) => (
-          <li key={n} className="cad-value" data-builtin>
-            <span className="sx-mono">{n}</span>
-            <span className="sx-small sx-muted">{`= ${mm(v)}, built in`}</span>
+          <li key={n} className="tp-value" data-builtin>
+            <span className="tp-eq">
+              <span className="sx-mono tp-value-name">{n}</span>
+              <span className="tp-eq-sign" aria-hidden="true">=</span>
+              <span className="sx-muted">{`${mm(v)}, built in`}</span>
+            </span>
           </li>
         ))}
       </ul>
-      <div className="cad-pair">
+      <div className="tp-eq tp-value-new">
         <Input id="value-new-name" mono aria-label="New value's name" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
+        <span className="tp-eq-sign" aria-hidden="true">=</span>
         <Input id="value-new-expr" mono aria-label="New value" placeholder="2" value={expr} onChange={(e) => setExpr(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
       </div>
       {note ? <Message text={note} /> : null}
