@@ -5,7 +5,7 @@
 // one. Edits are plate overrides on top of Easy mode; saved profiles are never written from here.
 import type { SettingDef, SettingIntent, SettingValue } from '@slicerx/contracts'
 import { EASY_MAP } from '@slicerx/settings'
-import { Icon, keepInPlace, LinkButton, Seg, Switch, tipAttrs, type IconName } from '@slicerx/ui'
+import { Icon, keepInPlace, LinkButton, Select, Seg, SettingRow, Switch, tipAttrs, type IconName } from '@slicerx/ui'
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { PrimeTowerRow } from './prime-tower-row'
@@ -13,6 +13,7 @@ import { isWideText, MmOrPercentSetting, TextSetting } from './setting-rows'
 import './settings-tabs.css'
 import { formatValue, resolveConfig, SETTINGS } from '../../adapters/settings'
 import { presetOwnValue } from '../../adapters/config'
+import { shortLabel, WIDE_SELECTS } from '../../adapters/short-labels'
 import { useFilamentCount } from '../../filament/count'
 import { fuzzyScore } from '../../commands/fuzzy'
 import { effectiveMode, useLayout } from '../../first-run/look'
@@ -134,16 +135,31 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     })
     control = <Seg label={def.label ?? def.key} size="sm" full value={String(scalar ?? '')} options={locked ? options.map((o) => ({ ...o, disabled: true })) : options} onChange={(v) => setOverride(def.key, v)} className="tier-seg" />
   } else if (def.type === 'enum') {
+    const offered = offeredValues(def, scalar)
+    const current = offered.find((o) => o.value === String(scalar ?? ''))
+    // A closed select shows a short name for a long value; the menu, the tooltip and the accessible name keep the full one.
+    const face = mixed ? 'Mixed' : current ? shortLabel(def, current.value, current.label) : undefined
+    const full = current ? `${current.label}${current.gone ? ' (not supported yet, prints with the default)' : ''}` : undefined
+    const optionTip = optionTipAttrs(def.key, scalar)
+    const wide = WIDE_SELECTS[def.key]
     control = (
-      <select id={id} className="mini" value={mixed ? '' : String(scalar ?? '')} disabled={Boolean(locked)} {...optionTipAttrs(def.key, scalar)} onChange={(e) => e.currentTarget.value && setOverride(def.key, e.currentTarget.value)}>
+      <Select
+        id={id}
+        size="sm"
+        face={face}
+        wrap={{ ...(Object.keys(optionTip).length || !full || full === face ? optionTip : tipAttrs({ title: full })), ...(wide ? { style: { width: `${wide}px` } } : {}) }}
+        value={mixed ? '' : String(scalar ?? '')}
+        disabled={Boolean(locked)}
+        onChange={(e) => e.currentTarget.value && setOverride(def.key, e.currentTarget.value)}
+      >
         {mixed ? <option value="">Mixed</option> : null}
-        {offeredValues(def, scalar).map(({ value: v, label, gone }) => (
+        {offered.map(({ value: v, label, gone }) => (
           <option key={v} value={v}>
             {label}
-            {gone ? ' (not supported yet, prints with the default)' : ''}
+            {gone ? ' (unsupported)' : ''}
           </option>
         ))}
-      </select>
+      </Select>
     )
   } else {
     control = (
@@ -179,49 +195,54 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
   // number-or-percent row names its unit in its toggle instead.
   const unit = def.type === 'bool' || def.type === 'bools' || def.type === 'enum' || def.type === 'floatsOrPercents' ? '' : unitText
   return (
-    <li
+    <SettingRow
+      as="li"
       className={[overridden ? 'field changed' : 'field', scoped?.source === 'plate' ? 'inherited' : '', locked ? 'locked' : ''].filter(Boolean).join(' ')}
-      data-wide={marks || isWideText(def) ? true : undefined}
+      stack={isWideText(def)}
       data-testid="slice-setting-row"
       data-key={def.key}
       data-source={scoped ? scoped.source : 'plate'}
       {...settingTipAttrs(def.key)}
       {...lockTip}
+      mark={
+        <>
+          {overridden ? (
+            <span className="sx-setrow-dot" role="img" aria-label="Changed" {...tipAttrs({ title: 'Changed', body: scoped ? "Differs from the plate's value." : 'Differs from the Easy value.' })} />
+          ) : null}
+          {/* The pin shares the rail with the changed dot, so showing either never moves the row. */}
+          {pin ? (
+            <button type="button" className="row-pin" data-testid="slice-setting-pin" data-key={def.key} aria-pressed={pin.on} aria-label={pin.on ? 'Unpin this setting' : 'Pin this setting'} {...tipAttrs({ title: pin.on ? 'Unpin' : 'Pin', body: 'Pinned settings show above the tabs.' })} onClick={pin.toggle}>
+              <Icon name="pin" size={11} />
+            </button>
+          ) : null}
+        </>
+      }
+      label={
+        <label htmlFor={id}>
+          {def.label}
+          {unit ? <span className="field-unit">{unit}</span> : null}
+          {showKey ? <span className="key">{def.key}</span> : null}
+          {scoped && !locked ? <span className="scope-from">{scoped.source === 'plate' ? 'from plate' : scoped.source === 'mixed' ? 'differs across the selection' : `plate ${formatValue(def, scoped.plateValue)}`}</span> : null}
+        </label>
+      }
+      control={control}
+      reset={
+        overridden ? (
+          <button type="button" className="reset" data-testid="slice-setting-reset" data-key={def.key} onClick={() => setOverride(def.key, undefined)} aria-label={`Reset ${def.label}`} {...tipAttrs({ title: 'Reset', body: scoped ? "Go back to the plate's value." : 'Go back to the Easy value.' })}>
+            <Icon name="rotate" />
+          </button>
+        ) : null
+      }
     >
-      <label htmlFor={id}>
-        {def.label}
-        {unit ? <span className="field-unit">{unit}</span> : null}
-        {showKey ? <span className="key">{def.key}</span> : null}
-        {scoped && !locked ? <span className="scope-from">{scoped.source === 'plate' ? 'from plate' : scoped.source === 'mixed' ? 'differs across the selection' : `plate ${formatValue(def, scoped.plateValue)}`}</span> : null}
-      </label>
-      {control}
       {!scoped && !overridden && own !== null ? (
-        <p className="sx-small sx-muted slicerx-default" style={{ gridColumn: '1 / -1', margin: 0 }}>
+        <p className="sx-small sx-muted slicerx-default">
           {appName()} default. This printer's preset says {String(Array.isArray(own) ? own[0] : own)}.{' '}
           <LinkButton onClick={() => setOverride(def.key, own)}>Use this preset's own ({String(Array.isArray(own) ? own[0] : own)})</LinkButton>
         </p>
       ) : null}
-      {note ? (
-        <p className="sx-small sx-muted plate-own" style={{ gridColumn: '1 / -1', margin: 0 }}>
-          {note}
-        </p>
-      ) : null}
-      {/* The pin sits in the gutter left of the row, out of the grid, so showing it never moves the row. */}
-      {pin ? (
-        <button type="button" className="row-pin" data-testid="slice-setting-pin" data-key={def.key} aria-pressed={pin.on} aria-label={pin.on ? 'Unpin this setting' : 'Pin this setting'} {...tipAttrs({ title: pin.on ? 'Unpin' : 'Pin', body: 'Pinned settings show above the tabs.' })} onClick={pin.toggle}>
-          <Icon name="pin" size={11} />
-        </button>
-      ) : null}
-      {overridden ? (
-        <button type="button" className="reset" data-testid="slice-setting-reset" data-key={def.key} onClick={() => setOverride(def.key, undefined)} aria-label={`Reset ${def.label}`} {...tipAttrs({ title: 'Reset', body: scoped ? 'Go back to the plate\'s value.' : 'Go back to the Easy value.' })}>
-          <Icon name="rotate" />
-        </button>
-      ) : (
-        <span className="reset" aria-hidden="true" />
-      )}
-      {/* After the reset, so the reset keeps its place on the row's first line. */}
+      {note ? <p className="sx-small sx-muted plate-own">{note}</p> : null}
       {chips ? <p className="obj-chips">{chips}</p> : null}
-    </li>
+    </SettingRow>
   )
 }
 
@@ -278,14 +299,18 @@ function ChoiceRow({ name, config, overrides }: { name: string; config: Record<s
   }
   const touched = Object.values(choice.values).some((keys) => Object.keys(keys).some((k) => k in overrides))
   return (
-    <li className={touched ? 'field changed' : 'field'} data-wide>
-      <label {...tipAttrs({ title: choice.label, body: Object.values(choice.hints).join(' ') })}>
-        {choice.label}
-        {showKey ? <span className="key">{Object.keys(Object.values(choice.values)[0] ?? {}).join(', ')}</span> : null}
-      </label>
-      <Seg label={choice.label} size="sm" full value={current} options={options} onChange={pick} className="tier-seg" />
-      <span className="reset" aria-hidden="true" />
-    </li>
+    <SettingRow
+      as="li"
+      className={touched ? 'field changed' : 'field'}
+      mark={touched ? <span className="sx-setrow-dot" role="img" aria-label="Changed" {...tipAttrs({ title: 'Changed', body: 'Differs from the Easy value.' })} /> : null}
+      label={
+        <label {...tipAttrs({ title: choice.label, body: Object.values(choice.hints).join(' ') })}>
+          {choice.label}
+          {showKey ? <span className="key">{Object.keys(Object.values(choice.values)[0] ?? {}).join(', ')}</span> : null}
+        </label>
+      }
+      control={<Seg label={choice.label} size="sm" full value={current} options={options} onChange={pick} className="tier-seg" />}
+    />
   )
 }
 
@@ -570,8 +595,8 @@ export function ExpertSettings() {
                   <span className="sx-mono">{sections.reduce((n, s) => n + s.shown.length + s.more.length, 0)}</span>
                 </h4>
                 {sections.map(({ s, shown, more }) => (
-                  <div key={s.id} className="set-sec" data-section={s.key}>
-                    <div className="set-sec-sub">{s.label}</div>
+                  <div key={s.id} className="pset-sec" data-section={s.key}>
+                    <div className="pset-sec-sub">{s.label}</div>
                     <ul>
                       {shown.map((d) => field(d, { note: fixNote(d) }))}
                       {more.length ? <li className="tier-divider" aria-hidden="true">Expert</li> : null}
@@ -598,9 +623,9 @@ export function ExpertSettings() {
                   const listed = open ? rows : { shown: s.shown.filter((d) => changed(d.key)), more: rows.more.filter((d) => changed(d.key)), hidden: 0 }
                   const choices = s.choices && !scoped && open
                   return (
-                    <div key={s.key} className="set-sec" data-section={s.key} data-open={open}>
-                      <button type="button" className="set-sec-h" data-testid="slice-settings-section" data-section={s.key} aria-expanded={open} onClick={() => toggleSection(s, open)}>
-                        <Icon name="chevron-right" size={14} className="chev" />
+                    <div key={s.key} className="pset-sec" data-section={s.key} data-open={open}>
+                      <button type="button" className="pset-sec-h" data-testid="slice-settings-section" data-section={s.key} aria-expanded={open} onClick={() => toggleSection(s, open)}>
+                        <Icon name="chevron-right" size={12} className="chev" />
                         <span className="t">{s.label}</span>
                         <span className="n">{n ? `${n} changed` : ''}</span>
                         <span className="sum">{summaryOf(all, config)}</span>
