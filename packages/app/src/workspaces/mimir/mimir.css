@@ -89,13 +89,17 @@
 .mimir-drawing-cell > svg { position: absolute; left: 0; top: 0; overflow: visible; }
 .mimir-drawing-label { position: absolute; left: 10px; top: 8px; font-size: 11px; color: var(--muted); pointer-events: none; }
 .mimir-drawing-face { stroke: light-dark(#4d5164, #2a2c38); stroke-width: 0.9; stroke-linejoin: round; }
-.mimir-dim line, .mimir-dim polyline { stroke: var(--muted); stroke-width: 1; fill: none; }
+/* in light mode the lines go darker so they hold 3:1 against the part even where the halo thins out at 1x */
+.mimir-drawing { --dim-ink: var(--muted); --dim-guess: var(--orange); }
+:root[style*="color-scheme: light"] .mimir-drawing { --dim-ink: color-mix(in srgb, var(--fg) 78%, var(--muted)); --dim-guess: color-mix(in srgb, var(--orange) 72%, #000); }
+.mimir-dim line, .mimir-dim polyline { stroke: var(--dim-ink); stroke-width: 1; fill: none; }
 .mimir-dim .mimir-dim-halo :is(line, polyline) { stroke: var(--ink-2); stroke-width: 3.4; stroke-dasharray: none; stroke-linecap: round; }
-.mimir-dim[data-guess] > g:not(.mimir-dim-halo) > line:not(.mimir-dim-leader), .mimir-dim[data-guess] > g:not(.mimir-dim-halo) > polyline { stroke: var(--orange); stroke-dasharray: 4 3; }
-.mimir-dim-arrow, .mimir-dim-dot { fill: var(--muted); stroke: var(--ink-2); stroke-width: 1; paint-order: stroke; }
-.mimir-dim[data-guess] .mimir-dim-arrow { fill: var(--orange); }
+.mimir-dim[data-guess] > g:not(.mimir-dim-halo) > line:not(.mimir-dim-leader), .mimir-dim[data-guess] > g:not(.mimir-dim-halo) > polyline { stroke: var(--dim-guess); stroke-dasharray: 4 3; }
+.mimir-dim-arrow, .mimir-dim-dot { fill: var(--dim-ink); stroke: var(--ink-2); stroke-width: 1; paint-order: stroke; }
+.mimir-dim[data-guess] .mimir-dim-arrow { fill: var(--dim-guess); }
 .mimir-dim[data-on] > g:not(.mimir-dim-halo) :is(line, polyline) { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: none; }
 .mimir-dim[data-on] .mimir-dim-halo :is(line, polyline) { stroke-width: 4.6; }
+:root[style*="color-scheme: light"] .mimir-dim:not([data-on]) .mimir-dim-halo :is(line, polyline) { stroke-width: 2.6; }
 .mimir-dim[data-on] :is(.mimir-dim-arrow, .mimir-dim-dot) { fill: var(--accent); }
 .mimir-callout { cursor: pointer; }
 .mimir-callout circle { fill: var(--callout-fill); stroke: var(--muted); stroke-width: 1.5; }
