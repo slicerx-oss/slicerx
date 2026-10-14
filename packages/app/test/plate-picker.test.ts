@@ -153,19 +153,19 @@ describe('the plate keys', () => {
 describe('the sheet\'s size', () => {
   it('fits every plate, never resizes with a search (it counts all plates), and stops at the room it has', async () => {
     const { sheetHeight } = await import('../src/workspaces/prepare/plate-picker')
-    expect(sheetHeight(1, 640, 400)).toBe(202)
-    expect(sheetHeight(4, 640, 400)).toBe(202)
-    expect(sheetHeight(5, 640, 400)).toBe(314)
+    expect(sheetHeight(1, 640, 480)).toBe(238)
+    expect(sheetHeight(4, 640, 480)).toBe(238)
+    expect(sheetHeight(5, 640, 480)).toBe(386)
     // Two and a half rows at most: 13, 20 or 27 plates scroll inside a sheet of one size.
-    expect(sheetHeight(13, 640, 400)).toBe(378)
-    expect(sheetHeight(20, 640, 400)).toBe(378)
-    expect(sheetHeight(27, 640, 400)).toBe(378)
+    expect(sheetHeight(13, 640, 480)).toBe(464)
+    expect(sheetHeight(20, 640, 480)).toBe(464)
+    expect(sheetHeight(27, 640, 480)).toBe(464)
     expect(sheetHeight(27, 640, 260)).toBe(260)
     // Never more than four across, however wide.
-    expect(sheetHeight(5, 1200, 400)).toBe(314)
+    expect(sheetHeight(5, 1200, 480)).toBe(386)
     // A phone's narrower sheet has fewer columns, so more rows.
-    expect(sheetHeight(3, 366, 600)).toBe(314)
+    expect(sheetHeight(3, 366, 600)).toBe(386)
     // The plate settings form gets room of its own.
-    expect(sheetHeight(1, 640, 400, true)).toBe(320)
+    expect(sheetHeight(1, 640, 480, true)).toBe(320)
   })
 })
