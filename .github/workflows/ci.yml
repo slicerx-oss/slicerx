@@ -483,9 +483,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
     env:
       SX_BREP_REQUIRE: '1'
     steps:
@@ -502,7 +505,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: brep-${{ runner.os }}
-      - run: sh packages/brep/scripts/fetch-smlib.sh
+      - name: Locate the required kernel
+        run: |
+          kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
+          if [ "$RUNNER_OS" = Windows ]; then kernel=$(cygpath -m "$kernel"); fi
+          echo "SX_SMLIB_DIR=$kernel" >> "$GITHUB_ENV"
       - run: cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings
       - run: cargo test -p sx-brep --release --features routine-probe
       # the exact solid ops through sx-geom's JSON and CLI, against exact values and the mesh path
