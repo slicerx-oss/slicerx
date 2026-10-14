@@ -32,7 +32,9 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `edge-tab-<side>` | The tab on a panel's edge that shuts and reopens it: `edge-tab-left` (the left sidebar), `edge-tab-right` (the right pane), `edge-tab-bottom` (the bottom panel, and in Slice the playback bar); `aria-expanded` says whether the panel is open, `data-attention` is set while a shut panel's tab glows for something to look at, and `data-panel` says which panel: `model-tree`, `model-inspector`, `model-timeline`, `slice-sidebar` or `slice-summary` |
 | `model-tree`, `model-inspector`, `slice-sidebar`, `slice-summary` | The body of the side pane with that edge tab: Model's tree and its tool and transform pane, Slice's printer and settings sidebar (its printer and filaments sit above it, pinned) and its right pane with the objects and the slice summary. It is gone while the pane is shut |
 | `open-in-app` | Open in SlicerX in the top bar of the CAD-only browser build: downloads the design and asks the desktop app to open it |
+| `toasts` | The card the toasts on screen share, a line each; `data-held` while the plate grid covers it |
 | `toast` | A toast on screen; `data-tone` is ok, info, warn or error |
+| `toast-details` | Details on a toast line with more than one sentence: shows the rest in place, then reads Less |
 | `open-settings` | Settings in the top bar |
 | `phone-search` | Search in a phone's top bar, which opens the command bar |
 | `phone-view-notice` | A warning icon in a phone's top bar, before Search, shown only while the 3D view is drawn without hardware acceleration; it opens the full notice, `phone-view-notice-text`. A phone shows this instead of the toast a desktop gets |
