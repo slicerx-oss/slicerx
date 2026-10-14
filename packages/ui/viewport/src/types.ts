@@ -615,6 +615,8 @@ export interface Viewport {
   view(preset: ViewPreset, opts?: { animate?: boolean }): void
   /** Frame the selection, or every model when nothing is selected. Animated by default. */
   zoomToSelection(opts?: { animate?: boolean }): void
+  /** Frames the selection (every object with none) from the current angle, with room around it. */
+  frameSelection(opts?: { animate?: boolean }): void
   zoomToBed(opts?: { animate?: boolean }): void
   /** Moves the camera toward its target by `factor` (below 1 moves away), keeping the angle, within the zoom limits. */
   zoomBy(factor: number, opts?: { animate?: boolean }): void
