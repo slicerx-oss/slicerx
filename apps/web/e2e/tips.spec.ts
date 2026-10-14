@@ -138,6 +138,11 @@ test('each Simple setting, each of its choices and each plate tool opens its own
     await away()
   }
   const rows = page.locator('.srow')
+  // layer height has a still figure too; the loop takes its place, so the tip shows one picture
+  await rows.filter({ hasText: 'Layer height' }).locator('.srow-h').hover()
+  await expect(stage.locator('svg.sxs')).toBeVisible()
+  await expect(tip.locator('.sx-tip-fig')).toHaveCount(0)
+  await away()
   await plays(rows.filter({ hasText: 'Layer height' }).locator('.srow-h'), 'Layer height', 'lh')
   await plays(page.locator('label[for="easy-strength"]'), 'Adds walls and infill', 'st')
   await plays(page.locator('label[for="easy-speed"]'), 'How fast the printer moves', 'sp')

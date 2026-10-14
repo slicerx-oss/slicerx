@@ -474,7 +474,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       className="sx-tip sx-overlay"
       data-side={pos?.side}
       data-warm={shown.warm ? true : undefined}
-      data-fig={content.figure ? true : undefined}
+      data-fig={content.figure && !(content.demo && media) ? true : undefined}
       data-demo={content.demo && media ? true : undefined}
       data-still={shown.still ? true : undefined}
       data-ready={pos ? true : undefined}
@@ -500,7 +500,8 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
         </div>
       ) : null}
       {content.body && !(content.demo?.replacesBody && media) ? <p className="sx-tip-body">{content.body}</p> : null}
-      {content.figure ? (
+      {/* a loop shows the change itself, so the setting's still figure stands down while one plays */}
+      {content.figure && !(content.demo && media) ? (
         <div className="sx-tip-fig" aria-hidden="true">
           {content.figure}
         </div>
