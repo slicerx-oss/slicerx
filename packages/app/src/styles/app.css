@@ -388,6 +388,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .pane.sx-rail[data-collapsed] { width: var(--w-rail); }
 .pane.sx-rail[data-side=right]:not([data-collapsed]) { width: calc(var(--w-side) + 24px); }
 .pane-body { padding-bottom: 56px; }
+/* The right pane's scroll area stops 16px short of the window's bottom edge, so a block cut by it never sits against the edge. */
+.pane.sx-rail[data-side=right]:not([data-collapsed]):not(.sheet) > .sx-rail-body { margin-bottom: 16px; }
 .pane .sx-block:first-child { padding-top: var(--s-2); }
 .sx-rail-slot { height: 100%; }
 

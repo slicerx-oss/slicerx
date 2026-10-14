@@ -17,7 +17,7 @@ import { slotLabel } from '../../filament/rail'
 import { resolveSlots } from '../../filament/slots'
 import { exportGcode, recordSpoolUse } from '../../state/actions'
 import { setWorkspace, shownSlice, useApp } from '../../state/store'
-import { effectiveMode, useLayout, useTabLabel } from '../../first-run/look'
+import { effectiveMode, useLayout } from '../../first-run/look'
 import { usePrinter } from '../prepare/prepare-panes'
 import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { isExportOnly } from '../../lib/hand-printers'
@@ -67,6 +67,11 @@ const USED: [string, string, RegExp | null][] = [
   ['enable_support', 'Supports', /support/i],
 ]
 
+/** The link under the settings the slice used: how many values differ from the preset. */
+export function changedSettingsLabel(overrides: Record<string, unknown>): string {
+  return `Changed settings (${Object.keys(overrides).length})`
+}
+
 /** What the slicer actually used when a warning says it fell back ("... using rectilinear"). */
 function effective(message: string): string {
   const using = /using ([\w -]+?)(?:[.;,]|$)/i.exec(message)?.[1]
@@ -76,7 +81,6 @@ function effective(message: string): string {
 
 export function PreviewLeft() {
   const host = useHost()
-  const tab = useTabLabel('prepare')
   const slice = useApp((s) => s.slice)
   const preview = useApp((s) => s.preview)
   const resume = useApp((s) => s.resume)
@@ -175,7 +179,7 @@ export function PreviewLeft() {
           ))}
         </ul>
       </Block> : null}
-      {more ? <Block title="Settings used" aside={<LinkButton onClick={() => setWorkspace('prepare')}>Edit in {tab}</LinkButton>} data-section="used">
+      {more ? <Block title="Settings used" aside={<LinkButton {...tipAttrs({ title: 'Changed settings', body: 'Values you changed from the preset for this plate. Click to see and edit them.' })} onClick={() => setWorkspace('prepare')}>{changedSettingsLabel(overrides)}</LinkButton>} data-section="used">
         <dl className="used">
           {USED.map(([k, label, match]) => {
             const w = match ? r.warnings.find((x) => match.test(x.message)) : undefined
