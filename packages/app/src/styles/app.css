@@ -529,9 +529,13 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 
 /* settings dialog */
 .settings-dialog { width: min(760px, calc(100vw - 24px)); }
-/* one height for every section and option: a centered dialog that changed height would move everything in it */
-.settings-dialog[open] { display: flex; flex-direction: column; height: min(720px, calc(100dvh - 2 * var(--gutter))); }
-.settings-dialog .sx-dialog-body { flex: 1 0 auto; }
+/* one height for every section and option: a centered dialog that changed height would move everything in it. On a
+   short window the dialog fits the window: the header and the footer stay put and only the body scrolls, with its
+   scrollbar lane kept so a long section and a short one start at the same x */
+.settings-dialog[open] { display: flex; flex-direction: column; height: min(720px, calc(100dvh - 2 * var(--gutter))); overflow: hidden; }
+.settings-dialog .sx-dialog-h, .settings-dialog .sx-dialog-foot { flex: none; }
+.settings-dialog .sx-dialog-body { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.settings-dialog .sx-dialog-foot { padding-top: 12px; border-top: 1px solid var(--line-soft); }
 .settings { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; min-height: 320px; }
 .settings-nav { display: grid; align-content: start; gap: 2px; }
 /* The nav and the section scroll together in the dialog's body, so the nav stays at the top while a long section scrolls. */
