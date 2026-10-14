@@ -75,26 +75,34 @@ function workerProvider(): GeomProvider {
   let idle: ReturnType<typeof setTimeout> | null = null
   let seq = 0
   const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
-  const stop = () => {
+  const release = () => {
+    if (idle) clearTimeout(idle)
     idle = null
-    if (pending.size > 0) return
-    worker?.terminate()
+    const ended = worker
     worker = null
+    ended?.terminate()
+  }
+  const stop = () => {
+    if (pending.size === 0) release()
+  }
+  const failAll = (error: Error) => {
+    release()
+    for (const p of pending.values()) p.reject(error)
+    pending.clear()
   }
   endIfIdle = () => {
     if (pending.size > 0) return false
-    if (idle) clearTimeout(idle)
-    idle = null
-    worker?.terminate()
-    worker = null
+    release()
     return true
   }
   const start = () => {
     if (idle) clearTimeout(idle)
     idle = null
     if (worker) return worker
-    worker = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError }>) => {
+    const current = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
+    worker = current
+    current.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError }>) => {
+      if (worker !== current) return
       if ('loadError' in e.data) {
         noteLoadError(e.data.loadError)
         return
@@ -109,21 +117,24 @@ function workerProvider(): GeomProvider {
       if (e.data.error !== undefined) p.reject(new Error(e.data.error))
       else p.resolve(e.data.result)
     }
-    worker.onerror = (e) => {
-      for (const p of pending.values()) p.reject(new Error(e.message || 'The geometry engine did not start'))
-      pending.clear()
-      worker = null
+    current.onerror = (e) => {
+      if (worker !== current) return
+      failAll(new Error(e.message || 'The geometry engine did not start'))
     }
-    return worker
+    return current
   }
   return {
     call<T>(op: string, request: unknown, signal?: AbortSignal) {
+      if (signal?.aborted) return Promise.reject<T>(new DOMException('Canceled', 'AbortError'))
       const id = ++seq
       const answer = new Promise<T>((resolve, reject) => {
         const onAbort = () => {
-          if (pending.delete(id)) reject(new DOMException('Canceled', 'AbortError'))
-          // A history replay stops at its next step; single calls just lose their answer.
-          if (op === 'history.replay') worker?.postMessage({ cancel: id })
+          const p = pending.get(id)
+          if (!p) return
+          pending.delete(id)
+          p.reject(new DOMException('Canceled', 'AbortError'))
+          // a synchronous kernel call cannot read a cancel message; ending its worker also releases kept bodies.
+          if (op === 'history.replay') failAll(new Error('The geometry engine was interrupted by a canceled edit. Retry the operation.'))
         }
         // The abort listener goes once the call is answered: a signal that outlives the call (a fit check's lives
         // until the plate changes) would otherwise keep this closure, and what it can reach, alive.
