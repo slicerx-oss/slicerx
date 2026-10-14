@@ -77,6 +77,37 @@ test('a tip in the settings sidebar opens beside it, level with its control, and
   await beside(aegis, 'aegis varies wall width')
 })
 
+test('a tip on a row of the Preview legend opens beside the legend and covers none of its rows', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The legend is not drawn at phone widths')
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.debug', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced' }))
+  })
+  await page.goto('./')
+  await plateReady(page)
+  await page.getByRole('button', { name: 'Slice plate' }).click()
+  const legend = page.getByRole('list', { name: 'Toolpath legend' })
+  const rows = legend.locator('.legend-markers label')
+  await expect(rows.nth(1)).toBeVisible({ timeout: 40_000 })
+  const tip = page.locator('#sx-tip')
+  const n = await rows.count()
+  for (let i = 0; i < n - 1; i++) {
+    await rows.nth(i).hover()
+    await expect(tip).toHaveAttribute('data-ready', 'true')
+    const t = (await tip.boundingBox())!
+    const l = (await legend.boundingBox())!
+    const next = (await rows.nth(i + 1).boundingBox())!
+    const clear = (b: { x: number; y: number; width: number; height: number }) => t.x >= b.x + b.width || t.x + t.width <= b.x || t.y >= b.y + b.height || t.y + t.height <= b.y
+    // the next row, and every other row of the legend, stays in view
+    expect(clear(next), `tip of row ${i} over the next row`).toBe(true)
+    expect(clear(l), `tip of row ${i} over the legend`).toBe(true)
+    await page.mouse.move(5, 5)
+    await expect(tip).toHaveCount(0)
+  }
+})
+
 test('a tip with a loop holds its size while the loop loads, waits on its finished frame, then plays, in either theme', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Hover tips need a mouse')
   await page.addInitScript(() => {
