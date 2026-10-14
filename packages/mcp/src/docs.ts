@@ -48,6 +48,7 @@ export function listDocs(paths: DataPaths): DocEntry[] {
         ['integrators/agents', r('docs', 'integrators', 'AGENTS.md')],
         ['integrators/quickstart', r('docs', 'integrators', 'quickstart.md')],
         ['integrators/updates', r('docs', 'integrators', 'updates.md')],
+        ['integrators/kit-manifest', r('docs', 'integrators', 'kit-manifest.md')],
       ]
     : [
         ['install', r('docs', 'install.md')],
@@ -59,6 +60,7 @@ export function listDocs(paths: DataPaths): DocEntry[] {
         ['integrators/agents', r('docs', 'integrators', 'AGENTS.md')],
         ['integrators/quickstart', r('docs', 'integrators', 'quickstart.md')],
         ['integrators/updates', r('docs', 'integrators', 'updates.md')],
+        ['integrators/kit-manifest', r('docs', 'integrators', 'kit-manifest.md')],
       ]
   const docs: DocEntry[] = fixed.filter(([, p]) => existsSync(p)).map(([id, p]) => ({ id, title: title(p, id), path: p }))
   const settingsDir = repo ? r('packages', 'settings', 'docs') : r('docs', 'settings')

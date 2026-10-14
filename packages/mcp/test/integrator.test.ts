@@ -330,12 +330,14 @@ describe('a filament per slot', () => {
 })
 
 describe('the integrator kit as resources', () => {
-  it('serves the agent guide and the quickstart', async () => {
+  it('serves the agent guide, quickstart and packed kit contract', async () => {
     const h = await connect()
     const agents = await h.client.readResource({ uri: 'slicerx://docs/integrators/agents' })
     expect(JSON.stringify(agents.contents[0])).toMatch(/Rules that never change/)
     const quick = await h.client.readResource({ uri: 'slicerx://docs/integrators/quickstart' })
     expect(JSON.stringify(quick.contents[0])).toMatch(/## Error codes/)
+    const manifest = await h.client.readResource({ uri: 'slicerx://docs/integrators/kit-manifest' })
+    expect(JSON.stringify(manifest.contents[0])).toMatch(/schemaVersion: 1/)
   })
 })
 
