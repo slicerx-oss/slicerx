@@ -503,17 +503,8 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.guides.group)
     this.stage.objectsRoot.add(this.edgeMarks.group)
     this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.finished, this.originPlanes.group, this.dims.group)
-    this.stage.envSH.then(
-      (sh) => {
-        if (this.disposed) return
-        this.toolpaths.setEnvironment(sh)
-        this.invalidate()
-      },
-      (e: unknown) => {
-        // Toolpaths keep their flat ambient light without the bake; only a real failure is worth a line in the console.
-        if (!this.disposed) console.warn('Environment bake failed', e)
-      },
-    )
+    // Toolpaths keep their flat ambient light when the bake failed.
+    if (this.stage.envSH) this.toolpaths.setEnvironment(this.stage.envSH)
     this.stage.previewRoot.visible = false
     if (opts.controls) this.setControls(opts.controls)
     if (opts.theme) this.setTheme(opts.theme)

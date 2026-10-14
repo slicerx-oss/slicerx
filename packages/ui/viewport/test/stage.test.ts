@@ -1,14 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The environment bake outlives a stage that is torn down early (a reload, a remount): the cube target it reads must
-// be released once, while the renderer still knows it.
-import { afterEach, describe, expect, it, vi } from 'vitest'
+// The environment bake reads its cube back before the stage's first frame and releases the target at once, so a stage
+// torn down early (a reload, a remount) has nothing of it left to release.
+import { describe, expect, it, vi } from 'vitest'
 import type { Mesh, WebGLRenderTarget, WebGLRenderer } from 'three'
 
 /** Stands in for three's WebGLRenderer bookkeeping: a target the renderer has forgotten throws on dispose, as in deallocateRenderTarget. */
 class FakeRenderer {
   props = new Map<object, { framebuffers: number[] }>()
   released = 0
+  reads: number[] = []
+  failRead = false
+  coordinateSystem = 2000
+  readRenderTargetPixels(rt: WebGLRenderTarget, _x: number, _y: number, _w: number, _h: number, _out: Uint16Array, face: number): void {
+    if (!this.props.has(rt)) throw new Error('read back of a released target')
+    if (this.failRead) throw new Error('read back refused')
+    this.reads.push(face)
+  }
   shadowMap = { enabled: false, type: 0, autoUpdate: true, needsUpdate: false }
   allocate(rt: WebGLRenderTarget): void {
     if (this.props.has(rt)) return
@@ -29,7 +37,6 @@ class FakeRenderer {
 }
 
 let current: FakeRenderer
-const bake: { resolve: (() => void) | null } = { resolve: null }
 const envBakes = vi.hoisted(() => [] as unknown[][])
 
 vi.mock('three', async (orig) => {
@@ -56,64 +63,39 @@ vi.mock('three', async (orig) => {
   }
 })
 
-vi.mock('three/addons/lights/LightProbeGenerator.js', async () => {
-  const { SphericalHarmonics3 } = await import('three')
-  return {
-    LightProbeGenerator: {
-      fromCubeRenderTarget: () =>
-        new Promise((resolve) => {
-          bake.resolve = () => resolve({ sh: new SphericalHarmonics3() })
-        }),
-    },
-  }
-})
+const { Stage, LIFT_MM, FLOOR_ORDER } = await import('../src/stage')
 
-const { Stage, StageDisposedError, LIFT_MM, FLOOR_ORDER } = await import('../src/stage')
-
-function make() {
+function make(failRead = false) {
   current = new FakeRenderer()
+  current.failRead = failRead
   const stage = new Stage(current as unknown as WebGLRenderer, true)
-  const settled = stage.envSH.then(
-    (sh) => ({ ok: true as const, sh }),
-    (e: unknown) => ({ ok: false as const, e }),
-  )
-  return { stage, settled, r: current }
+  return { stage, r: current }
 }
 
-afterEach(() => {
-  bake.resolve = null
-})
-
 describe('stage environment bake', () => {
-  it('releases the cube target once when the bake finishes', async () => {
-    const { settled, r } = make()
-    bake.resolve?.()
-    const out = await settled
-    expect(out.ok).toBe(true)
-    if (out.ok) expect(out.sh).toHaveLength(9)
+  it('reads all six faces before the first frame and releases the cube target once', () => {
+    const { stage, r } = make()
+    expect(r.reads).toEqual([0, 1, 2, 3, 4, 5])
+    expect(stage.envSH).toHaveLength(9)
     expect(r.released).toBe(1)
     expect(r.props.size).toBe(0)
   })
 
-  it('survives the stage and renderer going away before the bake ends', async () => {
-    const { stage, settled, r } = make()
-    // Viewport.dispose: the stage first, then the renderer, both before the async read back is done.
-    stage.dispose()
-    r.dispose()
-    bake.resolve?.()
-    const out = await settled
-    expect(out.ok).toBe(false)
-    if (!out.ok) expect(out.e).toBeInstanceOf(StageDisposedError)
-    // Released by the stage while the renderer was alive, and not touched again after it was disposed.
+  it('a refused read back leaves the flat ambient light and still releases the target', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const { stage, r } = make(true)
+    expect(stage.envSH).toBeNull()
     expect(r.released).toBe(1)
+    expect(warn).toHaveBeenCalledOnce()
+    warn.mockRestore()
   })
 
-  it('does not release twice when disposed twice', async () => {
-    const { stage, settled, r } = make()
+  it('has nothing of the bake to release when the stage and renderer go away', () => {
+    const { stage, r } = make()
+    // Viewport.dispose: the stage first, then the renderer.
     stage.dispose()
+    r.dispose()
     stage.dispose()
-    bake.resolve?.()
-    await settled
     expect(r.released).toBe(1)
   })
 })
