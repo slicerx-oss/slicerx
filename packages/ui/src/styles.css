@@ -370,6 +370,19 @@ button { cursor: pointer; }
 .sx-rail-body { flex: 1; min-height: 0; overflow: auto; }
 .sx-rail-foot { flex: none; padding: 8px; border-top: 1px solid var(--line-soft); }
 .sx-rail-pin { flex: none; }
+/* A side panel's scrollers draw one slim bar with no arrow buttons, in a lane of its own at the panel's edge
+   (scrollbar-gutter), so it never sits on the cards or on the panel's edge tab. The thumb is faint until the panel is
+   hovered. Chromium draws ::-webkit-scrollbar only while the standard scrollbar properties are left at auto. */
+.sx-rail-body, .sx-rail-pin { scrollbar-gutter: stable; }
+@supports selector(::-webkit-scrollbar) {
+  .sx-rail-body, .sx-rail-pin { scrollbar-width: auto; scrollbar-color: auto; }
+  .sx-rail-body::-webkit-scrollbar, .sx-rail-pin::-webkit-scrollbar { width: 6px; height: 6px; background: transparent; }
+  .sx-rail-body::-webkit-scrollbar-button, .sx-rail-pin::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+  .sx-rail-body::-webkit-scrollbar-track, .sx-rail-pin::-webkit-scrollbar-track { background: transparent; }
+  .sx-rail-body::-webkit-scrollbar-thumb, .sx-rail-pin::-webkit-scrollbar-thumb { border-radius: 3px; background: color-mix(in srgb, var(--line) 55%, transparent); }
+  .sx-rail:hover .sx-rail-body::-webkit-scrollbar-thumb, .sx-rail:hover .sx-rail-pin::-webkit-scrollbar-thumb { background: var(--line); }
+  .sx-rail-body::-webkit-scrollbar-corner, .sx-rail-pin::-webkit-scrollbar-corner { background: transparent; }
+}
 .sx-rail[data-collapsed] .sx-rail-foot, .sx-rail[data-collapsed] .sx-rail-pin { display: none; }
 
 /* app frame: rounded framed grid of bar, main and status line (the concept shell) */
