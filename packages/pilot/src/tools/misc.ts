@@ -66,8 +66,8 @@ export function commandTools(commands: CommandSpec[]): PilotTool<never>[] {
         description: `${c.title}. App command in the ${c.section} section.`,
         input,
         async run(i) {
-          await c.run(i)
-          return { summary: `${c.title} done` }
+          const out = await c.run(i)
+          return { summary: `${c.title} done`, ...(out && typeof out === 'object' ? { output: out as Record<string, unknown> } : {}) }
         },
       }) as PilotTool<never>
     })

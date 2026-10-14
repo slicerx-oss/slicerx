@@ -143,5 +143,6 @@ export interface CommandSpec {
   tool?: { permission: PermissionClass; inputSchema?: Record<string, unknown> }
   /** Hidden from the bar and refused as a tool while this returns false. */
   enabled?(): boolean
-  run(input?: unknown): void | Promise<void>
+  /** What a tool call reads back, if anything: returned to Pilot as the call's output. */
+  run(input?: unknown): unknown
 }

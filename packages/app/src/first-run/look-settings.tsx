@@ -51,6 +51,29 @@ const FRAMING_DETAIL = {
   open: 'Model frames the part when it opens or one is added. Picking leaves the camera where it is.',
 } as const
 
+/** Settings > Look and feel > Workspace: when Model frames the view. */
+export function FramingRow() {
+  const framing = useApp((s) => s.appearance.modelFraming)
+  return (
+    <div className="set-seg-row" data-testid="set-model-framing">
+      <span className="set-seg-text">
+        <span>Frame the view</span>
+        <small>{FRAMING_DETAIL[framing]}</small>
+      </span>
+      <Seg
+        size="sm"
+        label="Frame the view"
+        value={framing}
+        onChange={(v) => setAppearance('modelFraming', v)}
+        options={[
+          { value: 'selection', label: 'Always', testId: 'set-model-framing-selection' },
+          { value: 'open', label: 'On open and add', testId: 'set-model-framing-open' },
+        ]}
+      />
+    </div>
+  )
+}
+
 export function LookSettingsSection() {
   const choice = useLookChoice()
   const firstRun = useApp((s) => s.firstRun)
@@ -60,7 +83,6 @@ export function LookSettingsSection() {
   const slices = hostSlices()
   // Changing it never moves the session you are in; it applies from the next launch.
   const openIn = useApp((s) => s.modelModeDefault)
-  const framing = useApp((s) => s.appearance.modelFraming)
   const custom = Boolean(choice.overrides && Object.keys(choice.overrides).length)
   const go = (fn: () => void) => {
     set({ settingsOpen: false, settingsSection: null })
@@ -109,22 +131,7 @@ export function LookSettingsSection() {
               />
             </div>
           ) : null}
-          <div className="set-seg-row" data-testid="set-model-framing">
-            <span className="set-seg-text">
-              <span>Frame the view</span>
-              <small>{FRAMING_DETAIL[framing]}</small>
-            </span>
-            <Seg
-              size="sm"
-              label="Frame the view"
-              value={framing}
-              onChange={(v) => setAppearance('modelFraming', v)}
-              options={[
-                { value: 'selection', label: 'Always' },
-                { value: 'open', label: 'On open and add' },
-              ]}
-            />
-          </div>
+          <FramingRow />
         </div>
       ) : null}
       <div className="set-group">
