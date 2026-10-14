@@ -258,3 +258,8 @@ test('Advanced rows from chamber temperature to wipe distance play their own loo
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['wave_overhangs', 'bwvo'], ['wave_overhang_line_spacing', 'bwvs'], ['wave_overhang_perimeter_overlap', 'bwvl'], ['wave_overhang_print_speed', 'bwvp'], ['wave_overhang_flow_mm3_per_mm', 'bwvf'], ['wave_overhang_max_iterations', 'bwvi']])
 })
+
+test('Expert rows for a switch list, a text template and a number or percent play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['slowdown_for_curled_perimeters', 'brcw'], ['solid_infill_rotate_template', 'brsr'], ['small_perimeter_speed', 'brss']])
+})
