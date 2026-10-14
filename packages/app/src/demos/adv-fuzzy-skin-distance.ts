@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Fuzzy skin point distance: the same wall, its roughness going from coarse to fine.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'afd',
+  readout: {rows: ["0.8 mm","0.3 mm"],w: 70},
+  css: ".sxs .afd-s{animation-timing-function:steps(1,end)}.sxs .afd-h{animation-name:afd-h}@keyframes afd-h{0%{translate:0 0px}45.7%{translate:0 -14px}94.3%{translate:0 0px}100%{translate:0 0px}}.sxs .afd-a{animation-name:afd-a}@keyframes afd-a{0%{opacity:1}45.7%{opacity:0}94.3%{opacity:1}100%{opacity:1}}.sxs .afd-b{animation-name:afd-b}@keyframes afd-b{0%{opacity:0}45.7%{opacity:1}94.3%{opacity:0}100%{opacity:0}}",
+  body: "<path class=\"s-cy s-ol\" d=\"M94.5 73.3V115.3A38.6 22.3 0 0 0 171.7 115.3V73.3A38.6 22.3 0 0 1 94.5 73.3Z\"/><ellipse class=\"s-f1 s-ol\" cx=\"133.1\" cy=\"73.3\" rx=\"38.6\" ry=\"22.3\"/><g class=\"afd-a afd-s s-a\"><path class=\"s-f1 s-ol\" d=\"M160.9 89.3l-13.3 4.2-14.5 3.4-14.4-3.7-12.5-4.4-7.1-7.4-7.9-8.1 4.9-8.9 7.9-7.9 13.4-5.1 15.7 1.4 15.1-.6 14.3 4.1 4.5 8.8 6.5 8.2-7 8-5.6 8z\"/><path class=\"s-n\" style=\"stroke:var(--stage-t3,#6c7086);stroke-width:1.2\" d=\"M172.4 101.3l-4.3-8.4-6-8.4-14.7-3.2-14.3-2-14.1 2.3-15.5 2.5-7.4 8.3-4.1 8.9M174.6 87.3l-7.6-8.2-5.3-8.3-14.7-2.9-13.9-4.6-13.9 4.5-12.6 4.1-9.6 6.7-1.6 8.7\"/></g><g class=\"afd-b afd-s s-a\"><path class=\"s-f1 s-ol\" d=\"M160.9 89.3l-6.7 2.1-5.4 3.7-8.4-.6-7.3 .7-7.2-1.1-8.8 1.5-6.2-3.1-6.9-2.5-5-3.6 1.3-5.3-5.9-3.4-2.9-4.4 5.6-4.2-1.3-4.8 7.2-2.7 .8-5.3 9.1-.5 5.8-2.6 6.8-2 7.6 .3 7.4 .3 7.5 .6 5.1 3.6 8 1.1 6.7 2.8-.7 5.2 2.2 4 4.3 4.1-.3 4.7-3.7 4.1-6.8 2.7-1.9 4.6z\"/><path class=\"s-n\" style=\"stroke:var(--stage-t3,#6c7086);stroke-width:1.2\" d=\"M172.4 101.3l-2.1-4.3 .6-4.8-6.6-3-4.3-3.5-6.5-2.1-4.4-4.7-8.2-.3-7.8-1.1-8 .5-5.6 4.3-8.3 0-7.5 2-1.1 5.2-6.8 2.8 1.8 4.9-5.9 4.1M174.6 87.3l-5.5-4.2 1.3-4.8-7.2-2.7-.8-5.3-9.1-.5-5.9-2.6-6.7-2-7.6 .3-7.4 .3-7.6 .6-5 3.6-8 1.1-6.7 2.8 .6 5.2-2.1 4-4.3 4.2\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-afd\" x=\"203.7\" y=\"94.3\"/><clipPath id=\"afd-hw\"><rect x=\"209.7\" y=\"86.3\" width=\"60\" height=\"16\"/></clipPath><g clip-path=\"url(#afd-hw)\"><g class=\"afd-h afd-s s-a\"><use href=\"#sxs-rows-afd\" x=\"203.7\" y=\"94.3\"/></g></g></g>",
+}
