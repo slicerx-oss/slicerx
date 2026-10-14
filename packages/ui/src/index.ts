@@ -33,6 +33,8 @@ export type { ChipProps, ChipTone, PillProps, PillState, KbdProps, EyebrowProps 
 export { Input, Textarea, Select, Field } from './components/input'
 export type { InputProps, TextareaProps, SelectProps, FieldProps } from './components/input'
 export { Seg, Switch, SwitchRow } from './components/seg'
+export { SettingRow } from './components/setting-row'
+export type { SettingRowProps } from './components/setting-row'
 export { Range } from './components/range'
 export type { RangeProps } from './components/range'
 export { ScrubNumber, VectorField, scrubFactor, spokenUnit } from './components/scrub'

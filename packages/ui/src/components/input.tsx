@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import type { HTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
 import { Icon } from '../icons/icon'
 import type { IconName } from '../icons/icon-paths'
 
@@ -58,15 +58,26 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
   id: string
   size?: 'sm' | 'md'
   children?: ReactNode
+  /** What the closed select shows instead of its option's text, such as a short name for a long value. The open menu
+   * and the accessible name keep the option's own text. */
+  face?: ReactNode
+  /** Props for the wrapper that draws the chevron (a width, a tooltip). */
+  wrap?: HTMLAttributes<HTMLSpanElement> & Record<`data-${string}`, string | undefined>
 }
 
 /** A native select with the Subban chrome. Options are plain option elements. */
-export function Select({ id, size = 'md', className, children, ...rest }: SelectProps) {
+export function Select({ id, size = 'md', className, children, face, wrap, ...rest }: SelectProps) {
+  const hasFace = face !== undefined && face !== null
   return (
-    <span className="sx-selectwrap">
-      <select id={id} className={className ? `sx-select ${className}` : 'sx-select'} data-size={size === 'md' ? undefined : size} {...rest}>
+    <span {...wrap} className={wrap?.className ? `sx-selectwrap ${wrap.className}` : 'sx-selectwrap'}>
+      <select id={id} className={className ? `sx-select ${className}` : 'sx-select'} data-size={size === 'md' ? undefined : size} data-face={hasFace ? true : undefined} {...rest}>
         {children}
       </select>
+      {hasFace ? (
+        <span className="sx-select-face" aria-hidden="true">
+          <span>{face}</span>
+        </span>
+      ) : null}
     </span>
   )
 }
