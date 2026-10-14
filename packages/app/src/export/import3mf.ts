@@ -42,6 +42,8 @@ export interface ImportedObject {
   volumes: ImportedVolume[]
   /** Setting entries a normal part carries in the file, by part name (Orca's strings). Untrusted: take them through project-settings.ts. */
   rawPartSettings?: Record<string, Record<string, string>>
+  /** Parts the file gives no filament of their own, by name: they read as filament 1 until a spool is picked for them. */
+  noSlot?: string[]
   /** 4x4 column-major, mm, on the plate. */
   transform: number[]
   /** Painted brim ears from Metadata/brim_ear_points.txt, [x, y, z, headRadius] in the object's own space. */
@@ -485,6 +487,8 @@ interface Assembled {
   paint: Record<number, PaintOfPart>
   volumes: ImportedVolume[]
   rawPartSettings: Record<string, Record<string, string>>
+  /** Normal parts with no filament in the file. */
+  noSlot: string[]
   transform: Mat | null
   printable: boolean
   /** Components placed its parts, which may then sit far from the object's origin (centerObject). */
@@ -521,6 +525,7 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
     const paint: Record<number, PaintOfPart> = {}
     const volumes: ImportedVolume[] = []
     const rawPartSettings: Record<string, Record<string, string>> = {}
+    const noSlot: string[] = []
     for (const p of o.parts) {
       if (p.kindText !== null) continue
       const name = p.name || o.name || 'Part'
@@ -536,6 +541,7 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
       // PrusaSlicer's object settings apply to each of its parts; a part's own settings win.
       const settings = prusaOverrides ? { ...raw(o.settings), ...own } : own
       if (Object.keys(settings).length) rawPartSettings[name] = settings
+      if (p.slot == null && o.slot == null) noSlot.push(name)
       parts.push(part)
     }
     items.push({
@@ -546,6 +552,7 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
       paint,
       volumes,
       rawPartSettings,
+      noSlot,
       transform: geomMatrix(o.transform, g.unitScale),
       printable: o.printable,
       placed: o.parts.some((p) => p.transformed),
@@ -635,6 +642,7 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
     const paintByPart: Record<number, PaintOfPart> = {}
     const volumes: ImportedVolume[] = []
     const rawPartSettings: Record<string, Record<string, string>> = {}
+    const noSlot: string[] = []
     const pz = prusa.get(item.objectId)
     const sources: { obj: ScannedObject | undefined; id: string; matrix: Mat | null }[] = pz?.volumes.length && obj.mesh
       ? []
@@ -653,6 +661,7 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
           // The object's settings apply to each of its parts; a part's own settings win.
           const raw = { ...pz.settings, ...v.settings }
           if (Object.keys(raw).length) rawPartSettings[name] = raw
+          if (v.extruder == null && pz.extruder == null) noSlot.push(name)
           parts.push(part)
         }
       }
@@ -669,10 +678,11 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
       else {
         if (mesh.paint) paintByPart[parts.length] = mesh.paint
         if (pi?.raw) rawPartSettings[name] = pi.raw
+        if (pi?.extruder == null && info?.extruder == null) noSlot.push(name)
         parts.push(baked)
       }
     }
-    items.push({ objectId: item.objectId, itemIndex, name: info?.name ?? pz?.name ?? obj.name ?? parts[0]?.name ?? 'Part', parts, paint: paintByPart, volumes, rawPartSettings, transform: item.transform, printable: item.printable, placed: sources.some((s) => s.matrix) })
+    items.push({ objectId: item.objectId, itemIndex, name: info?.name ?? pz?.name ?? obj.name ?? parts[0]?.name ?? 'Part', parts, paint: paintByPart, volumes, rawPartSettings, noSlot, transform: item.transform, printable: item.printable, placed: sources.some((s) => s.matrix) })
   }
   return { plateCfg, items }
 }
@@ -709,7 +719,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     if (a.placed) centerObject(parts, volumes, t, itemEars)
     const own = marks.objects.get(a.objectId)
     const source = own ? sourceOf({ ...marks.root, ...own }) : rootSource
-    ;(plates[pIndex] ?? plates[0]!).objects.push({ name: a.name, parts, volumes, transform: t, ...(Object.keys(a.rawPartSettings).length ? { rawPartSettings: a.rawPartSettings } : {}), ...(Object.keys(a.paint).length ? { paint: a.paint } : {}), ...(a.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: a.objectId })
+    ;(plates[pIndex] ?? plates[0]!).objects.push({ name: a.name, parts, volumes, transform: t, ...(Object.keys(a.rawPartSettings).length ? { rawPartSettings: a.rawPartSettings } : {}), ...(a.noSlot.length ? { noSlot: a.noSlot } : {}), ...(Object.keys(a.paint).length ? { paint: a.paint } : {}), ...(a.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: a.objectId })
   }
   // Marks from Orca and Bambu Studio's layer slider: color change 0, pause 1, custom 4 (other types are not carried over).
   const marksText = files.get('Metadata/custom_gcode_per_layer.xml')

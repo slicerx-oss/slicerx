@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The filament rail: one ring per slot, grouped by the unit that holds it, with the share of the plate's filament as
-// an arc from the last slice. Hovering or focusing a ring picks its filament out in the viewport; a click edits the
-// slot, Alt-click selects every object on it. A slot set to something the printer does not hold carries a corner dot.
-// Under the rail, a line says what a click does and how to add a filament, or, when the printer fills the slots in, why
-// there is no add here and how to change one. A setup note (dry the filament, a nozzle that won't take it) takes that
-// line's place, so the panel never changes height when the note arrives.
-import { Button, LinkButton, Menu, MenuItem, SwatchRing, tipAttrs } from '@slicerx/ui'
+// The Filament section's spools: every slot the printer has loaded (or the project holds), grouped by the unit that
+// holds it. A spool in use has an inset accent edge and a count of its parts, so picking one never changes its size. A
+// click moves the target there: the selected objects, or with nothing selected the plate, or with two or more
+// filaments in use the one picked in the row under the spools. Editing what a slot holds is in its menu (right-click,
+// Shift+F10); Alt-click selects the objects on it. Hovering or focusing a spool picks its filament out in the viewport.
+// Under the spools: what the target prints with, and why (picked by hand, by color, the spool used last), or that
+// it is another material than the profile's. Every line keeps its height, so nothing moves when one changes.
+import { Button, LinkButton, Menu, MenuItem, Seg, Select, SwatchRing, tipAttrs } from '@slicerx/ui'
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { effectiveMode, useLayout } from '../first-run/look'
+import { useStore } from 'zustand'
+import { activeMeta } from '../plate/plates'
 import { selectByFilament } from '../plate/selection'
 import { get, set, shownSlice, toast, useApp } from '../state/store'
 import { colorName, railGroups, slotMismatch, slotUsage, type SlotMismatch } from './rail'
+import { currentTarget, moveToSpool, profileMaterial, spoolParts, spoolPicks, targetSlot, type PickWhy, type SpoolTarget } from './pick'
 import { SetupNoteLine, useSetupNotes } from './setup-plan'
 import { MAX_SLOTS, resetSlots, setSlot, type ResolvedSlot } from './slots'
 import './slot-rail.css'
@@ -52,31 +55,87 @@ export interface SlotRailProps {
   slots: readonly ResolvedSlot[]
   /** What is left on a slot's spool, in words, or null. */
   left: (s: ResolvedSlot) => string | null
-  /** The Tune, Retune or Tuned badge of the slot the line under the rail names, or null. */
+  /** The Tune, Retune or Tuned badge of the slot the line under the spools names, or null. */
   badge?: (s: ResolvedSlot) => ReactNode
+  /** Shown at the right of the first unit's header in place of its count (Add filament). */
+  add?: ReactNode
 }
 
-export function SlotRail({ slots, left, badge }: SlotRailProps) {
+/** The target in words: "Cube", "3 objects", "the plate", or the parts on one filament. */
+export function targetWords(target: SpoolTarget, plate: readonly { id: string; name: string }[], names: (slot: number) => string[]): string {
+  if (target.kind === 'plate') return 'the plate'
+  if (target.kind === 'filament') {
+    const n = names(target.from)
+    return n.length === 1 ? n[0]! : `${n.length} parts`
+  }
+  if (target.part) return target.part
+  const picked = plate.filter((e) => target.ids.includes(e.id))
+  return picked.length === 1 ? picked[0]!.name : `${picked.length} objects`
+}
+
+/**
+ * The line under the spools: that a spool in use holds another material than the profile's (the target's first), else
+ * why the target prints on its spool, else what a click does.
+ */
+export function pickNote(o: { spool: Pick<ResolvedSlot, 'label' | 'type'> | undefined; material: string; why: PickWhy | undefined; what: string; inUse?: readonly { type: string; what: string }[] }): { text: string; other: boolean } {
+  const s = o.spool
+  const differs = (type: string) => type.toUpperCase() !== o.material.toUpperCase()
+  const other = s && differs(s.type) ? { type: s.type, what: o.what } : o.inUse?.find((x) => differs(x.type))
+  if (other) return { text: `${other.type} on a ${o.material} profile: the slice uses ${other.type} settings for ${other.what}.`, other: true }
+  const click = { text: o.what ? `Click a spool to print ${o.what} with it.` : '', other: false }
+  if (!s) return click
+  if (o.why === 'manual') return { text: `You picked ${s.label}.`, other: false }
+  if (o.why === 'color') return { text: `Picked automatically: the closest ${o.material} to the model's color.`, other: false }
+  if (o.why === 'last') return { text: 'Picked automatically: no color in the file, so the spool used last on this printer.', other: false }
+  if (o.why === 'material') return { text: `Picked automatically: the first ${o.material} spool loaded.`, other: false }
+  return click
+}
+
+export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
   const hover = useApp((s) => s.hoverSlot)
   const printerSlots = useApp((s) => s.printerSlots)
+  const plate = useApp((s) => s.plate)
+  const plates = useApp((s) => s.plates)
+  const activePlate = useApp((s) => s.activePlate)
+  const selection = useApp((s) => s.selection)
+  const selectedIds = useApp((s) => s.selectedIds)
+  const material = profileMaterial({ profile: useApp((s) => s.profile) })
+  const picks = useStore(spoolPicks, (s) => s.why)
   // The last slice's usage stays while a new one runs; stale arcs draw at half strength.
   const slice = shownSlice(useApp((s) => s.slice))
   const stale = slice?.stale === true
   const usage = slotUsage(slice?.result.stats, Math.max(...slots.map((s) => s.index), 0))
   const mismatches = new Map(slotMismatch(printerSlots, slots).map((m) => [m.slot, m]))
   const groups = railGroups(slots)
-  // Simple mode shows an unused filament as a dimmed marker, not a button: it keeps its place in the numbering
-  // without adding a control. Advanced and up can click it to change it.
-  const simple = effectiveMode(useApp((st) => st.settingsMode), useLayout()) === 'simple'
+  const fromPrinter = printerSlots.length > 0
   const [menu, setMenu] = useState<{ slot: number; at: { x: number; y: number } } | null>(null)
-  // The line names the hovered or focused slot, else the first one in use.
-  const lineSlot = slots.find((s) => s.index === hover) ?? slots.find((s) => s.used) ?? slots[0]
+  // With two or more filaments in use and nothing selected, the row under the spools picks which one moves.
+  const [from, setFrom] = useState<number | null>(null)
+  const parts = spoolParts(plate, activeMeta({ plates, activePlate }))
+  const target = currentTarget({ selection, selectedIds, plate, plates, activePlate }, from)
+  const on = targetSlot({ plate, plates, activePlate }, target)
+  const names = (slot: number) => parts.get(slot)?.names ?? []
+  const what = targetWords(target, plate, names)
+  const bySlot = (n: number | null) => (n === null ? undefined : slots.find((s) => s.index === n))
+  // The line names the hovered or focused spool, else the one the target prints with, else the first in use.
+  const lineSlot = bySlot(hover) ?? bySlot(on) ?? slots.find((s) => parts.has(s.index)) ?? slots[0]
   const lineMismatch = lineSlot ? mismatches.get(lineSlot.index) : undefined
   const grams = (s: ResolvedSlot) => usage[s.index - 1]?.grams ?? null
+  const firstId = target.kind === 'objects' ? target.ids[0] : plate.find((e) => target.kind === 'plate' || targetSlot({ plate: [e], plates, activePlate }, target) !== null)?.id
+  const inUseWords = [...parts.entries()].flatMap(([n, p]) => {
+    const sp = bySlot(n)
+    return sp ? [{ type: sp.type, what: p.names.length === 1 ? p.names[0]! : `${p.parts} parts` }] : []
+  })
+  const note = pickNote({ spool: bySlot(on), material, why: firstId ? picks[firstId] : undefined, what: plate.length ? what : '', inUse: inUseWords })
 
+  // A tray the printer reports with nothing in it, and nothing set for it here.
+  const empty = (s: ResolvedSlot) => s.source !== 'user' && Boolean(printerSlots[s.index - 1]) && !printerSlots[s.index - 1]!.material && !printerSlots[s.index - 1]!.color
   const onClick = (e: MouseEvent<HTMLButtonElement>, s: ResolvedSlot) => {
     if (e.altKey) return selectSlotObjects(s.index, slotWords(s))
-    set({ slotDialog: s.index })
+    // Nothing to move yet, or an empty tray: the click opens what the slot holds instead.
+    if (plate.length === 0 || empty(s)) return set({ slotDialog: s.index })
+    moveToSpool(target, s.index)
+    if (target.kind === 'filament') setFrom(s.index)
   }
   const onContext = (e: MouseEvent<HTMLButtonElement>, s: ResolvedSlot) => {
     e.preventDefault()
@@ -91,68 +150,97 @@ export function SlotRail({ slots, left, badge }: SlotRailProps) {
     }
   }
   const menuSlot = menu ? slots.find((s) => s.index === menu.slot) : undefined
+  const inUse = [...parts.keys()].sort((a, b) => a - b)
 
   return (
     <div className="slot-rail-wrap" data-stale={stale ? true : undefined}>
-      <div className="slot-rail" role="group" aria-label="Filament slots" data-testid="slice-filament-rail" onPointerLeave={() => set({ hoverSlot: null })}>
-        {groups.map((g) => (
-          <div className="slot-rail-group" key={g.unit} role="group" aria-label={groups.length > 1 ? g.unit : undefined}>
-            {groups.length > 1 ? <span className="slot-rail-unit">{g.unit}</span> : null}
-            <div className="slot-rail-rings">
+      <div className="slot-rail" role="group" aria-label="Filament spools" data-testid="slice-filament-rail" onPointerLeave={() => set({ hoverSlot: null })}>
+        {groups.map((g, gi) => (
+          <div className="slot-rail-group" key={g.unit} role="group" aria-label={g.unit === 'Slots' ? 'Filaments' : g.unit}>
+            <div className="slot-rail-unit" data-add={add && gi === 0 ? true : undefined}>
+              <span>{g.unit === 'Slots' ? (fromPrinter ? 'Printer' : 'Filaments') : g.unit}</span>
+              {add && gi === 0 ? add : <span>{fromPrinter ? `${g.slots.filter((s) => !empty(s)).length} loaded` : g.slots.length === 1 ? '1 filament' : `${g.slots.length} filaments`}</span>}
+            </div>
+            <div className="spool-grid">
               {g.slots.map((s) => {
                 const m = mismatches.get(s.index)
                 const share = usage[s.index - 1]?.share
+                const n = parts.get(s.index)?.parts ?? 0
+                const pct = s.remainingPct
+                const lefts = left(s)
+                const none = empty(s)
                 return (
-                  <div className={s.used ? 'rail-slot' : 'rail-slot unused'} data-slot={s.index} key={s.index}>
-                    {simple && !s.used ? (
-                      <span
-                        className="slot-ring static"
-                        role="img"
-                        aria-label={`Filament ${s.index}, not used`}
-                        data-testid="slice-filament-slot"
-                        data-slot={s.index}
-                        data-used="false"
-                        {...tipAttrs({ title: `${s.label} ${slotWords(s)}`, body: 'Not used. Nothing on the plate prints with it.' })}
-                      >
-                        <SwatchRing color={s.color} label={s.label} dim />
+                  <button
+                    key={s.index}
+                    type="button"
+                    className="spool"
+                    aria-label={none ? `${s.label} empty` : `${s.label} ${slotWords(s)}${n ? `, ${n === 1 ? '1 part' : `${n} parts`}` : ''}`}
+                    aria-pressed={on === s.index}
+                    aria-describedby={m ? `slot-mm-${s.index}` : undefined}
+                    data-testid="slice-filament-slot"
+                    data-slot={s.index}
+                    data-used={s.used ? 'true' : 'false'}
+                    data-parts={n}
+                    data-mismatch={m ? 'true' : undefined}
+                    data-empty={none ? 'true' : undefined}
+                    {...tipAttrs(none ? { title: `${s.label} is empty`, body: 'Load a spool on the printer, or click to set what this project prints with here.' } : { title: `${s.label} ${slotWords(s)}${lefts ? `, ${lefts}` : ''}`, body: m ? mismatchText(m) : `Click to print ${what} with it. Right-click to change what it holds.` })}
+                    onPointerEnter={() => set({ hoverSlot: s.index })}
+                    onFocus={() => set({ hoverSlot: s.index })}
+                    onBlur={() => set({ hoverSlot: null })}
+                    onClick={(e) => onClick(e, s)}
+                    onContextMenu={(e) => onContext(e, s)}
+                    onKeyDown={(e) => onKey(e, s)}
+                  >
+                    <span className="spool-count" aria-hidden="true">{n || ''}</span>
+                    <SwatchRing color={none ? 'none' : s.color} size={30} {...(share !== undefined ? { usage: share } : {})} mismatch={Boolean(m)} selected={hover === s.index} />
+                    <span className="spool-id">{s.label}</span>
+                    <span className="spool-type">{none ? 'Empty' : s.type}</span>
+                    {pct !== undefined ? (
+                      <span className="spool-left" aria-hidden="true">
+                        <i style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
                       </span>
-                    ) : (
-                    <button
-                      type="button"
-                      className="slot-ring"
-                      aria-label={`Edit filament ${s.index}`}
-                      aria-describedby={m ? `slot-mm-${s.index}` : undefined}
-                      data-testid="slice-filament-slot"
-                      data-slot={s.index}
-                      data-used={s.used ? 'true' : 'false'}
-                      data-mismatch={m ? 'true' : undefined}
-                      {...tipAttrs({ title: `${s.label} ${slotWords(s)}`, body: m ? mismatchText(m) : s.used ? 'Click to change it. Alt-click selects the objects that print with it.' : 'Not used. Nothing on the plate prints with it. Click to change it.' })}
-                      onPointerEnter={() => set({ hoverSlot: s.index })}
-                      onFocus={() => set({ hoverSlot: s.index })}
-                      onBlur={() => set({ hoverSlot: null })}
-                      onClick={(e) => onClick(e, s)}
-                      onContextMenu={(e) => onContext(e, s)}
-                      onKeyDown={(e) => onKey(e, s)}
-                    >
-                      <SwatchRing color={s.color} label={s.label} {...(share !== undefined ? { usage: share } : {})} dim={!s.used} mismatch={Boolean(m)} selected={hover === s.index} />
-                    </button>
-                    )}
+                    ) : null}
                     {m ? (
                       <span id={`slot-mm-${s.index}`} className="sr-only">
                         {mismatchText(m)}
                       </span>
                     ) : null}
-                  </div>
+                  </button>
                 )
               })}
             </div>
           </div>
         ))}
       </div>
+      <div className="spool-target" data-testid="slice-filament-target" data-kind={target.kind}>
+        {target.kind === 'filament' && inUse.length <= 3 ? (
+          <Seg
+            label="Filament to move"
+            size="sm"
+            full
+            value={String(target.from)}
+            onChange={(v) => setFrom(Number(v))}
+            options={inUse.map((n) => ({ value: String(n), label: `Move ${names(n).length === 1 ? names(n)[0] : bySlot(n)?.label ?? n}`, tip: { title: `Parts on ${bySlot(n)?.label ?? n}`, body: names(n).join(', ') }, testId: `slice-filament-target-${n}` }))}
+          />
+        ) : target.kind === 'filament' ? (
+          <label className="spool-target-pick">
+            <span>Move the parts on</span>
+            <Select id="spool-from" size="sm" aria-label="Filament to move" value={target.from} onChange={(e) => setFrom(Number(e.target.value))}>
+              {inUse.map((n) => (
+                <option key={n} value={n}>
+                  {`${bySlot(n)?.label ?? n}: ${names(n).join(', ')}`}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ) : (
+          <p className="spool-target-line">{plate.length === 0 ? 'Nothing on the plate yet.' : target.kind === 'plate' ? 'A click moves the whole plate.' : `A click moves the selection: ${what}.`}</p>
+        )}
+      </div>
       {lineSlot ? (
         <p className="slot-line" data-testid="slice-filament-slot-line" aria-live="polite">
           <span>{slotLine(lineSlot, grams(lineSlot), left(lineSlot))}</span>
-          {/* Tune, Retune or Tuned for the slot the line names, so the rings stay one tight row. */}
+          {/* Tune, Retune or Tuned for the slot the line names, so the spools stay one tight grid. */}
           {badge ? badge(lineSlot) : null}
           {lineMismatch ? (
             <button type="button" className="slot-line-fix" data-testid="slice-filament-use-printer" {...tipAttrs({ title: "Use printer's filament", body: mismatchText(lineMismatch) })} onClick={() => followPrinterSlot(lineMismatch.slot)}>
@@ -161,8 +249,11 @@ export function SlotRail({ slots, left, badge }: SlotRailProps) {
           ) : null}
         </p>
       ) : null}
+      <p className="spool-note" data-testid="slice-filament-note" data-other={note.other ? 'true' : undefined} aria-live="polite" {...(note.text ? tipAttrs({ title: note.text }) : {})}>
+        {note.text}
+      </p>
       <Menu open={menu !== null} onClose={() => setMenu(null)} label="Filament slot" at={menu?.at}>
-        <MenuItem icon="rename" onClick={() => menu && set({ slotDialog: menu.slot })}>
+        <MenuItem icon="rename" data-testid="slice-filament-edit" onClick={() => menu && set({ slotDialog: menu.slot })}>
           Edit filament
         </MenuItem>
         {menuSlot ? (
@@ -180,13 +271,13 @@ export function SlotRail({ slots, left, badge }: SlotRailProps) {
   )
 }
 
-/** Three rings while the printer's slots load. */
+/** Four blank spools while the printer's slots load. */
 export function SlotRailSkeleton() {
   return (
     <div className="slot-rail" aria-busy="true" aria-label="Loading the printer's filament">
-      <div className="slot-rail-rings">
-        {[0, 1, 2].map((i) => (
-          <span key={i} className="slot-skel" aria-hidden="true" />
+      <div className="spool-grid">
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className="spool-skel" aria-hidden="true" />
         ))}
       </div>
     </div>
@@ -221,8 +312,6 @@ export function unitWords(system: 'ams' | 'mmu' | 'toolchanger' | undefined): st
 }
 
 export interface RailFootProps {
-  /** How many slots the project has now. */
-  count: number
   /** The connected printer reports the slots (its AMS or MMU), so they follow what is loaded there. */
   fromPrinter: boolean
   system?: 'ams' | 'mmu' | 'toolchanger' | undefined
@@ -231,13 +320,12 @@ export interface RailFootProps {
 }
 
 /**
- * The line under the rail, kept to one line so Simple fits at 1440 x 900. With no printer filling the slots in: what a
- * click on a ring does, and Add filament. With the printer's slots: where they come from and that a click changes one,
+ * The last line of the section, kept to one line so Simple fits at 1440 x 900. With no printer filling the slots in:
+ * how to change a filament (Add filament sits above the spools). With the printer's slots: where they come from and how to change one,
  * with the rest (for this project only, load a new filament on the printer) in its tip, and Reset to printer once a
- * slot was changed here. The rail above it never changes height, so adding a
- * filament never moves this line.
+ * slot was changed here. The spools above it never change height, so adding a filament never moves this line.
  */
-export function RailFoot({ count, fromPrinter, system, edited }: RailFootProps) {
+export function RailFoot({ fromPrinter, system, edited }: RailFootProps) {
   const notes = useSetupNotes()
   if (fromPrinter) {
     const reset = edited ? (
@@ -251,27 +339,34 @@ export function RailFoot({ count, fromPrinter, system, edited }: RailFootProps) 
           <SetupNoteLine notes={notes} after={reset} />
         ) : (
           <p className="rail-foot-text" {...tipAttrs({ title: `Filled in from ${unitWords(system)}`, body: 'A change here is for this project only. To add a filament, load it on the printer.' })}>
-            <span className="rail-foot-line">From {unitWords(system)}. Click a slot to change it.</span>
+            <span className="rail-foot-line">From {unitWords(system)}. Right-click a spool to change it.</span>
             {reset}
           </p>
         )}
       </div>
     )
   }
-  const full = count >= MAX_SLOTS
   return (
     <div className="rail-foot" data-testid="slice-filament-foot">
-      {notes ? <SetupNoteLine notes={notes} /> : <p className="rail-foot-text"><span className="rail-foot-line">Click a filament to change it.</span></p>}
-      <Button
-        size="sm"
-        icon="plus"
-        data-testid="slice-filament-add"
-        disabled={full}
-        tip={{ title: 'Add filament', body: `Adds filament ${Math.min(count + 1, MAX_SLOTS)} and opens it to pick the material and color.`, ...(full ? { reason: `A project holds ${MAX_SLOTS} filaments at most.` } : {}) }}
-        onClick={() => addSlot(count + 1)}
-      >
-        Add filament
-      </Button>
+      {notes ? <SetupNoteLine notes={notes} /> : <p className="rail-foot-text"><span className="rail-foot-line">Right-click a filament to change it.</span></p>}
     </div>
+  )
+}
+
+/** Add filament, at the top of the spools so the new one lands below it and nothing above it moves. */
+export function AddFilament({ count }: { count: number }) {
+  const full = count >= MAX_SLOTS
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      icon="plus"
+      data-testid="slice-filament-add"
+      disabled={full}
+      tip={{ title: 'Add filament', body: `Adds filament ${Math.min(count + 1, MAX_SLOTS)} and opens it to pick the material and color.`, ...(full ? { reason: `A project holds ${MAX_SLOTS} filaments at most.` } : {}) }}
+      onClick={() => addSlot(count + 1)}
+    >
+      Add filament
+    </Button>
   )
 }
