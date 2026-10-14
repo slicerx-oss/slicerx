@@ -97,7 +97,7 @@ test.describe('mimir in the browser build that only models', () => {
     // part chips, none about printers
     await expect(dock.getByRole('button', { name: 'Design a part' })).toBeVisible()
     await expect(dock.getByRole('button', { name: 'Check on a print' })).toHaveCount(0)
-    await expect(dock.getByRole('textbox', { name: /^Ask / })).toHaveAttribute('placeholder', /Describe a part/)
+    await expect(dock.getByRole('textbox', { name: /^Ask / })).toHaveAttribute('placeholder', 'Ask mimir')
     await dock.screenshot({ path: info.outputPath(`web-dock-empty-${info.project.name}.png`) })
 
     await ask(page, 'What layer height for a strong bracket?')
