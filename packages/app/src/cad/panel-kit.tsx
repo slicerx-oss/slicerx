@@ -17,7 +17,7 @@ import { fromMmText, lengthText, toMmText } from './units'
 import { useLength } from './use-units'
 import { usePhoneLayout } from '../lib/phone-layout'
 import { touchWords } from './touch-words'
-import { choiceFit, selectFits, sentence, type ChoiceFit } from './tool-panel'
+import { choiceFit, choiceMeasure, selectFits, sentence, type ChoiceFit } from './tool-panel'
 import './cad.css'
 
 /** A typed number: plain, or arithmetic over the project's named values (`wall * 2`). NaN when it does not read. */
@@ -95,7 +95,7 @@ export interface RowProps {
 
 /**
  * One row of a tool panel: the label on the left and the control ending at the panel's right edge, with the unit beside
- * the label. The sizes are the settings rows': a 40 px row, number fields 72 px, selects 132 px. A wide row puts the
+ * the label. One control height (34 px), and a number field or compact select is 96 px (--w-ctl). A wide row puts the
  * control under the label instead.
  */
 export function Row({ label, unit, htmlFor, labelId, wide = false, className, testId, children }: RowProps) {
@@ -157,6 +157,8 @@ export interface ChoiceOption<V extends string> {
   label: string
   /** Shown alone, with the label as its tooltip, when the words don't fit. */
   icon?: IconName
+  /** Drawn before the word while the words show, and counted when deciding whether they fit. */
+  glyph?: IconName
   disabled?: boolean
   tip?: TipSpec
   testId?: string
@@ -201,6 +203,7 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
   // a select whose longest option fits the control column sits there, like a settings row's; a longer one goes under the label
   const [inline, setInline] = useState(true)
   const words = options.map((o) => o.label).join('\n')
+  const glyphs = options.map((o) => (o.glyph ? 1 : 0)).join('')
   useLayoutEffect(() => {
     const el = box.current
     const p = probe.current
@@ -212,7 +215,7 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
     }
     const measure = () => {
       const labels = words.split('\n')
-      setFit(choiceFit({ labels: labels.map((l) => width(l)), words: labels.map((l) => Math.max(0, ...l.split(/\s+/).map((w) => width(w)))), width: el.clientWidth, icons }))
+      setFit(choiceFit({ ...choiceMeasure(labels, [...glyphs].map((g) => g === '1'), width), width: el.clientWidth, icons }))
       setInline(selectFits(Math.max(0, ...labels.map((l) => width(l, 'select')))))
     }
     measure()
@@ -221,12 +224,12 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
     // the face's real widths arrive with the font
     void document.fonts?.ready.then(measure)
     return () => ro?.disconnect()
-  }, [words, icons])
+  }, [words, glyphs, icons])
   const name = ariaLabel ?? label
   const segOptions = options.map((o): SegOption<V> => ({
     value: o.value,
     label: fit === 'icons' ? null : o.label,
-    ...(fit === 'icons' && o.icon ? { icon: o.icon, title: o.label } : {}),
+    ...(fit === 'icons' && o.icon ? { icon: o.icon, title: o.label } : fit !== 'icons' && o.glyph ? { icon: o.glyph } : {}),
     ...(o.tip ? { tip: o.tip } : {}),
     ...(o.disabled ? { disabled: true } : {}),
     ...(o.testId ? { testId: o.testId } : {}),
@@ -240,7 +243,7 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
         </span>
       )}
       {fit === 'select' ? (
-        <Select id={id} size="sm" aria-label={name} value={value} onChange={(e) => onChange(e.target.value as V)}>
+        <Select id={id} aria-label={name} value={value} onChange={(e) => onChange(e.target.value as V)}>
           {options.map((o) => (
             <option key={o.value} value={o.value} disabled={o.disabled}>
               {o.label}
@@ -248,7 +251,7 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
           ))}
         </Select>
       ) : (
-        <Seg label={name} size="sm" full className={`tp-seg tp-seg-${fit}`} value={value} onChange={onChange} options={segOptions} />
+        <Seg label={name} full className={`tp-seg tp-seg-${fit}`} value={value} onChange={onChange} options={segOptions} />
       )}
     </div>
   )
@@ -272,10 +275,11 @@ export function Card({ title, state, muted = false, reason, testId, children }: 
 }
 
 /**
- * The frame of a tool panel: its name, and its state on the right of the header ("No hole yet", "1 edge"). `section`
- * names it for the sidebar and the specs (the modeling tools are cad-tool, Cut is cut-tool).
+ * The frame of a tool panel: its name, its state on the right of the header ("No hole yet", "1 edge"), and after the
+ * state an optional `action` that belongs to the whole tool, such as the sketch's Other plane. `section` names it for
+ * the sidebar and the specs (the modeling tools are cad-tool, Cut is cut-tool).
  */
-export function Shell({ title, aside, section = 'cad-tool', children }: { title: string; aside?: string; section?: string; children: ReactNode }) {
+export function Shell({ title, aside, action, section = 'cad-tool', children }: { title: string; aside?: string; action?: ReactNode; section?: string; children: ReactNode }) {
   // The tool was picked from a menu further down the sidebar, so its panel is brought into view.
   useEffect(() => {
     document.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: 'nearest' })
@@ -287,8 +291,15 @@ export function Shell({ title, aside, section = 'cad-tool', children }: { title:
     return e && step ? `${e.original.name} › ${stepName(step, (mm) => lengthText(mm, s.units))}` : null
   })
   const state = crumb ?? aside
+  const head =
+    state || action ? (
+      <>
+        {state ? <ToolState text={state} crumb={crumb !== null} /> : null}
+        {action ? <span className="tp-head-action">{action}</span> : null}
+      </>
+    ) : undefined
   return (
-    <Block title={title} data-section={section} aside={state ? <ToolState text={state} crumb={crumb !== null} /> : undefined} className="cad tp">
+    <Block title={title} data-section={section} aside={head} className="cad tp">
       {children}
     </Block>
   )
@@ -350,7 +361,7 @@ export interface ToolFooterProps {
   busy?: boolean
   /** Hole, Fillet and Thread: "Apply and repeat", in the menu on Apply, keeps the tool open with the same settings and an empty pick. */
   repeat?: boolean
-  /** Other actions, such as Other plane: on their own line above Cancel and Apply. */
+  /** Other actions: on their own line above Cancel and Apply. An action for the whole tool goes in Shell's `action`. */
   extra?: ReactNode
 }
 

@@ -119,10 +119,10 @@ export function ThreadTool() {
     <Shell title="Thread" aside={edit ? `Editing step ${edit.index + 1}` : t ? `${t.internal ? 'Hole' : 'Rod'} ${mm(t.diameterMm)}, ${mm(t.lengthMm)} long` : 'Nothing picked yet'}>
       <PointerHint text={t ? 'Click another hole or rod to thread that one instead.' : 'Click the wall of a round hole, or the side of a rod or boss.'} />
       {sizes.length ? (
-        <Row label="Size" htmlFor="thread-size">
+        <Row label={<>Size <span className="tp-aside">pitch {sizes.find((s) => s.name === size)?.pitchMm ?? ''} mm</span></>} htmlFor="thread-size">
           <Select id="thread-size" size="sm" aria-label="Thread size" value={size} onChange={(ev) => setSize(ev.target.value)}>
             {sizes.map((s) => (
-              <option key={s.name} value={s.name}>{`${s.name} x ${s.pitchMm}`}</option>
+              <option key={s.name} value={s.name}>{s.name}</option>
             ))}
           </Select>
         </Row>

@@ -11,13 +11,9 @@
 .sketch-dof[data-tone='warn'] { color: var(--orange); }
 .sketch-driven { color: var(--dim); }
 /* The sketch palette: Look at, grid and snap, section, and what the sketch shows. */
-.sketch-palette { display: grid; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+.sketch-palette { display: grid; gap: var(--s-3); padding: var(--s-3) 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .sketch-palette > .sx-btn { justify-self: start; }
-.sketch-toggles { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); }
-.sketch-toggles label { margin-right: 8px; }
-.sketch-toggles .sx-selectwrap { width: 88px; margin-left: auto; }
-.sketch-show { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; margin: 0; padding: 0; border: 0; }
-.sketch-show legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--dim); }
+
 .sketch-copies { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .sketch-copies legend { padding: 0; margin-bottom: 4px; font-size: var(--fs-xs); color: var(--dim); }
 .cad-note { color: var(--fg); }
@@ -91,10 +87,10 @@
 /* the ways to draw a sketch tool family: the row keeps its height when the family has none */
 .sketch-hint-text { display: grid; }
 .sketch-hint-text::before { content: attr(data-sizer); visibility: hidden; grid-area: 1 / 1; }
-.sketch-hint-text > span { grid-area: 1 / 1; align-self: center; }
+.sketch-hint-text > span { grid-area: 1 / 1; align-self: start; }
 /* the reserved room sits evenly above and below a short hint, with the icon beside it */
-.sketch-hint { align-items: center; }
-.sketch-hint .sx-ic { margin-top: 0; }
+.sketch-hint { align-items: flex-start; }
+.sketch-hint .sx-ic { margin-top: 1px; }
 /* eight tools share the row: icons only, so the buttons may shrink to their icon */
 .sx-seg.sketch-tools[data-size] > button { min-width: 0; padding: 0 4px; }
 .sketch-variants { display: flex; align-items: center; gap: 8px; min-height: var(--h-sm); }
@@ -104,63 +100,87 @@
 .sketch-sides { display: flex; align-items: center; gap: 4px; flex: none; color: var(--dim); }
 .sketch-sides .sx-input { width: 36px; text-align: right; }
 
-/* The tool panel language (panel-kit.tsx): every tool in the right sidebar reads the same. The sizes are the settings
-   rows' (styles/app.css .field): one 40 px row, number fields 72 px, selects 132 px, every control ending at the
-   panel's right edge, a number's unit beside its label. */
-.cad.tp { --tp-row-h: 40px; --tp-num-w: 72px; --tp-select-w: 132px; gap: var(--s-2); }
+/* The tool panel language (panel-kit.tsx), on the UI spec's scale: a label 4 px above its own control, 12 px between
+   settings, one 34 px control height, every single field or compact select 96 px wide at the right edge, radii 6 for
+   controls and 10 for cards, and the unit once beside the label. */
+.cad.tp { --tp-gap: var(--s-3); --tp-ctl: var(--w-ctl); gap: var(--tp-gap); }
 .cad.tp > .sx-block-h { margin-bottom: 0; }
 .cad.tp > .sx-block-h h3 { flex: none; }
-/* the tool's state, on the right of its header: it gives way to the name, never pushes it */
-.cad.tp > .sx-block-h .sx-block-aside { min-width: 0; overflow: hidden; font: var(--fw-medium) var(--fs-sm) / 1.2 var(--f-body); color: var(--dim); }
-.tp-state { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cad.tp > .sx-block-h + div { display: flex; flex-direction: column; gap: var(--s-1); min-width: 0; }
+/* the tool's state, on the right of its header, then the header's own action: the state gives way, never the name */
+.cad.tp > .sx-block-h .sx-block-aside { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-2); min-width: 0; font: var(--fw-medium) var(--fs-sm) / 1.2 var(--f-body); color: var(--dim); }
+.tp-state { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-head-action { flex: none; display: flex; }
+.cad.tp > .sx-block-h + div { display: flex; flex-direction: column; gap: var(--tp-gap); min-width: 0; }
+/* groups that came in their own wrapper stack with the same gap */
+.cad.tp .cad-pair:has(> .tp-row), .cad.tp .cad-trio:has(> .tp-row), .cad.tp .cad-issues { display: flex; flex-direction: column; gap: var(--tp-gap); align-items: stretch; }
+.cad.tp .cad-hint { gap: var(--s-1); }
 .tp-hint, .tp-note { line-height: 1.35; }
 /* a warning or an error: a sentence on a faint tint of its color */
-.tp-msg { padding: 6px 8px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--orange) 10%, transparent); font-size: var(--fs-sm); line-height: 1.35; }
+.tp-msg { padding: var(--s-2); border-radius: var(--r-sm); background: color-mix(in srgb, var(--orange) 10%, transparent); font-size: var(--fs-sm); line-height: 1.35; }
 .tp-msg[data-tone='error'] { background: color-mix(in srgb, var(--red) 10%, transparent); }
 .tp-msg[data-tone='error'] .sx-ic { color: var(--red); }
+/* one control height and the control radius for everything in a tool panel */
+.cad.tp .sx-input, .cad.tp .sx-select { height: var(--h-md); border-radius: var(--r-sm); font-size: var(--fs-body); }
+.cad.tp .sx-select { padding: 0 26px 0 10px; }
+:where(.cad.tp) .sx-btn { border-radius: var(--r-sm); }
+.cad.tp .sx-vector-box, .cad.tp .sx-scrub[data-boxed] { height: var(--h-md); }
+.cad.tp .cad-file { height: var(--h-md); }
 /* a row: the label, then the control at the right edge */
-.tp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s-2); align-items: center; min-height: var(--tp-row-h); min-width: 0; }
-.tp-label { min-width: 0; font-size: calc(13px * var(--text-scale)); line-height: 1.25; color: var(--muted); }
-.tp-row > .tp-num, .tp-row > .sx-inputwrap, .tp-row > .sx-scrub { justify-self: end; width: var(--tp-num-w); }
+.tp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s-2); align-items: center; min-width: 0; }
+.tp-label, .cad.tp .sx-field-label, .cad.tp .sx-vector-label { min-width: 0; font: var(--fw-regular) var(--fs-md) / 1.25 var(--f-body); color: var(--muted); }
+.cad.tp .sx-field { gap: var(--s-1); }
+.tp-row > .tp-num, .tp-row > .sx-inputwrap, .tp-row > .sx-scrub, .tp-row > .sx-selectwrap { justify-self: end; width: var(--tp-ctl); }
 .tp-num { text-align: right; font-variant-numeric: tabular-nums; }
-.tp-row > .sx-selectwrap { justify-self: end; width: var(--tp-select-w); }
 .tp-row > .sx-selectwrap > select { width: 100%; }
-.tp-row > .sx-switch { justify-self: end; }
+.tp-row > .sx-switch, .tp-row > .sx-btn, .tp-row > .tp-end { justify-self: end; }
+/* a switch is 20 px tall; its hit area reaches 28 px without changing how it looks */
+.cad.tp .sx-switch::before { content: ''; position: absolute; inset: -5px -1px; }
 /* a wide row: the control under its label, from the label's edge to the right edge */
-.tp-row[data-wide] { grid-template-columns: minmax(0, 1fr); row-gap: 6px; align-items: stretch; min-height: 0; padding-block: 4px; }
-.tp-row[data-wide] > .sx-selectwrap, .tp-row[data-wide] > .sx-input, .tp-row[data-wide] > .cad-file { justify-self: stretch; width: 100%; }
+.tp-row[data-wide] { grid-template-columns: minmax(0, 1fr); row-gap: var(--s-1); align-items: stretch; }
+.tp-row[data-wide] > .sx-selectwrap, .tp-row[data-wide] > .sx-input, .tp-row[data-wide] > .cad-file, .tp-row[data-wide] > .sx-seg { justify-self: stretch; width: 100%; }
 /* choices: one line, or two lines in a segment of fixed height, or icons, or a select; never past the edge */
 .tp-choice { position: relative; }
-.tp-choice[data-bare] { padding-top: 0; }
-.tp-seg-probe { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; white-space: nowrap; font: var(--fw-semibold) var(--fs-xs) var(--f-body); }
-.tp-seg-probe[data-as='select'] { font: var(--fw-regular) var(--fs-md) var(--f-body); }
-.sx-seg.tp-seg { min-width: 0; }
-.sx-seg.tp-seg > button { min-width: 0; }
-.sx-seg.tp-seg-wrap[data-size] > button { height: 34px; padding: 0 6px; white-space: normal; line-height: 1.15; text-align: center; }
-.sx-seg.tp-seg-icons[data-size] > button { padding: 0; }
-/* X, Y and Z in one outline: the label on the left, the outline ending at the right edge */
-.cad.tp .tp-vec { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s-2); min-height: var(--tp-row-h); }
-.cad.tp .tp-vec > .sx-vector-box { width: calc(var(--tp-num-w) * 2); }
+.tp-seg-probe { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; white-space: nowrap; font: var(--fw-semibold) var(--fs-sm) var(--f-body); }
+.tp-seg-probe[data-as='select'] { font: var(--fw-regular) var(--fs-body) var(--f-body); }
+.cad.tp .sx-seg { min-width: 0; border-radius: var(--r-sm); }
+.cad.tp .sx-seg > button { min-width: 0; height: 28px; padding: 0 var(--s-2); border-radius: var(--r-xs); font-size: var(--fs-sm); gap: var(--s-1); }
+.cad.tp .sx-seg.tp-seg-wrap > button { white-space: normal; line-height: 1.1; text-align: center; padding: 0 var(--s-1); }
+.cad.tp .sx-seg.tp-seg-icons > button { padding: 0; }
+.tp-glyph { flex: none; }
+/* X, Y and Z in one outline split by hairlines, 64 px an axis, ending at the right edge */
+.cad.tp .tp-vec { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s-2); }
+.cad.tp .tp-vec > .sx-vector-box { width: 128px; }
 .cad.tp .tp-vec:has(> .sx-vector-box > :nth-child(3)) > .sx-vector-box { width: 192px; }
-.cad.tp .sx-vector-label { font-size: calc(13px * var(--text-scale)); font-weight: var(--fw-regular); color: var(--muted); }
-/* a phase of a tool: its own header, muted with a reason until it can be used */
-.tp-card { display: flex; flex-direction: column; gap: var(--s-1); padding: var(--s-2) var(--s-3) var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-2) 50%, transparent); min-width: 0; }
-.tp-card-h { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-height: 28px; }
-.tp-card-h h4 { margin: 0; flex: none; font: var(--fw-semibold) var(--fs-sm) / 1.2 var(--f-body); color: var(--fg); }
-.tp-card-state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--dim); }
-.tp-card[data-muted] { background: none; border-style: dashed; }
+/* a secondary action in the panel body: a pill, never a bare word */
+.cad.tp .sx-btn.tp-pill { height: var(--h-sm); padding: 0 12px; border-radius: var(--r-pill); border-color: var(--line); background: var(--ink-3); color: var(--fg); font-size: var(--fs-sm); }
+.cad.tp .sx-btn.tp-pill:hover:not(:disabled) { background: var(--ink-4); }
+.cad.tp .sx-btn.tp-pill:disabled { opacity: 0.5; }
+/* filter chips: what a view shows, each on or off, 8 px apart and wrapping */
+.tp-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); min-width: 0; }
+.tp-chip { height: var(--h-sm); padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-pill); background: none; color: var(--muted); font: var(--fw-semibold) var(--fs-sm) var(--f-body); cursor: pointer; }
+.tp-chip:hover { color: var(--fg); background: var(--ink-3); }
+.tp-chip[aria-pressed='true'] { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--fg); }
+.tp-chip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* a phase of a tool: a flat card with its own header, muted with a reason until it can be used */
+.tp-card { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: none; box-shadow: none; min-width: 0; }
+.tp-card-h { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.tp-card-h h4 { margin: 0; flex: none; font: var(--fw-semibold) var(--fs-lg) / 1.25 var(--f-body); color: var(--fg); }
+.tp-card-state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--dim); }
+.tp-card[data-muted] { border-style: dashed; }
 .tp-card[data-muted] .tp-card-h h4 { color: var(--muted); }
 .tp-card-reason { margin: 0; font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
-.tp-card-body { display: flex; flex-direction: column; gap: var(--s-1); min-width: 0; }
-/* the action row: the quiet action on the left, the primary on the right, anything else on its own line above */
-.cad-actions.tp-actions { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: var(--s-2); }
+.tp-card-body { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; }
+/* the action row: the quiet action on the left, the primary on the right at one width in every tool */
+.cad-actions.tp-actions { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: var(--s-2); padding-top: 0; }
+.cad.tp .cad-footer { padding-top: var(--s-3); }
 .tp-actions-extra { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .tp-actions-main { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-width: 0; }
 .tp-actions-start, .tp-actions-end { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
 .tp-actions-end { margin-left: auto; }
+.tp-actions-end > .sx-btn[data-variant='primary'] { min-width: 128px; }
+.tp-actions-end > .sx-split > .sx-split-main { min-width: calc(128px - var(--h-md)); }
 /* a quiet button that starts a row lines its text up with the labels above, so it shows as text and lights up on hover */
-.tp-actions-start > .sx-btn[data-variant='ghost']:first-child, .tp-actions-extra > .sx-btn[data-variant='ghost']:first-child { padding-inline: 0 6px; border-left-width: 0; }
+.tp-actions-start > .sx-btn[data-variant='ghost']:first-child, .tp-actions-extra > .sx-btn[data-variant='ghost']:first-child { padding-inline: 0 var(--s-2); border-left-width: 0; }
 .tp-actions-start > .sx-btn[data-variant='ghost']:first-child:hover, .tp-actions-extra > .sx-btn[data-variant='ghost']:first-child:hover { background: none; }
 /* a button's label keeps the width of its widest form */
 .tp-steady { display: inline-grid; justify-items: center; }
@@ -169,9 +189,19 @@
 .tp-line { display: block; }
 .tp-aside { margin-left: var(--s-1); font-size: var(--fs-xs); color: var(--dim); }
 /* a row whose label is a sentence about the control beside it */
-.tp-row.tp-row-note > .tp-label { font-size: var(--fs-sm); line-height: 1.35; padding-block: 4px; }
+.tp-row.tp-row-note > .tp-label { font-size: var(--fs-sm); line-height: 1.35; }
+/* name = value: the "=" with 8 px on each side */
+.tp-eq { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); column-gap: var(--s-2); align-items: center; min-width: 0; line-height: 1.25; }
+.tp-eq-sign { color: var(--dim); font: var(--fw-regular) var(--fs-body) var(--f-mono); }
 /* in a side panel the scrollbar lane takes 6 px of the block's right padding (ui styles.css), so the footer's bleed
    matches the 12 px left there */
 @supports selector(::-webkit-scrollbar) {
   .sx-rail-body .cad-footer, .sx-rail-pin .cad-footer { margin-right: -12px; padding-right: 12px; }
 }
+/* Named values: name = value rows, the result under each of the person's own */
+.tp-values { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-3); }
+.tp-value { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s-2); row-gap: var(--s-1); align-items: center; min-width: 0; }
+.tp-value > .tp-eq { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.tp-value[data-builtin] > .tp-eq { grid-column: 1 / -1; grid-template-columns: auto auto minmax(0, 1fr); font-size: var(--fs-body); line-height: 20px; }
+.tp-value-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.tp-value-result, .tp-value > .tp-msg { grid-column: 1 / -1; }

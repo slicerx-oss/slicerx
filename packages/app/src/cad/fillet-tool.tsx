@@ -246,7 +246,7 @@ export function FilletTool() {
       {kind === 'chamfer' ? <Num id="edge-size2" label="Other face, if different" unit="mm" value={size2} onChange={setSize2} onEnter={() => void apply()} /> : null}
       {limit !== null && Number.isFinite(limit) ? <Note>At most {words(limit)} on the last picked edge.</Note> : null}
       <Row label={picked?.last ? `${picked.last.loop.length} edges around this face` : 'Pick an edge to offer its loop'}>
-        <Button size="sm" variant="ghost" data-tip="cad.edgeLoop" disabled={!picked?.last || busy} onClick={wholeLoop}>Whole loop</Button>
+        <Button size="sm" className="tp-pill" data-tip="cad.edgeLoop" disabled={!picked?.last || busy} onClick={wholeLoop}>Whole loop</Button>
       </Row>
       {note ? <Message text={note} /> : null}
       <ToolFooter verb={kind === 'fillet' ? 'Round' : 'Bevel'} verbs={['Round', 'Bevel']} onApply={apply} busy={busy} disabled={!n || !sizeOk || (!previewOk && note !== null)} repeat={!edit} />

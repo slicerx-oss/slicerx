@@ -123,12 +123,13 @@ export function CutPanel() {
         <Select id="cut-conn" size="sm" value={conn.kind} onChange={(ev) => setConn({ kind: ev.target.value as ConnectorKind, placing: false })}>
           <option value="none">None</option>
           <option value="pin">Pins</option>
-          <option value="dowel">Dowels (printed separately)</option>
+          <option value="dowel">Dowels</option>
           <option value="dovetail">Dovetail</option>
         </Select>
       </Row>
       {conn.kind !== 'none' ? (
         <>
+          {conn.kind === 'dowel' ? <Note>Dowels print as separate pieces.</Note> : null}
           <Row label={conn.kind === 'dovetail' ? 'Width' : 'Diameter'} unit="mm">
             <ScrubNumber parse={num} id="cut-conn-d" handle ariaLabel={`Connector ${conn.kind === 'dovetail' ? 'width' : 'diameter'}, millimeters`} unit="mm" digits={1} min={1} value={conn.diameterMm} onCommit={(v) => setConn({ diameterMm: v })} />
           </Row>
@@ -140,11 +141,11 @@ export function CutPanel() {
           </Row>
           <Row label={conn.toleranceSet ? `Typed. The fit clearance is ${clearanceWords.charAt(0).toLowerCase()}${clearanceWords.slice(1)}` : clearanceWords} className="tp-row-note" testId="cut-conn-tol-source">
             {conn.toleranceSet ? (
-              <Button size="sm" variant="ghost" onClick={() => setConn({ toleranceSet: false })}>
+              <Button size="sm" className="tp-pill" onClick={() => setConn({ toleranceSet: false })}>
                 Use it
               </Button>
             ) : !clearanceMeasured ? (
-              <Button size="sm" variant="ghost" onClick={() => set({ calibrationOpen: true })}>
+              <Button size="sm" className="tp-pill" onClick={() => set({ calibrationOpen: true })}>
                 Print the test
               </Button>
             ) : null}
@@ -155,7 +156,7 @@ export function CutPanel() {
               {conn.placing ? (
                 <Row label={conn.points.length === 0 ? 'Click the cut face to add a connector there; click one to take it away. With none placed they go in automatically.' : `${conn.points.length === 1 ? '1 connector' : `${conn.points.length} connectors`} placed. Click the cut face to add one, or click one to take it away.`} className="tp-row-note">
                   {conn.points.length ? (
-                    <Button size="sm" variant="ghost" onClick={() => setConn({ points: [] })}>
+                    <Button size="sm" className="tp-pill" onClick={() => setConn({ points: [] })}>
                       Clear
                     </Button>
                   ) : null}
