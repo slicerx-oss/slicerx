@@ -139,7 +139,7 @@ test('a setting changed in Expert stays listed after a switch to Advanced, under
   test.skip(isMobile, 'Desktop: the mode chip sits in the Slice pane title')
   await open(page, isMobile, 'expert')
   const quality = page.locator('#set-tab-panel section[aria-label="Quality"]')
-  const walls = quality.locator('.set-sec[data-section="quality/walls"]')
+  const walls = quality.locator('.pset-sec[data-section="quality/walls"]')
   await walls.getByTestId('slice-settings-section').click()
   await walls.locator('.tier-more').click()
   const row = walls.locator('li', { has: page.locator('#set-detect_thin_wall') })
@@ -174,7 +174,7 @@ test('shots: a changed Expert setting in Advanced, light and dark', async ({ pag
   for (const scheme of ['light', 'dark'] as const) {
     await page.evaluate((p) => (window as unknown as { __sx: Sx }).__sx.setState(p), { scheme, themeFollowsSystem: false, settingsMode: 'advanced', expertOpen: true, settingsTab: 'quality', overrides: { detect_thin_wall: true } })
     // A phone has Simple settings only: its shot shows the sheet as it is.
-    const last = page.locator('#set-tab-panel section[aria-label="Quality"] .set-sec[data-section="quality/walls"] li').last()
+    const last = page.locator('#set-tab-panel section[aria-label="Quality"] .pset-sec[data-section="quality/walls"] li').last()
     if (!isMobile) await last.evaluate((el) => el.scrollIntoView({ block: 'center' }))
     await page.mouse.move(0, 0)
     await page.waitForTimeout(400)
