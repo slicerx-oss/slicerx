@@ -685,7 +685,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .pp-sheet { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: var(--z-menu); width: min(640px, calc(100cqw - 24px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; padding: 10px; border-radius: var(--r-md); box-shadow: var(--shadow-pop); background: color-mix(in srgb, var(--ink-1) 96%, transparent); }
 .pp-find { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pp-search { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-0); color: var(--muted); }
-.pp-search:focus-within { border-color: var(--accent); }
+.pp-search:focus-within { border-color: var(--accent); box-shadow: var(--focus-field); }
 .pp-search-input { flex: 1 1 0; min-width: 0; height: 100%; padding: 0; border: 0; background: none; color: var(--fg); font: calc(12.5px * var(--text-scale)) var(--f-body); outline: none; }
 .pp-search-input::-webkit-search-cancel-button { display: none; }
 .pp-find .sx-seg { flex: none; }
