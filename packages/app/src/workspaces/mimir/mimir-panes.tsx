@@ -5,7 +5,7 @@
 // caption that names the view.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Composer, TranscriptView, UsageLinkContext, useAttachments, usePilotRun, type ApprovalHandlers, type Transcript } from '@slicerx/pilot/ui'
-import type { PilotLookup } from '@slicerx/contracts'
+import { DEFAULT_POLICY, type Pilot, type PilotLookup } from '@slicerx/contracts'
 import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, ResizeEdge, tipAttrs } from '@slicerx/ui'
 import { RavenMark } from '@slicerx/ui/raven'
@@ -13,10 +13,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { setLookups } from './lookups'
 import { stepWords } from './step-words'
 import { followSteps, useStepCaption, viewStep } from './view-step'
-import { newSessionId, noteMessage, tabMimir, tabTools } from './session'
+import { newSessionId, noteMessage, tabTools, useTabMimir } from './session'
 import { editRow } from './sheet-drive'
 import { openSheet, setDraft, setSheetActions, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
-import { useHost } from '../../host'
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
@@ -63,6 +62,16 @@ export function lookupsIn(t: Transcript): PilotLookup[] {
   return t.turns.flatMap((turn) => turn.blocks.flatMap((b) => (b.kind === 'lookup' ? [b.lookup] : [])))
 }
 
+/** Stands in while the tab sets up its model: nothing to run, and the composer does not send. */
+const SETTING_UP: Pilot = {
+  tools: () => [],
+  run: async function* () {},
+  switchMachine: async function* () {},
+  resolveApproval: async () => undefined,
+  setPolicy: () => undefined,
+  policy: () => DEFAULT_POLICY,
+}
+
 // Approvals never come up in the tab: its tools change nothing outside the design.
 const NO_APPROVAL = async (): Promise<void> => undefined
 
@@ -74,8 +83,9 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const ref = useRef<HTMLElement>(null)
   const attachments = useAttachments()
   const link = useMimirLink()
-  const host = useHost()
-  const pilot = useMemo(() => tabMimir(host.slicer), [host])
+  // null for the moment the tab sets up its model; sending waits until it is there
+  const ready = useTabMimir()
+  const pilot = ready ?? SETTING_UP
   const [sessionId, setSessionId] = useState(newSessionId)
   const run = usePilotRun(pilot, sessionId)
   const { reset, transcript } = run
@@ -187,7 +197,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         </span>
         {/* Shown while the stub answers, so nobody mistakes it for a model. */}
         {link === 'scripted' ? (
-        <span className="mimir-chat-scripted sx-mono" {...tipAttrs({ title: 'Scripted replies', body: `${ASSISTANT_NAME} plays scripted turns here until a model is connected to this tab. The tools it calls are real.` })}>
+        <span className="mimir-chat-scripted sx-mono" {...tipAttrs({ title: 'Scripted replies', body: `${ASSISTANT_NAME} plays scripted turns here until a model is set up in Settings > mimir. The tools it calls are real.` })}>
           Scripted replies
         </span>
         ) : null}
@@ -242,6 +252,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         <Composer
           attachments={attachments}
           running={run.running}
+          sendOff={ready === null}
           onStop={run.cancel}
           onSend={(text, files) => {
             stick.current = true
