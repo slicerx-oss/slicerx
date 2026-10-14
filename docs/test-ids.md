@@ -493,6 +493,7 @@ Ids that tests read for their text:
 | `model-tool-apply`, `model-tool-cancel`, `model-tool-more`, `model-tool-repeat` | A tool's footer: Apply (Enter) runs it and closes, Cancel (Esc) closes; on Hole, Fillet and Thread, More (the menu half of Apply) opens Apply and repeat, which runs it and stays open |
 | `model-tool-state` | A tool panel's state on the right of its header: "No hole yet", "1 edge" |
 | `sketch-other-plane` | Sketch: Other plane, in the header after the plane's name; starts the sketch over on another plane or face |
+| `sketch-variant-one` | Sketch: the family's name in the variant row when it has one way to draw it (Select, Line, Dimension); text, not a control |
 | `cad-font-system`, `cad-font-file` | Text on a face: where the font comes from, the built-in or an installed font, or a TTF or OTF file |
 | `model-inspector-multi` | The inspector with two or more objects selected |
 | `model-multi-size` | The size the selected objects take together |
