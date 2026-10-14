@@ -106,6 +106,8 @@
   --h-sm: 28px;
   --h-md: 34px;
   --h-lg: 44px;
+  /* a single number field or compact select in a row's right column */
+  --w-ctl: 96px;
   --h-bar: 52px;
   --h-status: 28px;
   /* Where toasts rest when nothing else places them: 8 px above the status bar, inside the window frame and its border. */

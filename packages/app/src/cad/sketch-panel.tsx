@@ -1113,7 +1113,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const driven = constraints.filter((c) => isDimension(c) && c.driven).length
   const words = (t: string) => (phone ? touchWords(t) : t)
   return (
-    <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label}>
+    <Shell
+      title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'}
+      aside={plane.label}
+      {...(featureOnly ? {} : { action: <Button size="sm" className="tp-pill" data-testid="sketch-other-plane" onClick={onRestart} disabled={busy} tip={{ title: 'Sketch on another plane or face' }}>Other plane</Button> })}
+    >
       {featureOnly ? null : (
         <>
           <PhonePicker>
@@ -1145,31 +1149,33 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             </p>
           ) : null}
           <div className="sketch-palette" role="group" aria-label="Sketch palette">
-            <Button size="sm" variant="ghost" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
-            <div className="sketch-toggles">
+            <Button size="sm" className="tp-pill" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
+            <Row label="Grid" htmlFor="sk-grid">
               <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
-              <label htmlFor="sk-grid">Grid</label>
-              <Switch id="sk-snap" checked={pal.snap} onChange={(on) => setPal({ snap: on })} label="Snap" />
-              <label htmlFor="sk-snap">Snap</label>
-              <Select id="sk-step" size="sm" aria-label="Snap step" value={pal.step} onChange={(e) => setPal({ step: e.target.value })}>
+            </Row>
+            {/* the step, or Off: one row for snapping */}
+            <Row label="Snap to grid" htmlFor="sk-step">
+              <Select id="sk-step" aria-label="Snap step" value={pal.snap ? pal.step : 'off'} onChange={(e) => setPal(e.target.value === 'off' ? { snap: false } : { snap: true, step: e.target.value })}>
+                <option value="off">Off</option>
                 {gridSteps(units, pal.step).map((g) => (
                   <option key={g.value} value={g.value}>{g.label}</option>
                 ))}
               </Select>
-            </div>
-            <div className="sketch-toggles" data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">
+            </Row>
+            <Row label={<span data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">Section</span>} htmlFor="sk-section">
               <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
-              <label htmlFor="sk-section">Section</label>
+            </Row>
+            {/* what the sketch shows: filters, so chips */}
+            <div className="tp-row" data-wide="">
+              <span className="tp-label" id="sk-show-label">Show</span>
+              <div className="tp-chips" role="group" aria-labelledby="sk-show-label">
+                {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
+                  <button key={k} id={`sk-show-${k}`} type="button" className="tp-chip" aria-pressed={pal[k]} aria-label={`Show ${k}`} onClick={() => setPal({ [k]: !pal[k] })}>
+                    {k[0]!.toUpperCase() + k.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
-            <fieldset className="sketch-show">
-              <legend>Show</legend>
-              {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
-                <span key={k} className="sketch-toggles">
-                  <Switch id={`sk-show-${k}`} checked={pal[k]} onChange={(on) => setPal({ [k]: on })} label={`Show ${k}`} />
-                  <label htmlFor={`sk-show-${k}`}>{k[0]!.toUpperCase() + k.slice(1)}</label>
-                </span>
-              ))}
-            </fieldset>
           </div>
         </>
       )}
@@ -1185,9 +1191,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           {draft.tool === 'select' && sel ? (
             <>
               <div className="cad-row sketch-loop-actions">
-                <Button size="sm" variant="ghost" icon="mirror" aria-pressed={pending?.kind === 'mirror'} data-tip-title="Mirror" data-tip-body="Adds a copy of this loop across the straight line you click next, held symmetric to it." onClick={() => setPending(pending?.kind === 'mirror' ? null : { kind: 'mirror', e: selected!.e })}>Mirror</Button>
-                <Button size="sm" variant="ghost" aria-pressed={sel.construction === true} data-tip-title="Construction" data-tip-key="X" data-tip-body="A construction curve stays in the sketch for constraints and snaps, and makes no profile." onClick={() => setSketch((s) => toggleConstruction(s, selected!.e))}>Construction</Button>
-                <Button size="sm" variant="ghost" icon="delete" onClick={() => { const e = selected!.e; setConstraints((c) => afterLoopChange(c, e, 0)); setSketch((s) => s.filter((_, i) => i !== e)); setSelected(null) }}>Delete loop</Button>
+                <Button size="sm" className="tp-pill" icon="mirror" aria-pressed={pending?.kind === 'mirror'} data-tip-title="Mirror" data-tip-body="Adds a copy of this loop across the straight line you click next, held symmetric to it." onClick={() => setPending(pending?.kind === 'mirror' ? null : { kind: 'mirror', e: selected!.e })}>Mirror</Button>
+                <Button size="sm" className="tp-pill" aria-pressed={sel.construction === true} data-tip-title="Construction" data-tip-key="X" data-tip-body="A construction curve stays in the sketch for constraints and snaps, and makes no profile." onClick={() => setSketch((s) => toggleConstruction(s, selected!.e))}>Construction</Button>
+                <Button size="sm" className="tp-pill" icon="delete" onClick={() => { const e = selected!.e; setConstraints((c) => afterLoopChange(c, e, 0)); setSketch((s) => s.filter((_, i) => i !== e)); setSelected(null) }}>Delete loop</Button>
               </div>
               <Num id="sk-offset" label="Offset" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
               <Button full data-tip-title="Offset" data-tip-body="Adds a copy of this loop grown by the distance; a negative one shrinks it." onClick={() => void doOffset()}>Offset the loop</Button>
@@ -1217,8 +1223,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
               <Choice id="sk-corner-kind" label="Corner shape" value={cornerKind} onChange={setCornerKind} options={[{ value: 'fillet', label: 'Round' }, { value: 'chamfer', label: 'Bevel' }]} />
               <Num id="sk-corner" label={cornerKind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={corner} onChange={setCorner} onEnter={() => void doCorners(false)} />
               <div className="cad-row sketch-corner-actions">
-                <Button size="sm" variant="ghost" data-tip="sketch.corners" onClick={() => void doCorners(false)}>Corners of this line</Button>
-                <Button size="sm" variant="ghost" onClick={() => void doCorners(true)}>Every corner of the loop</Button>
+                <Button size="sm" className="tp-pill" data-tip="sketch.corners" onClick={() => void doCorners(false)}>Corners of this line</Button>
+                <Button size="sm" className="tp-pill" onClick={() => void doCorners(true)}>Every corner of the loop</Button>
               </div>
         </>
       ) : null}
@@ -1269,7 +1275,6 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         onApply={go}
         busy={busy}
         disabled={!ready || (op !== 'new' && !target)}
-        {...(featureOnly ? {} : { extra: <Button variant="ghost" onClick={onRestart} disabled={busy}>Other plane</Button> })}
       />
       {field && fields.length
         ? createPortal(

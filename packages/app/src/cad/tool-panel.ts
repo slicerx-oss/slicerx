@@ -28,6 +28,20 @@ export interface ChoiceMeasure {
   wrapPad?: number
 }
 
+/** What a glyph before an option's word takes of its line: the 14 px icon and the 4 px gap after it. */
+export const GLYPH_WIDTH = 18
+
+/**
+ * The widths choiceFit weighs for a set of option labels, from a measure of text in the segment's face: each label on
+ * one line and its longest word, with a glyph's width added to the label and to its first word, which it sits before.
+ */
+export function choiceMeasure(labels: readonly string[], glyphs: readonly boolean[], width: (text: string) => number): { labels: number[]; words: number[] } {
+  return {
+    labels: labels.map((l, i) => width(l) + (glyphs[i] ? GLYPH_WIDTH : 0)),
+    words: labels.map((l, i) => Math.max(0, ...l.split(/\s+/).map((w, k) => width(w) + (k === 0 && glyphs[i] ? GLYPH_WIDTH : 0)))),
+  }
+}
+
 /**
  * How a set of choices fits: one line when every label fits its share of the width, two lines when every label fits in
  * two lines of its share with no word cut, and past that (or past three options) icons with tooltips when every option
@@ -41,7 +55,7 @@ export function choiceFit(m: ChoiceMeasure): ChoiceFit {
   const frame = m.frame ?? 6
   const gap = m.gap ?? 2
   const each = (m.width - frame - gap * (n - 1)) / n
-  const line = each - (m.pad ?? 18)
+  const line = each - (m.pad ?? 16)
   if (line > 0 && m.labels.every((w) => w <= line)) return 'line'
   // Two lines: no single word wider than a line, and the whole label within two lines (a word that wraps leaves
   // some of the first line empty, so a little room is kept).
@@ -50,9 +64,9 @@ export function choiceFit(m: ChoiceMeasure): ChoiceFit {
   return fallback
 }
 
-/** The settings rows' select width, px, and what its frame takes of it: padding and the arrow. */
-export const SELECT_WIDTH = 132
-const SELECT_FRAME = 8 + 30 + 2
+/** The control column's width (--w-ctl), px, and what a select's frame takes of it: padding, the arrow and the border. */
+export const SELECT_WIDTH = 96
+const SELECT_FRAME = 10 + 26 + 2
 
 /** A select fits the control column when its longest option's text (px, in the select's face) fits inside it. */
 export function selectFits(longest: number): boolean {
