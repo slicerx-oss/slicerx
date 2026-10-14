@@ -22,6 +22,8 @@ import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
 import { startFillet } from '../../cad/start-hint'
 import { requestFinish, useCanFinish, useSketchInUse } from '../../cad/sketches'
+import { useSketchMode } from '../../cad/sketch-mode'
+import { modKey } from '../../lib/keys'
 import { availableTools, menuEntryTipAttrs, nextSlot, pickWords, SHELF_GROUPS, shelfGroup, toolTipAttrs, type DialogTool, type NextEntry, type NextPick, type ShelfGroup, type ShelfTool } from './shelf-tools'
 
 /**
@@ -98,6 +100,8 @@ export function Shelf() {
   const { undo, redo } = useHistoryCounts()
   const [menu, setMenu] = useState<string | null>(null)
   const canFinish = useCanFinish()
+  // one primary at a time: Finish sketch while drawing, the panel's Extrude once the profile can make a solid
+  const sketchMode = useSketchMode()
   // an Extrude or Revolve from a finished sketch runs in the sketch tool, but nobody is sketching
   const pressedTool = useSketchInUse() !== null && objectTool === 'sketch' ? null : objectTool
   const tools = availableTools({ modeling, drawing })
@@ -208,7 +212,7 @@ export function Shelf() {
       {/* while sketching, Finish sketch takes the slot of the tools for what is picked; the end group stays put */}
       {canFinish ? (
         <div className="shelf-finish-slot">
-          <Button size="sm" variant="primary" icon="check" data-testid="sketch-finish" data-tip-title="Finish sketch" data-tip-body="Keeps the sketch in the timeline without making a solid. Enter does the same." onClick={requestFinish}>
+          <Button size="sm" variant={sketchMode?.ready ? 'default' : 'primary'} icon="check" data-testid="sketch-finish" data-tip-title="Finish sketch" data-tip-key={`${modKey()}Enter`} data-tip-body="Keeps the sketch in the timeline without making a solid." onClick={requestFinish}>
             Finish sketch
           </Button>
         </div>

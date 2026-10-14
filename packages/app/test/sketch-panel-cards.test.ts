@@ -6,11 +6,11 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement, createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CursorPills, nextPill, placePills, type CursorPillsHandle } from '../src/cad/cursor-pills'
-import { emptyDraft, fieldsFor, liveValues, type Draft } from '../src/cad/sketch-model'
+import { emptyDraft, fieldsFor, liveValues, typedPoint, type Draft } from '../src/cad/sketch-model'
 import { appState } from '../src/agent-bridge/page'
 import { Card, Num } from '../src/cad/panel-kit'
 import { get } from '../src/state/store'
-import { lookAtSketch, provideSketchLook, setSketchMode, sketchMode, sketchModeText, solidCard, surfaceOf } from '../src/cad/sketch-mode'
+import { applyReason, lookAtSketch, profileState, provideSketchLook, setSketchMode, sketchMode, sketchModeText, solidCard, surfaceOf } from '../src/cad/sketch-mode'
 
 afterEach(() => {
   cleanup()
@@ -33,6 +33,52 @@ describe('solid card', () => {
   })
   it('is always open for Extrude or Revolve from a finished sketch', () => {
     expect(solidCard({ featureOnly: true, closedProfiles: 0, issues: [], drawn: false }).open).toBe(true)
+  })
+})
+
+describe('profile and why Extrude waits', () => {
+  const base = { drawing: false, checked: true, finish: 'extrude' as const, axis: false, op: 'new' as const, target: false }
+  it('tells nothing drawn, open, closed but invalid, and valid apart', () => {
+    expect(profileState({ drawn: false, closedProfiles: 0, checked: false, ok: false, issues: [] })).toBe('none')
+    expect(profileState({ drawn: true, closedProfiles: 0, checked: true, ok: false, issues: [{}] })).toBe('open')
+    expect(profileState({ drawn: true, closedProfiles: 1, checked: true, ok: false, issues: [{}] })).toBe('invalid')
+    expect(profileState({ drawn: true, closedProfiles: 1, checked: true, ok: true, issues: [] })).toBe('valid')
+  })
+  it('gives a reason for every way Extrude or Revolve is off, and none when it can run', () => {
+    expect(applyReason({ ...base, profile: 'valid', drawing: true })).toMatch(/End the shape/)
+    expect(applyReason({ ...base, profile: 'none' })).toBe('Draw a closed outline to make a solid.')
+    expect(applyReason({ ...base, profile: 'open' })).toBe('Close the outline to make a solid.')
+    expect(applyReason({ ...base, profile: 'invalid', firstIssue: 'Loop 1 crosses itself.' })).toBe('Loop 1 crosses itself.')
+    expect(applyReason({ ...base, profile: 'valid', checked: false })).toBe('Checking the sketch.')
+    expect(applyReason({ ...base, profile: 'valid', finish: 'revolve' })).toBe('Pick a straight line of the sketch as the axis.')
+    expect(applyReason({ ...base, profile: 'valid', op: 'cut' })).toBe('Pick a body to cut from.')
+    expect(applyReason({ ...base, profile: 'valid' })).toBeNull()
+    expect(applyReason({ ...base, profile: 'valid', finish: 'revolve', axis: true, op: 'join', target: true })).toBeNull()
+  })
+})
+
+describe('typed numbers to a point', () => {
+  const close = (p: unknown, want: [number, number]) => {
+    expect(Array.isArray(p)).toBe(true)
+    const [x, y] = p as [number, number]
+    // points keep six decimals (a nanometer), so compare to five
+    expect(x).toBeCloseTo(want[0], 5)
+    expect(y).toBeCloseTo(want[1], 5)
+  }
+  it('puts a line end at the typed length and angle from the start, whatever the cursor', () => {
+    const d = at('line', [[2, 3]])
+    close(typedPoint(d, [12, 30], [-50, -50]), [2 + 12 * Math.cos(Math.PI / 6), 3 + 12 * Math.sin(Math.PI / 6)])
+    close(typedPoint(d, [10, 90], [99, 0]), [2, 13])
+    close(typedPoint(d, [10, 225], [0, 0]), [2 - 10 / Math.SQRT2, 3 - 10 / Math.SQRT2])
+  })
+  it('takes the cursor for a pill left empty', () => {
+    const d = at('line', [[0, 0]])
+    close(typedPoint(d, [5, null], [0, 10]), [0, 5])
+    close(typedPoint(d, [null, 0], [3, 4]), [5, 0])
+  })
+  it('refuses a length of 0 or less instead of placing a wrong point', () => {
+    expect(typeof typedPoint(at('line', [[0, 0]]), [0, 30], [1, 1])).toBe('string')
+    expect(typeof typedPoint(at('line', [[0, 0]]), [-4, 30], [1, 1])).toBe('string')
   })
 })
 
@@ -90,7 +136,7 @@ describe('cursor pills', () => {
     { label: 'Length', unit: 'mm' },
     { label: 'Angle', unit: '°' },
   ]
-  const props = { fields, focus: 0, editing: null, onFocus: () => undefined, onChange: () => undefined, onCommit: () => undefined, onCancel: () => undefined }
+  const props = { fields, focus: 0, editing: null, onFocus: () => undefined, onChange: () => undefined, onCommit: () => undefined, onCancel: () => undefined, onLeave: () => undefined }
 
   it('Tab goes round the pills, Shift+Tab back', () => {
     expect(nextPill(0, 2)).toBe(1)
@@ -116,7 +162,7 @@ describe('cursor pills', () => {
     expect(box.hidden).toBe(true)
   })
 
-  it('type into the focused pill; Tab moves on, Enter places, Esc drops', () => {
+  it('type into the focused pill; Tab moves on, Enter places, Esc clears the pill', () => {
     const ref = createRef<CursorPillsHandle>()
     const onFocus = vi.fn()
     const onChange = vi.fn()
@@ -137,19 +183,52 @@ describe('cursor pills', () => {
     expect(onFocus).toHaveBeenLastCalledWith(1)
     fireEvent.keyDown(length, { key: 'Enter' })
     expect(onCommit).toHaveBeenCalledOnce()
+    // Esc in a typed pill clears it, so it follows the cursor again; typing goes on
     fireEvent.keyDown(length, { key: 'Escape' })
-    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onChange).toHaveBeenLastCalledWith(['', ''])
+    expect(onCancel).not.toHaveBeenCalled()
   })
 
-  it('keep Tab in a single pill instead of sending focus out of the view', () => {
-    const onFocus = vi.fn()
+  it('Esc in an empty pill ends typing', () => {
+    const onCancel = vi.fn()
+    const onChange = vi.fn()
     const ref = createRef<CursorPillsHandle>()
-    render(createElement(CursorPills, { ...props, ref, fields: [{ label: 'Radius', unit: 'mm' }], focus: 0, editing: ['3'], onFocus }))
-    act(() => ref.current!.show(10, 10, ['2.00'], null))
-    const radius = screen.getByRole('textbox', { name: 'Radius mm' })
-    // fireEvent returns false when the default was prevented
-    expect(fireEvent.keyDown(radius, { key: 'Tab' })).toBe(false)
+    render(createElement(CursorPills, { ...props, ref, focus: 1, editing: ['20', ''], onCancel, onChange }))
+    act(() => ref.current!.show(10, 10, ['12.00', '45.0'], null))
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Angle °' }), { key: 'Escape' })
+    expect(onCancel).toHaveBeenCalledOnce()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('hold still while a number is typed, so the field never jumps from the caret', () => {
+    const ref = createRef<CursorPillsHandle>()
+    render(createElement(CursorPills, { ...props, ref, editing: ['2', ''] }))
+    act(() => ref.current!.show(100, 200, ['12.00', '45.0'], null))
+    const box = screen.getByTestId('sketch-pills')
+    expect([box.style.left, box.style.top]).toEqual(['116px', '216px'])
+    act(() => ref.current!.show(300, 50, ['30.00', '10.0'], null))
+    expect([box.style.left, box.style.top]).toEqual(['116px', '216px'])
+    // the live hint in the empty pill still follows the cursor
+    expect((screen.getByRole('textbox', { name: 'Angle °' }) as HTMLInputElement).placeholder).toBe('10.0')
+  })
+
+  it('let Tab out past the last pill and Shift+Tab out before the first: no focus trap', () => {
+    const onFocus = vi.fn()
+    const onLeave = vi.fn()
+    const ref = createRef<CursorPillsHandle>()
+    render(createElement(CursorPills, { ...props, ref, focus: 1, editing: ['20', '30'], onFocus, onLeave }))
+    act(() => ref.current!.show(10, 10, ['2.00', '0.0'], null))
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Angle °' }), { key: 'Tab' })
+    expect(onLeave).toHaveBeenLastCalledWith(false)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Length mm' }), { key: 'Tab', shiftKey: true })
+    expect(onLeave).toHaveBeenLastCalledWith(true)
     expect(onFocus).not.toHaveBeenCalled()
+    // one pill: Tab leaves at once
+    cleanup()
+    render(createElement(CursorPills, { ...props, ref, fields: [{ label: 'Radius', unit: 'mm' }], focus: 0, editing: ['3'], onLeave }))
+    act(() => ref.current!.show(10, 10, ['2.00'], null))
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Radius mm' }), { key: 'Tab' })
+    expect(onLeave).toHaveBeenCalledTimes(3)
   })
 })
 
@@ -200,6 +279,10 @@ describe('the read-back', () => {
     expect(appState(get())['sketch']).toBeNull()
     setSketchMode({ on: 'face', label: 'A face of Box', tool: 'Line' })
     expect(appState(get())['sketch']).toEqual({ on: 'face', label: 'A face of Box', tool: 'Line', mode: 'Sketching on a face · Line' })
+    // with the panel's check in: the profile, dof, whether Extrude can run and why not, and the loops
+    const loops = [{ closed: true, points: [[0, 0], [10, 0], [10, 10]] }]
+    setSketchMode({ on: 'face', label: 'A face of Box', tool: 'Line', profile: 'valid', dof: 2, ready: true, reason: null, loops })
+    expect(appState(get())['sketch']).toEqual({ on: 'face', label: 'A face of Box', tool: 'Line', mode: 'Sketching on a face · Line', profile: 'valid', dof: 2, ready: true, reason: null, loops })
     setSketchMode(null)
     expect(appState(get())['sketch']).toBeNull()
   })

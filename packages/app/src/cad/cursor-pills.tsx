@@ -2,10 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The sketch's live numbers beside the cursor: small pills for the drawing tool's next step (X and Y for a first point,
 // length and angle for a line, width and height for a rectangle). One pill has focus; typing a number edits it, Tab
-// moves to the next, Enter places the point and Esc drops what was typed (typing then starts again in the first pill).
-// A pill left empty takes the cursor's value.
+// moves to the next and Shift+Tab back, and Tab past either end leaves the pills (the typed numbers stay) for the rest of
+// the page. Enter places the point with the typed numbers. Esc clears the focused pill, so it follows the cursor again,
+// and in an empty pill leaves typing (typing then starts again in the first pill). A pill left empty takes the cursor's
+// value.
 // The pills stay inside the view and never over the point being placed: below and right of the cursor, or flipped to
-// the other side near an edge. While a number is typed the group turns to edit fields, so typed and live read apart.
+// the other side near an edge. While a number is typed the group turns to edit fields, so typed and live read apart,
+// and holds still where typing began, so the field never jumps away from the caret.
 //
 // Speed: the hover path moves the pills and writes their numbers through `show`, without a React render. React renders
 // when the tool, the focus or the typed text changes.
@@ -36,7 +39,10 @@ export interface CursorPillsProps {
   onFocus: (i: number) => void
   onChange: (values: string[]) => void
   onCommit: () => void
+  /** Esc in an empty pill: typing ends and the pills follow the cursor again. */
   onCancel: () => void
+  /** Tab past the last pill, or Shift+Tab before the first: focus leaves the pills, the typed numbers kept. */
+  onLeave: (back: boolean) => void
 }
 
 /** Where the pills sit from the cursor, px: below and to the right, clear of the pointer. */
@@ -70,13 +76,18 @@ export function placePills(x: number, y: number, w: number, h: number, area: Box
 /** The next pill for Tab (or the one before for Shift+Tab), round the ends. */
 export const nextPill = (focus: number, count: number, back = false): number => (count <= 0 ? 0 : (focus + (back ? count - 1 : 1)) % count)
 
-export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(function CursorPills({ fields, area, text = false, focus, editing, onFocus, onChange, onCommit, onCancel }, ref) {
+export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(function CursorPills({ fields, area, text = false, focus, editing, onFocus, onChange, onCommit, onCancel, onLeave }, ref) {
   const box = useRef<HTMLDivElement | null>(null)
   const values = useRef<(HTMLElement | null)[]>([])
   const inputs = useRef<(HTMLInputElement | null)[]>([])
   const snapRef = useRef<HTMLSpanElement | null>(null)
   // the last spot, so a render (a focus change, a typed key) keeps the pills where they were
   const last = useRef<{ x: number; y: number; values: readonly string[]; snap: string | null } | null>(null)
+  // where the pills were as typing began: they hold there while a number is typed
+  const held = useRef<{ left: number; top: number } | null>(null)
+  const typing = editing !== null
+  const typingRef = useRef(typing)
+  typingRef.current = typing
 
   const paint = () => {
     const el = box.current
@@ -87,7 +98,9 @@ export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(funct
       return
     }
     el.hidden = false
-    const at = placePills(l.x, l.y, el.offsetWidth, el.offsetHeight, area?.() ?? null)
+    if (!typingRef.current) held.current = null
+    const at = held.current ?? placePills(l.x, l.y, el.offsetWidth, el.offsetHeight, area?.() ?? null)
+    if (typingRef.current) held.current = at
     el.style.left = `${Math.round(at.left)}px`
     el.style.top = `${Math.round(at.top)}px`
     l.values.forEach((v, i) => {
@@ -118,7 +131,6 @@ export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(funct
   useEffect(paint)
 
   // typing starts in the focused pill, the caret after the key that opened it
-  const typing = editing !== null
   useEffect(() => {
     if (!typing) return
     const el = inputs.current[focus]
@@ -133,11 +145,15 @@ export const CursorPills = forwardRef<CursorPillsHandle, CursorPillsProps>(funct
       onCommit()
     } else if (e.key === 'Escape') {
       e.preventDefault()
-      onCancel()
-    } else if (e.key === 'Tab') {
-      // Tab stays in the pills: the next one, or the only one
+      e.stopPropagation()
+      // a typed pill goes back to the cursor's value first; an empty one ends typing
+      if ((editing?.[i] ?? '') !== '') onChange(fields.map((_, k) => (k === i ? '' : (editing?.[k] ?? ''))))
+      else onCancel()
+    } else if (e.key === 'Tab' && !e.altKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault()
-      if (fields.length > 1) onFocus(nextPill(i, fields.length, e.shiftKey))
+      const out = e.shiftKey ? i === 0 : i === fields.length - 1
+      if (out) onLeave(e.shiftKey)
+      else onFocus(nextPill(i, fields.length, e.shiftKey))
     }
   }
 

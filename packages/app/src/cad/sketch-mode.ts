@@ -16,6 +16,15 @@ export interface SketchMode {
   label: string
   /** The drawing tool's name as its button shows it: "Line", "Rectangle", "Select". */
   tool: string
+  /** What the drawing is as a profile (see `profileState`); absent until the panel has checked it. */
+  profile?: ProfileState
+  /** The solver's degrees of freedom left, 0 when fully defined; null until it has run. */
+  dof?: number | null
+  /** Extrude or Revolve can run now; when false, `reason` says why in the panel's words. */
+  ready?: boolean
+  reason?: string | null
+  /** The drawn loops in the sketch plane, mm, for clients to check what was drawn. */
+  loops?: unknown
 }
 
 let mode: SketchMode | null = null
@@ -28,7 +37,7 @@ export const sketchMode = (): SketchMode | null => mode
 
 /** Sets what the open sketch shows; null when it closes. */
 export function setSketchMode(next: SketchMode | null): void {
-  if (next === mode || (next && mode && next.on === mode.on && next.label === mode.label && next.tool === mode.tool)) return
+  if (next === mode || (next && mode && JSON.stringify(next) === JSON.stringify(mode))) return
   mode = next
   emit()
 }
@@ -99,4 +108,50 @@ export function solidCard(s: { featureOnly: boolean; closedProfiles: number; iss
   const first = s.issues[0]?.message
   if (first) return { open: false, reason: first }
   return { open: false, reason: s.drawn ? 'Close the outline to make a solid.' : 'Draw a closed outline to make a solid.' }
+}
+
+/**
+ * What the drawing is as a profile, from the engine's check: nothing drawn, open (no closed loop yet), invalid (a closed
+ * loop the check finds wrong, such as one crossing itself), or valid. Closed says nothing of how defined the sketch is;
+ * the solver's dof says that.
+ */
+export type ProfileState = 'none' | 'open' | 'invalid' | 'valid'
+
+export function profileState(s: { drawn: boolean; closedProfiles: number; checked: boolean; ok: boolean; issues: readonly unknown[] }): ProfileState {
+  if (!s.drawn) return 'none'
+  if (s.closedProfiles === 0) return 'open'
+  if (s.issues.length || (s.checked && !s.ok)) return 'invalid'
+  return 'valid'
+}
+
+/**
+ * Why Extrude or Revolve can't run yet, in one line for under the button, or null when it can. The first thing to
+ * fix comes first: the shape being drawn, then the profile, then what the operation itself needs.
+ */
+export function applyReason(s: {
+  profile: ProfileState
+  drawing: boolean
+  checked: boolean
+  firstIssue?: string
+  finish: 'extrude' | 'revolve'
+  axis: boolean
+  op: 'new' | 'join' | 'cut'
+  target: boolean
+}): string | null {
+  if (s.drawing) return 'End the shape being drawn first (Esc or a right click).'
+  if (s.profile === 'none') return 'Draw a closed outline to make a solid.'
+  if (s.profile === 'open') return 'Close the outline to make a solid.'
+  if (s.profile === 'invalid') return s.firstIssue ?? 'The outline needs fixing before it can make a solid.'
+  if (!s.checked) return 'Checking the sketch.'
+  if (s.finish === 'revolve' && !s.axis) return 'Pick a straight line of the sketch as the axis.'
+  if (s.op !== 'new' && !s.target) return s.op === 'join' ? 'Pick a body to join to.' : 'Pick a body to cut from.'
+  return null
+}
+
+// Test hook: with localStorage 'slicerx.debug' set (as for window.__sx), scripts read the open sketch as app_state's
+// `sketch` is built from it.
+try {
+  if (typeof window !== 'undefined' && localStorage.getItem('slicerx.debug')) Object.assign(window, { __sketch: sketchMode })
+} catch {
+  // storage blocked: no hook
 }
