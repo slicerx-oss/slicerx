@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Settings > Look and feel and the first-run theme step: the theme cards, the mode, flavors, accent,
 // text, contrast and color vision, how they are stored, and how the old settings move over.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Host } from '@slicerx/contracts'
@@ -23,11 +23,14 @@ beforeEach(() => set({ themeCache: [], themeIds: { dark: 'subban-dark', light: '
 afterEach(() => cleanup())
 
 describe('the theme cards', () => {
-  it('lists every theme once, Subban picked, with both modes on each card', () => {
+  it('lists every theme once, Subban picked, with the mode in use on each card', () => {
     mount(createElement(ThemePicker))
     const cards = screen.getAllByRole('radio').filter((r) => r.classList.contains('th-card'))
     expect(cards.map((c) => c.querySelector('.th-name > span')?.textContent)).toEqual(['Subban', 'Dracula', 'Catppuccin', 'Nord', 'One', 'Tokyo Night', 'GitHub', 'Solarized', 'Night', 'Gothic', 'Newsprint', 'Pixyll', 'Whitey'])
     expect(cards[0]?.getAttribute('aria-checked')).toBe('true')
+    // Dark shows each card's dark mode full width; System shows both modes side by side.
+    for (const c of cards) expect(c.querySelectorAll('.th-prev')).toHaveLength(1)
+    act(() => set({ themeFollowsSystem: true }))
     for (const c of cards) expect(c.querySelectorAll('.th-prev')).toHaveLength(2)
   })
 
@@ -44,7 +47,17 @@ describe('the theme cards', () => {
     const flavor = screen.getByRole('radiogroup', { name: 'Dark flavor' })
     fireEvent.click(flavor.querySelector('[role=radio]:nth-child(3)') as HTMLElement)
     expect(get().themeIds.dark).toBe('catppuccin-frappe')
-    expect(screen.getByTestId('theme-catppuccin').textContent).toContain('Frappe')
+    expect(screen.getByRole('button', { name: 'Catppuccin flavors' }).textContent).toContain('Frappe')
+  })
+
+  it('the flavor pill names the flavor count and picks a flavor from its menu', () => {
+    mount(createElement(ThemePicker))
+    const pill = screen.getByRole('button', { name: 'Catppuccin flavors' })
+    expect(pill.textContent).toBe('4 flavors')
+    fireEvent.click(pill)
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Macchiato' }))
+    expect(get().themeIds).toEqual({ dark: 'catppuccin-macchiato', light: 'catppuccin-latte' })
+    expect(screen.getByRole('button', { name: 'Catppuccin flavors' }).textContent).toBe('Macchiato')
   })
 
   it('the mode switch sets light, dark or follow system', () => {
