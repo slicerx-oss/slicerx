@@ -110,8 +110,10 @@ export interface DrawnDim {
   n: number
   guess: boolean
   lines: [P2, P2][]
-  /** From a size measured inside the part out to its callout, past the part's outline. */
+  /** From the size's midpoint to its callout, when the callout had to move off its line. */
   leader: [P2, P2] | null
+  /** The size is measured over the part, so its leader starts on a dot. */
+  inside: boolean
   /** Where each arrow points, and the point it comes from. */
   arrows: [P2, P2][]
   arc: P2[] | null
@@ -285,8 +287,9 @@ export function drawView(part: readonly PilotSheetSolid[], dims: readonly PilotD
     badge = [r1(Math.min(w - BADGE_R - 2, Math.max(BADGE_R + 2, badge[0]))), r1(Math.min(h - BADGE_R - 2, Math.max(BADGE_R + 2, badge[1])))]
     placed.push(badge)
     const gap = Math.hypot(badge[0] - m[0], badge[1] - m[1])
-    const leader: [P2, P2] | null = leads && gap > BADGE_R ? [m, [r1(badge[0] - ((badge[0] - m[0]) / gap) * BADGE_R), r1(badge[1] - ((badge[1] - m[1]) / gap) * BADGE_R)]] : null
-    return { key: r.key, n: r.n, guess: r.guess, lines: [...lines, ...dimLines], leader, arrows, arc, badge }
+    // every callout that does not sit on its own line gets a leader to it, so its target is never a guess
+    const leader: [P2, P2] | null = gap > BADGE_R + 5 ? [m, [r1(badge[0] - ((badge[0] - m[0]) / gap) * BADGE_R), r1(badge[1] - ((badge[1] - m[1]) / gap) * BADGE_R)]] : null
+    return { key: r.key, n: r.n, guess: r.guess, lines: [...lines, ...dimLines], leader, inside: leads, arrows, arc, badge }
   })
   return { faces, dims: drawn }
 }
