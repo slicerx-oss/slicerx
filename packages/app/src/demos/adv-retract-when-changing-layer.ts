@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Retract when changing layer: without it the nozzle oozes a blob and a string where it steps up a layer; with it, the step is clean.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'bqrw',
+  readout: {rows: ["Off","On"],w: 64},
+  css: ".bqrw0{animation-name:bqrw0;animation-timing-function:steps(1,end)}@keyframes bqrw0{0%{opacity:1}50%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.bqrw1{animation-name:bqrw1;animation-timing-function:steps(1,end)}@keyframes bqrw1{0%{opacity:0}50%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.bqrw-h{animation-name:bqrw-h;animation-timing-function:steps(1,end)}@keyframes bqrw-h{0%{translate:0 0px}50%{translate:0 -14px}98.6%{translate:0 0px}100%{translate:0 0px}}.bqrw-n{animation-name:bqrw-n}@keyframes bqrw-n{0%{translate:0 0}8.6%{translate:0 0}17.1%{translate:0px -10.5px}45.7%{translate:0px -10.5px}50%{translate:0 0}58.6%{translate:0 0}67.1%{translate:0px -10.5px}100%{translate:0px -10.5px}}.bqrw-b{animation-name:bqrw-b}@keyframes bqrw-b{0%{opacity:0}12.9%{opacity:0}17.1%{opacity:1}45.7%{opacity:1}48.6%{opacity:0}100%{opacity:0}}",
+  body: "<polygon class=\"s-f2 s-ol\" points=\"93.7,106.5 142.2,134.5 142.2,99.5 93.7,71.5\"/><polygon class=\"s-f3 s-ol\" points=\"172.5,117 142.2,134.5 142.2,99.5 172.5,82\"/><polygon class=\"s-f1 s-ol\" points=\"124,54 172.5,82 142.2,99.5 93.7,71.5\"/><g class=\"bqrw0 s-a\"><g class=\"bqrw-b s-a\"><ellipse class=\"s-cf s-cl\" cx=\"142.2\" cy=\"99.5\" rx=\"6.9\" ry=\"4\"/><path class=\"s-n\" style=\"stroke:var(--stage-cut,#ff5555);stroke-width:1.4\" d=\"M142.2 99.5q5 -7 -1 -12\"/></g></g><g class=\"bqrw1 s-a\"></g><g class=\"bqrw-n s-a\"><polygon class=\"s-g2 s-aol\" points=\"130.1,90.4 142.2,97.4 142.2,86.9 130.1,79.9\"/><polygon class=\"s-g3 s-aol\" points=\"154.3,90.4 142.2,97.4 142.2,86.9 154.3,79.9\"/><polygon class=\"s-g1 s-aol\" points=\"142.2,72.9 154.3,79.9 142.2,86.9 130.1,79.9\"/><polygon class=\"s-g2 s-aol\" points=\"142.2,99.5 134.9,90.4 149.5,90.4\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-bqrw\" x=\"212\" y=\"40\"/><clipPath id=\"bqrw-hw\"><rect x=\"218\" y=\"32\" width=\"54\" height=\"16\"/></clipPath><g clip-path=\"url(#bqrw-hw)\"><g class=\"bqrw-h s-a\"><use href=\"#sxs-rows-bqrw\" x=\"212\" y=\"40\"/></g></g></g>",
+}
