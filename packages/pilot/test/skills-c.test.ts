@@ -180,6 +180,17 @@ describe('tools without geometry', () => {
     expect(JSON.stringify(out.output)).toMatch(/not cut/)
     expect(t.project.objects().some((o) => o.id === 'plate')).toBe(true)
   })
+  it('text_to_part names what it made, so a client and the reply card read the same part', async () => {
+    const t = toolsWith(null, false)
+    const cubeOut = await t.run('text_to_part', { name: '20 mm cube', solids: [{ type: 'box', sizeMm: [20, 20, 20] }] })
+    expect(cubeOut.output).toMatchObject({ objectId: '20-mm-cube', name: '20 mm cube', kind: 'cube', sizeMm: [20, 20, 20] })
+    const plate = await t.run('text_to_part', { name: 'Plate', solids: [{ type: 'plate', sizeMm: [40, 20, 3] }] })
+    expect(plate.output).toMatchObject({ kind: 'box' })
+    const rod = await t.run('text_to_part', { name: 'Rod', solids: [{ type: 'cylinder', diameterMm: 8, heightMm: 30 }] })
+    expect(rod.output).toMatchObject({ kind: 'cylinder' })
+    const holed = await t.run('text_to_part', { name: 'Holed', solids: [{ type: 'box', sizeMm: [20, 20, 20] }], holes: [{ diameterMm: 3, atMm: [10, 10, 0] }] })
+    expect(holed.output).toMatchObject({ kind: 'part' })
+  })
   it('threads_and_fits returns sizes with an honest note', async () => {
     const t = toolsWith([cube(20)], false)
     const out = await t.run('threads_and_fits', { features: [{ kind: 'insert', size: 'M3', atMm: [10, 10, 20] }] })

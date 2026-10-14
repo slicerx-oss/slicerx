@@ -6,7 +6,7 @@
 import { PERMISSION_LABELS, type ApprovalRequest, type PermissionMode, type PermissionPolicy } from '@slicerx/contracts'
 import { SKILL_INFO } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Inspector, Terminal, transcriptTurns, UsageLinkContext, usePilotRun, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
+import { DEFAULT_PART_LOOK, Inspector, PartLookContext, Terminal, transcriptTurns, UsageLinkContext, usePilotRun, type PartHandlers, type PartLook, type PolicyClass, type Suggestion } from '@slicerx/pilot/ui'
 import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, LinkButton, Menu, MenuAnchor, MenuItem } from '@slicerx/ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -63,6 +63,23 @@ export function emptyNote(watching: Watch, slices = hostSlices()): string {
   if (!slices) return `Describe a part and ${ASSISTANT_NAME} models it, or ask a material or printing question. Or pick one below.`
   return watching.attention ? `Something looked off on ${watching.names.join(', ')}. Ask what ${ASSISTANT_NAME} saw.` : watching.names.length ? `Watching ${watching.names.join(', ')}. Ask how the print is going, or pick a skill.` : 'Ask about a print, a failure or a setting, or pick a skill below.'
 }
+
+/** The part card's look while the owner picks one on the design picks page; goes once a look is picked. */
+function mockPartLook(): PartLook {
+  try {
+    const raw = localStorage.getItem('sx.mock.partLook')
+    return raw ? { ...DEFAULT_PART_LOOK, ...(JSON.parse(raw) as Partial<PartLook>) } : DEFAULT_PART_LOOK
+  } catch {
+    return DEFAULT_PART_LOOK
+  }
+}
+
+/** Select the part a reply made on the plate. */
+function pickPart(id: string): void {
+  set({ selection: id, selectedIds: [id], towerSelected: false })
+}
+
+const PART_HANDLERS: PartHandlers = { onEdit: pickPart, onSelect: pickPart }
 
 function DockBody() {
   const pilot = usePilot()
@@ -166,6 +183,12 @@ function DockRun(p: {
   const first = run.transcript.turns.find((t) => t.user)?.user ?? null
   const empty = emptyNote(p.watching)
   const slices = hostSlices()
+  const [partLook, setPartLook] = useState(mockPartLook)
+  useEffect(() => {
+    const on = () => setPartLook(mockPartLook())
+    window.addEventListener('sx-mock-part-look', on)
+    return () => window.removeEventListener('sx-mock-part-look', on)
+  }, [])
   return (
     <>
       {p.more ? null : <ChatGptCard compact />}
@@ -175,6 +198,7 @@ function DockRun(p: {
         </div>
       ) : (
       <UsageLinkContext.Provider value={openUsage}>
+      <PartLookContext.Provider value={partLook}>
       <Terminal
         sessionTitle={first ? first.slice(0, 40) : 'new'}
         transcript={run.transcript}
@@ -196,7 +220,9 @@ function DockRun(p: {
         emptyNote={empty}
         announcement={p.announcement}
         {...(slices ? {} : { placeholder: `Describe a part or ask ${ASSISTANT_NAME}` })}
+        parts={PART_HANDLERS}
       />
+      </PartLookContext.Provider>
       </UsageLinkContext.Provider>
       )}
       {phone ? (

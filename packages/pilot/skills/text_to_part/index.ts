@@ -10,7 +10,7 @@ import { z } from 'zod'
 import { defineSkill, type ToolContext } from '../../src/tool'
 import { partsBox } from '../orientation_search/geometry'
 import { cm3, densityOf, fmtSize, geomRun, geomTry, meshInfo, meshVolume, needsGeometry, num, partFromGeom, printNumbers, rec, round, toGeomMesh, triangleCount, type GeomMesh, type GeomSolid } from '../geom_common/index'
-import { HoleSpecInput, ProfileSpec, SolidSpec, buildSolids, planHoles, primMesh, primitives, profileRequest } from './solids'
+import { HoleSpecInput, ProfileSpec, SolidSpec, buildSolids, planHoles, primMesh, primitives, profileRequest, type Prim } from './solids'
 
 /**
  * The solids joined into one manifold body with the holes cut out, through sx-geom `boolean`. Null when
@@ -29,6 +29,15 @@ export async function unitedBody(ctx: ToolContext, solids: GeomSolid[], holes: G
 
 export function slug(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'part'
+}
+
+/** The part in a word, for the reply's card: one box is a cube or a box, one cylinder a cylinder, anything else a part. */
+export function partKind(prims: readonly Prim[], profiles: number, holes: number): 'cube' | 'box' | 'cylinder' | 'part' {
+  const [p, more] = prims
+  if (!p || more || profiles || holes) return 'part'
+  if (p.kind === 'cylinder') return 'cylinder'
+  const [x, y, z] = p.max.map((v, k) => round(v - (p.min[k] ?? 0), 3))
+  return x === y && y === z ? 'cube' : 'box'
 }
 
 export function createTextToPart() {
@@ -140,6 +149,8 @@ export function createTextToPart() {
         summary: `Added ${i.name}, ${fmtSize(size)}, ${cm3(volume)} cm3${i.holes.length ? holesMade ? `, ${solids.length} hole${solids.length === 1 ? '' : 's'}` : ', holes not cut' : ''}`,
         output: {
           objectId: id,
+          name: i.name,
+          kind: partKind(prims, i.profiles.length, i.holes.length),
           sizeMm: size,
           volumeCm3: cm3(volume),
           gramsIfSolid: grams,
