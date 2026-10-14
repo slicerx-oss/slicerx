@@ -24,6 +24,7 @@ import { setSettingsView } from './settings'
 import { settingsView } from '../workspaces/prepare/settings-view'
 import { autoSliceMode } from '../state/auto-slice-mode'
 import { cadShown } from '../state/model-mode'
+import { sketchMode, sketchModeText } from '../cad/sketch-mode'
 import { layerView } from '../workspaces/preview/layer-keys'
 import { slicePanes } from '../lib/slice-panes'
 import { uiState } from './ui-state'
@@ -71,6 +72,12 @@ export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'a
 
 function warning(w: SliceWarning): Record<string, unknown> {
   return { code: w.code, message: w.message, ...(w.objectId ? { objectId: w.objectId } : {}), ...(w.layer !== undefined ? { layer: w.layer } : {}) }
+}
+
+/** The open sketch as the view's mode pill shows it, or null. */
+function sketchState(): Record<string, unknown> | null {
+  const m = sketchMode()
+  return m ? { on: m.on, label: m.label, tool: m.tool, mode: sketchModeText(m) } : null
 }
 
 /** The app as an agent reads it: the tab, the plate with each object's parts and warnings, the printer and filament, and slicing. */
@@ -122,6 +129,9 @@ export function appState(s: AppState): Record<string, unknown> {
     ...(s.viewNotice ? { viewNotice: s.viewNotice } : {}),
     unsavedPrompt: s.unsavedPrompt?.what ?? null,
     multiBodyPrompt: s.multiBodyPrompt,
+    // An open sketch: where it draws (face, bed, plane, or a sketch opened again), the panel's words for it, the
+    // drawing tool, and the view's mode pill as it reads ("Sketching on a face · Line"). Null with no sketch open.
+    sketch: sketchState(),
     // The printer bridge: off, connecting, on, reconnecting (after a dropped connection, with the try it is on) or error.
     // While it reconnects the printer cards show their last known state and their controls are off (`cardsDisabled`).
     printerBridge: { state: s.bridgeStatus.state, ...(s.bridgeStatus.attempt ? { attempt: s.bridgeStatus.attempt } : {}), ...(s.bridgeStatus.state === 'reconnecting' ? { cardsDisabled: true } : {}), ...(s.bridgeStatus.state === 'error' && s.bridgeStatus.message ? { message: s.bridgeStatus.message } : {}) },
