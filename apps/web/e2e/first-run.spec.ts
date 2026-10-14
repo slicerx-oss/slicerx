@@ -287,10 +287,11 @@ test('Skip, use defaults closes setup; mimir shows and opens the connect step un
   await fresh(page, isMobile)
   await page.getByRole('button', { name: 'Skip, use defaults' }).click()
   await expect(page.locator('.fr')).toHaveCount(0)
-  await page.locator('.mimir-btn').click()
+  // a phone opens mimir from its tab bar, and leaves it for the first tab
+  await page.locator(isMobile ? '[data-testid="phone-tabs"] [data-tab="mimir"]' : '.mimir-btn').click()
   await expect(page.locator('.mimir-connect')).toContainText('Nothing is sent until you connect')
   await expect(page.locator('.mimir-connect').getByRole('radiogroup', { name: 'Model provider' })).toBeVisible()
-  await page.locator('.mimir-btn').click()
+  await page.locator(isMobile ? '.phone-tab >> nth=0' : '.mimir-btn').click()
   await expect(page.locator('.mimir-dock')).toHaveCount(0)
   // A question offers mimir, and choosing it opens the same step with the question waiting.
   await page.keyboard.press('ControlOrMeta+k')
