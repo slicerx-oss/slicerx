@@ -171,7 +171,7 @@ std::filesystem::path scratch_file()
     return std::filesystem::temp_directory_path() / ("sx_brep_" + std::to_string(tag) + "_" + std::to_string(++n) + ".smb");
 }
 
-// the kernel's reader trusts its input, so saved text carries a hash of itself and nothing else gets read
+// the checksum detects changed text; it does not authenticate the body
 const char* kSeal = "//sx-brep fnv1a64 ";
 
 std::string seal_of(const std::string& text)
@@ -188,6 +188,7 @@ const char* kKeys = "//sx-brep keys";
 
 SmBrep* read_smb(const std::string& sealed, const char* k)
 {
+    if (sealed.size() > 8 * 1024 * 1024) throw Error(k, "saved body exceeds 8 MiB");
     size_t at = sealed.rfind(kSeal);
     std::string text = at == std::string::npos ? std::string() : sealed.substr(0, at);
     if (at == std::string::npos || sealed.compare(at, std::string::npos, seal_of(text)) != 0)
@@ -1817,7 +1818,17 @@ char* sx_brep_call(const char* op, const char* request)
         }
     } unload;
     try {
-        Value r = sxj::Parser(request ? std::string(request) : std::string("{}")).parse();
+        size_t op_size = 0;
+        if (op) {
+            while (op_size <= sxj::kMaxOperationBytes && op[op_size]) ++op_size;
+            if (op_size > sxj::kMaxOperationBytes) throw Error("op", "exceeds 128 bytes");
+        }
+        size_t size = 0;
+        if (request) {
+            while (size <= sxj::kMaxRequestBytes && request[size]) ++size;
+            if (size > sxj::kMaxRequestBytes) throw Error("request", "exceeds 32 MiB");
+        }
+        Value r = sxj::Parser(request ? std::string(request, size) : std::string("{}")).parse();
         const Value& salt = r["keySalt"];
         keys.on = salt.kind == Value::Number && salt.n >= 0 && salt.n == std::floor(salt.n) && salt.n < 9007199254740992.0;
         keys.salt = keys.on ? (unsigned long long)salt.n : 0;
