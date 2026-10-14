@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The tooltip demo loops, by id: each is a stage loop (packages/ui tooltip-stage), a module under ../demos that loads
-// when a tip first shows it. An anchor names one with data-tip-demo (or its registry tip does). A loop's sentence is
-// the tip's text when the anchor has none of its own.
+// when a tip first shows it. A loop's sentence is the tip's text when the anchor has none of its own.
+// To add a loop: write ../demos/<id>.ts (a `loop: StageTool`, drawn by the loop builder), add one entry to OWN below
+// (its id, the module import, the sentence), then point a tip at it: `demo: '<id>'` on a registry tip or tipAttrs,
+// or data-tip-demo="<id>" on the anchor. Dark and light come from the stage tokens, and the finished frame (shown
+// paused before the loop plays, and under reduced motion) is the poster, so an entry needs no other files.
 import type { StageDemo, TipDemo } from '@slicerx/ui'
 
 const demo = (stage: StageDemo['stage'], label: string): TipDemo => ({ stage, label, body: label })
