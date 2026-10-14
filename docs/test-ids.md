@@ -541,3 +541,4 @@ Ids that tests read for their text:
 | `plate-sheet-search` | The sheet's Find a plate field: words of the name, or a plate number |
 | `plate-sheet-all`, `plate-sheet-not-sliced` | The sheet's All and Not sliced filter |
 | `ph-placeholder` | The phone view's placeholder |
+| `ph-no-camera` | The live view's line under the placeholder when the printer has no camera, so the camera guard can't watch it |
