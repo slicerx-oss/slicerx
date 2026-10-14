@@ -227,7 +227,8 @@ fn boolean_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value>
     let wb: Vec<TriMesh> = b.iter().map(Item::world).collect();
     let (m, mut r) = boolean::boolean(&wa, &wb, op, &opts)?;
     let m = boolean::tidy(m, &mut r);
-    let mut v = mesh_report(&first.to_local(&m)?, enc);
+    let m = boolean::storage_mesh(&first.to_local(&m)?)?;
+    let mut v = mesh_report(&m, enc);
     insert(&mut v, "report", to_value(&r)?);
     Ok(v)
 }
@@ -325,6 +326,7 @@ fn tool_reply(
         (Some(t), face::Operation::Join | face::Operation::Cut) => (t.to_local(&r.mesh)?, true),
         _ => (r.mesh, false),
     };
+    let mesh = boolean::storage_mesh(&mesh)?;
     let mut v = mesh_report(&mesh, enc);
     insert(&mut v, "frame", json!(if local { "target" } else { "world" }));
     insert(&mut v, "tool", enc.mesh(&r.tool));
@@ -512,7 +514,8 @@ fn push_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     let d: f64 = field(req, "distanceMm")?;
     let opts: BooleanOptions = field_or_default(req, "options")?;
     let r = push::push_face(&it.world(), triangle, at, d, &opts)?;
-    let mut v = mesh_report(&it.to_local(&r.mesh)?, enc);
+    let mesh = boolean::storage_mesh(&it.to_local(&r.mesh)?)?;
+    let mut v = mesh_report(&mesh, enc);
     insert(&mut v, "tool", enc.mesh(&r.tool));
     insert(&mut v, "operation", json!(r.operation));
     insert(&mut v, "report", to_value(&r.report)?);
