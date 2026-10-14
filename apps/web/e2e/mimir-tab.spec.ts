@@ -334,6 +334,33 @@ test.describe('the mimir tab', () => {
     await expect.poll(plate).toEqual([{ name: 'Box with lid', parts: ['Box', 'Lid'], steps: 3 }])
   })
 
+  test('a finished part brings up the spools under the run, and a click there picks the spool it prints with', async ({ page }) => {
+    await open(page, 'dark', { printerId: 'bay-1' })
+    await openEmpty(page)
+    const composer = page.getByTestId('mimir-composer')
+    await composer.getByRole('textbox').fill('Can you make a box with a lid?')
+    await composer.getByRole('button', { name: 'Send' }).click()
+    // no pick while the run waits on the sizes
+    await expect(page.getByTestId('mimir-sheet-build')).toBeVisible()
+    await expect(page.getByTestId('mimir-filament')).toHaveCount(0)
+    await page.getByTestId('mimir-sheet-build').click()
+    await expect(page.getByTestId('mimir-transcript')).toContainText('Done: the box and its lid', { timeout: 30_000 })
+    const pick = page.getByTestId('mimir-filament')
+    await expect(pick).toBeVisible()
+    const spools = pick.getByTestId('slice-filament-slot')
+    expect(await spools.count()).toBeGreaterThan(1)
+    // the part is selected after the build, so a click moves it; nothing in the card moves
+    const slot = Number(await pick.locator('[data-testid="slice-filament-slot"][data-parts="0"]:not([data-empty])').first().getAttribute('data-slot'))
+    const free = pick.locator(`[data-testid="slice-filament-slot"][data-slot="${slot}"]`)
+    const at = await pick.boundingBox()
+    await free.click()
+    await expect(free).not.toHaveAttribute('data-parts', '0')
+    expect(await pick.boundingBox()).toEqual(at)
+    const slots = await page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: { slotOverrides?: Record<string, number>; handle: { parts: { name: string; slot: number }[] } }[] } } }).__sx.getState().plate.flatMap((e) => e.handle.parts.map((p) => e.slotOverrides?.[p.name] ?? p.slot)))
+    expect(slots).toContain(slot)
+    await page.screenshot({ path: test.info().outputPath('mimir-filament-dark.png') })
+  })
+
   for (const scheme of ['dark', 'light'] as const) {
     test(`screenshot, empty, ${scheme}`, async ({ page }, info) => {
       await open(page, scheme)
