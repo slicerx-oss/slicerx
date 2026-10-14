@@ -41,12 +41,13 @@ async function shutAndOpen(page: Page, side: 'left' | 'right', panel: string, ke
   await expect(tab).toHaveAttribute('aria-expanded', 'true')
   await expect(body).toBeVisible()
   const before = await viewAt(page, () => true)
+  const paneWidth = shutsFully ? await page.locator(`.pane[data-side="${side}"]`).evaluate((el) => Math.round(el.getBoundingClientRect().width)) : 0
   const cam = await target(page)
   await tab.click()
   await expect(tab).toHaveAttribute('aria-expanded', 'false')
   await expect(body).toBeHidden()
   // The view and its canvas take the freed width: all of the pane's on Model, all but the icon rail on Slice.
-  await viewAt(page, (w) => w - before > (shutsFully ? 250 : 180))
+  await viewAt(page, (w) => (shutsFully ? w - before >= paneWidth - 2 : w - before > 180))
   // No jump: the camera keeps its target, so the model stays at the middle of the wider view.
   expect(await target(page)).toEqual(cam)
   await tab.click()
