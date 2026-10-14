@@ -144,6 +144,8 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-sheet-foot .sx-btn { min-height: 44px; }
 :root[data-phone] .mimir-chat .composer-text { height: 40px; font-size: 16px; }
 :root[data-phone] .mimir-chat .composer .sx-btn { width: 44px; height: 44px; }
-/* surface steps (mock only): the bubble sits on the card step and the composer on the field step */
-html[data-surface-step] .mimir-chat.sx-pilot { --t-bubble: var(--panel); }
-html[data-surface-step] .mimir-chat .composer { background: var(--panel-2); border-color: var(--panel-line); }
+/* the surface ladder at the owner's medium step (U1), chat only until it is checked on every surface: the bubble
+   and cards one step off the page, the composer two */
+.mimir-chat { --panel: color-mix(in srgb, var(--ink-1), var(--fg) 7%); --panel-2: color-mix(in srgb, var(--ink-1), var(--fg) 14%); --panel-line: var(--line); }
+.mimir-chat.sx-pilot { --t-bubble: var(--panel); }
+.mimir-chat .composer { background: var(--panel-2); border-color: var(--panel-line); }
