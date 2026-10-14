@@ -126,3 +126,21 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mimir-sheet-hint[data-bad] { color: var(--red); }
 .mimir-sheet-foot { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line-soft); }
 .mimir-sheet-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-sm); }
+/* On a phone the tab stacks: the view on top, the chat under it to the tab bar. The lookup cards are one row along
+   the view's bottom that scrolls sideways, and the dimension sheet's list takes the chat's place while it is up. */
+:root[data-phone] .studio[data-model-mode="mimir"] { flex-direction: column; height: calc(100dvh - var(--h-bar) - var(--phone-tabbar-h)); --mimir-view-h: 42%; }
+:root[data-phone] .studio[data-model-mode="mimir"] > .vp { order: 0; flex: none; height: var(--mimir-view-h); min-height: 0; }
+:root[data-phone] .studio[data-model-mode="mimir"] > .mimir-chat { order: 1; flex: 1; width: 100%; min-height: 0; border-right: 0; border-top: 1px solid var(--line-soft); }
+:root[data-phone] .mimir-split { display: none; }
+:root[data-phone] .mimir-chat-head { height: 44px; }
+:root[data-phone] .mimir-chat-head .sx-btn { width: 44px; height: 44px; }
+:root[data-phone] .mimir-lookups { left: 0; right: 0; bottom: 8px; max-width: none; padding: 0 12px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(232px, 78%); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; }
+:root[data-phone] .mimir-lookup { scroll-snap-align: start; }
+:root[data-phone] .mimir-lookup-h .sx-btn { width: 32px; height: 32px; }
+:root[data-phone] .vp[data-mimir-sheet] .mimir-lookups { right: 0; max-width: none; }
+:root[data-phone] .studio > .vp { --mimir-sheet-w: 0px; }
+:root[data-phone] .mimir-sheet-panel { position: fixed; left: 0; right: 0; top: calc(var(--h-bar) + (100dvh - var(--h-bar) - var(--phone-tabbar-h)) * 0.42); bottom: var(--phone-tabbar-h); width: auto; z-index: 6; border-left: 0; border-top: 1px solid var(--line-soft); }
+:root[data-phone] .mimir-sheet-row { min-height: 48px; grid-template-columns: 22px minmax(0, 1fr) 84px 92px; }
+:root[data-phone] .mimir-sheet-foot .sx-btn { min-height: 44px; }
+:root[data-phone] .mimir-chat .composer-text { height: 40px; font-size: 16px; }
+:root[data-phone] .mimir-chat .composer .sx-btn { width: 44px; height: 44px; }
