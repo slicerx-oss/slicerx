@@ -73,7 +73,7 @@ During alpha, mimir cloud saves free chats for 30 days to improve mimir. Each ed
 | `x-sx-session` | one id per conversation, 1 to 64 letters, digits, `_` or `-` (16 random bytes as base64url works). Without it, the turn is filed under one session per install and Melbourne day. |
 | `x-sx-version` | your app's version, 1 to 40 letters, digits, `.`, `+` or `-` |
 
-Only a call that answered in full is saved. The reply keeps every tool call with its whole input, so a design can be replayed. Images are stored as a placeholder, without their data. The system prompt and tool list are stored once per distinct text, not in every turn, and a turn over 1 MB isn't saved. Give the user a switch that sends `x-sx-share: 0` and a way to delete what was saved (`/forget`). With `@slicerx/pilot`, pass `share: () => ({ on, version })` to `createTransportClient`; `on: false` sends the `0`.
+Only a call that answered in full is saved. The reply keeps every tool call with its whole input, so a design can be replayed. Images are stored as a placeholder, without their data. The system prompt and tool list are stored once per distinct text, not in every turn, and a turn over 1 MB isn't saved. In a public release, give the user a switch that sends `x-sx-share: 0` and a way to delete what was saved (`/forget`). A closed test, where people join your app as testers, can make saving a condition of testing and leave the switch out, as long as your app tells testers before their first chat that their mimir chats are saved for 30 days to improve mimir. With `@slicerx/pilot`, pass `share: () => ({ on, version })` to `createTransportClient`; `on: false` sends the `0`.
 
 ## Today's use
 
