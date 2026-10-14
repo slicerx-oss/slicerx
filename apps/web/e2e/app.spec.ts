@@ -131,7 +131,11 @@ test('Settings opens with Account and Phone access', async ({ page }) => {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Settings' })
   await expect(dialog).toBeVisible()
+  // a phone opens Settings on its list of sections
+  const list = dialog.getByTestId('settings-list')
+  if (await list.isVisible()) await list.getByRole('button', { name: 'Account' }).click()
   await expect(dialog.getByRole('heading', { name: 'Account' })).toBeVisible()
+  if (await dialog.getByTestId('settings-back').isVisible()) await dialog.getByTestId('settings-back').click()
   await dialog.getByRole('button', { name: 'Phone access' }).click()
   const sw = dialog.getByRole('switch', { name: /Phone access on this network/ })
   await expect(sw).toHaveAttribute('aria-checked', 'false')

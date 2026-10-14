@@ -213,6 +213,8 @@ test('Settings, Look and feel: theme, accent, text and accessibility; Slicing an
   await noHorizontalScroll(page)
   // Auto slice, the electricity price and the drawing tools moved to their own page.
   await expect(dialog.getByRole('radiogroup', { name: 'Auto slice' })).toHaveCount(0)
+  // a phone shows one section at a time: back to the list first
+  if (await dialog.getByTestId('settings-back').isVisible()) await dialog.getByTestId('settings-back').click()
   await nav.getByRole('button', { name: 'Slicing and modeling' }).click()
   await expect(dialog.getByRole('radiogroup', { name: 'Auto slice' })).toBeVisible()
   await expect(dialog.getByText('Drawing tools')).toBeVisible()

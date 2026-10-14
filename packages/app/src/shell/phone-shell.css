@@ -22,6 +22,8 @@
 :root[data-phone] #root { height: 100%; }
 :root[data-phone] .sx-frame-root { height: 100dvh; padding: 0; }
 :root[data-phone] .sx-frame { flex: 1; height: 100%; border: 0; border-radius: 0; background: var(--ink-1); }
+/* clip, not hidden: focusing the mimir composer scrolled the frame a pixel and moved both bars */
+:root[data-phone] .sx-frame { overflow: clip; }
 :root[data-phone] .sx-main { overflow: hidden auto; overscroll-behavior: contain; }
 /* the status line has nothing a phone needs; loading and progress show where they happen */
 :root[data-phone] .sx-status { display: none; }
