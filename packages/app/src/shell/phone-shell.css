@@ -1,0 +1,133 @@
+/* SPDX-License-Identifier: Apache-2.0
+   Copyright (C) 2026 The SlicerX contributors */
+/* The app shell on a phone (html[data-phone]: a touch screen 900 px wide or less). The window is the app: no frame
+   card, no page scroll. The top bar keeps the project name, Search and Settings; the tabs and mimir are in the tab bar
+   at the bottom. .sx-main is the one box between the two bars, and what a workspace draws sizes to it, or to
+   calc(100dvh - var(--h-bar) - var(--phone-tabbar-h)). Every rule here is phone only, so the desktop never changes. */
+:root[data-phone] {
+  --h-bar: 48px;
+  --phone-tabbar-h: 0px;
+  /* how far the on-screen keyboard reaches up from the bottom edge (phone-tabs.tsx), 0 when it is shut */
+  --phone-kb: 0px;
+  /* toasts rest just above the tab bar */
+  --toast-floor: 12px;
+}
+:root[data-phone][data-phone-tabs] { --phone-tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px)); --toast-floor: 68px; }
+
+:root[data-phone], :root[data-phone] body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+:root[data-phone] #root { height: 100%; }
+:root[data-phone] .sx-frame-root { height: 100dvh; padding: 0; }
+:root[data-phone] .sx-frame { flex: 1; height: 100%; border: 0; border-radius: 0; background: var(--ink-1); }
+:root[data-phone] .sx-main { overflow: hidden auto; overscroll-behavior: contain; }
+/* the status line has nothing a phone needs; loading and progress show where they happen */
+:root[data-phone] .sx-status { display: none; }
+
+/* Top bar: the mark, the project name, then Search and Settings at full touch size. */
+:root[data-phone] .sx-appbar-phone { gap: var(--s-3); height: var(--h-bar); padding: 0 var(--s-1) 0 var(--s-4); }
+:root[data-phone] .sx-appbar-phone .sx-projname { display: flex; flex: 1; height: 24px; padding-left: var(--s-3); font-size: var(--fs-body); }
+:root[data-phone] .sx-appbar-phone .sx-appbar-right { gap: 0; }
+:root[data-phone] .sx-appbar-phone .sx-appbar-right > .sx-btn { width: 44px; height: 44px; padding: 0; justify-content: center; }
+:root[data-phone] .sx-appbar-phone .sx-appbar-right > .sx-btn .sx-ic { width: 20px; height: 20px; }
+
+/* The tab bar: equal cells, icon over label. The current tab changes color and draws a bar on its top edge, which is
+   absolutely placed, so no tab changes size or moves when pressed. */
+.phone-tabs { position: relative; z-index: 10; display: flex; height: var(--phone-tabbar-h); padding: 0 var(--s-2) env(safe-area-inset-bottom, 0px); border-top: 1px solid var(--line-soft); background: var(--ink-1); }
+.phone-tab { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 56px; padding: 0; border: 0; background: none; color: var(--muted); font: var(--fw-semibold) var(--fs-xs) / 1 var(--f-body); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.phone-tab::before { content: ""; position: absolute; top: -1px; left: 50%; width: 32px; height: 2px; margin-left: -16px; border-radius: 0 0 2px 2px; background: transparent; }
+.phone-tab[aria-current="page"] { color: var(--fg); }
+.phone-tab[aria-current="page"]::before { background: var(--accent); }
+.phone-tab[aria-current="page"] .phone-tab-ic { color: var(--accent); }
+.phone-tab:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); border-radius: var(--r-md); }
+.phone-tab-ic { position: relative; display: inline-flex; }
+.phone-tab-ic .sx-ic { width: 24px; height: 24px; }
+.phone-tab-dot { position: absolute; top: -1px; right: -4px; margin: 0; }
+.phone-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* mimir is a page over the workspace, between the bars (lifted by the keyboard while it is up). The workspace keeps
+   running under it, so Model comes back as it was. Its name is on the tab, so the panel header goes. */
+:root[data-phone] .mimir-dock {
+  position: fixed; top: var(--h-bar); bottom: max(var(--phone-tabbar-h), var(--phone-kb)); left: 0; right: 0; width: auto; z-index: calc(var(--z-rail-peek) + 3);
+  grid-template-rows: auto auto minmax(0, 1fr); border: 0; background: var(--ink-1); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+:root[data-phone] .mimir-dock.sx-pilot { --t-bg: var(--ink-1); }
+:root[data-phone] .mimir-dock > .mimir-head { display: none; }
+/* the conversation's own links sit on one row above it, sideways if they do not fit */
+:root[data-phone] .mimir-dock > .mimir-foot { grid-row: 1; flex-wrap: nowrap; justify-content: flex-start; gap: var(--s-1); padding: 0 var(--s-2); border-top: 0; border-bottom: 1px solid var(--line-soft); overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+:root[data-phone] .mimir-dock > .mimir-foot .sx-linkbtn, :root[data-phone] .mimir-dock > .mimir-foot > button { flex: none; min-height: 44px; padding: 0 var(--s-2); white-space: nowrap; }
+:root[data-phone] .mimir-dock > .cg-compact { grid-row: 2; }
+:root[data-phone] .mimir-dock > .term, :root[data-phone] .mimir-dock > .mimir-more, :root[data-phone] .mimir-dock > .ws-loading { grid-row: 3; }
+:root[data-phone] .mimir-dock > .pc-notice { grid-row: 1 / 4; margin: var(--s-3); }
+:root[data-phone] .mimir-dock > .mimir-connect { grid-row: 1 / 4; padding: var(--s-4); gap: var(--s-4); }
+:root[data-phone] .mimir-dock .term { border-bottom: 0; }
+:root[data-phone] .mimir-dock .term-bar { min-height: 44px; padding: 0 var(--s-2) 0 var(--s-4); flex-wrap: nowrap; }
+:root[data-phone] .mimir-dock .term-title { display: none; }
+:root[data-phone] .mimir-dock .ctrl { flex: 1; justify-content: flex-end; }
+:root[data-phone] .mimir-dock .ibtn { width: 44px; height: 44px; }
+:root[data-phone] .mimir-dock .pp-switch { min-height: 44px; order: -1; margin-right: auto; padding: 0; }
+:root[data-phone] .mimir-dock .term-body { padding: var(--s-4) var(--s-4) var(--s-5); }
+:root[data-phone] .mimir-dock .term-in { padding: var(--s-2) var(--s-3) var(--s-3); }
+:root[data-phone] .mimir-dock .in-row { height: 48px; }
+/* 16 px keeps a phone browser from zooming into the field */
+:root[data-phone] .mimir-dock .in-row input { font-size: 16px; }
+:root[data-phone] .mimir-dock .in-row .sx-btn { height: 40px; min-width: 56px; }
+:root[data-phone] .mimir-dock .chips { flex-wrap: nowrap; margin: var(--s-2) calc(-1 * var(--s-3)) 0; padding: 0 var(--s-3); overflow-x: auto; scrollbar-width: none; }
+:root[data-phone] .mimir-dock .sugg { flex: none; height: 44px; padding: 0 var(--s-4); }
+/* the setup and sign-in: full-width cards and a full-width send */
+:root[data-phone] .mimir-dock .ms-card { min-height: 64px; }
+:root[data-phone] .ms-signin .si-row { flex-direction: column; }
+:root[data-phone] .ms-signin .si-row > * { flex: none; width: 100%; min-height: 44px; }
+:root[data-phone] .ms-signin .si-row input { font-size: 16px; }
+
+/* Settings: a full-screen page. A list of sections first, a section with Back after (settings.tsx). */
+:root[data-phone] .settings-dialog[open] { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; background: var(--ink-1); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+:root[data-phone] .settings-dialog .sx-dialog-h { min-height: var(--h-bar); padding: 0 var(--s-1) 0 var(--s-4); border-bottom: 1px solid var(--line-soft); }
+:root[data-phone] .settings-dialog .sx-dialog-h h2 { font-size: var(--fs-lg); }
+:root[data-phone] .settings-dialog .sx-dialog-close { width: 44px; height: 44px; }
+:root[data-phone] .settings-dialog .sx-dialog-close .sx-ic { width: 20px; height: 20px; }
+:root[data-phone] .settings-dialog .sx-dialog-body { flex: 1 1 0; min-height: 0; overflow: auto; padding: var(--s-4); overscroll-behavior: contain; }
+:root[data-phone] .settings-dialog .settings { display: block; min-height: 0; }
+:root[data-phone] .settings-back { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 44px; margin: calc(-1 * var(--s-3)) 0 var(--s-2) calc(-1 * var(--s-2)); padding: 0 var(--s-2); border: 0; border-radius: var(--r-sm); background: none; color: var(--accent); font: var(--fw-medium) var(--fs-body) var(--f-body); cursor: pointer; }
+:root[data-phone] .settings-back:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+:root[data-phone] .settings-list { display: grid; margin: calc(-1 * var(--s-4)) calc(-1 * var(--s-4)) 0; padding: 0; list-style: none; }
+:root[data-phone] .settings-list button { display: grid; grid-template-columns: 24px minmax(0, 1fr) 16px; align-items: center; gap: var(--s-3); width: 100%; min-height: 52px; padding: 0 var(--s-4); border: 0; border-bottom: 1px solid var(--line-soft); background: none; color: var(--fg); font: var(--fw-medium) var(--fs-body) var(--f-body); text-align: left; cursor: pointer; }
+:root[data-phone] .settings-list button:active { background: var(--ink-2); }
+:root[data-phone] .settings-list button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+:root[data-phone] .settings-list .sx-ic { width: 20px; height: 20px; color: var(--muted); }
+:root[data-phone] .settings-list .settings-list-go { color: var(--dim); }
+:root[data-phone] .settings-list-about { color: var(--muted) !important; }
+:root[data-phone] .settings-body { gap: var(--s-5); }
+/* rows and fields in a section get full touch size */
+:root[data-phone] .settings-body .sx-switchrow { min-height: 44px; }
+:root[data-phone] .settings-body .sx-btn { min-height: 44px; }
+:root[data-phone] .settings-body .sx-input, :root[data-phone] .settings-body select { min-height: 44px; font-size: 16px; }
+
+/* First run and the agreement: the footer action fills its row, every button is a full touch target. */
+:root[data-phone] .fr { grid-template-rows: var(--h-bar) 2px minmax(0, 1fr); height: 100dvh; }
+:root[data-phone] .fr-top { padding: 0 var(--s-2) 0 var(--s-4); }
+:root[data-phone] .fr-top .fr-textbtn, :root[data-phone] .fr-top .sx-btn { min-height: 44px; }
+:root[data-phone] .fr-body { padding: var(--s-5) var(--s-4) var(--s-6); }
+:root[data-phone] .fr-title.fr-display { font-size: calc(26px * var(--text-scale)); }
+:root[data-phone] .fr-lede { font-size: var(--fs-body); }
+:root[data-phone] .fr-foot { padding: var(--s-2) var(--s-4) calc(var(--s-2) + env(safe-area-inset-bottom, 0px)); }
+:root[data-phone] .fr-foot-in { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "links links" "back next"; column-gap: var(--s-2); }
+:root[data-phone] .fr-foot-in:not(:has(.fr-foot-links)) { grid-template-areas: "back next"; }
+:root[data-phone] .fr-foot-in:not(:has(.fr-back)) { grid-template-areas: "links links" "next next"; }
+:root[data-phone] .fr-foot-in:not(:has(.fr-back)):not(:has(.fr-foot-links)) { grid-template-areas: "next next"; }
+:root[data-phone] .fr-foot-next { justify-self: stretch; }
+:root[data-phone] .fr-foot-next > .sx-btn { flex: 1; justify-content: center; min-height: 48px; }
+:root[data-phone] .fr-foot-next .fr-foot-hint { display: none; }
+:root[data-phone] .fr-back { min-height: 48px; }
+:root[data-phone] .fr-foot-links .sx-btn, :root[data-phone] .fr-foot-links .fr-textbtn { min-height: 44px; }
+:root[data-phone] .fr .ms-card { align-items: flex-start; }
+:root[data-phone] .fr .ms-card-ic { height: 24px; }
+:root[data-phone] .fra-point { grid-template-columns: 28px minmax(0, 1fr); align-items: start; padding: var(--s-4) var(--s-4) var(--s-4) var(--s-3); }
+:root[data-phone] .fra-point-ic { width: 28px; height: 28px; align-self: start; }
+:root[data-phone] .fra-point-ic .sx-ic { width: 22px; height: 22px; }
+:root[data-phone] .fra-point-title { font-size: var(--fs-body); }
+:root[data-phone] .fra-check { min-height: 44px; align-items: center; }
+:root[data-phone] .fra-check input { width: 22px; height: 22px; margin-top: 0; }
+:root[data-phone] .ws-error { min-height: 0; }
+/* the agreement's footer is its one action, the width of the screen */
+:root[data-phone] .fra .fr-foot-in { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; }
+:root[data-phone] .fra .fr-foot-in > span { display: none; }
+:root[data-phone] .fra .fr-next-btn { width: 100%; min-height: 48px; justify-content: center; }

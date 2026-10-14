@@ -26,6 +26,7 @@ import { CommandBar } from './shell/command-bar'
 import { bridgeConnector } from './link/connector'
 import { ApprovalDialog, Status, ToastBridge } from './shell/overlays'
 import { TopBar } from './shell/top-bar'
+import { PhoneTabs } from './shell/phone-tabs'
 import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice } from './first-run/look'
 import { useAskForPrinter } from './first-run/ask-printer'
 import { addFileRefs } from './state/actions'
@@ -276,7 +277,15 @@ function Shell() {
   const Feature = current?.component ?? null
   return (
     <>
-      <Frame bar={<TopBar />} status={<Status />} className="app" data-workspace={workspace}>
+      <Frame
+        bar={<TopBar />}
+        status={
+          <>
+            <Status />
+            <PhoneTabs />
+          </>
+        }
+        className="app" data-workspace={workspace}>
         <WorkspaceBoundary name={shownName}>
           {covered ? null : (
             <Suspense fallback={<Loading />}>

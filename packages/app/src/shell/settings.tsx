@@ -15,6 +15,7 @@ import { PendingRemovals, RemoteRows } from '../features/phone/remote-rows'
 import { hostSlices } from '../state/model-mode'
 import { set, useApp } from '../state/store'
 import { Loading } from './loading'
+import { usePhoneLayout } from '../lib/phone-layout'
 
 const PHONE_ID = 'phone'
 const PilotSettingsSection = lazy(() => import('../pilot-connect/settings-section').then((m) => ({ default: m.PilotSettingsSection })))
@@ -60,6 +61,17 @@ export function SettingsDialog() {
     ...(settings.some((s) => s.id === PILOT_ID) ? [] : [{ id: PILOT_ID, label: ASSISTANT_NAME, icon: 'mimir' as IconName }]),
   ]
   const id = [want, picked].find((x) => x && sections.some((s) => s.id === x)) ?? sections[0]?.id
+  // A phone opens on the list of sections, and a section on its own page with Back; a section asked for from
+  // elsewhere opens straight on its page.
+  const phone = usePhoneLayout()
+  const listed = phone && sections.length > 1 && !(want && sections.some((s) => s.id === want)) && !(picked && sections.some((s) => s.id === picked))
+  const back = () => {
+    setPicked(null)
+    set({ settingsSection: null })
+  }
+  useEffect(() => {
+    if (!open) setPicked(null)
+  }, [open])
   // On a phone the sections are one scrolling row. Opening Settings, or a section opened from elsewhere, brings that
   // tab fully into view; a tap on the row never moves it. An edge with more tabs past it fades out rather than cutting
   // a tab in half.
@@ -95,16 +107,46 @@ export function SettingsDialog() {
       className="settings-dialog"
       splitFooter
       footer={
+        phone ? null : (
         <>
           <Button variant="ghost" onClick={() => set({ settingsOpen: false, settingsSection: null, aboutOpen: true })}>
             About {edition.brand.name}
           </Button>
           <Button onClick={close}>Close</Button>
         </>
+        )
       }
     >
+      {listed ? (
+        <nav aria-label="Settings sections">
+        <ul className="settings-list" data-testid="settings-list">
+          {sections.map((s) => (
+            <li key={s.id}>
+              <button type="button" data-testid={`settings-nav-${s.id}`} onClick={() => setPicked(s.id)}>
+                <Icon name={s.icon} />
+                {s.label}
+                <Icon name="chevron-right" className="settings-list-go" />
+              </button>
+            </li>
+          ))}
+          <li>
+            <button type="button" className="settings-list-about" onClick={() => set({ settingsOpen: false, settingsSection: null, aboutOpen: true })}>
+              <Icon name="info" />
+              About {edition.brand.name}
+              <Icon name="chevron-right" className="settings-list-go" />
+            </button>
+          </li>
+        </ul>
+        </nav>
+      ) : (
       <div className="settings">
-        {sections.length > 1 ? (
+        {phone && sections.length > 1 ? (
+          <button type="button" className="settings-back" data-testid="settings-back" onClick={back}>
+            <Icon name="chevron-left" />
+            All settings
+          </button>
+        ) : null}
+        {sections.length > 1 && !phone ? (
           <nav ref={nav} className="settings-nav" aria-label="Settings sections" onScroll={measure} data-more-start={edges.start || undefined} data-more-end={edges.end || undefined}>
             {sections.map((s) => (
               <button key={s.id} type="button" data-testid={`settings-nav-${s.id}`} aria-current={id === s.id ? 'true' : undefined} onClick={() => setPicked(s.id)}>
@@ -154,6 +196,7 @@ export function SettingsDialog() {
           )}
         </div>
       </div>
+      )}
     </Dialog>
   )
 }
