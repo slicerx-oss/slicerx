@@ -4,7 +4,7 @@
 // suits it comes first), and the thread is cut in place as a step of the object's history. The clearance is the
 // measured fit (plate/clearance.ts), at most a quarter of the pitch (thread-spec.ts).
 import type { PickEvent } from '@slicerx/viewport'
-import { Icon, Select } from '@slicerx/ui'
+import { Select } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { threadFind, type ThreadTarget } from '../geom/cad'
 import { toGeom } from '../geom/client'
@@ -16,7 +16,7 @@ import { edgeLines } from './edges'
 import { applyThread } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
+import { close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 import { threadSpecFor } from './thread-spec'
 
@@ -119,30 +119,27 @@ export function ThreadTool() {
     <Shell title="Thread" aside={edit ? `Editing step ${edit.index + 1}` : t ? `${t.internal ? 'Hole' : 'Rod'} ${mm(t.diameterMm)}, ${mm(t.lengthMm)} long` : 'Nothing picked yet'}>
       <PointerHint text={t ? 'Click another hole or rod to thread that one instead.' : 'Click the wall of a round hole, or the side of a rod or boss.'} />
       {sizes.length ? (
-        <div className="cad-row">
-          <span>Size</span>
-          <Select id="thread-size" aria-label="Thread size" value={size} onChange={(ev) => setSize(ev.target.value)}>
+        <Row label="Size" htmlFor="thread-size">
+          <Select id="thread-size" size="sm" aria-label="Thread size" value={size} onChange={(ev) => setSize(ev.target.value)}>
             {sizes.map((s) => (
               <option key={s.name} value={s.name}>{`${s.name} x ${s.pitchMm}`}</option>
             ))}
           </Select>
-        </div>
+        </Row>
       ) : edit ? (
-        <p className="cad-hint">{edit.params.label}. Click the hole or rod again to pick another size.</p>
+        <Note>{edit.params.label}. Click the hole or rod again to pick another size.</Note>
       ) : null}
       {t ? (
-        <div className="cad-pair">
-          <Num id="thread-length" label="Length" unit="mm" value={length} onChange={setLength} onEnter={() => void apply()} />
-        </div>
+        <Num id="thread-length" label="Length" unit="mm" value={length} onChange={setLength} onEnter={() => void apply()} />
       ) : null}
       {sized ? (
-        <div className="cad-hint" data-testid="thread-words">
+        <Note testId="thread-words">
           {sized.words.map((w) => (
-            <p key={w}>{w}</p>
+            <span key={w} className="tp-line">{w}</span>
           ))}
-        </div>
+        </Note>
       ) : null}
-      {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
+      {note ? <Message text={note} /> : null}
       <ToolFooter verb="Cut thread" onApply={apply} busy={busy} disabled={!target || !(sized || edit)} repeat={!edit} />
     </Shell>
   )

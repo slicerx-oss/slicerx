@@ -34,7 +34,7 @@ import { defaultTarget, finishSketch, provideFinish, provideInUse, sketchById, t
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { flipFor, goesIntoFace } from './extrude-direction'
-import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
+import { Actions, Choice, close, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { formatLength, fraction, parseLength, type UnitPrefs } from './units'
 import { currentValues } from './value-table'
@@ -302,10 +302,8 @@ export function SketchTool() {
     return (
       <Shell title="Sketch" aside="No plane yet">
         <PointerHint text="Click an origin plane (XY, XZ or YZ), the bed or a flat face to sketch on." />
-        {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-        <div className="cad-actions">
-          <Button variant="ghost" onClick={close}>Cancel</Button>
-        </div>
+        {note ? <Message text={note} /> : null}
+        <Actions quiet={<Button variant="ghost" onClick={close}>Cancel</Button>} />
       </Shell>
     )
   }
@@ -1176,11 +1174,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         </>
       )}
       {issues.length ? (
-        <ul className="cad-issues" role="status">
+        <div className="cad-issues">
           {issues.slice(0, 6).map((i, k) => (
-            <li key={k}><Icon name="alert" size={14} /> {i.message}</li>
+            <Message key={k} text={i.message} />
           ))}
-        </ul>
+        </div>
       ) : null}
       {featureOnly ? null : (
         <>
@@ -1191,22 +1189,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
                 <Button size="sm" variant="ghost" aria-pressed={sel.construction === true} data-tip-title="Construction" data-tip-key="X" data-tip-body="A construction curve stays in the sketch for constraints and snaps, and makes no profile." onClick={() => setSketch((s) => toggleConstruction(s, selected!.e))}>Construction</Button>
                 <Button size="sm" variant="ghost" icon="delete" onClick={() => { const e = selected!.e; setConstraints((c) => afterLoopChange(c, e, 0)); setSketch((s) => s.filter((_, i) => i !== e)); setSelected(null) }}>Delete loop</Button>
               </div>
-              <div className="cad-pair">
-                <Num id="sk-offset" label="Offset" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
-                <Button full data-tip-title="Offset" data-tip-body="Adds a copy of this loop grown by the distance; a negative one shrinks it." onClick={() => void doOffset()}>Offset the loop</Button>
-              </div>
+              <Num id="sk-offset" label="Offset" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
+              <Button full data-tip-title="Offset" data-tip-body="Adds a copy of this loop grown by the distance; a negative one shrinks it." onClick={() => void doOffset()}>Offset the loop</Button>
               {/* copies of the loop in this sketch; the extrude's Pattern below copies the solid */}
               <fieldset className="sketch-copies">
                 <legend>Copy in sketch</legend>
-                <div className="cad-pair">
-                  {/* a radio group has no input to name, so the label is drawn as a field's */}
-                  <div className="sx-field">
-                    <span className="sx-field-label" aria-hidden>Kind</span>
-                    <Seg label="Copy kind" size="sm" full value={copies.kind} onChange={(kind) => (setCopies({ ...copies, kind }), setPending(null))} options={[{ value: 'line', label: 'Line' }, { value: 'circle', label: 'Circle' }]} />
-                  </div>
-                  <Num id="sk-copies" label="Copies" unit="" value={copies.count} onChange={(count) => setCopies({ ...copies, count })} />
-                </div>
-                <div className="cad-pair">
+                <Choice id="sk-copy-kind" label="Kind" ariaLabel="Copy kind" value={copies.kind} onChange={(kind) => (setCopies({ ...copies, kind }), setPending(null))} options={[{ value: 'line', label: 'Line' }, { value: 'circle', label: 'Circle' }]} />
+                <Num id="sk-copies" label="Copies" unit="" value={copies.count} onChange={(count) => setCopies({ ...copies, count })} />
+                <>
                   {copies.kind === 'line' ? (
                     <>
                       <Num id="sk-step-x" label="Step across" unit="mm" value={copies.dx} onChange={(dx) => setCopies({ ...copies, dx })} onEnter={() => void copyLoop(selected!.e)} />
@@ -1215,7 +1205,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
                   ) : (
                     <Num id="sk-pattern-angle" label="Angle" unit="°" value={copies.angle} onChange={(angle) => setCopies({ ...copies, angle })} />
                   )}
-                </div>
+                </>
                 <Button full pressed={pending?.kind === 'round'} data-tip-title="Add copies" data-tip-body="Copies of this loop in the sketch, the original counted: along the step, or round a point you click next." onClick={() => (copies.kind === 'line' ? void copyLoop(selected!.e) : setPending(pending?.kind === 'round' ? null : { kind: 'round', e: selected!.e }))}>
                   {copies.kind === 'line' ? 'Add copies' : 'Add copies round a point'}
                 </Button>
@@ -1224,11 +1214,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           ) : null}
           {draft.tool === 'select' && sel?.kind === 'chain' ? (
             <>
-              <div className="cad-row">
-                <Seg label="Corner shape" size="sm" value={cornerKind} onChange={setCornerKind} options={[{ value: 'fillet', label: 'Round' }, { value: 'chamfer', label: 'Bevel' }]} />
-                <Num id="sk-corner" label={cornerKind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={corner} onChange={setCorner} onEnter={() => void doCorners(false)} />
-              </div>
-              <div className="cad-row">
+              <Choice id="sk-corner-kind" label="Corner shape" value={cornerKind} onChange={setCornerKind} options={[{ value: 'fillet', label: 'Round' }, { value: 'chamfer', label: 'Bevel' }]} />
+              <Num id="sk-corner" label={cornerKind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={corner} onChange={setCorner} onEnter={() => void doCorners(false)} />
+              <div className="cad-row sketch-corner-actions">
                 <Button size="sm" variant="ghost" data-tip="sketch.corners" onClick={() => void doCorners(false)}>Corners of this line</Button>
                 <Button size="sm" variant="ghost" onClick={() => void doCorners(true)}>Every corner of the loop</Button>
               </div>
@@ -1236,36 +1224,26 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       ) : null}
         </>
       )}
-      {featureOnly ? null : <Seg label="Finish with" size="sm" full value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} />}
+      {featureOnly ? null : <Choice id="sk-finish" label="Finish with" bare value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} />}
       {finish === 'extrude' ? (
         <>
-          <div className="cad-row">
-            <span>Direction</span>
-            <Seg label="Direction" size="sm" value={extentKind} onChange={setExtentKind} options={[{ value: 'oneSide', label: 'One side' }, { value: 'symmetric', label: 'Symmetric' }, { value: 'twoSides', label: 'Two sides' }]} />
-          </div>
-          <div className="cad-pair">
-            <Num id="sk-dist" label={extentKind === 'symmetric' ? 'Total distance' : 'Distance'} unit="mm" value={distance} onChange={setDistance} onEnter={() => void go()} />
-            {extentKind === 'twoSides' ? <Num id="sk-dist2" label="Other side" unit="mm" value={distance2} onChange={setDistance2} /> : <Num id="sk-taper" label="Draft" unit="°" value={taper} onChange={setTaper} />}
-          </div>
-          <div className="cad-row">
-            <label htmlFor="sk-flip">Extrude into the face</label>
+          <Choice id="sk-direction" label="Direction" value={extentKind} onChange={setExtentKind} options={[{ value: 'oneSide', label: 'One side' }, { value: 'symmetric', label: 'Symmetric' }, { value: 'twoSides', label: 'Two sides' }]} />
+          <Num id="sk-dist" label={extentKind === 'symmetric' ? 'Total distance' : 'Distance'} unit="mm" value={distance} onChange={setDistance} onEnter={() => void go()} />
+          {extentKind === 'twoSides' ? <Num id="sk-dist2" label="Other side" unit="mm" value={distance2} onChange={setDistance2} /> : <Num id="sk-taper" label="Draft" unit="°" value={taper} onChange={setTaper} />}
+          <Row label="Extrude into the face" htmlFor="sk-flip">
             <Switch id="sk-flip" checked={intoFace} onChange={setIntoFace} label="Extrude into the face" />
-          </div>
+          </Row>
           <PatternSection value={patternFields} onChange={setPatternFields} />
         </>
       ) : (
         <>
-          <p className="cad-hint"><Icon name="info" size={15} /> {axis ? 'The picked line is the axis.' : featureOnly ? 'Click a straight line of the sketch: it becomes the axis.' : 'Pick a straight line of the sketch with Select: it becomes the axis.'}</p>
+          <Note>{axis ? 'The picked line is the axis.' : featureOnly ? 'Click a straight line of the sketch: it becomes the axis.' : 'Pick a straight line of the sketch with Select: it becomes the axis.'}</Note>
           <Num id="sk-angle" label="Angle" unit="°" value={angle} onChange={setAngle} onEnter={() => void go()} />
         </>
       )}
-      <div className="cad-row">
-        <span>Result</span>
-        <Seg label="Result" size="sm" value={op} onChange={setOperation} options={[{ value: 'join', label: 'Join', disabled: !canInto }, { value: 'cut', label: 'Cut', disabled: !canInto }, { value: 'new', label: 'New body' }]} />
-      </div>
+      <Choice id="sk-result" label="Result" value={op} onChange={setOperation} options={[{ value: 'join', label: 'Join', disabled: !canInto }, { value: 'cut', label: 'Cut', disabled: !canInto }, { value: 'new', label: 'New body' }]} />
       {featureOnly && op !== 'new' ? (
-        <div className="cad-row">
-          <label htmlFor="sk-into">{op === 'join' ? 'Join to' : 'Cut from'}</label>
+        <Row label={op === 'join' ? 'Join to' : 'Cut from'} htmlFor="sk-into" wide>
           <Select
             id="sk-into"
             size="sm"
@@ -1281,12 +1259,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </Select>
-        </div>
+        </Row>
       ) : null}
-      <p className="cad-hint"><Icon name="info" size={15} /> {stepEdit ? 'Applying changes this step; the steps after it run again.' : featureOnly ? `Made from ${plane.label}. Edit sketch in its menu changes the shape.` : 'Finish sketch keeps it in the timeline without a solid. Extrude or revolve here turns it into one.'}</p>
-      {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
+      <Note>{stepEdit ? 'Applying changes this step; the steps after it run again.' : featureOnly ? `Made from ${plane.label}. Edit sketch in its menu changes the shape.` : 'Finish sketch keeps it in the timeline without a solid. Extrude or revolve here turns it into one.'}</Note>
+      {note ? <Message text={note} /> : null}
       <ToolFooter
         verb={finish === 'extrude' ? 'Extrude' : 'Revolve'}
+        verbs={['Extrude', 'Revolve']}
         onApply={go}
         busy={busy}
         disabled={!ready || (op !== 'new' && !target)}

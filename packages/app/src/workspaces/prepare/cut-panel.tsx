@@ -6,7 +6,7 @@
 // the section, computed again only when the plane settles. Pins and dowels go where the panel's
 // placement says: automatically, or where clicks on the plane put them, drawn as circles of their
 // size. Loaded the first time the tool opens.
-import { Block, Button, Field, ScrubNumber, Seg, Select, VectorField } from '@slicerx/ui'
+import { Button, ScrubNumber, Select, VectorField } from '@slicerx/ui'
 import { useEffect, useMemo, useState } from 'react'
 import { useHost } from '../../host'
 import { clearanceFor } from '../../plate/clearance'
@@ -15,7 +15,7 @@ import { cutSelected, sectionLoops } from '../../plate/geom-ops'
 import { cameraBus } from '../../plate/tools'
 import { bounds, type Vec3 } from '../../plate/transform'
 import { get, set, toast, useApp } from '../../state/store'
-import { num, ToolFooter } from '../../cad/panel-kit'
+import { Actions, Choice, Note, num, PointerHint, Row, Shell, ToolFooter } from '../../cad/panel-kit'
 import '../../cad/cad.css'
 
 type Preset = 'z' | 'x' | 'y'
@@ -47,7 +47,6 @@ export function CutPanel() {
   // The sidebar opens with the tool, and a new object starts with a level plane through its middle.
   useEffect(() => {
     set((s) => (s.rails['prepare']?.left === false ? { rails: { ...s.rails, prepare: { ...s.rails['prepare'], left: true } } } : {}))
-    document.querySelector('[data-section="cut-tool"]')?.scrollIntoView({ block: 'nearest' })
     return () => {
       cutStore.setState((st) => ({ plane: null, connectors: { ...st.connectors, points: [], placing: false } }))
       cameraBus()?.guides?.({})
@@ -78,12 +77,10 @@ export function CutPanel() {
   const close = () => set({ objectTool: null })
   if (!entry || !plane || !box) {
     return (
-      <Block title="Cut" data-section="cut-tool" className="cad">
-        <p className="cad-hint">Select an object to cut.</p>
-        <div className="cad-actions">
-          <Button variant="ghost" onClick={close}>Close</Button>
-        </div>
-      </Block>
+      <Shell title="Cut" section="cut-tool" aside="Nothing selected">
+        <Note>Select an object to cut.</Note>
+        <Actions quiet={<Button variant="ghost" onClick={close}>Close</Button>} />
+      </Shell>
     )
   }
   const tilts = tiltsOf(plane.normal)
@@ -113,45 +110,35 @@ export function CutPanel() {
     }
   }
   return (
-    <Block title="Cut" data-section="cut-tool" className="cad">
-      <div className="cad-row">
-        <span>Plane</span>
-        <Seg label="Plane" size="sm" value={presetOf(tilts)} onChange={(v: Preset | '') => v && put(normalOf(...PRESETS[v]), 0)} options={[{ value: 'z', label: 'Level' }, { value: 'x', label: 'Across X' }, { value: 'y', label: 'Across Y' }]} />
-      </div>
-      <VectorField id="cut-tilt" className="tf-row" label="Tilt" unit="°" axes={['x', 'y']} digits={1} values={tilts} onCommit={tilt} onPreview={tilt} />
-      <div className="tf-row" role="group" aria-label="Distance from the center">
-        <span className="tf-name">Offset<small>mm</small></span>
+    <Shell title="Cut" section="cut-tool" aside={entry.name}>
+      <PointerHint text="Drag the plane or its handle to move it and the rings to tilt it; hold Shift to snap." />
+      <Choice id="cut-plane" label="Plane" value={presetOf(tilts)} onChange={(v: Preset | '') => v && put(normalOf(...PRESETS[v]), 0)} options={[{ value: 'z', label: 'Level' }, { value: 'x', label: 'Across X' }, { value: 'y', label: 'Across Y' }]} />
+      <VectorField id="cut-tilt" className="tp-vec" label="Tilt" unit="°" axes={['x', 'y']} digits={1} values={tilts} onCommit={tilt} onPreview={tilt} />
+      <Row label="Offset" unit="mm" labelId="cut-offset-label">
         <ScrubNumber parse={num} id="cut-offset" handle ariaLabel="Distance from the center, millimeters" unit="mm" value={offset} onCommit={(v) => put(plane.normal, v)} onPreview={(v) => put(plane.normal, v)} />
-      </div>
-      <p className="cad-hint">Distance from the object's center, {lo.toFixed(1)} to {hi.toFixed(1)} mm. Drag the plane or its handle to move it and the rings to tilt it; hold Shift to snap.</p>
-      <div className="cad-row">
-        <span>Keep</span>
-        <Seg label="Keep" size="sm" value={keep} onChange={(v: CutKeep) => cutStore.setState({ keep: v })} options={[{ value: 'both', label: 'Both' }, { value: 'below', label: 'Lower' }, { value: 'above', label: 'Upper' }]} />
-      </div>
-      <Field htmlFor="cut-conn" label="Connectors">
-        <Select id="cut-conn" value={conn.kind} onChange={(ev) => setConn({ kind: ev.target.value as ConnectorKind, placing: false })}>
+      </Row>
+      <Note>Distance from the object's center, {lo.toFixed(1)} to {hi.toFixed(1)} mm.</Note>
+      <Choice id="cut-keep" label="Keep" value={keep} onChange={(v: CutKeep) => cutStore.setState({ keep: v })} options={[{ value: 'both', label: 'Both' }, { value: 'below', label: 'Lower' }, { value: 'above', label: 'Upper' }]} />
+      <Row label="Connectors" htmlFor="cut-conn">
+        <Select id="cut-conn" size="sm" value={conn.kind} onChange={(ev) => setConn({ kind: ev.target.value as ConnectorKind, placing: false })}>
           <option value="none">None</option>
           <option value="pin">Pins</option>
           <option value="dowel">Dowels (printed separately)</option>
           <option value="dovetail">Dovetail</option>
         </Select>
-      </Field>
+      </Row>
       {conn.kind !== 'none' ? (
         <>
-          <div className="tf-row" role="group" aria-label="Connector size">
-            <span className="tf-name">{conn.kind === 'dovetail' ? 'Width' : 'Diameter'}<small>mm</small></span>
+          <Row label={conn.kind === 'dovetail' ? 'Width' : 'Diameter'} unit="mm">
             <ScrubNumber parse={num} id="cut-conn-d" handle ariaLabel={`Connector ${conn.kind === 'dovetail' ? 'width' : 'diameter'}, millimeters`} unit="mm" digits={1} min={1} value={conn.diameterMm} onCommit={(v) => setConn({ diameterMm: v })} />
-          </div>
-          <div className="tf-row" role="group" aria-label="Connector depth">
-            <span className="tf-name">Depth<small>mm</small></span>
+          </Row>
+          <Row label="Depth" unit="mm">
             <ScrubNumber parse={num} id="cut-conn-depth" handle ariaLabel="Connector depth, millimeters" unit="mm" digits={1} min={0.5} value={conn.depthMm} onCommit={(v) => setConn({ depthMm: v })} />
-          </div>
-          <div className="tf-row" role="group" aria-label="Connector tolerance">
-            <span className="tf-name">Tolerance<small>mm</small></span>
+          </Row>
+          <Row label="Tolerance" unit="mm">
             <ScrubNumber parse={num} id="cut-conn-tol" handle ariaLabel="Connector tolerance, millimeters" unit="mm" step={0.01} digits={2} min={0} value={toleranceMm} onCommit={(v) => setConn({ toleranceMm: v, toleranceSet: true })} />
-          </div>
-          <div className="cad-row" data-testid="cut-conn-tol-source">
-            <span className="cad-hint">{conn.toleranceSet ? `Typed. The fit clearance is ${clearanceWords.charAt(0).toLowerCase()}${clearanceWords.slice(1)}` : clearanceWords}</span>
+          </Row>
+          <Row label={conn.toleranceSet ? `Typed. The fit clearance is ${clearanceWords.charAt(0).toLowerCase()}${clearanceWords.slice(1)}` : clearanceWords} className="tp-row-note" testId="cut-conn-tol-source">
             {conn.toleranceSet ? (
               <Button size="sm" variant="ghost" onClick={() => setConn({ toleranceSet: false })}>
                 Use it
@@ -161,29 +148,25 @@ export function CutPanel() {
                 Print the test
               </Button>
             ) : null}
-          </div>
+          </Row>
           {conn.kind !== 'dovetail' ? (
             <>
-              <div className="cad-row">
-                <span>Place</span>
-                <Seg label="Place connectors" size="sm" value={conn.placing ? 'view' : 'auto'} onChange={(v: 'auto' | 'view') => setConn(v === 'auto' ? { placing: false, points: [] } : { placing: true })} options={[{ value: 'auto', label: 'Automatically' }, { value: 'view', label: 'By clicking' }]} />
-              </div>
+              <Choice id="cut-place" label="Place" ariaLabel="Place connectors" value={conn.placing ? 'view' : 'auto'} onChange={(v: 'auto' | 'view') => setConn(v === 'auto' ? { placing: false, points: [] } : { placing: true })} options={[{ value: 'auto', label: 'Automatically' }, { value: 'view', label: 'By clicking' }]} />
               {conn.placing ? (
-                <div className="cad-row">
-                  <span className="cad-hint">{conn.points.length === 0 ? 'Click the cut face to add a connector there; click one to take it away. With none placed they go in automatically.' : `${conn.points.length === 1 ? '1 connector' : `${conn.points.length} connectors`} placed. Click the cut face to add one, or click one to take it away.`}</span>
+                <Row label={conn.points.length === 0 ? 'Click the cut face to add a connector there; click one to take it away. With none placed they go in automatically.' : `${conn.points.length === 1 ? '1 connector' : `${conn.points.length} connectors`} placed. Click the cut face to add one, or click one to take it away.`} className="tp-row-note">
                   {conn.points.length ? (
                     <Button size="sm" variant="ghost" onClick={() => setConn({ points: [] })}>
                       Clear
                     </Button>
                   ) : null}
-                </div>
+                </Row>
               ) : null}
             </>
           ) : null}
         </>
       ) : null}
-      {entry.history?.steps.length ? <p className="cad-hint">Cutting ends this object's CAD history: the pieces start without one.</p> : null}
+      {entry.history?.steps.length ? <Note>Cutting ends this object's CAD history: the pieces start without one.</Note> : null}
       <ToolFooter verb="Cut" onApply={cut} busy={busy} />
-    </Block>
+    </Shell>
   )
 }
