@@ -59,6 +59,12 @@ static LOCK: Mutex<()> = Mutex::new(());
 
 /// Runs one operation. `Ok` holds the JSON reply; `Err` the message of a failed one.
 pub fn call(op: &str, request: &str) -> Result<String, String> {
+    if op.len() > 128 {
+        return Err("op: exceeds 128 bytes".into());
+    }
+    if request.len() > 32 * 1024 * 1024 {
+        return Err("request: exceeds 32 MiB".into());
+    }
     let (Ok(op), Ok(request)) = (CString::new(op), CString::new(request)) else {
         return Err("request: contains a NUL byte".into());
     };
