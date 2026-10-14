@@ -3,8 +3,11 @@
 // The rules behind the tool panel's shared pieces (panel-kit.tsx), kept free of React so they can be tested alone:
 // how a set of choices fits the panel's width, and how a message reads.
 
-/** How a set of choices shows: one line of options, options whose label takes two lines, icons with tooltips, or a select. */
-export type ChoiceFit = 'line' | 'wrap' | 'icons' | 'select'
+/**
+ * How a set of choices shows: one line of options, options whose label takes two lines, one line with the narrow
+ * padding (only where a select would come next), icons with tooltips, or a select.
+ */
+export type ChoiceFit = 'line' | 'wrap' | 'tight' | 'icons' | 'select'
 
 /** More options than this never show as a row of words. */
 export const MAX_WORD_OPTIONS = 3
@@ -26,6 +29,8 @@ export interface ChoiceMeasure {
   pad?: number
   /** Padding inside an option whose label takes two lines, px. */
   wrapPad?: number
+  /** Padding inside an option on one line with the narrow padding (--s-1 each side) and a pixel to spare, px. */
+  tightPad?: number
 }
 
 /** What a glyph before an option's word takes of its line: the 14 px icon and the 4 px gap after it. */
@@ -45,7 +50,7 @@ export function choiceMeasure(labels: readonly string[], glyphs: readonly boolea
 /**
  * How a set of choices fits: one line when every label fits its share of the width, two lines when every label fits in
  * two lines of its share with no word cut, and past that (or past three options) icons with tooltips when every option
- * has one, else a select. A width of 0 (not laid out yet) fits on one line, so the first frame has no select in it.
+ * has one, else one line with the narrow padding when every label fits that way, else a select. A width of 0 (not laid out yet) fits on one line, so the first frame has no select in it.
  */
 export function choiceFit(m: ChoiceMeasure): ChoiceFit {
   const n = m.labels.length
@@ -61,6 +66,10 @@ export function choiceFit(m: ChoiceMeasure): ChoiceFit {
   // some of the first line empty, so a little room is kept).
   const two = each - (m.wrapPad ?? 12)
   if (two > 0 && m.words.every((w) => w <= two) && m.labels.every((w) => w <= two * 2 - Math.min(two * 0.25, 24))) return 'wrap'
+  // Before a select takes over, every label on one line with the narrow padding. Sets that fit above, or that have
+  // icons, never get here, so they show as they always did.
+  const tight = each - (m.tightPad ?? 9)
+  if (fallback === 'select' && tight > 0 && m.labels.every((w) => w <= tight)) return 'tight'
   return fallback
 }
 

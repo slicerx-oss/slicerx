@@ -156,6 +156,8 @@
 .cad.tp .sx-seg > button { min-width: 0; height: 28px; padding: 0 var(--s-2); border-radius: var(--r-xs); font-size: var(--fs-sm); gap: var(--s-1); }
 .cad.tp .sx-seg.tp-seg-wrap > button { white-space: normal; line-height: 1.1; text-align: center; padding: 0 var(--s-1); }
 .cad.tp .sx-seg.tp-seg-icons > button { padding: 0; }
+/* the narrow tier: one line, the wrap tier's padding, so a three-way choice stays a segment in a 280 px pane */
+.cad.tp .sx-seg.tp-seg-tight > button { padding: 0 var(--s-1); }
 .tp-glyph { flex: none; }
 /* X, Y and Z in one outline split by hairlines, 64 px an axis, ending at the right edge */
 .cad.tp .tp-vec { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s-2); }
