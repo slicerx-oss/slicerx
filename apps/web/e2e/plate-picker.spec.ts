@@ -162,6 +162,31 @@ test.describe('the plate picker', () => {
     await oneRowClearOfLane(page, sheet)
   })
 
+  test('every plate is reachable by Prev and Next, and by its card in the sheet', async ({ page }) => {
+    await openPlateProject(page, DECK_BOX_27, [5, 12], { autoSlice: false })
+    await viewSized(page)
+    const no = current(page).locator('.pp-no')
+    // Next walks up to the last plate and Prev walks back down to the first, one plate a step, never wrapping.
+    for (let i = 2; i <= 27; i++) {
+      await next(page).click()
+      await expect(no).toHaveText(`Plate ${i}`)
+    }
+    await expect(next(page)).toBeDisabled()
+    for (let i = 26; i >= 1; i--) {
+      await prev(page).click()
+      await expect(no).toHaveText(`Plate ${i}`)
+    }
+    await expect(prev(page)).toBeDisabled()
+    // Each card in the sheet shows its own plate and shuts the sheet, empty plates included.
+    for (let i = 27; i >= 1; i--) {
+      const sheet = await plateSheet(page)
+      const card = sheet.locator('.pp-card').nth(i - 1)
+      await card.click()
+      await expect(sheet).toBeHidden()
+      await expect(no).toHaveText(`Plate ${i}`)
+    }
+  })
+
   test('the sheet finds plates by name or number, and Not sliced leaves out sliced and empty plates', async ({ page, isMobile }) => {
     await openPlateProject(page, DECK_BOX_27, [5, 12], { autoSlice: false })
     await viewSized(page)
