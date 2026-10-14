@@ -12,7 +12,8 @@ import { orientSelected, repairSelected } from './geom-ops'
 import { addPrimitiveVolume } from './volumes'
 import { addPrimitive, mergeSelected, splitSelectedToObjects, splitSelectedToParts, arrangePlate, centerSelected, dropSelectedToBed, fillBed, instanceCount, mirrorSelected, selectAll, setInstanceCount } from './edit'
 import { history } from './history'
-import { addPlate, duplicatePlate, removePlate, switchPlate } from './plates'
+import { addPlate, duplicatePlate, removePlate } from './plates'
+import { stepPlate, stepTarget } from './plate-step'
 import { cameraBus, getPaintBus, setTool } from './tools'
 import { appName, editionHasCad, MODELING_COMMANDS } from '../edition'
 import { openTool } from '../workspaces/design/open-tool'
@@ -30,13 +31,6 @@ function renameSelected(): void {
 
 function reportError(e: unknown): void {
   toast(e instanceof Error ? e.message : String(e), 'error')
-}
-
-function stepPlate(d: 1 | -1): void {
-  const { plates, activePlate } = get()
-  const i = plates.findIndex((p) => p.id === activePlate)
-  const next = plates[(i + d + plates.length) % plates.length]
-  if (next) switchPlate(next.id)
 }
 
 /** The selected object's last history step, as object id and index. */
@@ -173,8 +167,8 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
     })),
     { id: 'plate-add', title: 'Add a plate', section: 'plate', keywords: ['new plate', 'build plate'], workspace: 'prepare', tool: { permission: 'slice' }, run: () => void addPlate() },
     { id: 'plate-duplicate', title: 'Duplicate this plate with its objects', section: 'plate', keywords: ['copy plate', 'clone plate', 'repeat print'], workspace: 'prepare', tool: { permission: 'slice' }, enabled: () => get().plate.length > 0, run: () => void duplicatePlate() },
-    { id: 'plate-next', title: 'Show the next plate', section: 'plate', keywords: ['plates', 'switch'], workspace: 'prepare', enabled: () => get().plates.length > 1, run: () => stepPlate(1) },
-    { id: 'plate-previous', title: 'Show the previous plate', section: 'plate', keywords: ['plates', 'switch'], workspace: 'prepare', enabled: () => get().plates.length > 1, run: () => stepPlate(-1) },
+    withKey({ id: 'plate-next', title: 'Show the next plate', section: 'plate', keywords: ['plates', 'switch'], workspace: 'prepare', enabled: () => stepTarget(get().plates, get().activePlate, 1) !== null, run: () => void stepPlate(1) }, 'plate.next'),
+    withKey({ id: 'plate-previous', title: 'Show the previous plate', section: 'plate', keywords: ['plates', 'switch'], workspace: 'prepare', enabled: () => stepTarget(get().plates, get().activePlate, -1) !== null, run: () => void stepPlate(-1) }, 'plate.prev'),
     { id: 'plate-delete', title: 'Delete this plate and its objects', section: 'plate', keywords: ['remove plate'], workspace: 'prepare', enabled: () => get().plates.length > 1, run: () => void removePlate(get().activePlate) },
     withKey({ id: 'zoom-selection', title: 'Zoom to the selection', section: 'view', keywords: ['frame', 'focus'], run: () => cameraBus()?.zoomToSelection?.({ animate: true }) }, 'view.zoomSelection'),
     { id: 'toolpath-palette', title: 'Toggle color vision colors', section: 'view', keywords: ['color vision', 'color-blind', 'deuteranopia', 'protanopia', 'tritanopia', 'accessibility', 'palette', 'toolpaths'], run: () => set({ appearance: { ...get().appearance, colorVision: get().appearance.colorVision === 'standard' ? 'redgreen' : 'standard' } }) },
