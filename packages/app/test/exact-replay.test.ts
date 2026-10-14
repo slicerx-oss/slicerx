@@ -231,6 +231,23 @@ it('pushes and pulls a flat face on the kernel, and records the face it moved as
   expect(f.ops().slice(2, 4)).toEqual(['brep.push', 'face.push'])
 })
 
+it('makes a hole another size on the kernel, in the part frame, and runs it on the mesh when the kernel refuses it', async () => {
+  // the part moved 5 along x since the box: the hole goes to the kernel in the part's own coordinates
+  const moved = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1]
+  const params = { op: 'hole.apply', hole: { entry: [5, 0, 5], axis: [0, 0, 2], diameterMm: 4, depthMm: 5, through: true }, spec: { diameterMm: 3.4, counterbore: { diameterMm: 6.5, depthMm: 3.4 } }, label: 'M3 counterbore' } as StepParams
+  const e = engine()
+  const r = await replayHistory(e.call, { history: history(box, hole, step('fit-1', params, moved)), exact: true })
+  expect(r.status.map((s) => s.state)).toEqual(['done', 'done', 'done'])
+  expect(e.ops()).toEqual(['brep.extrude', 'brep.tessellate', 'brep.subtract', 'brep.tessellate', 'brep.hole', 'brep.tessellate'])
+  expect(e.sent[4]!.req).toMatchObject({ body: { smb: 'subtract-2' }, hole: { entry: [0, 0, 5], axis: [0, 0, 1], diameterMm: 4, depthMm: 5, through: true }, spec: { diameterMm: 3.4, counterbore: { diameterMm: 6.5, depthMm: 3.4 } }, keySalt: stepSalt('fit-1') })
+  // a hole the kernel cannot find or make goes to the mesh, which says why when it is gone
+  clearReplayCache()
+  const f = engine(['brep.hole'])
+  const back = await replayHistory(f.call, { history: history(box, hole, step('fit-1', params)), exact: true })
+  expect(back.exactFellBack).toEqual(['fit-1'])
+  expect(f.ops().slice(4, 6)).toEqual(['brep.hole', 'hole.apply'])
+})
+
 it('sends slots, rounded rectangles and sketches to the kernel as lines and arcs', async () => {
   const slot = step('slot-1', { ...box.params, shape: { type: 'slot', lengthMm: 30, widthMm: 10 } } as StepParams)
   const e = engine()
