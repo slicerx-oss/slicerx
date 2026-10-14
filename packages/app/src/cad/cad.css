@@ -229,12 +229,12 @@
 /* the live numbers beside the cursor in the view */
 .sketch-pills { position: fixed; z-index: 30; display: flex; align-items: center; gap: var(--s-1); pointer-events: none; }
 .sketch-pills[data-typing] { pointer-events: auto; }
-.sketch-pill { display: inline-flex; align-items: center; gap: var(--s-1); height: 24px; padding: 0 var(--s-2); border: 1px solid var(--line); border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-1) 90%, transparent); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+.sketch-pill { display: inline-flex; align-items: center; gap: var(--s-1); height: var(--s-5); padding: 0 var(--s-2); border: 1px solid var(--line); border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-1) 90%, transparent); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
 .sketch-pill[data-focus] { border-color: var(--accent); outline: 2px solid var(--accent-tint); outline-offset: 0; }
 .sketch-pill-label { color: var(--dim); }
 .sketch-pill-value { min-width: 4ch; text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; }
 .sketch-pill-unit { color: var(--dim); }
-.sketch-pill-input { width: 7ch; height: 18px; padding: 0 2px; border: 0; border-radius: var(--r-xs); background: var(--ink-3); color: var(--fg); font-size: var(--fs-xs); text-align: right; outline: none; }
+.sketch-pill-input { width: 7ch; height: calc(100% - var(--s-1)); padding: 0 var(--s-1); border: 0; border-radius: var(--r-xs); background: var(--ink-3); color: var(--fg); font-size: var(--fs-xs); text-align: right; outline: none; }
 .sketch-pill-input::placeholder { color: var(--dim); }
 .sketch-pill-input:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 /* typing: the pills turn to edit fields, so a typed number reads apart from the live one; a typed pill takes the accent */
@@ -243,7 +243,7 @@
 .sketch-pill[data-typed] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--ink-2)); }
 .sketch-pill[data-typed] .sketch-pill-input { font-weight: var(--fw-semibold); }
 .sketch-pills:not([data-typing]) .sketch-pill-value { color: var(--muted); }
-.sketch-pill-snap { height: 20px; padding: 0 var(--s-2); display: inline-flex; align-items: center; border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 22%, var(--ink-1)); color: var(--fg); font-size: var(--fs-xs); }
+.sketch-pill-snap { height: calc(var(--s-5) - var(--s-1)); padding: 0 var(--s-2); display: inline-flex; align-items: center; border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 22%, var(--ink-1)); color: var(--fg); font-size: var(--fs-xs); }
 .sketch-pill-snap[hidden], .sketch-pills[hidden] { display: none; }
 /* a dense card (spec 2d): 12 px inside and 8 px between its rows, so Sketch's Distance and Draft stay in view at 900 px tall */
 .tp-card[data-dense] { padding: var(--s-3); gap: var(--s-2); }

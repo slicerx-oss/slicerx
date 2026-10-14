@@ -91,7 +91,7 @@
 :root[data-phone] .studio[data-model-mode="design"] > .vp { --toast-floor: calc(var(--pbar-gap) + var(--pbar-h) + var(--ptl-h) + 16px); }
 
 /* The tool sheet sits on the bar, without a scrim: the view above it still takes taps. It folds to its header. */
-:root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side] { bottom: calc(var(--pbar-top-gap, var(--pbar-h)) + 4px + var(--kb-lift, 0px)); left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); max-height: 44dvh; border-radius: var(--r-lg); z-index: calc(var(--z-hud) + 2); }
+:root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side] { bottom: calc(var(--pbar-top-gap, var(--pbar-h)) + var(--s-1) + var(--kb-lift, 0px)); left: max(var(--s-2), env(safe-area-inset-left, 0px)); right: max(var(--s-2), env(safe-area-inset-right, 0px)); max-height: 44dvh; border-radius: var(--r-lg); z-index: calc(var(--z-hud) + 2); }
 :root[data-phone] .pane.sheet.sheet-docked.sx-rail[data-side]:not(.sheet-open) { visibility: hidden; transform: translateY(calc(100% + var(--pbar-top-gap, var(--pbar-h)) + 24px)); transition: transform 200ms var(--ease), visibility 0s linear 200ms; }
 :root[data-phone] .pane.sheet.sheet-docked.sheet-folded.sx-rail[data-side] { height: auto !important; overflow: hidden; }
 /* folded: the handle and the header only, so a panel's summary in the header stays in view */
@@ -101,7 +101,7 @@
 :root[data-phone] .pane.sheet-docked .sx-rail-head:has(.sketch-summary) .sx-rail-title { display: none; }
 :root[data-phone] .pane.sheet-docked .sx-rail-head:has(.sketch-summary) .sx-rail-extra { flex: 1; min-width: 0; }
 .sheet-summary-slot { display: contents; }
-.sketch-summary { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.sketch-summary { display: flex; align-items: center; gap: var(--s-2); width: 100%; min-width: 0; }
 .sketch-summary-tool { flex: none; color: var(--fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); }
 .sketch-summary-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-sm); }
 .sketch-summary-toggle { flex: none; margin-left: auto; }
