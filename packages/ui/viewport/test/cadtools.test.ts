@@ -4,7 +4,7 @@ import { InterleavedBufferAttribute, LineSegments, Matrix4, Mesh, Vector3 } from
 import { Line2 } from 'three/addons/lines/Line2.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { describe, expect, it } from 'vitest'
-import { DimensionLayer, EdgePreview, PLANE_EDGE, PLANE_EDGE_LIGHT, PLANE_FILL, PLANE_FILL_LIGHT, PushPreview, SketchLayer, frameMatrix, fromPlane, prismMatrix, rayOnPlane, toPlane, type CadFrame } from '../src/cadtools'
+import { DimensionLayer, EdgePreview, PLANE_EDGE, PLANE_EDGE_LIGHT, PLANE_FILL, PLANE_FILL_LIGHT, PushPreview, SketchLayer, frameMatrix, fromPlane, glyphInk, glyphPixels, prismMatrix, rayOnPlane, toPlane, type CadFrame, type SketchGlyphKind } from '../src/cadtools'
 import type { V3 } from '../src/scaling'
 
 const close = (a: readonly number[], b: readonly number[], digits = 6) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i] ?? NaN, digits))
@@ -186,5 +186,58 @@ describe('edge preview', () => {
     p.set(null)
     expect(p.group.children).toHaveLength(0)
     p.dispose()
+  })
+})
+
+describe('constraint glyphs', () => {
+  const KINDS: SketchGlyphKind[] = ['coincident', 'horizontal', 'vertical', 'parallel', 'perpendicular', 'tangent', 'equal', 'midpoint', 'concentric', 'collinear', 'symmetric']
+  // the halo's reach round a lit pixel
+  const reach = (rows: string[], x: number, y: number) => {
+    let d = Infinity
+    rows.forEach((r, j) => [...r].forEach((ch, i) => ch !== '.' && ch !== 'h' && (d = Math.min(d, Math.max(Math.abs(i - x), Math.abs(j - y))))))
+    return d
+  }
+
+  it('draws all eleven on a 16 px grid with no tile, each a different shape', () => {
+    const seen = new Set<string>()
+    for (const k of KINDS) {
+      const rows = glyphPixels(k)
+      expect(rows, k).toHaveLength(16)
+      for (const r of rows) expect(r, k).toMatch(/^[.lowh]{16}$/)
+      expect(rows.join('').replace(/[.h]/g, '').length, k).toBeGreaterThan(8)
+      // empty corners: the glyph keeps the lines under it visible
+      for (const [x, y] of [[0, 0], [15, 0], [0, 15], [15, 15]] as const) expect(rows[y]![x], k).toBe('.')
+      seen.add(rows.join('|'))
+    }
+    expect(seen.size).toBe(KINDS.length)
+  })
+
+  it('rings every glyph with a 1 px halo, picked or not', () => {
+    for (const k of KINDS) {
+      const rows = glyphPixels(k)
+      rows.forEach((r, y) =>
+        [...r].forEach((ch, x) => {
+          const d = reach(rows, x, y)
+          if (ch === 'h') expect(d, `${k} ${x},${y}`).toBeLessThanOrEqual(1)
+          if (ch === '.') expect(d, `${k} ${x},${y}`).toBeGreaterThan(1)
+        }),
+      )
+    }
+  })
+
+  it('swaps line and halo on a picked glyph in dark, uses its own darker gold in light, and leaves the shared gold alone', () => {
+    expect(glyphInk(true, true).l).toBe('#8f6a00')
+    expect(glyphInk(false, true).l).toBe('#282a36')
+    // dark: the picked glyph's line is the unpicked halo's color and its halo is the selected gold
+    expect(glyphInk(true, false).l).toBe('#191a21')
+    expect(glyphInk(true, false).h).toBe('#f1fa8c')
+    expect(glyphInk(false, false).h).toBe('rgba(25, 26, 33, 0.85)')
+    // light: the halo is the same picked or not
+    expect(glyphInk(true, true).h).toBe(glyphInk(false, true).h)
+    const layer = new SketchLayer()
+    layer.setLight(true)
+    const gold = (layer as unknown as { dimPickMat: { color: { getHexString(): string } } }).dimPickMat.color.getHexString()
+    expect(gold).toBe('b8860b')
+    layer.dispose()
   })
 })
