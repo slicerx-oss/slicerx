@@ -91,8 +91,8 @@ function FilamentBlock() {
   return <AmsPanel maker={printer?.vendor ?? ''} system={printer?.filamentSystem} />
 }
 
-/** The top of the settings sidebar: the printer and the filaments stay in view while the settings under them scroll. */
-export function SlicePinned() {
+/** The printer and filaments lead the settings in the sidebar's shared scroll area. */
+function SlicePrinter() {
   // Design models parts: it has no printer or filament.
   if (useModelMode() === 'design') return null
   return (
@@ -119,8 +119,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
   const scoped = useScope().scope.kind !== 'plate'
   return (
     <>
-      {/* A phone's sheet scrolls as one, so the printer and filaments lead it instead of sitting pinned. */}
-      {compact ? <SlicePinned /> : null}
+      <SlicePrinter />
       {objectsFirst ? <PrepareObjects /> : null}
       {design ? null : (
         <>
