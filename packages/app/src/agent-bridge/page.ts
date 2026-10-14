@@ -77,6 +77,8 @@ export function appState(s: AppState): Record<string, unknown> {
     ...(s.workspace === 'prepare' ? { mode: cadShown() ? s.modelMode : 'slice' } : {}),
     // Settings > Look and feel > Toolbar size: the Model ribbon's icons at 32, 24 or 16 px.
     toolbarSize: s.appearance.toolbarSize,
+    // Settings > Look and feel > Frame the view: 'selection' frames each pick, 'open' only Model opening and adds.
+    modelFraming: s.appearance.modelFraming,
     plate: {
       loading: s.plateLoading,
       active: s.activePlate,

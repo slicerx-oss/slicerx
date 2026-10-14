@@ -49,3 +49,13 @@ describe('toolbar size', () => {
     expect(get().appearance.toolbarSize).toBe('medium')
   })
 })
+
+describe('model framing', () => {
+  it('frames each pick by default, keeps a stored choice and falls back on a bad one', () => {
+    expect(DEFAULT_APPEARANCE.modelFraming).toBe('selection')
+    savePrefs({ ...loadPrefs(), appearance: { ...DEFAULT_APPEARANCE, modelFraming: 'open' } })
+    expect(loadPrefs().appearance?.modelFraming).toBe('open')
+    localStorage.setItem(KEY, JSON.stringify({ appearance: { modelFraming: 'sometimes' } }))
+    expect(loadPrefs().appearance?.modelFraming).toBe('selection')
+  })
+})

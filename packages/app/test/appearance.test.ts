@@ -99,7 +99,7 @@ describe('accent, text and accessibility', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Blue-yellow' }))
     fireEvent.click(screen.getByRole('radio', { name: 'Roomy' }))
     fireEvent.click(screen.getByRole('radio', { name: 'Reduced' }))
-    expect(get().appearance).toEqual({ accent: 'green', textSize: 'larger', fontWeight: 'bold', contrast: 'higher', colorVision: 'blueyellow', density: 'roomy', toolbarSize: 'large' })
+    expect(get().appearance).toEqual({ accent: 'green', textSize: 'larger', fontWeight: 'bold', contrast: 'higher', colorVision: 'blueyellow', density: 'roomy', toolbarSize: 'large', modelFraming: 'selection' })
     expect(get().motion).toBe('reduced')
     expect(screen.getByText(/Body text at 18 px/)).toBeTruthy()
   })
