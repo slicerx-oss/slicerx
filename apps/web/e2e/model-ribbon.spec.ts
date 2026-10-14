@@ -7,7 +7,7 @@
 // each width and size to SX_SHOTS_DIR (test-results/shots by default).
 import { join } from 'node:path'
 import { type Locator, type Page } from '@playwright/test'
-import { openStudio, pick, toolPanel } from './cad-helpers'
+import { freshBox, openStudio, pick, toolPanel } from './cad-helpers'
 import { expect, test } from './fixtures'
 
 type Size = 'large' | 'medium' | 'small'
@@ -102,6 +102,33 @@ test.describe('Model ribbon sizes', () => {
     expect(await ribbon.locator('.rb-body svg.ti').first().getAttribute('width')).toBe('16')
     await row.getByRole('radio', { name: 'Medium' }).click()
     await expect(ribbon).toHaveAttribute('data-setting', 'medium')
+  })
+
+  test('each tab shows each tool once, with an object picked too, and Solid has Extrude', async ({ page }) => {
+    const ribbon = await openModel(page, 'large', 1440)
+    // every button in the row, by the tool, action or menu it opens
+    const ids = () => ribbon.locator('.rb-body').evaluate((b) => [...b.querySelectorAll<HTMLElement>('button')].map((x) => x.dataset['tool'] ?? x.dataset['action'] ?? x.dataset['testid'] ?? x.getAttribute('aria-label') ?? ''))
+    const once = async (tab: string) => {
+      const all = await ids()
+      expect(all.filter((id, i) => all.indexOf(id) !== i), `${tab}: shown twice`).toEqual([])
+      return all
+    }
+    await freshBox(page)
+    for (const picked of [false, true]) {
+      if (picked) await page.evaluate(() => {
+        const sx = (window as unknown as { __sx: { getState(): { plate: { id: string }[] }; setState(p: unknown): void } }).__sx
+        const id = sx.getState().plate[0]!.id
+        sx.setState({ selection: id, selectedIds: [id] })
+      })
+      await page.getByTestId('ribbon-tab-solid').click()
+      const solid = await once(`solid, picked ${picked}`)
+      expect(solid).toEqual(expect.arrayContaining(['sketch', 'extrude', 'revolve', 'push', 'cut', 'array', 'holefit']))
+      await expect(ribbon.getByTestId('ribbon-extrude')).toBeVisible()
+      for (const tab of ['mesh', 'sketch'] as const) {
+        await page.getByTestId(`ribbon-tab-${tab}`).click()
+        await once(`${tab}, picked ${picked}`)
+      }
+    }
   })
 
   test('Sketch opens the Sketch tab with its drawing tools, and leaving the sketch goes back', async ({ page }) => {
