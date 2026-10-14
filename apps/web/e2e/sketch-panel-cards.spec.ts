@@ -141,6 +141,7 @@ test('at 1440 by 900 Distance and Draft show above the footer with the solid car
   await sketchAt(page, 'click', [3, 3])
   await expect(page.getByTestId('sketch-solid')).not.toHaveAttribute('data-muted')
   const panel = toolPanel(page)
+  await expect(panel.getByTestId('model-tool-apply')).toBeEnabled()
   const footer = (await panel.locator('.cad-footer').boundingBox())!
   for (const id of ['#sk-dist', '#sk-taper']) {
     const b = (await panel.locator(id).boundingBox())!
