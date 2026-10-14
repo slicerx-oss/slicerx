@@ -166,6 +166,7 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-sheet-foot .sx-btn { min-height: 44px; }
 :root[data-phone] .mimir-chat .composer-text { height: 40px; font-size: 16px; }
 :root[data-phone] .mimir-chat .composer .sx-btn { width: 44px; height: 44px; }
-/* the composer is a field in dark, one step above the cards; light keeps its float until its own pass */
-.mimir-chat .composer { background: var(--field-bg); border-color: var(--field-line); }
-:root[data-scheme="light"] .mimir-chat .composer { background: var(--overlay); border-color: var(--line-soft); }
+/* The surface ladder (spec 4b) in the surface tokens: the page tone under the chat, its cards one step up with a 1 px
+   border, the composer one more as a field. Same steps in dark and light. */
+.mimir-chat :is(.lookup-rec, .tools, .choice) { border-color: var(--surface-line); background: var(--surface-card); }
+.mimir-chat .composer { border: 1px solid var(--field-line); background: var(--field-bg); }
