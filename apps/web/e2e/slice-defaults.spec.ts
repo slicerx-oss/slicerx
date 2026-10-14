@@ -8,15 +8,20 @@ import { expect, sliceCount, sliced, test } from './fixtures'
 
 type Sx = { getState(): { plate: { name: string }[]; showToolhead: boolean; showGantry: boolean }; setState(p: unknown): void }
 
-async function open(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    sessionStorage.setItem('sx-right-pane', 'shut')
+/**
+ * Opens the app with the playback bar shut, as people get it. `rightPane` 'open' starts Slice's right pane open, as the
+ * other specs do, for a test that slices but is not about that pane: a finished slice opens a shut pane, and on software
+ * graphics the view's resize that comes with it holds the page for seconds.
+ */
+async function open(page: Page, rightPane: 'shut' | 'open' = 'shut'): Promise<void> {
+  await page.addInitScript((pane) => {
+    if (pane === 'shut') sessionStorage.setItem('sx-right-pane', 'shut')
     sessionStorage.setItem('sx-preview-drawer', 'shut')
     localStorage.setItem('slicerx.debug', '1')
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' }, printerId: 'bay-1' }))
-  })
+  }, rightPane)
   await page.goto('./')
   await expect.poll(() => page.evaluate(() => (window as unknown as { __sx?: Sx }).__sx?.getState().plate.some((p) => p.name.includes('Layered X')) ?? false), { timeout: 120_000 }).toBe(true)
   await page.locator('html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: 120_000 })
@@ -42,7 +47,7 @@ test.describe('Slice tab defaults', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop width: on a phone the bar opens from its own row and the toolbar is off')
 
   test('the playback bar starts shut to its transport row and opens from its tab and its key', async ({ page }) => {
-    await open(page)
+    await open(page, 'open')
     await slice(page)
     const dock = page.getByTestId('preview-drawer')
     const tab = dock.getByTestId('edge-tab-bottom')
@@ -76,10 +81,10 @@ test.describe('Slice tab defaults', () => {
     for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1024, height: 768 }]) {
       await page.setViewportSize(size)
       if (size.width === 1440) {
-        await open(page)
-        await slice(page)
         // Both panes open: the narrowest view at this width.
-        if ((await page.getByTestId('edge-tab-right').getAttribute('aria-expanded')) !== 'true') await page.getByTestId('edge-tab-right').click()
+        await open(page, 'open')
+        await slice(page)
+        await expect(page.getByTestId('edge-tab-right')).toHaveAttribute('aria-expanded', 'true')
       }
       const dock = page.getByTestId('preview-drawer')
       const tab = dock.getByTestId('edge-tab-bottom')
@@ -118,7 +123,7 @@ test.describe('Slice tab defaults', () => {
 
   test('the pinned printer and filaments end on a row edge, never through a row', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await open(page)
+    await open(page, 'open')
     await slice(page)
     for (const size of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }, { width: 1440, height: 700 }]) {
       await page.setViewportSize(size)
@@ -134,7 +139,7 @@ test.describe('Slice tab defaults', () => {
   })
 
   test('Show toolhead starts on and Show gantry off, each its own switch', async ({ page }) => {
-    await open(page)
+    await open(page, 'open')
     await slice(page)
     const head = page.getByTestId('pv-show-toolhead')
     const gantry = page.getByTestId('pv-show-gantry')
