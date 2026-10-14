@@ -388,8 +388,12 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .pane.sx-rail[data-collapsed] { width: var(--w-rail); }
 .pane.sx-rail[data-side=right]:not([data-collapsed]) { width: calc(var(--w-side) + 24px); }
 .pane-body { padding-bottom: 56px; }
-/* The right pane's scroll area stops 16px short of the window's bottom edge, so a block cut by it never sits against the edge. */
+/* The right pane's scroll area stops 16px short of the window's bottom edge, and its last 24px fade into the pane
+   while there is more below, so a block cut there reads as more to scroll. Scrolled to the end, the last block keeps
+   the gap the blocks have between them. */
 .pane.sx-rail[data-side=right]:not([data-collapsed]):not(.sheet) > .sx-rail-body { margin-bottom: 16px; }
+.pane.sx-rail[data-side=right]:not([data-collapsed]):not(.sheet) > .sx-rail-body[data-more] { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane.sx-rail[data-side=right] .pane-body { padding-bottom: var(--s-2); }
 .pane .sx-block:first-child { padding-top: var(--s-2); }
 .sx-rail-slot { height: 100%; }
 

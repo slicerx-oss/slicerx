@@ -219,6 +219,22 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
   }, [sheet, sheetOpen])
   // A sheet closes when its pane goes (switching between Model and Slice).
   useEffect(() => () => setSheet(sheetKey, false), [sheetKey])
+  // The right pane's foot fades while there is more below, so a block cut by the edge reads as more to scroll.
+  useEffect(() => {
+    const el = bodyRef.current?.parentElement
+    if (!el || side !== 'right' || sheet) return
+    const mark = () => el.toggleAttribute('data-more', el.scrollTop + el.clientHeight < el.scrollHeight - 1)
+    mark()
+    el.addEventListener('scroll', mark, { passive: true })
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(mark)
+    ro?.observe(el)
+    if (bodyRef.current) ro?.observe(bodyRef.current)
+    return () => {
+      el.removeEventListener('scroll', mark)
+      ro?.disconnect()
+      el.removeAttribute('data-more')
+    }
+  }, [side, sheet, open])
 
   const onSelect = (item: RailItem) => {
     if (!open) setRail(ws, side, true)
