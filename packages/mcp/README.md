@@ -243,6 +243,19 @@ slicerx-mcp --engine stub call project_open '{"printer":"bambu_p1s","filament":"
   project_set_filament '{"slot":1,"color":"#000000"}' project_show
 ```
 
+### Project values and step bindings
+
+`slicerx_app_values` reads the open project's named values, expressions, resolved numbers or errors, built-in `nozzle` and `clearance`, and history-step bindings on every plate. `slicerx_app_value_set` adds or changes an expression, `slicerx_app_value_remove` removes an unused value, and `slicerx_app_step_bind` makes a step's main number follow an expression. These tools require the app link; edits require its edit grant and the `slice` permission class.
+
+```sh
+slicerx-mcp call --app app_value_set '{"name":"height","expression":"5mm"}' app_values
+slicerx-mcp call --app app_step_bind '{"design":"obj_1","step":1,"expression":"height * 2"}' \
+  design_steps '{"design":"obj_1"}' app_values
+slicerx-mcp call --app app_step_bind '{"design":"obj_1","step":1,"expression":null}'
+```
+
+Use the design and step ids from `design_list` and `design_steps`. A null binding keeps the current number. Setting an explicit `value` with `design_edit_step` also clears the binding, as typing a number in the app does; renaming or suppressing the step keeps it. Changes replay affected objects on the shown plate; bindings on other plates report `pending` until those plates are shown. Invalid expressions remain stored as in the values panel. If an edit leaves an expression or replay error, the call fails with the resulting state in `error.details`, including `applied:true`; `app_values` reads that state independently. Invalid binding requests fail before changing the step.
+
 ## Options
 
 | Flag | Environment | Default |

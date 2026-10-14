@@ -271,7 +271,7 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     source: 'command',
     permission: 'slice',
     description:
-      `Edit one step of a design and replay the steps after it, as editing a step in ${productName()}'s history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. Steps after it that no longer work are reported broken with the reason; edit them, or edit this one back.`,
+      `Edit one step of a design and replay the steps after it, as editing a step in ${productName()}'s history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. Setting a number clears that step's expression binding; renaming or suppressing it keeps the binding. Steps after it that no longer work are reported broken with the reason; edit them, or edit this one back.`,
     input: z.object({
       design: designArg,
       step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id'),
@@ -289,7 +289,8 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
         if (most !== undefined && Math.abs(i.value) > most) throw new ToolInputError(`value: at most ${most} for this step, as its tool takes`)
         const p = withNumber(s.params, i.value)
         if (typeof p === 'string') throw new ToolInputError(`value: ${p}`)
-        next = { ...next, params: p }
+        const { bind: _bind, ...unbound } = next
+        next = { ...unbound, params: p }
       }
       if (i.suppressed !== undefined) {
         const { suppressed: _s, ...rest } = next

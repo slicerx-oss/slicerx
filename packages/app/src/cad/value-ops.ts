@@ -47,7 +47,16 @@ export function removeValue(name: string): void {
  * Brings every bound step on the plate in view to the number its expression gives now and replays each object
  * that changed. A step whose expression does not resolve keeps its number, and the sentence says why.
  */
-export async function refreshBound(host: Loader): Promise<{ replayed: string[]; broken: string[] }> {
+let refreshing: Promise<unknown> = Promise.resolve()
+
+/** UI effects and project commands share one replay queue. Each pass reads the latest table. */
+export function refreshBound(host: Loader): Promise<{ replayed: string[]; broken: string[] }> {
+  const next = refreshing.then(() => refreshNow(host))
+  refreshing = next.catch(() => undefined)
+  return next
+}
+
+async function refreshNow(host: Loader): Promise<{ replayed: string[]; broken: string[] }> {
   const { values, errors } = valueTable()
   const replayed: string[] = []
   const broken: string[] = []
@@ -78,7 +87,10 @@ export async function refreshBound(host: Loader): Promise<{ replayed: string[]; 
       return { ...s, params }
     })
     if (!changed) continue
-    await applyHistory(host, e.id, { ...h, steps })
+    const result = await applyHistory(host, e.id, { ...h, steps })
+    result.status.forEach((s, i) => {
+      if (s.state === 'broken') broken.push(`${e.name}, step ${i + 1}: ${s.message ?? 'The step failed.'}`)
+    })
     replayed.push(e.id)
   }
   return { replayed, broken }

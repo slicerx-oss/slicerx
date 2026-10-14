@@ -40,6 +40,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // window behaves, never the project.
   'look.get': 'read',
   'look.set': 'read',
+  'values.list': 'read',
+  'values.set': 'edit',
+  'values.remove': 'edit',
+  'values.bind': 'edit',
   // The design tools (@slicerx/mcp/toolset), run here on the plate's design host.
   'design.new': 'edit',
   'design.list': 'read',
@@ -439,6 +443,10 @@ async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): P
 /** Runs one call the hub handed over, from `client`. The hub already checked the method and the client's grant. */
 export async function runCall(method: string, args: Record<string, unknown>, client: LinkClient = { id: '', name: 'An agent' }): Promise<unknown> {
   if (!Object.hasOwn(APP_LINK_METHODS, method)) throw new LinkError('not_found', `${appName()} has no app link method ${method}`)
+  if (method === 'values.list' || method === 'values.set' || method === 'values.remove' || method === 'values.bind') {
+    const { valueCall } = await import('./values')
+    return valueCall(method, args, linkLoader)
+  }
   const h = Object.hasOwn(HANDLERS, method) ? HANDLERS[method] : undefined
   if (h) return h(args, client)
   const tool = designTools?.get(method)

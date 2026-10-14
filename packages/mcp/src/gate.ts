@@ -13,6 +13,7 @@ import type { ApprovalRequest, ApprovalToken, PermissionClass, PermissionPolicy 
 import { grantApproval, hashParams, PERMISSION_LABELS, productName } from '@slicerx/contracts'
 import { buildApprovalRequest, decide, policyMayGrant, TOKEN_TTL_MS, toolMessage, type AgentWork, type ApprovalBroker, type PilotTool, type ToolContext, type ToolOutput } from '@slicerx/pilot'
 import type { ActionLog } from './actionlog'
+import { ToolInputError } from './errors'
 
 export interface PendingCall {
   tool: PilotTool<unknown>
@@ -129,7 +130,7 @@ function failFrom(e: unknown): CallToolResult {
   const raw = typeof e === 'object' && e !== null && 'code' in e ? (e as { code: unknown }).code : undefined
   const code = typeof raw === 'string' && raw !== '' ? raw : 'internal_error'
   const message = e instanceof Error ? e.message : String(e)
-  return fail(`${code}: ${message}`, { error: { code, message } })
+  return fail(`${code}: ${message}`, { error: { code, message, ...(e instanceof ToolInputError && e.details ? { details: e.details } : {}) } })
 }
 
 async function execute(

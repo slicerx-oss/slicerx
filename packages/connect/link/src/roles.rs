@@ -123,6 +123,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: they change how the window behaves, never the project. No other setting is reachable.
     ("look.get", LinkClass::Read),
     ("look.set", LinkClass::Read),
+    ("values.list", LinkClass::Read),
+    ("values.set", LinkClass::Edit),
+    ("values.remove", LinkClass::Edit),
+    ("values.bind", LinkClass::Edit),
     // The design tools, run in the app on its plate, each step a history step the person can undo.
     // Opening and saving files stay with the server and the person.
     ("design.new", LinkClass::Edit),
@@ -355,6 +359,10 @@ mod tests {
             ("plates.show", LinkClass::Read),
             ("look.get", LinkClass::Read),
             ("look.set", LinkClass::Read),
+            ("values.list", LinkClass::Read),
+            ("values.set", LinkClass::Edit),
+            ("values.remove", LinkClass::Edit),
+            ("values.bind", LinkClass::Edit),
             ("design.new", LinkClass::Edit),
             ("design.list", LinkClass::Read),
             ("design.steps", LinkClass::Read),
@@ -394,13 +402,15 @@ mod tests {
                 "pair", "client",
             ] {
                 assert!(
-                    !m.to_ascii_lowercase().contains(word),
+                    !m.to_ascii_lowercase().contains(word) || (*m == "values.remove" && word == "remove"),
                     "{m} looks like something a person keeps ({word})"
                 );
             }
         }
         assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
+        // removing a project value is an edit, never a file or printer action.
+        assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
         for m in ["design.open", "design.save"] {
             assert_eq!(link_class(m), None, "{m} reads or writes files");
         }
