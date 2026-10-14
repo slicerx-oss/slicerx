@@ -9,7 +9,7 @@ import { withStep } from '../src/cad/history/record'
 import { runReplay } from '../src/cad/history/ops'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
-import { faceMadeBy } from '../src/cad/history/made-by'
+import { faceMadeBy, faceSource } from '../src/cad/history/made-by'
 import type { PlateEntry } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
@@ -53,23 +53,30 @@ describe('the step that made a face', () => {
     expect(made.get(holeFloor!)).toBe(h.steps[2]!.id)
   })
 
-  it('names the push for the top it moved, and nothing for a face the base still has', async () => {
+  it('keeps the base provenance of the moved top and records the push as its user', async () => {
     const made = madeBy(h.steps, await partsAfter(h))
     const top = faceKeyAt(parts[0]!, T, [90, 95, 10], [0, 0, 1])
     const bottom = faceKeyAt(parts[0]!, T, [90, 95, 0], [0, 0, -1])
     expect(top).toBeDefined()
     expect(bottom).toBeDefined()
-    expect(made.get(top!)).toBe(h.steps[0]!.id)
+    expect(made.has(top!)).toBe(false)
     expect(made.has(bottom!)).toBe(false)
+    const step = { ...h.steps[0]!, id: 'push-again', params: { ...pull, at: [90, 95, 10] as [number, number, number], distanceMm: 1, faceKey: top! } }
+    const history = { ...h, steps: [...h.steps, step] }
+    const replay = await runReplay({ history })
+    expect(replay.status.every((s) => s.state === 'done')).toBe(true)
+    const entry = { id: 'o', parts: replay.parts.map((p) => ({ name: p.name, slot: p.slot, positions: new Float32Array(p.positions), indices: new Uint32Array(p.indices) })), history } as unknown as PlateEntry
+    const triangle = Array.from({ length: replay.parts[0]!.indices.length / 3 }, (_, t) => t).find((t) => keyOfTriangle(replay.parts[0]!, t) === top)!
+    expect(await faceSource(entry, 0, triangle)).toEqual({ made: 'base', used: [step.id] })
   })
 
   it('reads the base keys the way the engine makes them', async () => {
     const first = (await runReplay({ history: { ...h, steps: h.steps.slice(0, 1) } })).parts[0]!
     const bottom = faceKeyAt(first, T, [90, 95, 0], [0, 0, -1])
     expect(baseKeys(0, first.faces?.table.length ?? 0).has(bottom!)).toBe(true)
-    // and only the faces the push left alone: the top it moved and its new sides are the push's own
+    // moving a cap preserves its identity, just as the exact kernel does.
     const top = faceKeyAt(first, T, [90, 95, 10], [0, 0, 1])
-    expect(baseKeys(0, first.faces?.table.length ?? 0).has(top!)).toBe(false)
+    expect(baseKeys(0, first.faces?.table.length ?? 0).has(top!)).toBe(true)
   })
 })
 

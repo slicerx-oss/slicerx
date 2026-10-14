@@ -26,8 +26,7 @@ use std::collections::HashMap;
 pub struct OpenFace {
     pub at: V3,
     pub normal: V3,
-    /// The face's key (faces.rs), looked for first; `at` and `normal` find the face when it has none, or the key is
-    /// gone.
+    /// the face's key; missing or split keys require repair. unkeyed selections use `at` and `normal`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<u64>,
 }
@@ -127,11 +126,11 @@ fn open_faces(w: &TriMesh, faces: &Faces, open: &[OpenFace]) -> Result<(Vec<u32>
     let mut out: Vec<u32> = Vec::new();
     let mut keys: Vec<u64> = Vec::new();
     for o in open {
-        let by_key = o
-            .key
-            .filter(|&k| k != 0)
-            .and_then(|k| faces.keys.iter().position(|&x| x == k))
-            .and_then(|f| u32::try_from(f).ok());
+        let by_key = if let Some(key) = o.key.filter(|&k| k != 0) {
+            Some(faces::resolve_key(w, faces, key)?)
+        } else {
+            None
+        };
         if let Some(f) = by_key {
             keys.push(faces.keys[f as usize]);
             if !out.contains(&f) {
@@ -487,6 +486,56 @@ mod tests {
         assert!((out.volume() - want).abs() < 1e-6);
         // Without the key the old place is not on a face.
         assert!(shell(&tall, &[top(20.0)], 2.0, &o()).is_err());
+    }
+
+    #[test]
+    fn a_disconnected_open_face_key_requires_repair() {
+        let mesh = TriMesh::new(
+            vec![
+                [0.0, 0.0, 20.0],
+                [2.0, 0.0, 20.0],
+                [0.0, 2.0, 20.0],
+                [10.0, 0.0, 20.0],
+                [11.0, 0.0, 20.0],
+                [10.0, 1.0, 20.0],
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            vec![[0, 1, 2], [3, 4, 5], [6, 7, 8]],
+        );
+        let faces = Faces {
+            ids: vec![0, 0, 1],
+            keys: vec![7, 8],
+            table: vec![
+                Surface::Plane {
+                    normal: [0.0, 0.0, 1.0],
+                    offset: 20.0,
+                },
+                Surface::Plane {
+                    normal: [0.0, 0.0, 1.0],
+                    offset: 0.0,
+                },
+            ],
+        };
+        let reference = OpenFace {
+            key: Some(7),
+            ..top(20.0)
+        };
+        let error = open_faces(&mesh, &faces, &[reference]).unwrap_err().to_string();
+        assert!(error.contains("split") && error.contains("repair"), "{error}");
+    }
+
+    #[test]
+    fn a_missing_open_face_key_requires_repair() {
+        let mut m = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
+        crate::faces::with_key_salt(Some(9), || crate::faces::base_keys(&mut m));
+        let missing = OpenFace {
+            key: Some(1),
+            ..top(20.0)
+        };
+        let error = shell(&m, &[missing], 2.0, &o()).unwrap_err().to_string();
+        assert!(error.contains("missing") && error.contains("repair"), "{error}");
     }
 
     #[test]
