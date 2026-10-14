@@ -6,7 +6,7 @@ The print watch's failure detector. It runs beside sx-link on the user's own mac
 sx-watch [--url ws://127.0.0.1:47615] [--state-dir <sx-link state dir>]
 ```
 
-Without `--url`, a test or dev run's `SX_TEST_HUB_PORT` (1024 or above) names the hub's loopback port, as it does for sx-link.
+Without `--url`, a build with the `test-hub` feature (`cargo run -p sx-watch --features test-hub`) takes the hub's loopback port from `SX_TEST_HUB_PORT` (1024 or above), as sx-link does. The app's bundled sx-watch is built without it and always uses 47615 unless given `--url`.
 
 The watch code comes from `SX_WATCH_CODE` or the hub's `watch-code` file (mode 0600), never from the command line. The hub's `hub-key.pub` is pinned. A hub that cannot prove that key gets nothing but the hello, and sx-watch stops instead of retrying.
 

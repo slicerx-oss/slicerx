@@ -11,8 +11,9 @@
 //! pinned. The model is looked for beside this binary (or `--model`, `SX_WATCH_MODEL`); without
 //! it the watch runs the stub, which reports nothing. `--huginn` (or `SX_WATCH_HUGINN`) lists
 //! the printers whose suspected failures huginn confirms on the ChatGPT plan saved in the
-//! keychain; it is off unless given. Without `--url`, a test or dev run's `SX_TEST_HUB_PORT` (1024 or above) names
-//! the hub's loopback port, as it does for sx-link and the app.
+//! keychain; it is off unless given. Without `--url`, a build with the `test-hub` feature (tests and dev runs, never the
+//! app's bundled sidecar) takes the hub's loopback port from `SX_TEST_HUB_PORT` (1024 or above), as sx-link and the
+//! app's test builds do.
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -71,6 +72,18 @@ fn hub_url(flag: Option<String>, setting: Option<&str>) -> String {
     })
 }
 
+/// A test or dev run's hub port setting. Only a `test-hub` build reads the variable: the release sidecar is built
+/// without it, and apps/desktop/release/check-agent-bridge.mjs refuses a release binary that carries its name.
+#[cfg(feature = "test-hub")]
+fn test_hub_setting() -> Option<String> {
+    std::env::var("SX_TEST_HUB_PORT").ok()
+}
+
+#[cfg(not(feature = "test-hub"))]
+fn test_hub_setting() -> Option<String> {
+    None
+}
+
 fn options() -> Result<Options, String> {
     let args: Vec<String> = std::env::args().collect();
     let arg = |name: &str| {
@@ -82,7 +95,7 @@ fn options() -> Result<Options, String> {
     if args.iter().any(|a| a == "--code") {
         return Err("--code is not accepted, since other users can read command lines. Set SX_WATCH_CODE or keep the hub's watch-code file.".into());
     }
-    let url = hub_url(arg("--url"), std::env::var("SX_TEST_HUB_PORT").ok().as_deref());
+    let url = hub_url(arg("--url"), test_hub_setting().as_deref());
     let dir = arg("--state-dir")
         .map(PathBuf::from)
         .or_else(default_state_dir)
