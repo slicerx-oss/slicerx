@@ -426,7 +426,8 @@ export interface ViewportEvents {
   /** WebGL context lost or the renderer failed to start. */
   error: { message: string }
   /** The viewport lowered its own quality to keep frames smooth. Show `message` as a toast. */
-  degrade: { message: string }
+  /** `details` is the rest of a short `message`, shown behind Details. */
+  degrade: { message: string; details?: string }
 }
 
 /**
