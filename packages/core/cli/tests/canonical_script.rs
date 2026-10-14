@@ -183,3 +183,60 @@ fn slicing_uses_the_same_review_and_checks_the_effective_firmware() {
         }
     }
 }
+
+#[test]
+fn explicit_replacement_slices_and_rejects_stale_or_conflicting_choices() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut request: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixtures.join("cube-request.json")).unwrap()).unwrap();
+    request["meshes"]["cube"] = serde_json::json!(fixtures.join("cube.stl"));
+    request["options"] = serde_json::json!({"emitGcode": false, "emitPreview": false, "shards": 1});
+    request["config"]["printer_model"] = serde_json::json!("Bambu Lab P1S");
+    request["config"]["gcode_flavor"] = serde_json::json!("marlin");
+    request["config"]["machine_pause_gcode"] = serde_json::json!("M400 U1\nM500");
+    request["script_replacements"] = serde_json::json!([{
+        "key": "machine_pause_gcode", "original": "M400 U1\nM500", "replacement": "M400 U1"
+    }]);
+    for (flavor, original, expected) in [
+        ("marlin", "M400 U1\nM500", "applied"),
+        ("klipper", "M400 U1\nM500", "printer_identity_conflict"),
+        ("marlin", "stale", "original no longer matches"),
+    ] {
+        request["options"]["flavor"] = serde_json::json!(flavor);
+        request["script_replacements"][0]["original"] = serde_json::json!(original);
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sx"))
+            .args([
+                "slice",
+                "--request",
+                "-",
+                "--script-printer",
+                "bambu-p1s",
+                "--script-firmware",
+                "marlin",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(request.to_string().as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        if expected == "applied" {
+            assert!(output.status.success(), "{stderr}");
+            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["script_replacements"][0]["decision"], "applied");
+            assert_eq!(report["script_replacements"][0]["original"], original);
+            assert_eq!(report["script_replacements"][0]["replacement"], "M400 U1");
+            assert_eq!(report["script_reviews"][0]["reason"], "stock_equivalent");
+        } else {
+            assert!(!output.status.success());
+            assert!(stderr.contains(expected), "{stderr}");
+        }
+    }
+}

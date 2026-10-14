@@ -5,11 +5,13 @@
 // before the core ships.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import type { HeightRange, SettingValue, VolumeRole, ScriptReviewInput, ScriptReview, ScriptReplacementInput, ScriptReplacement } from '@slicerx/contracts'
+import type { HeightRange, SettingValue, VolumeRole, ScriptReviewInput, ScriptReview, ScriptReplacementInput, ScriptReplacement, ScriptIdentity, ScriptReplacementChoice, AppliedScriptReplacement } from '@slicerx/contracts'
 import { readStl } from './mesh'
 import { ToolInputError } from './models'
 
 export interface SliceJob {
+  scriptPrinter?: ScriptIdentity
+  scriptReplacements?: ScriptReplacementChoice[]
   modelPath: string
   /** For a 3MF or .sx3mf project: the plate to slice, 1-based. Unset slices the first plate. */
   modelPlate?: number
@@ -49,6 +51,7 @@ export interface SliceJobObject {
 }
 
 export interface SliceSummary {
+  script_replacements?: AppliedScriptReplacement[]
   engine: 'sx' | 'stub'
   model: { name: string; triangles?: number; bbox_mm?: [number, number, number] }
   layer_count: number

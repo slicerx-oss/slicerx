@@ -46,6 +46,33 @@ type Err = { error: { code: string; message: string; details?: { summary?: strin
 type Summary = { project_gcode?: { key: string; use: string; message: string }[]; gcode_path: string }
 
 describe('a project with its own printer G-code', () => {
+  it.skipIf(noSx())('explicitly replaces one imported script, retains the original and keeps the input file intact', { timeout: sxTimeout }, async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      const model = join(h.dir, 'replacement.3mf')
+      const original = 'M400 U1\nM500'
+      writeFileSync(model, writeZip([
+        { name: '3D/3dmodel.model', data: MODEL },
+        { name: 'Metadata/project_settings.config', data: JSON.stringify({ printer_model: 'Bambu Lab P1S', gcode_flavor: 'marlin', layer_height: '0.2', machine_pause_gcode: original }) },
+      ]))
+      const before = readFileSync(model)
+      const args = { model, project_settings: true, script_printer: { model: 'bambu-p1s', firmware: 'marlin' }, script_replacements: [{ key: 'machine_pause_gcode', original, replacement: 'M400 U1' }] }
+      const result = await h.call('slicerx_slice_file', args)
+      expect(result.isError, text(result)).toBeFalsy()
+      const output = data<{ layer_count: number; script_replacements: { original: string; replacement: string; decision: string; diff: unknown[] }[] }>(result)
+      expect(output.layer_count).toBeGreaterThan(0)
+      expect(output.script_replacements).toHaveLength(1)
+      expect(output.script_replacements[0]).toMatchObject({ original, replacement: 'M400 U1', decision: 'applied' })
+      expect(output.script_replacements[0]!.diff.length).toBeGreaterThan(0)
+      expect(readFileSync(model)).toEqual(before)
+      const stale = await h.call('slicerx_slice_file', { ...args, script_replacements: [{ ...args.script_replacements[0], original: 'stale' }] })
+      expect(data<Err>(stale).error.code).toBe('script_replacement_stale')
+      const overridden = await h.call('slicerx_slice_file', { ...args, overrides: { machine_pause_gcode: 'G4 P0' } })
+      expect(data<Err>(overridden).error.code).toBe('script_replacement_stale')
+      const changed = await h.call('slicerx_slice_file', { ...args, script_replacements: [{ ...args.script_replacements[0], replacement: 'M400 U1\nM500' }] })
+      expect(changed.isError).toBe(true)
+    } finally { await h.client.close() }
+  })
   it('keeps the stock A1 start G-code with M211, M500 and M18 in it, trusted, and says so', async () => {
     expect(STOCK_START).toMatch(/^M211 /m)
     expect(STOCK_START).toMatch(/^\s*M500/m)

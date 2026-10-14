@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-176 tools.
+178 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -110,6 +110,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_paint_regions` |  |  | read | Read a design's paint back: for one layer, each part's painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. |
 | `slicerx_pending_approvals` | Pending approvals | core | read, ungated | List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in SlicerX or on the phone, and how those went once the hub ran them. |
 | `slicerx_plan_settings` | Plan settings | settings | read, ungated | Work out which OrcaSlicer settings to change for a filament, printer, nozzle and print intent. |
+| `slicerx_prepare_script_replacement` | Prepare a stock-script replacement | core | read, ungated | Prepare an inspectable replacement with verified stock for an explicitly selected printer. |
 | `slicerx_print_adjust` |  |  | start | Make one change to a running print: part fan, speed factor, nozzle or bed temperature, or pause. |
 | `slicerx_printer_add` |  |  | printer_config | Adds the printer to SlicerX with its profile, nozzle and connection. |
 | `slicerx_printer_cancel` |  |  | start | Cancel the running print. |
@@ -158,6 +159,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_remove_from_fleet` | Remove a printer from a fleet | fleets | read, ungated | Remove a printer from a fleet. |
 | `slicerx_rename_fleet` | Rename a fleet | fleets | read, ungated | Rename a fleet. |
 | `slicerx_resume_from_layer` |  |  | read | Plan a restart after a failed print with the part still on the bed. |
+| `slicerx_review_script` | Review a printer script | core | read, ungated | Compare a printer script with versioned stock for the selected printer and firmware. |
 | `slicerx_risk_report` |  |  | read | Check a plate for what is likely to fail before slicing: warping (footprint size, the material's shrink and enclosure need, open printers), tall thin parts, overhangs with supports off, open mesh edges and small first layer contact. |
 | `slicerx_scale_with_tolerance` |  |  | slice | Scale a part uniformly while holding its fastener holes and fits at their real sizes (heat-set inserts, tap holes, clearance holes, pin fits), then report the hole and contour compensation the printer needs. |
 | `slicerx_schedule` |  |  | read | Plan jobs across printers: for each job (object, copies, material, optional due date) it estimates time per copy by slicing one copy, splits copies into plates, and assigns each plate to a printer that has the material loaded (else notes a spool swap), idle printers first, lowest machine cost, meeting due dates. |

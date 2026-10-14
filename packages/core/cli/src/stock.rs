@@ -107,12 +107,12 @@ pub fn stock_keys(config: &Map<String, Value>) -> Vec<String> {
         .collect()
 }
 
-/// an explicit target uses the shared versioned review, including every declared identity.
-pub fn reviewed_keys(
+/// extracts current declarations for both recognition and replacement.
+pub fn declarations(
     config: &Map<String, Value>,
     selected: &sx_core::script_review::Identity,
-) -> Result<(Vec<String>, Vec<Value>), String> {
-    use sx_core::script_review::{Identity, ReviewInput, review_known};
+) -> Vec<sx_core::script_review::Identity> {
+    use sx_core::script_review::Identity;
     let t = table();
     let firmware = first_str(config.get("gcode_flavor")).unwrap_or("unknown");
     let mut declared = vec![Identity {
@@ -160,6 +160,16 @@ pub fn reviewed_keys(
             }));
         }
     }
+    declared
+}
+
+/// an explicit target uses the shared versioned review, including every declared identity.
+pub fn reviewed_keys(
+    config: &Map<String, Value>,
+    selected: &sx_core::script_review::Identity,
+) -> Result<(Vec<String>, Vec<Value>), String> {
+    use sx_core::script_review::{ReviewInput, review_known};
+    let declared = declarations(config, selected);
     let mut trusted = Vec::new();
     let mut results = Vec::new();
     for (key, value) in config

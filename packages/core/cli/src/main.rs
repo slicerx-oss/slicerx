@@ -499,6 +499,54 @@ fn review_request_scripts(
     Ok(reviews)
 }
 
+fn apply_request_replacements(
+    req: &mut sx_core::api::SliceRequest,
+    raw: &Value,
+    selected: Option<&sx_core::script_review::Identity>,
+) -> Res<Vec<sx_core::script_replacement::AppliedReplacement>> {
+    let Some(choices) = raw.get("script_replacements") else {
+        return Ok(Vec::new());
+    };
+    #[cfg(feature = "stock-gcode")]
+    {
+        let selected = selected.ok_or("script replacements require an explicit printer and firmware")?;
+        let choices = serde_json::from_value::<Vec<sx_core::script_replacement::Choice>>(choices.clone())?;
+        let config = req
+            .config
+            .as_object_mut()
+            .ok_or("script replacements require object settings")?;
+        let mut declared = stock::declarations(config, selected);
+        if let Some(flavor) = &req.options.flavor {
+            declared.push(sx_core::script_review::Identity {
+                model: selected.model.clone(),
+                firmware: flavor.clone(),
+            });
+        }
+        Ok(sx_core::script_replacement::apply_known(
+            config,
+            Some(selected),
+            &declared,
+            &choices,
+        )?)
+    }
+    #[cfg(not(feature = "stock-gcode"))]
+    {
+        let _ = (req, choices, selected);
+        Err("stock script replacement is unavailable in this build".into())
+    }
+}
+
+fn request_script_changes(
+    req: &mut sx_core::api::SliceRequest,
+    raw: &Value,
+    args: &[String],
+) -> Res<(Vec<sx_core::script_replacement::AppliedReplacement>, Vec<Value>)> {
+    let selected = script_target(args)?;
+    let replacements = apply_request_replacements(req, raw, selected.as_ref())?;
+    let reviews = review_request_scripts(req, selected.as_ref())?;
+    Ok((replacements, reviews))
+}
+
 fn cmd_request(args: &[String]) -> ExitCode {
     use sx_core::api;
     let fail = |code: u8, msg: String| {
@@ -520,12 +568,8 @@ fn cmd_request(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(EXIT_INPUT, format!("request: {e}")),
     };
-    let selected = match script_target(args) {
-        Ok(selected) => selected,
-        Err(e) => return fail(EXIT_USAGE, e.to_string()),
-    };
-    let script_reviews = match review_request_scripts(&mut req, selected.as_ref()) {
-        Ok(reviews) => reviews,
+    let (script_replacements, script_reviews) = match request_script_changes(&mut req, &raw, args) {
+        Ok(result) => result,
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
     };
     report_options(&mut req, args);
@@ -572,6 +616,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
     };
     if !script_reviews.is_empty() {
         out["script_reviews"] = serde_json::json!(script_reviews);
+    }
+    if !script_replacements.is_empty() {
+        out["script_replacements"] = serde_json::json!(script_replacements);
     }
     if let Some(dir) = flag(args, "--out-dir") {
         let dir = Path::new(dir);
