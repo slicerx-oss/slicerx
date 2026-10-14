@@ -2,6 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The plate picker's logic: names cut in the middle to fit, stepping through the plates and stopping at the ends, the
 // sheet's search and Not sliced filter, each plate's slice state, and the Shift+[ and Shift+] keys.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { KEYMAPS, keymapConflicts, LOOK_IDS } from '@slicerx/ui'
 import { fitMiddle, midTruncate } from '../src/lib/mid-truncate'
@@ -167,5 +169,19 @@ describe('the sheet\'s size', () => {
     expect(sheetHeight(3, 366, 600)).toBe(386)
     // The plate settings form gets room of its own.
     expect(sheetHeight(1, 640, 480, true)).toBe(320)
+  })
+})
+
+describe('the picker\'s look (design spec 2 and 4)', () => {
+  const css = readFileSync(join(import.meta.dirname, '../src/styles/app.css'), 'utf8')
+  const rule = (selector: string) => css.split('\n').find((l) => l.startsWith(`${selector} {`)) ?? ''
+  it('has controls 34 px tall, the control height token', () => {
+    expect(rule('.pp-step')).toContain('height: var(--h-md)')
+    expect(rule('.pp-main')).toContain('height: var(--h-md)')
+    expect(rule('.plate-picker')).toContain('height: calc(var(--h-md) + 8px)')
+  })
+  it('lifts the pill and the grid popover with the lift edge', () => {
+    expect(rule('.plate-picker')).toContain('var(--shadow-float), var(--lift-edge)')
+    expect(rule('.pp-sheet')).toContain('var(--shadow-pop), var(--lift-edge)')
   })
 })
