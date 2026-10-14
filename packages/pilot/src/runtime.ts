@@ -24,7 +24,7 @@ import type {
   SettingsDiff,
   ToolSpec,
 } from '@slicerx/contracts'
-import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams } from '@slicerx/contracts'
+import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams, pluginLoads } from '@slicerx/contracts'
 import { productName } from '@slicerx/contracts'
 import { Channel } from './channel'
 import { ASSISTANT_NAME } from './name'
@@ -229,12 +229,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const manifests = await opts.host.printers.plugins().catch(() => [])
     const printers = await opts.host.printers.list().catch(() => [])
     const made = pluginToolsFrom(manifests).filter((t) => !tools.has(t.name)) as AnyTool[]
-    const loads: PluginLoad[] = manifests.map((m) => {
-      const assigned = printers.filter((p) => p.plugin === m.id)
-      const detail = m.kind === 'printer' ? (assigned.length ? assigned.map((p) => p.name).join(', ') : 'No printers assigned') : m.name
-      return { id: m.id, name: m.name, detail, state: m.kind === 'printer' && assigned.length === 0 ? 'off' : 'ready', tools: m.tools.length }
-    })
-    return { loads, tools: made }
+    return { loads: pluginLoads(manifests, printers), tools: made }
   }
 
   const web: WebLookup | undefined = opts.config.webSearch === false ? undefined : async (query, signal) => {

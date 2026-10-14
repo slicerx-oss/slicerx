@@ -58,6 +58,30 @@ describe('one mimir setup', () => {
     }
   })
 
+  it('lists the integrations with the same states the dock shows, and none in a CAD-only build', async () => {
+    const manifests = [
+      { id: 'bambu', name: 'Bambu Lab', kind: 'printer', tools: [{}, {}] },
+      { id: 'moonraker', name: 'Klipper', kind: 'printer', tools: [{}] },
+    ]
+    const printers = { plugins: async () => manifests, list: async () => [{ id: 'a1', name: 'A1 mini', plugin: 'bambu' }] }
+    const host = { ...HOST, printers } as unknown as Host
+    const withPrinters = (el: ReturnType<typeof createElement>) => createElement(HostContext.Provider, { value: host }, createElement(Suspense, { fallback: null }, el))
+    const view = render(withPrinters(createElement(PilotSettingsSection)))
+    const list = await screen.findByTestId('mimir-integrations')
+    await screen.findByText('A1 mini')
+    const rows = [...list.querySelectorAll('li')].map((li) => li.textContent)
+    expect(rows).toEqual(['Bambu LabA1 miniConnected', 'KlipperNo printers assignedOff'])
+    view.unmount()
+    setHostSlices(false)
+    try {
+      const cad = render(withPrinters(createElement(PilotSettingsSection)))
+      expect(cad.queryByTestId('mimir-integrations')).toBeNull()
+      cad.unmount()
+    } finally {
+      setHostSlices(true)
+    }
+  })
+
   it('starts the model list on Auto, never on Opus, and keeps any other id', () => {
     let model = 'auto'
     const view = render(inHost(createElement(ModelPicker, { idPrefix: 't', provider: 'anthropic', value: model, onChange: (v: string) => (model = v) })))
