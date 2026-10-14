@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// One line blocks: the permission note, Auto's model switch, errors, the plan and the plugins loading line.
-import type { PluginLoad } from '@slicerx/contracts'
+// One line blocks: the permission note, Auto's model switch, errors, the plan and the integrations a reply used.
 import { Icon } from '@slicerx/ui'
 import { useContext } from 'react'
-import { Spinner } from './spinner'
 import { USAGE_CODES, UsageLinkContext } from './usage-link'
 
 /** What the Permissions setting decided for a step mimir did not ask about. */
@@ -49,30 +47,15 @@ export function PlanList({ steps }: { steps: string[] }) {
   )
 }
 
-/** A quiet line at run start: each plugin with a spinner that becomes a check, or "off". */
-export function PluginsLoading({ plugins }: { plugins: PluginLoad[] }) {
-  const loading = plugins.some((p) => p.state === 'loading')
+/** One small pill under a reply that used an integration, naming the ones it used. Nothing when it used none. */
+export function UsedLine({ names }: { names: string[] }) {
+  if (!names.length) return null
   return (
-    <div className="meta-ln plugs" aria-busy={loading || undefined}>
-      <span>{loading ? 'Loading plugins' : 'Plugins'}</span>
-      {plugins.map((p) => (
-        <span key={p.id} className={`plug ${p.state}`}>
-          {p.state === 'loading' ? (
-            <Spinner className="pst" />
-          ) : p.state === 'ready' ? (
-            <span className="pst">
-              <Icon name="check" />
-            </span>
-          ) : p.state === 'error' ? (
-            <span className="pst">
-              <Icon name="alert" />
-            </span>
-          ) : null}
-          {p.name}
-          {p.state === 'off' ? <span className="poff">off</span> : null}
-          {p.state === 'error' ? <span className="vh">failed to load</span> : null}
-        </span>
-      ))}
+    <div className="meta-ln used">
+      <span className="used-pill">
+        <Icon name="check" />
+        {names.join(', ')}
+      </span>
     </div>
   )
 }

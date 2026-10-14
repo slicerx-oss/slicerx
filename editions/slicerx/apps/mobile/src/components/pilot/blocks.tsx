@@ -5,7 +5,7 @@
 // activity stays quiet and opens on tap.
 import { memo, useState } from 'react'
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { PERMISSION_LABELS, type Cell, type Citation, type PluginLoad, type SettingsDiff, type ToolDisplay } from '@slicerx/contracts'
+import { PERMISSION_LABELS, type Cell, type Citation, type SettingsDiff, type ToolDisplay } from '@slicerx/contracts'
 import { Button } from '../button'
 import { haptic } from '../feedback'
 import { Icon } from '../icon'
@@ -383,23 +383,6 @@ export function ErrorLine({ message, retryable, onRetry }: { message: string; re
         {message}
       </Txt>
       {retryable && onRetry ? <Button label="Retry" icon="refresh" kind="ghost" onPress={onRetry} /> : null}
-    </View>
-  )
-}
-
-const PLUGIN_TONE: Record<PluginLoad['state'], string> = { loading: t.color.cyan, ready: t.color.green, off: t.color.dim, error: t.color.red }
-
-export function PluginsLoading({ plugins }: { plugins: PluginLoad[] }) {
-  return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
-      {plugins.map((p) => (
-        <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Dot color={PLUGIN_TONE[p.state]} pulse={p.state === 'loading'} size={6} />
-          <Txt variant="mono" tone="muted">
-            {p.name}
-          </Txt>
-        </View>
-      ))}
     </View>
   )
 }
