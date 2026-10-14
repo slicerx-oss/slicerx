@@ -47,7 +47,7 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const MAX_TIMEOUT_MS: u64 = 15 * 60_000;
 
 /// Tools the page answers. Anything not listed here or in `SHELL_TOOLS` is refused before it reaches the page.
-pub const PAGE_TOOLS: [&str; 17] = [
+pub const PAGE_TOOLS: [&str; 19] = [
     "state",
     "layers",
     "toasts",
@@ -65,6 +65,8 @@ pub const PAGE_TOOLS: [&str; 17] = [
     "clear_plate",
     "slice",
     "fonts",
+    "spools",
+    "move_to_spool",
 ];
 /// Tools the shell answers itself.
 pub const SHELL_TOOLS: [&str; 4] = ["screenshot", "open_file", "auth_callback", "export_gcode"];

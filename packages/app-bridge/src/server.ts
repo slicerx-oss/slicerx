@@ -107,6 +107,17 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     forward('layers'),
   )
   server.registerTool(
+    'app_spools',
+    {
+      title: 'Read the loaded spools',
+      description:
+        'The Filament section of the Slice sidebar: every spool the printer has loaded (or the project holds), each with its slot number and label (A1), material, color, where it comes from (printer, user, model, default), whether a spool is loaded there or the tray is empty, what is left, how many parts on the shown plate print with it (inUse) and their names, and whether it differs from what the printer holds. Also the print profile\'s material, what a click on a spool moves now (target: the selected objects, the plate, or the parts on one filament) and why each object prints on its spool (picks: manual, color, last or material).',
+      inputSchema: {},
+      annotations: read,
+    },
+    forward('spools'),
+  )
+  server.registerTool(
     'app_toasts',
     { title: 'Read toasts', description: 'Toasts the app showed, each with its text, tone (ok, info, warn, error, plain) and time, in order. Pass since to get only newer ones; the answer carries the new marker.', inputSchema: { since, limit }, annotations: read },
     forward('toasts'),
@@ -233,6 +244,23 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     forward('clear_plate'),
   )
   server.registerTool(
+    'app_move_to_spool',
+    {
+      title: 'Move to a spool',
+      description:
+        'Moves an object (or one of its parts), the parts on one filament, or the whole plate to a loaded spool, as a click on that spool in the Filament section does. Give object (id or name, with part to move one part), from (the filament whose parts move) or plate: true; with none of them it moves what a click would, and refuses on a plate that prints with two or more filaments. Another material than the profile\'s is allowed: the slice uses that spool\'s settings. Returns how many parts moved and the spools as app_spools reads them.',
+      inputSchema: {
+        spool: z.union([z.string().min(1).max(16), z.number().int().min(1).max(16)]).describe('The spool to print with: its label (A3) or slot number'),
+        object: z.string().min(1).max(200).optional().describe('Object id or name on the shown plate'),
+        part: z.string().min(1).max(200).optional().describe('One part of that object, by name'),
+        from: z.union([z.string().min(1).max(16), z.number().int().min(1).max(16)]).optional().describe('Move every part that prints with this filament (label or slot number)'),
+        plate: z.boolean().optional().describe('Move every part on the shown plate'),
+      },
+      annotations: { ...act, idempotentHint: true },
+    },
+    forward('move_to_spool'),
+  )
+  server.registerTool(
     'app_slice',
     {
       title: 'Slice and wait',
@@ -281,6 +309,7 @@ export const TOOL_NAMES = [
   'app_health',
   'app_state',
   'app_layers',
+  'app_spools',
   'app_toasts',
   'app_dialogs',
   'app_console',
@@ -296,6 +325,7 @@ export const TOOL_NAMES = [
   'app_open_file',
   'app_open_vault_design',
   'app_clear_plate',
+  'app_move_to_spool',
   'app_slice',
   'app_export_gcode',
   'app_auth_callback',

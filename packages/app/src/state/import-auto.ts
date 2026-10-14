@@ -17,6 +17,7 @@ import { repairChanged, rememberRepair, showRepairReport, type RepairEntry } fro
 import { appStore, get, markStale, set, toast, type AppState, type PlateEntry } from './store'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { brandAccent, objectPalette } from '../edition'
+import { withAutoSpools } from '../filament/pick'
 import type { OpenScope } from '../project/unsaved'
 import { markOpenStage } from '../lib/open-mark'
 import { bodyCount, multiBodyChoice, regroup, severalShells, willAsk } from './multi-body'
@@ -190,7 +191,8 @@ async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn:
     // alive at once.
     edit(() =>
       set((s) => {
-        const plate = [...s.plate, { id, name, handle, parts: [part], colors: [color], transform }]
+        // a plain STL starts on the auto-picked spool (the one used last on this printer), not always filament 1
+        const plate = [...s.plate, ...withAutoSpools([{ id, name, handle, parts: [part], colors: [color], transform }], {}, s)]
         return { plate, selection: id, selectedIds: [id], sliceDuringOpen: !isBigSlice(plate, sliceTimingsOf(s.activePlate)) }
       }),
     )
@@ -271,6 +273,11 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
       const handle = await host.slicer.loadParts(m.name, m.parts)
       entries.push({ id: uid(), name: m.name, handle, parts: m.parts, colors: m.colors, transform: m.transform, ...(split ? { splitOf: split } : {}) })
     }
+    // Parts start on the auto-picked spool: nearest to the file's color when it has colors, else (a plain model, all on
+    // filament 1) the one used last. A file that spreads its parts over filaments without colors keeps its own.
+    const colored = result.slotColors.length > 0 || result.objects.some((o) => o.parts.some((p) => p.color))
+    const plain = entries.every((e) => e.handle.parts.every((p) => p.slot === 1))
+    if (colored || plain) entries = withAutoSpools(entries, colored ? { color: (e, i) => e.colors[i] } : {})
     if (!quick) markOpenStage('engine')
     // The engine's result takes the place of the object shown before it.
     edit(() => set((s) => ({ plate: [...s.plate.filter((p) => p.id !== quick?.id), ...entries], selection: entries[0]!.id, selectedIds: entries.map((e) => e.id) })))

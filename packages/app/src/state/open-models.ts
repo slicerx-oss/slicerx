@@ -5,6 +5,7 @@
 import type { FileRef, Host } from '@slicerx/contracts'
 import type { DecodedModel } from '@slicerx/embed/mesh'
 import { brandAccent } from '../edition'
+import { withAutoSpools } from '../filament/pick'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { markOpenEnded, markOpenStage, markOpenStarted } from '../lib/open-mark'
 import { clearProject } from '../project/new'
@@ -26,11 +27,11 @@ function centered(bedW: number, bedD: number): number[] {
 let opened = 0
 let seeded = false
 
-async function addDecoded(host: Host, model: DecodedModel, opts: { replace: boolean; thumb?: string; keep?: () => boolean; scope?: OpenScope | undefined }): Promise<PlateEntry | null> {
+async function addDecoded(host: Host, model: DecodedModel, opts: { replace: boolean; thumb?: string; keep?: () => boolean; scope?: OpenScope | undefined; autoSpool?: boolean }): Promise<PlateEntry | null> {
   const handle = await host.slicer.loadParts(model.name, model.parts)
   if (opts.keep && !opts.keep()) return null
   const { bed } = get()
-  const entry: PlateEntry = {
+  const made: PlateEntry = {
     id: uid('obj'),
     name: model.name,
     handle,
@@ -39,6 +40,8 @@ async function addDecoded(host: Host, model: DecodedModel, opts: { replace: bool
     transform: centered(bed.widthMm, bed.depthMm),
     ...(opts.thumb ? { thumb: opts.thumb } : {}),
   }
+  // a plain STL has no filament of its own: it starts on the auto-picked spool
+  const entry = opts.autoSpool ? withAutoSpools([made], {})[0]! : made
   const add = () => set((s) => ({ plate: opts.replace ? [entry] : [...s.plate, entry], selection: entry.id }))
   if (opts.scope) opts.scope.run(add)
   else add()
@@ -109,7 +112,7 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer, scope?: Ope
       if (!/\.stl$/i.test(name)) throw e
       const { decodeStl } = await import('@slicerx/embed/mesh')
       try {
-        await addDecoded(host, decodeStl(data, name), { replace: false, scope })
+        await addDecoded(host, decodeStl(data, name), { replace: false, scope, autoSpool: true })
       } catch {
         throw e
       }
