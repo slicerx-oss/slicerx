@@ -9,6 +9,7 @@ import { EASY_MAP } from '@slicerx/settings'
 import { Icon, LinkButton, Seg, Switch, tipAttrs, type IconName } from '@slicerx/ui'
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { PrimeTowerRow } from './prime-tower-row'
+import { isWideText, MmOrPercentSetting, TextSetting } from './setting-rows'
 import './settings-tabs.css'
 import { formatValue, isVisible, resolveConfig, SETTINGS } from '../../adapters/settings'
 import { presetOwnValue } from '../../adapters/config'
@@ -25,6 +26,13 @@ import { appName } from '../../edition'
 import { useScope } from './scope-bar'
 
 export const EDITABLE = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floats', 'ints', 'percents', 'floatOrPercent'])
+
+/**
+ * The process panel also lists switches held as a list (one per extruder), text settings and the speeds and
+ * accelerations that are a number or a percent (setting-rows.tsx). The printer dialog and the object modifiers keep to
+ * EDITABLE: the printer's text settings include its network address and credentials.
+ */
+export const PROCESS_EDITABLE: ReadonlySet<string> = new Set([...EDITABLE, 'bools', 'string', 'floatsOrPercents'])
 
 /** The intents in the order the panel shows them. Output (G-code and file keys) is Expert only. */
 export const INTENTS: readonly { id: SettingIntent; label: string; icon: IconName; blurb: string }[] = [
@@ -118,8 +126,16 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
   const marks = MARKED[def.key]
   const own = presetOwnValue(def.key)
   let control
+  // A number's unit, as a person reads it.
+  const unitText = def.unit && def.unit !== '%' ? (UNIT_TEXT[def.unit] ?? def.unit) : def.type === 'percent' ? '%' : ''
   if (def.type === 'bool') {
     control = <Switch id={id} checked={value === true} disabled={Boolean(locked)} onChange={(v) => setOverride(def.key, v)} />
+  } else if (def.type === 'bools') {
+    control = <Switch id={id} checked={!mixed && on(value)} disabled={Boolean(locked)} onChange={(v) => setOverride(def.key, [v])} />
+  } else if (def.type === 'string') {
+    control = <TextSetting id={id} def={def} value={value} mixed={mixed} disabled={Boolean(locked)} onSet={(v) => setOverride(def.key, v)} />
+  } else if (def.type === 'floatsOrPercents') {
+    control = <MmOrPercentSetting id={id} def={def} unit={unitText || 'mm'} value={value} mixed={mixed} disabled={Boolean(locked)} onSet={(v) => setOverride(def.key, v)} />
   } else if (def.type === 'enum' && marks) {
     const options = offeredValues(def, scalar).map(({ value: v, label }) => {
       const icon = marks[v]
@@ -170,12 +186,13 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
       />
     )
   }
-  // A number's unit is written once, beside the label (the number fields rule), so every field ends at one edge.
-  const unit = def.type === 'bool' || def.type === 'enum' ? '' : def.unit && def.unit !== '%' ? (UNIT_TEXT[def.unit] ?? def.unit) : def.type === 'percent' ? '%' : ''
+  // A number's unit is written once, beside the label (the number fields rule), so every field ends at one edge. A
+  // number-or-percent row names its unit in its toggle instead.
+  const unit = def.type === 'bool' || def.type === 'bools' || def.type === 'enum' || def.type === 'floatsOrPercents' ? '' : unitText
   return (
     <li
       className={[overridden ? 'field changed' : 'field', scoped?.source === 'plate' ? 'inherited' : '', locked ? 'locked' : ''].filter(Boolean).join(' ')}
-      data-wide={marks ? true : undefined}
+      data-wide={marks || isWideText(def) ? true : undefined}
       data-testid="slice-setting-row"
       data-key={def.key}
       data-source={scoped ? scoped.source : 'plate'}
@@ -341,7 +358,7 @@ export function ExpertSettings() {
       <Field key={def.key} def={def} value={config[def.key]} overridden={def.key in overrides} />
     )
   }
-  const editable = useMemo(() => SETTINGS.filter((d) => EDITABLE.has(d.type) && d.section === 'process'), [])
+  const editable = useMemo(() => SETTINGS.filter((d) => PROCESS_EDITABLE.has(d.type) && d.section === 'process'), [])
   const matches = (def: SettingDef) => !q || fuzzyScore(q, def.label) >= 0 || fuzzyScore(q, def.key) >= 0
   const groups = useMemo((): Group[] => {
     const out: Group[] = INTENTS.map((intent) => ({ intent, shown: [], more: [] }))

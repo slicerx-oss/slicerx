@@ -421,6 +421,14 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
    sharing that width. */
 .field[data-wide] .tier-seg { grid-column: 1; }
 .field[data-wide] .tier-seg > button { min-width: 0; }
+/* A text setting: the control column's width (--w-ctl) at the right edge, or, for a template or prose, the row under
+   its label like a segmented choice. A number-or-percent setting: its unit toggle, then the number field at the edge
+   every number field ends at. */
+.field > input.text { justify-self: end; width: var(--w-ctl); font-variant-numeric: tabular-nums; }
+.field[data-wide] > input.text.wide { grid-column: 1; justify-self: stretch; width: 100%; }
+.field > .mm-or-pct { justify-self: end; display: inline-flex; align-items: center; gap: var(--s-2); }
+.mm-or-pct > input.num { width: 72px; height: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+.mm-or-pct .unit-seg > button { height: 22px; padding: 0 var(--s-2); }
 .seg-mark { display: inline-flex; align-items: center; gap: 5px; }
 .seg-mark .sx-ic { width: 15px; height: 15px; color: var(--cyan); }
 .mark-sleipnir .sx-ic { color: var(--cyan); }
