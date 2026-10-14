@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// heimdall's strike marks on the layer strip and the playback sliders, and the strike list. They show only after a slice with collisions,
+// heimdall's strike marks on the playback sliders, and the strike list. They show only after a slice with collisions,
 // so they load then (lazy, through strike-slots.tsx) and add nothing to the code the web shell starts with.
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { Icon, tipAttrs } from '@slicerx/ui'
@@ -76,13 +76,6 @@ function Rail({ marks, axis, size, className, icon, severity }: { marks: Mark[];
       })}
     </>
   )
-}
-
-/** Marks beside the vertical layer strip; `y` is a layer's share from the top. */
-export function StripStrikes({ y }: { y: (layer: number) => number }) {
-  const { strikes, title } = useStrikes()
-  const marks = strikes.map((c, i) => ({ i, at: y(c.layer + 1), label: `${title(i)}, layer ${c.layer + 1}`, body: `Layer ${c.layer + 1}. Click to jump there.` }))
-  return <Rail marks={marks} axis="y" size={24} className="lstrike" icon={14} severity={(i) => strikes[i]?.severity} />
 }
 
 /** Marks on the horizontal layer slider. */

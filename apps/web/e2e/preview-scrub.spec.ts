@@ -167,33 +167,19 @@ test('the playback bar plays, pauses and scrubs by time', async ({ page, isMobil
   await expect(dock.getByRole('button', { name: 'Play print' })).toBeVisible()
 })
 
-test('the layer strip is a vertical slider with two handles', async ({ page, isMobile }) => {
+test('the Layer slider in the playback bar steps the drawn layers by arrow and page keys', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop layout')
   await sliced(page)
-  const top = page.getByRole('slider', { name: 'Top layer' })
-  const bottom = page.getByRole('slider', { name: 'Bottom layer' })
-  const n = Number(await top.getAttribute('aria-valuemax'))
-  await expect(top).toHaveAttribute('aria-valuenow', String(n))
-  await top.focus()
+  const layer = page.locator('#pv-layer')
+  const n = Number(await layer.getAttribute('max'))
+  await expect(layer).toHaveValue(String(n))
+  await layer.focus()
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('PageDown')
-  await expect(top).toHaveAttribute('aria-valuenow', String(n - 11))
+  await expect(layer).toHaveValue(String(n - 11))
   await expect.poll(async () => (await drawn(page)).hi).toBe(n - 12)
-  // The bottom handle hides the lower layers.
-  await bottom.focus()
+  await page.keyboard.press('ArrowRight')
   await page.keyboard.press('PageUp')
-  await expect(bottom).toHaveAttribute('aria-valuenow', '11')
-  await expect.poll(async () => (await drawn(page)).from).toBeGreaterThan(0)
-  // Dragging the top handle to the middle of the track lands near the middle layer.
-  const box = (await page.locator('.ltrack').boundingBox())!
-  const hb = (await top.boundingBox())!
-  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.5, { steps: 6 })
-  await page.mouse.up()
-  const mid = Number(await top.getAttribute('aria-valuenow'))
-  expect(Math.abs(mid - n / 2)).toBeLessThan(n * 0.15)
-  // Clicking the track jumps the nearest handle.
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.1)
-  expect(Number(await top.getAttribute('aria-valuenow'))).toBeGreaterThan(n * 0.8)
+  await expect(layer).toHaveValue(String(n))
+  await expect.poll(async () => (await drawn(page)).hi).toBe(n - 1)
 })

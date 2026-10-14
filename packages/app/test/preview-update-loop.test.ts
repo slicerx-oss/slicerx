@@ -2,11 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Held layer keys in Preview on a slow machine: each press must settle in one render, or React counts every
 // press as a nested update and throws "maximum update depth exceeded" (error 185) after about fifty of them.
-import { createElement, Fragment } from 'react'
+import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type PreviewBuffers } from '@slicerx/contracts'
-import { LayerStrip } from '../src/workspaces/layer-strip'
 import { LayerDock } from '../src/workspaces/preview/preview-hud'
 import { get, set, type ProfileInfo } from '../src/state/store'
 
@@ -58,15 +57,14 @@ describe('Preview layer keys', () => {
     vi.unstubAllGlobals()
     errors.length = 0
   })
-  // The playback bar, and with `strip` the layer slider beside it, in one React root as Preview draws them.
-  const mount = async (layerHi: number, layers = 150, strip = false) => {
+  // The playback bar in a React root of its own, as Slice draws it.
+  const mount = async (layerHi: number, layers = 150) => {
     const p = preview(layers)
-    if (strip) set({ slice: { status: 'done', stale: false, result: { layerZ: Array.from(p.layerZ), layerCount: layers } as never } })
     set({ preview: p, layerHi, moveCut: 1, toolChange: null, workspace: 'preview', settingsMode: 'advanced', profile, overrides: { nozzle_diameter: ['0.4', '0.4', '0.4', '0.4'], machine_tool_change_time: '5', travel_speed: '350' }, bed: { widthMm: 270, depthMm: 270, heightMm: 270 } })
     const el = document.createElement('div')
     document.body.append(el)
     const root = createRoot(el)
-    root.render(strip ? createElement(Fragment, null, createElement(LayerDock), createElement(LayerStrip)) : createElement(LayerDock))
+    root.render(createElement(LayerDock))
     await new Promise((r) => setTimeout(r, 50))
     let gone = false
     const done = () => {
@@ -96,10 +94,10 @@ describe('Preview layer keys', () => {
     done()
   })
 
-  it('take the walk a scripted check makes on the Top layer handle, with no waits between keys', async () => {
+  it('take the walk a scripted check makes on the Layer slider, with no waits between keys', async () => {
     window.addEventListener('error', onError)
-    const { el, done } = await mount(304, 304, true)
-    const top = el.querySelector('[aria-label="Top layer"]') as HTMLElement
+    const { el, done } = await mount(304, 304)
+    const top = el.querySelector('#pv-layer') as HTMLElement
     expect(top).not.toBeNull()
     // As Playwright presses them: every key lands before React's scheduled work gets a turn.
     const press = async (key: string, n = 1) => {
@@ -108,12 +106,12 @@ describe('Preview layer keys', () => {
         await Promise.resolve()
       }
     }
-    await press('Home')
+    await press('ArrowLeft', 303)
     await press('ArrowRight', 303)
-    await press('Home')
+    await press('PageDown', 31)
     await press('ArrowRight', 4)
     await press('ArrowRight', 150)
-    await press('End')
+    await press('PageUp', 20)
     await new Promise((r) => setTimeout(r, 50))
     expect(errors.map(String)).toEqual([])
     expect(get().layerHi).toBe(304)

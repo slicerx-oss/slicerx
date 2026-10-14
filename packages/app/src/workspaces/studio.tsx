@@ -21,7 +21,6 @@ import { bounds, sizeOf } from '../plate/transform'
 import { usePrinter } from '../lib/use-printer'
 import { useRightAttention } from '../lib/right-attention'
 import { ViewportHost } from '../viewport/viewport-host'
-import { LayerStrip } from './layer-strip'
 import { ZoneLegend } from './zone-legend'
 import { PrepareLeft, PrepareObjects, SlicePinned, SliceBlock } from './prepare/prepare-panes'
 import { LayerDock, Legend } from './preview/preview-hud'
@@ -59,15 +58,13 @@ const PREVIEW_RIGHT: PaneSection[] = [
 ]
 
 /**
- * The viewport controls toasts keep off: bottom bars, the top toolbar and view switch, and on a phone the layer slider
- * and an open sheet, which a toast floats above rather than over.
+ * The viewport controls toasts keep off: bottom bars, the top toolbar and view switch, and on a phone an open sheet,
+ * which a toast floats above rather than over.
  */
 // With the toolpaths, the color legend runs down the left under the top row: the toast keeps to its right.
 // mimir's sizes panel runs down the right while a sheet is up: the toast keeps to its left, off Build and Cancel.
 const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .dock, .bpanel-body', top: '.plate-tools, .slice-look, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel' }
-// On a phone, and beside the toolpaths, the layer slider runs down the right: the toast keeps to its left too.
-const SIDE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, side: '.lstrip' }
-const PHONE_OVERLAYS: OverlaySelectors = { ...SIDE_OVERLAYS, cover: '.pane.sheet.sheet-open' }
+const PHONE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, cover: '.pane.sheet.sheet-open' }
 
 const PLATES_SECTION: PaneSection = { id: 'plates', icon: 'plates', label: 'Plates' }
 const DESIGN_TREE: PaneSection[] = [{ id: 'objects', icon: 'history', label: 'Model' }]
@@ -170,9 +167,9 @@ export function Studio() {
   const rightAttention = useRightAttention(rightOpen, printResult)
   const rightSections = [...(objectsRight ? [OBJECTS_SECTION] : []), ...(hasPreview ? (manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT) : [])]
   // Toasts center over the viewport and sit above the plate bar and the playback bar, below the toolbar and the view
-  // switch, never on a control. On a phone the layer slider runs down the right side, so they keep to the left of it.
+  // switch, never on a control.
   const vpRef = useRef<HTMLElement>(null)
-  useOverlayOffset(vpRef, compact ? PHONE_OVERLAYS : layers ? SIDE_OVERLAYS : OVERLAYS)
+  useOverlayOffset(vpRef, compact ? PHONE_OVERLAYS : OVERLAYS)
 
   // Painting, brim ears and lay on face are print setup: they close when Design opens.
   // The full geometry engine starts loading on the way into Design, so its first tool does not wait.
@@ -338,7 +335,6 @@ export function Studio() {
         ) : null}
         {cad ? null : (
           <>
-            <LayerStrip />
             <ZoneLegend layers={layers} />
           </>
         )}
