@@ -6,6 +6,7 @@
 // SX_GEOM_RECORD=1 with a built engine records again. Call `useGeomEngine(name)` at the top of a test file.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import { afterAll, beforeAll, beforeEach, expect } from 'vitest'
 import { setGeomProvider } from '../src/geom/client'
 
@@ -94,7 +95,7 @@ const testKey = (): string => expect.getState().currentTestName ?? SETUP
 type Replies = Record<string, Recorded[]>
 
 function replayGeom(file: string) {
-  const replies = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Replies) : {}
+  const replies = existsSync(file) ? (JSON.parse((file.endsWith('.gz') ? gunzipSync(readFileSync(file)) : readFileSync(file)).toString('utf8')) as Replies) : {}
   if (Array.isArray(replies)) throw new Error(`${file} is in the old one list form: record it again with SX_GEOM_RECORD=1`)
   let key = SETUP
   let next = 0
@@ -122,9 +123,9 @@ function replayGeom(file: string) {
   }
 }
 
-/** Installs the engine for this file's tests: live wasm when built, else the recorded replies. Tests may run in any order. */
-export function useGeomEngine(name: string): void {
-  const fixture = join(__dirname, 'fixtures', `${name}.json`)
+/** Installs live wasm or recorded replies; compressed stores large mesh fixtures as gzip. Tests may run in any order. */
+export function useGeomEngine(name: string, options: { compressed?: boolean } = {}): void {
+  const fixture = join(__dirname, 'fixtures', `${name}.json${options.compressed ? '.gz' : ''}`)
   const record = liveEngine && process.env['SX_GEOM_RECORD'] === '1'
   const recorded: Replies = {}
   let replay: ReturnType<typeof replayGeom> | null = null
@@ -145,6 +146,9 @@ export function useGeomEngine(name: string): void {
   })
   afterAll(() => {
     setGeomProvider(null)
-    if (record) writeFileSync(fixture, `${JSON.stringify(recorded)}\n`)
+    if (record) {
+      const json = `${JSON.stringify(recorded)}\n`
+      writeFileSync(fixture, options.compressed ? gzipSync(json) : json)
+    }
   })
 }
