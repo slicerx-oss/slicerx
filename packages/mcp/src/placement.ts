@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Placement and per-object control of the open project, as a person does it in the app: move, rotate and scale an
 // object, add, remove and fill plates, give an object its own settings, add cuts, support regions and settings
-// modifiers, and set settings by height. Each tool answers with the project as it is after the change
+// modifiers, and set settings by height; and the model ring's object verbs (duplicate, rename, lay on a face, lock,
+// leave out of the print, center, split to objects or parts). Each tool answers with the project as it is after the change
 // (slicerx_project_show reads it back the same way); the next slice uses it.
 import { readFileSync } from 'node:fs'
 import type { SettingValue, VolumeRole } from '@slicerx/contracts'
@@ -303,5 +304,65 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
     },
   })
 
-  return [move, rotate, scale, objectSettings, addVolume, removeVolume, heightRanges, plateAdd, plateRemove, moveToPlate, removeObject, duplicate, rename, layOnFace] as PilotTool<never>[]
+  const lock = tool({
+    name: 'project.lock',
+    description:
+      'Lock or unlock an object, as Lock on the app\'s ring menu does: a locked object is not moved, rotated, scaled, laid on a face, centered, cut or taken to another plate (those tools refuse it), and an arrange leaves it on its plate. Answers with the project, whose objects say locked.',
+    input: z.object({ object: objectArg, locked: z.boolean().default(true).describe('true locks it, false unlocks it') }),
+    title: (i) => `${i.locked ? 'Lock' : 'Unlock'} ${i.object}?`,
+    run(i, project) {
+      const id = project.setLocked(i.object, i.locked)
+      return done(`${id} ${i.locked ? 'locked' : 'unlocked'}`, project)
+    },
+  })
+
+  const printable = tool({
+    name: 'project.printable',
+    description:
+      'Leave an object out of the print, or put it back, as Leave out of the print does in the app: it keeps its place on the plate (its placements say printable: false), and the next slice leaves it out. Answers with the project, whose objects say printable.',
+    input: z.object({ object: objectArg, printable: z.boolean().describe('false leaves it out of the print, true puts it back') }),
+    title: (i) => (i.printable ? `Print ${i.object}?` : `Leave ${i.object} out of the print?`),
+    run(i, project) {
+      const id = project.setPrintable(i.object, i.printable)
+      return done(i.printable ? `${id} is in the print` : `${id} is left out of the print`, project)
+    },
+  })
+
+  const center = tool({
+    name: 'project.center',
+    description:
+      'Center an object on the bed of its plate, as Center on the bed does in the app: the center of its footprint goes to the middle of the printable area (the circle\'s center on a round bed), and it stays there as if placed with slicerx_project_move. Answers with the position and the project.',
+    input: z.object({ object: objectArg }),
+    title: (i) => `Center ${i.object} on the bed?`,
+    run(i, project) {
+      const { id, position } = project.center(i.object)
+      return done(`${id} centered at ${position.join(', ')} mm`, project, { position })
+    },
+  })
+
+  const splitObjects = tool({
+    name: 'project.split_objects',
+    description:
+      'Split an object to objects, as Split to objects does in the app: each separate body of its model becomes an object of its own, named after it with a number, with its rotation, scale, settings, volumes, lock and print state, on the same plates; one placed with slicerx_project_move leaves each piece where it was. The source object goes. Answers with the new ids and the project.',
+    input: z.object({ object: objectArg }),
+    title: (i) => `Split ${i.object} to objects?`,
+    async run(i, project) {
+      const ids = await project.splitObjects(i.object)
+      return done(`${i.object} split to ${ids.length} objects: ${ids.join(', ')}`, project, { objects: ids })
+    },
+  })
+
+  const splitParts = tool({
+    name: 'project.split_parts',
+    description:
+      'Split an object to parts, as Split to parts does in the app: each separate body of its model becomes a part of the same object, which keeps its id, place, rotation, scale and settings. Answers with the part count and the project, whose object lists parts.',
+    input: z.object({ object: objectArg }),
+    title: (i) => `Split ${i.object} to parts?`,
+    async run(i, project) {
+      const { id, parts } = await project.splitParts(i.object)
+      return done(`${id} split to ${parts} parts`, project, { parts })
+    },
+  })
+
+  return [move, rotate, scale, objectSettings, addVolume, removeVolume, heightRanges, plateAdd, plateRemove, moveToPlate, removeObject, duplicate, rename, layOnFace, lock, printable, center, splitObjects, splitParts] as PilotTool<never>[]
 }

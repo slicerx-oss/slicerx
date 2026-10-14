@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-171 tools.
+176 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -132,15 +132,18 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_add_filament` |  |  | slice | Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. |
 | `slicerx_project_add_model` |  |  | read | Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. |
 | `slicerx_project_add_volume` |  |  | slice | Add a volume to an object, in the object's own coordinates (as modeled, before rotation and scale; slicerx_project_show gives each object's model_bounds): negative cuts it away, support_blocker keeps support out, support_enforcer asks for support there (with supports on), and modifier prints the object inside it with its own settings (walls, infill, speeds, flow). |
+| `slicerx_project_center` |  |  | slice | Center an object on the bed of its plate, as Center on the bed does in the app: the center of its footprint goes to the middle of the printable area (the circle's center on a round bed), and it stays there as if placed with slicerx_project_move. |
 | `slicerx_project_duplicate` |  |  | slice | Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows. |
 | `slicerx_project_height_ranges` |  |  | slice | Set the project's settings by height (replaces the list; an empty list clears it): each range has z_from_mm and z_to_mm above the bed, the settings, and optionally the objects it is for (every object when left out). |
 | `slicerx_project_lay_on_face` |  |  | slice | Lay an object on one of its faces, as Lay on bed does in the app: it turns so that face points straight down and sits on the bed. |
+| `slicerx_project_lock` |  |  | slice | Lock or unlock an object, as Lock on the app's ring menu does: a locked object is not moved, rotated, scaled, laid on a face, centered, cut or taken to another plate (those tools refuse it), and an arrange leaves it on its plate. |
 | `slicerx_project_move` |  |  | slice | Place an object on its plate: x and y are the center of its footprint in mm, in bed coordinates (as the printer profile's printable area gives them). |
 | `slicerx_project_move_to_plate` |  |  | slice | Move an object, with all its copies, to another plate. |
 | `slicerx_project_object_settings` |  |  | slice | Give one object its own settings (OrcaSlicer keys), over the project's and the plate's: walls, infill, top and bottom shells, supports and speeds. |
 | `slicerx_project_open` |  |  | read | Start a new project for mimir skills to work on (replaces the current one). |
 | `slicerx_project_plate_add` |  |  | slice | Add an empty plate to the project and answer with its number. |
 | `slicerx_project_plate_remove` |  |  | slice | Remove a plate. |
+| `slicerx_project_printable` |  |  | slice | Leave an object out of the print, or put it back, as Leave out of the print does in the app: it keeps its place on the plate (its placements say printable: false), and the next slice leaves it out. |
 | `slicerx_project_remove_object` |  |  | slice | Take an object, with all its copies, out of the project. |
 | `slicerx_project_remove_volume` |  |  | slice | Remove a volume (a cut, support region or modifier) from an object, by the id slicerx_project_add_volume gave it. |
 | `slicerx_project_rename` |  |  | slice | Rename an object. |
@@ -149,6 +152,8 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_set_filament` |  |  | slice | Change a filament of the open project: its material type, its color, or both (the app's filament dialog, opened by clicking a ring on the Slice filament rail). |
 | `slicerx_project_set_overrides` |  |  | slice | Set OrcaSlicer settings for the open project, such as the config_patch from slicerx_plan_settings. |
 | `slicerx_project_show` |  |  | read | Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides. |
+| `slicerx_project_split_objects` |  |  | slice | Split an object to objects, as Split to objects does in the app: each separate body of its model becomes an object of its own, named after it with a number, with its rotation, scale, settings, volumes, lock and print state, on the same plates; one placed with slicerx_project_move leaves each piece where it was. |
+| `slicerx_project_split_parts` |  |  | slice | Split an object to parts, as Split to parts does in the app: each separate body of its model becomes a part of the same object, which keeps its id, place, rotation, scale and settings. |
 | `slicerx_region_modifiers` |  |  | slice | Settings for a goal only where it matters, such as strong screw holes without slowing the whole part. |
 | `slicerx_remove_from_fleet` | Remove a printer from a fleet | fleets | read, ungated | Remove a printer from a fleet. |
 | `slicerx_rename_fleet` | Rename a fleet | fleets | read, ungated | Rename a fleet. |
