@@ -255,11 +255,11 @@ function TileCamera({ r, now }: { r: FleetRow; now: number }) {
       </>
     )
   if (on && !failed) return <CameraIdle connecting text="Connecting to the camera" />
+  // Said on the tile, not only in a tip: with no camera the guard never checks this plate or watches this print.
+  if (!exportOnly && !st.cameraAvailable) return <CameraIdle text="No camera" detail="The camera guard can't watch this printer." showDetail />
   const [text, detail] = exportOnly
     ? ['No connection', 'This printer takes exported files only, so there is no camera to show.']
-    : !st.cameraAvailable
-        ? ['No camera', 'This printer has no camera.']
-        : ['No picture', 'The camera did not send a picture.']
+    : ['No picture', 'The camera did not send a picture.']
   return <CameraIdle text={text} detail={detail} />
 }
 

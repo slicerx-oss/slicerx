@@ -492,6 +492,18 @@ async fn pairing_a_snapmaker_stores_the_token_without_returning_it() {
 
     let st = call(&mut ws, 6, "status", json!({ "printerId": "bay-2" })).await;
     assert_eq!(st["result"]["state"], "idle", "{st}");
+
+    // The 2.0 has no camera, so the camera guard has nothing to watch it with: the status says so
+    // and the empty-plate picture is refused.
+    assert_eq!(st["result"]["cameraAvailable"], false, "{st}");
+    let r = call(&mut ws, 7, "watch.plateClear", json!({ "printerId": "bay-2" })).await;
+    assert_eq!(r["error"]["code"], "not_supported", "{r}");
+    assert!(
+        r["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("no camera")),
+        "{r}"
+    );
 }
 
 #[tokio::test]

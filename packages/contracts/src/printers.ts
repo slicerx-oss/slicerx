@@ -146,6 +146,17 @@ export interface PrinterStatus {
   live?: PrinterLive
 }
 
+/**
+ * Whether the camera guard can watch a printer: `no_camera` when the printer has no camera, so the guard never checks
+ * its plate or watches it print. `can_watch` says only that it has a camera; the person may still turn the guard off.
+ * Clients read it as `cameraGuard` in printer.status and printer.list.
+ */
+export type CameraGuardReach = 'can_watch' | 'no_camera'
+
+export function cameraGuardOf(status: Pick<PrinterStatus, 'cameraAvailable'>): CameraGuardReach {
+  return status.cameraAvailable ? 'can_watch' : 'no_camera'
+}
+
 /** Fans, speed, light and filament feed as the printer reports them. Every field is absent when the printer does not say. */
 export interface PrinterLive {
   /** Fan speeds in percent: part cooling, auxiliary and chamber. */
