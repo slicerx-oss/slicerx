@@ -16,6 +16,16 @@ afterEach(() => set({ overrides: {}, settingsMode: 'advanced', settingsTab: 'qua
 const none = () => false
 
 describe('settings sections', () => {
+  it('keeps Expert list switches, text and number-or-percent rows available to clients', () => {
+    const keys = ['slowdown_for_curled_perimeters', 'solid_infill_rotate_template', 'small_perimeter_speed']
+    const tabs = buildTabs({ mode: 'expert', changed: none, filamentCount: 1, searching: true })
+    const listed = tabs.flatMap((t) => t.sections.flatMap((s) => [...s.shown, ...s.more].map((d) => d.key)))
+    expect(listed).toEqual(expect.arrayContaining(keys))
+    const view = setSettingsView({ pin: keys })
+    expect(view['pins']).toEqual(keys.map((key) => expect.objectContaining({ key })))
+    expect(appState(get())['settings']).toMatchObject({ pins: view['pins'] })
+  })
+
   it('gives every process key a section of its tab, and every section a label', () => {
     for (const d of EDITABLE_PROCESS) {
       if (!d.intent) continue
