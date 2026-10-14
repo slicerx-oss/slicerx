@@ -192,7 +192,7 @@ describe('design tools with --app', () => {
 
 describe('plate edits over the app link', () => {
   // Stand-ins for the server's project tools: here they answer from the server's own project.
-  const here = ['project.move', 'project.rotate', 'project.scale', 'project.object_settings'].map((name) => ({ name, run: vi.fn(async () => ({ summary: `${name} here` })) }))
+  const here = ['project.move', 'project.rotate', 'project.scale', 'project.rename', 'project.duplicate', 'project.remove_object', 'project.lay_on_face', 'project.object_settings'].map((name) => ({ name, run: vi.fn(async () => ({ summary: `${name} here` })) }))
   const route = (call: AppLinkCaller['call'], opts: RouteOptions) => {
     const tools = routeToApp(here as never, { call }, 'SlicerX', opts)
     return (name: string, input: Record<string, unknown>) => tools.find((t) => t.name === name)!.run(input as never, {} as never)

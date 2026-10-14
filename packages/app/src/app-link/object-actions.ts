@@ -56,7 +56,8 @@ export async function objectAction(action: Action, args: Record<string, unknown>
     const base = setRotation(e.parts, e.transform, [0, 0, 0])
     const box = bounds(e.parts, base)
     if (!box) throw new LinkError('refused', 'The object has no geometry to orient')
-    const scaled = normal.map((v, i) => v / scale[i]!) as Vec3
+    const magnitude = Math.max(...normal.map(Math.abs))
+    const scaled = normal.map((v, i) => (v / magnitude) / scale[i]!) as Vec3
     const center = box.min.map((v, i) => (v + box.max[i]!) / 2) as Vec3
     const transform = layOnFace(e.parts, base, scaled, center)
     changed = transform.some((v, i) => Math.abs(v - e.transform[i]!) > 1e-9)

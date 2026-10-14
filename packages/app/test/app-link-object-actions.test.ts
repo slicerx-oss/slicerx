@@ -117,6 +117,20 @@ it('refuses ambiguous names, invalid counts/normals, locked removal and edits du
   await expect(call('rename', { object: 'one', name: 'new' })).rejects.toMatchObject({ code: 'busy' })
 })
 
+it('gives the same face orientation for a large finite normal and its unit-sized direction', async () => {
+  const src = entry('source')
+  src.transform = compose({ position: [50, 60, 20], rotation: [10, 20, 30], scale: [0.5, 1, 2] })
+  set({ plate: [src] })
+  history().clear()
+  await call('lay_on_face', { object: 'source', normal: [1, 1, 1] })
+  const expected = get().plate[0]!.transform
+  history().undo()
+  await call('lay_on_face', { object: 'source', normal: [1e308, 1e308, 1e308] })
+  const actual = get().plate[0]!.transform
+  expect(actual.every(Number.isFinite)).toBe(true)
+  for (let i = 0; i < 16; i++) expect(actual[i]).toBeCloseTo(expected[i]!, 8)
+})
+
 it('keeps surviving selection and refuses removal while a surviving copy has an open history edit', async () => {
   const src = entry('source'), other = entry('other')
   const copy = { ...entry('copy'), instanceOf: 'source' }
