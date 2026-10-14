@@ -6,7 +6,7 @@
 // so an icon added to the rail, the app bar or a startup panel is caught before it pops in.
 export const STARTUP_ICONS = [
   'aegis', 'alert', 'approve', 'arrange', 'arrow-down', 'arrow-right', 'atlas', 'brim', 'bug', 'calibration',
-  'camera', 'check', 'chevron-down', 'chevron-right', 'clay', 'close', 'color-painting', 'comment', 'copy', 'cube',
+  'camera', 'check', 'chevron-down', 'chevron-left', 'chevron-right', 'chevron-up', 'clay', 'close', 'color-painting', 'comment', 'copy', 'cube',
   'cut', 'delete', 'desktop', 'download', 'drop', 'duplicate', 'export', 'external', 'extruder', 'feed', 'fit',
   'fleet', 'flush', 'fullscreen', 'glow', 'grid', 'group', 'help', 'hide', 'import', 'info', 'iso-view', 'key',
   'lay-flat', 'layers', 'library', 'license', 'link', 'list', 'log', 'mcp', 'measure', 'mimir', 'model', 'more', 'mouse', 'move',
