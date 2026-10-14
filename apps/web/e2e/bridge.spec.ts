@@ -263,6 +263,30 @@ test('Partner app: a named key shown once, listed in Devices, and revoking it cu
   partner.close()
 })
 
+// Agent first: a client reads the integrations list Settings > mimir shows, with the same states and bays.
+test('Settings > mimir and slicerx_integrations_list show the same integrations, states and bays', async ({ page }) => {
+  await connectApp(page)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'mimir' }).click()
+  const rows = page.getByTestId('mimir-integrations').locator('li')
+  await expect(rows.filter({ hasText: 'Voron' })).toHaveCount(1)
+  const shown = await rows.evaluateAll((lis) => lis.map((li) => ({ name: li.querySelector('b')?.textContent ?? '', detail: li.querySelector('small')?.textContent ?? '', word: li.querySelector('.sx-pill')?.textContent ?? '' })))
+  const mcp = await mcpClient()
+  try {
+    const r = await mcp.call('slicerx_integrations_list', {})
+    expect(r.isError ?? false).toBe(false)
+    const listed = (r.structuredContent as { integrations: { name: string; state: string; bays: string[] }[] }).integrations
+    expect(listed.length).toBeGreaterThan(0)
+    expect(listed.map((i) => i.name)).toEqual(shown.map((s) => s.name))
+    expect(listed.map((i) => (i.state === 'connected' ? 'Connected' : i.state === 'off' ? 'Off' : i.state))).toEqual(shown.map((s) => s.word))
+    // a printer integration's detail in Settings names its bays, or says none is assigned
+    for (const [i, row] of listed.map((l, n) => [l, shown[n]!] as const)) if (i.bays.length) expect(row.detail).toBe(i.bays.join(', '))
+    expect(listed.find((i) => i.bays.includes('Voron'))?.state).toBe('connected')
+  } finally {
+    await mcp.close()
+  }
+})
+
 test('a wrong code is refused with a plain message', async ({ page }) => {
   await seed(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()

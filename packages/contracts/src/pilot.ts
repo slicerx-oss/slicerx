@@ -189,6 +189,8 @@ export interface PluginLoad {
   detail?: string
   state: 'loading' | 'ready' | 'off' | 'error'
   tools: number
+  /** A printer plugin's printers by name (the bays it drives); empty when none is assigned. */
+  bays?: string[]
 }
 
 /** Each plugin as mimir sees it: a printer plugin with no printers assigned is off, and its detail names the printers it drives. */
@@ -196,7 +198,7 @@ export function pluginLoads(manifests: PluginManifest[], printers: Pick<PrinterI
   return manifests.map((m) => {
     const assigned = printers.filter((p) => p.plugin === m.id)
     const detail = m.kind === 'printer' ? (assigned.length ? assigned.map((p) => p.name).join(', ') : 'No printers assigned') : m.name
-    return { id: m.id, name: m.name, detail, state: m.kind === 'printer' && assigned.length === 0 ? 'off' : 'ready', tools: m.tools.length }
+    return { id: m.id, name: m.name, detail, state: m.kind === 'printer' && assigned.length === 0 ? 'off' : 'ready', tools: m.tools.length, bays: assigned.map((p) => p.name) }
   })
 }
 

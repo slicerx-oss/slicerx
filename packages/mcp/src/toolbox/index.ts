@@ -13,6 +13,7 @@ import findSettings from './find-settings'
 import getPolicy from './get-policy'
 import getProfile from './get-profile'
 import inspectProject from './inspect-project'
+import integrationsList from './integrations-list'
 import knowledgeLookup from './knowledge-lookup'
 import listFleets from './list-fleets'
 import listProfiles from './list-profiles'
@@ -31,4 +32,4 @@ import updateFleet from './update-fleet'
 import validateConfig from './validate-config'
 
 /** Every server tool, one file each. */
-export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, knowledgeLookup, listFleets, listProfiles, openInApp, pendingApprovals, planSettings, printerList, printerSnapshot, printerStatus, removeFromFleet, renameFleet, sliceFile, themeCreate, themeGet, updateFleet, validateConfig]
+export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, openInApp, pendingApprovals, planSettings, printerList, printerSnapshot, printerStatus, removeFromFleet, renameFleet, sliceFile, themeCreate, themeGet, updateFleet, validateConfig]
