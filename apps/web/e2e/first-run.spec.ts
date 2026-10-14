@@ -157,7 +157,8 @@ test('the theme step: every theme as a card, the mode and flavors apply at once 
   // Catppuccin: one card, the dark flavor picked inside it, Latte as its light mode.
   await page.getByTestId('theme-catppuccin').click()
   await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'catppuccin-mocha')
-  await page.getByRole('radiogroup', { name: 'Dark flavor' }).getByRole('radio', { name: 'Frappe' }).click()
+  await page.getByRole('button', { name: 'Catppuccin flavors' }).click()
+  await page.getByRole('menuitemcheckbox', { name: 'Frappe' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'catppuccin-frappe')
   await page.getByRole('radiogroup', { name: 'Theme mode' }).getByRole('radio', { name: 'Light' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'catppuccin-latte')

@@ -66,6 +66,16 @@ export interface MenuProps {
 export function Menu({ open, onClose, label, align = 'start', static: isStatic, at, className, testId, target, children }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [place, setPlace] = useState<Place>({ up: false })
+  // Where a lifted menu goes: the modal it opened in (a page-level portal would sit under the modal), else the body.
+  const host = useRef<Element | null>(null)
+  // A host with a backdrop filter or a transform holds fixed children to its own box: the menu shifts by it.
+  const shift = (h: Element | null) => {
+    host.current = h
+    const cs = h ? getComputedStyle(h) : null
+    if (!h || !cs || (cs.transform === 'none' && cs.filter === 'none' && (cs.backdropFilter ?? 'none') === 'none')) return { x: 0, y: 0, b: 0 }
+    const r = h.getBoundingClientRect()
+    return { x: r.left + h.clientLeft, y: r.top + h.clientTop, b: window.innerHeight - r.bottom }
+  }
   useDismiss(ref, open && !isStatic, onClose)
   // A menu opened near the bottom of a scrolling panel or the window opens upward when there is more room
   // there, and scrolls itself when neither side fits it, so no item is cut off. One a panel would cut off at the side
@@ -105,10 +115,11 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
       const up = height > below && above > below
       const room = Math.floor(up ? above : below)
       const x = Math.min(Math.max(EDGE, start), window.innerWidth - width - EDGE)
+      const o = shift(anchor.closest('dialog, [aria-modal="true"]'))
       setPlace({
         up,
         ...(height > room ? { max: Math.max(MIN_HEIGHT, room) } : {}),
-        fixed: up ? { left: x, bottom: window.innerHeight - a.top + GAP } : { left: x, top: a.bottom + GAP },
+        fixed: up ? { left: x - o.x, bottom: window.innerHeight - a.top + GAP - o.b } : { left: x - o.x, top: a.bottom + GAP - o.y },
       })
       return
     }
@@ -127,7 +138,8 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
     const room = window.innerHeight - 2 * EDGE
     const height = Math.min(el.scrollHeight, room)
     const p = placeAt({ x: atX, y: atY }, { width: el.offsetWidth, height }, { width: window.innerWidth, height: window.innerHeight })
-    setPlace({ up: false, ...(el.scrollHeight > room ? { max: room } : {}), fixed: { left: p.left, top: p.top } })
+    const o = shift(el.parentElement?.closest('dialog, [aria-modal="true"]') ?? null)
+    setPlace({ up: false, ...(el.scrollHeight > room ? { max: room } : {}), fixed: { left: p.left - o.x, top: p.top - o.y } })
   }, [open, isStatic, atX, atY])
   // closed, it measures again next time
   useEffect(() => {
@@ -176,7 +188,7 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
     </div>
   )
   // lifted out of a panel that would cut it off: on top of everything, in the window's own layer
-  return place.fixed && typeof document !== 'undefined' ? createPortal(menu, document.body) : menu
+  return place.fixed && typeof document !== 'undefined' ? createPortal(menu, host.current ?? document.body) : menu
 }
 
 export interface MenuItemProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
