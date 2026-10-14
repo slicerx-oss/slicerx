@@ -204,8 +204,8 @@ test.describe('the mimir tab', () => {
     const chips = choice.getByRole('button')
     const before = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
     await choice.getByRole('button', { name: 'Yes, that one' }).click()
-    // the ravens stay behind the conversation once it starts, and the bubble has no prompt glyph
-    await expect(page.getByTestId('mimir-ravens')).toBeVisible()
+    // the ravens go once the conversation starts, so nothing shows behind a reply, and the bubble has no prompt glyph
+    await expect(page.getByTestId('mimir-ravens')).toHaveCount(0)
     await expect(page.locator('.mimir-chat .bubble .pg')).toBeHidden()
     await expect(choice).toHaveAttribute('data-picked', 'same')
     const after = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))

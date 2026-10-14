@@ -94,10 +94,29 @@ const LOOKS = {
   P: { icon: 'left', actions: 'edit', lines: 2, chips: 'prompt' },
 } as const
 
-/** Each look, in dark and light at this project's width. */
+const shotsDir = () => process.env['SX_SHOTS_DIR'] ?? test.info().outputPath('shots')
+
+/** Sets the scheme with the hardware acceleration toast cleared; that toast over the chat is its own fix. */
+async function scheme(page: Page, s: 'dark' | 'light'): Promise<void> {
+  await page.evaluate((v) => (window as unknown as W).__sx.setState({ scheme: v, themeFollowsSystem: false, toast: null }), s)
+  await page.mouse.move(0, 0)
+  await page.waitForTimeout(400)
+  // a loaded machine can still be mid color change; wait for the transitions to land
+  await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished.catch(() => undefined))))
+  await page.evaluate(() => (window as unknown as W).__sx.setState({ toast: null }))
+  await expect(page.getByTestId('toast')).toHaveCount(0)
+}
+
+/** The plugin lines at the top of a reply are their own fix; they are hidden so the card shows. */
+const hidePlugins = (page: Page) => page.addStyleTag({ content: '.sx-pilot .plugs { display: none !important; }' })
+
+const STEPS = ['subtle', 'medium', 'strong'] as const
+
+/** Each look, in dark and light at this project's width, then each surface step on the phone. */
 async function shots(page: Page, project: string): Promise<void> {
   if (!process.env['SX_SHOTS']) return
-  const dir = process.env['SX_SHOTS_DIR'] ?? test.info().outputPath('shots')
+  const dir = shotsDir()
+  await hidePlugins(page)
   const schemes = project === 'phone' ? (['dark', 'light'] as const) : (['dark'] as const)
   const width = project === 'phone' ? 390 : 1440
   for (const [id, look] of Object.entries(LOOKS)) {
@@ -105,17 +124,25 @@ async function shots(page: Page, project: string): Promise<void> {
       localStorage.setItem('sx.mock.partLook', JSON.stringify(l))
       window.dispatchEvent(new Event('sx-mock-part-look'))
     }, look)
-    for (const scheme of schemes) {
-      // the hardware acceleration toast over the chat is its own fix (P3); it is cleared so the card shows
-      await page.evaluate((s) => (window as unknown as W).__sx.setState({ scheme: s, themeFollowsSystem: false, toast: null }), scheme)
-      await page.mouse.move(0, 0)
-      await page.waitForTimeout(400)
-      await page.evaluate(() => (window as unknown as W).__sx.setState({ toast: null }))
-      await expect(page.getByTestId('toast')).toHaveCount(0)
-      await page.screenshot({ path: `${dir}/part-${id}-${scheme}-${width}.png` })
-      if (project !== 'phone') await page.locator('.mimir-dock').screenshot({ path: `${dir}/part-${id}-${scheme}-${width}-dock.png` })
+    for (const s of schemes) {
+      await scheme(page, s)
+      await page.screenshot({ path: `${dir}/part-${id}-${s}-${width}.png` })
+      if (project !== 'phone') await page.locator('.mimir-dock').screenshot({ path: `${dir}/part-${id}-${s}-${width}-dock.png` })
     }
   }
+  if (project !== 'phone') return
+  await page.evaluate(() => {
+    localStorage.removeItem('sx.mock.partLook')
+    window.dispatchEvent(new Event('sx-mock-part-look'))
+  })
+  for (const step of STEPS) {
+    await page.evaluate((v) => (document.documentElement.dataset['surfaceStep'] = v), step)
+    for (const s of ['dark', 'light'] as const) {
+      await scheme(page, s)
+      await page.screenshot({ path: `${dir}/surface-${step}-${s}-390.png` })
+    }
+  }
+  await page.evaluate(() => delete document.documentElement.dataset['surfaceStep'])
 }
 
 test.describe('a reply that makes a part', () => {
@@ -156,5 +183,38 @@ test.describe('a reply that makes a part', () => {
     expect(asked.at(-1)).toMatch(/User request:\s*Fillet the edges of the cube by 2 mm$/)
     // the chip's request shows as the person's message
     await expect(dock.locator('.turn-user').last()).toContainText('Fillet the edges of the cube by 2 mm')
+  })
+})
+
+// The surface steps on the mimir tab while the owner picks one: the question, the Confirm model card and the composer.
+test.describe('surface steps in the mimir tab', () => {
+  test.skip(({ isMobile }) => isMobile || !process.env['SX_SHOTS'], 'Shots only, desktop only: phones have no modeling tabs')
+  test('shots of each step', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem('sx-e2e')) return
+      sessionStorage.setItem('sx-e2e', '1')
+      localStorage.setItem('slicerx.debug', '1')
+      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
+    })
+    await page.goto('./')
+    await viewportReady(page)
+    await page.getByTestId('tab-mimir').click()
+    const composer = page.getByTestId('mimir-composer')
+    await composer.getByRole('textbox').fill('Hey mimir, I need a wall mount for this thermostat. Can we print it?')
+    await composer.getByRole('button', { name: 'Send' }).click()
+    await expect(page.getByTestId('mimir-choice')).toBeVisible({ timeout: 30_000 })
+    const dir = shotsDir()
+    for (const step of STEPS) {
+      await page.evaluate((v) => (document.documentElement.dataset['surfaceStep'] = v), step)
+      for (const s of ['dark', 'light'] as const) {
+        await scheme(page, s)
+        await page.getByTestId('mimir-chat').screenshot({ path: `${dir}/surface-tab-${step}-${s}.png` })
+      }
+    }
+    await page.evaluate(() => delete document.documentElement.dataset['surfaceStep'])
+    for (const s of ['dark', 'light'] as const) {
+      await scheme(page, s)
+      await page.getByTestId('mimir-chat').screenshot({ path: `${dir}/surface-tab-today-${s}.png` })
+    }
   })
 })

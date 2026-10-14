@@ -33,7 +33,7 @@ export function tabMimir(loader: { loadParts(name: string, parts: MeshPart[]): P
     const still = motionReduced()
     tools = mimirTools(designToolset(appDesignHost(loader)))
     pilot = scriptedMimir(SCRIPTS, tools, { store: mimirLogs, delayMs: still ? 0 : 28, callDelayMs: still ? 0 : 350 })
-    // The stub answers: the chat says so, and the ravens stay behind it.
+    // The stub answers: the chat says so.
     setMimirLink('scripted')
   }
   return pilot
