@@ -4,6 +4,7 @@
 // screen: with Slice's right pane shut, as people get it, where the objects list is not drawn. After the open and after
 // a preset edit the slice starts soon, not after the fit check's longest wait.
 import { expect, test } from '@playwright/test'
+import { viewSized } from './fixtures'
 import { zip } from './project-zip'
 
 type Sx = { getState(): { plateLoading: boolean; plate: { name: string }[]; slice: { status: string; startedAt?: number } } }
@@ -81,6 +82,13 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
   const opened = Date.now() - from
   // A preset edit (the Fine goal) once that slice is done: the next one starts as soon.
   await expect.poll(async () => (await state()).status, { timeout: 120_000 }).not.toBe('running')
+  // The tube is a new project, so its finished slice opened the right pane again: the hand close held for the starter
+  // only. Shut it, so the edit runs with the pane shut as this test is about, and start the clock once the view has
+  // its new size, not while the canvas is being resized.
+  await expect(tab).toHaveAttribute('aria-expanded', 'true')
+  await tab.click()
+  await expect(tab).toHaveAttribute('aria-expanded', 'false')
+  await viewSized(page)
   const first = { startedAt: (await state()).startedAt, slices: await slices() }
   from = Date.now()
   await page.getByTestId('slice-goal-fine').click()
