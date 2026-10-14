@@ -3,8 +3,8 @@
 // Advanced settings, first half (acceleration to precise Z height). Settings change by themselves, so no pointer;
 // the bad result is red at one end and a time bar shows where a value costs print time. Shared drawings are exported
 // as functions that take an id and the part to pick out, for the second half to import.
-import { box, cyl, hud, iso, kf, r1, rowFrames, run, S } from './stage.mjs'
-import { A1, CUT, draw, rel, st, steps, T3, timebar, vis } from './kit.mjs'
+import { box, cyl, hud, iso, kf, morph, r1, rowFrames, run, S } from './stage.mjs'
+import { A1, CUT, draw, join, rel, st, steps, T3, timebar, vis } from './kit.mjs'
 
 const EASE = 'animation-timing-function:cubic-bezier(.65,0,.35,1)'
 const C30 = Math.cos(Math.PI / 6)
@@ -129,6 +129,144 @@ export function avoidCrossing() {
   return { id, about: 'Avoid crossing walls: a travel that cuts across a wall and strings, then one that detours around it at a little more time.', css: css + ro.css, body }
 }
 
+
+// ---------- shared pieces for the second set ----------
+/** Two still states, A then B, stepped with the readout. */
+const twoCss = (id, t = TWO) => [steps(id), vis(`${id}-a`, 0, t[1], t[2]), vis(`${id}-b`, t[1], t[2])].join('')
+const stateG = (id, k, inner) => `<g class="${id}-${k} ${id}-s s-a">${inner}</g>`
+const poly = (cls, ps, extra = '') => `<polygon class="${cls}" points="${ps.map((q) => iso(...q).join(',')).join(' ')}"${extra}/>`
+
+// ---------- bridge sag: strands between two posts sag into the air, then pull tight ----------
+export function bridgeSagLoop(id = 'abg', about = 'Bridge: strands across a gap sag into the air, then print tight and flat with the right density, speed and flow.') {
+  const Z = 9, ys = [2.5, 5, 7.5, 10]
+  const strands = (sag) => ys.map((y) => {
+    const [a, m, b] = [iso(7, y, Z), iso(15, y, Z - sag), iso(23, y, Z)]
+    return `M${join(a)}Q${join(m)} ${join(b)}`
+  }).join('')
+  const body = `${box([0, 0, 0], [7, 13, Z])}${stateG(id, 'a', bead('', strands(5), CUT, 2))}${stateG(id, 'b', bead('', strands(0), A1, 2.2))}${box([23, 0, 0], [30, 13, Z])}`
+  return { id, about, css: twoCss(id), body }
+}
+
+// ---------- hatch angle: a top surface's lines turning to the set angle (bridge angle, infill direction) ----------
+function hatch(x0, y0, x1, y1, z, deg, sp) {
+  // lines at `deg` from the x axis, clipped to the rectangle, as one relative path
+  const t = (deg * Math.PI) / 180, [c, s] = [Math.cos(t), Math.sin(t)], n = [-s, c]
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.hypot(x1 - x0, y1 - y0) / 2
+  let d = ''
+  for (let k = -R; k <= R; k += sp) {
+    const px = cx + n[0] * k, py = cy + n[1] * k
+    // clip the line p + u*(c, s) to the box
+    let lo = -1e9, hi = 1e9
+    for (const [p, dd, a, b] of [[px, c, x0, x1], [py, s, y0, y1]]) {
+      if (Math.abs(dd) < 1e-9) { if (p < a || p > b) { lo = 1; hi = 0 } continue }
+      const [u1, u2] = [(a - p) / dd, (b - p) / dd]
+      lo = Math.max(lo, Math.min(u1, u2)); hi = Math.min(hi, Math.max(u1, u2))
+    }
+    if (hi - lo > 0.5) d += rel([[px + c * lo, py + s * lo, z], [px + c * hi, py + s * hi, z]], false)
+  }
+  return d
+}
+/** gap: the lines span only an opening in the slab (bridge angle) instead of the whole top (infill direction). */
+export function hatchAngleLoop(id, rows, degs, about, sp = 2.2, gap = false) {
+  const X = 26, Y = 16, Z = 2.5, T = [0, 1.1, 2.2, 3.3]
+  const [g0, g1, h0, h1] = gap ? [8, 18, 4, 12] : [1.5, X - 1.5, 1.5, Y - 1.5]
+  const css = [steps(id), `.sxs .${id}-h{animation-name:${id}-h}` + rowFrames(`${id}-h`, [[0, 0], [T[1], 1], [T[2], 2], [T[3], 0]]), ...degs.map((_, i) => vis(`${id}-${i}`, T[i], T[i + 1], i ? undefined : T[3]))].join('')
+  const [hx, hy] = iso(X, 0, Z)
+  const hole = gap ? poly('s-hole', [[g0, h0, Z], [g1, h0, Z], [g1, h1, Z], [g0, h1, Z]]) : ''
+  const body = `${box([0, 0, 0], [X, Y, Z])}${hole}${degs.map((d, i) => `<path class="${id}-${i} ${id}-s s-a s-n"${st(i ? A1 : T3, gap ? 1.8 : 1.4)} d="${hatch(g0, h0, g1, h1, Z, d, sp)}"/>`).join('')}${hud(id, r1(hx + 16), r1(hy + 8), { w: 48 }, `${id}-h ${id}-s`, '')}`
+  return { id, about, css, body, readout: { rows, w: 48 } }
+}
+
+// ---------- draft shield: air blowing past a part chills its side, then a thin wall around it takes the draft ----------
+export function draftShieldLoop(id = 'ads', about = 'Draft shield: a draft chills the side of a part; a thin wall printed around it keeps the air off.') {
+  // the air comes from the front left (+y) at the part's visible side
+  const flow = (stop) => [8, 13, 18].map((x) => [3, 7].map((z) => rel([[x, 26, z], [x, stop, z]], false)).join('')).join('')
+  const css = [twoCss(id), `.sxs .${id}-w{animation:${id}-w .6s linear infinite}@keyframes ${id}-w{from{stroke-dashoffset:12}to{stroke-dashoffset:0}}`].join('')
+  const air = (stop) => `<path class="${id}-w s-n" style="stroke:var(--cyan,#8be9fd);stroke-width:2;stroke-dasharray:6 6" d="${flow(stop)}"/>`
+  const shield = poly('s-af', [[3, 17.5, 0], [23, 17.5, 0], [23, 17.5, 11], [3, 17.5, 11]], ` style="stroke:var(${A1});stroke-width:1.6"`)
+  const cold = poly('s-cf', [[6, 14, 0], [20, 14, 0], [20, 14, 10], [6, 14, 10]], ` style="stroke:var(${CUT});stroke-width:1.6"`)
+  const body = `${box([6, 4, 0], [20, 14, 10])}${stateG(id, 'a', cold + air(14))}${stateG(id, 'b', shield + air(17.5))}`
+  return { id, about, css, body }
+}
+
+// ---------- elephant foot: the first layers flare out, then are pulled in so the wall stays true ----------
+export function elephantFootLoop(id = 'aef', about = 'Elephant foot compensation: the first layers squash out into a lip; pulled in, the wall stays straight.') {
+  const X = 20, Y = 13, Z = 12, F = 1.2, L = 2
+  const foot = (o, cls) => box([-o, -o, 0], [X + o, Y + o, L], cls)
+  const css = [twoCss(id), rows2(id)].join('')
+  const [hx, hy] = iso(X, 0, Z / 2)
+  const body = `${stateG(id, 'a', foot(F, { l: 's-cf', r: 's-cf', t: 's-f1', ol: 's-cl' }))}${stateG(id, 'b', foot(0, { l: 's-g2', r: 's-g3', t: 's-g1', ol: 's-aol' }))}${box([0, 0, L], [X, Y, Z])}${hud(id, r1(hx + 16), r1(hy), { w: 70 }, `${id}-h ${id}-s`, '')}`
+  return { id, about, css, body, readout: { rows: ['0.00 mm', '0.15 mm'], w: 70 } }
+}
+
+// ---------- internal bridge: the first solid layer over sparse infill sags into the gaps, then spans them flat ----------
+export function internalBridgeLoop(id = 'aib', about = 'Internal bridge: the first solid layer over sparse infill droops into the gaps; a thick bridge layer spans them flat.') {
+  const X = 26, Y = 10, Z = 10, top = 7.5, posts = [3, 9, 15, 21]
+  const [ox, oy] = iso(0, Y, 0)
+  const m = `matrix(${r1(C30 * S * 100) / 100} ${r1(0.5 * S * 100) / 100} 0 ${-S} ${ox} ${oy})`
+  const sk = (sag) => {
+    let d = `M0 ${top}`
+    for (let i = 0; i < posts.length; i++) {
+      const a = posts[i], b = posts[i + 1] ?? X
+      d += `L${a + 1} ${top}` + (i < posts.length ? `Q${(a + 1 + b) / 2} ${top - sag} ${b} ${top}` : '')
+    }
+    return d + `L${X} ${top}`
+  }
+  const css = twoCss(id)
+  const inner = posts.map((x) => `<rect class="s-f2" x="${x}" y="1" width="1" height="${top - 1}"/>`).join('') + stateG(id, 'a', `<path class="s-n"${st(CUT, 1.6)} d="${sk(2.6)}"/>`) + stateG(id, 'b', `<path class="s-n"${st(A1, 2.2)} d="${sk(0)}"/>`)
+  const body = `${box([0, 0, 0], [X, Y, Z], { l: 's-f3' })}<g transform="${m}" style="vector-effect:non-scaling-stroke">${inner}</g>`
+  return { id, about, css, body }
+}
+
+// ---------- ironing: the nozzle passes over a ridged top, leaving it smooth behind; the print takes longer ----------
+export function ironingLoop(id = 'air', about = 'Ironing: the hot nozzle passes over the top surface with a little flow and leaves it smooth; the print takes longer.') {
+  const X = 26, Y = 14, Z = 4, run0 = [0.3, 3.0]
+  const ridges = Array.from({ length: 7 }, (_, k) => rel([[1, 1 + k * 2, Z], [X - 1, 1 + k * 2, Z]], false)).join('')
+  const [a, b] = [iso(0, 0, Z), iso(X, 0, Z)]
+  const sweep = `translate:${r1(b[0] - a[0])}px ${r1(b[1] - a[1])}px`
+  const css = run(`${id}-n`) + kf(`${id}-n`, [[run0[0], 'translate:0 0'], [run0[1], sweep], [3.2, sweep], [3.45, 'translate:0 0']])
+  const region = (x) => `M${join(iso(0, 0, Z))}L${join(iso(x, 0, Z))}L${join(iso(x, Y, Z))}L${join(iso(0, Y, Z))}Z`
+  const tb = timebar(id, 0, 0, [[0, 0.5], [run0[0], 0.5], [run0[1], 0.85], [3.2, 0.85], [3.45, 0.5]])
+  const [nx, ny] = iso(0, Y / 2, Z)
+  const [hx, hy] = iso(X, 0, Z)
+  const body = `${box([0, 0, 0], [X, Y, Z])}<path class="s-n"${st(T3, 1.2)} d="${ridges}"/>${morph('s-g1', [[run0[0], region(0.01)], [run0[1], region(X)], [3.2, region(X)], [3.45, region(0.01)]], region(X), ' style="fill-opacity:.85"')}<g class="${id}-n s-a"><polygon class="s-g2 s-aol" points="${nx},${ny} ${r1(nx - 5)},${r1(ny - 11)} ${r1(nx + 5)},${r1(ny - 11)}"/></g>${tb.svg.replace('translate(0 0)', `translate(${r1(hx + 12)} ${r1(hy + 6)})`)}`
+  return { id, about, css: css + tb.css, body }
+}
+
+// ---------- make printable: a ledge's flat underside hangs in the air, then is reshaped into a slope that prints ----------
+export function makePrintableLoop(id = 'amp', about = 'Make overhangs printable: a flat underside that would hang in the air is reshaped into a slope that prints without support.') {
+  const post = box([0, 2, 0], [7, 12, 14])
+  const ledge = box([7, 2, 9], [20, 12, 14])
+  const cone = poly('s-g2 s-aol', [[7, 12, 2], [20, 12, 9], [7, 12, 9]]) + poly('s-g3 s-aol', [[20, 2, 9], [20, 12, 9], [7, 12, 2], [7, 2, 2]])
+  const air = `<path class="s-n"${st(CUT, 2)} d="${rel([[7, 12, 9], [20, 12, 9], [20, 2, 9]], false)}"/>`
+  return { id, about, css: twoCss(id), body: `${post}${stateG(id, 'b', cone)}${ledge}${stateG(id, 'a', air)}` }
+}
+
+// ---------- minimum layer time: a small spire's tip melts when its layers come too fast, then stays crisp ----------
+export function minLayerTimeLoop(id = 'aml', about = 'Minimum layer time: a small tip printed fast has no time to cool and slumps; slowed down, it stays crisp and takes longer.') {
+  const cx = 12, cy = 8, H = 16
+  const spire = (droop) => {
+    const [b1, b2, t] = [iso(cx - 4, cy + 4, 0), iso(cx + 4, cy - 4, 0), iso(cx + droop, cy, H - droop * 1.4)]
+    return `M${join(b1)}L${join(t)}L${join(b2)}Z`
+  }
+  const css = [twoCss(id), rows2(id)].join('')
+  const tb = timebar(id, 0, 0, timeTwo(0.35, 0.75))
+  const [hx, hy] = iso(cx + 8, cy - 8, 6)
+  const body = `${cyl(cx, cy, 0, 1.5, 6)}${stateG(id, 'a', `<path class="s-cf" style="stroke:var(${CUT});stroke-width:1.4" d="${spire(3)}"/>`)}${stateG(id, 'b', `<path class="s-g1 s-aol" d="${spire(0)}"/>`)}${hud(id, r1(hx + 14), r1(hy), { w: 52 }, `${id}-h ${id}-s`, '')}${tb.svg.replace('translate(0 0)', `translate(${r1(hx + 14)} ${r1(hy + 18)})`)}`
+  return { id, about, css: css + tb.css, body, readout: { rows: ['1 s', '5 s'], w: 52 } }
+}
+
+// ---------- nozzle temperature: a line printed too cold (gaps), right, and too hot (strings and sag) ----------
+export function nozzleTempLoop(id = 'ant', about = 'Nozzle temperature: too cold and the line breaks into gaps; right, it is even; too hot and it strings and sags.') {
+  const T = [0, 1.1, 2.2, 3.3], Z = 3
+  const lines = [3, 8, 13].map((y) => rel([[2, y, Z], [24, y, Z]], false)).join('')
+  const strings = [[6, 3, 8], [14, 8, 13], [19, 3, 8]].map(([x, y0, y1]) => `M${join(iso(x, y0, Z))}Q${join(iso(x + 1, (y0 + y1) / 2, Z + 3))} ${join(iso(x - 1, y1, Z))}`).join('')
+  const css = [steps(id), `.sxs .${id}-h{animation-name:${id}-h}` + rowFrames(`${id}-h`, [[0, 0], [T[1], 1], [T[2], 2], [T[3], 0]]), vis(`${id}-0`, 0, T[1], T[3]), vis(`${id}-1`, T[1], T[2]), vis(`${id}-2`, T[2], T[3])].join('')
+  const [hx, hy] = iso(26, 0, Z)
+  const body = `${box([0, 0, 0], [26, 16, Z])}${stateG(id, 0, `<path class="s-n" style="stroke:var(${CUT});stroke-width:2.6;stroke-dasharray:3 2.5" d="${lines}"/>`)}${stateG(id, 1, bead('', lines))}${stateG(id, 2, bead('', lines, CUT, 3.4) + `<path class="s-n"${st(CUT, 0.9)} d="${strings}"/>`)}${hud(id, r1(hx + 16), r1(hy + 8), { w: 56 }, `${id}-h ${id}-s`, '')}`
+  return { id, about, css, body, readout: { rows: ['190 °C', '215 °C', '240 °C'], w: 56 } }
+}
+
 /** Advanced, first half, by the file name the export uses. */
 export const LOOPS = {
   'adv-acceleration': () => accelerationLoop(),
@@ -142,4 +280,14 @@ export const LOOPS = {
   'adv-fuzzy-skin': () => fuzzySkinLoop(),
   'adv-fuzzy-skin-distance': () => fuzzySkinLoop('afd', 'distance', 'Fuzzy skin point distance: the same wall, its roughness going from coarse to fine.'),
   'adv-avoid-crossing': avoidCrossing,
+  'adv-bridge-sag': () => bridgeSagLoop(),
+  'adv-bridge-angle': () => hatchAngleLoop('aba', ['0°', '45°', '90°'], [0, 45, 90], 'Bridge angle: the bridge lines across an opening turned to the angle you set.', 1.6, true),
+  'adv-infill-direction': () => hatchAngleLoop('aid', ['0°', '45°', '90°'], [0, 45, 90], 'Infill direction: the sparse infill lines turned to the angle you set.', 3.4),
+  'adv-draft-shield': () => draftShieldLoop(),
+  'adv-elephant-foot': () => elephantFootLoop(),
+  'adv-internal-bridge': () => internalBridgeLoop(),
+  'adv-ironing': () => ironingLoop(),
+  'adv-make-printable': () => makePrintableLoop(),
+  'adv-min-layer-time': () => minLayerTimeLoop(),
+  'adv-nozzle-temperature': () => nozzleTempLoop(),
 }
