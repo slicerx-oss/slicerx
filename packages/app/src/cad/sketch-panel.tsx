@@ -1,27 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Sketch mode. Pick the bed or a flat face, draw lines, rectangles, circles and three point arcs on
-// it with snaps and typed sizes, fix what sketch.check reports, then extrude or revolve. The camera
-// stays free; "Look at the sketch" turns it square on. Constraints go through the engine's solver
-// (sketch-constraints.ts), and the palette says how defined the sketch is. Finishing records the
-// sketch as a step of the object's history, where it opens again in this panel to be changed.
+// it with snaps and typed sizes, fix what sketch.check reports, then extrude or revolve. The panel has
+// two cards: drawing (tools, grid and snap, what shows) and the solid, which stays folded with the
+// reason until the sketch has a closed profile. The live numbers sit beside the cursor in the view
+// (cursor-pills.tsx). The camera stays free; Look at the sketch, among the view's camera buttons,
+// turns it square on. Constraints go through the engine's solver (sketch-constraints.ts), and the
+// drawing card says how defined the sketch is. Finishing records the sketch as a step of the
+// object's history, where it opens again in this panel to be changed.
 //
 // Speed: the view reports the cursor at most once a frame (viewport cadtools.ts). The hover path
-// here snaps, moves the rubber band in its fixed buffer and writes one text node; it renders no
-// React. React renders on clicks, drags of points and edits only.
+// here snaps, moves the rubber band in its fixed buffer and writes the cursor pills' text nodes; it
+// renders no React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
 import { afterLoopChange, afterReverse, curveStates, dimMark, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
 import { dimensionFor, isDimension, measured, pointAt, pointHit, type DimPick } from './sketch-dimension'
 import { evaluate, namesIn } from './values'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type SketchTone } from '@slicerx/viewport'
-import { Button, Field, Icon, Seg, Select, Switch } from '@slicerx/ui'
+import { Button, Icon, Seg, Select, Switch } from '@slicerx/ui'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { usePhoneLayout } from '../lib/phone-layout'
 import { claimPhoneSketchSlot, usePhoneSketchSlot } from '../workspaces/design/phone-slot'
 import { touchWords } from './touch-words'
-import { FAMILIES, familyOf, SketchVariants, VARIANTS, type Family } from './sketch-variants'
+import { FAMILIES, familyName, familyOf, SketchVariants, VARIANTS, type Family } from './sketch-variants'
 import { checkSketch, extendSketch, mirrorSketch, offsetSketch, patternSketch, pickFace, sketchSnaps, solveSketch, trimSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
@@ -34,8 +37,11 @@ import { bindNext, sketchNext } from './history/record'
 import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
-import { flipFor, goesIntoFace } from './extrude-direction'
-import { Actions, Choice, close, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
+import { goesIntoFace } from './extrude-direction'
+import { CursorPills, nextPill, type CursorPillsHandle } from './cursor-pills'
+import { SketchGlyphIcon } from './sketch-glyphs'
+import { provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
+import { Actions, Card, Choice, close, type ChoiceOption, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { formatLength, fraction, parseLength, type UnitPrefs } from './units'
 import { currentValues } from './value-table'
@@ -56,6 +62,7 @@ import {
   polylineToChain,
   preview,
   readout,
+  liveValues,
   SNAP_NAMES,
   segStart,
   sketchTargets,
@@ -130,6 +137,30 @@ const hintText = (t: DrawTool): string => HINTS[t]
 
 /** Fusion's keys for the sketch tools it gives one. */
 const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle', d: 'dimension', t: 'trim' }
+
+/** The tool's name for the view's mode pill: its family's, or Extend for Trim's other way. */
+const toolName = (t: DrawTool): string => (t === 'extend' ? 'Extend' : familyName(familyOf(t)))
+
+/** A tool that draws, so the cursor pills show its numbers. */
+const drawingTool = (t: DrawTool): boolean => t !== 'select' && t !== 'dimension' && t !== 'trim' && t !== 'extend'
+
+type Extent = 'oneSide' | 'symmetric' | 'twoSides'
+type Result = 'new' | 'join' | 'cut'
+
+const DIRECTIONS: ChoiceOption<Extent>[] = [
+  { value: 'oneSide', label: 'One side', glyph: <SketchGlyphIcon kind="oneSide" /> },
+  { value: 'symmetric', label: 'Symmetric', glyph: <SketchGlyphIcon kind="symmetric" /> },
+  { value: 'twoSides', label: 'Two sides', glyph: <SketchGlyphIcon kind="twoSides" /> },
+]
+
+const RESULTS: ChoiceOption<Result>[] = [
+  { value: 'join', label: 'Join', glyph: <SketchGlyphIcon kind="join" /> },
+  { value: 'cut', label: 'Cut', glyph: <SketchGlyphIcon kind="cut" /> },
+  { value: 'new', label: 'New body', glyph: <SketchGlyphIcon kind="new" /> },
+]
+
+/** The options with their glyphs, or the words alone (a phone keeps its choices as they were). */
+const withGlyphs = <V extends string>(options: readonly ChoiceOption<V>[], on: boolean): ChoiceOption<V>[] => (on ? [...options] : options.map(({ glyph: _glyph, ...o }) => o))
 
 /** The way each family was last drawn this session, so picking the family again draws it the same way. */
 const lastVariant: Partial<Record<Family, DrawTool>> = {}
@@ -351,7 +382,16 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const units = useApp((s) => s.units)
   const [check, setCheck] = useState<SketchCheck | null>(null)
   const [engineSnaps, setEngineSnaps] = useState<SnapTargets>({ points: [], edges: [] })
-  const [field, setField] = useState<{ x: number; y: number; values: string[]; focus: number } | null>(null)
+  // the cursor pills: the one typing goes to, and the typed text while a number is being typed
+  const [typed, setTyped] = useState<string[] | null>(null)
+  const [pillFocus, setPillFocus] = useState(0)
+  const pills = useRef<CursorPillsHandle | null>(null)
+  // a phone keeps its readout line under the hint, where a desktop has the cursor pills; a new tool starts it empty
+  // and Select's says what is picked
+  const readoutRef = useRef<HTMLSpanElement | null>(null)
+  useEffect(() => {
+    if (readoutRef.current) readoutRef.current.textContent = draft.tool === 'select' ? pickedText(sketch, selected, ...readoutUnits(units)) : ''
+  }, [draft.tool, selected, sketch, units])
   const [finish, setFinish] = useDraft<'extrude' | 'revolve'>('finish', init?.finish ?? 'extrude')
   const [distance, setDistance] = useDraft('distance', init?.fields.distance ?? '5')
   const [extentKind, setExtentKind] = useDraft<'oneSide' | 'symmetric' | 'twoSides'>('extentKind', init?.fields.extent ?? 'oneSide')
@@ -374,11 +414,12 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [dimField, setDimField] = useState<DimField | null>(null)
   // a dimension or constraint glyph picked with Select, by constraint index
   const [pickedCon, setPickedCon] = useState<number | null>(null)
-  const readoutRef = useRef<HTMLSpanElement | null>(null)
-  // a new tool starts with an empty readout; Select's says what is picked
-  useEffect(() => {
-    if (readoutRef.current) readoutRef.current.textContent = draft.tool === 'select' ? pickedText(sketch, selected, ...readoutUnits(units)) : ''
-  }, [draft.tool, selected, sketch, units])
+  // a new tool or step starts typing in its first pill, and a new tool's pills wait for the cursor
+  const fieldKey = fieldsFor(draft)
+    .map((f) => f.label)
+    .join()
+  useEffect(() => setPillFocus(0), [fieldKey])
+  useEffect(() => pills.current?.hide(), [draft.tool])
   // a dimension typed with a name from the value table follows it: the value is read again as the sketch opens
   useEffect(() => {
     const u = get().units
@@ -407,8 +448,19 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // What the hover path reads without a render.
   // landed: the clicks of the shape being drawn and what each snapped to, for the constraints it leaves
   // dims and glyphs: what the view shows, to read its picks by
-  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, pending, copies, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null })
-  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, pending, copies, solved: solved?.solved ?? null }
+  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, pending, copies, pillFocus, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null })
+  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, pending, copies, pillFocus, solved: solved?.solved ?? null }
+
+  // The live numbers beside the cursor for the tool's next step, or the step's readout when it takes no typed number.
+  const showPills = (d: Draft, at: V2, screen: readonly [number, number], snapName: string | null): void => {
+    const p = pills.current
+    if (!p) return
+    if (!drawingTool(d.tool)) return p.hide()
+    const [f, u] = readoutUnits(get().units)
+    const kinds = fieldsFor(d)
+    const values = kinds.length ? liveValues(d, at).map((v, i) => (v === null ? '' : kinds[i]?.unit === 'mm' ? f(v) : v.toFixed(1))) : [readout(d, at, f, u)]
+    p.show(screen[0], screen[1], values, snapName)
+  }
 
   // Snap targets on the plane: the picked face's outline, and edges of bodies lying in the plane.
   useEffect(() => {
@@ -500,6 +552,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const dimPoints = dimPicks.flatMap((p) => ('point' in p ? [pointAt(sketch, p.point)] : [])).filter((p): p is V2 => p !== null)
     view.setSketch({
       frame: plane.frame,
+      // the plane being drawn on, as a tinted frame of its own, apart from the world grid
+      ...(featureOnly || phone ? {} : { plane: { min: plane.min, max: plane.max } }),
       paths,
       // points hide when Show points is off, but a picked sketch keeps its handles to drag
       handles: featureOnly ? [] : draft.tool === 'select' ? hs.points : pal.points ? [...hs.points, ...draft.points, ...dimPoints] : [...draft.points, ...dimPoints],
@@ -548,7 +602,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     }
     setSketch(r.sketch)
     setDraft(r.draft)
-    setField(null)
+    setTyped(null)
   }
 
   // A kept dimension opens in the value field at a screen spot.
@@ -575,7 +629,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       const m = c ? dimMark(l.sketch, c, c.value, -1, (mm) => formatLength(mm, get().units)) : null
       view?.setSketchCursor(m ? { dim: m } : null)
       const u = get().units
-      if (readoutRef.current) readoutRef.current.textContent = c ? `${DIM_NAMES[c.type]} ${dimValueText(c, c.value, u)} ${c.type === 'angle' ? '\u00b0' : u.length}` : ''
+      if (readoutRef.current) readoutRef.current.textContent = c ? `${DIM_NAMES[c.type]} ${dimValueText(c, c.value, u)} ${c.type === 'angle' ? '°' : u.length}` : ''
       return
     }
     if (l.dimField) return void commitDim()
@@ -789,9 +843,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (ev.kind === 'hover') {
           view.setSketchCursor({ path: preview(l.draft, s.at, { sides: l.sides }, l.sketch), at: s.at, guide: 'guide' in s && s.guide ? s.guide : null })
           const r = readoutRef.current
-          const u = readoutUnits(get().units)
-          const base = l.draft.tool === 'select' ? pickedText(l.sketch, l.selected, ...u) : readout(l.draft, s.at, ...u)
-          if (r) r.textContent = `${base}${s.kind ? `${base ? ', ' : ''}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
+          if (r) {
+            const u = readoutUnits(get().units)
+            const base = l.draft.tool === 'select' ? pickedText(l.sketch, l.selected, ...u) : readout(l.draft, s.at, ...u)
+            r.textContent = `${base}${s.kind ? `${base ? ', ' : ''}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
+          } else showPills(l.draft, s.at, ev.screen, s.kind ? SNAP_NAMES[s.kind] : null)
           return
         }
         if (l.draft.tool === 'select' && l.pending) {
@@ -862,7 +918,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       if (key && !e.metaKey && !e.ctrlKey && !e.altKey && !featureOnly) {
         e.preventDefault()
         setDraft(emptyDraft(key))
-        setField(null)
+        setTyped(null)
         dropDim()
         setPickedCon(null)
         view?.setSketchCursor(null)
@@ -891,9 +947,19 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         view?.setSketchCursor(null)
         return
       }
-      if (/^[0-9.\-]$/.test(e.key) && l.draft.tool !== 'select' && l.draft.tool !== 'dimension' && !e.metaKey && !e.ctrlKey) {
+      const kinds = drawingTool(l.draft.tool) && !featureOnly ? fieldsFor(l.draft) : []
+      // Tab moves between the cursor pills, from the view; in the panel it moves between its controls as usual
+      if (e.key === 'Tab' && kinds.length > 1 && !e.altKey && !e.metaKey && !e.ctrlKey && (t === document.body || t instanceof HTMLCanvasElement)) {
         e.preventDefault()
-        setField({ x: l.screen[0], y: l.screen[1], values: [e.key, ''], focus: 0 })
+        setPillFocus((f) => nextPill(f, kinds.length, e.shiftKey))
+        return
+      }
+      if (/^[0-9.\-]$/.test(e.key) && kinds.length && !e.metaKey && !e.ctrlKey) {
+        // a number goes into the focused pill; the others keep following the cursor until typed in
+        e.preventDefault()
+        const at = Math.min(l.pillFocus, kinds.length - 1)
+        showPills(l.draft, l.cursor, l.screen, null)
+        setTyped(kinds.map((_, i) => (i === at ? e.key : '')))
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && l.draft.tool === 'select' && !featureOnly) {
         const sel = l.selected
         if (sel) {
@@ -920,10 +986,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }, [view])
 
   const commitField = () => {
-    if (!field) return
+    if (!typed) return
     const kinds = fieldsFor(draft)
     const read = (v: string, i: number) => (kinds[i]?.unit === 'mm' ? parseLength(v, units, currentValues()) : num(v))
-    const values = field.values.map((v, i) => (v.trim() === '' ? null : read(v, i)))
+    const values = typed.map((v, i) => (v.trim() === '' ? null : read(v, i)))
     if (values.some((v) => Number.isNaN(v))) return setNote('Type numbers only.')
     const p = typedPoint(draft, values, live.current.cursor)
     if (typeof p === 'string') return setNote(p)
@@ -931,13 +997,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const r = click(sketch, draft, p, { sides: sidesN })
     setSketch(r.sketch)
     setDraft(r.draft)
-    setField(null)
+    setTyped(null)
   }
 
   const pickTool = (t: DrawTool) => {
     if (VARIANTS[familyOf(t)]) lastVariant[familyOf(t)] = t
     setDraft(emptyDraft(t))
-    setField(null)
+    setTyped(null)
     dropDim()
     setPickedCon(null)
     setPending(null)
@@ -951,6 +1017,16 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const r = ext ? ext.radius * 1.4 : Math.hypot(plane.max[0] - plane.min[0], plane.max[1] - plane.min[1]) / 2
     view?.lookAtPlane(frameToBed(plane.frame, c), plane.frame.normal, r)
   }
+
+  const lookRef = useRef(look)
+  lookRef.current = look
+  // the view's camera buttons get Look at the sketch, and its mode pill says where and with what the sketch draws
+  const name = toolName(draft.tool)
+  useEffect(() => {
+    if (!featureOnly) setSketchMode({ on: surfaceOf(plane, init !== undefined), label: plane.label, tool: name })
+  }, [featureOnly, plane, init, name])
+  useEffect(() => (featureOnly ? undefined : () => setSketchMode(null)), [featureOnly])
+  useEffect(() => (featureOnly ? undefined : provideSketchLook(() => lookRef.current())), [featureOnly])
 
   // A plane just picked: the camera turns square on to it, as Look at the sketch does.
   const looked = useRef(false)
@@ -1015,9 +1091,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const bodies = useApp((s) => s.plate)
   const canInto = featureOnly ? bodies.length > 0 : !!plane.target
   const op = canInto ? operation : 'new'
-  // The switch shows where the extrusion goes; the engine's flip is relative to the operation.
+  // Flip says where the extrusion goes now; the engine's flip is relative to the operation
   const intoFace = goesIntoFace(flip, op)
-  const setIntoFace = (on: boolean) => setFlip(flipFor(on, op))
   const loops = toLoops(sketch)
   // A sketch step opened from the history saves into its place; the steps after it run again.
   const saveSketch = async (params: Parameters<typeof saveEdit>[1]) => {
@@ -1112,124 +1187,149 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }, [featureOnly, family, canMirror, mirroring, mirrorE])
   const driven = constraints.filter((c) => isDimension(c) && c.driven).length
   const words = (t: string) => (phone ? touchWords(t) : t)
-  return (
-    <Shell
-      title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'}
-      aside={plane.label}
-      {...(featureOnly ? {} : { action: <Button size="sm" className="tp-pill" data-testid="sketch-other-plane" onClick={onRestart} disabled={busy} tip={{ title: 'Sketch on another plane or face' }}>Other plane</Button> })}
-    >
-      {featureOnly ? null : (
+  // On a desktop the panel has two cards, drawing and then the solid, which stays folded with the reason until the
+  // sketch has a closed profile. A phone keeps its one sheet of controls.
+  const closedProfiles = useMemo(() => profileRings(sketch).length, [sketch])
+  const card = phone ? { open: true, reason: null } : solidCard({ featureOnly, closedProfiles, issues, drawn: sketch.length > 0 || draft.points.length > 0 })
+  const [lenFmt, lenUnit] = readoutUnits(units)
+  const dof = solved ? (
+    <span className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)} {...(driven ? { 'data-tip-title': 'Driven dimensions', 'data-tip-body': 'The other constraints already set these sizes, so they show in parentheses and change nothing.' } : {})}>
+      {dofText(solved.solved)}
+      {driven ? <span className="sketch-driven">, {driven} driven</span> : null}
+    </span>
+  ) : null
+  const idle = words(pending ? 'Esc stops.' : idleText(draft.tool))
+  const drawing = (
+    <>
+      <PhonePicker>
+        <Seg label="Drawing tool" size="sm" full className="sketch-tools" value={familyOf(draft.tool)} onChange={(f) => pickTool(lastVariant[f] ?? VARIANTS[f]?.[0]?.value ?? (f as DrawTool))} options={FAMILIES} />
+        {/* the ways to draw the family; the row is always there, so nothing below moves */}
+        <SketchVariants tool={draft.tool} onPick={pickTool} sides={sides} onSides={setSides} />
+      </PhonePicker>
+      <p className="cad-hint sketch-hint" role="status" {...(phone ? {} : { 'data-tip-title': familyName(familyOf(draft.tool)), 'data-tip-body': idle })}>
+        <Icon name={phone ? 'info' : 'mouse-left'} size={15} />{' '}
+        <span className="sketch-hint-text">{words(pending ? PENDING_HINTS[pending.kind] : hintText(draft.tool))}</span>
+      </p>
+      {phone ? (
         <>
-          <PhonePicker>
-            <Seg label="Drawing tool" size="sm" full className="sketch-tools" value={familyOf(draft.tool)} onChange={(f) => pickTool(lastVariant[f] ?? VARIANTS[f]?.[0]?.value ?? (f as DrawTool))} options={FAMILIES} />
-            {/* the ways to draw the family; the row is always there, so nothing below moves */}
-            <SketchVariants tool={draft.tool} onPick={pickTool} sides={sides} onSides={setSides} />
-          </PhonePicker>
-          <p className="cad-hint sketch-hint" role="status">
-            <Icon name={phone ? 'info' : 'mouse-left'} size={15} />{' '}
-            <span className="sketch-hint-text">{words(pending ? PENDING_HINTS[pending.kind] : hintText(draft.tool))}</span>
-          </p>
           {/* the live sizes while drawing; between shapes, what else the tool takes */}
-          <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" data-idle={words(pending ? 'Esc stops.' : idleText(draft.tool))} /></p>
+          <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" data-idle={idle} /></p>
           {solved ? (
             <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)} data-tip-demo="still-sketch-status" {...(driven ? { 'data-tip-title': 'Driven dimensions', 'data-tip-body': 'The other constraints already set these sizes, so they show in parentheses and change nothing.' } : { 'data-tip-title': 'Sketch status' })}>
               {dofText(solved.solved)}
               {driven ? <span className="sketch-driven">, {driven} driven</span> : null}
             </p>
           ) : null}
-          <div className="sketch-palette" role="group" aria-label="Sketch palette">
-            <Button size="sm" className="tp-pill" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
-            <div className="sketch-pair">
-              <Row label="Grid" htmlFor="sk-grid">
-                <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
-              </Row>
-              <Row label={<span data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">Section</span>} htmlFor="sk-section">
-                <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
-              </Row>
-            </div>
-            {/* the step, or Off: one row for snapping */}
-            <Row label="Snap to grid" htmlFor="sk-step">
-              <Select id="sk-step" aria-label="Snap step" value={pal.snap ? pal.step : 'off'} onChange={(e) => setPal(e.target.value === 'off' ? { snap: false } : { snap: true, step: e.target.value })}>
-                <option value="off">Off</option>
-                {gridSteps(units, pal.step).map((g) => (
-                  <option key={g.value} value={g.value}>{g.label}</option>
-                ))}
-              </Select>
-            </Row>
-            {/* what the sketch shows: filters, so chips */}
-            <div className="tp-row" data-wide="">
-              <span className="tp-label" id="sk-show-label">Show</span>
-              <div className="tp-chips" role="group" aria-labelledby="sk-show-label">
-                {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
-                  <button key={k} id={`sk-show-${k}`} type="button" className="tp-chip" aria-pressed={pal[k]} aria-label={`Show ${k}`} onClick={() => setPal({ [k]: !pal[k] })}>
-                    {k[0]!.toUpperCase() + k.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
+        </>
+      ) : null}
+      <div className="sketch-palette" role="group" aria-label="Sketch palette">
+        {phone ? <Button size="sm" className="tp-pill" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button> : null}
+        <div className="sketch-pair">
+          <Row label="Grid" htmlFor="sk-grid">
+            <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
+          </Row>
+          <Row label={<span data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">Section</span>} htmlFor="sk-section">
+            <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
+          </Row>
+        </div>
+        {/* the step, or Off: one row for snapping */}
+        <Row label="Snap to grid" htmlFor="sk-step">
+          <Select id="sk-step" aria-label="Snap step" value={pal.snap ? pal.step : 'off'} onChange={(e) => setPal(e.target.value === 'off' ? { snap: false } : { snap: true, step: e.target.value })}>
+            <option value="off">Off</option>
+            {gridSteps(units, pal.step).map((g) => (
+              <option key={g.value} value={g.value}>{g.label}</option>
+            ))}
+          </Select>
+        </Row>
+        {/* what the sketch shows: filters, so chips */}
+        <div className="tp-row sketch-show">
+          <span className="tp-label" id="sk-show-label">Show</span>
+          <div className="tp-chips" role="group" aria-labelledby="sk-show-label">
+            {(['profiles', 'points', 'dimensions', 'constraints'] as const).map((k) => (
+              <button key={k} id={`sk-show-${k}`} type="button" className="tp-chip" aria-pressed={pal[k]} aria-label={`Show ${k}`} onClick={() => setPal({ [k]: !pal[k] })}>
+                {k[0]!.toUpperCase() + k.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+  // what Select picked and what to do with it: in the drawing card on a desktop, after the check's messages on a phone
+  const picks = (
+    <>
+      {draft.tool === 'select' && sel ? (
+        <>
+          {phone ? null : <p className="sketch-picked sx-mono" data-testid="sketch-picked">{pickedText(sketch, selected, lenFmt, lenUnit)}</p>}
+          <div className="cad-row sketch-loop-actions">
+            <Button size="sm" className="tp-pill" icon="mirror" aria-pressed={pending?.kind === 'mirror'} data-tip-title="Mirror" data-tip-body="Adds a copy of this loop across the straight line you click next, held symmetric to it." onClick={() => setPending(pending?.kind === 'mirror' ? null : { kind: 'mirror', e: selected!.e })}>Mirror</Button>
+            <Button size="sm" className="tp-pill" aria-pressed={sel.construction === true} data-tip-title="Construction" data-tip-key="X" data-tip-body="A construction curve stays in the sketch for constraints and snaps, and makes no profile." onClick={() => setSketch((s) => toggleConstruction(s, selected!.e))}>Construction</Button>
+            <Button size="sm" className="tp-pill" icon="delete" onClick={() => { const e = selected!.e; setConstraints((c) => afterLoopChange(c, e, 0)); setSketch((s) => s.filter((_, i) => i !== e)); setSelected(null) }}>Delete loop</Button>
+          </div>
+          <Num id="sk-offset" label="Offset" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
+          <Button full data-tip-title="Offset" data-tip-body="Adds a copy of this loop grown by the distance; a negative one shrinks it." onClick={() => void doOffset()}>Offset the loop</Button>
+          {/* copies of the loop in this sketch; the extrude's Pattern below copies the solid */}
+          <fieldset className="sketch-copies">
+            <legend>Copy in sketch</legend>
+            <Choice id="sk-copy-kind" label="Kind" ariaLabel="Copy kind" value={copies.kind} onChange={(kind) => (setCopies({ ...copies, kind }), setPending(null))} options={[{ value: 'line', label: 'Line' }, { value: 'circle', label: 'Circle' }]} />
+            <Num id="sk-copies" label="Copies" unit="" value={copies.count} onChange={(count) => setCopies({ ...copies, count })} />
+            {copies.kind === 'line' ? (
+              <>
+                <Num id="sk-step-x" label="Step across" unit="mm" value={copies.dx} onChange={(dx) => setCopies({ ...copies, dx })} onEnter={() => void copyLoop(selected!.e)} />
+                <Num id="sk-step-y" label="Step up" unit="mm" value={copies.dy} onChange={(dy) => setCopies({ ...copies, dy })} onEnter={() => void copyLoop(selected!.e)} />
+              </>
+            ) : (
+              <Num id="sk-pattern-angle" label="Angle" unit="°" value={copies.angle} onChange={(angle) => setCopies({ ...copies, angle })} />
+            )}
+            <Button full pressed={pending?.kind === 'round'} data-tip-title="Add copies" data-tip-body="Copies of this loop in the sketch, the original counted: along the step, or round a point you click next." onClick={() => (copies.kind === 'line' ? void copyLoop(selected!.e) : setPending(pending?.kind === 'round' ? null : { kind: 'round', e: selected!.e }))}>
+              {copies.kind === 'line' ? 'Add copies' : 'Add copies round a point'}
+            </Button>
+          </fieldset>
+        </>
+      ) : null}
+      {draft.tool === 'select' && sel?.kind === 'chain' ? (
+        <>
+          <Choice id="sk-corner-kind" label="Corner shape" value={cornerKind} onChange={setCornerKind} options={[{ value: 'fillet', label: 'Round' }, { value: 'chamfer', label: 'Bevel' }]} />
+          <Num id="sk-corner" label={cornerKind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={corner} onChange={setCorner} onEnter={() => void doCorners(false)} />
+          <div className="cad-row sketch-corner-actions">
+            <Button size="sm" className="tp-pill" data-tip="sketch.corners" onClick={() => void doCorners(false)}>Corners of this line</Button>
+            <Button size="sm" className="tp-pill" onClick={() => void doCorners(true)}>Every corner of the loop</Button>
           </div>
         </>
-      )}
-      {issues.length ? (
-        <div className="cad-issues">
-          {issues.slice(0, 6).map((i, k) => (
-            <Message key={k} text={i.message} />
-          ))}
-        </div>
       ) : null}
-      {featureOnly ? null : (
-        <>
-          {draft.tool === 'select' && sel ? (
-            <>
-              <div className="cad-row sketch-loop-actions">
-                <Button size="sm" className="tp-pill" icon="mirror" aria-pressed={pending?.kind === 'mirror'} data-tip-title="Mirror" data-tip-body="Adds a copy of this loop across the straight line you click next, held symmetric to it." onClick={() => setPending(pending?.kind === 'mirror' ? null : { kind: 'mirror', e: selected!.e })}>Mirror</Button>
-                <Button size="sm" className="tp-pill" aria-pressed={sel.construction === true} data-tip-title="Construction" data-tip-key="X" data-tip-body="A construction curve stays in the sketch for constraints and snaps, and makes no profile." onClick={() => setSketch((s) => toggleConstruction(s, selected!.e))}>Construction</Button>
-                <Button size="sm" className="tp-pill" icon="delete" onClick={() => { const e = selected!.e; setConstraints((c) => afterLoopChange(c, e, 0)); setSketch((s) => s.filter((_, i) => i !== e)); setSelected(null) }}>Delete loop</Button>
-              </div>
-              <Num id="sk-offset" label="Offset" unit="mm" value={offset} onChange={setOffset} onEnter={() => void doOffset()} />
-              <Button full data-tip-title="Offset" data-tip-body="Adds a copy of this loop grown by the distance; a negative one shrinks it." onClick={() => void doOffset()}>Offset the loop</Button>
-              {/* copies of the loop in this sketch; the extrude's Pattern below copies the solid */}
-              <fieldset className="sketch-copies">
-                <legend>Copy in sketch</legend>
-                <Choice id="sk-copy-kind" label="Kind" ariaLabel="Copy kind" value={copies.kind} onChange={(kind) => (setCopies({ ...copies, kind }), setPending(null))} options={[{ value: 'line', label: 'Line' }, { value: 'circle', label: 'Circle' }]} />
-                <Num id="sk-copies" label="Copies" unit="" value={copies.count} onChange={(count) => setCopies({ ...copies, count })} />
-                <>
-                  {copies.kind === 'line' ? (
-                    <>
-                      <Num id="sk-step-x" label="Step across" unit="mm" value={copies.dx} onChange={(dx) => setCopies({ ...copies, dx })} onEnter={() => void copyLoop(selected!.e)} />
-                      <Num id="sk-step-y" label="Step up" unit="mm" value={copies.dy} onChange={(dy) => setCopies({ ...copies, dy })} onEnter={() => void copyLoop(selected!.e)} />
-                    </>
-                  ) : (
-                    <Num id="sk-pattern-angle" label="Angle" unit="°" value={copies.angle} onChange={(angle) => setCopies({ ...copies, angle })} />
-                  )}
-                </>
-                <Button full pressed={pending?.kind === 'round'} data-tip-title="Add copies" data-tip-body="Copies of this loop in the sketch, the original counted: along the step, or round a point you click next." onClick={() => (copies.kind === 'line' ? void copyLoop(selected!.e) : setPending(pending?.kind === 'round' ? null : { kind: 'round', e: selected!.e }))}>
-                  {copies.kind === 'line' ? 'Add copies' : 'Add copies round a point'}
-                </Button>
-              </fieldset>
-            </>
-          ) : null}
-          {draft.tool === 'select' && sel?.kind === 'chain' ? (
-            <>
-              <Choice id="sk-corner-kind" label="Corner shape" value={cornerKind} onChange={setCornerKind} options={[{ value: 'fillet', label: 'Round' }, { value: 'chamfer', label: 'Bevel' }]} />
-              <Num id="sk-corner" label={cornerKind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={corner} onChange={setCorner} onEnter={() => void doCorners(false)} />
-              <div className="cad-row sketch-corner-actions">
-                <Button size="sm" className="tp-pill" data-tip="sketch.corners" onClick={() => void doCorners(false)}>Corners of this line</Button>
-                <Button size="sm" className="tp-pill" onClick={() => void doCorners(true)}>Every corner of the loop</Button>
-              </div>
-        </>
-      ) : null}
-        </>
-      )}
-      {featureOnly ? null : <Choice id="sk-finish" label="Finish with" bare value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} />}
+    </>
+  )
+  const messages = issues.length ? (
+    <div className="cad-issues">
+      {issues.slice(0, 6).map((i, k) => (
+        <Message key={k} text={i.message} />
+      ))}
+    </div>
+  ) : null
+  const distanceField = <Num id="sk-dist" label={extentKind === 'symmetric' ? 'Total distance' : 'Distance'} unit="mm" value={distance} onChange={setDistance} onEnter={() => void go()} />
+  const finishWith = <Choice id="sk-finish" label="Finish with" bare value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} />
+  const solid = (
+    <>
+      {featureOnly || !phone ? null : finishWith}
       {finish === 'extrude' ? (
         <>
-          <Choice id="sk-direction" label="Direction" value={extentKind} onChange={setExtentKind} options={[{ value: 'oneSide', label: 'One side' }, { value: 'symmetric', label: 'Symmetric' }, { value: 'twoSides', label: 'Two sides' }]} />
-          <Num id="sk-dist" label={extentKind === 'symmetric' ? 'Total distance' : 'Distance'} unit="mm" value={distance} onChange={setDistance} onEnter={() => void go()} />
+          <Choice id="sk-direction" label="Direction" value={extentKind} onChange={setExtentKind} options={withGlyphs(DIRECTIONS, !phone)} />
+          {/* Flip sits beside Distance, on a phone too */}
+          <div className="sketch-distance">
+            {distanceField}
+            <Button
+              size="sm"
+              className="tp-pill"
+              icon="mirror"
+              data-testid="sketch-flip"
+              aria-pressed={flip}
+              tip={{ title: 'Flip', body: intoFace ? 'Goes into the face now. Flip sends it out of the face.' : 'Goes out of the face now. Flip sends it into the face.' }}
+              onClick={() => setFlip(!flip)}
+            >
+              Flip
+            </Button>
+          </div>
           {extentKind === 'twoSides' ? <Num id="sk-dist2" label="Other side" unit="mm" value={distance2} onChange={setDistance2} /> : <Num id="sk-taper" label="Draft" unit="°" value={taper} onChange={setTaper} />}
-          <Row label="Extrude into the face" htmlFor="sk-flip">
-            <Switch id="sk-flip" checked={intoFace} onChange={setIntoFace} label="Extrude into the face" />
-          </Row>
           <PatternSection value={patternFields} onChange={setPatternFields} />
         </>
       ) : (
@@ -1238,7 +1338,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           <Num id="sk-angle" label="Angle" unit="°" value={angle} onChange={setAngle} onEnter={() => void go()} />
         </>
       )}
-      <Choice id="sk-result" label="Result" value={op} onChange={setOperation} options={[{ value: 'join', label: 'Join', disabled: !canInto }, { value: 'cut', label: 'Cut', disabled: !canInto }, { value: 'new', label: 'New body' }]} />
+      <Choice id="sk-result" label="Result" value={op} onChange={setOperation} options={withGlyphs(RESULTS, !phone).map((o) => (o.value === 'new' ? o : { ...o, disabled: !canInto }))} />
       {featureOnly && op !== 'new' ? (
         <Row label={op === 'join' ? 'Join to' : 'Cut from'} htmlFor="sk-into" wide>
           <Select
@@ -1259,6 +1359,48 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         </Row>
       ) : null}
       <Note>{stepEdit ? 'Applying changes this step; the steps after it run again.' : featureOnly ? `Made from ${plane.label}. Edit sketch in its menu changes the shape.` : 'Finish sketch keeps it in the timeline without a solid. Extrude or revolve here turns it into one.'}</Note>
+    </>
+  )
+  // Other plane sits in the header beside the face being sketched on, on a phone too, so the footer holds only Cancel and the primary
+  const change = featureOnly ? null : (
+    <Button size="sm" className="tp-pill" data-testid="sketch-other-plane" onClick={onRestart} disabled={busy} tip={{ title: 'Sketch on another plane or face' }}>
+      Other plane
+    </Button>
+  )
+  return (
+    <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label} {...(change ? { action: change } : {})}>
+      {featureOnly ? (
+        <>
+          {messages}
+          {solid}
+        </>
+      ) : phone ? (
+        <>
+          {drawing}
+          {messages}
+          {picks}
+          {solid}
+        </>
+      ) : (
+        <>
+          <Card title="Drawing" state={dof ?? undefined} testId="sketch-drawing" dense>
+            {drawing}
+            {picks}
+          </Card>
+          <Card
+            title="Solid"
+            testId="sketch-solid"
+            dense
+            muted={!card.open}
+            {...(card.reason ? { reason: card.reason } : {})}
+            // Extrude or Revolve, at the header's right once the card opens
+            state={card.open ? <Seg label="Finish with" size="sm" className="sketch-finish-with" value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} /> : undefined}
+          >
+            {messages}
+            {solid}
+          </Card>
+        </>
+      )}
       {note ? <Message text={note} /> : null}
       <ToolFooter
         verb={finish === 'extrude' ? 'Extrude' : 'Revolve'}
@@ -1267,27 +1409,26 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         busy={busy}
         disabled={!ready || (op !== 'new' && !target)}
       />
-      {field && fields.length
-        ? createPortal(
-            <CursorField
-              x={field.x}
-              y={field.y}
-              labels={fields.map((f) => ({ label: f.label, unit: f.unit === 'mm' ? units.length : f.unit }))}
-              values={field.values}
-              onChange={(values) => setField({ ...field, values })}
-              onCommit={commitField}
-              onCancel={() => setField(null)}
-            />,
-            document.body,
-          )
-        : null}
+      {featureOnly || !drawingTool(draft.tool) ? null : (
+        <CursorPills
+          ref={pills}
+          fields={fields.map((f) => ({ label: f.label, unit: f.unit === 'mm' ? units.length : f.unit }))}
+          text={!fields.length}
+          focus={Math.min(pillFocus, Math.max(0, fields.length - 1))}
+          editing={typed}
+          onFocus={setPillFocus}
+          onChange={setTyped}
+          onCommit={commitField}
+          onCancel={() => setTyped(null)}
+        />
+      )}
       {dimField
         ? createPortal(
             <CursorField
               key={`${dimField.index ?? 'new'}:${dimField.x}:${dimField.y}`}
               x={dimField.x}
               y={dimField.y}
-              labels={[{ label: DIM_NAMES[dimField.c.type], unit: dimField.c.type === 'angle' ? '\u00b0' : units.length }]}
+              labels={[{ label: DIM_NAMES[dimField.c.type], unit: dimField.c.type === 'angle' ? '°' : units.length }]}
               values={[dimField.text]}
               selectAll
               onChange={(v) => setDimField({ ...dimField, text: v[0] ?? '' })}

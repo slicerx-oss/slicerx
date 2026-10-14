@@ -213,3 +213,39 @@
 .tp-value[data-builtin] > .tp-eq { grid-column: 1 / -1; grid-template-columns: auto auto minmax(0, 1fr); font-size: var(--fs-body); line-height: 20px; }
 .tp-value-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .tp-value-result, .tp-value > .tp-msg { grid-column: 1 / -1; }
+/* Sketch (sketch-panel.tsx), on the tool panel pieces above */
+.tp-card-state > .sketch-dof { margin: 0; }
+/* Distance with Flip beside its field: the row's label, then Flip, then the field at the right edge */
+.sketch-distance { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--s-2); align-items: center; min-height: var(--tp-row-h); }
+.sketch-distance > .tp-row { display: contents; }
+.sketch-distance > .tp-row > .tp-num { order: 2; }
+.sketch-distance > .sx-btn { order: 1; }
+/* a choice's glyph before its word; a cut in the cut color */
+.tp-glyph-label { display: inline-flex; align-items: center; gap: var(--s-1); min-width: 0; }
+.sketch-glyph { flex: none; }
+.sx-seg > button .sketch-glyph[data-glyph='cut'] { color: var(--red); }
+/* the picked curve in Select, in place of the old readout line */
+.sketch-picked { margin: 0; font-size: var(--fs-sm); color: var(--fg); }
+/* the live numbers beside the cursor in the view */
+.sketch-pills { position: fixed; z-index: 30; display: flex; align-items: center; gap: var(--s-1); pointer-events: none; }
+.sketch-pills[data-typing] { pointer-events: auto; }
+.sketch-pill { display: inline-flex; align-items: center; gap: var(--s-1); height: 24px; padding: 0 var(--s-2); border: 1px solid var(--line); border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-1) 90%, transparent); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+.sketch-pill[data-focus] { border-color: var(--accent); outline: 2px solid var(--accent-tint); outline-offset: 0; }
+.sketch-pill-label { color: var(--dim); }
+.sketch-pill-value { min-width: 4ch; text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; }
+.sketch-pill-unit { color: var(--dim); }
+.sketch-pill-input { width: 7ch; height: 18px; padding: 0 2px; border: 0; border-radius: var(--r-xs); background: var(--ink-3); color: var(--fg); font-size: var(--fs-xs); text-align: right; outline: none; }
+.sketch-pill-input::placeholder { color: var(--dim); }
+.sketch-pill-snap { height: 20px; padding: 0 var(--s-2); display: inline-flex; align-items: center; border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 22%, var(--ink-1)); color: var(--fg); font-size: var(--fs-xs); }
+.sketch-pill-snap[hidden], .sketch-pills[hidden] { display: none; }
+/* a dense card (spec 2d): 12 px inside, so Sketch's Distance and Draft stay in view at 900 px tall */
+.tp-card[data-dense] { padding: var(--s-3); gap: var(--s-3); }
+.tp-card[data-dense] > .tp-card-h { min-height: var(--h-sm); }
+.tp-card-state > .sketch-finish-with { width: auto; }
+.tp-card > .tp-card-body > .sketch-palette { padding: 0; border: 0; }
+/* three marks of the tool's own fit the control column, beside the label */
+.tp-choice[data-fit='icons']:not([data-wide]) > .sx-seg { justify-self: end; width: var(--tp-ctl); }
+/* Show: the label, then the chips two by two */
+.sketch-show { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+.sketch-show > .tp-label { line-height: var(--h-sm); }
+.sketch-palette .sketch-show > .tp-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-1) var(--s-2); }
