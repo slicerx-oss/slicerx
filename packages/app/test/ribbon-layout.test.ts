@@ -16,6 +16,15 @@ describe('the ribbon layout', () => {
     expect(RIBBON.solid.map((g) => g.label)).toEqual(['Create', 'Modify', 'Inspect', 'Output'])
   })
 
+  it('shows each item once per tab, with Extrude on Solid', () => {
+    for (const tab of ['solid', 'mesh', 'sketch'] as const) {
+      const ids = ribbonGroups(tab, all, true).flatMap((g) => g.items.map((i) => `${i.kind}:${i.id}`))
+      expect(ids.filter((id, i) => ids.indexOf(id) !== i), tab).toEqual([])
+    }
+    const solid = ribbonGroups('solid', all, true).flatMap((g) => g.items.map((i) => i.id))
+    expect(solid).toEqual(expect.arrayContaining(['sketch', 'extrude', 'revolve', 'push', 'cut', 'array', 'holefit']))
+  })
+
   it('places every shelf tool that has a shelf place, and Auto orient in Mesh', () => {
     const where = placed(true)
     // the On a face tools stay in their menu; the old Mesh menu's tools sit on the Mesh tab as buttons
