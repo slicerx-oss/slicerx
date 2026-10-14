@@ -15,7 +15,7 @@ import { findTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
-import { close, errorText, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
+import { close, errorText, Num, pickWords, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
 import { follow, useDraft, useDraftObject, useRestored } from './park'
 import { applyPush, onFace, parseDistance, pickPushFace, pushWords, type PushFace } from './push'
 
@@ -160,7 +160,7 @@ export function PushTool() {
   return (
     <Shell title="Push and pull" aside={edit ? `Editing step ${edit.index + 1}` : face ? 'A face is picked' : 'No face yet'}>
       {!face ? (
-        <p className="cad-hint"><Icon name="mouse-left" size={15} /> Click a flat face, or drag one in or out. Hold Shift to move in 1 mm steps.</p>
+        <PointerHint text="Click a flat face, or drag one in or out. Hold Shift to move in 1 mm steps." />
       ) : (
         <p className="cad-hint" role="status"><Icon name="info" size={15} /> {words}</p>
       )}
