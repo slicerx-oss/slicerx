@@ -6,12 +6,14 @@
 import type { SxBrepModule } from '../../../brep/lib/sx_brep.mjs'
 
 export interface BrepModule {
+  memoryBytes(): number
   call(op: string, request: unknown): unknown
 }
 
 /** One call: request in as JSON, the reply back parsed; a reply with an error throws it. */
 export function brepModule(m: SxBrepModule): BrepModule {
   return {
+    memoryBytes: () => m.HEAPU8.buffer.byteLength,
     call(op, request) {
       const json = JSON.stringify(request ?? {})
       if (json === undefined) throw new Error('brep: request is not JSON')

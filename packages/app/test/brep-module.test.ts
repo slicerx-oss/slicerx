@@ -157,3 +157,18 @@ describe('B-rep kernel module', () => {
     expect(bodies()).toBe(before)
   })
 })
+
+it('reports the current exact heap after real memory growth', async () => {
+  const m = await init({ wasmBinary: wasm })
+  const k = brepModule(m)
+  const before = k.memoryBytes()
+  expect(before).toBeGreaterThan(0)
+  const ptr = m.stringToNewUTF8('x'.repeat(before + 1))
+  try {
+    expect(ptr).toBeGreaterThan(0)
+    expect(k.memoryBytes()).toBeGreaterThan(before)
+    expect(k.memoryBytes()).toBe(m.HEAPU8.buffer.byteLength)
+  } finally {
+    m._free(ptr)
+  }
+})

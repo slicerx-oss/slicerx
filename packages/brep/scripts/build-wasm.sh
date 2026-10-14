@@ -57,7 +57,7 @@ mkdir -p "$here/lib"
 "$emxx" $flags $(awk '$2 ~ /\/obj\/smapi\// {print $2}' "$list") $(awk '$2 ~ /\/obj\/smlib\// {print $2}' "$list") -o "$here/lib/sx_brep.mjs" \
   -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web,worker,node -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=4GB \
   -sSTACK_SIZE=8MB -Wl,-mllvm,-wasm-enable-eh -Wl,-mllvm,-exception-model=wasm -sEXPORTED_FUNCTIONS=_sx_brep_call,_sx_brep_free,_malloc,_free \
-  -sEXPORTED_RUNTIME_METHODS=UTF8ToString,stringToNewUTF8
+  -sEXPORTED_RUNTIME_METHODS=UTF8ToString,stringToNewUTF8,HEAPU8
 cd "$here/lib"
 for f in sx_brep.mjs sx_brep.wasm; do
   echo "$f: $(wc -c < "$f") bytes, $(gzip -9c "$f" | wc -c) gzip"
