@@ -12,8 +12,6 @@ svg.ti .a1{fill:var(--ti-a1);stroke:var(--ti-aol)}
 svg.ti .a2{fill:var(--ti-a2);stroke:var(--ti-aol)}
 svg.ti .a3{fill:var(--ti-a3);stroke:var(--ti-aol)}
 svg.ti .hl{fill:var(--ti-hl);stroke:none}
-svg.ti .cya{fill:url(#ti-cya)}
-svg.ti .cyg{fill:url(#ti-cyg)}
 svg.ti .out{stroke:var(--ti-ol)}
 svg.ti .out.ao{stroke:var(--ti-aol)}
 svg.ti .nf{fill:none}
