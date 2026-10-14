@@ -43,4 +43,21 @@ describe('the tool icons', () => {
     expect(at16).toContain('aria-label="Push and pull"')
     expect(at16).toContain('viewBox="0 0 16 16"')
   })
+
+  it('gives each copy its own defs ids, and every reference stays inside its own icon', () => {
+    const withDefs = names.filter((n) => TOOL_ICONS[n][24].includes('id="ti-') || TOOL_ICONS[n][32].includes('id="ti-'))
+    expect(withDefs).toEqual(expect.arrayContaining(['cylinder', 'shell']))
+    const page = renderToStaticMarkup(
+      <>
+        {withDefs.flatMap((n) => [<ToolIcon key={`${n}a`} name={n} size={24} />, <ToolIcon key={`${n}b`} name={n} size={24} />, <ToolIcon key={`${n}c`} name={n} size={32} />])}
+      </>,
+    )
+    const ids = [...page.matchAll(/ id="([^"]+)"/g)].map((m) => m[1])
+    expect(ids.length).toBeGreaterThan(withDefs.length * 2)
+    expect(new Set(ids).size, 'duplicate ids').toBe(ids.length)
+    for (const svg of page.split('</svg>').slice(0, -1)) {
+      const own = new Set([...svg.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]))
+      for (const ref of svg.matchAll(/url\(#([^)]+)\)/g)) expect(own.has(ref[1]), ref[1]).toBe(true)
+    }
+  })
 })

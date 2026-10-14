@@ -165,7 +165,7 @@ V.sphere = (c) => {
 G.sphere = () => { const g = grid(); solid(g, [[ring(8, 8, 6.5, 6.5), 'b'], [ring(7, 7, 4, 4), 'a']], 'd'); return g }
 V.cone = (c) => {
   const b = c.disc(3, 3, 0, 3), [ax, ay] = c.P(3, 3, 6.5)
-  return `<path class="cya out ao" d="M${ax} ${ay}L${r2(b.cx - b.rx)} ${b.cy}A${b.rx} ${b.ry} 0 0 0 ${r2(b.cx + b.rx)} ${b.cy}Z"/>`
+  return `<path class="cya out ao" style="fill:url(#ti-cya)" d="M${ax} ${ay}L${r2(b.cx - b.rx)} ${b.cy}A${b.rx} ${b.ry} 0 0 0 ${r2(b.cx + b.rx)} ${b.cy}Z"/>`
 }
 G.cone = () => {
   const g = grid()
