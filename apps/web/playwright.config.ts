@@ -55,8 +55,10 @@ export default defineConfig({
   ],
   // Always build and serve a fresh bundle with the test environment. A server left running from an earlier build hides changes (and lacks the relay URL the phone pairing tests need).
   // The build leaves the WebAssembly slicer out (SLICERX_WEB_SLICING=0) and slices through the native test host.
+  // The native host gets SIGTERM so it removes its temporary directory; without gracefulShutdown Playwright SIGKILLs it
+  // and every run leaves a sx-e2e-native-* folder of meshes and G-code behind.
   webServer: [
-    { command: `node e2e/native-host/server.mjs --port ${nativePort} --origin http://127.0.0.1:${port}`, url: `${nativeUrl}/healthz`, reuseExistingServer: false, timeout: 30_000, env: { SX_CLI_BIN: sxBin } },
+    { command: `node e2e/native-host/server.mjs --port ${nativePort} --origin http://127.0.0.1:${port}`, url: `${nativeUrl}/healthz`, reuseExistingServer: false, timeout: 30_000, env: { SX_CLI_BIN: sxBin }, gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 } },
     { command: `pnpm exec vite build && pnpm exec vite preview --port ${port} --strictPort --host 127.0.0.1`, url: `http://127.0.0.1:${port}/studio/`, reuseExistingServer: false, timeout: 120_000, env: { SLICERX_E2E: '1', SLICERX_WEB_SLICING: '0', SLICERX_E2E_NATIVE_URL: nativeUrl, SX_TEST_HUB_PORT: hubPort, SLICERX_SUPABASE_URL: '', SLICERX_SUPABASE_ANON_KEY: '', SLICERX_RELAY_URL: 'https://relay.example.invalid' } },
   ],
 })
