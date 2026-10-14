@@ -157,10 +157,13 @@ export function SlotRail({ slots, left, badge, add }: SlotRailProps) {
       <div className="slot-rail" role="group" aria-label="Filament spools" data-testid="slice-filament-rail" onPointerLeave={() => set({ hoverSlot: null })}>
         {groups.map((g, gi) => (
           <div className="slot-rail-group" key={g.unit} role="group" aria-label={g.unit === 'Slots' ? 'Filaments' : g.unit}>
-            <div className="slot-rail-unit" data-add={add && gi === 0 ? true : undefined}>
-              <span>{g.unit === 'Slots' ? (fromPrinter ? 'Printer' : 'Filaments') : g.unit}</span>
-              {add && gi === 0 ? add : <span>{fromPrinter ? `${g.slots.filter((s) => !empty(s)).length} loaded` : g.slots.length === 1 ? '1 filament' : `${g.slots.length} filaments`}</span>}
-            </div>
+            {/* One unit under the Filament title needs no header of its own, unless it holds Add filament. */}
+            {groups.length > 1 || (add && gi === 0) ? (
+              <div className="slot-rail-unit" data-add={add && gi === 0 ? true : undefined}>
+                <span>{g.unit === 'Slots' ? (fromPrinter ? 'Printer' : 'Filaments') : g.unit}</span>
+                {add && gi === 0 ? add : <span>{fromPrinter ? `${g.slots.filter((s) => !empty(s)).length} loaded` : g.slots.length === 1 ? '1 filament' : `${g.slots.length} filaments`}</span>}
+              </div>
+            ) : null}
             <div className="spool-grid">
               {g.slots.map((s) => {
                 const m = mismatches.get(s.index)
