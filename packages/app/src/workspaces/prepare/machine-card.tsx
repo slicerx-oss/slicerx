@@ -133,6 +133,9 @@ export function MachineCard() {
             data-testid="slice-machine-printer"
             aria-haspopup="dialog"
             aria-expanded={printerOpen}
+            // Below the whole card: beside the sidebar it would sit over the viewport toolbar.
+            data-tip-side="bottom"
+            data-tip-avoid=".machine-card"
             {...tipAttrs({ title: modelLine, body: `${shortPrinterName(printer.name) === printer.name ? '' : `${printer.name}. `}Pick another printer, or add one.` })}
             onClick={() => (printerOpen ? closePrinter() : setPop('printer'))}
           >
