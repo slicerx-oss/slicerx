@@ -2,13 +2,15 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-177 tools.
+179 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
 | `slicerx_action_log` | Action log | core | read, ungated | The most recent tool calls and approval decisions this server recorded: tool, permission class, decision, who decided, and the result summary. |
 | `slicerx_add_to_fleet` | Add a printer to a fleet | fleets | read, ungated | Add a printer to a fleet. |
 | `slicerx_ams_mapping` |  |  | read | Map the filaments a job needs (material and color per part) onto the slots loaded on one printer. |
+| `slicerx_app_look` |  |  | read | Read two view preferences of SlicerX (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). |
+| `slicerx_app_look_set` |  |  | read | Set SlicerX's Frame the view (modelFraming: selection or open) or Toolbar size (toolbarSize: large, medium or small), or both, the way the person does in Settings, Look and feel. |
 | `slicerx_app_plate_show` |  |  | read | Show one plate of the project open in SlicerX, as its plate picker does: plate (a number from 1, or an id from slicerx_app_plates), or step: next or previous (stepping stops at the first and last plate). |
 | `slicerx_app_plates` |  |  | read | List the plates of the project open in SlicerX, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), and which plate the window shows. |
 | `slicerx_approve` | Approve or decline a pending action | core | read, ungated | Resolve an approval request returned by another SlicerX tool (status "approval_required"). |
