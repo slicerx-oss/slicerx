@@ -164,27 +164,33 @@ const FILTERS = [
   { value: 'not-sliced', label: 'Not sliced', testId: 'plate-sheet-not-sliced' },
 ] as const
 
-/** The most the sheet may take: up to 320 px, and never into the toolbar's lane at the top of the view. */
+/** The most the sheet may take: up to 400 px, and never into the toolbar's lane at the top of the view. */
 function sheetRoom(anchor: HTMLElement | null): number {
   const vp = anchor?.closest('.vp')
-  if (!anchor || !vp) return 320
+  if (!anchor || !vp) return 400
   const top = anchor.getBoundingClientRect().top
   const lane = vp.querySelector('.plate-tools-group:not([data-moved])')?.getBoundingClientRect().bottom ?? vp.getBoundingClientRect().top
-  return Math.max(160, Math.min(320, Math.floor(top - lane - 16)))
+  return Math.max(160, Math.min(400, Math.floor(top - lane - 16)))
 }
 
-/** Card sizes in the sheet (app.css .pp-grid and .pp-card), and the rows around the grid. */
-const CARD = { min: 132, height: 48, gap: 6 }
+/**
+ * Tile sizes in the sheet (app.css .pp-grid and .pp-card): square thumbnails big enough to tell parts apart, four
+ * across. The grid shows at most two and a half rows (BODY_MAX) and scrolls inside, so more plates never grow the sheet.
+ */
+const CARD = { min: 120, height: 104, gap: 8 }
+const TILE_THUMB = 56
+const BODY_MAX = 280
 const CHROME = 8 * 2 + 30 + 32 + 6 * 2 + 4 * 2
 
 /**
  * The sheet's height for `count` plates at `width` px: room for every plate (not just the ones a search keeps, so
- * typing or filtering never resizes it), up to `room`. The plate settings form gets at least 320 px.
+ * typing or filtering never resizes it) up to two and a half rows, and up to `room`. The plate settings form gets at
+ * least 320 px.
  */
 export function sheetHeight(count: number, width: number, room: number, form = false): number {
-  const cols = Math.max(1, Math.floor((width - 24 + CARD.gap) / (CARD.min + CARD.gap)))
+  const cols = Math.min(4, Math.max(1, Math.floor((width - 24 + CARD.gap) / (CARD.min + CARD.gap))))
   const rows = Math.max(1, Math.ceil(count / cols))
-  const want = CHROME + rows * CARD.height + (rows - 1) * CARD.gap
+  const want = CHROME + Math.min(BODY_MAX, rows * CARD.height + (rows - 1) * CARD.gap)
   return Math.min(room, Math.max(form ? 320 : 0, want))
 }
 
@@ -196,7 +202,7 @@ function PlateSheet({ rows, objectsOf, onClose, anchor }: { rows: PlateRow[]; ob
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [editing, setEditing] = useState(false)
-  const [room, setRoom] = useState(320)
+  const [room, setRoom] = useState(400)
   const [width, setWidth] = useState(640)
   const box = useRef<HTMLDivElement>(null)
   const search = useRef<HTMLInputElement>(null)
@@ -260,12 +266,10 @@ function PlateSheet({ rows, objectsOf, onClose, anchor }: { rows: PlateRow[]; ob
                 <li key={r.id}>
                   <button type="button" className="pp-card" aria-current={r.shown ? 'true' : undefined} data-state={r.state} onClick={() => pick(r.id)} {...tipAttrs({ title: fullName(r), body: `${r.objects} ${r.objects === 1 ? 'object' : 'objects'}, ${SLICE_STATE_LABEL[r.state].toLowerCase()}.` })}>
                     <span className="pp-card-thumb" aria-hidden="true">
-                      <PlateThumb objects={objectsOf(r.id)} bed={bed} size={32} fit />
+                      <PlateThumb objects={objectsOf(r.id)} bed={bed} size={TILE_THUMB} fit />
                     </span>
-                    <span className="pp-card-text">
-                      <MidText className="pp-card-name" lead={String(r.number)} text={plateSubtitle(r.name, r.number) || `Plate ${r.number}`} />
-                      <small className="pp-card-state">{SLICE_STATE_LABEL[r.state]}</small>
-                    </span>
+                    <MidText className="pp-card-name" lead={String(r.number)} text={plateSubtitle(r.name, r.number) || `Plate ${r.number}`} />
+                    <small className="pp-card-state">{SLICE_STATE_LABEL[r.state]}</small>
                   </button>
                 </li>
               ))}

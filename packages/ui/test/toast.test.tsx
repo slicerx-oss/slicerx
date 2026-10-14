@@ -167,14 +167,28 @@ describe('toasts on screen', () => {
     expect(shown()).toBe(0)
   })
 
-  it('drops each line of the card on its own time, and the card shrinks', () => {
+  it('keeps one time for the card: the lines go together, after the longest one takes to read', () => {
     act(() => post('Saved'))
     act(() => post(NOZZLE_NOTE))
     expect(host.querySelectorAll('.sx-toasts').length).toBe(1)
     act(() => void vi.advanceTimersByTime(20))
     act(() => void vi.advanceTimersByTime(2600))
-    expect(shown()).toBe(1)
-    expect(host.querySelector('[data-testid=toast]')!.textContent).toContain('Slicing for the A1 mini')
+    expect(shown()).toBe(2)
+    act(() => void vi.advanceTimersByTime(readingTime(NOZZLE_NOTE) - 2600))
+    expect(shown()).toBe(0)
+  })
+
+  it('waits while the pointer is anywhere on the card, on its way to Details or a button', () => {
+    act(() => post('Saved'))
+    act(() => post(NOZZLE_NOTE, { action: { label: 'Change printer', run: () => {} } }))
+    act(() => void vi.advanceTimersByTime(20))
+    const stack = host.querySelector<HTMLElement>('[data-testid=toasts]')!
+    act(() => void stack.dispatchEvent(ptr('pointerover')))
+    act(() => void vi.advanceTimersByTime(60_000))
+    expect(shown()).toBe(2)
+    act(() => void stack.dispatchEvent(new ((globalThis.PointerEvent ?? MouseEvent) as typeof MouseEvent)('pointerout', { bubbles: true, relatedTarget: document.body })))
+    act(() => void vi.advanceTimersByTime(readingTime(NOZZLE_NOTE)))
+    expect(shown()).toBe(0)
   })
 
   it('shows the first sentence, and Details opens the rest in place with the card top held', () => {
@@ -212,10 +226,12 @@ describe('toasts and the view under them', () => {
   const css = readFileSync(join(import.meta.dirname, '../src/styles.css'), 'utf8')
   const rule = (selector: string) => css.split('\n').find((l) => l.startsWith(`${selector} {`)) ?? ''
 
-  it('lets a press through the stack and through a toast, so the 3D view under one still takes it', () => {
+  it('lets a press through the empty stack, so the 3D view takes it when no toast is up', () => {
     expect(rule('.sx-toasts')).toContain('pointer-events: none')
-    expect(rule('.sx-toast')).toContain('pointer-events: none')
-    expect(rule('.sx-toast')).not.toContain('pointer-events: auto')
+  })
+
+  it('has the card take the pointer while a toast is up, so hovering it holds its time', () => {
+    expect(rule('.sx-toasts:not(:empty)')).toContain('pointer-events: auto')
   })
 
   it('keeps a toast own buttons and links pressable', () => {
