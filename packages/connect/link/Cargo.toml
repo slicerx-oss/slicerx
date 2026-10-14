@@ -12,7 +12,9 @@ workspace = true
 
 [features]
 # Test builds only (sx-connect's `test-hooks`): the hub's scan takes its neighbour table from `SX_TEST_NEIGHBORS`.
-test-hooks = ["sx-connect/test-hooks"]
+test-hooks = ["sx-connect/test-hooks", "test-hub"]
+# Tests and dev runs only: without `--port`, the port comes from `SX_TEST_HUB_PORT`. Never in a release build.
+test-hub = []
 
 [dependencies]
 base64 = "=0.23.1"

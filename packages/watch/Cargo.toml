@@ -21,6 +21,9 @@ default = ["siglip", "huginn"]
 siglip = ["dep:ort"]
 # Confirming a suspicion with huginn on the person's ChatGPT plan (opt-in per printer).
 huginn = ["dep:sx-llm"]
+# Tests and dev runs only: without `--url`, the hub port comes from `SX_TEST_HUB_PORT`. Never in `default` or in the
+# app's sidecar build (apps/desktop/release/prepare-sidecars.mjs), which the release check would refuse.
+test-hub = []
 
 [dependencies]
 base64 = "=0.23.1"

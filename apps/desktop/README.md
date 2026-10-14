@@ -20,7 +20,7 @@ pnpm --filter @slicerx/desktop tauri dev     # cargo must be on PATH
 pnpm --filter @slicerx/desktop build:app     # tauri build with the edition's product name, identifier and deep links
 ```
 
-A dev run's printer hub takes 47615 like a release, or the port in `SX_TEST_HUB_PORT` (1024 or above), so it can run beside an installed app's hub, an sx-link or an end-to-end run; sx-link, the MCP server and sx-watch read the same variable. Release builds never read it.
+A dev run's printer hub takes 47615 like a release, or the port in `SX_TEST_HUB_PORT` (1024 or above), so it can run beside an installed app's hub, an sx-link or an end-to-end run; the MCP server reads the same variable, and so do sx-link and sx-watch when built with their `test-hub` feature. Release builds never read it.
 
 `build:app` writes the edition's Tauri settings to `src-tauri/gen/edition.conf.json` (from `SLICERX_CONFIG`, default the SlicerX edition) and passes them to `tauri build --config`.
 
