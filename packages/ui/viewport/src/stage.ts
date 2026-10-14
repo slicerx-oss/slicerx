@@ -40,15 +40,16 @@ import {
   RGBAFormat,
   Vector3,
   WebGLCubeRenderTarget,
+  WebGLCoordinateSystem,
   WebGLRenderTarget,
   type Object3D,
   type Texture,
   type WebGLRenderer,
 } from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { LightProbeGenerator } from 'three/addons/lights/LightProbeGenerator.js'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import type { Bed } from '@slicerx/contracts'
+import { cubeFacesSH } from './env-sh'
 import { SCENE, type SceneColors } from './palette'
 import { REVEAL_GRID_SETTLE_MS, REVEAL_GRID_SPAN_MS, REVEAL_SETTLED } from './reveal'
 import type { BedOutline, PlateStyle } from './types'
@@ -193,14 +194,6 @@ interface ContactBake {
   size: number
 }
 
-/** The irradiance bake ended after its stage was disposed; nothing is wrong, the result is just not wanted. */
-export class StageDisposedError extends Error {
-  constructor() {
-    super('The stage was disposed before the environment bake finished')
-    this.name = 'StageDisposedError'
-  }
-}
-
 export class Stage {
   readonly scene = new Scene()
   /** Bed frame: Z up, mm, origin at the bed's front left corner. Everything slicer-side hangs here. */
@@ -250,7 +243,8 @@ export class Stage {
     this.envTex = pm.fromScene(room, 0.04, 0.1, 100, { size: weak ? 128 : 256 }).texture
     pm.dispose()
     this.scene.environment = this.envTex
-    this.envSH = this.bakeSH(room).finally(() => room.dispose())
+    this.envSH = this.bakeSH(room)
+    room.dispose()
 
     // Intensities are the concept's legacy-light values times pi (three.js now uses physical units).
     // Every light is white, so shading changes a filament's brightness and never its hue.
@@ -281,37 +275,35 @@ export class Stage {
   }
 
   /** Bed coordinates (Z up, front left origin) to three.js world (Y up, bed center at origin). */
-  /** Spherical-harmonic irradiance of the room environment, for materials that skip the prefiltered map. */
-  readonly envSH: Promise<Vector3[]>
+  /** Spherical-harmonic irradiance of the room environment, for materials that skip the prefiltered map; null if the bake failed. */
+  readonly envSH: Vector3[] | null
 
-  /** The cube target the irradiance bake reads back, until the bake ends or the stage is disposed. */
-  private shTarget: WebGLCubeRenderTarget | null = null
   private disposed = false
 
   /**
-   * Runs once per stage. The read back spans several frames (one async read per cube face), so the stage can be
-   * disposed, and the renderer with it, before it ends: then the target was already released by `dispose` while the
-   * renderer still knew it. Releasing it again after `renderer.dispose()` makes three.js look up framebuffers it has
-   * forgotten and throw.
+   * Runs once per stage, before the first frame. The six faces are read back at once, right after the cube is drawn:
+   * a read waits for everything the GPU has queued before it, and spread over later frames (one async read per face)
+   * each read waited behind a full frame of the plate, seconds of a held page on software WebGL once the toolpaths draw.
+   * Here only the environment prefilter and this 32 px cube are queued.
    */
-  private async bakeSH(room: Scene): Promise<Vector3[]> {
-    const rt = new WebGLCubeRenderTarget(32, { type: HalfFloatType })
-    this.shTarget = rt
-    const cam = new CubeCamera(0.1, 100, rt)
-    cam.update(this.renderer, room)
+  private bakeSH(room: Scene): Vector3[] | null {
+    const size = 32
+    const rt = new WebGLCubeRenderTarget(size, { type: HalfFloatType })
     try {
-      const probe = await LightProbeGenerator.fromCubeRenderTarget(this.renderer, rt)
-      if (this.disposed) throw new StageDisposedError()
-      return probe.sh.coefficients.map((c) => c.clone())
+      new CubeCamera(0.1, 100, rt).update(this.renderer, room)
+      const faces = Array.from({ length: 6 }, (_, face) => {
+        const px = new Uint16Array(size * size * 4)
+        this.renderer.readRenderTargetPixels(rt, 0, 0, size, size, px, face)
+        return px
+      })
+      return cubeFacesSH(faces, size, this.renderer.coordinateSystem === WebGLCoordinateSystem ? -1 : 1)
+    } catch (e) {
+      // Toolpaths keep their flat ambient light without the bake; only a real failure is worth a line in the console.
+      console.warn('Environment bake failed', e)
+      return null
     } finally {
-      this.releaseShTarget(rt)
+      rt.dispose()
     }
-  }
-
-  private releaseShTarget(rt: WebGLCubeRenderTarget): void {
-    if (this.shTarget !== rt) return
-    this.shTarget = null
-    rt.dispose()
   }
 
   bedMatrix(): Matrix4 {
@@ -711,8 +703,6 @@ export class Stage {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    // Released here, while the renderer is alive; the bake's own release then does nothing.
-    if (this.shTarget) this.releaseShTarget(this.shTarget)
     for (const d of [...this.disposables, ...this.zoneDisposables, ...this.excludeDisposables, ...this.retired]) d.dispose()
     const k = this.bakeKit
     if (k) for (const d of [k.rt, k.rtb, k.mat, k.blur, k.quad]) d.dispose()
