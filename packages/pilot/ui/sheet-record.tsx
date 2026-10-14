@@ -53,7 +53,11 @@ export function SheetRecord({
   const canOpen = actionable && onOpen !== undefined && answer !== null && answer.confirmed && bound
   const editable = !answer && onEdit !== undefined && !sent
   const valueOf = (key: string, fallback: number): number => (answer?.confirmed ? (answer.values[key] ?? fallback) : (values?.[key] ?? fallback))
-  const status = !answer ? 'Waiting for you to confirm' : !answer.confirmed ? 'Canceled, nothing built' : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
+  // a guess is assumed until its row is typed in or kept with Enter, or the sheet is confirmed
+  const assumed = answer?.confirmed ? [] : sheet.dims.filter((d) => d.source === 'guess' && (answer !== null || !(values && d.key in values)))
+  const status = !answer && assumed.length
+    ? `${assumed.length} assumed value${assumed.length === 1 ? '' : 's'}: ${assumed.map((d) => `${d.label.toLowerCase()} ${valueOf(d.key, d.value)} ${unitText(d.unit)}`).join(', ')}`
+    : !answer ? 'Waiting for you to confirm' : !answer.confirmed ? 'Canceled, nothing built' : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
   return (
     <div className="lookup-rec sheet-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record">
       <div className="sheet-rec-head">
@@ -80,8 +84,8 @@ export function SheetRecord({
         {sheet.dims.map((d, i) => {
           const used = valueOf(d.key, d.value)
           const yours = answer ? answer.changed.includes(d.key) : used !== d.value
-          const guess = d.source === 'guess' && !yours && !answer?.confirmed
-          const tag = yours ? 'yours' : TAG[d.source]
+          const guess = assumed.includes(d)
+          const tag = yours ? 'yours' : d.source === 'guess' && !guess && !answer ? 'kept' : TAG[d.source]
           const id = `sheet-rec-${sheet.id}-${d.key}`
           return (
             <li key={d.key} className="sheet-rec-row" data-dim={d.key} data-source={d.source} data-guess={guess ? '' : undefined}>
@@ -93,7 +97,14 @@ export function SheetRecord({
                 {tag ? <small className="sheet-rec-tag">{tag}</small> : null}
               </label>
               {editable ? (
-                <span className="sheet-rec-field">
+                <span
+                  className="sheet-rec-field"
+                  onKeyDown={(e) => {
+                    // Enter on a guess left as it is keeps it, the same as typing it in
+                    const v = Number((e.target as HTMLInputElement).value)
+                    if (e.key === 'Enter' && guess && v === used) onEdit(sheet.id, d.key, used)
+                  }}
+                >
                   <ScrubNumber
                     id={id}
                     value={used}
@@ -117,7 +128,9 @@ export function SheetRecord({
         })}
       </ol>
       <span className="sheet-rec-foot">
-        <span className="lookup-rec-s">{status}</span>
+        <span className="lookup-rec-s" data-assumed={!answer && assumed.length ? '' : undefined} data-testid="mimir-sheet-status">
+          {status}
+        </span>
         {canConfirm ? (
           <Button
             size="sm"
@@ -129,7 +142,7 @@ export function SheetRecord({
               void onConfirm(sheet.id, Object.fromEntries(sheet.dims.map((d) => [d.key, valueOf(d.key, d.value)]))).catch(() => setSent(false))
             }}
           >
-            Check sizes and build 3D
+            Confirm sizes and build
           </Button>
         ) : canOpen ? (
           <Button size="sm" variant="ghost" data-testid="mimir-sheet-open" onClick={() => onOpen(sheet.id)}>

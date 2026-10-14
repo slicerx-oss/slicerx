@@ -362,7 +362,9 @@
 .sx-pilot .lookup-rec-s{color:var(--cyan);font-size:12.5px;text-decoration:none;justify-self:start}
 .sx-pilot .lookup-rec-s:hover{text-decoration:underline}
 .sx-pilot .sheet-rec-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px}
-.sx-pilot .sheet-rec-foot .lookup-rec-s{color:var(--t-mute);text-decoration:none}
+.sx-pilot .sheet-rec-foot .lookup-rec-s{min-width:0;color:var(--t-mute);text-decoration:none}
+.sx-pilot .sheet-rec-foot .lookup-rec-s[data-assumed]{color:var(--orange)}
+.sx-pilot .sheet-rec-foot .sx-btn{flex:none}
 /* part card: the part a reply made, flat in the transcript like the choice card. Air around it from the turn's gap. */
 .sx-pilot .part-card{display:flex;flex-direction:column;gap:var(--s-2);padding:var(--s-3) var(--s-4);border:1px solid var(--surface-line);border-radius:var(--r-md);background:var(--surface-card);max-width:68ch}
 .sx-pilot .part-row{display:flex;align-items:center;gap:var(--s-3)}
@@ -401,7 +403,9 @@
 .sx-pilot .sheet-rec-row[data-source="lookup"] .sheet-rec-n{border-color:var(--cyan)}
 .sx-pilot .sheet-rec-row[data-source="asked"] .sheet-rec-n{border-color:var(--purple)}
 .sx-pilot .sheet-rec-row[data-source="photo"] .sheet-rec-n{border-color:var(--pink)}
-.sx-pilot .sheet-rec-row[data-source="guess"] .sheet-rec-n{border-color:var(--orange);border-style:dashed;background:transparent;color:var(--orange)}
+.sx-pilot .sheet-rec-row[data-guess] .sheet-rec-n{border-color:var(--orange);border-style:dashed;background:transparent;color:var(--orange)}
+.sx-pilot .sheet-rec-row[data-source="guess"]:not([data-guess]) .sheet-rec-n{border-color:var(--purple)}
+.sx-pilot .sheet-rec{scroll-margin-block:16px}
 .sx-pilot .sheet-rec-label{display:flex;align-items:baseline;gap:6px;min-width:0;color:var(--t-sub);overflow:hidden;white-space:nowrap}
 .sx-pilot .sheet-rec-tag{flex:none;font-size:11.5px;color:var(--t-mute)}
 .sx-pilot .sheet-rec-row[data-guess] .sheet-rec-tag{padding:0 6px;border:1px dashed color-mix(in srgb,var(--orange) 70%,var(--line));border-radius:var(--r-pill);color:var(--orange)}

@@ -122,6 +122,28 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+  // While a sheet waits and its record is scrolled out of the chat, a pill brings it back.
+  const waiting = useSheetUi((s) => (sheetMode(s) === 'confirm' ? s.shown!.sheet.id : null))
+  const [away, setAway] = useState(false)
+  const recordOf = (id: string | null) => (id ? (body.current?.querySelector<HTMLElement>(`[data-testid="mimir-sheet-record"][data-sheet-id="${CSS.escape(id)}"]`) ?? null) : null)
+  useEffect(() => {
+    const root = body.current
+    const rec = recordOf(waiting)
+    if (!root || !rec) {
+      setAway(false)
+      return
+    }
+    const io = new IntersectionObserver(([e]) => setAway(!!e && e.intersectionRatio < 0.6), { root, threshold: [0, 0.6, 1] })
+    io.observe(rec)
+    return () => io.disconnect()
+  }, [waiting, transcript])
+  const toSizes = () => {
+    const rec = recordOf(waiting)
+    if (!rec) return
+    rec.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    // to the first assumed size, else the first size
+    ;(rec.querySelector<HTMLElement>('[data-guess] input') ?? rec.querySelector<HTMLElement>('input'))?.focus({ preventScroll: true })
+  }
   // On mimir cloud, the first chat waits for the person to read what is sent and kept.
   const notice = useCloudNoticeDue()
   // A file dragged anywhere over the chat can be dropped onto the message.
@@ -205,6 +227,13 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             </div>
           )}
         </div>
+        {waiting && away ? (
+          <button type="button" className="mimir-sizes-pill sx-overlay" data-testid="mimir-sizes-pill" onClick={toSizes}>
+            <Icon name="tolerance" size={16} />
+            <span>Sizes</span>
+            <Icon name="chevron-down" size={14} />
+          </button>
+        ) : null}
       </div>
       <div className="mimir-chat-foot">
         <Composer

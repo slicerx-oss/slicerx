@@ -26,6 +26,11 @@
 .mimir-notice { position: relative; padding: var(--s-3); }
 .mimir-empty p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
 .mimir-chat-foot { padding: 0 var(--s-3) var(--s-3); }
+/* back to a waiting sheet's sizes once its record has scrolled out of the chat; floats, so nothing under it moves */
+.mimir-sizes-pill { position: absolute; z-index: 2; left: 50%; bottom: var(--s-3); transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: var(--h-md); padding: 0 12px 0 10px; border-radius: var(--r-pill); color: var(--fg); font: var(--fw-medium) var(--fs-sm) var(--f-body); cursor: pointer; }
+.mimir-sizes-pill::before { content: ''; position: absolute; inset: -5px; }
+.mimir-sizes-pill:hover { border-color: var(--line); }
+.mimir-sizes-pill:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .mimir-split { position: absolute; top: 0; bottom: 0; right: 0; width: 0; }
 .mimir-chat[data-resizing] { user-select: none; }
 .mimir-chat[data-drop]::after { content: ""; position: absolute; inset: 6px; border: 1px dashed var(--purple); border-radius: var(--r-md); background: color-mix(in srgb, var(--purple) 6%, transparent); pointer-events: none; }
@@ -85,11 +90,13 @@
 .mimir-drawing-label { position: absolute; left: 10px; top: 8px; font-size: 11px; color: var(--muted); pointer-events: none; }
 .mimir-drawing-face { stroke: light-dark(#4d5164, #2a2c38); stroke-width: 0.9; stroke-linejoin: round; }
 .mimir-dim line, .mimir-dim polyline { stroke: var(--muted); stroke-width: 1; fill: none; }
-.mimir-dim[data-guess] line:last-child, .mimir-dim[data-guess] polyline { stroke-dasharray: 4 3; }
-.mimir-dim .mimir-dim-leader { stroke-width: 0.8; opacity: 0.8; }
-.mimir-dim-arrow { fill: var(--muted); }
-.mimir-dim[data-on] line, .mimir-dim[data-on] polyline { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: none; }
-.mimir-dim[data-on] .mimir-dim-arrow { fill: var(--accent); }
+.mimir-dim .mimir-dim-halo :is(line, polyline) { stroke: var(--ink-2); stroke-width: 3.4; stroke-dasharray: none; stroke-linecap: round; }
+.mimir-dim[data-guess] > g:not(.mimir-dim-halo) > line:not(.mimir-dim-leader), .mimir-dim[data-guess] > g:not(.mimir-dim-halo) > polyline { stroke: var(--orange); stroke-dasharray: 4 3; }
+.mimir-dim-arrow, .mimir-dim-dot { fill: var(--muted); stroke: var(--ink-2); stroke-width: 1; paint-order: stroke; }
+.mimir-dim[data-guess] .mimir-dim-arrow { fill: var(--orange); }
+.mimir-dim[data-on] > g:not(.mimir-dim-halo) :is(line, polyline) { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: none; }
+.mimir-dim[data-on] .mimir-dim-halo :is(line, polyline) { stroke-width: 4.6; }
+.mimir-dim[data-on] :is(.mimir-dim-arrow, .mimir-dim-dot) { fill: var(--accent); }
 .mimir-callout { cursor: pointer; }
 .mimir-callout circle { fill: var(--callout-fill); stroke: var(--muted); stroke-width: 1.5; }
 .mimir-callout text { fill: #fff; font: var(--fw-bold) 11.5px var(--f-body); font-variant-numeric: tabular-nums; text-anchor: middle; dominant-baseline: central; }

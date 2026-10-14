@@ -16,6 +16,13 @@ const CUBE: PilotSheetSolid = { plane: 'xy', points: [[0, 0], [0, 10], [10, 10],
 
 const dim = (key: string, at: PilotDim['at'], source: PilotDim['source'] = 'guess'): PilotDim => ({ key, label: key, value: 10, unit: 'mm', source, ...(at ? { at } : {}) })
 
+/** The distance from a point to a segment. */
+function toSegment(p: readonly number[], a: readonly number[], b: readonly number[]): number {
+  const [dx, dy] = [b[0]! - a[0]!, b[1]! - a[1]!]
+  const t = Math.max(0, Math.min(1, ((p[0]! - a[0]!) * dx + (p[1]! - a[1]!) * dy) / (dx * dx + dy * dy || 1)))
+  return Math.hypot(p[0]! - a[0]! - t * dx, p[1]! - a[1]! - t * dy)
+}
+
 describe('the sheet drawing', () => {
   it('turns a solid into sides and caps whose normals point out, whichever way its outline runs', () => {
     const faces = solidFaces(CUBE)
@@ -76,6 +83,10 @@ describe('the sheet drawing', () => {
             expect(d.badge[0]).toBeLessThanOrEqual(w - 10)
             expect(d.badge[1]).toBeGreaterThanOrEqual(10)
             expect(d.badge[1]).toBeLessThanOrEqual(h - 10)
+            // its target is never a guess: the callout touches its own lines, or a leader runs from them to its rim
+            const near = Math.min(...[...d.lines, ...(d.arc ?? []).slice(1).map((q, i) => [d.arc![i]!, q] as const)].map(([a, b]) => toSegment(d.badge, a, b)))
+            if (d.leader) expect(Math.hypot(d.leader[1][0] - d.badge[0], d.leader[1][1] - d.badge[1])).toBeCloseTo(10, 0)
+            else expect(near, `${v} ${d.key}`).toBeLessThanOrEqual(16)
           }
           for (let i = 0; i < drawn.dims.length; i++) {
             for (let j = i + 1; j < drawn.dims.length; j++) {

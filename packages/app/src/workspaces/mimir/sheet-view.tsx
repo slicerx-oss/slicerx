@@ -48,6 +48,9 @@ const PAD = 24
 
 /** The drawing: four views in a 2 x 2 frame, the flat ones at one scale, its title, units and state on the frame's bottom edge. */
 function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: string | null; onPick: (key: string) => void }) {
+  // a guess stays marked until its row is typed in or kept with Enter
+  const draft = useSheetUi((s) => s.draft)
+  const assumed = (key: string): boolean => sheet.dims.some((d) => d.key === key && d.source === 'guess') && !(key in draft)
   const ref = useRef<HTMLDivElement>(null)
   const [cell, setCell] = useState<{ w: number; h: number } | null>(null)
   useLayoutEffect(() => {
@@ -82,25 +85,35 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
               {drawn.faces.map((f, i) => (
                 <path key={i} className="mimir-drawing-face" d={f.path} fillRule="evenodd" style={{ fill: `color-mix(in srgb, var(--sheet-part) ${f.light}%, var(--sheet-part-dark))` }} />
               ))}
-              {drawn.dims.map((d) => (
-                <g key={d.key} className="mimir-dim" data-on={editing === d.key || undefined} data-guess={d.guess || undefined}>
-                  {d.lines.map(([a, b], i) => (
-                    <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} />
-                  ))}
-                  {d.arc ? <polyline points={d.arc.map((p) => p.join(',')).join(' ')} /> : null}
-                  {d.leader ? <line className="mimir-dim-leader" x1={d.leader[0][0]} y1={d.leader[0][1]} x2={d.leader[1][0]} y2={d.leader[1][1]} /> : null}
-                  {d.arrows.map(([tip, from], i) => (
-                    <polygon key={i} className="mimir-dim-arrow" points={arrowHead(tip, from)} />
-                  ))}
-                </g>
-              ))}
+              {drawn.dims.map((d) => {
+                // a halo in the card's color first, so the lines read over the part as well as beside it
+                const strokes = (halo: boolean) => (
+                  <g className={halo ? 'mimir-dim-halo' : undefined}>
+                    {d.lines.map(([a, b], i) => (
+                      <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} />
+                    ))}
+                    {d.arc ? <polyline points={d.arc.map((p) => p.join(',')).join(' ')} /> : null}
+                    {d.leader ? <line className="mimir-dim-leader" x1={d.leader[0][0]} y1={d.leader[0][1]} x2={d.leader[1][0]} y2={d.leader[1][1]} /> : null}
+                  </g>
+                )
+                return (
+                  <g key={d.key} className="mimir-dim" data-key={d.key} data-on={editing === d.key || undefined} data-guess={assumed(d.key) || undefined}>
+                    {strokes(true)}
+                    {strokes(false)}
+                    {d.leader && d.inside ? <circle className="mimir-dim-dot" cx={d.leader[0][0]} cy={d.leader[0][1]} r={2.4} /> : null}
+                    {d.arrows.map(([tip, from], i) => (
+                      <polygon key={i} className="mimir-dim-arrow" points={arrowHead(tip, from)} />
+                    ))}
+                  </g>
+                )
+              })}
               {drawn.dims.map((d) => {
                 const dim = sheet.dims.find((x) => x.key === d.key)!
                 return (
                   <g
                     key={d.key}
                     className="mimir-callout"
-                    data-source={dim.source}
+                    data-source={dim.source === 'guess' && !assumed(d.key) ? 'asked' : dim.source}
                     data-on={editing === d.key || undefined}
                     data-testid="mimir-sheet-callout"
                     data-key={d.key}
