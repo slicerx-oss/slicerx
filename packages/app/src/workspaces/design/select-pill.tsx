@@ -15,7 +15,6 @@ import { get, set, useApp } from '../../state/store'
 import { useMadeBy } from './use-made-by'
 import { useLengthWords } from '../../cad/use-units'
 import { sketchModeText, useSketchMode } from '../../cad/sketch-mode'
-import { usePhoneLayout } from '../../lib/phone-layout'
 
 const ICON: Readonly<Record<PickKind, 'select-object' | 'select-face' | 'select-edge'>> = { object: 'select-object', face: 'select-face', edge: 'select-edge' }
 
@@ -33,10 +32,7 @@ export function SelectPill() {
   const ids = primary ? [primary, ...selected.filter((id) => id !== primary)] : selected
   const objects = ids.map((id) => names[id]).filter((n): n is string => n !== undefined)
   const on = (kind: 'face' | 'edge') => picks.filter((p) => p.kind === kind).map((p) => ({ object: names[p.objectId] ?? 'an object' }))
-  // a phone's pill keeps saying what is picked
-  const phone = usePhoneLayout()
-  const mode = useSketchMode()
-  const sketching = phone ? null : mode
+  const sketching = useSketchMode()
   const readout = sketching ? sketchModeText(sketching) : pickReadout({ objects, faces: on('face'), edges: on('edge') })
   const anything = objects.length > 0 || picks.length > 0
   const host = useHost()

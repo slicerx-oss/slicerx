@@ -224,6 +224,8 @@ test.describe('Model on a phone', () => {
     const bar = page.getByTestId('phone-sketch-bar')
     const families = bar.getByRole('radiogroup', { name: 'Drawing tool' })
     await expect(families).toBeInViewport()
+    // the view's pill says the mode, as on a desktop
+    await expect(page.getByTestId('model-select-readout')).toHaveText('Sketching on a plane · Line')
     await expect(page.locator('.pbar-slots')).toBeHidden()
     const row = (await families.boundingBox())!
     // Rectangle: its ways to draw show in the second row; the first row stays put
