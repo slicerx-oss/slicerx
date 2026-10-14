@@ -155,6 +155,15 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("geom.shell", LinkClass::Edit),
     ("geom.info", LinkClass::Read),
     ("geom.measure", LinkClass::Read),
+    ("geom.cut", LinkClass::Edit),
+    ("geom.split", LinkClass::Edit),
+    ("geom.mirror", LinkClass::Edit),
+    ("geom.array", LinkClass::Edit),
+    ("geom.repair", LinkClass::Edit),
+    ("geom.hollow", LinkClass::Edit),
+    ("geom.emboss", LinkClass::Edit),
+    ("geom.build", LinkClass::Edit),
+    ("geom.subtract", LinkClass::Edit),
     // A client's dimension sheet: asking puts a question in front of the person, so it edits.
     ("sheet.ask", LinkClass::Edit),
     ("sheet.get", LinkClass::Read),
@@ -394,6 +403,15 @@ mod tests {
             ("geom.shell", LinkClass::Edit),
             ("geom.info", LinkClass::Read),
             ("geom.measure", LinkClass::Read),
+            ("geom.cut", LinkClass::Edit),
+            ("geom.split", LinkClass::Edit),
+            ("geom.mirror", LinkClass::Edit),
+            ("geom.array", LinkClass::Edit),
+            ("geom.repair", LinkClass::Edit),
+            ("geom.hollow", LinkClass::Edit),
+            ("geom.emboss", LinkClass::Edit),
+            ("geom.build", LinkClass::Edit),
+            ("geom.subtract", LinkClass::Edit),
             ("sheet.ask", LinkClass::Edit),
             ("sheet.get", LinkClass::Read),
             ("mimir.sessions", LinkClass::Read),
@@ -412,8 +430,12 @@ mod tests {
                 "login", "auth", "buy", "purchase", "delete", "remove", "secret", "printer", "setting",
                 "pair", "client",
             ] {
+                // mesh repair does not pair clients.
+                let mesh_repair = *m == "geom.repair" && word == "pair";
                 assert!(
-                    !m.to_ascii_lowercase().contains(word) || (*m == "values.remove" && word == "remove"),
+                    mesh_repair
+                        || !m.to_ascii_lowercase().contains(word)
+                        || (*m == "values.remove" && word == "remove"),
                     "{m} looks like something a person keeps ({word})"
                 );
             }
