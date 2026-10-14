@@ -61,9 +61,12 @@ test.describe('Model box select', () => {
     const p1 = await screen(page, 145, 160, 0)
     await drag(page, { x: Math.min(p0.x, p1.x), y: Math.min(p0.y, p1.y) }, { x: Math.max(p0.x, p1.x), y: Math.max(p0.y, p1.y) })
     await expect.poll(() => selected(page)).toBe(2)
-    // Model frames a new selection, so the points are read again once the camera has stopped.
+    // Model frames a new selection, so the pick is cleared and the top view taken again before the points are read.
+    await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ selection: null, selectedIds: [] }))
+    await page.mouse.move(700, 450)
+    await page.keyboard.press('1')
     await page.waitForTimeout(300)
-    await expect.poll(async () => !(await moving())).toBe(true)
+    await expect.poll(async () => !(await moving()) && Math.abs((await screen(page, 60, 100, 0)).x - (await screen(page, 60, 160, 0)).x) < 1).toBe(true)
     const q0 = await screen(page, 60, 100, 0)
     const q1 = await screen(page, 145, 160, 0)
     // Right to left from inside the third box, the same height: it touches all three.
