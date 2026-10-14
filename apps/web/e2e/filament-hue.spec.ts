@@ -130,7 +130,7 @@ async function openModel(page: Page, seen: FileChooser[], file: string): Promise
 }
 
 for (const scheme of ['dark', 'light'] as const) {
-  test(`a flat filament keeps its hue on every lit face (${scheme})`, async ({ page, isMobile }) => {
+  test(`a flat filament keeps its hue on every lit face (${scheme})`, { tag: '@gpu' }, async ({ page, isMobile }) => {
     test.skip(isMobile, 'Desktop view')
     test.slow()
     const seen: FileChooser[] = []
