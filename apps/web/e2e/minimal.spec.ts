@@ -54,7 +54,7 @@ async function visibleControls(page: Page): Promise<string[]> {
   }, INTERACTIVE)
 }
 
-test('The plate tab with an object selected shows 42 controls or fewer, Simple mode', async ({ page, isMobile }) => {
+test('The plate tab with an object selected shows 44 controls or fewer, Simple mode', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop width')
   await open(page, 'prepare')
   const list = await visibleControls(page)
@@ -68,10 +68,11 @@ test('The plate tab with an object selected shows 42 controls or fewer, Simple m
   // selected, and Arrange options always shows beside Arrange all.
   // 42: the plate picker replaces the plate chip, which was a label, with Previous plate, the plate (which opens every
   // plate, with Add plate) and Next plate. They keep their places with one plate, so adding one moves nothing.
-  expect(list.length).toBeLessThanOrEqual(42)
+  // 44: every loaded spool shows in the Filament section, not only the ones in use (two more on the reference AMS).
+  expect(list.length).toBeLessThanOrEqual(44)
 })
 
-test('a phone\'s Slice, with its settings sheet open, shows 29 controls or fewer', async ({ page, isMobile }) => {
+test('a phone\'s Slice, with its settings sheet open, shows 31 controls or fewer', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Phone width')
   await open(page, 'prepare')
   await openSheet(page)
@@ -79,7 +80,8 @@ test('a phone\'s Slice, with its settings sheet open, shows 29 controls or fewer
   console.log('phone slice', list.length, list.join(' | '))
   // a phone views and prints: Simple settings, the objects as a list, and no plate tools or modeling
   // 29: the plate picker's Previous plate, the plate and Next plate (see the desktop count)
-  expect(list.length).toBeLessThanOrEqual(29)
+  // 31: every loaded spool shows in the Filament section, not only the ones in use (two more on the reference AMS)
+  expect(list.length).toBeLessThanOrEqual(31)
 })
 
 test('a saved Preview tab opens Slice, with no Preview tab in the bar', async ({ page }) => {
