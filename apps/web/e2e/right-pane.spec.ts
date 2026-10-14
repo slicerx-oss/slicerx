@@ -45,7 +45,7 @@ test.describe('the right pane', () => {
     await expect(tab(page)).not.toHaveAttribute('data-attention', /./)
   })
 
-  test('shut by hand, it stays shut through the project\'s slices until opened again, and a reload starts it shut', async ({ page }) => {
+  test('shut by hand, it stays shut through the project\'s slices until opened again', async ({ page }) => {
     await open(page)
     await slice(page)
     await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
@@ -63,7 +63,12 @@ test.describe('the right pane', () => {
     await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
     await slice(page)
     await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
-    // Not kept between sessions: open it, reload, and it starts shut.
+  })
+
+  // Its own test: the one above already chains four slices and four resizes of the view.
+  test('not kept between sessions: opened by hand, a reload starts it shut', async ({ page }) => {
+    await open(page)
+    await expect(tab(page)).toHaveAttribute('aria-expanded', 'false')
     await tab(page).click()
     await expect(tab(page)).toHaveAttribute('aria-expanded', 'true')
     await page.reload()
