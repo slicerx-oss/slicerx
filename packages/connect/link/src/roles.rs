@@ -102,7 +102,8 @@ pub(crate) enum LinkClass {
 /// Every method an agent may call on the project open in the app (`app.call`, `app_link.rs`), and
 /// whether it reads or edits. The hub refuses any other name. None of them prints, queues, starts
 /// or sends a job, answers a card, signs in, buys, deletes, or changes printers, the network or
-/// settings: those stay with a person. Adding one here needs its entry in the test below.
+/// settings, apart from two view preferences (look.set): those stay with a person. Adding one here
+/// needs its entry in the test below.
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("plate.list", LinkClass::Read),
@@ -118,6 +119,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: showing a plate changes only what the window shows, never the project.
     ("plates.list", LinkClass::Read),
     ("plates.show", LinkClass::Read),
+    // Two view preferences from Settings, Look and feel: Frame the view and Toolbar size, read and set.
+    // Read: they change how the window behaves, never the project. No other setting is reachable.
+    ("look.get", LinkClass::Read),
+    ("look.set", LinkClass::Read),
     // The design tools, run in the app on its plate, each step a history step the person can undo.
     // Opening and saving files stay with the server and the person.
     ("design.new", LinkClass::Edit),
@@ -344,6 +349,8 @@ mod tests {
             ("preview.set", LinkClass::Read),
             ("plates.list", LinkClass::Read),
             ("plates.show", LinkClass::Read),
+            ("look.get", LinkClass::Read),
+            ("look.set", LinkClass::Read),
             ("design.new", LinkClass::Edit),
             ("design.list", LinkClass::Read),
             ("design.steps", LinkClass::Read),
