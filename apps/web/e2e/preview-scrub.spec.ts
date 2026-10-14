@@ -141,7 +141,14 @@ test('the playback bar plays, pauses and scrubs by time', async ({ page, isMobil
   expect(mid).toBe(true)
   // Play from the start, see it advance, then pause. 100 times, the fastest speed, passes the first layers within a few
   // seconds and leaves the end far off, so the pause always lands mid-print.
-  await dock.getByRole('radio', { name: '100 times real time' }).click()
+  // the speeds are a segmented control on a wide bar, and one menu button on a folded one (the side panes open)
+  const seg = dock.getByRole('radio', { name: '100 times real time' })
+  if (await seg.isVisible()) await seg.click()
+  else {
+    await dock.getByRole('button', { name: /^Playback speed/ }).click()
+    await page.getByRole('menuitemcheckbox', { name: '100x' }).click()
+    await expect(dock.getByRole('button', { name: 'Playback speed 100x' })).toBeVisible()
+  }
   await time.focus()
   await page.keyboard.press('Home')
   await dock.getByRole('button', { name: 'Play print' }).click()

@@ -1126,13 +1126,15 @@ test('pause, color change and custom G-code are set on the layer slider and land
   await expect(sliced(page, slices11)).toBeVisible({ timeout: 120_000 })
   const slider = page.locator('#pv-layer')
   await slider.fill('20')
-  await slider.click({ button: 'right' })
+  await page.getByRole('button', { name: 'Add layer action' }).click()
   await page.getByRole('menuitem', { name: 'Add pause' }).click()
   await slider.fill('40')
-  await page.getByRole('button', { name: 'Add at this layer' }).click()
+  await page.getByRole('button', { name: 'Add layer action' }).click()
   await page.getByRole('menuitem', { name: 'Add color change' }).click()
+  // with two filaments loaded, a color change asks which one it changes to
+  await page.getByRole('menuitemcheckbox', { name: /Slot 2/ }).click()
   await slider.fill('60')
-  await page.getByRole('button', { name: 'Add at this layer' }).click()
+  await page.getByRole('button', { name: 'Add layer action' }).click()
   await page.getByRole('menuitem', { name: 'Add custom G-code' }).click()
   const dialog = page.getByRole('dialog', { name: /Custom G-code at layer 60/ })
   await dialog.getByLabel('G-code').fill('M500')
@@ -1156,9 +1158,9 @@ test('pause, color change and custom G-code are set on the layer slider and land
   const at = (needle: RegExp) => text.slice(0, text.search(needle)).split(/;LAYER_CHANGE|; CHANGE_LAYER/).length - 1
   expect(at(pause)).toBeLessThan(at(/\nM600/))
   expect(at(/\nM600/)).toBeLessThan(at(/M117 Swap the lid/))
-  // A mark is deleted from its own menu.
+  // A mark is removed from its own menu.
   await page.locator('.layer-mark').first().click()
-  await page.getByRole('menuitem', { name: 'Delete pause' }).click()
+  await page.getByRole('menuitem', { name: 'Remove pause' }).click()
   await expect(page.locator('.layer-mark')).toHaveCount(2)
 })
 

@@ -226,7 +226,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 [data-token="--pink"] { background: var(--pink); } [data-token="--purple"] { background: var(--purple); } [data-token="--red"] { background: var(--red); }
 [data-token="--yellow"] { background: var(--yellow); } [data-token="--orange"] { background: var(--orange); } [data-token="--cyan"] { background: var(--cyan); }
 [data-token="--green"] { background: var(--green); } [data-token="--muted"] { background: var(--muted); } [data-token="--fg"] { background: var(--fg); } [data-token="--dim"] { background: var(--dim); }
-.dock { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 3; border-radius: var(--r-md); padding: 10px 14px 12px; display: grid; gap: 6px; }
+.dock { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 3; border-radius: var(--r-md); padding: 8px 14px 12px; display: grid; gap: 4px; }
 .dock-h { display: flex; align-items: center; gap: 18px; font-size: calc(12.5px * var(--text-scale)); flex-wrap: wrap; }
 .dock-h b { color: var(--fg); font-weight: var(--fw-medium); }
 .play { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--ink-3); display: grid; place-items: center; cursor: pointer; }
@@ -959,15 +959,39 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 @container dock (max-width: 760px) { .dock-h2 .dock-read .hide-sm { display: none; } }
 @container dock (max-width: 600px) { .dock-pre { display: none; } .dock-h2 { gap: 12px; } }
 
-/* Layer slider marks: pause, color change and custom G-code on the track. */
-.layer-track { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.layer-track-rail { position: relative; flex: 1; min-width: 0; }
-.layer-marks { position: absolute; left: 0; right: 0; top: -14px; height: 14px; pointer-events: none; }
-.layer-mark { position: absolute; transform: translateX(-50%); width: 18px; height: 18px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--ink-3); color: var(--muted); cursor: pointer; pointer-events: auto; }
-.layer-mark[data-kind="pause"] { color: var(--orange); }
-.layer-mark[data-kind="color_change"] { color: var(--purple); }
-.layer-mark[data-kind="custom"] { color: var(--cyan); }
-.layer-mark:hover { background: var(--ink-2); }
+/* A narrow bar: one control row, the speed one button showing the rate, one width for every rate. */
+.dock[data-narrow] .dock-h { gap: 12px; }
+.dock-speed-btn { display: inline-flex; align-items: center; justify-content: space-between; gap: 4px; width: 60px; height: 26px; padding: 0 6px 0 8px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: none; color: var(--fg); font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-mono); cursor: pointer; }
+.dock-speed-btn:hover, .dock-speed-btn[aria-expanded="true"] { background: var(--ink-3); border-color: var(--line); }
+.dock-speed-btn:focus-visible { outline: none; box-shadow: var(--focus-field); }
+.dock-speed-btn .sx-ic { color: var(--muted); }
+.dock-toggle { position: relative; }
+.dock-toggle > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.dock-toggle[data-on] { color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 45%, var(--line)); }
+.dock-toggle:has(> input:focus-visible) { box-shadow: var(--focus-field); }
+
+/* Layer slider marks: pause, color change and custom G-code as pins over the track, each on a stem down to its layer.
+   Pins closer than their hit area step up into lanes (pinLanes). The Layer row keeps a band for three lanes whether
+   or not there are pins, so adding one, or the layer changing, moves nothing; the band clears the Time track's thumb. */
+.layer-track { display: flex; align-items: center; gap: 8px; min-width: 0; height: 18px; }
+.layer-track-rail { position: relative; flex: 1; min-width: 0; height: 18px; }
+.dock-row:has(> .layer-track) { padding-top: 52px; }
+/* inset by half the thumb, so a share of 0 or 1 is the thumb's center at the first or last layer */
+.layer-marks { position: absolute; left: 6.5px; right: 6.5px; bottom: 50%; height: 0; pointer-events: none; }
+.layer-mark { --pin: var(--ink-3); --stem: calc(11px + var(--lane, 0) * 18px); position: absolute; bottom: var(--stem); transform: translateX(-50%); width: 16px; height: 16px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: var(--pin); color: var(--muted); cursor: pointer; pointer-events: auto; box-shadow: 0 0 0 2px var(--ink-1); }
+/* the hit area, 28 px, a little short at the foot so the slider's thumb stays easy to grab */
+.layer-mark::before { content: ""; position: absolute; inset: -6px -6px -3px; border-radius: 14px; }
+.layer-mark::after { content: ""; position: absolute; left: 50%; top: 100%; width: 2px; height: calc(var(--stem) - 1px); margin-left: -1px; background: var(--stem-c, var(--muted)); pointer-events: none; }
+.layer-mark[data-kind="pause"] { --pin: var(--accent); --stem-c: var(--accent); color: var(--ink-1); }
+.layer-mark[data-kind="color_change"] { --stem-c: var(--fg); color: var(--fg); box-shadow: 0 0 0 2px var(--ink-1), inset 0 0 0 1.5px var(--fg); }
+.layer-mark[data-kind="color_change"][data-swatch] { --pin: var(--c); box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 3.5px var(--fg); }
+.layer-mark[data-kind="custom"] { --pin: var(--ink-2); color: var(--fg); box-shadow: 0 0 0 2px var(--ink-1), inset 0 0 0 1.5px var(--muted); }
+.layer-mark:hover { filter: brightness(1.12); }
+/* the + beside the track is taller than it; it overhangs the row instead of growing it */
+.layer-track > .lmarks-add { display: flex; align-items: center; height: 18px; }
+/* readouts keep one width as their digits change, so nothing beside them moves with the layer */
+.dock-z b { display: inline-block; min-width: 6ch; text-align: right; }
+.dock-lt b { display: inline-block; min-width: 7ch; text-align: right; }
 
 /* heimdall: the strike, where the machine would meet a printed part. Red for a hit, orange for a close call. */
 .app-tag.strike-tag { color: var(--red); }
@@ -984,9 +1008,11 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .strike-fixes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .strike-fixes b { font: var(--fw-semibold) calc(12.5px * var(--text-scale)) var(--f-body); color: var(--fg); }
 .strike-fixes p { margin: 2px 0 0; font-size: calc(12px * var(--text-scale)); color: var(--muted); line-height: 1.45; }
-.layer-mark.strike-mark { color: var(--red); background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); }
-.layer-mark.strike-mark[data-severity="close"] { color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
+.layer-mark.strike-mark { --stem-c: var(--red); color: var(--red); background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); }
+.layer-mark.strike-mark[data-severity="close"] { --stem-c: var(--orange); color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
 .strike-rail { position: relative; min-width: 0; }
+/* a block slider, so the rail is the slider's 18 px and not a text line's height */
+.strike-rail > .sx-range { display: block; }
 .strike-tick { position: absolute; top: -12px; transform: translateX(-50%); width: 16px; height: 16px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); color: var(--red); cursor: pointer; }
 .strike-tick[data-severity="close"] { color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
 .strike-measure { position: absolute; inset: 0; pointer-events: none; visibility: hidden; }
@@ -999,9 +1025,6 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .sx-seg.goal-seg > button { flex-direction: column; height: 48px; gap: 3px; padding: 0 4px; min-width: 0; font-size: calc(11.5px * var(--text-scale)); }
 .sx-seg.goal-seg > button .sx-ic { width: 18px; height: 18px; }
 
-/* The + on the layer slider shows with the row: on hover, on focus and while its menu is open. */
-.layer-track > .sx-menu-anchor > .sx-btn { opacity: 0; transition: opacity 120ms var(--ease); }
-.dock-row:hover .layer-track > .sx-menu-anchor > .sx-btn, .layer-track:focus-within > .sx-menu-anchor > .sx-btn, .layer-track > .sx-menu-anchor > .sx-btn[aria-expanded="true"] { opacity: 1; }
 
 /* Add model and Export share one row; the filament strip is one line of swatches. */
 .plate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }

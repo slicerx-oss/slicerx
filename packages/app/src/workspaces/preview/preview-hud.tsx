@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { EdgeTab, Icon, keymapFor, Range, ResizeEdge, Seg, tipAttrs } from '@slicerx/ui'
+import { EdgeTab, Icon, keymapFor, Menu, MenuAnchor, MenuItem, Range, ResizeEdge, Seg, tipAttrs, type IconName } from '@slicerx/ui'
 import { COLORBLIND_THEME, FEATURE_COLORS, SCENE } from '@slicerx/viewport/palette'
 import type { MarkerKind } from '@slicerx/viewport'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { buildTimeline, clock, fitOf, movesAt, leadInStart, movesOf, positionAt, sliderOf, timeAt, timeOfSlider } from '../../lib/preview-timeline'
 import { toolChangerFor } from '../../lib/toolchanger'
 import { lengthLabel, previewStats } from '../../lib/preview-stats'
@@ -25,7 +25,50 @@ import { purgeReadout, usePurgeView, type PlayPurge } from './purge-view'
 import { MoveStrikes, TimeStrikes } from './strike-slots'
 
 /** Heights in px the playback bar snaps between: slim (transport only), medium and full. */
-export const DOCK = { min: 56, max: 240, full: 190 } as const
+export const DOCK = { min: 56, max: 240, full: 174 } as const
+/** Under this width the bar's two control rows fold into one. */
+const NARROW = 1000
+/** Playback speeds as the speed control shows them; the store keeps the number (PLAYBACK_SPEEDS). */
+const speedLabel = (v: number) => (v < 1 ? `${v === 0.25 ? '¼' : '½'}x` : `${v}x`)
+const speedTitle = (v: number) => (v === 1 ? 'Real time: as fast as the printer moves' : v < 1 ? `${v === 0.25 ? 'Quarter' : 'Half'} of real time` : `${v} times real time`)
+const TOOLHEAD_TIP = { title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.' }
+const GANTRY_TIP = { title: 'Show gantry', body: 'Draw the gantry over the toolhead at the clearance height your printer profile gives, and the carriage a docked toolhead hangs on. A layer where the gantry would hit the print shows it either way.' }
+const FOLLOW_TIP = { title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.' }
+
+/** The playback speed as one button showing the rate, for a narrow bar. */
+function SpeedMenu({ speed }: { speed: number }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <MenuAnchor className="dock-speed">
+      <button type="button" className="dock-speed-btn sx-mono" aria-haspopup="menu" aria-expanded={open} aria-label={`Playback speed ${speedLabel(speed)}`} {...tipAttrs({ title: 'Playback speed', body: speedTitle(speed) })} onClick={() => setOpen(!open)}>
+        <span>{speedLabel(speed)}</span>
+        <Icon name="chevron-down" size={12} />
+      </button>
+      <Menu open={open} onClose={() => setOpen(false)} label="Playback speed">
+        {PLAYBACK_SPEEDS.map((v) => (
+          <MenuItem key={v} checked={v === speed} aside={v === 1 ? 'real time' : undefined} onClick={() => (setOpen(false), set({ playbackSpeed: v }))}>
+            {speedLabel(v)}
+          </MenuItem>
+        ))}
+      </Menu>
+    </MenuAnchor>
+  )
+}
+
+/** True while the element is narrower than `px`; false where it cannot be measured. */
+function useNarrower(ref: { current: HTMLElement | null }, px: number, on: boolean): boolean {
+  const [narrow, setNarrow] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!on || !el || typeof ResizeObserver === 'undefined') return setNarrow(false)
+    const measure = () => setNarrow(el.getBoundingClientRect().width < px)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref, px, on])
+  return narrow
+}
 
 /**
  * Whether the playback bar starts open, with its sliders. People start with it shut to its transport row and open it
@@ -135,9 +178,6 @@ export function Legend() {
 }
 
 const NO_PURGES: PlayPurge[] = []
-
-/** Playback speeds as the speed control shows them; the store keeps the number (PLAYBACK_SPEEDS). */
-const speedLabel = (v: number) => (v < 1 ? `${v === 0.25 ? '¼' : '½'}x` : `${v}x`)
 
 /** Playback bar: play, pause and speed, scrub by print time or by layer, and the readouts for both. */
 export function LayerDock() {
@@ -292,6 +332,8 @@ export function LayerDock() {
   toggleRef.current = toggleDrawer
   const shown = !!preview && !!timeline
   useEffect(() => (shown && !compact ? registerEdge('bottom', () => toggleRef.current()) : undefined), [shown, compact])
+  // A narrow bar (the right pane open on a laptop) keeps one control row: the speed as a menu, the checks as icon toggles.
+  const narrow = useNarrower(dockRef, NARROW, !compact && shown)
   if (!preview || !timeline) return null
   // Tall shows every slider, medium the time and layer ones, and the slim bar only the transport.
   const mode = compact ? 'full' : shut ? 'slim' : dockSize < 150 ? 'compact' : 'full'
@@ -305,7 +347,9 @@ export function LayerDock() {
 
   // Speed beside the transport; the toolhead, gantry and nozzle checks and the G-code lines on the row under it with
   // the readout. On a phone both open together in the opened bar.
-  const speedOpts = (
+  const speedOpts = narrow ? (
+    <SpeedMenu speed={Number(speed)} />
+  ) : (
     <>
       <span className="dock-cap">Speed</span>
       <Seg
@@ -318,7 +362,33 @@ export function LayerDock() {
       />
     </>
   )
-  const viewOpts = (
+  const gcodeBtn = (
+    <button
+      type="button"
+      className="play step ghost"
+      aria-label="G-code"
+      aria-pressed={gcodeOn}
+      {...tipAttrs({ title: gcodeOn ? 'Hide the G-code' : 'Show the G-code', body: 'The G-code around the move at the nozzle. Click a line to move there.' })}
+      onClick={() => setGcodePanel(!gcodeOn)}
+    >
+      <Icon name="list" />
+    </button>
+  )
+  // On a folded bar the checks are icon toggles, still checkboxes (the same test ids and names) inside a button's frame.
+  const iconCheck = (testId: string | undefined, label: string, tip: { title: string; body: string }, icon: IconName, on: boolean, change: (on: boolean) => void) => (
+    <label className="play step ghost dock-toggle" data-on={on || undefined} {...tipAttrs(tip)}>
+      <input type="checkbox" {...(testId ? { 'data-testid': testId } : {})} aria-label={label} checked={on} onChange={(e) => change(e.target.checked)} />
+      <Icon name={icon} />
+    </label>
+  )
+  const viewOpts = narrow ? (
+    <>
+      {iconCheck('pv-show-toolhead', 'Show toolhead', TOOLHEAD_TIP, 'hotend', showToolhead, (on) => set({ showToolhead: on }))}
+      {iconCheck('pv-show-gantry', 'Show gantry', GANTRY_TIP, 'printer-cartesian-gantry', showGantry, (on) => set({ showGantry: on }))}
+      {iconCheck(undefined, 'Follow nozzle', FOLLOW_TIP, 'camera', followNozzle, (on) => set({ followNozzle: on }))}
+      {gcodeBtn}
+    </>
+  ) : (
     <>
       <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.', demo: 'heimdall' })}>
         <input type="checkbox" data-testid="pv-show-toolhead" aria-label="Show toolhead" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
@@ -334,16 +404,7 @@ export function LayerDock() {
         <input type="checkbox" checked={followNozzle} onChange={(e) => set({ followNozzle: e.target.checked })} />
         Follow nozzle
       </label>
-      <button
-        type="button"
-        className="play step ghost"
-        aria-label="G-code"
-        aria-pressed={gcodeOn}
-        {...tipAttrs({ title: gcodeOn ? 'Hide the G-code' : 'Show the G-code', body: 'The G-code around the move at the nozzle. Click a line to move there.' })}
-        onClick={() => setGcodePanel(!gcodeOn)}
-      >
-        <Icon name="list" />
-      </button>
+      {gcodeBtn}
     </>
   )
   const opts = (
@@ -353,22 +414,27 @@ export function LayerDock() {
     </>
   )
 
+  // A typed layer, a pin and a right-click on the Layer track all go to a layer the same way: playback stops there.
+  const jump = (k: number) => (setPlaying(false), stepLayer(0, k))
+
   // Layer, Z and layer time, or the change and purge in their place.
   const readout = (
     <span className="dock-read sx-mono sx-dim">
       {/* During a purge its grams take the layer's place (the layer slider shows both), so the line keeps its length. */}
       {purge && !layerJump ? null : (
         <>
-          <LayerJump top={top} n={n} layerZ={preview.layerZ} onJump={(k) => (setPlaying(false), stepLayer(0, k))} />
-          <span className="hide-sm">
-            Z <b>{z.toFixed(2)}</b> mm
+          <LayerJump top={top} n={n} layerZ={preview.layerZ} short={narrow} onJump={jump} />
+          <span className="hide-sm dock-z" {...(narrow ? tipAttrs({ title: 'Height of this layer' }) : {})}>
+            {narrow ? null : 'Z '}
+            <b>{z.toFixed(2)}</b> mm
           </span>
         </>
       )}
       {/* A change takes the layer time's place, so the readout keeps its line and the transport does not move. */}
       {toolChange ? null : (
-        <span className="hide-sm">
-          Layer time <b>{layerT < 60 ? `${layerT.toFixed(0)} s` : `${Math.floor(layerT / 60)}m ${Math.round(layerT % 60)}s`}</b>
+        <span className="hide-sm dock-lt" {...(narrow ? tipAttrs({ title: 'Layer time' }) : {})}>
+          {narrow ? null : 'Layer time '}
+          <b>{layerT < 60 ? `${layerT.toFixed(0)} s` : `${Math.floor(layerT / 60)}m ${Math.round(layerT % 60)}s`}</b>
         </span>
       )}
       {toolChange ? (
@@ -385,7 +451,7 @@ export function LayerDock() {
   )
 
   return (
-    <div className="dock sx-overlay" role="group" aria-label="Layers and moves" data-mode={mode} data-phone={compact || undefined} data-testid="preview-drawer" ref={dockRef}>
+    <div className="dock sx-overlay" role="group" aria-label="Layers and moves" data-mode={mode} data-phone={compact || undefined} data-narrow={narrow || undefined} data-testid="preview-drawer" ref={dockRef}>
       {compact ? null : (
         <EdgeTab
           side="bottom"
@@ -430,14 +496,15 @@ export function LayerDock() {
           <Icon name="chevron-right" />
         </button>
         {compact ? null : speedOpts}
-        {compact ? readout : null}
+        {narrow ? viewOpts : null}
+        {compact || narrow ? readout : null}
         {compact ? (
           <button type="button" className="play step ghost dock-more" aria-expanded={opened} aria-label={opened ? 'Fewer playback controls' : 'More playback controls'} onClick={() => setOpened(!opened)}>
             <Icon name={opened ? 'chevron-down' : 'chevron-up'} />
           </button>
         ) : null}
       </div>
-      {compact ? null : (
+      {compact || narrow ? null : (
         <div className="dock-h dock-h2">
           {viewOpts}
           {readout}
@@ -478,7 +545,7 @@ export function LayerDock() {
           </div>
           <div className="dock-row">
             <label htmlFor="pv-layer">Layer</label>
-            <LayerTrack id="pv-layer" n={n} top={top} layerZ={preview.layerZ} onKeyDown={(e) => { const by = layerKeyStep(e.key); if (by && !e.altKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setPlaying(false); stepLayer(by) } }} onChange={(v) => (setPlaying(false), set({ layerHi: v, moveCut: 1, toolChange: null }))} />
+            <LayerTrack id="pv-layer" n={n} top={top} layerZ={preview.layerZ} onKeyDown={(e) => { const by = layerKeyStep(e.key); if (by && !e.altKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setPlaying(false); stepLayer(by) } }} onChange={(v) => (setPlaying(false), set({ layerHi: v, moveCut: 1, toolChange: null }))} onJump={jump} />
             <output className="sx-mono" htmlFor="pv-layer">
               {z.toFixed(2)} mm
             </output>

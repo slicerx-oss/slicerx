@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { beforeEach, describe, expect, it } from 'vitest'
 import { addMark, customGcodeProblem, layerGcodeByHeight, marksFor, nextSlot, removeMark, setMarkSlot } from '../src/plate/layer-marks'
+import { layerAtPoint, layerOf, pinLanes } from '../src/workspaces/preview/layer-track'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 describe('layer marks', () => {
@@ -75,5 +76,53 @@ describe('layer marks in a project file', () => {
     const { projectFiles } = await import('../src/export/threemf')
     const files = projectFiles({ plates: [], bed: { widthMm: 256, depthMm: 256 }, settings: {} })
     expect(files.some((f) => f.name === 'Metadata/custom_gcode_per_layer.xml')).toBe(false)
+  })
+})
+
+describe('pin lanes', () => {
+  it('keeps pins in one lane while they are apart, and steps crowded ones right', () => {
+    // a 200 px track: 0.1 and 0.5 are 80 px apart, 0.5 and 0.55 only 10 px
+    expect(pinLanes([0.1, 0.5, 0.55], 200)).toEqual([0, 0, 1])
+    // three within one hit area take three lanes; a fourth further down goes back to the first
+    expect(pinLanes([0.3, 0.31, 0.32, 0.6], 200)).toEqual([0, 1, 2, 0])
+    // order on the track decides, not the order of the marks
+    expect(pinLanes([0.55, 0.5], 200)).toEqual([1, 0])
+  })
+})
+
+describe('pin lanes when every lane is taken', () => {
+  it('puts the next pin in the lane whose last pin is furthest back', () => {
+    // four pins 2 px apart: three lanes, then the fourth back in the first
+    expect(pinLanes([0.3, 0.31, 0.32, 0.33], 200)).toEqual([0, 1, 2, 0])
+    // with two lanes the third goes back to the first
+    expect(pinLanes([0.3, 0.31, 0.32], 200, 2)).toEqual([0, 1, 0])
+  })
+})
+
+describe('a mark lands on a layer slot', () => {
+  // a 213 px track: 200 px between the thumb's centers at the first and last layer
+  const track = { left: 100, width: 213 }
+  it('picks the nearest layer to the pointer, never one between two', () => {
+    expect(layerAtPoint(106.5, track, 11)).toBe(1)
+    expect(layerAtPoint(306.5, track, 11)).toBe(11)
+    // 20 px per layer: 115 px from the first center is nearer layer 7 (120) than layer 6 (100)
+    expect(layerAtPoint(106.5 + 115, track, 11)).toBe(7)
+    expect(layerAtPoint(106.5 + 109, track, 11)).toBe(6)
+    // past either end, the end layer
+    expect(layerAtPoint(0, track, 11)).toBe(1)
+    expect(layerAtPoint(999, track, 11)).toBe(11)
+    expect(layerAtPoint(200, track, 1)).toBe(1)
+  })
+  it('a mark between two layer tops shows on the layer above it', () => {
+    const z = [0.2, 0.4, 0.6]
+    expect(layerOf({ z: 0.4 }, z)).toBe(2)
+    expect(layerOf({ z: 0.45 }, z)).toBe(3)
+    expect(layerOf({ z: 9 }, z)).toBe(3)
+  })
+})
+
+describe('pin lanes before the track is measured', () => {
+  it('keeps every pin in the first lane', () => {
+    expect(pinLanes([0.1, 0.5, 0.55], 0)).toEqual([0, 0, 0])
   })
 })

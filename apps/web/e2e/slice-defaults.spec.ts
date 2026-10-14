@@ -77,7 +77,7 @@ test.describe('Slice tab defaults', () => {
     await expect(page.getByTestId('preview-drawer')).toHaveAttribute('data-mode', 'full')
   })
 
-  test('the bar keeps transport and speed on one row and the view checks with the readout on the next, and its tab never meets the plate chip', async ({ page }) => {
+  test('the bar keeps its controls on one row while it is folded, or transport and speed over the view checks and readout when wide, and its tab never meets the plate chip', async ({ page }) => {
     for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1024, height: 768 }]) {
       await page.setViewportSize(size)
       if (size.width === 1440) {
@@ -93,18 +93,21 @@ test.describe('Slice tab defaults', () => {
         await expect(dock).toHaveAttribute('data-mode', want)
         await page.waitForTimeout(250)
         const mid = async (sel: string) => { const b = (await dock.locator(sel).first().boundingBox())!; return b.y + b.height / 2 }
+        // under 1000 px (both side panes open) the bar folds to one row: the speed as one button, the checks as icons
+        const folded = (await dock.getAttribute('data-narrow')) !== null
         const play = await mid('button[aria-label="Play print"]')
-        const speed = await mid('[role="radiogroup"]')
+        const speed = await mid(folded ? '.dock-speed-btn' : '[role="radiogroup"]')
         const head = await mid('[data-testid="pv-show-toolhead"]')
         const gantry = await mid('[data-testid="pv-show-gantry"]')
-        const follow = await mid('label:has-text("Follow nozzle") input')
+        const follow = await mid('label:has-text("Follow nozzle") input, input[aria-label="Follow nozzle"]')
         const read = await mid('.dock-read')
-        const where = `${size.width} ${want}`
+        const where = `${size.width} ${want}${folded ? ' folded' : ''}`
         expect(Math.abs(play - speed), where).toBeLessThan(4)
         expect(Math.abs(head - gantry), where).toBeLessThan(2)
         expect(Math.abs(head - follow), where).toBeLessThan(2)
         expect(Math.abs(head - read), where).toBeLessThan(4)
-        expect(head - play, where).toBeGreaterThan(16)
+        if (folded) expect(Math.abs(head - play), where).toBeLessThan(4)
+        else expect(head - play, where).toBeGreaterThan(16)
         // The tab and the plate chips never meet.
         const t = (await tab.boundingBox())!
         for (const chip of await page.locator('.vp > .hud-bl > *').all()) {
