@@ -4,7 +4,7 @@
 // around them, fitted to the picture, and the same plate always gives the same key (it is drawn once and kept).
 import { describe, expect, it } from 'vitest'
 import type { PlateEntry } from '../src/state/store'
-import { plateKey, rasterPlate } from '../src/workspaces/preview/plate-render'
+import { PictureCache, plateKey, rasterPlate } from '../src/workspaces/preview/plate-render'
 
 function box(id: string, size: number, at: [number, number], color = '#a0a0a0'): PlateEntry {
   const s = size
@@ -50,5 +50,43 @@ describe('a plate picture', () => {
     expect(plateKey(a, 256, 160)).toBe(plateKey(a, 256, 160))
     expect(plateKey(a, 256, 160)).not.toBe(plateKey(a, 128, 80))
     expect(plateKey(a, 256, 160)).not.toBe(plateKey([box('a', 20, [60, 50])], 256, 160))
+  })
+})
+
+describe('the kept pictures', () => {
+  it('keeps at most its cap, dropping the least recently used and revoking its URL', () => {
+    const revoked: string[] = []
+    const c = new PictureCache(3, 1_000_000, (u) => revoked.push(u))
+    for (const k of ['a', 'b', 'c']) c.set(k, `blob:${k}`, 100)
+    // Reading a keeps it recent, so b is the oldest.
+    expect(c.get('a')).toBe('blob:a')
+    c.set('d', 'blob:d', 100)
+    expect(c.size).toBe(3)
+    expect(c.has('b')).toBe(false)
+    expect(revoked).toEqual(['blob:b'])
+    expect(c.bytes).toBe(300)
+  })
+
+  it('keeps within its byte budget, and never revokes an empty plate', () => {
+    const revoked: string[] = []
+    const c = new PictureCache(48, 250, (u) => revoked.push(u))
+    c.set('empty', null, 0)
+    c.set('a', 'blob:a', 100)
+    c.set('b', 'blob:b', 100)
+    c.set('c', 'blob:c', 100)
+    expect(c.bytes).toBeLessThanOrEqual(250)
+    expect(c.has('empty')).toBe(false)
+    expect(c.has('a')).toBe(false)
+    expect(revoked).toEqual(['blob:a'])
+  })
+
+  it('replacing a picture revokes the old URL and counts its bytes once', () => {
+    const revoked: string[] = []
+    const c = new PictureCache(4, 1000, (u) => revoked.push(u))
+    c.set('a', 'blob:a1', 100)
+    c.set('a', 'blob:a2', 120)
+    expect(revoked).toEqual(['blob:a1'])
+    expect(c.bytes).toBe(120)
+    expect(c.get('missing')).toBeUndefined()
   })
 })

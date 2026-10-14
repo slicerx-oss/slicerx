@@ -199,14 +199,27 @@ export function sheetHeight(count: number, width: number, room: number, form = f
 }
 
 /**
- * A tile's picture: the plate's objects drawn shaded (plate-render.ts), once per plate and kept. Until it is drawn,
- * and on a plate with nothing on it, the tile shows the plate's outline thumbnail.
+ * A tile's picture: the plate's objects drawn shaded (plate-render.ts), once per plate and kept. Only a tile in view, or
+ * within a row of it, asks for its picture to be drawn. Until it is drawn, and on a plate with nothing on it, the tile
+ * shows the plate's outline thumbnail.
  */
 function TilePicture({ objects, bed }: { objects: readonly PlateEntry[]; bed: Bed }) {
   const [, redraw] = useState(0)
-  const url = objects.length ? platePicture(objects, PICTURE.width, PICTURE.height, () => redraw((n) => n + 1)) : null
+  const [near, setNear] = useState(typeof IntersectionObserver === 'undefined')
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver((seen) => setNear(seen.some((e) => e.isIntersecting)), { root: el.closest('.pp-body'), rootMargin: `${CARD.height}px 0px` })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  const asked = objects.length ? platePicture(objects, PICTURE.width, PICTURE.height, () => redraw((n) => n + 1), near) : null
+  const cancel = asked?.cancel
+  useEffect(() => cancel, [cancel])
+  const url = asked?.url
   return (
-    <span className="pp-card-thumb" aria-hidden="true" data-drawn={url ? '' : undefined}>
+    <span ref={ref} className="pp-card-thumb" aria-hidden="true" data-drawn={url ? '' : undefined}>
       {url ? <img src={url} alt="" draggable={false} /> : <PlateThumb objects={objects} bed={bed} size={64} fit />}
     </span>
   )
