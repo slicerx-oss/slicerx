@@ -264,6 +264,8 @@ export interface AppState {
   /** Preview playback keeps the camera on the nozzle. */
   followNozzle: boolean
   toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction } | null
+  /** A standing notice about the 3D view (drawn without hardware acceleration), or null. A phone shows it as an icon in the top bar instead of a toast. */
+  viewNotice: string | null
   aboutOpen: boolean
   /** The Settings dialog, and the section it opens on. */
   settingsOpen: boolean
@@ -682,6 +684,7 @@ export const appStore = createStore<AppState>()(() => ({
   playbackSpeed: prefs.playbackSpeed ?? DEFAULT_PLAYBACK_SPEED,
   followNozzle: prefs.followNozzle ?? false,
   toast: null,
+  viewNotice: null,
   aboutOpen: false,
   settingsOpen: false,
   settingsSection: null,

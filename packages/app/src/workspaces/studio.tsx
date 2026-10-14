@@ -63,7 +63,7 @@ const PREVIEW_RIGHT: PaneSection[] = [
  */
 // With the toolpaths, the color legend runs down the left under the top row: the toast keeps to its right.
 // mimir's sizes panel runs down the right while a sheet is up: the toast keeps to its left, off Build and Cancel.
-const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .dock, .bpanel-body', top: '.plate-tools, .slice-look, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel' }
+const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .dock, .bpanel-body', top: '.plate-tools, .slice-look, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel', chat: '.mimir-dock' }
 const PHONE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, cover: '.pane.sheet.sheet-open' }
 
 const PLATES_SECTION: PaneSection = { id: 'plates', icon: 'plates', label: 'Plates' }
