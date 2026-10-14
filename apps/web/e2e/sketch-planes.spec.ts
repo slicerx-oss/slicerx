@@ -66,6 +66,10 @@ test('the plane names follow their corners when the camera turns and zooms', asy
   await openStudio(page)
   await command(page, 'Sketch on the bed or a face')
   await expect(toolPanel(page)).toContainText('Click an origin plane (XY, XZ or YZ)')
+  // Model frames the part on open with an eased move, close enough that a turn can take a corner off screen: once it
+  // stops, start from the whole plate so every turn and zoom below keeps the names in view
+  await page.waitForFunction(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)
+  await page.evaluate(() => (window as unknown as { __vp: { view(p: string): void; invalidate(): void } }).__vp.view('plate'))
   for (const [turn, zoom] of [
     [60, 1],
     [0, 0.6],
