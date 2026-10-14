@@ -235,3 +235,8 @@ test('Advanced rows from smart layer smoothing to travel speed play their own lo
   test.skip(isMobile, 'Hover tips need a mouse')
   await rowsPlay(page, [['smart_layer_smoothing', 'brls'], ['smart_layer_smoothing_radius', 'brlo'], ['slicing_mode', 'brsm'], ['solid_infill_direction', 'brsd'], ['outer_wall_speed', 'bros'], ['inner_wall_speed', 'bris'], ['sparse_infill_speed', 'brps'], ['internal_solid_infill_speed', 'brds'], ['top_surface_speed', 'brts'], ['gap_infill_speed', 'brgs'], ['small_perimeter_threshold', 'brsh'], ['travel_speed', 'brvs']])
 })
+
+test('Advanced rows from initial layer speed to support angle play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['initial_layer_speed', 'brfs'], ['initial_layer_infill_speed', 'brfi'], ['slow_down_layers', 'brsl'], ['spiral_mode', 'brvm'], ['spiral_mode_smooth', 'brvo'], ['spiral_starting_flow_ratio', 'brva'], ['spiral_finishing_flow_ratio', 'brvf'], ['support_speed', 'brus'], ['support_interface_speed', 'brui'], ['support_type', 'brty'], ['support_critical_regions_only', 'brcr'], ['support_threshold_angle', 'brth'], ['support_angle', 'brsn']])
+})
