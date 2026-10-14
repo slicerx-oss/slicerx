@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Tool and resource registration for the SlicerX MCP server.
 import { readFileSync } from 'node:fs'
+import packageJson from '../package.json'
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
 import { ListToolsRequestSchema, type CallToolResult, type ServerNotification, type ServerRequest, type Tool } from '@modelcontextprotocol/sdk/types.js'
@@ -22,7 +23,7 @@ import { SERVER_TOOLS } from './toolbox'
 export { noPrinterMessage } from './toolbox/slice'
 
 export const SERVER_NAME = 'slicerx-mcp-server'
-export const SERVER_VERSION = '0.1.0'
+export const SERVER_VERSION = packageJson.version
 const CHARACTER_LIMIT = 25_000
 
 export interface ServerContext {
