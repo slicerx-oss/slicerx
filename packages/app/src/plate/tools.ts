@@ -42,6 +42,8 @@ export interface CameraPose {
   elevationDeg: number
   distanceMm: number
   projection?: 'perspective' | 'orthographic'
+  /** The view preset the camera is at (iso, top, front and the rest), null once it was turned by hand. */
+  preset?: string | null
 }
 
 /** Viewport calls the app drives directly. Optional: the 2D fallback has none of them. */

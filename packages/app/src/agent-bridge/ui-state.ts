@@ -25,7 +25,7 @@ export const OPEN_PANELS = {
 /** Open flags that are not a panel: the open of a file running, which the plate's state reads already. */
 export const NOT_PANELS: readonly (keyof AppState)[] = ['sliceDuringOpen']
 
-type UiSource = Pick<AppState, 'selection' | 'selectedIds' | 'subPicks' | 'pickFilter' | 'plate' | 'objectTool' | 'parked' | 'camera' | 'setup' | 'workspace'> & Pick<AppState, (typeof OPEN_PANELS)[keyof typeof OPEN_PANELS]>
+type UiSource = Pick<AppState, 'selection' | 'selectedIds' | 'subPicks' | 'pickFilter' | 'plate' | 'objectTool' | 'parked' | 'setup' | 'workspace'> & Pick<AppState, (typeof OPEN_PANELS)[keyof typeof OPEN_PANELS]>
 
 const round = (v: number, digits = 2): number => {
   const k = 10 ** digits
@@ -85,10 +85,11 @@ export function panelState(s: UiSource, doc: Document): Record<string, unknown> 
 
 /**
  * Where the 3D view's camera is: the orbit center on the bed (mm), the angle round it (0 from the front, 90 from the
- * right) and above the bed, the distance, the projection, and the last view picked (iso, top, front or fit; the camera
- * may have been turned since). Null while there is no 3D view (another tab, or the 2D fallback).
+ * right) and above the bed, the distance, the projection, and the view preset it is at (iso, top, front and the rest,
+ * whichever key, button or command chose it; null once it was turned by hand). Null while there is no 3D view (another
+ * tab, or the 2D fallback).
  */
-export function cameraState(s: Pick<UiSource, 'camera'>): Record<string, unknown> | null {
+export function cameraState(): Record<string, unknown> | null {
   const pose = cameraBus()?.pose?.()
   if (!pose) return null
   return {
@@ -97,11 +98,11 @@ export function cameraState(s: Pick<UiSource, 'camera'>): Record<string, unknown
     elevationDeg: round(pose.elevationDeg, 1),
     distanceMm: round(pose.distanceMm, 1),
     ...(pose.projection ? { projection: pose.projection } : {}),
-    lastView: s.camera,
+    preset: pose.preset ?? null,
   }
 }
 
 /** The four together, as app_state carries them. */
 export function uiState(s: UiSource, doc: Document = document): Record<string, unknown> {
-  return { selection: selectionState(s), tool: toolState(s), panels: panelState(s, doc), camera: cameraState(s) }
+  return { selection: selectionState(s), tool: toolState(s), panels: panelState(s, doc), camera: cameraState() }
 }

@@ -345,7 +345,6 @@ describe('the UI state an agent reads', () => {
       commandOpen: false,
       expertOpen: false,
       setup: null,
-      camera: 'iso',
     }),
   )
   afterEach(() => {
@@ -415,10 +414,9 @@ describe('the UI state an agent reads', () => {
     expect(flags.filter((k) => !named.has(k))).toEqual([])
   })
 
-  it('reads back where the camera is, rounded, with the last view picked', () => {
-    setCameraBus({ pose: () => ({ target: [128.004, 127.996, 5], azimuthDeg: 44.96, elevationDeg: 30.04, distanceMm: 412.345, projection: 'orthographic' }) })
-    set({ camera: 'top' })
-    expect(uiState(get(), document)['camera']).toEqual({ targetMm: [128, 128, 5], azimuthDeg: 45, elevationDeg: 30, distanceMm: 412.3, projection: 'orthographic', lastView: 'top' })
+  it('reads back where the camera is, rounded, with the view preset it is at', () => {
+    setCameraBus({ pose: () => ({ target: [128.004, 127.996, 5], azimuthDeg: 44.96, elevationDeg: 30.04, distanceMm: 412.345, projection: 'orthographic', preset: 'top' }) })
+    expect(uiState(get(), document)['camera']).toEqual({ targetMm: [128, 128, 5], azimuthDeg: 45, elevationDeg: 30, distanceMm: 412.3, projection: 'orthographic', preset: 'top' })
   })
 
   it('comes back from the state tool with the rest of the app state', async () => {
@@ -433,7 +431,7 @@ describe('the UI state an agent reads', () => {
       selection: { primary: 'cube', objects: [{ id: 'cube', name: 'Cube' }] },
       tool: { view: 'scale' },
       panels: { open: ['command'] },
-      camera: { targetMm: [0, 0, 0], azimuthDeg: 0, elevationDeg: 90, distanceMm: 300, lastView: 'iso' },
+      camera: { targetMm: [0, 0, 0], azimuthDeg: 0, elevationDeg: 90, distanceMm: 300, preset: null },
     })
     expect(state['camera']).not.toHaveProperty('projection')
   })
