@@ -35,6 +35,9 @@ async function visibleControls(page: Page): Promise<string[]> {
       // The slow 3D view notice in a phone's top bar is a status, not a settings control: it shows only where the
       // browser draws without the GPU, as CI does, so counting it would make the total depend on the machine.
       if (el.closest('.sx-view-notice')) continue
+      // A toast's Details (and its action) go with the note when it expires or is dismissed, so they are not standing
+      // controls.
+      if (el.closest('.sx-toasts')) continue
       // Hover-revealed controls (opacity 0 on the control or a parent) are not on screen.
       let hidden = false
       for (let p: Element | null = el; p; p = p.parentElement) if (Number(getComputedStyle(p).opacity) === 0) hidden = true
@@ -51,7 +54,7 @@ async function visibleControls(page: Page): Promise<string[]> {
   }, INTERACTIVE)
 }
 
-test('The plate tab with an object selected shows 39 controls or fewer, Simple mode', async ({ page, isMobile }) => {
+test('The plate tab with an object selected shows 42 controls or fewer, Simple mode', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop width')
   await open(page, 'prepare')
   const list = await visibleControls(page)
@@ -63,17 +66,20 @@ test('The plate tab with an object selected shows 39 controls or fewer, Simple m
   // finishes loading, before or after the count, which made the total 38 or 39 from run to run.
   // 39: the plate toolbar keeps still (static controls), so Drop to bed stays in place, disabled with nothing
   // selected, and Arrange options always shows beside Arrange all.
-  expect(list.length).toBeLessThanOrEqual(39)
+  // 42: the plate picker replaces the plate chip, which was a label, with Previous plate, the plate (which opens every
+  // plate, with Add plate) and Next plate. They keep their places with one plate, so adding one moves nothing.
+  expect(list.length).toBeLessThanOrEqual(42)
 })
 
-test('a phone\'s Slice, with its settings sheet open, shows 26 controls or fewer', async ({ page, isMobile }) => {
+test('a phone\'s Slice, with its settings sheet open, shows 29 controls or fewer', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Phone width')
   await open(page, 'prepare')
   await openSheet(page)
   const list = await visibleControls(page)
   console.log('phone slice', list.length, list.join(' | '))
   // a phone views and prints: Simple settings, the objects as a list, and no plate tools or modeling
-  expect(list.length).toBeLessThanOrEqual(26)
+  // 29: the plate picker's Previous plate, the plate and Next plate (see the desktop count)
+  expect(list.length).toBeLessThanOrEqual(29)
 })
 
 test('a saved Preview tab opens Slice, with no Preview tab in the bar', async ({ page }) => {
