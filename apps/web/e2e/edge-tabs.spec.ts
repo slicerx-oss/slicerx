@@ -16,14 +16,14 @@ const panesStill = (page: Page) =>
   page.evaluate(() => !document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === 'running' && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.matches('.pane, .vp')))
 
 /**
- * Waits for the view to reach a width with no pane sliding, then for the canvas to fill it. The panes are checked
+ * Waits for the view to reach a width with no pane sliding or camera framing, then for the canvas to fill it. The panes are checked
  * before the width is read: two reads in one frame of a slide match, and the slide can end before a later check.
  */
 async function viewAt(page: Page, ok: (w: number) => boolean): Promise<number> {
   let last = -1
   await expect
     .poll(async () => {
-      const still = await panesStill(page)
+      const still = (await panesStill(page)) && await page.evaluate(() => !(window as unknown as { __vp: { stats(): { cameraMoving: boolean } } }).__vp.stats().cameraMoving)
       const w = await viewWidth(page)
       const done = still && ok(w) && w === last && Math.abs((await canvasWidth(page)) - w) <= 2
       last = w
