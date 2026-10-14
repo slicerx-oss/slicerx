@@ -43,7 +43,7 @@ export function ctx(sz) {
 /** an upright cylinder on (x, y) from z0 to z1, radius rad; accent or gray */
 export function cyl(c, x, y, z0, z1, rad, accent = false, top) {
   const bt = c.disc(x, y, z0, rad), tp = c.disc(x, y, z1, rad)
-  const side = `<path class="${accent ? 'cya out ao' : 'cyg out'}" d="M${r(tp.cx - tp.rx)} ${tp.cy}V${bt.cy}A${bt.rx} ${bt.ry} 0 0 0 ${r(bt.cx + bt.rx)} ${bt.cy}V${tp.cy}A${tp.rx} ${tp.ry} 0 0 1 ${r(tp.cx - tp.rx)} ${tp.cy}Z"/>`
+  const side = `<path class="${accent ? 'cya out ao' : 'cyg out'}" style="fill:url(#ti-${accent ? 'cya' : 'cyg'})" d="M${r(tp.cx - tp.rx)} ${tp.cy}V${bt.cy}A${bt.rx} ${bt.ry} 0 0 0 ${r(bt.cx + bt.rx)} ${bt.cy}V${tp.cy}A${tp.rx} ${tp.ry} 0 0 1 ${r(tp.cx - tp.rx)} ${tp.cy}Z"/>`
   return side + c.ell(tp, top ?? (accent ? 'a1' : 't1'))
 }
 

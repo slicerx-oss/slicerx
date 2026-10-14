@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import type { SVGProps } from 'react'
+import { useId, useMemo, type SVGProps } from 'react'
 import { TOOL_ICONS, type ToolIconName, type ToolIconSize } from './tool-icons'
 
 export { TOOL_ICONS, TOOL_ICON_GROUPS, type ToolIconName, type ToolIconSize } from './tool-icons'
@@ -13,8 +13,16 @@ export interface ToolIconProps extends Omit<SVGProps<SVGSVGElement>, 'name' | 'c
   label?: string
 }
 
+/** The markup with its ti- ids and their url(#ti-...) references renamed under `prefix`, so copies on one page never share defs. */
+export function scopeToolIconIds(markup: string, prefix: string): string {
+  return markup.includes('id="ti-') ? markup.replace(/(id="|url\(#)ti-/g, `$1${prefix}-`) : markup
+}
+
 /** A shaded tool icon, drawn for its size and colored from the --ti-* tokens, so it follows the theme. */
 export function ToolIcon({ name, size, label, className, ...rest }: ToolIconProps) {
+  // a gradient or clip found by id resolves to the first match in the document, which may be hidden or in another theme
+  const prefix = 'ti' + useId().replace(/[^\w-]/g, '')
+  const html = useMemo(() => scopeToolIconIds(TOOL_ICONS[name][size], prefix), [name, size, prefix])
   return (
     <svg
       className={className ? `ti ${className}` : 'ti'}
@@ -26,7 +34,7 @@ export function ToolIcon({ name, size, label, className, ...rest }: ToolIconProp
       aria-hidden={label ? undefined : true}
       data-tool-icon={name}
       // Markup comes from the generated table, never from user input.
-      dangerouslySetInnerHTML={{ __html: TOOL_ICONS[name][size] }}
+      dangerouslySetInnerHTML={{ __html: html }}
       {...rest}
     />
   )
