@@ -748,6 +748,11 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (s.workspace !== p.workspace || s.modelMode !== p.modelMode) applyTool()
       }))
       if (vp.setTool) offs.push((vp as unknown as Viewport).on('facepick', (pick) => void layOnPickedFace(pick)))
+      // The view preset the camera is at (a key, a button or a command chose it), null once it is turned by hand.
+      let cameraPreset: string | null = 'iso'
+      offs.push(vp.on('camera', (e) => {
+        cameraPreset = e.preset
+      }))
       setCameraBus({
         view: (preset, o) => vp.view(preset, o),
         ...(vp.zoomToSelection ? { zoomToSelection: (o?: { animate?: boolean }) => vp.zoomToSelection?.(o) } : {}),
@@ -755,7 +760,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         ...(vp.zoomBy ? { zoomBy: (f: number, o?: { animate?: boolean }) => vp.zoomBy?.(f, o) } : {}),
         ...(vp.focusBedPoint ? { focusBedPoint: (x: number, y: number, z: number, o?: { animate?: boolean }) => vp.focusBedPoint?.(x, y, z, o) } : {}),
         ...(vp.toggleProjection ? { toggleProjection: () => vp.toggleProjection?.() } : {}),
-        ...(vp.getCamera ? { pose: () => ({ ...vp.getCamera!(), ...(vp.getProjection ? { projection: vp.getProjection() } : {}) }) } : {}),
+        ...(vp.getCamera ? { pose: () => ({ ...vp.getCamera!(), ...(vp.getProjection ? { projection: vp.getProjection() } : {}), preset: cameraPreset }) } : {}),
         ...(vp.setGuides ? { guides: (g: Parameters<Viewport['setGuides']>[0]) => vp.setGuides?.(g), probeFaces: (on: boolean) => vp.setProbeFaces?.(on) } : {}),
         ...(vp.arrange ? { arrange: (o?: { animate?: boolean; gapMm?: number }) => vp.arrange?.(o) ?? {} } : {}),
         ...('setPush' in vp ? { cad: vp as unknown as CadView } : {}),

@@ -23,6 +23,8 @@ export async function finishFirstRun({ testids, click, sleep, tries = 120 }) {
     } else if (ids['setup-skip-all']) await click('setup-skip-all')
     // The right pane never opens by itself (docs/direction.md): open it once, the way a person pulls it out. Its edge
     // tab toggles, so it is pressed only once.
+    // A profile kept from an earlier run (macOS keeps the bridge build's web data) can start on another tab.
+    else if (!ids['setup'] && ids['tab-prepare'] && !ids['edge-tab-right']) await click('tab-prepare')
     else if (!ids['setup'] && ids['edge-tab-right'] && !paneOpened) {
       paneOpened = true
       await click('edge-tab-right')

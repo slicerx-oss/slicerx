@@ -79,7 +79,7 @@ try {
   client = new Client({ name: 'bridge-e2e', version: '0' })
   await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(repo, 'packages', 'app-bridge', 'src', 'cli.ts'), '--token-file', tokenFile], stderr: 'ignore' }))
   const { tools } = await client.listTools()
-  record('tools listed', tools.length === 20, tools.map((t) => t.name))
+  record('tools listed', tools.length === 22, tools.map((t) => t.name))
 
   const call = async (name, args = {}) => {
     const r = await client.callTool({ name, arguments: args })
@@ -100,7 +100,7 @@ try {
   }
   const summarize = (name, d) => {
     if (!d) return undefined
-    if (name === 'app_state') return { tab: d.tab, objects: d.plate?.objects?.map((o) => o.name), slicing: d.slicing?.status, dialogs: d.dialogs?.map((x) => x.title), selection: d.selection?.objects?.map((o) => o.id), tool: d.tool?.view, open: d.panels?.open, camera: d.camera && { elevationDeg: d.camera.elevationDeg, lastView: d.camera.lastView } }
+    if (name === 'app_state') return { tab: d.tab, objects: d.plate?.objects?.map((o) => o.name), slicing: d.slicing?.status, dialogs: d.dialogs?.map((x) => x.title), selection: d.selection?.objects?.map((o) => o.id), tool: d.tool?.view, open: d.panels?.open, camera: d.camera && { elevationDeg: d.camera.elevationDeg, preset: d.camera.preset } }
     if (name === 'app_slice') return { status: d.status, layers: d.layers, timeS: d.timeS, filamentG: d.filamentG, warnings: d.warnings?.length }
     if ('entries' in d) return { marker: d.marker, entries: d.entries.length, last: d.entries.at(-1) }
     return d
@@ -175,9 +175,9 @@ try {
   await stateUntil('app_state tool after M', (d) => d.tool?.view === 'move' && d.tool.moveArrows === true)
   await stateUntil('app_state camera pose', (d) => d.camera?.distanceMm > 0 && d.camera.targetMm?.length === 3)
   await expectOk('app_press_key', { key: '1' })
-  await stateUntil('app_state camera after 1 (top view)', (d) => d.camera?.lastView === 'top' && d.camera.elevationDeg > 80)
+  await stateUntil('app_state camera after 1 (top view)', (d) => d.camera?.preset === 'top' && d.camera.elevationDeg > 80)
   await expectOk('app_press_key', { key: '7' })
-  await stateUntil('app_state camera after 7 (iso view)', (d) => d.camera?.lastView === 'iso' && d.camera.elevationDeg < 80)
+  await stateUntil('app_state camera after 7 (iso view)', (d) => d.camera?.preset === 'iso' && d.camera.elevationDeg < 80)
   const panes = (await call('app_state')).data?.panels?.panes ?? []
   const left = panes.find((p) => p.side === 'left')
   record('app_state panels list the edge panels', panes.length > 0 && Boolean(left), panes)
@@ -189,7 +189,8 @@ try {
   }
   await expectOk('app_click', { testid: 'open-settings' })
   await stateUntil('app_state panels with Settings open', (d) => d.panels?.open?.includes('settings'))
-  await expectOk('app_press_key', { key: 'Escape' })
+  await expectOk('app_wait_for', { testid: 'dialog-close', state: 'visible', timeoutMs: 5000 })
+  await expectOk('app_click', { testid: 'dialog-close' })
   await stateUntil('app_state panels with Settings shut', (d) => !d.panels?.open?.includes('settings'))
   const sliced = await expectOk('app_slice', { timeoutMs: 600000 }, (d) => d.status === 'done' && d.layers > 0)
   await expectOk('app_export_gcode', {}, (d) => d.bytes > 0 && existsSync(d.path))
