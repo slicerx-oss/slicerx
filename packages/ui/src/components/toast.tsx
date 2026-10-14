@@ -14,7 +14,7 @@ export interface ToastOptions {
   duration?: number
   /** A button on the toast, for example an undo. */
   action?: { label: string; run: () => void }
-  /** Stays on the card until it is dismissed, however long it takes. A warning does by default; information never. */
+  /** Stays on the card until it is dismissed, however long it takes. A warning or an error does by default; information never. */
   persist?: boolean
 }
 
@@ -27,9 +27,9 @@ interface ToastRecord {
   action?: { label: string; run: () => void }
 }
 
-/** Whether a toast with this tone and option stays until dismissed: a warning does, and so does one that asks to. */
+/** Whether a toast with this tone and option stays until dismissed: a warning or an error does, and so does one that asks to. */
 export function staysUntilDismissed(tone: ToastTone, persist?: boolean): boolean {
-  return persist ?? tone === 'warn'
+  return persist ?? (tone === 'warn' || tone === 'error')
 }
 
 /**
