@@ -736,7 +736,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'slice',
     description:
-      'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. With "design" it adds a shell step (the open faces kept by their keys, and its wall an editable number); with a model it writes the new STL and reports the walls.',
+      'Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). A body whose faces are all flat gets exact walls. Give each open face as a point on it and its outward normal, as slicerx_geom_faces lists them; none for a closed hollow. With "design" it adds a shell step (the open faces kept by their keys, and its wall an editable number); with a model it writes the new STL and reports the walls. With --app, a design is the body in the open project.',
     input: z.object({
       model: modelOrDesign,
       design: designArg.optional(),
@@ -766,7 +766,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step.',
+    description: 'Check a model or a design: its bounds (min, max and size in mm), volume, surface area, triangle count, whether it is closed (watertight) and how many separate shells it has. A design reads per part, as it is now or right after a given step. With --app, read the body in the open project without changing its history.',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), step: stepArg }),
     async run(i) {
       oneOf(i)
@@ -806,7 +806,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     source: 'command',
     permission: 'read',
     description:
-      'Measure a model or a design as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. Pick a face by a point on it and its outward normal, as slicerx_geom_faces lists them; snap_mm snaps the pick to an edge or a corner that close, to measure from an edge.',
+      'Measure a model or a design as the measure tool does (distance, angle and radius): the feature at a picked point, a flat face, a hole or boss (a cylinder, with its diameter), an edge or a corner, and with a second pick "b" the distance and angle between the two. Pick a face by a point on it and its outward normal, as slicerx_geom_faces lists them; snap_mm snaps the pick to an edge or a corner that close, to measure from an edge. With --app, measure a design in the open project, in world coordinates.',
     input: z.object({ model: modelOrDesign, design: designArg.optional(), step: stepArg, a: faceRef, b: faceRef.optional(), snap_mm: z.number().min(0).max(5).default(0).describe('Snap to an edge or corner within this distance, mm') }),
     async run(i) {
       oneOf(i)

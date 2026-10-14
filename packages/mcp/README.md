@@ -75,6 +75,18 @@ These commands require the app link and an edit grant. They can reverse the pers
 
 From the command line, use `slicerx-mcp --printers link call app_history`, then `slicerx-mcp --printers link call app_undo '{"revision":"<revision from the read>"}'`. `app_redo` takes the same argument. The app stays the source of the history; these commands do not fall back to a separate server project.
 
+### Shell and measure the open project
+
+With `--app`, `geom_shell`, `geom_info` and `geom_measure` use a design from the open app. Shell adds an editable history step. Information and measurements accept a read-only app grant and report world coordinates; `step` reads an earlier result without rolling the current body back. Model file arguments still use the local engine.
+
+```sh
+slicerx-mcp --app call design_list
+slicerx-mcp --app call geom_shell '{"design":"<id>","open":[{"at":[0,0,8],"normal":[0,0,1]}],"wall_mm":1}'
+slicerx-mcp --app call geom_info '{"design":"<id>"}' geom_measure '{"design":"<id>","a":{"at":[0,0,1],"normal":[0,0,1]},"b":{"at":[0,0,0],"normal":[0,0,-1]}}'
+```
+
+Use the design id from `design_list` and face points from `geom_faces`. The example picks describe a tray with its floor at Z = 0 to 1 mm and its top at Z = 8 mm.
+
 ### Errors and progress
 
 A refused call has `isError: true`, text of the form `Error: <code>: <message>`, and `structuredContent.error` with the same `code` and `message`. The codes are stable, so a client can branch on them: `invalid_input`, `file_not_found`, `path_not_allowed`, `unsupported_format`, `invalid_model`, `no_such_plate`, `download_failed`, `urls_disabled`, `unknown_profile`, `invalid_settings`, `engine_unavailable`, `slice_failed`, `preflight_blocked`, `project_gcode_review`, `printer_needed`, `project_settings_unused`, `sequence_clearance`, `not_configured`, `auth_failed`, `not_invited`, `quota_exceeded`, `rate_limited`, `service_error`, `not_found`, `not_supported`, `busy` (the open app is in use or asking the person; call again shortly) and `internal_error`, and for locked projects `sxlock_` followed by the format's reason (`sxlock_wrong_account`, `sxlock_offline`, `sxlock_missing_scope` and the rest). `docs/integrators/quickstart.md` says what each means.

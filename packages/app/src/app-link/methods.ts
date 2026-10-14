@@ -69,6 +69,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.fillet': 'edit',
   'geom.chamfer': 'edit',
   'geom.hole': 'edit',
+  'geom.shell': 'edit',
+  'geom.info': 'read',
+  'geom.measure': 'read',
   // A client's dimension sheet: asking puts a question in front of the person, so it is an edit.
   'sheet.ask': 'edit',
   'sheet.get': 'read',
