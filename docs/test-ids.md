@@ -500,7 +500,13 @@ Ids that tests read for their text:
 | `model-select-object` | In the readout, the object the faces or edges are on: selects that object alone |
 | `model-select-made-by` | The step that made the one face picked: opens it; `data-step` is its index, or `base` for "from the original mesh" |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
-| `sketch-dof` | The sketch palette's line from the solver: "Fully defined", the degrees of freedom left, or a conflict; `data-dof` is the count |
+| `sketch-dof` | The drawing card's status from the solver, in its header: "Fully defined", the degrees of freedom left, or a conflict; `data-dof` is the count |
+| `sketch-drawing` | The sketch panel's drawing card: the tools, grid and snap, what shows, and the picked loop's actions |
+| `sketch-solid` | The sketch panel's solid card; it has `data-muted` until the sketch has a closed profile, with its `.tp-card-reason` line on why it can't make a solid yet (the first problem the check found, or what's missing) |
+| `sketch-flip` | Flip beside Distance: `aria-pressed` when the extrusion goes the other way from its default for the result |
+| `sketch-picked` | With Select, the picked curve and its size ("Line, 20.00 mm") |
+| `sketch-pills`, `sketch-pill` | The live numbers beside the cursor in the view while a drawing tool is on (group "Exact size"); each pill has `data-label` (X, Y, Length, Angle...) and the focused one `data-focus`; typing edits it, with inputs named by label and unit |
+| `sketch-look` | Look at the sketch, among the view's camera buttons while a sketch is open |
 | `sketch-finish` | The shelf's Finish sketch button while a sketch is open: the sketch goes in the timeline without a solid |
 | `sketch-ctx` | A finished sketch's menu, from the timeline strip or the Model tree |
 | `sketch-ctx-edit` | In a finished sketch's menu: Edit sketch |

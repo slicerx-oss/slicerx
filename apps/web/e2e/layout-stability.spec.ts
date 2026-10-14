@@ -6,7 +6,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { type Locator, type Page, type TestInfo } from '@playwright/test'
 import { expect, openSheet, plateReady, test, viewportReady } from './fixtures'
-import { command, facePick, freshBox, pick } from './cad-helpers'
+import { command, facePick, freshBox, pick, sketchAt } from './cad-helpers'
 
 type Sx = { setState(p: unknown): void }
 type Moved = { control: string; what: string; dx: number; dy: number; dw: number; dh: number }
@@ -424,6 +424,27 @@ test.describe('controls never move when pressed', () => {
     }
     report(info, moved)
     expect(past).toEqual([])
+    expect(moved).toEqual([])
+  })
+
+  test('the sketch panel with its solid card open', async ({ page, isMobile }, info) => {
+    test.skip(isMobile, 'The tool panels are sheets on a phone; covered at desktop width')
+    await open(page, { settingsMode: 'advanced' })
+    await page.locator('.sx-tab[data-mode="design"]').click()
+    const id = await freshBox(page)
+    await sx(page, { selection: id, selectedIds: [id] })
+    await command(page, 'Sketch on the bed or a face, then extrude or revolve')
+    const panel = page.locator('[data-section="cad-tool"]')
+    await expect(panel).toBeVisible()
+    await pick(page, await facePick(page, id, [0, 0, 1]))
+    await expect(panel).toContainText('A face of')
+    // a closed rectangle opens the solid card; then each control in both cards is pressed
+    await page.locator('body').press('r')
+    await sketchAt(page, 'click', [-3, -3])
+    await sketchAt(page, 'click', [3, 3])
+    await expect(page.getByTestId('sketch-solid')).not.toHaveAttribute('data-muted')
+    const moved = await probe(page, 'Sketch panel', panel)
+    report(info, moved)
     expect(moved).toEqual([])
   })
 

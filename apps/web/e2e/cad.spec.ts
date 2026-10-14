@@ -111,7 +111,7 @@ test('a circle sketched on the top face cuts a hole through the part', async ({ 
   await panel.getByRole('radiogroup', { name: 'Result' }).getByRole('radio', { name: 'Cut' }).click()
   // A cut goes into the face on its own.
   await panel.locator('#sk-dist').fill('25')
-  await expect(panel.getByRole('switch', { name: 'Extrude into the face' })).toHaveAttribute('aria-checked', 'true')
+  await expect(panel.getByTestId('sketch-flip')).toHaveAttribute('aria-pressed', 'false')
   await panel.getByRole('button', { name: 'Extrude' }).click()
   await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Sketch cut 25 mm', state: 'done' }])
   // The bore reaches the bottom: the mesh has points on the bed 4 mm from the face center.

@@ -4,7 +4,7 @@ import { InterleavedBufferAttribute, LineSegments, Matrix4, Mesh, Vector3 } from
 import { Line2 } from 'three/addons/lines/Line2.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { describe, expect, it } from 'vitest'
-import { DimensionLayer, EdgePreview, PushPreview, SketchLayer, frameMatrix, fromPlane, prismMatrix, rayOnPlane, toPlane, type CadFrame } from '../src/cadtools'
+import { DimensionLayer, EdgePreview, PLANE_EDGE, PLANE_EDGE_LIGHT, PLANE_FILL, PLANE_FILL_LIGHT, PushPreview, SketchLayer, frameMatrix, fromPlane, prismMatrix, rayOnPlane, toPlane, type CadFrame } from '../src/cadtools'
 import type { V3 } from '../src/scaling'
 
 const close = (a: readonly number[], b: readonly number[], digits = 6) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i] ?? NaN, digits))
@@ -127,6 +127,21 @@ describe('sketch layer', () => {
     expect(thin()).toHaveLength(1)
     s.cursor(null)
     expect(thin()).toHaveLength(0)
+    s.dispose()
+  })
+
+  it('frames the sketch plane in the accent, firmer on a light studio', () => {
+    const s = new SketchLayer()
+    s.set({ frame: WALL, paths: [], handles: [], plane: { min: [-20, -10], max: [20, 10] } })
+    const plane = s.group.children.filter((o) => o.name === 'sketch-plane') as (Mesh | LineSegments)[]
+    expect(plane).toHaveLength(2)
+    const alpha = () => plane.map((o) => (o.material as { opacity: number }).opacity)
+    expect(alpha()).toEqual([PLANE_FILL, PLANE_EDGE])
+    s.setLight(true)
+    expect(alpha()).toEqual([PLANE_FILL_LIGHT, PLANE_EDGE_LIGHT])
+    expect(PLANE_FILL_LIGHT).toBeGreaterThan(PLANE_FILL)
+    s.setLight(false)
+    expect(alpha()).toEqual([PLANE_FILL, PLANE_EDGE])
     s.dispose()
   })
 })

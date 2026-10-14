@@ -75,9 +75,9 @@ test('keys and the variant row draw a circle, a 3-point rectangle, a pentagon, a
   await families.getByRole('radio', { name: 'Arc' }).click()
   await expect(variants.getByRole('radio', { name: 'Tangent' })).toHaveAttribute('aria-checked', 'true')
 
-  // a new tool starts with an empty readout, not the last tool's
+  // Select has no cursor numbers: the last tool's pills go
   await families.getByRole('radio', { name: 'Select' }).click()
-  await expect(panel.locator('.sketch-readout')).toHaveText('')
+  await expect(page.getByTestId('sketch-pills')).toBeHidden()
 
   await page.getByTestId('sketch-finish').click()
   await expect.poll(async () => (await loops(page)).length, { timeout: 10_000 }).toBe(5)
