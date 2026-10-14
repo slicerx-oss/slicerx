@@ -29,6 +29,15 @@ it('does not select the larger split region or competing coplanar face', async (
   }
 })
 
+it('requires repair when regions of one face id only touch at a vertex', async () => {
+  const split = { ...mesh, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0, -1, 0, 0, 0, -1, 0], indices: [0, 1, 2, 0, 3, 4], faces: { ids: [0, 0], keys: [7], table: mesh.faces!.table } }
+  let calls = 0
+  const r = await replayHistory(async () => { calls++; return { mesh } }, { history: history([split], 7) })
+  expect(r.status[0]).toMatchObject({ state: 'broken', message: expect.stringMatching(/Ambiguous face.*repair/) })
+  expect(r.parts[0]!.positions).toEqual(split.positions)
+  expect(calls).toBe(0)
+})
+
 it.each(['', 'brep: '])('does not fall back after an exact reference failure with prefix %s', async (prefix) => {
   const h = history([], 9)
   h.steps.unshift({ id: 'box', part: 0, transform: [...IDENTITY], params: { op: 'shape.extrude', frame: { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'rectangle', widthMm: 10, heightMm: 10 }, spec: { distanceMm: 5, operation: 'new' } } })
@@ -68,6 +77,7 @@ it('requires repair for deleted, split and merged kernel faces, including after 
     // a unique key survives save/reload and still names the intended face
     const saved = k.call('save', { body: box.body }) as { smb: string }
     const pushed = make('push', { body: { smb: saved.smb }, faceKey: key, at: [2, 2, 20], normal: [0, 0, 1], distanceMm: 1 })
+    expect(pushed).toMatchObject({ faceKey: key })
     expect((k.call('info', { body: pushed.body }) as { volumeMm3: number }).volumeMm3).toBeCloseTo(8400, 6)
   } finally {
     for (const body of held) k.call('free', { body })

@@ -65,6 +65,33 @@ function meshVolume(x: ArrayLike<number>, ix: ArrayLike<number>): number {
 }
 
 describe('B-rep kernel module', () => {
+  it('requires repair for missing and split face keys without changing the solid', async () => {
+    const k = await brep()
+    const { body: cube } = k.call('box', { min: [0, 0, 0], max: [20, 20, 20], keySalt: 71 }) as Body
+    const faces = (k.call('tessellate', { body: cube }) as { faces: { key: number; surface: { normal?: number[] } }[] }).faces
+    const top = faces.find((f) => f.surface.normal?.[2] === 1)!
+    const absent = Math.max(...faces.map((f) => f.key)) + 1
+    const { body: tool } = k.call('box', { min: [6, -1, 17], max: [8, 21, 21], keySalt: 72 }) as Body
+    const { body: split } = k.call('boolean', { op: 'difference', a: cube, b: tool, keySalt: 73 }) as Body
+    try {
+      const splitFaces = (k.call('tessellate', { body: split }) as { faces: { key: number }[] }).faces
+      expect(splitFaces.filter((f) => f.key === top.key)).toHaveLength(2)
+      for (const [body, faceKey, reason] of [[cube, absent, 'missing'], [split, top.key, '(split|ambiguous)']] as const) {
+        const before = k.call('info', { body }) as Info
+        expect(() => k.call('push', { body, at: [5, 5, 20], normal: [0, 0, 1], distanceMm: 1, faceKey })).toThrow(new RegExp(`^faceReference:.*${reason}.*repair`))
+        expect(k.call('info', { body })).toEqual(before)
+      }
+      expect(() => k.call('chamfer', { body: cube, edges: [{ a: [20, 20, 0], b: [20, 20, 20], face: [1, 0, 0], keys: [absent, absent + 1] }], distanceMm: 1 })).toThrow(/^faceReference:.*missing.*repair/)
+      for (const keys of [null, [], [1], [0, 2], [-1, 2], [1.5, 2], ['1', 2], [2 ** 52, 2]]) {
+        expect(() => k.call('chamfer', { body: cube, edges: [{ a: [20, 20, 0], b: [20, 20, 20], face: [1, 0, 0], keys }], distanceMm: 1 })).toThrow(/^faceReference:.*invalid.*repair/)
+      }
+      const front = faces.find((f) => f.surface.normal?.[1] === -1)!
+      expect(() => k.call('chamfer', { body: split, edges: [{ a: [0, 0, 20], b: [6, 0, 20], face: [0, 0, 1], keys: [top.key, front.key] }], distanceMm: 1 })).toThrow(/^faceReference:.*split.*repair/)
+    } finally {
+      for (const body of [split, tool, cube]) k.call('free', { body })
+    }
+  })
+
   it('cuts a hole as deep as the part into a closed solid', async () => {
     const k = await brep()
     const { body: cube } = k.call('box', { min: [0, 0, 0], max: [20, 20, 20] }) as Body

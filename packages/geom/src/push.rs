@@ -6,11 +6,12 @@ use crate::boolean::{self, BoolOp, BooleanOptions};
 use crate::build;
 use crate::error::{Error, Result};
 use crate::face::{self, ExtrudeReport, FaceFrame, Operation};
+use crate::faces::{self, Surface};
 use crate::mesh::TriMesh;
 use crate::poly2d::{self, Polygon};
 use crate::vec3::{self, V3};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// the prism reaches this far past the face, so the boolean never meets two coincident faces
 const OVERLAP_MM: f64 = 0.01;
@@ -140,6 +141,7 @@ pub fn push_face(
     let pick = face::pick_face(mesh, triangle, at)?;
     let (mut tool, operation) = preview(&pick.frame, &pick.outline, distance_mm)?;
     on_corners(&mut tool, mesh, &pick.triangles, &pick.frame, distance_mm);
+    carry_keys(&mut tool, mesh, triangle, &pick.triangles, &pick.frame);
     let before = boolean::Solid::new(mesh)?;
     let v0 = before.volume();
     let solid = boolean::Solid::new(&tool)?;
@@ -170,6 +172,79 @@ pub fn push_face(
             distance_mm,
         },
     })
+}
+
+// the moved cap and extensions of its adjacent planes retain their source identity.
+#[allow(clippy::indexing_slicing, reason = "validated meshes and face tables")]
+fn carry_keys(tool: &mut TriMesh, mesh: &TriMesh, triangle: u32, region: &[u32], frame: &FaceFrame) {
+    let Some(source) = mesh.faces.as_ref().filter(|f| !f.keys.is_empty()) else {
+        return;
+    };
+    let Some(&id) = source.ids.get(triangle as usize) else {
+        return;
+    };
+    let Some(&key) = source.keys.get(id as usize).filter(|&&key| key != 0) else {
+        return;
+    };
+    let mut border = HashSet::new();
+    let region: HashSet<u32> = region.iter().copied().collect();
+    for (i, tri) in mesh.triangles.iter().enumerate() {
+        if !u32::try_from(i).is_ok_and(|i| region.contains(&i)) {
+            continue;
+        }
+        for j in 0..3 {
+            let (a, b) = (tri[j], tri[(j + 1) % 3]);
+            let edge = (a.min(b), a.max(b));
+            if !border.insert(edge) {
+                border.remove(&edge);
+            }
+        }
+    }
+    let adjacent: HashSet<u32> = mesh
+        .triangles
+        .iter()
+        .enumerate()
+        .filter_map(|(i, tri)| {
+            if u32::try_from(i).is_ok_and(|i| region.contains(&i)) {
+                return None;
+            }
+            (0..3)
+                .any(|j| {
+                    let (a, b) = (tri[j], tri[(j + 1) % 3]);
+                    border.contains(&(a.min(b), a.max(b)))
+                })
+                .then(|| source.ids[i])
+        })
+        .collect();
+    let mut target = faces::recognize(tool);
+    target.keys = faces::fresh_keys(target.table.len());
+    if target.keys.is_empty() {
+        target.keys.resize(target.table.len(), 0);
+    }
+    for (i, &surface) in target.table.iter().enumerate() {
+        let Surface::Plane { normal, .. } = surface else {
+            continue;
+        };
+        if vec3::dot(normal, frame.normal).abs() > 0.999_998 {
+            target.keys[i] = key;
+            continue;
+        }
+        let matches: HashSet<u64> = adjacent
+            .iter()
+            .filter_map(|&id| {
+                let old = source.table[id as usize];
+                (faces::same_plane(surface, old, 1e-6) || faces::same_plane(surface.flipped(), old, 1e-6))
+                    .then(|| source.keys[id as usize])
+            })
+            .filter(|&key| key != 0)
+            .collect();
+        if matches.len() == 1
+            && let Some(&key) = matches.iter().next()
+        {
+            target.keys[i] = key;
+        }
+    }
+    tool.faces = Some(target);
 }
 
 #[cfg(test)]
@@ -222,6 +297,25 @@ mod tests {
                 per_face[i as usize] += 1;
             }
             assert_eq!(per_face, vec![2; 6], "pull {d}");
+        }
+    }
+
+    #[test]
+    fn a_moved_cap_and_its_wall_extensions_keep_their_keys() {
+        let mut m = build::box_mesh([0.0; 3], [20.0, 20.0, 20.0]);
+        faces::with_key_salt(Some(11), || faces::base_keys(&mut m));
+        let original = m.faces.as_ref().unwrap();
+        for distance in [-3.0, 4.0] {
+            let out = faces::with_key_salt(Some(12), || push(&m, [0.0, 0.0, 1.0], 20.0, distance))
+                .unwrap()
+                .mesh;
+            let after = out.faces.as_ref().unwrap();
+            for &key in &original.keys {
+                assert!(
+                    faces::resolve_key(&out, after, key).is_ok(),
+                    "distance {distance}, key {key}"
+                );
+            }
         }
     }
 

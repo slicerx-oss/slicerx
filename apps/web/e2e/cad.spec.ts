@@ -367,11 +367,15 @@ test('editing an earlier step replays the steps after it; suppress and delete wo
   expect((await bounds(page, id)).triangles).toBeGreaterThan(12)
   expect(filleted).toBeGreaterThan(12)
 
-  // Suppressing the pull drops it. The fillet's edge was on the pulled top, so that step breaks and says why.
+  // Suppressing the pull keeps the original cap and wall identities, so the fillet follows their edge back.
+  const edgeKeys = async () => ((await state(page)).plate.find((p) => p.id === id)?.history?.steps[1] as { params: { edges: { keys?: number[] }[] } }).params.edges[0]?.keys
+  const selectedKeys = await edgeKeys()
+  expect(selectedKeys).toHaveLength(2)
   await clickStepButton(page, 'Pull 10 mm', 'Suppress Pull 10 mm')
-  await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Pull 10 mm', state: 'suppressed' }, { name: 'Fillet 2 mm', state: 'broken' }])
-  await expect(page.locator('.cad-step[data-state=broken] .cad-step-why')).not.toBeEmpty()
+  await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Pull 10 mm', state: 'suppressed' }, { name: 'Fillet 2 mm', state: 'done' }])
   await expect.poll(() => height(page, id)).toBe(20)
+  expect((await bounds(page, id)).triangles).toBeGreaterThan(12)
+  expect(await edgeKeys()).toEqual(selectedKeys)
   await clickStepButton(page, 'Pull 10 mm', 'Turn Pull 10 mm back on')
   await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Pull 10 mm', state: 'done' }, { name: 'Fillet 2 mm', state: 'done' }])
   await expect.poll(() => height(page, id), { timeout: 30_000 }).toBe(30)

@@ -971,7 +971,22 @@ SmTArray<SmEdge*> edges_of(SmBrep* b, const Value& refs)
     for (size_t i = 0; i < refs.a.size(); ++i) {
         const Value& ref = refs.a[i];
         const Value& ks = ref["keys"];
-        bool keyed = ks.kind == Value::Array && ks.a.size() == 2 && ks.a[0].kind == Value::Number && ks.a[1].kind == Value::Number;
+        bool keyed = ref.kind == Value::Object && ref.o.count("keys") != 0;
+        if (keyed && (ks.kind != Value::Array || ks.a.size() != 2))
+            throw Error("faceReference", "invalid edge face keys; repair the reference before editing");
+        if (keyed) for (const Value& k : ks.a)
+            if (k.kind != Value::Number || !std::isfinite(k.n) || k.n <= 0 || k.n >= 4503599627370496.0 || k.n != std::floor(k.n))
+                throw Error("faceReference", "invalid edge face key; repair the reference before editing");
+        if (keyed) {
+            SmTArray<SmFace*> faces;
+            check(SmApiGetFaces(b, faces), "faces");
+            for (size_t k = 0; k < 2; ++k) {
+                size_t matches = 0;
+                for (ULONG j = 0; j < faces.GetSize(); ++j)
+                    if (face_key(faces[j]) == (unsigned long long)ks.a[k].n) ++matches;
+                if (matches != 1) throw Error("faceReference", matches ? "the edge's face reference was split; repair the reference before editing" : "the edge's face reference is missing; repair the reference before editing");
+            }
+        }
         SmEdge* best = nullptr;
         double first = 1e30, second = 1e30;
         for (ULONG j = 0; j < all.GetSize(); ++j) {
@@ -986,8 +1001,10 @@ SmTArray<SmEdge*> edges_of(SmBrep* b, const Value& refs)
             }
         }
         // a keyed edge may have moved along its faces (a push since), so only a near tie counts against it
-        if (!best || (!keyed && first > tol) || second < first + tol)
+        if (!best || (!keyed && first > tol) || second < first + tol) {
+            if (keyed) throw Error("faceReference", "edge " + std::to_string(i) + (best ? " is ambiguous; repair the reference before editing" : " has a missing face reference; repair the reference before editing"));
             throw Error("edges", "edge " + std::to_string(i) + " is not on the body");
+        }
         for (ULONG j = 0; j < out.GetSize(); ++j)
             if (out[j] == best) throw Error("edges", "edge " + std::to_string(i) + " is named twice");
         out.Add(best);

@@ -236,8 +236,9 @@ export function findByKey(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'fac
   const tris: number[] = []
   for (let k = 0; k < ix.length / 3; k++) if (f.keys[f.ids[k] ?? -1] === key) tris.push(k)
   if (!tris.length) return null
-  // The parts of the face: triangles joined through shared vertices.
+  // The parts of the face: triangles joined across edges, not only at a point.
   const parent = new Map<number, number>()
+  const edges = new Map<string, number>()
   const root = (v: number): number => {
     let r = v
     while (parent.has(r) && parent.get(r) !== r) r = parent.get(r)!
@@ -245,13 +246,17 @@ export function findByKey(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'fac
   }
   for (const k of tris) {
     const [a, b, c] = [ix[3 * k]!, ix[3 * k + 1]!, ix[3 * k + 2]!]
-    for (const v of [a, b, c]) if (!parent.has(v)) parent.set(v, v)
-    parent.set(root(b), root(a))
-    parent.set(root(c), root(a))
+    if (!parent.has(k)) parent.set(k, k)
+    for (const [u, v] of [[a, b], [b, c], [c, a]] as [number, number][]) {
+      const edge = `${Math.min(u, v)},${Math.max(u, v)}`
+      const other = edges.get(edge)
+      if (other !== undefined) parent.set(root(k), root(other))
+      else edges.set(edge, k)
+    }
   }
-  const regions = new Set(tris.map((k) => root(ix[3 * k]!)))
+  const components = new Set(tris.map(root))
   const faces = new Set(tris.map((k) => f.ids[k]))
-  if (regions.size > 1 || faces.size > 1) return { triangle: -1, at, split: true }
+  if (components.size > 1 || faces.size > 1) return { triangle: -1, at, split: true }
   const corners = (k: number) => [0, 1, 2].map((j) => point(t, p, 3 * ix[3 * k + j]!)) as [Vec3, Vec3, Vec3]
   let best = -1
   let bestD = Infinity
