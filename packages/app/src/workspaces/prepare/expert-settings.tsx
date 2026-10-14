@@ -39,7 +39,7 @@ export const INTENTS: readonly { id: SettingIntent; label: string; icon: IconNam
 ]
 
 /** Units as a person reads them; a temperature difference is still in degrees Celsius. */
-const UNIT_TEXT: Readonly<Record<string, string>> = { C: '°C', 'delta-C': '°C', deg: '°', mm3: 'mm³', 'mm3/s': 'mm³/s', 'mm/s2': 'mm/s²' }
+const UNIT_TEXT: Readonly<Record<string, string>> = { C: '°C', 'delta-C': '°C', deg: '°', mm3: 'mm³', 'mm3/s': 'mm³/s', 'mm3/s2': 'mm³/s²', 'mm/s2': 'mm/s²' }
 
 /** Settings the prime tower row's atlas line sets: they are not listed as rows. */
 const ATLAS_KEYS = new Set(['prime_tower_auto_position', 'wipe_tower_x', 'wipe_tower_y'])
@@ -124,9 +124,10 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     const options = offeredValues(def, scalar).map(({ value: v, label }) => {
       const icon = marks[v]
       const tip = OPTION_TIPS[`${def.key}.${v}`]
-      return { value: v, label: icon ? <span className="seg-mark"><Icon name={icon} size={15} />{label}</span> : label, ...(tip ? { title: tip.body } : {}) }
+      // The option keeps its own name; its tip has the name as title and the longer copy under it.
+      return { value: v, label: icon ? <span className="seg-mark"><Icon name={icon} size={15} />{label}</span> : label, ...(tip ? { tip: { title: tip.title, body: tip.body } } : {}) }
     })
-    control = <Seg label={def.label ?? def.key} size="sm" value={String(scalar ?? '')} options={locked ? options.map((o) => ({ ...o, disabled: true })) : options} onChange={(v) => setOverride(def.key, v)} className="tier-seg" />
+    control = <Seg label={def.label ?? def.key} size="sm" full value={String(scalar ?? '')} options={locked ? options.map((o) => ({ ...o, disabled: true })) : options} onChange={(v) => setOverride(def.key, v)} className="tier-seg" />
   } else if (def.type === 'enum') {
     control = (
       <select id={id} className="mini" value={mixed ? '' : String(scalar ?? '')} disabled={Boolean(locked)} {...optionTipAttrs(def.key, scalar)} onChange={(e) => e.currentTarget.value && setOverride(def.key, e.currentTarget.value)}>
@@ -141,37 +142,36 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     )
   } else {
     control = (
-      <span className="num">
-        <input
-          id={id}
-          key={String(scalar)}
-          className="mini sx-mono"
-          inputMode="decimal"
-          placeholder={mixed ? 'Mixed' : def.auto ? 'Auto' : undefined}
-          disabled={Boolean(locked)}
-          defaultValue={mixed || isAuto(def, scalar) ? '' : String(scalar ?? '')}
-          onBlur={(e) => {
-            const shown = mixed || isAuto(def, scalar) ? '' : String(scalar ?? '')
-            if (e.currentTarget.value === shown) return
-            const v = parseInput(def, e.currentTarget.value)
-            if (v !== undefined) setOverride(def.key, v)
-            else e.currentTarget.value = shown
-          }}
-          onFocus={(e) => e.currentTarget.select()}
-          onMouseUp={(e) => {
-            // The click that focuses the field would drop the selection again.
-            if (e.currentTarget.dataset.sel === '1') e.preventDefault()
-            delete e.currentTarget.dataset.sel
-          }}
-          onMouseDown={(e) => {
-            if (document.activeElement !== e.currentTarget) e.currentTarget.dataset.sel = '1'
-          }}
-          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-        />
-        <span className="unit">{def.unit && def.unit !== '%' ? (UNIT_TEXT[def.unit] ?? def.unit) : def.type === 'percent' ? '%' : ''}</span>
-      </span>
+      <input
+        id={id}
+        key={String(scalar)}
+        className="mini num"
+        inputMode="decimal"
+        placeholder={mixed ? 'Mixed' : def.auto ? 'Auto' : undefined}
+        disabled={Boolean(locked)}
+        defaultValue={mixed || isAuto(def, scalar) ? '' : String(scalar ?? '')}
+        onBlur={(e) => {
+          const shown = mixed || isAuto(def, scalar) ? '' : String(scalar ?? '')
+          if (e.currentTarget.value === shown) return
+          const v = parseInput(def, e.currentTarget.value)
+          if (v !== undefined) setOverride(def.key, v)
+          else e.currentTarget.value = shown
+        }}
+        onFocus={(e) => e.currentTarget.select()}
+        onMouseUp={(e) => {
+          // The click that focuses the field would drop the selection again.
+          if (e.currentTarget.dataset.sel === '1') e.preventDefault()
+          delete e.currentTarget.dataset.sel
+        }}
+        onMouseDown={(e) => {
+          if (document.activeElement !== e.currentTarget) e.currentTarget.dataset.sel = '1'
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+      />
     )
   }
+  // A number's unit is written once, beside the label (the number fields rule), so every field ends at one edge.
+  const unit = def.type === 'bool' || def.type === 'enum' ? '' : def.unit && def.unit !== '%' ? (UNIT_TEXT[def.unit] ?? def.unit) : def.type === 'percent' ? '%' : ''
   return (
     <li
       className={[overridden ? 'field changed' : 'field', scoped?.source === 'plate' ? 'inherited' : '', locked ? 'locked' : ''].filter(Boolean).join(' ')}
@@ -184,6 +184,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     >
       <label htmlFor={id}>
         {def.label}
+        {unit ? <span className="field-unit">{unit}</span> : null}
         {showKey ? <span className="key">{def.key}</span> : null}
         {scoped && !locked ? <span className="scope-from">{scoped.source === 'plate' ? 'from plate' : scoped.source === 'mixed' ? 'differs across the selection' : `plate ${formatValue(def, scoped.plateValue)}`}</span> : null}
       </label>
@@ -247,7 +248,8 @@ function ChoiceRow({ name, config, overrides }: { name: string; config: Record<s
   if (!choice) return null
   const first = (v: SettingValue | undefined) => (Array.isArray(v) ? v[0] : v)
   const current = Object.entries(choice.values).find(([, keys]) => Object.entries(keys).every(([k, v]) => String(first(config[k]) ?? '') === String(v)))?.[0] ?? ''
-  const options = Object.keys(choice.values).map((v) => ({ value: v, label: choice.labels[v] ?? v, title: choice.hints[v] ?? '' }))
+  // Each option keeps its own name; the hint is its tip.
+  const options = Object.keys(choice.values).map((v) => ({ value: v, label: choice.labels[v] ?? v, ...(choice.hints[v] ? { tip: { title: choice.labels[v] ?? v, body: choice.hints[v] } } : {}) }))
   const pick = (v: string) => {
     const keys = choice.values[v] ?? {}
     set((s) => {
@@ -267,7 +269,7 @@ function ChoiceRow({ name, config, overrides }: { name: string; config: Record<s
         {choice.label}
         {showKey ? <span className="key">{Object.keys(Object.values(choice.values)[0] ?? {}).join(', ')}</span> : null}
       </label>
-      <Seg label={choice.label} size="sm" value={current} options={options} onChange={pick} className="tier-seg" />
+      <Seg label={choice.label} size="sm" full value={current} options={options} onChange={pick} className="tier-seg" />
       <span className="reset" aria-hidden="true" />
     </li>
   )

@@ -49,6 +49,8 @@
 .ap-text > span { font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--fg); }
 .ap-ctl { display: flex; align-items: center; gap: 8px; flex: none; }
 .ap-ctl .sx-selectwrap { min-width: 168px; }
+/* The select fills its wrap, so its arrow sits inside it: every select in a row is one width. */
+.ap-ctl .sx-selectwrap > .sx-select { width: 100%; }
 @media (max-width: 560px) { .ap-ctl { padding-left: 30px; } .ap-ctl .sx-seg { flex: 1; } }
 .ap-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 .ap-swatch { width: 24px; height: 24px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 25%, transparent); }
