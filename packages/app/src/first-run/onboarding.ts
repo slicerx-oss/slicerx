@@ -48,11 +48,16 @@ function tabStore(): Storage | null {
   }
 }
 
-/** Notes the step setup shows, or that it closed, for the tab's session: a reload in the middle of setup comes back to it. */
-export function noteSetupOpen(step: string | null): void {
+/**
+ * Notes the step setup shows, or that it closed, for the tab's session: a reload in the middle of setup comes back to
+ * it. Only a guided run is kept (`start` when it opens: the first launch or a re-run); a printer setup opened from the
+ * printer picker is a dialog, and a reload closes it as before.
+ */
+export function noteSetupOpen(step: string | null, start = false): void {
   try {
-    if (step && OPEN_STEPS.includes(step)) tabStore()?.setItem(OPEN_KEY, step)
-    else tabStore()?.removeItem(OPEN_KEY)
+    const store = tabStore()
+    if (!step || !OPEN_STEPS.includes(step)) store?.removeItem(OPEN_KEY)
+    else if (start || store?.getItem(OPEN_KEY)) store?.setItem(OPEN_KEY, step)
   } catch {
     // storage refused: a reload leaves setup, as before
   }

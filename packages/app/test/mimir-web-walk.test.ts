@@ -81,11 +81,18 @@ describe('a reload keeps the conversation', () => {
 
 describe('a reload in the middle of setup', () => {
   it('notes the step for the tab and forgets it when setup closes', () => {
+    noteSetupOpen('welcome', true)
     noteSetupOpen('printer')
     expect(setupOpenAtReload()).toBe('printer')
     noteSetupOpen(null)
     expect(setupOpenAtReload()).toBeNull()
     noteSetupOpen('nonsense')
+    expect(setupOpenAtReload()).toBeNull()
+  })
+
+  it('keeps no printer setup opened from the printer picker', () => {
+    noteSetupOpen(null)
+    noteSetupOpen('printer')
     expect(setupOpenAtReload()).toBeNull()
   })
 

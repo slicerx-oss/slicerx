@@ -852,9 +852,10 @@ function alwaysAutoSliceDefault(): boolean {
 const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 // the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
-noteSetupOpen(appStore.getState().setup?.step ?? null)
+const setup0 = appStore.getState().setup
+noteSetupOpen(setup0?.step ?? null, setup0 !== null)
 appStore.subscribe((s, prev) => {
-  if (s.setup !== prev.setup && (s.setup === null || prev.setup === null)) noteSetupOpen(s.setup?.step ?? null)
+  if (s.setup !== prev.setup && (s.setup === null || prev.setup === null)) noteSetupOpen(s.setup?.step ?? null, s.setup?.step === 'welcome' || s.setup?.rerun === true)
 })
 
 appStore.subscribe((s, prev) => {
