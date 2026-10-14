@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The plate list: every plate with its object count, the add button, and per-plate settings (name,
-// bed type, print sequence, filament order). Drawn as thumbnails along the bottom of the viewport,
-// or as a sidebar block, per the look and feel.
+// bed type, print sequence, filament order), as a sidebar block for looks that keep plates there. The settings form is
+// also the plate picker's (plate-picker.tsx).
 import type { LayoutSpec } from '@slicerx/contracts'
 import { Block, Button, Icon, Select, tipAttrs } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
@@ -31,7 +31,7 @@ function useGlobalSequence(): 'by-layer' | 'by-object' {
 
 const SEQUENCE_LABEL = { 'by-layer': 'By layer', 'by-object': 'By object' } as const
 
-function PlateSettingsForm({ plate, slots, canDelete, onDone }: { plate: PlateMeta; slots: number; canDelete: boolean; onDone: () => void }) {
+export function PlateSettingsForm({ plate, slots, canDelete, onDone }: { plate: PlateMeta; slots: number; canDelete: boolean; onDone: () => void }) {
   const [name, setName] = useState(plate.name)
   const order = plate.settings.filamentOrder ?? Array.from({ length: slots }, (_, i) => i + 1)
   const move = (i: number, d: -1 | 1) => {
@@ -113,7 +113,11 @@ function useSlots(): number {
   return useApp((s) => slotsOnPlate(s.plate))
 }
 
-export function PlateList({ layout }: { layout: LayoutSpec }) {
+/**
+ * The plate list as a sidebar block, for looks that keep their plates in the sidebar. In the view, the plate picker
+ * (plate-picker.tsx) shows the plates instead.
+ */
+export function PlateList(_props: { layout: LayoutSpec }) {
   const { plates, active, activeCount } = usePlates()
   const activeObjects = useApp((s) => s.plate)
   const bed = useApp((s) => s.bed)
@@ -121,17 +125,6 @@ export function PlateList({ layout }: { layout: LayoutSpec }) {
   const slots = useSlots()
   const editingPlate = plates.find((p) => p.id === editing)
   const global = useGlobalSequence()
-  // The SlicerX preset hides a lone plate; a second one shows the list.
-  if (layout.plateList === 'hidden-single' && plates.length === 1 && !editing) {
-    return (
-      <div className="plate-strip single">
-        <Button size="sm" variant="ghost" icon="new-plate" onClick={() => addPlate()} tip="plate.add">
-          Add plate
-        </Button>
-        <Button size="sm" variant="ghost" icon="settings" aria-label="Plate settings" tip="plate.settings" onClick={() => setEditing(active)} />
-      </div>
-    )
-  }
   const list = (
     <ul className="plate-cards" aria-label="Plates">
       {plates.map((p, i) => {
@@ -158,18 +151,10 @@ export function PlateList({ layout }: { layout: LayoutSpec }) {
     </ul>
   )
   const form = editingPlate ? <PlateSettingsForm key={editingPlate.id} plate={editingPlate} slots={slots} canDelete={plates.length > 1} onDone={() => setEditing(null)} /> : null
-  if (layout.plateList === 'sidebar') {
-    return (
-      <Block title="Plates" aside={`${plates.length}`} data-section="plates">
-        {list}
-        {form}
-      </Block>
-    )
-  }
   return (
-    <div className="plate-strip sx-overlay">
+    <Block title="Plates" aside={`${plates.length}`} data-section="plates">
       {list}
-      {form ? <div className="plate-strip-form">{form}</div> : null}
-    </div>
+      {form}
+    </Block>
   )
 }
