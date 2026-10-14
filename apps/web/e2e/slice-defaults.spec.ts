@@ -50,11 +50,11 @@ test.describe('Slice tab defaults', () => {
     await expect(tab).toHaveAttribute('aria-expanded', 'false')
     await expect(dock.getByRole('button', { name: 'Play print' })).toBeVisible()
     await expect(dock.getByLabel('Time', { exact: true })).toBeHidden()
-    // The tab sits on the bar's top edge, in the middle, and is big enough to hit.
+    // The tab sits on the bar's top edge, near its right end, and is big enough to hit.
     const t = (await tab.boundingBox())!
     const d = (await dock.boundingBox())!
     expect(Math.abs(t.y + t.height - d.y)).toBeLessThan(1.5)
-    expect(Math.abs(t.x + t.width / 2 - (d.x + d.width / 2))).toBeLessThan(1.5)
+    expect(Math.abs(d.x + d.width - (t.x + t.width) - 24)).toBeLessThan(1.5)
     expect(t.width).toBeGreaterThanOrEqual(72)
     expect(t.height).toBeGreaterThanOrEqual(22)
     await tab.click()
@@ -70,6 +70,67 @@ test.describe('Slice tab defaults', () => {
     await reloaded(page)
     await slice(page)
     await expect(page.getByTestId('preview-drawer')).toHaveAttribute('data-mode', 'full')
+  })
+
+  test('the bar keeps transport and speed on one row and the view checks with the readout on the next, and its tab never meets the plate chip', async ({ page }) => {
+    for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1024, height: 768 }]) {
+      await page.setViewportSize(size)
+      if (size.width === 1440) {
+        await open(page)
+        await slice(page)
+        // Both panes open: the narrowest view at this width.
+        if ((await page.getByTestId('edge-tab-right').getAttribute('aria-expanded')) !== 'true') await page.getByTestId('edge-tab-right').click()
+      }
+      const dock = page.getByTestId('preview-drawer')
+      const tab = dock.getByTestId('edge-tab-bottom')
+      for (const want of ['slim', 'full'] as const) {
+        if ((await dock.getAttribute('data-mode')) !== want) await tab.click()
+        await expect(dock).toHaveAttribute('data-mode', want)
+        await page.waitForTimeout(250)
+        const mid = async (sel: string) => { const b = (await dock.locator(sel).first().boundingBox())!; return b.y + b.height / 2 }
+        const play = await mid('button[aria-label="Play print"]')
+        const speed = await mid('[role="radiogroup"]')
+        const head = await mid('[data-testid="pv-show-toolhead"]')
+        const gantry = await mid('[data-testid="pv-show-gantry"]')
+        const follow = await mid('label:has-text("Follow nozzle") input')
+        const read = await mid('.dock-read')
+        const where = `${size.width} ${want}`
+        expect(Math.abs(play - speed), where).toBeLessThan(4)
+        expect(Math.abs(head - gantry), where).toBeLessThan(2)
+        expect(Math.abs(head - follow), where).toBeLessThan(2)
+        expect(Math.abs(head - read), where).toBeLessThan(4)
+        expect(head - play, where).toBeGreaterThan(16)
+        // The tab and the plate chips never meet.
+        const t = (await tab.boundingBox())!
+        for (const chip of await page.locator('.vp > .hud-bl > *').all()) {
+          const c = await chip.boundingBox()
+          if (!c) continue
+          const apart = c.x + c.width + 8 <= t.x || t.x + t.width + 8 <= c.x || c.y + c.height + 8 <= t.y || t.y + t.height + 8 <= c.y
+          expect(apart, `${where}: chip ${JSON.stringify(c)} tab ${JSON.stringify(t)}`).toBe(true)
+        }
+      }
+      // The slider tracks run to the readout column: no more than the readout's own column and gaps after them.
+      const time = (await dock.locator('#pv-time').boundingBox())!
+      const out = (await dock.locator('output[for="pv-time"]').boundingBox())!
+      expect(out.x - (time.x + time.width), `${size.width}`).toBeLessThan(24)
+    }
+  })
+
+  test('the pinned printer and filaments end on a row edge, never through a row', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await open(page)
+    await slice(page)
+    for (const size of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }, { width: 1440, height: 700 }]) {
+      await page.setViewportSize(size)
+      await page.waitForTimeout(300)
+      const cut = await page.evaluate(() => {
+        const pin = document.querySelector('aside.pane[data-side="left"] .sx-rail-pin')!
+        const bottom = pin.getBoundingClientRect().bottom
+        const rows = '.machine-card, .sx-block-h, .slot-rail-wrap, .rail-foot, .sx-switchrow, .nozzle-row'
+        return Array.from(pin.querySelectorAll(rows)).map((r) => r.getBoundingClientRect()).filter((r) => r.height > 0 && r.top < bottom - 1 && r.bottom > bottom + 1).length
+      })
+      expect(cut, `${size.width}x${size.height}`).toBe(0)
+    }
   })
 
   test('Show toolhead starts on and Show gantry off, each its own switch', async ({ page }) => {
