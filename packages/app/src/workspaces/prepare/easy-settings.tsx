@@ -185,7 +185,7 @@ export function EasySettingsPanel() {
       </div>
       <Seg<Goal> label="Goal" full className="goal-seg goal-tiles" value={shownGoal} options={tiles} onChange={(g) => !scoped && g !== 'custom' && pickGoal(g)} />
 
-      <div className="srow" {...settingTipAttrs('layer_height', '.srow')}>
+      <div className="srow" data-compact={!more || undefined} {...settingTipAttrs('layer_height', '.srow')}>
         <div className="srow-h">
           <span className="lbl-strong" id="easy-layer-label">
             Layer height
@@ -270,7 +270,7 @@ export function EasySettingsPanel() {
       </>
       ) : null}
 
-      <div className="srow" {...settingTipAttrs('enable_support', '.srow')} data-tip-demo="supports">
+      <div className="srow" data-compact={!more || undefined} {...settingTipAttrs('enable_support', '.srow')} data-tip-demo="supports">
         <div className="srow-h">
           <span className="lbl-strong">Supports</span>
         </div>

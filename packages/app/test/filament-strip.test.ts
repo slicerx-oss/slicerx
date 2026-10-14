@@ -28,13 +28,13 @@ describe('the filament strip', () => {
     expect(stripSlots(all, 5).map((s) => s.index)).toEqual([1, 2, 3, 4, 5])
   })
 
-  it('draws the unused slot dimmed with the Not used hint, and keeps the slot ids as labels', () => {
+  it('marks the unused slot with the Not used hint, and keeps the slot ids as labels', () => {
     const slots = stripSlots(resolveSlots(project([1, 2, 4, 5])), 0)
     const el = document.createElement('div')
     document.body.appendChild(el)
     flushSync(() => createRoot(el).render(createElement(SlotRail, { slots, left: () => null })))
     const rings = [...el.querySelectorAll('[data-testid="slice-filament-slot"]')]
-    expect(rings.map((r) => r.querySelector('.sx-swatch-label')?.textContent)).toEqual(['1', '2', '3', '4', '5'])
+    expect(rings.map((r) => r.querySelector('.spool-id')?.textContent)).toEqual(['1', '2', '3', '4', '5'])
     expect(rings[2]!.getAttribute('data-used')).toBe('false')
     expect(rings[2]!.getAttribute('data-tip-body')).toMatch(/^Not used/)
     expect(rings[3]!.getAttribute('data-used')).toBe('true')

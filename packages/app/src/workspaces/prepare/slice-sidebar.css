@@ -8,3 +8,7 @@
 @media (min-width: 901px) {
   .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane:has(.sx-rail-foot) .sx-rail-body > .pane-body { padding-bottom: var(--s-2); }
 }
+/* Compact settings keep the completed estimate and Print in view at desktop height. */
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block:has(.srow[data-compact]) { padding-bottom: var(--s-2); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block:has(.srow[data-compact]) > .sx-block-h { margin-bottom: var(--s-2); }
+.sx-block:has(.srow[data-compact]) .scope-bar { margin-bottom: var(--s-2); }

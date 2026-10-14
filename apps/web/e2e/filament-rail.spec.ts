@@ -361,14 +361,15 @@ test("with the printer's slots, the rail says where they come from, has no add, 
 const NEAR = { 1: { type: 'PLA', brand: '', color: '#282a36' }, 2: { type: 'PLA', brand: '', color: '#f8f8f2' }, 3: { type: 'PLA', brand: '', color: '#ff5555' }, 4: { type: 'PLA', brand: '', color: '#1a1a1a' } }
 const edged = (page: Page, n: number) => slot(page, n).locator('.sx-swatch-ring')
 
-test('the rail shows every filament in order, a gap in the ids dimmed with a Not used hint', async ({ page }) => {
+test('the rail keeps filament numbering across gaps and identifies unused slots', async ({ page }) => {
   await open(page, { ...UNCONNECTED })
   const hand = { type: 'PLA', brand: '', color: '#ff5555' }
   // Slots 1, 2 and 4 are set; slot 3 sits between them and nothing prints with it.
   await sx(page, { slotSetup: { 1: hand, 2: hand, 4: hand } })
   await expect(page.getByTestId('slice-filament-slot')).toHaveCount(4)
-  await expect(page.getByTestId('slice-filament-slot').locator('.sx-swatch-label')).toHaveText(['1', '2', '3', '4'])
+  await expect(page.getByTestId('slice-filament-slot').locator('.spool-id')).toHaveText(['1', '2', '3', '4'])
   await expect(slot(page, 3)).toHaveAttribute('data-used', 'false')
+  await expect(slot(page, 3)).toHaveAttribute('data-parts', '0')
   await expect(slot(page, 3)).toHaveAttribute('data-tip-body', /^Not used/)
 })
 
