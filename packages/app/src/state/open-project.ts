@@ -177,7 +177,7 @@ async function addProjectShown(
     if (plate.marks?.length) {
       const { customGcodeProblem, markId } = await import('../plate/layer-marks')
       // Custom text from a file is untrusted: it passes the same check as text typed in.
-      const ok = plate.marks.filter((m) => m.kind !== 'custom' || customGcodeProblem(m.gcode ?? '') === null).map((m) => ({ id: markId(), z: m.z, kind: m.kind, ...(m.kind === 'custom' ? { gcode: (m.gcode ?? '').trim() } : {}) }))
+      const ok = plate.marks.filter((m) => m.kind !== 'custom' || customGcodeProblem(m.gcode ?? '') === null).map((m) => ({ id: markId(), z: m.z, kind: m.kind, ...(m.kind === 'custom' ? { gcode: (m.gcode ?? '').trim() } : {}), ...(m.kind === 'color_change' && m.slot ? { slot: m.slot } : {}) }))
       mine(() => set((s) => ({ layerMarks: { ...s.layerMarks, [s.activePlate]: [...(s.layerMarks[s.activePlate] ?? []), ...ok].sort((a, b) => a.z - b.z) } })))
     }
     const sequence = plate.sequence

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { beforeEach, describe, expect, it } from 'vitest'
-import { addMark, customGcodeProblem, layerGcodeByHeight, marksFor, removeMark } from '../src/plate/layer-marks'
+import { addMark, customGcodeProblem, layerGcodeByHeight, marksFor, nextSlot, removeMark, setMarkSlot } from '../src/plate/layer-marks'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 describe('layer marks', () => {
@@ -31,6 +31,24 @@ describe('layer marks', () => {
   })
 })
 
+describe('the filament a color change goes to', () => {
+  beforeEach(() => set({ layerMarks: {}, activePlate: 'plate-1' }))
+
+  it('defaults to the slot after the last color change below, and keeps the G-code the same', () => {
+    expect(nextSlot(2, [], 4)).toBe(2)
+    const a = addMark(2, 'color_change', undefined, undefined, 2)!
+    expect(nextSlot(4, marksFor(), 4)).toBe(3)
+    expect(nextSlot(1, marksFor(), 4)).toBe(2)
+    addMark(4, 'color_change', undefined, undefined, 4)
+    expect(nextSlot(6, marksFor(), 4)).toBe(1)
+    setMarkSlot(a.id, 3)
+    expect(marksFor().find((m) => m.id === a.id)?.slot).toBe(3)
+    expect(layerGcodeByHeight(marksFor())).toEqual([{ zMm: 2, kind: 'color_change' }, { zMm: 4, kind: 'color_change' }])
+    // a pause takes no slot
+    expect(addMark(6, 'pause', undefined, undefined, 2)?.slot).toBeUndefined()
+  })
+})
+
 describe('layer marks in a project file', () => {
   it('are written as Orca lays them out and read back, with custom text kept', async () => {
     const { writeProject, projectFiles } = await import('../src/export/threemf')
@@ -42,15 +60,15 @@ describe('layer marks in a project file', () => {
       plates: [{ id: 'p1', name: 'Plate 1', objects: [entry], settings: { sequence: 'by-layer' as const } }],
       bed: { widthMm: 256, depthMm: 256 },
       settings: {},
-      layerMarks: { 0: [{ z: 2, kind: 'pause' as const }, { z: 4.2, kind: 'color_change' as const }, { z: 6, kind: 'custom' as const, gcode: 'M117 hi <there>' }] },
+      layerMarks: { 0: [{ z: 2, kind: 'pause' as const }, { z: 4.2, kind: 'color_change' as const, slot: 3 }, { z: 6, kind: 'custom' as const, gcode: 'M117 hi <there>' }] },
     }
     const xml = String(projectFiles(input).find((f) => f.name === 'Metadata/custom_gcode_per_layer.xml')!.data)
     expect(xml).toContain('<plate_info id="1"/>')
     expect(xml).toContain('top_z="2" type="1"')
-    expect(xml).toContain('top_z="4.2" type="0"')
+    expect(xml).toContain('top_z="4.2" type="0" extruder="3"')
     expect(xml).toContain('top_z="6" type="4"')
     const read = await readProject(writeProject(input), input.bed)
-    expect(read.plates[0]!.marks).toEqual([{ z: 2, kind: 'pause' }, { z: 4.2, kind: 'color_change' }, { z: 6, kind: 'custom', gcode: 'M117 hi <there>' }])
+    expect(read.plates[0]!.marks).toEqual([{ z: 2, kind: 'pause' }, { z: 4.2, kind: 'color_change', slot: 3 }, { z: 6, kind: 'custom', gcode: 'M117 hi <there>' }])
   })
 
   it('a project without marks has no marks file', async () => {
