@@ -75,8 +75,8 @@ test('a sketch on XZ finishes into the timeline, then extrudes from its menu', a
   await expect(panel.getByRole('heading', { name: 'Extrude' })).toBeVisible()
   await expect(panel.getByRole('radiogroup', { name: 'Drawing tool' })).toHaveCount(0)
   await expect(page.getByTestId('sketch-finish')).toHaveCount(0)
-  // nobody is sketching, so the shelf's Sketch is up; the tree marks the sketch in use
-  await expect(page.locator('.shelf-tool[aria-pressed="true"]')).toHaveCount(0)
+  // nobody is sketching, so the ribbon's Sketch is up; the tree marks the sketch in use
+  await expect(page.getByTestId('model-shelf').locator('.rb-btn[aria-pressed="true"]')).toHaveCount(0)
   await expect(row).toHaveAttribute('data-current')
   await panel.locator('#sk-dist').fill('4')
   const extrude = panel.getByRole('button', { name: 'Extrude' })
