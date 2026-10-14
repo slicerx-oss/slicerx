@@ -34,29 +34,50 @@ const gapToSettings = (page: Page) =>
     return Math.round(p.top - f.bottom)
   })
 
-test('Print settings sits the same gap under Filament with Filament open or shut, even after the pinned list scrolled', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'A phone scrolls the sheet as one, with nothing pinned')
-  // Two nozzles and their slots fill the pinned top past its cap, so it scrolls.
+test('printer, filament and settings share one vertical scroll area', async ({ page, isMobile }, info) => {
+  test.skip(isMobile, 'Desktop overflow; the phone sheet has its own layout checks')
+  const printer = { id: 'e2e-h2d', name: 'Two nozzles', profileId: 'bambu-h2d', vendor: 'Bambu Lab', model: 'H2D', nozzleCount: 2 }
+  await open(page, { settingsMode: 'advanced', handPrinters: [printer], printerId: printer.id })
+  const pane = page.locator('.pane[data-side="left"]')
+  const scrollAreas = () => pane.evaluate((el) => Array.from(el.querySelectorAll<HTMLElement>('*')).filter((node) => {
+    const overflow = getComputedStyle(node).overflowY
+    return (overflow === 'auto' || overflow === 'scroll') && node.clientHeight > 0 && node.scrollHeight > node.clientHeight + 2
+  }).map((node) => node.className))
+  await page.screenshot({ path: info.outputPath('sidebar-overflow.png') })
+  await expect.poll(scrollAreas).toEqual(['sx-rail-body'])
+  const footer = pane.locator('.sx-rail-foot')
+  const before = await footer.boundingBox()
+  const scroller = pane.locator('.sx-rail-body')
+  await scroller.evaluate((el) => { el.scrollTop = el.scrollHeight })
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  await expect(footer).toBeVisible()
+  expect(await footer.boundingBox()).toEqual(before)
+  await page.locator('#expert-toggle').scrollIntoViewIfNeeded()
+  await expect(page.locator('#expert-toggle')).toBeVisible()
+})
+test('Print settings sits the same gap under Filament with Filament open or shut, even after scrolling', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop card spacing')
+  // Two nozzles and their slots make the sidebar overflow.
   const h2d = { id: 'e2e-h2d', name: 'Two nozzles', profileId: 'bambu-h2d', vendor: 'Bambu Lab', model: 'H2D', nozzleCount: 2 }
   await open(page, { settingsMode: 'advanced', handPrinters: [h2d], printerId: h2d.id })
   const toggle = page.locator('[data-section="filament"] .sx-block-toggle')
-  const pin = page.locator('.pane[data-side="left"] .sx-rail-pin')
+  const body = page.locator('.pane[data-side="left"] .sx-rail-body')
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   const shut = await gapToSettings(page)
   expect(shut).toBeLessThanOrEqual(24)
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  // Scrolled down the slots, then shut: the pinned top shrinks to the card, and Print settings moves up under it.
-  await pin.evaluate((e) => (e.scrollTop = 40))
+  // Closing the slots after scrolling preserves the gap to Print settings.
+  await body.evaluate((e) => (e.scrollTop = 40))
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect.poll(() => gapToSettings(page)).toBe(shut)
-  await expect(pin.locator('[data-sx-room]')).toHaveCount(0)
+  await expect(body.locator('[data-sx-room]')).toHaveCount(0)
 })
 
 test('the gap under Filament is the same open and shut when the slots fit', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'A phone scrolls the sheet as one, with nothing pinned')
+  test.skip(isMobile, 'Desktop card spacing')
   await open(page, { settingsMode: 'advanced' })
   const toggle = page.locator('[data-section="filament"] .sx-block-toggle')
   const opened = await gapToSettings(page)
