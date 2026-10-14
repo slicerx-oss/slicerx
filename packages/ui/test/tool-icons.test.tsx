@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { TOOL_ICON_GROUPS, TOOL_ICONS, ToolIcon, type ToolIconName } from '../src/icons/tool-icon'
 
-const CLASSES = new Set(['t1', 't2', 't3', 'a1', 'a2', 'a3', 'hl', 'nos', 'po', 'pa', 'sh', 'sh3', 'hi', 'out', 'edge', 'mesh', 'ao', 'lu', 'lg', 'lw', 'ln', 'px', 'sk', 'skc', 'skf', 'skcf', 'nd'])
+const CLASSES = new Set(['t1', 't2', 't3', 'a1', 'a2', 'a3', 'hl', 'cya', 'cyg', 'out', 'ao', 'nf', 'nos', 'mesh', 'ln', 'sk', 'lg', 'dash', 'dash2', 'faint', 'faint2', 'nd', 'px', 'po', 'pa', 'skf', 'skcf', 'sgf'])
 const names = Object.keys(TOOL_ICONS) as ToolIconName[]
 
 describe('the tool icons', () => {
