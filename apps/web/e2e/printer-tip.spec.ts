@@ -19,13 +19,23 @@ test.beforeEach(async ({ page }) => {
 
 const tip = (page: import('@playwright/test').Page) => page.locator('.sx-tip[data-ready]')
 
+// A tip that opens while another is showing (warm) slides from the old spot to the new one over 120 ms, so a position
+// read right after it shows can still be the previous control's. The position is polled until the slide ends.
+const tipBelowCard = (page: import('@playwright/test').Page) =>
+  expect
+    .poll(async () => {
+      const t = await tip(page).boundingBox()
+      const card = await page.getByTestId('slice-machine-card').boundingBox()
+      return t && card ? t.y - (card.y + card.height) : -1
+    })
+    .toBeGreaterThanOrEqual(0)
+
 test('the tip shows on hover, below the card and clear of the plate toolbar', async ({ page }, info) => {
   test.skip(info.project.name === 'phone', 'hover tips are a desktop pointer feature')
   await page.getByTestId('slice-machine-printer').hover()
   await expect(tip(page)).toContainText('Pick another printer, or add one.')
+  await tipBelowCard(page)
   const t = (await tip(page).boundingBox())!
-  const card = (await page.getByTestId('slice-machine-card').boundingBox())!
-  expect(t.y).toBeGreaterThanOrEqual(card.y + card.height)
   const bar = await page.locator('.plate-tools').boundingBox()
   if (bar) expect(t.y >= bar.y + bar.height || t.x + t.width <= bar.x || t.x >= bar.x + bar.width).toBe(true)
 })
@@ -37,9 +47,7 @@ test('the tip shows when Tab focuses the button, below the card', async ({ page 
   for (let i = 0; i < 40 && !(await printer.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab')
   await expect(printer).toBeFocused()
   await expect(tip(page)).toContainText('Pick another printer, or add one.')
-  const t = (await tip(page).boundingBox())!
-  const card = (await page.getByTestId('slice-machine-card').boundingBox())!
-  expect(t.y).toBeGreaterThanOrEqual(card.y + card.height)
+  await tipBelowCard(page)
 })
 
 test('closing the printer popover with the keyboard does not bring the tip back', async ({ page }, info) => {
