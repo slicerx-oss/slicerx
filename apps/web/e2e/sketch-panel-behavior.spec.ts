@@ -154,13 +154,17 @@ test('the keyboard is never stuck in the pills, and Esc steps back one level at 
   await page.locator('body').press('Escape')
   await expect(panel).toBeVisible()
   await expect(panel).toContainText('A face of')
-  // Tab from the page no longer moves between pills: it walks the page
+  // while a line is drawn, Tab in the panel walks the panel's controls; it no longer moves between pills
   await page.locator('body').press('l')
+  await expect(page.getByTestId('sketch-drawing').locator('h4')).toHaveText('Drawing · Line')
   await sketchAt(page, 'click', [0, 0])
   await sketchAt(page, 'hover', [2, 2])
-  await page.locator('body').press('Tab')
   await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
-  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
+  await panel.locator('#sk-grid').focus()
+  await page.keyboard.press('Tab')
+  await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
+  expect(await page.evaluate(() => document.activeElement?.id)).not.toBe('sk-grid')
+  expect(await page.evaluate(() => !!document.activeElement?.closest('[data-section="cad-tool"]'))).toBe(true)
 })
 
 test('Finish sketch and Extrude stay apart: one primary, Ctrl/Cmd+Enter finishes, a bare Enter does not', async ({ page, isMobile }) => {
