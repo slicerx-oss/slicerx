@@ -100,6 +100,9 @@
   --ti-hi: rgba(255, 255, 255, 0.42);
   --ti-sh: rgba(12, 10, 26, 0.13);
   --ti-sh3: rgba(12, 10, 26, 0.08);
+  /* sketch strokes on the tool icons: the accent line and the gray line */
+  --ti-sk: var(--ti-a1);
+  --ti-sg: var(--ti-t2);
   /* the ribbon's selected and hover states: selected is a filled segment one step up the surface ladder, no glow */
   --rib-sel-bg: var(--ink-3);
   --rib-sel-bd: var(--line);
@@ -221,6 +224,8 @@
   --ti-hi: rgba(255, 255, 255, 0.85);
   --ti-sh: rgba(40, 28, 78, 0.09);
   --ti-sh3: rgba(40, 28, 78, 0.06);
+  --ti-sk: var(--ti-a2);
+  --ti-sg: var(--ti-t3);
   --rib-hover-bg: color-mix(in srgb, var(--fg) 4.5%, transparent);
 }
 
