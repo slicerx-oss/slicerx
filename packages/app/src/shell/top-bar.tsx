@@ -17,6 +17,7 @@ import { useFleet } from '../lib/queries'
 import { openSettings, set, setWorkspace, useApp } from '../state/store'
 import { ModeTabs } from './mode-tab'
 import { hostSlices, useCadShown, useInMimir } from '../state/model-mode'
+import { usePhoneLayout } from '../lib/phone-layout'
 import './top-bar.css'
 
 // only the CAD-only build shows it, so the project writer stays out of the startup chunk
@@ -68,22 +69,15 @@ function useFitStep(probe: RefObject<HTMLElement | null>, content: string): numb
   return step
 }
 
-export function TopBar() {
+/** The workspace tabs the shell shows (Model's own tab aside), shared by the top bar and the phone's tab bar. */
+export function useShellTabs(): { shown: TabSpec[]; cad: boolean; activeTab: string } {
   const active = useApp((s) => s.workspace)
   const { workspaces: available } = useFeatures()
   const layout = useLayout()
   // One Library tab: Community and Mine are views of it, switched inside.
   const hasFeed = available.some((w) => w.id === 'feed')
   const workspaces = useMemo(() => topBarTabs(available, layout), [available, layout])
-  // The search field names the look's command bar key (Space in the OrcaSlicer style); Mod+K works in every look.
-  const choice = useLookChoice()
-  const palette = keymapFor(choice.id, choice.overrides?.keys ?? {}).palette ?? 'Mod+K'
   const fleet = useFleet()
-  const assistant = useHasFeature('pilot')
-  const dockOpen = useDockOpen()
-  // On the mimir tab the chat is already on screen: the button hides but keeps its place, so nothing in the bar moves.
-  const inMimir = useInMimir()
-  const watch = watchOf(fleet.data ?? [])
   const online = fleet.data?.filter((p) => p.status.state !== 'offline').length ?? 0
   const failing = fleet.data?.some((p) => p.status.state === 'error') ?? false
   const total = fleet.data?.length ?? 0
@@ -95,13 +89,47 @@ export function TopBar() {
   // A host that cannot slice (the CAD-only browser build) shows Model and nothing else.
   const slices = hostSlices()
   const shown = useMemo(() => (!slices ? [] : cad ? tabs.filter((w) => w.id !== 'prepare') : tabs), [slices, cad, tabs])
+  const activeTab = hasFeed && active === 'library' ? 'feed' : active
+  return { shown, cad, activeTab }
+}
+
+export function TopBar() {
+  const layout = useLayout()
+  const { shown, cad, activeTab } = useShellTabs()
+  // The search field names the look's command bar key (Space in the OrcaSlicer style); Mod+K works in every look.
+  const choice = useLookChoice()
+  const palette = keymapFor(choice.id, choice.overrides?.keys ?? {}).palette ?? 'Mod+K'
+  const fleet = useFleet()
+  const assistant = useHasFeature('pilot')
+  const dockOpen = useDockOpen()
+  // On the mimir tab the chat is already on screen: the button hides but keeps its place, so nothing in the bar moves.
+  const inMimir = useInMimir()
+  const watch = watchOf(fleet.data ?? [])
+  const slices = hostSlices()
+  // A phone has the tabs and mimir in the tab bar at the bottom (phone-tabs.tsx); the top bar keeps the name, search and Settings.
+  const phone = usePhoneLayout()
   const projectFile = useApp((s) => s.projectFile)
   const nameRef = useRef<HTMLDivElement>(null)
   const step = useFitStep(nameRef, `${projectFile?.name ?? ''}|${shown.map((t) => t.label).join(',')}`)
   const overflow = step >= 3 ? OVERFLOW.flatMap((id) => shown.filter((t) => t.id === id)) : []
   const inBar = overflow.length ? shown.filter((t) => !overflow.includes(t)) : shown
-  const activeTab = hasFeed && active === 'library' ? 'feed' : active
 
+  if (phone)
+    return (
+      <AppBar
+        className="sx-appbar-phone"
+        right={
+          <>
+            <Button variant="ghost" icon="search" aria-label="Search" data-testid="phone-search" onClick={() => set({ commandOpen: true })} />
+            <Button variant="ghost" icon="settings" tip="nav.settings" aria-label="Settings" data-testid="open-settings" onClick={() => openSettings()} />
+          </>
+        }
+      >
+        <div ref={nameRef} className="sx-projname">
+          {projectFile ? <b>{projectFile.name.replace(/\.sx3mf$/i, '')}</b> : 'Untitled'}
+        </div>
+      </AppBar>
+    )
   return (
     <AppBar
       data-tauri-drag-region
