@@ -154,6 +154,14 @@
   --h-lg: 44px;
   /* a single number field or compact select in a row's right column */
   --w-ctl: 96px;
+  /* a settings row (SettingRow): a number field, a select, a segmented choice, the row's least height, and its two
+     rails, the changed dot and pin at the left and the reset at the right */
+  --w-num: 80px;
+  --w-sel: 128px;
+  --w-seg: 216px;
+  --h-row: 36px;
+  --w-mark: 12px;
+  --w-reset: 22px;
   --h-bar: 52px;
   --h-status: 28px;
   /* Where toasts rest when nothing else places them: 8 px above the status bar, inside the window frame and its border. */
