@@ -34,7 +34,7 @@ fn flat(m: &TriMesh) -> Value {
 }
 
 fn edit(
-    mesh: Value,
+    mesh: &Value,
     z: f64,
     operation: &str,
     width: f64,
@@ -59,9 +59,9 @@ fn edit(
 fn rotated_cut_on_imported_embossed_plate_refuses_storage_damage() {
     let imported = imported_plate();
     assert!(!Solid::new(&imported).unwrap().self_intersects());
-    let joined = edit(flat(&imported), 5.0, "join", 20.0, 17.0, "flat").unwrap();
+    let joined = edit(&flat(&imported), 5.0, "join", 20.0, 17.0, "flat").unwrap();
     for encoding in ["flat", "stlBase64", "raw"] {
-        let result = edit(joined["mesh"].clone(), 10.0, "cut", 10.0, 17.0, encoding);
+        let result = edit(&joined["mesh"], 10.0, "cut", 10.0, 17.0, encoding);
         assert!(result.is_err(), "cut must not return intersecting stored faces");
         let error = result
             .expect_err("cut must not return intersecting stored faces")
@@ -74,8 +74,8 @@ fn rotated_cut_on_imported_embossed_plate_refuses_storage_damage() {
 
 #[test]
 fn aligned_cut_on_imported_embossed_plate_remains_available() {
-    let joined = edit(flat(&imported_plate()), 5.0, "join", 20.0, 0.0, "flat").unwrap();
-    let cut = edit(joined["mesh"].clone(), 10.0, "cut", 10.0, 0.0, "flat").unwrap();
+    let joined = edit(&flat(&imported_plate()), 5.0, "join", 20.0, 0.0, "flat").unwrap();
+    let cut = edit(&joined["mesh"], 10.0, "cut", 10.0, 0.0, "flat").unwrap();
     let crossing = sx_geom::json::call_value(
         "import.selfIntersections",
         &json!({
@@ -91,7 +91,7 @@ fn aligned_cut_on_imported_embossed_plate_remains_available() {
 #[test]
 fn deliberate_disconnected_cut_pieces_are_retained() {
     let plate = build::box_mesh([0.0, 9.0, 0.0], [40.0, 21.0, 5.0]);
-    let cut = edit(flat(&plate), 5.0, "cut", 2.0, 0.0, "flat").unwrap();
+    let cut = edit(&flat(&plate), 5.0, "cut", 2.0, 0.0, "flat").unwrap();
     assert_eq!(cut["shells"], 2);
     assert_eq!(cut["watertight"], true);
     assert!((cut["volumeMm3"].as_f64().unwrap() - 2280.0).abs() < 1e-6);
