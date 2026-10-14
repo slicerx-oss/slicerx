@@ -56,6 +56,8 @@ a { color: var(--purple); }
 .mini { height: 26px; border-radius: 6px; border: 1px solid var(--line-soft); background: var(--ink-2); color: var(--fg); font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-body); padding: 0 6px; max-width: 100%; }
 .mini:hover { border-color: var(--line); }
 .srow { margin-top: 12px; }
+/* Simple keeps its two core rows in view without shrinking their controls. */
+.srow[data-compact] { margin-top: var(--s-2); }
 .srow-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
 .srow-h label { font: var(--fw-medium) calc(13px * var(--text-scale)) var(--f-body); }
 .srow-h output { font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-mono); color: var(--purple); }

@@ -815,9 +815,10 @@ test.describe('the view\'s panels open without moving anything', () => {
     await expect(tab).toHaveAttribute('aria-expanded', 'false')
     // Above the right pane: the top bar; beside it: the settings sidebar's controls.
     const beside = '.sx-appbar .sx-tab, .sx-appbar .sx-btn, aside.pane[data-side="left"] [role="radio"], aside.pane[data-side="left"] .mc-box'
+    // Clearing the selection offers the filaments to move; measure that state before opening the pane.
+    await page.mouse.click(700, 450)
     const before = await boxesOf(page, beside)
     const n = Number((await page.locator('.studio').getAttribute('data-slices')) ?? 0)
-    await page.mouse.click(700, 450)
     await page.keyboard.press('ControlOrMeta+Enter')
     await expect(page.locator(`.studio[data-layers][data-slice="current"]:not([data-slices="${n}"])`)).toBeVisible({ timeout: 120_000 })
     await expect(tab).toHaveAttribute('aria-expanded', 'true')
