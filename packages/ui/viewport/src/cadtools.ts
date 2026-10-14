@@ -215,6 +215,11 @@ export interface SketchScene {
   /** Points a press can grab when `dragHandles` is on; drawn as dots. */
   handles: readonly V2[]
   dragHandles?: boolean
+  /**
+   * The plane being sketched on, from `min` to `max`: a translucent fill and a border in the accent tint, drawn under
+   * the grid so it reads apart from the world grid.
+   */
+  plane?: { min: V2; max: V2 }
   /** A faint grid, every `stepMm`, over the rectangle `min` to `max`. */
   grid?: { stepMm: number; min: V2; max: V2 }
   /** Problem spots, drawn as red dots. */
@@ -298,6 +303,12 @@ export function setSketchResolution(width: number, height: number): void {
   curveRes.set(width, height)
 }
 
+// the sketch plane's wash and border, as alpha over the scene; a light studio washes the tint out, so it gets more
+export const PLANE_FILL = 0.045
+export const PLANE_EDGE = 0.6
+export const PLANE_FILL_LIGHT = 0.12
+export const PLANE_EDGE_LIGHT = 0.95
+
 // tones drawn thin: the faint grid and projected edges
 const THIN: ReadonlySet<SketchTone> = new Set(['grid', 'soft'])
 
@@ -312,6 +323,9 @@ export class SketchLayer {
   private readonly fillMat = new MeshBasicMaterial({ color: new Color('#8be9fd'), transparent: true, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false, ...KEEP_ALPHA, opacity: 0.12 })
   private readonly dimMat = new LineBasicMaterial({ color: new Color('#f1fa8c'), transparent: true, depthTest: false, toneMapped: false, ...KEEP_ALPHA, opacity: 0.8 })
   private readonly dimPickMat = new LineBasicMaterial({ color: new Color(TONE.selected.color), transparent: true, depthTest: false, toneMapped: false, ...KEEP_ALPHA })
+  // the sketch plane: an accent wash and a firmer accent border
+  private readonly planeFillMat = new MeshBasicMaterial({ color: new Color(TONE.soft.color), transparent: true, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false, ...KEEP_ALPHA, opacity: PLANE_FILL })
+  private readonly planeEdgeMat = new LineBasicMaterial({ color: new Color(TONE.soft.color), transparent: true, depthTest: false, depthWrite: false, toneMapped: false, ...KEEP_ALPHA, opacity: PLANE_EDGE })
   private drawn: (LineSegments | Points | Sprite | Mesh)[] = []
   private labels: { sprite: Sprite; aspect: number; size?: number; mark?: SketchMark; at?: V2 }[] = []
   /** The dimension following the cursor: its lines, and its value, made again only when the text changes. */
@@ -388,6 +402,26 @@ export class SketchLayer {
       let list = byTone.get(tone)
       if (!list) byTone.set(tone, (list = []))
       list.push(a[0] ?? 0, a[1] ?? 0, lift, b[0] ?? 0, b[1] ?? 0, lift)
+    }
+    const pl = scene.plane
+    if (pl && pl.max[0] > pl.min[0] && pl.max[1] > pl.min[1]) {
+      const [x0, y0] = pl.min
+      const [x1, y1] = pl.max
+      const z = lift / 4
+      const fillGeo = new BufferGeometry()
+      fillGeo.setAttribute('position', new Float32BufferAttribute([x0, y0, z, x1, y0, z, x1, y1, z, x0, y0, z, x1, y1, z, x0, y1, z], 3))
+      const fill = new Mesh(fillGeo, this.planeFillMat)
+      fill.renderOrder = 4
+      const edgeGeo = new BufferGeometry()
+      edgeGeo.setAttribute('position', new Float32BufferAttribute([x0, y0, z, x1, y0, z, x1, y0, z, x1, y1, z, x1, y1, z, x0, y1, z, x0, y1, z, x0, y0, z], 3))
+      const edge = new LineSegments(edgeGeo, this.planeEdgeMat)
+      edge.renderOrder = 4.5
+      for (const o of [fill, edge]) {
+        o.name = 'sketch-plane'
+        o.raycast = () => {}
+        this.group.add(o)
+        this.drawn.push(o)
+      }
     }
     const g = scene.grid
     if (g && g.stepMm > 0) {
@@ -634,6 +668,8 @@ export class SketchLayer {
   /** Projected (soft) lines take the theme's selection color. */
   setAccent(hex: string): void {
     this.mats.get('soft')?.color.set(hex)
+    this.planeFillMat.color.set(hex)
+    this.planeEdgeMat.color.set(hex)
   }
 
   /** Darker curves, points and snap marker on a light studio, so they read on it. */
@@ -649,6 +685,8 @@ export class SketchLayer {
     this.dimMat.color.set(light ? '#5c5f73' : '#f1fa8c')
     this.dimPickMat.color.set(light ? LIGHT_TONE.selected! : TONE.selected.color)
     this.cutMat.color.set(light ? LIGHT_TONE.issue! : TONE.issue.color)
+    this.planeFillMat.opacity = light ? PLANE_FILL_LIGHT : PLANE_FILL
+    this.planeEdgeMat.opacity = light ? PLANE_EDGE_LIGHT : PLANE_EDGE
   }
 
   dispose(): void {
@@ -664,6 +702,8 @@ export class SketchLayer {
     this.fixMat.dispose()
     this.dimMat.dispose()
     this.dimPickMat.dispose()
+    this.planeFillMat.dispose()
+    this.planeEdgeMat.dispose()
     this.group.removeFromParent()
   }
 }

@@ -7,7 +7,7 @@
 // sentences, and the action row with the primary action on the right. Probe mode for the view lives here too.
 import type { PickEvent } from '@slicerx/viewport'
 import { Block, Button, Icon, Input, Menu, MenuItem, Seg, Select, SplitButton, VectorField, type Axis, type IconName, type SegOption, type TipSpec } from '@slicerx/ui'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
 import { set, useApp } from '../state/store'
@@ -157,8 +157,11 @@ export interface ChoiceOption<V extends string> {
   label: string
   /** Shown alone, with the label as its tooltip, when the words don't fit. */
   icon?: IconName
-  /** Drawn before the word while the words show, and counted when deciding whether they fit. */
-  glyph?: IconName
+  /**
+   * Drawn before the word while the words show, and counted when deciding whether they fit: an icon of the set, or a
+   * small mark of the tool's own (the sketch's direction and boolean marks) until the set has one.
+   */
+  glyph?: IconName | ReactElement
   disabled?: boolean
   tip?: TipSpec
   testId?: string
@@ -198,7 +201,9 @@ export function PointerHint({ text }: { text: string }) {
 export function Choice<V extends string>({ id, label, ariaLabel, bare = false, value, onChange, options }: ChoiceProps<V>) {
   const box = useRef<HTMLDivElement>(null)
   const probe = useRef<HTMLSpanElement>(null)
-  const icons = options.length > 0 && options.every((o) => o.icon)
+  // marks of the tool's own stand in for icons; three of them fit the control column, beside the label
+  const marks = options.length > 0 && options.every((o) => !o.icon && o.glyph && typeof o.glyph !== 'string')
+  const icons = options.length > 0 && options.every((o) => o.icon || (o.glyph && typeof o.glyph !== 'string'))
   const [fit, setFit] = useState<ChoiceFit>(() => choiceFit({ labels: options.map(() => 0), words: options.map(() => 0), width: 0, icons }))
   // a select whose longest option fits the control column sits there, like a settings row's; a longer one goes under the label
   const [inline, setInline] = useState(true)
@@ -228,14 +233,22 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
   const name = ariaLabel ?? label
   const segOptions = options.map((o): SegOption<V> => ({
     value: o.value,
-    label: fit === 'icons' ? null : o.label,
-    ...(fit === 'icons' && o.icon ? { icon: o.icon, title: o.label } : fit !== 'icons' && o.glyph ? { icon: o.glyph } : {}),
+    label:
+      fit === 'icons' ? (o.icon || !o.glyph || typeof o.glyph === 'string' ? null : o.glyph) : o.glyph && typeof o.glyph !== 'string' ? (
+        <span className="tp-glyph-label">
+          {o.glyph}
+          <span>{o.label}</span>
+        </span>
+      ) : (
+        o.label
+      ),
+    ...(fit === 'icons' && o.icon ? { icon: o.icon, title: o.label } : fit === 'icons' && o.glyph ? { title: o.label } : fit !== 'icons' && typeof o.glyph === 'string' ? { icon: o.glyph } : {}),
     ...(o.tip ? { tip: o.tip } : {}),
     ...(o.disabled ? { disabled: true } : {}),
     ...(o.testId ? { testId: o.testId } : {}),
   }))
   return (
-    <div ref={box} className="tp-row tp-choice" data-wide={fit === 'select' && inline ? undefined : ''} data-fit={fit} data-bare={bare ? '' : undefined}>
+    <div ref={box} className="tp-row tp-choice" data-wide={(fit === 'select' && inline) || (fit === 'icons' && marks && options.length <= 3) ? undefined : ''} data-fit={fit} data-bare={bare ? '' : undefined}>
       <span ref={probe} className="tp-seg-probe" aria-hidden="true" />
       {bare ? null : (
         <span className="tp-label" id={`${id}-label`}>
@@ -261,10 +274,10 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
  * A phase of a tool, as a card with its own header: the sketch's drawing, then its solid. A card that can't be used yet
  * stays muted with one line saying why, and its header keeps its place, so opening it moves nothing above.
  */
-export function Card({ title, state, muted = false, reason, testId, children }: { title: string; state?: ReactNode; muted?: boolean; reason?: string; testId?: string; children?: ReactNode }) {
+export function Card({ title, state, muted = false, dense = false, reason, testId, children }: { title: string; state?: ReactNode; muted?: boolean; dense?: boolean; reason?: string; testId?: string; children?: ReactNode }) {
   const body = muted ? (reason ? <p className="tp-card-reason">{sentence(reason)}</p> : null) : <div className="tp-card-body">{children}</div>
   return (
-    <section className="tp-card" aria-label={title} data-muted={muted ? '' : undefined} data-testid={testId}>
+    <section className="tp-card" aria-label={title} data-muted={muted ? '' : undefined} data-dense={dense ? '' : undefined} data-testid={testId}>
       <div className="tp-card-h">
         <h4>{title}</h4>
         {state !== undefined ? <span className="tp-card-state">{state}</span> : null}

@@ -3,7 +3,7 @@
 // Model's selection pill, at the top left of the view: what a click picks (objects, faces, edges), what is picked in
 // plain words, and a way to clear it. The filter keys are Alt+1, Alt+2 and Alt+3, with Shift to add or drop a kind.
 // With faces or edges on one object, its name selects the object alone; with one face, a crumb names the step that
-// made it and opens that step.
+// made it and opens that step. While a sketch is open it says the mode instead: "Sketching on a face · Line".
 import { Icon, keymapFor, tipAttrs } from '@slicerx/ui'
 import { beginEdit, toolFor, viewStep } from '../../cad/history/ops'
 import { stepName } from '@slicerx/cad-history'
@@ -14,6 +14,8 @@ import { setPickKind } from '../../plate/sub-pick'
 import { get, set, useApp } from '../../state/store'
 import { useMadeBy } from './use-made-by'
 import { useLengthWords } from '../../cad/use-units'
+import { sketchModeText, useSketchMode } from '../../cad/sketch-mode'
+import { usePhoneLayout } from '../../lib/phone-layout'
 
 const ICON: Readonly<Record<PickKind, 'select-object' | 'select-face' | 'select-edge'>> = { object: 'select-object', face: 'select-face', edge: 'select-edge' }
 
@@ -31,7 +33,11 @@ export function SelectPill() {
   const ids = primary ? [primary, ...selected.filter((id) => id !== primary)] : selected
   const objects = ids.map((id) => names[id]).filter((n): n is string => n !== undefined)
   const on = (kind: 'face' | 'edge') => picks.filter((p) => p.kind === kind).map((p) => ({ object: names[p.objectId] ?? 'an object' }))
-  const readout = pickReadout({ objects, faces: on('face'), edges: on('edge') })
+  // a phone's pill keeps saying what is picked
+  const phone = usePhoneLayout()
+  const mode = useSketchMode()
+  const sketching = phone ? null : mode
+  const readout = sketching ? sketchModeText(sketching) : pickReadout({ objects, faces: on('face'), edges: on('edge') })
   const anything = objects.length > 0 || picks.length > 0
   const host = useHost()
   const made = useMadeBy()
@@ -66,8 +72,8 @@ export function SelectPill() {
           )
         })}
       </div>
-      <span className="select-pill-readout" data-testid="model-select-readout" aria-live="polite">
-        {on1 && readout.endsWith(` on ${on1.name}`) ? (
+      <span className="select-pill-readout" data-testid="model-select-readout" aria-live="polite" {...(sketching ? { 'data-mode': 'sketch' } : {})}>
+        {!sketching && on1 && readout.endsWith(` on ${on1.name}`) ? (
           <>
             {readout.slice(0, -on1.name.length)}
             <button type="button" className="select-pill-crumb" data-testid="model-select-object" {...tipAttrs({ title: `Select ${on1.name}` })} onClick={() => set({ subPicks: [], selection: on1.id, selectedIds: [on1.id] })}>
@@ -78,7 +84,7 @@ export function SelectPill() {
           readout
         )}
       </span>
-      {made && made.objectId === on1?.id ? (
+      {!sketching && made && made.objectId === on1?.id ? (
         made.index < 0 ? (
           <span className="select-pill-made" data-testid="model-select-made-by" data-step="base">
             from the original mesh
@@ -89,7 +95,7 @@ export function SelectPill() {
           </button>
         )
       ) : null}
-      {anything ? (
+      {anything && !sketching ? (
         <button type="button" className="select-pill-clear" data-testid="model-select-clear" aria-label="Clear selection" {...tipAttrs({ title: 'Clear selection', key: 'Esc' })} onClick={() => set({ subPicks: [], selection: null, selectedIds: [] })}>
           <Icon name="close" size={14} />
         </button>
