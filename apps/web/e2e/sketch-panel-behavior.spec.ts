@@ -273,6 +273,29 @@ for (const height of [900, 760, 640, 560]) {
   })
 }
 
+test('the solid card lines its controls up on one right edge', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Modeling tools are desktop only')
+  await sketchOnTop(page)
+  await page.locator('body').press('r')
+  await sketchAt(page, 'click', [-3, -3])
+  await sketchAt(page, 'click', [3, 3])
+  const solid = page.getByTestId('sketch-solid')
+  await expect(solid).not.toHaveAttribute('data-muted')
+  const edges = await solid.locator('.tp-card-body').evaluate((body) => {
+    const right = body.getBoundingClientRect().right - parseFloat(getComputedStyle(body).paddingRight)
+    const out: { what: string; gap: number }[] = []
+    for (const el of body.querySelectorAll<HTMLElement>('input:not([type="checkbox"]):not([type="radio"]), select, [role="radiogroup"], .sx-seg')) {
+      const r = el.getBoundingClientRect()
+      if (!r.width) continue
+      // a segmented control is measured by its frame, not its last button inside the frame's padding
+      out.push({ what: el.getAttribute('aria-label') ?? el.id, gap: Math.round((right - r.right) * 10) / 10 })
+    }
+    return out
+  })
+  expect(edges.length).toBeGreaterThan(2)
+  for (const e of edges) expect(Math.abs(e.gap), e.what).toBeLessThanOrEqual(1)
+})
+
 test('Other plane asks before it drops a drawing', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Modeling tools are desktop only')
   await sketchOnTop(page)
