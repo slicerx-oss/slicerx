@@ -26,7 +26,7 @@ import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
 import { appStore, selectedIds, set, shownSlice, toast, toggledSelection, useApp, type AppState } from '../state/store'
-import { cadShown, showsDesign } from '../state/model-mode'
+import { cadShown, modelMode, showsDesign } from '../state/model-mode'
 import { isPhoneLayout, onPhoneLayout } from '../lib/phone-layout'
 import { modelReveal, type RevealMemory } from './model-reveal'
 import { webgl2Available, watchFor, withRetries } from './context-retry'
@@ -161,12 +161,26 @@ function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
 }
 
 /**
- * The viewport tool for the app's tool. Scale shows the viewport's handles (x, y, z and the uniform corners), as move
- * and rotate show theirs. A phone views and prints, so it only selects; the brim tool without the viewport's brim mode
- * is a plain selection.
+ * How a phone runs the 3D view: 'slim' where it views and prints (Slice), 'model' in Model, false off a phone.
  */
-export function viewportTool(tool: Tool, phone: boolean, brimMode: boolean): PlateTool {
-  if (phone) return 'select'
+export type PhoneView = 'slim' | 'model' | false
+
+/** The phone view for the app's state, read once. */
+export function phoneView(s: { workspace: string }): PhoneView {
+  if (!isPhoneLayout()) return false
+  // the mode shown, not the saved one: a phone on a host that slices always shows Slice
+  return showsDesign({ workspace: s.workspace, modelMode: modelMode() }) ? 'model' : 'slim'
+}
+
+/**
+ * The viewport tool for the app's tool. Scale shows the viewport's handles (x, y, z and the uniform corners), as move
+ * and rotate show theirs. A phone in Slice views and prints, so it only selects; a phone in Model keeps the move,
+ * rotate and scale handles, and every other tool selects there. The brim tool without the viewport's brim mode is a
+ * plain selection.
+ */
+export function viewportTool(tool: Tool, phone: PhoneView, brimMode: boolean): PlateTool {
+  if (phone === 'slim') return 'select'
+  if (phone === 'model') return tool === 'move' || tool === 'rotate' || tool === 'scale' ? tool : 'select'
   if (tool === 'brim' && !brimMode) return 'select'
   return tool
 }
@@ -562,7 +576,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       // else the object, selected first; else empty space. The menu key opens it for what is picked.
       offs.push(vp.on('contextpick', (e) => {
         const st = appStore.getState()
-        if (isPhoneLayout() || st.workspace !== 'prepare' || st.modelMode !== 'design' || st.objectTool !== null) return
+        if (phoneView(st) === 'slim' || st.workspace !== 'prepare' || st.modelMode !== 'design' || st.objectTool !== null) return
         const at = { x: e.screen[0], y: e.screen[1] }
         if (e.key) return openViewRing(at, ringTarget(st))
         if (!e.objectId || e.objectId === TOWER_ID) {
@@ -680,13 +694,16 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       // Tools: the viewport has handles for move, rotate and scale, and lay on face; the numeric fields work too.
       const applyTool = () => {
-        // A phone views and prints: a tap selects and a drag turns the view, and nothing on the plate moves.
-        const phone = isPhoneLayout()
-        const t = phone ? 'select' : toolStore.getState().tool
+        // A phone in Slice views and prints: a tap selects and a drag turns the view, and nothing on the plate moves.
+        // A phone in Model keeps the handles, so a finger moves a model only by its arrows, rings or corners, never by
+        // dragging the model itself.
+        const phone = phoneView(appStore.getState())
+        const t = phone === 'slim' ? 'select' : toolStore.getState().tool
         vp.setMovable?.(!phone)
         vp.setTool?.(viewportTool(t, phone, !!brimVp.setBrimEars))
         vp.setRotateSpace?.(toolStore.getState().rotateSpace)
-        vp.setMoveHandles?.(t === 'move' && toolStore.getState().moveArrows)
+        // a phone in Model has no drag on the model itself, so the arrows are how Move works there
+        vp.setMoveHandles?.(t === 'move' && (phone === 'model' || toolStore.getState().moveArrows))
         brimVp.setBrimHoverRadius?.(t === 'brim' ? headDiameter() / 2 : null)
       }
       offs.push(onHeadDiameter(applyTool))
@@ -706,6 +723,9 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       applyTool()
       offs.push(toolStore.subscribe(applyTool))
       offs.push(onPhoneLayout(applyTool))
+      offs.push(appStore.subscribe((s, p) => {
+        if (s.workspace !== p.workspace || s.modelMode !== p.modelMode) applyTool()
+      }))
       if (vp.setTool) offs.push((vp as unknown as Viewport).on('facepick', (pick) => void layOnPickedFace(pick)))
       setCameraBus({
         view: (preset, o) => vp.view(preset, o),
