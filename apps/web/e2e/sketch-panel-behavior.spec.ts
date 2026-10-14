@@ -42,6 +42,10 @@ async function sketchOnBed(page: Page): Promise<void> {
 }
 
 const DEG = Math.PI / 180
+
+/** A hover with Alt held, so no snap moves the cursor off the exact spot. */
+const hoverFree = (page: Page, at: [number, number]) =>
+  page.evaluate((at) => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('sketch', { kind: 'hover', at, mmPerPx: 0.2, screen: [700, 420], shift: false, alt: true }), at)
 const near = (got: [number, number], want: [number, number]) => {
   expect(got[0]).toBeCloseTo(want[0], 4)
   expect(got[1]).toBeCloseTo(want[1], 4)
@@ -87,7 +91,7 @@ test('typed length and angle put the committed end where they say, the next segm
   near(s.loops![0]!.start!, [1, 2])
   near(s.loops![0]!.segments![0]!.to, first)
   // the next segment starts at the typed end: the live length reads from there
-  await sketchAt(page, 'hover', [first[0] + 3, first[1] + 4])
+  await hoverFree(page, [first[0] + 3, first[1] + 4])
   await expect(pills.locator('[data-label="Length"]')).toContainText('5.00')
   // a second typed segment, 5 mm at 120 degrees, measured the same way
   await typeSegment(page, '5', '120')
@@ -122,17 +126,16 @@ test('the keyboard is never stuck in the pills, and Esc steps back one level at 
   await sketchAt(page, 'click', [0, 0])
   await sketchAt(page, 'hover', [4, 3])
   await typeSegment(page, '10', '90')
-  // Tab past the last pill leaves them for the view, the numbers kept; the next Tab goes on through the page
+  // Tab past the last pill goes on into the panel, the numbers kept; Tab goes on through the panel from there
   await pills.getByRole('textbox', { name: 'Angle °' }).press('Tab')
-  await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('CANVAS')
+  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[data-section="cad-tool"]'))).toBe(true)
   await expect(pills.getByRole('textbox', { name: 'Length mm' })).toHaveValue('10')
   await page.keyboard.press('Tab')
-  expect(await page.evaluate(() => !!document.activeElement?.closest('[data-testid="sketch-pills"]'))).toBe(false)
-  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('CANVAS')
-  // Shift+Tab before the first pill leaves too
+  expect(await page.evaluate(() => !!document.activeElement?.closest('[data-section="cad-tool"]'))).toBe(true)
+  // Shift+Tab before the first pill goes back to the view
   await pills.getByRole('textbox', { name: 'Length mm' }).focus()
   await pills.getByRole('textbox', { name: 'Length mm' }).press('Shift+Tab')
-  expect(await page.evaluate(() => !!document.activeElement?.closest('[data-testid="sketch-pills"]'))).toBe(false)
+  await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('CANVAS')
   // Enter back in the view places the kept numbers
   await page.locator('canvas.vp-canvas').focus()
   await page.keyboard.press('Enter')
@@ -151,14 +154,13 @@ test('the keyboard is never stuck in the pills, and Esc steps back one level at 
   await page.locator('body').press('Escape')
   await expect(panel).toBeVisible()
   await expect(panel).toContainText('A face of')
-  // Tab from the view walks the page; it no longer moves between pills
+  // Tab from the page no longer moves between pills: it walks the page
   await page.locator('body').press('l')
   await sketchAt(page, 'click', [0, 0])
   await sketchAt(page, 'hover', [2, 2])
-  await page.locator('canvas.vp-canvas').focus()
-  await page.keyboard.press('Tab')
+  await page.locator('body').press('Tab')
   await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
-  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('CANVAS')
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
 })
 
 test('Finish sketch and Extrude stay apart: one primary, Ctrl/Cmd+Enter finishes, a bare Enter does not', async ({ page, isMobile }) => {
@@ -182,16 +184,16 @@ test('Finish sketch and Extrude stay apart: one primary, Ctrl/Cmd+Enter finishes
   await expect(finish).not.toHaveAttribute('data-variant', 'primary')
   await expect(panel.getByTestId('model-tool-reason')).toHaveCount(0)
   // a bare Enter in the view, twice, neither finishes nor extrudes
-  const timeline = await page.evaluate(() => (window as unknown as { __sx: { getState(): { timeline?: unknown[] } } }).__sx.getState().timeline?.length ?? 0)
+  const timeline = await page.evaluate(() => (window as unknown as { __sx: { getState(): { timeline: { items: unknown[] } } } }).__sx.getState().timeline.items.length)
   await page.locator('body').press('Enter')
   await page.locator('body').press('Enter')
   await expect(panel).toBeVisible()
-  expect(await page.evaluate(() => (window as unknown as { __sx: { getState(): { timeline?: unknown[] } } }).__sx.getState().timeline?.length ?? 0)).toBe(timeline)
+  expect(await page.evaluate(() => (window as unknown as { __sx: { getState(): { timeline: { items: unknown[] } } } }).__sx.getState().timeline.items.length)).toBe(timeline)
   // Ctrl/Cmd+Enter is Finish sketch: the sketch goes in the timeline with no solid
   await page.locator('body').press('ControlOrMeta+Enter')
   await expect(panel).toHaveCount(0)
   await expect(page.getByTestId('toast').filter({ hasText: 'is in the timeline' })).toBeVisible()
-  expect(await page.evaluate(() => (window as unknown as { __sx: { getState(): { timeline?: unknown[] } } }).__sx.getState().timeline?.length ?? 0)).toBe(timeline + 1)
+  expect(await page.evaluate(() => (window as unknown as { __sx: { getState(): { timeline: { items: unknown[] } } } }).__sx.getState().timeline.items.length)).toBe(timeline + 1)
 })
 
 test('Extrude and Revolve say why they are off: open, crossing, no axis, no body to cut', async ({ page, isMobile }) => {
