@@ -1321,6 +1321,203 @@ bool face_on(SmBrep* b, const SmVector3d& p, const SmVector3d& n)
     return false;
 }
 
+// --- the hole tool
+
+// past the faces a new hole opens through, so the cut never meets them flush, mm (as the mesh path's)
+const double kHoleOverlap = 0.01;
+
+// a round hole on the body: entry is its center on the entry face, axis the way out through it
+struct Bore {
+    SmVector3d entry, axis;
+    double radius = 0, depth = 0;
+    bool through = false;
+};
+
+SmVector3d along(const SmVector3d& p, const SmVector3d& d, double t) { return SmVector3d(p.x + t * d.x, p.y + t * d.y, p.z + t * d.z); }
+
+double positive(const Value& r, const char* k)
+{
+    double v = num(r, k);
+    if (!(std::isfinite(v) && v > 0 && v <= 10000)) throw Error(k, "must be above 0 (at most 10000 mm)");
+    return v;
+}
+
+// the hole a step names, found again as it is now: a cylinder wall with the material outside it, on the line
+// through entry along axis and of its diameter, opening at a flat face square to it at the entry, and at another
+// (through) or at a flat floor. Anything else is an error, so the mesh path runs the step
+Bore bore_of(SmBrep* b, const Value& h)
+{
+    const char* plain = "the hole does not end at a flat face or a flat floor; pick a plain round hole";
+    const char* gone = "the hole is not there any more; pick it again";
+    SmVector3d entry = v3(h, "entry"), axis = unit(v3(h, "axis"), "hole.axis");
+    double d = num(h, "diameterMm");
+    SmPoint3d lo, hi;
+    check(SmApiBrepBoundingBox(b, FALSE, lo, hi), "bounds");
+    double tol = std::max(1e-5 * dist(SmVector3d(lo.x, lo.y, lo.z), SmVector3d(hi.x, hi.y, hi.z)), 1e-3);
+    auto height = [&](const SmVector3d& p) { return dot(SmVector3d(p.x - entry.x, p.y - entry.y, p.z - entry.z), axis); };
+    SmTArray<SmFace*> fs;
+    SmApiGetFaces(b, fs);
+    std::vector<SmFace*> walls;
+    double radius = 0;
+    for (ULONG i = 0; i < fs.GetSize(); ++i) {
+        Value s = surface_of(fs[i]->GetSurface());
+        if (s["kind"].kind != Value::String || s["kind"].s != "cylinder") continue;
+        SmVector3d o = v3(s, "origin"), a = unit(v3(s, "axis"), "axis");
+        SmVector3d q(entry.x - o.x, entry.y - o.y, entry.z - o.z);
+        double t = dot(q, a);
+        if (std::fabs(dot(a, axis)) > 0.9999 && dist(q, SmVector3d(t * a.x, t * a.y, t * a.z)) < tol && std::fabs(2 * num(s, "radius") - d) < tol) {
+            walls.push_back(fs[i]);
+            radius = num(s, "radius");
+        }
+    }
+    if (walls.empty()) throw Error("hole", gone);
+    // the wall's ends along the axis, from its corners. A wall in pieces (stacked, as after a push, or side by side)
+    // has rims between them only where it meets itself, so a rim anywhere else is not at an end
+    double t0 = 1e30, t1 = -1e30;
+    for (SmFace* f : walls) {
+        SmTArray<SmEdge*> es;
+        f->GetEdges(es);
+        for (ULONG k = 0; k < es.GetSize(); ++k)
+            for (SmVertex* v : {es[k]->GetStartVertex(), es[k]->GetEndVertex()}) {
+                t0 = std::min(t0, height(at(v)));
+                t1 = std::max(t1, height(at(v)));
+            }
+    }
+    if (!(t1 - t0 > 1e-6)) throw Error("hole", plain);
+    // the material is outside the wall
+    SmPoint3d p;
+    SmTArray<SmEdge*> es;
+    walls[0]->GetEdges(es);
+    if (!es.GetSize() || SmApiFaceInternalPoint(walls[0], p) != SM_SUCCESS) throw Error("hole", plain);
+    SmVector3d q(p.x - entry.x, p.y - entry.y, p.z - entry.z);
+    double t = dot(q, axis);
+    SmVector3d out = unit(SmVector3d(q.x - t * axis.x, q.y - t * axis.y, q.z - t * axis.z), "hole");
+    if (!inside(es[0], along(SmVector3d(p.x, p.y, p.z), out, 1e-3))) throw Error("hole", "pick the wall of a round hole that starts at a flat face");
+    // each end: the faces across the wall's rims, flat and square to the axis. Facing out along the axis at the top
+    // is an opening; at the bottom, facing against it is one (through) and along it a floor
+    int ends[2] = {0, 0};
+    for (SmFace* f : walls) {
+        SmTArray<SmEdge*> rims;
+        f->GetEdges(rims);
+        for (ULONG k = 0; k < rims.GetSize(); ++k) {
+            SmTArray<SmFace*> across;
+            rims[k]->GetFaces(across);
+            for (ULONG j = 0; j < across.GetSize(); ++j) {
+                SmFace* g = across[j];
+                if (std::find(walls.begin(), walls.end(), g) != walls.end()) continue;
+                SmVector3d m;
+                double off = 0;
+                double ts = height(at(rims[k]->GetStartVertex())), te = height(at(rims[k]->GetEndVertex()));
+                if (!outward_plane(g, m, off) || std::fabs(std::fabs(dot(m, axis)) - 1) > 1e-6 || std::fabs(ts - te) > tol) throw Error("hole", plain);
+                int top = std::fabs(ts - t1) <= tol ? 1 : std::fabs(ts - t0) <= tol ? 0 : -1;
+                if (top < 0) throw Error("hole", plain);
+                int kind = (top ? dot(m, axis) > 0 : dot(m, axis) < 0) ? 1 : 2;
+                if (ends[top] && ends[top] != kind) throw Error("hole", plain);
+                ends[top] = kind;
+            }
+        }
+    }
+    // entered from the opening nearest the old entry, which must face the same way, else it is another hole
+    bool through = ends[0] == 1 && ends[1] == 1;
+    if (ends[1] != 1 || !ends[0] || (through && std::fabs(t0) < std::fabs(t1))) throw Error("hole", gone);
+    Bore r;
+    r.entry = along(entry, axis, t1);
+    r.axis = axis;
+    r.radius = radius;
+    r.depth = t1 - t0;
+    r.through = through;
+    return r;
+}
+
+// a cylinder standing on base along axis, its faces keyed
+SmBrep* rod(const SmVector3d& base, const SmVector3d& axis, double r, double h)
+{
+    SmBrep* b = nullptr;
+    check(SmApiCreateCylinder(SmVector3d(0, 0, 0), r, h, b), "hole");
+    try {
+        place(b, frame_for(base, axis));
+    } catch (...) {
+        delete b;
+        throw;
+    }
+    return fresh_keys(b);
+}
+
+// the hole made to spec in place, as the mesh path's hole tool does: a smaller or shallower one (or one the same
+// size, so the new wall never lies on the old one) fills the old hole first, flush with its ends; then the shaft and
+// the head at the entry, a counterbore or a countersink, are cut in one
+SmBrep* rebore(SmBrep* a, const Bore& h, const Value& spec)
+{
+    double r = positive(spec, "diameterMm") / 2;
+    double depth = spec.has("depthMm") && !h.through ? positive(spec, "depthMm") : h.depth;
+    double top = h.depth, up = top + kHoleOverlap, bottom = h.through ? -kHoleOverlap : h.depth - depth;
+    SmVector3d far = along(h.entry, h.axis, -h.depth), down(-h.axis.x, -h.axis.y, -h.axis.z);
+    bool bore = spec.has("counterbore"), sink = spec.has("countersink");
+    if (bore && sink) throw Error("hole", "a hole takes a counterbore or a countersink, not both");
+    // the head along the axis above far, from h0 up: a counterbore of radius hr, or a cone from hr0 to hr
+    double hr = 0, hr0 = 0, h0 = 0;
+    if (bore) {
+        const Value& c = spec["counterbore"];
+        hr = positive(c, "diameterMm") / 2;
+        double cd = positive(c, "depthMm");
+        if (hr <= r) throw Error("counterbore.diameterMm", "must be above the hole's diameter");
+        if (top - cd <= bottom) throw Error("counterbore.depthMm", "must be less than the hole's depth");
+        h0 = top - cd;
+    } else if (sink) {
+        const Value& c = spec["countersink"];
+        double rh = positive(c, "diameterMm") / 2, deg = num_or(c, "angleDeg", 90);
+        if (rh <= r) throw Error("countersink.diameterMm", "must be above the hole's diameter");
+        if (!(deg >= 30 && deg <= 150)) throw Error("countersink.angleDeg", "must be between 30 and 150");
+        double tan = std::tan(deg * kPi / 360), cone = (rh - r) / tan;
+        if (top - cone <= bottom) throw Error("countersink.diameterMm", "the countersink is deeper than the hole");
+        // the cone goes on into the shaft, so it crosses the shaft's wall instead of meeting it on a circle
+        double e = std::min(r / 2 / tan, (top - cone - bottom) / 2);
+        hr = rh + kHoleOverlap * tan;
+        hr0 = r - e * tan;
+        h0 = top - cone - e;
+    }
+    SmBrep* m = copy_of(a);
+    SmBrep* tool = nullptr;
+    // combine takes both bodies, so each is let go of before it runs
+    auto take = [](SmBrep*& b) {
+        SmBrep* x = b;
+        b = nullptr;
+        return x;
+    };
+    try {
+        if (r < h.radius + 2 * kHoleOverlap || depth < h.depth) {
+            SmBrep* fill = rod(far, h.axis, h.radius + kHoleOverlap, h.depth);
+            m = combine(take(m), fill, "union");
+            join_flat_faces(m, "hole");
+        }
+        tool = rod(along(far, h.axis, bottom), h.axis, r, up - bottom);
+        SmBrep* head = nullptr;
+        if (bore) head = rod(along(far, h.axis, h0), h.axis, hr, up - h0);
+        if (sink) {
+            // standing on its wide end, at the top
+            check(SmApiCreateCone(SmVector3d(0, 0, 0), hr, hr0, up - h0, head), "hole");
+            try {
+                place(head, frame_for(along(far, h.axis, up), down));
+            } catch (...) {
+                delete head;
+                throw;
+            }
+            fresh_keys(head);
+        }
+        if (head) tool = combine(take(tool), head, "union");
+        m = combine(take(m), take(tool), "difference");
+    } catch (...) {
+        delete m;
+        delete tool;
+        throw;
+    }
+    if (!face_count(m)) {
+        delete m;
+        throw Error("hole", "the change removes the whole body");
+    }
+    return m;
+}
+
 // --- the ops
 
 Value run(const std::string& op, const Value& r)
@@ -1381,6 +1578,19 @@ Value run(const std::string& op, const Value& r)
         SmVector3d from = v3(r, "at"), cap(from.x + d * n.x, from.y + d * n.y, from.z + d * n.z);
         out.set("reached", Value(face_on(m, cap, n)));
         out.set("body", Value(keep(m)));
+    } else if (op == "hole") {
+        // a round hole made another size in place, found again on the body as it is now (an earlier step may have
+        // made the part thicker), as the mesh path's hole.apply does
+        SmBrep* a = body(r, "body");
+        Bore h = bore_of(a, r["hole"]);
+        Value found = Value::object();
+        found.set("entry", xyz(h.entry));
+        found.set("axis", xyz(h.axis));
+        found.set("diameterMm", Value(2 * h.radius));
+        found.set("depthMm", Value(h.depth));
+        found.set("through", Value(h.through));
+        out.set("hole", found);
+        out.set("body", Value(keep(rebore(a, h, r["spec"]))));
     } else if (op == "boolean") {
         SmBrep* a = copy_of(body(r, "a"));
         SmBrep* b = nullptr;

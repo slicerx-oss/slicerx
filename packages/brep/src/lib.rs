@@ -18,6 +18,7 @@
 //! | `fillet` | `body`, `edges` (`a`, `b`, optional `center` for a round rim and `keys` of its two faces), `radiusMm` | `body` |
 //! | `chamfer` | as `fillet`, with `distanceMm` (both faces set back by it; the faces must be flat and square) | `body` |
 //! | `push` | `body`, `at` and `normal` (a flat face facing that way, under `at`; `faceKey` names it first), `distanceMm` (out joins, in cuts) | `body`, `faceKey`, `frame` and `polygons` (the face as `extrude` takes it), `reached` (a face is left where it moved to) |
+//! | `hole` | `body`, `hole` (`entry`, `axis`, `diameterMm` as `hole.find` gives them; found again on the body), `spec` (`diameterMm`, optional `depthMm`, `counterbore` or `countersink`) | `body`, `hole` (as found: `entry`, `axis`, `diameterMm`, `depthMm`, `through`) |
 //! | `info` | `body` | `manifold`, `volumeMm3`, `bounds`, `faces`, `faceTypes` |
 //! | `tessellate` | `body`, `chordMm` (0.01), `angleDeg` (15) | `positions`, `indices`, `faceIds`, `faces` (`id`, `type`, `surface`, `key`) |
 //! | `save` | `body` | `smb` (the body as `SMLib` text) |

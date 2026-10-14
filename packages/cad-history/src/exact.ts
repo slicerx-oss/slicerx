@@ -355,6 +355,17 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
         pushed({ frame: { origin: point(s.transform, f.origin), normal, u, v: cross(normal, u) }, outline, distanceMm: p.distanceMm }, r.faceKey, r.reached)
         return out
       }
+      case 'hole.apply': {
+        const b = solid(target)
+        if (b === null || !target) return null
+        // the hole in the part's own coordinates; the kernel finds it again as the part is now
+        const inv = invert(s.transform)
+        const a = direction(inv, p.hole.axis)
+        const l = Math.hypot(...a) || 1
+        const hole = { ...p.hole, entry: point(inv, p.hole.entry), axis: [a[0] / l, a[1] / l, a[2] / l] }
+        out[s.part] = await part(target, await call('brep.hole', { body: b, hole, spec: p.spec, ...kept }))
+        return out
+      }
       case 'shape.extrude': {
         const op = p.spec.operation ?? 'new'
         if (!p.frame || p.pattern || !('type' in p.shape)) return null
