@@ -139,7 +139,7 @@ test.describe('Model ribbon shots', () => {
       const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
       for (const width of [1440, 1280]) {
         for (const size of ['large', 'medium', 'small'] as const) {
-          const ctx = await browser.newContext({ baseURL: info.project.use.baseURL, deviceScaleFactor: 2 })
+          const ctx = await browser.newContext({ ...(info.project.use.baseURL ? { baseURL: info.project.use.baseURL } : {}), deviceScaleFactor: 2 })
           const page = await ctx.newPage()
           const ribbon = await openModel(page, size, width, scheme)
           await ribbon.locator('[data-tool="push"]').click()
