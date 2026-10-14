@@ -73,17 +73,27 @@ const hover = (el: Element) => act(() => void el.dispatchEvent(new MouseEvent('p
 const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms))
 
 describe('setting tooltip', () => {
-  it('appears after a short hover delay with the note and the figure', () => {
+  it('appears after a short hover delay with the note, and its loop in place of the still figure', () => {
     hover(row.querySelector('label') as Element)
     wait(TIP_TIMING.cold - 100)
     expect(tip()).toBeNull()
     wait(100)
     expect(tip()?.querySelector('.sx-tip-title')?.textContent).toBe('Wall loops')
     expect(tip()?.querySelector('.sx-tip-body')?.textContent).toMatch(/loops/)
-    expect(tip()?.querySelector('.sx-tip-fig svg.sx-fig')).not.toBeNull()
+    // wall loops has a loop, so the figure stands down and the tip shows one picture
+    expect(tip()?.querySelector('.sx-demo')).not.toBeNull()
+    expect(tip()?.querySelector('.sx-tip-fig')).toBeNull()
     expect(tip()?.textContent).not.toContain('wall_loops')
     expect(row.getAttribute('aria-describedby')).toBe('sx-tip')
     expect(tip()?.getAttribute('role')).toBe('tooltip')
+  })
+
+  it('shows the still figure when tip media is off, since no loop plays then', () => {
+    act(() => root.render(createElement(TooltipHost, { resolve: (el: HTMLElement) => resolveTip(el, {}), media: false })))
+    hover(row.querySelector('label') as Element)
+    wait(TIP_TIMING.cold)
+    expect(tip()?.querySelector('.sx-tip-fig svg.sx-fig')).not.toBeNull()
+    expect(tip()?.querySelector('.sx-demo')).toBeNull()
   })
 
   it('hands over to a neighbor after the short warm delay, not the cold one', () => {
