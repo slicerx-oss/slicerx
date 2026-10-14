@@ -32,3 +32,4 @@ export { createMemoryProject, rotatedBox, rotationMatrix, type MemoryObject, typ
 export { buildApprovalRequest, toolMessage } from './runtime'
 export { createDemoClient } from './demo'
 export type { GeomHost, HistoryHost, JobRecord, ModelHit, ModelSearchHost, ProfileSummary, ProfilesHost, ProjectExportHost, ProjectExportSlot, SetupAddInput, SetupConnection, SetupDiscovered, SetupHost, SetupProfileHit, SetupTestResult, ShareHost } from './hosts'
+export { AXES, flatFaces, partTriangles, soupTriangles, type FaceSummary, type Tri } from '../skills/geom_common/faces'

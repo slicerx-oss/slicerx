@@ -8,8 +8,8 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
+import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost } from '@slicerx/cad-history'
 import { modelArg, vec3, type GeomCall } from './args'
@@ -17,6 +17,8 @@ import { designArg, designSummary, faceAt, item, partAt, partsAt, type Design } 
 import { ToolInputError } from './errors'
 
 type V3 = [number, number, number]
+
+export { flatFaces }
 
 const vec2 = z.tuple([z.number(), z.number()])
 
@@ -37,36 +39,6 @@ export function frameFor(origin: V3, normal: V3, u?: V3): { origin: V3; normal: 
   if (!uu) uu = Math.abs(w[2]) > 0.9 ? (unit([1 - w[0] * w[0], -w[0] * w[1], -w[0] * w[2]]) ?? [1, 0, 0]) : (unit(cross([0, 0, 1], w)) ?? [1, 0, 0])
   const z0 = (a: V3): V3 => a.map((c) => c + 0) as V3
   return { origin, normal: z0(w), u: z0(uu), v: z0(cross(w, uu)) }
-}
-
-interface Tri {
-  p: [V3, V3, V3]
-  n: V3
-  area: number
-}
-
-function soupTriangles(pos: ArrayLike<number>): Tri[] {
-  const out: Tri[] = []
-  for (let t = 0; t + 9 <= pos.length; t += 9) {
-    const at = (k: number): V3 => [pos[t + k] ?? 0, pos[t + k + 1] ?? 0, pos[t + k + 2] ?? 0]
-    const p: [V3, V3, V3] = [at(0), at(3), at(6)]
-    const c = cross(sub(p[1], p[0]), sub(p[2], p[0]))
-    out.push({ p, n: unit(c) ?? [0, 0, 0], area: len(c) / 2 })
-  }
-  return out
-}
-
-
-/** An indexed part as triangles, in triangle order. */
-function partTriangles(m: Pick<HistoryMesh, 'positions' | 'indices'>): Tri[] {
-  const pos = new Array<number>(m.indices.length * 3)
-  for (let k = 0; k < m.indices.length; k++) {
-    const i = (m.indices[k] ?? 0) * 3
-    pos[k * 3] = m.positions[i] ?? 0
-    pos[k * 3 + 1] = m.positions[i + 1] ?? 0
-    pos[k * 3 + 2] = m.positions[i + 2] ?? 0
-  }
-  return soupTriangles(pos)
 }
 
 /** Distance from a point to a triangle (closest point on the triangle, Ericson 5.1.5). */
@@ -128,67 +100,6 @@ export function triangleAt(tris: Tri[], at: V3, normal?: V3): number {
   if (!first) throw new ToolInputError('at: no face there')
   if (near.some(({ t }) => dot(t.n, first.t.n) < 0.9999)) throw new ToolInputError('at: the point is on an edge between faces; give normal, the outward normal of the face you mean')
   return first.i
-}
-
-interface FaceSummary {
-  triangle: number
-  at: V3
-  normal: V3
-  facing?: string
-  areaMm2: number
-  center: V3
-}
-
-const AXES: [string, V3][] = [['+x', [1, 0, 0]], ['-x', [-1, 0, 0]], ['+y', [0, 1, 0]], ['-y', [0, -1, 0]], ['+z (top)', [0, 0, 1]], ['-z (bottom)', [0, 0, -1]]]
-
-/** Flat faces: triangles joined across shared edges while they lie in one plane. */
-export function flatFaces(tris: Tri[]): FaceSummary[] {
-  const key = (v: V3): string => v.map((c) => Math.round(c * 1e4)).join(',')
-  const parent = tris.map((_, i) => i)
-  const find = (i: number): number => {
-    while (parent[i] !== i) i = parent[i] = parent[parent[i] ?? i] ?? i
-    return i
-  }
-  const edges = new Map<string, number>()
-  tris.forEach((t, i) => {
-    if (t.area <= 0) return
-    for (let k = 0; k < 3; k++) {
-      const a = key(t.p[k] as V3)
-      const b = key(t.p[(k + 1) % 3] as V3)
-      const e = a < b ? `${a}|${b}` : `${b}|${a}`
-      const j = edges.get(e)
-      if (j === undefined) {
-        edges.set(e, i)
-        continue
-      }
-      const o = tris[j]
-      if (o && dot(o.n, t.n) > 0.99999 && Math.abs(dot(o.n, sub(t.p[0], o.p[0]))) < 1e-3) parent[find(i)] = find(j)
-    }
-  })
-  const groups = new Map<number, number[]>()
-  tris.forEach((t, i) => {
-    if (t.area <= 0) return
-    const r = find(i)
-    groups.set(r, [...(groups.get(r) ?? []), i])
-  })
-  const round = (v: V3): V3 => v.map((c) => Math.round(c * 1000) / 1000) as V3
-  const out: FaceSummary[] = []
-  for (const list of groups.values()) {
-    let area = 0
-    const c: V3 = [0, 0, 0]
-    let big = list[0] ?? 0
-    for (const i of list) {
-      const t = tris[i] as Tri
-      area += t.area
-      for (let k = 0; k < 3; k++) c[k] = (c[k] ?? 0) + ((t.p[0][k] ?? 0) + (t.p[1][k] ?? 0) + (t.p[2][k] ?? 0)) * (t.area / 3)
-      if (t.area > (tris[big]?.area ?? 0)) big = i
-    }
-    const t = tris[big] as Tri
-    const centroid: V3 = [0, 1, 2].map((k) => ((t.p[0][k] ?? 0) + (t.p[1][k] ?? 0) + (t.p[2][k] ?? 0)) / 3) as V3
-    const facing = AXES.find(([, a]) => dot(a, t.n) > 0.9998)?.[0]
-    out.push({ triangle: big, at: round(centroid), normal: round(t.n), ...(facing ? { facing } : {}), areaMm2: Math.round(area * 1000) / 1000, center: round(c.map((x) => x / area) as V3) })
-  }
-  return out.sort((a, b) => b.areaMm2 - a.areaMm2)
 }
 
 const faceRef = z
