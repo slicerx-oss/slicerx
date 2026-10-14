@@ -303,8 +303,9 @@ export function LayerDock() {
   const changeTo = changeIndex >= 0 ? (timeline.changes[changeIndex]?.to ?? 0) : 0
   const purge = purgeReadout(purges, toolChange)
 
-  // Speed, the toolhead and nozzle checks and the G-code lines: beside the transport, or on a phone in the opened bar.
-  const opts = (
+  // Speed beside the transport; the toolhead, gantry and nozzle checks and the G-code lines on the row under it with
+  // the readout. On a phone both open together in the opened bar.
+  const speedOpts = (
     <>
       <span className="dock-cap">Speed</span>
       <Seg
@@ -315,13 +316,19 @@ export function LayerDock() {
         onChange={(v) => set({ playbackSpeed: Number(v) })}
         options={PLAYBACK_SPEEDS.map((v) => ({ value: String(v), label: speedLabel(v), title: v === 1 ? 'Real time: as fast as the printer moves' : v < 1 ? `${v === 0.25 ? 'Quarter' : 'Half'} of real time` : `${v} times real time` }))}
       />
+    </>
+  )
+  const viewOpts = (
+    <>
       <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.' })}>
-        <input type="checkbox" data-testid="pv-show-toolhead" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
-        Show toolhead
+        <input type="checkbox" data-testid="pv-show-toolhead" aria-label="Show toolhead" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
+        <span className="dock-pre">Show </span>
+        toolhead
       </label>
       <label className="dock-check" {...tipAttrs({ title: 'Show gantry', body: 'Draw the gantry over the toolhead at the clearance height your printer profile gives, and the carriage a docked toolhead hangs on. A layer where the gantry would hit the print shows it either way.' })}>
-        <input type="checkbox" data-testid="pv-show-gantry" checked={showGantry} onChange={(e) => set({ showGantry: e.target.checked })} />
-        Show gantry
+        <input type="checkbox" data-testid="pv-show-gantry" aria-label="Show gantry" checked={showGantry} onChange={(e) => set({ showGantry: e.target.checked })} />
+        <span className="dock-pre">Show </span>
+        gantry
       </label>
       <label className="dock-check" {...tipAttrs({ title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.' })}>
         <input type="checkbox" checked={followNozzle} onChange={(e) => set({ followNozzle: e.target.checked })} />
@@ -338,6 +345,43 @@ export function LayerDock() {
         <Icon name="list" />
       </button>
     </>
+  )
+  const opts = (
+    <>
+      {speedOpts}
+      {viewOpts}
+    </>
+  )
+
+  // Layer, Z and layer time, or the change and purge in their place.
+  const readout = (
+    <span className="dock-read sx-mono sx-dim">
+      {/* During a purge its grams take the layer's place (the layer slider shows both), so the line keeps its length. */}
+      {purge && !layerJump ? null : (
+        <>
+          <LayerJump top={top} n={n} layerZ={preview.layerZ} onJump={(k) => (setPlaying(false), stepLayer(0, k))} />
+          <span className="hide-sm">
+            Z <b>{z.toFixed(2)}</b> mm
+          </span>
+        </>
+      )}
+      {/* A change takes the layer time's place, so the readout keeps its line and the transport does not move. */}
+      {toolChange ? null : (
+        <span className="hide-sm">
+          Layer time <b>{layerT < 60 ? `${layerT.toFixed(0)} s` : `${Math.floor(layerT / 60)}m ${Math.round(layerT % 60)}s`}</b>
+        </span>
+      )}
+      {toolChange ? (
+        <span data-testid="pv-change">
+          {changer?.kind === 'filament-swap' ? 'Filament change' : 'Tool change'} <b>{changeIndex + 1}</b> of {timeline.changes.length}, to slot {changeTo + 1}
+        </span>
+      ) : null}
+      {purge ? (
+        <span data-testid="pv-purge" {...tipAttrs({ title: 'Purge', body: 'Plastic flushed into the chute: this change so far, and the whole print up to here. From the change G-code and the filament density.' })}>
+          Purge <b>{purge.now.toFixed(2)} g</b>, print total <b>{purge.total.toFixed(2)} g</b>
+        </span>
+      ) : null}
+    </span>
   )
 
   return (
@@ -385,40 +429,20 @@ export function LayerDock() {
         <button type="button" className="play step ghost" aria-label="Next layer" aria-disabled={top >= n} {...tipAttrs({ title: 'Next layer', ...(top >= n ? { reason: 'This is the last layer.' } : {}) })} onClick={() => top < n && (setPlaying(false), set({ layerHi: top + 1, moveCut: 1, toolChange: null }))}>
           <Icon name="chevron-right" />
         </button>
-        {compact ? null : opts}
-        <span className="dock-read sx-mono sx-dim">
-          {/* During a purge its grams take the layer's place (the layer slider shows both), so the line keeps its length. */}
-          {purge && !layerJump ? null : (
-            <>
-              <LayerJump top={top} n={n} layerZ={preview.layerZ} onJump={(k) => (setPlaying(false), stepLayer(0, k))} />
-              <span className="hide-sm">
-                Z <b>{z.toFixed(2)}</b> mm
-              </span>
-            </>
-          )}
-          {/* A change takes the layer time's place, so the readout keeps its line and the transport does not move. */}
-          {toolChange ? null : (
-            <span className="hide-sm">
-              Layer time <b>{layerT < 60 ? `${layerT.toFixed(0)} s` : `${Math.floor(layerT / 60)}m ${Math.round(layerT % 60)}s`}</b>
-            </span>
-          )}
-          {toolChange ? (
-            <span data-testid="pv-change">
-              {changer?.kind === 'filament-swap' ? 'Filament change' : 'Tool change'} <b>{changeIndex + 1}</b> of {timeline.changes.length}, to slot {changeTo + 1}
-            </span>
-          ) : null}
-          {purge ? (
-            <span data-testid="pv-purge" {...tipAttrs({ title: 'Purge', body: 'Plastic flushed into the chute: this change so far, and the whole print up to here. From the change G-code and the filament density.' })}>
-              Purge <b>{purge.now.toFixed(2)} g</b>, print total <b>{purge.total.toFixed(2)} g</b>
-            </span>
-          ) : null}
-        </span>
+        {compact ? null : speedOpts}
+        {compact ? readout : null}
         {compact ? (
           <button type="button" className="play step ghost dock-more" aria-expanded={opened} aria-label={opened ? 'Fewer playback controls' : 'More playback controls'} onClick={() => setOpened(!opened)}>
             <Icon name={opened ? 'chevron-down' : 'chevron-up'} />
           </button>
         ) : null}
       </div>
+      {compact ? null : (
+        <div className="dock-h dock-h2">
+          {viewOpts}
+          {readout}
+        </div>
+      )}
       {/* On a phone the rest opens as a panel over the foot of the view, so the bar's row and Print stay put. */}
       {compact && !opened ? null : (
         <div id={bodyId} className={compact ? 'dock-body sx-overlay' : 'dock-body'}>
