@@ -504,13 +504,15 @@ Ids that tests read for their text:
 | `sketch-dof` | The drawing card's status from the solver, in its header: "Fully defined", the degrees of freedom left, or a conflict; `data-dof` is the count |
 | `sketch-drawing` | The sketch panel's drawing card: the tools, grid and snap, what shows, and the picked loop's actions; `sketch-drawing-sub` is the tool's name after the card's title ("Drawing · Line") |
 | `sketch-grid-snap` | The row with Grid's switch and Snap's step (Off first), two separate controls; Section has its own row |
-| `sketch-summary`, `sketch-sheet-toggle` | Phone: the docked sheet's header while sketching, with the tool and the sketch's state, and the button that folds or opens the sheet (`aria-expanded`); the sheet folds as drawing starts |
+| `sketch-summary`, `sketch-sheet-toggle` | Phone: the docked sheet's header while sketching, with the tool and the sketch's state, and the button that folds or opens the sheet (`aria-expanded`); the sheet folds once, at the sketch's first point, and stays as the button leaves it after that |
 | `sketch-solid` | The sketch panel's solid card; it has `data-muted` until the sketch has a closed profile, with its `.tp-card-reason` line on why it can't make a solid yet (the first problem the check found, or what's missing) |
 | `sketch-flip` | Flip at the right of Direction's label line: `aria-pressed` when the extrusion goes the other way from its default for the result |
 | `sketch-picked` | With Select, the picked curve and its size ("Line, 20.00 mm") |
-| `sketch-pills`, `sketch-pill` | The live numbers beside the cursor in the view while a drawing tool is on (group "Exact size"); each pill has `data-label` (X, Y, Length, Angle...) and the focused one `data-focus`; typing edits it, with inputs named by label and unit, the group gets `data-typing` and a pill with typed text `data-typed`; the group stays inside the view and off the cursor's point |
+| `sketch-pills`, `sketch-pill` | The live numbers beside the cursor in the view while a drawing tool is on (group "Exact size"); each pill has `data-label` (X, Y, Length, Angle...) and the focused one `data-focus`; typing edits it, with inputs named by label and unit, the group gets `data-typing` and a pill with typed text `data-typed`, and holds still while typed in; the group stays inside the view and off the cursor's point |
+| `sketch-result-reason` | Sketch: the line under Result saying why Join and Cut are off (no body to join or cut) |
+| `sketch-plane-ask`, `sketch-plane-keep`, `sketch-plane-drop` | Sketch: Other plane with something drawn asks first, with Keep drawing and Drop it and pick a plane |
 | `sketch-look` | Look at the sketch, among the view's camera buttons while a sketch is open |
-| `sketch-finish` | The shelf's Finish sketch button while a sketch is open: the sketch goes in the timeline without a solid |
+| `sketch-finish` | The shelf's Finish sketch button while a sketch is open (Ctrl/Cmd+Enter): the sketch goes in the timeline without a solid; it is the primary until the sketch can make a solid, when the panel's Extrude takes over |
 | `sketch-ctx` | A finished sketch's menu, from the timeline strip or the Model tree |
 | `sketch-ctx-edit` | In a finished sketch's menu: Edit sketch |
 | `sketch-ctx-extrude` | In a finished sketch's menu: Extrude, which opens the sketch tool to extrude it |
@@ -530,6 +532,7 @@ Ids that tests read for their text:
 | `model-transform-summary` | Transform's position line while a tool is open and Transform is folded |
 | `model-tool-crumb` | A tool's header while a step is being edited: the object, then the step |
 | `model-tool-apply`, `model-tool-cancel`, `model-tool-more`, `model-tool-repeat` | A tool's footer: Apply (Enter) runs it and closes, Cancel (Esc) closes; on Hole, Fillet and Thread, More (the menu half of Apply) opens Apply and repeat, which runs it and stays open |
+| `model-tool-reason` | Over a tool's footer while Apply is off: the one line saying why (the sketch's "Close the outline to make a solid.") |
 | `model-tool-state` | A tool panel's state on the right of its header: "No hole yet", "1 edge" |
 | `sketch-other-plane` | Sketch: Other plane, in the header after the plane's name; starts the sketch over on another plane or face |
 | `cad-font-system`, `cad-font-file` | Text on a face: where the font comes from, the built-in or an installed font, or a TTF or OTF file |
