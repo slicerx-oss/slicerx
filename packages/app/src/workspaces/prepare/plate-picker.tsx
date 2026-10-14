@@ -12,6 +12,8 @@ import { fitMiddle, textWidth } from '../../lib/mid-truncate'
 import { addPlate, switchPlate } from '../../plate/plates'
 import { filterPlates, plateRows, plateSubtitle, SLICE_STATE_LABEL, stepPlate, type PlateRow } from '../../plate/plate-step'
 import { useApp, type PlateEntry } from '../../state/store'
+import type { Bed } from '@slicerx/contracts'
+import { platePicture } from '../preview/plate-render'
 import { PlateThumb } from '../preview/plate-thumb'
 import { PlateSettingsForm, slotsOnPlate } from './plate-list'
 
@@ -19,7 +21,7 @@ import { PlateSettingsForm, slotsOnPlate } from './plate-list'
  * Text cut in the middle to fit its own box, measured in its own font; the box's width never depends on the text. A
  * `lead` (a plate's number) goes before it in bold, uncut, and the text fits the room it leaves.
  */
-export function MidText({ text, lead, className }: { text: string; lead?: string; className?: string }) {
+export function MidText({ text, lead, className, lines = 1 }: { text: string; lead?: string; className?: string; lines?: number }) {
   const ref = useRef<HTMLSpanElement>(null)
   const leadRef = useRef<HTMLElement>(null)
   const [width, setWidth] = useState(0)
@@ -31,7 +33,8 @@ export function MidText({ text, lead, className }: { text: string; lead?: string
       const cs = getComputedStyle(el)
       const f = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
       const before = leadRef.current ? leadRef.current.offsetWidth + textWidth(' ', f) : 0
-      setWidth(Math.max(1, el.clientWidth - before))
+      // Over more than one line the text wraps at words, so it is given a little less than the lines' full width.
+      setWidth(Math.max(1, lines > 1 ? el.clientWidth * lines * 0.86 - before : el.clientWidth - before))
       setFont(f)
     }
     read()
@@ -39,7 +42,7 @@ export function MidText({ text, lead, className }: { text: string; lead?: string
     const ro = new ResizeObserver(read)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [lead])
+  }, [lead, lines])
   // Before the first measure the whole name shows, clipped by the box; one frame later it is cut to fit.
   const shown = useMemo(() => (width > 0 && font ? fitMiddle(text, width, (t) => textWidth(t, font)) : text), [text, width, font])
   return (
@@ -164,22 +167,23 @@ const FILTERS = [
   { value: 'not-sliced', label: 'Not sliced', testId: 'plate-sheet-not-sliced' },
 ] as const
 
-/** The most the sheet may take: up to 400 px, and never into the toolbar's lane at the top of the view. */
+/** The most the sheet may take: up to 480 px, and never into the toolbar's lane at the top of the view. */
 function sheetRoom(anchor: HTMLElement | null): number {
   const vp = anchor?.closest('.vp')
-  if (!anchor || !vp) return 400
+  if (!anchor || !vp) return 480
   const top = anchor.getBoundingClientRect().top
   const lane = vp.querySelector('.plate-tools-group:not([data-moved])')?.getBoundingClientRect().bottom ?? vp.getBoundingClientRect().top
-  return Math.max(160, Math.min(400, Math.floor(top - lane - 16)))
+  return Math.max(160, Math.min(480, Math.floor(top - lane - 16)))
 }
 
 /**
  * Tile sizes in the sheet (app.css .pp-grid and .pp-card): square thumbnails big enough to tell parts apart, four
  * across. The grid shows at most two and a half rows (BODY_MAX) and scrolls inside, so more plates never grow the sheet.
  */
-const CARD = { min: 120, height: 104, gap: 8 }
-const TILE_THUMB = 56
-const BODY_MAX = 280
+const CARD = { min: 120, height: 140, gap: 8 }
+/** The picture a tile draws, in pixels: twice the size it shows at, so it stays sharp on a dense screen. */
+const PICTURE = { width: 256, height: 160 }
+const BODY_MAX = 2 * CARD.height + 2 * CARD.gap + CARD.height / 2
 const CHROME = 8 * 2 + 30 + 32 + 6 * 2 + 4 * 2
 
 /**
@@ -194,6 +198,20 @@ export function sheetHeight(count: number, width: number, room: number, form = f
   return Math.min(room, Math.max(form ? 320 : 0, want))
 }
 
+/**
+ * A tile's picture: the plate's objects drawn shaded (plate-render.ts), once per plate and kept. Until it is drawn,
+ * and on a plate with nothing on it, the tile shows the plate's outline thumbnail.
+ */
+function TilePicture({ objects, bed }: { objects: readonly PlateEntry[]; bed: Bed }) {
+  const [, redraw] = useState(0)
+  const url = objects.length ? platePicture(objects, PICTURE.width, PICTURE.height, () => redraw((n) => n + 1)) : null
+  return (
+    <span className="pp-card-thumb" aria-hidden="true" data-drawn={url ? '' : undefined}>
+      {url ? <img src={url} alt="" draggable={false} /> : <PlateThumb objects={objects} bed={bed} size={64} fit />}
+    </span>
+  )
+}
+
 function PlateSheet({ rows, objectsOf, onClose, anchor }: { rows: PlateRow[]; objectsOf: (id: string) => readonly PlateEntry[]; onClose: () => void; anchor: RefObject<HTMLDivElement | null> }) {
   const bed = useApp((s) => s.bed)
   const activeObjects = useApp((s) => s.plate)
@@ -202,7 +220,7 @@ function PlateSheet({ rows, objectsOf, onClose, anchor }: { rows: PlateRow[]; ob
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [editing, setEditing] = useState(false)
-  const [room, setRoom] = useState(400)
+  const [room, setRoom] = useState(480)
   const [width, setWidth] = useState(640)
   const box = useRef<HTMLDivElement>(null)
   const search = useRef<HTMLInputElement>(null)
@@ -265,10 +283,8 @@ function PlateSheet({ rows, objectsOf, onClose, anchor }: { rows: PlateRow[]; ob
               {list.map((r) => (
                 <li key={r.id}>
                   <button type="button" className="pp-card" aria-current={r.shown ? 'true' : undefined} data-state={r.state} onClick={() => pick(r.id)} {...tipAttrs({ title: fullName(r), body: `${r.objects} ${r.objects === 1 ? 'object' : 'objects'}, ${SLICE_STATE_LABEL[r.state].toLowerCase()}.` })}>
-                    <span className="pp-card-thumb" aria-hidden="true">
-                      <PlateThumb objects={objectsOf(r.id)} bed={bed} size={TILE_THUMB} fit />
-                    </span>
-                    <MidText className="pp-card-name" lead={String(r.number)} text={plateSubtitle(r.name, r.number) || `Plate ${r.number}`} />
+                    <TilePicture objects={objectsOf(r.id)} bed={bed} />
+                    <MidText className="pp-card-name" lines={2} lead={String(r.number)} text={plateSubtitle(r.name, r.number) || `Plate ${r.number}`} />
                     <small className="pp-card-state">{SLICE_STATE_LABEL[r.state]}</small>
                   </button>
                 </li>
