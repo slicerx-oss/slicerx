@@ -222,8 +222,6 @@
 .sketch-direction > .sx-btn { position: absolute; top: 0; right: 0; }
 /* a pill that stays pressed (Flip) reads as on: the accent's tint and edge, same size */
 .cad.tp .sx-btn.tp-pill[aria-pressed='true'], .cad.tp .sx-btn.tp-pill[aria-pressed='true']:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--ink-3)); color: var(--fg); }
-/* a number with its unit inside the field, after the number */
-.tp-row > .sx-inputwrap > .tp-num { width: 100%; }
 /* the card's title, then what it is doing now */
 .tp-card-sub { font-weight: var(--fw-regular, 400); color: var(--muted); }
 /* the picked curve in Select, in place of the old readout line */

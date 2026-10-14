@@ -1415,8 +1415,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     <>
       <PhonePicker>
         <Seg label="Drawing tool" size="sm" full className="sketch-tools" value={familyOf(draft.tool)} onChange={(f) => pickTool(lastVariant[f] ?? VARIANTS[f]?.[0]?.value ?? (f as DrawTool))} options={FAMILIES} />
-        {/* the ways to draw the family; the row is always there, so nothing below moves */}
-        <SketchVariants tool={draft.tool} onPick={pickTool} sides={sides} onSides={setSides} />
+        {/* the ways to draw the family, shown only when it has more than one; the phone bar keeps its row */}
+        <SketchVariants tool={draft.tool} onPick={pickTool} sides={sides} onSides={setSides} reserve={phone} />
       </PhonePicker>
       <p className="cad-hint sketch-hint" role="status" {...(phone ? {} : { 'data-tip-title': familyName(familyOf(draft.tool)), 'data-tip-body': idle })}>
         <Icon name={phone ? 'info' : 'mouse-left'} size={15} />{' '}
@@ -1517,7 +1517,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       ))}
     </div>
   ) : null
-  const distanceField = <Num id="sk-dist" label={extentKind === 'symmetric' ? 'Total distance' : 'Distance'} unit="mm" unitIn value={distance} onChange={setDistance} onEnter={() => void go()} />
+  const distanceField = <Num id="sk-dist" label={extentKind === 'symmetric' ? 'Total distance' : 'Distance'} unit="mm" value={distance} onChange={setDistance} onEnter={() => void go()} />
   const finishWith = <Choice id="sk-finish" label="Finish with" bare value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} />
   const solid = (
     <>
@@ -1540,13 +1540,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             </Button>
           </div>
           {distanceField}
-          {extentKind === 'twoSides' ? <Num id="sk-dist2" label="Other side" unit="mm" unitIn value={distance2} onChange={setDistance2} onEnter={() => void go()} /> : <Num id="sk-taper" label="Draft" unit="°" unitIn value={taper} onChange={setTaper} onEnter={() => void go()} />}
+          {extentKind === 'twoSides' ? <Num id="sk-dist2" label="Other side" unit="mm" value={distance2} onChange={setDistance2} onEnter={() => void go()} /> : <Num id="sk-taper" label="Draft" unit="°" value={taper} onChange={setTaper} onEnter={() => void go()} />}
           <PatternSection value={patternFields} onChange={setPatternFields} />
         </>
       ) : (
         <>
           <Note>{axis ? 'The picked line is the axis.' : featureOnly ? 'Click a straight line of the sketch: it becomes the axis.' : 'Pick a straight line of the sketch with Select: it becomes the axis.'}</Note>
-          <Num id="sk-angle" label="Angle" unit="°" unitIn value={angle} onChange={setAngle} onEnter={() => void go()} />
+          <Num id="sk-angle" label="Angle" unit="°" value={angle} onChange={setAngle} onEnter={() => void go()} />
         </>
       )}
       <Choice id="sk-result" label="Result" value={op} onChange={setOperation} options={RESULTS.map((o) => (o.value === 'new' ? o : { ...o, disabled: !canInto }))} />

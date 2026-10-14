@@ -86,20 +86,31 @@ test('the solid card opens on a closed profile, and nothing above it moves', asy
   await expect(page.getByTestId('model-select-readout')).toHaveText('Sketching on a face · Line')
   await expect(page.getByTestId('sketch-drawing').locator('h4')).toHaveText('Drawing · Line')
   await expect(page.getByTestId('sketch-variant-one')).toHaveCount(0)
+  // Line has one way to draw: no variant row, no empty space for one
+  await expect(panel.locator('.sketch-variants')).toHaveCount(0)
 
-  // picking each tool moves neither the solid card nor the tools themselves
+  // picking a tool never moves the tools themselves; a family with ways shows them below, one row's height, and the
+  // solid card moves only by that row
   const families = panel.getByRole('radiogroup', { name: 'Drawing tool' })
   const solidY = await top(page, 'sketch-solid')
   const toolsBox = await families.boundingBox()
+  const shifts = new Set<number>()
   for (const name of ['Rectangle', 'Circle', 'Arc', 'Polygon', 'Slot', 'Trim', 'Dimension', 'Line']) {
     const radio = families.getByRole('radio', { name })
     const before = await radio.boundingBox()
     await radio.click()
     await expect(radio).toHaveAttribute('aria-checked', 'true')
     expect(await radio.boundingBox()).toEqual(before)
-    expect(await top(page, 'sketch-solid')).toBe(solidY)
+    await expect(radio).toBeFocused()
+    const row = await panel.locator('.sketch-variants').count()
+    const shift = (await top(page, 'sketch-solid')) - solidY
+    if (row) shifts.add(shift)
+    else expect(shift).toBe(0)
     await expect(page.getByTestId('sketch-drawing').locator('h4')).toHaveText(`Drawing · ${name}`)
   }
+  // every family with ways moves the card by the same row height
+  expect(shifts.size).toBe(1)
+  expect([...shifts][0]).toBeGreaterThan(0)
   expect(await families.boundingBox()).toEqual(toolsBox)
   await expect(page.getByTestId('model-select-readout')).toHaveText('Sketching on a face · Line')
 
@@ -148,12 +159,18 @@ test('at 1440 by 900 Distance and Draft show above the footer with the solid car
     // clear of the footer and the fade above it
     expect(b.y + b.height).toBeLessThanOrEqual(footer.y - 24)
   }
-  // Distance reads on one line, its unit inside the field
-  const label = (await panel.locator('label[for="sk-dist"]').boundingBox())!
-  expect(label.height).toBeLessThan(22)
-  await expect(panel.locator('label[for="sk-dist"]')).toHaveText('Distance')
-  await expect(panel.locator('.sx-inputwrap').filter({ has: page.locator('#sk-dist') }).locator('.sx-inputwrap-unit')).toHaveText('mm')
-  await expect(panel.locator('.sx-inputwrap').filter({ has: page.locator('#sk-taper') }).locator('.sx-inputwrap-unit')).toHaveText('°')
+  // the units sit beside the labels, each on one line, and the fields hold only the numbers
+  for (const [id, text] of [['sk-dist', 'Distance mm'], ['sk-taper', 'Draft °']]) {
+    const label = panel.locator(`label[for="${id}"]`)
+    await expect(label).toHaveText(text)
+    expect((await label.boundingBox())!.height).toBeLessThan(22)
+    await expect(panel.locator(`#${id}`)).toHaveValue(/^-?[0-9.]+$/)
+    await expect(panel.locator('.sx-inputwrap').filter({ has: page.locator(`#${id}`) }).locator('.sx-inputwrap-unit')).toHaveCount(0)
+  }
+  // Symmetric's longer label still fits on one line
+  await panel.getByRole('radiogroup', { name: 'Direction' }).getByRole('radio', { name: 'Symmetric' }).click()
+  await expect(panel.locator('label[for="sk-dist"]')).toHaveText('Total distance mm')
+  expect((await panel.locator('label[for="sk-dist"]').boundingBox())!.height).toBeLessThan(22)
 })
 
 test('Flip beside Direction sends a join into the face instead of out of it', async ({ page, isMobile }) => {
