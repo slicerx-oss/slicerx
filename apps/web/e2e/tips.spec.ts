@@ -110,3 +110,47 @@ test('a tip with a loop holds its size while the loop loads, waits on its finish
   await page.evaluate(() => document.documentElement.style.removeProperty('color-scheme'))
   await expect.poll(ink).toBe(dark)
 })
+
+test('each Simple setting, each of its choices and each plate tool opens its own loop and plays it', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await page.addInitScript(() => {
+    localStorage.setItem('slicerx.debug', '1')
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    // Advanced keeps the Simple rows open (Strength, Speed and Brim sit behind More in Simple)
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', printerId: 'bay-1', pilot: { mode: 'off' } }))
+  })
+  await page.goto('./')
+  await plateReady(page)
+  const tip = page.locator('#sx-tip')
+  const stage = tip.locator('.sx-stage')
+  const away = async () => {
+    await page.mouse.move(5, 5)
+    await expect(tip).toHaveCount(0)
+  }
+  // each anchor's loop id is the class prefix of its drawing, so the loop on show is told apart by it
+  const plays = async (anchor: Locator, text: string, loopId: string) => {
+    await anchor.hover()
+    await expect(tip).toContainText(text)
+    await expect(stage.locator('svg.sxs')).toBeVisible()
+    await expect(stage).toHaveAttribute('data-play', 'true')
+    await expect(stage.locator(`[class*="${loopId}-"]`).first()).toBeAttached()
+    await away()
+  }
+  const rows = page.locator('.srow')
+  await plays(rows.filter({ hasText: 'Layer height' }).locator('.srow-h'), 'Layer height', 'lh')
+  await plays(page.locator('label[for="easy-strength"]'), 'Adds walls and infill', 'st')
+  await plays(page.locator('label[for="easy-speed"]'), 'How fast the printer moves', 'sp')
+  await plays(page.locator('output[for="easy-speed"]'), 'The preset speeds', 'sd')
+  const supports = rows.filter({ hasText: 'Supports' })
+  await plays(supports.locator('.srow-h'), 'Supports', 'su')
+  await plays(supports.getByRole('radio', { name: 'Off' }), 'No supports', 'so')
+  await plays(supports.getByRole('radio', { name: 'Auto' }), 'Organic tree supports', 'sa')
+  await plays(supports.getByRole('radio', { name: 'Painted' }), 'Only where you paint support', 'sn')
+  await plays(page.locator('label[for="easy-brim"]'), 'flat rings around the first layer', 'br')
+  const tools = page.getByRole('toolbar', { name: 'Plate tools' })
+  await plays(tools.getByRole('button', { name: 'Move', exact: true }), 'Drag the model across the plate', 'mv')
+  await plays(tools.getByRole('button', { name: 'Rotate', exact: true }), 'Drag a ring', 'ro')
+  await plays(tools.getByRole('button', { name: 'Scale', exact: true }), 'Resize the model', 'sc')
+  await plays(tools.getByRole('button', { name: 'Lay on face', exact: true }), 'Pick a face', 'lf')
+})

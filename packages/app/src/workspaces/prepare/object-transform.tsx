@@ -125,7 +125,7 @@ export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
           <Icon name="mirror" size={14} className="tf-mirror-mark" aria-hidden="true" />
           <span className="tf-mirror-label">Mirror</span>
           {AXES.map((a, i) => (
-            <Button key={a} size="sm" variant="ghost" aria-label={`Mirror along ${a}`} onClick={() => mirrorSelected(i as 0 | 1 | 2)} tip={{ title: `Mirror along ${a}`, body: `Flip the object across the ${a} axis.` }}>
+            <Button key={a} size="sm" variant="ghost" aria-label={`Mirror along ${a}`} onClick={() => mirrorSelected(i as 0 | 1 | 2)} tip={{ title: `Mirror along ${a}`, body: `Flip the object across the ${a} axis.`, demo: `mirror-${a.toLowerCase()}` }}>
               {a}
             </Button>
           ))}
