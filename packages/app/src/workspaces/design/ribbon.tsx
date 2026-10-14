@@ -20,6 +20,7 @@ import { history } from '../../plate/history'
 import { set, toast, useApp } from '../../state/store'
 import { SHAPES } from '../prepare/object-actions'
 import { useHistoryCounts } from '../prepare/plate-toolbar'
+import { modKey } from '../../lib/keys'
 import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
 import { startFillet } from '../../cad/start-hint'
@@ -271,7 +272,7 @@ export function Ribbon() {
       )
     }
     if (it.kind === 'action') {
-      return <RibbonButton key={key} icon={it.icon} size={px} label={it.label} tip={it.tip} pressed={actionPressed(it.id)} off={actionOff(it.id)} testId={it.id === 'finish' ? 'sketch-finish' : `ribbon-${it.id}`} data={{ 'data-action': it.id }} onClick={() => doAction(it.id)} />
+      return <RibbonButton key={key} icon={it.icon} size={px} label={it.label} tip={it.tip} pressed={actionPressed(it.id)} off={actionOff(it.id)} testId={it.id === 'finish' ? 'sketch-finish' : `ribbon-${it.id}`} data={it.id === 'finish' ? { 'data-action': it.id, 'data-tip-key': `${modKey()}Enter` } : { 'data-action': it.id }} onClick={() => doAction(it.id)} />
     }
     const pressed = it.id === 'face' && tools.some((t) => t.shelf?.menu === 'face' && t.tool !== undefined && pressedTool === t.tool)
     return (

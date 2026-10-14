@@ -54,7 +54,7 @@ export const RIBBON: Readonly<Record<RibbonTab, readonly RibbonGroup[]>> = {
     { id: 'output', label: 'Output', items: [EXPORT] },
   ],
   sketch: [
-    { id: 'sketch', label: 'Sketch', items: [tool('sketch'), act('finish', 'Finish sketch', 'sketch-finish', 'Keeps the sketch in the timeline without making a solid. Enter does the same.')] },
+    { id: 'sketch', label: 'Sketch', items: [tool('sketch'), act('finish', 'Finish sketch', 'sketch-finish', 'Keeps the sketch in the timeline without making a solid.')] },
     {
       id: 'draw',
       label: 'Draw',
