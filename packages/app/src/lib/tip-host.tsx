@@ -32,6 +32,11 @@ export function loadTips(): Promise<void> {
   return loading
 }
 
+/** Whether the tip text has arrived. */
+export function tipsLoaded(): boolean {
+  return registry !== null && settingTip !== null
+}
+
 export function resolveTip(el: HTMLElement, map: Readonly<Record<string, string | null>>, developer = false): TipContent | null {
   const id = el.getAttribute('data-tip')
   if (id?.startsWith(SETTING_TIP)) {
@@ -70,10 +75,11 @@ export function AppTooltips() {
   const tips = useApp((s) => s.tooltips)
   const developer = useApp((s) => s.settingsMode === 'developer')
   const overrides = choice.overrides?.keys
-  // fetched once the app is up; by the time anything is hovered it is here
+  // Fetched once the app is up, with tips on or off: ? summons a tip and a disabled tool explains itself either way,
+  // and a first ? before the text arrives would open the shortcut list instead.
   useEffect(() => {
-    if (tips.enabled) void loadTips()
-  }, [tips.enabled])
+    void loadTips()
+  }, [])
   const resolve = useCallback((el: HTMLElement) => resolveTip(el, keymapFor(choice.id, overrides ?? {}), developer), [choice.id, overrides, developer])
   return <TooltipHost resolve={resolve} enabled={tips.enabled} media={tips.media} />
 }
