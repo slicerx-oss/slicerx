@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-166 tools.
+168 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -26,6 +26,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_design_redo` |  |  | slice | Put back the step slicerx_design_undo last removed. |
 | `slicerx_design_roll` |  |  | slice | Move the timeline marker, rolling the whole design back to how it was after that many items (0 is before everything; leave marker out for the end), as dragging the marker in SlicerX does. |
 | `slicerx_design_save` |  |  | slice | Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in SlicerX with every step editable (other slicers open the parts). |
+| `slicerx_design_sketch` |  |  | slice | Finish a sketch into the design timeline without making a solid, as Finish Sketch does in the app: closed loops of lines and arcs on the bed, any plane or a picked face. |
 | `slicerx_design_steps` |  |  | read | The steps of a design in order: each one's index, id, name ("Pull 5 mm", "Fillet 0.5 mm"), its main number, and whether it went through, broke (with the reason) or is suppressed. |
 | `slicerx_design_timeline` |  |  | read | The design timeline: every sketch and feature across the designs in the order made, the way SlicerX's Model timeline shows them, with the marker (how many items are live; the end when nothing is rolled back). |
 | `slicerx_design_undo` |  |  | slice | Remove the last step of a design and replay it, back to how it was before that step. |
@@ -65,6 +66,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_geom_revolve` |  |  | slice | Revolve a sketch profile around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. |
 | `slicerx_geom_shell` |  |  | slice | Shell a closed body: hollow it to a wall thickness with some flat faces left open, for boxes, trays and enclosures (the shell tool). |
 | `slicerx_geom_sketch_check` |  |  | read | Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. |
+| `slicerx_geom_sketch_edit` |  |  | read | Edit sketch loops as the sketch tools do, and get the loops back: "intersect" lists where segments cross; "trim" takes off the piece of a segment around a point, back to the nearest crossings (a curve that crosses nothing goes whole); "extend" runs an open loop's end segment on to the nearest curve; "mirror" adds copies of picked loops across a line; "pattern" adds copies along a step or round a center. |
 | `slicerx_geom_sketch_solve` |  |  | read | Solve a constrained 2D sketch, as the sketch tool does: points, lines, circles and arcs held by constraints (coincident, horizontal, parallel, tangent, distance, angle and the rest). |
 | `slicerx_geom_split` |  |  | slice | Split a model or a design part that is too big for the printer into pieces that each fit the build volume, with the fewest cuts. |
 | `slicerx_geom_subtract` |  |  | slice | Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. |
