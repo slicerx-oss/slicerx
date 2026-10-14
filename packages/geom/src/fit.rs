@@ -464,7 +464,7 @@ fn contains(outer: &Aabb, inner: &Aabb) -> bool {
 }
 
 /// closest point to `p` on triangle `abc` (Ericson, Real-Time Collision Detection 5.1.5)
-fn closest_on_tri(p: V3, [a, b, c]: &[V3; 3]) -> V3 {
+pub(crate) fn closest_on_tri(p: V3, [a, b, c]: &[V3; 3]) -> V3 {
     let (ab, ac, ap) = (vec3::sub(*b, *a), vec3::sub(*c, *a), vec3::sub(p, *a));
     let (d1, d2) = (vec3::dot(ab, ap), vec3::dot(ac, ap));
     if d1 <= 0.0 && d2 <= 0.0 {
