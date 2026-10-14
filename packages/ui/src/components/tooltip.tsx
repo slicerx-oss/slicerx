@@ -492,6 +492,9 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
+    // a list that grows or narrows while its row's tip is open (a slice filling in the legend) moves the tip with it
+    const list = shown.touch ? null : rowList(shown.anchor)
+    if (list) ro.observe(list)
     window.addEventListener('resize', measure)
     return () => {
       ro.disconnect()
