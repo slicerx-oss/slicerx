@@ -10,7 +10,6 @@ import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { appName, currentEdition, editionHasCad } from '../edition'
 import { mimirCloudHost, type MimirQuota } from '../pilot-connect/cloud'
-import { bounds } from '../plate/transform'
 import { LinkError } from './methods-error'
 import { listSessions, readSession } from './sessions'
 import { toolStore } from '../plate/tools'
@@ -32,6 +31,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'project.move': 'edit',
   'project.rotate': 'edit',
   'project.scale': 'edit',
+  'project.rename': 'edit',
+  'project.duplicate': 'edit',
+  'project.remove_object': 'edit',
+  'project.lay_on_face': 'edit',
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
@@ -313,31 +316,21 @@ const HANDLERS: Record<string, Handler> = {
     const s = get()
     return { app: appName(), tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS }
   },
-  'plate.list': () => {
+  'plate.list': async () => {
+    const { objectState } = await import('./object-state')
     const s = get()
     const at = s.plates.findIndex((p) => p.id === s.activePlate) + 1
     const drawn = drawnPlate()
-    return {
-      bed: bedShape(),
-      // The view draws these objects, the plate shown; left out when no view is up.
-      ...(drawn !== undefined ? { drawn: drawn === at } : {}),
-      objects: s.plate.map((e) => {
-        const b = bounds(e.parts, e.transform)
-        return {
-          id: e.id,
-          name: e.name,
-          parts: e.parts.length,
-          transform: e.transform.map(round),
-          ...(b ? { minMm: b.min.map(round), maxMm: b.max.map(round), sizeMm: b.max.map((v, i) => round(v - b.min[i]!)) } : {}),
-          ...(e.history ? { steps: e.history.steps.length } : {}),
-        }
-      }),
-    }
+    return { bed: bedShape(), ...(drawn !== undefined ? { drawn: drawn === at } : {}), objects: s.plate.map(objectState) }
   },
   // Loaded when first used, so arranging stays out of the link's startup.
   'project.move': async (args, client) => (await import('./plate-edits')).move(args, client.name),
   'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client.name),
   'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client.name),
+  'project.rename': async (args, client) => (await import('./object-actions')).objectAction('rename', args, client.name),
+  'project.duplicate': async (args, client) => (await import('./object-actions')).objectAction('duplicate', args, client.name),
+  'project.remove_object': async (args, client) => (await import('./object-actions')).objectAction('remove_object', args, client.name),
+  'project.lay_on_face': async (args, client) => (await import('./object-actions')).objectAction('lay_on_face', args, client.name),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
   'plates.list': () => platesState(),

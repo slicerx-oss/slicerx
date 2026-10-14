@@ -44,7 +44,7 @@ export const APP_DESIGN_TOOLS = new Set([
 ])
 
 /** Moving, turning and scaling objects, which run on the app's shown plate when the object is not this server's. */
-export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale'])
+export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale', 'project.rename', 'project.duplicate', 'project.remove_object', 'project.lay_on_face'])
 
 /** The agent side of the app link (link-client `appLink.call`). */
 export interface AppLinkCaller {

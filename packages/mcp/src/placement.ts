@@ -258,7 +258,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
 
   const removeObject = tool({
     name: 'project.remove_object',
-    description: 'Take an object, with all its copies, out of the project.',
+    description: 'Take an object, with all its copies, out of the project. In the live app, removes only the concrete object on the shown plate: surviving copies keep their geometry and settings, and measurements referencing the removed object are removed. Answers with removed ids and the remaining shown objects; toolbar Undo restores the change.',
     input: z.object({ object: objectArg }),
     title: (i) => `Remove ${i.object}?`,
     run(i, project) {
@@ -270,7 +270,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
   const duplicate = tool({
     name: 'project.duplicate',
     description:
-      'Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows. For identical copies that always print alike, add the model with copies instead. Answers with the new ids and the project.',
+      'Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows. For identical copies that always print alike, add the model with copies instead. Answers with the new ids and the project. In the live app, copies one concrete object into free space on the shown plate without using the clipboard, retains inherited object and part settings, and returns requested and created counts plus the new object states. Fewer copies may fit; one toolbar Undo removes them all.',
     input: z.object({ object: objectArg, count: z.number().int().min(1).max(50).default(1).describe('How many copies, 1 to 50') }),
     title: (i) => `Duplicate ${i.object}${i.count > 1 ? ` ${i.count} times` : ''}?`,
     run(i, project) {
@@ -281,7 +281,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
 
   const rename = tool({
     name: 'project.rename',
-    description: 'Rename an object. Its id stays, and the new name shows in the app and in the exported project.',
+    description: 'Rename an object. Its id stays, and the new name shows in the app and in the exported project. In the live app, targets one concrete object on the shown plate and returns its resulting state. Use ids when names are ambiguous. An unchanged name adds no Undo step.',
     input: z.object({ object: objectArg, name: z.string().min(1).max(120) }),
     title: (i) => `Rename ${i.object} to ${i.name}?`,
     run(i, project) {
@@ -293,7 +293,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
   const layOnFace = tool({
     name: 'project.lay_on_face',
     description:
-      'Lay an object on one of its faces, as Lay on bed does in the app: it turns so that face points straight down and sits on the bed. normal is the face\'s outward normal in the model as modeled, as slicerx_geom_faces gives it for the same model file (for example [1, 0, 0] lays it on its +x side). It sets the rotation (absolute, as slicerx_project_rotate does) and keeps the scale. Answers with the project, including the rotation and the new size.',
+      'Lay an object on one of its faces, as Lay on bed does in the app: it turns so that face points straight down and sits on the bed. normal is the face\'s outward normal in the model as modeled, as slicerx_geom_faces gives it for the same model file (for example [1, 0, 0] lays it on its +x side). It sets the rotation (absolute, as slicerx_project_rotate does) and keeps the scale. Answers with the project, including the rotation and the new size. In the live app, targets one concrete object on the shown plate, preserves the center of its footprint and returns the resulting transform and bounds. Locked objects and active history edits refuse; toolbar Undo restores the placement.',
     input: z.object({ object: objectArg, normal: vec3.describe('Outward normal of the face, in the model as modeled') }),
     title: (i) => `Lay ${i.object} on a face?`,
     run(i, project) {

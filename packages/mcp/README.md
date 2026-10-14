@@ -105,6 +105,21 @@ A refused call has `isError: true`, text of the form `Error: <code>: <message>`,
 
 `slicerx_slice_file`, `slicerx_estimate_file` and `slicerx_local_ai_setup` send MCP progress notifications (`notifications/progress`, progress from 0 to 1 with a message per stage) when the request carries a `progressToken`.
 
+### Live object management
+
+With a configured named-client credential (`SLICERX_MCP_LINK_KEY_REF`), the app link enabled and an edit grant, these commands manage concrete objects on the shown plate:
+
+```sh
+slicerx-mcp --printers link --app call project_rename '{"object":"obj_1","name":"Bracket"}'
+slicerx-mcp --printers link --app call project_duplicate '{"object":"obj_1","count":2}'
+slicerx-mcp --printers link --app call project_lay_on_face '{"object":"obj_1","normal":[1,0,0]}'
+slicerx-mcp --printers link --app call project_remove_object '{"object":"obj_1"}'
+```
+
+Use ids when several objects share a name. Responses include resulting object states; `plate.list` reads them again. Copies get independent ids and retain inherited object and part settings. They use available space and return both requested and created counts, so a full plate cannot silently appear to have received every requested copy. Duplication leaves the clipboard alone and creates one Undo step.
+
+Live removal deletes only the named concrete object. Other copies keep their geometry and settings; measurements referencing the removed object are removed too. Undo restores all of these changes. Lay on face uses a normal in model coordinates, keeps scale and the footprint center, and places the object on the bed. Locked removal/orientation and conflicting timeline edits refuse. Partner app keys cannot edit the open project.
+
 ## Permissions
 
 The policy file gives each class of action one of three modes:

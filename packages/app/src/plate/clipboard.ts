@@ -10,7 +10,9 @@ import type { Bed, SettingValue } from '@slicerx/contracts'
 import { get, markStale, selectedIds, set, toast, type PlateEntry, type PlateVolumeEntry } from '../state/store'
 import { bedCircle, boxInBed } from './bed-shape'
 import { arrange, currentMargins, MARGIN_SAFETY_MM, printSizeOf } from './arrange'
-import { sourceId } from './object-settings'
+import { partOverridesOf, sourceId } from './object-settings'
+import { inStep } from './history'
+import { removeObjects } from './remove'
 import { bounds, compose, identity, type Box, type Mat4 } from './transform'
 
 export type Clipboard =
@@ -44,26 +46,30 @@ const newId = (p: string) => `${p}_${Date.now().toString(36)}${(++seq).toString(
 
 /** Copies the selected objects. Returns how many. */
 export function copySelection(): number {
+  const copy = objectCopy(selectedIds())
+  if (!copy) return 0
+  setClip(copy)
+  return copy.entries.length
+}
+
+function objectCopy(ids: readonly string[]): Extract<Clipboard, { kind: 'objects' }> | null {
   const s = get()
-  const ids = new Set(selectedIds(s))
-  const entries = s.plate.filter((p) => ids.has(p.id))
-  if (entries.length === 0) return 0
+  const entries = s.plate.filter((p) => ids.includes(p.id))
+  if (entries.length === 0) return null
   const settings: Record<string, Record<string, SettingValue>> = {}
   for (const e of entries) {
     const own = s.objectSettings[sourceId(e)]
     if (own) settings[e.id] = { ...own }
   }
-  setClip({ kind: 'objects', entries: entries.map((e) => ({ ...e })), settings })
-  return entries.length
+  const all = [...s.plate, ...s.plates.filter((p) => p.id !== s.activePlate).flatMap((p) => p.objects)]
+  return { kind: 'objects', entries: entries.map((e) => ({ ...e, partSettings: { ...partOverridesOf(all, e) } })), settings }
 }
 
 /** Copy, then remove the originals in one step. */
 export function cutSelection(): number {
   const n = copySelection()
   if (n === 0) return 0
-  const ids = new Set(selectedIds(get()))
-  set({ plate: get().plate.filter((p) => !ids.has(p.id)), selection: null, selectedIds: [] })
-  markStale()
+  removeObjects(selectedIds())
   return n
 }
 
@@ -235,10 +241,22 @@ export function pasteClipboard(): string[] {
 
 /** Copy and paste in one go, leaving the clipboard as it was. */
 export function duplicateSelection(): string[] {
-  const before = clip
-  const n = copySelection()
-  if (n === 0) return []
-  const ids = pasteClipboard()
-  setClip(before)
-  return ids
+  return duplicateObjects(selectedIds())
+}
+
+/** Duplicate named objects without using the clipboard. All placed copies form one undo step. */
+export function duplicateObjects(ids: readonly string[], count = 1): string[] {
+  if (!Number.isInteger(count) || count < 1 || count > 50) return []
+  const copy = objectCopy(ids)
+  if (!copy) return []
+  return inStep({}, () => {
+    const made: string[] = []
+    for (let i = 0; i < count; i++) {
+      const next = pasteObjects(copy)
+      made.push(...next)
+      if (next.length < copy.entries.length) break
+    }
+    if (made.length) set({ selection: made[0]!, selectedIds: made })
+    return made
+  })
 }

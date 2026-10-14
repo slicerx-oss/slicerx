@@ -6,6 +6,7 @@ import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, Permi
 import { grantApproval, hashParams } from '@slicerx/contracts'
 import type { QueueItem } from '../queue/queue'
 import { clearProject } from '../project/new'
+import { removeObjects } from '../plate/remove'
 import { get, markStale, set, toast, type AppState, selectedIds, type PendingApproval, type ModelSource } from './store'
 
 
@@ -53,11 +54,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
 }
 
 export function removeSelected(): void {
-  const ids = new Set(selectedIds())
-  if (ids.size === 0) return
-  const { plate } = get()
-  set({ plate: plate.filter((p) => !ids.has(p.id)), selection: null, selectedIds: [] })
-  markStale()
+  removeObjects(selectedIds())
 }
 
 /**
