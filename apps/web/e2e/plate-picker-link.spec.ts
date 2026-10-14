@@ -29,9 +29,10 @@ const from = createRequire(join(mcpDir, 'package.json'))
 type Plates = { shown: number; count: number; plates: { number: number; name: string; shown: boolean; slice: string }[] }
 type Answer = { isError?: boolean; structuredContent?: { ok: boolean; summary: string; output: Plates } }
 
-/** The process environment for slicerx-mcp: the hub's agent code in it, never on the command line. */
-const env = (): Record<string, string> => ({ ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string')), SLICERX_MCP_LINK_CODE: hub.code })
-const serverArgs = (dir: string) => [from.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'stub', '--printers', 'link', '--link-url', hub.linkUrl, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
+/** The process environment for slicerx-mcp, with no link credential of its own: it reads the hub's agent code. */
+const env = (): Record<string, string> => Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string' && !e[0].startsWith('SLICERX_MCP_LINK')))
+/** slicerx-mcp as a client runs it, reading the hub's agent code from the hub's state directory. */
+const serverArgs = (dir: string) => [from.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'stub', '--printers', 'link', '--link-url', hub.linkUrl, '--link-state-dir', hub.stateDir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
 
 /** The person allows each new client the first time it calls; the buttons arm after a moment. */
 async function allowWhenAsked<T>(page: Page, call: Promise<T>): Promise<T> {
