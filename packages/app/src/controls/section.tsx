@@ -129,7 +129,7 @@ function Gizmo({ choice, onChange }: { choice: LookAndFeelChoice; onChange: (c: 
             <label htmlFor={id} {...tipAttrs(r.hint ? { title: r.label ?? r.hint, body: r.hint } : undefined)}>
               {r.label}
             </label>
-            <Select id={id} size="sm" value={cur} onChange={(e) => set(r.path, e.target.value as ModKey | 'none')}>
+            <Select id={id} size="sm" className="ctl-key" value={cur} onChange={(e) => set(r.path, e.target.value as ModKey | 'none')}>
               {MOD_OPTIONS.filter((m) => r.optional || m.value !== 'none').map((m) => (
                 <option key={m.value} value={m.value}>
                   {m.label}
