@@ -126,6 +126,23 @@
   --t-slow: 260ms;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 
+  /* the tooltip stage (demo loops): the toolbar icons' grays, the accent shaded from the theme's own, and the pill and pointer */
+  --stage-t1: #d6d8e4;
+  --stage-t2: #9da1b6;
+  --stage-t3: #6c7086;
+  --stage-ol: #1a1b24;
+  --stage-a1: color-mix(in srgb, var(--accent) 72%, white);
+  --stage-a2: color-mix(in srgb, var(--accent) 88%, black);
+  --stage-a3: color-mix(in srgb, var(--accent) 64%, black);
+  --stage-aol: color-mix(in srgb, var(--accent) 22%, black);
+  --stage-cut: var(--red);
+  --stage-pill: #16171e;
+  --stage-pill-text: #f8f8f2;
+  --stage-pill-line: rgb(255 255 255 / 18%);
+  --stage-grid: #5a5e74;
+  --stage-ptr: white;
+  --stage-ptr-line: #111218;
+
   /* stacking */
   --z-hud: 2;
   --z-rail-peek: 20;
@@ -134,6 +151,19 @@
   --z-dialog: 60;
   --z-tip: 65;
   --z-palette: 70;
+}
+
+:root[style*="color-scheme: light"] {
+  --stage-t1: #fff;
+  --stage-t2: #cfccd9;
+  --stage-t3: #9b97a8;
+  --stage-ol: #36333f;
+  --stage-a1: color-mix(in srgb, var(--accent) 78%, white);
+  --stage-a2: var(--accent);
+  --stage-a3: color-mix(in srgb, var(--accent) 80%, black);
+  --stage-aol: color-mix(in srgb, var(--accent) 40%, black);
+  --stage-pill: #2d2834;
+  --stage-grid: #8b8395;
 }
 
 /* The approved Subban brand kit colors for the brand pages. design/sync.mjs appends this after the
