@@ -25,6 +25,8 @@ export function formatShortcut(s: string): string {
     .join(mac ? '' : '+')
 }
 
+const SHIFTED_BRACKET: Record<string, string> = { '[': 'BracketLeft', ']': 'BracketRight' }
+
 /** True when the event matches a shortcut such as "Mod+K" or "Mod+Shift+Enter". */
 export function matchShortcut(e: KeyboardEvent, s: string): boolean {
   const parts = s.split('+')
@@ -37,6 +39,9 @@ export function matchShortcut(e: KeyboardEvent, s: string): boolean {
   const k = e.key.length === 1 ? e.key.toUpperCase() : e.key
   // Alt changes e.key on macOS, so fall back to the physical key for letters and digits. Named keys (Space) match by code.
   const code = e.code.startsWith('Key') ? e.code.slice(3) : e.code.startsWith('Digit') ? e.code.slice(5) : e.code
+  // Shift turns [ into { on a US keyboard, and other layouts put the brackets elsewhere: a shifted bracket chord
+  // (Shift+[ steps plates) matches the physical bracket key.
+  if (parts.includes('Shift') && SHIFTED_BRACKET[key] === e.code) return true
   return k === key.toUpperCase() || k === key || code === key.toUpperCase() || e.code === key
 }
 

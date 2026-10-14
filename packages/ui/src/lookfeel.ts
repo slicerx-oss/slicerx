@@ -146,7 +146,7 @@ export const KEY_ACTIONS = [
   'view.plate', 'view.top', 'view.bottom', 'view.front', 'view.back', 'view.left', 'view.right', 'view.iso',
   'view.zoomSelection', 'view.zoomBed', 'view.projection',
   'tool.move', 'tool.rotate', 'tool.scale', 'tool.cut', 'tool.placeOnFace', 'tool.supports', 'tool.orient',
-  'plate.arrange', 'plate.arrangeSelected',
+  'plate.arrange', 'plate.arrangeSelected', 'plate.prev', 'plate.next',
   'edit.copy', 'edit.cut', 'edit.paste', 'edit.duplicate', 'object.printable',
   'workspace.toggle', 'model.mode', 'slice', 'export', 'palette',
   'panel.left', 'panel.right', 'panel.bottom',
@@ -162,6 +162,8 @@ const COMMON: Keymap = {
   'view.zoomSelection': null, 'view.zoomBed': null, 'view.projection': null,
   'tool.move': 'M', 'tool.rotate': 'R', 'tool.scale': 'S', 'tool.cut': 'C', 'tool.placeOnFace': 'F', 'tool.supports': null, 'tool.orient': null,
   'plate.arrange': 'A', 'plate.arrangeSelected': 'Shift+A',
+  // Shift+[ and Shift+] step through the plates; [ and ] alone are the side panels. Matched on the physical key.
+  'plate.prev': 'Shift+[', 'plate.next': 'Shift+]',
   'edit.copy': 'Mod+C', 'edit.cut': 'Mod+X', 'edit.paste': 'Mod+V', 'edit.duplicate': null, 'object.printable': 'V',
   'workspace.toggle': null, 'model.mode': 'Mod+E', 'slice': 'Mod+G', 'export': 'Mod+Shift+E', 'palette': 'Mod+K',
   'panel.left': '[', 'panel.right': ']', 'panel.bottom': 'Mod+J',

@@ -7,7 +7,7 @@ import type { LookAndFeelChoice } from '@slicerx/contracts'
 import { keymapFor, type KeyAction } from '@slicerx/ui'
 import { runCommand } from '../commands/registry'
 import { inTextField, matchShortcut } from '../lib/keys'
-import { toggleModelMode } from '../state/model-mode'
+import { modelMode, toggleModelMode } from '../state/model-mode'
 import { get, set } from '../state/store'
 import { toggleEdge } from '../shell/edge-keys'
 import { onControl } from '../controls/global-keys'
@@ -17,6 +17,7 @@ import { PICK_KINDS, pickKeysOn } from './pick-filter'
 import { clearPicks, setPickKind } from './sub-pick'
 import { arrangePlate, centerSelected, clearSelection, dropSelectedToBed, selectAll } from './edit'
 import { history } from './history'
+import { stepPlate } from './plate-step'
 import { selectAllEars } from './brim-ears'
 import { cameraBus, getPaintBus, setTool, toolStore } from './tools'
 
@@ -60,6 +61,9 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
     'view.projection': () => void bus()?.toggleProjection?.(),
     'plate.arrange': () => void arrangePlate('all'),
     'plate.arrangeSelected': () => void arrangePlate('selection'),
+    // The plate picker's steps, in Slice, where the picker is: Model and mimir show the design, not the plate.
+    'plate.prev': () => void (modelMode() === 'slice' && stepPlate(-1)),
+    'plate.next': () => void (modelMode() === 'slice' && stepPlate(1)),
     'edit.copy': () => void runCommand('copy'),
     'edit.cut': () => void runCommand('cut'),
     'edit.paste': () => void runCommand('paste'),
