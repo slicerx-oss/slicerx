@@ -143,6 +143,7 @@ function MultiSelection() {
 
 export { Shelf } from './shelf'
 export { PhoneHandles, PhoneShelf, PhoneUndo } from './phone-shelf'
+export { Ribbon } from './ribbon'
 export { SelectPill } from './select-pill'
 
 /**

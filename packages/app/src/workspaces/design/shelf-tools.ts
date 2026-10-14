@@ -4,6 +4,7 @@
 // its own order, and the command bar gates each tool's command by the same flags, so none of them drift. Each entry
 // opens a tool panel (`tool`) or runs at once (`run`).
 import type { IconName } from '@slicerx/ui'
+import type { ToolIconName } from '@slicerx/ui/tool-icons'
 import type { CadTool } from '../../state/store'
 
 export type ShelfGroup = 'create' | 'shape' | 'fasten' | 'mesh' | 'utility'
@@ -19,6 +20,8 @@ export interface ShelfTool {
   label: string
   short?: string
   icon: IconName
+  /** Its shaded icon in the Model ribbon (@slicerx/ui/tool-icons). */
+  toolIcon: ToolIconName
   tool?: ToolId
   run?: ShelfAction
   tip?: string
@@ -39,24 +42,24 @@ export interface ShelfTool {
 }
 
 export const SHELF_TOOLS: readonly ShelfTool[] = [
-  { id: 'cut', label: 'Cut', icon: 'cut', tool: 'cut', needsSelection: true, shelf: { group: 'shape' }, menu: 0, command: 'object-cut', accepts: ['object'] },
-  { id: 'orient', label: 'Auto orient', icon: 'orient', run: 'orient', needsSelection: true, menu: 0, command: 'object-orient' },
-  { id: 'measure', label: 'Measure', icon: 'measure', tool: 'measure', shelf: { group: 'utility' }, menu: 1, command: 'object-measure' },
-  { id: 'array', label: 'Array', icon: 'array-linear', tool: 'array', needsSelection: true, shelf: { group: 'shape' }, menu: 1, command: 'object-array', accepts: ['object'] },
-  { id: 'sketch', label: 'Sketch', icon: 'sketch', tool: 'sketch', tip: 'sketch.enter', modeling: true, shelf: { group: 'create' }, menu: 1, command: 'object-sketch', accepts: ['face'] },
-  { id: 'facesvg', label: 'SVG on a face', icon: 'svg-face', tool: 'facesvg', tip: 'cad.svgFace', modeling: true, shelf: { group: 'create', menu: 'face' }, menu: 1, command: 'object-svg-face' },
-  { id: 'push', label: 'Push and pull', icon: 'push-pull', tool: 'push', tip: 'cad.push', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-push', accepts: ['face'] },
-  { id: 'fillet', label: 'Fillet and chamfer', short: 'Fillet', icon: 'fillet-edge', tool: 'fillet', tip: 'cad.fillet', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-fillet', accepts: ['edge'] },
-  { id: 'holefit', label: 'Hole for a screw or insert', short: 'Hole', icon: 'hole-fit', tool: 'holefit', modeling: true, shelf: { group: 'fasten' }, menu: 1, command: 'object-holefit', accepts: ['round', 'object'] },
-  { id: 'thread', label: 'Thread', icon: 'thread-bolt', tool: 'thread', modeling: true, shelf: { group: 'fasten' }, menu: 1, command: 'object-thread', accepts: ['round'] },
-  { id: 'shell', label: 'Shell with open faces', short: 'Shell', icon: 'shell-open', tool: 'shell', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-shell', accepts: ['face'] },
-  { id: 'values', label: 'Named values', short: 'Values', icon: 'named-values', tool: 'values', modeling: true, shelf: { group: 'utility' }, menu: 1, command: 'project-values' },
-  { id: 'shape', label: 'Shape on a face', icon: 'on-face', tool: 'shape', modeling: true, drawing: true, shelf: { group: 'create', menu: 'face' }, menu: 2, command: 'object-shape' },
-  { id: 'facetext', label: 'Text on a face', icon: 'text', tool: 'facetext', modeling: true, drawing: true, shelf: { group: 'create', menu: 'face' }, menu: 2, command: 'object-text' },
-  { id: 'subtract', label: 'Subtract a shape', short: 'Subtract', icon: 'subtract-shape', tool: 'hole', needsSelection: true, drawing: true, shelf: { group: 'shape' }, menu: 2, command: 'object-subtract' },
-  { id: 'hollow', label: 'Hollow', icon: 'hollow', tool: 'hollow', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-hollow' },
-  { id: 'repair', label: 'Repair mesh', icon: 'repair-mesh', run: 'repair', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-repair' },
-  { id: 'simplify', label: 'Simplify mesh', icon: 'simplify-mesh', tool: 'simplify', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-simplify' },
+  { id: 'cut', label: 'Cut', icon: 'cut', toolIcon: 'cut', tool: 'cut', needsSelection: true, shelf: { group: 'shape' }, menu: 0, command: 'object-cut', accepts: ['object'] },
+  { id: 'orient', label: 'Auto orient', icon: 'orient', toolIcon: 'orient', run: 'orient', needsSelection: true, menu: 0, command: 'object-orient' },
+  { id: 'measure', label: 'Measure', icon: 'measure', toolIcon: 'measure', tool: 'measure', shelf: { group: 'utility' }, menu: 1, command: 'object-measure' },
+  { id: 'array', label: 'Array', icon: 'array-linear', toolIcon: 'array-linear', tool: 'array', needsSelection: true, shelf: { group: 'shape' }, menu: 1, command: 'object-array', accepts: ['object'] },
+  { id: 'sketch', label: 'Sketch', icon: 'sketch', toolIcon: 'sketch', tool: 'sketch', tip: 'sketch.enter', modeling: true, shelf: { group: 'create' }, menu: 1, command: 'object-sketch', accepts: ['face'] },
+  { id: 'facesvg', label: 'SVG on a face', icon: 'svg-face', toolIcon: 'svg-face', tool: 'facesvg', tip: 'cad.svgFace', modeling: true, shelf: { group: 'create', menu: 'face' }, menu: 1, command: 'object-svg-face' },
+  { id: 'push', label: 'Push and pull', icon: 'push-pull', toolIcon: 'push', tool: 'push', tip: 'cad.push', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-push', accepts: ['face'] },
+  { id: 'fillet', label: 'Fillet and chamfer', short: 'Fillet', icon: 'fillet-edge', toolIcon: 'fillet', tool: 'fillet', tip: 'cad.fillet', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-fillet', accepts: ['edge'] },
+  { id: 'holefit', label: 'Hole for a screw or insert', short: 'Hole', icon: 'hole-fit', toolIcon: 'hole-fit', tool: 'holefit', modeling: true, shelf: { group: 'fasten' }, menu: 1, command: 'object-holefit', accepts: ['round', 'object'] },
+  { id: 'thread', label: 'Thread', icon: 'thread-bolt', toolIcon: 'thread-bolt', tool: 'thread', modeling: true, shelf: { group: 'fasten' }, menu: 1, command: 'object-thread', accepts: ['round'] },
+  { id: 'shell', label: 'Shell with open faces', short: 'Shell', icon: 'shell-open', toolIcon: 'shell', tool: 'shell', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-shell', accepts: ['face'] },
+  { id: 'values', label: 'Named values', short: 'Values', icon: 'named-values', toolIcon: 'named-values', tool: 'values', modeling: true, shelf: { group: 'utility' }, menu: 1, command: 'project-values' },
+  { id: 'shape', label: 'Shape on a face', icon: 'on-face', toolIcon: 'shape-face', tool: 'shape', modeling: true, drawing: true, shelf: { group: 'create', menu: 'face' }, menu: 2, command: 'object-shape' },
+  { id: 'facetext', label: 'Text on a face', icon: 'text', toolIcon: 'text-face', tool: 'facetext', modeling: true, drawing: true, shelf: { group: 'create', menu: 'face' }, menu: 2, command: 'object-text' },
+  { id: 'subtract', label: 'Subtract a shape', short: 'Subtract', icon: 'subtract-shape', toolIcon: 'subtract-shape', tool: 'hole', needsSelection: true, drawing: true, shelf: { group: 'shape' }, menu: 2, command: 'object-subtract' },
+  { id: 'hollow', label: 'Hollow', icon: 'hollow', toolIcon: 'hollow', tool: 'hollow', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-hollow' },
+  { id: 'repair', label: 'Repair mesh', icon: 'repair-mesh', toolIcon: 'repair-mesh', run: 'repair', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-repair' },
+  { id: 'simplify', label: 'Simplify mesh', icon: 'simplify-mesh', toolIcon: 'simplify-mesh', tool: 'simplify', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-simplify' },
 ]
 
 /** The shelf's groups, in order, set apart by space and a short hairline. The name shows in each tool's tip. Utility (Measure, Values) sits at the right end, as icons, by undo and redo. */
