@@ -25,12 +25,14 @@ function hsv(hex: string): { h: number; s: number } {
 }
 
 /**
- * The model's pixels in the view: those that differ from the same view with the plate empty. For each, its hue's
- * distance from `hue` (colored pixels only: lit, saturation above 0.2) and its saturation (lit pixels).
+ * The model's pixels in the view: those that differ from the same view with the plate empty. For each one inside the
+ * model's outline, its hue's distance from `hue` (colored pixels only: lit, saturation above 0.2) and its saturation
+ * (lit pixels).
  */
-async function measure(page: Page, withModel: string, again: string, without: string, after: string, hue: number): Promise<{ n: number; hueDev: number[]; sat: number[]; moving: number }> {
+async function measure(page: Page, withModel: string, again: string, without: string, after: string, hue: number): Promise<{ n: number; edge: number; hueDev: number[]; sat: number[]; moving: number }> {
   return page.evaluate(
     async ({ withModel, again, without, after, hue }) => {
+      let w = 0
       const load = async (b64: string) => {
         const img = new Image()
         img.src = `data:image/png;base64,${b64}`
@@ -38,6 +40,7 @@ async function measure(page: Page, withModel: string, again: string, without: st
         const c = document.createElement('canvas')
         c.width = img.width
         c.height = img.height
+        w = img.width
         const g = c.getContext('2d')!
         g.drawImage(img, 0, 0)
         return g.getImageData(0, 0, c.width, c.height).data
@@ -46,11 +49,14 @@ async function measure(page: Page, withModel: string, again: string, without: st
       const b = await load(without)
       const c = await load(after)
       const a2 = await load(again)
-      const hueDev: number[] = []
-      const sat: number[] = []
+      const px = a.length / 4
+      const h = px / w
+      // 1: the model's pixel, 0: not the model, or something passed over it
+      const model = new Uint8Array(px)
       let n = 0
       let moving = 0
-      for (let i = 0; i < a.length; i += 4) {
+      for (let p = 0; p < px; p++) {
+        const i = p * 4
         const d = Math.abs(a[i]! - b[i]!) + Math.abs(a[i + 1]! - b[i + 1]!) + Math.abs(a[i + 2]! - b[i + 2]!)
         if (d < 30) continue
         // the view without the model, before and after: where they differ, something else moved, not the model
@@ -61,6 +67,30 @@ async function measure(page: Page, withModel: string, again: string, without: st
           continue
         }
         n++
+        model[p] = 1
+      }
+      // The outline's pixels mix the filament with what is behind it: a GPU draws still frames with 4x MSAA and FXAA at
+      // up to twice the page's pixels, so the model's edge in the shot is about two pixels of blend toward the bluish
+      // background. On an axis view the model is small and that edge is more than 2% of its pixels. Faces are
+      // measured inside it: a pixel counts when the model covers every pixel within R of it.
+      const R = 2
+      const inside = (p: number) => {
+        const x = p % w
+        const y = (p - x) / w
+        if (x < R || y < R || x >= w - R || y >= h - R) return false
+        for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (!model[p + dy * w + dx]) return false
+        return true
+      }
+      const hueDev: number[] = []
+      const sat: number[] = []
+      let edge = 0
+      for (let p = 0; p < px; p++) {
+        if (!model[p]) continue
+        if (!inside(p)) {
+          edge++
+          continue
+        }
+        const i = p * 4
         const r = a[i]! / 255
         const gg = a[i + 1]! / 255
         const bb = a[i + 2]! / 255
@@ -71,10 +101,10 @@ async function measure(page: Page, withModel: string, again: string, without: st
         const s = dd / mx
         sat.push(s)
         if (s < 0.2) continue
-        const h = (mx === r ? ((gg - bb) / dd + 6) % 6 : mx === gg ? (bb - r) / dd + 2 : (r - gg) / dd + 4) * 60
-        hueDev.push(((h - hue + 540) % 360) - 180)
+        const hh = (mx === r ? ((gg - bb) / dd + 6) % 6 : mx === gg ? (bb - r) / dd + 2 : (r - gg) / dd + 4) * 60
+        hueDev.push(((hh - hue + 540) % 360) - 180)
       }
-      return { n, hueDev, sat, moving }
+      return { n, edge, hueDev, sat, moving }
     },
     { withModel, again, without, after, hue },
   )
@@ -180,7 +210,7 @@ for (const scheme of ['dark', 'light'] as const) {
         const lo = pct(m.hueDev, 0.02)
         const hi = pct(m.hueDev, 0.98)
         const sat98 = pct(m.sat, 0.98)
-        rows.push(`${name} ${angle}: model px ${m.n}, moving ${m.moving}, colored ${m.hueDev.length}, hue p2..p98 ${lo.toFixed(1)}..${hi.toFixed(1)}, sat p98 ${sat98.toFixed(3)}`)
+        rows.push(`${name} ${angle}: model px ${m.n}, edge ${m.edge}, moving ${m.moving}, colored ${m.hueDev.length}, hue p2..p98 ${lo.toFixed(1)}..${hi.toFixed(1)}, sat p98 ${sat98.toFixed(3)}`)
         if (process.env['SX_HUE_SHOTS']) writeFileSync(join(process.env['SX_HUE_SHOTS'], `${file}-${name}-${angle}-${scheme}.png`), Buffer.from(withModel, 'base64'))
         if (colored) {
           expect.soft(m.hueDev.length, `${name} ${angle}: colored pixels`).toBeGreaterThan(500)
