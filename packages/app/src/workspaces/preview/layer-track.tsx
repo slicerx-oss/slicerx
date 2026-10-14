@@ -210,7 +210,8 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
   const marks = useApp((s) => s.layerMarks[plateId]) ?? EMPTY
   const slots = useSlotRows()
   const band = useRef<HTMLDivElement>(null)
-  const pointer = useRef('mouse')
+  // the last press: its kind and where it went down, since a click made from a tap can carry other coordinates
+  const pointer = useRef<{ type: string; x: number; y: number }>({ type: 'mouse', x: 0, y: 0 })
   const sorted = byLayer(marks, layerZ)
   const pins = pinLayout(sorted.map((e) => x(e.layer)), useSpan(track), PIN_LANES, sorted.map((e) => `${e.m.z.toFixed(4)} ${e.m.id}`))
   const held = sorted.map((_, i) => sorted.filter((__, j) => j === i || pins[j]!.into === i))
@@ -232,14 +233,17 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
     // Enter or Space on a focused pin: that pin
     const own = (e.target as HTMLElement).closest<HTMLElement>('.layer-mark[data-ids]')
     if (e.type === 'click' && e.detail === 0 && own) return open(all.filter((h) => h.el === own))
-    const type = (e.nativeEvent as PointerEvent).pointerType || pointer.current
-    const near = pinsAt(e.clientX, e.clientY, all.map((h) => h.head), type === 'touch')
-    open(all.filter((h) => near.includes(h.head)))
+    const type = (e.nativeEvent as PointerEvent).pointerType || pointer.current.type
+    const touch = type === 'touch'
+    const at = touch ? pointer.current : { x: e.clientX, y: e.clientY }
+    const near = pinsAt(at.x, at.y, all.map((h) => h.head), touch)
+    // a tap on a pin always picks at least that pin
+    open(near.length ? all.filter((h) => near.includes(h.head)) : all.filter((h) => h.el === own))
   }
   return (
     <>
       {/* on a touch screen the band over the track takes taps between pins too, and gives them to the heads near the finger */}
-      <div ref={band} className="layer-pin-band" aria-hidden="true" onPointerDown={(e) => ((pointer.current = e.pointerType), e.stopPropagation())} onClick={act} />
+      <div ref={band} className="layer-pin-band" aria-hidden="true" onPointerDown={(e) => ((pointer.current = { type: e.pointerType, x: e.clientX, y: e.clientY }), e.stopPropagation())} onClick={act} />
       {sorted.map((e, i) => {
         const p = pins[i]!
         if (p.into >= 0) return null
@@ -280,7 +284,7 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
             aria-label={label}
             aria-haspopup="menu"
             {...tipAttrs({ title, body })}
-            onPointerDown={(ev) => ((pointer.current = ev.pointerType), ev.stopPropagation())}
+            onPointerDown={(ev) => ((pointer.current = { type: ev.pointerType, x: ev.clientX, y: ev.clientY }), ev.stopPropagation())}
             onClick={act}
             onContextMenu={act}
           >
