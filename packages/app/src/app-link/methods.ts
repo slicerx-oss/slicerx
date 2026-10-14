@@ -38,6 +38,7 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'design.list': 'read',
   'design.steps': 'read',
   'design.edit_step': 'edit',
+  'design.delete_step': 'edit',
   'design.undo': 'edit',
   'design.redo': 'edit',
   // the design timeline, and moving its marker (rolling the design back or forward)
@@ -349,7 +350,7 @@ async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): P
   try {
     // The reply is the tool's own: a summary and sizes, never meshes.
     const out = await tool.run(parsed.data, {} as never)
-    return { summary: out.summary, output: out.output ?? null }
+    return { ...(out.ok === undefined ? {} : { ok: out.ok }), summary: out.summary, output: out.output ?? null }
   } catch (e) {
     const code = (e as { code?: unknown }).code
     throw new LinkError(typeof code === 'string' && TOOL_CODES.has(code) ? (code as 'invalid_input' | 'not_found') : 'refused', e instanceof Error ? e.message : String(e))

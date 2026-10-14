@@ -17,6 +17,15 @@ function routed(call: AppLinkCaller['call']) {
 }
 
 describe('design tools over the app link', () => {
+  it('preserves an unsuccessful replay and its broken-step read-back', async () => {
+    const output = { removed: { id: 'step-2', index: 2 }, steps: [{ id: 'step-3', state: 'broken', message: 'The face is gone.' }] }
+    const call = vi.fn(async () => ({ ok: false, summary: 'One remaining step requires repair', output }))
+    const { run } = routed(call as AppLinkCaller['call'])
+    const result = await run('design.delete_step', { design: 'obj_1', step: 'step-2' })
+    expect(call).toHaveBeenCalledWith('design.delete_step', { design: 'obj_1', step: 'step-2' })
+    expect(result).toMatchObject({ ok: false, output: { ...output, in: 'app' } })
+  })
+
   it('route exactly the hub list, never the file tools', () => {
     const names = designToolset(NO_ENGINE_HOST).map((t) => t.name)
     for (const n of APP_DESIGN_TOOLS) expect(names, n).toContain(n)

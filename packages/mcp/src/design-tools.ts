@@ -3,7 +3,7 @@
 // The design tools and what they read back, on any design host (cad-history host.ts): the MCP server's designs
 // (design.ts) or the app's plate. No Node imports, so the app runs the same definitions; files come through
 // DesignFiles, which only the server has.
-import { bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, timelineOf, timelineSummary, withNumber, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
+import { bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, timelineOf, timelineSummary, withNumber, withoutStep, type Design as HostDesign, type DesignHost, type History, type HistoryMesh, type Mat4, type Step } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
@@ -308,6 +308,27 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     },
   })
 
+  const remove = defineTool({
+    name: 'design.delete_step',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: `Delete one feature from a design's history, as Delete does in ${productName()}, and replay the remaining steps. Give its stable id or one-based index from slicerx_design_steps. Returns the deleted feature, remaining steps with any broken references, and the resulting geometry summary. References that followed its end face are detached; the redo tail is cleared.`,
+    input: z.object({ design: designArg, step: z.union([z.number().int().min(1), z.string().min(1)]).describe('Index from 1, or a step id') }),
+    async run(i) {
+      const d = designs.get(i.design)
+      const k = stepIndex(d, i.step)
+      if (typeof i.step === 'string' && d.history.steps[k]!.id !== i.step) throw new ToolInputError('step: give a stable id or one-based index from slicerx_design_steps')
+      const removed = { index: k + 1, id: d.history.steps[k]!.id, name: stepName(d.history.steps[k]!) }
+      d.history = { ...d.history, steps: withoutStep(d.history.steps, k) }
+      d.redo = []
+      await designs.replay(d)
+      const rows = d.history.steps.map((_, j) => stepRow(d, j))
+      const broken = rows.filter((r) => r['state'] === 'broken')
+      return { ok: broken.length === 0, summary: `Deleted ${removed.name}${broken.length ? `; ${broken.length} remaining step${broken.length === 1 ? '' : 's'} require repair` : ''}`, output: { ...designSummary(d), removed, steps: rows } }
+    },
+  })
+
   const undo = defineTool({
     name: 'design.undo',
     version: '1.0.0',
@@ -386,5 +407,5 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     },
   })
 
-  return [create, open, list, steps, edit, undo, redo, timeline, roll, save] as PilotTool<never>[]
+  return [create, open, list, steps, edit, remove, undo, redo, timeline, roll, save] as PilotTool<never>[]
 }

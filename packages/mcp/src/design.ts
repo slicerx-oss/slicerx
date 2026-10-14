@@ -78,7 +78,10 @@ export class Designs implements DesignHost {
 
   /** Writes the parts as one STL in the object's frame, so slicing and the mesh tools can take the result. */
   private export(d: Design): void {
-    if (!d.parts.length) return
+    if (!d.parts.length) {
+      delete d.stl
+      return
+    }
     const dir = join(this.deps.policy.outDir, 'designs', d.id)
     mkdirSync(dir, { recursive: true })
     d.written = (d.written ?? 0) + 1

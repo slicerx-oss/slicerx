@@ -124,6 +124,7 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("design.list", LinkClass::Read),
     ("design.steps", LinkClass::Read),
     ("design.edit_step", LinkClass::Edit),
+    ("design.delete_step", LinkClass::Edit),
     ("design.undo", LinkClass::Edit),
     ("design.redo", LinkClass::Edit),
     // the design timeline, and moving its marker (rolling the design back or forward)
@@ -348,6 +349,7 @@ mod tests {
             ("design.list", LinkClass::Read),
             ("design.steps", LinkClass::Read),
             ("design.edit_step", LinkClass::Edit),
+            ("design.delete_step", LinkClass::Edit),
             ("design.undo", LinkClass::Edit),
             ("design.redo", LinkClass::Edit),
             ("design.timeline", LinkClass::Read),
@@ -381,13 +383,15 @@ mod tests {
                 "pair", "client",
             ] {
                 assert!(
-                    !m.to_ascii_lowercase().contains(word),
+                    !m.to_ascii_lowercase().contains(word)
+                        || (*m == "design.delete_step" && word == "delete"),
                     "{m} looks like something a person keeps ({word})"
                 );
             }
         }
         assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
+        assert_eq!(link_class("design.delete_step"), Some(LinkClass::Edit));
         for m in ["design.open", "design.save"] {
             assert_eq!(link_class(m), None, "{m} reads or writes files");
         }

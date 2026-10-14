@@ -22,6 +22,29 @@ beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit:
 const code = async (p: Promise<unknown>) => ((await p.catch((e: unknown) => e)) as LinkError).code
 
 describe('design tools over the app link', () => {
+  it('reports a broken dependent feature after deleting the hole it edits', async () => {
+    const design = ((await runCall('design.new', { name: 'Plate' })) as { output: { design: string } }).output.design
+    await runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 3 })
+    await runCall('geom.extrude', { design, operation: 'cut', frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 4 }, distance_mm: 3 })
+    await runCall('geom.hole', { design, center: [0, 0, 3], axis: [0, 0, 1], diameter_mm: 3 })
+    const deleted = await runCall('design.delete_step', { design, step: 2 })
+    expect(deleted).toMatchObject({ ok: false, output: { volumeMm3: 600, steps: [{ state: 'done' }, { state: 'broken', message: expect.any(String) }] } })
+    expect(await runCall('design.steps', { design })).toMatchObject({ output: { volumeMm3: 600, steps: [{ state: 'done' }, { state: 'broken' }] } })
+  })
+
+  it('deletes a feature through the same history edit and reads the remaining steps back', async () => {
+    const design = ((await runCall('design.new', { name: 'Block' })) as { output: { design: string } }).output.design
+    await runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 3 })
+    await runCall('geom.extrude', { design, operation: 'cut', frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, shape: { type: 'rectangle', widthMm: 4, heightMm: 4 }, distance_mm: 3 })
+    const deleted = await runCall('design.delete_step', { design, step: 2 })
+    expect(deleted).toMatchObject({ output: { removed: { index: 2 }, volumeMm3: 600, steps: [{ state: 'done' }] } })
+    const entry = get().plate.find((p) => p.id === design)!
+    expect(entry.history?.steps).toHaveLength(1)
+    const read = await runCall('design.steps', { design })
+    expect(read).toMatchObject({ output: { steps: [{ id: entry.history!.steps[0]!.id, state: 'done' }] } })
+    expect(JSON.stringify(deleted)).not.toMatch(/positions|indices/)
+  })
+
   it('start a design and extrude on the plate, as history steps undo takes back', async () => {
     const started = (await runCall('design.new', { name: 'Clip' })) as { output: { design: string } }
     const design = started.output.design

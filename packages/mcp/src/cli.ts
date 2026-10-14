@@ -306,14 +306,15 @@ async function runCalls(server: ReturnType<typeof createSlicerxServer>, calls: {
       const r = (await client.callTool({ name: c.name, arguments: c.args })) as CallToolResult
       // The server's refusals already read plainly (sdk-errors.ts).
       const text = r.content.map((p) => (p.type === 'text' ? p.text : '')).filter(Boolean).join('\n')
+      const succeeded = r.isError !== true && (r.structuredContent as { ok?: boolean } | undefined)?.ok !== false
       if (bare) {
         // One flag, one tool: its output alone, or its error as {code, message}.
         process.stdout.write(`${JSON.stringify(r.isError ? { error: refusal(text) } : ((r.structuredContent as { output?: unknown } | undefined)?.output ?? null))}\n`)
-        if (r.isError) process.exitCode = 1
+        if (!succeeded) process.exitCode = 1
         return
       }
-      process.stdout.write(`${JSON.stringify({ tool: c.name, ok: r.isError !== true, text, output: r.structuredContent ?? null })}\n`)
-      if (r.isError) {
+      process.stdout.write(`${JSON.stringify({ tool: c.name, ok: succeeded, text, output: r.structuredContent ?? null })}\n`)
+      if (!succeeded) {
         process.exitCode = 1
         return
       }

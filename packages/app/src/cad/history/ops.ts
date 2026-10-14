@@ -14,7 +14,7 @@ import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, type History, type HistoryMesh, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, withoutStep, type History, type HistoryMesh, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
 import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
@@ -270,15 +270,7 @@ export function setSuppressed(host: Loader, objectId: string, index: number, sup
 
 export function deleteStep(host: Loader, objectId: string, index: number): Promise<{ status: StepStatus[] }> {
   const h = need(objectId)
-  const gone = h.steps[index]
-  // Steps that followed the deleted one's end face keep their place as it is now.
-  const without = (s: Step): Step => {
-    const keep = followsOf(s).filter((f) => f.step !== gone?.id)
-    if (keep.length === followsOf(s).length) return s
-    const { follow: _f, ...r } = s
-    return { ...r, ...followField(keep) }
-  }
-  return applyHistory(host, objectId, { ...h, steps: h.steps.filter((_, i) => i !== index).map(without) })
+  return applyHistory(host, objectId, { ...h, steps: withoutStep(h.steps, index) })
 }
 
 /** The longest name a step can have, as for objects. */

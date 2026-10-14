@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-171 tools.
+172 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -21,6 +21,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_create_fleet` | Create a fleet | fleets | read, ungated | Create a named group of printers. |
 | `slicerx_cut` |  |  | slice | Make a model fit a printer: compare scaling it down with splitting it (mode "compare" only reports), or split it (mode "split"). |
 | `slicerx_delete_fleet` | Delete a fleet | fleets | read, ungated | Delete a fleet. |
+| `slicerx_design_delete_step` |  |  | slice | Delete one feature from a design's history, as Delete does in SlicerX, and replay the remaining steps. |
 | `slicerx_design_edit_step` |  |  | slice | Edit one step of a design and replay the steps after it, as editing a step in SlicerX's history does: set its main number (the distance, depth, angle, radius, wall or diameter slicerx_design_steps shows as value), suppress it or turn it back on, or rename it. |
 | `slicerx_design_list` |  |  | read | The designs open on this server, with their parts, sizes and step counts. |
 | `slicerx_design_new` |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
