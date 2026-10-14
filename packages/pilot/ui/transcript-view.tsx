@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { Fragment, memo } from 'react'
+import { Fragment, memo, useContext } from 'react'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
 import { ChoiceCard } from './choice-card'
@@ -9,6 +9,8 @@ import { SheetRecord } from './sheet-record'
 import { Citations } from './citations'
 import { Diff } from './diff'
 import { ErrorLine, ModelLine, PermLine, PlanList, PluginsLoading } from './notes'
+import { createdPart, followUps, lastPart } from './part'
+import { FollowUpChips, PartCard, PartLookContext, type PartHandlers } from './part-card'
 import type { Block, Transcript } from './reduce'
 import { Say } from './say'
 import { Summary } from './summary'
@@ -29,7 +31,7 @@ export interface ApprovalHandlers {
 }
 
 // Unchanged blocks keep their identity in the reducer, so a streaming delta repaints only its own block.
-const BlockView = memo(function BlockView({ block, showThinking, approvals, words }: { block: Block; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords | undefined }) {
+const BlockView = memo(function BlockView({ block, showThinking, approvals, words, parts }: { block: Block; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords | undefined; parts?: PartHandlers | undefined }) {
   switch (block.kind) {
     case 'plugins':
       return <PluginsLoading plugins={block.plugins} />
@@ -39,8 +41,19 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
       return <Say text={block.text} streaming={block.streaming} />
     case 'plan':
       return <PlanList steps={block.steps} />
-    case 'tools':
-      return <ToolGroup rows={block.rows} words={words} />
+    case 'tools': {
+      if (!parts) return <ToolGroup rows={block.rows} words={words} />
+      // a call that made a part shows as the part's card; the other calls stay rows
+      const made = block.rows.map((r) => ({ r, part: createdPart(r) }))
+      if (!made.some((m) => m.part)) return <ToolGroup rows={block.rows} words={words} />
+      const rest = made.filter((m) => !m.part).map((m) => m.r)
+      return (
+        <>
+          {rest.length ? <ToolGroup rows={rest} words={words} /> : null}
+          {made.map((m) => (m.part ? <PartCard key={m.r.callId} part={m.part} handlers={parts} /> : null))}
+        </>
+      )
+    }
     case 'diff':
       return <Diff diff={block.diff} />
     case 'perm':
@@ -77,7 +90,11 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
  * Every turn in order. `words` puts tool calls in the person's words ("Sketching the outline"); the tool's own name moves
  * to the row's tooltip.
  */
-export function TranscriptView({ transcript, showThinking, approvals, words }: { transcript: Transcript; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords }) {
+export function TranscriptView({ transcript, showThinking, approvals, words, parts }: { transcript: Transcript; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords; parts?: PartHandlers }) {
+  const look = useContext(PartLookContext)
+  // the next steps for the part the last reply made sit under that reply, once it has finished
+  const part = parts && look.chips === 'reply' ? lastPart(transcript) : null
+  const last = transcript.turns.at(-1)
   return (
     <>
       {transcript.turns.map((t) => (
@@ -85,8 +102,9 @@ export function TranscriptView({ transcript, showThinking, approvals, words }: {
           {t.user !== null ? <Bubble text={t.user} where={t.where} attachments={t.attachments} /> : null}
           <PilotTurn>
             {t.blocks.map((b) => (
-              <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} />
+              <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} />
             ))}
+            {part && t === last ? <FollowUpChips items={followUps(part)} onRun={parts?.onRun} place="reply" /> : null}
           </PilotTurn>
         </Fragment>
       ))}
