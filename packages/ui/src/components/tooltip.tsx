@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { prefersReducedMotion } from '../tokens'
-import { DemoLoop, type TipDemo } from './demo-loop'
+import type { TipDemo } from './demo-loop'
+
+// The loop's code (and the stage drawing it) loads with the first tip that has one, not at startup.
+const DemoLoop = lazy(() => import('./demo-loop').then((m) => ({ default: m.DemoLoop })))
+/** The box a loop will fill, so the tip keeps its size while the chunk loads: the stage's 296 by 166, or a recorded loop's own size. */
+const demoBox = (d: TipDemo) => (d.stage ? '296 / 166' : `${d.width} / ${d.height}`)
 
 /** What a tip shows. Keys are already formatted for the platform, one chip each. */
 export interface TipContent {
@@ -466,7 +471,11 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
           {content.figure}
         </div>
       ) : null}
-      {content.demo && media ? <DemoLoop demo={content.demo} play={mediaOn && !shown.still} /> : null}
+      {content.demo && media ? (
+        <Suspense fallback={<div className="sx-demo" style={{ aspectRatio: demoBox(content.demo) }} />}>
+          <DemoLoop demo={content.demo} play={mediaOn && !shown.still} />
+        </Suspense>
+      ) : null}
       {content.meta ? <p className="sx-tip-meta">{content.meta}</p> : null}
       {content.media && media ? (
         <div className="sx-tip-media" data-open={mediaOn ? true : undefined} aria-hidden="true">

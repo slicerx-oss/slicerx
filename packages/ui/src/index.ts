@@ -47,10 +47,9 @@ export type { ContextMenuProps, ContextMenuBind, MenuEntry, MenuIconProps, MenuP
 export { ResizeEdge } from './components/resize-edge'
 export type { ResizeEdgeProps } from './components/resize-edge'
 export { TooltipHost, tipAttrs, TIP_TIMING } from './components/tooltip'
-export { DemoLoop, demoLoaded } from './components/demo-loop'
 export type { RecordedDemo, StageDemo, TipDemo } from './components/demo-loop'
-export { TooltipStage } from './components/tooltip-stage'
-export { stageSvg, STAGE_W, STAGE_H, STAGE_LOOP, STAGE_STILL, STAGE_ROW, type StageTool } from './components/tooltip-stage-svg'
+// The loop drawing code (the stage, DemoLoop) is reached only through the tooltip's lazy import, so it stays out of startup; only the types are public.
+export type { StageTool } from './components/tooltip-stage-svg'
 export { RadialMenu, ringCenter, slotAt, RING_R, RING_HOLE, type RingItem, type RadialMenuProps } from './components/radial-menu'
 export { motionPreference, motionReduced, resolveMotion, setMotionPreference, subscribeMotion, systemReducesMotion } from './motion'
 export { useMotionReduced } from './motion-hook'
