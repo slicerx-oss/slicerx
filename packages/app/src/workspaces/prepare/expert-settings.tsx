@@ -197,7 +197,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
       ) : null}
       {/* The pin sits in the gutter left of the row, out of the grid, so showing it never moves the row. */}
       {pin ? (
-        <button type="button" className="row-pin" data-testid="slice-setting-pin" data-key={def.key} aria-pressed={pin.on} aria-label={pin.on ? `Unpin ${def.label}` : `Pin ${def.label}`} {...tipAttrs({ title: pin.on ? 'Unpin' : 'Pin', body: 'Pinned settings show above the tabs.' })} onClick={pin.toggle}>
+        <button type="button" className="row-pin" data-testid="slice-setting-pin" data-key={def.key} aria-pressed={pin.on} aria-label={pin.on ? 'Unpin this setting' : 'Pin this setting'} {...tipAttrs({ title: pin.on ? 'Unpin' : 'Pin', body: 'Pinned settings show above the tabs.' })} onClick={pin.toggle}>
           <Icon name="pin" size={11} />
         </button>
       ) : null}
