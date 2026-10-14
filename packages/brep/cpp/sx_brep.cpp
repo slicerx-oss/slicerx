@@ -537,12 +537,37 @@ SmBrep* taper_half(const Value& l, double h, double deg)
     throw Error("taperDeg", "the taper closes the shape before the full distance; use a smaller angle or distance");
 }
 
+// a union can merge coplanar faces without preserving all of their keys
+void clear_merge_keys(SmBrep* a, SmBrep* b)
+{
+    SmTArray<SmFace*> af, bf;
+    SmApiGetFaces(a, af);
+    SmApiGetFaces(b, bf);
+    for (ULONG i = 0; i < af.GetSize(); ++i) {
+        SmPoint3d ao;
+        SmVector3d an;
+        if (!af[i]->GetSurface() || !af[i]->GetSurface()->IsPlanar(1e-6, &ao, &an)) continue;
+        for (ULONG j = 0; j < bf.GetSize(); ++j) {
+            SmPoint3d bo;
+            SmVector3d bn;
+            if (!bf[j]->GetSurface() || !bf[j]->GetSurface()->IsPlanar(1e-6, &bo, &bn)) continue;
+            if (std::fabs(std::fabs(dot(an, bn)) - 1) < 1e-6 && std::fabs(dot(an, SmVector3d(bo.x - ao.x, bo.y - ao.y, bo.z - ao.z))) < 1e-6) {
+                set_key(af[i], 0);
+                set_key(bf[j], 0);
+            }
+        }
+    }
+}
+
 // a op b; a and b are consumed whatever happens
 SmBrep* combine(SmBrep* a, SmBrep* b, const std::string& op)
 {
     SmBrep* r = nullptr;
     long st;
-    if (op == "union") st = SmApiBooleanUnion(a, b, r);
+    if (op == "union") {
+        clear_merge_keys(a, b);
+        st = SmApiBooleanUnion(a, b, r);
+    }
     else if (op == "difference") st = SmApiBooleanDifference(a, b, r);
     else if (op == "intersection") st = SmApiBooleanIntersection(a, b, r);
     else {
@@ -1144,35 +1169,33 @@ bool outward_plane(SmFace* f, SmVector3d& n, double& offset)
     return true;
 }
 
-// the flat face a push names, facing the way it does: by its key first, then the one under at
+// a key must name exactly one face; geometry is only for a new, unkeyed pick
 SmFace* pushed_face(SmBrep* b, const Value& r, SmVector3d& n)
 {
     SmVector3d want = unit(v3(r, "normal"), "normal"), where = v3(r, "at");
     const Value& k = r["faceKey"];
-    unsigned long long key = k.kind == Value::Number && k.n > 0 ? (unsigned long long)k.n : 0;
+    if (r.has("faceKey") && (k.kind != Value::Number || !std::isfinite(k.n) || k.n <= 0 || k.n >= 4503599627370496.0 || k.n != std::floor(k.n)))
+        throw Error("faceReference", "invalid face key; pick the face again to repair this step");
+    unsigned long long key = r.has("faceKey") ? (unsigned long long)k.n : 0;
     SmTArray<SmFace*> fs;
     SmApiGetFaces(b, fs);
-    const double tol = 1e-3;
-    std::vector<std::pair<SmFace*, SmVector3d>> keyed, near;
+    std::vector<SmFace*> candidates;
     for (ULONG i = 0; i < fs.GetSize(); ++i) {
-        bool mine = key && face_key(fs[i]) == key;
-        if (!mine && off_face(fs[i], where) > tol) continue;
-        SmVector3d m;
-        double d = 0;
-        if (!outward_plane(fs[i], m, d) || dot(m, want) < 1 - 1e-6) continue;
-        (mine ? keyed : near).emplace_back(fs[i], m);
+        if (key) {
+            if (face_key(fs[i]) == key) candidates.push_back(fs[i]);
+        } else {
+            SmVector3d m;
+            double d = 0;
+            if (off_face(fs[i], where) <= 1e-3 && outward_plane(fs[i], m, d) && dot(m, want) >= 1 - 1e-6)
+                candidates.push_back(fs[i]);
+        }
     }
-    // a face split in two since: the one under at, else the mesh path picks the larger part and says so
-    if (keyed.size() > 1) {
-        auto first = std::min_element(keyed.begin(), keyed.end(), [&](const auto& x, const auto& y) { return off_face(x.first, where) < off_face(y.first, where); });
-        if (off_face(first->first, where) > tol) throw Error("faceKey", "the face this step moved was split in two");
-        keyed = {*first};
-    }
-    if (keyed.empty()) keyed = near;
-    if (keyed.empty()) throw Error("at", "no flat face there facing that way");
-    auto best = std::min_element(keyed.begin(), keyed.end(), [&](const auto& x, const auto& y) { return off_face(x.first, where) < off_face(y.first, where); });
-    n = best->second;
-    return best->first;
+    if (candidates.empty()) throw Error("faceReference", key ? "missing face; pick the face again to repair this step" : "no flat face there; pick the face again to repair this step");
+    if (candidates.size() != 1) throw Error("faceReference", "ambiguous face; pick the face again to repair this step");
+    double offset = 0;
+    if (!outward_plane(candidates[0], n, offset) || dot(n, want) < 1 - 1e-6)
+        throw Error("faceReference", "changed face; pick the face again to repair this step");
+    return candidates[0];
 }
 
 // a loop of a flat face as lines and arcs in the frame, counterclockwise ({"start", "segments"}, or a circle)
