@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // What an agent may do with the open project over the app link, and the page's answer to each. The hub keeps the same
 // list (packages/connect/link/src/roles.rs, APP_LINK_METHODS) and refuses every other name before it reaches here; a
-// test checks the two lists match. Nothing here prints, queues, approves, signs in or changes settings.
+// test checks the two lists match. Nothing here prints, queues, approves, signs in or configures printers.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
@@ -14,8 +14,9 @@ import { listSessions, readSession } from './sessions'
 import { toolStore } from '../plate/tools'
 import { get, pilotState, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
 import { slicePanes } from '../lib/slice-panes'
-import { findPlate, plateRows, stepTarget } from '../plate/plate-step'
+import { findPlate, stepTarget } from '../plate/plate-step'
 import { switchPlate } from '../plate/plates'
+import { platesState } from './plate-state'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -33,6 +34,12 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // preview, showing a plate changes only what the window shows, never the project.
   'plates.list': 'read',
   'plates.show': 'read',
+  'plates.add': 'edit',
+  'plates.duplicate': 'edit',
+  'plates.rename': 'edit',
+  'plates.settings': 'edit',
+  'plates.remove': 'edit',
+  'plates.move': 'edit',
   // The design tools (@slicerx/mcp/toolset), run here on the plate's design host.
   'design.new': 'edit',
   'design.list': 'read',
@@ -167,16 +174,6 @@ function setPreview(args: Record<string, unknown>) {
   return previewState()
 }
 
-/** The project's plates in order, the one in view marked, as the plate picker shows them. */
-function platesState() {
-  const rows = plateRows()
-  return {
-    shown: rows.find((r) => r.shown)?.number ?? 1,
-    count: rows.length,
-    plates: rows.map((r) => ({ number: r.number, id: r.id, name: r.name, objects: r.objects, slice: r.state, shown: r.shown })),
-  }
-}
-
 /**
  * Shows one plate, as the plate picker does: `plate` (its number from 1, or its id) or `step` ('next' or 'previous';
  * stepping stops at the first and last plate). Like the preview, it answers busy unless the window is on Slice with no
@@ -241,6 +238,12 @@ const HANDLERS: Record<string, Handler> = {
   'preview.set': (args) => setPreview(args),
   'plates.list': () => platesState(),
   'plates.show': (args) => showPlate(args),
+  ...Object.fromEntries(['add', 'duplicate', 'rename', 'settings', 'remove', 'move'].map((action) => [
+    `plates.${action}`, async (args: Record<string, unknown>, client: LinkClient) => {
+      const { editPlate } = await import('./plates')
+      return editPlate(action as Parameters<typeof editPlate>[0], args, client.name)
+    },
+  ])),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),

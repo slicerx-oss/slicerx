@@ -96,9 +96,19 @@ export function removePlate(id: string): boolean {
   if (i < 0) return false
   if (id === s.activePlate) {
     const neighbor = s.plates[i + 1] ?? s.plates[i - 1]
-    if (neighbor) switchPlate(neighbor.id)
+    if (!neighbor) return false
+    set({
+      plates: s.plates.filter((p) => p.id !== id).map((p) => p.id === neighbor.id ? { ...p, objects: [] } : p),
+      plate: neighbor.objects,
+      activePlate: neighbor.id,
+      selection: null,
+      selectedIds: [],
+      slice: { status: 'idle' },
+      preview: null,
+    })
+  } else {
+    set({ plates: s.plates.filter((p) => p.id !== id) })
   }
-  set((st) => ({ plates: st.plates.filter((p) => p.id !== id) }))
   markStale()
   return true
 }
@@ -117,13 +127,19 @@ export function setPlateSettings(id: string, patch: Partial<PlateSettings>, repl
 
 /** Moves the selected objects to another plate and arranges them into its free space. */
 export function moveSelectedToPlate(targetId: string): number {
+  return moveObjectsToPlate(targetId, selectedIds(get()))
+}
+
+/** Moves only the named concrete objects, using the same placement as the plate menu. */
+export function moveObjectsToPlate(targetId: string, objectIds: readonly string[], requireFit = false): number {
   const s = get()
   if (targetId === s.activePlate) return 0
   const target = s.plates.find((p) => p.id === targetId)
-  const ids = new Set(selectedIds(s))
+  const ids = new Set(objectIds)
   if (!target || ids.size === 0) return 0
   const moving: PlateEntry[] = s.plate.filter((p) => ids.has(p.id))
   const r = arrange(moving, target.objects, s.bed)
+  if (requireFit && (r.leftOver.length || moving.some((o) => !r.transforms[o.id]))) return 0
   const placed = moving.map((m) => (r.transforms[m.id] ? { ...m, transform: r.transforms[m.id]! } : m))
   set({
     plate: s.plate.filter((p) => !ids.has(p.id)),

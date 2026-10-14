@@ -232,6 +232,15 @@ The browser build has no keychain, so it cannot hold a per-agent credential. The
 
 ### From a shell
 
+With the desktop app link enabled and this client allowed to edit, plate commands operate on the open project:
+
+```sh
+slicerx-mcp --printers link call app_plate_add '{"name":"Spare"}' app_plates
+slicerx-mcp --printers link call app_plate_settings '{"plate":1,"settings":{"sequence":"by-object"}}' app_plates
+```
+
+`app_plate_duplicate`, `app_plate_rename`, `app_plate_remove` and `app_plate_move` use the same plate numbers or stable ids returned by `app_plates`. Each edit returns all plates, their settings, and `entries` with concrete object ids, copy relationships, transforms and bounds in mm. `app_plate_move` takes `objects`, a list of ids on the shown plate; copies not named stay put. Removal of a populated plate needs `deleteObjects: true`. The last plate and locked objects cannot be removed. Each edit is one toolbar Undo step and refuses while the person is using a tool, loading, slicing, or editing history. These commands always require the open app; the `project_plate_*` commands still operate on the server's project.
+
 `slicerx-mcp call` runs tools without a client, in order and in one process, so a project the first calls build is there for the next. It prints one JSON line per call (`tool`, `ok`, `text`, `output`) and stops with exit code 1 at the first call that fails. Tool names may leave out the `slicerx_` prefix; the JSON after a name is its arguments.
 
 ```sh

@@ -118,6 +118,12 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: showing a plate changes only what the window shows, never the project.
     ("plates.list", LinkClass::Read),
     ("plates.show", LinkClass::Read),
+    ("plates.add", LinkClass::Edit),
+    ("plates.duplicate", LinkClass::Edit),
+    ("plates.rename", LinkClass::Edit),
+    ("plates.settings", LinkClass::Edit),
+    ("plates.remove", LinkClass::Edit),
+    ("plates.move", LinkClass::Edit),
     // The design tools, run in the app on its plate, each step a history step the person can undo.
     // Opening and saving files stay with the server and the person.
     ("design.new", LinkClass::Edit),
@@ -344,6 +350,12 @@ mod tests {
             ("preview.set", LinkClass::Read),
             ("plates.list", LinkClass::Read),
             ("plates.show", LinkClass::Read),
+            ("plates.add", LinkClass::Edit),
+            ("plates.duplicate", LinkClass::Edit),
+            ("plates.rename", LinkClass::Edit),
+            ("plates.settings", LinkClass::Edit),
+            ("plates.remove", LinkClass::Edit),
+            ("plates.move", LinkClass::Edit),
             ("design.new", LinkClass::Edit),
             ("design.list", LinkClass::Read),
             ("design.steps", LinkClass::Read),
@@ -380,14 +392,21 @@ mod tests {
                 "login", "auth", "buy", "purchase", "delete", "remove", "secret", "printer", "setting",
                 "pair", "client",
             ] {
+                // these edit project plates, never files or printer configuration.
+                let plate_edit = matches!(
+                    (*m, word),
+                    ("plates.remove", "remove") | ("plates.settings", "setting")
+                );
                 assert!(
-                    !m.to_ascii_lowercase().contains(word),
+                    plate_edit || !m.to_ascii_lowercase().contains(word),
                     "{m} looks like something a person keeps ({word})"
                 );
             }
         }
         assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
+        assert_eq!(link_class("plates.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("plates.settings"), Some(LinkClass::Edit));
         for m in ["design.open", "design.save"] {
             assert_eq!(link_class(m), None, "{m} reads or writes files");
         }

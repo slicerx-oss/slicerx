@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { MeshHandle, PreviewBuffers, SliceResult } from '@slicerx/contracts'
 import { boxMesh } from '../src/plate/mesh-ops'
-import { switchPlate } from '../src/plate/plates'
+import { removePlate, switchPlate } from '../src/plate/plates'
+import { createHistory } from '../src/plate/history'
 import { compose } from '../src/plate/transform'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { forgetPlateSlices, keptSlice, trackPlateSlices } from '../src/workspaces/preview/plate-slices'
@@ -91,5 +92,26 @@ describe('switching plates in Preview', () => {
     switchPlate('p2')
     set((s) => ({ plates: s.plates.filter((p) => p.id !== 'p1') }))
     expect(keptSlice('p1')).toBeNull()
+  })
+
+  it('does not cache the shown plate when it is removed in one update', () => {
+    expect(removePlate('p1')).toBe(true)
+    expect(get().activePlate).toBe('p2')
+    expect(keptSlice('p1')).toBeNull()
+  })
+
+  it('undoing a deletion never shows the neighboring plate toolpaths on the restored plate', () => {
+    switchPlate('p2')
+    set({ slice: { status: 'done', result: { ...result, id: 'r2' }, stale: false }, preview: { ...preview, segmentCount: 2 } })
+    switchPlate('p1')
+    const h = createHistory()
+    try {
+      expect(removePlate('p1')).toBe(true)
+      expect(get().preview?.segmentCount).toBe(2)
+      expect(h.undo()).toBe(true)
+      expect(get().activePlate).toBe('p1')
+      expect(get().slice.status).toBe('idle')
+      expect(get().preview).toBeNull()
+    } finally { h.dispose() }
   })
 })

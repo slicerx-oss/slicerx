@@ -64,7 +64,7 @@ export function trackPlateSlices(): () => void {
     if (s.activePlate === prev.activePlate) return
     // A norn comparison belongs to the plate it was made on.
     const norn = { ...s.norn, pick: null, before: null, ghost: false }
-    if (prev.slice.status === 'done' && prev.preview) {
+    if (prev.slice.status === 'done' && prev.preview && s.plates.some((p) => p.id === prev.activePlate)) {
       kept.delete(prev.activePlate)
       kept.set(prev.activePlate, { slice: prev.slice, preview: prev.preview, layerHi: prev.layerHi, layerLo: prev.layerLo, moveCut: prev.moveCut, inputs: inputsOf(prev) })
       while (kept.size > KEEP) kept.delete(kept.keys().next().value as string)

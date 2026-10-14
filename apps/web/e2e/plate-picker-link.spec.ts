@@ -59,7 +59,7 @@ const env = (bin: string): Record<string, string> => ({
   SLICERX_MCP_APP_IDENTIFIER: APP_ID,
 })
 /** slicerx-mcp as a client runs it, checking the hub's key from the hub's state directory. */
-const serverArgs = (dir: string) => [from.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'stub', '--printers', 'link', '--link-url', hub.linkUrl, '--link-state-dir', hub.stateDir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
+const serverArgs = (dir: string) => [from.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'sx', ...(process.env['SX_CLI_BIN'] ? ['--sx-bin', process.env['SX_CLI_BIN']] : []), '--printers', 'link', '--link-url', hub.linkUrl, '--link-state-dir', hub.stateDir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
 
 /**
  * The person allows a client the first time it calls; the buttons arm after a moment. A client already allowed is not

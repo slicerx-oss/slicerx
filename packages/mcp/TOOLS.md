@@ -2,15 +2,21 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-177 tools.
+183 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
 | `slicerx_action_log` | Action log | core | read, ungated | The most recent tool calls and approval decisions this server recorded: tool, permission class, decision, who decided, and the result summary. |
 | `slicerx_add_to_fleet` | Add a printer to a fleet | fleets | read, ungated | Add a printer to a fleet. |
 | `slicerx_ams_mapping` |  |  | read | Map the filaments a job needs (material and color per part) onto the slots loaded on one printer. |
+| `slicerx_app_plate_add` |  |  | slice | Add an empty plate and show it. |
+| `slicerx_app_plate_duplicate` |  |  | slice | Copy a plate with its objects, copies, paint and settings, and show the new plate. |
+| `slicerx_app_plate_move` |  |  | slice | Move only the concrete object ids supplied from the shown plate to another plate, arranging into free space. |
+| `slicerx_app_plate_remove` |  |  | slice | Remove a plate. |
+| `slicerx_app_plate_rename` |  |  | slice | Rename a plate. |
+| `slicerx_app_plate_settings` |  |  | slice | Merge per-plate bedType, sequence, filamentOrder, slotMap or nozzleMap overrides. |
 | `slicerx_app_plate_show` |  |  | read | Show one plate of the project open in SlicerX, as its plate picker does: plate (a number from 1, or an id from slicerx_app_plates), or step: next or previous (stepping stops at the first and last plate). |
-| `slicerx_app_plates` |  |  | read | List the plates of the project open in SlicerX, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), and which plate the window shows. |
+| `slicerx_app_plates` |  |  | read | List the plates of the project open in SlicerX, in order: each plate's number (from 1), id, name, object count, slice state and which plate the window shows. |
 | `slicerx_approve` | Approve or decline a pending action | core | read, ungated | Resolve an approval request returned by another SlicerX tool (status "approval_required"). |
 | `slicerx_arrange` |  |  | slice | Pack copies of an object onto plates. |
 | `slicerx_calibrate` |  |  | read | Plan calibration tests for a filament (temperature tower, flow, pressure advance, retraction, max volumetric speed, tolerance, shrinkage) with ranges from the knowledge base, time and filament. |

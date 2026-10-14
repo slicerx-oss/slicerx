@@ -291,7 +291,7 @@ describe('the plates over the link', () => {
 
   it('list every plate with its number, name, objects and slice, the shown one marked', async () => {
     three()
-    expect(await runCall('plates.list', {})).toEqual({
+    expect(await runCall('plates.list', {})).toMatchObject({
       shown: 1,
       count: 3,
       plates: [

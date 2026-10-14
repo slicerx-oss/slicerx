@@ -1,12 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The plates of the project open in the app, through the app link: each plate's number, name, objects and slice state,
-// and showing one of them the way the app's plate picker does (a plate by number, or the next or previous). Showing a
-// plate changes only what the window shows, never the project, so both tools read. Each answer is the plates read back.
+// Live plate navigation and edits, with the resulting objects and settings read back through the app link.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
+import { appPlateInputs, type appPlateSettings } from './app-plate-inputs'
+
+export interface AppPlateEntry {
+  id: string
+  name: string
+  instanceOf: string | null
+  locked: boolean
+  printable: boolean
+  transform: number[]
+  settings: Record<string, unknown>
+  partSettings: Record<string, Record<string, unknown>>
+  slotOverrides: Record<string, number>
+  minMm?: number[]
+  maxMm?: number[]
+  sizeMm?: number[]
+}
 
 /** One plate as the app reads it back (packages/app app-link/methods.ts, plates.list). */
 export interface AppPlate {
@@ -16,14 +30,17 @@ export interface AppPlate {
   objects: number
   slice: 'empty' | 'not-sliced' | 'slicing' | 'sliced' | 'stale'
   shown: boolean
+  settings: z.infer<typeof appPlateSettings>
+  entries: AppPlateEntry[]
 }
 export interface AppPlates {
   shown: number
   count: number
   plates: AppPlate[]
+  changedPlate?: string
 }
 
-const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_found', busy: 'busy', read_only: 'not_supported', denied: 'not_supported' }
+const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_found', busy: 'busy', refused: 'not_supported', read_only: 'not_supported', denied: 'not_supported' }
 const OFF = ['app_link_off', 'app_closed', 'forbidden', 'unauthorized']
 
 async function call(link: AppLinkCaller | undefined, appName: string, method: string, args: Record<string, unknown>): Promise<AppPlates> {
@@ -53,7 +70,7 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `List the plates of the project open in ${appName}, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), and which plate the window shows. Reads through the app link; the app must be open with the link on.`,
+    description: `List the plates of the project open in ${appName}, in order: each plate's number (from 1), id, name, object count, slice state and which plate the window shows. Includes plate settings and entries with concrete object ids, copy relationships, transforms, bounds in mm, locked/printable flags and object/part settings. Reads through the app link without changing the shown plate; the app must be open with the link on.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'plates.list', {})
@@ -77,5 +94,21 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
       return { summary: summary(out), output: out }
     },
   })
-  return [list, show] as PilotTool<never>[]
+  const descriptions = {
+    add: 'Add an empty plate and show it. Inherit the shown plate settings unless settings is supplied. Optionally give a name.',
+    duplicate: 'Copy a plate with its objects, copies, paint and settings, and show the new plate. Optionally give a name. New object ids are in entries.',
+    rename: 'Rename a plate. Names are trimmed and must be 1 to 40 characters.',
+    settings: 'Merge per-plate bedType, sequence, filamentOrder, slotMap or nozzleMap overrides. With replace: true, replace every override; an empty settings object clears them.',
+    remove: 'Remove a plate. A populated plate requires deleteObjects: true, which deletes its contents too. Refuses the last plate and locked objects. Undo in the app restores it.',
+    move: 'Move only the concrete object ids supplied from the shown plate to another plate, arranging into free space. Copies not named stay put. Refuses locked objects or a move where any object does not fit; nothing moves on refusal.',
+  }
+  const edit = <S extends z.ZodType>(action: keyof typeof appPlateInputs, input: S) => defineTool({
+    name: `app.plate_${action}`, version: '1.0.0', source: 'command', permission: 'slice', input,
+    description: `${descriptions[action]} Edits the project open in ${appName} through the app link, with edit permission. Needs Slice open and no tool, load, slice or history edit in progress. One toolbar Undo step; returns every plate and its objects/settings read back, plus changedPlate.`,
+    async run(args) {
+      const out = await call(link, appName, `plates.${action}`, args as Record<string, unknown>)
+      return { summary: summary(out), output: out }
+    },
+  }) as PilotTool<never>
+  return [list, show, ...Object.entries(appPlateInputs).map(([action, input]) => edit(action as keyof typeof appPlateInputs, input))] as PilotTool<never>[]
 }

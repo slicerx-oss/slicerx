@@ -96,8 +96,12 @@ export function createHistory(store = appStore, limit = 100): History {
       // A history step open for editing closes first: the object goes back to how it is.
       const open = store.getState().historyEdit
       if (open) store.setState((s) => ({ plate: fullPlate(s), historyEdit: null }))
-      to.push(snap(store.getState()))
-      store.setState(target)
+      const current = store.getState()
+      to.push(snap(current))
+      // A restored plate must not show the other plate's toolpaths while its own slice is absent.
+      store.setState(target.activePlate !== undefined && target.activePlate !== current.activePlate
+        ? { ...target, slice: { status: 'idle' }, preview: null }
+        : target)
     } finally {
       restoring = false
     }
