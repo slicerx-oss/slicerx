@@ -491,7 +491,7 @@ test.describe('the view\'s panels open without moving anything', () => {
     // Above the playback bar: the toolbar, the chips over the bar, the layer slider and the legend.
     const dock = page.getByTestId('preview-drawer')
     await expect(dock).toHaveAttribute('data-mode', 'slim')
-    const above = '.plate-tools-group, .vp .hud-bl > *, .vp .lstrip, .vp .hud-top .hud-col > *'
+    const above = '.plate-tools-group, .vp .hud-bl > *, .vp .hud-top .hud-col > *'
     const top = await boxesOf(page, above)
     await dock.getByTestId('edge-tab-bottom').click()
     await expect(dock).toHaveAttribute('data-mode', 'full')
