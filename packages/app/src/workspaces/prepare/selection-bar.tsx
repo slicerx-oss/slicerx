@@ -23,6 +23,13 @@ import './selection.css'
 const transformStore = createStore<{ open: boolean; bars: number }>()(() => ({ open: false, bars: 0 }))
 const setTransform = (open: boolean) => transformStore.setState({ open })
 
+/** Opens the selection's Transform popover (size, position, rotation), once the bar for the new selection is up. */
+export function openTransform(): void {
+  setTransform(true)
+  // with no bar to show it (a layout without one), it does not wait to pop up later
+  requestAnimationFrame(() => requestAnimationFrame(() => transformStore.getState().bars === 0 && setTransform(false)))
+}
+
 /** Deletes the selection; it is one undo step, so the toast offers Undo instead of a confirm first. */
 export function deleteSelection(): void {
   const s = get()

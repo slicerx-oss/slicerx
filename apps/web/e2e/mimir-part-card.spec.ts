@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A reply that makes a part, against a stubbed mimir proxy: the real text_to_part call puts a cube on the plate, the
-// reply shows it as a card read from the tool's result, and the next steps under the question send their request as
-// typed. The starters show only while the thread is empty. SX_SHOTS=1 saves each card look for review.
+// reply shows it as a card read from the tool's result, Edit opens the part's editor, and the next steps under each
+// reply act on that reply's part: a step under an older reply targets the older part, and a step for a deleted part
+// says so instead of acting. The starters show only while the thread is empty. SX_SHOTS=1 saves shots for review.
 import { type Page, type Route } from '@playwright/test'
 import { expect, test, viewportReady } from './fixtures'
 
-type W = { __sx: { setState(p: unknown): void }; __sxMimirCloud(h: unknown, base: string): void; __sxBrowserMimirCloud(base: string, token: string | null): unknown }
+type W = { __sx: { setState(p: unknown): void; getState(): { plate: { id: string }[]; selection: string | null } }; __sxMimirCloud(h: unknown, base: string): void; __sxBrowserMimirCloud(base: string, token: string | null): unknown }
 
 const SESSION = 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJlMmUifQ.c2ln'
 
@@ -48,11 +49,12 @@ async function stubProxy(page: Page) {
     const sse = (blocks: Block[]) => route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: message(blocks) })
     if (text.includes('tool_result')) return sse([{ type: 'text', text: 'Want rounded edges, or a hole through it?' }])
     asked.push(text)
-    if (text.includes('20 mm cube'))
-      return sse([
-        { type: 'text', text: 'A 20 mm cube is easy. I put one on the grid at the origin, 20 by 20 by 20 mm.' },
-        { type: 'tool_use', id: 'tu_1', name: 'text_to_part', input: { name: '20 mm cube', solids: [{ type: 'box', sizeMm: [20, 20, 20] }] } },
-      ])
+    for (const n of [20, 10])
+      if (text.includes(`a ${n} mm cube`))
+        return sse([
+          { type: 'text', text: `Created a ${n} mm cube at the origin.` },
+          { type: 'tool_use', id: `tu_${n}`, name: 'text_to_part', input: { name: `${n} mm cube`, solids: [{ type: 'box', sizeMm: [n, n, n] }] } },
+        ])
     return sse([{ type: 'text', text: 'On it.' }])
   })
   return asked
@@ -85,15 +87,6 @@ const ask = async (page: Page, text: string) => {
   await box.press('Enter')
 }
 
-/** The looks the owner picks from: the card (A to D) and where the next steps go (R under the reply, P in the prompt row). */
-const LOOKS = {
-  A: { icon: 'left', actions: 'edit', lines: 2, chips: 'reply' },
-  B: { icon: 'left', actions: 'edit-select', lines: 2, chips: 'reply' },
-  C: { icon: 'top', actions: 'edit', lines: 2, chips: 'reply' },
-  D: { icon: 'left', actions: 'edit', lines: 1, chips: 'reply' },
-  P: { icon: 'left', actions: 'edit', lines: 2, chips: 'prompt' },
-} as const
-
 const shotsDir = () => process.env['SX_SHOTS_DIR'] ?? test.info().outputPath('shots')
 
 /** Sets the scheme with the hardware acceleration toast cleared; that toast over the chat is its own fix. */
@@ -107,49 +100,27 @@ async function scheme(page: Page, s: 'dark' | 'light'): Promise<void> {
   await expect(page.getByTestId('toast')).toHaveCount(0)
 }
 
-/** The plugin lines at the top of a reply are their own fix; they are hidden so the card shows. */
-const hidePlugins = (page: Page) => page.addStyleTag({ content: '.sx-pilot .plugs { display: none !important; }' })
-
-const STEPS = ['subtle', 'medium', 'strong'] as const
-
-/** Each look, in dark and light at this project's width, then each surface step on the phone. */
-async function shots(page: Page, project: string): Promise<void> {
+/** The card in dark and light at this project's width; the plugin lines at the top of a reply are their own fix (P1). */
+async function shots(page: Page, project: string, name: string): Promise<void> {
   if (!process.env['SX_SHOTS']) return
-  const dir = shotsDir()
-  await hidePlugins(page)
-  const schemes = project === 'phone' ? (['dark', 'light'] as const) : (['dark'] as const)
+  await page.addStyleTag({ content: '.sx-pilot .plugs { display: none !important; }' })
   const width = project === 'phone' ? 390 : 1440
-  for (const [id, look] of Object.entries(LOOKS)) {
-    await page.evaluate((l) => {
-      localStorage.setItem('sx.mock.partLook', JSON.stringify(l))
-      window.dispatchEvent(new Event('sx-mock-part-look'))
-    }, look)
-    for (const s of schemes) {
-      await scheme(page, s)
-      await page.screenshot({ path: `${dir}/part-${id}-${s}-${width}.png` })
-      if (project !== 'phone') await page.locator('.mimir-dock').screenshot({ path: `${dir}/part-${id}-${s}-${width}-dock.png` })
-    }
+  for (const s of ['dark', 'light'] as const) {
+    await scheme(page, s)
+    await page.screenshot({ path: `${shotsDir()}/${name}-${s}-${width}.png` })
+    if (project !== 'phone') await page.locator('.mimir-dock').screenshot({ path: `${shotsDir()}/${name}-${s}-${width}-dock.png` })
   }
-  if (project !== 'phone') return
-  await page.evaluate(() => {
-    localStorage.removeItem('sx.mock.partLook')
-    window.dispatchEvent(new Event('sx-mock-part-look'))
-  })
-  for (const step of STEPS) {
-    await page.evaluate((v) => (document.documentElement.dataset['surfaceStep'] = v), step)
-    for (const s of ['dark', 'light'] as const) {
-      await scheme(page, s)
-      await page.screenshot({ path: `${dir}/surface-${step}-${s}-390.png` })
-    }
-  }
-  await page.evaluate(() => delete document.documentElement.dataset['surfaceStep'])
+  await scheme(page, 'dark')
 }
+
+const plateIds = (page: Page) => page.evaluate(() => (window as unknown as W).__sx.getState().plate.map((e) => e.id))
 
 test.describe('a reply that makes a part', () => {
   test('shows the part as a card, and its next steps send their request', async ({ page }, info) => {
     const asked = await stubProxy(page)
     await open(page)
     const dock = page.locator('.mimir-dock')
+    await expect(dock.getByRole('textbox', { name: 'Ask mimir' })).toHaveAttribute('placeholder', 'Ask mimir')
     const starters = dock.getByRole('group', { name: 'Suggestions' })
     await expect(starters).toBeVisible()
 
@@ -158,63 +129,87 @@ test.describe('a reply that makes a part', () => {
     await expect(card).toBeVisible({ timeout: 30_000 })
     await expect(card).toContainText('Cube created')
     await expect(card).toContainText('Cube 20 x 20 x 20 mm')
+    await expect(dock).toContainText('Created a 20 mm cube at the origin.')
     await expect(dock).toContainText('Want rounded edges, or a hole through it?')
-    // the card reads the part the call put on the plate
-    const id = await card.getAttribute('data-part')
-    expect(id).toBe('20-mm-cube')
+    // the card reads the part the call put on the plate, and the permission line gives way to it
+    expect(await card.getAttribute('data-part')).toBe('20-mm-cube')
+    await expect(dock).not.toContainText('set to Allow in Permissions')
     // the starters are gone once the thread has a turn
     await expect(starters).toHaveCount(0)
     const next = dock.getByRole('group', { name: 'Next steps' })
-    await expect(next.getByRole('button')).toHaveText(['Fillet edges', 'Center hole', 'Change size'])
+    await expect(next.getByRole('button')).toHaveText(['Fillet edges, 2 mm', 'Center hole, 5 mm', 'Change size'])
+    await shots(page, info.project.name, 'part')
 
-    await shots(page, info.project.name)
-    await page.evaluate(() => {
-      localStorage.removeItem('sx.mock.partLook')
-      window.dispatchEvent(new Event('sx-mock-part-look'))
-    })
+    // Change size asks for the size first; nothing is sent until Resize
+    await next.getByRole('button', { name: 'Change size' }).click()
+    const sizing = dock.getByRole('group', { name: 'Change size' })
+    await expect(sizing).toBeVisible()
+    const before = asked.length
+    await sizing.getByRole('textbox', { name: /X/ }).fill('30')
+    await sizing.getByRole('textbox', { name: /X/ }).press('Enter')
+    expect(asked.length).toBe(before)
+    await shots(page, info.project.name, 'part-size')
+    await sizing.getByRole('button', { name: 'Resize' }).click()
+    await expect(dock).toContainText('On it.', { timeout: 30_000 })
+    expect(asked.at(-1)).toMatch(/User request:\s*Change the size of the 20 mm cube to 30 x 20 x 20 mm$/)
+
+    await next.first().getByRole('button', { name: 'Fillet edges, 2 mm' }).click()
+    await expect.poll(() => asked.at(-1)).toMatch(/User request:\s*Fillet the edges of the 20 mm cube by 2 mm$/)
+    // the chip's request shows as the person's message
+    await expect(dock.locator('.turn-user').last()).toContainText('Fillet the edges of the 20 mm cube by 2 mm')
+
     // a reload brings the card back from the saved conversation
     await page.reload()
     await viewportReady(page)
     await expect(card).toContainText('Cube created')
-    await signIn(page)
-
-    await dock.getByRole('group', { name: 'Next steps' }).getByRole('button', { name: 'Fillet edges' }).click()
-    await expect(dock).toContainText('On it.', { timeout: 30_000 })
-    expect(asked.at(-1)).toMatch(/User request:\s*Fillet the edges of the cube by 2 mm$/)
-    // the chip's request shows as the person's message
-    await expect(dock.locator('.turn-user').last()).toContainText('Fillet the edges of the cube by 2 mm')
   })
-})
 
-// The surface steps on the mimir tab while the owner picks one: the question, the Confirm model card and the composer.
-test.describe('surface steps in the mimir tab', () => {
-  test.skip(({ isMobile }) => isMobile || !process.env['SX_SHOTS'], 'Shots only, desktop only: phones have no modeling tabs')
-  test('shots of each step', async ({ page }) => {
-    await page.addInitScript(() => {
-      if (sessionStorage.getItem('sx-e2e')) return
-      sessionStorage.setItem('sx-e2e', '1')
-      localStorage.setItem('slicerx.debug', '1')
-      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
+  test('Edit opens the part for editing, and the card body selects it', async ({ page, isMobile }) => {
+    await stubProxy(page)
+    await open(page)
+    await ask(page, 'a 20 mm cube')
+    const card = page.locator('.mimir-dock').getByTestId('mimir-part')
+    await expect(card).toBeVisible({ timeout: 30_000 })
+    await page.evaluate(() => (window as unknown as W).__sx.setState({ selection: null, selectedIds: [] }))
+    await card.getByRole('button', { name: 'Select the 20 mm cube' }).click()
+    await expect.poll(() => page.evaluate(() => (window as unknown as W).__sx.getState().selection)).toBe('20-mm-cube')
+    // a phone has no modeling tools, so its card has no Edit
+    if (isMobile) return expect(card.getByRole('button', { name: 'Edit the 20 mm cube' })).toHaveCount(0)
+    await card.getByRole('button', { name: 'Edit the 20 mm cube' }).click()
+    const transform = page.getByRole('dialog', { name: 'Transform' })
+    await expect(transform).toBeVisible()
+    await expect(transform.getByRole('group', { name: /Size/ })).toBeVisible()
+    await shots(page, test.info().project.name, 'part-edit')
+  })
+
+  test('a step under an older reply acts on that reply\'s part, and a deleted part says so', async ({ page }) => {
+    const asked = await stubProxy(page)
+    await open(page)
+    const dock = page.locator('.mimir-dock')
+    await ask(page, 'a 20 mm cube')
+    await expect(dock.getByTestId('mimir-part')).toHaveCount(1, { timeout: 30_000 })
+    await expect(dock.getByRole('group', { name: 'Next steps' })).toHaveCount(1)
+    await ask(page, 'a 10 mm cube')
+    await expect(dock.getByTestId('mimir-part')).toHaveCount(2, { timeout: 30_000 })
+    const groups = dock.getByRole('group', { name: 'Next steps' })
+    await expect(groups).toHaveCount(2)
+    expect(await plateIds(page)).toEqual(expect.arrayContaining(['20-mm-cube', '10-mm-cube']))
+
+    // the newer cube is selected; the older reply's step still targets the older cube
+    await groups.first().getByRole('button', { name: 'Center hole, 5 mm' }).click()
+    await expect.poll(() => asked.at(-1)).toMatch(/User request:\s*Add a 5 mm hole through the center of the 20 mm cube$/)
+    await expect.poll(() => page.evaluate(() => (window as unknown as W).__sx.getState().selection)).toBe('20-mm-cube')
+    await expect(dock).toContainText('On it.', { timeout: 30_000 })
+
+    // delete the older cube: its step explains instead of acting on the selection
+    await page.evaluate(() => {
+      const sx = (window as unknown as W).__sx
+      sx.setState({ plate: sx.getState().plate.filter((e) => e.id !== '20-mm-cube'), selection: '10-mm-cube', selectedIds: ['10-mm-cube'] })
     })
-    await page.goto('./')
-    await viewportReady(page)
-    await page.getByTestId('tab-mimir').click()
-    const composer = page.getByTestId('mimir-composer')
-    await composer.getByRole('textbox').fill('Hey mimir, I need a wall mount for this thermostat. Can we print it?')
-    await composer.getByRole('button', { name: 'Send' }).click()
-    await expect(page.getByTestId('mimir-choice')).toBeVisible({ timeout: 30_000 })
-    const dir = shotsDir()
-    for (const step of STEPS) {
-      await page.evaluate((v) => (document.documentElement.dataset['surfaceStep'] = v), step)
-      for (const s of ['dark', 'light'] as const) {
-        await scheme(page, s)
-        await page.getByTestId('mimir-chat').screenshot({ path: `${dir}/surface-tab-${step}-${s}.png` })
-      }
-    }
-    await page.evaluate(() => delete document.documentElement.dataset['surfaceStep'])
-    for (const s of ['dark', 'light'] as const) {
-      await scheme(page, s)
-      await page.getByTestId('mimir-chat').screenshot({ path: `${dir}/surface-tab-today-${s}.png` })
-    }
+    const sent = asked.length
+    await groups.first().getByRole('button', { name: 'Fillet edges, 2 mm' }).click()
+    await expect(groups.first().locator('..').getByRole('status')).toHaveText('The 20 mm cube is no longer in the project, so this step has nothing to change.')
+    expect(asked.length).toBe(sent)
+    expect(await page.evaluate(() => (window as unknown as W).__sx.getState().selection)).toBe('10-mm-cube')
   })
 })
