@@ -48,7 +48,7 @@ async function visibleControls(page: Page): Promise<string[]> {
   }, INTERACTIVE)
 }
 
-test('The plate tab with an object selected shows 39 controls or fewer, Simple mode', async ({ page, isMobile }) => {
+test('The plate tab with an object selected shows 41 controls or fewer, Simple mode', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop width')
   await open(page, 'prepare')
   const list = await visibleControls(page)
@@ -60,17 +60,19 @@ test('The plate tab with an object selected shows 39 controls or fewer, Simple m
   // finishes loading, before or after the count, which made the total 38 or 39 from run to run.
   // 39: the plate toolbar keeps still (static controls), so Drop to bed stays in place, disabled with nothing
   // selected, and Arrange options always shows beside Arrange all.
-  expect(list.length).toBeLessThanOrEqual(39)
+  // 41: every loaded spool shows in the Filament section, not only the ones in use (two more on the reference AMS).
+  expect(list.length).toBeLessThanOrEqual(41)
 })
 
-test('a phone\'s Slice, with its settings sheet open, shows 26 controls or fewer', async ({ page, isMobile }) => {
+test('a phone\'s Slice, with its settings sheet open, shows 28 controls or fewer', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Phone width')
   await open(page, 'prepare')
   await openSheet(page)
   const list = await visibleControls(page)
   console.log('phone slice', list.length, list.join(' | '))
   // a phone views and prints: Simple settings, the objects as a list, and no plate tools or modeling
-  expect(list.length).toBeLessThanOrEqual(26)
+  // 28: every loaded spool shows in the Filament section, not only the ones in use (two more on the reference AMS)
+  expect(list.length).toBeLessThanOrEqual(28)
 })
 
 test('a saved Preview tab opens Slice, with no Preview tab in the bar', async ({ page }) => {
