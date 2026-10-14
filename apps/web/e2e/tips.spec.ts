@@ -100,7 +100,8 @@ test('a tip on a row of the Preview legend opens beside the legend and covers no
     const l = (await legend.boundingBox())!
     const next = (await rows.nth(i + 1).boundingBox())!
     const clear = (b: { x: number; y: number; width: number; height: number }) => t.x >= b.x + b.width || t.x + t.width <= b.x || t.y >= b.y + b.height || t.y + t.height <= b.y
-    // the next row, and every other row of the legend, stays in view
+    // the next row, and every other row of the legend, stays in view; a tip that opens warm, right after the last one
+    // closed, appears in place rather than gliding in from the corner, so its box is final once it shows
     expect(clear(next), `tip of row ${i} over the next row`).toBe(true)
     expect(clear(l), `tip of row ${i} over the legend`).toBe(true)
     await page.mouse.move(5, 5)

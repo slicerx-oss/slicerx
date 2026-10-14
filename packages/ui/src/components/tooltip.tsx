@@ -253,7 +253,7 @@ function toTopLayer(el: HTMLElement): void {
  * opens on a click or tap and stays open until the next click or Esc.
  */
 export function TooltipHost({ resolve, enabled = true, media = true, summonKey = '?' }: TooltipHostProps) {
-  const [shown, setShown] = useState<{ anchor: HTMLElement; layer: HTMLElement; content: TipContent; pinned: boolean; warm: boolean; touch: boolean; still: boolean } | null>(null)
+  const [shown, setShown] = useState<{ anchor: HTMLElement; layer: HTMLElement; content: TipContent; pinned: boolean; warm: boolean; glide: boolean; touch: boolean; still: boolean } | null>(null)
   const [mediaOn, setMediaOn] = useState(false)
   const [pos, setPos] = useState<{ x: number; y: number; side: Side } | null>(null)
   const tipRef = useRef<HTMLDivElement>(null)
@@ -290,6 +290,8 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       if (!content) return
       if (!pinned && !live.current.enabled && !(isDisabled(anchor) && content.reason)) return
       const warm = performance.now() - s.lastHidden < TIP_TIMING.warmWindow || s.current !== null
+      // only a tip already on screen glides to its next anchor; one opening fresh appears in place, not from the corner
+      const glide = s.current !== null
       undescribe()
       s.current = anchor
       s.pinned = pinned
@@ -298,7 +300,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       s.described = focused instanceof HTMLElement && focused !== anchor && anchor.contains(focused) ? [anchor, focused] : [anchor]
       for (const el of s.described) describe(el)
       setMediaOn(false)
-      setShown({ anchor, layer: layerFor(anchor), content: isDisabled(anchor) ? content : withoutReason(content), pinned, warm, touch, still: prefersReducedMotion() })
+      setShown({ anchor, layer: layerFor(anchor), content: isDisabled(anchor) ? content : withoutReason(content), pinned, warm, glide, touch, still: prefersReducedMotion() })
     }
     const schedule = (anchor: HTMLElement, delay: number) => {
       window.clearTimeout(s.hide)
@@ -508,6 +510,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       className="sx-tip sx-overlay"
       data-side={pos?.side}
       data-warm={shown.warm ? true : undefined}
+      data-glide={shown.glide ? true : undefined}
       data-fig={content.figure && !(content.demo && media) ? true : undefined}
       data-demo={content.demo && media ? true : undefined}
       data-still={shown.still ? true : undefined}
