@@ -13,6 +13,10 @@
   --toast-floor: 12px;
 }
 :root[data-phone][data-phone-tabs] { --phone-tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px)); --toast-floor: 68px; }
+/* On the mimir page toasts rest above the composer and its chips (or the keyboard, while it is up). The 3D view under
+   the page still places the stack over its own controls (--overlay-bottom), so the page sets the stack's place itself. */
+:root[data-phone]:has(.mimir-dock .term-in) { --toast-floor: calc(max(var(--phone-tabbar-h), var(--phone-kb)) + 124px + 12px); }
+:root[data-phone]:has(.mimir-dock .term-in) .sx-toasts { top: auto; bottom: calc(var(--toast-floor) + env(safe-area-inset-bottom, 0px)); left: 50%; max-width: calc(100vw - 2 * var(--gutter)); }
 
 :root[data-phone], :root[data-phone] body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 :root[data-phone] #root { height: 100%; }
@@ -51,9 +55,12 @@
 }
 :root[data-phone] .mimir-dock.sx-pilot { --t-bg: var(--ink-1); }
 :root[data-phone] .mimir-dock > .mimir-head { display: none; }
-/* the conversation's own links sit on one row above it, sideways if they do not fit */
-:root[data-phone] .mimir-dock > .mimir-foot { grid-row: 1; flex-wrap: nowrap; justify-content: flex-start; gap: var(--s-1); padding: 0 var(--s-2); border-top: 0; border-bottom: 1px solid var(--line-soft); overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
-:root[data-phone] .mimir-dock > .mimir-foot .sx-linkbtn, :root[data-phone] .mimir-dock > .mimir-foot > button { flex: none; min-height: 44px; padding: 0 var(--s-2); white-space: nowrap; }
+/* the conversation's own links sit on one row above it: New conversation, then More with the other two (dock.tsx) */
+:root[data-phone] .mimir-dock > .mimir-foot { grid-row: 1; flex-wrap: nowrap; justify-content: flex-start; gap: var(--s-1); padding: 0 var(--s-1) 0 var(--s-2); border-top: 0; border-bottom: 1px solid var(--line-soft); }
+:root[data-phone] .mimir-dock > .mimir-foot > .sx-linkbtn { flex: none; min-height: 44px; padding: 0 var(--s-2); white-space: nowrap; }
+:root[data-phone] .mimir-foot-more { margin-left: auto; }
+:root[data-phone] .mimir-foot-more > .sx-btn { width: 44px; height: 44px; padding: 0; justify-content: center; color: var(--fg); }
+:root[data-phone] [data-testid="mimir-foot-menu"] .sx-menu-item { min-height: 44px; }
 :root[data-phone] .mimir-dock > .cg-compact { grid-row: 2; }
 :root[data-phone] .mimir-dock > .term, :root[data-phone] .mimir-dock > .mimir-more, :root[data-phone] .mimir-dock > .ws-loading { grid-row: 3; }
 :root[data-phone] .mimir-dock > .pc-notice { grid-row: 1 / 4; margin: var(--s-3); }
