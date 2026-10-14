@@ -2,6 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The person-only path end to end against a scripted sx-link hub: the MCP server pairs as an
 // agent, registers the card with its work, and records the hub's approval.done report.
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { hashParams } from '@slicerx/contracts'
 import { DEFAULT_POLICY } from '@slicerx/contracts'
@@ -339,6 +342,48 @@ describe('mimir cloud status through a scripted hub', () => {
     const off = await demo.call('slicerx_mimir_cloud_status')
     expect(off.isError).toBe(true)
     expect(text(off)).toMatch(/--printers link/)
+  })
+})
+
+describe('a message to mimir with files, through a scripted hub', () => {
+  const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+
+  it('reads a picture and a PDF from disk, sends them to the open app, and reads the conversation back', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sx-mimir-ask-'))
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+    const pdf = Buffer.from('%PDF-1.4\n%%EOF')
+    await writeFile(join(dir, 'sketch.png'), png)
+    await writeFile(join(dir, 'bracket.pdf'), pdf)
+    const seen: { method: string; args: Record<string, unknown> }[] = []
+    const hub = scriptedHub({ ok: true }, true, undefined, (method, args) => {
+      seen.push({ method, args })
+      if (method === 'mimir.ask') return { sessionId: 's_1', said: args['message'], attachments: (args['files'] as { name: string; type: string }[]).map((f) => ({ name: f.name, type: f.type, bytes: 1 })) }
+      if (method === 'mimir.sessions') return { sessions: [{ id: 's_1' }] }
+      return { id: 's_1', turns: [{ said: 'Make a bracket for this', attachments: ['sketch.png', 'bracket.pdf'], steps: [{ kind: 'said', text: 'I can see the drawing.' }] }] }
+    })
+    const h = await connect(opts(hub))
+    const asked = await h.call('slicerx_mimir_ask', { message: 'Make a bracket for this', files: [join(dir, 'sketch.png'), join(dir, 'bracket.pdf')] })
+    expect(asked.isError, text(asked)).toBeFalsy()
+    expect(text(asked)).toMatch(/with sketch\.png, bracket\.pdf/)
+    expect(seen[0]).toEqual({ method: 'mimir.ask', args: { message: 'Make a bracket for this', files: [{ name: 'sketch.png', type: 'image/png', data: png.toString('base64') }, { name: 'bracket.pdf', type: 'application/pdf', data: pdf.toString('base64') }] } })
+    const back = await h.call('slicerx_mimir_session', {})
+    expect(data<{ output: { turns: { attachments: string[] }[] } }>(back).output.turns[0]!.attachments).toEqual(['sketch.png', 'bracket.pdf'])
+    expect(seen.map((s) => s.method)).toEqual(['mimir.ask', 'mimir.sessions', 'mimir.session'])
+  })
+
+  it('refuses a file that is not a picture or a PDF before anything is sent', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'sx-mimir-ask-'))
+    await writeFile(join(dir, 'part.stl'), 'solid x')
+    const seen: string[] = []
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      seen.push(method)
+      return {}
+    })
+    const h = await connect(opts(hub))
+    const out = await h.call('slicerx_mimir_ask', { message: 'hi', files: [join(dir, 'part.stl')] })
+    expect(out.isError).toBe(true)
+    expect(text(out)).toMatch(/part\.stl isn't an image or a PDF/)
+    expect(seen).toEqual([])
   })
 })
 

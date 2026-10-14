@@ -16,6 +16,10 @@ import { matchShortcut } from '../../lib/keys'
 import { useFleet } from '../../lib/queries'
 import { openSettings, pilotState, set, useApp } from '../../state/store'
 import { clearDockChat, saveDockChat, savedDockChat } from './dock-chat'
+import { dockLogs, dockMessages, noteDockMessage } from './dock-log'
+import { setMimirAsker } from '../../app-link/mimir-ask'
+import { setSessionSource } from '../../app-link/sessions'
+import type { PilotAttachment } from '@slicerx/contracts'
 import { closeDock, toggleDock, useDockOpen } from './dock-state'
 import { watchOf, type Watch } from './watch'
 import { usePilot } from './use-pilot'
@@ -101,6 +105,30 @@ function DockRun(p: {
   const { pilot, sessionId, prompt, setAnnouncement } = p
   const run = usePilotRun(pilot, sessionId)
   const attachments = useAttachments()
+  // every message goes through here, so the read-back lines the person's words up with mimir's runs
+  const send = (m: string, files: readonly PilotAttachment[] = []): void => {
+    noteDockMessage(sessionId, m, files)
+    run.run(m, files.length ? { attachments: [...files] } : {})
+  }
+  const sendRef = useRef(send)
+  sendRef.current = send
+  const running = useRef(run.running)
+  running.current = run.running
+  // clients reach this chat over the app link: their messages (mimir.ask) and the read-back (mimir.session)
+  useEffect(() => {
+    setSessionSource({ store: dockLogs, messages: dockMessages })
+    setMimirAsker({
+      busy: () => running.current,
+      send: (text, files) => {
+        sendRef.current(text, files)
+        return sessionId
+      },
+    })
+    return () => {
+      setMimirAsker(null)
+      setSessionSource(null)
+    }
+  }, [sessionId])
   const { reset, restore } = run
   useEffect(() => reset(), [sessionId, reset])
   // the conversation from before a reload, shown as it was and given back to the runtime as context
@@ -148,7 +176,7 @@ function DockRun(p: {
   useEffect(() => {
     if (!prompt || consumed.current === prompt || run.running) return
     consumed.current = prompt
-    run.run(prompt)
+    sendRef.current(prompt)
     set({ pilotPrompt: null })
   }, [prompt, run])
 
@@ -205,10 +233,10 @@ function DockRun(p: {
         canReplay={false}
         onReplay={() => undefined}
         onPause={() => run.setPaused(!run.paused)}
-        onRun={(m, files) => run.run(m, files?.length ? { attachments: files } : {})}
+        onRun={(m, files) => send(m, files)}
         onStop={run.cancel}
         attachments={attachments}
-        suggestions={chips((m) => run.run(m))}
+        suggestions={chips((m) => send(m))}
         approvals={approvals}
         emptyNote={empty}
         announcement={p.announcement}

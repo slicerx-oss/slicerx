@@ -68,6 +68,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // mimir's conversations in this window: what was said and what mimir did.
   'mimir.sessions': 'read',
   'mimir.session': 'read',
+  // a client's message to mimir, with pictures and PDFs, sent in the chat as the person's next message
+  'mimir.ask': 'edit',
   // today's mimir cloud use and caps; the install token stays in the shell
   'mimir.quota': 'read',
   // whether mimir cloud keeps this install's sessions (Settings > mimir), and whether the notice was read
@@ -288,6 +290,7 @@ const HANDLERS: Record<string, Handler> = {
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),
   'mimir.sessions': () => listSessions(),
   'mimir.session': (args) => readSession(args),
+  'mimir.ask': async (args) => (await import('./mimir-ask')).askMimir(args),
   'mimir.quota': async () => {
     // loaded on use: only the desktop shell carries mimir cloud
     const { cloudReady } = await import('../pilot-connect/cloud-edition')

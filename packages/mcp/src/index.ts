@@ -26,6 +26,7 @@ import { APP_DESIGN_TOOLS, routeToApp } from './app-route'
 import { mimirCloudTools } from './mimir-cloud'
 import { appSheetTools } from './app-sheet'
 import { appLookTools } from './app-look'
+import { mimirAskTools } from './mimir-ask'
 import { appPlateTools } from './app-plates'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
 import { cadFiles, geomEngine, geomTools, findSxGeom } from './geom'
@@ -186,7 +187,9 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const look = appLookTools(appLink, productName())
   // A client's dimension sheets go to the person through the open app, while the link is in use.
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...plates, ...look, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
+  const asks = appLink ? mimirAskTools(appLink, productName()) : []
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...look, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,
