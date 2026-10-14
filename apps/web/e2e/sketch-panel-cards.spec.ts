@@ -181,11 +181,14 @@ test('Flip beside Direction sends a join into the face instead of out of it', as
     expect(Math.abs(fb.x + fb.width - (direction.x + direction.width))).toBeLessThan(2)
     expect(fb.y + fb.height).toBeLessThanOrEqual(direction.y)
     if (flipped) {
-      const off = await flip.evaluate((el) => getComputedStyle(el).backgroundColor)
+      const fill = () => flip.evaluate((el) => getComputedStyle(el).backgroundColor)
+      const off = await fill()
       await flip.click()
       await expect(flip).toHaveAttribute('aria-pressed', 'true')
-      // pressed reads as on: a different fill, the same size
-      expect(await flip.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(off)
+      // pressed reads as on: a different fill, under the pointer and away from it, the same size
+      await expect.poll(fill).not.toBe(off)
+      await page.mouse.move(0, 0)
+      await expect.poll(fill).not.toBe(off)
       expect(await flip.boundingBox()).toEqual(fb)
     }
     await panel.locator('#sk-dist').fill('5')
@@ -316,10 +319,11 @@ test('the pills stay in the view and off the point; typed numbers read apart; Ta
   await length.press('Tab')
   await angle.fill('30')
   await frame('6-tab-angle')
-  // Esc drops what was typed and goes back to the live numbers, the line still waiting
+  // Esc drops what was typed and goes back to the live numbers, the line still waiting, and typing starts over at Length
   await angle.press('Escape')
   await expect(pills).not.toHaveAttribute('data-typing')
   await expect(pills.locator('[data-label="Length"]')).toContainText('5.00')
+  await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
   await frame('7-escape')
   // Enter places the typed point: 12 mm at 90 degrees from the start
   await page.locator('body').press('1')
