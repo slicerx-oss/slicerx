@@ -66,8 +66,8 @@ test('a tip in the settings sidebar opens beside it, level with its control, and
   }
   // sleipnir on the layer height, over Supports' segment before
   await beside(page.locator('#easy-layer'), 'sleipnir changes the layer height')
-  // aegis on the wall generator: the option keeps its name, and its tip names it over the longer copy
-  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ expertOpen: true }))
+  // aegis on the wall generator, in the open Walls section of Quality: the option keeps its name, and its tip names it over the longer copy
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ expertOpen: true, settingsTab: 'quality', settingsSections: { 'quality/walls': true } }))
   const aegis = page.locator('[data-key="wall_generator"]').getByRole('radio', { name: 'aegis' })
   // scrolled into view inside the sidebar only, so the page itself stays put
   await aegis.evaluate((el) => {
