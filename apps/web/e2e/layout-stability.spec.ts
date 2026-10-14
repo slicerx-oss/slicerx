@@ -294,6 +294,7 @@ test.describe('controls never move when pressed', () => {
     moved.push(...(await probe(page, 'Model handles', page.getByTestId('phone-handles'))))
     // the sketch's two rows in the bar
     await page.getByTestId('phone-sketch').click()
+    await expect(page.getByRole('complementary', { name: 'Tool and transform' })).toContainText('Tap an origin plane')
     await page.evaluate(() => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('pick', { objectId: null, partIndex: null, triangle: null, point: null, bed: null, originPlane: 'xy' }))
     await expect(page.getByTestId('phone-sketch-bar').getByRole('radiogroup', { name: 'Drawing tool' })).toBeVisible()
     moved.push(...(await probe(page, 'Sketch tools', page.getByTestId('phone-sketch-bar'))))
