@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Staggered inner seams: the inner walls start at different spots, so their seams do not line up into one weak line.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'bqsi',
+  readout: {rows: ["Off","On"],w: 64},
+  css: ".bqsi0{animation-name:bqsi0;animation-timing-function:steps(1,end)}@keyframes bqsi0{0%{opacity:1}50%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.bqsi1{animation-name:bqsi1;animation-timing-function:steps(1,end)}@keyframes bqsi1{0%{opacity:0}50%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.bqsi-h{animation-name:bqsi-h;animation-timing-function:steps(1,end)}@keyframes bqsi-h{0%{translate:0 0px}50%{translate:0 -14px}98.6%{translate:0 0px}100%{translate:0 0px}}",
+  body: "<polygon class=\"s-f2 s-ol\" points=\"75.5,110 148.2,152 148.2,145 75.5,103\"/><polygon class=\"s-f3 s-ol\" points=\"196.7,124 148.2,152 148.2,145 196.7,117\"/><polygon class=\"s-f1 s-ol\" points=\"124,75 196.7,117 148.2,145 75.5,103\"/><path class=\"s-n\" style=\"stroke:var(--stage-t3,#6c7086);stroke-width:1.6\" d=\"M124 78.2l66.7 38.5-42.5 24.4-66.6-38.4z\"/><path class=\"s-n\" style=\"stroke:var(--stage-t3,#6c7086);stroke-width:1.6\" d=\"M124 83.8l57 32.9-32.8 18.9-56.9-32.9z\"/><path class=\"s-n\" style=\"stroke:var(--stage-t3,#6c7086);stroke-width:1.6\" d=\"M124 89.4l47.3 27.3-23.1 13.3-47.2-27.3z\"/><g class=\"bqsi0 s-a\"><ellipse class=\"s-cf s-cl\" cx=\"114.9\" cy=\"121.9\" rx=\"3.4\" ry=\"2\"/><ellipse class=\"s-cf s-cl\" cx=\"119.8\" cy=\"119.1\" rx=\"3.4\" ry=\"2\"/><ellipse class=\"s-cf s-cl\" cx=\"124.6\" cy=\"116.3\" rx=\"3.4\" ry=\"2\"/></g><g class=\"bqsi1 s-a\"><ellipse class=\"s-af s-al\" cx=\"114.9\" cy=\"121.9\" rx=\"3.4\" ry=\"2\"/><ellipse class=\"s-af s-al\" cx=\"110.7\" cy=\"91.5\" rx=\"3.4\" ry=\"2\"/><ellipse class=\"s-af s-al\" cx=\"171.3\" cy=\"116.7\" rx=\"3.4\" ry=\"2\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-bqsi\" x=\"212\" y=\"40\"/><clipPath id=\"bqsi-hw\"><rect x=\"218\" y=\"32\" width=\"54\" height=\"16\"/></clipPath><g clip-path=\"url(#bqsi-hw)\"><g class=\"bqsi-h s-a\"><use href=\"#sxs-rows-bqsi\" x=\"212\" y=\"40\"/></g></g></g>",
+}
