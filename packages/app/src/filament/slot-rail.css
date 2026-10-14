@@ -11,6 +11,8 @@
 .slot-line .tuned-badge { flex: none; margin: 0; }
 .slot-ring { display: grid; place-items: center; padding: 2px; border: 0; border-radius: var(--r-md); background: none; cursor: pointer; }
 .slot-ring:hover { background: var(--ink-3); }
+.slot-ring.static { cursor: default; }
+.slot-ring.static:hover { background: none; }
 .slot-ring:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 /* The disc's outline uses the line token, so white and clear filaments stay visible on a light theme. */
 .slot-rail .sx-swatch-disc { stroke: var(--line); }

@@ -8,6 +8,7 @@
 // line's place, so the panel never changes height when the note arrives.
 import { Button, LinkButton, Menu, MenuItem, SwatchRing, tipAttrs } from '@slicerx/ui'
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { effectiveMode, useLayout } from '../first-run/look'
 import { selectByFilament } from '../plate/selection'
 import { get, set, shownSlice, toast, useApp } from '../state/store'
 import { colorName, railGroups, slotMismatch, slotUsage, type SlotMismatch } from './rail'
@@ -64,6 +65,9 @@ export function SlotRail({ slots, left, badge }: SlotRailProps) {
   const usage = slotUsage(slice?.result.stats, Math.max(...slots.map((s) => s.index), 0))
   const mismatches = new Map(slotMismatch(printerSlots, slots).map((m) => [m.slot, m]))
   const groups = railGroups(slots)
+  // Simple mode shows an unused filament as a dimmed marker, not a button: it keeps its place in the numbering
+  // without adding a control. Advanced and up can click it to change it.
+  const simple = effectiveMode(useApp((st) => st.settingsMode), useLayout()) === 'simple'
   const [menu, setMenu] = useState<{ slot: number; at: { x: number; y: number } } | null>(null)
   // The line names the hovered or focused slot, else the first one in use.
   const lineSlot = slots.find((s) => s.index === hover) ?? slots.find((s) => s.used) ?? slots[0]
@@ -100,6 +104,19 @@ export function SlotRail({ slots, left, badge }: SlotRailProps) {
                 const share = usage[s.index - 1]?.share
                 return (
                   <div className={s.used ? 'rail-slot' : 'rail-slot unused'} data-slot={s.index} key={s.index}>
+                    {simple && !s.used ? (
+                      <span
+                        className="slot-ring static"
+                        role="img"
+                        aria-label={`Filament ${s.index}, not used`}
+                        data-testid="slice-filament-slot"
+                        data-slot={s.index}
+                        data-used="false"
+                        {...tipAttrs({ title: `${s.label} ${slotWords(s)}`, body: 'Not used. Nothing on the plate prints with it.' })}
+                      >
+                        <SwatchRing color={s.color} label={s.label} dim />
+                      </span>
+                    ) : (
                     <button
                       type="button"
                       className="slot-ring"
@@ -119,6 +136,7 @@ export function SlotRail({ slots, left, badge }: SlotRailProps) {
                     >
                       <SwatchRing color={s.color} label={s.label} {...(share !== undefined ? { usage: share } : {})} dim={!s.used} mismatch={Boolean(m)} selected={hover === s.index} />
                     </button>
+                    )}
                     {m ? (
                       <span id={`slot-mm-${s.index}`} className="sr-only">
                         {mismatchText(m)}
