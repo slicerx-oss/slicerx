@@ -120,6 +120,8 @@ describe('setting tooltip', () => {
     vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, sel: string) {
       return sel === ':focus-visible' ? this === input : Element.prototype.closest.call(this, sel) === this
     })
+    // Tab moves focus here; focus with no key before it (a popover handing it back) shows nothing.
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' })))
     act(() => input.focus())
     wait(TIP_TIMING.focus)
     expect(tip()).not.toBeNull()
