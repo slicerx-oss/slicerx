@@ -4,20 +4,15 @@
 // the bad result is red at one end and a time bar shows where a value costs print time. Shared drawings are exported
 // as functions that take an id and the part to pick out, for the second half to import.
 import { box, cyl, hud, iso, kf, morph, r1, rowFrames, run, S } from './stage.mjs'
-import { A1, CUT, draw, join, rel, st, steps, T3, timebar, vis } from './kit.mjs'
+import { A1, bead, CUT, draw, join, poly, rel, rows2, st, stateG, steps, T3, timebar, timeTwo, TWO, twoCss, vis } from './kit.mjs'
 
 const EASE = 'animation-timing-function:cubic-bezier(.65,0,.35,1)'
 const C30 = Math.cos(Math.PI / 6)
-/** Two states: A over [0, t), B over [t, 3.3), back to A. */
-const TWO = [0, 1.6, 3.3]
-const rows2 = (id, t = TWO) => `.sxs .${id}-h{animation-name:${id}-h}` + rowFrames(`${id}-h`, [[0, 0], [t[1], 1], [t[2], 0]])
 /** The readout and time bar stacked at (x, y). */
 function readout(id, x, y, w, time) {
   const tb = time && timebar(id, 0, 0, time)
   return { css: tb ? tb.css : '', svg: hud(id, x, y, { w }, `${id}-h ${id}-s`, '') + (tb ? tb.svg.replace('translate(0 0)', `translate(${x} ${r1(y + 18)})`) : '') }
 }
-const timeTwo = (a, b, t = TWO) => [[0, a], [t[1] - 0.05, a], [t[1] + 0.3, b], [t[2] - 0.05, b], [t[2] + 0.15, a]]
-const bead = (cls, d, c = A1, w = 2.6, extra = '') => `<path class="${cls}${cls ? ' s-a ' : ''}s-n" style="stroke:var(${c});stroke-width:${w}${extra}" d="${d}"/>`
 
 // ---------- acceleration: a serpentine path, ringing after each corner; less acceleration, less ringing, more time ----------
 export function accelerationLoop(id = 'aac', about = 'Acceleration: a printed path that rings after each corner; lower acceleration rings less and takes longer.') {
@@ -132,9 +127,6 @@ export function avoidCrossing() {
 
 // ---------- shared pieces for the second set ----------
 /** Two still states, A then B, stepped with the readout. */
-const twoCss = (id, t = TWO) => [steps(id), vis(`${id}-a`, 0, t[1], t[2]), vis(`${id}-b`, t[1], t[2])].join('')
-const stateG = (id, k, inner) => `<g class="${id}-${k} ${id}-s s-a">${inner}</g>`
-const poly = (cls, ps, extra = '') => `<polygon class="${cls}" points="${ps.map((q) => iso(...q).join(',')).join(' ')}"${extra}/>`
 
 // ---------- bridge sag: strands between two posts sag into the air, then pull tight ----------
 export function bridgeSagLoop(id = 'abg', about = 'Bridge: strands across a gap sag into the air, then print tight and flat with the right density, speed and flow.') {
