@@ -408,12 +408,31 @@ for (const height of [844, 700, 600]) {
       const fade = parseFloat(getComputedStyle(foot, '::before').height) || 24
       return body.querySelector('.sketch-show')!.getBoundingClientRect().bottom + body.scrollTop <= foot.getBoundingClientRect().top - fade + 0.5
     })).toBe(true)
-    // the chips end on the panel's right edge, with the Snap menu
-    const edges = await sheet.evaluate((el) => {
-      const chips = [...el.querySelectorAll('.sketch-show button')].map((b) => b.getBoundingClientRect().right)
-      return { chips: Math.max(...chips), snap: el.querySelector('#sk-grid')!.closest('.tp-row, .sx-field, div')!.getBoundingClientRect().right }
+    // no chip's word runs past its chip, and no chip passes the panel's right edge (where the Snap menu ends)
+    const { chips, room, need } = await sheet.evaluate((el) => {
+      const edge = el.querySelector('.sketch-palette')!.getBoundingClientRect().right
+      const group = el.querySelector<HTMLElement>('.sketch-show .tp-chips')!
+      const all = [...group.querySelectorAll<HTMLElement>('.tp-chip')]
+      const widths = all.map((b) => {
+        const was = b.style.width
+        b.style.width = 'max-content'
+        const w = b.getBoundingClientRect().width
+        b.style.width = was
+        return w
+      })
+      return {
+        chips: all.map((b) => ({ text: b.textContent, over: b.scrollWidth - b.clientWidth, past: b.getBoundingClientRect().right - edge, top: Math.round(b.getBoundingClientRect().top) })),
+        room: group.getBoundingClientRect().width,
+        need: widths.reduce((a, w) => a + w, 0) + parseFloat(getComputedStyle(group).columnGap) * 3,
+      }
     })
-    expect(edges.chips).toBeLessThanOrEqual(edges.snap + 0.5)
+    expect(chips).toHaveLength(4)
+    for (const c of chips) {
+      expect(c.over, `${c.text} at ${height}`).toBeLessThanOrEqual(0)
+      expect(c.past, `${c.text} at ${height}`).toBeLessThanOrEqual(0.5)
+    }
+    // one row only when the four fit the column, as on the desktop (a 390 phone's column fits them)
+    expect(new Set(chips.map((c) => c.top)).size).toBe(need <= room ? 1 : 2)
     const top = (await page.locator('.topbar, header').first().boundingBox())!
     expect((await sheet.boundingBox())!.y).toBeGreaterThanOrEqual(top.y + top.height)
     await page.screenshot({ path: test.info().outputPath(`sheet-open-${height}.png`) })
