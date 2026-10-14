@@ -9,7 +9,7 @@
 // engine is asked about a face once (edge.pick gives the ring of edges around it); moving along that
 // face picks the nearest edge of the ring here, with no engine call and no React render.
 import type { PickEvent, ProbeHover } from '@slicerx/viewport'
-import { Button, Icon, Seg } from '@slicerx/ui'
+import { Button } from '@slicerx/ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Vec3 } from '../geom/cad'
 import { edgePreview, pickEdge, type EdgePick, type EdgeRef } from './edge-api'
@@ -21,7 +21,7 @@ import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, typ
 import { followed } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
+import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, type Now } from './park'
 import { takeFilletKind } from './start-hint'
 import { useLengthWords } from './use-units'
@@ -240,19 +240,16 @@ export function FilletTool() {
   const n = picked?.edges.length ?? 0
   return (
     <Shell title="Fillet and chamfer" aside={edit ? `Editing step ${edit.index + 1}` : n ? `${n} ${n === 1 ? 'edge' : 'edges'}` : 'No edge yet'}>
-      <Seg label="Edge shape" size="sm" full value={kind} onChange={setKind} options={[{ value: 'fillet', label: 'Fillet' }, { value: 'chamfer', label: 'Chamfer' }]} />
       <PointerHint text={n ? 'Shift and click to add or remove an edge.' : 'Click an edge between two flat faces. Shift and click adds more.'} />
-      <div className="cad-pair">
-        <Num id="edge-size" label={kind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={size} onChange={setSize} onEnter={() => void apply()} />
-        {kind === 'chamfer' ? <Num id="edge-size2" label="Other face, if different" unit="mm" value={size2} onChange={setSize2} onEnter={() => void apply()} /> : null}
-      </div>
-      {limit !== null && Number.isFinite(limit) ? <p className="cad-hint"><Icon name="info" size={15} /> At most {words(limit)} on the last picked edge.</p> : null}
-      <div className="cad-row">
-        <span className="sx-small sx-muted">{picked?.last ? `${picked.last.loop.length} edges around this face` : 'Pick an edge to offer its loop'}</span>
+      <Choice id="edge-kind" label="Edge shape" bare value={kind} onChange={setKind} options={[{ value: 'fillet', label: 'Fillet' }, { value: 'chamfer', label: 'Chamfer' }]} />
+      <Num id="edge-size" label={kind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={size} onChange={setSize} onEnter={() => void apply()} />
+      {kind === 'chamfer' ? <Num id="edge-size2" label="Other face, if different" unit="mm" value={size2} onChange={setSize2} onEnter={() => void apply()} /> : null}
+      {limit !== null && Number.isFinite(limit) ? <Note>At most {words(limit)} on the last picked edge.</Note> : null}
+      <Row label={picked?.last ? `${picked.last.loop.length} edges around this face` : 'Pick an edge to offer its loop'}>
         <Button size="sm" variant="ghost" data-tip="cad.edgeLoop" disabled={!picked?.last || busy} onClick={wholeLoop}>Whole loop</Button>
-      </div>
-      {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-      <ToolFooter verb={kind === 'fillet' ? 'Round' : 'Bevel'} onApply={apply} busy={busy} disabled={!n || !sizeOk || (!previewOk && note !== null)} repeat={!edit} />
+      </Row>
+      {note ? <Message text={note} /> : null}
+      <ToolFooter verb={kind === 'fillet' ? 'Round' : 'Bevel'} verbs={['Round', 'Bevel']} onApply={apply} busy={busy} disabled={!n || !sizeOk || (!previewOk && note !== null)} repeat={!edit} />
     </Shell>
   )
 }

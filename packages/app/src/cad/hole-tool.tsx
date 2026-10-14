@@ -5,7 +5,7 @@
 // countersink for the head, as a step of the object's history. Clearance holes take the measured fit
 // (plate/clearance.ts); the other sizes come from a table of usual ones (hole-sizes.ts).
 import type { PickEvent } from '@slicerx/viewport'
-import { Icon, Seg, Select } from '@slicerx/ui'
+import { Select } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { holeFind, type Hole } from '../geom/cad'
 import { toGeom } from '../geom/client'
@@ -18,7 +18,7 @@ import { holeSpecFor, THREADS, type Head, type Purpose, type Thread } from './ho
 import { applyHole } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
+import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 
 interface Picked {
@@ -112,10 +112,10 @@ export function HoleTool() {
   return (
     <Shell title="Hole" aside={edit ? `Editing step ${edit.index + 1}` : h ? `${mm(h.diameterMm)}, ${h.through ? 'through' : `${mm(h.depthMm)} deep`}` : 'No hole yet'}>
       <PointerHint text={h ? 'Click another hole to change that one instead.' : 'Click the wall of a round hole.'} />
-      <Seg
-        label="What the hole is for"
-        size="sm"
-        full
+      <Choice
+        id="hole-purpose"
+        label="Hole for"
+        ariaLabel="What the hole is for"
         value={purpose}
         onChange={setPurpose}
         options={[
@@ -126,33 +126,25 @@ export function HoleTool() {
         ]}
       />
       {purpose === 'custom' ? (
-        <div className="cad-pair">
-          <Num id="hole-diameter" label="Diameter" unit="mm" value={custom} onChange={setCustom} onEnter={() => void apply()} />
-        </div>
+        <Num id="hole-diameter" label="Diameter" unit="mm" value={custom} onChange={setCustom} onEnter={() => void apply()} />
       ) : (
-        <div className="cad-row">
-          <span>Screw</span>
-          <Select id="hole-thread" aria-label="Screw size" value={thread} onChange={(ev) => setThread(ev.target.value as Thread)}>
+        <Row label="Screw" htmlFor="hole-thread">
+          <Select id="hole-thread" size="sm" aria-label="Screw size" value={thread} onChange={(ev) => setThread(ev.target.value as Thread)}>
             {THREADS.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </Select>
-        </div>
+        </Row>
       )}
-      {purpose === 'clearance' ? (
-        <div className="cad-row">
-          <span>Head</span>
-          <Seg label="Screw head" size="sm" value={head} onChange={setHead} options={[{ value: 'none', label: 'None' }, { value: 'counterbore', label: 'Counterbore' }, { value: 'countersink', label: 'Countersink' }]} />
-        </div>
-      ) : null}
+      {purpose === 'clearance' ? <Choice id="hole-head" label="Head" ariaLabel="Screw head" value={head} onChange={setHead} options={[{ value: 'none', label: 'None' }, { value: 'counterbore', label: 'Counterbore' }, { value: 'countersink', label: 'Countersink' }]} /> : null}
       {sized ? (
-        <div className="cad-hint" data-testid="hole-size-words">
+        <Note testId="hole-size-words">
           {sized.words.map((w) => (
-            <p key={w}>{w}</p>
+            <span key={w} className="tp-line">{w}</span>
           ))}
-        </div>
+        </Note>
       ) : null}
-      {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
+      {note ? <Message text={note} /> : null}
       <ToolFooter verb="Make hole" onApply={apply} busy={busy} disabled={!picked || !sized} repeat={!edit} />
     </Shell>
   )

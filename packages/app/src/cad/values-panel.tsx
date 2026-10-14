@@ -7,7 +7,7 @@ import { Button, Icon, Input } from '@slicerx/ui'
 import { useState } from 'react'
 import { get, useApp } from '../state/store'
 import { lengthText } from './units'
-import { close, errorText, Shell } from './panel-kit'
+import { Actions, close, errorText, Message, Note, Shell } from './panel-kit'
 import { removeValue, setValue, stepsUsing } from './value-ops'
 import { builtIns, valueTable } from './value-table'
 
@@ -53,7 +53,7 @@ function Row({ name, expr }: { name: string; expr: string }) {
           }
         }}
       />
-      {note ? <p className="cad-note"><Icon name="alert" size={13} /> {note}</p> : null}
+      {note ? <Message text={note} /> : null}
     </li>
   )
 }
@@ -78,7 +78,7 @@ export function ValuesPanel() {
   }
   return (
     <Shell title="Named values" aside={values.length === 1 ? '1 value' : `${values.length} values`}>
-      <p className="cad-hint">Type a name in any size, or a sum such as <span className="sx-mono">wall * 2 + clearance</span>. Steps typed with a name follow it when it changes. Values are in mm unless you type a unit, such as <span className="sx-mono">1/8 in</span>.</p>
+      <Note>Type a name in any size, or a sum such as <span className="sx-mono">wall * 2 + clearance</span>. Steps typed with a name follow it when it changes. Values are in mm unless you type a unit, such as <span className="sx-mono">1/8 in</span>.</Note>
       <ul className="cad-values">
         {values.map((v) => (
           <Row key={`${v.name}=${v.expr}`} name={v.name} expr={v.expr} />
@@ -94,11 +94,10 @@ export function ValuesPanel() {
         <Input id="value-new-name" mono aria-label="New value's name" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <Input id="value-new-expr" mono aria-label="New value" placeholder="2" value={expr} onChange={(e) => setExpr(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
       </div>
-      {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={close}>Done</Button>
+      {note ? <Message text={note} /> : null}
+      <Actions quiet={<Button variant="ghost" onClick={close}>Done</Button>}>
         <Button variant="primary" onClick={add} disabled={!name.trim()}>Add value</Button>
-      </div>
+      </Actions>
     </Shell>
   )
 }

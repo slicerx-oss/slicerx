@@ -4,7 +4,6 @@
 // drag moves it, in the view (viewport cadtools.ts stretches a 1 mm prism, no boolean) or by the
 // typed distance. The field and the drag stay in step. The push itself runs once, on release or Enter.
 import type { PickEvent, PushEvent } from '@slicerx/viewport'
-import { Icon } from '@slicerx/ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { pushPreview, type Vec3 } from '../geom/cad'
 import type { GeomMesh } from '../geom/client'
@@ -15,7 +14,7 @@ import { findTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
-import { close, errorText, Num, pickWords, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
+import { close, errorText, Message, Note, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, useRestored } from './park'
 import { applyPush, onFace, parseDistance, pickPushFace, pushWords, type PushFace } from './push'
 
@@ -159,15 +158,12 @@ export function PushTool() {
   const bad = text.trim() !== '' && distance === null
   return (
     <Shell title="Push and pull" aside={edit ? `Editing step ${edit.index + 1}` : face ? 'A face is picked' : 'No face yet'}>
-      {!face ? (
-        <PointerHint text="Click a flat face, or drag one in or out. Hold Shift to move in 1 mm steps." />
-      ) : (
-        <p className="cad-hint" role="status"><Icon name="info" size={15} /> {words}</p>
-      )}
+      {!face ? <PointerHint text="Click a flat face, or drag one in or out. Hold Shift to move in 1 mm steps." /> : <Note status>{words}</Note>}
       <Num id="push-dist" label="Distance along the face normal" unit="mm" value={text} onChange={setText} />
-      {note || bad ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note ?? 'Type a number, such as 5 or -3.'}</p> : null}
+      {note || bad ? <Message text={note ?? 'Type a number, such as 5 or -3.'} /> : null}
       <ToolFooter
         verb={distance !== null && distance < 0 ? 'Push in' : 'Pull out'}
+        verbs={['Push in', 'Pull out']}
         onApply={async () => {
           // a typed distance can follow a named value; a dragged one is a plain number
           bindNext(text)
