@@ -919,3 +919,78 @@ fn plain_and_request_slices_select_project_filament_variants() {
     assert!(gcode.lines().any(|line| line == "; selected 215"));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn raw_retraction_modes_match_the_switch_through_both_cli_inputs() {
+    use serde_json::json;
+    let dir = std::env::temp_dir().join(format!("sx-cli-retraction-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for request in [false, true] {
+        let run = |extra: serde_json::Value| {
+            let mut config = json!({
+                "layer_height": 0.2,
+                "wall_loops": 2,
+                "sparse_infill_density": 15,
+                "sparse_infill_pattern": "grid",
+                "brim_width": 0,
+                "wipe": false,
+                "retraction_minimum_travel": 1,
+            });
+            config
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let input = dir.join("input.json");
+            let gcode = dir.join("slice.gcode");
+            let mut cmd = sx();
+            if request {
+                let body = json!({
+                    "schemaVersion": 1,
+                    "meshes": {"cube": fixture("cube.stl")},
+                    "plate": {"objects": [{"id": "cube", "mesh": "cube"}]},
+                    "config": config,
+                    "options": {"configReport": true},
+                });
+                std::fs::write(&input, body.to_string()).unwrap();
+                cmd.args(["slice", "--request"])
+                    .arg(&input)
+                    .arg("--out-dir")
+                    .arg(&dir);
+            } else {
+                std::fs::write(&input, config.to_string()).unwrap();
+                cmd.args(["slice", &fixture("cube.stl"), "--config"])
+                    .arg(&input)
+                    .arg("-o")
+                    .arg(&gcode);
+            }
+            let out = cmd.arg("--strict").output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            std::fs::read_to_string(&gcode)
+                .unwrap()
+                .lines()
+                .map(|l| l.split(';').next().unwrap_or("").trim())
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let enabled = run(json!({"reduce_infill_retraction": true}));
+        let disabled = run(json!({"reduce_infill_retraction": false}));
+        assert!(enabled.matches("G1 E-").count() < disabled.matches("G1 E-").count());
+        for (mode, sticky, expected) in [
+            ("Auto", json!(["None", "Low"]), &enabled),
+            ("Auto", json!(["Low", "High"]), &disabled),
+            ("Enabled", json!("High"), &enabled),
+            ("Disabled", json!("Low"), &disabled),
+        ] {
+            let actual = run(json!({
+                "reduce_infill_retraction_mode": mode,
+                "filament_metal_stickiness": sticky,
+            }));
+            assert_eq!(
+                &actual, expected,
+                "request={request}, mode={mode}, sticky={sticky}"
+            );
+        }
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
