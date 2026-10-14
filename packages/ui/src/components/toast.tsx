@@ -1,7 +1,7 @@
 'use client'
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FocusEvent, type HTMLAttributes, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type HTMLAttributes, type ReactNode } from 'react'
 import { Icon } from '../icons/icon'
 import { Button } from './button'
 import type { IconName } from '../icons/icon-paths'
@@ -14,13 +14,39 @@ export interface ToastOptions {
   duration?: number
   /** A button on the toast, for example an undo. */
   action?: { label: string; run: () => void }
+  /** Stays on the card until it is dismissed, however long it takes. A warning does by default; information never. */
+  persist?: boolean
 }
 
 interface ToastRecord {
   id: number
   message: ReactNode
   tone: ToastTone
+  /** Stays until dismissed: the card's time never removes it. */
+  persist: boolean
   action?: { label: string; run: () => void }
+}
+
+/** Whether a toast with this tone and option stays until dismissed: a warning does, and so does one that asks to. */
+export function staysUntilDismissed(tone: ToastTone, persist?: boolean): boolean {
+  return persist ?? tone === 'warn'
+}
+
+/**
+ * The lines left on the card when its time ends: only information goes, a persistent line stays. Also the lines that
+ * fit the card when a new one joins: the oldest information goes first, and a persistent line only when the card holds
+ * nothing but persistent lines.
+ */
+export function afterTime<T extends { persist: boolean }>(list: readonly T[]): T[] {
+  return list.filter((t) => t.persist)
+}
+export function fitCard<T extends { persist: boolean }>(list: readonly T[], max: number): T[] {
+  const out = [...list]
+  while (out.length > max) {
+    const at = out.findIndex((t) => !t.persist)
+    out.splice(at === -1 ? 0 : at, 1)
+  }
+  return out
 }
 
 const ToastContext = createContext<((message: ReactNode, options?: ToastOptions) => void) | null>(null)
@@ -122,16 +148,17 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
   const card = useRef<ToastClock | null>(null)
   const holds = useRef(new Set<string>())
   const stack = useRef<HTMLDivElement>(null)
-  const clear = useCallback(() => {
-    card.current?.stop()
+  // The card's time ends: information goes, and a line that stays until dismissed is still there.
+  const expire = useCallback(() => {
     card.current = null
-    setToasts([])
+    setToasts((list) => afterTime(list))
     setOpen(new Set())
   }, [])
   const drop = useCallback((id: number) => {
     setToasts((list) => {
       const left = list.filter((t) => t.id !== id)
-      if (left.length === 0) {
+      // With no information left, the card has nothing to time.
+      if (!left.some((t) => !t.persist)) {
         card.current?.stop()
         card.current = null
       }
@@ -143,12 +170,15 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
     (message: ReactNode, options?: ToastOptions) => {
       const id = next.current++
       const tone = options?.tone ?? 'plain'
-      setToasts((list) => [...list, { id, message, tone, ...(options?.action ? { action: options.action } : {}) }].slice(-max))
+      const persist = staysUntilDismissed(tone, options?.persist)
+      setToasts((list) => fitCard([...list, { id, message, tone, persist, ...(options?.action ? { action: options.action } : {}) }], max))
+      // A line that stays has no time to run out, so it neither starts the card's time nor lengthens it.
+      if (persist) return
       const ms = readingTime(message, tone, options?.duration)
       if (card.current) card.current.extend(ms)
-      else card.current = new ToastClock(ms, clear, ['unseen', ...[...holds.current].map((h) => `away:${h}`)])
+      else card.current = new ToastClock(ms, expire, ['unseen', ...[...holds.current].map((h) => `away:${h}`)])
     },
-    [max, clear],
+    [max, expire],
   )
   const hide = useMemo<ToastHold>(
     () => ({
@@ -207,6 +237,7 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
             >
               {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
               <ToastText message={t.message} expanded={open.has(t.id)} onDetails={() => details(t.id)} />
+              {t.persist ? <Button size="sm" variant="ghost" icon="close" className="sx-toast-dismiss" data-testid="toast-dismiss" aria-label="Dismiss" onClick={() => drop(t.id)} /> : null}
               {t.action ? (
                 <Button size="sm" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
                   {t.action.label}
@@ -232,13 +263,26 @@ export function splitLead(message: ReactNode): { lead: ReactNode; rest: string }
 
 function ToastText({ message, expanded, onDetails }: { message: ReactNode; expanded: boolean; onDetails: () => void }) {
   const { lead, rest } = splitLead(message)
+  const text = useRef<HTMLSpanElement>(null)
+  // A line wraps to two lines before Details takes over, so Details also shows for a first sentence that still does
+  // not fit in two. Measured while the line is closed, before it is drawn, and kept while it is open.
+  const [clipped, setClipped] = useState(false)
+  useLayoutEffect(() => {
+    const el = text.current
+    if (!el || expanded) return
+    const measure = () => setClipped(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    watch?.observe(el)
+    return () => watch?.disconnect()
+  }, [expanded, message])
   return (
     <>
-      <span className="sx-toast-text">
+      <span ref={text} className="sx-toast-text">
         <span className="sx-toast-lead">{lead}</span>
         {rest ? <span className="sx-toast-more"> {rest}</span> : null}
       </span>
-      {rest ? (
+      {rest || clipped ? (
         // The label is drawn from data-label, so a toast's text (what it announces, and what a client reads) stays its
         // message.
         <Button size="sm" variant="ghost" className="sx-toast-details" data-testid="toast-details" data-label={expanded ? 'Less' : 'Details'} aria-label={expanded ? 'Less' : 'Details'} aria-expanded={expanded} onClick={onDetails} />

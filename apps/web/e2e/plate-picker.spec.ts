@@ -283,3 +283,78 @@ test.describe('the plate picker', () => {
     await expect(first.locator('.sx-toast-more')).toBeHidden()
   })
 })
+
+// Design spec 2, 4 and 8: the pill's controls are 34 px, the card has 16 px padding, a note wraps to two lines before
+// Details takes over, and a warning stays until it is dismissed while information goes with the card's one timer.
+test.describe('the toast card and the picker, to the spec', () => {
+  type Store = { setState(p: { toast: { id: number; text: string; tone?: string } }): void }
+  const post = (page: Page, id: number, text: string, tone = 'info') =>
+    page.evaluate(([i, t, k]) => (window as unknown as { __sx: Store }).__sx.setState({ toast: { id: i as number, text: t as string, tone: k as string } }), [id, text, tone] as const)
+  const textHeight = async (line: Locator) => (await line.locator('.sx-toast-text').boundingBox())!.height
+
+  test('the pill controls are 34 px tall and the pill, the grid and the card carry the lift edge', async ({ page }) => {
+    await openPlateProject(page, SMALL_3)
+    await viewSized(page)
+    for (const l of [prev(page), current(page), next(page)]) expect((await l.boundingBox())!.height).toBe(34)
+    const shadow = (l: Locator) => l.evaluate((el) => getComputedStyle(el).boxShadow)
+    const edge = /rgba\(255, 255, 255, 0\.07\) 0px 1px 0px 0px inset/
+    expect(await shadow(picker(page))).toMatch(edge)
+    await plateSheet(page)
+    expect(await shadow(page.getByTestId('plate-sheet'))).toMatch(edge)
+    await shutPlateSheet(page)
+    await post(page, 9201, 'Lift edge check.')
+    const card = page.getByTestId('toasts')
+    await expect(card).toBeVisible()
+    expect(await shadow(card)).toMatch(edge)
+    const pad = await card.evaluate((el) => { const c = getComputedStyle(el); return [c.paddingTop, c.paddingRight, c.paddingBottom, c.paddingLeft] })
+    expect(pad).toEqual(['16px', '16px', '16px', '16px'])
+  })
+
+  test('a note wraps to two lines before Details takes over', async ({ page }) => {
+    await openPlateProject(page, SMALL_3)
+    await viewSized(page)
+    const lines = page.getByTestId('toasts').getByTestId('toast')
+    await post(page, 9211, 'Short wrap check.')
+    const one = lines.filter({ hasText: 'Short wrap check.' })
+    await expect(one).toHaveCount(1)
+    const h1 = await textHeight(one)
+    await expect(one.getByTestId('toast-details')).toHaveCount(0)
+    // About 75 characters: two lines on a desktop card and on a phone's, and no Details.
+    await post(page, 9212, 'The nozzle in this project is not the one the printer has, so check it first')
+    const two = lines.filter({ hasText: 'The nozzle in this project' })
+    await expect(two).toHaveCount(1)
+    const h2 = await textHeight(two)
+    expect(h2).toBeGreaterThan(h1 * 1.8)
+    expect(h2).toBeLessThan(h1 * 2.3)
+    await expect(two.getByTestId('toast-details')).toHaveCount(0)
+    // A sentence of three or more lines stops at two, and Details opens the whole of it in place.
+    await post(page, 9213, 'This note keeps going well past two lines on any card so that the sentence itself would hide its own ending if it were cut at two lines and nothing offered the rest of it')
+    const long = lines.filter({ hasText: 'This note keeps going' })
+    await expect(long).toHaveCount(1)
+    expect(await textHeight(long)).toBeCloseTo(h2, 0)
+    await long.getByTestId('toast-details').click()
+    await expect(long).toHaveAttribute('data-expanded', '')
+    expect(await textHeight(long)).toBeGreaterThan(h2 * 1.4)
+  })
+
+  test('a warning stays past the card timer until it is dismissed', async ({ page }) => {
+    await openPlateProject(page, SMALL_3)
+    await viewSized(page)
+    const lines = page.getByTestId('toasts').getByTestId('toast')
+    const info = lines.filter({ hasText: 'Timer check info.' })
+    const warn = lines.filter({ hasText: 'The bed is smaller than the plate.' })
+    await post(page, 9221, 'Timer check info.')
+    await post(page, 9222, 'The bed is smaller than the plate.', 'warn')
+    await expect(info).toHaveCount(1)
+    await expect(warn).toHaveCount(1)
+    // Information has no dismiss control, the warning has one.
+    await expect(info.getByTestId('toast-dismiss')).toHaveCount(0)
+    await expect(warn.getByTestId('toast-dismiss')).toHaveCount(1)
+    // The card's one timer ends the information. The warning would have gone with it at its 6 s reading time.
+    await expect(info).toHaveCount(0, { timeout: 20_000 })
+    await page.waitForTimeout(8000)
+    await expect(warn).toHaveCount(1)
+    await warn.getByTestId('toast-dismiss').click()
+    await expect(warn).toHaveCount(0)
+  })
+})
