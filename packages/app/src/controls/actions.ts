@@ -29,6 +29,8 @@ export const ACTION_LABEL: Record<KeyAction, { label: string; group: ActionGroup
   'tool.orient': { label: 'Auto orient', group: 'Prepare' },
   'plate.arrange': { label: 'Arrange all objects', group: 'Prepare' },
   'plate.arrangeSelected': { label: 'Arrange the selected objects', group: 'Prepare' },
+  'plate.prev': { label: 'Show the previous plate', group: 'Prepare' },
+  'plate.next': { label: 'Show the next plate', group: 'Prepare' },
   'edit.copy': { label: 'Copy', group: 'Prepare' },
   'edit.cut': { label: 'Cut', group: 'Prepare' },
   'edit.paste': { label: 'Paste', group: 'Prepare' },
