@@ -155,9 +155,14 @@ const DIRECTIONS: ChoiceOption<Extent>[] = [
 ]
 
 const RESULTS: ChoiceOption<Result>[] = [
-  { value: 'join', label: 'Join' },
-  { value: 'cut', label: 'Cut' },
-  { value: 'new', label: 'New body' },
+  { value: 'join', label: 'Join', tip: { title: 'Join', body: 'The solid merges into the body under the sketch.' } },
+  { value: 'cut', label: 'Cut', tip: { title: 'Cut', body: 'The solid is taken out of the body under the sketch.' } },
+  { value: 'new', label: 'New body', tip: { title: 'New body', body: 'The solid is its own part on the plate.' } },
+]
+
+const FINISH_WITH: ChoiceOption<'extrude' | 'revolve'>[] = [
+  { value: 'extrude', label: 'Extrude', tip: { title: 'Extrude', body: 'Pushes the profile straight out of the sketch plane.' } },
+  { value: 'revolve', label: 'Revolve', tip: { title: 'Revolve', body: 'Turns the profile around a line of the sketch.' } },
 ]
 
 /** The way each family was last drawn this session, so picking the family again draws it the same way. */
@@ -1518,7 +1523,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     </div>
   ) : null
   const distanceField = <Num id="sk-dist" label={extentKind === 'symmetric' ? 'Total distance' : 'Distance'} unit="mm" value={distance} onChange={setDistance} onEnter={() => void go()} />
-  const finishWith = <Choice id="sk-finish" label="Finish with" bare value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} />
+  const finishWith = <Choice id="sk-finish" label="Finish with" bare value={finish} onChange={setFinish} options={FINISH_WITH} />
   const solid = (
     <>
       {featureOnly || !phone ? null : finishWith}
@@ -1621,7 +1626,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             muted={!card.open}
             {...(card.reason ? { reason: card.reason } : {})}
             // Extrude or Revolve, at the header's right once the card opens
-            state={card.open ? <Seg label="Finish with" size="sm" className="sketch-finish-with" value={finish} onChange={setFinish} options={[{ value: 'extrude', label: 'Extrude' }, { value: 'revolve', label: 'Revolve' }]} /> : undefined}
+            state={card.open ? <Seg label="Finish with" size="sm" className="sketch-finish-with" value={finish} onChange={setFinish} options={FINISH_WITH} /> : undefined}
           >
             {messages}
             {solid}
