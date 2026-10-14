@@ -56,7 +56,7 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
         .read_to_string(&mut input)
         .map_err(|e| sx_geom::Error::invalid_arg(format!("stdin: {e}")))?;
     if op.starts_with("brep.") && input.len() as u64 > brep_limit {
-        return Err(sx_geom::Error::invalid("request", "exceeds 32 MiB"));
+        return Err(sx_geom::Error::invalid_arg("request: exceeds 32 MiB"));
     }
     let mut req: Value = serde_json::from_str(&input).map_err(|e| sx_geom::Error::Json(e.to_string()))?;
     if out_dir.is_some()
