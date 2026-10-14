@@ -20,6 +20,56 @@ import { get, railOpen, set, setRail, useApp, type Side } from '../state/store'
 import { registerEdge } from './edge-keys'
 import './pane.css'
 
+/** The rows the pinned top may end on: a clipped pinned top ends under one of them, never through one. */
+export const PIN_ROWS = '.machine-card, .sx-block-h, .slot-rail-wrap, .rail-foot, .sx-switchrow, .nozzle-row, .pane-pin > .sx-block'
+/** Room under the last whole row of a clipped pinned top, px. */
+const PIN_ROOM = 6
+
+/**
+ * Where a pinned top taller than its cap (40% of the pane, in CSS) is clipped: under the last row that fits whole, so
+ * no row shows cut through its middle. The rest scrolls inside the pinned top. `rows` are the rows' bottom edges and
+ * `top` the pinned top's own, in px.
+ */
+export function pinClip(top: number, cap: number, rows: number[]): number | null {
+  const fits = rows.filter((b) => b - top + PIN_ROOM <= cap)
+  return fits.length ? Math.max(...fits) - top + PIN_ROOM : null
+}
+
+/** The pinned top of a side pane, clipped on a row edge when it is taller than its cap. */
+function PinnedTop({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const body = ref.current
+    const pin = body?.parentElement
+    if (!body || !pin || typeof ResizeObserver === 'undefined') return
+    const fit = () => {
+      pin.style.maxHeight = ''
+      let next = ''
+      if (pin.scrollHeight > pin.clientHeight + 1) {
+        const top = pin.getBoundingClientRect().top
+        const rows = Array.from(body.querySelectorAll(PIN_ROWS)).map((r) => r.getBoundingClientRect()).filter((r) => r.height > 0).map((r) => r.bottom)
+        const clip = pinClip(top, pin.clientHeight, rows)
+        if (clip !== null) next = `${Math.round(clip)}px`
+      }
+      pin.style.maxHeight = next
+    }
+    fit()
+    // The pane's height and the pinned rows' own: clipping changes neither, so this never feeds itself.
+    const ro = new ResizeObserver(fit)
+    ro.observe(body)
+    if (pin.parentElement) ro.observe(pin.parentElement)
+    return () => {
+      ro.disconnect()
+      pin.style.maxHeight = ''
+    }
+  }, [])
+  return (
+    <div className="pane-body pane-pin" ref={ref}>
+      {children}
+    </div>
+  )
+}
+
 export interface PaneSection {
   id: string
   icon: IconName
@@ -206,7 +256,7 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
             ),
           })}
       {...(footer ? { footer } : {})}
-      {...(pinned ? { pinned: <div className="pane-body pane-pin">{pinned}</div> } : {})}
+      {...(pinned ? { pinned: <PinnedTop>{pinned}</PinnedTop> } : {})}
       {...(headExtra ? { headExtra } : {})}
     >
       <div className="pane-body" ref={bodyRef} id={bodyId} {...(tab ? { 'data-testid': tab.panel } : {})}>
