@@ -76,6 +76,11 @@ export function followUps(p: CreatedPart): FollowUp[] {
   ]
 }
 
+/** True when one of the turn's calls made a part, so the turn shows a part card. */
+export function madePart(turn: Transcript['turns'][number]): boolean {
+  return turn.blocks.some((b) => b.kind === 'tools' && b.rows.some((r) => createdPart(r) !== null))
+}
+
 /** The newest part the conversation's last turn made, once that turn has finished; null otherwise. */
 export function lastPart(t: Transcript): CreatedPart | null {
   if (t.status === 'running') return null

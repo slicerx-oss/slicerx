@@ -18,6 +18,7 @@ function reply(done = true, output: unknown = OUTPUT) {
   const events: PilotEvent[] = [
     { type: 'start', runId: 'r1', sessionId: 's', provider: 'scripted', model: 'm', at: '2026-10-14T00:00:00Z' },
     { type: 'text', delta: 'A 20 mm cube is easy. I put one on the grid at the origin.' },
+    { type: 'permission_note', permission: 'slice', mode: 'allow', tool: 'text_to_part', message: 'Slice and arrange is set to Allow in Permissions, so mimir continued without asking.' },
     { type: 'tool_call', callId: 'c1', tool: 'text_to_part', source: 'skill', input: {}, args: '"20 mm cube"' },
     { type: 'tool_result', callId: 'c1', ok: true, summary: 'Added 20 mm cube, 20 x 20 x 20 mm, 8 cm3', output },
     { type: 'text', delta: 'Want rounded edges, or a hole through it?' },
@@ -53,6 +54,14 @@ describe('the part a reply made', () => {
     expect(order).toEqual(['say', 'part-card', 'say', 'follow'])
     fireEvent.click(screen.getByRole('button', { name: 'Fillet edges' }))
     expect(h.onRun).toHaveBeenCalledWith('Fillet the edges of the cube by 2 mm')
+  })
+
+  it('drops the permission line when the card shows, and keeps it as a plain row', () => {
+    render(<TranscriptView transcript={reply()} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(document.body.textContent).not.toContain('set to Allow in Permissions')
+    cleanup()
+    render(<TranscriptView transcript={reply()} showThinking={false} approvals={approvals} />)
+    expect(document.body.textContent).toContain('set to Allow in Permissions')
   })
 
   it('offers no next steps while the reply is still running', () => {
