@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { exportAssets } from './export-kit-assets.mjs'
 
 const REPO = 'slicerx-oss/slicerx'
 /** The platforms an engine release builds, by the suffix of its archive names. */
@@ -165,9 +166,11 @@ async function main(args) {
   const engineSource = flag(args, '--engine')
   const repo = flag(args, '--repo')
   const engineOnly = args.includes('--engine-only')
+  const assetsOnly = args.includes('--assets-only')
   if (engineOnly && !engineSource) throw new Error('--engine-only needs --engine <tag | folder>')
   mkdirSync(dest, { recursive: true })
-  if (!engineOnly) packPackages(dest)
+  if (!engineOnly && !assetsOnly) packPackages(dest)
+  await exportAssets(join(dest, 'assets'))
   if (!engineSource) return
   const archives = await engineArchives(engineSource, repo ? { repo } : {})
   const label = existsSync(engineSource)
