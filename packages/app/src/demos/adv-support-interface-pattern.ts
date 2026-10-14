@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Support interface pattern: the line pattern of the layers the part rests on.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'brip',
+  readout: {rows: ["Rectilinear","Concentric"],w: 96},
+  css: ".brip0{animation-name:brip0;animation-timing-function:steps(1,end)}@keyframes brip0{0%{opacity:1}50%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.brip1{animation-name:brip1;animation-timing-function:steps(1,end)}@keyframes brip1{0%{opacity:0}50%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.brip-h{animation-name:brip-h;animation-timing-function:steps(1,end)}@keyframes brip-h{0%{translate:0 0px}50%{translate:0 -14px}98.6%{translate:0 0px}100%{translate:0 0px}}",
+  body: "<g class=\"brip0 s-a\"><polygon class=\"s-f2 s-ol\" points=\"81.6,113.5 148.2,152 148.2,131 81.6,92.5\"/><polygon class=\"s-f3 s-ol\" points=\"196.7,124 148.2,152 148.2,131 196.7,103\"/><polygon class=\"s-f1 s-ol\" points=\"130.1,64.5 196.7,103 148.2,131 81.6,92.5\"/><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1.4\" d=\"M128.5 67.1l63.1 36.4l-3 1.8l-63.1-36.4l-3 1.7l63 36.4l-3 1.8l-63-36.4l-3.1 1.7l63.1 36.4l-3.1 1.8l-63-36.4l-3 1.7l63 36.4l-3 1.8l-63.1-36.4l-3 1.7l63 36.4l-3 1.8l-63-36.4l-3.1 1.7l63.1 36.4l-3 1.8l-63.1-36.4l-3 1.7l63 36.4l-3 1.8l-63.1-36.4l-3 1.7l63.1 36.4\"/></g><g class=\"brip1 s-a\"><polygon class=\"s-f2 s-ol\" points=\"81.6,113.5 148.2,152 148.2,131 81.6,92.5\"/><polygon class=\"s-f3 s-ol\" points=\"196.7,124 148.2,152 148.2,131 196.7,103\"/><polygon class=\"s-f1 s-ol\" points=\"130.1,64.5 196.7,103 148.2,131 81.6,92.5\"/><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1.4\" d=\"M130.1 66.3l63 36.4-44.9 25.9-63-36.4zM130.1 71.2l54.5 31.5-36.4 21-54.5-31.5zM130.1 76.1l46 26.6-27.9 16.1-46-26.6zM130.1 81l37.5 21.7-19.4 11.2-37.5-21.7zM130.1 85.9l29.1 16.8-11 6.3-29-16.8z\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-brip\" x=\"188\" y=\"40\"/><clipPath id=\"brip-hw\"><rect x=\"194\" y=\"32\" width=\"86\" height=\"16\"/></clipPath><g clip-path=\"url(#brip-hw)\"><g class=\"brip-h s-a\"><use href=\"#sxs-rows-brip\" x=\"188\" y=\"40\"/></g></g></g>",
+}
