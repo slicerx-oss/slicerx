@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Support base pattern: the pattern inside the support; a grid is stiffer, plain lines snap off more easily.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'brbp',
+  readout: {rows: ["Rectilinear","Rectilinear grid"],w: 116},
+  css: ".brbp0{animation-name:brbp0;animation-timing-function:steps(1,end)}@keyframes brbp0{0%{opacity:1}50%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.brbp1{animation-name:brbp1;animation-timing-function:steps(1,end)}@keyframes brbp1{0%{opacity:0}50%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.brbp-h{animation-name:brbp-h;animation-timing-function:steps(1,end)}@keyframes brbp-h{0%{translate:0 0px}50%{translate:0 -14px}98.6%{translate:0 0px}100%{translate:0 0px}}",
+  body: "<g class=\"brbp0 s-a\"><polygon class=\"s-f2 s-ol\" points=\"81.6,113.5 148.2,152 148.2,131 81.6,92.5\"/><polygon class=\"s-f3 s-ol\" points=\"196.7,124 148.2,152 148.2,131 196.7,103\"/><polygon class=\"s-f1 s-ol\" points=\"130.1,64.5 196.7,103 148.2,131 81.6,92.5\"/><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1.4\" d=\"M126.4 68.4l63.1 36.4l-7.3 4.2l-63-36.4l-7.3 4.2l63 36.4l-7.3 4.2l-63-36.4l-7.3 4.2l63.1 36.4l-7.3 4.2l-63-36.4\"/></g><g class=\"brbp1 s-a\"><polygon class=\"s-f2 s-ol\" points=\"81.6,113.5 148.2,152 148.2,131 81.6,92.5\"/><polygon class=\"s-f3 s-ol\" points=\"196.7,124 148.2,152 148.2,131 196.7,103\"/><polygon class=\"s-f1 s-ol\" points=\"130.1,64.5 196.7,103 148.2,131 81.6,92.5\"/><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1.4\" d=\"M126.4 68.4l63.1 36.4l-7.3 4.2l-63-36.4l-7.3 4.2l63 36.4l-7.3 4.2l-63-36.4l-7.3 4.2l63.1 36.4l-7.3 4.2l-63-36.4M189.5 100.6l-44.9 25.9l-7.3-4.2l44.9-25.9l-7.3-4.2l-44.8 25.9l-7.3-4.2l44.8-25.9l-7.2-4.2l-44.9 25.9l-7.3-4.2l44.9-25.9l-7.3-4.2l-44.8 25.9l-7.3-4.2l44.8-25.9l-7.2-4.2l-44.9 25.9\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-brbp\" x=\"172\" y=\"40\"/><clipPath id=\"brbp-hw\"><rect x=\"178\" y=\"32\" width=\"106\" height=\"16\"/></clipPath><g clip-path=\"url(#brbp-hw)\"><g class=\"brbp-h s-a\"><use href=\"#sxs-rows-brbp\" x=\"172\" y=\"40\"/></g></g></g>",
+}

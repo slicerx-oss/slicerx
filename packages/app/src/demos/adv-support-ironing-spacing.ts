@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Support ironing spacing: the gap between ironing passes; smaller is smoother and slower.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'btss',
+  readout: {rows: ["0.1 mm","0.3 mm"],w: 72},
+  css: ".btss0{animation-name:btss0;animation-timing-function:steps(1,end)}@keyframes btss0{0%{opacity:1}50%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.btss1{animation-name:btss1;animation-timing-function:steps(1,end)}@keyframes btss1{0%{opacity:0}50%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.btss-h{animation-name:btss-h;animation-timing-function:steps(1,end)}@keyframes btss-h{0%{translate:0 0px}50%{translate:0 -14px}98.6%{translate:0 0px}100%{translate:0 0px}}",
+  body: "<polygon class=\"s-f2 s-ol\" points=\"81.6,113.5 148.2,152 148.2,131 81.6,92.5\"/><polygon class=\"s-f3 s-ol\" points=\"196.7,124 148.2,152 148.2,131 196.7,103\"/><polygon class=\"s-f1 s-ol\" points=\"130.1,64.5 196.7,103 148.2,131 81.6,92.5\"/><path class=\"s-n\" style=\"stroke:var(--stage-t3,#6c7086);stroke-width:1.6\" d=\"M129.5 67.3l61.8 35.7m-4.9 2.8l-61.8-35.7m-4.8 2.8l61.8 35.7m-4.9 2.8l-61.8-35.7m-4.8 2.8l61.8 35.7m-4.9 2.8l-61.8-35.7m-4.8 2.8l61.8 35.7m-4.9 2.8l-61.8-35.7m-4.8 2.8l61.8 35.7\"/><g class=\"btss0 s-a\"><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1\" d=\"M130.1 66.8l61.8 35.7l-2.1 1.2l-61.9-35.7l-2.1 1.2l61.9 35.7l-2.2 1.3l-61.8-35.7l-2.1 1.2l61.8 35.7l-2.1 1.2l-61.8-35.7l-2.2 1.2l61.9 35.7l-2.2 1.3l-61.8-35.7l-2.1 1.2l61.8 35.7l-2.1 1.2l-61.8-35.7l-2.2 1.2l61.9 35.7l-2.1 1.3l-61.9-35.7l-2.1 1.2l61.8 35.7l-2.1 1.2l-61.8-35.7l-2.1 1.2l61.8 35.7l-2.1 1.3l-61.9-35.8l-2.1 1.3l61.8 35.7l-2.1 1.2l-61.8-35.7l-2.1 1.2l61.8 35.7l-2.1 1.3l-61.9-35.7l-2.1 1.2l61.9 35.7\"/></g><g class=\"btss1 s-a\"><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1\" d=\"M130.1 66.8l61.8 35.7l-6.7 3.8l-61.8-35.7l-6.7 3.9l61.9 35.7l-6.7 3.8l-61.8-35.7l-6.7 3.9l61.8 35.7l-6.6 3.8l-61.9-35.7l-6.6 3.9l61.8 35.7\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-btss\" x=\"204\" y=\"40\"/><clipPath id=\"btss-hw\"><rect x=\"210\" y=\"32\" width=\"62\" height=\"16\"/></clipPath><g clip-path=\"url(#btss-hw)\"><g class=\"btss-h s-a\"><use href=\"#sxs-rows-btss\" x=\"204\" y=\"40\"/></g></g></g>",
+}

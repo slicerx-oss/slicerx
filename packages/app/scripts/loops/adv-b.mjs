@@ -684,6 +684,153 @@ function spiralEnd(id, start, rowsT, about) {
 const spiralStart = () => spiralEnd('brva', true, ['0', '0.5'], 'Spiral starting flow: the first loop ramps up from this flow; at 0 the first loop can come out thin.')
 const spiralFinish = () => spiralEnd('brvf', false, ['0', '0.5'], 'Spiral finishing flow: the last loop tapers down to this flow; at 0 the top edge can come out thin.')
 
+// ========== Advanced loops, second half, batch C: support ironing to wall transitions ==========
+const dashC = (d, c, w, da = '2 2') => `<path class="s-n" stroke-dasharray="${da}"${st(c, w)} d="${d}"/>`
+const poly = (cls, ps) => `<polygon class="${cls}" points="${ps.map((p) => iso(...p).join(',')).join(' ')}"/>`
+
+// ---------- support ironing: the support interface's top, ironed flat ----------
+const SBC = box([2, 0, 0], [24, 16, 6]), SZ = 6.1
+const IFACE = pd('', hatch(2.8, 23.2, 1, 15, 1.6, SZ, false), T3, 1.6)
+const ridges = pd('', hatch(4, 22, 2, 14, 3.2, SZ + 0.1, false), CUT, 1)
+const iron = (sp, w, cls = '', c = A2) => pd(cls, hatch(2.8, 23.2, 0.8, 15.2, sp, SZ + 0.05), c, w, !!cls)
+function supportIroning() {
+  const id = 'btsi'
+  return staged(id, [ridges, iron(0.8, 1, `${id}-r`)], ['Off', 'On'], 'Support ironing: the hot nozzle passes over the support interface again with a little flow, so the part above gets a smoother underside.', { extra: SBC + IFACE, css: draw(`${id}-r`, 1.9, 3) })
+}
+function supportIroningFlow() {
+  const id = 'btsf'
+  return staged(id, [ridges + iron(0.8, 0.5), iron(0.8, 1.1), iron(0.8, 2.2) + pd('', hatch(4, 22, 2.4, 13, 3.2, SZ + 0.1, false), CUT, 1.4)], ['2 %', '10 %', '30 %'], 'Support ironing flow: too little leaves the interface rough, too much leaves ridges; about 10 percent irons it flat.', { extra: SBC + IFACE })
+}
+function supportIroningPattern() {
+  let rings = ''
+  for (let i = 0.6; i < 7.6; i += 0.9) rings += rect(2, 0, 24, 16, SZ + 0.05, i)
+  return staged('btsp', [iron(0.9, 1), pd('', rings, A2, 1)], ['Rectilinear', 'Concentric'], 'Support ironing pattern: the path the nozzle irons in, back and forth or in rings.', { extra: SBC + IFACE, w: 96, x: 188 })
+}
+function supportIroningSpacing() {
+  return staged('btss', [iron(0.7, 1), iron(2.2, 1)], ['0.1 mm', '0.3 mm'], 'Support ironing spacing: the gap between ironing passes; smaller is smoother and slower.', { extra: SBC + IFACE, w: 72, x: 204 })
+}
+
+// ---------- the ledge over support, shared by the support tips ----------
+const POSTC = box([0, 4, 0], [6, 12, 14]), LEDGEC = box([6, 4, 10], [24, 12, 14])
+const colsC = (x0, x1, z1, sp = 2, y = 12, z0 = 0) => { let d = ''; for (let x = x0; x <= x1 + 1e-6; x += sp) d += rel([[x, y, z0], [x, y, z1]], false); return d }
+const COLSC = pd('', colsC(8, 23, 9.4), A2, 1.8)
+const IFL = (c = A2) => pd('', rel([[8, 12, 9.4], [23, 12, 9.4]], false), c, 2.6)
+function interfaceFan() {
+  // air on the interface lets the support separate; without it the interface fuses to the ledge
+  const id = 'btsn', breeze = pd(`${id}-w`, `M${iso(30, 14, 9.6).join(' ')}q-14 -2 -26 4M${iso(30, 16, 8.4).join(' ')}q-14 -2 -24 4`, A1, 1.6, true)
+  return staged(id, [IFL(CUT), IFL() + breeze], ['0 %', '100 %'], 'Support interface fan speed: more air on the interface layer makes the support easier to separate from the part.', { extra: POSTC + COLSC + LEDGEC, css: draw(`${id}-w`, 1.9, 2.5) })
+}
+function firstLayerGap() {
+  // first layer seen from above: the part's footprint and the support's beside it
+  const id = 'btsg', P = box([0, 2, 0], [10, 14, 0.8]), S = (gap) => pd('', hatch(10 + gap, 22, 2.4, 13.6, 1.2, 0.3, false), A2, 1.2)
+  return staged(id, [P + S(0.2) + pd('', rel([[10, 14, 0.8], [10, 2, 0.8]], false), CUT, 2.2), P + S(2)], ['0 mm', '0.2 mm'], 'Support first layer gap: the sideways gap between support and the part on the first layer, so the two do not fuse.', { w: 72, x: 204 })
+}
+function buildPlateOnly() {
+  // a step under the ledge: support either stands on the step too, or only on the bed
+  const id = 'btsb', STEP = box([13, 4, 0], [24, 12, 5])
+  const onBed = pd('', colsC(8, 11.5, 9.4, 1.75), A2, 1.8), onStep = pd('', colsC(14, 23, 9.4, 1.8, 12, 5), A2, 1.8) + dots([[14, 12, 5], [17.6, 12, 5], [21.2, 12, 5]], 's-cf s-cl', 0.7)
+  return staged(id, [onBed + onStep, onBed + `<path class="s-ghost" d="M${iso(13, 12, 10).join(' ')}Q${iso(18, 12, 7.5).join(' ')} ${iso(24, 12, 10).join(' ')}"/>`], ['Off', 'On'], 'Support on the bed only: support never stands on the part, so the step stays clean, but the ledge over it goes unsupported.', { extra: POSTC + STEP + LEDGEC })
+}
+function removeSmallOverhang() {
+  const id = 'btsr', B = box([0, 4, 0], [10, 12, 12]), nub = box([10, 7, 9.5], [12, 10, 12])
+  return staged(id, [B + pd('', colsC(10.5, 11.5, 9.2, 1, 10), A2, 1.8) + nub, B + nub], ['Off', 'On'], 'Remove small overhangs: tiny overhangs that print fine on their own get no support.')
+}
+function travelSlope() {
+  const id = 'btts', B = box([0, 0, 0], [26, 14, 4]), a = [3, 7, 4.2], b = [23, 7, 4.2]
+  const up = pd(`${id}-a`, rel([a, [3, 7, 9], [23, 7, 9], b], false), A2, 2, true), ramp = pd(`${id}-b`, rel([a, [13, 7, 9], [23, 7, 9], b], false), A2, 2, true)
+  return staged(id, [up, ramp], ['90°', '30°'], 'Travel slope: how steeply the nozzle climbs on a slope or spiral z hop; 90 lifts straight up.', { extra: B, css: draw(`${id}-a`, 0.3, 1.2, 1.6) + draw(`${id}-b`, 1.95, 2.85) })
+}
+
+// ---------- treeC support: an organic treeC under the ledge ----------
+/** trunk at x 16 from the bed to a fork, branches to tips under the ledge (z 10) */
+function treeD(tips, forkZ = 5) {
+  const y = 12.6, f = [16, y, forkZ]
+  let d = rel([[16, y, 0], f], false)
+  for (const t of tips) d += `M${iso(...f).join(' ')}Q${iso((16 + t) / 2, y, (forkZ + 10) / 2 + 1).join(' ')} ${iso(t, y, 10).join(' ')}`
+  return d
+}
+const treeC = (tips, w = 3.2, forkZ = 5, c = A2) => pd('', treeD(tips, forkZ), c, w)
+const TS = (body, about, rowsT, id, opts) => staged(id, body, rowsT, about, { ...opts, extra: POSTC + LEDGEC + (opts?.extra ?? ''), after: '' })
+const ledgeAfter = LEDGEC
+const treeAngle = () => TS([treeC([12, 16, 20], 3.2, 7), treeC([7, 16, 25], 3.2, 2)], 'Branch angle: how far branches may lean; a wider angle reaches further from the trunk but stands less steady.', ['25°', '50°'], 'btta', { after: ledgeAfter })
+const treeAngleSlow = () => TS([treeC([12, 16, 20], 3.2, 8), treeC([9, 16, 23], 3.2, 3.5)], 'Preferred branch angle: the lean branches take when nothing is in the way; lower is more upright, higher merges branches sooner.', ['15°', '35°'], 'btal', { after: ledgeAfter })
+const treeDiameter = () => TS([treeC([10, 16, 22], 1.6), treeC([10, 16, 22], 5.5)], 'Branch diameter: thicker branches stand steadier and use more filament.', ['2 mm', '5 mm'], 'bttd', { after: ledgeAfter })
+function treeDiameterAngle() {
+  // the trunk widens toward the bed at this angle
+  const taper = (w0) => `<path class="s-g2 s-aol" d="${rel([[16 - w0, 12.6, 0], [16 + w0, 12.6, 0], [16.4, 12.6, 5], [15.6, 12.6, 5]])}"/>`
+  return TS([treeC([10, 16, 22], 1.8) + taper(0.3), treeC([10, 16, 22], 1.8) + taper(3)], 'Branch diameter angle: how quickly branches thicken toward the bed; a little taper keeps tall trees standing.', ['0°', '5°'], 'bttg', { after: ledgeAfter })
+}
+const treeDistance = () => TS([treeC([9, 16, 23], 2.6), treeC([8, 11, 14, 17, 20, 23], 2.2)], 'Branch distance: how far apart the branch tips sit under the part; closer holds better and is harder to remove.', ['8 mm', '3 mm'], 'bttb', { after: ledgeAfter })
+function treeTip() {
+  const marks = (r) => dots([[9, 12.6, 10], [16, 12.6, 10], [23, 12.6, 10]], 's-g1 s-aol', r)
+  return TS([treeC([9, 16, 23], 2.4) + marks(0.6), treeC([9, 16, 23], 2.4) + marks(1.6)], 'Tip diameter: the size of each branch tip where it touches the part; smaller tips leave smaller marks.', ['0.8 mm', '2 mm'], 'bttt', { after: ledgeAfter + '' })
+}
+const treeTopRate = () => TS([treeC([10, 16, 22], 2.2), treeC([8, 10, 12, 14, 16, 18, 20, 22, 24], 1.6)], 'Top rate: how densely branch tips fill under the part; higher holds overhangs better and is harder to remove.', ['15 %', '50 %'], 'bttr', { after: ledgeAfter })
+function treeWalls() {
+  // a branch cut across: one wall or btwo
+  const id = 'bttw', c = [16, 8, 0], ring = (r) => ellipse(disc(16, 8, 9, r), 's-n', ` style="stroke:var(${A2});stroke-width:1.6"`)
+  const trunk = cyl(16, 8, 0, 9, 3)
+  return staged(id, [trunk + ring(2.4), trunk + ring(2.4) + ring(1.4)], ['1 wall', '2 walls'], 'Branch walls: how many walls each tree branch gets; more walls make stiffer branches.', { w: 72, x: 204 })
+}
+function treeBrim() {
+  const id = 'bttm', rings = (n) => { let d = ''; for (let i = 1; i <= n; i++) d += circ(16, 12.6, 0.1, 1.6 + i * 0.9, 20); return pd('', d, A1, 1.4) }
+  const tip = `.${id}-w{animation-name:${id}-w;transform-box:fill-box;transform-origin:50% 100%}` + kf(`${id}-w`, [[0.4, 'rotate:0deg'], [1.2, 'rotate:-4deg'], [1.6, 'rotate:-4deg'], [1.7, 'rotate:0deg']])
+  return staged(id, ['', rings(4)], ['0 mm', '3 mm'], 'Tree brim width: a brim under each trunk keeps tall, thin trees from tipping over.', { css: tip, extra: POSTC + LEDGEC, after: g(`${id}-w`, treeC([10, 16, 22], 2.4)) })
+}
+
+// ---------- max volumetric speed: a thin and a wide line at the same nozzle speed ----------
+function volumetric() {
+  const id = 'btvs', thin = pd('', rel([[0, 4, 0.3], [26, 4, 0.3]], false), A2, 1.6), wideOk = pd(`${id}-b`, rel([[0, 12, 0.3], [26, 12, 0.3]], false), A2, 5, true)
+  const wideBad = pd(`${id}-a`, rel([[0, 12, 0.3], [26, 12, 0.3]], false), T3, 5, true) + dashC(rel([[3, 12, 0.3], [24, 12, 0.3]], false), CUT, 2.4, '3 4')
+  const tb = timebar(id, 0, 0, [[0, 0.4], [1.7, 0.4], [2, 0.8], [3.3, 0.8], [3.45, 0.4]])
+  return staged(id, [wideBad, wideOk], ['40 mm³/s', '15 mm³/s'], 'Max volumetric speed: a wide line needs more plastic per second; above what the hotend can melt it comes out starved, so the speed is capped and the line prints slower.', { extra: thin, css: draw(`${id}-a`, 0.3, 0.9, 1.6) + draw(`${id}-b`, 1.95, 3) + tb.css, w: 84, x: 196, after: tb.svg.replace('translate(0 0)', 'translate(206 58)') })
+}
+
+// ---------- wall order: three walls and infill on a slab, drawn in the order they print ----------
+const WS = box([0, 0, 0], [26, 18, 2]), WZ = 2.1
+const loopAt = (i, ccw = true) => { const p = [[0 + i, 18 - i, WZ], [26 - i, 18 - i, WZ], [26 - i, i, WZ], [i, i, WZ], [i, 18 - i, WZ]]; return rel(ccw ? p : [...p].reverse(), false) }
+const FILL = hatch(4, 22, 4, 14, 1.6, WZ)
+function sequence(id, order, rowsT, about, { bad, w = 96 } = {}) {
+  // order[s] lists, per state, what prints in turn: a wall index (0 outer) or 'f' for infill; each piece is one path drawn twice
+  let css = '', body = ''
+  for (const k of [2, 1, 0, 'f']) {
+    const [a, b] = order.map((seq, s) => (s ? 1.95 : 0.3) + seq.indexOf(k) * 0.36), cls = `${id}-${k}`
+    css += `.${cls}{animation-name:${cls}}` + kf(cls, [[a, 'stroke-dashoffset:101'], [a + 0.32, 'stroke-dashoffset:0'], [1.55, op(1)], [1.62, `${op(0)};stroke-dashoffset:0`], [b - 0.02, `${op(0)};stroke-dashoffset:101`], [b, op(1)], [b + 0.32, 'stroke-dashoffset:0'], [3.2, op(1)], [3.35, op(0)]])
+    body += k === 'f' ? pd(cls, FILL, A2, 1.2, true) : pd(cls, loopAt(0.7 + k), k === 0 ? A2 : A1, 2, true)
+  }
+  const parts = ['', '']
+  if (bad !== undefined) parts[bad] = pd('', rel([[3, 18.6, WZ], [8, 19.2, WZ], [13, 18.6, WZ]], false), CUT, 1.8)
+  return staged(id, parts, rowsT, about, { extra: WS + body, css, w, x: 300 - w - 8 })
+}
+const wallSequence = () => sequence('btwo', [[2, 1, 0, 'f'], [0, 1, 2, 'f']], ['Inner, outer', 'Outer, inner'], 'Wall order: inner walls first give the outer wall something to lean on, for the best surface; the outer wall first keeps sizes more accurate.')
+const infillFirst = () => sequence('btif', [[2, 1, 0, 'f'], ['f', 2, 1, 0]], ['Walls first', 'Infill first'], 'Infill first: the infill prints before the walls, which can help steep overhangs but may push the outer wall out.', { bad: 1, w: 92 })
+function wallDirection() {
+  const id = 'btwd'
+  return staged(id, [pd(`${id}-a`, loopAt(0.7, true), A2, 2.4, true), pd(`${id}-b`, loopAt(0.7, false), A2, 2.4, true)], ['Counterclockwise', 'Clockwise'], 'Wall direction: the way outer walls print, seen from above; holes print the other way.', { extra: WS + pd('', loopAt(1.7) + loopAt(2.7), T3, 1.4), css: draw(`${id}-a`, 0.3, 1.4, 1.55) + draw(`${id}-b`, 1.95, 3.05), w: 118, x: 172 })
+}
+
+// ---------- wall transitions: a wedge seen from above, its btwo walls joining into one toward the tip ----------
+const WEDGE = poly('s-f1 s-ol', [[0, 0, 1.5], [28, 8, 1.5], [0, 16, 1.5]]) + poly('s-f2 s-ol', [[0, 16, 0], [28, 8, 0], [28, 8, 1.5], [0, 16, 1.5]])
+const WZ2 = 1.6
+/** btwo walls from the base that meet at x = m over a join of length L, then one center wall to x = end */
+function walls(m, L, end = 26, wob = 0) {
+  const off = (x) => 8 * (1 - x / 28) - 1.2
+  const up = [[0.8, 1.2, WZ2], [m - L, 8 - off(m - L), WZ2]], dn = [[0.8, 14.8, WZ2], [m - L, 8 + off(m - L), WZ2]]
+  let d = rel([...up, [m, 8, WZ2], [end, 8, WZ2]], false) + rel([...dn, [m, 8, WZ2]], false)
+  if (wob) for (let k = 0; k < wob; k++) { const x = m + 2 + k * 3; d += rel([[x, 8, WZ2], [x + 1, 7.3, WZ2], [x + 2, 8, WZ2]], false) }
+  return d
+}
+function transitionLength() {
+  return staged('bttl', [pd('', walls(14, 1), A2, 1.8), pd('', walls(14, 6), A2, 1.8)], ['50 %', '200 %'], 'Wall transition length: how much room the walls get to join into one; longer is gentler.', { extra: WEDGE, w: 72, x: 204 })
+}
+function transitionAngle() {
+  const gap = ellipse(disc(23, 8, WZ2, 1.6), 's-cf s-cl')
+  return staged('bttn', [pd('', walls(14, 3, 20), A2, 1.8) + gap, pd('', walls(14, 3, 26), A2, 1.8)], ['5°', '20°'], 'Wall transition angle: how sharp a wedge must be before the wall count changes; too low leaves a gap near the tip.', { extra: WEDGE })
+}
+function transitionFilter() {
+  return staged('bttf', [pd('', walls(12, 3, 26, 4), A2, 1.8) + dots([[14.5, 7.4, WZ2], [17.5, 7.4, WZ2], [20.5, 7.4, WZ2], [23.5, 7.4, WZ2]], 's-cf s-cl', 0.5), pd('', walls(12, 3, 26), A2, 1.8)], ['5 %', '25 %'], 'Wall transition filter: a margin that stops walls switching back and forth between one line and two, so there are fewer starts and stops.', { extra: WEDGE })
+}
+
 /** Advanced, second half, by the file name the export uses. */
 export const LOOPS = {
   'adv-pressure-advance': pressureAdvance,
@@ -761,4 +908,19 @@ export const LOOPS = {
   'adv-support-critical-regions-only': supportCritical,
   'adv-support-threshold-angle': supportThreshold,
   'adv-support-angle': supportAngle,
+  'adv-support-base-pattern': supportBase,
+  'adv-support-base-pattern-spacing': supportBaseSpacing,
+  'adv-support-interface-pattern': supportInterfacePattern,
+  'adv-support-bottom-interface-spacing': supportBottomSpacing,
+  'adv-support-expansion': supportExpansion,
+  'adv-support-ironing': supportIroning,
+  'adv-support-ironing-flow': supportIroningFlow,
+  'adv-support-ironing-pattern': supportIroningPattern,
+  'adv-support-ironing-spacing': supportIroningSpacing,
+  'adv-support-interface-fan-speed': interfaceFan,
+  'adv-support-object-first-layer-gap': firstLayerGap,
+  'adv-support-on-build-plate-only': buildPlateOnly,
+  'adv-support-remove-small-overhang': removeSmallOverhang,
+  'adv-travel-slope': travelSlope,
+  'adv-tree-support-branch-angle': treeAngle,
 }

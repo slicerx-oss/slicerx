@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Remove small overhangs: tiny overhangs that print fine on their own get no support.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'btsr',
+  readout: {rows: ["Off","On"],w: 64},
+  css: ".btsr0{animation-name:btsr0;animation-timing-function:steps(1,end)}@keyframes btsr0{0%{opacity:1}50%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.btsr1{animation-name:btsr1;animation-timing-function:steps(1,end)}@keyframes btsr1{0%{opacity:0}50%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.btsr-h{animation-name:btsr-h;animation-timing-function:steps(1,end)}@keyframes btsr-h{0%{translate:0 0px}50%{translate:0 -14px}98.6%{translate:0 0px}100%{translate:0 0px}}",
+  body: "<g class=\"btsr0 s-a\"><polygon class=\"s-f2 s-ol\" points=\"87.6,103 117.9,120.5 117.9,78.5 87.6,61\"/><polygon class=\"s-f3 s-ol\" points=\"142.2,106.5 117.9,120.5 117.9,78.5 142.2,64.5\"/><polygon class=\"s-f1 s-ol\" points=\"111.9,47 142.2,64.5 117.9,78.5 87.6,61\"/><path class=\"s-n\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:1.8\" d=\"M125.5 117.9l0-32.2M128.5 119.6l0-32.2\"/><polygon class=\"s-f2 s-ol\" points=\"124,83.8 130.1,87.3 130.1,78.5 124,75\"/><polygon class=\"s-f3 s-ol\" points=\"139.2,82 130.1,87.3 130.1,78.5 139.2,73.3\"/><polygon class=\"s-f1 s-ol\" points=\"133.1,69.8 139.2,73.3 130.1,78.5 124,75\"/></g><g class=\"btsr1 s-a\"><polygon class=\"s-f2 s-ol\" points=\"87.6,103 117.9,120.5 117.9,78.5 87.6,61\"/><polygon class=\"s-f3 s-ol\" points=\"142.2,106.5 117.9,120.5 117.9,78.5 142.2,64.5\"/><polygon class=\"s-f1 s-ol\" points=\"111.9,47 142.2,64.5 117.9,78.5 87.6,61\"/><polygon class=\"s-f2 s-ol\" points=\"124,83.8 130.1,87.3 130.1,78.5 124,75\"/><polygon class=\"s-f3 s-ol\" points=\"139.2,82 130.1,87.3 130.1,78.5 139.2,73.3\"/><polygon class=\"s-f1 s-ol\" points=\"133.1,69.8 139.2,73.3 130.1,78.5 124,75\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-btsr\" x=\"212\" y=\"40\"/><clipPath id=\"btsr-hw\"><rect x=\"218\" y=\"32\" width=\"54\" height=\"16\"/></clipPath><g clip-path=\"url(#btsr-hw)\"><g class=\"btsr-h s-a\"><use href=\"#sxs-rows-btsr\" x=\"212\" y=\"40\"/></g></g></g>",
+}
