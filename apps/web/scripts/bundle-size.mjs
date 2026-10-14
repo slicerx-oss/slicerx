@@ -19,7 +19,7 @@ const SHELL_KB = 217
 const WASM_KB = 1056
 const STEP_WASM_KB = 3584
 const FULL_GEOM_WASM_KB = 1536
-const BREP_WASM_KB = 1258
+const BREP_WASM_KB = 1400
 const isStepReader = (file) => /occt-import-js/.test(file)
 const isFullGeom = (file) => /sx_geom_wasm/.test(file)
 const isBrep = (file) => /sx_brep/.test(file)
