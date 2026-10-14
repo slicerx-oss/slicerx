@@ -411,3 +411,37 @@ describe('a dimension sheet through a scripted hub', () => {
     expect(listed.tools.some((t) => t.name.startsWith('slicerx_app_sheet'))).toBe(false)
   })
 })
+
+describe('the mimir tab through a scripted hub', () => {
+  const link = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+
+  it('reads what answers in the tab: a model on Auto, the scripts, or nothing yet', async () => {
+    const answers = [
+      { link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, tools: ['pilot.sheet', 'design.new', 'geom.extrude'], key: 'sk-never' },
+      { link: 'scripted', provider: 'scripted', model: 'scripted', auto: null, tools: ['pilot.sheet', 'geom.extrude'] },
+      { link: 'none', provider: null, model: null, auto: null, tools: [] },
+    ]
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      if (method !== 'mimir.tab') throw { code: 'bad_request', message: `unknown method ${method}` }
+      return answers.shift()
+    })
+    const h = await connect(link(hub))
+    const model = await h.call('slicerx_mimir_tab')
+    expect(model.isError, text(model)).toBeFalsy()
+    expect(data<{ output: unknown }>(model).output).toEqual({ link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, tools: ['pilot.sheet', 'design.new', 'geom.extrude'] })
+    expect(JSON.stringify(model)).not.toMatch(/sk-never/)
+    expect(text(model)).toMatch(/runs anthropic on Auto: claude-haiku-5-5, and claude-sonnet-5-5 for a picture/)
+    const scripted = await h.call('slicerx_mimir_tab')
+    expect(data<{ output: { link: string } }>(scripted).output.link).toBe('scripted')
+    expect(text(scripted)).toMatch(/scripted replies: no model is set up/)
+    const none = await h.call('slicerx_mimir_tab')
+    expect(text(none)).toMatch(/has not been opened/)
+  })
+
+  it('says how to reach the app without sx-link', async () => {
+    const demo = await connect({ printers: 'demo' })
+    const off = await demo.call('slicerx_mimir_tab')
+    expect(off.isError).toBe(true)
+    expect(text(off)).toMatch(/--printers link/)
+  })
+})

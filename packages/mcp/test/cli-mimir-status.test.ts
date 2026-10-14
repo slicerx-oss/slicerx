@@ -48,3 +48,13 @@ describe('slicerx-mcp --mimir-cloud-status', () => {
     expect(stdout).toContain('{"cloud", "enabled", "signed_in", "needs_sign_in", "quota", "quota_error"}')
   }, 30_000)
 })
+
+describe('slicerx-mcp call mimir_tab', () => {
+  it('prints one JSON line a client reads, saying where the tab is read from', async () => {
+    const e = await cli(['--printers', 'demo', 'call', 'mimir_tab'])
+    expect(e.code).toBe(1)
+    const out = JSON.parse(e.stdout.trim()) as { tool: string; ok: boolean; output: { error: { code: string; message: string } } }
+    expect(out).toMatchObject({ tool: 'slicerx_mimir_tab', ok: false, output: { error: { code: 'not_configured', message: expect.stringMatching(/--printers link/) } } })
+    expect(e.stdout.trim().split('\n')).toHaveLength(1)
+  }, 30_000)
+})
