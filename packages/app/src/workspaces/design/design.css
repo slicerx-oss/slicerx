@@ -172,3 +172,11 @@ button.select-pill-made { color: var(--muted); }
 .dtree-part[data-current] .sx-ic { color: var(--accent); }
 .cad-step[data-later] .cad-step-icon, .cad-step[data-later] .cad-step-n { opacity: 0.45; }
 span.cad-step-n, span.cad-step-name { cursor: default; }
+
+/* Model's size badge and its view notices (the hardware acceleration notice) sit flat on the view (spec 4): the panel
+   surface and one line, no shadow or glass. Menus, popovers and tooltips keep their lift. */
+.studio[data-model-mode="design"] .dims.sx-overlay, :root:has(.studio[data-model-mode="design"]) .sx-toast { background: var(--ink-1); border: 1px solid var(--line); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* Model's panel collapse handles stay quiet until hovered or focused: the grip mark alone, no surface or shadow. */
+@media (min-width: 901px) {
+  .studio[data-model-mode="design"] .sx-edge-tab:not(:hover):not(:focus-visible):not([data-attention]) { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

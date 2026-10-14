@@ -501,6 +501,15 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         // Model draws geometry, not filament: the CAD gray with its edges (X-ray still works there); Slice keeps the look
         if (first || s.look !== prev.look || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode) vp.setRenderMode(modelLook(s))
         if (!first && s.cameraSeq !== prev.cameraSeq) vp.view(s.camera, { animate: true })
+        // Model frames the part so it is the biggest thing on screen: the whole model when Model opens or an object
+        // is added, the selection when it changes outside a tool (keeping the angle).
+        if (!first && designing(s) && s.cameraSeq === prev.cameraSeq) {
+          if (!designing(prev) || s.plate.length > prev.plate.length) vp.view('iso', { animate: true })
+          else if (s.objectTool === null && (s.selection !== prev.selection || s.selectedIds !== prev.selectedIds)) {
+            const now = selectedIds(s)
+            if (now.length > 0 && now.join() !== selectedIds(prev).join()) (vp as unknown as Viewport).frameSelection?.({ animate: true })
+          }
+        }
         // The look and feel picks the mouse map; overrides from Settings sit on top.
         if ((first || s.lookAndFeel !== prev.lookAndFeel) && vp.setControls && vp.controlsApi) vp.setControls(controlsFor(vp.controlsApi, s.lookAndFeel ?? { id: defaultLook.current }))
         prev = s

@@ -95,7 +95,7 @@ export interface RowProps {
 
 /**
  * One row of a tool panel: the label on the left and the control ending at the panel's right edge, with the unit beside
- * the label. The sizes are the settings rows': a 40 px row, number fields 72 px, selects 132 px. A wide row puts the
+ * the label. The sizes are the settings rows': a 40 px row, number fields 96 px (--w-ctl), selects 132 px. A wide row puts the
  * control under the label instead.
  */
 export function Row({ label, unit, htmlFor, labelId, wide = false, className, testId, children }: RowProps) {

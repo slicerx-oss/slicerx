@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Model's ribbon: the Solid tab's four groups (Create, Modify, Inspect, Output) set apart by hairlines, and a next
-// slot with the tools for the picked object that appears with the pick at the end of the row. Checked at the widths
-// the plan names: the names drop where the row does not fit, the next slot hides at 900 px, and nothing in the bar
-// overlaps. Wherever the named ribbon does not fit (the mimir panel open beside it at 1440 px), it drops its names
-// too, so no tool is out of view.
+// Model's ribbon: the Solid tab's four groups (Create, Modify, Inspect, Output) set apart by hairlines. What is picked
+// shows in the groups themselves: a tool waiting for an object is off until one is selected, and a tool that takes one
+// at a time is off, with the reason in its tip, when more are picked. Checked at the widths the plan names: the names
+// drop where the row does not fit and nothing in the bar overlaps. Wherever the named ribbon does not fit (the mimir
+// panel open beside it at 1440 px), it drops its names too, so no tool is out of view.
 import { type Page } from '@playwright/test'
 import { command, facePick, freshBox, openStudio, pick } from './cad-helpers'
 import { expect, test } from './fixtures'
@@ -27,7 +27,7 @@ async function noOverlap(page: Page): Promise<void> {
 test.describe('Model ribbon', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop widths')
 
-  test('groups, utility icons, and the next slot for a picked object', async ({ page }) => {
+  test('groups, and the selection shows in them with no separate slot', async ({ page }) => {
     await openStudio(page)
     await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ selection: null, selectedIds: [] }))
     await page.locator('.sx-tab[data-mode="design"]').click()
@@ -35,82 +35,62 @@ test.describe('Model ribbon', () => {
     await expect(shelf.locator('.rb-grp')).toHaveCount(4)
     expect(await shelf.locator('.rb-glabel').allTextContents()).toEqual(['Create', 'Modify', 'Inspect', 'Output'])
     await expect(page.getByTestId('model-shelf-next')).toHaveCount(0)
+    // nothing selected: the tools that work on an object are off, saying why
+    for (const id of ['cut', 'array']) await expect(shelf.locator(`[data-tool="${id}"]`)).toHaveAttribute('aria-disabled', 'true')
+    await expect(shelf.locator('[data-tool="cut"]')).toHaveAttribute('data-tip-body', 'Select an object first.')
     await freshBox(page)
     await page.locator('.dtree-name', { hasText: 'Box' }).click()
-    const next = page.getByTestId('model-shelf-next')
-    await expect(next.getByTestId('model-shelf-next-tool')).toHaveCount(3)
-    expect(await next.locator('[data-next-tool]').evaluateAll((els) => els.map((e) => e.getAttribute('data-next-tool')))).toEqual(['cut', 'array', 'holefit'])
+    for (const id of ['cut', 'array', 'holefit']) await expect(shelf.locator(`[data-tool="${id}"]`)).not.toHaveAttribute('aria-disabled', 'true')
+    await expect(page.getByTestId('model-shelf-next')).toHaveCount(0)
     await noOverlap(page)
     // Everything fits at 1440 px: the shelf does not scroll, so undo and redo are on screen.
     expect(await shelf.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0)
-    for (const [width, labels, nextShown] of [[1100, false, true], [900, false, false]] as const) {
+    for (const [width, labels] of [[1100, false], [900, false]] as const) {
       await page.setViewportSize({ width, height: 800 })
       await expect(shelf.locator('[data-tool="push"] .rb-label')).toBeVisible({ visible: labels })
-      await expect(next).toBeVisible({ visible: nextShown })
       await noOverlap(page)
     }
   })
 })
 
-test.describe('Model ribbon next slot for faces and edges', () => {
+test.describe('Model ribbon with more picked than a tool takes', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop widths')
 
-  test('counts the picks and turns off the tools that cannot take that many', async ({ page }) => {
+  test('turns off the tools that take one face at a time, in their own groups', async ({ page }) => {
     await openStudio(page)
     const id = await freshBox(page)
     await page.locator('.sx-tab[data-mode="design"]').click()
     await page.locator('.dtree-name', { hasText: 'Box' }).click()
-    const next = page.getByTestId('model-shelf-next')
-    const tools = () => next.getByTestId('model-shelf-next-tool').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-next-tool')}${e.getAttribute('aria-disabled') ? ' off' : ''}`))
-    // one object needs no count
-    await expect(page.getByTestId('model-shelf-next-count')).toHaveCount(0)
-    // one face, then a second with Shift
+    const shelf = page.getByTestId('model-shelf')
+    const off = (tool: string) => shelf.locator(`[data-tool="${tool}"]`).getAttribute('aria-disabled')
     await page.keyboard.press('Alt+2')
     await pick(page, await facePick(page, id, [0, 0, 1]))
-    await expect(page.getByTestId('model-shelf-next-count')).toHaveAttribute('aria-label', '1 face')
-    expect(await tools()).toEqual(['push', 'sketch', 'shell'])
+    expect([await off('push'), await off('sketch'), await off('shell')]).toEqual([null, null, null])
     await pick(page, { ...(await facePick(page, id, [1, 0, 0])), shift: true })
-    await expect(page.getByTestId('model-shelf-next-count')).toHaveAttribute('aria-label', '2 faces')
-    expect(await tools()).toEqual(['push off', 'sketch off', 'shell'])
-    // the chip fits: the shelf still does not scroll at 1440 px
-    expect(await page.getByTestId('model-shelf').evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0)
-    // edges get Fillet and Chamfer
-    await page.keyboard.press('Alt+3')
-    await pick(page, await facePick(page, id, [0, 0, 1]))
-    await expect(page.getByTestId('model-shelf-next-count')).toHaveAttribute('aria-label', '1 edge')
-    expect(await tools()).toEqual(['fillet', 'chamfer'])
+    await expect(shelf.locator('[data-tool="push"]')).toHaveAttribute('aria-disabled', 'true')
+    await expect(shelf.locator('[data-tool="push"]')).toHaveAttribute('data-tip-body', 'Push and pull takes one face at a time.')
+    await expect(shelf.locator('[data-tool="sketch"]')).toHaveAttribute('aria-disabled', 'true')
+    expect(await off('shell')).toBeNull()
+    await expect(page.getByTestId('model-shelf-next')).toHaveCount(0)
+    expect(await shelf.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0)
   })
 
-  test('a round face offers Hole and Thread', async ({ page }) => {
+  test('two objects turn off Cut and Hole, Array stays on', async ({ page }) => {
     await openStudio(page)
     await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
+    await command(page, 'Add a box')
     await command(page, 'Add a cylinder')
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: unknown[] } } }).__sx.getState().plate.length)).toBe(1)
-    const id = await page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: { id: string }[] } } }).__sx.getState().plate[0]!.id)
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: unknown[] } } }).__sx.getState().plate.length)).toBe(2)
+    await page.evaluate(() => {
+      const sx = (window as unknown as { __sx: { getState(): { plate: { id: string }[] }; setState(p: unknown): void } }).__sx
+      const ids = sx.getState().plate.map((p) => p.id)
+      sx.setState({ selection: ids[0], selectedIds: ids })
+    })
     await page.locator('.sx-tab[data-mode="design"]').click()
-    await page.keyboard.press('Alt+2')
-    // a triangle of the cylinder's side wall: its normal lies flat
-    const side = await page.evaluate((oid) => {
-      type E = { id: string; transform: number[]; parts: { positions: Float32Array; indices: Uint32Array }[] }
-      const e = (window as unknown as { __sx: { getState(): { plate: E[] } } }).__sx.getState().plate.find((p) => p.id === oid)!
-      const m = e.transform
-      const part = e.parts[0]!
-      const w = (i: number) => {
-        const x = part.positions[i * 3]!, y = part.positions[i * 3 + 1]!, z = part.positions[i * 3 + 2]!
-        return [m[0]! * x + m[4]! * y + m[8]! * z + m[12]!, m[1]! * x + m[5]! * y + m[9]! * z + m[13]!, m[2]! * x + m[6]! * y + m[10]! * z + m[14]!]
-      }
-      for (let t = 0; t < part.indices.length / 3; t++) {
-        const [a, b, c] = [w(part.indices[t * 3]!), w(part.indices[t * 3 + 1]!), w(part.indices[t * 3 + 2]!)] as number[][]
-        const u = [b![0]! - a![0]!, b![1]! - a![1]!, b![2]! - a![2]!], v = [c![0]! - a![0]!, c![1]! - a![1]!, c![2]! - a![2]!]
-        const n = [u[1]! * v[2]! - u[2]! * v[1]!, u[2]! * v[0]! - u[0]! * v[2]!, u[0]! * v[1]! - u[1]! * v[0]!]
-        const len = Math.hypot(n[0]!, n[1]!, n[2]!)
-        if (len > 1e-9 && Math.abs(n[2]! / len) < 0.05) return { objectId: oid, partIndex: 0, triangle: t, point: [(a![0]! + b![0]! + c![0]!) / 3, (a![1]! + b![1]! + c![1]!) / 3, (a![2]! + b![2]! + c![2]!) / 3] as [number, number, number] }
-      }
-      throw new Error('no side wall')
-    }, id)
-    await pick(page, side)
-    await expect(page.getByTestId('model-shelf-next-count')).toHaveAttribute('aria-label', '1 round face', { timeout: 15_000 })
-    expect(await page.getByTestId('model-shelf-next').getByTestId('model-shelf-next-tool').evaluateAll((els) => els.map((e) => e.getAttribute('data-next-tool')))).toEqual(['holefit', 'thread'])
+    const shelf = page.getByTestId('model-shelf')
+    await expect(shelf.locator('[data-tool="cut"]')).toHaveAttribute('data-tip-body', 'Cut one object at a time.')
+    await expect(shelf.locator('[data-tool="holefit"]')).toHaveAttribute('aria-disabled', 'true')
+    await expect(shelf.locator('[data-tool="array"]')).not.toHaveAttribute('aria-disabled', 'true')
   })
 })
 

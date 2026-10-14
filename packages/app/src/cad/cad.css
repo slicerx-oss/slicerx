@@ -13,7 +13,7 @@
 /* The sketch palette: Look at, grid and snap, section, and what the sketch shows. */
 .sketch-palette { display: grid; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .sketch-palette > .sx-btn { justify-self: start; }
-.sketch-toggles { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); }
+.sketch-toggles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 6px; font-size: var(--fs-sm); color: var(--muted); }
 .sketch-toggles label { margin-right: 8px; }
 .sketch-toggles .sx-selectwrap { width: 88px; margin-left: auto; }
 .sketch-show { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; margin: 0; padding: 0; border: 0; }
@@ -107,7 +107,7 @@
 /* The tool panel language (panel-kit.tsx): every tool in the right sidebar reads the same. The sizes are the settings
    rows' (styles/app.css .field): one 40 px row, number fields 72 px, selects 132 px, every control ending at the
    panel's right edge, a number's unit beside its label. */
-.cad.tp { --tp-row-h: 40px; --tp-num-w: 72px; --tp-select-w: 132px; gap: var(--s-2); }
+.cad.tp { --tp-row-h: 40px; --tp-num-w: var(--w-ctl); --tp-select-w: 132px; gap: var(--s-2); }
 .cad.tp > .sx-block-h { margin-bottom: 0; }
 .cad.tp > .sx-block-h h3 { flex: none; }
 /* the tool's state, on the right of its header: it gives way to the name, never pushes it */
@@ -141,7 +141,7 @@
 .sx-seg.tp-seg-icons[data-size] > button { padding: 0; }
 /* X, Y and Z in one outline: the label on the left, the outline ending at the right edge */
 .cad.tp .tp-vec { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s-2); min-height: var(--tp-row-h); }
-.cad.tp .tp-vec > .sx-vector-box { width: calc(var(--tp-num-w) * 2); }
+.cad.tp .tp-vec > .sx-vector-box { width: 128px; }
 .cad.tp .tp-vec:has(> .sx-vector-box > :nth-child(3)) > .sx-vector-box { width: 192px; }
 .cad.tp .sx-vector-label { font-size: calc(13px * var(--text-scale)); font-weight: var(--fw-regular); color: var(--muted); }
 /* a phase of a tool: its own header, muted with a reason until it can be used */
