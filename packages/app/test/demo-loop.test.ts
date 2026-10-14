@@ -152,8 +152,8 @@ describe('demo loops', () => {
     }
   })
 
-  it('has every settings and model tool loop, each with a sentence and a module under 8 KB', async () => {
-    const ids = ['layer-height', 'strength', 'infill-density', 'wall-loops', 'speed', 'speed-quality', 'speed-balanced', 'speed-fast', 'speed-fastest', 'supports', 'supports-off', 'supports-auto', 'supports-painted', 'enable-support', 'brim', 'brim-type', 'history-suppress', 'history-view', 'history-earlier', 'history-later', 'keep-dimension', 'mirror-x', 'mirror-y', 'mirror-z', 'print-sequence', 'whole-loop', 'drop-to-bed', 'round-corners', 'brim-ears', 'move', 'lay-on-face', 'rotate', 'scale']
+  it('has every settings, model tool and advanced loop, each with a sentence and a module under 8 KB', async () => {
+    const ids = ['layer-height', 'strength', 'infill-density', 'wall-loops', 'speed', 'speed-quality', 'speed-balanced', 'speed-fast', 'speed-fastest', 'supports', 'supports-off', 'supports-auto', 'supports-painted', 'enable-support', 'brim', 'brim-type', 'history-suppress', 'history-view', 'history-earlier', 'history-later', 'keep-dimension', 'mirror-x', 'mirror-y', 'mirror-z', 'print-sequence', 'whole-loop', 'drop-to-bed', 'round-corners', 'brim-ears', 'move', 'lay-on-face', 'rotate', 'scale', 'adv-acceleration', 'adv-jerk', 'adv-flow-ratio', 'adv-flow-ratio-outer', 'adv-flow-ratio-inner', 'adv-flow-ratio-infill', 'adv-flow-ratio-top', 'adv-flow-ratio-first', 'adv-fuzzy-skin', 'adv-fuzzy-skin-distance', 'adv-avoid-crossing', 'adv-bridge-sag', 'adv-bridge-angle', 'adv-infill-direction', 'adv-draft-shield', 'adv-elephant-foot', 'adv-internal-bridge', 'adv-ironing', 'adv-make-printable', 'adv-min-layer-time', 'adv-nozzle-temperature']
     const seen = new Map<string, string>()
     for (const id of ids) {
       const d = DEMOS[id]
@@ -171,6 +171,10 @@ describe('demo loops', () => {
     for (const id of Object.values(SETTING_DEMOS)) expect(DEMOS[id], id).toBeDefined()
     expect(SETTING_DEMOS['sparse_infill_density']).toBe('infill-density')
     expect(SETTING_DEMOS['wall_loops']).toBe('wall-loops')
+    // a setting that shares a drawing picks out its own part of it
+    expect(SETTING_DEMOS['outer_wall_flow_ratio']).toBe('adv-flow-ratio-outer')
+    expect(SETTING_DEMOS['fuzzy_skin_point_distance']).toBe('adv-fuzzy-skin-distance')
+    expect(SETTING_DEMOS['travel_jerk']).toBe('adv-jerk')
     for (const k of ['tool.move', 'tool.rotate', 'tool.scale', 'tool.placeOnFace', 'tool.brim', 'plate.drop', 'history.suppress', 'history.view', 'history.earlier', 'history.later', 'cad.keepDimension', 'cad.edgeLoop', 'sketch.corners'] as const) {
       const t = TIPS[k] as { demo?: string }
       expect(t.demo && DEMOS[t.demo], k).toBeDefined()
