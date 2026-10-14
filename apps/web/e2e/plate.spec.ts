@@ -3,7 +3,7 @@
 // Plate tools on the plate tab: numeric transform fields, scale to size, undo and redo, tool keys.
 import { type Page } from '@playwright/test'
 import { addMenu, closeSheet, expect, openSheet, openTransform, panesSettled, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
-import { pressable, steady } from './canvas-press'
+import { pressable, screenOf, steady } from './canvas-press'
 import { expectFileDialog, interceptFileDialogs } from './file-dialog'
 import { addPlateFromPicker, pickPlate, plateSheet, shownPlateSettings, shutPlateSheet } from './plate-project'
 
@@ -400,8 +400,30 @@ test('Settings > Controls changes a shortcut, uses it, and puts it back', async 
   await expect(page.getByLabel('Rotate tool: R')).toBeVisible()
 })
 
+/** The middle of the Layered X model in bed coordinates (mm), where the X's arms cross. */
+async function layeredMid(page: Page): Promise<[number, number, number]> {
+  return page.evaluate(() => {
+    const e = (window as unknown as { __sx: { getState(): { plate: { name: string; transform: number[]; parts: { positions: ArrayLike<number> }[] }[] } } }).__sx.getState().plate.find((p) => p.name === 'Layered X')!
+    const m = e.transform
+    const min = [Infinity, Infinity, Infinity]
+    const max = [-Infinity, -Infinity, -Infinity]
+    for (const part of e.parts)
+      for (let i = 0; i + 2 < part.positions.length; i += 3) {
+        const [x, y, z] = [part.positions[i]!, part.positions[i + 1]!, part.positions[i + 2]!]
+        for (let k = 0; k < 3; k++) {
+          const w = m[k]! * x + m[k + 4]! * y + m[k + 8]! * z + m[k + 12]!
+          min[k] = Math.min(min[k]!, w)
+          max[k] = Math.max(max[k]!, w)
+        }
+      }
+    return [0, 1, 2].map((k) => (min[k]! + max[k]!) / 2) as [number, number, number]
+  })
+}
+
 test('the paint tool paints the object with a filament color, and undo takes it back', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Painting needs a mouse')
+  // The store and the view are there as window.__sx and window.__vp with localStorage 'slicerx.debug' set.
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
   await prepare(page)
   // Select the model first: the Paint panel takes the Objects card's place.
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
@@ -411,18 +433,21 @@ test('the paint tool paints the object with a filament color, and undo takes it 
   await panel.getByRole('radio', { name: /Filament 2/ }).click()
   // The panel shows the brush's state, not a stale one.
   await expect(panel.getByRole('radio', { name: /Filament 2/ })).toHaveAttribute('aria-checked', 'true')
-  // The view opens on the whole plate: the iso view (7) brings the model to the middle before painting it.
+  // The view opens on the whole plate: the iso view (7) brings the model to the middle before painting it. It eases
+  // there over as many frames as the page needs, so the stroke waits until the camera stops. The wait watches a point
+  // above the model's middle, since a zoom toward the middle keeps the middle itself still on screen. The stroke starts
+  // on the model (a press beside it turns the view), at the middle where the X's arms cross, and runs up the crossing.
   await page.keyboard.press('7')
-  await page.waitForTimeout(600)
-  const box = await page.locator('.vp-canvas').first().boundingBox()
-  if (!box) throw new Error('no canvas')
-  const cx = box.x + box.width / 2
-  const cy = box.y + box.height / 2
-  await pressable(page, { x: cx - 30, y: cy })
-  await page.mouse.move(cx - 30, cy)
+  const [mx, my, mz] = await layeredMid(page)
+  const end = await steady(page, mx, my, mz + 4)
+  const start = await pressable(page, await screenOf(page, mx, my, mz))
+  await page.mouse.move(start.x, start.y)
   await page.mouse.down()
-  await page.mouse.move(cx + 30, cy + 10, { steps: 12 })
+  await page.mouse.move(end.x, end.y, { steps: 12 })
   await page.mouse.up()
+  // The drag was the brush's: the view did not turn.
+  const after = await screenOf(page, mx, my, mz + 4)
+  expect(Math.hypot(after.x - end.x, after.y - end.y)).toBeLessThan(0.5)
   const clear = panel.getByRole('button', { name: /Clear color/ })
   await expect(clear).toBeEnabled()
   await page.getByRole('button', { name: 'Undo' }).click()
@@ -678,26 +703,13 @@ test('seam paint changes where the seam lands in the sliced G-code', { tag: '@gp
   await panel.getByRole('radiogroup', { name: 'Brush' }).getByRole('radio', { name: 'Fill', exact: true }).click()
   // The view opens on the whole plate: bring the model to the middle of the view before painting it, once the right
   // pane the tool opens has finished sliding. The zoom eases over as many frames as the page needs to draw it, so the
-  // clicks wait until the model's middle stays put on screen.
+  // clicks wait until the camera stops. The middle is where the zoom eases to and stays put meanwhile, so the wait
+  // watches a point above it.
   await panesSettled(page)
   await page.keyboard.press('z')
-  const mid = await page.evaluate(() => {
-    const e = (window as unknown as { __sx: { getState(): { plate: { name: string; transform: number[]; parts: { positions: ArrayLike<number> }[] }[] } } }).__sx.getState().plate.find((p) => p.name === 'Layered X')!
-    const m = e.transform
-    const min = [Infinity, Infinity, Infinity]
-    const max = [-Infinity, -Infinity, -Infinity]
-    for (const part of e.parts)
-      for (let i = 0; i + 2 < part.positions.length; i += 3) {
-        const [x, y, z] = [part.positions[i]!, part.positions[i + 1]!, part.positions[i + 2]!]
-        for (let k = 0; k < 3; k++) {
-          const w = m[k]! * x + m[k + 4]! * y + m[k + 8]! * z + m[k + 12]!
-          min[k] = Math.min(min[k]!, w)
-          max[k] = Math.max(max[k]!, w)
-        }
-      }
-    return [0, 1, 2].map((k) => (min[k]! + max[k]!) / 2) as [number, number, number]
-  })
-  const { x: cx, y: cy } = await pressable(page, await steady(page, ...mid))
+  const [mx, my, mz] = await layeredMid(page)
+  await steady(page, mx, my, mz + 4)
+  const { x: cx, y: cy } = await pressable(page, await screenOf(page, mx, my, mz))
   // Bucket fill on a spread of points over the model paints whole surfaces with the seam enforcer. A click between the
   // X's arms misses it and keeps the object selected for the next one.
   for (const [dx, dy] of [[-50, 0], [50, 0], [0, -40], [0, 40], [-30, 25], [30, -25], [-70, 30], [70, -30], [0, 0]] as const) await page.mouse.click(cx + dx, cy + dy)
