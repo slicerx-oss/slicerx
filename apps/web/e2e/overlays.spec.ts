@@ -74,7 +74,8 @@ async function postToast(page: Page, text: string): Promise<Box> {
     await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)))
     // The offset follows the overlays a frame later.
     await new Promise((r) => requestAnimationFrame(r))
-    const r = el.getBoundingClientRect()
+    // The toasts up at once share one card, and the card is what sits on the page.
+    const r = (el.closest<HTMLElement>('[data-testid="toasts"]') ?? el).getBoundingClientRect()
     return { x: r.x, y: r.y, width: r.width, height: r.height }
   }, text)
 }

@@ -219,7 +219,9 @@ describe('toasts on screen', () => {
     expect(stack.style.top).toBe('')
     act(() => host.querySelector<HTMLButtonElement>('[data-testid=toast-details]')!.click())
     expect(line.hasAttribute('data-expanded')).toBe(true)
-    expect(host.querySelector('[data-testid=toast-details]')!.textContent).toBe('Less')
+    expect(host.querySelector('[data-testid=toast-details]')!.getAttribute('aria-label')).toBe('Less')
+    // The label is drawn, not text, so the toast's text stays its message.
+    expect(line.textContent).toBe(NOZZLE_NOTE)
     expect(stack.style.top).toBe('0px')
     expect(stack.style.bottom).toBe('auto')
     act(() => host.querySelector<HTMLButtonElement>('[data-testid=toast-details]')!.click())
