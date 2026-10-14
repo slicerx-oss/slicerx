@@ -39,6 +39,36 @@ async function open(page: Page, prefs: Record<string, unknown>): Promise<void> {
 const sx = (page: Page, p: unknown) => page.evaluate((x) => (window as unknown as { __sx: Sx }).__sx.setState(x), p)
 
 /**
+ * Waits for the view to come to rest: no transition or animation running in it, the camera not moving, and the view's
+ * overlays and camera the same across two frames. On a busy machine a style change (the timeline shutting) can wait
+ * for the next frame before its transition even starts, so a fixed pause can measure the old place, or halfway.
+ * Reading the animations flushes styles, which starts any transition still pending.
+ */
+async function viewAtRest(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const vp = (window as unknown as { __vp: { camera: { position: { x: number; y: number; z: number } }; stats(): { cameraMoving: boolean } } }).__vp
+        const view = document.querySelector('.vp')
+        if (!view) return false
+        const busy = () => view.getAnimations({ subtree: true }).some((a) => a.playState !== 'finished' && a.effect?.getTiming().iterations !== Infinity)
+        const look = () => {
+          const p = vp.camera.position
+          const rects = [...view.querySelectorAll('.mimir-lookups, .mimir-lookup, .hud-bl > *')].map((e) => e.getBoundingClientRect())
+          return JSON.stringify([p.x, p.y, p.z, rects.map((r) => [r.x, r.y, r.width, r.height])])
+        }
+        if (busy() || vp.stats().cameraMoving) return false
+        const a = look()
+        const frame = () => new Promise((r) => requestAnimationFrame(r))
+        await frame()
+        await frame()
+        return !busy() && !vp.stats().cameraMoving && look() === a
+      }),
+    )
+    .toBe(true)
+}
+
+/**
  * Boxes of the control and of what comes before it: at each level from the control up to the screen's root, the
  * element's earlier siblings. Marked with data attributes, so they can be found again after the press.
  */
@@ -269,7 +299,7 @@ test.describe('controls never move when pressed', () => {
     // the build opened the timeline for a moment; it shuts once the pointer is away
     await page.mouse.move(700, 300)
     await expect(timeline).toBeHidden({ timeout: 15_000 })
-    await page.waitForTimeout(400)
+    await viewAtRest(page)
     const band = async () => (await page.locator('.mimir-lookups').boundingBox())!
     // With two cards up the part is framed above them: its center is above the band.
     const center = await page.evaluate(() => {
@@ -318,7 +348,7 @@ test.describe('controls never move when pressed', () => {
     await cards.first().getByTestId('mimir-lookup-close').click()
     await expect(page.locator('.mimir-lookup-more')).toHaveCount(0)
     await expect(cards).toHaveCount(2)
-    await page.waitForTimeout(400)
+    await viewAtRest(page)
     compare('close a card, the folded one rises', before, await outside())
     const still = page.locator(`[data-testid="mimir-lookup-card"][data-lookup-id="${keptId}"]`)
     const k = (await still.boundingBox())!
@@ -328,7 +358,7 @@ test.describe('controls never move when pressed', () => {
     const lastBox = (await still.boundingBox())!
     await cards.first().getByTestId('mimir-lookup-close').click()
     await expect(cards).toHaveCount(1)
-    await page.waitForTimeout(400)
+    await viewAtRest(page)
     compare('close a card', before, await outside())
     const l = (await still.boundingBox())!
     if (Math.max(Math.abs(l.x - lastBox.x), Math.abs(l.y - lastBox.y)) > LIMIT) moved.push({ control: 'close a card', what: 'the last card', dx: l.x - lastBox.x, dy: l.y - lastBox.y, dw: 0, dh: 0 })
