@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A tip never covers the next thing a person presses: it takes no clicks, and it closes once the pointer leaves its
 // control, even when the pointer crosses the tip on the way.
-import { type Locator } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
 import { expect, plateReady, test } from './fixtures'
 
 test('the lock button\'s tip closes as the pointer moves to the name under it, and the name takes the click', async ({ page, isMobile }) => {
@@ -190,4 +190,36 @@ test('an Advanced setting row opens the loop of its drawing and plays it', async
     await page.mouse.move(5, 5)
     await expect(tip).toHaveCount(0)
   }
+})
+
+/** Hovers each setting row in the Expert panel (found by its key) and checks its tip plays the loop with that class
+ *  prefix. */
+async function rowsPlay(page: Page, rows: readonly (readonly [key: string, loopId: string])[]): Promise<void> {
+  await page.addInitScript(() => {
+    localStorage.setItem('slicerx.debug', '1')
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'expert', printerId: 'bay-1', pilot: { mode: 'off' } }))
+  })
+  await page.goto('./')
+  await plateReady(page)
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ expertOpen: true }))
+  const tip = page.locator('#sx-tip')
+  const stage = tip.locator('.sx-stage')
+  for (const [key, loopId] of rows) {
+    await page.locator('#expert-search').fill(key)
+    const row = page.locator(`li[data-key="${key}"]`).first()
+    await row.scrollIntoViewIfNeeded()
+    await row.locator('label').first().hover()
+    await expect(stage.locator('svg.sxs'), key).toBeVisible()
+    await expect(stage).toHaveAttribute('data-play', 'true')
+    await expect(stage.locator(`[class*="${loopId}"]`).first(), key).toBeAttached()
+    await page.mouse.move(5, 5)
+    await expect(tip).toHaveCount(0)
+  }
+}
+
+test('Advanced rows from prime tower to extrusion rate smoothing play their own loops', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  await rowsPlay(page, [['prime_tower_width', 'bqpw'], ['prime_tower_infill_gap', 'bqpg'], ['prime_tower_brim_width', 'bqpb'], ['raft_contact_distance', 'bqrc'], ['raft_expansion', 'bqre'], ['raft_first_layer_density', 'bqrd'], ['raft_first_layer_expansion', 'bqrx'], ['max_volumetric_extrusion_rate_slope', 'bqrs'], ['max_volumetric_extrusion_rate_slope_segment_length', 'bqrg'], ['extrusion_rate_smoothing_external_perimeter_only', 'bqro']])
 })
