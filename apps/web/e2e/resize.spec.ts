@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Pane edges: drag to resize, keys, collapse by drag and double-click, sizes kept per look.
 import { type Locator, type Page } from '@playwright/test'
-import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
+import { expect, plateReady, sliceCount, sliced, test, viewSized } from './fixtures'
 
 async function prepare(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -37,6 +37,36 @@ async function settledBox(el: Locator): Promise<{ x: number; y: number; width: n
 
 test.describe('resizable panes', () => {
   test.skip(({ isMobile }) => isMobile, 'Panes stack on a phone')
+
+  test('resizing a pane does not reset the old canvas buffer first', async ({ page }) => {
+    await page.addInitScript(() => {
+      const state = window as unknown as { bufferWrites: { previous: number; next: number }[] }
+      state.bufferWrites = []
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width')!
+      const read = descriptor.get!
+      const write = descriptor.set!
+      Object.defineProperty(HTMLCanvasElement.prototype, 'width', {
+        ...descriptor,
+        set(this: HTMLCanvasElement, value: number) {
+          const previous = read.call(this) as number
+          write.call(this, value)
+          if (this.matches('canvas.vp-canvas')) state.bufferWrites.push({ previous, next: value })
+        },
+      })
+    })
+    await prepare(page)
+    await viewSized(page)
+    const edge = page.getByRole('separator', { name: /Resize printer and settings/i })
+    await edge.focus()
+    await page.evaluate(() => { (window as unknown as { bufferWrites: unknown[] }).bufferWrites = [] })
+    await page.keyboard.press('End')
+    await expect.poll(() => width(page)).toBeGreaterThanOrEqual(540)
+    await viewSized(page)
+    const writes = await page.evaluate(() => (window as unknown as { bufferWrites: { previous: number; next: number }[] }).bufferWrites)
+    expect(writes).toHaveLength(1)
+    // Reassigning the current width clears the buffer and can block on software graphics.
+    expect(writes.filter((w) => w.previous === w.next)).toEqual([])
+  })
 
   test('the sidebar edge drags, responds to keys, collapses and reopens', async ({ page }) => {
     await prepare(page)
