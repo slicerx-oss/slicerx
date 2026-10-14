@@ -54,15 +54,21 @@ export async function aim(page: Page, x: number, y: number, z: number): Promise<
 /**
  * Where a bed point is on screen once the camera has stopped: the same spot twice, further apart than the view's
  * second look at its overlays (600 ms). A camera move the view eases (zoom to the selection, a view preset) takes as
- * long as the page needs to draw it, which on a slow renderer is far longer than its nominal time.
+ * long as the page needs to draw it, which on a slow renderer is far longer than its nominal time. Wait on a point away
+ * from where the camera eases to: a zoom toward a point keeps that point still on screen while the camera moves.
  */
 export async function steady(page: Page, x: number, y: number, z: number): Promise<{ x: number; y: number }> {
   let at = await screenOf(page, x, y, z)
+  let since = Date.now()
   await expect
     .poll(async () => {
       const again = await screenOf(page, x, y, z)
+      // The poll asks once right away, and two looks inside one frame always agree, so a look counts only once the
+      // one before it is far enough back.
+      if (Date.now() - since < 600) return false
       const still = Math.hypot(again.x - at.x, again.y - at.y) < 0.5
       at = again
+      since = Date.now()
       return still
     }, { intervals: [700] })
     .toBe(true)
