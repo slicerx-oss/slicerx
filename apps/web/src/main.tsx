@@ -52,14 +52,19 @@ if (__SX_FEATURE_CONNECT__) {
   const pagePort = __SX_E2E__ ? (window as { __sxTestHubPort?: unknown }).__sxTestHubPort : undefined
   // An end-to-end page can stand in for the desktop shell's bridge whose start fails with the shell's words, as a Tauri
   // command rejects: with a string. It counts the starts (e2e/bridge-port.spec.ts).
-  const page = window as { __sxTestShellStartError?: unknown; __sxTestShellStarts?: number }
+  const page = window as { __sxTestShellStartError?: unknown; __sxTestShellStarts?: number; __sxTestShell?: { url: string; code: string; hubKey?: string } }
   const shellFails = __SX_E2E__ ? page.__sxTestShellStartError : undefined
   const failedStart = (): Promise<never> => {
     page.__sxTestShellStarts = (page.__sxTestShellStarts ?? 0) + 1
     return Promise.reject(shellFails)
   }
+  // It can also stand in for a shell whose start works, with the hub it started: the bridge then connects as the
+  // desktop app's does, app link included, which the browser build never hosts (e2e/plate-picker-link.spec.ts).
+  const shellStarted = __SX_E2E__ ? page.__sxTestShell : undefined
   const relay = editionFromBuild().backend.relay
-  setBridgeConnector(typeof shellFails === 'string' ? shellBridge(failedStart, relay) : browserBridge(testHubUrl(pagePort ?? __SX_TEST_HUB_PORT__), relay))
+  setBridgeConnector(
+    shellStarted ? shellBridge(() => Promise.resolve(shellStarted), relay) : typeof shellFails === 'string' ? shellBridge(failedStart, relay) : browserBridge(testHubUrl(pagePort ?? __SX_TEST_HUB_PORT__), relay),
+  )
   // Phone access keeps its identity and pairings sealed in this browser (features/phone/sealed.ts).
   const { setPairStorage, sealedPairStores, browserDocStore } = await import('@slicerx/app')
   setPairStorage({ ...sealedPairStores(browserDocStore()), name: 'SlicerX in the browser', kind: 'web' })
