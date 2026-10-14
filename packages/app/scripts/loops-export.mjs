@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(here, '../../..')
-const NAMES = { push: 'push-pull', sketch: 'sketch', face: 'on-a-face', add: 'add', fillet: 'fillet', shell: 'shell', subtract: 'subtract', cut: 'cut', array: 'array', hole: 'hole', thread: 'thread', mesh: 'simplify-mesh', sleipnir: 'sleipnir', aegis: 'aegis', atlas: 'atlas', heimdall: 'heimdall', norn: 'norn' }
+const NAMES = { push: 'push-pull', sketch: 'sketch', face: 'on-a-face', add: 'add', fillet: 'fillet', shell: 'shell', subtract: 'subtract', cut: 'cut', array: 'array', hole: 'hole', thread: 'thread', mesh: 'simplify-mesh', sleipnir: 'sleipnir', aegis: 'aegis', atlas: 'atlas', heimdall: 'heimdall', norn: 'norn', 'layer-height': 'layer-height', 'strength': 'strength', 'infill-density': 'infill-density', 'wall-loops': 'wall-loops', 'speed': 'speed', 'speed-quality': 'speed-quality', 'speed-balanced': 'speed-balanced', 'speed-fast': 'speed-fast', 'speed-fastest': 'speed-fastest', 'supports': 'supports', 'supports-off': 'supports-off', 'supports-auto': 'supports-auto', 'supports-painted': 'supports-painted', 'enable-support': 'enable-support', 'brim': 'brim', 'brim-type': 'brim-type', 'history-suppress': 'history-suppress', 'history-view': 'history-view', 'history-earlier': 'history-earlier', 'history-later': 'history-later', 'keep-dimension': 'keep-dimension', 'mirror-x': 'mirror-x', 'mirror-y': 'mirror-y', 'mirror-z': 'mirror-z', 'print-sequence': 'print-sequence', 'whole-loop': 'whole-loop', 'drop-to-bed': 'drop-to-bed', 'round-corners': 'round-corners', 'brim-ears': 'brim-ears', 'move': 'move', 'lay-on-face': 'lay-on-face', 'rotate': 'rotate', 'scale': 'scale' }
 const CYCLE = 3.5
 const FPS = 30
 
@@ -57,7 +57,8 @@ const stems = (dir, ext, only) => readdirSync(dir).filter((f) => f.endsWith(ext)
 async function frames(svgDir, out, only) {
   const require = createRequire(import.meta.url)
   const pw = require(process.env.PLAYWRIGHT_CORE || 'playwright-core')
-  const b = await pw.chromium.launch()
+  // without this flag compositor-driven opacity fades lag the frozen clock
+  const b = await pw.chromium.launch({ args: ['--disable-threaded-animation'] })
   const p = await b.newPage({ viewport: { width: 592, height: 332 } })
   for (const name of stems(svgDir, '.svg', only)) {
     const od = path.join(out, name)

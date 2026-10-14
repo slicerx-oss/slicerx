@@ -63,7 +63,7 @@ function PlateSettingsForm({ plate, slots, canDelete, onDone }: { plate: PlateMe
           ))}
         </Select>
       </label>
-      <label className="plate-form-row" htmlFor={`ps-${id}`} {...tipAttrs({ title: 'Print sequence', body: 'Same as print settings follows Print sequence in the print settings. By layer or By object sets this plate on its own.' })}>
+      <label className="plate-form-row" htmlFor={`ps-${id}`} {...tipAttrs({ title: 'Print sequence', body: 'Same as print settings follows Print sequence in the print settings. By layer or By object sets this plate on its own.', demo: 'print-sequence' })}>
         <span>Print sequence</span>
         <Select id={`ps-${id}`} size="sm" value={plate.settings.sequence ?? ''} onChange={(e) => {
           const v = e.target.value as PlateSettings['sequence'] | ''

@@ -37,10 +37,10 @@ const SPEEDS: { value: SpeedPreset; label: string; pct: number }[] = [
 ]
 
 const SUPPORTS = [
-  { value: 'off', label: 'Off' },
-  { value: 'auto', label: 'Auto' },
-  { value: 'painted', label: 'Painted' },
-] as const satisfies readonly { value: SupportMode; label: string }[]
+  { value: 'off', label: 'Off', tip: { title: 'Off', demo: 'supports-off' } },
+  { value: 'auto', label: 'Auto', tip: { title: 'Auto', demo: 'supports-auto' } },
+  { value: 'painted', label: 'Painted', tip: { title: 'Painted', demo: 'supports-painted' } },
+] as const satisfies readonly { value: SupportMode; label: string; tip: { title: string; demo: string } }[]
 const SUPPORTS_PHONE = SUPPORTS.filter((o) => o.value !== 'painted')
 
 function update(patch: Partial<EasySettings>, goal?: EasyGoal): void {
@@ -238,7 +238,7 @@ export function EasySettingsPanel() {
 
       {more ? (
       <>
-      <div className="srow">
+      <div className="srow" {...tipAttrs({ title: 'Strength', demo: 'strength' })}>
         <div className="srow-h">
           <label htmlFor="easy-strength">Strength</label>
           <output htmlFor="easy-strength">
@@ -253,10 +253,10 @@ export function EasySettingsPanel() {
       </div>
 
       {scoped ? null : (
-      <div className="srow">
+      <div className="srow" {...tipAttrs({ title: 'Speed', demo: 'speed' })}>
         <div className="srow-h">
           <label htmlFor="easy-speed">Speed</label>
-          <output htmlFor="easy-speed">
+          <output htmlFor="easy-speed" {...(speed ? tipAttrs({ title: speed.label, demo: `speed-${speed.value}` }) : {})}>
             {speed?.label} ({speed?.pct}%)
           </output>
         </div>
@@ -270,7 +270,7 @@ export function EasySettingsPanel() {
       </>
       ) : null}
 
-      <div className="srow" {...settingTipAttrs('enable_support', '.srow')}>
+      <div className="srow" {...settingTipAttrs('enable_support', '.srow')} data-tip-demo="supports">
         <div className="srow-h">
           <span className="lbl-strong">Supports</span>
         </div>
@@ -287,7 +287,11 @@ export function EasySettingsPanel() {
         </p> : null}
       </div>
 
-      {more ? <SwitchRow className="mt14" id="easy-brim" label="Brim" detail={scoped && mixedIn(keys.brim) ? 'Mixed' : brim ? `${Number(cfg.brim_width) || 5} mm, helps small feet stick` : 'Off'} checked={brim} onChange={(brim) => pick({ brim }, keys.brim)} /> : null}
+      {more ? (
+        <div {...tipAttrs({ title: 'Brim', demo: 'brim' })}>
+          <SwitchRow className="mt14" id="easy-brim" label="Brim" detail={scoped && mixedIn(keys.brim) ? 'Mixed' : brim ? `${Number(cfg.brim_width) || 5} mm, helps small feet stick` : 'Off'} checked={brim} onChange={(brim) => pick({ brim }, keys.brim)} />
+        </div>
+      ) : null}
     </>
   )
 }

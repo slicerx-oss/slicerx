@@ -9,7 +9,7 @@ import { setMotionPreference, TIP_TIMING, TooltipHost } from '@slicerx/ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEMOS } from '../src/lib/demos'
+import { DEMOS, SETTING_DEMOS } from '../src/lib/demos'
 import { loadTips, resolveTip } from '../src/lib/tip-host'
 import { OPTION_TIPS, TIPS } from '../src/lib/tips'
 
@@ -149,6 +149,31 @@ describe('demo loops', () => {
     }
     for (const f of ['push', 'sketch', 'face', 'add', 'fillet', 'shell', 'subtract', 'cut', 'array', 'hole', 'thread', 'mesh', 'sleipnir', 'aegis', 'atlas', 'heimdall', 'norn']) {
       expect(statSync(join(import.meta.dirname, '../src/demos', `${f}.ts`)).size, f).toBeLessThanOrEqual(8 * 1024)
+    }
+  })
+
+  it('has every settings and model tool loop, each with a sentence and a module under 8 KB', async () => {
+    const ids = ['layer-height', 'strength', 'infill-density', 'wall-loops', 'speed', 'speed-quality', 'speed-balanced', 'speed-fast', 'speed-fastest', 'supports', 'supports-off', 'supports-auto', 'supports-painted', 'enable-support', 'brim', 'brim-type', 'history-suppress', 'history-view', 'history-earlier', 'history-later', 'keep-dimension', 'mirror-x', 'mirror-y', 'mirror-z', 'print-sequence', 'whole-loop', 'drop-to-bed', 'round-corners', 'brim-ears', 'move', 'lay-on-face', 'rotate', 'scale']
+    const seen = new Map<string, string>()
+    for (const id of ids) {
+      const d = DEMOS[id]
+      expect(d?.stage, id).toBeTypeOf('function')
+      expect(d?.body?.length, id).toBeGreaterThan(10)
+      const tool = await d!.stage!()
+      // the loop's id prefixes its classes and keyframes, and every tip shares one document
+      expect(seen.get(tool.id), `${id} shares ${tool.id}`).toBeUndefined()
+      seen.set(tool.id, id)
+      expect(statSync(join(import.meta.dirname, '../src/demos', `${id}.ts`)).size, id).toBeLessThanOrEqual(8 * 1024)
+    }
+  })
+
+  it('points each settings row and choice at its own loop', () => {
+    for (const id of Object.values(SETTING_DEMOS)) expect(DEMOS[id], id).toBeDefined()
+    expect(SETTING_DEMOS['sparse_infill_density']).toBe('infill-density')
+    expect(SETTING_DEMOS['wall_loops']).toBe('wall-loops')
+    for (const k of ['tool.move', 'tool.rotate', 'tool.scale', 'tool.placeOnFace', 'tool.brim', 'plate.drop', 'history.suppress', 'history.view', 'history.earlier', 'history.later', 'cad.keepDimension', 'cad.edgeLoop', 'sketch.corners'] as const) {
+      const t = TIPS[k] as { demo?: string }
+      expect(t.demo && DEMOS[t.demo], k).toBeDefined()
     }
   })
 
