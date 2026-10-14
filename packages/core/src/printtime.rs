@@ -438,7 +438,8 @@ impl Machine {
         let process = n.saturating_sub(keep);
         let mut idx = 0usize;
         for b in self.blocks.iter().take(process) {
-            let mut t = b.time();
+            let motion = b.time();
+            let mut t = motion;
             if let Some(&(k, extra)) = merged.get(idx)
                 && (k == Kind::Noop || k == b.kind)
             {
@@ -447,16 +448,16 @@ impl Machine {
             }
             self.time += t;
             if b.layer == 1 {
-                self.first_layer += t;
+                self.first_layer += motion;
             }
             if self.segments.len() <= b.segment {
                 self.segments.resize(b.segment + 1, 0.0);
             }
             if let Some(s) = self.segments.get_mut(b.segment) {
-                *s += t;
+                *s += motion;
             }
             if let Some(slot) = self.lines.as_mut().and_then(|l| l.get_mut(b.line)) {
-                *slot = self.time;
+                *slot += motion;
             }
         }
         if let Some(rest) = merged.get(idx..)
@@ -466,11 +467,6 @@ impl Machine {
                 // Nothing left to carry it: it counts in the total only.
                 let leftover: f64 = rest.iter().map(|r| r.1).sum();
                 self.time += leftover;
-                if let Some(s) = self.segments.last_mut() {
-                    *s += leftover;
-                } else {
-                    self.segments.push(leftover);
-                }
             } else {
                 self.pending.extend_from_slice(rest);
             }
@@ -631,7 +627,7 @@ const AXES: [u8; 4] = *b"XYZE";
 impl Reader {
     fn new(cfg: &PrintConfig, per_line: Option<usize>) -> Self {
         let mut m = Machine::new(cfg);
-        m.lines = per_line.map(|n| vec![f64::NAN; n]);
+        m.lines = per_line.map(|n| vec![0.0; n]);
         let printer_model = cfg
             .raw
             .get("printer_model")
@@ -708,7 +704,25 @@ impl Reader {
         }
     }
 
+    fn delay(&mut self, extra: f64) {
+        if extra > 0.0 {
+            if self.m.segments.len() <= self.segment {
+                self.m.segments.resize(self.segment + 1, 0.0);
+            }
+            if let Some(segment) = self.m.segments.get_mut(self.segment) {
+                *segment += extra;
+            }
+            if self.layer <= 1 {
+                self.m.first_layer += extra;
+            }
+            if let Some(slot) = self.m.lines.as_mut().and_then(|l| l.get_mut(self.line)) {
+                *slot += extra;
+            }
+        }
+    }
+
     fn sync(&mut self, extra: f64) {
+        self.delay(extra);
         self.m.synchronize(extra, Kind::Noop);
     }
 
@@ -1127,6 +1141,7 @@ impl Reader {
         };
         b.calculate_trapezoid();
         self.m.blocks.push(b);
+        self.delay(extra);
         self.m.synchronize(extra, Kind::ToolChange);
     }
 
@@ -1517,9 +1532,7 @@ pub fn estimate(gcode: &[u8], cfg: &PrintConfig, per_line: bool) -> Estimate {
         let mut last = 0.0;
         l.into_iter()
             .map(|t| {
-                if !t.is_nan() {
-                    last = t;
-                }
+                last += t;
                 last
             })
             .collect()
@@ -1649,6 +1662,42 @@ mod tests {
     }
 
     #[test]
+    fn waits_belong_to_their_own_segment() {
+        for text in [
+            "G1 X10 F600\n;@L 0 0\nG1 X20\nG4 S{wait}\n",
+            ";@L 0 0\nG4 S{wait}\n;@L 0 0\nG1 X10 F600\nG1 X20\n",
+            ";@L 0 0\nG4 S{wait}\n",
+        ] {
+            for trace in [false, true] {
+                let base = estimate(text.replace("{wait}", "0").as_bytes(), &marlin(), trace);
+                let waited = estimate(text.replace("{wait}", "120").as_bytes(), &marlin(), trace);
+                assert!((waited.total - base.total - 120.0).abs() < 1e-9);
+                assert_eq!(base.segments.len(), waited.segments.len());
+                for (i, (a, b)) in base.segments.iter().zip(&waited.segments).enumerate() {
+                    let extra = if i == 1 { 120.0 } else { 0.0 };
+                    assert!((b - a - extra).abs() < 1e-9, "segment {i}: {waited:?}");
+                }
+                assert!((waited.segments.iter().sum::<f64>() - waited.total).abs() < 1e-9);
+            }
+        }
+        let mut c = marlin();
+        c.raw
+            .insert("filament_diameter".into(), serde_json::json!([1.75, 1.75]));
+        c.raw
+            .insert("machine_load_filament_time".into(), serde_json::json!(20));
+        c.raw
+            .insert("machine_unload_filament_time".into(), serde_json::json!(10));
+        let e = estimate(b"T0\n;@L 0 0\nT1\n", &c, true);
+        assert_eq!(e.segments, [20.0, 30.0]);
+        assert!((e.total - 50.0).abs() < 1e-9);
+        let text = "G4 S5\n;LAYER_CHANGE\nG1 X10 F600\n;@L 0 0\n;LAYER_CHANGE\nG1 X20\nG4 S120\n";
+        let base = estimate(text.replace("G4 S120", "G4 S0").as_bytes(), &marlin(), false);
+        let waited = estimate(text.as_bytes(), &marlin(), false);
+        assert!(waited.first_layer >= 5.0);
+        assert!((waited.first_layer - base.first_layer).abs() < 1e-9);
+    }
+
+    #[test]
     fn layer_markers_split_the_time() {
         let g = b"G1 X10 F600\n;@L 0 0\nG1 X20\n;@L 0 0\nG1 X30\n";
         let e = estimate(g, &marlin(), false);
@@ -1671,6 +1720,59 @@ mod tests {
         let e = estimate(b"G1 X0 Y0 F1200\nG2 X20 Y0 I10 J0\n", &marlin(), false);
         let expect = std::f64::consts::PI * 10.0 / 20.0;
         assert!((e.total - expect).abs() < 0.15, "{} vs {expect}", e.total);
+    }
+
+    #[test]
+    fn line_times_include_each_wait_at_its_own_line() {
+        for prefix in ["", "G1 X10 F600\nG1 X20\n"] {
+            for (waits, first, second) in [
+                ("M400 S180\nM400 S180\n", 180.0, 180.0),
+                ("G4 S5\nM400 P500\n", 5.0, 0.5),
+            ] {
+                let text = format!("{prefix}{waits}");
+                let e = estimate(text.as_bytes(), &marlin(), true);
+                let plain = estimate(text.as_bytes(), &marlin(), false);
+                let before = prefix.lines().count();
+                let at = |line: usize| *e.lines.get(line).expect("trace line");
+                let prior = if before == 0 { 0.0 } else { at(before - 1) };
+                assert!((at(before) - prior - first).abs() < 1e-9, "first wait: {e:?}");
+                assert!(
+                    (at(before + 1) - at(before) - second).abs() < 1e-9,
+                    "second wait: {e:?}"
+                );
+                assert!((at(before + 1) - e.total).abs() < 1e-9);
+                assert!((e.total - plain.total).abs() < 1e-9);
+                if !prefix.is_empty() {
+                    let motion = estimate(prefix.as_bytes(), &marlin(), true);
+                    assert!(
+                        (at(0) - motion.lines.first().copied().expect("motion trace")).abs() < 1e-9,
+                        "wait moved before motion"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn line_times_keep_tool_changes_and_arc_segments() {
+        let mut c = marlin();
+        c.raw
+            .insert("filament_diameter".into(), serde_json::json!([1.75, 1.75]));
+        c.raw
+            .insert("machine_load_filament_time".into(), serde_json::json!(20));
+        c.raw
+            .insert("machine_unload_filament_time".into(), serde_json::json!(10));
+        let e = estimate(b"T0\nG4 S2\nT1\nM400 P500\n", &c, true);
+        for (actual, expected) in e.lines.iter().zip([20.0, 22.0, 52.0, 52.5, 52.5]) {
+            assert!((actual - expected).abs() < 1e-9, "tool trace: {e:?}");
+        }
+        let text = b"G1 X0 Y0 F1200\nG2 X20 Y0 I10 J0\nG1 X30\nM400 S5\n";
+        let arc = estimate(text, &marlin(), true);
+        let plain = estimate(text, &marlin(), false);
+        assert!(arc.lines.get(1).copied().unwrap_or(0.0) > 1.4);
+        assert!(arc.lines.windows(2).all(|w| w.first() <= w.get(1)));
+        assert!((arc.lines.last().copied().unwrap_or(0.0) - arc.total).abs() < 1e-9);
+        assert!((arc.total - plain.total).abs() < 1e-9);
     }
 
     #[test]

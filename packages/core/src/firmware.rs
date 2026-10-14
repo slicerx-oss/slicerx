@@ -1307,7 +1307,7 @@ pub fn finalize_timed(
                 &mut out,
                 &format!(
                     "; estimated first layer printing time (normal mode) = {}",
-                    format_time(prepare)
+                    format_time(first_layer)
                 ),
             );
             continue;

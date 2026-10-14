@@ -145,3 +145,35 @@ pub(crate) fn apply(gcode: &[u8], cfg: &PrintConfig) -> Vec<u8> {
     }
     out.into_iter().flat_map(|(l, _)| l.into_bytes()).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preheat_looks_back_across_waits() {
+        let mut cfg = PrintConfig {
+            gcode_flavor: crate::config::GcodeFlavor::Marlin,
+            nozzle_temperature: vec![205.0, 215.0],
+            ..PrintConfig::default()
+        };
+        cfg.raw.insert("preheat_time".into(), serde_json::json!(30));
+        for wait in ["G4 S120", "M400 S120"] {
+            let input = format!(
+                "T0\nG1 X10 F600\nM104 T1 S150 ; cooldown before wait\n{wait}\nM104 T1 S150 ; cooldown after wait\nG1 X20\nT1\nG1 X30\n"
+            );
+            let output = String::from_utf8(apply(input.as_bytes(), &cfg)).expect("gcode");
+            let preheat = output.find("preheat T1 time:").expect("preheat");
+            let wait_at = output.find(wait).expect("wait");
+            let change = output.find("\nT1\n").expect("tool change");
+            assert!(preheat < wait_at && wait_at < change, "{output}");
+            assert!(output.contains("M104 T1 S150 ; cooldown before wait"));
+            assert!(!output.contains("cooldown after wait"));
+            assert_eq!(output.matches("preheat T1 time:").count(), 1);
+            assert_eq!(output.matches("; removed M104").count(), 1);
+            for motion in ["G1 X10 F600", "G1 X20", "G1 X30"] {
+                assert_eq!(output.matches(motion).count(), 1);
+            }
+        }
+    }
+}
