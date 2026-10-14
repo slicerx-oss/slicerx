@@ -122,18 +122,15 @@ test('the context menu offers the printer filament, by mouse and by keyboard', a
   await expect(slot(page, 2)).not.toHaveAttribute('data-mismatch', 'true')
 })
 
-test('the menu holds Calibrate, Flush volumes, Swap colors, Reset to printer and Show unused slots', async ({ page }) => {
+test('the menu holds Calibrate, Flush volumes, Swap colors, and Reset to printer', async ({ page }) => {
   await open(page)
-  const all = await page.getByTestId('slice-filament-slot').count()
   await page.getByTestId('slice-filament-menu').click()
   await expect(page.getByTestId('slice-filament-calibrate')).toBeVisible()
   await expect(page.getByTestId('slice-filament-flush')).toBeVisible()
   await expect(page.getByTestId('slice-filament-swap')).toBeVisible()
   // Nothing edited: no reset.
   await expect(page.getByTestId('slice-filament-reset')).toHaveCount(0)
-  await page.getByRole('menuitemcheckbox', { name: 'Show unused slots' }).click()
-  await expect.poll(() => page.getByTestId('slice-filament-slot').count()).toBeGreaterThan(all)
-  await expect(page.locator('[data-testid="slice-filament-slot"][data-used="false"]').first()).toBeVisible()
+  await expect(page.getByRole('menuitemcheckbox', { name: 'Show unused slots' })).toHaveCount(0)
 })
 
 test('the Filament options menu sits on top of the nozzle rows under it', async ({ page, isMobile }) => {
@@ -167,9 +164,8 @@ test('the Filament options menu sits on top of the nozzle rows under it', async 
   if (!isMobile) expect(hits.under.length).toBeGreaterThan(0)
   expect(hits.under.every(Boolean)).toBe(true)
   // the menu still works where it overlaps a rack button
-  const unused = menu.getByRole('menuitemcheckbox', { name: 'Show unused slots' })
-  await unused.click()
-  await expect(unused).toHaveAttribute('aria-checked', 'true')
+  await menu.getByTestId('slice-filament-calibrate').click()
+  await expect(page.getByRole('dialog')).toBeVisible()
 })
 
 test('Swap colors opens from the menu and swaps the two filaments on the plate', async ({ page }) => {
@@ -187,7 +183,7 @@ test('Swap colors opens from the menu and swaps the two filaments on the plate',
 test('a full rail scrolls inside the card, never the page, at any width', async ({ page }) => {
   await open(page, { printerId: null })
   const setup = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [i + 1, { type: 'PLA', brand: '', color: ['#ff0000', '#00ff00', '#0000ff', '#ffffff'][i % 4] }]))
-  await sx(page, { slotSetup: setup, showUnusedSlots: true })
+  await sx(page, { slotSetup: setup, printerSlots: [] })
   await expect(page.getByTestId('slice-filament-slot')).toHaveCount(16)
   const rail = page.getByTestId('slice-filament-rail')
   const box = await rail.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))
@@ -252,9 +248,20 @@ test("with the printer's slots, the rail says where they come from, has no add, 
 const NEAR = { 1: { type: 'PLA', brand: '', color: '#282a36' }, 2: { type: 'PLA', brand: '', color: '#f8f8f2' }, 3: { type: 'PLA', brand: '', color: '#ff5555' }, 4: { type: 'PLA', brand: '', color: '#1a1a1a' } }
 const edged = (page: Page, n: number) => slot(page, n).locator('.sx-swatch-ring')
 
+test('the rail shows every filament in order, a gap in the ids dimmed with a Not used hint', async ({ page }) => {
+  await open(page, { ...UNCONNECTED })
+  const hand = { type: 'PLA', brand: '', color: '#ff5555' }
+  // Slots 1, 2 and 4 are set; slot 3 sits between them and nothing prints with it.
+  await sx(page, { slotSetup: { 1: hand, 2: hand, 4: hand } })
+  await expect(page.getByTestId('slice-filament-slot')).toHaveCount(4)
+  await expect(page.getByTestId('slice-filament-slot').locator('.sx-swatch-label')).toHaveText(['1', '2', '3', '4'])
+  await expect(slot(page, 3)).toHaveAttribute('data-used', 'false')
+  await expect(slot(page, 3)).toHaveAttribute('data-tip-body', /^Not used/)
+})
+
 test('a filament color close to the panel gets a contrast edge, in both themes', async ({ page }) => {
   await open(page, { ...UNCONNECTED })
-  await sx(page, { slotSetup: NEAR, showUnusedSlots: true, scheme: 'dark', themeFollowsSystem: false })
+  await sx(page, { slotSetup: NEAR, scheme: 'dark', themeFollowsSystem: false })
   await expect(page.locator('html')).toHaveAttribute('data-sx-theme', /dark/)
   await expect(edged(page, 1)).toHaveAttribute('data-edge', 'true')
   await expect(edged(page, 4)).toHaveAttribute('data-edge', 'true')
@@ -274,7 +281,7 @@ test('shots: colors close to the panel, with their edge, light and dark', async 
   await open(page, { ...UNCONNECTED })
   const block = page.locator('[data-section="filament"]')
   for (const scheme of ['dark', 'light'] as const) {
-    await sx(page, { slotSetup: NEAR, showUnusedSlots: true, scheme, themeFollowsSystem: false, hoverSlot: null })
+    await sx(page, { slotSetup: NEAR, scheme, themeFollowsSystem: false, hoverSlot: null })
     await expect(page.locator('html')).toHaveAttribute('data-sx-theme', new RegExp(scheme))
     await block.evaluate((el) => el.scrollIntoView({ block: 'center' }))
     await page.mouse.move(0, 0)

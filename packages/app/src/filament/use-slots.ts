@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { useMemo } from 'react'
 import { useApp } from '../state/store'
+import { stripSlots } from './rail'
 import { resolveSlots, type ResolvedSlot } from './slots'
 
 /**
@@ -17,4 +18,11 @@ export function useResolvedSlots(): ResolvedSlot[] {
   const slotMatch = useApp((s) => s.slotMatch)
   const fileSlotColors = useApp((s) => s.fileSlotColors)
   return useMemo(() => resolveSlots({ printerSlots, plates, plate, activePlate, slotSetup, slotMatch, fileSlotColors }), [printerSlots, plates, plate, activePlate, slotSetup, slotMatch, fileSlotColors])
+}
+
+/** The slots the sidebar strip and the part badges share: the project's filaments, capped to the printer's slots when it reports them. */
+export function useStripSlots(): ResolvedSlot[] {
+  const slots = useResolvedSlots()
+  const printerCount = useApp((s) => s.printerSlots.length)
+  return useMemo(() => stripSlots(slots, printerCount), [slots, printerCount])
 }

@@ -87,3 +87,20 @@ export function colorName(hex: string): string {
 export function slotLabel(s: Pick<ResolvedSlot, 'label' | 'type' | 'color'>): string {
   return `${s.label} ${s.type} ${colorName(s.color)}`
 }
+
+/**
+ * The slots the sidebar strip shows: every project filament in order, the ones nothing prints with dimmed. When the
+ * printer reports slots, the strip stops at the printer's slot count (its external spool is one of those slots).
+ */
+export function stripSlots(slots: readonly ResolvedSlot[], printerSlotCount: number): ResolvedSlot[] {
+  return printerSlotCount > 0 ? slots.filter((s) => s.index <= printerSlotCount) : [...slots]
+}
+
+/**
+ * What a part's filament badge says: the slot id in full ("10" is two digits, never cut to "0"), or "?" when the slot is
+ * not 1 or more or is not one of the strip's filaments.
+ */
+export function partBadge(slot: number | null | undefined, strip: readonly Pick<ResolvedSlot, 'index'>[]): { text: string; known: boolean } {
+  const known = typeof slot === 'number' && Number.isInteger(slot) && slot >= 1 && strip.some((s) => s.index === slot)
+  return { text: known ? String(slot) : '?', known }
+}

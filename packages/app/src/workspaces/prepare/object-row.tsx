@@ -5,9 +5,9 @@
 // of its parts and volumes. A click selects it, Cmd or Ctrl adds it, a double-click or F2 renames it in place.
 import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, useContextMenu, type IconName } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useState, type KeyboardEvent } from 'react'
-import { slotLabel } from '../../filament/rail'
-import { effectiveSlot } from '../../filament/slots'
-import { useResolvedSlots } from '../../filament/use-slots'
+import { partBadge, slotLabel } from '../../filament/rail'
+import { effectiveSlot, type ResolvedSlot } from '../../filament/slots'
+import { useResolvedSlots, useStripSlots } from '../../filament/use-slots'
 import { effectiveMode, useLayout } from '../../first-run/look'
 import { partCount, triangles } from '../../lib/estimate-line'
 import { usePhoneLayout } from '../../lib/phone-layout'
@@ -38,6 +38,33 @@ export function overrideText(n: number): string {
   return `${n} ${n === 1 ? 'setting differs' : 'settings differ'} from the plate`
 }
 
+/** The filament badge of a part: its swatch and its slot in full, or "?" with a warning when the filament is not one of the project's. */
+function PartSlotBadge({ part, slot, slots, strip, fallback, onOpen }: { part: { name: string }; slot: number; slots: readonly ResolvedSlot[]; strip: readonly ResolvedSlot[]; fallback: string | undefined; onOpen: (at: { x: number; y: number }) => void }) {
+  const badge = partBadge(slot, strip)
+  const s = badge.known ? slots[slot - 1] : undefined
+  const warning = `No filament is assigned to ${part.name}. Pick one.`
+  return (
+    <button
+      type="button"
+      className="part-slot"
+      data-testid="object-part-slot"
+      data-slot={slot}
+      data-unassigned={badge.known ? undefined : 'true'}
+      aria-haspopup="menu"
+      aria-label={s ? `Filament for ${part.name}: ${slotLabel(s)}` : warning}
+      {...tipAttrs({ title: badge.known ? `Filament for ${part.name}` : 'No filament', body: s ? slotLabel(s) : warning })}
+      onClick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect()
+        onOpen({ x: r.left, y: r.bottom + 4 })
+      }}
+    >
+      {badge.known ? null : <Icon name="alert" size={12} className="part-slot-warn" />}
+      <span className="part-slot-n">{badge.text}</span>
+      <SwatchRing color={s?.color ?? (badge.known ? (fallback ?? 'var(--dim)') : 'none')} size={20} />
+    </button>
+  )
+}
+
 /** Part colors on the row: up to four, then "+2". */
 export function rowSwatches(colors: readonly string[]): { shown: string[]; more: number } {
   return colors.length <= 4 ? { shown: [...colors], more: 0 } : { shown: colors.slice(0, 3), more: colors.length - 3 }
@@ -52,6 +79,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const own = useApp((s) => s.objectSettings[p.id])
   const developer = effectiveMode(useApp((s) => s.settingsMode), useLayout()) === 'developer'
   const slots = useResolvedSlots()
+  const strip = useStripSlots()
   // a phone shows the row and its print toggle; renaming, locking, parts and reordering wait for the desktop
   const phone = usePhoneLayout()
   const [open, setOpen] = useState(false)
@@ -196,21 +224,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
                   >
                     {part.name}
                   </button>
-                  <button
-                    type="button"
-                    className="part-slot"
-                    data-testid="object-part-slot"
-                    data-slot={effectiveSlot(p, part)}
-                    aria-haspopup="menu"
-                    aria-label={`Filament for ${part.name}: ${slots[effectiveSlot(p, part) - 1] ? slotLabel(slots[effectiveSlot(p, part) - 1]!) : effectiveSlot(p, part)}`}
-                    {...tipAttrs({ title: `Filament for ${part.name}`, body: slots[effectiveSlot(p, part) - 1] ? slotLabel(slots[effectiveSlot(p, part) - 1]!) : `Slot ${effectiveSlot(p, part)}` })}
-                    onClick={(e) => {
-                      const r = e.currentTarget.getBoundingClientRect()
-                      setSlotMenu({ part: part.name, at: { x: r.left, y: r.bottom + 4 } })
-                    }}
-                  >
-                    <SwatchRing color={colors[i] ?? 'var(--dim)'} size={20} />
-                  </button>
+                  <PartSlotBadge part={part} slot={effectiveSlot(p, part)} slots={slots} strip={strip} fallback={p.colors[i]} onOpen={(at) => setSlotMenu({ part: part.name, at })} />
                 </li>
               ),
             )}
