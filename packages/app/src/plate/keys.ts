@@ -20,6 +20,7 @@ import { history } from './history'
 import { stepPlate } from './plate-step'
 import { selectAllEars } from './brim-ears'
 import { cameraBus, getPaintBus, setTool, toolStore } from './tools'
+import { sketchMode } from '../cad/sketch-mode'
 
 type Handler = () => void
 
@@ -138,6 +139,9 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
     // While sketching, a typed number opens the size field at the cursor, L, R and C pick the sketch's line,
     // rectangle and circle and X toggles construction, as in Fusion; the view and tool keys (1 is top, R rotates) step aside.
     if (s.objectTool === 'sketch' && /^[0-9.\-lrcx]$/i.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) return
+    // A sketch being drawn has its own undo and redo: Ctrl/Cmd+Z there steps the drawing, even an empty one, never the
+    // model, whichever of the two listeners the window calls first.
+    if (sketchMode() && (e.metaKey || e.ctrlKey) && !e.altKey && /^[zy]$/i.test(e.key)) return
     const run = (h: Handler) => {
       e.preventDefault()
       e.stopPropagation()
