@@ -46,32 +46,37 @@ const n1 = (list) => list.every((r) => r[2] === 1)
 /** A part cut open along its front face: the box from x X0 to X0 + X, y -D to D, its section dark behind the lines. */
 const cutPart = (X0, X, D, Z, inner = '') => `${box([X0, -D, 0], [X0 + X, D, Z], { l: 's-f3' })}${face(D, `<rect class="s-hole" x="0" y="0" width="${X}" height="${Z}"/>${inner}`, X0)}`
 
-// ---------- line widths: a part cut open, every line end on, the tip's role lit with its width ----------
+// ---------- line widths: a part cut open, every line end on, the tip's role lit, one of its lines bracketed ----------
 // 7 mm of drawing per mm of print: 0.42 mm is 2.94, a 0.2 mm layer is 1.4
 const LW = { outer: 0.42, inner: 0.45, sparse: 0.45, solid: 0.42, top: 0.42, first: 0.5 }
 function lineWidths(id, role, about) {
   const k = 7, H = 1.6, X = 36, X0 = -8, D = 4, n = 8, gap = 0.2
   const w = (r) => LW[r] * k
   const rows = { outer: [], inner: [], sparse: [], solid: [], top: [], first: [] }
-  // a row of c lines of width wr spread evenly over [a, b]
-  const fill = (r, a, b, z) => { const c = Math.floor((b - a + gap) / (w(r) + gap)); rows[r].push([X0 + a, z, c, (b - a - w(r)) / (c - 1), w(r), H]) }
+  // a row of c lines of width wr spread evenly over [a, b], closed up so no gap in the cut reads as a pattern
+  const fill = (r, a, b, z) => { const c = Math.round((b - a + gap) / (w(r) + gap)); rows[r].push([X0 + a, z, c, (b - a - w(r)) / (c - 1), w(r), H]) }
   fill('first', 0, X, 0)
   const lo = w('outer') + 2 * (w('inner') + gap) + gap, hi = X - lo
   for (let L = 1; L < n; L++) {
     const z = L * H
-    // the walls, both sides: the outer, then two inner
+    // the walls, both sides: the outer, then two inner; the infill between them
     rows.outer.push([X0, z, 2, X - w('outer'), w('outer'), H])
     rows.inner.push([X0 + w('outer') + gap, z, 2, w('inner') + gap, w('inner'), H], [X0 + hi, z, 2, w('inner') + gap, w('inner'), H])
-    // sparse infill crosses the cut every few mm, shifted each layer; solid rows close up under the top
-    if (L === n - 1) fill('top', lo, hi, z)
-    else if (L === n - 2) fill('solid', lo, hi, z)
-    else rows.sparse.push([X0 + lo + 1.4 + (L % 2) * 4, z, 2, 8, w('sparse'), H])
+    fill(L === n - 1 ? 'top' : L === n - 2 ? 'solid' : 'sparse', lo, hi, z)
   }
   const inner = Object.entries(rows).map(([r, list]) => beads(list, D, role === 'all' || r === role)).join('')
-  const Z = n * H, at = (u, L) => [X0 + u, D, (L + 0.5) * H]
-  const p = { all: [X0 + X, D, Z], outer: at(X - 1.5, 5), inner: at(X - 4.5, 4), sparse: at(lo + 9.4, 3), solid: at(X - 12, n - 2), top: at(X - 9, n - 1), first: at(X - 6, 0) }[role]
-  const px = 222, py = role === 'first' ? 140 : 50
-  return still(id, about, cutPart(X0, X, D, Z) + inner + lead(p, px, py) + tag(px, py, `${(role === 'all' ? 0.42 : LW[role]).toFixed(2)} mm`))
+  // the one line the leader picks out: [row, line index from the right] in its role's rows
+  const r = role === 'all' ? 'top' : role, [ri, li] = { outer: [n - 2, 0], inner: [2 * n - 3, 0], top: [0, 2], solid: [0, 2], sparse: [n - 4, 2], first: [0, 2] }[r]
+  const [x, z, c, pitch, wl] = rows[r][ri], xa = x + (c - 1 - li) * pitch
+  const Z = n * H, below = r === 'first', py = below ? 140 : 50
+  return still(id, about, cutPart(X0, X, D, Z) + inner + xBracket(xa, xa + wl, D, below ? z : z + H, below) + lead([xa + wl / 2, D, below ? z - 0.6 : z + H + 0.6], 222, py) + tag(222, py, `${(role === 'all' ? 0.42 : LW[role]).toFixed(2)} mm`))
+}
+/** A bracket on the plane y = D along x from xa to xb at height z, its ticks reaching into the line below it (or
+ *  above, `up`), over a dark halo so it reads on lit and plain lines alike. */
+const xBracket = (xa, xb, D, z, up) => {
+  const o = up ? -0.6 : 0.6, t = up ? 0.9 : -0.9
+  const d = `M${iso(xa, D, z + t).join(' ')}L${iso(xa, D, z + o).join(' ')}L${iso(xb, D, z + o).join(' ')}L${iso(xb, D, z + t).join(' ')}`
+  return `<path class="s-n"${st('--stage-ol', 3.4)} d="${d}"/><path class="s-n"${st(A1, 1.4)} d="${d}"/>`
 }
 
 // ---------- shells: a part cut open, its solid top and bottom layers counted, their thickness bracketed ----------
@@ -103,8 +108,9 @@ function firstLayer(id, about) {
   const rest = []
   for (let L = 1; L < n; L++) rest.push([X0, h0 + (L - 1) * h, 12, (X - 2.8) / 11, 2.8, h])
   const Z = h0 + (n - 1) * h
-  const p0 = [X0 + X - 2, D, h0 / 2], p1 = [X0 + X - 2, D, h0 + 3.5 * h]
-  return still(id, about, cutPart(X0, X, D, Z) + beads([[X0, 0, 11, (X - 3.2) / 10, 3.2, h0]], D, true) + beads(rest, D, false) + lead(p0, 226, 140) + tag(226, 140, '0.3 mm') + lead(p1, 226, 70) + tag(226, 70, '0.2 mm'))
+  // each leader ends on a bracket spanning exactly one layer: the first, and the fourth above it
+  const bx = X0 + X + 1.6, z1 = h0 + 3 * h
+  return still(id, about, cutPart(X0, X, D, Z) + beads([[X0, 0, 11, (X - 3.2) / 10, 3.2, h0]], D, true) + beads(rest, D, false) + zBracket(bx, D, 0, h0) + zBracket(bx, D, z1, z1 + h) + lead([bx, D, h0 / 2], 226, 140) + tag(226, 140, '0.3 mm') + lead([bx, D, z1 + h / 2], 226, 70) + tag(226, 70, '0.2 mm'))
 }
 
 /** A bracket on the plane y = D from (x, za) to (x, zb), its ticks pointing back toward -x. */
