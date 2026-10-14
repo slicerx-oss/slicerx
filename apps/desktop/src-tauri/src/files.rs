@@ -24,6 +24,13 @@ pub struct FileRef {
     path: String,
 }
 
+impl FileRef {
+    /// The path the system handed over, to tell two handovers of one file apart from two files.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+}
+
 impl OpenFiles {
     /// Registers a path the system handed to the app, so the webview can read it by id.
     pub fn add(&self, path: PathBuf) -> FileRef {

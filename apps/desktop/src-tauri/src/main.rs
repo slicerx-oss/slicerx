@@ -138,12 +138,16 @@ fn main() {
             use tauri_plugin_deep_link::DeepLinkExt;
             let handle = app.handle().clone();
             // Links that opened the app, then links that arrive while it runs.
+            // Files come from the open event below (macOS) and the arguments (Windows and Linux), never from here.
             if let Ok(Some(urls)) = app.deep_link().get_current() {
-                opened::handle(&handle, urls.iter().map(ToString::to_string).collect());
+                opened::handle(&handle, opened::links_only(urls.iter().map(ToString::to_string)));
             }
             let later = handle.clone();
             app.deep_link().on_open_url(move |event| {
-                opened::handle(&later, event.urls().iter().map(ToString::to_string).collect())
+                opened::handle(
+                    &later,
+                    opened::links_only(event.urls().iter().map(ToString::to_string)),
+                )
             });
             // Windows and Linux pass a double-clicked file as an argument.
             opened::handle(&handle, std::env::args().skip(1).collect());
