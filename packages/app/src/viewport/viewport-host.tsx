@@ -95,6 +95,9 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   zoomBy?: Viewport['zoomBy']
   focusBedPoint?: Viewport['focusBedPoint']
   toggleProjection?: Viewport['toggleProjection']
+  /** Where the camera is, for the agent bridge's read-back. */
+  getCamera?: Viewport['getCamera']
+  getProjection?: Viewport['getProjection']
   arrange?: Viewport['arrange']
   controlsApi?: ControlsApi
   /** Paint: only the GPU viewport has it. */
@@ -752,6 +755,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         ...(vp.zoomBy ? { zoomBy: (f: number, o?: { animate?: boolean }) => vp.zoomBy?.(f, o) } : {}),
         ...(vp.focusBedPoint ? { focusBedPoint: (x: number, y: number, z: number, o?: { animate?: boolean }) => vp.focusBedPoint?.(x, y, z, o) } : {}),
         ...(vp.toggleProjection ? { toggleProjection: () => vp.toggleProjection?.() } : {}),
+        ...(vp.getCamera ? { pose: () => ({ ...vp.getCamera!(), ...(vp.getProjection ? { projection: vp.getProjection() } : {}) }) } : {}),
         ...(vp.setGuides ? { guides: (g: Parameters<Viewport['setGuides']>[0]) => vp.setGuides?.(g), probeFaces: (on: boolean) => vp.setProbeFaces?.(on) } : {}),
         ...(vp.arrange ? { arrange: (o?: { animate?: boolean; gapMm?: number }) => vp.arrange?.(o) ?? {} } : {}),
         ...('setPush' in vp ? { cad: vp as unknown as CadView } : {}),

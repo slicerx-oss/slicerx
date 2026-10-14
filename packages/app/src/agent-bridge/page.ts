@@ -21,6 +21,7 @@ import { autoSliceMode } from '../state/auto-slice-mode'
 import { cadShown } from '../state/model-mode'
 import { layerView } from '../workspaces/preview/layer-keys'
 import { slicePanes } from '../lib/slice-panes'
+import { uiState } from './ui-state'
 
 export { BridgeError } from './dom'
 
@@ -268,7 +269,9 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
 
   const tools: Record<string, (a: Args) => unknown> = {
     // `panes`: Slice's right pane, the playback bar, the toolhead and gantry switches and the toolbar, as on screen.
-    state: () => ({ ...appState(get()), panes: slicePanes(get(), doc), exports: exportCommands(), dialogs: capture.openDialogs(), toasts: capture.visibleToasts(), marker: capture.marker() }),
+    // `selection`, `tool`, `panels` and `camera`: what is selected and picked, the active tool, every panel and window
+    // open, and where the camera is (agent-bridge/ui-state.ts).
+    state: () => ({ ...appState(get()), ...uiState(get(), doc), panes: slicePanes(get(), doc), exports: exportCommands(), dialogs: capture.openDialogs(), toasts: capture.visibleToasts(), marker: capture.marker() }),
     toasts: log('toast'),
     // The layer slider, one layer mode, the legend and the jump field, as the layer keys and commands leave them.
     layers: () => layerView(),
