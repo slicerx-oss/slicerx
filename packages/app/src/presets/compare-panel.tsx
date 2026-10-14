@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { Select, tipAttrs } from '@slicerx/ui'
 import { useState } from 'react'
 import { useApp } from '../state/store'
 import { comparePresets, type CompareRow } from './compare'
@@ -23,19 +24,20 @@ export function ComparePanel() {
       <h4 className="set-sub" id="presets-compare-h">Compare presets</h4>
       <div className="preset-save">
         <label className="sr-only" htmlFor="cmp-kind">Kind</label>
-        <select id="cmp-kind" value={kind} onChange={(e) => { setKind(e.target.value as PresetKind); setA(''); setB('') }}>
+        <Select id="cmp-kind" size="sm" value={kind} onChange={(e) => { setKind(e.target.value as PresetKind); setA(''); setB('') }}>
           {KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-        </select>
+        </Select>
         <label className="sr-only" htmlFor="cmp-a">First preset</label>
-        <select id="cmp-a" value={aId} onChange={(e) => setA(e.target.value)}>
+        {/* A long name ellipsizes while closed; the tooltip and the open list show it whole. */}
+        <Select id="cmp-a" size="sm" face={a ? a.name : 'First preset'} wrap={{ className: 'cmp-pick', ...(a ? tipAttrs({ title: a.name }) : {}) }} value={aId} onChange={(e) => setA(e.target.value)}>
           <option value="">First preset</option>
           {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        </Select>
         <label className="sr-only" htmlFor="cmp-b">Second preset</label>
-        <select id="cmp-b" value={bId} onChange={(e) => setB(e.target.value)}>
+        <Select id="cmp-b" size="sm" face={b ? b.name : 'Second preset'} wrap={{ className: 'cmp-pick', ...(b ? tipAttrs({ title: b.name }) : {}) }} value={bId} onChange={(e) => setB(e.target.value)}>
           <option value="">Second preset</option>
           {list.filter((p) => p.id !== aId).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        </Select>
       </div>
       {a && b && rows ? (
         rows.length === 0 ? (

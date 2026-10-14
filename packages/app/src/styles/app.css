@@ -837,10 +837,13 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .preset-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 8px; }
 .preset-row[data-active='true'] { border-color: var(--purple); }
 .preset-name { display: grid; min-width: 0; }
-.preset-name small { color: var(--dim); font-size: calc(11px * var(--text-scale)); }
+/* A long preset name wraps in the list, so it always reads whole. */
+.preset-name b { overflow-wrap: anywhere; }
+.preset-name small { color: var(--dim); font-size: var(--fs-xs); }
 .preset-act { display: inline-flex; flex-wrap: wrap; gap: 2px; }
 .preset-save { display: flex; gap: 8px; align-items: center; }
 .preset-save .sx-input { flex: 1; min-width: 0; }
+.preset-save > .cmp-pick { flex: 1 1 0; min-width: 0; }
 /* Connected apps: the address and the key each take a full row, the buttons follow. */
 .preset-save.app-form { flex-wrap: wrap; }
 .preset-save.app-form .sx-input { flex: 1 1 100%; }
