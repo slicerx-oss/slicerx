@@ -1073,6 +1073,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           setDraft(emptyDraft(l.draft.tool))
           view?.setSketchCursor(null)
         } else if (e.key === 'Escape') {
+          // held here even with nothing left to step back, so the view's own Esc (clear the model's selection) and
+          // the panel never take it as closing the sketch
           e.preventDefault()
           if (l.draft.tool !== 'select') pickRef.current('select')
           else if (l.selected || l.pickedCon !== null) {
@@ -1085,6 +1087,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     // Undo, redo and Finish sketch go first, ahead of the plate's own keys: inside a sketch, Ctrl/Cmd+Z steps the
     // drawing back, not the model.
     const onModKey = (e: KeyboardEvent) => {
+      // Esc steps the sketch back before the view or anything else sees it (onKey's ladder), unless a menu or dialog
+      // is open to take it
+      if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !featureOnly && !document.querySelector('[role="menu"], [role="dialog"][aria-modal="true"]')) {
+        onKey(e)
+        if (e.defaultPrevented) e.stopPropagation()
+        return
+      }
       if (!(e.metaKey || e.ctrlKey) || e.altKey || featureOnly) return
       const t = e.target as HTMLElement | null
       const field = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.isContentEditable)
@@ -1595,7 +1604,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         reason={reason}
         // one primary at a time: Finish sketch while drawing, Extrude once the profile can make a solid
         primary={ready || featureOnly}
-        keys={false}
+        // the sketch steps its own Esc and Enter; Extrude or Revolve from a finished sketch is a plain tool
+        keys={featureOnly}
       />
       {featureOnly || !drawingTool(draft.tool) ? null : (
         <CursorPills
