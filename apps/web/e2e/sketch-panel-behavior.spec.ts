@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // How the sketch panel behaves, beyond how it looks: typed lengths and angles land the committed end where they say,
 // the sketch steps back and on with its own undo, the keyboard never gets stuck in the cursor pills and Esc steps
-// back one level at a time, Finish sketch and Extrude stay apart (one primary at a time, and a bare Enter finishes
-// nothing), every reason Extrude or Revolve is off shows, the footer never covers a setting at 900 px tall or less,
+// back one level at a time, Finish sketch and Extrude stay apart (one primary at a time, Finish sketch while drawing
+// and Extrude for a valid profile, and a bare Enter finishes nothing), every reason Extrude or Revolve is off shows, the footer never covers a setting at 900 px tall or less,
 // and Other plane asks before it drops a drawing. On a phone, the folded sheet opens to every control and stays open.
 import { type Page } from '@playwright/test'
 import { bounds, command, facePick, freshBox, openStudio, pick, sketchAt, steps, toolPanel } from './cad-helpers'
@@ -280,21 +280,24 @@ test('Finish sketch and Extrude stay apart: one primary, Ctrl/Cmd+Enter finishes
   const panel = toolPanel(page)
   const finish = page.getByTestId('sketch-finish')
   const extrude = panel.getByTestId('model-tool-apply')
-  // while drawing, Finish sketch is there to press and Extrude is off with its reason. Finish sketch is a ribbon
-  // button, which has no primary look, so Extrude is the only primary there is
+  // while drawing, Finish sketch is the primary and Extrude is off with its reason, in the plain look
   await expect(finish).not.toHaveAttribute('aria-disabled', 'true')
+  await expect(finish).toHaveAttribute('data-variant', 'primary')
   await expect(extrude).toBeDisabled()
   await expect(extrude).not.toHaveAttribute('data-variant', 'primary')
   await expect(panel.getByTestId('model-tool-reason')).toHaveText('Draw a closed outline to make a solid.')
   await expect(finish).toHaveAttribute('data-tip-key', /Enter$/)
-  // a closed rectangle: Extrude takes the primary, Finish sketch steps back, and no frame shows both as primary
+  // a closed rectangle: Extrude takes the primary and Finish sketch goes plain, with exactly one primary in every
+  // painted frame on the way (never both, never neither)
   await page.evaluate(() => {
-    const w = window as unknown as { __both: number; __watch: boolean }
-    w.__both = 0
+    const w = window as unknown as { __off: number; __frames: number; __watch: boolean }
+    w.__off = 0
+    w.__frames = 0
     w.__watch = true
     const tick = () => {
-      const both = document.querySelectorAll('[data-testid="sketch-finish"][data-variant="primary"], [data-section="cad-tool"] [data-testid="model-tool-apply"][data-variant="primary"]').length === 2
-      if (both) w.__both++
+      const n = document.querySelectorAll('[data-testid="sketch-finish"][data-variant="primary"], [data-section="cad-tool"] [data-testid="model-tool-apply"][data-variant="primary"]').length
+      w.__frames++
+      if (n !== 1) w.__off++
       if (w.__watch) requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
@@ -306,11 +309,13 @@ test('Finish sketch and Extrude stay apart: one primary, Ctrl/Cmd+Enter finishes
   await expect(extrude).toHaveAttribute('data-variant', 'primary')
   await expect(finish).not.toHaveAttribute('data-variant', 'primary')
   await page.waitForTimeout(300)
-  expect(await page.evaluate(() => {
-    const w = window as unknown as { __both: number; __watch: boolean }
+  const frames = await page.evaluate(() => {
+    const w = window as unknown as { __off: number; __frames: number; __watch: boolean }
     w.__watch = false
-    return w.__both
-  })).toBe(0)
+    return { off: w.__off, frames: w.__frames }
+  })
+  expect(frames.frames).toBeGreaterThan(0)
+  expect(frames.off).toBe(0)
   await expect(panel.getByTestId('model-tool-reason')).toHaveCount(0)
   // a bare Enter in the view, twice, neither finishes nor extrudes
   const bodies = () => page.evaluate(() => JSON.stringify((window as unknown as { __sx: { getState(): { plate: { id: string; parts: { positions: ArrayLike<number> }[] }[] } } }).__sx.getState().plate.map((e) => [e.id, e.parts.map((p) => Array.from(p.positions).reduce((a, v) => a + v, 0).toFixed(3))])))
@@ -411,10 +416,12 @@ test('Extrude and Revolve say why they are off: open, crossing, no axis, no body
   await page.locator('body').press('Escape')
   await expect(reason).toHaveText('Close the outline to make a solid.')
   await expect.poll(async () => (await read(page))?.profile).toBe('open')
-  // the button itself carries the reason, is not the primary, and Finish sketch is there to press
+  // the button itself carries the reason, is not the primary, and Finish sketch is there to press, as the primary
+  const finish = page.getByTestId('sketch-finish')
   await expect(apply).toHaveAccessibleDescription('Close the outline to make a solid.')
   await expect(apply).not.toHaveAttribute('data-variant', 'primary')
-  await expect(page.getByTestId('sketch-finish')).not.toHaveAttribute('aria-disabled', 'true')
+  await expect(finish).not.toHaveAttribute('aria-disabled', 'true')
+  await expect(finish).toHaveAttribute('data-variant', 'primary')
   // undo back to nothing, then a bow tie: closed, but it crosses itself
   await undoAll(page)
   for (const p of [[20, 0], [30, 10], [30, 0], [20, 10], [20, 0]] as [number, number][]) await sketchAt(page, 'click', p)
@@ -423,8 +430,10 @@ test('Extrude and Revolve say why they are off: open, crossing, no axis, no body
   await expect(reason).toBeVisible()
   expect((await reason.textContent())!.length).toBeGreaterThan(5)
   expect((await read(page))!.ready).toBe(false)
-  // no false success: Extrude is not the primary, the reason is its description, and the read-back gives the same reason
+  // no false success: Extrude is not the primary (Finish sketch still is), the reason is its description, and the
+  // read-back gives the same reason
   await expect(apply).not.toHaveAttribute('data-variant', 'primary')
+  await expect(finish).toHaveAttribute('data-variant', 'primary')
   await expect(apply).toHaveAccessibleDescription((await reason.textContent())!)
   expect((await read(page))!.reason).toBe(await reason.textContent())
   // undo the bow tie, draw a square: valid, and the read-back agrees
@@ -435,6 +444,8 @@ test('Extrude and Revolve say why they are off: open, crossing, no axis, no body
   await expect.poll(async () => (await read(page))?.profile).toBe('valid')
   await expect(apply).toBeEnabled()
   expect((await read(page))!.reason).toBeNull()
+  await expect(apply).toHaveAttribute('data-variant', 'primary')
+  await expect(finish).not.toHaveAttribute('data-variant', 'primary')
   // on the bed there is no body: Join and Cut say why they are off
   await expect(panel.getByTestId('sketch-result-reason')).toBeVisible()
   await expect(panel.getByRole('radiogroup', { name: 'Result' }).getByRole('radio', { name: 'Cut' })).toBeDisabled()
