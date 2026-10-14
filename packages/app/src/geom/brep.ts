@@ -15,8 +15,11 @@ export function brepModule(m: SxBrepModule): BrepModule {
   return {
     memoryBytes: () => m.HEAPU8.buffer.byteLength,
     call(op, request) {
+      if (op.length > 128 || new TextEncoder().encode(op).byteLength > 128) throw new Error('op: exceeds 128 bytes')
       const json = JSON.stringify(request ?? {})
       if (json === undefined) throw new Error('brep: request is not JSON')
+      const maxBytes = 32 * 1024 * 1024
+      if (json.length > maxBytes || new TextEncoder().encode(json).byteLength > maxBytes) throw new Error('request: exceeds 32 MiB')
       let o = 0
       let r = 0
       let p = 0

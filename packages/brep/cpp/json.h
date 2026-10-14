@@ -13,6 +13,11 @@
 
 namespace sxj {
 
+constexpr size_t kMaxOperationBytes = 128;
+constexpr size_t kMaxRequestBytes = 32 * 1024 * 1024;
+constexpr size_t kMaxJsonDepth = 64;
+constexpr size_t kMaxJsonValues = 1'000'000;
+
 struct Value {
     enum Kind { Null, Bool, Number, String, Array, Object } kind = Null;
     bool b = false;
@@ -64,6 +69,7 @@ public:
     explicit Parser(const std::string& t) : t_(t) {}
     Value parse()
     {
+        if (t_.size() > kMaxRequestBytes) throw Error("request", "exceeds 32 MiB");
         Value v = value();
         ws();
         if (i_ != t_.size()) fail("trailing text");
@@ -73,6 +79,7 @@ public:
 private:
     const std::string& t_;
     size_t i_ = 0;
+    size_t values_ = 0;
 
     [[noreturn]] void fail(const char* m) { throw Error("request", std::string("bad JSON: ") + m); }
     void ws()
@@ -92,11 +99,14 @@ private:
     {
         if (!eat(c)) fail("unexpected character");
     }
-    Value value()
+    Value value(size_t depth = 0)
     {
+        if (++values_ > kMaxJsonValues) throw Error("request", "JSON exceeds 1000000 values");
         ws();
         if (i_ >= t_.size()) fail("unexpected end");
         char c = t_[i_];
+        if ((c == '{' || c == '[') && depth >= kMaxJsonDepth)
+            throw Error("request", "JSON nesting exceeds 64 containers");
         if (c == '{') {
             ++i_;
             Value v = Value::object();
@@ -105,7 +115,7 @@ private:
                 ws();
                 std::string k = str();
                 expect(':');
-                v.o[k] = value();
+                v.o[k] = value(depth + 1);
             } while (eat(','));
             expect('}');
             return v;
@@ -114,7 +124,7 @@ private:
             ++i_;
             Value v = Value::array();
             if (eat(']')) return v;
-            do v.a.push_back(value());
+            do v.a.push_back(value(depth + 1));
             while (eat(','));
             expect(']');
             return v;

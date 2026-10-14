@@ -113,4 +113,31 @@ test.describe('Exact solids', () => {
       expect(result.after.parts[0]?.indices).toEqual(result.before.parts[0]?.indices)
     }
   })
+  test('the exact worker rejects excessive input and remains usable', async ({ page }) => {
+    await openStudio(page, { settingsMode: 'developer' })
+    const result = await page.evaluate(async () => {
+      const g = (window as unknown as { __geom: { call(op: string, r: unknown): Promise<unknown> } }).__geom
+      const before = await g.call('brep.count', {})
+      let nested: unknown = 0
+      for (let i = 0; i < 64; i++) nested = [nested]
+      const errors: string[] = []
+      for (const [op, request] of [
+        ['brep.count', { x: nested }],
+        ['brep.load', { body: { smb: 'x'.repeat(8 * 1024 * 1024 + 1) } }],
+      ] as const) {
+        try { await g.call(op, request); errors.push('accepted') }
+        catch (error) { errors.push(String(error)) }
+      }
+      const body = (await g.call('brep.box', { min: [0, 0, 0], max: [20, 20, 20] }) as { body: number }).body
+      let info: unknown
+      try { info = await g.call('brep.info', { body }) }
+      finally { await g.call('brep.free', { body }) }
+      return { before, after: await g.call('brep.count', {}), errors, info }
+    })
+    expect(result.errors[0]).toContain('JSON nesting exceeds 64 containers')
+    expect(result.errors[1]).toContain('saved body exceeds 8 MiB')
+    expect(result.info).toMatchObject({ manifold: true, volumeMm3: 8000 })
+    expect(result.after).toEqual(result.before)
+  })
+
 })

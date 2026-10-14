@@ -13,6 +13,12 @@ CI runs the required-kernel suite on Linux and macOS. `kernel_detection` checks 
 
 A first build compiles about 230 C++ files (about 450 CPU seconds, one minute on 8 cores).
 
+## Input limits
+
+Operation names are limited to 128 UTF-8 bytes. Requests are limited to 32 MiB of UTF-8 JSON, 64 nested containers and 1,000,000 JSON values. Serialized bodies are limited to 8 MiB before checksum verification or the kernel reader. The native wrapper and browser adapter reject oversized requests before copying them into the kernel. The `sx-geom` CLI also bounds `brep.*` input before JSON parsing, including whitespace. Numeric body handles remain the preferred path for a process or worker that keeps its bodies alive.
+
+The saved-body checksum detects changed text; it is not authentication. These limits bound input parsing, not the time or memory of an arbitrary modeling operation. Native serialized-body input still requires the existing developer opt-in. Worker/process termination and recovery remain necessary for a hard execution deadline.
+
 ## Our routines in the kernel
 
 Eleven kernel routines and all of `SmIntegrator.cpp` cite Numerical Recipes, whose code is not under an open source license. After unpacking, `scripts/swap-routines.sh` replaces each routine's body with a call to our own version in `cpp/routines.cpp`, turns the `smos_Pythag` macro into `hypot`, and removes `SmIntegrator.cpp`, whose classes `cpp/integrator.cpp` defines instead. Ours are written from the published algorithms (each file names its sources). `fetch-smlib.sh` checks that every one is swapped out before it hands over the copy. The list is a sweep of the whole kernel, not only the routines a feature reaches:
