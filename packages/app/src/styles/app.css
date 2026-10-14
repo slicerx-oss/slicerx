@@ -584,10 +584,10 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .studio[data-model-mode="design"] > .pane[data-side="left"] { order: 0; }
 .studio[data-model-mode="design"] > .pane[data-side="right"] { order: 2; }
 /* Design: the shelf spans the window over the tree, the viewport and the tool pane; on a phone it sits above the viewport. */
-.studio[data-model-mode="design"] > .shelf { order: -2; }
+.studio[data-model-mode="design"] > .shelf, .studio[data-model-mode="design"] > .ribbon { order: -2; }
 @media (min-width: 901px) {
   .studio[data-model-mode="design"] { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr); }
-  .studio[data-model-mode="design"] > .shelf { grid-column: 1 / -1; }
+  .studio[data-model-mode="design"] > .shelf, .studio[data-model-mode="design"] > .ribbon { grid-column: 1 / -1; }
   .studio[data-model-mode="design"] > .vp { order: 1; min-height: 0; }
 }
 .slice-float { position: absolute; right: 12px; bottom: 12px; z-index: var(--z-hud); width: 300px; border-radius: var(--r-md); }

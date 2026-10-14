@@ -67,6 +67,26 @@
   --red-tint: color-mix(in srgb, var(--red) 13%, transparent);
   --overlay: color-mix(in srgb, var(--ink-1) 92%, transparent);
 
+  /* the shaded tool icons (icons/tool): three grays and the accent at three light levels, lit from the upper left,
+     the outline inks, a cavity, the catch light and the shade. Light schemes repoint them below. */
+  --ti-t1: color-mix(in srgb, var(--fg) 70%, var(--muted));
+  --ti-t2: color-mix(in srgb, var(--muted) 92%, var(--ink-4));
+  --ti-t3: color-mix(in srgb, var(--muted) 52%, var(--ink-4));
+  --ti-ol: color-mix(in srgb, var(--ink-0) 62%, black);
+  --ti-a1: color-mix(in srgb, var(--accent) 82%, white);
+  --ti-a2: color-mix(in srgb, var(--accent) 86%, var(--ink-0));
+  --ti-a3: color-mix(in srgb, var(--accent) 64%, var(--ink-0));
+  --ti-aol: color-mix(in srgb, var(--accent) 18%, var(--ti-ol));
+  --ti-hl: color-mix(in srgb, var(--ink-0) 80%, black);
+  --ti-hi: rgba(255, 255, 255, 0.42);
+  --ti-sh: rgba(12, 10, 26, 0.13);
+  --ti-sh3: rgba(12, 10, 26, 0.08);
+  /* the ribbon's selected and hover states: dark a rounded accent border with a soft glow, light a tinted backdrop */
+  --rib-sel-bg: color-mix(in srgb, var(--accent) 13%, transparent);
+  --rib-sel-bd: color-mix(in srgb, var(--accent) 62%, transparent);
+  --rib-sel-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent), 0 0 14px -1px color-mix(in srgb, var(--accent) 42%, transparent);
+  --rib-hover-bg: color-mix(in srgb, var(--fg) 5%, transparent);
+
   /* type */
   --f-display: "Unbounded Variable", "Unbounded", "Arial Black", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-body: "Hanken Grotesk Variable", "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -159,6 +179,7 @@
   --z-palette: 70;
 }
 
+/* a light scheme's tool icons, ribbon states and tooltip stage */
 :root[style*="color-scheme: light"] {
   --stage-t1: #fff;
   --stage-t2: #cfccd9;
@@ -170,4 +191,20 @@
   --stage-aol: color-mix(in srgb, var(--accent) 40%, black);
   --stage-pill: #2d2834;
   --stage-grid: #8b8395;
+  --ti-t1: color-mix(in srgb, var(--ink-0) 25%, white);
+  --ti-t2: color-mix(in srgb, var(--fg) 18%, var(--ink-0));
+  --ti-t3: color-mix(in srgb, var(--fg) 42%, var(--ink-0));
+  --ti-ol: color-mix(in srgb, var(--fg) 88%, var(--ink-0));
+  --ti-a1: color-mix(in srgb, var(--accent) 62%, white);
+  --ti-a2: var(--accent);
+  --ti-a3: color-mix(in srgb, var(--accent) 78%, var(--fg));
+  --ti-aol: color-mix(in srgb, var(--accent) 40%, var(--fg));
+  --ti-hl: color-mix(in srgb, var(--fg) 82%, var(--ink-0));
+  --ti-hi: rgba(255, 255, 255, 0.85);
+  --ti-sh: rgba(40, 28, 78, 0.09);
+  --ti-sh3: rgba(40, 28, 78, 0.06);
+  --rib-sel-bg: color-mix(in srgb, var(--accent) 10%, transparent);
+  --rib-sel-bd: color-mix(in srgb, var(--accent) 22%, transparent);
+  --rib-sel-glow: none;
+  --rib-hover-bg: color-mix(in srgb, var(--fg) 4.5%, transparent);
 }
