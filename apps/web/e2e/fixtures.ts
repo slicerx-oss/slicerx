@@ -210,6 +210,23 @@ export async function panesSettled(page: Page): Promise<void> {
     .toBe(true)
 }
 
+/**
+ * Waits until no pane slides and the view's canvas has taken the view's new size. Sizing the canvas holds the page
+ * while software graphics reallocates it (about 2 s at 1440 by 900, far longer on a busy machine), so a step timed
+ * after a pane opens or shuts starts once that is over, not inside it.
+ */
+export async function viewSized(page: Page): Promise<void> {
+  await panesSettled(page)
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const c = document.querySelector<HTMLCanvasElement>('canvas.vp-canvas')
+        return !!c && c.clientWidth > 0 && c.clientHeight > 0 && Math.abs(c.width / c.clientWidth - c.height / c.clientHeight) < 0.02
+      }),
+    )
+    .toBe(true)
+}
+
 /** Opens the selection bar's Transform popover (from its menu in Simple), where the number rows are. */
 export async function openTransform(page: Page): Promise<void> {
   const pop = page.locator('.selbar-transform')
