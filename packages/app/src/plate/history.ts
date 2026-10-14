@@ -12,6 +12,8 @@ export type Snapshot = Pick<AppState, 'plate' | 'selection'> & Partial<Pick<AppS
 const KEYS = ['plate', 'selection', 'selectedIds', 'plates', 'activePlate', 'objectSettings', 'slotSetup', 'flush', 'timeline', 'rollback'] as const
 
 export interface History {
+  /** Counts and an opaque revision for comparing a read with a later command. */
+  state(): { undo: number; redo: number; revision: string }
   undo(): boolean
   redo(): boolean
   canUndo(): boolean
@@ -66,6 +68,8 @@ export function inStep<T>(token: object, fn: () => T): T {
 }
 
 export function createHistory(store = appStore, limit = 100): History {
+  const epoch = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  let revision = 0
   const undo: Snapshot[] = []
   const redo: Snapshot[] = []
   const listeners = new Set<(s: { undo: number; redo: number }) => void>()
@@ -77,6 +81,7 @@ export function createHistory(store = appStore, limit = 100): History {
     if (restoring || quiet > 0 || !edited(s, prev)) return
     // Loading a plate from scratch is not something to undo into an empty plate while it loads.
     if (prev.plateLoading && prev.plate.length === 0) return
+    revision++
     if (step && step === lastStep) {
       redo.length = 0
       return
@@ -90,6 +95,7 @@ export function createHistory(store = appStore, limit = 100): History {
   const restore = (from: Snapshot[], to: Snapshot[]): boolean => {
     const target = from.pop()
     if (!target) return false
+    revision++
     lastStep = null
     restoring = true
     try {
@@ -106,11 +112,13 @@ export function createHistory(store = appStore, limit = 100): History {
     return true
   }
   return {
+    state: () => ({ undo: undo.length, redo: redo.length, revision: `${epoch}:${revision}` }),
     undo: () => restore(undo, redo),
     redo: () => restore(redo, undo),
     canUndo: () => undo.length > 0,
     canRedo: () => redo.length > 0,
     clear() {
+      revision++
       undo.length = 0
       redo.length = 0
       notify()

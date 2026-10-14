@@ -101,11 +101,13 @@ pub(crate) enum LinkClass {
 
 /// Every method an agent may call on the project open in the app (`app.call`, `app_link.rs`), and
 /// whether it reads or edits. The hub refuses any other name. None of them prints, queues, starts
-/// or sends a job, answers a card, signs in, buys, deletes, or changes printers, the network or
-/// settings, apart from two view preferences (look.set): those stay with a person. Adding one here
-/// needs its entry in the test below.
+/// or sends a job, answers a card, signs in, buys, deletes files, or changes printers, the network or
+/// connection settings. look.set changes only two view preferences. additions need a test entry below.
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
+    ("history.get", LinkClass::Read),
+    ("history.undo", LinkClass::Edit),
+    ("history.redo", LinkClass::Edit),
     ("plate.list", LinkClass::Read),
     // Moving, turning and scaling objects on the shown plate, each one undo step the person can take back.
     ("project.move", LinkClass::Edit),
@@ -349,6 +351,9 @@ mod tests {
         // A new method lands here on purpose, with its class, after a review of what it can do.
         let pinned: &[(&str, LinkClass)] = &[
             ("app.info", LinkClass::Read),
+            ("history.get", LinkClass::Read),
+            ("history.undo", LinkClass::Edit),
+            ("history.redo", LinkClass::Edit),
             ("plate.list", LinkClass::Read),
             ("project.move", LinkClass::Edit),
             ("project.rotate", LinkClass::Edit),

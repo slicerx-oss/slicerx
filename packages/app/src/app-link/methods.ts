@@ -2,9 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // What an agent may do with the open project over the app link, and the page's answer to each. The hub keeps the same
 // list (packages/connect/link/src/roles.rs, APP_LINK_METHODS) and refuses every other name before it reaches here; a
-// test checks the two lists match. Nothing here prints, queues, approves or signs in, and the only settings it changes
-// are two view preferences (look.set: Frame the view and Toolbar size), which change how the window behaves, never
-// the project.
+// test checks the two lists match. Nothing here prints, queues, approves, signs in or changes connection settings.
+// look.set changes only two view preferences: Frame the view and Toolbar size.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
@@ -24,6 +23,9 @@ export type LinkClass = 'read' | 'edit'
 
 export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'app.info': 'read',
+  'history.get': 'read',
+  'history.undo': 'edit',
+  'history.redo': 'edit',
   'plate.list': 'read',
   // Moving, turning and scaling objects on the shown plate, each one undo step; the person sees who did it.
   'project.move': 'edit',
@@ -446,6 +448,10 @@ export async function runCall(method: string, args: Record<string, unknown>, cli
   if (method === 'values.list' || method === 'values.set' || method === 'values.remove' || method === 'values.bind') {
     const { valueCall } = await import('./values')
     return valueCall(method, args, linkLoader)
+  }
+  if (method === 'history.get' || method === 'history.undo' || method === 'history.redo') {
+    const { historyCall } = await import('./history')
+    return historyCall(method, args, client.name)
   }
   const h = Object.hasOwn(HANDLERS, method) ? HANDLERS[method] : undefined
   if (h) return h(args, client)
