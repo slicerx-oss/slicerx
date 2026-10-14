@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Wall direction: the way outer walls print, seen from above; holes print the other way.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'btwd',
+  readout: {rows: ["Counterclockwise","Clockwise"],w: 118},
+  css: ".btwd0{animation-name:btwd0;animation-timing-function:steps(1,end)}@keyframes btwd0{0%{opacity:1}50%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.btwd1{animation-name:btwd1;animation-timing-function:steps(1,end)}@keyframes btwd1{0%{opacity:0}50%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.btwd-h{animation-name:btwd-h;animation-timing-function:steps(1,end)}@keyframes btwd-h{0%{translate:0 0px}50%{translate:0 -14px}98.6%{translate:0 0px}100%{translate:0 0px}}.btwd-a{animation-name:btwd-a}@keyframes btwd-a{0%{stroke-dashoffset:101}8.6%{stroke-dashoffset:101}40%{stroke-dashoffset:0}44.3%{opacity:1}48.6%{opacity:0}100%{opacity:0}}.btwd-b{animation-name:btwd-b}@keyframes btwd-b{0%{stroke-dashoffset:101}55.7%{stroke-dashoffset:101}87.1%{stroke-dashoffset:0}91.4%{opacity:1}95.7%{opacity:0}100%{opacity:0}}",
+  body: "<polygon class=\"s-f2 s-ol\" points=\"69.4,113.5 148.2,159 148.2,152 69.4,106.5\"/><polygon class=\"s-f3 s-ol\" points=\"202.8,127.5 148.2,159 148.2,152 202.8,120.5\"/><polygon class=\"s-f1 s-ol\" points=\"124,75 202.8,120.5 148.2,152 69.4,106.5\"/><path class=\"s-n\" style=\"stroke:var(--stage-t3,#6c7086);stroke-width:1.4\" d=\"M79.7 106.2l68.5 39.5 44.3-25.5-68.5-39.6-44.3 25.6M85.8 106.2l62.4 36 38.2-22-62.4-36.1-38.2 22.1\"/><g class=\"btwd0 s-a\"><path class=\"btwd-a s-a s-n\" pathLength=\"100\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:2.4;stroke-dasharray:100 102\" d=\"M73.7 106.2l74.5 43 50.4-29-74.6-43.1-50.3 29.1\"/></g><g class=\"btwd1 s-a\"><path class=\"btwd-b s-a s-n\" pathLength=\"100\" style=\"stroke:var(--stage-a2,#a57ae8);stroke-width:2.4;stroke-dasharray:100 102\" d=\"M73.7 106.2l50.3-29.1 74.6 43.1-50.4 29-74.5-43\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-btwd\" x=\"172\" y=\"40\"/><clipPath id=\"btwd-hw\"><rect x=\"178\" y=\"32\" width=\"108\" height=\"16\"/></clipPath><g clip-path=\"url(#btwd-hw)\"><g class=\"btwd-h s-a\"><use href=\"#sxs-rows-btwd\" x=\"172\" y=\"40\"/></g></g></g>",
+}
