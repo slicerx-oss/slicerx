@@ -462,6 +462,9 @@ button { cursor: pointer; }
 .sx-toast[data-expanded] .sx-toast-text { display: block; padding: 5px 0; max-height: 9.5em; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; }
 .sx-toast[data-expanded] .sx-toast-more { display: inline; }
 .sx-toast-details, .sx-toast-action, .sx-toast-dismiss { flex: none; }
+.sx-toast-close { position: relative; flex: none; }
+/* on a touch screen the close mark keeps its size and takes taps over 44 px, grown into the gap around it only */
+@media (pointer: coarse) { .sx-toast-close::before { content: ''; position: absolute; inset: calc((var(--h-sm) - var(--h-lg)) / 2); } }
 .sx-toast-details::after { content: attr(data-label); }
 .sx-toast[data-tone="ok"] > .sx-ic { color: var(--green); }
 .sx-toast[data-tone="warn"] > .sx-ic { color: var(--orange); }

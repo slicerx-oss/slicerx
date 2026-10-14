@@ -52,6 +52,9 @@ import { currentSlice, sliceStage } from '../lib/slice-timing'
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
 // One memory a session: a second view (a remount) does not count as Model's first open again.
 const revealMemory: RevealMemory = { modelSeen: false }
+/** View notices already told this visit: each new view says its notice again, which would stack a second card or
+ * bring back one the person closed. */
+const toldNotices = new Set<string>()
 const prefersReducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** The render mode for the state: Model's CAD look, or the look picked for Slice. */
@@ -841,7 +844,11 @@ export function ViewportHost({ layers }: { layers: boolean }) {
           // the toast shows the first sentence on one line, with the reason behind Details
           const text = e.details ? `${e.message} ${e.details}` : e.message
           set({ viewNotice: text })
-          if (!isPhoneLayout()) toast(text, 'info')
+          // told once a visit, with a close mark; the next view (another tab, the view started again) says the same thing
+          if (!isPhoneLayout() && !toldNotices.has(text)) {
+            toldNotices.add(text)
+            toast(text, 'info', undefined, {})
+          }
         }),
       )
       offs.push(vp.on('error', (e) => toast(e.message, 'error')))
