@@ -40,7 +40,7 @@ import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { goesIntoFace } from './extrude-direction'
 import { CursorPills, type CursorPillsHandle } from './cursor-pills'
-import { applyReason, profileState, provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
+import { applyReason, CHECKING, profileState, provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
 import { Actions, Card, Choice, close, type ChoiceOption, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { formatLength, fraction, parseLength, type UnitPrefs } from './units'
@@ -397,6 +397,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // and the frames of one point drag fold into the step that started them.
   const hist = useRef<{ past: SketchSnap[]; future: SketchSnap[]; cur: SketchSnap; restoring: boolean }>({ past: [], future: [], cur: { sketch, constraints }, restoring: false })
   const mergeNext = useRef(false)
+  // Finish sketch applies: a new sketch or a finished one opened again, not a body's step being edited
+  const finishable = useRef(false)
   useEffect(() => {
     const h = hist.current
     const now = { sketch, constraints }
@@ -1103,6 +1105,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       const field = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.isContentEditable)
       const k = e.key.toLowerCase()
       if (e.key === 'Enter') {
+        // only a sketch that finishes on its own; a body's step being edited leaves Ctrl/Cmd+Enter to the app (slice)
+        if (!finishable.current) return
         e.preventDefault()
         e.stopPropagation()
         finishRef.current()
@@ -1320,6 +1324,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }
   const finishRef = useRef(finishOnly)
   finishRef.current = finishOnly
+  finishable.current = !stepEdit && !featureOnly
   useEffect(() => (stepEdit || featureOnly ? undefined : provideFinish(() => void finishRef.current())), [stepEdit, featureOnly])
   const usedId = featureOnly ? init?.from?.id : undefined
   useEffect(() => (usedId ? provideInUse(usedId) : undefined), [usedId])
@@ -1631,7 +1636,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         onApply={go}
         busy={busy}
         disabled={!ready}
-        reason={reason}
+        // the check's tenth of a second is no reason to show: the line would only blink and move the settings above
+        reason={check === null && reason === CHECKING ? null : reason}
         // one primary at a time: Finish sketch while drawing, Extrude once the profile can make a solid
         primary={ready || featureOnly}
         // the sketch steps its own Esc and Enter; Extrude or Revolve from a finished sketch is a plain tool
