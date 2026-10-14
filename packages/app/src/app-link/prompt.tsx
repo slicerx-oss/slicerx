@@ -31,6 +31,8 @@ function SheetQuestion({ item }: { item: ClientSheet }) {
     const t = setTimeout(() => setArmed(true), ARM_MS)
     return () => clearTimeout(t)
   }, [])
+  // the person's typed sizes; a size left alone goes back as the client sent it
+  const [draft, setDraft] = useState<Record<string, number>>({})
   const answer = (values: Record<string, number> | null) => void answerClientSheet(item.sheet.id, values).catch(() => undefined)
   return (
     <Dialog
@@ -44,17 +46,17 @@ function SheetQuestion({ item }: { item: ClientSheet }) {
           <Button variant="ghost" disabled={!armed} onClick={() => answer(null)} data-testid="app-link-sheet-decline" data-agent-refuse>
             Not now
           </Button>
-          <Button disabled={!armed} onClick={() => answer(Object.fromEntries(item.sheet.dims.map((d) => [d.key, d.value])))} data-testid="app-link-sheet-confirm" data-agent-refuse>
+          <Button disabled={!armed} onClick={() => answer(Object.fromEntries(item.sheet.dims.map((d) => [d.key, draft[d.key] ?? d.value])))} data-testid="app-link-sheet-confirm" data-agent-refuse>
             Build with these sizes
           </Button>
         </>
       }
     >
       <p>
-        An agent you connected, which calls itself <b>{item.client.name}</b>, will build from these sizes. Guesses are marked; check them before it builds.
+        An agent you connected, which calls itself <b>{item.client.name}</b>, will build from these sizes. Guesses are marked; check them, and change any size that is off, before it builds.
       </p>
       <div className="app-link-sheet-rec sx-pilot">
-        <SheetRecord sheet={item.sheet} answer={null} />
+        <SheetRecord sheet={item.sheet} answer={null} values={draft} onEdit={(_id, key, value) => setDraft((x) => ({ ...x, [key]: value }))} />
       </div>
     </Dialog>
   )

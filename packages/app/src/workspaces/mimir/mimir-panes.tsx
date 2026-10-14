@@ -15,7 +15,7 @@ import { stepWords } from './step-words'
 import { followSteps, useStepCaption, viewStep } from './view-step'
 import { newSessionId, noteMessage, tabMimir, tabTools } from './session'
 import { editRow } from './sheet-drive'
-import { openSheet, setSheetActions, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
+import { openSheet, setDraft, setSheetActions, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
 import { useHost } from '../../host'
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import { cameraBus } from '../../plate/tools'
@@ -92,7 +92,19 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   useEffect(() => () => setShownSheet(null), [])
   useEffect(() => followSteps(transcript), [transcript])
   useEffect(() => () => viewStep.setState({ caption: null }), [])
-  const handlers = useMemo<ApprovalHandlers>(() => ({ onApprove: NO_APPROVAL, onCancel: NO_APPROVAL, onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(), onOpenSheet: openSheet }), [pilot])
+  const draft = useSheetUi((s) => s.draft)
+  const handlers = useMemo<ApprovalHandlers>(
+    () => ({
+      onApprove: NO_APPROVAL,
+      onCancel: NO_APPROVAL,
+      onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(),
+      onConfirmSheet: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve(),
+      onEditSheet: (_sheetId, key, value) => setDraft(key, value),
+      onOpenSheet: openSheet,
+      sheetValues: draft,
+    }),
+    [pilot, draft],
+  )
   // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
   const body = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -245,8 +257,14 @@ export function MimirCaption() {
   const drawing = useSheetUi((s) => sheetMode(s) === 'confirm' && (s.shown?.sheet.part?.length ?? 0) > 0)
   if (drawing) {
     return (
-      <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
-        Drawing, four views
+      <div className="mimir-caption-row">
+        <div className="mimir-caption sx-overlay sx-mono" data-testid="mimir-caption" aria-live="polite">
+          Drawing, four views
+        </div>
+        <span className="mimir-caption-tag sx-mono" data-testid="mimir-drawing-status">
+          <span>mm</span>
+          <span>Not built yet</span>
+        </span>
       </div>
     )
   }

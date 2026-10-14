@@ -78,4 +78,27 @@ describe('client sheets over the app link', () => {
     await vi.waitFor(async () => expect(((await runCall('sheet.get', { sheetId: second.sheetId }, A)) as { state: string }).state).toBe('declined'))
     expect(await runCall('sheet.get', { sheetId: second.sheetId }, A)).toMatchObject({ state: 'declined' })
   })
+
+  it('come back with the guess the person typed over, marked as changed, and the rest as the client sent them', async () => {
+    vi.useFakeTimers()
+    const asked = (await runCall('sheet.ask', SHEET, A)) as { sheetId: string }
+    render(createElement(AppLinkPrompt))
+    const wall = document.querySelector('[data-dim="wall"]')!
+    expect(wall.hasAttribute('data-guess')).toBe(true)
+    expect(wall.querySelector('.sheet-rec-n')!.textContent).toBe('2')
+    const field = screen.getByRole('textbox', { name: 'Wall, millimeters' }) as HTMLInputElement
+    expect(field.value).toBe('1.6')
+    // out of the client's range: refused in place, nothing kept
+    fireEvent.change(field, { target: { value: '9' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(wall.hasAttribute('data-guess')).toBe(true)
+    fireEvent.change(field, { target: { value: '2.4' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(wall.hasAttribute('data-guess')).toBe(false)
+    expect(wall.textContent).toContain('yours')
+    act(() => void vi.advanceTimersByTime(ARM_MS))
+    fireEvent.click(screen.getByTestId('app-link-sheet-confirm'))
+    await vi.waitFor(async () => expect(((await runCall('sheet.get', { sheetId: asked.sheetId }, A)) as { state: string }).state).toBe('confirmed'))
+    expect(await runCall('sheet.get', { sheetId: asked.sheetId }, A)).toMatchObject({ state: 'confirmed', answer: { confirmed: true, values: { bore: 6.2, wall: 2.4 }, changed: ['wall'] } })
+  })
 })
