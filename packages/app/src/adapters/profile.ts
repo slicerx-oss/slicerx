@@ -70,6 +70,8 @@ export interface ProfileLayer {
   gcodeKeys: string[]
   /** Each slot's filament preset id (`filament_id`, such as `GFA00`), in slot order; empty where no shipped preset applies. */
   filamentIds: string[]
+  /** The material of the maker's default filament for the printer (PLA, PETG), empty without a resolved preset. */
+  materialType: string
   /** The layer height and walls each goal's process gives on this printer and nozzle, for the Goal tiles. */
   goalValues: Record<EasyGoal, Record<string, SettingValue>>
 }
@@ -268,6 +270,7 @@ export async function buildProfileLayer(input: ProfileInput): Promise<ProfileLay
     shippedGcode: shipped,
     gcodeKeys,
     filamentIds,
+    materialType: defaultType,
     goalValues,
   }
 }

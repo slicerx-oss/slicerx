@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The Filament block of the Prepare sidebar: every slot with its material, brand and color, filled in
-// from the connected printer's AMS or MMU until the person changes it, plus the flush volume dialog
+// The Filament block of the Prepare sidebar: every loaded spool (or project filament) with its material, brand and
+// color, filled in from the connected printer's AMS or MMU until the person changes it, plus the flush volume dialog
 // and per-plate color swaps.
 import { Block, Button, Icon, LinkButton, Menu, MenuAnchor, MenuItem, Popover, Select, SwitchRow, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
@@ -10,12 +10,12 @@ import { activeMeta } from '../plate/plates'
 import { useHost } from '../host'
 import { spoolFor, useSpools } from '../inventory/spools'
 import { estimateLine } from '../lib/estimate-line'
-import { RailFoot, SlotRail, SlotRailEmpty, SlotRailSkeleton } from './slot-rail'
+import { AddFilament, RailFoot, SlotRail, SlotRailEmpty, SlotRailSkeleton } from './slot-rail'
 import { slotLabel } from './rail'
 import { useFold } from '../shell/fold'
 import { set, shownSlice, useApp } from '../state/store'
 import { nozzleText, tuneState } from '../calibration/tuned'
-import { useResolvedSlots, useStripSlots } from './use-slots'
+import { useResolvedSlots } from './use-slots'
 import { SetupNotes } from './setup-plan'
 import { resetSlots, swapPlateSlots, type ResolvedSlot } from './slots'
 import { resolveConfig } from '../adapters/config'
@@ -128,8 +128,6 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   const [menuOpen, setMenuOpen] = useState(false)
   // Swap colors opens from the menu, so the rail keeps its one row.
   const [swapOpen, setSwapOpen] = useState(false)
-  // The rail shows every project filament in order; one nothing prints with is dimmed and says "Not used".
-  const shown = useStripSlots()
   // The printer has a filament unit but has not reported its slots yet.
   const loading = (system === 'ams' || system === 'mmu') && !fromPrinter && !edited
   // After a slice: "148 g, 4 changes" (changes only on a multi-color plate).
@@ -190,8 +188,8 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
     >
       {loading ? <SlotRailSkeleton /> : slots.length === 0 ? <SlotRailEmpty /> : (
         <>
-          <SlotRail slots={shown} left={left} badge={tuneBadge} />
-          <RailFoot count={slots.length} fromPrinter={fromPrinter} system={system} edited={edited} />
+          <SlotRail slots={slots} left={left} badge={tuneBadge} {...(fromPrinter ? {} : { add: <AddFilament count={slots.length} /> })} />
+          <RailFoot fromPrinter={fromPrinter} system={system} edited={edited} />
         </>
       )}
       <NozzleRows slots={slots} />

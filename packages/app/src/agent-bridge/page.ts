@@ -7,6 +7,8 @@
 import type { EditionHost, SliceWarning } from '@slicerx/contracts'
 import { isEnabled, listCommands, runCommand } from '../commands/registry'
 import { resolveSlots } from '../filament/slots'
+import { spoolParts } from '../filament/pick'
+import { activeMeta } from '../plate/plates'
 import { printBlock } from '../plate/heimdall'
 import { objectWarnings } from '../plate/object-list'
 import { jobFileName } from '../state/actions'
@@ -17,6 +19,7 @@ import { get, setWorkspace, type AppState } from '../state/store'
 import type { Capture, LogKind } from './capture'
 import { BridgeError, click, elements, fill, pressKey, testids, waitFor } from './dom'
 import { loadFaces } from './fonts'
+import { moveSpool, spoolsView } from './spools'
 import { autoSliceMode } from '../state/auto-slice-mode'
 import { cadShown } from '../state/model-mode'
 import { layerView } from '../workspaces/preview/layer-keys'
@@ -71,6 +74,7 @@ function warning(w: SliceWarning): Record<string, unknown> {
 /** The app as an agent reads it: the tab, the plate with each object's parts and warnings, the printer and filament, and slicing. */
 export function appState(s: AppState): Record<string, unknown> {
   const warnings = s.slice.status === 'done' && !s.slice.stale ? s.slice.result.warnings : []
+  const inUse = spoolParts(s.plate, activeMeta(s))
   return {
     tab: s.workspace,
     // The plate tabs' mode (mimir, design or slice), as the tab bar shows it.
@@ -104,7 +108,8 @@ export function appState(s: AppState): Record<string, unknown> {
       ...(s.profile ? { nozzleMm: s.profile.nozzle, profile: s.profile.source, tier: s.profile.tier } : {}),
       noPrinter: s.noPrinter,
     },
-    filament: resolveSlots(s).map((r) => ({ slot: r.index, used: r.used, type: r.type, brand: r.brand, color: r.color, source: r.source })),
+    // Each slot with its label ("A1"), whether the printer has a spool in it and how many parts on this plate print with it.
+    filament: resolveSlots(s).map((r) => ({ slot: r.index, label: r.label, used: r.used, inUse: inUse.get(r.index)?.parts ?? 0, loaded: Boolean(s.printerSlots[r.index - 1]?.material || s.printerSlots[r.index - 1]?.color), type: r.type, brand: r.brand, color: r.color, source: r.source })),
     slicing: sliceSummary(s),
     setupOpen: s.setup !== null,
     // The 3D view's standing notice (drawn without hardware acceleration); a phone shows it in the top bar, not as a toast.
@@ -291,6 +296,9 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
     clear_plate: clearPlate,
     slice,
     export_info: exportInfo,
+    // The Filament section: the spools and what a click on one moves, then that move.
+    spools: () => spoolsView(get()),
+    move_to_spool: moveSpool,
     fonts: async (a) => ({ faces: await loadFaces(doc.fonts, Array.isArray(a['families']) ? a['families'].filter((x): x is string => typeof x === 'string') : null) }),
   }
 

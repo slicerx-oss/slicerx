@@ -5,6 +5,7 @@
 import type { Host, MeshHandle, SettingValue } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { objectPalette } from '../edition'
+import { withAutoSpools } from '../filament/pick'
 import { markOpenStage } from '../lib/open-mark'
 import { bake } from '../plate/mesh-ops'
 import type { ImportedObject } from '../export/import3mf'
@@ -151,7 +152,9 @@ async function addProjectShown(
       // Its settings by height, what of them the plate can use.
       const ranges = !geometryOnly && o.layerRanges ? usableRanges(o.layerRanges) : null
       for (const k of ranges?.left ?? []) rangesLeft.add(k)
-      out.push({ id: first ? idOf.get(o.fileId)! : uid('obj'), name: o.name, ...(dims.length ? { dimensions: dims } : {}), ...(history ? { history } : {}), handle, parts: o.parts, ...(Object.keys(partSettings).length ? { partSettings } : {}), colors: o.parts.map((p) => colors[p.slot - 1] ?? palette[0]!), transform: o.transform, ...(o.paint ? { paint: o.paint } : {}), ...(o.printable === false ? { printable: false } : {}), ...(o.brimPoints?.length ? { brimPoints: o.brimPoints } : {}), ...(volumes.length ? { volumes } : {}), ...(o.source ? { source: o.source } : {}), ...(ranges?.ranges.length ? { layerRanges: ranges.ranges } : {}) })
+      const entry: PlateEntry = { id: first ? idOf.get(o.fileId)! : uid('obj'), name: o.name, ...(dims.length ? { dimensions: dims } : {}), ...(history ? { history } : {}), handle, parts: o.parts, ...(Object.keys(partSettings).length ? { partSettings } : {}), colors: o.parts.map((p) => colors[p.slot - 1] ?? palette[0]!), transform: o.transform, ...(o.paint ? { paint: o.paint } : {}), ...(o.printable === false ? { printable: false } : {}), ...(o.brimPoints?.length ? { brimPoints: o.brimPoints } : {}), ...(volumes.length ? { volumes } : {}), ...(o.source ? { source: o.source } : {}), ...(ranges?.ranges.length ? { layerRanges: ranges.ranges } : {}) }
+      // a part the file gives no filament starts on the auto-picked spool
+      out.push(o.noSlot?.length ? withAutoSpools([entry], { own: (_e, part) => !o.noSlot!.includes(part) })[0]! : entry)
     }
     return out
   }

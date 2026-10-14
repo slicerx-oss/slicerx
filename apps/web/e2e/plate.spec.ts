@@ -312,7 +312,10 @@ test('sending runs the preflight and needs the bed-clear check', async ({ page }
 test('the filament slot editor sets a slot and the panel shows it', async ({ page }) => {
   await prepare(page)
   await openSheet(page)
-  await page.locator('[data-section="filament"]').getByRole('button', { name: 'Edit filament 1' }).first().click()
+  // A click moves the plate to a spool; what a slot holds is edited from its menu.
+  await page.locator('[data-testid="slice-filament-slot"][data-slot="1"]').focus()
+  await page.keyboard.press('Shift+F10')
+  await page.getByTestId('slice-filament-edit').click()
   const dialog = page.getByRole('dialog', { name: /Filament 1/ })
   await expect(dialog).toBeVisible()
   await dialog.getByLabel('Material').selectOption('PETG')
@@ -1001,7 +1004,8 @@ test('a slot links to a Spoolman spool, and the plate can be subtracted from it 
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await prepare(page)
-  await page.getByRole('button', { name: 'Edit filament 1' }).first().click()
+  await page.locator('[data-testid="slice-filament-slot"][data-slot="1"]').click({ button: 'right' })
+  await page.getByTestId('slice-filament-edit').click()
   const dialog = page.getByRole('dialog', { name: /Filament 1/ })
   // The spool picker is a list with a search and a vendor filter; the first row is Not linked.
   const spools = dialog.getByRole('listbox', { name: 'Spools' }).getByRole('option')
