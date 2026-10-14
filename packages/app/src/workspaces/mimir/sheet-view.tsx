@@ -8,7 +8,7 @@ import type { PilotDim, PilotSheet } from '@slicerx/contracts'
 import { Button, Icon, ScrubNumber, tipAttrs, type IconName } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { arrowHead, drawView, fitScale, SHEET_VIEWS, VIEWS, type ViewName } from './sheet-draw'
-import { closeSheet, setLive, sheetMode, useSheetUi } from './sheet-ui'
+import { closeSheet, setDraft, setLive, sheetMode, useSheetUi } from './sheet-ui'
 import './mimir.css'
 
 const SOURCE: Record<PilotDim['source'], { label: string; icon: IconName }> = {
@@ -40,7 +40,10 @@ function focusRow(sheetId: string, key: string): void {
   el?.scrollIntoView({ block: 'nearest' })
 }
 
-/** The drawing: four views in a 2 x 2 frame, the flat ones at one scale, and a title block. */
+/** Room around a view's drawing for its view label and callouts, in px. */
+const PAD = 24
+
+/** The drawing: four views in a 2 x 2 frame, the flat ones at one scale. Its units and state are in the caption. */
 function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: string | null; onPick: (key: string) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const [cell, setCell] = useState<{ w: number; h: number } | null>(null)
@@ -60,8 +63,8 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
   const views = useMemo(() => {
     if (!cell) return null
     // the flat views share one scale, as a print drawing does; the iso view fits its own cell
-    const flat = Math.min(...SHEET_VIEWS.filter((v) => v !== 'iso').map((v) => fitScale(part, sheet.dims, v, cell.w, cell.h, 34, sheet.views)))
-    return SHEET_VIEWS.map((v) => ({ v, drawn: drawView(part, sheet.dims, v, cell.w, cell.h, { pad: 34, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) }) }))
+    const flat = Math.min(...SHEET_VIEWS.filter((v) => v !== 'iso').map((v) => fitScale(part, sheet.dims, v, cell.w, cell.h, PAD, sheet.views)))
+    return SHEET_VIEWS.map((v) => ({ v, drawn: drawView(part, sheet.dims, v, cell.w, cell.h, { pad: PAD, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) }) }))
   }, [cell, part, sheet.dims, sheet.views])
   return (
     <div className="mimir-drawing" data-testid="mimir-sheet-drawing">
@@ -78,6 +81,7 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
                     <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} />
                   ))}
                   {d.arc ? <polyline points={d.arc.map((p) => p.join(',')).join(' ')} /> : null}
+                  {d.leader ? <line className="mimir-dim-leader" x1={d.leader[0][0]} y1={d.leader[0][1]} x2={d.leader[1][0]} y2={d.leader[1][1]} /> : null}
                   {d.arrows.map(([tip, from], i) => (
                     <polygon key={i} className="mimir-dim-arrow" points={arrowHead(tip, from)} />
                   ))}
@@ -109,11 +113,6 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
             <span className="mimir-drawing-label sx-mono">{VIEWS[v].label}</span>
           </div>
         ))}
-        <div className="mimir-drawing-block sx-mono" aria-hidden="true">
-          <span>{sheet.title}</span>
-          <span>mm</span>
-          <span>Not built yet</span>
-        </div>
       </div>
     </div>
   )
@@ -158,11 +157,10 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
   const actions = useSheetUi((s) => s.actions)
   const bound = useSheetUi((s) => s.shown?.bound ?? null)
   const live = useSheetUi((s) => s.live)
-  const [draft, setDraft] = useState<Record<string, number>>({})
+  const draft = useSheetUi((s) => s.draft)
   const [sending, setSending] = useState(false)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
   useEffect(() => {
-    setDraft({})
     setSending(false)
     setNote(null)
   }, [sheet.id])
@@ -174,7 +172,7 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
   const counts = (['asked', 'lookup', 'photo', 'guess'] as const).map((s) => [s, sheet.dims.filter((d) => d.source === s).length] as const).filter(([, n]) => n > 0)
   const commit = async (d: PilotDim, v: number) => {
     if (mode === 'confirm') {
-      setDraft((x) => ({ ...x, [d.key]: v }))
+      setDraft(d.key, v)
       return
     }
     if (!actions || !bound) return

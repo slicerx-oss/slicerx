@@ -30,6 +30,11 @@
 .mimir-chat[data-resizing] { user-select: none; }
 .mimir-chat[data-drop]::after { content: ""; position: absolute; inset: 6px; border: 1px dashed var(--purple); border-radius: var(--r-md); background: color-mix(in srgb, var(--purple) 6%, transparent); pointer-events: none; }
 .studio[data-model-mode="mimir"] > .vp { order: 1; }
+.mimir-caption-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+/* the drawing's units and state, a quiet tag beside its caption */
+.mimir-caption-tag { display: inline-flex; align-items: center; height: 24px; border: 1px solid var(--line-soft); border-radius: var(--r-xs); background: var(--ink-0); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.mimir-caption-tag > span { padding: 0 8px; }
+.mimir-caption-tag > span + span { border-left: 1px solid var(--line-soft); }
 .mimir-caption { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--fg); white-space: nowrap; }
 /* Lookup cards: a band at the view's bottom left, lifted (they float over the view). The band keeps clear of what
    runs along the bottom edge: the timeline's edge tab, the model size pill and the strip that opens the timeline when
@@ -63,20 +68,18 @@
 .vp[data-mimir-sheet] .bpanel, .vp[data-mimir-sheet] .mimir-lookups { right: calc(var(--mimir-sheet-w) + 12px); }
 .vp[data-mimir-sheet] .mimir-lookups { max-width: calc(100% - var(--mimir-sheet-w) - 24px); }
 .vp[data-mimir-sheet="drawing"] .mimir-lookups { visibility: hidden; }
-.vp[data-mimir-sheet="drawing"] .hud-top .hud-row > :not(.mimir-caption), .vp[data-mimir-sheet] .hud-top .hud-col.end { visibility: hidden; }
+.vp[data-mimir-sheet="drawing"] .hud-top .hud-row > :not(.mimir-caption, .mimir-caption-row), .vp[data-mimir-sheet] .hud-top .hud-col.end { visibility: hidden; }
 .mimir-drawing { position: absolute; inset: 0 var(--mimir-sheet-w) 0 0; z-index: 1; background-color: var(--ink-0); }
-.mimir-drawing-grid { position: absolute; left: 12px; right: 12px; top: 56px; bottom: 64px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; border: 1px solid var(--line); border-radius: var(--r-xs); overflow: hidden; }
+.mimir-drawing-grid { position: absolute; left: 12px; right: 12px; top: 52px; bottom: 56px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; border: 1px solid var(--line); border-radius: var(--r-xs); overflow: hidden; }
 .mimir-drawing-cell { position: relative; min-width: 0; min-height: 0; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
 .mimir-drawing-cell:nth-child(2n) { border-right: 0; }
 .mimir-drawing-cell:nth-child(n + 3) { border-bottom: 0; }
 .mimir-drawing-cell > svg { position: absolute; left: 0; top: 0; overflow: visible; }
 .mimir-drawing-label { position: absolute; left: 10px; top: 8px; font-size: 11px; color: var(--muted); pointer-events: none; }
-.mimir-drawing-block { position: absolute; right: 0; bottom: 0; display: grid; grid-template-columns: auto auto auto; border-top: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--ink-0); font-size: 10.5px; color: var(--muted); }
-.mimir-drawing-block > span { padding: 4px 8px; border-right: 1px solid var(--line-soft); white-space: nowrap; }
-.mimir-drawing-block > span:last-child { border-right: 0; }
 .mimir-drawing-face { stroke: light-dark(#4d5164, #2a2c38); stroke-width: 0.9; stroke-linejoin: round; }
 .mimir-dim line, .mimir-dim polyline { stroke: var(--muted); stroke-width: 1; fill: none; }
 .mimir-dim[data-guess] line:last-child, .mimir-dim[data-guess] polyline { stroke-dasharray: 4 3; }
+.mimir-dim .mimir-dim-leader { stroke-width: 0.8; opacity: 0.8; }
 .mimir-dim-arrow { fill: var(--muted); }
 .mimir-dim[data-on] line, .mimir-dim[data-on] polyline { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: none; }
 .mimir-dim[data-on] .mimir-dim-arrow { fill: var(--accent); }

@@ -76,9 +76,10 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-attach` | The composer's attach button, which opens the image picker |
 | `mimir-attachment` | An image on the message or on a sent turn; its remove button is named Remove and the file name |
 | `mimir-choice` | A choice card in the conversation; `data-picked` holds the picked answer's id once there is one |
-| `mimir-sheet-record` | A dimension sheet as it stays in the conversation: each size with its source, guesses marked (`data-guess`), each row `data-dim` with its key |
-| `mimir-sheet-confirm` | Build with these sizes, on a sheet still waiting; it confirms the sheet as shown |
-| `mimir-sheet-open` | On a sheet's record in the tab: Check sizes while it waits, Edit sizes once its rows drive the built steps |
+| `mimir-sheet-record` | A dimension sheet as it stays in the conversation: a numbered row per size (the number is its callout), guesses marked (`data-guess`), each row `data-dim` with its key; while it waits in the tab its rows are fields |
+| `mimir-sheet-source` | The page the looked-up sizes came from, once in the record's header |
+| `mimir-sheet-confirm` | Check sizes and build 3D, on a sheet still waiting; it confirms the sheet with the record's values |
+| `mimir-sheet-open` | On a built sheet's record in the tab: Edit sizes, once its rows drive the built steps |
 | `mimir-sheet-drawing` | The drawing that covers the view while a sheet waits: front, right, top and iso, with callouts |
 | `mimir-sheet-callout` | A numbered callout on the drawing (`data-key` is its row); clicking it picks the row |
 | `mimir-sheet-panel` | The sizes panel docked on the view's right (`data-mode` confirm or drive) |
@@ -90,6 +91,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-ravens` | The battle ravens watermark behind the conversation; `data-shown` while no model answers in the tab |
 | `mimir-split` | Holds the chat's resize edge (`role="separator"`), 340 px to half the window |
 | `mimir-caption` | The pill at the view's top left that names the view, such as Top, XY |
+| `mimir-drawing-status` | Beside the caption while the drawing shows: its units and that nothing is built yet |
 | `mimir-lookup-card` | A card over the view with what mimir looked up: two rows and the source; Escape closes it |
 | `mimir-lookup-close` | The close button on a lookup card |
 | `mimir-see-usage` | See usage, on a refusal for a used-up free allowance (`data-code` day_used, edition_day_used or slow_down on the line); opens Settings at Account > Usage |

@@ -110,6 +110,8 @@ export interface DrawnDim {
   n: number
   guess: boolean
   lines: [P2, P2][]
+  /** From a size measured inside the part out to its callout, past the part's outline. */
+  leader: [P2, P2] | null
   /** Where each arrow points, and the point it comes from. */
   arrows: [P2, P2][]
   arc: P2[] | null
@@ -222,6 +224,9 @@ export function drawView(part: readonly PilotSheetSolid[], dims: readonly PilotD
     path: ring(f.pts) + (f.holes ?? []).map(ring).join(''),
     light: Math.round(38 + 62 * Math.max(0, dot(f.n, LIGHT))),
   }))
+  // the part on screen: a size measured over it gets its callout off it, on a leader
+  const polys = seen.map(({ f }) => f.pts.map(SP))
+  const inside = (p: P2): boolean => polys.some((poly) => inPoly(p, poly))
   const placed: P2[] = []
   const drawn = raws.map((r): DrawnDim => {
     const lines = r.lines.map(([p, q]) => [S(p), S(q)] as [P2, P2])
@@ -246,17 +251,47 @@ export function drawView(part: readonly PilotSheetSolid[], dims: readonly PilotD
     const arc = r.arc ? r.arc.map(S) : null
     if (arc && arc.length > 1) arrows.push([arc[0]!, arc[1]!], [arc.at(-1)!, arc.at(-2)!])
     const pl = Math.hypot(r.push[0], r.push[1]) || 1
-    const ux = r.push[0] / pl
-    const uy = r.push[1] / pl
+    let ux = r.push[0] / pl
+    let uy = r.push[1] / pl
     const m = S(r.mid)
-    let badge: P2 = [m[0] + ux * (BADGE_R + 3), m[1] + uy * (BADGE_R + 3)]
-    // apart from the callouts already placed, then inside the cell
-    for (let tries = 0; tries < 12 && placed.some((p) => Math.hypot(p[0] - badge[0], p[1] - badge[1]) < 2 * BADGE_R + 3); tries++) badge = [badge[0] + ux * 8 + (ux === 0 && uy === 0 ? 8 : 0), badge[1] + uy * 8]
+    const clash = (b: P2): boolean => placed.some((p) => Math.hypot(p[0] - b[0], p[1] - b[1]) < 2 * BADGE_R + 3)
+    const leads = inside(m) && (ux !== 0 || uy !== 0)
+    let badge: P2
+    if (leads) {
+      // out past the part's edge on the nearer side along its way out, then a callout's width further
+      const exit = (vx: number, vy: number): number => {
+        let t = 0
+        while (t < w + h && inside([m[0] + vx * t, m[1] + vy * t])) t += 2
+        return t
+      }
+      if (exit(-ux, -uy) < exit(ux, uy) - 1) [ux, uy] = [-ux, -uy]
+      const reach = exit(ux, uy) + BADGE_R + 6
+      const at = (k: number): P2 => [m[0] + ux * reach - uy * k, m[1] + uy * reach + ux * k]
+      // a callout already there: beside it along the outline, then the other side, then further out
+      const steps = [0, 1, -1, 2, -2, 3, -3].map((i) => i * (2 * BADGE_R + 5))
+      badge = at(steps.find((k) => !clash(at(k))) ?? 0)
+    } else {
+      badge = [m[0] + ux * (BADGE_R + 3), m[1] + uy * (BADGE_R + 3)]
+      // apart from the callouts already placed, then inside the cell
+      for (let tries = 0; tries < 12 && clash(badge); tries++) badge = [badge[0] + ux * 8 + (ux === 0 && uy === 0 ? 8 : 0), badge[1] + uy * 8]
+    }
     badge = [r1(Math.min(w - BADGE_R - 2, Math.max(BADGE_R + 2, badge[0]))), r1(Math.min(h - BADGE_R - 2, Math.max(BADGE_R + 2, badge[1])))]
     placed.push(badge)
-    return { key: r.key, n: r.n, guess: r.guess, lines: [...lines, ...dimLines], arrows, arc, badge }
+    const gap = Math.hypot(badge[0] - m[0], badge[1] - m[1])
+    const leader: [P2, P2] | null = leads && gap > BADGE_R ? [m, [r1(badge[0] - ((badge[0] - m[0]) / gap) * BADGE_R), r1(badge[1] - ((badge[1] - m[1]) / gap) * BADGE_R)]] : null
+    return { key: r.key, n: r.n, guess: r.guess, lines: [...lines, ...dimLines], leader, arrows, arc, badge }
   })
   return { faces, dims: drawn }
+}
+
+/** Whether a point is inside a polygon (even-odd). */
+function inPoly(p: P2, poly: readonly P2[]): boolean {
+  let hit = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [a, b] = [poly[i]!, poly[j]!]
+    if (a[1] > p[1] !== b[1] > p[1] && p[0] < ((b[0] - a[0]) * (p[1] - a[1])) / (b[1] - a[1]) + a[0]) hit = !hit
+  }
+  return hit
 }
 
 /** An arrowhead at `tip`, pointing away from `from`. */

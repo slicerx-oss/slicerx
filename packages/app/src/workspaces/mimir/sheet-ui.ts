@@ -27,10 +27,12 @@ export interface SheetUiState {
   open: boolean
   /** The values a built sheet's rows hold now, after edits in the panel. */
   live: Record<string, number>
+  /** The sizes typed on the waiting sheet, in the panel or on its record in the chat. */
+  draft: Record<string, number>
   actions: SheetActions | null
 }
 
-export const sheetUi = createStore<SheetUiState>()(() => ({ shown: null, open: false, live: {}, actions: null }))
+export const sheetUi = createStore<SheetUiState>()(() => ({ shown: null, open: false, live: {}, draft: {}, actions: null }))
 
 /** How the view shows the sheet: the drawing and panel while it waits, the panel alone after the build, or not at all. */
 export type SheetMode = 'confirm' | 'drive' | null
@@ -48,7 +50,7 @@ export function setShownSheet(shown: ShownSheet | null): void {
   const same = s.shown?.sheet.id === shown?.sheet.id
   if (same && s.shown?.answer === shown?.answer && s.shown?.bound === shown?.bound) return
   const values = shown?.answer?.confirmed ? shown.answer.values : {}
-  sheetUi.setState({ shown, ...(same ? {} : { open: false, live: values }), ...(same && !s.shown?.answer && shown?.answer ? { live: values } : {}) })
+  sheetUi.setState({ shown, ...(same ? {} : { open: false, live: values, draft: {} }), ...(same && !s.shown?.answer && shown?.answer ? { live: values } : {}) })
 }
 
 export function setSheetActions(actions: SheetActions | null): void {
@@ -70,6 +72,11 @@ export function closeSheet(): void {
 
 export function setLive(key: string, value: number): void {
   sheetUi.setState((s) => ({ live: { ...s.live, [key]: value } }))
+}
+
+/** A size typed on the waiting sheet. */
+export function setDraft(key: string, value: number): void {
+  sheetUi.setState((s) => ({ draft: { ...s.draft, [key]: value } }))
 }
 
 export function useSheetUi<T>(pick: (s: SheetUiState) => T): T {
