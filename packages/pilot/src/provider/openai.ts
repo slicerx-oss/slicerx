@@ -24,9 +24,15 @@ function inputItems(req: LlmRequest): unknown[] {
       case 'system':
         items.push({ role: 'developer', content: m.content })
         break
-      case 'user':
-        items.push({ role: 'user', content: m.content })
+      case 'user': {
+        // the person's files go ahead of their words, PDFs as input files and pictures as input images
+        const files = [
+          ...(m.documents ?? []).map((d) => ({ type: 'input_file', filename: d.name, file_data: `data:${d.mime};base64,${d.data}` })),
+          ...(m.images ?? []).map((i) => ({ type: 'input_image', image_url: `data:${i.mime};base64,${i.data}`, detail: 'high' })),
+        ]
+        items.push({ role: 'user', content: files.length ? [...files, { type: 'input_text', text: m.content }] : m.content })
         break
+      }
       case 'assistant':
         if (m.raw && m.raw.length > 0) {
           items.push(...m.raw)

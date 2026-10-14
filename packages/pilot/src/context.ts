@@ -42,7 +42,7 @@ const IMAGE_TOKENS = 800
 export function messageTokens(m: LlmMessage): number {
   let n = 4 + estimateTokens(m.content)
   if (m.role === 'assistant' && m.toolCalls) for (const c of m.toolCalls) n += estimateTokens(c.name) + estimateTokens(c.arguments) + 8
-  if (m.role === 'tool' && m.images) n += m.images.length * IMAGE_TOKENS
+  if ((m.role === 'tool' || m.role === 'user') && m.images) n += m.images.length * IMAGE_TOKENS
   return n
 }
 
@@ -78,7 +78,7 @@ export function fitContext(messages: readonly LlmMessage[], tools: readonly LlmT
     droppedTurns++
   }
   const kept = rest.slice(from).map((m) => m)
-  if (droppedTurns && kept[0]?.role === 'user') kept[0] = { role: 'user', content: `${TRIMMED_TURNS}\n\n${kept[0].content}` }
+  if (droppedTurns && kept[0]?.role === 'user') kept[0] = { ...kept[0], content: `${TRIMMED_TURNS}\n\n${kept[0].content}` }
 
   // 2. Still too long: shrink the oldest tool results of the current run, keeping the newest ones.
   let stubbedResults = 0

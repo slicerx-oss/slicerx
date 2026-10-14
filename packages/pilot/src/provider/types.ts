@@ -6,8 +6,16 @@ import type { JsonSchema, LlmHttpRequest } from '@slicerx/contracts'
 
 /** An image the model sees, such as a camera frame a tool returned. Base64 without a data: prefix. */
 export interface LlmImage {
-  mime: 'image/jpeg' | 'image/png' | 'image/webp'
+  mime: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
   data: string
+}
+
+/** A document the model reads, such as a PDF drawing the person attached. Base64 without a data: prefix. */
+export interface LlmDocument {
+  mime: 'application/pdf'
+  data: string
+  /** The file's name, so the model can refer to it. */
+  name: string
 }
 
 export interface LlmToolCall {
@@ -19,7 +27,8 @@ export interface LlmToolCall {
 
 export type LlmMessage =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  /** The person's files ride on their message: pictures as images, PDFs as documents. */
+  | { role: 'user'; content: string; images?: LlmImage[]; documents?: LlmDocument[] }
   | {
       role: 'assistant'
       content: string

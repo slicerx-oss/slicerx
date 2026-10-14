@@ -53,9 +53,15 @@ function messageList(req: LlmRequest): { system: string; messages: Obj[] } {
       case 'system':
         system.push(m.content)
         break
-      case 'user':
-        messages.push({ role: 'user', content: m.content })
+      case 'user': {
+        // the person's files go ahead of their words, PDFs as documents and pictures as images
+        const files: Obj[] = [
+          ...(m.documents ?? []).map((d) => ({ type: 'document', source: { type: 'base64', media_type: d.mime, data: d.data }, title: d.name })),
+          ...(m.images ?? []).map((i) => ({ type: 'image', source: { type: 'base64', media_type: i.mime, data: i.data } })),
+        ]
+        messages.push({ role: 'user', content: files.length ? [...files, { type: 'text', text: m.content }] : m.content })
         break
+      }
       case 'assistant': {
         if (m.raw && m.raw.length > 0) {
           messages.push({ role: 'assistant', content: m.raw })

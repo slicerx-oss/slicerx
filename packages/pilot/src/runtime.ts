@@ -16,6 +16,7 @@ import type {
   PermissionPolicy,
   Pilot,
   PilotConfig,
+  PilotAttachment,
   PilotContext,
   PilotEvent,
   PilotMachine,
@@ -26,6 +27,7 @@ import type {
 } from '@slicerx/contracts'
 import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams, pluginLoads } from '@slicerx/contracts'
 import { productName } from '@slicerx/contracts'
+import { conversationFileBytes, modelFiles } from './attach'
 import { Channel } from './channel'
 import { ASSISTANT_NAME } from './name'
 import { decide, normalizePolicy, policyMayGrant } from './gate'
@@ -707,7 +709,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       asks.delete(askId)
       done(choiceId)
     },
-    run(sessionId: string, message: string, runOpts: { signal?: AbortSignal; context?: PilotContext } = {}): AsyncIterable<PilotEvent> {
+    run(sessionId: string, message: string, runOpts: { signal?: AbortSignal; context?: PilotContext; attachments?: PilotAttachment[] } = {}): AsyncIterable<PilotEvent> {
       const signal = runOpts.signal ?? new AbortController().signal
       // Without a machine from the caller, the open project's printer, filament and nozzle stand in.
       const given: PilotContext = runOpts.context ?? {}
@@ -733,7 +735,21 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           history.set(sessionId, messages)
         }
         const today = new Date(now()).toISOString().slice(0, 10)
-        messages.push({ role: 'user', content: `${contextMessage(context, policy, today)}\n\nUser request:\n${message}` })
+        // the person's files ride on the message; one that can't go is said plainly, before any model call
+        const files = runOpts.attachments?.length ? modelFiles(runOpts.attachments, client.provider, conversationFileBytes(messages)) : null
+        if (files && 'problem' in files) {
+          emit({ type: 'text', delta: files.problem })
+          emit({ type: 'text_done' })
+          emit({ type: 'done', stopReason: 'end', ms: 0 })
+          return
+        }
+        const attached = files?.names.length ? `\n\nAttached: ${files.names.join(', ')}` : ''
+        messages.push({
+          role: 'user',
+          content: `${contextMessage(context, policy, today)}\n\nUser request:\n${message}${attached}`,
+          ...(files?.images.length ? { images: files.images } : {}),
+          ...(files?.documents.length ? { documents: files.documents } : {}),
+        })
         let done: PilotEvent & { type: 'done' }
         try {
           done = await loop(sessionId, messages, context, emit, signal, undefined, tierForPrompt(message))
