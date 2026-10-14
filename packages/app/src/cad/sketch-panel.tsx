@@ -89,44 +89,43 @@ interface Plane {
   fresh?: boolean
 }
 
-/** What each tool wants clicked, in order: two lines at most, so the hint's box is two lines tall. */
+/** What each tool wants clicked, in order: one line each, so the hint keeps one height and nothing below it moves. */
 const HINTS: Record<DrawTool, string> = {
-  select: 'Click a line to pick it, drag a point to move it. Delete removes it.',
-  line: 'Click point after point, or drag from the end for an arc. Right click stops.',
+  select: 'Click to pick, drag a point to move.',
+  line: 'Click points, drag off an end for an arc.',
   rect: 'Click two opposite corners.',
-  rect3: 'Click the two ends of one edge, then out to the width.',
+  rect3: "Click an edge's ends, then the width.",
   rectCenter: 'Click the center, then a corner.',
-  circle: 'Click the center, then a point on the rim.',
+  circle: 'Click the center, then the rim.',
   circle2: 'Click the two ends of a diameter.',
-  arc: 'Click the start, the end, then a point on the arc.',
-  arcCenter: 'Click the center, the start, then where it ends.',
-  arcTangent: 'Click the open end of a line or arc, then where the arc ends.',
+  arc: 'Click the start, the end, then the arc.',
+  arcCenter: 'Click the center, the start, the end.',
+  arcTangent: 'Click an open end, then where it ends.',
   polygon: 'Click the center, then a corner.',
-  polygonOut: 'Click the center, then the middle of an edge.',
-  polygonEdge: 'Click the two ends of one edge, then the side it goes on.',
-  slot: 'Click the two arc centers, then out to the width.',
-  slotOverall: 'Click the two ends, then out to the width.',
-  slotCenter: 'Click the center, an arc center, then out to the width.',
-  dimension: 'Click a line, a circle or two points, then where the value goes.',
+  polygonOut: 'Click the center, then an edge middle.',
+  polygonEdge: "Click an edge's ends, then its side.",
+  slot: 'Click both arc centers, then the width.',
+  slotOverall: 'Click the two ends, then the width.',
+  slotCenter: 'Click the center, an end, the width.',
+  dimension: 'Click a line, circle or two points.',
   trim: 'Click the piece of a curve to take off.',
-  extend: 'Click near the open end of a line or arc.',
+  extend: 'Click near the open end of a line.',
 }
 
 /** The line under the hint while nothing is being drawn: what else the tool takes. The live sizes take its place. */
 const IDLE: Partial<Record<DrawTool, string>> = {
-  select: 'X makes a picked line construction.',
-  dimension: 'Type the size and press Enter.',
+  select: 'Delete removes it, X makes it construction.',
+  line: 'Right click stops. Type a number for sizes.',
+  dimension: 'Then click where the value goes.',
   trim: 'It goes back to the nearest crossings.',
   extend: 'It runs on to the next curve.',
 }
 const idleText = (t: DrawTool): string => IDLE[t] ?? 'Type a number to give exact sizes.'
 
-/** What Mirror and a round Pattern wait for, in place of the tool's hint. */
-const PENDING_HINTS = { mirror: 'Click the straight line to mirror across. Esc stops.', round: 'Click the point to pattern round. Esc stops.' }
+/** What Mirror and a round Pattern wait for, in place of the tool's hint; Esc stops either, on the line under it. */
+const PENDING_HINTS = { mirror: 'Click the straight line to mirror across.', round: 'Click the point to pattern round.' }
 
 const hintText = (t: DrawTool): string => HINTS[t]
-// every hint, laid over each other unseen: the tallest sets the box, so picking a tool moves nothing below it
-const ALL_HINTS = [...new Set([...Object.values(HINTS), ...Object.values(PENDING_HINTS)])]
 
 /** Fusion's keys for the sketch tools it gives one. */
 const TOOL_KEYS: Record<string, DrawTool> = { l: 'line', r: 'rect', c: 'circle', d: 'dimension', t: 'trim' }
@@ -1146,17 +1145,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           </PhonePicker>
           <p className="cad-hint sketch-hint" role="status">
             <Icon name={phone ? 'info' : 'mouse-left'} size={15} />{' '}
-            <span className="sketch-hint-text">
-              {ALL_HINTS.map((h) => (
-                <span key={h} className="sketch-hint-sizer" aria-hidden="true">
-                  {words(h)}
-                </span>
-              ))}
-              <span>{words(pending ? PENDING_HINTS[pending.kind] : hintText(draft.tool))}</span>
-            </span>
+            <span className="sketch-hint-text">{words(pending ? PENDING_HINTS[pending.kind] : hintText(draft.tool))}</span>
           </p>
           {/* the live sizes while drawing; between shapes, what else the tool takes */}
-          <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" data-idle={pending ? '' : words(idleText(draft.tool))} /></p>
+          <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" data-idle={words(pending ? 'Esc stops.' : idleText(draft.tool))} /></p>
           {solved ? (
             <p className="sketch-dof" role="status" data-testid="sketch-dof" data-dof={solved.solved.dof} data-tone={dofTone(solved.solved)} {...(driven ? { 'data-tip-title': 'Driven dimensions', 'data-tip-body': 'The other constraints already set these sizes, so they show in parentheses and change nothing.' } : {})}>
               {dofText(solved.solved)}
@@ -1165,9 +1157,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           ) : null}
           <div className="sketch-palette" role="group" aria-label="Sketch palette">
             <Button size="sm" className="tp-pill" icon="top-view" data-tip="sketch.look" onClick={look}>Look at the sketch</Button>
-            <Row label="Grid" htmlFor="sk-grid">
-              <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
-            </Row>
+            <div className="sketch-pair">
+              <Row label="Grid" htmlFor="sk-grid">
+                <Switch id="sk-grid" checked={pal.grid} onChange={(on) => setPal({ grid: on })} label="Grid" />
+              </Row>
+              <Row label={<span data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">Section</span>} htmlFor="sk-section">
+                <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
+              </Row>
+            </div>
             {/* the step, or Off: one row for snapping */}
             <Row label="Snap to grid" htmlFor="sk-step">
               <Select id="sk-step" aria-label="Snap step" value={pal.snap ? pal.step : 'off'} onChange={(e) => setPal(e.target.value === 'off' ? { snap: false } : { snap: true, step: e.target.value })}>
@@ -1176,9 +1173,6 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
                   <option key={g.value} value={g.value}>{g.label}</option>
                 ))}
               </Select>
-            </Row>
-            <Row label={<span data-tip-title="Section" data-tip-body="Cut away the model in front of the sketch plane">Section</span>} htmlFor="sk-section">
-              <Switch id="sk-section" checked={pal.section} onChange={(on) => setPal({ section: on })} label="Section" />
             </Row>
             {/* what the sketch shows: filters, so chips */}
             <div className="tp-row" data-wide="">

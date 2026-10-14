@@ -11,7 +11,12 @@
 .sketch-dof[data-tone='warn'] { color: var(--orange); }
 .sketch-driven { color: var(--dim); }
 /* The sketch palette: Look at, grid and snap, section, and what the sketch shows. */
-.sketch-palette { display: grid; gap: var(--s-3); padding: var(--s-3) 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+/* Sketch is a dense panel (UI spec 2d): its display settings are one group, 8 px apart inside, Grid and Section side
+   by side, and the Show chips on one row, so Distance and Draft stay in view at 900 px tall */
+.sketch-palette { display: grid; gap: var(--s-2); padding: var(--s-3) 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); }
+.sketch-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--s-4); }
+.sketch-palette .tp-chips { flex-wrap: nowrap; }
+.sketch-palette .tp-chip { padding: 0 6px; font-size: var(--fs-xs); white-space: nowrap; }
 .sketch-palette > .sx-btn { justify-self: start; }
 
 .sketch-copies { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
@@ -89,9 +94,7 @@
 /* the body a finished sketch joins or cuts: room for a name and the chevron */
 .sketch-into { min-width: 160px; }
 /* the ways to draw a sketch tool family: the row keeps its height when the family has none */
-.sketch-hint-text { display: grid; }
-.sketch-hint-text > span { grid-area: 1 / 1; align-self: start; }
-.sketch-hint-text > .sketch-hint-sizer { visibility: hidden; }
+.sketch-hint-text { min-width: 0; }
 /* the reserved room sits evenly above and below a short hint, with the icon beside it */
 .sketch-hint { align-items: flex-start; }
 .sketch-hint .sx-ic { margin-top: 1px; }
@@ -174,15 +177,14 @@
 .tp-card[data-muted] .tp-card-h h4 { color: var(--muted); }
 .tp-card-reason { margin: 0; font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
 .tp-card-body { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; }
-/* the action row: the quiet action on the left, the primary on the right at one width in every tool */
+/* the action row: the quiet action on the left, the primary on the right; the primary keeps one width as its own
+   label changes (Steady), and each tool's primary is as wide as its words */
 .cad-actions.tp-actions { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: var(--s-2); padding-top: 0; }
 .cad.tp .cad-footer { padding-top: var(--s-3); }
 .tp-actions-extra { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .tp-actions-main { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-width: 0; }
 .tp-actions-start, .tp-actions-end { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
 .tp-actions-end { margin-left: auto; }
-.tp-actions-end > .sx-btn[data-variant='primary'] { min-width: 128px; }
-.tp-actions-end > .sx-split > .sx-split-main { min-width: calc(128px - var(--h-md)); }
 /* a quiet button that starts a row lines its text up with the labels above, so it shows as text and lights up on hover */
 .tp-actions-start > .sx-btn[data-variant='ghost']:first-child, .tp-actions-extra > .sx-btn[data-variant='ghost']:first-child { padding-inline: 0 var(--s-2); border-left-width: 0; }
 .tp-actions-start > .sx-btn[data-variant='ghost']:first-child:hover, .tp-actions-extra > .sx-btn[data-variant='ghost']:first-child:hover { background: none; }
