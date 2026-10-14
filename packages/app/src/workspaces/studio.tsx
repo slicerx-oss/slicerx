@@ -82,6 +82,9 @@ const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ de
 const Shelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Shelf })))
 const DesignTimeline = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignTimeline })))
 const SelectPill = lazy(() => import('./design/design-panes').then((m) => ({ default: m.SelectPill })))
+const PhoneShelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.PhoneShelf })))
+const PhoneUndo = lazy(() => import('./design/design-panes').then((m) => ({ default: m.PhoneUndo })))
+const PhoneHandles = lazy(() => import('./design/design-panes').then((m) => ({ default: m.PhoneHandles })))
 // mimir's chat and view caption load the first time its tab opens.
 const MimirChat = lazy(() => import('./mimir/mimir-panes').then((m) => ({ default: m.MimirChat })))
 const MimirCaption = lazy(() => import('./mimir/mimir-panes').then((m) => ({ default: m.MimirCaption })))
@@ -216,7 +219,8 @@ export function Studio() {
 
   return (
     <div className="studio" data-mode="prepare" data-layers={layers || undefined} data-slice={sliceState} data-slices={slicesDone} data-model-mode={cad ? modelMode : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
-      {design ? (
+      {/* on a phone Model's tools are a bar along the bottom of the view instead */}
+      {design && !phone ? (
         <Suspense fallback={<div className="shelf" aria-hidden="true" />}>
           <Shelf />
         </Suspense>
@@ -228,7 +232,7 @@ export function Studio() {
         </Suspense>
       ) : null}
       {mimir ? null : design ? (
-        <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280} tab={{ panel: 'model-tree', shutFully: true }}>
+        <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280} tab={{ panel: 'model-tree', shutFully: true }} sheetTab={!phone}>
           <Suspense fallback={<Loading />}>
             <DesignLeft />
           </Suspense>
@@ -256,19 +260,31 @@ export function Studio() {
                   <MimirCaption />
                 </Suspense>
               ) : null}
-              <RenderMenu />
+              {/* on a phone in Model the look button joins the view buttons on the right, so the pill row fits */}
+              {design && phone ? null : <RenderMenu />}
               {design ? (
                 <Suspense fallback={null}>
                   <SelectPill />
                 </Suspense>
               ) : null}
             </div>
+            {design && phone ? (
+              <Suspense fallback={null}>
+                <PhoneHandles />
+              </Suspense>
+            ) : null}
             {layers ? (
               <Legend />
             ) : null}
           </div>
           <div className="hud-col end">
+            {design && phone ? <RenderMenu /> : null}
             <ViewMenu />
+            {design && phone ? (
+              <Suspense fallback={null}>
+                <PhoneUndo />
+              </Suspense>
+            ) : null}
           </div>
         </div>
 
@@ -311,7 +327,12 @@ export function Studio() {
         ) : null}
         {cad ? (
           <Suspense fallback={null}>
-            <DesignTimeline />
+            <DesignTimeline phone={phone && design} />
+          </Suspense>
+        ) : null}
+        {design && phone ? (
+          <Suspense fallback={null}>
+            <PhoneShelf sheetKeys={{ tree: `${railKey('prepare', 'design')}:${side}`, tool: `${railKey('prepare', 'design')}:${other}` }} />
           </Suspense>
         ) : null}
         {cad ? null : (
@@ -323,7 +344,7 @@ export function Studio() {
       </section>
 
       {mimir ? null : design ? (
-        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={312} tab={{ panel: 'model-inspector', shutFully: true }}>
+        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={312} tab={{ panel: 'model-inspector', shutFully: true }} docked={phone} sheetTab={!phone}>
           <Suspense fallback={<Loading />}>
             <DesignRight />
           </Suspense>

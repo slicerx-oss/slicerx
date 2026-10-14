@@ -16,8 +16,11 @@ import { evaluate, namesIn } from './values'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch, type SegOption } from '@slicerx/ui'
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { usePhoneLayout } from '../lib/phone-layout'
+import { claimPhoneSketchSlot, usePhoneSketchSlot } from '../workspaces/design/phone-slot'
+import { touchWords } from './touch-words'
 import { checkSketch, extendSketch, mirrorSketch, offsetSketch, patternSketch, pickFace, sketchSnaps, solveSketch, trimSketch, type FaceFrame, type MeshItem, type Polygon, type SketchCheck } from '../geom/cad'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
@@ -31,7 +34,7 @@ import { defaultTarget, finishSketch, provideFinish, provideInUse, sketchById, t
 import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { flipFor, goesIntoFace } from './extrude-direction'
-import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
+import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter, PointerHint } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { formatLength, fraction, parseLength, type UnitPrefs } from './units'
 import { currentValues } from './value-table'
@@ -298,7 +301,7 @@ export function SketchTool() {
   if (!plane) {
     return (
       <Shell title="Sketch" aside="No plane yet">
-        <p className="cad-hint"><Icon name="mouse-left" size={15} /> Click an origin plane (XY, XZ or YZ), the bed or a flat face to sketch on.</p>
+        <PointerHint text="Click an origin plane (XY, XZ or YZ), the bed or a flat face to sketch on." />
         {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
         <div className="cad-actions">
           <Button variant="ghost" onClick={close}>Cancel</Button>
@@ -355,6 +358,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // Extrude or Revolve from a finished sketch's menu: only that feature's settings; Edit sketch changes the shape
   const featureOnly = init?.from !== undefined && init.from.mode !== 'edit'
   const host = useHost()
+  const phone = usePhoneLayout()
   const view = cameraBus()?.cad
   const [sketch, setSketch] = useDraft<Entity[]>('sketch', init?.sketch ?? [])
   const [constraints, setConstraints] = useDraft<SketchConstraint[]>('constraints', init?.constraints ?? [])
@@ -1109,27 +1113,30 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const fields = fieldsFor(draft)
   const sel = selected ? sketch[selected.e] : undefined
   const driven = constraints.filter((c) => isDimension(c) && c.driven).length
+  const words = (t: string) => (phone ? touchWords(t) : t)
   return (
     <Shell title={featureOnly ? (finish === 'extrude' ? 'Extrude' : 'Revolve') : 'Sketch'} aside={plane.label}>
       {featureOnly ? null : (
         <>
-          <Seg label="Drawing tool" size="sm" full className="sketch-tools" value={familyOf(draft.tool)} onChange={(f) => pickTool(lastVariant[f] ?? VARIANTS[f]?.[0]?.value ?? (f as DrawTool))} options={FAMILIES} />
-          {/* the ways to draw the family; the row is always there, so nothing below moves */}
-          <div className="sketch-variants">
-            {VARIANTS[familyOf(draft.tool)] ? (
-              <Seg label="Draw it by" size="sm" full={familyOf(draft.tool) !== 'polygon'} value={draft.tool} onChange={pickTool} options={VARIANTS[familyOf(draft.tool)]!} />
-            ) : null}
-            {familyOf(draft.tool) === 'polygon' ? (
-              <label className="sketch-sides" data-tip-title="Sides" data-tip-body="How many sides the polygon has, 3 to 64.">
-                <Icon name="sk-polygon" size={14} />
-                <input id="sk-sides" className="sx-input" data-mono data-size="sm" inputMode="numeric" aria-label="Sides" value={sides} onChange={(e) => setSides(e.target.value)} />
-              </label>
-            ) : null}
-          </div>
+          <PhonePicker>
+            <Seg label="Drawing tool" size="sm" full className="sketch-tools" value={familyOf(draft.tool)} onChange={(f) => pickTool(lastVariant[f] ?? VARIANTS[f]?.[0]?.value ?? (f as DrawTool))} options={FAMILIES} />
+            {/* the ways to draw the family; the row is always there, so nothing below moves */}
+            <div className="sketch-variants">
+              {VARIANTS[familyOf(draft.tool)] ? (
+                <Seg label="Draw it by" size="sm" full={familyOf(draft.tool) !== 'polygon'} value={draft.tool} onChange={pickTool} options={VARIANTS[familyOf(draft.tool)]!} />
+              ) : null}
+              {familyOf(draft.tool) === 'polygon' ? (
+                <label className="sketch-sides" data-tip-title="Sides" data-tip-body="How many sides the polygon has, 3 to 64.">
+                  <Icon name="sk-polygon" size={14} />
+                  <input id="sk-sides" className="sx-input" data-mono data-size="sm" inputMode="numeric" aria-label="Sides" value={sides} onChange={(e) => setSides(e.target.value)} />
+                </label>
+              ) : null}
+            </div>
+          </PhonePicker>
           <p className="cad-hint sketch-hint" role="status">
-            <Icon name="mouse-left" size={15} />{' '}
-            <span className="sketch-hint-text" data-sizer={HINT_SIZER}>
-              <span>{pending ? PENDING_HINTS[pending.kind] : hintText(draft.tool)}</span>
+            <Icon name={phone ? 'info' : 'mouse-left'} size={15} />{' '}
+            <span className="sketch-hint-text" data-sizer={phone ? touchWords(HINT_SIZER) : HINT_SIZER}>
+              <span>{words(pending ? PENDING_HINTS[pending.kind] : hintText(draft.tool))}</span>
             </span>
           </p>
           <p className="cad-hint sketch-readout"><span ref={readoutRef} className="sx-mono" aria-live="off" /></p>
@@ -1320,6 +1327,17 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         : null}
     </Shell>
   )
+}
+
+/**
+ * The drawing tools' two rows: in the panel, or on a phone in Model's bar along the bottom of the view
+ * (workspaces/design/phone-slot.ts), so they stay under the thumb while the sheet is low or folded. Same component,
+ * same state; only where it shows changes.
+ */
+function PhonePicker({ children }: { children: ReactNode }) {
+  const slot = usePhoneSketchSlot()
+  useEffect(() => (slot ? claimPhoneSketchSlot() : undefined), [slot])
+  return slot ? createPortal(<div className="sketch-picker-phone">{children}</div>, slot) : <>{children}</>
 }
 
 /** The small field at the cursor: one or two numbers, Tab between them, Enter to place, Escape to drop. */
