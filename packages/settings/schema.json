@@ -414,16 +414,16 @@
     "disabled",
     "enabled"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": "disabled",
    "group": "adhesion",
    "pilot": "edit",
    "invalidates": "paths",
-   "intent": "adhesion",
    "enumLabels": [
     "Off",
     "On"
-   ]
+   ],
+   "intent": "adhesion"
   },
   {
    "key": "min_skirt_length",
@@ -432,7 +432,7 @@
    "label": "Min skirt length",
    "unit": "mm",
    "min": 0,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 0,
    "group": "adhesion",
    "invalidates": "paths",
@@ -452,7 +452,7 @@
    "label": "Raft contact distance",
    "unit": "mm",
    "min": 0,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 0.1,
    "group": "adhesion",
    "invalidates": "paths",
@@ -465,7 +465,7 @@
    "label": "Raft expansion",
    "unit": "mm",
    "min": 0,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 1.5,
    "group": "adhesion",
    "invalidates": "paths",
@@ -533,7 +533,7 @@
    "unit": "mm",
    "min": 0,
    "max": 60,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 2,
    "group": "adhesion",
    "invalidates": "paths",
@@ -632,15 +632,15 @@
     "combined",
     "perobject"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": "combined",
    "group": "adhesion",
    "invalidates": "paths",
-   "intent": "adhesion",
    "enumLabels": [
     "Combined",
     "Per object"
-   ]
+   ],
+   "intent": "adhesion"
   },
   {
    "key": "support_ironing",
@@ -687,11 +687,11 @@
    "default": "rectilinear",
    "group": "adhesion",
    "invalidates": "paths",
-   "intent": "supports",
    "enumLabels": [
     "Rectilinear",
     "Concentric"
-   ]
+   ],
+   "intent": "supports"
   },
   {
    "key": "support_ironing_spacing",
@@ -713,7 +713,7 @@
    "type": "float",
    "label": "Brim size under tree support",
    "min": 0,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 3,
    "group": "adhesion",
    "invalidates": "paths",
@@ -808,7 +808,7 @@
    "section": "process",
    "type": "bool",
    "label": "Interlocking beam",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "advanced",
    "invalidates": "contours",
@@ -896,7 +896,7 @@
    "type": "float",
    "label": "Extrusion rate smoothing",
    "min": 0,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 0,
    "group": "advanced",
    "invalidates": "gcode",
@@ -1014,7 +1014,7 @@
    "label": "Print flow ratio",
    "min": 0.01,
    "max": 2,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 1,
    "group": "advanced",
    "invalidates": "gcode",
@@ -1788,7 +1788,7 @@
    "section": "process",
    "type": "bool",
    "label": "Ooze prevention",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "multimaterial",
    "invalidates": "gcode",
@@ -1818,7 +1818,7 @@
    "enumValues": [
     "-1"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": 3,
    "group": "multimaterial",
    "invalidates": "paths",
@@ -1917,7 +1917,7 @@
    "type": "bool",
    "label": "Place prime tower automatically",
    "help": "Puts the prime tower on a free spot next to the objects, clear of the printer's no-go areas, and widens it when nothing else fits. Turn off to keep the tower where you put it.",
-   "mode": "advanced",
+   "mode": "expert",
    "default": true,
    "group": "multimaterial",
    "pilot": "edit",
@@ -1984,7 +1984,7 @@
    "unit": "delta-C",
    "min": -1500,
    "max": 1500,
-   "mode": "advanced",
+   "mode": "expert",
    "default": -5,
    "group": "multimaterial",
    "invalidates": "gcode",
@@ -2064,12 +2064,12 @@
    "unavailableValues": [
     "cyclic"
    ],
-   "intent": "multicolor",
-   "showWhen": "multicolor",
    "enumLabels": [
     "Default",
     "Cyclic"
-   ]
+   ],
+   "intent": "multicolor",
+   "showWhen": "multicolor"
   },
   {
    "key": "top_surface_filament_id",
@@ -2163,7 +2163,7 @@
    "unit": "%",
    "min": 100,
    "max": 300,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 100,
    "group": "multimaterial",
    "invalidates": "paths",
@@ -2228,7 +2228,7 @@
    "section": "process",
    "type": "bool",
    "label": "Prime tower no sparse layers",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "multimaterial",
    "invalidates": "paths",
@@ -2263,7 +2263,7 @@
    "type": "float",
    "label": "Rotation of the prime tower",
    "unit": "deg",
-   "mode": "advanced",
+   "mode": "expert",
    "default": 0,
    "group": "multimaterial",
    "invalidates": "paths",
@@ -2429,7 +2429,7 @@
    "section": "process",
    "type": "enum",
    "label": "Bridge counterbore holes",
-   "mode": "advanced",
+   "mode": "expert",
    "default": "none",
    "group": "overhangs",
    "pilot": "edit",
@@ -2829,7 +2829,7 @@
    "section": "process",
    "type": "bool",
    "label": "Arc fitting",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "quality",
    "pilot": "edit",
@@ -2847,7 +2847,7 @@
     "internal_bridge_only",
     "apply_to_all"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": "disabled",
    "group": "quality",
    "invalidates": "gcode",
@@ -2889,7 +2889,7 @@
    "section": "process",
    "type": "bool",
    "label": "Print round holes as polyholes",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "quality",
    "pilot": "edit",
@@ -2939,7 +2939,7 @@
    "unit": "mm",
    "min": 0.1,
    "max": 2,
-   "mode": "advanced",
+   "mode": "expert",
    "default": "0",
    "group": "quality",
    "pilot": "edit",
@@ -2992,7 +2992,7 @@
    "unit": "mm",
    "min": 0.1,
    "max": 2,
-   "mode": "advanced",
+   "mode": "expert",
    "default": "0",
    "group": "quality",
    "pilot": "edit",
@@ -3150,11 +3150,11 @@
      "value": "no ironing"
     }
    ],
-   "intent": "effects",
    "enumLabels": [
     "Rectilinear",
     "Concentric"
-   ]
+   ],
+   "intent": "effects"
   },
   {
    "key": "ironing_spacing",
@@ -3224,13 +3224,13 @@
     "increase": "Ironing smooths chosen top surfaces and adds time",
     "decrease": "Without ironing top surfaces print faster and rougher"
    },
-   "intent": "effects",
    "enumLabels": [
     "No ironing",
     "Top surfaces",
     "Topmost surface",
     "All solid layers"
-   ]
+   ],
+   "intent": "effects"
   },
   {
    "key": "is_infill_first",
@@ -3273,7 +3273,7 @@
    "unit": "mm",
    "min": 0.1,
    "max": 2,
-   "mode": "advanced",
+   "mode": "expert",
    "default": "0",
    "group": "quality",
    "pilot": "edit",
@@ -3383,7 +3383,7 @@
    "section": "process",
    "type": "bool",
    "label": "Single wall on the top surface",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "quality",
    "pilot": "edit",
@@ -3405,7 +3405,7 @@
    "unit": "mm",
    "min": 0.1,
    "max": 2,
-   "mode": "advanced",
+   "mode": "expert",
    "default": "0",
    "group": "quality",
    "pilot": "edit",
@@ -3516,7 +3516,7 @@
    "label": "Seam gap",
    "unit": "mm",
    "min": 0,
-   "mode": "advanced",
+   "mode": "expert",
    "default": "10%",
    "group": "quality",
    "pilot": "edit",
@@ -3544,21 +3544,21 @@
     "increase": "Changes where layer starts and ends are placed",
     "decrease": "Changes where layer starts and ends are placed"
    },
-   "intent": "quality",
    "enumLabels": [
     "Nearest",
     "Aligned",
     "Aligned back",
     "Back",
     "Random"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "seam_slope_conditional",
    "section": "process",
    "type": "bool",
    "label": "Seam slope conditional",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "quality",
    "invalidates": "paths",
@@ -3672,12 +3672,12 @@
      "value": false
     }
    ],
-   "intent": "quality",
    "enumLabels": [
     "None",
     "Contour",
     "Contour and hole"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "slice_closing_radius",
@@ -3705,12 +3705,12 @@
    "default": "regular",
    "group": "quality",
    "invalidates": "layers",
-   "intent": "quality",
    "enumLabels": [
     "Regular",
     "Even-odd",
     "Close holes"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "smart_layer",
@@ -3884,7 +3884,7 @@
    "unit": "mm",
    "min": 0.1,
    "max": 2,
-   "mode": "advanced",
+   "mode": "expert",
    "default": "0",
    "group": "quality",
    "pilot": "edit",
@@ -3953,7 +3953,7 @@
    "unit": "mm",
    "min": 0.1,
    "max": 2,
-   "mode": "advanced",
+   "mode": "expert",
    "default": "0",
    "group": "quality",
    "pilot": "edit",
@@ -3997,7 +3997,6 @@
      "value": 0
     }
    ],
-   "intent": "quality",
    "enumLabels": [
     "Monotonic",
     "Monotonic line",
@@ -4007,7 +4006,8 @@
     "Hilbert curve",
     "Archimedean chords",
     "Octagram spiral"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "tree_support_auto_brim",
@@ -4055,15 +4055,15 @@
     "ccw",
     "cw"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": "ccw",
    "group": "quality",
    "invalidates": "gcode",
-   "intent": "quality",
    "enumLabels": [
     "Counterclockwise",
     "Clockwise"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "wall_distribution_count",
@@ -4102,12 +4102,12 @@
    "group": "quality",
    "pilot": "edit",
    "invalidates": "perimeters",
-   "intent": "quality",
    "enumLabels": [
     "Classic",
     "Arachne",
     "aegis"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "wall_maximum_deviation",
@@ -4159,12 +4159,12 @@
      "value": 0
     }
    ],
-   "intent": "quality",
    "enumLabels": [
     "Inner, then outer",
     "Outer, then inner",
     "Inner, outer, inner"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "wall_transition_angle",
@@ -4280,7 +4280,7 @@
    "type": "float",
    "label": "X-Y contour compensation",
    "unit": "mm",
-   "mode": "advanced",
+   "mode": "expert",
    "default": 0,
    "group": "quality",
    "pilot": "edit",
@@ -4413,8 +4413,8 @@
    "default": false,
    "group": "special",
    "invalidates": "perimeters",
-   "intent": "effects",
-   "help": "Runs the wrapping detection G-code on every layer, on printers that can detect filament wrapping around the nozzle."
+   "help": "Runs the wrapping detection G-code on every layer, on printers that can detect filament wrapping around the nozzle.",
+   "intent": "effects"
   },
   {
    "key": "fuzzy_skin",
@@ -4438,7 +4438,6 @@
     "increase": "Fuzzy skin roughens the outer wall for grip and hides layer lines",
     "decrease": "Smooth outer walls"
    },
-   "intent": "effects",
    "enumLabels": [
     "Painted only",
     "Contour",
@@ -4446,7 +4445,8 @@
     "Contour and hole",
     "All walls",
     "Disabled"
-   ]
+   ],
+   "intent": "effects"
   },
   {
    "key": "fuzzy_skin_first_layer",
@@ -4499,12 +4499,12 @@
      "value": "none"
     }
    ],
-   "intent": "effects",
    "enumLabels": [
     "Displacement",
     "Extrusion",
     "Combined"
-   ]
+   ],
+   "intent": "effects"
   },
   {
    "key": "fuzzy_skin_noise_type",
@@ -4530,7 +4530,6 @@
      "value": "none"
     }
    ],
-   "intent": "effects",
    "enumLabels": [
     "Classic",
     "Perlin",
@@ -4538,7 +4537,8 @@
     "Ridged multifractal",
     "Voronoi",
     "Ripple"
-   ]
+   ],
+   "intent": "effects"
   },
   {
    "key": "fuzzy_skin_octaves",
@@ -4701,16 +4701,16 @@
     "by layer",
     "by object"
    ],
-   "mode": "expert",
+   "mode": "advanced",
    "default": "by layer",
    "group": "special",
    "pilot": "edit",
    "invalidates": "paths",
-   "intent": "effects",
    "enumLabels": [
     "By layer",
     "By object"
-   ]
+   ],
+   "intent": "output"
   },
   {
    "key": "spiral_finishing_flow_ratio",
@@ -5310,7 +5310,7 @@
    "section": "process",
    "type": "bool",
    "label": "Alternate extra wall",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "strength",
    "pilot": "edit",
@@ -5345,7 +5345,7 @@
    "label": "Bottom shell layers",
    "unit": "layers",
    "min": 0,
-   "mode": "expert",
+   "mode": "advanced",
    "default": 3,
    "group": "strength",
    "pilot": "edit",
@@ -5396,7 +5396,7 @@
    "unit": "%",
    "min": 10,
    "max": 100,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 100,
    "group": "strength",
    "invalidates": "surfaces",
@@ -5428,12 +5428,12 @@
     "outward",
     "inward"
    ],
-   "intent": "strength",
    "enumLabels": [
     "Default",
     "Outward",
     "Inward"
-   ]
+   ],
+   "intent": "strength"
   },
   {
    "key": "bottom_surface_pattern",
@@ -5461,7 +5461,6 @@
      "value": 0
     }
    ],
-   "intent": "quality",
    "enumLabels": [
     "Monotonic",
     "Monotonic line",
@@ -5471,7 +5470,8 @@
     "Hilbert curve",
     "Archimedean chords",
     "Octagram spiral"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "center_of_surface_pattern",
@@ -5491,12 +5491,12 @@
     "each_model",
     "each_assembly"
    ],
-   "intent": "strength",
    "enumLabels": [
     "Each surface",
     "Each object",
     "Each assembly"
-   ]
+   ],
+   "intent": "strength"
   },
   {
    "key": "detect_narrow_internal_solid_infill",
@@ -5525,13 +5525,13 @@
    "group": "strength",
    "pilot": "edit",
    "invalidates": "surfaces",
-   "intent": "strength",
    "enumLabels": [
     "None",
     "Critical only",
     "Moderate",
     "All"
-   ]
+   ],
+   "intent": "strength"
   },
   {
    "key": "extra_solid_infills",
@@ -5579,12 +5579,12 @@
    "default": "nowhere",
    "group": "strength",
    "invalidates": "gcode",
-   "intent": "strength",
    "enumLabels": [
     "Everywhere",
     "Top and bottom surfaces",
     "Nowhere"
-   ]
+   ],
+   "intent": "strength"
   },
   {
    "key": "gyroid_optimized",
@@ -5623,7 +5623,7 @@
    "section": "process",
    "type": "floatOrPercent",
    "label": "Infill anchor max",
-   "mode": "advanced",
+   "mode": "expert",
    "default": "20",
    "group": "strength",
    "invalidates": "infill",
@@ -5683,7 +5683,7 @@
    "unit": "deg",
    "min": 0,
    "max": 360,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 45,
    "group": "strength",
    "invalidates": "infill",
@@ -5811,12 +5811,11 @@
     "archimedeanchords",
     "octagramspiral"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": "monotonic",
    "group": "strength",
    "pilot": "edit",
    "invalidates": "infill",
-   "intent": "quality",
    "enumLabels": [
     "Monotonic",
     "Monotonic line",
@@ -5826,7 +5825,8 @@
     "Hilbert curve",
     "Archimedean chords",
     "Octagram spiral"
-   ]
+   ],
+   "intent": "quality"
   },
   {
    "key": "lateral_lattice_angle_1",
@@ -6093,7 +6093,6 @@
     }
    ],
    "easy": true,
-   "intent": "strength",
    "enumLabels": [
     "Rectilinear",
     "Aligned rectilinear",
@@ -6121,7 +6120,8 @@
     "Hilbert curve",
     "Archimedean chords",
     "Octagram spiral"
-   ]
+   ],
+   "intent": "strength"
   },
   {
    "key": "sparse_infill_rotate_template",
@@ -6167,7 +6167,7 @@
    "type": "percent",
    "label": "Top and bottom infill to wall overlap",
    "unit": "%",
-   "mode": "advanced",
+   "mode": "expert",
    "default": 25,
    "group": "strength",
    "invalidates": "gcode",
@@ -6202,7 +6202,7 @@
    "label": "Top shell layers",
    "unit": "layers",
    "min": 0,
-   "mode": "expert",
+   "mode": "advanced",
    "default": 4,
    "group": "strength",
    "pilot": "edit",
@@ -6253,7 +6253,7 @@
    "unit": "%",
    "min": 0,
    "max": 100,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 100,
    "group": "strength",
    "invalidates": "surfaces",
@@ -6298,12 +6298,12 @@
     "inward",
     "outward"
    ],
-   "intent": "strength",
    "enumLabels": [
     "Inward and outward",
     "Inward",
     "Outward"
-   ]
+   ],
+   "intent": "strength"
   },
   {
    "key": "top_surface_expansion_margin",
@@ -6337,12 +6337,12 @@
     "outward",
     "inward"
    ],
-   "intent": "strength",
    "enumLabels": [
     "Default",
     "Outward",
     "Inward"
-   ]
+   ],
+   "intent": "strength"
   },
   {
    "key": "wall_loops",
@@ -6465,7 +6465,7 @@
     "lightning",
     "hollow"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": "default",
    "group": "support",
    "invalidates": "paths",
@@ -6477,7 +6477,6 @@
     }
    ],
    "help": "The pattern inside the support. Lightning grows thin branches that hold up only what needs it, inside slim, strong and hybrid tree supports; other supports print it as rectilinear. Hollow prints tree branches as walls only.",
-   "intent": "supports",
    "enumLabels": [
     "Default",
     "Rectilinear",
@@ -6485,7 +6484,8 @@
     "Honeycomb",
     "Lightning",
     "Hollow"
-   ]
+   ],
+   "intent": "supports"
   },
   {
    "key": "support_base_pattern_spacing",
@@ -6545,7 +6545,7 @@
    "section": "process",
    "type": "bool",
    "label": "Support critical areas only",
-   "mode": "advanced",
+   "mode": "expert",
    "default": false,
    "group": "support",
    "invalidates": "paths",
@@ -6580,7 +6580,7 @@
    "enumValues": [
     "-1"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": 0,
    "group": "support",
    "invalidates": "paths",
@@ -6627,7 +6627,7 @@
     "rectilinear_interlaced",
     "grid"
    ],
-   "mode": "advanced",
+   "mode": "expert",
    "default": "auto",
    "group": "support",
    "invalidates": "paths",
@@ -6801,7 +6801,6 @@
      "value": true
     }
    ],
-   "intent": "supports",
    "enumLabels": [
     "Default (grid or organic)",
     "Grid",
@@ -6810,7 +6809,8 @@
     "Tree slim",
     "Tree strong",
     "Tree hybrid"
-   ]
+   ],
+   "intent": "supports"
   },
   {
    "key": "support_threshold_angle",
@@ -6932,13 +6932,13 @@
      "value": true
     }
    ],
-   "intent": "supports",
    "enumLabels": [
     "Normal (auto)",
     "Tree (auto)",
     "Normal (manual)",
     "Tree (manual)"
-   ]
+   ],
+   "intent": "supports"
   },
   {
    "key": "tree_support_angle_slow",
@@ -6962,7 +6962,7 @@
    "unit": "deg",
    "min": 0,
    "max": 60,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 40,
    "group": "support",
    "invalidates": "paths",
@@ -7005,7 +7005,7 @@
    "unit": "mm",
    "min": 1,
    "max": 10,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 5,
    "group": "support",
    "invalidates": "paths",
@@ -7105,7 +7105,7 @@
    "unit": "mm",
    "min": 0.1,
    "max": 100,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 0.8,
    "group": "support",
    "invalidates": "paths",
@@ -7146,7 +7146,7 @@
    "label": "Tree support wall count",
    "min": 0,
    "max": 2,
-   "mode": "advanced",
+   "mode": "expert",
    "default": 0,
    "group": "support",
    "invalidates": "paths",
