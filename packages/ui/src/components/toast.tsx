@@ -25,6 +25,13 @@ interface ToastRecord {
 
 const ToastContext = createContext<((message: ReactNode, options?: ToastOptions) => void) | null>(null)
 
+/** Keeps the toasts out of sight, with their time stopped, while something holds them (for example the plate grid). */
+export interface ToastHold {
+  hold(why: string): void
+  release(why: string): void
+}
+const ToastHoldContext = createContext<ToastHold | null>(null)
+
 const TONE_ICON: Record<Exclude<ToastTone, 'plain'>, IconName> = { ok: 'check', info: 'thinking', warn: 'alert', error: 'alert' }
 
 /** The text a toast reads out, from a string or the strings inside its elements. */
@@ -98,22 +105,54 @@ export class ToastClock {
  */
 export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max?: number }) {
   const [toasts, setToasts] = useState<ToastRecord[]>([])
+  const [open, setOpen] = useState<ReadonlySet<number>>(new Set())
+  const [held, setHeld] = useState(false)
+  // While a toast shows its details, the card keeps its top edge where it was, so it grows down and nothing above moves.
+  const [anchor, setAnchor] = useState<number | null>(null)
   const next = useRef(1)
   const clocks = useRef(new Map<number, ToastClock>())
+  const holds = useRef(new Set<string>())
+  const stack = useRef<HTMLDivElement>(null)
   const drop = useCallback((id: number) => {
     clocks.current.get(id)?.stop()
     clocks.current.delete(id)
     setToasts((list) => list.filter((t) => t.id !== id))
+    setOpen((o) => (o.has(id) ? new Set([...o].filter((x) => x !== id)) : o))
   }, [])
   const toast = useCallback(
     (message: ReactNode, options?: ToastOptions) => {
       const id = next.current++
       const tone = options?.tone ?? 'plain'
       setToasts((list) => [...list, { id, message, tone, ...(options?.action ? { action: options.action } : {}) }].slice(-max))
-      clocks.current.set(id, new ToastClock(readingTime(message, tone, options?.duration), () => drop(id), ['unseen']))
+      clocks.current.set(id, new ToastClock(readingTime(message, tone, options?.duration), () => drop(id), ['unseen', ...[...holds.current].map((h) => `away:${h}`)]))
     },
     [max, drop],
   )
+  const hide = useMemo<ToastHold>(
+    () => ({
+      hold(why) {
+        if (holds.current.has(why)) return
+        holds.current.add(why)
+        clocks.current.forEach((c) => c.hold(`away:${why}`))
+        setHeld(true)
+      },
+      release(why) {
+        if (!holds.current.delete(why)) return
+        clocks.current.forEach((c) => c.release(`away:${why}`))
+        setHeld(holds.current.size > 0)
+      },
+    }),
+    [],
+  )
+  const details = useCallback((id: number) => {
+    const top = stack.current?.getBoundingClientRect().top
+    setAnchor((a) => a ?? (top === undefined ? null : Math.round(top)))
+    setOpen((o) => (o.has(id) ? new Set([...o].filter((x) => x !== id)) : new Set([...o, id])))
+  }, [])
+  // The card lets go of its top edge once no toast shows its details.
+  useEffect(() => {
+    if (open.size === 0) setAnchor(null)
+  }, [open])
   useEffect(() => {
     const all = clocks.current
     return () => all.forEach((c) => c.stop())
@@ -121,39 +160,42 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
   const value = useMemo(() => toast, [toast])
   return (
     <ToastContext.Provider value={value}>
-      {children}
-      <div className="sx-toasts" role="status" aria-live="polite">
-        {toasts.map((t) => (
-          <ToastItem
-            key={t.id}
-            clock={clocks.current.get(t.id)}
-            className="sx-toast"
-            data-testid="toast"
-            data-tone={t.tone === 'plain' ? undefined : t.tone}
-            onPointerEnter={() => clocks.current.get(t.id)?.hold('pointer')}
-            onPointerLeave={() => clocks.current.get(t.id)?.release('pointer')}
-            onFocus={() => clocks.current.get(t.id)?.hold('focus')}
-            onBlur={(e: FocusEvent<HTMLDivElement>) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) clocks.current.get(t.id)?.release('focus')
-            }}
-          >
-            {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
-            <ToastText message={t.message} />
-            {t.action ? (
-              <Button size="sm" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
-                {t.action.label}
-              </Button>
-            ) : null}
-          </ToastItem>
-        ))}
-      </div>
+      <ToastHoldContext.Provider value={hide}>
+        {children}
+        <div ref={stack} className="sx-toasts" role="status" aria-live="polite" data-held={held ? '' : undefined} data-testid="toasts" style={anchor === null ? undefined : { top: anchor, bottom: 'auto' }}>
+          {toasts.map((t) => (
+            <ToastItem
+              key={t.id}
+              clock={clocks.current.get(t.id)}
+              className="sx-toast"
+              data-testid="toast"
+              data-tone={t.tone === 'plain' ? undefined : t.tone}
+              data-expanded={open.has(t.id) ? '' : undefined}
+              onPointerEnter={() => clocks.current.get(t.id)?.hold('pointer')}
+              onPointerLeave={() => clocks.current.get(t.id)?.release('pointer')}
+              onFocus={() => clocks.current.get(t.id)?.hold('focus')}
+              onBlur={(e: FocusEvent<HTMLDivElement>) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) clocks.current.get(t.id)?.release('focus')
+              }}
+            >
+              {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
+              <ToastText message={t.message} expanded={open.has(t.id)} onDetails={() => details(t.id)} />
+              {t.action ? (
+                <Button size="sm" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
+                  {t.action.label}
+                </Button>
+              ) : null}
+            </ToastItem>
+          ))}
+        </div>
+      </ToastHoldContext.Provider>
     </ToastContext.Provider>
   )
 }
 
 /**
  * The first sentence of a string message, and the rest. A toast shows only its first sentence on one line; the rest
- * stays in the text (and the announcement) behind Details.
+ * stays in the text (and the announcement) and shows in place under Details.
  */
 export function splitLead(message: ReactNode): { lead: ReactNode; rest: string } {
   if (typeof message !== 'string') return { lead: message, rest: '' }
@@ -161,7 +203,7 @@ export function splitLead(message: ReactNode): { lead: ReactNode; rest: string }
   return m ? { lead: m[1], rest: m[2] ?? '' } : { lead: message, rest: '' }
 }
 
-function ToastText({ message }: { message: ReactNode }) {
+function ToastText({ message, expanded, onDetails }: { message: ReactNode; expanded: boolean; onDetails: () => void }) {
   const { lead, rest } = splitLead(message)
   return (
     <>
@@ -170,8 +212,8 @@ function ToastText({ message }: { message: ReactNode }) {
         {rest ? <span className="sx-toast-more"> {rest}</span> : null}
       </span>
       {rest ? (
-        <Button size="sm" variant="ghost" className="sx-toast-details" data-testid="toast-details">
-          Details
+        <Button size="sm" variant="ghost" className="sx-toast-details" data-testid="toast-details" aria-expanded={expanded} onClick={onDetails}>
+          {expanded ? 'Less' : 'Details'}
         </Button>
       ) : null}
     </>
@@ -192,4 +234,17 @@ export function useToast(): (message: ReactNode, options?: ToastOptions) => void
   const ctx = useContext(ToastContext)
   if (!ctx) throw new Error('useToast needs a ToastProvider above it')
   return ctx
+}
+
+/**
+ * Keeps the toasts hidden while `active`, their time stopped, and brings them back with the time they had left when it
+ * ends. Does nothing outside a ToastProvider.
+ */
+export function useHideToasts(active: boolean, why: string): void {
+  const hold = useContext(ToastHoldContext)
+  useEffect(() => {
+    if (!hold || !active) return
+    hold.hold(why)
+    return () => hold.release(why)
+  }, [hold, active, why])
 }

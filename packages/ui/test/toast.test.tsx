@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readingTime, ToastClock, ToastProvider, useToast, type ToastOptions } from '../src/components/toast'
+import { readingTime, splitLead, ToastClock, ToastProvider, useHideToasts, useToast, type ToastOptions } from '../src/components/toast'
 
 const NOZZLE_NOTE = "Slicing for the A1 mini with its own G-code. Not carried over, made for the project's 0.2 mm nozzle: layer height."
 
@@ -167,6 +167,38 @@ describe('toasts on screen', () => {
     expect(shown()).toBe(0)
   })
 
+  it('drops each line of the card on its own time, and the card shrinks', () => {
+    act(() => post('Saved'))
+    act(() => post(NOZZLE_NOTE))
+    expect(host.querySelectorAll('.sx-toasts').length).toBe(1)
+    act(() => void vi.advanceTimersByTime(20))
+    act(() => void vi.advanceTimersByTime(2600))
+    expect(shown()).toBe(1)
+    expect(host.querySelector('[data-testid=toast]')!.textContent).toContain('Slicing for the A1 mini')
+  })
+
+  it('shows the first sentence, and Details opens the rest in place with the card top held', () => {
+    act(() => post(NOZZLE_NOTE))
+    const stack = host.querySelector<HTMLElement>('[data-testid=toasts]')!
+    const line = host.querySelector<HTMLElement>('[data-testid=toast]')!
+    expect(line.querySelector('.sx-toast-lead')!.textContent).toBe('Slicing for the A1 mini with its own G-code.')
+    expect(line.hasAttribute('data-expanded')).toBe(false)
+    expect(stack.style.top).toBe('')
+    act(() => host.querySelector<HTMLButtonElement>('[data-testid=toast-details]')!.click())
+    expect(line.hasAttribute('data-expanded')).toBe(true)
+    expect(host.querySelector('[data-testid=toast-details]')!.textContent).toBe('Less')
+    expect(stack.style.top).toBe('0px')
+    expect(stack.style.bottom).toBe('auto')
+    act(() => host.querySelector<HTMLButtonElement>('[data-testid=toast-details]')!.click())
+    expect(line.hasAttribute('data-expanded')).toBe(false)
+    expect(stack.style.top).toBe('')
+  })
+
+  it('has no Details on a one sentence toast', () => {
+    act(() => post('Saved.'))
+    expect(host.querySelector('[data-testid=toast-details]')).toBeNull()
+  })
+
   it('closes a toast when its button is pressed', () => {
     const run = vi.fn()
     act(() => post('Loaded as one object', { action: { label: 'Keep separate', run } }))
@@ -188,5 +220,66 @@ describe('toasts and the view under them', () => {
 
   it('keeps a toast own buttons and links pressable', () => {
     expect(rule('.sx-toast button, .sx-toast a')).toContain('pointer-events: auto')
+  })
+})
+
+describe('a toast line', () => {
+  it('splits a message after its first sentence, keeping numbers like 0.4 whole', () => {
+    expect(splitLead('Opened as H2D 0.4 mm from the project. Kept the walls.')).toEqual({ lead: 'Opened as H2D 0.4 mm from the project.', rest: 'Kept the walls.' })
+    expect(splitLead('Saved')).toEqual({ lead: 'Saved', rest: '' })
+    expect(splitLead('Saved.')).toEqual({ lead: 'Saved.', rest: '' })
+  })
+})
+
+describe('toasts held out of sight', () => {
+  let host: HTMLDivElement
+  let root: Root
+  let post: (text: string, options?: ToastOptions) => void = () => {}
+  function App({ hidden }: { hidden: boolean }) {
+    const toast = useToast()
+    useHideToasts(hidden, 'grid')
+    useEffect(() => void (post = toast), [toast])
+    return null
+  }
+  beforeEach(() => {
+    vi.useFakeTimers()
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    host = document.createElement('div')
+    document.body.append(host)
+    root = createRoot(host)
+  })
+  afterEach(() => {
+    act(() => root.unmount())
+    host.remove()
+    vi.useRealTimers()
+  })
+  const stack = () => host.querySelector<HTMLElement>('[data-testid=toasts]')!
+  const shown = () => host.querySelectorAll('[data-testid=toast]').length
+
+  it('hides the card with its time stopped, and brings it back with the time it had left', () => {
+    act(() => root.render(<ToastProvider><App hidden={false} /></ToastProvider>))
+    act(() => post('Saved'))
+    act(() => void vi.advanceTimersByTime(20))
+    act(() => void vi.advanceTimersByTime(1000))
+    act(() => root.render(<ToastProvider><App hidden /></ToastProvider>))
+    expect(stack().hasAttribute('data-held')).toBe(true)
+    act(() => void vi.advanceTimersByTime(60_000))
+    expect(shown()).toBe(1)
+    act(() => root.render(<ToastProvider><App hidden={false} /></ToastProvider>))
+    expect(stack().hasAttribute('data-held')).toBe(false)
+    act(() => void vi.advanceTimersByTime(1500))
+    expect(shown()).toBe(1)
+    act(() => void vi.advanceTimersByTime(200))
+    expect(shown()).toBe(0)
+  })
+
+  it('holds a toast posted while hidden until the card shows again', () => {
+    act(() => root.render(<ToastProvider><App hidden /></ToastProvider>))
+    act(() => post('Saved'))
+    act(() => void vi.advanceTimersByTime(60_000))
+    expect(shown()).toBe(1)
+    act(() => root.render(<ToastProvider><App hidden={false} /></ToastProvider>))
+    act(() => void vi.advanceTimersByTime(2700))
+    expect(shown()).toBe(0)
   })
 })

@@ -444,19 +444,23 @@ button { cursor: pointer; }
 .sx-ticks { display: flex; justify-content: space-between; font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--dim); margin-top: 2px; }
 
 /* toasts */
-.sx-toasts { position: fixed; left: var(--overlay-center, 50%); top: var(--overlay-top, auto); bottom: var(--overlay-bottom, calc(var(--toast-floor) + env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: var(--overlay-width, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
-.sx-toast { pointer-events: none; background: color-mix(in srgb, var(--ink-4) 90%, transparent); border: 1px solid var(--line); padding: 9px 14px; border-radius: var(--r-md); font-size: var(--fs-md); box-shadow: var(--shadow-float); display: flex; align-items: center; gap: 10px; max-width: 100%; animation: sx-toast-in var(--t-slow) var(--ease); }
+.sx-toasts { position: fixed; left: var(--overlay-center, 50%); top: var(--overlay-top, auto); bottom: var(--overlay-bottom, calc(var(--toast-floor) + env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; gap: 0; align-items: stretch; width: max-content; max-width: var(--overlay-width, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
+/* The toasts up at once read as one card, a line each. Each line keeps its own time, and the card shrinks as lines go. */
+.sx-toasts:not(:empty) { padding: 4px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-4) 90%, transparent); box-shadow: var(--shadow-float); }
+/* Out of sight, time stopped, while something covers their place (the plate grid). */
+.sx-toasts[data-held] { visibility: hidden; }
+.sx-toast { pointer-events: none; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 8px 4px 14px; font-size: var(--fs-md); max-width: 100%; animation: sx-toast-in var(--t-slow) var(--ease); }
+.sx-toast + .sx-toast { border-top: 1px solid var(--line-soft); }
 .sx-toast button, .sx-toast a { pointer-events: auto; }
 .sx-toast .sx-ic { width: 16px; height: 16px; flex: none; }
-/* A toast is one line: its first sentence, cut to fit, with the rest behind Details. */
-.sx-toast-text { min-width: 0; max-width: 56ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* A line is its first sentence, cut to fit; Details shows the rest in place, below it, so nothing above moves. */
+.sx-toast-text { flex: 1 1 auto; min-width: 0; max-width: 56ch; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .sx-toast-more { display: none; }
+.sx-toast[data-expanded] { align-items: flex-start; }
+.sx-toast[data-expanded] > .sx-ic { margin-top: 6px; }
+.sx-toast[data-expanded] .sx-toast-text { padding: 5px 0; white-space: normal; max-height: 9.5em; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; }
+.sx-toast[data-expanded] .sx-toast-more { display: inline; }
 .sx-toast-details, .sx-toast-action { flex: none; }
-/* Two or more toasts up at once read as one card, one line each, instead of a stack of cards. */
-.sx-toasts:has(> .sx-toast + .sx-toast) { gap: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-4) 90%, transparent); box-shadow: var(--shadow-float); }
-.sx-toasts:has(> .sx-toast + .sx-toast) > .sx-toast { width: 100%; padding: 4px 8px 4px 14px; min-height: 36px; border: 0; border-radius: 0; background: none; box-shadow: none; animation: none; }
-.sx-toasts:has(> .sx-toast + .sx-toast) > .sx-toast + .sx-toast { border-top: 1px solid var(--line-soft); }
-.sx-toasts:has(> .sx-toast + .sx-toast) .sx-toast-text { flex: 1 1 auto; }
 .sx-toast[data-tone="ok"] .sx-ic { color: var(--green); }
 .sx-toast[data-tone="warn"] .sx-ic { color: var(--orange); }
 .sx-toast[data-tone="error"] .sx-ic { color: var(--red); }
@@ -624,7 +628,7 @@ button { cursor: pointer; }
 :root[style*="color-scheme: light"] .sx-resize-edge[data-pane="bottom"]::before { height: 3px; top: 2.5px; }
 
 /* every lifted surface is frosted glass over what is under it */
-.sx-overlay, .sx-menu, .sx-dialog, .sx-palette, .sx-toast, .sx-rail[data-peek] { -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); }
+.sx-overlay, .sx-menu, .sx-dialog, .sx-palette, .sx-toasts:not(:empty), .sx-rail[data-peek] { -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); }
 
 /* inside a scroll pane or tight group the ring sits inside the control so it is never clipped */
 .sx-tab:focus-visible, .sx-palette-item:focus-visible, .sx-rail-body :focus-visible, .sx-panel :focus-visible { outline-offset: var(--focus-offset-inset); }
