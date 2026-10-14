@@ -30,3 +30,5 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 - [MCP server reference](../../packages/mcp/README.md): every tool, the permission policy and every option
 - [Theming reference](../../packages/ui/THEMING.md): every theme token
 - [Sample app](../../examples/integrator-sample/README.md): Spoolhouse, a working app that follows the quickstart
+
+- [kit-manifest.md](kit-manifest.md): stable package filenames, versions and checksums in a packed kit

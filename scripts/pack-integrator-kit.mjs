@@ -134,16 +134,21 @@ export function writePackageManifest(dest, packages) {
   return manifest
 }
 
+export function kitPackages() {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  return ['ui/viewport', 'embed', 'mcp'].map((folder) => JSON.parse(readFileSync(join(root, 'packages', folder, 'package.json'), 'utf8')))
+}
+
 function packPackages(dest) {
-  const packages = ['@slicerx/viewport', '@slicerx/embed', '@slicerx/mcp']
+  const metadata = kitPackages()
+  const packages = metadata.map((p) => p.name)
+  rmSync(join(dest, 'kit-manifest.json'), { force: true })
   for (const f of readdirSync(dest)) if (/^slicerx-(viewport|embed|mcp)(?:-.*)?\.tgz$/.test(f)) rmSync(join(dest, f))
   const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   for (const p of packages) {
     // pack runs each package's prepack, which builds it.
     execFileSync(pnpm, ['--filter', p, 'pack', '--pack-destination', dest], { stdio: ['ignore', 'ignore', 'inherit'], shell: process.platform === 'win32' })
   }
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  const metadata = packages.map((name) => JSON.parse(readFileSync(join(root, 'packages', name.split('/')[1], 'package.json'), 'utf8')))
   const manifest = writePackageManifest(dest, metadata)
   const files = manifest.packages.map((p) => p.file)
   // the credit kit is for people, so it sits beside the tarballs rather than in node_modules
