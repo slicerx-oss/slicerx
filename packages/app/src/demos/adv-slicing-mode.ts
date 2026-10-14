@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Slicing mode: regular joins overlapping shapes; even-odd leaves the overlap hollow; close holes fills every hole.
+import type { StageTool } from '@slicerx/ui'
+
+export const loop: StageTool = {
+  id: 'brsm',
+  readout: {rows: ["Regular","Even-odd","Close holes"],w: 94},
+  css: ".brsm0{animation-name:brsm0;animation-timing-function:steps(1,end)}@keyframes brsm0{0%{opacity:1}32.9%{opacity:0}98.6%{opacity:1}100%{opacity:1}}.brsm1{animation-name:brsm1;animation-timing-function:steps(1,end)}@keyframes brsm1{0%{opacity:0}32.9%{opacity:1}65.7%{opacity:0}100%{opacity:0}}.brsm2{animation-name:brsm2;animation-timing-function:steps(1,end)}@keyframes brsm2{0%{opacity:0}65.7%{opacity:1}98.6%{opacity:0}100%{opacity:0}}.brsm-h{animation-name:brsm-h;animation-timing-function:steps(1,end)}@keyframes brsm-h{0%{translate:0 0px}32.9%{translate:0 -14px}65.7%{translate:0 -28px}98.6%{translate:0 0px}100%{translate:0 0px}}",
+  body: "<g class=\"brsm0 s-a\"><path class=\"s-g1 s-aol\" d=\"M117.9 84.5l36.4 21-30.3 17.5-36.4-21z\"/><path class=\"s-g1 s-aol\" d=\"M154.3 88l36.4 21-30.3 17.5-36.4-21z\"/><path class=\"s-g1 s-aol\" fill-rule=\"evenodd\" d=\"M178.6 119.5l27.2 15.7-27.2 15.8-27.3-15.8zM178.6 126.5l15.1 8.7-15.1 8.8-15.2-8.8z\"/></g><g class=\"brsm1 s-a\"><path class=\"s-g1 s-aol\" d=\"M117.9 84.5l36.4 21-30.3 17.5-36.4-21z\"/><path class=\"s-g1 s-aol\" d=\"M154.3 88l36.4 21-30.3 17.5-36.4-21z\"/><path class=\"s-hole\" d=\"M139.2 96.7l15.1 8.8-15.1 8.7-15.2-8.7z\"/><path class=\"s-g1 s-aol\" fill-rule=\"evenodd\" d=\"M178.6 119.5l27.2 15.7-27.2 15.8-27.3-15.8zM178.6 126.5l15.1 8.7-15.1 8.8-15.2-8.8z\"/></g><g class=\"brsm2 s-a\"><path class=\"s-g1 s-aol\" d=\"M117.9 84.5l36.4 21-30.3 17.5-36.4-21z\"/><path class=\"s-g1 s-aol\" d=\"M154.3 88l36.4 21-30.3 17.5-36.4-21z\"/><path class=\"s-g1 s-aol\" d=\"M178.6 119.5l27.2 15.7-27.2 15.8-27.3-15.8z\"/></g><g class=\" s-a\"><use href=\"#sxs-hud-brsm\" x=\"188\" y=\"40\"/><clipPath id=\"brsm-hw\"><rect x=\"194\" y=\"32\" width=\"84\" height=\"16\"/></clipPath><g clip-path=\"url(#brsm-hw)\"><g class=\"brsm-h s-a\"><use href=\"#sxs-rows-brsm\" x=\"188\" y=\"40\"/></g></g></g>",
+}
