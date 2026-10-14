@@ -1,21 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { PilotSheet, PilotSheetAnswer } from '@slicerx/contracts'
-import { Button, Icon } from '@slicerx/ui'
+import { Button, Icon, ScrubNumber, tipAttrs } from '@slicerx/ui'
 import { useState } from 'react'
 import { safeUrl } from './citations'
 
-const SOURCE: Record<PilotSheet['dims'][number]['source'], string> = { asked: 'you said', lookup: 'looked up', photo: 'from your photo', guess: 'guess' }
+/** The quiet tag a row keeps; a looked-up size has none, its page is in the header. */
+const TAG: Record<PilotSheet['dims'][number]['source'], string | null> = { asked: 'you said', lookup: null, photo: 'from your photo', guess: 'guess' }
+
+const unitText = (u: PilotSheet['dims'][number]['unit']): string => (u === 'deg' ? '°' : u)
+
+/** The pages the looked-up sizes came from, once each, in row order. */
+function sourcesOf(sheet: PilotSheet): { title: string; href: string | null }[] {
+  const seen = new Map<string, { title: string; href: string | null }>()
+  for (const d of sheet.dims) {
+    if (d.source !== 'lookup') continue
+    const href = safeUrl(d.sourceUrl)
+    const id = href ?? d.sourceTitle ?? ''
+    if (!seen.has(id)) seen.set(id, { title: d.sourceTitle ?? (href ? new URL(href).hostname.replace(/^www\./, '') : 'Looked up'), href })
+  }
+  return [...seen.values()]
+}
 
 /**
- * A dimension sheet as it stays in the conversation: each size with its unit and where it came from, guesses marked,
- * and once answered the values used and which ones the person changed. Editing it happens on the sheet itself.
+ * A dimension sheet as it stays in the conversation: a numbered row per size (the number matches its callout in the
+ * drawing), where the looked-up sizes came from in the header, guesses marked, and once answered the values used and
+ * which ones the person changed. With `onEdit` the rows take typed values while the sheet waits.
  */
 export function SheetRecord({
   sheet,
   answer,
   bound = false,
   actionable = false,
+  values,
+  onEdit,
   onConfirm,
   onOpen,
 }: {
@@ -24,58 +42,101 @@ export function SheetRecord({
   /** Its rows drive the built design's steps. */
   bound?: boolean
   actionable?: boolean
+  /** The values typed so far, by key; a row without one shows the sheet's value. */
+  values?: Record<string, number> | undefined
+  onEdit?: ((sheetId: string, key: string, value: number) => void) | undefined
   onConfirm?: ((sheetId: string, values: Record<string, number>) => Promise<void>) | undefined
   onOpen?: ((sheetId: string) => void) | undefined
 }) {
   const [sent, setSent] = useState(false)
-  const canConfirm = actionable && !answer && onConfirm !== undefined && onOpen === undefined
-  const canOpen = actionable && onOpen !== undefined && (!answer || (answer.confirmed && bound))
+  const canConfirm = actionable && !answer && onConfirm !== undefined
+  const canOpen = actionable && onOpen !== undefined && answer !== null && answer.confirmed && bound
+  const editable = !answer && onEdit !== undefined && !sent
+  const valueOf = (key: string, fallback: number): number => (answer?.confirmed ? (answer.values[key] ?? fallback) : (values?.[key] ?? fallback))
   const status = !answer ? 'Waiting for you to confirm' : !answer.confirmed ? 'Canceled, nothing built' : answer.changed.length ? `Confirmed with ${answer.changed.length} change${answer.changed.length === 1 ? '' : 's'}` : 'Confirmed as shown'
   return (
-    <div className="lookup-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record">
-      <div className="lookup-rec-t">
-        <Icon name="tolerance" />
-        <span>{sheet.title}</span>
+    <div className="lookup-rec sheet-rec" data-sheet-id={sheet.id} data-testid="mimir-sheet-record">
+      <div className="sheet-rec-head">
+        <span className="lookup-rec-t">
+          <Icon name="tolerance" />
+          <span>{sheet.title}</span>
+        </span>
+        {sourcesOf(sheet).map((s) =>
+          s.href ? (
+            <a key={s.href} className="sheet-rec-src" href={s.href} target="_blank" rel="noreferrer noopener" data-testid="mimir-sheet-source" {...tipAttrs({ title: s.title })}>
+              <Icon name="log" size={13} />
+              <span>Source: {s.title}</span>
+              <Icon name="external" size={12} />
+            </a>
+          ) : (
+            <span key={s.title} className="sheet-rec-src" data-testid="mimir-sheet-source">
+              <Icon name="log" size={13} />
+              <span>Source: {s.title}</span>
+            </span>
+          ),
+        )}
       </div>
-      <dl className="lookup-rec-f">
-        {sheet.dims.map((d) => {
-          const used = answer?.confirmed ? (answer.values[d.key] ?? d.value) : d.value
-          const href = d.source === 'lookup' ? safeUrl(d.sourceUrl) : null
+      <ol className="sheet-rec-rows">
+        {sheet.dims.map((d, i) => {
+          const used = valueOf(d.key, d.value)
+          const yours = answer ? answer.changed.includes(d.key) : used !== d.value
+          const guess = d.source === 'guess' && !yours && !answer?.confirmed
+          const tag = yours ? 'yours' : TAG[d.source]
+          const id = `sheet-rec-${sheet.id}-${d.key}`
           return (
-            <div key={d.key} data-dim={d.key} data-guess={d.source === 'guess' && !answer?.confirmed ? '' : undefined}>
-              <dt>{d.label}</dt>
-              <dd>
-                {used} {d.unit === 'deg' ? '°' : d.unit}{' '}
-                <small className="sx-muted">
-                  {answer?.changed.includes(d.key) ? 'you changed it' : href ? <a href={href} target="_blank" rel="noreferrer noopener">{d.sourceTitle ?? SOURCE.lookup}</a> : SOURCE[d.source]}
-                </small>
-              </dd>
-            </div>
+            <li key={d.key} className="sheet-rec-row" data-dim={d.key} data-source={d.source} data-guess={guess ? '' : undefined}>
+              <span className="sheet-rec-n" aria-hidden="true">
+                {i + 1}
+              </span>
+              <label className="sheet-rec-label" htmlFor={editable ? id : undefined}>
+                {d.label}
+                {tag ? <small className="sheet-rec-tag">{tag}</small> : null}
+              </label>
+              {editable ? (
+                <span className="sheet-rec-field">
+                  <ScrubNumber
+                    id={id}
+                    value={used}
+                    ariaLabel={`${d.label}, ${d.unit === 'deg' ? 'degrees' : d.unit === '%' ? 'percent' : 'millimeters'}`}
+                    digits={2}
+                    step={d.unit === 'deg' ? 1 : 0.5}
+                    boxed={false}
+                    onCommit={(v) => onEdit(sheet.id, d.key, v)}
+                    {...(d.min !== undefined ? { min: d.min } : {})}
+                    {...(d.max !== undefined ? { max: d.max } : {})}
+                  />
+                  <span className="sheet-rec-unit">{unitText(d.unit)}</span>
+                </span>
+              ) : (
+                <span className="sheet-rec-v">
+                  {used} {unitText(d.unit)}
+                </span>
+              )}
+            </li>
           )
         })}
-      </dl>
-      {canConfirm ? (
-        <Button
-          size="sm"
-          disabled={sent}
-          data-testid="mimir-sheet-confirm"
-          onClick={() => {
-            setSent(true)
-            void onConfirm(sheet.id, Object.fromEntries(sheet.dims.map((d) => [d.key, d.value]))).catch(() => setSent(false))
-          }}
-        >
-          Build with these sizes
-        </Button>
-      ) : (
-        <span className="sheet-rec-foot">
-          <span className="lookup-rec-s">{status}</span>
-          {canOpen ? (
-            <Button size="sm" variant="ghost" data-testid="mimir-sheet-open" onClick={() => onOpen(sheet.id)}>
-              {answer ? 'Edit sizes' : 'Check sizes'}
-            </Button>
-          ) : null}
-        </span>
-      )}
+      </ol>
+      <span className="sheet-rec-foot">
+        <span className="lookup-rec-s">{status}</span>
+        {canConfirm ? (
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={sent}
+            data-testid="mimir-sheet-confirm"
+            onClick={() => {
+              setSent(true)
+              void onConfirm(sheet.id, Object.fromEntries(sheet.dims.map((d) => [d.key, valueOf(d.key, d.value)]))).catch(() => setSent(false))
+            }}
+          >
+            Check sizes and build 3D
+          </Button>
+        ) : canOpen ? (
+          <Button size="sm" variant="ghost" data-testid="mimir-sheet-open" onClick={() => onOpen(sheet.id)}>
+            Edit sizes
+          </Button>
+        ) : null}
+      </span>
     </div>
   )
 }
