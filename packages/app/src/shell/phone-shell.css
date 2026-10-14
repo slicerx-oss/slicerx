@@ -75,8 +75,6 @@
 :root[data-phone] .mimir-dock > .pc-notice { grid-row: 1 / 4; margin: var(--s-3); }
 :root[data-phone] .mimir-dock > .mimir-connect { grid-row: 1 / 4; padding: var(--s-4); gap: var(--s-4); }
 :root[data-phone] .mimir-dock .term { border-bottom: 0; }
-/* the terminal's bar is not drawn: Pause is in the row above and Show thinking in its More menu (dock.tsx) */
-:root[data-phone] .mimir-dock .term-bar { display: none; }
 :root[data-phone] .mimir-dock .term-body { padding: var(--s-4) var(--s-4) var(--s-5); }
 :root[data-phone] .mimir-dock .term-in { padding: var(--s-2) var(--s-3) var(--s-3); }
 :root[data-phone] .mimir-dock .in-row { height: 48px; }
