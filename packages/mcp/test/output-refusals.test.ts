@@ -1,15 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { randomUUID } from 'node:crypto'
 import { readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Ajv2020 from 'ajv/dist/2020'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it } from 'vitest'
-import { connect, data, sxBin, text } from './helpers'
+import { connect, data, noSx, sxBin, text } from './helpers'
 
 describe('listed output schemas', () => {
   for (const name of ['slicerx_slice_file', 'slicerx_estimate_file']) {
-    it(`${name} returns a missing-file refusal through the SDK client`, async () => {
+    it(`${name} returns an unavailable-engine refusal through the SDK client`, async () => {
+      const h = await connect({ engine: 'sx', sxBin: join(tmpdir(), `slicerx-missing-${randomUUID()}`) })
+      try {
+        const { tools } = await h.client.listTools()
+        expect(tools.find(t => t.name === name)?.outputSchema).toBeDefined()
+        const result = await h.client.callTool({ name, arguments: { model: join(h.dir, 'cube.stl') } }) as CallToolResult
+        expect(result.isError).toBe(true)
+        expect(text(result)).toMatch(/^Error: engine_unavailable: /)
+        expect(data(result)).toMatchObject({ error: { code: 'engine_unavailable', message: expect.any(String) } })
+      } finally {
+        await h.client.close()
+        rmSync(h.dir, { recursive: true, force: true })
+      }
+    })
+    it.skipIf(noSx())(`${name} returns a missing-file refusal through the SDK client`, async () => {
       const h = await connect({ engine: 'sx', sxBin })
       try {
         const { tools } = await h.client.listTools()
