@@ -108,6 +108,24 @@ it('validates the whole patch, rejects nonfinite resulting placement, and keeps 
   expect(readVolumes({ object: 'body' }).volumes[0]?.settings).toEqual({})
 })
 
+it.each([
+  { wall_loops: 2.5 },
+  { wall_loops: '2.5' },
+  { wall_loops: [4, -2] },
+  { line_width: '1e999%' },
+  { line_width: '-5%' },
+])('refuses lossy or nonfinite modifier values before adding or moving a volume: %j', async (settings) => {
+  const added = await call('add', { role: 'modifier', shape: 'box', settings: { wall_loops: 4 } })
+  history().clear()
+  const before = get().plate
+  await expect(call('add', { role: 'modifier', shape: 'box', settings })).rejects.toMatchObject({ code: 'invalid_input' })
+  expect(get().plate).toBe(before)
+  expect(history().canUndo()).toBe(false)
+  await expect(call('set', { volume: added.changed![0], positionMm: [4, 5, 6], set: { sparse_infill_density: 25, ...settings } })).rejects.toMatchObject({ code: 'invalid_input' })
+  expect(get().plate).toBe(before)
+  expect(history().canUndo()).toBe(false)
+})
+
 it('copies volumes directly into another object and consumes an object as a volume with read-back', async () => {
   const source = { ...get().plate[0]!, id: 'source', name: 'Source', transform: compose({ position: [10, 20, 5], rotation: [0, 0, 10], scale: [1, 2, 1] }) }
   set({ plate: [...get().plate, source] })

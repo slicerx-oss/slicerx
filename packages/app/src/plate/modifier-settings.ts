@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { SettingDef, SettingValue } from '@slicerx/contracts'
-import { checkValues, coerce, settingDef } from '@slicerx/settings'
+import { checkValues, settingDef } from '@slicerx/settings'
+import { settingEditValue } from './setting-edit-value'
 
 const GROUPS = new Set(['strength', 'speed', 'quality', 'extrusion'])
 const TYPES = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floats', 'ints', 'percents', 'floatOrPercent'])
@@ -21,9 +22,7 @@ export function modifierDefinition(key: string): SettingDef {
 export function modifierValues(values: Record<string, unknown>): Record<string, SettingValue> {
   const typed: Record<string, SettingValue> = {}
   for (const [key, value] of Object.entries(values)) {
-    const converted = coerce(modifierDefinition(key), value)
-    if (converted.ok !== true) throw new Error(`${key} has an invalid value`)
-    typed[key] = converted.value
+    typed[key] = settingEditValue(modifierDefinition(key), value)
   }
   const errors = checkValues(typed).filter((e) => e.severity === 'error' || e.code === 'unknown_key' || e.code === 'enum_value_unavailable')
   if (errors.length) throw new Error(errors.map((e) => e.message).join('; '))
