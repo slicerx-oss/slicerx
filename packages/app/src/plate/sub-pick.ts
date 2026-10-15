@@ -14,6 +14,9 @@ type Lines = { from: Vec3; to: Vec3 }[]
 /** The edge under a click, as lines to draw, or null when there is no edge to pick there. */
 export type EdgeAt = (objectId: string, partIndex: number, triangle: number, at: Vec3) => Promise<Lines | null>
 
+/** Whether lines of an edge lie within the pick radius of a client point (the new Model feel's edge priority). */
+export type EdgeWins = (lines: Lines, screen: [number, number]) => boolean
+
 /** Whether the face under a click is round (a hole's or a peg's wall), from the engine. */
 export type FaceRound = (objectId: string, partIndex: number, triangle: number, at: Vec3) => Promise<boolean>
 
@@ -40,7 +43,7 @@ export function addPick(cur: readonly SubPick[], pick: SubPick, mode: { shift?: 
  * Handles a Model click with faces or edges in the filter. True when it did (the click picked or cleared a face or
  * an edge); false leaves it to the ordinary object selection.
  */
-export async function pickSub(e: PickEvent, edgeAt: EdgeAt, faceRound?: FaceRound): Promise<boolean> {
+export async function pickSub(e: PickEvent, edgeAt: EdgeAt, faceRound?: FaceRound, edgeWins?: EdgeWins): Promise<boolean> {
   const filter = get().pickFilter
   const faces = filter.includes('face')
   const edges = filter.includes('edge')
@@ -51,8 +54,11 @@ export async function pickSub(e: PickEvent, edgeAt: EdgeAt, faceRound?: FaceRoun
   }
   const base = { objectId: e.objectId, partIndex: e.partIndex, triangle: e.triangle, point: e.point }
   let pick: SubPick | null = null
-  // Faces first when both are on: a click on a face picks the face; Edges alone pick the nearest edge.
-  if (faces) pick = { kind: 'face', ...base }
+  // Faces first when both are on: a click on a face picks the face; Edges alone pick the nearest edge. With the new
+  // Model feel (`edgeWins`), an edge within a few pixels of the click wins over the face under it.
+  const near = faces && edgeWins && e.screen ? await edgeAt(e.objectId, e.partIndex, e.triangle, e.point).catch(() => null) : null
+  if (near && e.screen && edgeWins?.(near, e.screen)) pick = { kind: 'edge', ...base, lines: near, ...(near.length > 1 ? { round: true } : {}) }
+  else if (faces) pick = { kind: 'face', ...base }
   else {
     const lines = await edgeAt(e.objectId, e.partIndex, e.triangle, e.point).catch(() => null)
     if (!lines) return true

@@ -394,6 +394,15 @@ describe('the UI state an agent reads', () => {
         { kind: 'edge', objectId: 'cube', part: 0, triangle: 9, pointMm: [1.23, 2, 3.01], round: true },
       ],
     })
+    // With the new Model feel (developer mode and the flag), faces in the filter say how near an edge wins.
+    expect(uiState(get(), document)['selection']).not.toHaveProperty('edgeWinsPx')
+    localStorage.setItem('sx.modelFeel', '1')
+    try {
+      expect(uiState({ ...get(), settingsMode: 'developer' }, document)['selection']).toMatchObject({ edgeWinsPx: 6 })
+      expect(uiState({ ...get(), settingsMode: 'advanced' }, document)['selection']).not.toHaveProperty('edgeWinsPx')
+    } finally {
+      localStorage.removeItem('sx.modelFeel')
+    }
     // A stale list without the primary reads as the primary alone, as the app treats it.
     set({ selection: 'peg', selectedIds: ['cube'] })
     expect((uiState(get(), document)['selection'] as { objects: unknown[] }).objects).toEqual([{ id: 'peg', name: 'Peg' }])

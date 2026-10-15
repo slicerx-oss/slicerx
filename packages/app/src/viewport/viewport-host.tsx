@@ -21,7 +21,9 @@ import { openViewMenu } from '../plate/view-menu'
 import { openViewRing, ringTarget, setLayFace } from '../plate/view-ring'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
 import { probeHandler, setCameraBus, toolStore, type CadView, type Tool } from '../plate/tools'
-import { pickSub, type EdgeAt, type FaceRound } from '../plate/sub-pick'
+import { pickSub, type EdgeAt, type EdgeWins, type FaceRound } from '../plate/sub-pick'
+import { EDGE_WINS_PX, screenDistance } from '../plate/pick-filter'
+import { modelFeelFor, onModelFeel } from '../cad/model-feel-flag'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
@@ -82,6 +84,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
   setSelectedFaces?: Viewport['setSelectedFaces']
   facePickAt?: Viewport['facePickAt']
   setPickFaces?: Viewport['setPickFaces']
+  screenOf?: Viewport['screenOf']
   setPickEdges?: Viewport['setPickEdges']
   setPickedEdges?: Viewport['setPickedEdges']
   setInsets?: Viewport['setInsets']
@@ -313,6 +316,9 @@ export function moveCount(p: PreviewBuffers | null, layerHi: number, cut: number
   // Fractional: the viewport draws the current move part of the way and puts the head there.
   return (end - startIdx) * cut
 }
+
+/** Whether this session has started the pick filter on Face for the new Model feel. */
+let feelStarted = false
 
 /** The plate's viewport. `layers`: Slice shows the toolpaths, with the layer dock and legend over the view. */
 /** The edge under a click in Model, from the geometry engine, as lines to draw. */
@@ -600,7 +606,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         // Model with Faces or Edges in the pick filter: the click picks a face or an edge (plate/sub-pick.ts).
         const st = appStore.getState()
         if (showsDesign(st) && st.pickFilter.some((k) => k !== 'object')) {
-          void pickSub(e, edgeAt, faceRound).then((done) => {
+          void pickSub(e, edgeAt, faceRound, edgeWinsFor(st)).then((done) => {
             if (!done) selectObject(e)
           })
           return
@@ -622,7 +628,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         const objectId = e.objectId
         if (st.pickFilter.some((k) => k !== 'object') && e.partIndex !== null && e.triangle !== null && e.point) {
           const already = st.subPicks.some((p) => p.objectId === objectId && p.partIndex === e.partIndex && p.triangle === e.triangle)
-          const ready = already ? Promise.resolve(true) : pickSub({ objectId, partIndex: e.partIndex, triangle: e.triangle, point: e.point, bed: null }, edgeAt, faceRound)
+          const ready = already ? Promise.resolve(true) : pickSub({ objectId, partIndex: e.partIndex, triangle: e.triangle, point: e.point, bed: null, screen: e.screen }, edgeAt, faceRound, edgeWinsFor(st))
           void ready.then((done) => {
             const now = appStore.getState()
             openViewRing(at, done && now.subPicks.length ? ringTarget(now) : { kind: 'object', objectId })
@@ -650,37 +656,57 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }))
       // The picked faces light up and picked edges draw as bars; the face filter lights the face under the pointer, and
       // the edge filter shows the edge a click would pick.
+      // With the new Model feel the face filter also asks for the edge under the pointer, and an edge within EDGE_WINS_PX
+      // lights instead of the face (`edgeWon`), as a click there would pick it.
       let hoverLines: { from: [number, number, number]; to: [number, number, number] }[] = []
+      let edgeWon = false
       const showPicks = (s: AppState) => {
         const inModel = showsDesign(s)
         const free = inModel && s.objectTool === null
+        const feel = free && s.pickFilter.includes('face') && edgeWinsFor(s) !== undefined
+        if (!feel) edgeWon = false
         vp.setSelectedFaces?.(inModel ? s.subPicks.filter((p) => p.kind === 'face') : [])
-        vp.setPickFaces?.(free && s.pickFilter.includes('face'))
-        const edges = free && s.pickFilter.includes('edge') && !s.pickFilter.includes('face')
+        vp.setPickFaces?.(free && s.pickFilter.includes('face') && !edgeWon)
+        const edges = (free && s.pickFilter.includes('edge') && !s.pickFilter.includes('face')) || feel
         vp.setPickEdges?.(edges)
         if (!edges) hoverLines = []
         vp.setPickedEdges?.(inModel ? s.subPicks.flatMap((p) => p.lines ?? []) : [], hoverLines)
       }
+      // An edge wins when its lines pass within EDGE_WINS_PX of the pointer on screen; off without the flag.
+      const edgeWinsFor = (s: AppState): EdgeWins | undefined =>
+        modelFeelFor(s.settingsMode) ? (lines, at) => screenDistance(at, lines, (p) => vp.screenOf?.(p) ?? null) <= EDGE_WINS_PX : undefined
       // The edge under the pointer, from the engine, at most one question at a time.
       let asking = 0
       offs.push(vp.on('edgehover', (h) => {
         const n = ++asking
         if (!h) {
           hoverLines = []
+          edgeWon = false
           return showPicks(appStore.getState())
         }
         void edgeAt(h.objectId, h.partIndex, h.triangle, h.point).then(
           (lines) => {
             if (n !== asking) return
-            hoverLines = lines ?? []
-            showPicks(appStore.getState())
+            const st = appStore.getState()
+            const wins = st.pickFilter.includes('face') ? edgeWinsFor(st) : undefined
+            // Face filter with the new Model feel: the edge shows only when it is near enough to win.
+            edgeWon = Boolean(wins && lines && wins(lines, h.screen))
+            hoverLines = wins && !edgeWon ? [] : (lines ?? [])
+            showPicks(st)
           },
           () => undefined,
         )
       }))
       showPicks(appStore.getState())
+      // The new Model feel starts the filter on Face, once a session (the store starts on objects, keeping the flag out
+      // of the startup shell); turning the flag over sets Face with it, whole objects without.
+      if (!feelStarted) {
+        feelStarted = true
+        if (modelFeelFor(appStore.getState().settingsMode)) set({ pickFilter: ['face'] })
+      }
+      offs.push(onModelFeel((on) => set({ pickFilter: on ? ['face'] : ['object'], subPicks: [] })))
       offs.push(appStore.subscribe((s, prev) => {
-        if (s.subPicks !== prev.subPicks || s.plate !== prev.plate || s.pickFilter !== prev.pickFilter || s.objectTool !== prev.objectTool || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) showPicks(s)
+        if (s.subPicks !== prev.subPicks || s.plate !== prev.plate || s.pickFilter !== prev.pickFilter || s.objectTool !== prev.objectTool || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace || s.settingsMode !== prev.settingsMode) showPicks(s)
       }))
       // Final transforms that land in the same frame (an arrange moves every object) are one undo step.
       let pending: Record<string, number[]> | null = null

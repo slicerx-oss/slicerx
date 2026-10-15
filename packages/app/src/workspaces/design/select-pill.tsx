@@ -9,7 +9,8 @@ import { beginEdit, toolFor, viewStep } from '../../cad/history/ops'
 import { stepName } from '@slicerx/cad-history'
 import { useLookChoice } from '../../first-run/look'
 import { useHost } from '../../host'
-import { PICK_KINDS, PICK_LABEL, pickReadout, type PickKind } from '../../plate/pick-filter'
+import { PICK_KINDS, PICK_LABEL, PICK_LABEL_FEEL, pickReadout, type PickKind } from '../../plate/pick-filter'
+import { modelFeelFor } from '../../cad/model-feel-flag'
 import { setPickKind } from '../../plate/sub-pick'
 import { get, set, useApp } from '../../state/store'
 import { useMadeBy } from './use-made-by'
@@ -20,6 +21,8 @@ const ICON: Readonly<Record<PickKind, 'select-object' | 'select-face' | 'select-
 
 export function SelectPill() {
   const filter = useApp((s) => s.pickFilter)
+  // The new Model feel names the kinds as modes: Face, Edge only, Body.
+  const labels = useApp((s) => modelFeelFor(s.settingsMode)) ? PICK_LABEL_FEEL : PICK_LABEL
   const plate = useApp((s) => s.plate)
   const words = useLengthWords()
   const names: Record<string, string> = {}
@@ -59,8 +62,8 @@ export function SelectPill() {
               data-testid="model-select-filter"
               data-kind={k}
               aria-pressed={filter.includes(k)}
-              aria-label={PICK_LABEL[k].label}
-              {...tipAttrs({ title: PICK_LABEL[k].label, body: `${PICK_LABEL[k].tip}. Shift adds or drops it.`, demo: `still-pick-${k}`, ...(key ? { key } : {}) })}
+              aria-label={labels[k].label}
+              {...tipAttrs({ title: labels[k].label, body: `${labels[k].tip}. Shift adds or drops it.`, demo: `still-pick-${k}`, ...(key ? { key } : {}) })}
               onClick={(e) => setPickKind(k, e.shiftKey ? 'toggle' : 'only')}
             >
               <Icon name={ICON[k]} size={16} />

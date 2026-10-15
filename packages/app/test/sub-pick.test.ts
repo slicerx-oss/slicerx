@@ -45,6 +45,23 @@ describe('picks', () => {
     expect(get().subPicks).toHaveLength(1)
   })
 
+  it('with the new Model feel, an edge near the click wins over the face under it, else the face', async () => {
+    setPickKind('face', 'only')
+    const line = { from: [0, 0, 0] as [number, number, number], to: [1, 0, 0] as [number, number, number] }
+    const near = async () => [line]
+    // The callback stands in for the view's screen measure: 4 px wins, 9 px does not.
+    const wins = (px: number) => () => px <= 6
+    expect(await pickSub({ ...hit(4), screen: [10, 10] }, near, undefined, wins(4))).toBe(true)
+    expect(get().subPicks).toMatchObject([{ kind: 'edge', triangle: 4, lines: [line] }])
+    expect(await pickSub({ ...hit(5), screen: [10, 10] }, near, undefined, wins(9))).toBe(true)
+    expect(get().subPicks).toMatchObject([{ kind: 'face', triangle: 5 }])
+    // No pointer position (a pick an agent or test sends) and no flag keep the face.
+    expect(await pickSub(hit(6), near, undefined, wins(0))).toBe(true)
+    expect(get().subPicks).toMatchObject([{ kind: 'face', triangle: 6 }])
+    expect(await pickSub({ ...hit(7), screen: [10, 10] }, near)).toBe(true)
+    expect(get().subPicks).toMatchObject([{ kind: 'face', triangle: 7 }])
+  })
+
   it('drops the picks of a kind the filter turns off, and Esc clears picks before the object', () => {
     set({ pickFilter: ['face'], subPicks: [face(1)], selection: 'a', selectedIds: ['a'] })
     setPickKind('edge', 'toggle')
