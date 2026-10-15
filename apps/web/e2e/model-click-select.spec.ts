@@ -58,6 +58,45 @@ async function offFrontEdge(page: Page, id: string, px: number): Promise<{ x: nu
   return { x: m[0] + n[0]! * px, y: m[1] + n[1]! * px }
 }
 
+/** Holds real edge answers until the pointer has stopped, in every browser engine. */
+async function holdEdgeAnswers(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker
+    let holding = false
+    const pending: (() => void)[] = []
+    window.Worker = class extends NativeWorker {
+      private readonly edges = new Set<number>()
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options)
+        this.addEventListener('message', (event: MessageEvent<{ id?: number }>) => {
+          if (event.data?.id === undefined || !this.edges.delete(event.data.id) || !holding) return
+          event.stopImmediatePropagation()
+          pending.push(() => this.dispatchEvent(new MessageEvent('message', { data: event.data })))
+        })
+      }
+      override postMessage(message: unknown, options: Transferable[] | StructuredSerializeOptions = []): void {
+        const request = message as { id?: number; op?: string } | null
+        if (request?.op === 'edge.pick' && typeof request.id === 'number') this.edges.add(request.id)
+        if (Array.isArray(options)) super.postMessage(message, options)
+        else super.postMessage(message, options)
+      }
+    }
+    Object.assign(window, {
+      __edgeAnswers: {
+        hold: () => { holding = true },
+        pending: () => pending.length,
+        release: () => {
+          holding = false
+          for (const deliver of pending.splice(0)) deliver()
+        },
+      },
+    })
+  })
+}
+
+const edgeAnswers = (page: Page, action: 'hold' | 'pending' | 'release') => page.evaluate((action) =>
+  (window as unknown as { __edgeAnswers: { hold(): void; pending(): number; release(): void } }).__edgeAnswers[action](), action)
+
 const filter = (page: Page, kind: string) => page.locator(`[data-testid="model-select-filter"][data-kind="${kind}"]`)
 const subPicks = (page: Page) => page.evaluate(() => (window as unknown as { __sx: { getState(): { subPicks: { kind: string }[] } } }).__sx.getState().subPicks.map((p) => p.kind))
 
@@ -80,12 +119,11 @@ test.describe('Model click to select', () => {
     expect(again).toEqual(b)
   })
 
-  test('on a slow machine, the face lights once the pointer rests inside it after an edge', async ({ page }) => {
+  test('after a delayed edge answer, the face lights under the resting pointer', async ({ page }) => {
     test.slow()
+    await holdEdgeAnswers(page)
     await openStudio(page)
     const id = await framedBox(page)
-    const cdp = await page.context().newCDPSession(page)
-    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 })
     const hover = () =>
       page.evaluate(() => {
         const vp = (window as unknown as { __vp: { edgeMarks: { lines: { hover: unknown[] } }; faceKey: string } }).__vp
@@ -98,12 +136,16 @@ test.describe('Model click to select', () => {
         await page.mouse.move(near.x, near.y - 30)
         await page.mouse.move(near.x, near.y, { steps: 3 })
         await expect.poll(hover).toEqual({ edge: true, face: false })
-        // one move inside, then the pointer rests: the late edge answer must not leave the face unlit
+        // Keep the real answer pending while the pointer moves inside, then release it without another move.
+        await edgeAnswers(page, 'hold')
         await page.mouse.move(inside.x, inside.y)
+        await expect.poll(() => edgeAnswers(page, 'pending')).toBeGreaterThan(0)
+        expect(await hover()).toEqual({ edge: true, face: false })
+        await edgeAnswers(page, 'release')
         await expect.poll(hover, { timeout: 10_000 }).toEqual({ edge: false, face: true })
       }
     } finally {
-      await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+      await edgeAnswers(page, 'release')
     }
   })
 
