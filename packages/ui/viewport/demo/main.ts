@@ -214,7 +214,7 @@ const ready = (async () => {
 
 declare global {
   interface Window {
-    sxDemo: { vp: typeof vp; ready: Promise<void>; orbit: typeof orbit; setMode: typeof setMode; preview: () => PreviewBuffers | null }
+    sxDemo: { vp: typeof vp; ready: Promise<void>; orbit: typeof orbit; setMode: typeof setMode; preview: () => PreviewBuffers | null; plate: { bed: Bed; objects: ViewportObject[]; surfaceLabel: string } }
   }
 }
-window.sxDemo = { vp, ready, orbit, setMode, preview: () => preview }
+window.sxDemo = { vp, ready, orbit, setMode, preview: () => preview, plate: { bed, objects, surfaceLabel: 'Textured PEI' } }
