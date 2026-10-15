@@ -13,7 +13,7 @@ const obj = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id
 const PLATE = { wall_loops: 2, sparse_infill_density: '15%' }
 
 beforeEach(() => {
-  set({ plate: [obj('a'), obj('b'), obj('c'), obj('d', { instanceOf: 'a' })], objectSettings: {} })
+  set({ activePlate: 'shown', plates: [{ id: 'shown', name: 'Shown', settings: {}, objects: [] }], plate: [obj('a'), obj('b'), obj('c'), obj('d', { instanceOf: 'a' })], objectSettings: {} })
 })
 
 describe('the scope a selection gives', () => {
@@ -62,6 +62,34 @@ describe('reading and writing a setting through a scope', () => {
     setScoped(get(), part, 'wall_loops', 6)
     expect(scopeValue(get(), PLATE, 'wall_loops', part)).toMatchObject({ value: 6, source: 'own' })
     expect(get().plate.find((p) => p.id === 'c')?.partSettings).toEqual({ body: { wall_loops: 6 } })
+  })
+
+  it('edits and clears a linked part through its copy, with the same read-back and one undo', () => {
+    const copy = { kind: 'part', id: 'd', part: 'body' } as const
+    const source = { kind: 'part', id: 'a', part: 'body' } as const
+    const h = history()
+    h.clear()
+    setScoped(get(), copy, 'wall_loops', 6)
+    expect(scopeValue(get(), PLATE, 'wall_loops', copy).value).toBe(6)
+    expect(scopeValue(get(), PLATE, 'wall_loops', source).value).toBe(6)
+    h.undo()
+    expect(scopeValue(get(), PLATE, 'wall_loops', copy).value).toBe(2)
+    h.redo()
+    setScoped(get(), copy, 'wall_loops', undefined)
+    expect(scopeValue(get(), PLATE, 'wall_loops', source).value).toBe(2)
+    expect(get().plate.find((p) => p.id === 'a')?.partSettings).toBeUndefined()
+  })
+
+  it('keeps linked part settings shared when the source is on another plate', () => {
+    set({ activePlate: 'shown', plate: [obj('d', { instanceOf: 'a' })], plates: [
+      { id: 'shown', name: 'Shown', settings: {}, objects: [] },
+      { id: 'other', name: 'Other', settings: {}, objects: [obj('a', { partSettings: { body: { sparse_infill_density: '30%' } } })] },
+    ] })
+    expect(scopeValue(get(), PLATE, 'sparse_infill_density', { kind: 'part', id: 'd', part: 'body' }).value).toBe('30%')
+    setScoped(get(), { kind: 'part', id: 'd', part: 'body' }, 'wall_loops', 6)
+    expect(get().plates.find((p) => p.id === 'other')?.objects[0]?.partSettings).toEqual({ body: { sparse_infill_density: '30%', wall_loops: 6 } })
+    expect(get().plate[0]?.partSettings).toEqual({ body: { sparse_infill_density: '30%', wall_loops: 6 } })
+    expect(scopeValue(get(), PLATE, 'wall_loops', { kind: 'part', id: 'd', part: 'body' }).value).toBe(6)
   })
 
   it('counts an object\'s own settings and its parts\' for the row badge', () => {

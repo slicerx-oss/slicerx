@@ -43,8 +43,8 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.subtract',
 ])
 
-/** Moving, turning and scaling objects, which run on the app's shown plate when the object is not this server's. */
-export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale'])
+/** Transforms and print overrides on the app's shown plate when the object is not this server's. */
+export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale', 'project.object_settings'])
 
 /** The agent side of the app link (link-client `appLink.call`). */
 export interface AppLinkCaller {
@@ -90,7 +90,7 @@ function onApp(name: string, input: Record<string, unknown>, opts: RouteOptions)
 }
 
 /**
- * The tools, with the design tools and the plate edits (project.move, .rotate and .scale on an object this server's
+ * The tools, with the design tools and plate edits (transforms and print overrides on an object this server's
  * project does not have) run in the app while the link answers.
  */
 export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appName: string, opts: RouteOptions = {}): PilotTool<never>[] {

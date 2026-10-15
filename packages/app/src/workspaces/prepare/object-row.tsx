@@ -16,6 +16,7 @@ import { Silhouette } from '../../parts'
 import { selectObject } from '../../plate/edit'
 import { moveObject, objectWarnings, onRenameRequest, renameObject, setPartSlot, toggleLock, togglePrintable, type ObjectMatch } from '../../plate/object-list'
 import { countSettings } from '../../plate/easy-groups'
+import { objectOverrides, partOverridesOf, settingsObjects } from '../../plate/object-settings'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
 import { get, selectedIds, set, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
 import { SelectionMenu } from './selection-bar'
@@ -76,7 +77,6 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const selected = selectedIds({ selection, selectedIds: multi }).includes(p.id)
   const bed = useApp((s) => s.bed)
   const printerSlots = useApp((s) => s.printerSlots)
-  const own = useApp((s) => s.objectSettings[p.id])
   const developer = effectiveMode(useApp((s) => s.settingsMode), useLayout()) === 'developer'
   const slots = useResolvedSlots()
   const strip = useStripSlots()
@@ -89,7 +89,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const [slotMenu, setSlotMenu] = useState<{ part: string; at: { x: number; y: number } } | null>(null)
   const warnings = objectWarnings(p, { bed, printerSlots })
   const groups = useSimpleGroups()
-  const overrides = overrideCount(own, p.partSettings, groups)
+  const overrides = useApp((s) => overrideCount(objectOverrides(s, p), p.instanceOf ? partOverridesOf(settingsObjects(s), p) : p.partSettings, groups))
   const colors = p.handle.parts.map((part, i) => slots[effectiveSlot(p, part) - 1]?.color ?? p.colors[i] ?? 'var(--dim)')
   const sw = rowSwatches(colors)
   // A search that finds a part or a volume opens the tree to show it.

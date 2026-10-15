@@ -16,7 +16,7 @@ import { layerHeightConflict } from '../../plate/object-settings'
 import { plateSequence } from '../../plate/plate-sequence'
 import { scopeValue, setScopedMany, type SettingsScope } from '../../plate/scope'
 import { easyGroups } from '../../plate/easy-groups'
-import { useScope } from './scope-bar'
+import { useScope, useSettingsObjects } from './scope-bar'
 import { usePhoneLayout } from '../../lib/phone-layout'
 import './goal-tiles.css'
 
@@ -88,7 +88,7 @@ export function EasySettingsPanel() {
   // In the selection's scope the controls read the selection's own values over the plate's, and write them.
   const { scope } = useScope()
   const scoped = scope.kind !== 'plate'
-  const plateEntries = useApp((s) => s.plate)
+  const plateEntries = useSettingsObjects()
   const objectSettings = useApp((s) => s.objectSettings)
   const keys = useMemo(() => easyGroups(easy), [easy, profile])
   const view = useMemo(() => {

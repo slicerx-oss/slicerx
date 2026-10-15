@@ -7,7 +7,9 @@ import type { SettingValue } from '@slicerx/contracts'
 import type { AppState, PlateEntry } from '../state/store'
 import { inStep } from './history'
 import { countSettings } from './easy-groups'
-import { objectOverrides, partOverridesOf, setObjectSetting, setPartSetting, sourceId } from './object-settings'
+import { objectOverrides, partOverridesOf, setObjectSetting, setPartSetting, settingsObjects, sourceId } from './object-settings'
+
+type ScopeState = { plate: readonly PlateEntry[]; objectSettings: AppState['objectSettings'] } & Partial<Pick<AppState, 'plates' | 'activePlate'>>
 
 export type SettingsScope = { kind: 'plate' } | { kind: 'objects'; ids: string[] } | { kind: 'part'; id: string; part: string }
 
@@ -27,12 +29,12 @@ export interface ScopedValue {
 const same = (a: SettingValue | undefined, b: SettingValue | undefined) => JSON.stringify(a) === JSON.stringify(b)
 
 /** A setting's value in a scope. `plate` is the plate's resolved configuration. */
-export function scopeValue(s: Pick<AppState, 'plate' | 'objectSettings'>, plate: Readonly<Record<string, SettingValue>>, key: string, scope: SettingsScope): ScopedValue {
+export function scopeValue(s: ScopeState, plate: Readonly<Record<string, SettingValue>>, key: string, scope: SettingsScope): ScopedValue {
   const plateValue = plate[key]
   if (scope.kind === 'plate') return { value: plateValue, source: 'plate', plateValue }
   if (scope.kind === 'part') {
     const entry = s.plate.find((p) => p.id === scope.id)
-    const own = entry ? partOverridesOf(s.plate, entry)[scope.part]?.[key] : undefined
+    const own = entry ? partOverridesOf(settingsObjects(s), entry)[scope.part]?.[key] : undefined
     if (own !== undefined) return { value: own, source: 'own', plateValue }
     // A part without its own value prints with its object's.
     const obj = entry ? objectOverrides(s, entry)[key] : undefined
@@ -72,17 +74,17 @@ export function setScopedMany(s: Pick<AppState, 'plate'>, scope: SettingsScope, 
 }
 
 /** The settings the scope's targets have of their own: listed in Print settings even when they would be behind search. */
-export function ownKeys(s: Pick<AppState, 'plate' | 'objectSettings'>, scope: SettingsScope): Set<string> {
+export function ownKeys(s: ScopeState, scope: SettingsScope): Set<string> {
   if (scope.kind === 'plate') return new Set()
   if (scope.kind === 'part') {
     const entry = s.plate.find((p) => p.id === scope.id)
-    return new Set(entry ? [...Object.keys(objectOverrides(s, entry)), ...Object.keys(partOverridesOf(s.plate, entry)[scope.part] ?? {})] : [])
+    return new Set(entry ? [...Object.keys(objectOverrides(s, entry)), ...Object.keys(partOverridesOf(settingsObjects(s), entry)[scope.part] ?? {})] : [])
   }
   return new Set(targets(s.plate, scope.ids).flatMap((p) => Object.keys(objectOverrides(s, p))))
 }
 
 /** How many settings an object has of its own, its parts' included: the badge on its row. */
-export function overrideCount(s: Pick<AppState, 'plate' | 'objectSettings'>, p: PlateEntry, groups: readonly (readonly string[])[] = []): number {
-  const parts = Object.values(partOverridesOf(s.plate, p)).reduce((n, o) => n + countSettings(Object.keys(o), groups), 0)
+export function overrideCount(s: ScopeState, p: PlateEntry, groups: readonly (readonly string[])[] = []): number {
+  const parts = Object.values(partOverridesOf(settingsObjects(s), p)).reduce((n, o) => n + countSettings(Object.keys(o), groups), 0)
   return countSettings(Object.keys(objectOverrides(s, p)), groups) + parts
 }

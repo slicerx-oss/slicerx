@@ -5,10 +5,19 @@
 import { Icon, Seg } from '@slicerx/ui'
 import { useEffect, useMemo } from 'react'
 import { overrideCount, scopeOf, type SettingsScope } from '../../plate/scope'
+import { settingsObjects } from '../../plate/object-settings'
 import { selectedIds, set, useApp } from '../../state/store'
 import { useSimpleGroups } from './simple-groups'
 import { usePhoneLayout } from '../../lib/phone-layout'
 import './scope.css'
+
+/** Subscribe to sources on other plates as well as the objects being edited. */
+export function useSettingsObjects() {
+  const plate = useApp((s) => s.plate)
+  const plates = useApp((s) => s.plates)
+  const activePlate = useApp((s) => s.activePlate)
+  return useMemo(() => settingsObjects({ plate, plates, activePlate }), [plate, plates, activePlate])
+}
 
 /** The scope Print settings edits now, and its name for the pill. */
 export function useScope(): { scope: SettingsScope; name: string } {

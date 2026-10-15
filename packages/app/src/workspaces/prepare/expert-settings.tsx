@@ -25,7 +25,7 @@ import { ownKeys, scopeValue, setScoped } from '../../plate/scope'
 import { plateSequence } from '../../plate/plate-sequence'
 import { get, markStale, set, useApp, type PlateMeta } from '../../state/store'
 import { appName } from '../../edition'
-import { useScope } from './scope-bar'
+import { useScope, useSettingsObjects } from './scope-bar'
 
 import { fixMatch } from './setting-fixes'
 import { buildTabs, EDITABLE_PROCESS, offeredTabs, sectionHasRows, sectionOpen, sectionRows, type ViewSection, type ViewTab } from './settings-view'
@@ -335,7 +335,7 @@ export function ExpertSettings() {
   const seqNote = plateSequenceNote(activeMeta, config)
   // With the selection's scope picked, each row reads and writes the selection's own values over the plate's.
   const { scope, name: scopeName } = useScope()
-  const plate = useApp((s) => s.plate)
+  const plate = useSettingsObjects()
   const objectSettings = useApp((s) => s.objectSettings)
   const scoped = scope.kind !== 'plate'
   const own = useMemo(() => ownKeys({ plate, objectSettings }, scope), [plate, objectSettings, scope])

@@ -17,7 +17,7 @@ import { sliceHandle, sliceShards } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
 import { bedTypeConfig } from '../plate/bed-type'
 import { plateSequence } from '../plate/plate-sequence'
-import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
+import { layerHeightConflict, objectOverrides, partOverridesOf, settingsObjects } from '../plate/object-settings'
 import { markOpenStage } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, openRightOnSlice, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
@@ -45,7 +45,8 @@ export async function plateObjects(slicer: Pick<SlicerHost, 'loadModel'>, s: App
   const handles = await Promise.all(toPrint.map((p) => sliceHandle(slicer, p)))
   // The plate counts from its front left corner; the engine takes machine coordinates.
   const origin = areaOrigin(resolveConfig(s.easy, s.overrides)['printable_area'])
-  return toPrint.map((p, i) => objectToMachine({ id: p.id, name: p.name, mesh: handles[i]!.id, transform: p.transform, ...overridesOf(meta, p), ...(p.volumes?.length ? { volumes: requestVolumes(p) } : {}), ...(Object.keys(objectOverrides(s, p)).length ? { settings: objectOverrides(s, p) } : {}), ...(Object.keys(partOverridesOf(entries, p)).length ? { partSettings: partOverridesOf(entries, p) } : {}), ...(p.brimPoints?.length ? { brimPoints: p.brimPoints } : {}) }, origin))
+  const shared = settingsObjects(s)
+  return toPrint.map((p, i) => objectToMachine({ id: p.id, name: p.name, mesh: handles[i]!.id, transform: p.transform, ...overridesOf(meta, p), ...(p.volumes?.length ? { volumes: requestVolumes(p) } : {}), ...(Object.keys(objectOverrides(s, p)).length ? { settings: objectOverrides(s, p) } : {}), ...(Object.keys(partOverridesOf(shared, p)).length ? { partSettings: partOverridesOf(shared, p) } : {}), ...(p.brimPoints?.length ? { brimPoints: p.brimPoints } : {}) }, origin))
 }
 
 /** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */

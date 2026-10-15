@@ -99,10 +99,9 @@ pub(crate) enum LinkClass {
     Edit,
 }
 
-/// Every method an agent may call on the project open in the app (`app.call`, `app_link.rs`), and
-/// whether it reads or edits. The hub refuses any other name. None of them prints, queues, starts
-/// or sends a job, answers a card, signs in, buys, deletes files, or changes printers, the network or
-/// connection settings. look.set changes only two view preferences. additions need a test entry below.
+/// methods on the open project and their grants. other names are refused.
+/// print overrides and view preferences are available; printing, accounts,
+/// printer connections and network settings stay with a person.
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("history.get", LinkClass::Read),
@@ -113,6 +112,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("project.move", LinkClass::Edit),
     ("project.rotate", LinkClass::Edit),
     ("project.scale", LinkClass::Edit),
+    ("project.object_settings", LinkClass::Edit),
+    ("object.settings", LinkClass::Read),
+    ("object.settings_set", LinkClass::Edit),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
@@ -368,6 +370,9 @@ mod tests {
         ("project.move", LinkClass::Edit),
         ("project.rotate", LinkClass::Edit),
         ("project.scale", LinkClass::Edit),
+        ("project.object_settings", LinkClass::Edit),
+        ("object.settings", LinkClass::Read),
+        ("object.settings_set", LinkClass::Edit),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
         ("plates.list", LinkClass::Read),

@@ -165,6 +165,20 @@ Off by default: the server calls no network endpoint for it, and `slicerx_cloud_
 
 A locked project (`.sxlock`, format in `packages/sx3mf/SPEC-sxlock.md`) is an `.sx3mf` encrypted for one SlicerX account, and only that account's service hands out its key. The server needs the edition's account service: `SLICERX_CONFIG` naming the resolved edition config (`backend.supabase`), or `SLICERX_MCP_SUPABASE_URL` with `SLICERX_MCP_SUPABASE_ANON_KEY`. Without it, `slicerx_sxlock_open` and `slicerx_sxlock_export` answer that locked projects are not configured and send nothing. Each call reads an API token at call time from the keychain item `slicerx-sxlock` (account `slicerx`; `SLICERX_MCP_SXLOCK_KEY_REF` names another `slicerx-sxlock-*` item) or from `SLICERX_MCP_SXLOCK_TOKEN`. The token's scopes decide what works: `sxlock_open` to open the account's own files, `sxlock_seal` to lock files for it. Give a token only the scope it needs. Opening needs the network every time, and opened projects are written to the output folder with mode 0600. `slicerx_sxlock_inspect` reads the owner and key id from a header and needs neither. Refusals (offline, another account, a revoked key, a missing scope, a damaged file) come back as tool errors with the reason in parentheses.
 
+## Print overrides in the open app
+
+`slicerx_app_object_settings` reads one object on the shown plate, its parts, their own overrides and the effective values after plate, object and part inheritance. Use a concrete object id from `slicerx_app_plate`; a unique object name also works. The response lists every linked copy affected, including copies on other plates. `keys` limits the effective values returned; the own-override lists remain available.
+
+`slicerx_app_object_settings_set` sets or clears object overrides. Add `part` with a part name from the read-back to edit that part instead. All values are checked before anything changes. Plate-wide settings, custom G-code and unknown keys are refused. Linked copies share the edit, and one toolbar Undo restores it. An unchanged patch adds no Undo step.
+
+```sh
+slicerx-mcp call --app app_object_settings '{"object":"obj_1","keys":["wall_loops"]}'
+slicerx-mcp call --app app_object_settings_set '{"object":"obj_1","part":"body","set":{"wall_loops":4}}'
+slicerx-mcp call --app app_object_settings_set '{"object":"obj_1","part":"body","clear":["wall_loops"]}'
+```
+
+These tools require the app link; writes require its edit grant. They return the same read-back after the change, including any layer-height conflict. Reading never exposes printer connections or credentials. The existing `slicerx_project_object_settings` command also routes to the open app like move, rotate and scale; a server-owned object remains on the server unless `--app` is set. Modifiers and settings by height keep their existing server behavior.
+
 ## Printers
 
 - `--printers demo` (default): five simulated printers. Nothing reaches real hardware, and approvals work exactly as they do for real printers.

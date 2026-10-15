@@ -135,7 +135,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
   const objectSettings = tool({
     name: 'project.object_settings',
     description:
-      'Give one object its own settings (OrcaSlicer keys), over the project\'s and the plate\'s: walls, infill, top and bottom shells, supports and speeds. Temperatures, fans and retraction follow the plate. Layer height may differ only when the plate prints by object. clear removes keys. Custom G-code cannot be set per object.',
+      'Give one object its own settings (OrcaSlicer keys), over the project\'s and the plate\'s: walls, infill, top and bottom shells, supports and speeds. Temperatures, fans and retraction follow the plate. Layer height may differ only when the plate prints by object. clear removes keys. Custom G-code cannot be set per object. In the open app, linked copies share these overrides and the response includes effective object and part values; use app_object_settings_set to edit a named part.',
     input: z.object({ object: objectArg, set: settingsArg.default({}), clear: z.array(z.string()).default([]) }),
     title: (i) => `Change ${Object.keys(i.set).length + i.clear.length} settings of ${i.object}?`,
     run(i, project) {

@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // What an agent may do with the open project over the app link, and the page's answer to each. The hub keeps the same
 // list (packages/connect/link/src/roles.rs, APP_LINK_METHODS) and refuses every other name before it reaches here; a
-// test checks the two lists match. Nothing here prints, queues, approves, signs in or changes connection settings.
-// look.set changes only two view preferences: Frame the view and Toolbar size.
+// test checks the two lists match. Nothing here prints, queues, approves or signs in. Project print overrides and
+// two view preferences are available; printer connections, accounts and network settings remain private.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
 import type { PilotTool } from '@slicerx/pilot'
@@ -32,6 +32,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'project.move': 'edit',
   'project.rotate': 'edit',
   'project.scale': 'edit',
+  'project.object_settings': 'edit',
+  'object.settings': 'read',
+  'object.settings_set': 'edit',
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
@@ -338,6 +341,12 @@ const HANDLERS: Record<string, Handler> = {
   'project.move': async (args, client) => (await import('./plate-edits')).move(args, client.name),
   'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client.name),
   'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client.name),
+  'project.object_settings': async (args, client) => {
+    const out = await (await import('./object-settings')).editObjectSettings(args, client.name)
+    return { summary: `${out.object.name}: print settings read back`, output: out }
+  },
+  'object.settings': async (args) => (await import('./object-settings')).readObjectSettings(args),
+  'object.settings_set': async (args, client) => (await import('./object-settings')).editObjectSettings(args, client.name),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
   'plates.list': () => platesState(),

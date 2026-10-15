@@ -12,6 +12,8 @@ import { modelingTools, type ModelingFiles } from './modeling-tools'
 
 export { appValueInputs, type AppValuesResult } from './app-values'
 
+export { appObjectSettingsInputs, type AppObjectSettings } from './app-object-settings'
+
 const noFiles = (): never => {
   throw new ToolInputError('Model files are for the MCP server; here, give a design instead.', 'not_supported')
 }

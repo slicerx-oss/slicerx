@@ -200,17 +200,19 @@ describe('plate edits over the app link', () => {
   const app = vi.fn(async (method: string) => ({ summary: `ran ${method}`, output: { objects: [{ id: 'obj_1' }] } }))
 
   it('move, turn and scale an object the server does not have on the app\'s plate, with no note', async () => {
-    expect([...APP_PROJECT_TOOLS]).toEqual(['project.move', 'project.rotate', 'project.scale'])
+    expect([...APP_PROJECT_TOOLS]).toEqual(['project.move', 'project.rotate', 'project.scale', 'project.object_settings'])
     const run = route(app as AppLinkCaller['call'], { serverHas: (o) => o === 'Bracket' })
     const out = await run('project.move', { object: 'Box', x: 50, y: 60 })
     expect(app).toHaveBeenCalledWith('project.move', { object: 'Box', x: 50, y: 60 })
     expect(out.summary).toBe('ran project.move (in SlicerX)')
     expect(out.output).toEqual({ objects: [{ id: 'obj_1' }], in: 'app' })
-    // The server's own object stays here, and so does every other project tool.
+    // The server's own object stays here, including its print settings.
     app.mockClear()
     expect((await run('project.rotate', { object: 'Bracket', rotate: [0, 0, 90] })).summary).toBe('project.rotate here')
-    expect((await run('project.object_settings', { object: 'Box', settings: {} })).summary).toBe('project.object_settings here')
+    expect((await run('project.object_settings', { object: 'Bracket', set: {} })).summary).toBe('project.object_settings here')
     expect(app).not.toHaveBeenCalled()
+    expect((await run('project.object_settings', { object: 'Box', set: { wall_loops: 4 } })).summary).toBe('ran project.object_settings (in SlicerX)')
+    expect(app).toHaveBeenCalledWith('project.object_settings', { object: 'Box', set: { wall_loops: 4 } })
   })
 
   it('run here while the link is off, and with --app refuse instead', async () => {

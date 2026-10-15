@@ -8,6 +8,11 @@ import { get, markStale, set, type AppState, type PlateEntry } from '../state/st
 
 export const sourceId = (p: Pick<PlateEntry, 'id' | 'instanceOf'>) => p.instanceOf ?? p.id
 
+/** Current objects followed by the other plates, for shared settings whose source may be elsewhere. */
+export function settingsObjects(s: { plate: readonly PlateEntry[] } & Partial<Pick<AppState, 'plates' | 'activePlate'>>): readonly PlateEntry[] {
+  return s.plates ? [...s.plate, ...s.plates.filter((p) => p.id !== s.activePlate).flatMap((p) => p.objects)] : s.plate
+}
+
 export function objectOverrides(s: Pick<AppState, 'objectSettings'>, p: Pick<PlateEntry, 'id' | 'instanceOf'>): Record<string, SettingValue> {
   return s.objectSettings[sourceId(p)] ?? {}
 }
@@ -37,14 +42,25 @@ export function setPartSetting(objectId: string, part: string, key: string, valu
   const s = get()
   const entry = s.plate.find((p) => p.id === objectId)
   if (!entry) return
-  const all = { ...(entry.partSettings ?? {}) }
-  const cur = { ...(all[part] ?? {}) }
+  const id = sourceId(entry)
+  const objects = settingsObjects(s)
+  const source = objects.find((p) => p.id === id) ?? entry
+  let all = { ...(source.partSettings ?? {}) }
+  const cur = { ...(Object.hasOwn(all, part) ? all[part] : {}) }
   if (value === undefined) delete cur[key]
   else cur[key] = value
-  if (Object.keys(cur).length) all[part] = cur
+  if (Object.keys(cur).length) all = { ...all, [part]: cur }
   else delete all[part]
-  const { partSettings: _old, ...rest } = entry
-  set({ plate: s.plate.map((p) => (p.id === objectId ? ({ ...rest, ...(Object.keys(all).length ? { partSettings: all } : {}) } as PlateEntry) : p)) })
+  // Keep the shared values on copies too, so a copy on another plate has the same fallback.
+  const update = (p: PlateEntry): PlateEntry => {
+    if (sourceId(p) !== id) return p
+    const { partSettings: _old, ...rest } = p
+    return { ...rest, ...(Object.keys(all).length ? { partSettings: all } : {}) }
+  }
+  set({
+    plate: s.plate.map(update),
+    plates: s.plates.map((p) => p.id !== s.activePlate && p.objects.some((o) => sourceId(o) === id) ? { ...p, objects: p.objects.map(update) } : p),
+  })
   markStale()
 }
 
