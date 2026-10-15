@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { resolveSliceConfig } from '../src/config'
 import type { SliceSummary } from '../src/slicer'
 import { writeZip } from '../src/zip'
@@ -64,6 +64,42 @@ describe('process motion settings for the selected printer', () => {
     })
     expect(custom.config.outer_wall_speed).toEqual([45])
   })
+
+  it('uses a custom printer nozzle for explicit and default processes, with overrides last', async () => {
+    const h = await connect()
+    await h.ctx.profiles.prepare(['process:standard'])
+    const presets = [{ name: 'Custom U1', section: 'printer' as const, inherits: 'Snapmaker U1 (0.4 nozzle)', values: { nozzle_diameter: [0.6] }, customGcode: false }]
+    for (const names of [[], ['process:standard']]) {
+      const { config } = resolveSliceConfig(h.ctx.store, h.ctx.profiles, names, undefined, { presets })
+      expect(config.nozzle_diameter).toEqual([0.6])
+      expect(config.layer_height).toBe(0.3)
+      expect(config.line_width).toBe('0.63')
+      expect(config.outer_wall_speed).toEqual([60])
+    }
+    const { config } = resolveSliceConfig(h.ctx.store, h.ctx.profiles, ['process:standard'], { nozzle_diameter: [0.4] }, { presets })
+    expect(config.nozzle_diameter).toEqual([0.4])
+    expect(config.layer_height).toBe(0.2)
+    expect(config.outer_wall_speed).toEqual([200])
+  })
+
+  it.skipIf(noSx())('slices a custom nozzle preset through the client with matching process dimensions', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const file = join(h.dir, 'Custom U1.json')
+    writeFileSync(file, JSON.stringify({ type: 'machine', name: 'Custom U1', inherits: 'Snapmaker U1 (0.4 nozzle)', nozzle_diameter: ['0.6'] }))
+    const slice = vi.spyOn(h.ctx.slicer!, 'slice')
+    const result = await h.call('slicerx_slice_file', {
+      model: join(h.dir, 'cube.stl'), profiles: ['process:standard'], profile_files: [file],
+      overrides: { enable_support: false, brim_type: 'no_brim' },
+    })
+    expect(result.isError, text(result)).toBeFalsy()
+    const sliced = data<SliceSummary>(result)
+    expect(sliced.engine).toBe('sx')
+    expect(sliced.layer_count).toBeGreaterThan(0)
+    expect(sliced.filament_mm).toBeGreaterThan(0)
+    expect(readFileSync(sliced.gcode_path!, 'utf8').length).toBeGreaterThan(0)
+    expect(slice).toHaveBeenCalledOnce()
+    expect(slice.mock.calls[0]![0].config).toMatchObject({ nozzle_diameter: [0.6], layer_height: 0.3, line_width: '0.63', outer_wall_speed: [60] })
+  }, sxTimeout)
 
   it.skipIf(noSx())('sends the selected printer motion settings through a real three-color plate slice', async () => {
     const h = await connect({ engine: 'sx', sxBin })
