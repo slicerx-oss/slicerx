@@ -5,6 +5,8 @@
    the app and the site comes from here. Themes override these variables (see THEMING.md). */
 :root {
   color-scheme: dark;
+  --assistant-ink-dark: #000000;
+  --assistant-ink-light: #ffffff;
 
   /* surfaces, darkest first */
   --ink-0: #282a36;
