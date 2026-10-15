@@ -40,6 +40,8 @@ test('the manifest keeps local measurements separate from world placement', () =
   assert.equal(manifest.faces[0].dimensions.diameterMm, 6)
   assert.deepEqual(manifest.transform, transform)
   assert.equal(manifest.capabilities.meshFallback, false)
+  assert.equal(manifest.capabilities.scopedEdits, false)
+  assert.equal(topologyManifest('body', 'revision', [part()], transform, true, true).capabilities.scopedEdits, true)
   assert.equal(topologyFace(manifest, { bodyId: 'body', revision: 'revision', part: 0, faceKey: 10 }), manifest.faces[0])
 })
 
