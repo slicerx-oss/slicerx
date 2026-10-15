@@ -29,21 +29,31 @@ fn probe() -> Value {
 }
 
 fn numbers(v: &Value) -> Vec<f64> {
-    v.as_array()
-        .expect("an array")
+    let values = v.as_array().expect("an array");
+    assert!(!values.is_empty(), "missing probe measurements");
+    values
         .iter()
-        .map(|x| x.as_f64().unwrap_or(f64::NAN))
+        .map(|x| {
+            x.as_f64()
+                .filter(|value| value.is_finite())
+                .expect("finite numeric probe measurement")
+        })
         .collect()
 }
 
 fn worst_error(v: &Value) -> f64 {
-    let values = numbers(v);
-    assert!(!values.is_empty(), "missing error measurements");
-    assert!(
-        values.iter().all(|value| value.is_finite()),
-        "nonfinite error measurement: {v}"
-    );
-    values.into_iter().map(f64::abs).fold(0.0, f64::max)
+    numbers(v).into_iter().map(f64::abs).fold(0.0, f64::max)
+}
+
+#[test]
+fn probe_values_must_be_present_and_numeric() {
+    for invalid in [
+        serde_json::json!([null]),
+        serde_json::json!([]),
+        serde_json::json!(["1"]),
+    ] {
+        assert!(std::panic::catch_unwind(|| numbers(&invalid)).is_err());
+    }
 }
 
 #[test]
