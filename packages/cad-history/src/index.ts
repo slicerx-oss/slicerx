@@ -5,6 +5,7 @@
 export * from './types'
 export * from './model'
 export * from './edit'
+export * from './reorder'
 export * from './replay'
 export * from './exact'
 export * from './provenance'

@@ -14,7 +14,7 @@ import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, type History, type HistoryMesh, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { reorderedSteps, direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, type History, type HistoryMesh, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
 import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
@@ -199,27 +199,14 @@ export async function viewStep(host: Loader, objectId: string, index: number): P
   quietly(() => set((s) => ({ historyEdit: { objectId, index, original: e, view: true }, plate: s.plate.map((p) => (p.id === objectId ? { ...rest, parts, handle } : p)) })))
 }
 
-/**
- * The steps with one moved from `from` to `to`, everything else in order. A step that followed the end
- * face of a step it now comes before keeps its place as it is now (as when that step is deleted).
- */
-export function movedSteps(steps: readonly Step[], from: number, to: number): Step[] {
-  const out = [...steps]
-  const [s] = out.splice(from, 1)
-  if (!s) return [...steps]
-  out.splice(Math.max(0, Math.min(to, out.length)), 0, s)
-  return out.map((x, i) => {
-    const keep = followsOf(x).filter((f) => out.findIndex((y) => y.id === f.step) < i)
-    if (keep.length === followsOf(x).length) return x
-    const { follow: _f, ...r } = x
-    return { ...r, ...followField(keep) }
-  })
-}
+export { movedSteps } from '@slicerx/cad-history'
 
 /** Moves a step earlier or later and runs the history again; a step that no longer works there says why. */
-export function moveStep(host: Loader, objectId: string, from: number, to: number): Promise<{ status: StepStatus[] }> {
+export async function moveStep(host: Loader, objectId: string, from: number, to: number): Promise<{ status: StepStatus[] }> {
   const h = need(objectId)
-  return applyHistory(host, objectId, { ...h, steps: movedSteps(h.steps, from, to) })
+  const steps = await reorderedSteps(h, from, to, (history) => runReplay({ history }))
+  if (need(objectId) !== h) throw abortError()
+  return applyHistory(host, objectId, { ...h, steps })
 }
 
 /** Puts the object back as it is and closes the edit. */

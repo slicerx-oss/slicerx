@@ -37,6 +37,29 @@ afterEach(() => {
 })
 
 describe('design timeline in the app', () => {
+  it('keeps a reordered history through timeline read-back, save, reopen and Undo', async () => {
+    const undo = createHistory(appStore)
+    stop = startTimeline()
+    try {
+      appStore.setState({ plate: [entry('a', box()), entry('b', peg())] })
+      const before = appStore.getState().timeline
+      const h = box()
+      const steps = [...h.steps].reverse()
+      appStore.setState((s) => ({ plate: s.plate.map((e) => e.id === 'a' ? { ...e, history: { ...h, steps } } : e) }))
+      const t = appStore.getState().timeline
+      expect(bare(historyOf(t, 'a'))).toEqual(steps)
+      expect(bare(historyOf(t, 'b'))).toEqual(peg().steps)
+      expect(t.items.map((i) => i.id).sort()).toEqual(before.items.map((i) => i.id).sort())
+      for (const [n, i] of t.items.entries()) if (i.kind === 'feature' && i.sketch) expect(t.items.findIndex((k) => k.id === i.sketch)).toBeLessThan(n)
+      const bed = { widthMm: 256, depthMm: 256 }
+      const p = await readProject(writeProject({ plates: [{ id: 'p1', name: 'Plate 1', objects: appStore.getState().plate, settings: {} }], bed, settings: {}, timeline: t }), bed)
+      const fileId = p.plates[0]!.objects[0]!.fileId!
+      expect(p.histories.get(fileId)!.steps.map((s) => s.id)).toEqual(steps.map((s) => s.id))
+      undo.undo()
+      expect(appStore.getState().timeline).toBe(before)
+    } finally { undo.dispose() }
+  })
+
   it('follows the objects: merged by time, a new step at the end, undo puts it back, a removed object takes its features', () => {
     const undo = createHistory(appStore)
     stop = startTimeline()

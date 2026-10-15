@@ -232,6 +232,31 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
     place.set(s.id, at + add.length - 1)
     if (at < marker || (!atEnd && at === marker)) marker += add.length
   })
+  if (atEnd) {
+    // A body's feature slots keep their place among other bodies, but follow its new history order.
+    const features = new Map(items.filter((i): i is FeatureItem => i.kind === 'feature' && i.body === body).map((i) => [i.id, i]))
+    const order = h.steps.map((s) => features.get(s.id)!)
+    let n = 0
+    let reordered = false
+    for (let i = 0; i < items.length; i++) {
+      const old = items[i]!
+      if (old.kind !== 'feature' || old.body !== body) continue
+      const next = order[n++]!
+      reordered ||= old.id !== next.id
+      items[i] = next
+    }
+    if (reordered) {
+      // A feature may now precede its sketch. Move that sketch before its first consumer, once.
+      for (let i = 0; i < items.length; i++) {
+        const f = items[i]!
+        if (f.kind !== 'feature' || !f.sketch) continue
+        const k = items.findIndex((s) => s.kind === 'sketch' && s.id === f.sketch)
+        if (k <= i) continue
+        const [sketch] = items.splice(k, 1)
+        items.splice(i++, 0, sketch!)
+      }
+    }
+  }
   const b: Body = { id: body, base: h.base, ...(h.ended ? { ended: h.ended } : {}) }
   const bodies = t.bodies.some((x) => x.id === body) ? t.bodies.map((x) => (x.id === body ? b : x)) : [...t.bodies, b]
   return { bodies, items, marker: atEnd ? items.length : marker }
