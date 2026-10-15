@@ -989,7 +989,11 @@ impl Reader {
         let re = (end[0] - center.0, end[1] - center.1);
         let full = (end[0] - sx).abs() < 1e-4 && (end[1] - sy).abs() < 1e-4;
         let angle = if full {
-            std::f64::consts::TAU
+            if clockwise {
+                -std::f64::consts::TAU
+            } else {
+                std::f64::consts::TAU
+            }
         } else {
             let mut a = (rs.0 * re.1 - rs.1 * re.0).m_atan2(rs.0 * re.0 + rs.1 * re.1);
             if a < 0.0 {
@@ -1730,7 +1734,14 @@ mod tests {
                         "{command}: {:?}",
                         r.m.prev.dir
                     );
-                    assert_eq!(r.end, [0.0, 0.0, z, e]);
+                    assert!(
+                        r.end
+                            .iter()
+                            .zip([0.0, 0.0, z, e])
+                            .all(|(actual, expected)| (actual - expected).abs() < 1e-12),
+                        "{:?}",
+                        r.end
+                    );
                 }
             }
         }
