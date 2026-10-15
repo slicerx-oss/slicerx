@@ -148,7 +148,8 @@ export class ProfileCatalog {
     )
   }
 
-  get(query: string): ProfileDetail | undefined {
+  /** Process tiers use the slice's printer and nozzle when known; a standalone lookup stays generic. */
+  get(query: string, printer?: { printerId: string; nozzle?: number | undefined }): ProfileDetail | undefined {
     const summary = this.find(query)
     if (!summary) return undefined
     const [kind, ...rest] = summary.id.split(':')
@@ -175,13 +176,14 @@ export class ProfileCatalog {
       const preset = parts && file ? resolveFilamentPreset(file, parts.family, parts.variant) : undefined
       return preset ? { ...summary, config: preset.config as unknown as Record<string, SettingValue>, chain: [preset.name], unknown_keys: Object.keys(preset.extras).sort() } : undefined
     }
+    const nozzle = printer?.nozzle ?? (printer ? printerProfile(printer.printerId)?.defaultNozzle : undefined) ?? 0.4
     if (summary.id === SLICERX_DEFAULT_PROCESS) {
-      const config = processConfig('standard') as unknown as Record<string, SettingValue> | undefined
+      const config = processConfig('standard', nozzle, printer?.printerId) as unknown as Record<string, SettingValue> | undefined
       const own = config ? Object.fromEntries(Object.entries(config).filter(([k]) => !SUPPORT_KEYS.includes(k))) : undefined
       return own ? { ...summary, config: { ...own, ...DEFAULT_PROCESS_KEYS }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
     }
     if (kind === 'process') {
-      const config = processConfig(id)
+      const config = processConfig(id, nozzle, printer?.printerId)
       return config ? { ...summary, config: config as unknown as Record<string, SettingValue>, chain: [summary.name], unknown_keys: [] } : undefined
     }
     return undefined

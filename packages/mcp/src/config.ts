@@ -75,11 +75,13 @@ export function setSlot(list: readonly unknown[], slot: number, value: unknown, 
 }
 
 /**
- * The printer model the slice is for: the last printer layer's, in the order the layers merge (profiles, then preset
+ * The printer model the slice is for: the last printer layer's, in the order the layers merge (project, profiles, then preset
  * files). Undefined when no layer names a printer, or the last one is not one of the printer models.
  */
-function slicePrinter(profiles: ProfileCatalog, names: string[], presets: PresetLayer[]): { printerId: string; nozzle?: number } | undefined {
-  let printer: { printerId: string; nozzle?: number } | undefined
+function slicePrinter(profiles: ProfileCatalog, names: string[], presets: PresetLayer[], project?: ExtraLayers['project']): { printerId: string; nozzle?: number } | undefined {
+  const diameter = project?.config['nozzle_diameter']
+  const nozzle = Number(Array.isArray(diameter) ? diameter[0] : diameter)
+  let printer: { printerId: string; nozzle?: number } | undefined = project?.model ? { printerId: project.model, ...(Number.isFinite(nozzle) && nozzle > 0 ? { nozzle } : {}) } : undefined
   for (const name of names) {
     if (profiles.find(name)?.section !== 'printer') continue
     const id = profiles.printerModel(name)
@@ -93,14 +95,18 @@ function slicePrinter(profiles: ProfileCatalog, names: string[], presets: Preset
 export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, names: string[], overrides: Record<string, unknown> | undefined, extra: ExtraLayers = {}): ResolvedConfig {
   const explicit: Record<string, SettingValue> = {}
   const applied: string[] = []
+  const printer = slicePrinter(profiles, names, extra.presets ?? [], extra.project)
+  const diameter = overrides?.['nozzle_diameter']
+  const nozzle = Number(Array.isArray(diameter) ? diameter[0] : diameter)
+  if (printer && Number.isFinite(nozzle) && nozzle > 0) printer.nozzle = nozzle
   // A slice that names no process gets a fresh SlicerX plate's, as the app does
   const choosesProcess = extra.project || names.some((n) => profiles.get(n)?.section === 'process') || (extra.presets ?? []).some((l) => l.section === 'process')
-  const fallback = choosesProcess ? undefined : profiles.get(SLICERX_DEFAULT_PROCESS)
+  const fallback = choosesProcess ? undefined : profiles.get(SLICERX_DEFAULT_PROCESS, printer)
   // No printer named anywhere: the engine falls back to its generic machine, which the result says
   const noPrinter = !extra.project && !names.some((n) => profiles.get(n)?.section === 'printer') && !(extra.presets ?? []).some((l) => l.section === 'printer')
   if (fallback) {
     // Its supports are what the app gives this printer on a fresh plate: the maker's preset's where it has one
-    Object.assign(explicit, fallback.config, profiles.defaultSupports(slicePrinter(profiles, names, extra.presets ?? [])))
+    Object.assign(explicit, fallback.config, profiles.defaultSupports(printer))
     applied.push(fallback.id)
   }
   if (extra.project) {
@@ -109,7 +115,7 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   }
   let untrustedProfile = false
   for (const name of names) {
-    const p = profiles.get(name)
+    const p = profiles.get(name, printer)
     if (!p) throw new ToolInputError(`No profile "${name}". Use slicerx_list_profiles to find ids such as printer:bambu_x1c or filament:petg.`, 'unknown_profile')
     Object.assign(explicit, p.config)
     applied.push(p.id)
