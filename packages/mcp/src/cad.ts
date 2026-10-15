@@ -15,6 +15,8 @@ import type { DesignHost } from '@slicerx/cad-history'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, faceAt, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
+import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
+import { StaleBody } from '@slicerx/cad-history/body-revisions'
 
 type V3 = [number, number, number]
 
@@ -197,6 +199,7 @@ const faceRef = z
     normal: vec3.optional().describe('Outward normal of the face; needed when "at" lies on an edge'),
     triangle: z.number().int().min(0).optional().describe('Triangle index from slicerx_geom_faces, instead of a point'),
     part: z.number().int().min(0).optional().describe('With a design and "triangle": the part the triangle is on (slicerx_geom_faces gives it)'),
+    topology: z.object({ bodyId: z.string().min(1), revision: z.string().min(1), part: z.number().int().min(0), faceKey: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) }).optional().describe('A scoped reference from geom.faces format=topology. Do not reuse it after the body changes.'),
   })
   .describe('The face: {"at":[x,y,z],"normal":[x,y,z]} or {"triangle":n}')
 
@@ -316,12 +319,18 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     return deps.designs.get(id)
   }
   const designs = (): DesignHost => deps.designs!
+  const manifestOf = (d: Design) => {
+    const host = designs()
+    if (!host.revision) throw new ToolInputError('This host cannot bind topology to a body revision.', 'not_supported')
+    return topologyManifest(d.id, host.revision(d.id), d.parts, d.transform, 'exact' in d.history && d.history.exact === true)
+  }
   const target = async (model: string | undefined, op: string): Promise<Record<string, unknown>> => {
     if (op === 'new') return {}
     if (!model) throw new ToolInputError(`target: ${op} needs a target model`)
     return { target: { stlPath: await path(model) } }
   }
   const pick = async (stlPath: string, face: z.infer<typeof faceRef>): Promise<{ triangle: number; at: V3 }> => {
+    if (face.topology) throw new ToolInputError('Topology references require a live design.', 'not_supported')
     const tris = triangles(stlPath)
     if (face.triangle !== undefined) {
       const t = tris[face.triangle]
@@ -333,6 +342,21 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
   }
   /** A face of a design: its part, triangle, a point on it, its outward normal and its key. */
   const pickIn = (d: Design, face: z.infer<typeof faceRef>): { part: number; triangle: number; at: V3; normal: V3; key: number | undefined } => {
+    if (face.topology) {
+      if (face.at || face.normal || face.triangle !== undefined || face.part !== undefined) throw new ToolInputError('Give a topology reference alone, without a second face selection.')
+      const manifest = manifestOf(d)
+      let selected: ReturnType<typeof topologyFace>
+      try { selected = topologyFace(manifest, face.topology) } catch (e) {
+        if (e instanceof TopologyReferenceError) throw new ToolInputError(e.message, e.code, { topology: { ...manifest, faceCount: manifest.faces.length, truncated: manifest.faces.length > 40, faces: manifest.faces.slice(0, 40) } })
+        throw e
+      }
+      const part = d.parts[selected.part]!
+      const triangle = Array.from(part.faces?.ids ?? []).findIndex(id => id === selected.face)
+      const t = partTriangles(bakeMesh(part, d.transform))[triangle]
+      if (!t) throw new ToolInputError('That face has no usable display triangles.', 'missing_face')
+      const at = [0, 1, 2].map(k => ((t.p[0][k] ?? 0) + (t.p[1][k] ?? 0) + (t.p[2][k] ?? 0)) / 3) as V3
+      return { part: selected.part, triangle, at, normal: t.n, key: selected.faceKey! }
+    }
     if (face.triangle !== undefined) {
       const part = face.part ?? 0
       const p = d.parts[part]
@@ -358,14 +382,20 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const faces = defineTool({
     name: 'geom.faces',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
       'List the flat faces of a model or a design, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center; for a design also its part, its face key and the step that made it. Use a face\'s "at" and "normal" with slicerx_geom_face_pick, slicerx_geom_edge_pick or slicerx_geom_push_pull. Curved surfaces show up as many small faces.',
-    input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, limit: z.number().int().min(1).max(500).default(40) }),
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, limit: z.number().int().min(1).max(500).default(40), format: z.enum(['flat', 'topology']).default('flat').describe('With a design, topology returns compact revision-bound surface metadata in body-local coordinates, with world placement separately.') }),
     async run(i) {
       oneOf(i)
+      if (i.format === 'topology') {
+        if (!i.design) throw new ToolInputError('Topology references require a live design, not a model path.', 'not_supported')
+        const manifest = manifestOf(designOf(i.design))
+        const selected = manifest.faces.filter(face => i.part === undefined || face.part === i.part)
+        return { summary: `${selected.length} topology faces at body revision ${manifest.revision}`, output: { topology: { ...manifest, faceCount: selected.length, truncated: selected.length > i.limit, faces: selected.slice(0, i.limit) } } }
+      }
       let all: (FaceSummary & { part?: number; key?: number; madeBy?: string })[]
       if (i.design) {
         const d = designOf(i.design)
@@ -388,7 +418,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const facePick = defineTool({
     name: 'geom.face_pick',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     description:
@@ -401,6 +431,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         const d = designOf(i.design)
         const f = pickIn(d, i.face)
         out = { ...(await engine('face.pick', { mesh: item(d, f.part), triangle: f.triangle, at: f.at })), part: f.part, ...(f.key ? { key: f.key } : {}) }
+        if (i.face.topology) {
+          const current = manifestOf(designOf(d.id))
+          if (current.revision !== i.face.topology.revision) throw new ToolInputError('The body changed during inspection. Inspect it again.', 'stale_body', { bodyId: d.id, currentRevision: current.revision })
+          out = { ...out, topology: current, measurementSource: 'tessellation' }
+        }
       } else {
         const stlPath = await path(i.model!)
         out = await call('face.pick', { mesh: { stlPath }, ...(await pick(stlPath, i.face)) })
@@ -419,6 +454,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     input: z.object({ model: modelOrDesign, design: designArg.optional(), face: faceRef.describe('The face the edge bounds: {"at":[x,y,z] near the edge,"normal":[x,y,z]} or {"triangle":n}') }),
     async run(i) {
       oneOf(i)
+      if (i.face.topology) throw new ToolInputError('A face reference does not uniquely select an edge. Edge topology references are not supported yet.', 'not_supported')
       let out: Record<string, unknown>
       if (i.design) {
         const d = designOf(i.design)
@@ -632,7 +668,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const push = defineTool({
     name: 'geom.push_pull',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'slice',
     description: 'Push or pull a flat face of a model or a design along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. With "design" it adds a step to the design; with a model it writes the new STL and reports the volume change and the moved face.',
@@ -642,9 +678,42 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const verb = i.distance_mm > 0 ? 'Pulled' : 'Pushed'
       if (i.design) {
         const d = designOf(i.design)
-        const f = pickIn(d, i.face)
-        await designs().add(d, f.part, { op: 'face.push', at: f.at, normal: f.normal, distanceMm: i.distance_mm, ...(f.key ? { faceKey: f.key } : {}) })
-        return stepOut(d, verb)
+        const measurements = (body: Design) => {
+          const summary = designSummary(body)
+          return { sizeMm: summary['sizeMm'], volumeMm3: summary['volumeMm3'] }
+        }
+        let f: ReturnType<typeof pickIn>
+        let before: ReturnType<typeof manifestOf> | undefined
+        let dimensionsBefore: ReturnType<typeof measurements> | undefined
+        try {
+          f = pickIn(d, i.face)
+          before = i.face.topology ? manifestOf(d) : undefined
+          if (before && topologyFace(before, i.face.topology!).surfaceType !== 'plane') throw new ToolInputError('Push/pull requires a planar face. Inspect the surface and choose a supported edit.', 'not_supported')
+          dimensionsBefore = before ? measurements(d) : undefined
+          await designs().add(d, f.part, { op: 'face.push', at: f.at, normal: f.normal, distanceMm: i.distance_mm, ...(f.key ? { faceKey: f.key } : {}) }, undefined, i.face.topology ? { expectedRevision: i.face.topology.revision } : undefined)
+        } catch (e) {
+          if (!i.face.topology) throw e
+          const code = e instanceof StaleBody ? 'stale_body' : e instanceof ToolInputError ? e.code : 'internal_error'
+          let current: ReturnType<typeof manifestOf> | null = null
+          try { current = manifestOf(designOf(d.id)) } catch { /* the body may have been removed */ }
+          throw new ToolInputError(e instanceof Error ? e.message : 'The edit was refused.', code, {
+            ...(e instanceof ToolInputError ? e.details : {}),
+            topology: current ? { ...current, faceCount: current.faces.length, truncated: current.faces.length > 40, faces: current.faces.slice(0, 40) } : null,
+            operationResult: { operation: 'geom.push_pull', status: 'refused', reason: code, bodyId: d.id,
+              priorRevision: i.face.topology.revision, revision: current?.revision ?? null, target: i.face.topology },
+          })
+        }
+        const result = stepOut(d, verb)
+        if (!before) return result
+        const after = manifestOf(designOf(d.id))
+        const targetsAfter = after.faces.filter(face => face.part === f.part && face.faceKey === f.key)
+        return { ...result, output: { ...result.output, topology: after, operationResult: {
+          operation: 'geom.push_pull', status: 'applied', bodyId: d.id, priorRevision: before.revision, revision: after.revision,
+          target: i.face.topology, distanceMm: i.distance_mm,
+          targetBefore: topologyFace(before, i.face.topology!),
+          targetAfter: targetsAfter.length === 1 && targetsAfter[0]!.ambiguity === 'none' ? targetsAfter[0] : null,
+          measurements: { source: 'tessellation', before: dimensionsBefore, after: measurements(designOf(d.id)) },
+        } } }
       }
       const stlPath = await path(i.model!)
       const out = await call('face.push', { mesh: { stlPath }, ...(await pick(stlPath, i.face)), distanceMm: i.distance_mm })

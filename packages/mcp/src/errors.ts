@@ -32,6 +32,9 @@ export const ERROR_CODES = [
   'service_error',
   'not_found',
   'not_supported',
+  'stale_body',
+  'missing_face',
+  'ambiguous_face',
   'busy',
   'internal_error',
 ] as const

@@ -14,6 +14,8 @@ import { exactSolids } from './history/exact-flag'
 import { finishSketch, sketchById } from './sketches'
 import { settle } from './sketch-dimension'
 import { fromLoops, toLoops } from './sketch-model'
+import { bodyRevisions } from './body-revisions'
+import { historyPart as toPart } from '@slicerx/cad-history/mesh-part'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -24,8 +26,6 @@ export class DesignNotFound extends Error {
 
 let seq = 0
 const newId = () => `obj_${Date.now().toString(36)}d${(++seq).toString(36)}`
-
-const toPart = (m: HistoryMesh): MeshPart => ({ name: m.name, slot: m.slot, positions: m.positions instanceof Float32Array ? m.positions : new Float32Array(m.positions), indices: m.indices instanceof Uint32Array ? m.indices : new Uint32Array(m.indices) })
 
 export function appDesignHost(loader: Loader): DesignHost {
   // Designs with no body yet, by id; their first step puts them on the plate under the same id.
@@ -49,6 +49,10 @@ export function appDesignHost(loader: Loader): DesignHost {
 
   const host: DesignHost = {
     call: (op, request) => geom().call(op, request),
+    revision(id) {
+      host.get(id)
+      return bodyRevisions.current(id)
+    },
 
     get(id) {
       const e = get().plate.find((p) => p.id === id)
@@ -74,6 +78,7 @@ export function appDesignHost(loader: Loader): DesignHost {
       const h: History = exact ? { ...source, exact: true } : source
       if (!base.length && !h.steps.length) {
         empty.set(id, { name, history: h, transform })
+        bodyRevisions.register(id)
         return host.get(id)
       }
       await place(id, name, h, transform)
@@ -81,14 +86,17 @@ export function appDesignHost(loader: Loader): DesignHost {
     },
 
     async add(d, part, params, label, opts) {
+      const guard = opts?.expectedRevision === undefined ? undefined : () => bodyRevisions.assert(d.id, opts.expectedRevision!)
+      guard?.()
       const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
       const next = appendStep(d.history, step)
       const w = empty.get(d.id)
       if (w) {
-        await place(d.id, d.name, next, w.transform, step.id)
+        await place(d.id, d.name, next, w.transform, step.id, guard)
         empty.delete(d.id)
       } else {
-        await applyHistory(loader, d.id, next, step.id).catch((e: unknown) => {
+        await applyHistory(loader, d.id, next, step.id, guard).catch((e: unknown) => {
+          if (e instanceof Error && 'code' in e && e.code === 'stale_body') throw e
           throw new Error(`The step did not go through: ${e instanceof Error ? e.message : String(e)}. The design is unchanged.`)
         })
       }
@@ -97,26 +105,33 @@ export function appDesignHost(loader: Loader): DesignHost {
       return host.get(d.id).history.steps.at(-1)!
     },
 
-    async replay(d) {
+    async replay(d, opts) {
+      const guard = opts?.expectedRevision === undefined ? undefined : () => bodyRevisions.assert(d.id, opts.expectedRevision!)
+      guard?.()
       if (empty.has(d.id)) {
         if (d.history.steps.length) {
-          await place(d.id, d.name, d.history, d.transform)
+          await place(d.id, d.name, d.history, d.transform, undefined, guard)
           empty.delete(d.id)
-        } else empty.set(d.id, { name: d.name, history: d.history, transform: d.transform })
+        } else {
+          empty.set(d.id, { name: d.name, history: d.history, transform: d.transform })
+          bodyRevisions.committed(d.id)
+        }
         redo.set(d.id, d.redo)
         Object.assign(d, host.get(d.id))
         return
       }
-      if (d.history.steps.length) await applyHistory(loader, d.id, d.history)
+      if (d.history.steps.length) await applyHistory(loader, d.id, d.history, undefined, guard)
       else {
         // Every step undone: the object goes back to its base parts, or off the plate while it has none.
         const base = d.history.base
         if (!base.length) {
           set((s) => ({ plate: s.plate.filter((p) => p.id !== d.id) }))
           empty.set(d.id, { name: d.name, history: d.history, transform: d.transform })
+          bodyRevisions.register(d.id)
         } else {
           const parts = base.map(toPart)
           const handle = await loader.loadParts(d.name, parts)
+          guard?.()
           set((s) => ({ plate: s.plate.map((p) => (p.id === d.id ? { ...p, handle, parts, history: d.history } : p)) }))
         }
         markStale()
@@ -144,7 +159,8 @@ export function appDesignHost(loader: Loader): DesignHost {
   }
 
   /** Replays a history with a body and puts it on the plate as a new object; throws the step's reason when `need` fails. */
-  async function place(id: string, name: string, history: History, transform: Mat4, need?: string): Promise<void> {
+  async function place(id: string, name: string, history: History, transform: Mat4, need?: string, guard?: () => void): Promise<void> {
+    guard?.()
     const r = await runReplay({ history })
     const k = need === undefined ? -1 : history.steps.findIndex((s) => s.id === need)
     if (k >= 0 && r.status[k]?.state !== 'done') throw new Error(`The step did not go through: ${r.status[k]?.message ?? 'the steps before it are broken'}. The design is unchanged.`)
@@ -152,6 +168,7 @@ export function appDesignHost(loader: Loader): DesignHost {
     const parts = r.parts.map(toPart)
     const handle = await loader.loadParts(name, parts)
     const entry: PlateEntry = { id, name, handle, parts, colors: [brandAccent()], transform: [...transform], history }
+    guard?.()
     set((s) => ({ plate: [...s.plate, entry], selection: id, selectedIds: [id] }))
     markStale()
   }
