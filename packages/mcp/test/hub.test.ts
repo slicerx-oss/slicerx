@@ -387,6 +387,40 @@ describe('a message to mimir with files, through a scripted hub', () => {
   })
 })
 
+describe('the docked mimir chat through a scripted hub', () => {
+  const link = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+
+  it('reads what answers in the dock and the tools its model is offered: a local model, the demo, or nothing yet', async () => {
+    const answers = [
+      { link: 'model', provider: 'openai-compatible', model: 'qwen3:8b-16k', local: true, tools: ['kb.search', 'text_to_part', 'slice'], key: 'sk-never' },
+      { link: 'demo', provider: null, model: null, local: false, tools: ['kb.search', 'make_model', 'text_to_part'] },
+      { link: 'none', provider: null, model: null, local: false, tools: [] },
+    ]
+    const hub = scriptedHub({ ok: true }, true, undefined, (method) => {
+      if (method !== 'mimir.dock') throw { code: 'bad_request', message: `unknown method ${method}` }
+      return answers.shift()
+    })
+    const h = await connect(link(hub))
+    const local = await h.call('slicerx_mimir_dock')
+    expect(local.isError, text(local)).toBeFalsy()
+    expect(data<{ output: unknown }>(local).output).toEqual({ link: 'model', provider: 'openai-compatible', model: 'qwen3:8b-16k', local: true, tools: ['kb.search', 'text_to_part', 'slice'] })
+    expect(JSON.stringify(local)).not.toMatch(/sk-never/)
+    expect(text(local)).toMatch(/runs openai-compatible with qwen3:8b-16k on this computer, offering 3 tools/)
+    const demo = await h.call('slicerx_mimir_dock')
+    expect(data<{ output: { link: string } }>(demo).output.link).toBe('demo')
+    expect(text(demo)).toMatch(/built-in demo: no model answers/)
+    const none = await h.call('slicerx_mimir_dock')
+    expect(text(none)).toMatch(/not set up/)
+  })
+
+  it('says how to reach the app without sx-link', async () => {
+    const demo = await connect({ printers: 'demo' })
+    const off = await demo.call('slicerx_mimir_dock')
+    expect(off.isError).toBe(true)
+    expect(text(off)).toMatch(/--printers link/)
+  })
+})
+
 describe('a dimension sheet through a scripted hub', () => {
   const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
 
