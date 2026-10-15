@@ -20,6 +20,13 @@ export interface LayerMark {
 
 export const MARK_LABEL: Record<MarkKind, string> = { pause: 'Pause', color_change: 'Color change', custom: 'Custom G-code' }
 
+/**
+ * How far below a layer top a mark's height may sit and still be on that layer. The engine places a mark by height
+ * on the first layer whose top reaches its height less this (layer tops are f32), so the slider uses the same value:
+ * a mark kept at a layer top rounded to 0.1 micron then reads back as that layer, the one its G-code goes in.
+ */
+export const MARK_Z_TOL = 1e-4
+
 let seq = 0
 export const markId = (): string => `mk_${Date.now().toString(36)}${(++seq).toString(36)}`
 

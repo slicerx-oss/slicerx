@@ -263,6 +263,49 @@ describe('a mark lands on a layer slot', () => {
   })
 })
 
+describe('a mark at a layer top round trip', () => {
+  beforeEach(() => set({ layerMarks: {}, activePlate: 'plate-1' }))
+
+  /** The engine's rule for a mark by height: the first f32 layer top at or above its height less the tolerance. */
+  const engineLayer = (z: number, tops: ArrayLike<number>): number => {
+    for (let i = 0; i < tops.length; i++) if (Math.fround(tops[i]!) >= Math.fround(z - 1e-4)) return i
+    return tops.length - 1
+  }
+  /** Layer tops as the preview holds them (f32), from a first layer and then `next(i)` per layer. */
+  const stack = (first: number, count: number, next: (i: number) => number): Float32Array => {
+    const tops = new Float32Array(count)
+    let z = first
+    for (let i = 0; i < count; i++) {
+      tops[i] = z
+      z += next(i)
+    }
+    return tops
+  }
+  let seed = 7
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648)
+  const stacks: [string, Float32Array][] = [
+    ...[0.08, 0.1, 0.12, 0.15, 0.16, 0.2, 0.24, 0.28, 0.3, 0.32].map((h): [string, Float32Array] => [`${h} mm`, stack(0.2, Math.min(1200, Math.floor(300 / h)), () => h)]),
+    ['variable 0.08 to 0.32 mm', stack(0.2, 1200, () => 0.08 + Math.round(rand() * 24) / 100)],
+    ['variable, smooth', stack(0.24, 1200, (i) => 0.2 + 0.12 * Math.sin(i / 9))],
+  ]
+
+  it.each(stacks)('every layer of %s reads back as itself and goes in that layer of the G-code', (_name, tops) => {
+    for (let i = 0; i < tops.length; i++) {
+      const mark = addMark(tops[i]!, 'pause')!
+      expect(layerOf(mark, tops), `layer ${i + 1} at ${tops[i]} kept as ${mark.z}`).toBe(i + 1)
+      expect(engineLayer(layerGcodeByHeight([mark])[0]!.zMm, tops)).toBe(i)
+      removeMark(mark.id)
+      // between two tops: the layer above, in the slider and in the G-code alike
+      if (i > 0) {
+        const mid = addMark((tops[i - 1]! + tops[i]!) / 2, 'pause')!
+        expect(layerOf(mid, tops)).toBe(i + 1)
+        expect(engineLayer(mid.z, tops)).toBe(i)
+        removeMark(mid.id)
+      }
+    }
+  })
+})
+
 describe('pin lanes before the track is measured', () => {
   it('keeps every pin in the first lane', () => {
     expect(pinLanes([0.1, 0.5, 0.55], 0)).toEqual([0, 0, 0])

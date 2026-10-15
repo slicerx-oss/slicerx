@@ -10,7 +10,7 @@ import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, M
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
 import { resolveSlots } from '../../filament/slots'
 import { Swatch } from '../../parts'
-import { addMark, customGcodeProblem, MARK_LABEL, nextSlot, removeMark, setMarkSlot, type LayerMark, type MarkKind } from '../../plate/layer-marks'
+import { addMark, customGcodeProblem, MARK_LABEL, MARK_Z_TOL, nextSlot, removeMark, setMarkSlot, type LayerMark, type MarkKind } from '../../plate/layer-marks'
 import { toast, useApp } from '../../state/store'
 import { TrackStrikes } from './strike-slots'
 
@@ -176,9 +176,9 @@ function useSlotRows(): SlotRow[] {
   return useMemo(() => (key ? key.split(';').map((r) => { const [index, color, type] = r.split('|'); return { index: Number(index), color: color ?? '', type: type ?? '' } }) : []), [key])
 }
 
-/** Layer number (1-based) a mark sits on: the first layer whose top reaches its height. */
+/** Layer number (1-based) a mark sits on: the first layer whose top reaches its height, as the engine places it. */
 export function layerOf(m: Pick<LayerMark, 'z'>, layerZ: ArrayLike<number>): number {
-  for (let i = 0; i < layerZ.length; i++) if ((layerZ[i] ?? 0) >= m.z - 1e-6) return i + 1
+  for (let i = 0; i < layerZ.length; i++) if ((layerZ[i] ?? 0) >= m.z - MARK_Z_TOL) return i + 1
   return layerZ.length
 }
 
