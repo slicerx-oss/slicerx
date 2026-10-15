@@ -110,5 +110,35 @@ fn only_the_prime_tower_wall_the_engine_does_not_build_warns_and_names_its_fallb
         .find(|i| i.code == "enum_value_unavailable")
         .expect("a cone warning");
     assert_eq!(w.severity, Severity::Warning);
-    assert!(w.message.ends_with("prints with the default, Rectangle."), "{}", w.message);
+    assert!(
+        w.message.ends_with("prints with the default, Rectangle."),
+        "{}",
+        w.message
+    );
+}
+
+#[test]
+fn the_rib_prime_tower_wall_warns_only_on_a_printer_whose_tower_is_not_type_1() {
+    let rib = |extra: serde_json::Value| {
+        let mut c = json!({"wipe_tower_wall_type": "rib"});
+        c.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        validate(&config_from(&c))
+            .into_iter()
+            .filter(|i| {
+                i.code == "enum_value_unavailable"
+                    && i.keys.first().is_some_and(|k| k == "wipe_tower_wall_type")
+            })
+            .map(|i| i.message)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        rib(json!({"printer_model": "Prusa CORE One", "wipe_tower_type": "type2"})),
+        [
+            "Prime tower wall type: \"rib\" is not supported on this printer, so it prints with the default, Rectangle."
+        ]
+    );
+    assert!(rib(json!({"printer_model": "Bambu Lab A1", "wipe_tower_type": "type2"})).is_empty());
+    assert!(rib(json!({"printer_model": "Prusa CORE One", "wipe_tower_type": "type1"})).is_empty());
 }

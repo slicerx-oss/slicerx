@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
+import { unavailableIn } from '@slicerx/settings'
 import { formatValue, SETTINGS, settingDef } from '../src/adapters/settings'
 import { Field, offeredValues, unsupportedNote } from '../src/workspaces/prepare/expert-settings'
 
@@ -56,13 +57,14 @@ describe('a value the engine cannot print', () => {
     root = null
   })
   /** The prime tower wall row holding `value`, re-rendered with `next` when given (a pick in the menu). */
-  function wallRow(value: string, next?: string): HTMLLIElement {
+  function wallRow(value: string, next?: string, unavailable?: readonly string[]): HTMLLIElement {
     el = document.createElement('div')
     document.body.append(el)
     root = createRoot(el)
     const def = settingDef('wipe_tower_wall_type')!
-    flushSync(() => root!.render(createElement(Field, { def, value, overridden: true, onSet: () => {} })))
-    if (next !== undefined) flushSync(() => root!.render(createElement(Field, { def, value: next, overridden: true, onSet: () => {} })))
+    const extra = unavailable ? { unavailable } : {}
+    flushSync(() => root!.render(createElement(Field, { def, value, overridden: true, onSet: () => {}, ...extra })))
+    if (next !== undefined) flushSync(() => root!.render(createElement(Field, { def, value: next, overridden: true, onSet: () => {}, ...extra })))
     return el.querySelector('li')!
   }
 
@@ -92,5 +94,21 @@ describe('a value the engine cannot print', () => {
     const li = wallRow('cone', 'rectangle')
     expect(li.querySelector('[data-testid="slice-setting-unsupported"]')).toBeNull()
     expect(li.querySelector('select')!.hasAttribute('aria-describedby')).toBe(false)
+  })
+
+  it('marks rib on a printer whose tower is not type 1, and not on a Bambu Lab printer', () => {
+    const def = settingDef('wipe_tower_wall_type')!
+    const prusa = unavailableIn(def, { printer_model: 'Prusa CORE One', wipe_tower_type: 'type2' } as never)
+    const bambu = unavailableIn(def, { printer_model: 'Bambu Lab A1', wipe_tower_type: 'type2' } as never)
+    expect(unsupportedNote(def, 'rib', prusa)).toBe('Rib is unsupported on this printer; slicing uses Rectangle.')
+    expect(unsupportedNote(def, 'rib', bambu)).toBeUndefined()
+    expect(unsupportedNote(def, 'cone', prusa)).toBe('Cone is unsupported; slicing uses Rectangle.')
+    expect(offeredValues(def, 'rectangle', prusa).map((o) => o.value)).toEqual(['rectangle'])
+    expect(offeredValues(def, 'rectangle', bambu).map((o) => o.value)).toEqual(['rectangle', 'rib'])
+    const li = wallRow('rib', undefined, prusa)
+    const note = li.querySelector('[data-testid="slice-setting-unsupported"]')!
+    expect(note.textContent).toBe('Rib is unsupported on this printer; slicing uses Rectangle.')
+    expect(li.querySelector('select')!.getAttribute('aria-describedby')).toBe(note.id)
+    expect([...li.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Rectangle', 'Rib (unsupported)'])
   })
 })

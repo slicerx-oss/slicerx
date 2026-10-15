@@ -63,9 +63,11 @@ export function checkValues(config: Readonly<Record<string, SettingValue>>): Set
         issues.push({ code: 'bad_enum', severity: 'error', keys: [key], message: `${def.label}: "${String(bad)}" is not one of ${def.enumValues.join(', ')}.` })
         continue
       }
-      const missing = items.find((x) => typeof x === 'string' && def.unavailableValues?.includes(x))
+      const gone = unavailableIn(def, config)
+      const missing = items.find((x) => typeof x === 'string' && gone.includes(x))
       if (missing !== undefined) {
-        issues.push({ code: 'enum_value_unavailable', severity: 'warning', keys: [key], message: `${def.label}: "${String(missing)}" is not supported by the ${productName()} engine yet, so it prints with ${fallbackName(def)}.` })
+        const why = def.unavailableValues?.includes(String(missing)) ? `by the ${productName()} engine yet` : 'on this printer'
+        issues.push({ code: 'enum_value_unavailable', severity: 'warning', keys: [key], message: `${def.label}: "${String(missing)}" is not supported ${why}, so it prints with ${fallbackName(def)}.` })
       }
     }
     if ((def.min !== undefined || def.max !== undefined || def.orcaMin !== undefined || def.orcaMax !== undefined) && !isVectorType(def.type) === !Array.isArray(v)) {
@@ -245,6 +247,27 @@ export function checkConflicts(config: PrintConfig, opts: { filament?: string } 
 }
 
 /** Value checks plus conflicts, errors first. */
+/**
+ * True when the engine builds a type 1 (Bambu Lab) prime tower for this printer: a Bambu G-code flavor, a Bambu Lab
+ * model, or `wipe_tower_type` type1. The same three inputs the engine reads; a key the config leaves out reads as the
+ * schema default, as the app sends it.
+ */
+export function typeOneTower(config: PrintConfig): boolean {
+  const text = (k: string) => String(scalarWith(config, k, true) ?? '')
+  return text('gcode_flavor') === 'bambu' || text('printer_model').startsWith('Bambu Lab') || text('wipe_tower_type') === 'type1'
+}
+
+/**
+ * The values of an enum setting the engine cannot print for this printer: the schema's `unavailableValues`, and the
+ * rib prime tower wall on a printer whose tower is not type 1 (the engine builds the rib wall on a type 1 tower only;
+ * elsewhere it prints the plain wall).
+ */
+export function unavailableIn(def: Pick<SettingDef, 'key' | 'unavailableValues'>, config: PrintConfig): string[] {
+  const out = [...(def.unavailableValues ?? [])]
+  if (def.key === 'wipe_tower_wall_type' && !typeOneTower(config) && !out.includes('rib')) out.push('rib')
+  return out
+}
+
 /** What a value the engine cannot print falls back to: the setting's default, by its label. */
 function fallbackName(def: SettingDef): string {
   const d = Array.isArray(def.default) ? def.default[0] : def.default
