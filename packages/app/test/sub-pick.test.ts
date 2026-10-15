@@ -62,6 +62,26 @@ describe('picks', () => {
     expect(get().subPicks).toMatchObject([{ kind: 'face', triangle: 7 }])
   })
 
+  it('a click just past the outline picks the edge there when it is near enough, and is a miss otherwise', async () => {
+    setPickKind('face', 'only')
+    const line = { from: [0, 0, 0] as [number, number, number], to: [1, 0, 0] as [number, number, number] }
+    const edge = async () => [line]
+    const wins = (px: number) => () => px <= 6
+    const past = { objectId: null, partIndex: null, triangle: null, point: null, bed: null, screen: [10, 10] as [number, number], near: { objectId: 'a', partIndex: 0, triangle: 8, point: [1, 2, 3] as [number, number, number] } }
+    expect(await pickSub(past, edge, undefined, wins(3))).toBe(true)
+    expect(get().subPicks).toMatchObject([{ kind: 'edge', triangle: 8, lines: [line] }])
+    expect(get().selection).toBe('a')
+    // Too far from the edge, or no edge there: a miss clears, and never picks the face beside it.
+    expect(await pickSub(past, edge, undefined, wins(9))).toBe(false)
+    expect(get().subPicks).toEqual([])
+    expect(await pickSub(past, noEdge, undefined, wins(3))).toBe(false)
+    expect(get().subPicks).toEqual([])
+    // Edge only picks it the same way.
+    setPickKind('edge', 'only')
+    expect(await pickSub(past, edge, undefined, wins(3))).toBe(true)
+    expect(get().subPicks).toMatchObject([{ kind: 'edge', triangle: 8 }])
+  })
+
   it('drops the picks of a kind the filter turns off, and Esc clears picks before the object', () => {
     set({ pickFilter: ['face'], subPicks: [face(1)], selection: 'a', selectedIds: ['a'] })
     setPickKind('edge', 'toggle')
