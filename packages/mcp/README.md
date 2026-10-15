@@ -18,7 +18,8 @@ Reading is always allowed. The permission class of the other tools decides what 
 | `slicerx_explain_setting`, `slicerx_find_settings`, `slicerx_validate_config` | Look up, search and check the 700 or so OrcaSlicer settings. | read |
 | `slicerx_knowledge_lookup` | Filament, printer, troubleshooting and workflow entries with sources. | read |
 | `slicerx_project_open`, `slicerx_project_add_model`, `slicerx_project_show` | Start a project with a printer and filament, add STL models with copies (a file of several bodies as one object, one object with parts, or an object per body), show it. | read |
-| `slicerx_project_set_overrides` | Change settings for the project (never a saved profile). | slice |
+| `slicerx_project_set_overrides` | Change or clear settings for the project (never a saved profile). With `--app`, edits the live project and returns its overrides and effective shown-plate values. | slice |
+| `slicerx_app_settings` | Read the open app's project print overrides and effective shown-plate values, with superseded keys in `shadowed`. Numeric, switch and choice process and filament settings, plus checked infill templates; no scripts, free text or printer configuration. | read |
 | `slicerx_project_add_filament`, `slicerx_project_set_filament` | Add a filament after the last one, or change one's material type or color, as on the app's filament rail. Both answer with the project; `slicerx_project_show` lists its `filaments` (number, type, color, and whether a client set it). The slice gets them as `filament_type` and `filament_colour`. | slice |
 | `slicerx_project_move`, `slicerx_project_rotate`, `slicerx_project_scale`, `slicerx_project_plate_add`, `slicerx_project_plate_remove`, `slicerx_project_move_to_plate`, `slicerx_project_remove_object` | Place an object by the center of its footprint in bed coordinates (or back in the automatic rows), rotate and scale it, add and remove plates, move an object to a plate, and take one out. Every object sits on the bed. Each answers with the project, whose plates list where every copy sits (`placements`). | slice |
 | `slicerx_project_duplicate`, `slicerx_project_rename`, `slicerx_project_lay_on_face` | The model ring's object and face verbs: duplicate an object as new objects of their own, rename one, and lay one on a face given by its outward normal (from `slicerx_geom_faces`). Each answers with the project. | slice |
@@ -360,3 +361,16 @@ Dependencies:
 ## Status
 
 Working: stdio and HTTP transports, the permission policy with elicitation and approval requests, the action log, file slicing with the `sx` engine or the stub, the MCP project with mimir's skills, the simulated printers, and every resource listed above. Theming tools build and check themes; applying one happens in your page with `applyTheme()` or `<ThemeProvider>`. Printer actions on real printers go through sx-link's broker (tested with the mock printers). Planned: publishing `@slicerx/mcp` to npm, and testing on physical printers.
+
+## Print settings in the open app
+
+Use `--app` to change the project the person has open. The app link must be on and the person must allow edits. A read-only grant can use `app_settings` but cannot change overrides. An unavailable app refuses the edit. Without `--app`, an open server project takes precedence, even if it has no objects; without one, the live app takes the call while its link answers.
+
+```sh
+sx call --app project_set_overrides '{"changes":{"layer_height":0.2,"brim_type":"painted"}}' app_settings '{"keys":["layer_height","brim_type"]}'
+sx call --app project_set_overrides '{"clear":["layer_height"]}' app_settings '{"keys":["layer_height"]}'
+```
+
+`clear` removes an override and restores the current profile and Easy value. A key cannot appear in both `changes` and `clear`. The whole patch is checked before any value changes. Printer settings, scripts and free text remain in the app; supported keys are listed by `app_settings`. The global override editor follows the settings panel and does not add a plate Undo step.
+
+Read `effective` for the values the shown plate sends to slicing. Filament calibration, bed type and plate choices can supersede project overrides; `shadowed` identifies those keys. Object and part overrides may further change individual objects. These calls change print configuration, and do not start a slice or a print. The app marks the current slice stale; its normal Auto slice behavior still applies.

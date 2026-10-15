@@ -200,7 +200,7 @@ describe('plate edits over the app link', () => {
   const app = vi.fn(async (method: string) => ({ summary: `ran ${method}`, output: { objects: [{ id: 'obj_1' }] } }))
 
   it('move, turn and scale an object the server does not have on the app\'s plate, with no note', async () => {
-    expect([...APP_PROJECT_TOOLS]).toEqual(['project.move', 'project.rotate', 'project.scale'])
+    expect([...APP_PROJECT_TOOLS]).toEqual(['project.move', 'project.rotate', 'project.scale', 'project.set_overrides'])
     const run = route(app as AppLinkCaller['call'], { serverHas: (o) => o === 'Bracket' })
     const out = await run('project.move', { object: 'Box', x: 50, y: 60 })
     expect(app).toHaveBeenCalledWith('project.move', { object: 'Box', x: 50, y: 60 })

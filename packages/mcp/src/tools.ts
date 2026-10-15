@@ -17,6 +17,7 @@ import { placementTools } from './placement'
 import { McpProject } from './project'
 import { FILAMENT_TYPES, MAX_FILAMENTS } from './filaments'
 import { validateConfig } from './settings'
+import { projectSettingsInput } from './project-settings-input'
 import type { NodeSlicerHost } from './slicerhost'
 
 export interface ProjectRef {
@@ -190,17 +191,19 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'settings',
     permission: 'slice',
-    description: 'Set OrcaSlicer settings for the open project, such as the config_patch from slicerx_plan_settings. Changes only the project, never a saved profile.',
-    input: z.object({ changes: z.record(z.string(), z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])) }),
+    description: 'Set or clear setting overrides for the open project, such as the config_patch from slicerx_plan_settings. Changes only the project, never a saved profile. With --app, edit the live project and read back with app.settings; scripts and printer settings are refused there. In automatic mode an open server project takes precedence, otherwise use the app while its link answers. clear restores inherited values; a key cannot also be in changes.',
+    input: projectSettingsInput,
     async approval(i) {
-      return { title: `Change ${Object.keys(i.changes).length} settings in this project?`, lines: Object.entries(i.changes).slice(0, 12).map(([k, v]) => `${k} = ${JSON.stringify(v)}`), actions: [] }
+      return { title: `Change ${Object.keys(i.changes).length + i.clear.length} settings in this project?`, lines: [...Object.entries(i.changes).map(([k, v]) => `${k} = ${JSON.stringify(v)}`), ...i.clear.map((k) => `${k}: use inherited value`)].slice(0, 12), actions: [] }
     },
     async run(i) {
       const project = need()
+      const unknown = i.clear.filter((k) => !deps.store.setting(k))
+      if (unknown.length) return { ok: false, summary: `Unknown settings: ${unknown.join(', ')}` }
       const errors = validateConfig(deps.store, i.changes).filter((x) => x.severity === 'error' || x.code === 'unknown_key')
       if (errors.length) return { ok: false, summary: 'Invalid settings', output: errors }
-      project.setOverrides(i.changes as Record<string, never>)
-      return { summary: `${Object.keys(i.changes).length} project settings changed`, output: project.overrides() }
+      project.setOverrides(i.changes as Record<string, never>, i.clear)
+      return { summary: `${Object.keys(i.changes).length + i.clear.length} project settings changed`, output: project.overrides() }
     },
   })
 

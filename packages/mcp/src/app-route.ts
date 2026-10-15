@@ -43,8 +43,8 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.subtract',
 ])
 
-/** Moving, turning and scaling objects, which run on the app's shown plate when the object is not this server's. */
-export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale'])
+/** Object placement and project print settings, routed to the app when the server does not own the target. */
+export const APP_PROJECT_TOOLS = new Set(['project.move', 'project.rotate', 'project.scale', 'project.set_overrides'])
 
 /** The agent side of the app link (link-client `appLink.call`). */
 export interface AppLinkCaller {
@@ -81,17 +81,19 @@ export interface RouteOptions {
   required?: boolean
   /** Whether this server's open project has the object (by id or name); such a call stays here. */
   serverHas?: (object: string) => boolean
+  /** A global patch stays with an open server project in automatic mode, even when it has no objects. */
+  serverProject?: () => boolean
 }
 
-/** Whether a call goes to the app: a design, or an object this server's own project does not have. */
+/** A design, an object absent from this server, or global settings with no open server project. */
 function onApp(name: string, input: Record<string, unknown>, opts: RouteOptions): boolean {
   if (!APP_PROJECT_TOOLS.has(name)) return onDesign(name, input)
+  if (name === 'project.set_overrides') return Boolean(opts.required) || !opts.serverProject?.()
   return Boolean(opts.required) || !opts.serverHas?.(String(input['object'] ?? ''))
 }
 
 /**
- * The tools, with the design tools and the plate edits (project.move, .rotate and .scale on an object this server's
- * project does not have) run in the app while the link answers.
+ * Design and project tools run in the app while its link answers, respecting server object and project ownership.
  */
 export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appName: string, opts: RouteOptions = {}): PilotTool<never>[] {
   let told = false

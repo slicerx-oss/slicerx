@@ -187,7 +187,8 @@ export class McpProject implements PilotProject {
     return { ...this.projectOverrides }
   }
 
-  setOverrides(changes: Record<string, SettingValue>): void {
+  setOverrides(changes: Record<string, SettingValue>, clear: readonly string[] = []): void {
+    for (const key of clear) delete this.projectOverrides[key]
     for (const [k, v] of Object.entries(changes)) this.projectOverrides[k] = toSchemaValue(this.store.setting(k), v)
   }
 

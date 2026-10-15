@@ -113,6 +113,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("project.move", LinkClass::Edit),
     ("project.rotate", LinkClass::Edit),
     ("project.scale", LinkClass::Edit),
+    ("project.set_overrides", LinkClass::Edit),
+    ("settings.get", LinkClass::Read),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
@@ -122,7 +124,7 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("plates.list", LinkClass::Read),
     ("plates.show", LinkClass::Read),
     // Two view preferences from Settings, Look and feel: Frame the view and Toolbar size, read and set.
-    // Read: they change how the window behaves, never the project. No other setting is reachable.
+    // read: these change only how the window behaves; project print settings have separate methods.
     ("look.get", LinkClass::Read),
     ("look.set", LinkClass::Read),
     ("values.list", LinkClass::Read),
@@ -368,6 +370,8 @@ mod tests {
         ("project.move", LinkClass::Edit),
         ("project.rotate", LinkClass::Edit),
         ("project.scale", LinkClass::Edit),
+        ("project.set_overrides", LinkClass::Edit),
+        ("settings.get", LinkClass::Read),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
         ("plates.list", LinkClass::Read),
@@ -436,13 +440,17 @@ mod tests {
                 assert!(
                     mesh_repair
                         || !m.to_ascii_lowercase().contains(word)
-                        || (*m == "values.remove" && word == "remove"),
+                        || (*m == "values.remove" && word == "remove")
+                        || (*m == "settings.get" && word == "setting"),
                     "{m} looks like something a person keeps ({word})"
                 );
             }
         }
         assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
+        assert_eq!(link_class("settings.get"), Some(LinkClass::Read));
+        assert_eq!(link_class("project.set_overrides"), Some(LinkClass::Edit));
+        assert_eq!(link_class("settings.set"), None);
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
         for m in ["design.open", "design.save"] {
