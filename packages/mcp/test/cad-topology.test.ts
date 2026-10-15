@@ -137,3 +137,26 @@ it('reports an applied hole edit when its later read-back fails', async () => {
     revision: designs.revision(d.id), verification: { status: 'failed', reason: 'measurement unavailable' } } } })
   expect(text(result)).toContain('the edit was applied but its read-back failed')
 })
+
+it.each([
+  { request: { diameter_mm: 6 }, status: 'failed' },
+  { request: { diameter_mm: 4, counterbore: { diameter_mm: 8, depth_mm: 0.5 } }, status: 'unverified' },
+])('does not overstate scoped hole verification: $status', async ({ request, status }) => {
+  const mesh = { name: 'Hole', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [17], table: [{ kind: 'cylinder', origin: [0, 0, 0], axis: [0, 0, 1], radius: 2 }] } }
+  const outDir = mkdtempSync(join(tmpdir(), 'hole-verification-')); directories.push(outDir)
+  const engine = async (op: string) => {
+    if (op === 'hole.apply') return { mesh }
+    if (op === 'hole.find') return { entry: [0, 0, 1], axis: [0, 0, 1], diameterMm: 4, depthMm: 1, through: true }
+    throw new Error(`unexpected operation ${op}`)
+  }
+  const designs = new Designs({ engine, policy: { outDir, allowDirs: undefined, allowUrls: false } })
+  const d = await designs.create('Hole', [mesh]), revision = designs.revision(d.id)
+  const unused = async (): Promise<never> => { throw new Error('must not read a file') }
+  const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
+  const result = await h.call('slicerx_geom_hole', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, ...request })
+  expect(result.isError, text(result)).toBeFalsy()
+  expect(data(result)).toMatchObject({ output: { after: { diameterMm: 4 }, operationResult: { status: 'applied', verification: { status, toleranceMm: 0.01 } } } })
+  const after = data<{ output: { after: Record<string, unknown> } }>(result).output.after
+  expect(after).not.toHaveProperty('counterbore')
+  expect(after).not.toHaveProperty('head')
+})
