@@ -195,6 +195,22 @@ export interface PickEvent {
   screen?: [number, number]
 }
 
+/** One face patch a ray passes through (`pickAll`): where, how deep and which way it faces, in the bed frame. */
+export interface PickAllHit {
+  objectId: string
+  partIndex: number
+  /** The triangle hit, as an index into the part's index buffer. */
+  triangle: number
+  /** The lowest triangle of the flat patch around it, the same for any hit on that patch. */
+  patch: number
+  /** Hit point in bed coordinates, mm, Z up. */
+  point: [number, number, number]
+  /** Distance from the eye along the ray, mm. */
+  depth: number
+  /** The patch's outward normal in the bed frame, unit length. */
+  normal: [number, number, number]
+}
+
 /** Probe tool with hover on: the model point under the cursor, at most once a frame. */
 export interface ProbeHover {
   objectId: string
@@ -397,6 +413,12 @@ export interface ViewportEvents {
   brimselect: { objectId: string; indices: number[]; mode: 'set' | 'add' | 'remove' }
   /** Model's box select: the objects the box picked, and how (left to right inside, right to left touch). */
   boxselect: { ids: string[]; dir: 'inside' | 'touch' }
+  /**
+   * Model's Select Other, while `setHoldPick` is on: a left button held still for half a second, or a finger held still
+   * (which then asks for this instead of `contextpick`). `screen` is the client point and `hits` what was under it when
+   * the press began (`pickAll`); the release that follows is no click.
+   */
+  holdpick: { screen: [number, number]; touch: boolean; hits: PickAllHit[] }
   /** Model's edge filter: the triangle and point under the pointer, or null off the models. */
   edgehover: { objectId: string; partIndex: number; triangle: number; point: [number, number, number]; screen: [number, number] } | null
   /** Brim tool: an ear dragged. `point` is the hit on the model under the cursor (bed frame, mm). One event per move with `final: false`, then one with `final: true` on release. */
@@ -621,6 +643,10 @@ export interface Viewport {
   /** Model's picked edges as solid bars, and a hovered one fainter. */
   setPickedEdges?(picked: readonly { from: [number, number, number]; to: [number, number, number] }[], hover?: readonly { from: [number, number, number]; to: [number, number, number] }[]): void
   setPickFaces?(on: boolean): void
+  /** Model's Select Other: a press or a touch held still emits `holdpick` (a touch no longer asks for `contextpick`). */
+  setHoldPick?(on: boolean): void
+  /** Everything a ray through a client point hits, front to back: one entry per face patch, deepest last. */
+  pickAll?(clientX: number, clientY: number): PickAllHit[]
   /** A bed point (mm) on screen, in client pixels, or null with no camera yet. */
   screenOf?(p: [number, number, number]): [number, number] | null
   /** The faces picked in Model, drawn until changed: each the patch around a triangle. */

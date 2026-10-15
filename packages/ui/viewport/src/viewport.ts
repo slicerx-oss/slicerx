@@ -36,6 +36,7 @@ import {
   Vector3,
   WebGLRenderer,
   Group,
+  type Intersection,
   type Material,
   type Object3D,
 } from 'three'
@@ -83,6 +84,7 @@ import type {
   ColorMode,
   PartStyle,
   FacePick,
+  PickAllHit,
   LegendFeature,
   MarkerKind,
   PreviewExtras,
@@ -195,6 +197,8 @@ const handleReach = (e: { pointerType?: string }): number => (e.pointerType === 
 /** A touch held still this long, ms, within this many pixels, opens the menu a right click would. */
 const LONG_PRESS_MS = 500
 const LONG_PRESS_SLOP_PX = 8
+/** A mouse is steadier: a left press held for Select Other stays a hold within this many pixels. */
+const HOLD_SLOP_PX = 4
 
 /** A ring drag in progress (rotate tool and cut tilt): the turn so far follows the cursor around `center` on the ring's plane, or along its screen tangent when the ring was grabbed edge on. */
 interface RingDrag {
@@ -216,6 +220,8 @@ interface PickHit {
   point: Vector3
   face: number
   dir: Vector3
+  /** Distance from the eye along the ray, for `pickAll`. */
+  depth?: number
 }
 
 /** A #rrggbb color at a quarter of its strength, for parts on a filament that is not picked out. */
@@ -266,6 +272,9 @@ class ViewportImpl implements Viewport {
   private projection: Projection = 'perspective'
   private display: DisplayStyle = 'edges'
   private pickFn: (e: { clientX: number; clientY: number }) => PickHit | null = () => null
+  private pickAllFn: (e: { clientX: number; clientY: number }) => PickHit[] = () => []
+  /** Model's Select Other: a press or a touch held still asks for the list (`holdpick`). */
+  private holdPick = false
   private faceOverlay: Mesh | null = null
   private pickFaces = false
   /** Asks face hover again at the pointer's resting spot; set with the pointer listeners. */
@@ -1497,6 +1506,47 @@ class ViewportImpl implements Viewport {
     // Turned on again while the pointer rests (a late edge answer said the edge no longer wins): light the face under
     // it now rather than on the next move.
     if (on && !was && this.tool !== 'probe') this.rehoverFace?.()
+  }
+
+  /** Model's Select Other: a left press or a touch held still emits `holdpick`; a touch then opens no menu. */
+  setHoldPick(on: boolean): void {
+    this.holdPick = on
+  }
+
+  /** Everything under a client point, front to back, one entry per flat patch (a ray can cross a patch only once). */
+  pickAll(clientX: number, clientY: number): PickAllHit[] {
+    return this.mode === 'prepare' ? this.patchesOf(this.pickAllFn({ clientX, clientY })) : []
+  }
+
+  /** Ray hits as face patches, one entry per patch, in the order hit. */
+  private patchesOf(hits: readonly PickHit[]): PickAllHit[] {
+    const out: PickAllHit[] = []
+    const seen = new Set<string>()
+    for (const h of hits) {
+      if (h.face < 0) continue
+      const f = this.faceFromHit(h)
+      const patch = f ? Math.min(...f.triangles) : h.face
+      const key = `${h.entry.id}:${h.part}:${patch}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const n = f?.pick.normal ?? [0, 0, 1]
+      out.push({ objectId: h.entry.id, partIndex: h.part, triangle: h.face, patch, point: this.worldToBed(h.point), depth: h.depth ?? 0, normal: [n[0], n[1], n[2]] })
+    }
+    return out
+  }
+
+  /** A move started by a press that then held still for Select Other: the model goes back and the press is no drag. */
+  private dropStillDrag(): void {
+    const d = this.drag
+    if (!d) return
+    this.drag = null
+    this.controls.enabled = true
+    if (d.group) this.endGroup(d.group, true)
+    else {
+      d.entry.group.matrix.fromArray(d.start)
+      d.entry.group.matrixWorldNeedsUpdate = true
+    }
+    this.invalidate()
   }
 
   /** A bed point (mm) on screen, in client pixels. */
@@ -3124,7 +3174,8 @@ class ViewportImpl implements Viewport {
     const hit = new Vector3()
     let down: { x: number; y: number } | null = null
     // A touch held still this long asks for the menu, as a right click does; it is cleared by a move or a second finger.
-    let press: { x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null
+    // With Select Other on (`holdPick`), a touch or a left press held still asks for its list instead (`holdpick`).
+    let press: { x: number; y: number; slop: number; timer: ReturnType<typeof setTimeout> } | null = null
     const stopPress = (): void => {
       if (press) clearTimeout(press.timer)
       press = null
@@ -3134,8 +3185,9 @@ class ViewportImpl implements Viewport {
       ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, (-(e.clientY - r.top) / r.height) * 2 + 1)
       ray.setFromCamera(ndc, this.camera)
     }
-    const pick = (e: { clientX: number; clientY: number }): PickHit | null => {
-      if (this.mode !== 'prepare') return null
+    /** What the ray through a client point hits on the models, nearest first: the nearest alone unless `all`. */
+    const rayHits = (e: { clientX: number; clientY: number }, all: boolean): Intersection[] => {
+      if (this.mode !== 'prepare') return []
       setRay(e)
       const meshes: Mesh[] = []
       for (const o of this.objects.values()) for (const p of o.parts) meshes.push(p.mesh)
@@ -3146,13 +3198,19 @@ class ViewportImpl implements Viewport {
       if (clipped) for (const m of meshes) (m.material as Material).side = DoubleSide
       const hits = ray.intersectObjects(meshes, false)
       if (clipped) meshes.forEach((m, i) => ((m.material as Material).side = sides[i] ?? FrontSide))
-      const h = clipped ? hits.find((x) => !this.painter.isClipped(x.point)) : hits[0]
-      if (!h) return null
-      const id = h.object.userData.objectId as string
-      const entry = this.objects.get(id)
-      return entry ? { entry, part: (h.object.userData.partIndex as number) ?? 0, point: h.point, face: h.faceIndex ?? -1, dir: ray.ray.direction.clone() } : null
+      const kept = clipped ? hits.filter((x) => !this.painter.isClipped(x.point)) : hits
+      return all ? kept : kept.slice(0, 1)
+    }
+    const toHit = (h: Intersection): PickHit | null => {
+      const entry = this.objects.get(h.object.userData.objectId as string)
+      return entry ? { entry, part: (h.object.userData.partIndex as number) ?? 0, point: h.point, face: h.faceIndex ?? -1, dir: ray.ray.direction.clone(), depth: h.distance } : null
+    }
+    const pick = (e: { clientX: number; clientY: number }): PickHit | null => {
+      const h = rayHits(e, false)[0]
+      return h ? toHit(h) : null
     }
     this.pickFn = pick
+    this.pickAllFn = (e) => rayHits(e, true).map(toHit).filter((h): h is PickHit => h !== null)
     /** The menu event for a point: what is under it, as a pick reports it. */
     const contextAt = (e: { clientX: number; clientY: number }): ViewportEvents['contextpick'] => {
       const p = pick(e)
@@ -3232,19 +3290,27 @@ class ViewportImpl implements Viewport {
       down = { x: e.clientX, y: e.clientY }
       if (this.mode !== 'prepare') return
       stopPress()
-      if (e.pointerType === 'touch' && e.isPrimary && this.tool !== 'paint' && this.tool !== 'brim' && !this.sketchOn()) {
+      const touch = e.pointerType === 'touch'
+      // a left press on a model with no keys held, in Model's plain selection
+      const held = !touch && this.holdPick && p0 !== null && e.button === 0 && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && (this.tool === 'select' || this.tool === 'move') && !this.cut && !this.sketchOn()
+      if ((touch && e.isPrimary && this.tool !== 'paint' && this.tool !== 'brim' && !this.sketchOn()) || held) {
         const at = { clientX: e.clientX, clientY: e.clientY }
+        // what is under the press now: a press that selects may frame the view before the hold ends
+        const under = this.holdPick ? this.pickAllFn(at) : []
         press = {
           x: e.clientX,
           y: e.clientY,
+          slop: touch ? LONG_PRESS_SLOP_PX : HOLD_SLOP_PX,
           timer: setTimeout(() => {
             press = null
-            // the finger's lift is not a tap now
+            // the lift is not a tap or a click now
             down = null
-            this.emit('contextpick', contextAt(at))
+            if (!this.holdPick) return void this.emit('contextpick', contextAt(at))
+            this.dropStillDrag()
+            this.emit('holdpick', { screen: [at.clientX, at.clientY], touch, hits: this.patchesOf(under) })
           }, LONG_PRESS_MS),
         }
-      } else if (e.pointerType === 'touch') stopPress()
+      } else if (touch) stopPress()
       if (this.tool === 'brim') {
         if (e.button === 2) {
           // A right click on an ear removes it; anywhere else the button keeps its camera job.
@@ -3387,7 +3453,7 @@ class ViewportImpl implements Viewport {
     }
     const onMove = (e: PointerEvent): void => {
       resting = e.buttons === 0 ? { clientX: e.clientX, clientY: e.clientY } : null
-      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > LONG_PRESS_SLOP_PX) stopPress()
+      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > press.slop) stopPress()
       if (this.boxDrag) {
         const bx = this.boxDrag
         if (Math.hypot(e.clientX - bx.x0, e.clientY - bx.y0) >= 4) bx.moved = true
