@@ -13,6 +13,7 @@ import { bake, invert } from './mesh-ops'
 import { repairHeadline, showRepairReport, sumRepair, type RepairCounts, type RepairEntry } from './repair-report'
 import { bounds, compose, dropToBed, identity, multiply, type Box, type Mat4, type Vec3 } from './transform'
 import { modelPlace } from './edit'
+import { objectOverrides, partOverridesOf } from './object-settings'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -138,6 +139,27 @@ export interface CutSpec {
 /** Cuts the selected object with a plane. The pieces become objects standing on the bed, side by side. */
 export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> {
   const e = need()
+  return cutObject(host, e.id, spec)
+}
+
+/** Cut one concrete object, even if the selection changes while geometry is running. */
+export async function cutObject(host: Loader, id: string, spec: CutSpec): Promise<number> {
+  const initial = get()
+  const e = initial.plate.find((entry) => entry.id === id)
+  if (!e) throw new Error('The object is no longer on the shown plate.')
+  if (e.locked) throw new Error(`${e.name} is locked; unlock it first.`)
+  const all = [...initial.plate, ...initial.plates.filter((p) => p.id !== initial.activePlate).flatMap((p) => p.objects)]
+  const source = e.instanceOf ? all.find((entry) => entry.id === e.instanceOf) : undefined
+  const settings = objectOverrides(initial, e)
+  const partSettings = partOverridesOf(all, e)
+  const { replaying } = await import('../cad/history/ops')
+  const check = () => {
+    const now = get()
+    if (now.rollback || now.historyEdit?.objectId === id || replaying(id)) throw new Error('Finish editing the object and return to the end of the timeline before cutting.')
+    if (now.activePlate !== initial.activePlate || now.plates !== initial.plates || now.objectSettings !== initial.objectSettings || now.plate.find((entry) => entry.id === id) !== e) throw new Error('The object or its plate changed while cutting; read it and try again.')
+    if (source && [...now.plate, ...now.plates.flatMap((p) => p.objects)].find((entry) => entry.id === source.id) !== source) throw new Error('The source of this copy changed while cutting; read it and try again.')
+  }
+  check()
   const below: MeshPart[] = []
   const above: MeshPart[] = []
   const extras: MeshPart[] = []
@@ -159,9 +181,20 @@ export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> 
     pieces.map(async (piece) => {
       const up = standUp(piece.parts)
       const handle = await host.loadParts(piece.name, up.parts)
-      return { id: newId(), name: piece.name, handle, parts: up.parts, colors: [...e.colors], transform: up.transform, ...(e.source ? { source: e.source } : {}) }
+      const names = new Set(piece.parts.map((p) => p.name))
+      const slots = Object.fromEntries(Object.entries(e.slotOverrides ?? {}).filter(([name]) => names.has(name)))
+      const overrides = Object.fromEntries(Object.entries(partSettings).filter(([name]) => names.has(name)))
+      return {
+        id: newId(), name: piece.name, handle, parts: up.parts, colors: [...e.colors], transform: up.transform,
+        ...(e.printable !== undefined ? { printable: e.printable } : {}),
+        ...(Object.keys(slots).length ? { slotOverrides: slots } : {}),
+        ...(Object.keys(overrides).length ? { partSettings: overrides } : {}),
+        ...(e.source ? { source: e.source } : {}),
+        ...(e.history ? { history: { version: e.history.version, base: up.parts, steps: [], ended: 'History ends here: the object was cut into separate objects.' } } : {}),
+      }
     }),
   )
+  check()
   const plate = get().plate
   // the pieces stand side by side, each beside the one before and clear of the other objects, not on top of each other
   const boxOf = (x: PlateEntry) => bounds(x.parts, x.transform)
@@ -177,12 +210,19 @@ export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> 
     entries[i] = { ...entries[i]!, transform: multiply(move, entries[i]!.transform) }
   }
   const at = plate.findIndex((p) => p.id === e.id)
-  // The pieces sit where the object was when the cut started: an object deleted or moved meanwhile keeps its new state.
-  if (at < 0 || plate[at]!.transform !== e.transform) {
-    toast(at < 0 ? 'The object was removed before the cut finished, so nothing changed.' : 'The object moved before the cut finished, so nothing changed. Cut it again.', 'warn')
-    return 0
+  const copies = e.instanceOf ? [] : all.filter((entry) => entry.instanceOf === e.id)
+  const root = copies[0]?.id
+  const objectSettings = { ...initial.objectSettings }
+  delete objectSettings[e.id]
+  for (const entry of entries) objectSettings[entry.id] = { ...settings }
+  if (root) objectSettings[root] = { ...settings }
+  const detach = (entry: PlateEntry): PlateEntry => {
+    if (!root || entry.instanceOf !== e.id) return entry
+    const { instanceOf: _source, ...plain } = entry
+    return entry.id === root ? { ...plain, partSettings: { ...partSettings } } : { ...plain, instanceOf: root }
   }
-  set({ plate: [...plate.slice(0, at), ...entries, ...plate.slice(at + 1)], selection: entries[0]?.id ?? null, selectedIds: entries.map((x) => x.id) })
+  const plates = initial.plates.map((p) => p.id === initial.activePlate ? p : { ...p, objects: p.objects.map(detach) })
+  set({ plate: [...plate.slice(0, at), ...entries, ...plate.slice(at + 1)].map(detach), plates, objectSettings, selection: entries[0]?.id ?? null, selectedIds: entries.map((x) => x.id) })
   markStale()
   return entries.length
 }
