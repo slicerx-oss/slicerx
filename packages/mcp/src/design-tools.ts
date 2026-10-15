@@ -203,9 +203,10 @@ export function stepIndex(d: HostDesign, step: number | string): number {
 /** The largest main number a step takes when edited, as its tool takes it (the rest stop at 10000). */
 const EDIT_MAX: Partial<Record<string, number>> = { 'edge.fillet': 1000, 'edge.chamfer': 1000, hollow: 50, shell: 50 }
 
-async function replayChange(host: DesignHost, design: HostDesign, history: History, redo = design.redo): Promise<void> {
+async function replayChange(host: DesignHost, design: Design, history: History, redo = design.redo): Promise<void> {
   const candidate = { ...design, history, redo: [...redo] }
   await host.replay(candidate)
+  if (!candidate.stl) delete design.stl
   Object.assign(design, candidate)
 }
 
