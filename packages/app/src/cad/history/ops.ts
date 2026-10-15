@@ -19,6 +19,7 @@ import { sessionFonts, takeBind } from './record'
 import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
 import { opensDesign } from '../../workspaces/design/shelf-tools'
+import { historyPart } from '@slicerx/cad-history/mesh-part'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -43,7 +44,7 @@ export async function runReplay(req: ReplayRequest, signal?: AbortSignal): Promi
   return r
 }
 
-export const toPart = (m: HistoryMesh): MeshPart => ({ name: m.name, slot: m.slot, positions: m.positions instanceof Float32Array ? m.positions : new Float32Array(m.positions), indices: m.indices instanceof Uint32Array ? m.indices : new Uint32Array(m.indices) })
+export const toPart = historyPart
 
 /** The steps with each one's broken message from a replay, kept so the list shows it after a reload. */
 export function withStatus(steps: readonly Step[], status: readonly StepStatus[], found: ReplayResult['found'] = {}): Step[] {
@@ -102,7 +103,8 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * show (a body whose only step fails), or when the step `need` (a new step) does not go through.
  * A newer call for the same object cancels this one.
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+  guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
   running.set(objectId, ac)
@@ -125,6 +127,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     const dimensions = (await followDimensions(entry, pushMoves(current.history, history, r.moved, current.transform))).dimensions ?? entry.dimensions
     if (ac.signal.aborted) throw abortError()
     // A step open for editing closes: the rollback goes away outside undo, the result is the edit.
+    guard?.()
     const still = get().historyEdit
     if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
     // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
