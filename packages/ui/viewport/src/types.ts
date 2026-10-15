@@ -486,8 +486,10 @@ export interface ViewportStats {
   triangles: number
   segments: number
   aoOn: boolean
-  /** Moving frames are drawn at this fraction of the still resolution. */
+  /** Moving frames are drawn at this fraction of the still resolution (1 while they are drawn at full quality). */
   motionScale: number
+  /** Moving frames are drawn exactly like still frames, with MSAA and AO. */
+  motionFull: boolean
   /** The camera is on its way to a view (a preset, a fit or a zoom), so the picture is not where it will stop. */
   cameraMoving: boolean
   /** Big parts still showing their stand-in while the mesh workers make their final geometry. */
