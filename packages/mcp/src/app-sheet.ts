@@ -5,7 +5,7 @@
 // answers at once with the sheet's id; sheet_get reads the answer back. Offered while the app link is in use.
 import { defineTool, sheetTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { AppLinkCaller } from './app-route'
+import { appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_found', busy: 'busy', read_only: 'not_supported', denied: 'not_supported' }
@@ -17,6 +17,7 @@ async function call(link: AppLinkCaller, appName: string, method: string, args: 
   } catch (e) {
     const code = String((e as { code?: unknown }).code ?? '')
     const message = e instanceof Error ? e.message : String(e)
+    if (code === 'unauthorized') throw new ToolInputError(appClientSetupMessage(appName), 'not_configured', { appLink: code })
     if (OFF.includes(code)) throw new ToolInputError(`${appName} is closed, its app link is off, or this client is not allowed on it, so the person cannot see the sheet`, 'not_configured', { appLink: code })
     throw new ToolInputError(message, CODES[code] ?? 'internal_error')
   }

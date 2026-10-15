@@ -5,7 +5,7 @@
 // plate changes only what the window shows, never the project, so both tools read. Each answer is the plates read back.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { AppLinkCaller } from './app-route'
+import { appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 /** One plate as the app reads it back (packages/app app-link/methods.ts, plates.list). */
@@ -35,6 +35,7 @@ async function call(link: AppLinkCaller | undefined, appName: string, method: st
   } catch (e) {
     const code = String((e as { code?: unknown }).code ?? '')
     const message = e instanceof Error ? e.message : String(e)
+    if (code === 'unauthorized') throw new ToolInputError(appClientSetupMessage(appName), 'not_configured', { appLink: code })
     if (OFF.includes(code)) throw new ToolInputError(`${appName} is closed, its app link is off, or this client is not allowed on it, so its plates cannot be read.`, 'not_configured', { appLink: code })
     throw new ToolInputError(message, CODES[code] ?? 'internal_error')
   }

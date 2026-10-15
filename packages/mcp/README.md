@@ -65,6 +65,12 @@ Resources:
 - `slicerx://knowledge/{kind}/{id}`: every knowledge entry as YAML with sources.
 - `slicerx://pilot/skills`: the mimir skill catalog.
 
+### Connect a command-line client to the open project
+
+Pairing with the hub's code, including through `--link-state-dir`, does not register a client for the app link. It will not raise the app's permission question. Connect the client in the assistant section of **Settings** (**mimir** in SlicerX) and run it with the generated client configuration, which names its stored credential. Turn on **Let agents use the open project** in **Settings > Agents**; the first call from that registered client then asks for permission in the app.
+
+An `unauthorized` app-link response means this setup is missing or the connection was revoked. Reconnect the client instead of waiting for a prompt from a code-only connection. The CLI and MCP keep the `not_configured` error code and `details.appLink: unauthorized` for these refusals.
+
 ### Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.

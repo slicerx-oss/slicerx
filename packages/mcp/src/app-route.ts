@@ -60,8 +60,14 @@ export interface AppLinkCaller {
 function notThere(code: string, message: string): boolean {
   return ['app_link_off', 'app_closed', 'forbidden', 'unauthorized'].includes(code) || (code === 'bad_request' && message.startsWith('unknown method'))
 }
+/** A code-only or revoked client cannot reach the app's permission question. */
+export function appClientSetupMessage(appName: string): string {
+  return `This client is not connected to ${appName}'s open project. Connect it in Settings and use the generated client configuration. A hub pairing code alone does not open a permission prompt.`
+}
+
 /** Why the link is not there, for `--app`, which refuses instead of falling back. */
 function whyNotThere(code: string, appName: string): string {
+  if (code === 'unauthorized') return `${appClientSetupMessage(appName)} To work on this server's designs instead, run without --app.`
   if (code === 'app_link_off') return `the app link is off: turn it on in ${appName}'s Settings, or run without --app`
   if (code === 'app_closed') return `${appName} is not open: open it, or run without --app`
   if (code === 'bad_request') return `this sx-link is older than the app link: update ${appName}, or run without --app`
