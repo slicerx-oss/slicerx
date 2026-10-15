@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The 3D view's part of the modeling tools: the push and pull preview, the sketch layer and kept
+// The 3D view's part of the modeling tools: the operation previews (push and pull, fillet and chamfer), the sketch layer and kept
 // dimensions. Each one draws only while its tool has something to show, and keeps its buffers:
 // a drag moves a matrix or rewrites a few floats in place, never builds geometry. The app does the
 // geometry (the sx-geom worker) and hands over prisms, outlines and labels.
@@ -13,9 +13,11 @@ import {
   DoubleSide,
   EdgesGeometry,
   Float32BufferAttribute,
+  FrontSide,
   Group,
   Line,
   LineBasicMaterial,
+  LineDashedMaterial,
   LineSegments,
   Matrix4,
   MaxEquation,
@@ -29,6 +31,7 @@ import {
   SRGBColorSpace,
   SrcAlphaFactor,
   Vector2,
+  Vector3,
   Sprite,
   SpriteMaterial,
 } from 'three'
@@ -95,16 +98,100 @@ export function prismMatrix(point: V3, normal: V3, d: number, out = new Matrix4(
   return out.set(m00, m01, m02, -k * nx * pn, m01, m11, m12, -k * ny * pn, m02, m12, m22, -k * nz * pn, 0, 0, 0, 1)
 }
 
-const JOIN = '#50fa7b'
-const CUT = '#ff5555'
+/** Fill and edge strengths of the operation preview, dark and light studio. */
+export const OP_LOOK = {
+  addFill: 0.34,
+  addFillLight: 0.3,
+  cutFill: 0.2,
+  cutFillLight: 0.16,
+  edge: 0.95,
+  /** Dash and gap of the removed material's edges, mm. */
+  dash: 1.4,
+  gap: 1,
+} as const
 
-/** What a fillet or chamfer would change: the removed pieces red, the added ones green, drawn through the model. Built only when set. */
+/** Dark studio defaults; setColors follows the theme. */
+const ADD = '#bd93f9'
+const CUT = '#ff5555'
+const CUT_LIGHT = '#d32f2f'
+
+/**
+ * One look for every Model operation that previews (push and pull, fillet and chamfer): added material is a tint in
+ * the accent, drawn with the model's depth so it reads as material on the part, with solid edges; removed material is
+ * a red ghost seen through the part, a faint fill with dashed edges. The view makes one and hands it to each preview.
+ */
+export class OpPreviewLook {
+  readonly addFill = new MeshBasicMaterial({ color: new Color(ADD), transparent: true, opacity: OP_LOOK.addFill, depthTest: true, depthWrite: false, side: DoubleSide, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 })
+  readonly addEdge = new LineBasicMaterial({ color: new Color(ADD), transparent: true, opacity: OP_LOOK.edge, depthTest: true, depthWrite: false, toneMapped: false })
+  // front faces only: a ghost drawn through the part shows one layer, not its near and far walls stacked into a block
+  readonly cutFill = new MeshBasicMaterial({ color: new Color(CUT), transparent: true, opacity: OP_LOOK.cutFill, depthTest: false, depthWrite: false, side: FrontSide, toneMapped: false })
+  readonly cutEdge = new LineDashedMaterial({ color: new Color(CUT), transparent: true, opacity: OP_LOOK.edge, dashSize: OP_LOOK.dash, gapSize: OP_LOOK.gap, depthTest: false, depthWrite: false, toneMapped: false })
+
+  /** The theme's accent for added material and its red for removed material; a light studio gets a deeper red and lighter fills. */
+  setColors(add: string, cut: string, light: boolean): void {
+    this.addFill.color.set(add)
+    this.addEdge.color.set(add)
+    const red = light ? CUT_LIGHT : cut
+    this.cutFill.color.set(red)
+    this.cutEdge.color.set(red)
+    this.addFill.opacity = light ? OP_LOOK.addFillLight : OP_LOOK.addFill
+    this.cutFill.opacity = light ? OP_LOOK.cutFillLight : OP_LOOK.cutFill
+  }
+
+  /** Read back for the view's own checks: the colors and strengths in use. */
+  colors(): { add: string; cut: string; addFill: number; cutFill: number } {
+    return { add: `#${this.addFill.color.getHexString()}`, cut: `#${this.cutFill.color.getHexString()}`, addFill: this.addFill.opacity, cutFill: this.cutFill.opacity }
+  }
+
+  dispose(): void {
+    for (const m of [this.addFill, this.addEdge, this.cutFill, this.cutEdge]) m.dispose()
+  }
+}
+
+/** Sets each segment's dash distances from its length after `m`, so dashes keep their size however a prism is stretched. */
+export function dashAlong(lines: LineSegments, m: Matrix4 | null): void {
+  const pos = lines.geometry.getAttribute('position')
+  if (!pos) return
+  let dist = lines.geometry.getAttribute('lineDistance') as BufferAttribute | undefined
+  if (!dist || dist.count !== pos.count) {
+    dist = new Float32BufferAttribute(new Float32Array(pos.count), 1)
+    lines.geometry.setAttribute('lineDistance', dist)
+  }
+  const a = new Vector3()
+  const b = new Vector3()
+  for (let i = 0; i + 1 < pos.count; i += 2) {
+    a.fromBufferAttribute(pos, i)
+    b.fromBufferAttribute(pos, i + 1)
+    if (m) {
+      a.applyMatrix4(m)
+      b.applyMatrix4(m)
+    }
+    dist.setX(i, 0)
+    dist.setX(i + 1, a.distanceTo(b))
+  }
+  dist.needsUpdate = true
+}
+
+/** A preview piece: its fill and its edges, in the added or the removed look. */
+function piece(m: { positions: ArrayLike<number>; indices: ArrayLike<number> }, look: OpPreviewLook, added: boolean): [Mesh, LineSegments] {
+  const g = new BufferGeometry()
+  g.setAttribute('position', new Float32BufferAttribute(Array.from(m.positions), 3))
+  g.setIndex(Array.from(m.indices))
+  const mesh = new Mesh(g, added ? look.addFill : look.cutFill)
+  mesh.renderOrder = 9
+  mesh.raycast = () => {}
+  const lines = new LineSegments(new EdgesGeometry(g, 20), added ? look.addEdge : look.cutEdge)
+  lines.renderOrder = 10
+  lines.raycast = () => {}
+  if (!added) dashAlong(lines, null)
+  return [mesh, lines]
+}
+
+/** What a fillet or chamfer would change: the removed pieces as a ghost, the added ones tinted (OpPreviewLook). Built only when set. */
 export class EdgePreview {
   readonly group = new Group()
-  private readonly cutFill = new MeshBasicMaterial({ color: new Color(CUT), transparent: true, opacity: 0.45, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false })
-  private readonly joinFill = new MeshBasicMaterial({ color: new Color(JOIN), transparent: true, opacity: 0.45, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false })
 
-  constructor() {
+  constructor(private readonly look: OpPreviewLook) {
     this.group.name = 'edge-preview'
     this.group.renderOrder = 9
     this.group.visible = false
@@ -113,17 +200,17 @@ export class EdgePreview {
   set(p: { cut: { positions: ArrayLike<number>; indices: ArrayLike<number> } | null; join: { positions: ArrayLike<number>; indices: ArrayLike<number> } | null } | null): void {
     this.clear()
     if (!p) return
-    for (const [m, mat] of [[p.cut, this.cutFill], [p.join, this.joinFill]] as const) {
+    for (const [m, added] of [[p.cut, false], [p.join, true]] as const) {
       if (!m || m.indices.length < 3) continue
-      const g = new BufferGeometry()
-      g.setAttribute('position', new Float32BufferAttribute(Array.from(m.positions), 3))
-      g.setIndex(Array.from(m.indices))
-      const mesh = new Mesh(g, mat)
-      mesh.renderOrder = 9
-      mesh.raycast = () => {}
-      this.group.add(mesh)
+      this.group.add(...piece(m, this.look, added))
     }
     this.group.visible = this.group.children.length > 0
+  }
+
+  /** What shows: whether removed and added pieces are drawn. */
+  shows(): { removed: boolean; added: boolean } {
+    const kids = this.group.visible ? this.group.children : []
+    return { removed: kids.some((c) => (c as Mesh).material === this.look.cutFill), added: kids.some((c) => (c as Mesh).material === this.look.addFill) }
   }
 
   private clear(): void {
@@ -136,21 +223,18 @@ export class EdgePreview {
 
   dispose(): void {
     this.clear()
-    this.cutFill.dispose()
-    this.joinFill.dispose()
   }
 }
 
-/** The push and pull preview: the swept prism, green when it adds and red when it cuts, drawn through the model. */
+/** The push and pull preview: the swept prism, tinted when it adds and a ghost when it cuts (OpPreviewLook). */
 export class PushPreview {
   readonly group = new Group()
-  private readonly fill = new MeshBasicMaterial({ color: new Color(JOIN), transparent: true, opacity: 0.28, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false })
-  private readonly edge = new LineBasicMaterial({ color: new Color(JOIN), transparent: true, opacity: 0.95, depthTest: false, toneMapped: false })
   private mesh: Mesh | null = null
   private lines: LineSegments | null = null
   private face: { point: V3; normal: V3 } | null = null
+  private d = 0
 
-  constructor() {
+  constructor(private readonly look: OpPreviewLook) {
     this.group.name = 'push-preview'
     this.group.matrixAutoUpdate = false
     this.group.renderOrder = 9
@@ -161,32 +245,35 @@ export class PushPreview {
     this.clear()
     this.face = face
     if (!prism || !face || prism.indices.length < 3) return
-    const g = new BufferGeometry()
-    g.setAttribute('position', new Float32BufferAttribute(Array.from(prism.positions), 3))
-    g.setIndex(Array.from(prism.indices))
-    this.mesh = new Mesh(g, this.fill)
-    this.mesh.renderOrder = 9
-    this.mesh.raycast = () => {}
-    this.lines = new LineSegments(new EdgesGeometry(g, 20), this.edge)
-    this.lines.renderOrder = 10
-    this.lines.raycast = () => {}
+    ;[this.mesh, this.lines] = piece(prism, this.look, this.d >= 0)
     this.group.add(this.mesh, this.lines)
+    this.setDistance(this.d)
   }
 
-  /** Stretches the prism to `d` mm; 0 hides it. */
+  /** Stretches the prism to `d` mm; 0 hides it. A negative distance draws the removed material's ghost. */
   setDistance(d: number): void {
+    this.d = d
     const f = this.face
     this.group.visible = !!f && !!this.mesh && Math.abs(d) > 1e-6
     if (!f) return
     prismMatrix(f.point, f.normal, d, this.group.matrix)
     this.group.matrixWorldNeedsUpdate = true
-    const c = d < 0 ? CUT : JOIN
-    this.fill.color.set(c)
-    this.edge.color.set(c)
+    const added = d >= 0
+    if (this.mesh) this.mesh.material = added ? this.look.addFill : this.look.cutFill
+    if (this.lines) {
+      this.lines.material = added ? this.look.addEdge : this.look.cutEdge
+      if (!added) dashAlong(this.lines, this.group.matrix)
+    }
   }
 
   get hasPrism(): boolean {
     return this.mesh !== null
+  }
+
+  /** What shows: removed material (a cut), added material (a pull) or nothing. */
+  shows(): { removed: boolean; added: boolean } {
+    const on = this.group.visible && this.mesh !== null
+    return { removed: on && this.d < 0, added: on && this.d > 0 }
   }
 
   private clear(): void {
@@ -201,8 +288,6 @@ export class PushPreview {
 
   dispose(): void {
     this.clear()
-    this.fill.dispose()
-    this.edge.dispose()
     this.group.removeFromParent()
   }
 }

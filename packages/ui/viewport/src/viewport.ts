@@ -49,7 +49,7 @@ import { alongAxis, arrowDir, ARROW_PX, MoveArrows, rayToSegment, type ArrowAxis
 import { applyToAll } from './group'
 import { RingSet, angleAround, pickRing, rayPlane, ringAxes, rotateAbout, snapAngle, turnVector, unit, unwrapAngle, type RingAxis, type RotateSpace } from './rings'
 import { CutGizmo, CutPreview, extentAlong, movePlane, tiltAxes, type CutKeep } from './cutplane'
-import { DimensionLayer, EdgePreview, PushPreview, SketchLayer, fromPlane, rayOnPlane, setSketchResolution, type DimensionMark, type SketchCursor, type SketchScene, type V2 } from './cadtools'
+import { DimensionLayer, EdgePreview, OpPreviewLook, PushPreview, SketchLayer, fromPlane, rayOnPlane, setSketchResolution, type DimensionMark, type SketchCursor, type SketchScene, type V2 } from './cadtools'
 import { clampScale, factorsFor, handleAxis, handleLocal, minFactorFor, nearestOnLine, pivotFor, ratioLine, ratioPivotFor, ratioPlane, ratioPoint, scaleTransform, snapScale, type HandleId, type V3 } from './scaling'
 import type { ModKey } from './gizmobindings'
 import { layerTopsProblems } from './layerheights'
@@ -79,6 +79,7 @@ import type {
   PushEvent,
   PushSpec,
   EdgePreviewSpec,
+  OperationPreviewShown,
   SketchEvent,
   ColorMode,
   PartStyle,
@@ -379,8 +380,10 @@ class ViewportImpl implements Viewport {
   private cut: { entry: ObjectEntry; point: V3; normal: V3; keep: CutKeep; place: boolean } | null = null
   private cutDrag: ({ kind: 'move'; point0: V3; extent: [number, number]; t0: number | null; mmPerPx: number; x0: number; y0: number } | (RingDrag & { kind: 'tilt'; ring: 'u' | 'v'; normal0: V3 })) | null = null
   private gizmoLabel: HTMLDivElement | null = null
-  private readonly pushView = new PushPreview()
-  private readonly edgeView = new EdgePreview()
+  // one look for every operation preview: added material tinted, removed material a ghost
+  private readonly opLook = new OpPreviewLook()
+  private readonly pushView = new PushPreview(this.opLook)
+  private readonly edgeView = new EdgePreview(this.opLook)
   private probeHover = false
   private push: PushSpec | null = null
   private pushDrag: { started: boolean; objectId: string; partIndex: number; triangle: number; point: V3; normal: V3; d0: number; d: number; snapped: boolean; t0: number | null; mmPerPx: number; x0: number; y0: number } | null = null
@@ -1482,6 +1485,12 @@ class ViewportImpl implements Viewport {
   setEdgePreview(preview: EdgePreviewSpec | null): void {
     this.edgeView.set(preview)
     this.invalidate()
+  }
+
+  operationPreview(): OperationPreviewShown {
+    const push = this.pushView.shows()
+    const edge = this.edgeView.shows()
+    return { added: push.added || edge.added, removed: push.removed || edge.removed, look: this.opLook.colors() }
   }
 
   setProbeFaces(on: boolean): void {
@@ -2958,6 +2967,7 @@ class ViewportImpl implements Viewport {
     this.brim.setColors(t.scene)
     this.cutRings.setColor('v', t.scene.selection)
     this.sketchLayer.setAccent(t.scene.selection)
+    this.opLook.setColors(t.scene.selection, t.scene.overhangRed, lightStudio(t.scene.bgTop))
     this.sketchLight = lightStudio(t.scene.bgTop)
     this.sketchLayer.setLight(this.sketchLight, t.glyphs)
     for (const l of this.finishedLayers) l.setLight(this.sketchLight, t.glyphs)
@@ -4220,6 +4230,7 @@ class ViewportImpl implements Viewport {
     this.cutGizmo.dispose()
     this.pushView.dispose()
     this.edgeView.dispose()
+    this.opLook.dispose()
     this.sketchLayer.dispose()
     for (const l of this.finishedLayers) l.dispose()
     this.originPlanes.dispose()
