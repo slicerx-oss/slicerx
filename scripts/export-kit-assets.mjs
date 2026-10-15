@@ -81,25 +81,23 @@ export function mergeSvgStyles(text) {
   })
 }
 
-export function scopeCss(css, selector) {
-  return css.replace(/(^|[{}])([^{}]+)(?=\{)/g, (match, lead, rules) => {
-    if (/^\s*(?:@|from\b|to\b|[\d.]+%)/.test(rules)) return match
-    return lead + rules.split(',').map((rule) => {
-      if (/\.sxs(?![\w-])|svg\.ti/.test(rule)) return rule.replace(/\.sxs(?![\w-])/g, `${selector}.sxs`).replaceAll('svg.ti', `${selector}.ti`)
-      return `${selector} ${rule.trim()}`
-    }).join(',')
-  })
+// Unique classes isolate assets without adding ancestors that break SVG use clones.
+export function namespaceClasses(text, prefix, rootClass) {
+  const names = new Set([rootClass])
+  for (const m of text.matchAll(/\bclass="([^"]+)"/g)) for (const name of m[1].split(/\s+/)) names.add(name)
+  return text.replace(/<style>([\s\S]*?)<\/style>/g, (_, css) =>
+    `<style>${css.replace(/\.([a-zA-Z_][\w-]*)/g, (match, name) => names.has(name) ? `.${prefix}-${name}` : match)}</style>`)
+    .replace(/\bclass="([^"]+)"/g, (_, classes) => `class="${classes} ${classes.split(/\s+/).map((name) => `${prefix}-${name}`).join(' ')}"`)
 }
 
 function documentSvg(id, scheme, width, height, cls, body, label, vars) {
   const prefix = `${id}-${scheme}-${width}`
-  const selector = `svg[data-sx-asset="${id}"][data-sx-variant="${scheme}"][data-sx-size="${width}"]`
   body = body.replace(/<style>([\s\S]*?)<\/style>/g, (_, css) => {
     const names = new Set([...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]))
     css = css.replace(/(@keyframes\s+|animation-name:)([\w-]+)/g, (match, lead, name) => names.has(name) ? `${lead}${prefix}-${name}` : match)
-    return `<style>${scopeCss(css, selector)}</style>`
+    return `<style>${css}</style>`
   })
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="${cls}" data-sx-asset="${xml(id)}" data-sx-variant="${scheme}" data-sx-size="${width}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(label)}"><title>${xml(label)}</title>${namespaceSvg(fallbacks(mergeSvgStyles(body), vars), prefix)}</svg>\n`
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${cls} ${prefix}-${cls}" data-sx-asset="${xml(id)}" data-sx-variant="${scheme}" data-sx-size="${width}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(label)}"><title>${xml(label)}</title>${namespaceSvg(fallbacks(namespaceClasses(mergeSvgStyles(body), prefix, cls), vars), prefix)}</svg>\n`
 }
 
 export async function exportAssets(dest) {
