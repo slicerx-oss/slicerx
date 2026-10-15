@@ -3,7 +3,7 @@
 // Which model a run uses. mimir has two tiers, named after Odin's ravens (design/NAMES.md):
 // huginn takes quick looks (check-ins, frame reads, short answers) on a small, fast vision
 // model; muninn thinks deeply (diagnosis, tune-from-failure, planning) on the large one.
-import type { PilotConfig } from '@slicerx/contracts'
+import type { PilotConfig, PilotRoute } from '@slicerx/contracts'
 
 export const HUGINN = 'huginn'
 export const MUNINN = 'muninn'
@@ -108,13 +108,71 @@ export function designSteps(prompt: string): number {
   return FEATURES.filter((f) => f.test(text)).length
 }
 
+/** The tier a request starts on and why, for the run's start event and the read-back. */
+export type Route = PilotRoute & { tier: Tier }
+/** Why Auto started a run on its tier: deep work, a picture or PDF to build from, many steps, sizes only the person knows, or none. */
+export type RouteReason = PilotRoute['reason']
+
+/** Things a person owns: "my shelf", "our cabinet door". The words after "my" that name the app's own things don't count. */
+const POSSESSIVE = /\b(?:my|our)\s+(?:own\s+)?([a-z][a-z-]*)/g
+const APP_THINGS = new Set(['print', 'prints', 'printer', 'printers', 'profile', 'profiles', 'settings', 'filament', 'filaments', 'nozzle', 'bed', 'plate', 'ams', 'slicer', 'project', 'model', 'models', 'part', 'parts', 'design', 'designs', 'file', 'files', 'drawing', 'drawings', 'sketch', 'photo', 'picture', 'gcode', 'layer', 'layers', 'idea', 'first', 'last', 'next', 'previous', 'own'])
+
+/** A part that mates with something that already exists: a replacement, a press fit, a holder or cap for a thing. */
+const MATING =
+  /\b(?:replacement|replaces?|spare|press[- ]?fits?|to fit|(?:fits?|fitting|slides?|clips?|snaps?|goes|hangs?|sits?|mounts?) (?:on|onto|over|into|in|around|between|under|inside)|(?:holder|mount|adapter|cap|lid|cover|case|sleeve|insert|plug|knob|bracket|stand|hook|clip|foot|feet|spacer) for (?:a|an|the|my|our|his|her|their)\b)/
+
+/** A size stated with its unit or as a standard fastener (40 mm, 1/2 in, 3", M3). */
+const SIZE = /\b\d+(?:[.,]\d+)?(?:\s*\/\s*\d+)?\s*(?:mm|cm|in|inch|inches|"|\u2033)(?![a-z])|\bM\d{1,2}\b/gi
+
+/** Sizes stated at which a request counts as having given its own: the measured thing and how the part sits on it. */
+export const SIZES_GIVEN = 3
+
 /**
- * The tier a design request starts on in the design tab. Auto stays on huginn unless the message carries a picture or
- * a PDF drawing to read, or the part takes many steps: a gear, thread or pattern, or `MANY_STEPS` distinct features
- * named. Tool calls never move a design run, and neither do failed ones: the build stays on the tier it started on.
+ * Whether a build needs a size only the person knows: it is for something they own ("my shelf", "our door"), or it
+ * mates with an existing thing (a replacement, a press fit, a holder for a jar), and the request does not already give
+ * `SIZES_GIVEN` sizes. Read from the words alone, without a model call.
  */
+export function personSizes(prompt: string): boolean {
+  const text = prompt.toLowerCase()
+  if ((text.match(SIZE) ?? []).length >= SIZES_GIVEN) return false
+  if (MATING.test(text)) return true
+  for (const m of text.matchAll(POSSESSIVE)) if (!APP_THINGS.has(m[1]!)) return true
+  return false
+}
+
+/** Words that ask for a part to be made, in the full chat (the design tab only builds). */
+const BUILD = /\b(?:make|design|model|build|create|draw|cad|print me|3d print)\b/i
+
+const reads = (files: readonly DesignRequestFiles[]): boolean => files.some((f) => f.type.startsWith('image/') || f.type === 'application/pdf')
+
+/**
+ * Where a design request starts in the design tab, and why. Auto stays on huginn unless the message carries a picture
+ * or a PDF drawing to read, the part takes many steps (a gear, thread or pattern, or `MANY_STEPS` distinct features
+ * named), or it needs a size only the person knows (see personSizes). Tool calls never move a design run, and neither
+ * do failed ones: the build stays on the tier it started on.
+ */
+export function designRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
+  if (reads(files)) return { tier: MUNINN, reason: 'attachment' }
+  if (MANY_FEATURES.test(prompt.toLowerCase()) || designSteps(prompt) >= MANY_STEPS) return { tier: MUNINN, reason: 'many_steps' }
+  if (personSizes(prompt)) return { tier: MUNINN, reason: 'person_sizes' }
+  return { tier: HUGINN, reason: 'default' }
+}
+
+/** The tier a design request starts on in the design tab (see designRoute). */
 export function designTier(prompt: string, files: readonly DesignRequestFiles[] = []): Tier {
-  if (files.some((f) => f.type.startsWith('image/') || f.type === 'application/pdf')) return MUNINN
-  if (MANY_FEATURES.test(prompt.toLowerCase())) return MUNINN
-  return designSteps(prompt) >= MANY_STEPS ? MUNINN : HUGINN
+  return designRoute(prompt, files).tier
+}
+
+/**
+ * Where a request starts in the full chat, and why: muninn for deep work (see tierForPrompt), and for a build from a
+ * picture or PDF or one that needs a size only the person knows, so the model that decides what to ask is the larger
+ * one. Any other request starts on huginn; a part tool or failures can still move the run up later.
+ */
+export function chatRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
+  if (tierForPrompt(prompt) === MUNINN) return { tier: MUNINN, reason: 'deep' }
+  if (BUILD.test(prompt)) {
+    if (reads(files)) return { tier: MUNINN, reason: 'attachment' }
+    if (personSizes(prompt)) return { tier: MUNINN, reason: 'person_sizes' }
+  }
+  return { tier: HUGINN, reason: 'default' }
 }
