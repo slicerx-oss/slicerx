@@ -28,7 +28,8 @@ test.describe('Model pick filter', () => {
     await expect(readout).toHaveText('1 face on Box')
     await command(page, 'Push or pull a face')
     await expect(toolPanel(page)).toContainText('A face is picked')
-    await expect(readout).toHaveText('Box')
+    // the pill keeps naming the face the tool works on
+    await expect(readout).toHaveText('1 face on Box')
   })
 
   test('edges: Alt+3 picks the edge next to the click, and Fillet starts from it', async ({ page }) => {

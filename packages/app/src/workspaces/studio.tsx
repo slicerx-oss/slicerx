@@ -162,6 +162,15 @@ export function Studio() {
   useEffect(() => {
     if (toolOpen && objectsRight && !railOpen(get().rails, 'preview', other, true)) setRail('preview', other, true)
   }, [toolOpen, objectsRight, other])
+  // Model's tools live in its right pane, which renders nothing while shut: opening a tool there opens the pane, so the
+  // tool hears its clicks and shows its controls.
+  const modelToolOpen = design && !compact && (objectTool === 'cut' || isCadTool(objectTool))
+  useEffect(() => {
+    if (!modelToolOpen) return
+    const ws = railKey('prepare', 'design')
+    const wide = typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1280px)').matches
+    if (!railOpen(get().rails, ws, other, wide)) setRail(ws, other, true)
+  }, [modelToolOpen, other])
   const { printer } = usePrinter()
   const printState = printer?.status.state
   const printResult = printer && (printState === 'finished' || printState === 'error') ? `${printer.id}:${printState}:${printer.status.updatedAt}` : null
