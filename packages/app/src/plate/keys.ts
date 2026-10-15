@@ -161,7 +161,8 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
         if (matchShortcut(e, key)) return run(() => setPickKind(kind, 'only'))
         if (matchShortcut(e, `Shift+${key}`)) return run(() => setPickKind(kind, 'toggle'))
       }
-      if (e.key === 'Escape' && s.subPicks.length) return run(() => void clearPicks())
+      // an open tool keeps its own Esc (cancel); the picks it uses stay
+      if (e.key === 'Escape' && s.subPicks.length && s.objectTool === null) return run(() => void clearPicks())
     }
     // Esc clears the selection in Slice while no tool is open; a menu, a popover, a phone's sheet or a tool panel keeps
     // its own Esc.

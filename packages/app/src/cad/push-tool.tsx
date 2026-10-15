@@ -9,7 +9,7 @@ import { pushPreview, type Vec3 } from '../geom/cad'
 import type { GeomMesh } from '../geom/client'
 import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
-import { get, set, toast } from '../state/store'
+import { get, set, toast, useApp, type SubPick } from '../state/store'
 import { findTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
@@ -109,6 +109,28 @@ export function PushTool() {
     },
     [host, edit],
   )
+
+  // The pill says what the tool works on: the picked face shows as Model's face pick while the tool has it, and stays
+  // picked when the tool closes. Clearing the pick (the pill's clear, or Esc with no tool) drops the tool's face too.
+  const mirrored = useRef<SubPick | null>(null)
+  useEffect(() => {
+    if (face) {
+      const p: SubPick = { kind: 'face', objectId: face.objectId, partIndex: face.partIndex, triangle: face.pick.triangle, point: face.pick.at }
+      mirrored.current = p
+      set({ subPicks: [p], selection: face.objectId, selectedIds: [face.objectId], towerSelected: false })
+    } else if (mirrored.current) {
+      const was = mirrored.current
+      mirrored.current = null
+      set((s) => ({ subPicks: s.subPicks.filter((x) => x !== was) }))
+    }
+  }, [face])
+  const picksGone = useApp((s) => mirrored.current !== null && !s.subPicks.includes(mirrored.current))
+  useEffect(() => {
+    if (!picksGone || live.current.busy) return
+    mirrored.current = null
+    setFace(null)
+    setText('')
+  }, [picksGone])
 
   // The prism for a 1 mm push; the view stretches it, so a drag asks the engine for nothing.
   useEffect(() => {
