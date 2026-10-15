@@ -95,6 +95,8 @@ export const ShapeBoxes = forwardRef<ShapeBoxesHandle, ShapeBoxesProps>(function
         if (document.activeElement === input) input.select()
       }
       input.placeholder = v
+      // the field grows with a long value, so every digit shows (7ch holds the usual ones)
+      input.style.width = `max(7ch, calc(${Math.max(input.value.length, v.length) + 1}ch + 2 * var(--s-1)))`
     })
     const sizes: Partial<Record<BoxKey, { w: number; h: number }>> = {}
     fields.forEach((f, i) => {
