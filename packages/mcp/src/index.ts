@@ -28,6 +28,7 @@ import { mimirTabTools } from './mimir-tab'
 import { appSheetTools } from './app-sheet'
 import { appLookTools } from './app-look'
 import { mimirAskTools } from './mimir-ask'
+import { appCutTools } from './app-cut'
 import { appPlateTools } from './app-plates'
 import { appValueTools } from './app-values'
 import { appHistoryTools } from './app-history'
@@ -193,7 +194,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
   // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...appCutTools(appLink, productName()), ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,
