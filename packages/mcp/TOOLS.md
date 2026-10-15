@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-194 tools.
+196 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -18,6 +18,8 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_redo` |  |  | slice | Redo one project edit from the toolbar history. |
 | `slicerx_app_step_bind` |  |  | slice | Bind a history step's main number to an expression in the open project, or pass expression:null to keep the number and stop following it. |
 | `slicerx_app_undo` |  |  | slice | Undo one recorded project edit using the same history as the toolbar, including object transforms, plate edits and design changes. |
+| `slicerx_app_units` |  |  | read | Read Model display units and precision from Settings, including the remembered precision of each unit. |
+| `slicerx_app_units_set` |  |  | read | Set Model display units (mm or in) and precision as in Settings. |
 | `slicerx_app_value_remove` |  |  | slice | Remove a named value from the open project. |
 | `slicerx_app_value_set` |  |  | slice | Add or change a named value in the open project, using the same arithmetic and millimeter units as Named values for sizes. |
 | `slicerx_app_values` |  |  | read | Read the open project's named values, expressions, resolved numbers or errors, built-in nozzle and clearance values, and step bindings on every plate. |
