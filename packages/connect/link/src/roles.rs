@@ -100,8 +100,8 @@ pub(crate) enum LinkClass {
 }
 
 /// methods on the open project, classified as read or edit. no printing, accounts or connection settings.
-/// geometry volumes and two view preferences are allowed, and `model.push_set` only types a distance into the
-/// open Push and pull. each method needs its pinned test entry.
+/// geometry volumes, two view preferences and Model's selection are allowed, and `model.push_set` only types a distance
+/// into the open Push and pull. each method needs its pinned test entry.
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("history.get", LinkClass::Read),
@@ -139,6 +139,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("model.push_set", LinkClass::Read),
     // The open Model tool's operation preview (push and pull, fillet and chamfer): ok or error, and its message.
     ("model.op_preview", LinkClass::Read),
+    // Model's Select Other: what is under a spot of the view, and picking one of those things.
+    // Read: a pick changes what the window has selected, never the project.
+    ("select.under", LinkClass::Read),
+    ("select.other", LinkClass::Read),
     ("values.list", LinkClass::Read),
     ("values.set", LinkClass::Edit),
     ("values.remove", LinkClass::Edit),
@@ -399,6 +403,8 @@ mod tests {
         ("model.push", LinkClass::Read),
         ("model.push_set", LinkClass::Read),
         ("model.op_preview", LinkClass::Read),
+        ("select.under", LinkClass::Read),
+        ("select.other", LinkClass::Read),
         ("values.list", LinkClass::Read),
         ("values.set", LinkClass::Edit),
         ("values.remove", LinkClass::Edit),

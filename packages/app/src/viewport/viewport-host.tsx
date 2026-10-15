@@ -6,7 +6,7 @@
 // keeps both workspaces usable.
 import { fitLines, keepFits, subscribeFits } from '../plate/fit-state'
 import type { PreviewBuffers } from '@slicerx/contracts'
-import type { PlateTool, RenderMode, ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
+import type { PlateTool, RenderMode, ToolChangerSpec, Viewport, ViewportEvents, ViewportPlate } from '@slicerx/viewport'
 import { onThemeChange } from '@slicerx/ui/theme'
 import { useEffect, useRef, useState } from 'react'
 import { brandAccent, useEdition } from '../edition'
@@ -24,6 +24,7 @@ import { probeHandler, setCameraBus, toolStore, type CadView, type Tool } from '
 import { pickSub, type EdgeAt, type EdgeWins, type FaceRound } from '../plate/sub-pick'
 import { EDGE_WINS_PX, screenDistance } from '../plate/pick-filter'
 import { modelFeelFor, onModelFeel } from '../cad/model-feel-flag'
+import { framingIsHeld, hideOtherTag, otherPick, selectOther, selectOtherOn, setOtherView } from '../plate/select-other'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
@@ -88,6 +89,9 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
   facePickAt?: Viewport['facePickAt']
   setPickFaces?: Viewport['setPickFaces']
   screenOf?: Viewport['screenOf']
+  /** Model's Select Other: everything under a point, and a press held still for its list. */
+  pickAll?: Viewport['pickAll']
+  setHoldPick?: Viewport['setHoldPick']
   setPickEdges?: Viewport['setPickEdges']
   setPickedEdges?: Viewport['setPickedEdges']
   setInsets?: Viewport['setInsets']
@@ -542,7 +546,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         // camera still on a pick.
         if (!first && designing(s) && s.cameraSeq === prev.cameraSeq) {
           if (!designing(prev) || s.plate.length > prev.plate.length) vp.view('iso', { animate: true })
-          else if (s.appearance.modelFraming === 'selection' && s.objectTool === null && (s.selection !== prev.selection || s.selectedIds !== prev.selectedIds)) {
+          // a Select Other pick keeps the camera: the same spot must still have the same things under it
+          else if (s.appearance.modelFraming === 'selection' && s.objectTool === null && !framingIsHeld() && (s.selection !== prev.selection || s.selectedIds !== prev.selectedIds)) {
             const now = selectedIds(s)
             if (now.length > 0 && now.join() !== selectedIds(prev).join()) (vp as unknown as Viewport).frameSelection?.({ animate: true })
           }
@@ -613,18 +618,19 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (toolStore.getState().tool === 'paint' && !e.objectId) return
         // Model with Faces or Edges in the pick filter: the click picks a face or an edge (plate/sub-pick.ts).
         const st = appStore.getState()
-        if (showsDesign(st) && st.pickFilter.some((k) => k !== 'object')) {
-          void pickSub(e, edgeAt, faceRound, edgeWinsFor(st)).then((done) => {
-            if (!done) selectObject(e)
-          })
-          return
+        const click = async () => {
+          if (showsDesign(st) && st.pickFilter.some((k) => k !== 'object')) {
+            if (!(await pickSub(e, edgeAt, faceRound, edgeWinsFor(st)))) selectObject(e)
+          } else selectObject(e)
         }
-        selectObject(e)
+        // Select Other: a plain click on the same spot again steps to the next thing under it (plate/select-other-pick.ts).
+        if (selectOtherOn(st) && !e.shift && !e.toggle && e.objectId && e.objectId !== TOWER_ID && vp.pickAll) return void otherPick().then((m) => m.clickAt(e, click))
+        void click()
       }))
-      // Model: a right click, a touch held still or the menu key opens the ring for what is under it (workspaces/design/
-      // view-ring.tsx): with Faces or Edges in the pick filter the face or edge, picked first unless it already is;
+      // Model: a right click or the menu key opens the ring for what is under it (workspaces/design/view-ring.tsx), as
+      // a touch held still does outside Select Other: with Faces or Edges in the pick filter the face or edge, picked first unless it already is;
       // else the object, selected first; else empty space. The menu key opens it for what is picked.
-      offs.push(vp.on('contextpick', (e) => {
+      const ringFor = (e: ViewportEvents['contextpick']) => {
         const st = appStore.getState()
         if (phoneView(st) === 'slim' || st.workspace !== 'prepare' || st.modelMode !== 'design' || st.objectTool !== null) return
         const at = { x: e.screen[0], y: e.screen[1] }
@@ -646,6 +652,48 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (!selectedIds(st).includes(objectId)) selectObject(e)
         if (st.subPicks.length) set({ subPicks: [] })
         openViewRing(at, { kind: 'object', objectId })
+      }
+      offs.push(vp.on('contextpick', ringFor))
+      // Select Other (plate/select-other.ts): a press or a finger held still on a model opens the list of everything
+      // under it; on a phone the list's More actions opens the ring a held finger opened before.
+      let pointerAt: [number, number] | null = null
+      const canvas = () => stage.querySelector<HTMLCanvasElement>('canvas')
+      const onPointer = (ev: PointerEvent) => {
+        pointerAt = ev.buttons === 0 ? [ev.clientX, ev.clientY] : pointerAt
+        const tag = selectOther.getState().tag
+        if (tag && Math.hypot(ev.clientX - tag.at.x, ev.clientY - tag.at.y) > 16) hideOtherTag()
+      }
+      const onLeave = () => void (pointerAt = null)
+      stage.addEventListener('pointermove', onPointer)
+      stage.addEventListener('pointerleave', onLeave)
+      offs.push(() => {
+        stage.removeEventListener('pointermove', onPointer)
+        stage.removeEventListener('pointerleave', onLeave)
+      })
+      if (vp.pickAll) {
+        const all = vp.pickAll.bind(vp)
+        setOtherView({
+          pickAll: all,
+          edgeAt,
+          faceRound,
+          screenOf: (p) => vp.screenOf?.(p) ?? null,
+          rect: () => (canvas() ?? stage).getBoundingClientRect(),
+          ring: (at) => {
+            const h = all(at[0], at[1])[0]
+            ringFor({ objectId: h?.objectId ?? null, partIndex: h?.partIndex ?? null, triangle: h?.triangle ?? null, point: h?.point ?? null, screen: at })
+          },
+          pointer: () => pointerAt,
+          focus: () => canvas()?.focus({ preventScroll: true }),
+        })
+        offs.push(() => setOtherView(null))
+      }
+      offs.push(vp.on('holdpick', (e) => void otherPick().then((m) => m.holdAt(e.screen, e.touch, e.hits))))
+      const holdOn = (s: AppState) => vp.setHoldPick?.(selectOtherOn(s) && phoneView(s) !== 'slim')
+      holdOn(appStore.getState())
+      offs.push(appStore.subscribe((s, prev) => {
+        if (s.workspace !== prev.workspace || s.modelMode !== prev.modelMode || s.objectTool !== prev.objectTool || s.settingsMode !== prev.settingsMode) holdOn(s)
+        // the tag names what the click picked: anything picked since takes it away
+        if (s.subPicks !== prev.subPicks || s.selectedIds !== prev.selectedIds || s.selection !== prev.selection) hideOtherTag()
       }))
       // Lay on bed from the ring: the last picked face of the object, as lay on face takes it.
       setLayFace((objectId) => {
@@ -673,12 +721,15 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         const free = inModel && s.objectTool === null
         const feel = free && s.pickFilter.includes('face') && edgeWinsFor(s) !== undefined
         if (!feel) edgeWon = false
-        vp.setSelectedFaces?.(inModel ? s.subPicks.filter((p) => p.kind === 'face') : [])
+        // a row of Select Other's list under the pointer or focus shows what it would pick
+        const hover = inModel ? selectOther.getState().hover : null
+        const faces = inModel ? s.subPicks.filter((p) => p.kind === 'face') : []
+        vp.setSelectedFaces?.(hover?.kind === 'face' ? [...faces, hover] : faces)
         vp.setPickFaces?.(free && s.pickFilter.includes('face') && !edgeWon)
         const edges = (free && s.pickFilter.includes('edge') && !s.pickFilter.includes('face')) || feel
         vp.setPickEdges?.(edges)
         if (!edges) hoverLines = []
-        vp.setPickedEdges?.(inModel ? s.subPicks.flatMap((p) => p.lines ?? []) : [], hoverLines)
+        vp.setPickedEdges?.(inModel ? s.subPicks.flatMap((p) => p.lines ?? []) : [], hover?.kind === 'edge' ? (hover.lines ?? []) : hoverLines)
       }
       // An edge wins when its lines pass within EDGE_WINS_PX of the pointer on screen; off without the flag.
       const edgeWinsFor = (s: AppState): EdgeWins | undefined =>
@@ -706,6 +757,14 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         )
       }))
       showPicks(appStore.getState())
+      // A body in Select Other's list shows as selected while its row is under the pointer or focus.
+      offs.push(selectOther.subscribe((o, was) => {
+        if (o.hover === was.hover) return
+        const st = appStore.getState()
+        showPicks(st)
+        if (o.hover?.kind === 'body') vp.setSelection([o.hover.objectId])
+        else if (was.hover?.kind === 'body') vp.setSelection(st.towerSelected ? [TOWER_ID] : selectedIds(st))
+      }))
       // The store starts on Face. A developer who turned the Model feel off starts on whole objects instead, once a
       // session (the flag stays out of the startup shell); turning the flag over sets Face with it, whole objects without.
       if (!feelStarted) {
