@@ -139,18 +139,20 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
           ...(['box', 'cylinder', 'sphere', 'cone'] as const).map((shape): CommandSpec => ({ id: `add-${shape}`, title: `Add a ${shape}`, section: 'plate', keywords: ['primitive', 'shape', 'new object'], workspace: 'prepare', tool: { permission: 'slice' }, run: () => void addPrimitive(host, shape, 'object') })),
         ] satisfies CommandSpec[])
       : []),
+    // Saves and exports hand back their promise, so a failure reaches the caller (the command bar, Mod+S, the
+    // menu, an agent) as a failed run instead of a rejection nothing handles.
     ...(full
       ? ([
-          { id: 'project-save', title: 'Save the project', section: 'plate', keywords: ['sx3mf', 'save as', 'export', 'file', 'plates'], shortcut: 'Mod+S', run: () => void saveProject(full) },
-          { id: 'project-export-locked', title: `Export a locked ${appName()} project (.sxlock)`, section: 'plate', keywords: ['sxlock', 'lock', 'encrypt', 'protect', 'private', 'account', 'export'], run: () => void import('../export/locked').then((m) => m.exportLockedProject(full)) },
-          { id: 'project-save-as', title: 'Save the project as a new file', section: 'plate', keywords: ['save as', 'sx3mf', 'copy', 'file'], shortcut: 'Mod+Shift+S', run: () => void saveProject(full, { as: true }) },
+          { id: 'project-save', title: 'Save the project', section: 'plate', keywords: ['sx3mf', 'save as', 'export', 'file', 'plates'], shortcut: 'Mod+S', run: () => saveProject(full) },
+          { id: 'project-export-locked', title: `Export a locked ${appName()} project (.sxlock)`, section: 'plate', keywords: ['sxlock', 'lock', 'encrypt', 'protect', 'private', 'account', 'export'], run: () => import('../export/locked').then((m) => m.exportLockedProject(full)) },
+          { id: 'project-save-as', title: 'Save the project as a new file', section: 'plate', keywords: ['save as', 'sx3mf', 'copy', 'file'], shortcut: 'Mod+Shift+S', run: () => saveProject(full, { as: true }) },
           { id: 'project-recent', title: 'Open a recent project', section: 'plate', keywords: ['recent', 'reopen', 'restore', 'autosave', 'sx3mf'], run: () => set({ projectsDialog: 'recent' }) },
-          { id: 'export-selection-stl', title: 'Export the selection as STL', section: 'plate', keywords: ['mesh', 'save', 'model'], enabled: () => selectedIds().length > 0 && !fromVault(get().plate.filter((p) => selectedIds().includes(p.id))), run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'selection', 'stl')) },
-          { id: 'export-selection-obj', title: 'Export the selection as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model'], enabled: () => selectedIds().length > 0 && !fromVault(get().plate.filter((p) => selectedIds().includes(p.id))), run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'selection', 'obj')) },
-          { id: 'export-plate-stl', title: 'Export the plate as STL', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], enabled: () => !fromVault(get().plate), run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'stl')) },
-          { id: 'export-plate-obj', title: 'Export the plate as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], enabled: () => !fromVault(get().plate), run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'obj')) },
-          { id: 'export-gcode-3mf', title: 'Export the sliced plate as .gcode.3mf', section: 'slice', keywords: ['bambu', 'printer file', 'send'], run: () => void exportGcode3mf(full) },
-          { id: 'export-all-plates', title: 'Slice and export every plate', section: 'slice', keywords: ['all plates', 'batch', 'gcode.3mf'], enabled: () => get().plates.length > 1, run: () => void exportAllPlates(full) },
+          { id: 'export-selection-stl', title: 'Export the selection as STL', section: 'plate', keywords: ['mesh', 'save', 'model'], enabled: () => selectedIds().length > 0 && !fromVault(get().plate.filter((p) => selectedIds().includes(p.id))), run: () => import('../export/mesh').then((m) => m.exportMesh(full, 'selection', 'stl')) },
+          { id: 'export-selection-obj', title: 'Export the selection as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model'], enabled: () => selectedIds().length > 0 && !fromVault(get().plate.filter((p) => selectedIds().includes(p.id))), run: () => import('../export/mesh').then((m) => m.exportMesh(full, 'selection', 'obj')) },
+          { id: 'export-plate-stl', title: 'Export the plate as STL', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], enabled: () => !fromVault(get().plate), run: () => import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'stl')) },
+          { id: 'export-plate-obj', title: 'Export the plate as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], enabled: () => !fromVault(get().plate), run: () => import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'obj')) },
+          { id: 'export-gcode-3mf', title: 'Export the sliced plate as .gcode.3mf', section: 'slice', keywords: ['bambu', 'printer file', 'send'], run: () => exportGcode3mf(full) },
+          { id: 'export-all-plates', title: 'Slice and export every plate', section: 'slice', keywords: ['all plates', 'batch', 'gcode.3mf'], enabled: () => get().plates.length > 1, run: () => exportAllPlates(full) },
         ] satisfies CommandSpec[])
       : []),
     ...[0.15, 0.2, 0.25, 0.4, 0.5, 0.6, 0.8, 1.0].map((mm): CommandSpec => ({

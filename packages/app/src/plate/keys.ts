@@ -8,7 +8,7 @@ import { keymapFor, type KeyAction } from '@slicerx/ui'
 import { runCommand } from '../commands/registry'
 import { inTextField, matchShortcut } from '../lib/keys'
 import { modelMode, toggleModelMode } from '../state/model-mode'
-import { get, set } from '../state/store'
+import { get, set, toast } from '../state/store'
 import { toggleEdge } from '../shell/edge-keys'
 import { onControl } from '../controls/global-keys'
 import { layerCountNow, stepLayer } from '../workspaces/preview/layer-step'
@@ -117,7 +117,8 @@ const TOOLS_WITH_ESC = new Set(['face', 'paint', 'brim', 'probe'])
 
 /** Undo and redo are the same in every preset. */
 const FIXED: [string, Handler][] = [
-  ['Mod+S', () => void runCommand('project-save')],
+  // A save that fails says so, as it does from the command bar; where there is nothing to save the key does nothing.
+  ['Mod+S', () => void runCommand('project-save').then((r) => (!r.ok && r.reason === 'failed' ? toast(r.message) : undefined))],
   ['Mod+A', () => (toolStore.getState().tool === 'brim' && get().selection ? selectAllEars(get().selection!) : selectAll())],
   ['Mod+Shift+Z', () => void history().redo()],
   ['Mod+Y', () => void history().redo()],
