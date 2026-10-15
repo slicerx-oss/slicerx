@@ -121,6 +121,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
     ("preview.set", LinkClass::Read),
+    ("preview.gcode", LinkClass::Read),
+    ("preview.gcode_jump", LinkClass::Read),
     // The project's plates with their slice states, and showing one of them (by number, or the next or previous).
     // Read: showing a plate changes only what the window shows, never the project.
     ("plates.list", LinkClass::Read),
@@ -380,6 +382,8 @@ mod tests {
         ("volumes.remove", LinkClass::Edit),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
+        ("preview.gcode", LinkClass::Read),
+        ("preview.gcode_jump", LinkClass::Read),
         ("plates.list", LinkClass::Read),
         ("plates.show", LinkClass::Read),
         ("look.get", LinkClass::Read),
@@ -447,8 +451,11 @@ mod tests {
                 if word == "remove" && *m == "volumes.remove" {
                     continue;
                 }
+                // these read preview text or move its cursor, never execute g-code.
+                let preview_text = word == "gcode" && matches!(*m, "preview.gcode" | "preview.gcode_jump");
                 assert!(
                     mesh_repair
+                        || preview_text
                         || !m.to_ascii_lowercase().contains(word)
                         || (*m == "values.remove" && word == "remove"),
                     "{m} looks like something a person keeps ({word})"
@@ -459,6 +466,16 @@ mod tests {
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
+        for m in ["preview.gcode", "preview.gcode_jump"] {
+            assert_eq!(link_class(m), Some(LinkClass::Read));
+        }
+        for m in [
+            "preview.gcode_send",
+            "preview.gcode_execute",
+            "preview.gcode_write",
+        ] {
+            assert_eq!(link_class(m), None, "{m}");
+        }
         for m in ["volumes.remove_file", "volumes.remove_printer", "printer.remove"] {
             assert_eq!(link_class(m), None, "{m}");
         }

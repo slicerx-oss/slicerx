@@ -43,6 +43,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
+  'preview.gcode': 'read',
+  'preview.gcode_jump': 'read',
   // The plates with their slice states, and showing one (by number or id, or the next or previous): like the
   // preview, showing a plate changes only what the window shows, never the project.
   'plates.list': 'read',
@@ -360,6 +362,8 @@ const HANDLERS: Record<string, Handler> = {
   'plates.list': () => platesState(),
   'plates.show': (args) => showPlate(args),
   'look.get': () => lookState(),
+  'preview.gcode': async (args) => (await import('./preview-gcode')).previewGcode(args, false),
+  'preview.gcode_jump': async (args) => (await import('./preview-gcode')).previewGcode(args, true),
   'look.set': (args) => setLook(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),

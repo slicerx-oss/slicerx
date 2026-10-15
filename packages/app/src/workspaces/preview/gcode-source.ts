@@ -11,7 +11,7 @@ import { gcodeView } from './gcode-file'
 import { indexLines, rangeSource, wholeSource, type LineSource } from './gcode-lines'
 import { parseGcodePreview } from './gcode-parse'
 
-let held: { key: string; source: Promise<LineSource>; users: number } | null = null
+let held: { key: string; source: Promise<LineSource>; users: number; host?: Host } | null = null
 /** The plate's slice from before a file was opened, put back when the file closes. */
 let beforeFile: Pick<AppState, 'slice' | 'preview' | 'layerHi' | 'layerLo' | 'moveCut'> | null = null
 let filePreview: PreviewBuffers | null = null
@@ -51,13 +51,14 @@ export function holdText(host: Host): TextHold {
   if (s.slice.status !== 'done') return NO_HOLD
   const r = s.slice.result
   const key = `slice:${r.id}`
-  if (held?.key !== key) {
+  if (held?.key !== key || held.host !== host) {
     if (r.gcodeFormat === 'bgcode') return { source: Promise.reject(new NoTextError('This printer takes binary G-code, which has no text lines to show.')), release: () => undefined }
     const source = sliceSource(host, r.id)
-    held = { key, source, users: 0 }
+    const owner = { key, source, users: 0, host }
+    held = owner
     // A failed load is not kept, so the next hold tries again.
     source.catch(() => {
-      if (held?.key === key) held = null
+      if (held === owner) held = null
     })
   }
   const h = held!

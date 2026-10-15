@@ -4,13 +4,14 @@
 // on a line moves the sliders to it. Only the rows in view exist in the page, so a 50 MB file scrolls like a
 // small one, and only their lines' text is read from the host that keeps a slice's G-code, a window around the view
 // at a time. Loaded with the first open (lazy in studio.tsx).
-import type { PreviewBuffers } from '@slicerx/contracts'
 import { Button, Icon } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useHost } from '../../host'
-import { set, shownSlice, useApp } from '../../state/store'
+import { shownSlice, useApp } from '../../state/store'
 import { setGcodePanel, useGcodeView } from './gcode-file'
-import { currentSegment, lineOfSegment, lineText, scroller, segmentOfLine, slidersFor, type LineIndex, type LineSource } from './gcode-lines'
+import { currentSegment, lineOfSegment, lineText, scroller, type LineIndex, type LineSource } from './gcode-lines'
+import { jumpToLine, lineAtNozzle, selectGcodeLine } from './gcode-selection'
+export { jumpToLine, lineAtNozzle } from './gcode-selection'
 import { holdText, NoTextError } from './gcode-source'
 import './gcode-panel.css'
 
@@ -18,19 +19,6 @@ const ROW = 18
 const OVERSCAN = 6
 /** Lines read beyond the view on each side, so a scroll of a few screens needs no new read. */
 const WINDOW_MARGIN = 400
-
-/** The G-code line at the nozzle for the sliders, or 0 when the preview has no line numbers. */
-export function lineAtNozzle(p: PreviewBuffers, layerHi: number, moveCut: number): number {
-  return lineOfSegment(p, currentSegment(p, layerHi, moveCut))
-}
-
-/** Moves the layer and move sliders to the move a G-code line belongs to. False before the first move. */
-export function jumpToLine(p: PreviewBuffers, line: number): boolean {
-  const seg = segmentOfLine(p, line)
-  if (seg < 0) return false
-  set(slidersFor(p, seg))
-  return true
-}
 
 function Row({ ix, n, on, top, onPick }: { ix: LineIndex; n: number; on: boolean; top: number; onPick: (n: number) => void }) {
   const text = lineText(ix, n)
@@ -123,7 +111,7 @@ export function GcodePanel() {
 
   // Without line numbers there is no move to go to, so a click only reads.
   const pick = (n: number) => {
-    if (preview && preview.extrasOffset >= 0 && !jumpToLine(preview, n)) set({ layerHi: 1, moveCut: 0 })
+    if (preview) selectGcodeLine(preview, n)
   }
 
   const onKey = (e: KeyboardEvent) => {
