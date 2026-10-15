@@ -831,9 +831,11 @@ impl Reader {
         }
         let jerk = m.axis_jerk();
         curr.safe = cruise;
-        for (a, j) in curr.axis.iter().zip(jerk) {
+        for (axis, (a, j)) in curr.axis.iter().zip(jerk).enumerate() {
             if a.abs() > j {
-                curr.safe = curr.safe.min(j);
+                // convert the filament limit to path speed for a mixed move.
+                let limit = if axis == 3 { cruise * j / a.abs() } else { j };
+                curr.safe = curr.safe.min(limit);
             }
         }
         let mut vmax = curr.safe;
