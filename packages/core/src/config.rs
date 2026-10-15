@@ -946,7 +946,7 @@ impl PrintConfig {
         // gap when only the layer height changes; a 0.2 mm gap on 0.08 mm layers rounds to three layers there).
         // `auto` asks for the same.
         let auto_gap = c.layer_height.min(0.2);
-        let gap_auto = |k: &str| match get(k) {
+        let gap_auto = |k: &str| match c.raw.get(k) {
             None => true,
             Some(Value::String(t)) => t.trim().eq_ignore_ascii_case("auto"),
             _ => false,
