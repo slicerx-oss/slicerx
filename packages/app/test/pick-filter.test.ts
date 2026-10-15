@@ -4,7 +4,7 @@
 // clear of every look's keys, and a readout in plain words.
 import { KEYMAPS, LOOK_IDS } from '@slicerx/ui'
 import { describe, expect, it } from 'vitest'
-import { nextFilter, PICK_KEYS, PICK_KINDS, pickKeyOf, pickKeysOn, pickReadout } from '../src/plate/pick-filter'
+import { EDGE_WINS_PX, nextFilter, PICK_KEYS, PICK_KINDS, pickKeyOf, pickKeysOn, pickReadout, screenDistance } from '../src/plate/pick-filter'
 
 const key = (k: string, code: string, o: Partial<KeyboardEventInit> = {}) => new KeyboardEvent('keydown', { key: k, code, ...o })
 
@@ -59,5 +59,27 @@ describe('the readout', () => {
     expect(pickReadout({ objects: ['Bracket'], faces: [{ object: 'Bracket' }, { object: 'Bracket' }] })).toBe('2 faces on Bracket')
     expect(pickReadout({ objects: ['Bracket', 'Lid'], edges: [{ object: 'Bracket' }, { object: 'Lid' }, { object: 'Lid' }] })).toBe('3 edges on 2 objects')
     expect(pickReadout({ objects: ['Bracket'], faces: [{ object: 'Bracket' }], edges: [{ object: 'Bracket' }] })).toBe('1 face and 1 edge on Bracket')
+  })
+})
+
+describe('the edge priority', () => {
+  // A flat projection, 1 px per mm, so the numbers read straight off.
+  const flat = (p: [number, number, number]) => [p[0], p[1]] as const
+
+  it('measures the pointer to the nearest line on screen, ends included', () => {
+    const lines = [{ from: [0, 0, 0] as [number, number, number], to: [10, 0, 0] as [number, number, number] }]
+    expect(screenDistance([5, 4], lines, flat)).toBe(4)
+    expect(screenDistance([13, 4], lines, flat)).toBe(5)
+    expect(screenDistance([5, 7], lines, flat)).toBeGreaterThan(EDGE_WINS_PX)
+    expect(EDGE_WINS_PX).toBe(6)
+  })
+
+  it('takes the nearest of several lines, as a round edge comes in pieces, and skips ends off screen', () => {
+    const lines = [
+      { from: [0, 0, 0] as [number, number, number], to: [10, 0, 0] as [number, number, number] },
+      { from: [10, 0, 0] as [number, number, number], to: [10, 10, 0] as [number, number, number] },
+    ]
+    expect(screenDistance([12, 5], lines, flat)).toBe(2)
+    expect(screenDistance([12, 5], lines, () => null)).toBe(Infinity)
   })
 })

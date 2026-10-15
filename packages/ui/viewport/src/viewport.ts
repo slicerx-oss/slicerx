@@ -1489,6 +1489,11 @@ class ViewportImpl implements Viewport {
     if (!on && this.tool !== 'face' && this.tool !== 'probe') this.hoverFace(null)
   }
 
+  /** A bed point (mm) on screen, in client pixels. */
+  screenOf(p: [number, number, number]): [number, number] {
+    return this.toScreen(p)
+  }
+
   /** Model's edge filter: report the triangle under the pointer (`edgehover`) so the app can show the edge it would pick. */
   setPickEdges(on: boolean): void {
     this.pickEdges = on
@@ -3409,7 +3414,7 @@ class ViewportImpl implements Viewport {
           const key = h && h.face >= 0 ? `${h.entry.id}:${h.part}:${h.face}:${Math.round(h.point.x * 4)}:${Math.round(h.point.y * 4)}:${Math.round(h.point.z * 4)}` : ''
           if (key !== this.edgeHoverAt) {
             this.edgeHoverAt = key
-            this.emit('edgehover', h && h.face >= 0 ? { objectId: h.entry.id, partIndex: h.part, triangle: h.face, point: this.worldToBed(h.point) } : null)
+            this.emit('edgehover', h && h.face >= 0 ? { objectId: h.entry.id, partIndex: h.part, triangle: h.face, point: this.worldToBed(h.point), screen: [e.clientX, e.clientY] } : null)
           }
         }
         if (this.tool === 'probe' && this.probeHover && this.mode === 'prepare' && e.buttons === 0) queueProbe(e)
@@ -3532,11 +3537,22 @@ class ViewportImpl implements Viewport {
       if (d) {
         this.drag = null
         this.controls.enabled = true
-        if (d.group) this.endGroup(d.group, false)
-        else this.emit('transform', { id: d.entry.id, transform: d.entry.group.matrix.toArray(), final: true })
-        this.objectsMoved()
-        down = null
-        return
+        // Model with faces or edges in the pick filter: a press that never moved is a click, and picks what is under it.
+        const click = (this.pickFaces || this.pickEdges) && e.button === 0 && down !== null && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5
+        if (click) {
+          // put back any sub-click nudge the drag made
+          if (d.group) this.endGroup(d.group, true)
+          else {
+            d.entry.group.matrix.fromArray(d.start)
+            d.entry.group.matrixWorldNeedsUpdate = true
+          }
+        } else {
+          if (d.group) this.endGroup(d.group, false)
+          else this.emit('transform', { id: d.entry.id, transform: d.entry.group.matrix.toArray(), final: true })
+          this.objectsMoved()
+          down = null
+          return
+        }
       }
       if (!down) return
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y)
@@ -3559,7 +3575,7 @@ class ViewportImpl implements Viewport {
       setRay(e)
       const op = this.originPlanes.at(ray)
       const onPlane = op && (!p || op.distance < p.point.distanceTo(ray.ray.origin)) ? op.plane : null
-      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(onPlane ? { originPlane: onPlane } : {}), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}) })
+      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(onPlane ? { originPlane: onPlane } : {}), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}), screen: [e.clientX, e.clientY] })
       if (this.pathsShown() && !p) {
         // A click on a toolpath: which path it is, so the app can show the setting that made it.
         setRay(e)
