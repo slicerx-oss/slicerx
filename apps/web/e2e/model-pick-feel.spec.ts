@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The new Model feel's pick filter (developer flag): Model starts on Face, a real click a few pixels from an edge picks
-// the edge and one well inside the face picks the face, Edge only and Body stay explicit modes, and the palette
-// command turns it over. Without the flag the filter starts on objects and the face wins, as before.
+// The Model feel's pick filter, on by default: Model starts on Face, a real click a few pixels from an edge picks the
+// edge and one well inside the face picks the face, Edge only and Body stay explicit modes, and the developer palette
+// command turns it off and on. Turned off, the filter starts on objects and the face wins, as before.
 import type { Page } from '@playwright/test'
 import { bounds, command, freshBox, openStudio } from './cad-helpers'
 import { expect, test } from './fixtures'
 
 type V3 = [number, number, number]
 
-/** Turns the flag on before the app starts, as the palette command leaves it. */
-async function withFeel(page: Page): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('sx.modelFeel', '1'))
+/** Turns the Model feel off before the app starts, as the developer palette command leaves it. */
+async function feelOff(page: Page): Promise<void> {
+  await page.addInitScript(() => localStorage.setItem('sx.modelFeel', '0'))
 }
 
 /**
@@ -75,13 +75,12 @@ async function framedBox(page: Page): Promise<string> {
 
 const filter = (page: Page, kind: string) => page.locator(`[data-testid="model-select-filter"][data-kind="${kind}"]`)
 
-test.describe('Model pick feel (developer flag)', () => {
+test.describe('Model pick feel', () => {
   test.skip(({ isMobile }) => isMobile, 'Needs a pointer and a keyboard')
 
   test('starts on Face, and an edge within 6 px of the click wins over the face', async ({ page }) => {
     test.slow()
-    await withFeel(page)
-    await openStudio(page, { settingsMode: 'developer' })
+    await openStudio(page)
     const id = await framedBox(page)
     const readout = page.getByTestId('model-select-readout')
     await expect(filter(page, 'face')).toHaveAttribute('aria-pressed', 'true')
@@ -107,8 +106,7 @@ test.describe('Model pick feel (developer flag)', () => {
 
   test('hover shows what a click would pick: the edge near it, else the face', async ({ page }) => {
     test.slow()
-    await withFeel(page)
-    await openStudio(page, { settingsMode: 'developer' })
+    await openStudio(page)
     const id = await framedBox(page)
     // The view's own hover state: the dashed edge lines and the lit face.
     const hover = () => page.evaluate(() => {
@@ -126,8 +124,7 @@ test.describe('Model pick feel (developer flag)', () => {
 
   test('Edge only and Body are explicit modes', async ({ page }) => {
     test.slow()
-    await withFeel(page)
-    await openStudio(page, { settingsMode: 'developer' })
+    await openStudio(page)
     const id = await framedBox(page)
     const readout = page.getByTestId('model-select-readout')
     // Edge only: even a click well inside the face picks the edge nearest it.
@@ -145,22 +142,23 @@ test.describe('Model pick feel (developer flag)', () => {
 
   test('the palette command turns it off and on; off, the filter is objects and labels are as before', async ({ page }) => {
     test.slow()
-    await withFeel(page)
     await openStudio(page, { settingsMode: 'developer' })
     await framedBox(page)
     await command(page, 'Developer: new Model feel')
     await expect(page.getByText('The new Model feel is off.')).toBeVisible()
     await expect(filter(page, 'object')).toHaveAttribute('aria-pressed', 'true')
     await expect(filter(page, 'object')).toHaveAttribute('aria-label', 'Objects')
-    expect(await page.evaluate(() => localStorage.getItem('sx.modelFeel'))).toBeNull()
+    expect(await page.evaluate(() => localStorage.getItem('sx.modelFeel'))).toBe('0')
     await command(page, 'Developer: new Model feel')
     await expect(page.getByText('The new Model feel is on.')).toBeVisible()
+    expect(await page.evaluate(() => localStorage.getItem('sx.modelFeel'))).toBeNull()
     await expect(filter(page, 'face')).toHaveAttribute('aria-pressed', 'true')
     await expect(filter(page, 'face')).toHaveAttribute('aria-label', 'Face')
   })
 
-  test('without the flag, Faces lets the face win as before', async ({ page }) => {
+  test('turned off, Faces lets the face win as before', async ({ page }) => {
     test.slow()
+    await feelOff(page)
     await openStudio(page, { settingsMode: 'developer' })
     const id = await framedBox(page)
     await expect(filter(page, 'object')).toHaveAttribute('aria-pressed', 'true')
@@ -172,7 +170,7 @@ test.describe('Model pick feel (developer flag)', () => {
   })
 })
 
-// Review shots: before (flag off, as main is) and after (flag on), the pointer resting 3 px in from the box's front top
+// Review shots: before (the feel turned off, as 0.2.7 shipped) and after (the default), the pointer resting 3 px in from the box's front top
 // edge, in both themes, at the project's width. SX_SHOTS=1 only.
 test.describe('Model pick feel shots', () => {
   for (const scheme of ['dark', 'light'] as const) {
@@ -181,7 +179,7 @@ test.describe('Model pick feel shots', () => {
         test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
         test.slow()
         const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
-        if (feel) await withFeel(page)
+        if (!feel) await feelOff(page)
         await openStudio(page, { settingsMode: 'developer', scheme, themeFollowsSystem: false })
         const design = page.locator('.sx-tab[data-mode="design"]')
         const id = await freshBox(page)

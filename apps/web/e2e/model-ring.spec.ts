@@ -27,6 +27,9 @@ test.describe('Model ring menu', () => {
     await page.locator('.sx-tab[data-mode="design"]').click()
     await expect(page.getByTestId('model-shelf')).toBeVisible()
     const shelfBefore = await page.getByTestId('model-shelf').boundingBox()
+    // Model starts on Face; Body picks whole objects
+    await page.mouse.move(700, 450)
+    await page.keyboard.press('Alt+1')
 
     // a part: the object is selected and its ring opens at the pointer
     const top = await facePick(page, id, [0, 0, 1])

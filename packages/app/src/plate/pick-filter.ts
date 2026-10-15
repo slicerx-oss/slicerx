@@ -18,16 +18,17 @@ export const PICK_LABEL: Readonly<Record<PickKind, { label: string; tip: string 
   edge: { label: 'Edges', tip: 'Pick edges' },
 }
 
-export const DEFAULT_FILTER: readonly PickKind[] = ['object']
+/** Model starts on Face (an edge near the pointer still wins); Body and Edge only are picked on purpose. */
+export const DEFAULT_FILTER: readonly PickKind[] = ['face']
 
-/** With the new Model feel, the labels read as modes: Face (edges near the pointer still win), Edge only, Body. */
+/** With the Model feel (on unless a developer turned it off), the labels read as modes: Face (edges near the pointer still win), Edge only, Body. */
 export const PICK_LABEL_FEEL: Readonly<Record<PickKind, { label: string; tip: string }>> = {
   object: { label: 'Body', tip: 'Pick whole bodies' },
   face: { label: 'Face', tip: 'Pick faces; an edge within 6 px of the pointer is picked instead' },
   edge: { label: 'Edge only', tip: 'Pick edges only' },
 }
 
-/** How near the pointer (client px) an edge must be to win over the face under it, with the new Model feel. */
+/** How near the pointer (client px) an edge must be to win over the face under it, with the Model feel. */
 export const EDGE_WINS_PX = 6
 
 type P2 = readonly [number, number]

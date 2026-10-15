@@ -495,7 +495,7 @@ Ids that tests read for their text:
 | `phone-handles` | Move, Rotate and Scale under the selection pill on a phone |
 | `phone-handle-<kind>` | One of those handles; `<kind>` is `move`, `rotate` or `scale` |
 | `model-select-pill` | Model's selection pill at the top left of the view |
-| `model-select-filter` | A pick filter button in the pill; `data-kind` is `object`, `face` or `edge`, and `aria-pressed` says whether it is on |
+| `model-select-filter` | A pick filter button in the pill (Body, Face, Edge only; Face is on to start); `data-kind` is `object`, `face` or `edge`, and `aria-pressed` says whether it is on. A client sets the filter by clicking one |
 | `model-select-readout` | What is picked, in words ("1 face on Box") |
 | `model-select-clear` | Clears the faces, edges and objects picked |
 | `model-select-object` | In the readout, the object the faces or edges are on: selects that object alone |
