@@ -62,6 +62,8 @@ export interface PilotProject {
   plates(): ProjectPlate[]
   /** Replace the plate layout (class slice: stays inside the project). */
   setPlates(plates: ProjectPlate[]): void
+  /** Capacity of the host's actual layout, including the resolved first-layer margins. */
+  arrangeCapacity?(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number
   /** Project level overrides by Orca key. */
   overrides(): Record<string, SettingValue>
   setOverrides(changes: Record<string, SettingValue>): void
