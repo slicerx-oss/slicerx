@@ -25,10 +25,16 @@ The token names are the existing UI contract: `--accent`, `--fg`, `--ink-0`, `--
 
 Every SVG also contains fallback colors, so opening the file by itself works. CSS on a parent HTML page cannot cross into an `<img>` or `<object>` document. Insert SVG markup inline when you want the shared stylesheet to recolor it. Defaults and overrides preserve CSS variables rather than baking a custom palette into thousands of paths.
 
-Exported ids and animation names are prefixed per asset, theme, and size, allowing different assets and both themes on one page. If inserting the same file more than once, give each copy a unique id prefix and update its `href` and `url(#...)` references, or use separate image documents.
+Exported ids, CSS classes and animation names are prefixed per asset kind, id, theme, and size, allowing different assets and both themes on one page. If inserting the same file more than once, give each copy a unique id prefix and update its `href` and `url(#...)` references, or use separate image documents.
 
 ## Plain HTML example
 
 Serve the `assets` folder over HTTP and open `example.html`. It loads three shaded tool icons and three loops in both themes, using `example.css` to change the accent. The only JavaScript fetches trusted local SVG files and inserts their markup. The example does not load any app bundle, framework, font service, or backend.
 
 Clients: the kit packaging command adds `--assets-only`; `node scripts/export-kit-assets.mjs <assets-directory>` is also available. No MCP tool or application command changes.
+
+The example checked in Chromium and WebKit with the custom accent and both themes:
+
+![Standalone assets in Chromium](images/kit-assets-chromium.png)
+
+![Standalone assets in WebKit](images/kit-assets-webkit.png)
