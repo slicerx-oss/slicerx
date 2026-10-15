@@ -646,6 +646,15 @@ jobs:
           deps="--with-deps"
           [ "$RUNNER_ENVIRONMENT" = self-hosted ] && deps=""
           pnpm --filter @slicerx/web exec playwright install $deps chromium
+      - name: Build the MCP runtime used by desktop link tests
+        if: matrix.project == 'desktop'
+        run: |
+          eval "$SX_GROUP_CHECK"
+          run=""
+          [ "$RUNNER_ENVIRONMENT" = self-hosted ] && run="bash scripts/ci/heavy.sh timeout 280"
+          ${run} pnpm --filter @slicerx/mcp build
+        env:
+          SX_HEAVY_WAIT: 1200
       # One retry per failing test, as in the web job. The next step decides from the results: a test that passed only
       # on the retry, or failed both times, fails the job unless scripts/ci/flaky.d or quarantine.d lists it
       # (scripts/ci/README.md, "Flaky tests"). Playwright's own exit code is left to that step.
