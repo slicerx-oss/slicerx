@@ -13,7 +13,7 @@ import { expect, test } from './fixtures'
 type V2 = [number, number]
 type Loop = { start?: V2; segments?: { type: string; to: V2 }[]; type?: string; center?: V2; diameterMm?: number }
 type W = {
-  __vp: { screenOf(p: number[]): [number, number]; sketchLayer: { scene: { frame: { origin: number[]; u: number[]; v: number[] }; dims?: { label: string }[] } | null }; emit(e: string, p: unknown): void; canvas: HTMLCanvasElement }
+  __vp: { screenOf(p: number[]): [number, number]; sketchLayer: { scene: { frame: { origin: number[]; u: number[]; v: number[] }; dims?: { label: string; hideLabel?: boolean }[] } | null }; emit(e: string, p: unknown): void; canvas: HTMLCanvasElement }
   __sketch: () => { loops?: Loop[]; dof?: number | null } | null
   __sketchBoxes: () => { read(): Boxes; set(r: Record<string, unknown>): Promise<Boxes & { driven: boolean }> } | null
 }
@@ -51,6 +51,23 @@ async function still(page: Page): Promise<void> {
 
 const loops = (page: Page) => page.evaluate(() => (window as unknown as W).__sketch()?.loops ?? [])
 const labels = (page: Page) => page.evaluate(() => ((window as unknown as W).__vp.sketchLayer.scene?.dims ?? []).map((d) => d.label).sort())
+/** The kept dimensions as the view draws them: how many, and how many have their value left off (shown in a box). */
+const dimsDrawn = (page: Page) =>
+  page.evaluate(() => {
+    const d = (window as unknown as W).__vp.sketchLayer.scene?.dims ?? []
+    return { all: d.length, hidden: d.filter((x) => x.hideLabel).length }
+  })
+/** Every shown box that sits over a control floating on the view (the pill, the view buttons, a phone's undo group). */
+const boxesOverControls = (page: Page) =>
+  page.evaluate(() => {
+    const hit = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+    const controls = Array.from(document.querySelectorAll<HTMLElement>('.hud-top .hud-row, .hud-top .phandles, .hud-top .hud-col.end > *, .hud-bl > *, .pbar-wrap > *, .pane.sheet.sheet-open'))
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0)
+    const boxes = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="shape-box"]:not([hidden])')).map((el) => el.getBoundingClientRect())
+    const rr = (r: DOMRect) => [r.left, r.top, r.right, r.bottom].map(Math.round)
+    return { boxes: boxes.length, controls: controls.length, over: boxes.filter((b) => controls.some((c) => hit(b, c))).length, boxRects: boxes.map(rr), controlRects: controls.map(rr) }
+  })
 const r2 = (v: number) => Math.round(v * 100) / 100
 const ends = (l: Loop | undefined) => (l?.segments ?? []).map((s) => s.to.map(r2))
 // a loop's extent from its start: a rectangle's width and height, a line's run and rise
@@ -265,6 +282,78 @@ test.describe('sketch dimension boxes on the shape, desktop', () => {
     await expect.poll(placed).toBe(true)
   })
 
+  test('a picked shape shows its sizes in boxes and not twice: the kept label steps aside, with the tool pane open or shut', async ({ page }) => {
+    test.slow()
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await sketchOnBed(page)
+    await page.keyboard.press('r')
+    await clickAt(page, [110, 110])
+    await move(page, [130, 120])
+    await page.keyboard.type('30')
+    await page.keyboard.press('Tab')
+    await page.keyboard.type('20')
+    await page.keyboard.press('Enter')
+    await expect.poll(() => labels(page)).toEqual(['20', '30'])
+    // placed: its two kept values show on the sides, nothing is picked
+    await expect.poll(() => dimsDrawn(page)).toEqual({ all: 2, hidden: 0 })
+    await page.keyboard.press('Escape')
+    await toolPanel(page).getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Select' }).click()
+    // the left side, which carries no value label (a press on a label picks its dimension instead)
+    await clickAt(page, [110, 120])
+    await expect(boxOf(page, 'width')).toBeVisible()
+    await expect(inputOf(page, 'width')).toHaveValue('30.00')
+    await expect(boxOf(page, 'height')).toHaveAttribute('data-set', 'driving')
+    // the boxes hold the values, so the labels at the sides' middles are left off and nothing is covered
+    await expect.poll(() => dimsDrawn(page)).toEqual({ all: 2, hidden: 2 })
+    await page.mouse.move(900, 760)
+    await page.screenshot({ path: test.info().outputPath('picked-kept.png') })
+    expect((await boxesOverControls(page)).over).toBe(0)
+    // picking nothing gives the labels back
+    await clickAt(page, [190, 190])
+    await expect(boxOf(page, 'width')).toHaveCount(0)
+    await expect.poll(() => dimsDrawn(page)).toEqual({ all: 2, hidden: 0 })
+    // shutting the tool pane closes the sketch panel and the sketch with it: no box is left hanging over the view
+    const canvasWidth = () => page.evaluate(() => Math.round((window as unknown as W).__vp.canvas.getBoundingClientRect().width))
+    const open = await canvasWidth()
+    await clickAt(page, [110, 120])
+    await expect(boxOf(page, 'width')).toBeVisible()
+    await page.getByTestId('edge-tab-right').click()
+    await expect.poll(canvasWidth).toBeGreaterThan(open + 100)
+    await expect(page.locator('[data-testid="shape-box"]')).toHaveCount(0)
+  })
+
+  test('a picked shape under the view buttons keeps its boxes clear of them', async ({ page }) => {
+    test.slow()
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await sketchOnBed(page)
+    // a rectangle whose Height box would land at the view's top right: draw it at the corner of the view
+    const corner = await page.evaluate(() => {
+      const vp = (window as unknown as W).__vp
+      const r = vp.canvas.getBoundingClientRect()
+      return { right: r.right, top: r.top }
+    })
+    await page.keyboard.press('r')
+    // a point of the sketch plane near the view's top right, found by walking the plane until it is there
+    const near = await page.evaluate((c) => {
+      const vp = (window as unknown as W).__vp
+      const f = vp.sketchLayer.scene!.frame
+      let best: V2 = [100, 100]
+      let bestD = Infinity
+      for (let x = 0; x <= 250; x += 2)
+        for (let y = 0; y <= 250; y += 2) {
+          const s = vp.screenOf([0, 1, 2].map((k) => f.origin[k]! + f.u[k]! * x + f.v[k]! * y))
+          const d = Math.hypot(s[0] - (c.right - 120), s[1] - (c.top + 70))
+          if (d < bestD) [best, bestD] = [[x, y], d]
+        }
+      return best
+    }, corner)
+    await clickAt(page, near)
+    await move(page, [near[0] - 10, near[1] - 6])
+    await expect(boxOf(page, 'height')).toBeVisible()
+    expect((await boxesOverControls(page)).over).toBe(0)
+    await page.screenshot({ path: test.info().outputPath('corner-live.png') })
+  })
+
   test('a client reads the open sketch boxes and sets one, as the app link does', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await sketchOnBed(page)
@@ -368,5 +457,21 @@ test.describe('sketch dimension boxes on the shape, phone', () => {
     await page.keyboard.press('Enter')
     await expect.poll(async () => (await loops(page))[2]).toMatchObject({ type: 'circle', diameterMm: 10 })
     await page.screenshot({ path: test.info().outputPath('phone-drawn.png') })
+  })
+
+  test('a box on the shape stays clear of the undo group and the other floating controls', async ({ page }) => {
+    test.slow()
+    await sketchOnPlane(page)
+    await family(page, 'Rectangle').tap()
+    // a first tap high and at the right of the view: its Height box would go above the corner, under the undo group
+    await tapAt(page, 0.85, 0)
+    await expect(boxOf(page, 'width')).toBeVisible()
+    await fitsPhone(page, ['width', 'height'])
+    const first = await boxesOverControls(page)
+    await page.waitForTimeout(1500)
+    const r = await boxesOverControls(page)
+    expect(r.controls).toBeGreaterThan(0)
+    expect(r.over, JSON.stringify({ first, r })).toBe(0)
+    await page.screenshot({ path: test.info().outputPath('phone-top-right.png') })
   })
 })

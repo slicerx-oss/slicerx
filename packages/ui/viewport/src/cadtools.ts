@@ -229,9 +229,9 @@ export interface SketchScene {
   marks?: readonly V2[]
   /**
    * Dimensions: a line from `from` to `to` with the value at its middle, extension lines out to it, and the picked
-   * one drawn bright. A press on a value comes back as the event's `mark`.
+   * one drawn bright; `hideLabel` leaves the value off. A press on a value comes back as the event's `mark`.
    */
-  dims?: readonly { from: V2; to: V2; at?: V2; ext?: readonly (readonly [V2, V2])[]; label: string; picked?: boolean }[]
+  dims?: readonly { from: V2; to: V2; at?: V2; ext?: readonly (readonly [V2, V2])[]; label: string; picked?: boolean; hideLabel?: boolean }[]
   /** Points held by Fix, drawn as squares. */
   fixed?: readonly V2[]
   /** Closed loops, shaded faintly so a closed profile reads at a glance. */
@@ -513,6 +513,8 @@ export class SketchLayer {
         this.drawn.push(seg)
       }
       scene.dims.forEach((m, i) => {
+        // a value shown elsewhere (in a box on the shape) keeps its line and loses its label
+        if (m.hideLabel) return
         const label = makeLabel(m.label, m.picked)
         if (!label) return
         const at: V2 = m.at ?? [(m.from[0] + m.to[0]) / 2, (m.from[1] + m.to[1]) / 2]

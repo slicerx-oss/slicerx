@@ -310,9 +310,10 @@ function outward(a: V2, b: V2, away: V2, none: V2): V2 {
 /**
  * Where each box goes for a shape on screen, given each box's size: a rectangle's Width beside its first side and Height
  * beside its second, both outside it; a line's Length beside its middle and Angle past its start; a circle's Diameter
- * beside its radius line, outside the rim. Each box stays inside `area`.
+ * beside its radius line, outside the rim. Each box stays inside `area` and clear of the rectangles in `avoid` (the
+ * controls floating over the view), moving the shortest way.
  */
-export function placeBoxes(shape: ScreenShape, sizes: Partial<Record<BoxKey, { w: number; h: number }>>, area: Area | null): BoxSpot[] {
+export function placeBoxes(shape: ScreenShape, sizes: Partial<Record<BoxKey, { w: number; h: number }>>, area: Area | null, avoid: readonly Area[] = []): BoxSpot[] {
   const centers: [BoxKey, V2][] = []
   const size = (k: BoxKey) => sizes[k] ?? { w: 0, h: 0 }
   if (shape.kind === 'rect') {
@@ -358,15 +359,34 @@ export function placeBoxes(shape: ScreenShape, sizes: Partial<Record<BoxKey, { w
     }
     placed.push(b)
   }
+  // then each box inside the view and clear of the floating controls and of the boxes placed before it
+  const done: Area[] = []
   return placed.map(({ key, left: l0, top: t0, w, h }) => {
-    let left = l0
-    let top = t0
-    if (area) {
-      left = Math.max(area.left + BOX_INSET, Math.min(left, area.right - BOX_INSET - w))
-      top = Math.max(area.top + BOX_INSET, Math.min(top, area.bottom - BOX_INSET - h))
-    }
+    const [left, top] = clearOf(l0, t0, w, h, [...avoid, ...done], area)
+    done.push({ left, top, right: left + w, bottom: top + h })
     return { key, left: Math.round(left), top: Math.round(top) }
   })
+}
+
+const hits = (l: number, t: number, w: number, h: number, r: Area): boolean => l < r.right && r.left < l + w && t < r.bottom && r.top < t + h
+
+/**
+ * A w by h box wanted at (left, top), kept inside `area` and moved the shortest way off every rectangle in `avoid`
+ * (the floating controls, other boxes). Where no clear spot is inside `area`, it stays where the view's edge puts it.
+ */
+function clearOf(left: number, top: number, w: number, h: number, avoid: readonly Area[], area: Area | null): V2 {
+  const fit = (l: number, t: number): V2 => (area ? [Math.max(area.left + BOX_INSET, Math.min(l, area.right - BOX_INSET - w)), Math.max(area.top + BOX_INSET, Math.min(t, area.bottom - BOX_INSET - h))] : [l, t])
+  const [l, t] = fit(left, top)
+  const over = avoid.filter((a) => hits(l, t, w, h, a))
+  if (!over.length) return [l, t]
+  // one step past each control it touches, on each of its four sides; the shortest that is inside the view and clear of all
+  const spots: V2[] = over.flatMap((r): V2[] => [[r.left - BOX_INSET - w, t], [r.right + BOX_INSET, t], [l, r.top - BOX_INSET - h], [l, r.bottom + BOX_INSET]])
+  const clear = spots.filter((c) => {
+    const f = fit(c[0], c[1])
+    return f[0] === c[0] && f[1] === c[1] && !avoid.some((a) => hits(c[0], c[1], w, h, a))
+  })
+  if (!clear.length) return [l, t]
+  return clear.reduce((best, c) => (Math.hypot(c[0] - l, c[1] - t) < Math.hypot(best[0] - l, best[1] - t) ? c : best))
 }
 
 /**

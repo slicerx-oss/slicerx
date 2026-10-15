@@ -194,6 +194,50 @@ describe('where the boxes go', () => {
   })
 })
 
+describe('boxes clear of the floating controls', () => {
+  const area = { left: 0, top: 0, right: 390, bottom: 700 }
+  // the undo group at the view's top right, 44 px buttons
+  const undo = { left: 290, top: 100, right: 386, bottom: 148 }
+  const overlaps = (s: BoxSpot, r: typeof undo) => s.left < r.right && r.left < s.left + size.w && s.top < r.bottom && r.top < s.top + size.h
+
+  it('moves a box off a control it would partly cover, the shortest way, and keeps it inside the view', () => {
+    // Height would sit right of the rectangle's right side, under the undo group
+    const corners: [V2, V2, V2, V2] = [[200, 160], [260, 160], [260, 110], [200, 110]]
+    const without = placeBoxes({ kind: 'rect', corners }, sizes, area)
+    expect(overlaps(box(without, 'height'), undo)).toBe(true)
+    const spots = placeBoxes({ kind: 'rect', corners }, sizes, area, [undo])
+    for (const s of spots) {
+      expect(overlaps(s, undo)).toBe(false)
+      expect(s.left).toBeGreaterThanOrEqual(area.left + BOX_INSET)
+      expect(s.left + size.w).toBeLessThanOrEqual(area.right - BOX_INSET)
+      expect(s.top).toBeGreaterThanOrEqual(area.top + BOX_INSET)
+    }
+    expect(overlap(box(spots, 'width'), box(spots, 'height'))).toBe(false)
+  })
+
+  it('steps off the control it covers even when it also grazes the one beside it', () => {
+    // the phone's first tap: a box under the view buttons' column by a fraction of a pixel and over the undo group
+    const buttons = { left: 334, top: 164, right: 378, bottom: 208 }
+    const phoneUndo = { left: 282, top: 216, right: 378, bottom: 266 }
+    const p: V2 = [270.29, 188.1]
+    const spots = placeBoxes({ kind: 'rect', corners: [p, p, p, p] }, { width: { w: 128, h: 44 }, height: { w: 130, h: 44 } }, { left: 0, top: 48, right: 390, bottom: 844 }, [buttons, phoneUndo])
+    const w = box(spots, 'width')
+    expect(w.left + 128 <= phoneUndo.left).toBe(true)
+    for (const s of spots) expect(s.left < buttons.right && buttons.left < s.left + 130 && s.top < buttons.bottom && buttons.top < s.top + 44).toBe(false)
+  })
+
+  it('leaves a box where it is when no control is near it', () => {
+    const corners: [V2, V2, V2, V2] = [[100, 400], [160, 400], [160, 350], [100, 350]]
+    expect(placeBoxes({ kind: 'rect', corners }, sizes, area, [undo])).toEqual(placeBoxes({ kind: 'rect', corners }, sizes, area))
+  })
+
+  it('keeps boxes apart from each other after one steps off a control', () => {
+    const spots = placeBoxes({ kind: 'line', a: [330, 160], b: [330, 120] }, sizes, area, [undo])
+    for (const s of spots) expect(overlaps(s, undo)).toBe(false)
+    expect(overlap(box(spots, 'length'), box(spots, 'angle'))).toBe(false)
+  })
+})
+
 describe('drawing with the boxes', () => {
   it('shows them for the second click of a rectangle, line or circle only', () => {
     expect(onShapeTool({ tool: 'rect', points: [[0, 0]] })).toBe(true)
