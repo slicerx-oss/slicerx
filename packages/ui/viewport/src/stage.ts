@@ -80,9 +80,21 @@ void main(){
   gl_FragColor = s;
 }`
 
+/**
+ * How fast the contact shadow fades with height, in mm: a surface this far above the bed casts 1/e as much. The part of
+ * an object that touches the bed casts the full shadow; one that floats casts less the higher it is, so a lifted part
+ * no longer looks like it sits on the plate.
+ */
+export const CONTACT_FALLOFF_MM = 4
+
+/** The bake's opacity for a surface `heightMm` above the bed (the shader below does the same), 0 to 1. */
+export function contactAlpha(heightMm: number, darkness: number): number {
+  return Math.min(1, darkness * Math.exp(-Math.max(heightMm, 0) / CONTACT_FALLOFF_MM))
+}
+
 const CONTACT_DEPTH_FS = /* glsl */ `
-uniform float darkness; uniform float range; varying float vH;
-void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, min(1.0, max(clamp(1.0 - vH / range, 0.0, 1.0) * darkness, 0.6))); }`
+uniform float darkness; varying float vH;
+void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, min(1.0, darkness * exp(-max(vH, 0.0) / ${CONTACT_FALLOFF_MM.toFixed(1)}))); }`
 
 const CONTACT_DEPTH_VS = /* glsl */ `
 varying float vH;
@@ -618,7 +630,7 @@ export class Stage {
     const rtb = new WebGLRenderTarget(RES, RES)
     rt.texture.generateMipmaps = false
     rtb.texture.generateMipmaps = false
-    const mat = new ShaderMaterial({ uniforms: { darkness: { value: 2.1 }, range: { value: 22 } }, vertexShader: CONTACT_DEPTH_VS, fragmentShader: CONTACT_DEPTH_FS, depthTest: false, depthWrite: false, transparent: true })
+    const mat = new ShaderMaterial({ uniforms: { darkness: { value: 2.1 } }, vertexShader: CONTACT_DEPTH_VS, fragmentShader: CONTACT_DEPTH_FS, depthTest: false, depthWrite: false, transparent: true })
     const blur = new ShaderMaterial({
       uniforms: { tDiffuse: { value: null }, dir: { value: [0, 0] } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
