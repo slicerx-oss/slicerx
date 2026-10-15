@@ -87,7 +87,12 @@ function slicePrinter(profiles: ProfileCatalog, names: string[], presets: Preset
     const id = profiles.printerModel(name)
     printer = id ? { printerId: id } : undefined
   }
-  for (const layer of presets) if (layer.section === 'printer') printer = printerForProfile(layer.inherits ?? layer.name)
+  for (const layer of presets) if (layer.section === 'printer') {
+    printer = printerForProfile(layer.inherits ?? layer.name)
+    const diameter = layer.values['nozzle_diameter']
+    const nozzle = Number(Array.isArray(diameter) ? diameter[0] : diameter)
+    if (printer && Number.isFinite(nozzle) && nozzle > 0) printer.nozzle = nozzle
+  }
   return printer
 }
 
