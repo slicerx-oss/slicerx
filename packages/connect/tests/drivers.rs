@@ -156,6 +156,7 @@ async fn u1_color_first_choices_and_missing_spool_data_are_read_only() {
     assert!(empty.assignments[0].empty);
     assert!(empty.requires_confirmation);
     assert_u1_color_preferences(session.as_ref(), &mocks).await;
+    assert_u1_global_color_choices(session.as_ref(), &mocks).await;
     mocks
         .control("/u1", serde_json::json!({"omitSpoolData":true}))
         .await;
@@ -187,6 +188,25 @@ async fn u1_color_first_choices_and_missing_spool_data_are_read_only() {
             .ends_with("T3\nG1 X10 E1\nT1\nG1 X20 E2\n")
     );
     assert_eq!(mocks.state().await["snapmaker-u1"]["log"], before);
+}
+
+async fn assert_u1_global_color_choices(session: &dyn sx_connect::PrinterSession, mocks: &Mocks) {
+    use std::collections::BTreeMap;
+    use sx_connect::toolhead_map::ToolheadNeed;
+    mocks
+        .control(
+            "/u1",
+            serde_json::json!({"filamentColors":["00FF00FF","FF0000FF","","FF0000FF"]}),
+        )
+        .await;
+    let needs = ["00fa00", "00ff00"].map(|color| ToolheadNeed {
+        tool: u8::from(color == "00ff00"),
+        material: "PLA".into(),
+        color: color.into(),
+    });
+    let plan = session.plan_toolheads(&needs, &BTreeMap::new()).await.unwrap();
+    assert_eq!(plan.assignments[1].physical_tool, Some(0));
+    assert_ne!(plan.assignments[0].physical_tool, Some(0));
 }
 
 async fn assert_u1_color_preferences(session: &dyn sx_connect::PrinterSession, mocks: &Mocks) {
@@ -241,6 +261,26 @@ async fn assert_u1_color_preferences(session: &dyn sx_connect::PrinterSession, m
         3
     );
     assert!(spare.assignments[3..].iter().all(|a| a.physical_tool == Some(0)));
+    mocks
+        .control(
+            "/u1",
+            serde_json::json!({"filamentColors":["00FA00FF","FF0000FF","","FF0000FF"]}),
+        )
+        .await;
+    let near_green = session
+        .plan_toolheads(
+            &[ToolheadNeed {
+                tool: 0,
+                material: "PLA".into(),
+                color: "00ff00".into(),
+            }],
+            &BTreeMap::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(near_green.assignments[0].physical_tool, Some(0));
+    assert!(near_green.assignments[0].color_mismatch);
+    assert!(near_green.requires_confirmation);
 }
 
 #[tokio::test]

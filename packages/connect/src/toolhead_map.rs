@@ -420,34 +420,46 @@ fn material_matches(need: &ToolheadNeed, head: &LoadedToolhead) -> bool {
         .is_some_and(|material| material_key(material) == material_key(&need.material))
 }
 
-fn proposed_head(need: &ToolheadNeed, heads: &[LoadedToolhead], used: &BTreeSet<u8>) -> Option<u8> {
-    let spare = heads.iter().any(|head| head.loaded && !used.contains(&head.tool));
-    let mut candidates: Vec<_> = heads
-        .iter()
-        .filter(|head| head.loaded && (!spare || !used.contains(&head.tool)))
-        .collect();
-    candidates.sort_by(|left, right| {
-        let left_distance = color_distance(need, left);
-        let right_distance = color_distance(need, right);
-        let left_exact = left_distance <= 2.0;
-        let right_exact = right_distance <= 2.0;
-        let material = material_matches(need, right).cmp(&material_matches(need, left));
-        right_exact
-            .cmp(&left_exact)
-            .then_with(|| {
-                if left_exact && right_exact {
-                    material
-                } else {
-                    std::cmp::Ordering::Equal
-                }
-            })
-            .then_with(|| left_distance.total_cmp(&right_distance))
-            .then(material)
-            .then(left.tool.cmp(&right.tool))
+fn proposed_heads(
+    needs: &[ToolheadNeed],
+    heads: &[LoadedToolhead],
+    selected: &BTreeMap<u8, u8>,
+) -> BTreeMap<u8, u8> {
+    let mut choices = selected.clone();
+    let mut occupied: BTreeSet<_> = selected.values().copied().collect();
+    let mut ranked = Vec::new();
+    for (need_index, need) in needs.iter().enumerate() {
+        for (head_index, head) in heads.iter().enumerate().filter(|(_, head)| head.loaded) {
+            let distance = color_distance(need, head);
+            let bucket = ((distance * 10.0).round() / 10.0).round();
+            ranked.push((
+                bucket,
+                !material_matches(need, head),
+                head_index,
+                need_index,
+                need.tool,
+                head.tool,
+            ));
+        }
+    }
+    ranked.sort_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then(left.1.cmp(&right.1))
+            .then(left.2.cmp(&right.2))
+            .then(left.3.cmp(&right.3))
     });
-    candidates.first().map(|head| head.tool)
+    for allow_reuse in [false, true] {
+        for &(_, _, _, _, tool, physical) in &ranked {
+            if choices.contains_key(&tool) || (!allow_reuse && occupied.contains(&physical)) {
+                continue;
+            }
+            choices.insert(tool, physical);
+            occupied.insert(physical);
+        }
+    }
+    choices
 }
-
 fn assignment(
     need: &ToolheadNeed,
     heads: &[LoadedToolhead],
@@ -504,15 +516,12 @@ pub fn plan_toolheads(
     selected: &BTreeMap<u8, u8>,
 ) -> Result<ToolheadPlan, String> {
     validate_inputs(needs, heads, selected)?;
-    let mut used: BTreeSet<_> = selected.values().copied().collect();
+    let proposed = proposed_heads(needs, heads, selected);
     let assignments: Vec<_> = needs
         .iter()
         .map(|need| {
             let explicit = selected.get(&need.tool).copied();
-            let chosen = explicit.or_else(|| proposed_head(need, heads, &used));
-            if let Some(tool) = chosen {
-                used.insert(tool);
-            }
+            let chosen = proposed.get(&need.tool).copied();
             assignment(need, heads, chosen, explicit.is_some())
         })
         .collect();
@@ -570,6 +579,17 @@ mod tests {
         let plan = plan_toolheads(&[need(0, "PLA", "ff0000")], &loaded, &BTreeMap::new()).unwrap();
         assert_eq!(plan.assignments[0].physical_tool, Some(0));
         assert_eq!(plan.assignments[0].status, ToolheadMatch::ChoiceRequired);
+    }
+
+    #[test]
+    fn owner_global_proposals_reserve_the_closest_spool_for_later_filaments() {
+        let needs = [need(0, "PLA", "00fa00"), need(1, "PLA", "00ff00")];
+        let plan = plan_toolheads(&needs, &heads(), &BTreeMap::new()).unwrap();
+        assert_eq!(plan.assignments[1].physical_tool, Some(1));
+        assert_ne!(plan.assignments[0].physical_tool, Some(1));
+        let explicit = plan_toolheads(&needs, &heads(), &BTreeMap::from([(0, 1)])).unwrap();
+        assert_eq!(explicit.assignments[0].physical_tool, Some(1));
+        assert_ne!(explicit.assignments[1].physical_tool, Some(1));
     }
 
     #[test]
