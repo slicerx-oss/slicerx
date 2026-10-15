@@ -51,6 +51,15 @@ describe('app plate tools', () => {
     expect(await summary(null)).toBe('Plate 1 of 3 is shown, sliced; 1 plate needs a slice. The view has not drawn it yet.')
   })
 
+  it('explains why an unregistered client will not get a permission prompt', async () => {
+    const [list] = appPlateTools({ call: refuse('unauthorized') }, 'SlicerX')
+    const e = (await list!.run({} as never, {} as never).catch((x: unknown) => x)) as ToolInputError
+    expect(e.code).toBe('not_configured')
+    expect(e.message).toContain('Connect it in Settings and use the generated client configuration')
+    expect(e.message).toContain('A hub pairing code alone does not open a permission prompt')
+    expect(e.details).toEqual({ appLink: 'unauthorized' })
+  })
+
   it('check the arguments before anything leaves', () => {
     const [, show] = appPlateTools({ call: vi.fn() } as unknown as AppLinkCaller, 'SlicerX')
     for (const bad of [{}, { plate: 1, step: 'next' }, { plate: 0 }, { plate: 1.5 }, { step: 'last' }]) expect(show!.input.safeParse(bad).success, JSON.stringify(bad)).toBe(false)

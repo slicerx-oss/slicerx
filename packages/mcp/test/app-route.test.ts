@@ -166,7 +166,7 @@ describe('design tools with --app', () => {
       ['app_link_off', '', /app link is off: turn it on in SlicerX's Settings/],
       ['app_closed', '', /SlicerX is not open/],
       ['forbidden', '', /not allowed on the app link/],
-      ['unauthorized', '', /not allowed on the app link/],
+      ['unauthorized', '', /generated client configuration/],
       ['bad_request', 'unknown method app.call', /older than the app link/],
     ] as const) {
       const run = required((async () => {
