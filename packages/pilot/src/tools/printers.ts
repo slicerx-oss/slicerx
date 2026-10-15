@@ -89,7 +89,7 @@ function slicedPlate(shared: ToolShared, ctx: ToolContext, plate: number): Slice
 
 const jobStats = (entry: SlicedPlate) => ({ timeS: entry.result.stats.timeS, grams: entry.result.stats.filamentG.reduce((a, b) => a + b, 0) })
 
-async function exportPlate(shared: ToolShared, ctx: ToolContext, plate: number): Promise<{ file: JobFile; timeS: number; grams: number }> {
+export async function exportPlate(shared: ToolShared, ctx: ToolContext, plate: number): Promise<{ file: JobFile; timeS: number; grams: number }> {
   const entry = slicedPlate(shared, ctx, plate)
   if (!entry.data || !entry.gcode) {
     const g = await ctx.host.slicer!.exportGcode(entry.result.id, { kind: 'blob' })
@@ -178,6 +178,7 @@ interface QueuePlan {
   opts: StartOptions
   /** `auto` when SlicerX matched the slots, `client` when the call named them, `none` for a printer that takes filament as the G-code says. */
   slots: 'auto' | 'client' | 'none'
+  toolheadLine?: string
 }
 
 /**
@@ -193,8 +194,12 @@ async function planQueue(shared: ToolShared, ctx: ToolContext, i: { printerId: s
   const given = i.slotMap && Object.keys(i.slotMap).length > 0 ? i.slotMap : undefined
   if (!info?.plugin || !pluginHas(info.plugin, 'project_file')) {
     const job = await exportPlate(shared, ctx, i.plate)
-    const file = await uploadedFile(ctx, i.printerId, job.file)
-    return { ...job, file, info, name, opts: queueOptions(given, info?.plugin, name, file.name), slots: 'none' }
+    const prepared = entry.preparedToolheads?.get(i.printerId)
+    if (!prepared && ['snapmaker', 'moonraker'].includes(info?.plugin ?? '') && /\bU1\b/i.test(info?.model ?? '')) throw new Error('Review the U1 toolheads with toolhead_mapping and preparePlate before queuing this plate.')
+    if (prepared && prepared.sourceSha256 !== job.file.sha256) throw new Error('This plate changed. Review its toolhead mapping again before sending.')
+    const file = await uploadedFile(ctx, i.printerId, prepared?.file ?? job.file)
+    const toolheadLine = prepared ? `Toolheads: ${prepared.plan.assignments.map((a) => `filament ${a.tool + 1} to toolhead ${Number(a.physicalTool) + 1}`).join(', ')}` : undefined
+    return { ...job, file, info, name, opts: queueOptions(given, info?.plugin, name, file.name), slots: 'none', ...(toolheadLine ? { toolheadLine } : {}) }
   }
   let opts: StartOptions
   if (given) {
@@ -446,6 +451,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
           `Plate ${i.plate} on ${plan.info ? `${plan.info.name} (${plan.info.model})` : i.printerId}, ${fmtDuration(plan.timeS)}, ${fmtGrams(plan.grams)}`,
           // The slot map is part of what the person approves: it decides which filament feeds each part.
           ...(slots ? [plan.slots === 'auto' ? `${slots} (matched to what is loaded)` : slots] : []),
+          ...(plan.toolheadLine ? [plan.toolheadLine] : []),
           plan.file.kind === 'gcode.3mf' ? 'Uploads the .gcode.3mf and starts the print' : 'Uploads the G-code and starts the print',
         ],
         printerId: i.printerId,

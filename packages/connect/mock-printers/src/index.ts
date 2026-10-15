@@ -114,7 +114,12 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     add('snapmaker-luban', l)
   }
   // The Snapmaker U1: Moonraker with the U1's objects and host name, and one webcam.
-  if (only.includes('snapmaker-u1')) add('snapmaker-u1', await startMoonraker(machine('snapmaker-u1'), { ...(apiKey ? { apiKey } : {}), variant: 'u1', webcam: true }))
+  let u1Control: MoonrakerControl | undefined
+  if (only.includes('snapmaker-u1')) {
+    const u1 = await startMoonraker(machine('snapmaker-u1'), { ...(apiKey ? { apiKey } : {}), variant: 'u1', webcam: true })
+    u1Control = u1.control
+    add('snapmaker-u1', u1)
+  }
   if (only.includes('ultimaker')) {
     const u = await startUltiMaker(machine('ultimaker'))
     add('ultimaker', u.api)
@@ -299,6 +304,13 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       return { json: crealityControl }
     }
     // POST /moonraker {variant?, klippy?, message?, expireTokens?}: see MoonrakerControl.
+    if (req.path === '/u1' && req.method === 'POST') {
+      if (!u1Control) return { status: 404 }
+      const b = req.json() as { ignoreToolheadUpdates?: boolean; filamentColors?: string[] }
+      if (typeof b.ignoreToolheadUpdates === 'boolean') u1Control.ignoreToolheadUpdates = b.ignoreToolheadUpdates
+      if (Array.isArray(b.filamentColors) && b.filamentColors.length === 4 && b.filamentColors.every((color) => typeof color === 'string' && /^(?:[0-9a-fA-F]{8})?$/.test(color))) u1Control.filamentColors = [...b.filamentColors]
+      return { json: { ignoreToolheadUpdates: u1Control.ignoreToolheadUpdates ?? false } }
+    }
     if (req.path === '/moonraker' && req.method === 'POST') {
       if (!moonrakerControl) return { status: 404 }
       const b = req.json() as { variant?: MoonrakerControl['variant'] | null; klippy?: MoonrakerControl['klippy']; message?: string; expireTokens?: boolean }

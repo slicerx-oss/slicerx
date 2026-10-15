@@ -6,9 +6,9 @@
 // empty; Upload only and Queue for later sit in the button's menu. The file and its filaments were
 // decided before the sheet opened, so they show as a summary; a slot is picked here only when no
 // loaded slot fits a filament.
-import { developerModeRemedies, followsSlotMap, STORAGE_FULL_REMEDY, type PrinterInfo, type PrinterStatus } from '@slicerx/contracts'
+import { developerModeRemedies, followsSlotMap, STORAGE_FULL_REMEDY, type PrinterInfo, type PrinterStatus, type ToolheadPlan } from '@slicerx/contracts'
 import { Button, Chip, Dialog, Field, Icon, Input, Menu, MenuAnchor, MenuItem, Pill, Switch, tipAttrs, type IconName } from '@slicerx/ui'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatDuration } from '../lib/preview-stats'
 import { VendorMark } from '../lib/vendor-mark'
 import { startAfterFromLocal } from '../queue/queue'
@@ -34,6 +34,7 @@ export interface PrintCheck {
 
 /** Everything the sheet needs. `check` is null while the file is still being exported and checked. */
 export interface PrintSheetAsk {
+  toolheads?: ToolheadPlan
   printer: PrinterInfo
   status: PrinterStatus | null
   plateName: string
@@ -99,8 +100,11 @@ export function PrintSheet() {
   const [when, setWhen] = useState('')
   const [edits, setEdits] = useState<Record<number, string>>(() => ask?.refusal?.last.slotMap ?? {})
   const [busy, setBusy] = useState(false)
+  const opened = useRef<PrintSheetAsk['resolve'] | null>(null)
   useEffect(() => {
-    if (ask) {
+    if (!ask) opened.current = null
+    if (ask && opened.current !== ask.resolve) {
+      opened.current = ask.resolve
       const last = ask.refusal?.last
       setMode('start')
       setMenu(false)
@@ -116,12 +120,13 @@ export function PrintSheet() {
   // A printer that does not follow a slot map for this file takes filament as the G-code says: the sheet shows that
   // order and offers no choice it would ignore.
   const follows = ask ? followsSlotMap(ask.printer.plugin, fileName) : false
-  const map: Record<number, string> = { ...(ask?.auto ?? {}), ...(follows ? edits : {}) }
+  const map: Record<number, string> = { ...(ask?.auto ?? {}), ...(follows || ask?.toolheads ? edits : {}) }
+  const missingToolhead = ask?.toolheads?.assignments.some((a) => !a.alternatives.includes(Number(map[a.tool + 1]) - 1)) ?? false
   const mapping = Boolean(ask && !(ask.connectOnly && !ask.refusal) && ask.filaments.length > 0 && ask.slots.length > 0 && mode !== 'upload')
   // Slots are picked here only when the automatic match leaves a filament without one or two on the same slot. The
   // choice stays open once shown, so a pick does not make the control vanish under the pointer.
   const pick = useMemo(() => Boolean(ask && follows && !(ask.connectOnly && !ask.refusal) && ask.filaments.length > 0 && ask.slots.length > 0 && (ask.filaments.some((f) => ask.auto[f.index] === undefined) || duplicateTargets(ask.auto).length > 0)), [ask, follows])
-  const dups = mapping ? duplicateTargets(map) : []
+  const dups = mapping && !ask?.toolheads ? duplicateTargets(map) : []
   const unmapped = mapping && ask ? ask.filaments.filter((f) => map[f.index] === undefined) : []
   const errors = ask?.check?.errors ?? []
   const warnings = ask?.check?.warnings ?? []
@@ -130,7 +135,7 @@ export function PrintSheet() {
   const via = ask?.connectOnly && ask.bambuConnect && !ask.refusal ? ask.bambuConnect : null
   const start = mode === 'start'
   // A filament with no slot would go out as unmapped, and the printer would pick one: the person picks it here instead.
-  const blocked = busy || checking || errors.length > 0 || dups.length > 0 || (follows && unmapped.length > 0)
+  const blocked = busy || checking || errors.length > 0 || dups.length > 0 || missingToolhead || (follows && unmapped.length > 0)
   const finish = (result: SendChoice | null) => {
     set({ printSheet: null })
     ask?.resolve(result)
@@ -145,6 +150,7 @@ export function PrintSheet() {
       name: fileName,
       ...(mode === 'queue' ? { queue: { ...(startAfter ? { startAfter } : {}) } } : {}),
       ...(mapping && follows ? { slotMap: map } : {}),
+      ...(ask.toolheads ? { toolheadMap: Object.fromEntries(ask.toolheads.assignments.map((a) => [a.tool, Number(map[a.tool + 1]) - 1])) } : {}),
     })
   }
   // After a refusal: the same plate as plain G-code, only on this click. The printer then takes filament 1 from the
@@ -242,6 +248,25 @@ export function PrintSheet() {
         ) : null}
         {ask.refusal?.storageFull ? <StorageFullHelp printer={ask.printer} /> : null}
         <div className="ps-body">
+          {ask.toolheads ? (
+            <div className="ps-map" role="group" aria-label="Choose toolheads">
+              <p className="ps-map-head">Choose a loaded toolhead for each filament</p>
+              {ask.toolheads.assignments.map((a) => (
+                <div key={a.tool} className="ps-map-row">
+                  <label htmlFor={`ps-toolhead-${a.tool}`}>Filament {a.tool + 1}</label>
+                  <select id={`ps-toolhead-${a.tool}`} className="mini" value={map[a.tool + 1] ?? ''} onChange={(e) => setEdits((current) => ({ ...current, [a.tool + 1]: e.target.value }))}>
+                    <option value="">{a.alternatives.length ? 'Choose a toolhead' : 'Required material is not loaded'}</option>
+                    {a.alternatives.map((tool) => {
+                      const head = ask.toolheads!.toolheads.find((h) => h.tool === tool)
+                      return <option key={tool} value={String(tool + 1)}>Toolhead {tool + 1}: {head?.material} {head?.color}</option>
+                    })}
+                  </select>
+                  <span className="sx-muted">{a.reason}</span>
+                </div>
+              ))}
+              {missingToolhead ? <p className="ps-row-warn" role="alert">Choose a compatible loaded toolhead for every filament. If a material is missing, load it and reopen this sheet.</p> : null}
+            </div>
+          ) : null}
           {pick && mapping ? (
             <div className="ps-map" role="group" aria-label="Pick a slot">
               <p className="ps-map-head">

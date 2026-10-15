@@ -65,6 +65,33 @@ function open(a: PrintSheetAsk): HTMLElement {
 }
 
 describe('Print sheet summary', () => {
+  it('requires a U1 color choice and returns physical toolheads separately from slot maps', () => {
+    const resolve = vi.fn()
+    const el = open(ask({
+      printer: { id: 'u1', name: 'U1', model: 'U1', vendor: 'Snapmaker', plugin: 'snapmaker' } as PrintSheetAsk['printer'],
+      ending: '.gcode', name: 'part.gcode', auto: {}, resolve,
+      toolheads: { ready: false, assignments: [{ tool: 0, physicalTool: 1, alternatives: [1], status: 'choice_required', reason: 'Loaded color differs' }], toolheads: [{ tool: 1, loaded: true, material: 'PLA', color: '#00ff00' }] },
+    }))
+    const go = el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!
+    expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(true)
+    const select = el.querySelector<HTMLSelectElement>('#ps-toolhead-0')!
+    expect([...select.options].map((o) => o.value)).toEqual(['', '2'])
+    flushSync(() => { select.value = '2'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(false)
+    flushSync(() => set((state) => ({ printSheet: { ...state.printSheet!, check: { errors: [], warnings: [{ text: 'Check the plate' }], sha256: 'updated' } } })))
+    expect(select.value).toBe('2')
+    flushSync(() => go.click())
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ toolheadMap: { 0: 1 } }))
+    expect(resolve.mock.calls[0]![0].slotMap).toBeUndefined()
+  })
+
+  it('blocks a U1 filament whose material is missing even with no reported slots', () => {
+    const el = open(ask({ slots: [], auto: {}, toolheads: { ready: false, assignments: [{ tool: 0, physicalTool: null, alternatives: [], status: 'unavailable', reason: 'Load PETG' }], toolheads: [] } }))
+    expect(el.textContent).toContain('Required material is not loaded')
+    const go = el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!
+    expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(true)
+  })
+
   it('shows the file and the filaments as text, with no field or slot picker', () => {
     const el = open(ask())
     expect(el.querySelector('.ps-file')?.textContent).toBe('benchy.gcode.3mf')

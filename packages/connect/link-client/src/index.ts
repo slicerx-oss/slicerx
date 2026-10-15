@@ -26,6 +26,7 @@ import type {
   SlotSetting,
   FilamentSlot,
   StartOptions,
+  ToolheadPlan,
 } from '@slicerx/contracts'
 
 export type LinkErrorCode = PrinterErrorCode | 'bad_request' | 'unauthorized' | 'locked' | 'closed' | 'hub_identity' | 'forbidden'
@@ -1155,6 +1156,12 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       }
     },
 
+    planToolheads: (printerId, needs, selected = {}) => call<ToolheadPlan>('planToolheads', { printerId, needs, selected }),
+    prepareToolheads: async (printerId, file, needs, selected) => {
+      const r = await call<{ file: { name: string; kind: JobFile['kind']; sha256: string; dataBase64: string }; plan: ToolheadPlan }>('prepareToolheads', { printerId, file: encodeFile(file), needs, selected })
+      const bytes = base64ToBytes(r.file.dataBase64)
+      return { file: { name: r.file.name, kind: r.file.kind, sha256: r.file.sha256, data: bytes.buffer }, plan: r.plan }
+    },
     prepareUpload: async (printerId, file) => {
       const r = await call<{ name: string; kind: JobFile['kind']; sha256: string; dataBase64: string }>('prepareUpload', { printerId, file: encodeFile(file) })
       const bytes = base64ToBytes(r.dataBase64)

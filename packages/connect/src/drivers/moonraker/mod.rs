@@ -3,6 +3,7 @@
 //! Moonraker (Klipper) over its HTTP API. Also the transport for Klipper based Creality and
 //! Snapmaker models, which pass their own plugin id.
 mod filament;
+mod toolhead;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -975,6 +976,71 @@ impl PrinterSession for MoonrakerSession {
         self.inner.fetch_status().await
     }
 
+    async fn plan_toolheads(
+        &self,
+        needs: &[crate::toolhead_map::ToolheadNeed],
+        selected: &std::collections::BTreeMap<u8, u8>,
+    ) -> Result<crate::toolhead_map::ToolheadPlan> {
+        if !self
+            .inner
+            .objects()
+            .iter()
+            .any(|name| name == "print_task_config")
+        {
+            return Err(Error::not_supported("moonraker", "U1 toolhead mapping"));
+        }
+        let reply = self
+            .inner
+            .call_json(|i| i.get("/printer/objects/query?print_task_config"))
+            .await?;
+        let status = reply
+            .pointer("/result/status")
+            .ok_or_else(|| Error::protocol(self.inner.id(), "The U1 did not report its loaded toolheads"))?;
+        let unit = filament::u1_unit(status)
+            .ok_or_else(|| Error::protocol(self.inner.id(), "The U1 did not report its loaded toolheads"))?;
+        let config = status
+            .get("print_task_config")
+            .ok_or_else(|| Error::protocol(self.inner.id(), "The U1 filament report is missing"))?;
+        let heads = unit
+            .slots
+            .into_iter()
+            .enumerate()
+            .map(|(index, slot)| {
+                let loaded = config
+                    .get("filament_exist")
+                    .and_then(Value::as_array)
+                    .and_then(|a| a.get(index))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let known = config
+                    .get("filament_type")
+                    .and_then(Value::as_array)
+                    .and_then(|a| a.get(index))
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| !s.trim().is_empty() && !s.trim().eq_ignore_ascii_case("none"));
+                crate::toolhead_map::LoadedToolhead {
+                    tool: u8::try_from(index).unwrap_or(u8::MAX),
+                    loaded,
+                    material: if known { slot.material } else { None },
+                    color: slot.color,
+                }
+            })
+            .collect::<Vec<_>>();
+        crate::toolhead_map::plan_toolheads(needs, &heads, selected)
+            .map_err(|reason| Error::protocol(self.inner.id(), &reason))
+    }
+
+    async fn prepare_toolheads(
+        &self,
+        file: JobFile,
+        needs: &[crate::toolhead_map::ToolheadNeed],
+        selected: &std::collections::BTreeMap<u8, u8>,
+    ) -> Result<(JobFile, crate::toolhead_map::ToolheadPlan)> {
+        let plan = self.plan_toolheads(needs, selected).await?;
+        crate::toolhead_map::prepare_toolhead_file(file, needs, &plan.toolheads, selected)
+            .map_err(|reason| Error::protocol(self.inner.id(), &reason))
+    }
+
     /// Nozzle diameters, kinematics and limits from Klipper's own config (`configfile.settings`), the
     /// build volume from the toolhead's travel limits, the Klipper version and host name from
     /// `printer/info`, a vendor build's `machine_name`, and the filament units (Happy Hare MMU, QIDI
@@ -1033,6 +1099,7 @@ impl PrinterSession for MoonrakerSession {
             Action::Upload,
             &params::upload(self.inner.id(), &file.name, &file.sha256),
         )?;
+        self.validate_toolhead_upload(&file).await?;
         let timeout = upload_timeout(file.data.len());
         let v = self
             .inner
@@ -1064,6 +1131,7 @@ impl PrinterSession for MoonrakerSession {
         opts.refuse_slot_map("moonraker")?;
         self.inner
             .token(token, Action::Start, &params::start(self.inner.id(), file, &opts))?;
+        self.establish_toolhead_map(file).await?;
         self.inner
             .call(|i| {
                 i.post("/printer/print/start")

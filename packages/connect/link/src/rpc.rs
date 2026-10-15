@@ -1037,6 +1037,29 @@ async fn dispatch(
             }
             Ok(json!({ "ok": true }))
         }
+        "planToolheads" => {
+            let id = str_arg(&p, "printerId")?;
+            let needs: Vec<sx_connect::toolhead_map::ToolheadNeed> = arg(&p, "needs")?;
+            let selected: std::collections::BTreeMap<u8, u8> = p
+                .get("selected")
+                .map(|_| arg(&p, "selected"))
+                .transpose()?
+                .unwrap_or_default();
+            to_json(&session(b, &id).await?.plan_toolheads(&needs, &selected).await?)
+        }
+        "prepareToolheads" => {
+            let id = str_arg(&p, "printerId")?;
+            let file = hub_rpc::decode_file(&p)?;
+            let needs: Vec<sx_connect::toolhead_map::ToolheadNeed> = arg(&p, "needs")?;
+            let selected: std::collections::BTreeMap<u8, u8> = arg(&p, "selected")?;
+            let (prepared, plan) = session(b, &id)
+                .await?
+                .prepare_toolheads(file, &needs, &selected)
+                .await?;
+            Ok(
+                json!({ "file": { "name": prepared.name, "kind": prepared.kind, "sha256": prepared.sha256, "dataBase64": B64.encode(&prepared.data) }, "plan": plan }),
+            )
+        }
         "prepareUpload" => prepare_upload_call(b, &p).await,
         "upload" => upload_call(b, &p).await,
         "start" => hub_rpc::start_with_token(b, &p).await,
