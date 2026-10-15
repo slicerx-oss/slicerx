@@ -110,13 +110,14 @@ A refused call has `isError: true`, text of the form `Error: <code>: <message>`,
 With a configured named-client credential (`SLICERX_MCP_LINK_KEY_REF`), the app link enabled and an edit grant, these commands manage concrete objects on the shown plate:
 
 ```sh
+slicerx-mcp --printers link --app call app_objects
 slicerx-mcp --printers link --app call project_rename '{"object":"obj_1","name":"Bracket"}'
 slicerx-mcp --printers link --app call project_duplicate '{"object":"obj_1","count":2}'
 slicerx-mcp --printers link --app call project_lay_on_face '{"object":"obj_1","normal":[1,0,0]}'
 slicerx-mcp --printers link --app call project_remove_object '{"object":"obj_1"}'
 ```
 
-Use ids when several objects share a name. Responses include resulting object states; `plate.list` reads them again. Copies get independent ids and retain inherited object and part settings. They use available space and return both requested and created counts, so a full plate cannot silently appear to have received every requested copy. Duplication leaves the clipboard alone and creates one Undo step.
+Use ids when several objects share a name. `slicerx_app_objects` needs only a read grant and returns the shown plate's concrete objects, including part details, stored overrides, transforms, world bounds, lock and print-inclusion flags, volumes and history counts. Responses to edits include resulting object states; read `slicerx_app_objects` again to verify them independently. Copies get independent ids and retain inherited object and part settings. They use available space and return both requested and created counts, so a full plate cannot silently appear to have received every requested copy. Duplication leaves the clipboard alone and creates one Undo step.
 
 Live removal deletes only the named concrete object. Other copies keep their geometry and settings; measurements referencing the removed object are removed too. Undo restores all of these changes. Lay on face uses a normal in model coordinates, keeps scale and the footprint center, and places the object on the bed. Locked removal/orientation and conflicting timeline edits refuse. Partner app keys cannot edit the open project.
 

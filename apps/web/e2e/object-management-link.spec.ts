@@ -51,13 +51,19 @@ test('clients rename, duplicate, orient and remove live objects with read-back a
     await expect(grant).toBeEnabled({ timeout: 30_000 })
     await grant.click()
     expect((await pending).isError).not.toBe(true)
-    return { call, read: () => ctx.printers.appLink.call('plate.list') as Promise<{ objects: Row[] }>, close: async () => { await client.close(); await server.close(); ctx.printers?.close?.() } }
+    const read = async () => {
+      const out = await call('app_objects')
+      expect(out.isError, JSON.stringify(out)).not.toBe(true)
+      return out.structuredContent!.output!
+    }
+    return { call, read, close: async () => { await client.close(); await server.close(); ctx.printers?.close?.() } }
   }
 
 
   try {
     const reader = await session('management-reader', true)
     try {
+      expect(Array.isArray((await reader.read()).objects)).toBe(true)
       for (const [name, args] of [
         ['project_rename', { object: 'unknown', name: 'Name' }],
         ['project_duplicate', { object: 'unknown' }],
