@@ -11,6 +11,7 @@ import { soup, slug, type Design, type DesignFiles } from './design-tools'
 import { writeBinaryStl, readStlPositions } from './mesh'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { readZip, writeZip } from './zip'
+import { BodyRevisions } from '@slicerx/cad-history/body-revisions'
 
 export { designArg, designSummary, designTools, faceAt, item, partAt, type Design, type DesignFiles } from './design-tools'
 
@@ -23,8 +24,14 @@ export interface DesignDeps {
 export class Designs implements DesignHost {
   private readonly all = new Map<string, Design>()
   private seq = 0
+  private readonly revisions = new BodyRevisions()
 
   constructor(readonly deps: DesignDeps) {}
+
+  revision(id: string): string {
+    this.get(id)
+    return this.revisions.current(id)
+  }
 
   call(op: string, request: unknown): Promise<unknown> {
     return this.deps.engine(op, request)
@@ -52,26 +59,32 @@ export class Designs implements DesignHost {
     const source = history ?? { version: HISTORY_VERSION, base, steps: [] }
     const d: Design = { id, name, history: exact ? { ...source, exact: true } : source, transform, parts: base, status: [], madeBy: {}, written: 0, redo: [] }
     if (d.history.steps.length) await this.replay(d)
-    else this.export(d)
+    else { this.export(d); this.revisions.register(id) }
     this.all.set(id, d)
     return d
   }
 
   /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through. */
-  async add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string }): Promise<Step> {
+  async add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string }): Promise<Step> {
+    const guard = () => { if (opts?.expectedRevision !== undefined) this.revisions.assert(d.id, opts.expectedRevision) }
+    guard()
     const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
     const history = appendStep(d.history, step)
     const r = await this.run(history)
     const st = r.status[r.status.length - 1]
     if (st?.state !== 'done') throw new ToolInputError(`The step did not go through: ${st?.message ?? 'the steps before it are broken'}. The design is unchanged.`, 'invalid_input', { design: d.id })
+    guard()
     this.keep(d, history, r)
     d.redo = []
     return history.steps[history.steps.length - 1]!
   }
 
   /** Replays the design as it is, after an edit of its steps. */
-  async replay(d: Design): Promise<void> {
+  async replay(d: Design, opts?: { expectedRevision?: string }): Promise<void> {
+    const guard = () => { if (opts?.expectedRevision !== undefined) this.revisions.assert(d.id, opts.expectedRevision) }
+    guard()
     const r = await this.run(d.history)
+    guard()
     this.keep(d, d.history, r)
   }
 
@@ -87,11 +100,14 @@ export class Designs implements DesignHost {
 
   private keep(d: Design, history: History, r: Awaited<ReturnType<typeof replayHistory>>): void {
     // A step that broke keeps its sentence, as the app shows it.
-    d.history = { ...history, steps: history.steps.map((s, i) => withBroken(s, r.status[i])) }
-    d.parts = r.parts
-    d.status = r.status
-    d.madeBy = r.madeBy ?? {}
-    this.export(d)
+    const next: Design = { ...d,
+      history: { ...history, steps: history.steps.map((s, i) => withBroken(s, r.status[i])) },
+      parts: r.parts, status: r.status, madeBy: r.madeBy ?? {},
+    }
+    this.export(next)
+    Object.assign(d, next)
+    if (!next.stl) delete d.stl
+    this.revisions.register(d.id)
   }
 
   /** Writes the parts as one STL in the object's frame, so slicing and the mesh tools can take the result. */
