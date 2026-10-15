@@ -709,7 +709,8 @@ class ViewportImpl implements Viewport {
       // drops MSAA and AO from them, then draws them smaller; once the camera stops, full quality returns and AO fades
       // in. Transitions are drawn at full quality throughout.
       const level = this.motion.level
-      const low = moving && !transition && !level.full
+      // the first frame of a new preview while the view moves stays cheap: it is the slice's time to first picture
+      const low = moving && !transition && (!level.full || this.previewSetAt !== null)
       if (low) {
         // Fade AO out over a few frames instead of cutting it, so starting to orbit does not pop the plate and shadows.
         this.aoLevel = Math.max(0, this.aoLevel - 0.34)
