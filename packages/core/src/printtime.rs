@@ -1584,6 +1584,43 @@ mod tests {
     }
 
     #[test]
+    fn extrusion_below_the_junction_limit_keeps_the_travel_time() {
+        let prefix = "G90\nM83\nM201 X20000 Y20000 Z500 E5000\nM203 X1000 Y1000 Z30 E50\nM204 S1000 T1000\nM205 X9 Y9 Z3 E2.5\n";
+        let travel = "G1 X20 Y0 F1500\nG1 X20 Y20 F6000\nG1 X0 Y20 F1500\nG1 X0 Y0 F6000\n";
+        let extrude = "G1 X20 Y0 E2 F1500\nG1 X20 Y20 E2 F6000\nG1 X0 Y20 E2 F1500\nG1 X0 Y0 E2 F6000\n";
+        let plain = estimate(
+            format!("{prefix}{}G4 S0\n", travel.repeat(100)).as_bytes(),
+            &marlin(),
+            false,
+        )
+        .total;
+        let with = estimate(
+            format!("{prefix}{}G4 S0\n", extrude.repeat(100)).as_bytes(),
+            &marlin(),
+            false,
+        )
+        .total;
+        // filament speed at the xy junction limit is 0.9 mm/s, below its 2.5 mm/s limit.
+        assert!((with - plain).abs() < 0.01, "{with} vs {plain}");
+    }
+
+    #[test]
+    fn extruder_safe_speed_uses_the_filament_to_path_ratio() {
+        for (extrusion, expected) in [(2, 9.0), (40, 1.25)] {
+            let mut r = Reader::new(&marlin(), None);
+            for line in ["M83", "M203 X1000 Y1000 Z30 E50", "M205 X9 Y9 Z3 E2.5"] {
+                r.line(line);
+            }
+            r.line(&format!("G1 X20 E{extrusion} F6000"));
+            assert!(
+                (r.m.prev.safe - expected).abs() < 1e-9,
+                "{} vs {expected}",
+                r.m.prev.safe
+            );
+        }
+    }
+
+    #[test]
     fn the_last_lone_block_is_not_timed() {
         // Orca's final pass needs two blocks in the queue; a file of one move takes no time.
         assert!(estimate(b"G1 X100 F3000\n", &marlin(), false).total.abs() < 1e-12);
