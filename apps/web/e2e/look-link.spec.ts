@@ -121,12 +121,12 @@ test('a client reads and sets Frame the view and Toolbar size over MCP and the c
       expect(a.isError, JSON.stringify(a)).toBeFalsy()
       return a.structuredContent!.output
     }
-    expect(await allowWhenAsked(page, call('slicerx_app_look'))).toEqual({ toolbarSize: 'large', modelFraming: 'selection' })
+    expect(await allowWhenAsked(page, call('slicerx_app_look'))).toMatchObject({ toolbarSize: 'large', modelFraming: 'selection' })
 
     // Set, read back, and the window agrees.
-    expect(await call('slicerx_app_look_set', { toolbarSize: 'small' })).toEqual({ toolbarSize: 'small', modelFraming: 'selection' })
+    expect(await call('slicerx_app_look_set', { toolbarSize: 'small' })).toMatchObject({ toolbarSize: 'small', modelFraming: 'selection' })
     await expect(ribbon).toHaveAttribute('data-setting', 'small')
-    expect(await call('slicerx_app_look_set', { modelFraming: 'open' })).toEqual({ toolbarSize: 'small', modelFraming: 'open' })
+    expect(await call('slicerx_app_look_set', { modelFraming: 'open' })).toMatchObject({ toolbarSize: 'small', modelFraming: 'open' })
     expect(await appearance(page)).toMatchObject({ toolbarSize: 'small', modelFraming: 'open' })
 
     // A bad value is refused before it leaves, and nothing changes.
@@ -140,7 +140,7 @@ test('a client reads and sets Frame the view and Toolbar size over MCP and the c
     await dialog.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Look and feel' }).click()
     await dialog.getByTestId('set-toolbar-size').getByRole('radio', { name: 'Medium' }).click()
     await expect(ribbon).toHaveAttribute('data-setting', 'medium')
-    expect(await call('slicerx_app_look')).toEqual({ toolbarSize: 'medium', modelFraming: 'open' })
+    expect(await call('slicerx_app_look')).toMatchObject({ toolbarSize: 'medium', modelFraming: 'open' })
     await page.keyboard.press('Escape')
   } finally {
     await client.close()
@@ -154,8 +154,8 @@ test('a client reads and sets Frame the view and Toolbar size over MCP and the c
     const lines = stdout.trim().split('\n').map((l) => JSON.parse(l) as { tool: string; ok: boolean; output: { output: Look } })
     expect(lines).toHaveLength(2)
     expect(lines.map((l) => l.ok)).toEqual([true, true])
-    expect(lines[0]!.output.output).toEqual({ toolbarSize: 'large', modelFraming: 'selection' })
-    expect(lines[1]!.output.output).toEqual({ toolbarSize: 'large', modelFraming: 'selection' })
+    expect(lines[0]!.output.output).toMatchObject({ toolbarSize: 'large', modelFraming: 'selection' })
+    expect(lines[1]!.output.output).toMatchObject({ toolbarSize: 'large', modelFraming: 'selection' })
     await expect(ribbon).toHaveAttribute('data-setting', 'large')
   } finally {
     rmSync(dir, { recursive: true, force: true })

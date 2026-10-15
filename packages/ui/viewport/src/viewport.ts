@@ -2565,7 +2565,7 @@ class ViewportImpl implements Viewport {
     }
     this.finishedLayers = scenes.map((s) => {
       const l = new SketchLayer()
-      l.setLight(this.sketchLight)
+      l.setLight(this.sketchLight, this.theme.glyphs)
       l.set({ frame: s.frame, paths: s.paths, handles: [], ...(s.profiles ? { profiles: s.profiles } : {}) })
       this.finished.add(l.group)
       return l
@@ -2944,8 +2944,8 @@ class ViewportImpl implements Viewport {
     this.cutRings.setColor('v', t.scene.selection)
     this.sketchLayer.setAccent(t.scene.selection)
     this.sketchLight = lightStudio(t.scene.bgTop)
-    this.sketchLayer.setLight(this.sketchLight)
-    for (const l of this.finishedLayers) l.setLight(this.sketchLight)
+    this.sketchLayer.setLight(this.sketchLight, t.glyphs)
+    for (const l of this.finishedLayers) l.setLight(this.sketchLight, t.glyphs)
     this.planeInk = { fg: lightStudio(t.scene.bgTop) ? '#282a36' : '#f8f8f2', halo: t.scene.bgTop }
     this.originPlanes.setLight(lightStudio(t.scene.bgTop))
     this.stage.setSceneColors(t.scene)

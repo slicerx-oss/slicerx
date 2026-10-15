@@ -3,6 +3,7 @@
 // Themes: a typed object that maps onto the CSS variables every component reads. Subban is the
 // default. Integrators build their own with createTheme() and apply it at runtime with
 // applyTheme() or <ThemeProvider>. See THEMING.md.
+import { clearVisualTokens, setVisualTokens, type VisualTokens } from './theme-visuals'
 
 export type ColorScheme = 'dark' | 'light'
 
@@ -97,6 +98,8 @@ export interface Theme {
   spacing: ThemeSpacing
   /** The 3D studio colors. Absent means the default dark studio. */
   scene?: ThemeScene
+  /** Edition color properties that take precedence over look presets. */
+  visuals?: VisualTokens
 }
 
 /** What createTheme() accepts: any subset, nested. */
@@ -109,6 +112,7 @@ export interface ThemeInput {
   radius?: Partial<ThemeRadius>
   spacing?: Partial<ThemeSpacing>
   scene?: ThemeScene
+  visuals?: VisualTokens
 }
 
 /** The default theme: Subban, the owner's dark palette, derived from Dracula. */
@@ -158,8 +162,10 @@ export function createTheme(input: ThemeInput, base: Theme = subban): Theme {
   const fonts: ThemeFonts = { ...base.fonts, ...input.fonts }
   if (input.fonts && 'href' in input.fonts && input.fonts.href === undefined) delete fonts.href
   const scene = input.scene ?? base.scene
+  const visuals = { ...base.visuals, ...input.visuals }
   return {
     ...(scene ? { scene } : {}),
+    ...(Object.keys(visuals).length ? { visuals } : {}),
     name: input.name ?? base.name,
     scheme: input.scheme ?? base.scheme,
     colors: { ...base.colors, ...input.colors },
@@ -228,6 +234,7 @@ export function themeToVars(theme: Theme): Record<string, string> {
   })
   vars['--gutter'] = `${theme.spacing.unit * 2}px`
   if (theme.scene) for (const k of Object.keys(SCENE_VARS) as (keyof ThemeScene)[]) if (theme.scene[k]) vars[SCENE_VARS[k]] = theme.scene[k] as string
+  Object.assign(vars, theme.visuals)
   return vars
 }
 
@@ -252,10 +259,12 @@ export const THEME_EVENT = 'sx-theme'
 export function applyTheme(theme: Theme, el?: HTMLElement): void {
   const target = el ?? (typeof document !== 'undefined' ? document.documentElement : undefined)
   if (!target) return
-  const vars = themeToVars(theme)
+  const { visuals, ...base } = theme
+  const vars = themeToVars(base)
   for (const [k, v] of Object.entries(vars)) target.style.setProperty(k, v)
   // Studio colors of an earlier theme must not linger when this one sets none.
   for (const k of Object.values(SCENE_VARS)) if (!(k in vars)) target.style.removeProperty(k)
+  setVisualTokens(target, visuals ?? {})
   target.style.setProperty('color-scheme', theme.scheme)
   // the surface tokens key on it (tokens.css): light-dark() in a custom property does not follow the scheme
   target.dataset['scheme'] = theme.scheme
@@ -267,6 +276,7 @@ export function applyTheme(theme: Theme, el?: HTMLElement): void {
 export function clearTheme(el?: HTMLElement): void {
   const target = el ?? (typeof document !== 'undefined' ? document.documentElement : undefined)
   if (!target) return
+  clearVisualTokens(target)
   for (const k of Object.keys(themeToVars(subban))) target.style.removeProperty(k)
   for (const k of Object.values(SCENE_VARS)) target.style.removeProperty(k)
   target.style.removeProperty('color-scheme')

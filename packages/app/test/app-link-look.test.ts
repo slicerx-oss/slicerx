@@ -27,10 +27,10 @@ describe('app link look', () => {
 
   it('reads the two preferences and sets either or both, reading them back', async () => {
     setCurrentEdition(NEUTRAL)
-    expect(await runCall('look.get', {})).toEqual({ toolbarSize: 'large', modelFraming: 'selection' })
-    expect(await runCall('look.set', { modelFraming: 'open' })).toEqual({ toolbarSize: 'large', modelFraming: 'open' })
-    expect(await runCall('look.set', { toolbarSize: 'small' })).toEqual({ toolbarSize: 'small', modelFraming: 'open' })
-    expect(await runCall('look.set', { toolbarSize: 'medium', modelFraming: 'selection' })).toEqual({ toolbarSize: 'medium', modelFraming: 'selection' })
+    expect(await runCall('look.get', {})).toMatchObject({ toolbarSize: 'large', modelFraming: 'selection' })
+    expect(await runCall('look.set', { modelFraming: 'open' })).toMatchObject({ toolbarSize: 'large', modelFraming: 'open' })
+    expect(await runCall('look.set', { toolbarSize: 'small' })).toMatchObject({ toolbarSize: 'small', modelFraming: 'open' })
+    expect(await runCall('look.set', { toolbarSize: 'medium', modelFraming: 'selection' })).toMatchObject({ toolbarSize: 'medium', modelFraming: 'selection' })
     expect(get().appearance).toMatchObject({ toolbarSize: 'medium', modelFraming: 'selection' })
     // the rest of the look stays the person's
     expect(get().appearance.textSize).toBe(DEFAULT_APPEARANCE.textSize)
@@ -49,9 +49,9 @@ describe('app link look', () => {
 
   it('in an edition without Model, has Toolbar size only', async () => {
     setCurrentEdition({ ...NEUTRAL, features: { ...NEUTRAL.features, cad: false } })
-    expect(await runCall('look.get', {})).toEqual({ toolbarSize: 'large' })
+    expect(await runCall('look.get', {})).toMatchObject({ toolbarSize: 'large' })
     expect(await refused({ modelFraming: 'open' })).toBe('not_found')
     expect(get().appearance.modelFraming).toBe('selection')
-    expect(await runCall('look.set', { toolbarSize: 'small' })).toEqual({ toolbarSize: 'small' })
+    expect(await runCall('look.set', { toolbarSize: 'small' })).toMatchObject({ toolbarSize: 'small' })
   })
 })

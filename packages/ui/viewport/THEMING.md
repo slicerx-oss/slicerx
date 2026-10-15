@@ -22,6 +22,8 @@ vp.setTheme() // back to the defaults
 
 `features` is keyed by the SXPV feature id. `heatRamp` takes two to eight stops, low to high. `toolColors` are used until the app calls `setToolColors`.
 
+`glyphs` recolors sketch constraint pixels: `line`, `pickedLine`, `node`, `pickedNode`, `center`, `halo`, `pickedEdge` and `pickedHalo`. These accept `#rrggbb` or `#rrggbbaa`. Omitted colors retain the existing defaults chosen from the studio background's lightness. Changing them with `setTheme` redraws existing glyph textures. See [edition restyling](../../../docs/integrators/restyle-icons-and-loops.md#viewport-sketch-glyphs) for the defaults and corresponding CSS properties.
+
 `setTheme` throws an `Error` that lists every invalid color, so a bad theme fails loudly. `themeProblems(theme)` returns the same list without throwing, for settings screens. Build legends from `resolveTheme(theme)` (from `@slicerx/viewport/palette`) so swatches match what the scene draws.
 
 Keep the roles apart: selection and live layer are not toolpath colors, and red and amber on the overhang map mean overhang. Clay, overhang and edge materials are shared by every viewport on the page, so a page has one theme for them.

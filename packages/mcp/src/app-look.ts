@@ -13,6 +13,8 @@ export interface AppLook {
   toolbarSize: 'large' | 'medium' | 'small'
   /** Absent in an edition without Model's modeling tools. */
   modelFraming?: 'selection' | 'open'
+  /** Present on apps with edition visual tokens. Omitted glyph colors follow the studio background. */
+  theme?: { scheme: 'dark' | 'light'; visuals: Record<string, string>; overrides: Record<string, string> }
 }
 
 const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_supported', busy: 'busy', read_only: 'not_supported', denied: 'not_supported' }
@@ -43,7 +45,7 @@ export function appLookTools(link: AppLinkCaller | undefined, appName: string): 
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Read two view preferences of ${appName} (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). Reads through the app link; the app must be open with the link on.`,
+    description: `Read two view preferences of ${appName} (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). Also reads theme.scheme, theme.visuals (the active CSS color properties) and theme.overrides (shared plus active edition overrides); omitted glyph colors follow the studio background. Reads through the app link; the app must be open with the link on.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'look.get', {})
