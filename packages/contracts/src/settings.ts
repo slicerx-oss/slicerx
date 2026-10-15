@@ -48,6 +48,8 @@ export interface SettingDef {
   enumLabels?: string[]
   /** Enum values the schema lists but the SlicerX engine cannot print yet. Choosing one is allowed (imported projects use them) and validation says so. */
   unavailableValues?: string[]
+  /** What the engine prints instead of an unavailable value, where that is not the default (a noun phrase: "prints with ..."). */
+  unavailableFallback?: Record<string, string>
   /** Old enum strings that read as a current value (for example athena for aegis). */
   enumAliases?: Record<string, string>
   label: string
