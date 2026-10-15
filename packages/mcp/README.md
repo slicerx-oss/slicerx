@@ -326,6 +326,23 @@ const ctx = await createContext({ extraTools: [myTool] })
 await createSlicerxServer(ctx).connect(transport)
 ```
 
+## Brim ears in the open app
+
+`app_brim_ears` reads the shown plate's ears, including their zero-based indices, local and bed coordinates in millimeters, world diameter, first-layer connectivity and effective brim type. Pass an object id or unique name to read one object. Linked copies are listed with their plate ids.
+
+`project_brim_ears` supports `add`, `move`, `resize`, `remove`, `clear` and `generate`. Every edit takes the `revision` from a fresh read. If another edit changes the project, read again before choosing indices. A changed edit is one toolbar Undo step, including updates to linked copies on other plates. Unchanged edits add no step. An active viewport edit, slice or locked linked copy prevents the command.
+
+```sh
+sx call --app app_brim_ears '{}'
+# Use the returned object id and revision. Coordinates are on the bed, in mm.
+sx call --app project_brim_ears '{"object":"object-id","revision":"read-revision","action":"add","x_mm":80,"y_mm":90,"diameter_mm":10}'
+sx call --app app_brim_ears '{"object":"object-id"}'
+```
+
+`move` takes one index in `indices` and `x_mm`/`y_mm`. `resize` takes `indices` and `diameter_mm` (5 to 20 mm, rounded to 0.1 mm); `remove` takes `indices`; `clear` removes all ears. `generate` adds ears at corners using optional `max_angle`, `detection_mm` and `diameter_mm`; read-back includes their defaults and the object's detection limit. Disconnected ears are reported as `connected: false`.
+
+Stored ears print only when the effective `brim_type` is `painted`. These commands leave that setting unchanged. Choose Painted in the app's Brim type setting, or use the live `project_set_overrides` command when available. Read `enabled` and `brimType` to check. These tools require the app link and never fall back to a server-owned project.
+
 ## Security
 
 - Model paths must be inside `--allow-dir` when it is set. HTTP mode reads no local path until you add one.

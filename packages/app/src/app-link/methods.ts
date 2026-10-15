@@ -28,6 +28,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'history.undo': 'edit',
   'history.redo': 'edit',
   'plate.list': 'read',
+  'brim.get': 'read',
+  'brim.edit': 'edit',
   // Moving, turning and scaling objects on the shown plate, each one undo step; the person sees who did it.
   'project.move': 'edit',
   'project.rotate': 'edit',
@@ -309,6 +311,8 @@ function bedShape() {
 }
 
 const HANDLERS: Record<string, Handler> = {
+  'brim.get': async (args) => (await import('./brim')).readBrim(args),
+  'brim.edit': async (args, client) => (await import('./brim')).editBrim(args, client.name),
   'app.info': () => {
     const s = get()
     return { app: appName(), tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS }

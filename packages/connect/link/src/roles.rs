@@ -109,6 +109,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("history.undo", LinkClass::Edit),
     ("history.redo", LinkClass::Edit),
     ("plate.list", LinkClass::Read),
+    ("brim.get", LinkClass::Read),
+    ("brim.edit", LinkClass::Edit),
     // Moving, turning and scaling objects on the shown plate, each one undo step the person can take back.
     ("project.move", LinkClass::Edit),
     ("project.rotate", LinkClass::Edit),
@@ -365,6 +367,8 @@ mod tests {
         ("history.undo", LinkClass::Edit),
         ("history.redo", LinkClass::Edit),
         ("plate.list", LinkClass::Read),
+        ("brim.get", LinkClass::Read),
+        ("brim.edit", LinkClass::Edit),
         ("project.move", LinkClass::Edit),
         ("project.rotate", LinkClass::Edit),
         ("project.scale", LinkClass::Edit),
