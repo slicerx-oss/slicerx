@@ -309,6 +309,7 @@ export async function splitSelectedToParts(host: Loader): Promise<number> {
 export async function splitSelectedToObjects(host: Loader): Promise<number> {
   const src = selectedEntry()
   if (!src) return 0
+  if (src.history?.exact) throw new Error('Splitting into mesh objects would remove the required exact history. The design is unchanged.')
   const pieces = splitToObjects(src.parts, src.transform)
   if (pieces.length === 0) {
     toast('This object is one piece; there is nothing to split.', 'info')
@@ -338,6 +339,7 @@ export async function mergeSelected(host: Loader): Promise<boolean> {
     toast('Select two or more objects to merge.', 'info')
     return false
   }
+  if (objs.some((o) => o.history?.exact)) throw new Error('Merging these objects would remove the required exact history. The designs are unchanged.')
   const parts = mergeParts(objs)
   const colors = objs.flatMap((o) => o.parts.map((_, i) => o.colors[i] ?? o.colors[0] ?? brandAccent()))
   const handle = await host.loadParts(first.name, parts)

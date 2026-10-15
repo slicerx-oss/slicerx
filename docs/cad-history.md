@@ -105,4 +105,6 @@ Required exact intent is saved as `exact: true` on the object's history and time
 
 The app's exact extrusion and hole tools use strict replay. Its plane cut currently keeps above or below on a single-part body, without connectors. Unsupported modeling commands refuse to replace required exact geometry. App undo restores parameter edits; `design.undo` removes the last feature and `design.redo` restores it. Measurement tools inspect the display tessellation, so their values are not kernel surface measurements.
 
+Splitting an exact body into mesh objects, merging it with another object, or consuming it as a modifier or cutter refuses with a reason. These operations cannot preserve its exact feature history yet. The original bodies remain available for editing.
+
 No constraint solver and no parametric expressions between steps. References are found again by position, so a step whose face an earlier edit removed or moved sideways breaks in words rather than guessing.
