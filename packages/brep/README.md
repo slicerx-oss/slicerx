@@ -29,6 +29,15 @@ node --test packages/brep/tests/solids-wasm.mjs
 
 Both paths check analytic volume, bounds, manifold status, save/reopen, closed and consistently oriented tessellation, and released body counts. Analytic relative volume tolerance is 1e-6, or 1e-4 for fillets that may use spline surfaces. Tessellation uses a scale-relative 0.01 mm chord and a 15 degree angle; its separate volume tolerance is 0.5 percent. Mesh volume is measured relative to the placement origin to avoid cancellation from large world coordinates. These are correctness tests, not timing benchmarks or proof of complete numerical conditioning.
 
+The app's mixed replay fixture uses the production STL reader and both real WASM adapters. It checks an imported part beside a native plate, hole edits, undo cache reuse, history reconstruction and final body cleanup. Build the geometry WASM first, then run from the repository root:
+
+```sh
+SX_BREP_REQUIRE_MIXED=1 SX_BREP_PROFILE_PATH=/tmp/mixed-exact-profile.json \
+  pnpm --filter @slicerx/app exec vitest run test/exact-mixed.test.ts --maxWorkers=1
+```
+
+The required flag fails when the geometry WASM is absent; ordinary app unit runs can skip this fixture. CI requires it and uploads the profile. The profile records artifact hashes, module load time, each operation, tessellation, replay overhead, combined WASM heap high-water size and whole test-process peak RSS. Five forced rebuilds per path retain correctness checks. Fixed execution order, first-use costs and shared-machine load limit timing comparisons; use the measurements as a baseline before choosing latency thresholds. JSON history reconstruction here does not replace the browser project save/reopen and reslice gate.
+
 ## Our routines in the kernel
 
 Eleven kernel routines and all of `SmIntegrator.cpp` cite Numerical Recipes, whose code is not under an open source license. After unpacking, `scripts/swap-routines.sh` replaces each routine's body with a call to our own version in `cpp/routines.cpp`, turns the `smos_Pythag` macro into `hypot`, and removes `SmIntegrator.cpp`, whose classes `cpp/integrator.cpp` defines instead. Ours are written from the published algorithms (each file names its sources). `fetch-smlib.sh` checks that every one is swapped out before it hands over the copy. The list is a sweep of the whole kernel, not only the routines a feature reaches:
