@@ -14,21 +14,28 @@ async function withFeel(page: Page): Promise<void> {
   await page.addInitScript(() => localStorage.setItem('sx.modelFeel', '1'))
 }
 
-/** Frames the box, then the screen points `px` pixels inside its top face from the middle of its front top edge. */
+/**
+ * The screen point `px` pixels inside the box's top face from the middle of its front top edge, measured square to
+ * that edge on screen: the pick radius is a distance from the edge, and the top face is foreshortened, so a step
+ * toward the face's center would land nearer the edge than its length.
+ */
 async function nearFrontEdge(page: Page, id: string, px: number): Promise<{ x: number; y: number }> {
   const b = await bounds(page, id)
-  const cx = (b.min[0] + b.max[0]) / 2
-  const edge: V3 = [cx, b.min[1], b.max[2]]
-  const center: V3 = [cx, (b.min[1] + b.max[1]) / 2, b.max[2]]
+  const ends: [V3, V3] = [[b.min[0], b.min[1], b.max[2]], [b.max[0], b.min[1], b.max[2]]]
+  const center: V3 = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, b.max[2]]
   return page.evaluate(
-    ({ edge, center, px }) => {
+    ({ ends, center, px }) => {
       const vp = (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp
-      const m = vp.screenOf(edge)
+      const [a, e] = ends.map((p) => vp.screenOf(p))
       const c = vp.screenOf(center)
-      const len = Math.hypot(c[0] - m[0], c[1] - m[1])
-      return { x: m[0] + ((c[0] - m[0]) / len) * px, y: m[1] + ((c[1] - m[1]) / len) * px }
+      const m = [(a[0] + e[0]) / 2, (a[1] + e[1]) / 2]
+      const len = Math.hypot(e[0] - a[0], e[1] - a[1])
+      // the edge's normal on screen, turned toward the face
+      let n = [-(e[1] - a[1]) / len, (e[0] - a[0]) / len]
+      if (n[0] * (c[0] - m[0]) + n[1] * (c[1] - m[1]) < 0) n = [-n[0], -n[1]]
+      return { x: m[0] + n[0] * px, y: m[1] + n[1] * px }
     },
-    { edge, center, px },
+    { ends, center, px },
   )
 }
 
@@ -39,6 +46,11 @@ async function nearFrontEdge(page: Page, id: string, px: number): Promise<{ x: n
 async function settledFit(page: Page, id: string): Promise<void> {
   await expect.poll(() => page.evaluate((id) => (window as unknown as { __vp: { drawnObjects(): string[] } }).__vp.drawnObjects().includes(id), id)).toBe(true)
   const at = () => page.evaluate(() => (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp.screenOf([0, 0, 0]).map((v) => Math.round(v)).join(','))
+  // Model opens with an eased move to its own view, and a fit keeps the angle the camera has: one taken partway
+  // through that move (a slow machine draws it slowly) frames from another angle on every run. So wait for Model to
+  // show and the move to end before framing.
+  await expect(filter(page, 'face')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)).toBe(true)
   await page.evaluate(() => (window as unknown as { __vp: { view(v: string, o?: unknown): void } }).__vp.view('fit', { animate: false }))
   // still for a second: a panel that opens with Model moves the view's frame a little later
   let last = ''
