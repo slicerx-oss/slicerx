@@ -5,7 +5,7 @@
 import type { CommandSpec } from '@slicerx/contracts'
 import { isTextField } from '../lib/keys'
 import { appName } from '../edition'
-import { get } from '../state/store'
+import { get, toast } from '../state/store'
 import { getCommand, isEnabled, runCommand } from './registry'
 
 export type MenuPlatform = 'macos' | 'windows' | 'linux'
@@ -181,7 +181,10 @@ export function runMenuCommand(e: CommandEntry): void {
     else document.execCommand(e.text === 'delete' ? 'forwardDelete' : e.text)
     return
   }
-  void runCommand(e.id)
+  // A command that fails (a save the system refused) says so, as it does from the command bar.
+  void runCommand(e.id).then((r) => {
+    if (!r.ok) toast(r.message)
+  })
 }
 
 /**
