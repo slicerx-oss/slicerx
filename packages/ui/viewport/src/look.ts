@@ -45,7 +45,7 @@ export interface ViewportLook {
   plate: {
     /** The bed outline and corner marks, sRGB hex; null uses the theme's selection color. */
     border: string | null
-    /** Scales the soft glow around the outline; 1 is the shipped glow. */
+    /** Scales the soft glow around the outline, and the corner marks with it (down to 30 percent at 0); 1 is the shipped glow. */
     borderGlow: number
     /** Scales the 10 mm and 50 mm grid lines; 1 is the shipped grid. */
     grid: number
@@ -176,4 +176,60 @@ export function lookProblems(look: ViewportLook): string[] {
   ] as const)
     if (typeof v === 'number' && (v < 0 || v > 1)) out.push(`${p} must be between 0 and 1`)
   return out
+}
+
+/**
+ * Studio satin shading, shared by both studio presets: a high key that stays in the room, a soft fill that turns with
+ * the view, the room light cut to what the faces need, satin materials, thin soft edges and light occlusion. White
+ * parts keep their curvature under the tone map's shoulder, black parts stay black with their edges readable, and the
+ * Slice tab's basic filament keeps its hue.
+ */
+const STUDIO_SATIN: Pick<ViewportLook, 'lighting' | 'materials' | 'geometry'> = {
+  lighting: {
+    key: { intensity: 0.7, direction: [-190, 330, -20], shadow: true },
+    fill: { intensity: 0.2, direction: [-0.3, 0.3, 0.9], camera: true },
+    rim: { intensity: 0.5, direction: [160, 150, -280], camera: false },
+    environment: 0.35,
+    exposure: 1,
+  },
+  materials: {
+    cad: { light: '#b9bdc2', dark: '#b9bdc2', roughness: 0.62, specular: 0.55, clearcoat: 0, sheen: 0, environment: 0.15 },
+    filament: { roughness: 0.62, specular: 1, clearcoat: 0, sheen: 0.7 },
+  },
+  geometry: { aoRadiusMm: 6, aoStrength: 0.55, edgeWidthPx: 1, edgeOpacity: 0.8, edgeLight: '#252b31', edgeDark: '#252b31', silhouette: 0.6, silhouetteWidthPx: 1 },
+}
+
+/** How strongly the bed outline glows in both studio presets (1 is the shipped glow). */
+export const STUDIO_PLATE_GLOW = 0.2
+
+/** Dark precision: Studio satin on a navy slate studio. The vignette darkens only the backdrop. */
+export const DARK_PRECISION_LOOK: ViewportLook = {
+  version: 1,
+  backdrop: { top: '#2a2e3a', bottom: '#1b1e26', center: '#333847', centerStrength: 0.55, vignette: 0.22, vignetteOnModels: false, dither: 2, ditherTriangular: true },
+  plate: { border: null, borderGlow: STUDIO_PLATE_GLOW, grid: 0.7, fill: 0.8, contactDarkness: 1.8, contactOpacity: 0.75 },
+  ...structuredClone(STUDIO_SATIN),
+}
+
+/** Light studio: Studio satin on a light gray studio a touch darker than the light theme's own, so white parts keep their outline. */
+export const LIGHT_STUDIO_LOOK: ViewportLook = {
+  version: 1,
+  backdrop: { top: '#e3e6ea', bottom: '#c3c8cf', center: '#eceef1', centerStrength: 0.5, vignette: 0.12, vignetteOnModels: false, dither: 2, ditherTriangular: true },
+  plate: { border: null, borderGlow: STUDIO_PLATE_GLOW, grid: 0.8, fill: 0.8, contactDarkness: 1.8, contactOpacity: 0.7 },
+  ...structuredClone(STUDIO_SATIN),
+}
+
+/** The named looks a host can pick: one per studio kind. */
+export const LOOK_PRESETS = { 'dark-precision': DARK_PRECISION_LOOK, 'light-studio': LIGHT_STUDIO_LOOK } as const
+export type LookPresetId = keyof typeof LOOK_PRESETS
+
+/**
+ * The preset for a theme: Dark precision on a dark theme, Light studio on a light one. With `themeBackdrop` the
+ * backdrop colors and the bed outline color are left to the theme (a rebranded theme keeps its own studio colors),
+ * and everything else in the preset still applies.
+ */
+export function lookForScheme(scheme: 'dark' | 'light', o: { themeBackdrop?: boolean } = {}): { preset: LookPresetId; look: ViewportLook } {
+  const preset: LookPresetId = scheme === 'light' ? 'light-studio' : 'dark-precision'
+  const base = LOOK_PRESETS[preset]
+  const look = o.themeBackdrop ? mergeLook(base, { backdrop: { top: null, bottom: null, center: null }, plate: { border: null } }) : structuredClone(base)
+  return { preset, look }
 }
