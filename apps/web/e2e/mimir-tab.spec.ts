@@ -226,6 +226,10 @@ test.describe('the mimir tab', () => {
     const timeline = page.locator('.bpanel-body')
     const tab = page.getByTestId('edge-tab-bottom')
     const press = async () => {
+      // A toast moves above the panel a frame after the panel opens, and until then it can lie over the tab (the
+      // software-drawn view's "will be slow" notice does on a busy machine). Click once the tab is what lies under the
+      // pointer, as a person sees it.
+      await expect.poll(() => tab.evaluate((el) => { const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)) })).toBe(true)
       const t = (await tab.boundingBox())!
       await page.mouse.click(t.x + t.width / 2, t.y + t.height / 2)
       await page.mouse.move(700, 300)
