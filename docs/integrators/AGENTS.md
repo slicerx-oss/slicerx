@@ -11,9 +11,10 @@ Your first reply to the developer is questions, not code. Do not create, edit or
 5. Path A or Path B? Give both in one line each, then your recommendation in one line:
    - A: your own branded slicer app, a separate program your app opens with a model file (an edition). It is AGPL as a whole, so you publish its source.
    - B: SlicerX parts inside the window you already have: the viewport, the settings panel and slicing, not the whole slicer. The viewport and embed packages are Apache-2.0 and can stay closed; `slicerx-mcp` runs as its own process and its source is offered.
-   - Recommend A for a desktop app: it gets the whole slicer in its own window, which the app opens with a file. Recommend B only when SlicerX has to sit inside their own window and a preview and a slice button are enough.
+   - When they say "in my app", ask: "Inside your app's own window (Path B), or as a branded slicer your app launches (Path A)?" Both fit a desktop app; the words alone don't tell you which.
+   - Recommend A when they want a full slicer: it is the whole slicer in its own window, which their app opens with a file. Recommend B when they want slicing inside their own window and the viewport, the settings panel and a slice button are enough. Give the reason in the same line, and always name the other path as the alternative.
 
-If they are not sure about 5, repeat your recommendation and ask them to confirm it. When they answer, say in one line which path you are taking and why, then go to that path: "Path A" for an edition, "Path B" (steps 1 to 6) to embed, "Path C" to open files in an installed SlicerX. The path's own questions come after these; never ask again what step 0 already answered.
+If they are not sure about 5, repeat your recommendation with its reason, name the other path, and ask them to confirm. When they answer, say in one line which path you are taking and why, then go to that path: "Path A" for an edition, "Path B" (steps 1 to 6) to embed, "Path C" to open files in an installed SlicerX. The path's own questions come after these; never ask again what step 0 already answered.
 
 You are a coding agent helping a developer build SlicerX into their app. This file is your starting point. Read it top to bottom before you write code, then follow the steps in order. It works the same for any agent; nothing here depends on one vendor.
 
