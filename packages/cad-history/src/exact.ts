@@ -310,7 +310,7 @@ export function fits(spec: PrimitiveSpec, positions: ArrayLike<number>, indices:
  * The parts after step `s` on exact solids, or null when the mesh path should run it. Kernel failures come back as
  * null too, with `fellBack` told; an answer that is the step's real result (a plane that misses) throws ExactBroken.
  */
-export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: () => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}): Promise<ExactPart[] | null> {
+export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBack: (error?: unknown) => void, solids: Solids = { keep: false, made: () => {} }, pushed: Pushed = () => {}): Promise<ExactPart[] | null> {
   const p = s.params
   let parts = given
   const frame = rigidFrame(s.transform)
@@ -368,12 +368,13 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
       }
       case 'shape.extrude': {
         const op = p.spec.operation ?? 'new'
-        if (!p.frame || p.pattern || !('type' in p.shape)) return null
+        if (p.pattern || !('type' in p.shape)) return null
         const into = op === 'new' ? null : solid(target)
         if (op !== 'new' && (into === null || !target)) return null
-        const f = localFrame(s, p.frame)
+        const sourceFrame: FaceFrame = p.frame ?? { origin: [0, 0, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }
+        const f = localFrame(s, sourceFrame)
         // the kernel's frame has v = normal x u; the step's may be the other way round
-        const flipV = dot(cross(f.normal, f.u), direction(invert(s.transform), p.frame.v)) < 0
+        const flipV = dot(cross(f.normal, f.u), direction(invert(s.transform), sourceFrame.v)) < 0
         const polygons = await loops(call, p.shape, p.placement ?? {}, flipV)
         const z = range(p.spec)
         if (!polygons || !z) return null
@@ -452,7 +453,7 @@ export async function exactStep(call: Call, s: Step, given: ExactPart[], fellBac
     }
   } catch (e) {
     if (e instanceof ExactBroken || (e as { name?: string }).name === 'AbortError') throw e
-    fellBack()
+    fellBack(e)
     return null
   }
 }

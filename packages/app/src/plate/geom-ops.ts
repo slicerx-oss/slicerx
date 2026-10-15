@@ -138,6 +138,18 @@ export interface CutSpec {
 /** Cuts the selected object with a plane. The pieces become objects standing on the bed, side by side. */
 export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> {
   const e = need()
+  if (e.history?.exact) {
+    if (spec.connector || spec.keep === 'both') throw new Error('This exact cut supports keeping above or below without connectors. The design is unchanged.')
+    if (e.parts.length !== 1) throw new Error('Select a single-part exact body to cut. The design is unchanged.')
+    const { reserveStepId, withStep } = await import('../cad/history/record')
+    const { applyHistory } = await import('../cad/history/ops')
+    reserveStepId()
+    const normal: Vec3 = spec.axis === 'x' ? [1, 0, 0] : spec.axis === 'y' ? [0, 1, 0] : [0, 0, 1]
+    const plane = spec.plane ?? { point: normal.map(v => v * spec.atMm) as Vec3, normal }
+    const next = withStep(e, 0, { op: 'plane.cut', plane, keep: spec.keep }, undefined, true)
+    await applyHistory(host, e.id, next, next.steps.at(-1)!.id)
+    return 1
+  }
   const below: MeshPart[] = []
   const above: MeshPart[] = []
   const extras: MeshPart[] = []

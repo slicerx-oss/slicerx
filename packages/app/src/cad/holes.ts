@@ -9,6 +9,7 @@ import { get, markStale } from '../state/store'
 import { commitMade } from './commit'
 import { stepName, type StepParams } from '@slicerx/cad-history'
 import { reserveStepId, withStep } from './history/record'
+import { applyHistory } from './history/ops'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -47,6 +48,12 @@ async function applyPartStep(
   const part = e?.parts[partIndex]
   if (!e || !part) throw new Error('That object is gone.')
   reserveStepId()
+  if (e.history?.exact) {
+    const next = withStep(e, partIndex, params, undefined, true)
+    await applyHistory(host, e.id, next, next.steps.at(-1)!.id)
+    const label = params.op === 'shell' ? stepName({ params }) : params.label
+    return { message: `${label} in ${e.name}.`, warn: false }
+  }
   const r = await run({ mesh: toGeom(part), transform: e.transform })
   const parts = e.parts.map((p, i) => (i === partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
   const handle = await host.loadParts(e.name, parts)

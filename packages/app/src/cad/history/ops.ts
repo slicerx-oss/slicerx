@@ -26,6 +26,7 @@ const abortError = () => Object.assign(new Error('Canceled'), { name: 'AbortErro
 
 /** Replays in the worker, or with the installed engine when the host gives its own (tests). */
 export async function runReplay(req: ReplayRequest, signal?: AbortSignal): Promise<ReplayResult & { before?: HistoryMesh[] }> {
+  if (req.history.exact && !exactSolids()) throw new Error('This design requires the developer exact-solids option. The mesh path was not used.')
   const full: ReplayRequest = { ...req, fonts: { ...sessionFonts(), ...req.fonts }, ...(exactSolids() ? { exact: true } : {}) }
   const r: ReplayResult & { before?: HistoryMesh[] } = usesWorker()
     ? await geom().call('history.replay', full, signal)
@@ -34,6 +35,10 @@ export async function runReplay(req: ReplayRequest, signal?: AbortSignal): Promi
           if (signal?.aborted) throw abortError()
         },
       })
+  if (req.history.exact) {
+    const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')
+    if (broken || r.exactFellBack?.length) throw new Error(`Exact replay stopped: ${broken?.message ?? 'a step requires the mesh path'}. The design is unchanged.`)
+  }
   if (r.exactFellBack?.length) noteFallBack(r.exactFellBack.length)
   return r
 }
@@ -105,6 +110,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     const open = get().historyEdit
     const current = open?.objectId === objectId ? open.original : get().plate.find((p) => p.id === objectId)
     if (!current) throw new Error('That object is gone.')
+    if (current.history?.exact && !next.exact) throw new Error('This edit would remove the required exact history. The design is unchanged.')
     const r = await runReplay({ history: next }, ac.signal)
     if (ac.signal.aborted) throw abortError()
     if (r.parts.length === 0) throw new Error(r.status.find((s) => s.state === 'broken')?.message ?? 'Nothing is left of this object.')
@@ -123,7 +129,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
     // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
     // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
-    const made = commitMade(objectId, (latest) => ({ handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}) }))
+    const made = commitMade(objectId, (latest) => ({ handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}) }), { exactReplay: next.exact === true })
     if (!made && still?.objectId !== objectId) throw abortError()
     markStale()
     return { status: r.status, moved: r.moved }

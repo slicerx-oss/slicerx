@@ -40,9 +40,18 @@ export class Designs implements DesignHost {
     return [...this.all.values()]
   }
 
-  async create(name: string, base: HistoryMesh[], history?: History, transform: Mat4 = [...IDENTITY]): Promise<Design> {
+  async create(name: string, base: HistoryMesh[], history?: History, transform: Mat4 = [...IDENTITY], options?: { exact?: boolean }): Promise<Design> {
+    const exact = history?.exact || options?.exact
+    if (exact) {
+      if (process.env['SX_BREP_DEV'] !== '1') throw new ToolInputError('Exact designs require the developer opt-in SX_BREP_DEV=1.')
+      if ((history?.base ?? base).length) throw new ToolInputError('Exact designs start from native features. Imported meshes cannot be converted by this option.')
+      // this host's native engine runs each call in a fresh process
+      const probe = await this.deps.engine('brep.box', { min: [0, 0, 0], max: [1, 1, 1], save: true }) as { bodySmb?: string }
+      if (!probe.bodySmb) throw new ToolInputError('The exact kernel did not return a native solid.')
+    }
     const id = `d${++this.seq}`
-    const d: Design = { id, name, history: history ?? { version: HISTORY_VERSION, base, steps: [] }, transform, parts: base, status: [], madeBy: {}, written: 0, redo: [] }
+    const source = history ?? { version: HISTORY_VERSION, base, steps: [] }
+    const d: Design = { id, name, history: exact ? { ...source, exact: true } : source, transform, parts: base, status: [], madeBy: {}, written: 0, redo: [] }
     if (d.history.steps.length) await this.replay(d)
     else this.export(d)
     this.all.set(id, d)
@@ -53,7 +62,7 @@ export class Designs implements DesignHost {
   async add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string }): Promise<Step> {
     const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
     const history = appendStep(d.history, step)
-    const r = await replayHistory(this.deps.engine, { history })
+    const r = await this.run(history)
     const st = r.status[r.status.length - 1]
     if (st?.state !== 'done') throw new ToolInputError(`The step did not go through: ${st?.message ?? 'the steps before it are broken'}. The design is unchanged.`, 'invalid_input', { design: d.id })
     this.keep(d, history, r)
@@ -63,8 +72,18 @@ export class Designs implements DesignHost {
 
   /** Replays the design as it is, after an edit of its steps. */
   async replay(d: Design): Promise<void> {
-    const r = await replayHistory(this.deps.engine, { history: d.history })
+    const r = await this.run(d.history)
     this.keep(d, d.history, r)
+  }
+
+  private async run(history: History): Promise<Awaited<ReturnType<typeof replayHistory>>> {
+    if (history.exact && process.env['SX_BREP_DEV'] !== '1') throw new ToolInputError('Exact designs require the developer opt-in SX_BREP_DEV=1.')
+    const r = await replayHistory(this.deps.engine, { history, exact: history.exact === true })
+    if (history.exact) {
+      const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')
+      if (broken || r.exactFellBack?.length) throw new ToolInputError(`Exact replay stopped: ${broken?.message ?? 'a step requires the mesh path'}. The design is unchanged.`)
+    }
+    return r
   }
 
   private keep(d: Design, history: History, r: Awaited<ReturnType<typeof replayHistory>>): void {

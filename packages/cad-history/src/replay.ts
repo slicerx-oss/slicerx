@@ -222,7 +222,7 @@ interface Found {
   fellBack: string[]
 }
 
-async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false, solids?: Solids): Promise<Flat[]> {
+async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found, exact = false, solids?: Solids, strict = false): Promise<Flat[]> {
   const p = s.params
   // Every call of the step makes its faces' keys from the step's own salt, as when the tool first ran it.
   const call: EngineCall = (op, r) => engine(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
@@ -231,7 +231,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       call,
       s,
       parts,
-      () => {
+      (error) => {
+        if (strict) throw new Broken(`Exact operation failed: ${error instanceof Error ? error.message : String(error)}`)
         found.notes[s.id] = EXACT_FELL_BACK
         found.fellBack.push(s.id)
       },
@@ -249,6 +250,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       return done
     }
   }
+  if (strict) throw new Broken(`Exact replay does not support ${p.op} for this part. The mesh path was not used.`)
   // the mesh path works on meshes: kept bodies not tessellated yet are now
   parts = await meshedAll(engine, parts)
   const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]
@@ -487,6 +489,7 @@ function font(name: string, fonts: Record<string, string>): string {
 
 /** Runs the history and says, per step, what happened. */
 export async function replayHistory(call: EngineCall, req: ReplayRequest, o: ReplayOptions = {}): Promise<ReplayResult & { before?: HistoryMesh[] }> {
+  if (req.history.exact) req = { ...req, exact: true }
   const made = new Set<number>()
   const solids: Solids = { keep: !!(req.exact && o.keepsBodies), made: (b) => made.add(b) }
   try {
@@ -513,7 +516,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
   // Keys after each step; a step's key covers everything that can change its result.
   const keys: string[] = []
   // the shapes base parts were made as change an exact replay's parts, so they are in its key
-  let k = req.exact ? hash(meshHash(history.base), JSON.stringify(['exact', history.base.map((m) => m.primitive ?? 0)])) : meshHash(history.base)
+  let k = req.exact ? hash(meshHash(history.base), JSON.stringify(['exact', !!history.exact, history.base.map((m) => m.primitive ?? 0)])) : meshHash(history.base)
   const baseKey = k
   const effective = steps.map((s) => followed(s, steps))
   for (const s of effective) {
@@ -553,7 +556,7 @@ async function replaySteps(call: EngineCall, req: ReplayRequest, o: ReplayOption
     }
     if (o.yieldStep) await o.yieldStep()
     try {
-      parts = await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids)
+      parts = await runStep(call, s, parts, fonts, moved, gone, found, req.exact, solids, !!history.exact)
       const note = found.notes[s.id]
       status[i] = note ? { state: 'done', note } : { state: 'done' }
       remember(keys[i]!, parts, { gone, moved, found })

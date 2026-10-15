@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Reads the CAD history parts of a project (docs/cad-history.md, "Storage"), written by
-// file.ts. Untrusted: a bad step or mesh drops that object's history, never the project.
+// file.ts. Untrusted: a bad step or mesh drops mesh history; required exact history refuses the project.
 import { productName } from '@slicerx/contracts/brand'
 import { featureOf, timelineOf, type Item, type SketchItem, type Timeline } from './design'
 import { BIN_VERSION, DESIGN_FILE_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
@@ -213,6 +213,7 @@ function readStored(v: unknown, files: ReadonlyMap<string, Uint8Array>): History
 }
 
 function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint8Array>): History | null {
+  if (v['exact'] !== undefined && v['exact'] !== true) return null
   const base = v['base'] === null || v['base'] === undefined ? [] : readStored(v['base'], files)
   const raw = v['steps']
   if (!base || !Array.isArray(raw) || raw.length > MAX_STEPS) return null
@@ -237,7 +238,7 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...(typeof s['label'] === 'string' && s['label'].trim() ? { label: s['label'].trim().slice(0, 100) } : {}),
     })
   }
-  return { version: 1, base, steps, ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}) }
+  return { version: 1, base, steps, ...(v['exact'] === true ? { exact: true } : {}), ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}) }
 }
 
 const MAX_ITEMS = 4000
@@ -292,6 +293,15 @@ function storedObjects(j: unknown): unknown[] | null {
   return j['objects']
 }
 
+function requireExactHistories(j: unknown, objectIds: ReadonlySet<string>, read: ReadonlyMap<string, History>): void {
+  if (!obj(j)) return
+  const bodies = [j['objects'], j['bodies']].flatMap(v => Array.isArray(v) ? v : [])
+  for (const b of bodies) {
+    if (!obj(b) || b['exact'] === undefined || typeof b['object'] !== 'string' || !objectIds.has(b['object'])) continue
+    if (b['exact'] !== true || !read.get(b['object'])?.exact) throw new Error(`The required exact history of object ${b['object']} could not be read. The project was not opened as a mesh.`)
+  }
+}
+
 // the body a sketch sits on; anything malformed is dropped, the sketch kept
 function onOf(v: unknown): Pick<SketchItem, 'on'> {
   if (!obj(v) || typeof v['body'] !== 'string' || !Number.isInteger(v['part']) || (v['part'] as number) < 0) return {}
@@ -318,7 +328,10 @@ export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds:
     return h.size ? timelineOf([...h].map(([id, history]) => ({ id, history }))) : null
   }
   const objects = designObjects(j, true)
-  if (!objects) return null
+  if (!objects) {
+    requireExactHistories(j, objectIds, new Map())
+    return null
+  }
   const histories = new Map<string, History>()
   for (const o of objects) {
     if (!obj(o) || typeof o['object'] !== 'string' || !objectIds.has(o['object']) || histories.has(o['object'])) continue
@@ -329,6 +342,7 @@ export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds:
       // that body is left out
     }
   }
+  requireExactHistories(j, objectIds, histories)
   if (!histories.size) return null
   const items: Item[] = []
   let marker = 0
@@ -345,7 +359,7 @@ export function parseTimeline(files: ReadonlyMap<string, Uint8Array>, objectIds:
     }
     if (i < (j['marker'] as number)) marker = items.length
   })
-  const bodies = [...histories].map(([id, h]) => ({ id, base: h.base, ...(h.ended ? { ended: h.ended } : {}) }))
+  const bodies = [...histories].map(([id, h]) => ({ id, base: h.base, ...(h.exact ? { exact: true as const } : {}), ...(h.ended ? { ended: h.ended } : {}) }))
   return { bodies, items, marker }
 }
 
@@ -361,7 +375,10 @@ export function parseHistories(files: ReadonlyMap<string, Uint8Array>, objectIds
     return out
   }
   const objects = storedObjects(j)
-  if (!objects) return out
+  if (!objects) {
+    requireExactHistories(j, objectIds, out)
+    return out
+  }
   for (const o of objects) {
     if (!obj(o) || typeof o['object'] !== 'string' || !objectIds.has(o['object']) || out.has(o['object'])) continue
     try {
@@ -371,6 +388,7 @@ export function parseHistories(files: ReadonlyMap<string, Uint8Array>, objectIds
       // That object opens without its history.
     }
   }
+  requireExactHistories(j, objectIds, out)
   return out
 }
 
