@@ -217,12 +217,99 @@ function knob() {
   )
 }
 
-export type LabScene = 'organic' | 'mech' | 'dark'
+/** A neutral test block for face tones: a box with one rounded vertical edge and a drilled hole in its top. */
+function block() {
+  const W = 60, D = 44, H = 36, R = 9
+  const s = new Shape()
+  s.moveTo(0, 0)
+  s.lineTo(W, 0)
+  s.lineTo(W, D - R)
+  s.absarc(W - R, D - R, R, 0, Math.PI / 2, false)
+  s.lineTo(0, D)
+  s.lineTo(0, 0)
+  const h = new Path()
+  h.absarc(W * 0.62, D * 0.5, 7, 0, Math.PI * 2, true)
+  s.holes.push(h)
+  const g = new ExtrudeGeometry(s, { depth: H, bevelEnabled: false, curveSegments: 48 })
+  return fromGeometry(g)
+}
+
+/** A printable case: a rounded box shell with a lip, open at the top. */
+function caseShell() {
+  const W = 70, D = 46, H = 30, R = 8, T = 2.4
+  const outer = new Shape()
+  const ring = (sh: Shape | Path, x0: number, y0: number, w: number, d: number, r: number, cw: boolean) => {
+    if (!cw) {
+      sh.moveTo(x0 + r, y0)
+      sh.lineTo(x0 + w - r, y0)
+      sh.absarc(x0 + w - r, y0 + r, r, -Math.PI / 2, 0, false)
+      sh.lineTo(x0 + w, y0 + d - r)
+      sh.absarc(x0 + w - r, y0 + d - r, r, 0, Math.PI / 2, false)
+      sh.lineTo(x0 + r, y0 + d)
+      sh.absarc(x0 + r, y0 + d - r, r, Math.PI / 2, Math.PI, false)
+      sh.lineTo(x0, y0 + r)
+      sh.absarc(x0 + r, y0 + r, r, Math.PI, Math.PI * 1.5, false)
+    } else {
+      sh.moveTo(x0 + r, y0)
+      sh.absarc(x0 + r, y0 + r, r, Math.PI * 1.5, Math.PI, true)
+      sh.lineTo(x0, y0 + d - r)
+      sh.absarc(x0 + r, y0 + d - r, r, Math.PI, Math.PI / 2, true)
+      sh.lineTo(x0 + w - r, y0 + d)
+      sh.absarc(x0 + w - r, y0 + d - r, r, Math.PI / 2, 0, true)
+      sh.lineTo(x0 + w, y0 + r)
+      sh.absarc(x0 + w - r, y0 + r, r, 0, -Math.PI / 2, true)
+      sh.lineTo(x0 + r, y0)
+    }
+  }
+  ring(outer, 0, 0, W, D, R, false)
+  const inner = new Path()
+  ring(inner, T, T, W - 2 * T, D - 2 * T, R - T, true)
+  outer.holes.push(inner)
+  const wall = new ExtrudeGeometry(outer, { depth: H, bevelEnabled: false, curveSegments: 32 })
+  const floorS = new Shape()
+  ring(floorS, 0, 0, W, D, R, false)
+  const floor = new ExtrudeGeometry(floorS, { depth: T, bevelEnabled: false, curveSegments: 32 })
+  // a row of vent slots on the floor's top is left out; a boss inside gives a recess and a hole to read
+  const boss = latheZ([[2.2, 0], [5, 0], [5, 9], [2.2, 9], [2.2, 0]], 48)
+  shift(boss, W - 12, 12, T)
+  return merge([fromGeometry(wall), fromGeometry(floor), boss])
+}
+
+export type LabScene = 'organic' | 'mech' | 'dark' | 'block' | 'black' | 'color' | 'mixed'
 
 const WHITE = '#ebebe6'
 const CHARCOAL = '#2c2d31'
 
+/** Bambu PLA Basic black and white as people pick them: the viewport's own display clamp applies to both. */
+const BLACK = '#000000'
+const PURE_WHITE = '#ffffff'
+const BLUE = '#1f6fd1'
+const TEAL = '#0fa3a3'
+
 export function labParts(scene: LabScene): LabPart[] {
+  if (scene === 'block') return [{ name: 'Block', color: '#9a9ea4', ...block(), at: [98, 106] }]
+  if (scene === 'black') {
+    return [
+      { name: 'Bracket', color: BLACK, ...shift(bracket(), -48, -30, 0), at: [100, 122] },
+      { name: 'Knob', color: BLACK, ...knob(), at: [190, 72] },
+      { name: 'Case', color: BLACK, ...caseShell(), at: [150, 160] },
+    ]
+  }
+  if (scene === 'color') {
+    return [
+      { name: 'Case', color: BLUE, ...caseShell(), at: [80, 110] },
+      { name: 'Case teal', color: TEAL, ...caseShell(), at: [160, 110] },
+      { name: 'Knob', color: '#7b3fd0', ...knob(), at: [200, 60] },
+    ]
+  }
+  if (scene === 'mixed') {
+    return [
+      { name: 'Head', color: PURE_WHITE, ...domeHead(), at: [70, 150] },
+      { name: 'Bracket', color: BLACK, ...shift(bracket(), -48, -30, 0), at: [150, 90] },
+      { name: 'Case', color: BLUE, ...caseShell(), at: [170, 160] },
+      { name: 'Block', color: '#9a9ea4', ...block(), at: [40, 50] },
+    ]
+  }
   if (scene === 'organic') {
     return [
       { name: 'Head', color: WHITE, ...domeHead(), at: [48, 80] },

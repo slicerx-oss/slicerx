@@ -19,10 +19,12 @@ import {
   ShaderMaterial,
   SrcAlphaFactor,
   ZeroFactor,
+  type Texture,
   type WebGLProgramParametersWithUniforms,
 } from 'three'
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { HEAT_RAMP, SCENE, displayHex, type SceneColors } from './palette'
+import type { ViewportLook } from './look'
 import type { DisplayStyle, FilamentFinish, RenderMode } from './types'
 
 /** Uniforms shared by every Prepare material, so one write updates all of them. */
@@ -175,8 +177,12 @@ export function studioMaterial(color: string, finish: FilamentFinish): MeshPhysi
     case 'translucent':
       m = new MeshPhysicalMaterial({ ...base, roughness: 0.28, metalness: 0, transmission: 0.55, thickness: 6, ior: 1.5, attenuationColor: c, attenuationDistance: 12, clearcoat: 0.3, clearcoatRoughness: 0.2, envMapIntensity: 0.8 })
       break
-    default:
-      m = new MeshPhysicalMaterial({ ...base, roughness: 0.65, metalness: 0, specularIntensity: 0.6, clearcoat: 0.08, clearcoatRoughness: 0.5, sheen: 0.3, sheenRoughness: 0.55, envMapIntensity: 0.6 })
+    default: {
+      const f = lookParts?.materials.filament
+      m = f
+        ? new MeshPhysicalMaterial({ ...base, roughness: f.roughness, metalness: 0, specularIntensity: f.specular, clearcoat: f.clearcoat, clearcoatRoughness: 0.5, sheen: f.sheen, sheenRoughness: 0.55, envMapIntensity: 0.6 })
+        : new MeshPhysicalMaterial({ ...base, roughness: 0.65, metalness: 0, specularIntensity: 0.6, clearcoat: 0.08, clearcoatRoughness: 0.5, sheen: 0.3, sheenRoughness: 0.55, envMapIntensity: 0.6 })
+    }
   }
   return withLayerLines(m, 'studio')
 }
@@ -203,6 +209,11 @@ export function xrayMaterial(color: string): ShaderMaterial {
 
 /** The CAD look's edge width, in CSS pixels. */
 export const CAD_EDGE_PX = 1.5
+
+/** The material side of a look (look.ts), or null for the shipped materials. Shared by every viewport on the page. */
+let lookParts: { materials: ViewportLook['materials']; geometry: ViewportLook['geometry'] } | null = null
+/** The room environment texture, for materials a look gives their own share of it. */
+let lookEnv: Texture | null = null
 
 let sharedMats: { clay: MeshStandardMaterial; overhang: MeshStandardMaterial; edgeDark: LineBasicMaterial; edgeXray: LineBasicMaterial; cad: MeshPhysicalMaterial; edgeCad: LineBasicMaterial; edgeCadWide: LineMaterial } | null = null
 
@@ -242,7 +253,7 @@ export function sharedMaterials(): NonNullable<typeof sharedMats> {
   // Model's CAD look: a mid gray (the studio's key light lifts it to a light gray) with a soft sheen so faces part by
   // their light, and edges dark enough to draw the shape
   const look = cadLook(SCENE.bgTop)
-  const cad = new MeshPhysicalMaterial({ color: lin(look.body), roughness: 0.5, metalness: 0, clearcoat: 0.2, clearcoatRoughness: 0.35, envMapIntensity: 0.6, polygonOffset: true })
+  const cad = new MeshPhysicalMaterial({ color: lin(look.body), roughness: 0.5, metalness: 0, clearcoat: 0.2, clearcoatRoughness: 0.35, envMapIntensity: 0.6, polygonOffset: true, sheenRoughness: 0.6 })
   const edgeCad = edgeBias(new LineBasicMaterial({ color: lin(look.edge), transparent: true, opacity: 0.9, depthWrite: false }))
   // the CAD look's edges as screen-space quads, so they keep a 1.5 px width (GL lines draw at 1 px)
   const edgeCadWide = new LineMaterial({ color: lin(look.edge).getHex(), linewidth: CAD_EDGE_PX, transparent: true, opacity: 0.95, depthWrite: false })
@@ -251,7 +262,46 @@ export function sharedMaterials(): NonNullable<typeof sharedMats> {
   }
   edgeCadWide.customProgramCacheKey = () => 'sx-edge-wide'
   sharedMats = { clay, overhang, edgeDark, edgeXray, cad, edgeCad, edgeCadWide }
+  applyCadLook(SCENE.bgTop)
   return sharedMats
+}
+
+/** The CAD body and edges from the active look, or the shipped values without one. */
+function applyCadLook(bgTop: string): void {
+  if (!sharedMats) return
+  const L = lookParts
+  const c = L?.materials.cad
+  const s = sharedMats
+  s.cad.roughness = c ? c.roughness : 0.5
+  s.cad.specularIntensity = c ? c.specular : 1
+  s.cad.clearcoat = c ? c.clearcoat : 0.2
+  s.cad.sheen = c ? c.sheen : 0
+  // three.js replaces envMapIntensity with the scene's environmentIntensity on materials without their own envMap, so
+  // the CAD body takes the room texture itself to get its own share of it
+  const env = c ? lookEnv : null
+  if (s.cad.envMap !== env) {
+    s.cad.envMap = env
+    s.cad.needsUpdate = true
+  }
+  s.cad.envMapIntensity = c ? c.environment : 0.6
+  const g = L?.geometry
+  s.edgeCadWide.linewidth = g ? g.edgeWidthPx : CAD_EDGE_PX
+  s.edgeCadWide.opacity = g ? g.edgeOpacity : 0.95
+  s.edgeCad.opacity = g ? g.edgeOpacity : 0.9
+  const look = cadLook(bgTop)
+  s.cad.color.copy(lin(look.body))
+  s.edgeCad.color.copy(lin(look.edge))
+  s.edgeCadWide.color.copy(lin(look.edge))
+}
+
+/**
+ * Sets the material side of a look for every viewport on the page (null restores the shipped materials). Cached
+ * per-color materials keep the old values: call MaterialCache.dispose() and rebuild them, as a theme change does.
+ */
+export function setMaterialLook(look: ViewportLook | null, bgTop: string, env: Texture | null): void {
+  lookEnv = env
+  lookParts = look ? { materials: structuredClone(look.materials), geometry: structuredClone(look.geometry) } : null
+  applyCadLook(bgTop)
 }
 
 export interface PartLook {
@@ -297,10 +347,7 @@ export function setSharedSceneColors(scene: SceneColors): void {
   sharedMats.overhang.color.copy(lin(scene.overhangBase))
   sharedMats.edgeDark.color.copy(lin(scene.edgeDark))
   sharedMats.edgeXray.color.copy(lin(scene.edgeXray))
-  const look = cadLook(scene.bgTop)
-  sharedMats.cad.color.copy(lin(look.body))
-  sharedMats.edgeCad.color.copy(lin(look.edge))
-  sharedMats.edgeCadWide.color.copy(lin(look.edge))
+  applyCadLook(scene.bgTop)
 }
 
 /** The drawing buffer size, for the wide edge material's pixel widths. */
@@ -320,6 +367,8 @@ export function edgeLook(mode: RenderMode, display: DisplayStyle): { edge: 'xray
 export function cadLook(bgTop: string): { body: string; edge: string } {
   const c = new Color(bgTop)
   const light = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b > 0.5
+  const L = lookParts
+  if (L) return light ? { body: L.materials.cad.light, edge: L.geometry.edgeLight ?? '#121318' } : { body: L.materials.cad.dark, edge: L.geometry.edgeDark ?? '#08090c' }
   return light ? { body: '#7b7e83', edge: '#121318' } : { body: '#6f757e', edge: '#08090c' }
 }
 

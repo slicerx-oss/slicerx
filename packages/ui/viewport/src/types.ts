@@ -3,6 +3,7 @@
 // Public types of @slicerx/viewport. Coordinates in every public call are the
 // slicer frame used by the Plate contract: millimeters, Z up, origin at the
 // bed's front left corner. The renderer converts to three.js Y-up internally.
+import type { ViewportLook } from './look'
 import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
 import type { HeadModel } from './heads'
@@ -519,6 +520,13 @@ export interface Viewport {
   setTransforms(transforms: Record<string, number[]>): void
   setPartStyle(objectId: string, partIndex: number, style: PartStyle): void
   setRenderMode(mode: RenderMode): void
+  /**
+   * How the studio and models are lit and graded: backdrop, plate, lights, materials, edges and occlusion (look.ts).
+   * null goes back to the shipped look. Throws on an invalid look; `lookProblems` lists what is wrong first.
+   */
+  setLook(look: ViewportLook | null): void
+  /** The look the viewport draws with now: the one set with setLook, or BASELINE_LOOK. */
+  look(): ViewportLook
   setDisplayStyle(style: DisplayStyle): void
   /** Overhang heat map threshold in degrees from vertical. Amber starts 15 degrees below it. */
   setOverhangAngle(deg: number): void

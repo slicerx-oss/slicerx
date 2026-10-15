@@ -92,7 +92,7 @@ void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vH = w.y; gl_Position =
 const GROUND_REACH = 1.8
 
 const PLATE_OUTLINE_FS = /* glsl */ `
-uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform float subtle; uniform vec3 grid; uniform vec2 hb; uniform float rnd; uniform vec3 reveal; varying vec2 vP;
+uniform vec3 edge; uniform vec3 edgeAlt; uniform vec3 look; uniform float alert; uniform float ground; uniform float surface; uniform float subtle; uniform vec3 grid; uniform vec2 hb; uniform float rnd; uniform vec3 reveal; varying vec2 vP;
 float lines(vec2 p, float s){ vec2 q = p / s; vec2 w = fwidth(q); vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4)); return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.3, 0.7, max(w.x, w.y))); }
 // the first plate reveal (reveal.ts): x is how far the outline is traced, 0 to 1 from the front middle round each side
 // to the back middle; y is ms since the grid started laying, back to front, a row overshooting as it lands; z is the
@@ -118,7 +118,7 @@ void main(){
   float groundEdge = clamp(1.0 - step(1.0, reveal.x) + reveal.z * 2.0, 0.0, 1.0);
   float px = max(fwidth(d), 1e-3);
   float line = 1.0 - smoothstep(0.0, 1.0, abs(d) / (px * mix(1.4, 0.8, subtle)));
-  float glow = exp(-abs(d) / 2.2) * (d < 0.0 ? 0.18 : 0.1);
+  float glow = exp(-abs(d) / 2.2) * (d < 0.0 ? 0.18 : 0.1) * look.x;
   // Four identical L brackets starting exactly at each corner, both legs inside the outline.
   vec2 c = hb - abs(vP);
   float inset = 1.1, th = 0.8, len = 14.0;
@@ -134,10 +134,10 @@ void main(){
   float fade = mix(1.0 - 0.3 * smoothstep(0.7, 1.0, edgeR), 1.0 - smoothstep(0.55, 1.0, groundR), ground);
   float inside = mix(1.0 - smoothstep(-0.4, 0.0, d), 1.0, ground);
   // 10 mm minor lines and brighter 50 mm major lines. On a plate surface the grid is a fainter guide over the sheet.
-  float gl = (lines(vP + hb, 10.0) * 0.16 + lines(vP + hb, 50.0) * 0.4) * fade * inside * (1.0 - 0.7 * surface) * row;
+  float gl = (lines(vP + hb, 10.0) * 0.16 + lines(vP + hb, 50.0) * 0.4) * fade * inside * (1.0 - 0.7 * surface) * row * look.y;
   // The bare bed gets a faint fill in the grid color, so the printable area stands apart from the background.
-  float fill = inside * 0.07 * (1.0 - surface) * (1.0 - ground) * row;
-  float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground) * row;
+  float fill = inside * 0.07 * (1.0 - surface) * (1.0 - ground) * row * look.z;
+  float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground) * row * look.z;
   // a subtle outline (hosts with a calm theme): a hairline at 0.35 alpha without the glow, the corner marks at 0.2
   float aEdge = clamp(line * mix(1.0, 0.35, subtle) + glow * (1.0 - subtle) + br * mix(0.7, 0.2, subtle), 0.0, 1.0) * mix(1.0, groundEdge, ground) * shown;
   float aG = clamp(gl + fill + inner, 0.0, 1.0);
@@ -228,6 +228,10 @@ export class Stage {
   private disposables: { dispose(): void }[] = []
   private contactDirty = false
   private retired: { dispose(): void }[] = []
+  /** The plate's look knobs (look.ts): x scales the outline glow, y the grid, z the fill. Shared by every rebuild. */
+  private readonly plateLookU = { value: new Vector3(1, 1, 1) }
+  /** The bed outline's color from a look, sRGB hex; null uses the theme's selection color. */
+  private plateBorder: string | null = null
 
   constructor(
     private readonly renderer: WebGLRenderer,
@@ -540,7 +544,7 @@ export class Stage {
     const half = new Vector2(bed.widthMm / 2, bed.depthMm / 2)
     const pad = 24
     const mat = new ShaderMaterial({
-      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, subtle: { value: this.bedOutline === 'subtle' ? 1 : 0 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half }, rnd: { value: bed.round ? 1 : 0 }, reveal: this.revealU },
+      uniforms: { look: this.plateLookU, edge: { value: new Color(this.plateBorder ?? this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, subtle: { value: this.bedOutline === 'subtle' ? 1 : 0 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half }, rnd: { value: bed.round ? 1 : 0 }, reveal: this.revealU },
       transparent: true,
       depthWrite: false,
       vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -638,6 +642,53 @@ export class Stage {
     if (this.retired.length === 0) return
     for (const d of this.retired) d.dispose()
     this.retired = []
+  }
+
+  /** Plate knobs from a look (look.ts): outline color, glow, grid and fill scales, and the contact shadow. */
+  setPlateLook(o: { border: string | null; borderGlow: number; grid: number; fill: number; contactDarkness: number; contactOpacity: number }): void {
+    this.plateLookU.value.set(o.borderGlow, o.grid, o.fill)
+    if (o.border !== this.plateBorder) {
+      this.plateBorder = o.border
+      if (this.outline?.uniforms.edge) (this.outline.uniforms.edge.value as Color).set(o.border ?? this.colors.selection)
+    }
+    const kit = this.bakeKit
+    if (kit?.mat.uniforms.darkness && kit.mat.uniforms.darkness.value !== o.contactDarkness) {
+      kit.mat.uniforms.darkness.value = o.contactDarkness
+      this.contactDirty = true
+    }
+    if (this.contact) (this.contact.plane.material as MeshBasicMaterial).opacity = o.contactOpacity
+  }
+
+  /** Lights from a look (look.ts): intensities in viewport units (times pi here), directions from the bed center. */
+  setLights(o: { key: { intensity: number; direction: [number, number, number]; shadow: boolean }; fill: { intensity: number; direction: [number, number, number]; camera: boolean }; rim: { intensity: number; direction: [number, number, number]; camera: boolean }; environment: number }): void {
+    const set = (l: DirectionalLight, spec: { intensity: number; direction: [number, number, number] }): void => {
+      l.intensity = spec.intensity * Math.PI
+      l.visible = spec.intensity > 0
+      l.position.set(...spec.direction)
+      l.updateMatrixWorld()
+    }
+    set(this.key, o.key)
+    set(this.fill, o.fill)
+    set(this.rim, o.rim)
+    this.viewLights = [o.fill.camera ? { light: this.fill, dir: new Vector3(...o.fill.direction).normalize() } : null, o.rim.camera ? { light: this.rim, dir: new Vector3(...o.rim.direction).normalize() } : null].filter((x): x is { light: DirectionalLight; dir: Vector3 } => x !== null)
+    if (this.key.castShadow !== o.key.shadow) this.key.castShadow = o.key.shadow
+    this.scene.environmentIntensity = o.environment
+    this.renderer.shadowMap.needsUpdate = true
+  }
+
+  /** Fill or rim lights that turn with the view (look.ts); empty for the shipped rig. */
+  private viewLights: { light: DirectionalLight; dir: Vector3 }[] = []
+  private readonly viewDir = new Vector3()
+
+  /** Turns camera-relative lights with the view. The viewport calls it before each frame; a no-op for the shipped rig. */
+  placeViewLights(camera: PerspectiveCamera): void {
+    if (this.viewLights.length === 0) return
+    camera.updateMatrixWorld()
+    for (const v of this.viewLights) {
+      this.viewDir.copy(v.dir).transformDirection(camera.matrixWorld)
+      v.light.position.copy(v.light.target.position).addScaledVector(this.viewDir, 380)
+      v.light.updateMatrixWorld()
+    }
   }
 
   setContactVisible(on: boolean): void {
