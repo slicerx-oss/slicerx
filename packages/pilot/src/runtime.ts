@@ -38,6 +38,7 @@ import { createShared } from './shared'
 import { citedSources } from './cite'
 import { contextMessage, systemPrompt as basePrompt, type PilotScope } from './prompt'
 import { fitContext, MIMIR_CONTEXT } from './context'
+import { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type WebLookup } from './tool'
@@ -71,6 +72,8 @@ export interface CreatePilotOptions {
   builtins?: boolean
   /** 'cad' for a host that only models (the browser build): the part, knowledge and app tools, no printers or plugins, and a prompt to match. */
   scope?: PilotScope
+  /** Where this mimir runs, which decides the tools a local model is offered (see surfaces.ts). Defaults to 'dock'. */
+  surface?: ToolSurface
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -255,17 +258,24 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { text, citations }
   }
 
-  /** The base prompt plus a playbook line for every catalog skill whose tools are registered. */
+  /** The base prompt plus a playbook line for every catalog skill whose tools the model is offered. */
   function systemPrompt(): string {
-    const book = playbooks(availableSkills(kb.skills(), (n) => findTool(n) !== undefined))
-    return book ? `${basePrompt(scope)}\n\n${book}` : basePrompt(scope)
+    const has = (n: string): boolean => findTool(n) !== undefined
+    const book = playbooks(availableSkills(kb.skills(), has))
+    const base = basePrompt(scope, has)
+    return book ? `${base}\n\n${book}` : base
   }
 
+  // A local model gets only its surface's tools; a cloud model gets them all.
+  const surface: ToolSurface = opts.surface ?? 'dock'
+  const local = isLocalModel(opts.config)
+  /** The tools the model is offered. */
   function allTools(): AnyTool[] {
-    return [...tools.values(), ...(pluginTools ?? [])]
+    return surfaceTools(surface, local, [...tools.values(), ...(pluginTools ?? [])])
   }
+  /** An offered tool by name; a tool the model is not offered is unknown to it. */
   function findTool(name: string): AnyTool | undefined {
-    return tools.get(name) ?? pluginTools?.find((t) => t.name === name)
+    return allTools().find((t) => t.name === name)
   }
 
   async function log(sessionId: string, ev: PilotEvent): Promise<void> {
@@ -509,7 +519,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const specs = visible.map((t) => toolSpec(t))
       const toolDefs = specs.map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
       // A local model has a small context and its runner cuts an overlong prompt from the start.
-      const sent = opts.config.provider === 'openai-compatible' ? fitContext(messages, toolDefs, MIMIR_CONTEXT).messages : messages
+      const sent = local ? fitContext(messages, toolDefs, MIMIR_CONTEXT).messages : messages
       let text = ''
       const toolCalls: LlmToolCall[] = []
       let raw: unknown[] | undefined
@@ -664,11 +674,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   }
 
   const pilot = {
+    /** The tools the model is offered, as the read-backs list them. */
     tools(): ToolSpec[] {
       return allTools().map((t) => toolSpec(t))
     },
+    /** Every registered tool, offered to the model or not. */
     registry(): AnyTool[] {
-      return allTools()
+      return [...tools.values(), ...(pluginTools ?? [])]
     },
     knowledge(): KnowledgeBase {
       return kb
