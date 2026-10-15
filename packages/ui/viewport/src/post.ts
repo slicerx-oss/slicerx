@@ -4,7 +4,7 @@
 // ambient occlusion at half resolution (no second geometry pass, which matters
 // with millions of toolpath instances), a selection outline from a mask,
 // then one grade pass (Khronos PBR Neutral tone mapping, background, vignette,
-// dither, sRGB) and FXAA to the canvas.
+// dither, sRGB) to the canvas, through FXAA where MSAA did not smooth the frame.
 import {
   Color,
   CustomBlending,
@@ -280,6 +280,11 @@ export class Pipeline {
   private height = 1
   private pixelRatio = 1
   private scale = 1
+  /**
+   * Run FXAA on frames MSAA already smoothed too. Off: on top of MSAA it only softens the picture (layer lines, the grid,
+   * edges). The CAD look's silhouette is drawn in the grade pass, after MSAA, so frames with it keep FXAA.
+   */
+  fxaaAfterMsaa = false
   aoRadius = 6
   aoStrength = 0.9
   exposure = 1
@@ -509,11 +514,11 @@ export class Pipeline {
     if (outline) this.renderMask(opts.outline, camera)
     if (g.outlineOn) g.outlineOn.value = outline ? 1 : 0
 
-    if (this.fxaa) {
-      const ldr = opts.fast ? this.ldrFast : this.ldr
-      const gu = g.texel?.value as Vector2
-      gu.set(1 / ldr.width, 1 / ldr.height)
-      if (g.edgePx) g.edgePx.value = 2 * this.pixelRatio * (ldr.width / this.width)
+    // the grade samples at the size this frame was drawn
+    const ldr = opts.fast ? this.ldrFast : this.ldr
+    ;(g.texel?.value as Vector2).set(1 / ldr.width, 1 / ldr.height)
+    if (g.edgePx) g.edgePx.value = 2 * this.pixelRatio * (ldr.width / this.width)
+    if (this.fxaa && (opts.fast || this.fxaaAfterMsaa || opts.silhouette === true || this.main.samples === 0)) {
       ;(this.fxaaMat.uniforms.resolution?.value as Vector2).set(1 / ldr.width, 1 / ldr.height)
       if (this.fxaaMat.uniforms.tDiffuse) this.fxaaMat.uniforms.tDiffuse.value = ldr.texture
       this.pass(this.gradeMat, ldr)

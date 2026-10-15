@@ -10,7 +10,7 @@ import { crossfadeFrom } from './crossfade'
 import { SceneHold, type Held } from './scene-hold'
 import { LoadingWisp, lightStudio } from './wisp'
 import { gpuProfile } from './gpu'
-import { DegradeGuard } from './frame-budget'
+import { DegradeGuard, MotionTuner } from './frame-budget'
 import { FrameFence } from './gpudone'
 import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
@@ -194,10 +194,6 @@ const handleReach = (e: { pointerType?: string }): number => (e.pointerType === 
 /** A touch held still this long, ms, within this many pixels, opens the menu a right click would. */
 const LONG_PRESS_MS = 500
 const LONG_PRESS_SLOP_PX = 8
-/** Side length of moving frames, as a share of the still frame, that a high density screen starts with (0.7 is half the pixels). */
-const MOTION_START_HIDPI = 0.7
-/** Moving frames shrink no further than this side length. */
-const MOTION_FLOOR = 0.3
 
 /** A ring drag in progress (rotate tool and cut tilt): the turn so far follows the cursor around `center` on the ring's plane, or along its screen tangent when the ring was grabbed edge on. */
 interface RingDrag {
@@ -305,11 +301,8 @@ class ViewportImpl implements Viewport {
   /** Frames left in the fade-in of full-quality effects after the camera stops. */
   private settle = 0
   private scrubbed = false
-  private motionSeeded = false
-  private slowFrames = 0
-  private fastFrames = 0
-  private raiseAfter = 45
-  private raisedAt = 0
+  /** What moving frames can afford, from their GPU time (frame-budget.ts). */
+  private motion!: MotionTuner
   /** Turns AO off and the pixel ratio down when even small moving frames are slow, and back on when they are fast again. */
   private readonly guard = new DegradeGuard()
   private fence!: FrameFence
@@ -435,6 +428,7 @@ class ViewportImpl implements Viewport {
       // Listeners attach after construction, so tell them on the next turn.
       setTimeout(() => this.emit('degrade', note), 0)
     }
+    this.motion = new MotionTuner({ weak: this.weak })
     this.fence = new FrameFence(renderer.getContext() as WebGL2RenderingContext)
     this.quality = opts.quality ?? (this.weak ? 'low' : 'high')
     this.adaptive = opts.adaptive ?? true
@@ -682,7 +676,7 @@ class ViewportImpl implements Viewport {
       return
     }
     // A camera on its way to a view (a preset, a fit, the reframe after a plate swap) is a short transition, drawn at
-    // full quality like a still frame; only motion a person drives draws cheaper frames.
+    // full quality like a still frame; only motion a person drives follows the motion budget.
     let transition = this.rig.step(now)
     let moving = transition || this.cameraMoved
     this.cameraMoved = false
@@ -711,21 +705,24 @@ class ViewportImpl implements Viewport {
     } else if (this.settle > 0) this.dirty = true
     if (this.dirty) {
       this.dirty = false
-      // Moving frames skip AO and MSAA; once the camera stops, full quality returns and AO fades in. Transitions are drawn
-      // at full quality throughout.
-      const low = moving && !transition
+      // Moving frames are drawn like still frames while the GPU has room for it (frame-budget.ts). A GPU that has not
+      // drops MSAA and AO from them, then draws them smaller; once the camera stops, full quality returns and AO fades
+      // in. Transitions are drawn at full quality throughout.
+      const level = this.motion.level
+      const low = moving && !transition && !level.full
       if (low) {
         // Fade AO out over a few frames instead of cutting it, so starting to orbit does not pop the plate and shadows.
         this.aoLevel = Math.max(0, this.aoLevel - 0.34)
       } else this.aoLevel = Math.min(1, this.aoLevel + 1 / SETTLE_FRAMES)
       const aoMix = this.aoLevel
       if (!moving && this.settle > 0) this.settle--
+      if (low) this.pipeline.motionScale = level.scale
       const programs = this.compileClock.programs
       const t0 = performance.now()
       this.renderFrame(aoMix, low)
       // Only frames a person moves are timed: reveal frames and transitions are animations over a view, and a frame that
       // compiled shaders says nothing about the next one.
-      if (low && !revealing && !this.gpuTiming && programs === this.compileClock.programs) this.timeFrame(t0)
+      if (moving && !transition && !revealing && !this.gpuTiming && programs === this.compileClock.programs) this.timeFrame(t0, low ? level.scale : 1)
       if (this.lastRenderT && !revealing) this.frameMs.push(now - this.lastRenderT)
       this.lastRenderT = now
       if (camMoving) this.emit('camera', { preset: this.rig.preset })
@@ -785,46 +782,19 @@ class ViewportImpl implements Viewport {
    * tunes quality with it. The time between animation frames is not used: it also counts the page's own work (opening a
    * project, building meshes), which says nothing about the GPU.
    */
-  private timeFrame(t0: number): void {
-    const scale = this.pipeline.motionScale
+  private timeFrame(t0: number, scale: number): void {
     const pr = this.pr
     this.fence.time(t0, (ms) => {
       if (this.disposed) return
-      this.tuneMotionScale(ms)
+      if (this.motion.sample(ms)) this.invalidate()
       if (!this.adaptive) return
       const full = Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, this.maxPr)
       // pixels the full pixel ratio draws over the pixels this frame drew
       const areaRatio = (full / pr) ** 2 / (scale * scale)
-      const step = this.guard.sample(ms, this.pipeline.motionScale <= MOTION_FLOOR, areaRatio)
+      const step = this.guard.sample(ms, this.motion.atFloor, areaRatio)
       if (step === 'degrade') this.degrade()
       else if (step === 'recover') this.recover()
     })
-  }
-
-  /**
-   * Resolution of moving frames follows their GPU time: a GPU that cannot hold 60 fps at the full pixel count
-   * draws orbit frames smaller (the last pass upsamples them) and sharpens again once frames are cheap.
-   */
-  private tuneMotionScale(dt: number): void {
-    const p = this.pipeline
-    if (dt > 22) {
-      this.fastFrames = 0
-      if (++this.slowFrames >= (dt > 45 ? 2 : 4)) {
-        this.slowFrames = 0
-        if (p.motionScale > MOTION_FLOOR) {
-          // Area scales the cost, so the side length scales with the square root of the time to win back.
-          p.motionScale = Math.min(p.motionScale - 0.05, p.motionScale * Math.sqrt(17 / dt))
-          if (this.raisedAt && this.frames - this.raisedAt < 240) this.raiseAfter = Math.min(this.raiseAfter * 2, 960)
-        }
-      }
-    } else if (dt < 19 && p.motionScale < 1) {
-      this.slowFrames = 0
-      if (++this.fastFrames >= this.raiseAfter) {
-        this.fastFrames = 0
-        p.motionScale = p.motionScale + 0.1
-        this.raisedAt = this.frames
-      }
-    } else this.slowFrames = Math.max(0, this.slowFrames - 1)
   }
 
   private degrade(): void {
@@ -1013,12 +983,6 @@ class ViewportImpl implements Viewport {
     this.pipeline.setSize(w, h, this.pr)
     setEdgeResolution(w * this.pr, h * this.pr)
     setSketchResolution(w * this.pr, h * this.pr)
-    // On a high density screen the first orbit starts at about half the pixels, so it is smooth from its first frame.
-    // tuneMotionScale raises it while frames stay cheap; still frames are always drawn at the full size with MSAA.
-    if (!this.motionSeeded) {
-      this.motionSeeded = true
-      if (this.pr >= 1.5) this.pipeline.motionScale = MOTION_START_HIDPI
-    }
     this.camera.aspect = w / h
     this.applyInset()
     shared.gmin.value = this.pr >= 1.5 ? 6.5 : 4
@@ -4124,7 +4088,8 @@ class ViewportImpl implements Viewport {
       triangles: info.render.triangles,
       segments: this.toolpaths.segmentCount,
       aoOn: this.aoOn,
-      motionScale: this.pipeline.motionScale,
+      motionScale: this.motion.level.scale,
+      motionFull: this.motion.full,
       cameraMoving: this.rig.move !== null,
       refiningParts: this.refining,
     }
