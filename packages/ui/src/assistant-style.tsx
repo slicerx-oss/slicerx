@@ -11,7 +11,7 @@ export function AssistantStyle() {
   const accent = typeof brand.accent === 'string' ? brand.accent : brand.accent?.[theme.scheme]
   if (!accent || !/^#[0-9a-fA-F]{6}$/.test(accent)) return null
   const rgb = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16) / 255).map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
-  const ink = 0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]! > 0.179 ? '#000000' : '#ffffff'
+  const ink = 0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]! > 0.179 ? 'var(--assistant-ink-dark)' : 'var(--assistant-ink-light)'
   return <style>{`
     .sx-pilot, .fr-mimir, .ms, .pc, .set-sec[aria-labelledby="pilot-h"],
     [data-testid="tab-mimir"], [data-testid="settings-nav-pilot"], .mimir-btn {

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { viteDefines } from '../src/build.ts'
 import { defineEditionConfig } from '../src/define.ts'
 import { editionLogoAssets, inlineLogo, INLINE_LOGO_BYTES } from '../src/node.ts'
 
@@ -16,6 +17,14 @@ describe('edition assistant identity', () => {
     const assistant = { name: 'YourMate', icon: 'brand/assistant.svg', accent: { light: '#006b65', dark: '#63e6d4' } }
     expect(defineEditionConfig({ brand: { assistant } }).brand.assistant).toEqual(assistant)
     expect(defineEditionConfig({ brand: { assistant: { name: 'yourmate' } } }).brand.assistant.name).toBe('yourmate')
+  })
+
+  it('defines the assistant identity without copying the full edition into its runtime', () => {
+    const config = defineEditionConfig({ brand: { name: 'Other Product', assistant: { name: 'YourMate', icon: 'helper.svg' } } })
+    const value = viteDefines(config)['__SX_ASSISTANT_BRAND__']!
+    expect(JSON.parse(value)).toEqual(config.brand.assistant)
+    expect(value).not.toContain('Other Product')
+    expect(JSON.parse(viteDefines(defineEditionConfig({}))['__SX_ASSISTANT_BRAND__']!)).toEqual({ name: 'mimir', icon: 'builtin:mimir' })
   })
 
   it('applies the lowercase rule only to mimir', () => {

@@ -2,13 +2,14 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-187 tools.
+188 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
 | `slicerx_action_log` | Action log | core | read, ungated | The most recent tool calls and approval decisions this server recorded: tool, permission class, decision, who decided, and the result summary. |
 | `slicerx_add_to_fleet` | Add a printer to a fleet | fleets | read, ungated | Add a printer to a fleet. |
 | `slicerx_ams_mapping` |  |  | read | Map the filaments a job needs (material and color per part) onto the slots loaded on one printer. |
+| `slicerx_app_assistant` |  |  | read | Read the assistant identity of the edition open in SlicerX: its display name, icon image or builtin:mimir, optional accent (one color or light/dark colors), and whether the edition enables the assistant. |
 | `slicerx_app_history` |  |  | read | Read the open project's Undo and Redo counts, history revision and current project state: plates, objects and transforms, bounds, design step summaries, object settings, filaments, flush settings and timeline. |
 | `slicerx_app_look` |  |  | read | Read two view preferences of SlicerX (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). |
 | `slicerx_app_look_set` |  |  | read | Set SlicerX's Frame the view (modelFraming: selection or open) or Toolbar size (toolbarSize: large, medium or small), or both, the way the person does in Settings, Look and feel. |

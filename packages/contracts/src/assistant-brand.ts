@@ -8,7 +8,7 @@ export interface AssistantBrand {
 }
 
 export const DEFAULT_ASSISTANT_BRAND: Readonly<AssistantBrand> = Object.freeze({ name: 'mimir', icon: 'builtin:mimir' })
-declare const __SX_EDITION__: { brand?: { assistant?: Partial<AssistantBrand> } } | undefined
+declare const __SX_ASSISTANT_BRAND__: Partial<AssistantBrand> | undefined
 
 function normalize(value?: Partial<AssistantBrand>): Readonly<AssistantBrand> {
   const name = value?.name?.trim() || DEFAULT_ASSISTANT_BRAND.name
@@ -21,7 +21,7 @@ function normalize(value?: Partial<AssistantBrand>): Readonly<AssistantBrand> {
 
 const KEY = Symbol.for('@slicerx/contracts/assistant-brand')
 const state = ((globalThis as Record<symbol, unknown>)[KEY] ??= {
-  value: normalize(typeof __SX_EDITION__ === 'undefined' ? undefined : __SX_EDITION__.brand?.assistant),
+  value: normalize(typeof __SX_ASSISTANT_BRAND__ === 'undefined' ? undefined : __SX_ASSISTANT_BRAND__),
   listeners: new Set<() => void>(),
 }) as { value: Readonly<AssistantBrand>; listeners: Set<() => void> }
 

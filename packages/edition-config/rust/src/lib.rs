@@ -693,7 +693,7 @@ mod tests {
             v["brand"]["assistant"] = serde_json::json!({
                 "name": "YourMate", "icon": "helper.svg",
                 "accent": { "light": "#006b65", "dark": "#63e6d4" }
-            })
+            });
         });
         let brand = EditionConfig::from_json(&custom).unwrap().brand.assistant;
         assert_eq!(brand.name, "YourMate");

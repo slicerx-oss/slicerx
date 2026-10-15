@@ -5,9 +5,8 @@ import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { AppTooltips } from './lib/tip-host'
 import { startAutoSlice } from './state/auto-slice'
-import { QueueWatcher } from './queue/watcher'
 import { ProfileFollow } from './shell/profile-follow'
-import { AssistantStyle, Frame, keepPressedControlsInPlace, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
+import { Frame, keepPressedControlsInPlace, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
 import { applyType, DEFAULT_THEMES, themeForScheme, themeFromFile } from '@slicerx/ui/theme'
 import '@slicerx/ui/styles.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -25,7 +24,7 @@ import { LazySlot, WorkspaceBoundary } from './shell/boundary'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { CommandBar } from './shell/command-bar'
 import { bridgeConnector } from './link/connector'
-import { ApprovalDialog, Status, ToastBridge } from './shell/overlays'
+import { Status, ToastBridge } from './shell/overlays'
 import { TopBar } from './shell/top-bar'
 import { PhoneTabs } from './shell/phone-tabs'
 import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice } from './first-run/look'
@@ -48,6 +47,8 @@ import './styles/fonts'
 import { Loading } from './shell/loading'
 import './styles/app.css'
 
+const DeferredEffects = lazy(() => import('./shell/deferred-effects').then((m) => ({ default: m.DeferredEffects })))
+const ApprovalDialog = lazy(() => import('./shell/approval-dialog').then((m) => ({ default: m.ApprovalDialog })))
 const CalibrationDialog = lazy(() => import('./calibration/dialog').then((m) => ({ default: m.CalibrationDialog })))
 const UnsavedDialog = lazy(() => import('./project/unsaved-dialog').then((m) => ({ default: m.UnsavedDialog })))
 const MultiBodyDialog = lazy(() => import('./plate/multi-body-dialog').then((m) => ({ default: m.MultiBodyDialog })))
@@ -148,7 +149,7 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
       <FeaturesContext value={featureSet}>
         <QueryClientProvider client={client}>
           <ThemeProvider theme={active} logo={brandLogo}>
-            <AssistantStyle />
+            <LazySlot><DeferredEffects /></LazySlot>
             <ToastProvider>
               <Shell />
               <ToastBridge />
@@ -163,6 +164,7 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
 
 function Shell() {
   const host = useHost()
+  const approval = useApp((s) => s.approval)
   const assistant = useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
   // Anything that asks for Slice (a key, a link, a saved pref) lands back in Model when the host cannot slice.
   useEffect(() => (hostSlices() ? undefined : stayInModel()), [])
@@ -324,7 +326,7 @@ function Shell() {
           <PrintSheet />
         </LazySlot>
       ) : null}
-      <ApprovalDialog />
+      {approval && <LazySlot><ApprovalDialog /></LazySlot>}
       {bridgeOn ? (
         <LazySlot>
           <AppLinkPrompt />
@@ -336,7 +338,6 @@ function Shell() {
         </LazySlot>
       ) : null}
       <AppTooltips />
-      <QueueWatcher />
       <ProfileFollow />
       <LazySlot>
         <FitWatch />
