@@ -73,6 +73,8 @@ const DESIGN_TOOL: PaneSection[] = [{ id: 'transform', icon: 'move', label: 'Tra
 
 // Design's panes load the first time Design opens, so Slice users never download them.
 // The picture a project shows while it opens; its code loads with the view, not with the app.
+// Push and pull's arrow and Distance box in the view; the tool itself runs there too, so it works with the pane shut.
+const PushInView = lazy(() => import('../cad/push-in-view').then((m) => ({ default: m.PushInView })))
 const OpeningPicture = lazy(() => import('../project/opening-preview').then((m) => ({ default: m.OpeningPicture })))
 const DesignLeft = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignLeft })))
 const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignRight })))
@@ -158,6 +160,8 @@ export function Studio() {
   // Cut, Paint, Brim ears and the modeling tools open in the Objects card: with the objects in the right pane, opening a
   // tool opens the pane, which starts shut.
   const objectTool = useApp((s) => s.objectTool)
+  // A history step opened for editing starts the tool fresh, as the panel does (design-panes.tsx).
+  const editKey = useApp((s) => (s.historyEdit ? `:${s.historyEdit.objectId}:${s.historyEdit.index}` : ''))
   const toolOpen = !cad && (plateTool === 'paint' || plateTool === 'brim' || objectTool === 'cut' || isCadTool(objectTool))
   useEffect(() => {
     if (toolOpen && objectsRight && !railOpen(get().rails, 'preview', other, true)) setRail('preview', other, true)
@@ -253,6 +257,11 @@ export function Studio() {
 
       <section className="vp" aria-label="Plate" ref={vpRef}>
         <ViewportHost layers={layers} />
+        {objectTool === 'push' ? (
+          <Suspense fallback={null}>
+            <PushInView key={editKey} />
+          </Suspense>
+        ) : null}
         <Suspense fallback={null}>
           <OpeningPicture />
         </Suspense>
