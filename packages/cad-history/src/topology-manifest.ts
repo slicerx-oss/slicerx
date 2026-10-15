@@ -80,15 +80,15 @@ export interface TopologyManifest {
   coordinates: 'body_local'
   transform: number[]
   metadataComplete: boolean
-  capabilities: { inspectFaces: true; revisionGuard: true; meshFallback: boolean }
+  capabilities: { inspectFaces: true; revisionGuard: true; meshFallback: boolean; scopedEdits: boolean }
   faces: TopologyFace[]
 }
 
-export function topologyManifest(bodyId: string, revision: string, parts: readonly HistoryMesh[], transform: readonly number[], exact: boolean): TopologyManifest {
+export function topologyManifest(bodyId: string, revision: string, parts: readonly HistoryMesh[], transform: readonly number[], exact: boolean, scopedEdits = false): TopologyManifest {
   if (!bodyId || !revision) throw new Error('A topology manifest requires a live body identity and revision')
   if (transform.length !== 16 || transform.some(n => !Number.isFinite(n))) throw new Error('The body placement is invalid')
   return { version: 1, bodyId, revision, representation: exact ? 'exact' : 'mesh', coordinates: 'body_local', transform: [...transform],
-    ...topologyFaces(parts, exact), capabilities: { inspectFaces: true, revisionGuard: true, meshFallback: !exact } }
+    ...topologyFaces(parts, exact), capabilities: { inspectFaces: true, revisionGuard: true, meshFallback: !exact, scopedEdits } }
 }
 
 export class TopologyReferenceError extends Error {
