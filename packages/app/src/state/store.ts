@@ -830,7 +830,7 @@ export const appStore = createStore<AppState>()(() => ({
   historyEdit: null,
   timeline: { bodies: [], items: [], marker: 0 },
   rollback: null,
-  pickFilter: ['object'],
+  pickFilter: ['face'],
   subPicks: [],
   parked: null,
   settingFocus: null,
