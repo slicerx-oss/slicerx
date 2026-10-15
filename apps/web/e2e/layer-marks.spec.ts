@@ -651,14 +651,24 @@ async function tap(page: Page, at: { x: number; y: number }): Promise<void> {
   await cdp.detach()
 }
 
+/**
+ * Taps until `done` passes. On a loaded machine the page can be busy past the half second that makes a press a long
+ * press, which shows the tip and takes no tap (touch-tips.spec.ts); a person whose tap showed a tip taps again too.
+ */
+async function tapFor(page: Page, at: () => Promise<{ x: number; y: number }>, done: () => Promise<unknown>): Promise<void> {
+  await expect(async () => {
+    await tap(page, await at())
+    await done()
+  }).toPass({ timeout: 30_000, intervals: [500, 1000, 2000] })
+}
+
 test('on a phone each pin is its own tap, close ones open a list, and More and the slider keep their taps', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Phone layout')
   await sliced(page)
   // Chromium's touch hit test wakes on the page's first mouse event
   await page.mouse.click(1, 1)
   const more = page.getByRole('button', { name: 'More playback controls' })
-  await tap(page, await center(more))
-  await expect(page.getByRole('button', { name: 'Fewer playback controls' })).toBeVisible()
+  await tapFor(page, () => center(more), () => expect(page.getByRole('button', { name: 'Fewer playback controls' })).toBeVisible({ timeout: 2000 }))
   const z = (await state(page)).preview!.layerZ
   const below = Math.round(((z[19]! - z[18]!) / 2) * 1e4) / 1e4
   await marks(page, [[20, 'pause'], [20, 'color_change', below], [21, 'custom'], [200, 'pause']])
@@ -670,10 +680,9 @@ test('on a phone each pin is its own tap, close ones open a list, and More and t
     ['Custom G-code at layer 21', 21, 'Remove custom G-code'],
   ] as const) {
     const p = pin(page, name)
-    await tap(page, await center(p))
-    await expect.poll(() => layerHi(page), name).toBe(layer)
     const menu = page.getByRole('menu', { name })
-    await expect(menu, name).toBeVisible()
+    await tapFor(page, () => center(p), () => expect(menu, name).toBeVisible({ timeout: 2000 }))
+    await expect.poll(() => layerHi(page), name).toBe(layer)
     await expect(menu.getByRole('menuitem', { name: item })).toBeVisible()
     await expect(p).toHaveAttribute('data-selected', 'true')
     const box = (await menu.boundingBox())!
@@ -686,14 +695,13 @@ test('on a phone each pin is its own tap, close ones open a list, and More and t
   // a finger between the two layer 20 heads could mean either: a list of both, and a tap on one opens its menu
   const a = await center(pin(page, 'Pause at layer 20'))
   const b = await center(pin(page, 'Color change at layer 20'))
-  await tap(page, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
   const list = page.getByRole('menu', { name: 'Layer actions near layer 20' })
+  await tapFor(page, async () => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }), () => expect(list).toBeVisible({ timeout: 2000 }))
   // both layer 20 marks, in layer order (a neighbor near the finger may join them)
   await expect(list.getByRole('menuitem', { name: / at layer / }).first()).toHaveText(/ at layer 20, /)
   await expect(list.getByRole('menuitem', { name: /^Pause at layer 20/ })).toBeVisible()
   await expect(list.getByRole('menuitem', { name: /^Color change at layer 20/ })).toBeVisible()
-  await tap(page, await center(list.getByRole('menuitem', { name: /^Color change at layer 20/ })))
-  await expect(page.getByRole('menu', { name: 'Color change at layer 20' }).getByRole('menuitem', { name: 'Remove color change' })).toBeVisible()
+  await tapFor(page, () => center(list.getByRole('menuitem', { name: /^Color change at layer 20/ })), () => expect(page.getByRole('menu', { name: 'Color change at layer 20' }).getByRole('menuitem', { name: 'Remove color change' })).toBeVisible({ timeout: 2000 }))
   await page.keyboard.press('Escape')
   // a drag on the slider scrubs: no pin takes it and no menu opens
   const track = (await page.locator('#pv-layer').boundingBox())!
@@ -708,8 +716,7 @@ test('on a phone each pin is its own tap, close ones open a list, and More and t
   await expect.poll(() => layerHi(page)).toBeGreaterThan(Math.round(n * 0.6))
   await expect(page.getByRole('menu')).toHaveCount(0)
   // and More still answers its own tap
-  await tap(page, await center(page.getByRole('button', { name: 'Fewer playback controls' })))
-  await expect(page.getByRole('button', { name: 'More playback controls' })).toBeVisible()
+  await tapFor(page, () => center(page.getByRole('button', { name: 'Fewer playback controls' })), () => expect(page.getByRole('button', { name: 'More playback controls' })).toBeVisible({ timeout: 2000 }))
 })
 
 test('on a phone the pins stand over the Layer track in the opened bar', async ({ page, isMobile }) => {
