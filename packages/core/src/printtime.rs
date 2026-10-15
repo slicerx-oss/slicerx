@@ -1715,6 +1715,52 @@ mod tests {
     }
 
     #[test]
+    fn full_circles_keep_the_commanded_direction_and_endpoint() {
+        for flavor in [GcodeFlavor::Marlin, GcodeFlavor::Marlin2] {
+            let mut c = marlin();
+            c.gcode_flavor = flavor;
+            for (command, direction) in [("G2", -1.0), ("G3", 1.0)] {
+                for (suffix, z, e) in [("", 0.0, 0.0), (" Z1 E2", 1.0, 2.0)] {
+                    let mut r = Reader::new(&c, None);
+                    r.line("M83");
+                    r.line(&format!("{command} I0 J10{suffix} F1200"));
+                    // at the bottom of the circle, clockwise exits toward negative x.
+                    assert!(
+                        r.m.prev.dir[0] * direction > 0.98,
+                        "{command}: {:?}",
+                        r.m.prev.dir
+                    );
+                    assert_eq!(r.end, [0.0, 0.0, z, e]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reflected_full_circle_paths_take_the_same_time() {
+        for flavor in [GcodeFlavor::Marlin, GcodeFlavor::Marlin2] {
+            let mut c = marlin();
+            c.gcode_flavor = flavor;
+            let prefix = "G90\nM204 S1000\nM205 X9 Y9 Z3 E2.5\n";
+            let clockwise = "G1 X20 Y0 F6000\nG2 X20 Y0 I0 J10 F6000\nG1 X0 Y0 F1500\n";
+            let reflected = "G1 X20 Y0 F6000\nG3 X20 Y0 I0 J-10 F6000\nG1 X0 Y0 F1500\n";
+            let a = estimate(
+                format!("{prefix}{}G4 S0\n", clockwise.repeat(20)).as_bytes(),
+                &c,
+                false,
+            )
+            .total;
+            let b = estimate(
+                format!("{prefix}{}G4 S0\n", reflected.repeat(20)).as_bytes(),
+                &c,
+                false,
+            )
+            .total;
+            assert!((a - b).abs() < 1e-6, "{a} vs {b}");
+        }
+    }
+
+    #[test]
     fn arcs_take_about_their_length() {
         // A half circle of radius 10 at 20 mm/s: about pi * 10 / 20 s.
         let e = estimate(b"G1 X0 Y0 F1200\nG2 X20 Y0 I10 J0\n", &marlin(), false);
