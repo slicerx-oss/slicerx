@@ -77,7 +77,8 @@ export function historyOf(e: Pick<PlateEntry, 'parts' | 'history'>): History {
  * The history after a tool ran `params` on part `part` (-1 for every part) of `before`, the entry
  * as it was. `transform` is the object's transform the params were given in (world values).
  */
-export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform): History {
+export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform, exactReplay = false): History {
+  if (before.history?.exact && !exactReplay) throw new Error('This operation requires exact replay. The design is unchanged.')
   return appendStep(historyOf(before), { id: takeId(), part, transform: [...transform], params, ...takeBind(params), ...takeSketch(params) })
 }
 
@@ -89,6 +90,7 @@ export function bodyHistory(params: StepParams, transform: number[]): History {
 /** After an edit that is not a step: no history, or a fresh one starting from `parts` with the reason shown. */
 export function endHistory(before: Pick<PlateEntry, 'history'>, parts: MeshPart[], why: string): History | undefined {
   if (!before.history) return undefined
+  if (before.history.exact) throw new Error('This operation would remove the required exact history. The design is unchanged.')
   return { version: HISTORY_VERSION, base: parts, steps: [], ended: `History ends here: ${why}` }
 }
 

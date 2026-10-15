@@ -73,7 +73,7 @@ export function historyFiles(objects: readonly { id: string; history?: History; 
     const store = storer(files, id)
     const base = h.base.length ? store(h.base) : null
     const steps = h.steps.map((s) => (s.params.op === 'parts.add' ? { ...s, params: { ...s.params, parts: store(s.params.parts) } } : s))
-    out.push({ object: String(id), base, ...(h.ended ? { ended: h.ended } : {}), steps })
+    out.push({ object: String(id), base, ...(h.exact ? { exact: true } : {}), ...(h.ended ? { ended: h.ended } : {}), steps })
   }
   if (!out.length) return []
   return [{ name: 'Metadata/slicerx_history.json', data: JSON.stringify({ version: HISTORY_FILE_VERSION, objects: out }) }, ...files]
@@ -92,7 +92,7 @@ export function timelineFiles(d: Timeline, fileIds: ReadonlyMap<string, number>)
     if (id === undefined) continue
     const store = storer(files, id)
     stores.set(b.id, store)
-    bodies.push({ object: String(id), base: b.base.length ? store(b.base) : null, ...(b.ended ? { ended: b.ended } : {}) })
+    bodies.push({ object: String(id), base: b.base.length ? store(b.base) : null, ...(b.exact ? { exact: true } : {}), ...(b.ended ? { ended: b.ended } : {}) })
   }
   if (!bodies.length) return []
   const items: unknown[] = []

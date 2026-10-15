@@ -10,6 +10,7 @@ import { geom } from '../geom/client'
 import { identity } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
+import { exactSolids } from './history/exact-flag'
 import { finishSketch, sketchById } from './sketches'
 import { settle } from './sketch-dimension'
 import { fromLoops, toLoops } from './sketch-model'
@@ -61,9 +62,16 @@ export function appDesignHost(loader: Loader): DesignHost {
       return [...get().plate.filter((e) => e.history).map(fromEntry), ...[...empty.keys()].map((id) => host.get(id))]
     },
 
-    async create(name, base, history, transform = identity()) {
+    async create(name, base, history, transform = identity(), options) {
+      const exact = history?.exact || options?.exact
+      if (exact) {
+        if (!exactSolids()) throw new Error('Exact designs require the developer exact-solids option.')
+        if ((history?.base ?? base).length) throw new Error('Exact designs start from native features. Imported meshes cannot be converted by this option.')
+        await geom().call('brep.count', {})
+      }
       const id = newId()
-      const h = history ?? { version: HISTORY_VERSION, base, steps: [] }
+      const source = history ?? { version: HISTORY_VERSION, base, steps: [] }
+      const h: History = exact ? { ...source, exact: true } : source
       if (!base.length && !h.steps.length) {
         empty.set(id, { name, history: h, transform })
         return host.get(id)
@@ -90,9 +98,13 @@ export function appDesignHost(loader: Loader): DesignHost {
     },
 
     async replay(d) {
-      redo.set(d.id, d.redo)
       if (empty.has(d.id)) {
-        empty.set(d.id, { name: d.name, history: d.history, transform: d.transform })
+        if (d.history.steps.length) {
+          await place(d.id, d.name, d.history, d.transform)
+          empty.delete(d.id)
+        } else empty.set(d.id, { name: d.name, history: d.history, transform: d.transform })
+        redo.set(d.id, d.redo)
+        Object.assign(d, host.get(d.id))
         return
       }
       if (d.history.steps.length) await applyHistory(loader, d.id, d.history)
@@ -109,6 +121,7 @@ export function appDesignHost(loader: Loader): DesignHost {
         }
         markStale()
       }
+      redo.set(d.id, d.redo)
       Object.assign(d, host.get(d.id))
     },
 

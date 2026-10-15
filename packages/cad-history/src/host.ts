@@ -27,7 +27,7 @@ export interface DesignHost {
   get(id: string): Design
   list(): Design[]
   /** A new design: empty (its first step makes the body) or from parts, with a history to replay when given. */
-  create(name: string, base: HistoryMesh[], history?: History, transform?: Mat4): Promise<Design>
+  create(name: string, base: HistoryMesh[], history?: History, transform?: Mat4, options?: { exact?: boolean }): Promise<Design>
   /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through; else throws its reason. */
   add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string }): Promise<Step>
   /** Replays the design as `d.history` says, after a tool edited, removed or put back steps. */
