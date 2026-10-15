@@ -71,6 +71,12 @@ Pairing with the hub's code, including through `--link-state-dir`, does not regi
 
 An `unauthorized` app-link response means this setup is missing or the connection was revoked. Reconnect the client instead of waiting for a prompt from a code-only connection. The CLI and MCP keep the `not_configured` error code and `details.appLink: unauthorized` for these refusals.
 
+### Slice preview markers
+
+`slicerx_app_preview_markers` reads the preview legend's retractions, seams, lifts (Z hops), wipes, toolChanges and pauses. Each row returns the `shown` preference, whether the loaded slice supports it (`available`), its data source, and its count when known. An absent count is unknown, not zero. G-code marker counts arrive asynchronously after a G-code marker is enabled.
+
+`slicerx_app_preview_markers_set` accepts one or more boolean switches, for example `{"seams":true,"wipes":true}`. It uses the same switches as the legend and returns read-back; poll the read command for later counts. The app must have a loaded slice on Slice with no paint, brim or face tool active. All inputs validate before anything changes. These view commands use the existing read grant, leave the project and its Undo history unchanged, and are also available through `sx call --app app_preview_markers_set '{"seams":true}' app_preview_markers`.
+
 ### Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.

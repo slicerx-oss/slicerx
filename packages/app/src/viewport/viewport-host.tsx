@@ -858,7 +858,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
             .then((pos) => {
               if (appStore.getState().preview !== p) return
               vp.setGcodeMarkers?.(pos)
-              markerView.setState({ counts: { wipes: pos.wipes.length / 3, toolChanges: pos.toolChanges.length / 3, pauses: pos.pauses.length / 3 } })
+              markerView.setState({ countsFor: p, counts: { wipes: pos.wipes.length / 3, toolChanges: pos.toolChanges.length / 3, pauses: pos.pauses.length / 3 } })
             })
             .catch(() => {
               if (markersFor === p) markersFor = null
@@ -869,7 +869,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         offs.push(
           appStore.subscribe((s, p) => {
             if (s.preview === p.preview) return
-            markerView.setState({ counts: {} })
+            markerView.setState({ countsFor: null, counts: {} })
             syncMarkers()
           }),
         )

@@ -21,6 +21,7 @@ import { findPlate, plateRows, stepTarget } from '../plate/plate-step'
 import { switchPlate } from '../plate/plates'
 import { drawnObjects } from '../viewport/drawn'
 import { viewportLookState } from '../viewport/viewport-look'
+import { previewIdle, PREVIEW_BUSY_TOOLS as BUSY_TOOLS } from './preview-guard'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -43,6 +44,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
+  'preview.markers': 'read',
+  'preview.markers_set': 'read',
   // The plates with their slice states, and showing one (by number or id, or the next or previous): like the
   // preview, showing a plate changes only what the window shows, never the project.
   'plates.list': 'read',
@@ -155,9 +158,6 @@ const layerArg = (v: unknown, n: number, key: string): number => {
   return v
 }
 
-/** Tools a person is in the middle of, which an agent's view change must not end. */
-const BUSY_TOOLS = ['paint', 'brim', 'face']
-
 /**
  * Moves the preview: `layer` (the top handle), `range` [bottom, top], `oneLayer`, `colorMode`, `camera`, and turns the
  * playback bar's Show toolhead (`toolhead`) and Show gantry (`gantry`) on or off. It never interrupts the person: it
@@ -166,10 +166,8 @@ const BUSY_TOOLS = ['paint', 'brim', 'face']
  * same ones the person sees in the playback bar, so they stay as the agent leaves them.
  */
 function setPreview(args: Record<string, unknown>) {
+  previewIdle()
   const s = get()
-  if (s.workspace !== 'prepare' || s.modelMode !== 'slice' || BUSY_TOOLS.includes(toolStore.getState().tool)) {
-    throw new LinkError('busy', 'the person is working elsewhere in the window; the preview moves only while Slice is open and no tool is in use')
-  }
   if (args['camera'] !== undefined && !CAMERAS.includes(args['camera'] as CameraView)) throw new LinkError('invalid_input', `camera is one of ${CAMERAS.join(', ')}`)
   if (args['colorMode'] !== undefined && !COLORS.includes(args['colorMode'] as ColorMode)) throw new LinkError('invalid_input', `colorMode is one of ${COLORS.join(', ')}`)
   if (args['oneLayer'] !== undefined && typeof args['oneLayer'] !== 'boolean') throw new LinkError('invalid_input', 'oneLayer is true or false')
@@ -357,6 +355,8 @@ const HANDLERS: Record<string, Handler> = {
   'volumes.remove': async (args, client) => (await import('./volumes')).volumeAction('remove', args, client.name, linkLoader),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
+  'preview.markers': async () => (await import('./preview-markers')).readMarkers(),
+  'preview.markers_set': async (args) => (await import('./preview-markers')).setMarkers(args),
   'plates.list': () => platesState(),
   'plates.show': (args) => showPlate(args),
   'look.get': () => lookState(),

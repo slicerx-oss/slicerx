@@ -121,6 +121,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
     ("preview.set", LinkClass::Read),
+    ("preview.markers", LinkClass::Read),
+    ("preview.markers_set", LinkClass::Read),
     // The project's plates with their slice states, and showing one of them (by number, or the next or previous).
     // Read: showing a plate changes only what the window shows, never the project.
     ("plates.list", LinkClass::Read),
@@ -380,6 +382,8 @@ mod tests {
         ("volumes.remove", LinkClass::Edit),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
+        ("preview.markers", LinkClass::Read),
+        ("preview.markers_set", LinkClass::Read),
         ("plates.list", LinkClass::Read),
         ("plates.show", LinkClass::Read),
         ("look.get", LinkClass::Read),
