@@ -3,7 +3,7 @@
 // The app's design host: a design is an object on the plate, and a step made through the host lands in its history
 // the way a person's edit does, in one store update, undoable and editable in Model's tree and timeline. An empty
 // design waits off the plate until its first step makes a body.
-import { HISTORY_VERSION, appendStep, stepId, type Design, type DesignHost, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, stepId, type Design, type DesignCommit, type DesignHost, type History, type HistoryMesh, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
@@ -86,25 +86,12 @@ export function appDesignHost(loader: Loader): DesignHost {
     },
 
     async add(d, part, params, label, opts) {
-      const guard = opts?.expectedRevision === undefined ? undefined : () => bodyRevisions.assert(d.id, opts.expectedRevision!)
-      guard?.()
-      const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
-      const next = appendStep(d.history, step)
-      const w = empty.get(d.id)
-      if (w) {
-        await place(d.id, d.name, next, w.transform, step.id, guard)
-        empty.delete(d.id)
-      } else {
-        await applyHistory(loader, d.id, next, step.id, guard).catch((e: unknown) => {
-          if (e instanceof Error && 'code' in e && e.code === 'stale_body') throw e
-          throw new Error(`The step did not go through: ${e instanceof Error ? e.message : String(e)}. The design is unchanged.`)
-        })
-      }
-      redo.delete(d.id)
-      Object.assign(d, host.get(d.id))
-      return host.get(d.id).history.steps.at(-1)!
+      return (await add(d, part, params, label, opts, false)).step
     },
 
+    async addWithReceipt(d, part, params, label, opts) {
+      return add(d, part, params, label, opts, true)
+    },
     async replay(d, opts) {
       const guard = opts?.expectedRevision === undefined ? undefined : () => bodyRevisions.assert(d.id, opts.expectedRevision!)
       guard?.()
@@ -158,8 +145,36 @@ export function appDesignHost(loader: Loader): DesignHost {
     },
   }
 
+  async function add(d: Design, part: number, params: StepParams, label: string | undefined, opts: { sketch?: string; expectedRevision?: string } | undefined, receipt: boolean): Promise<DesignCommit> {
+    const guard = opts?.expectedRevision === undefined ? undefined : () => bodyRevisions.assert(d.id, opts.expectedRevision!)
+    guard?.()
+    const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
+    const next = appendStep(d.history, step)
+    let committed: DesignCommit | undefined
+    const capture = receipt ? () => {
+      empty.delete(d.id)
+      redo.delete(d.id)
+      const current = host.get(d.id)
+      committed = { step: structuredClone(current.history.steps.at(-1)!), revision: bodyRevisions.current(d.id), design: structuredClone(current) }
+    } : undefined
+    const w = empty.get(d.id)
+    if (w) {
+      await place(d.id, d.name, next, w.transform, step.id, guard, capture)
+      if (!committed) empty.delete(d.id)
+    } else {
+      await applyHistory(loader, d.id, next, step.id, guard, capture).catch((e: unknown) => {
+        if (e instanceof Error && 'code' in e && e.code === 'stale_body') throw e
+        throw new Error(`The step did not go through: ${e instanceof Error ? e.message : String(e)}. The design is unchanged.`)
+      })
+    }
+    if (committed) { Object.assign(d, committed.design); return committed }
+    redo.delete(d.id)
+    Object.assign(d, host.get(d.id))
+    return { step: d.history.steps.at(-1)!, revision: bodyRevisions.current(d.id), design: d }
+  }
+
   /** Replays a history with a body and puts it on the plate as a new object; throws the step's reason when `need` fails. */
-  async function place(id: string, name: string, history: History, transform: Mat4, need?: string, guard?: () => void): Promise<void> {
+  async function place(id: string, name: string, history: History, transform: Mat4, need?: string, guard?: () => void, committed?: () => void): Promise<void> {
     guard?.()
     const r = await runReplay({ history })
     const k = need === undefined ? -1 : history.steps.findIndex((s) => s.id === need)
@@ -170,6 +185,7 @@ export function appDesignHost(loader: Loader): DesignHost {
     const entry: PlateEntry = { id, name, handle, parts, colors: [brandAccent()], transform: [...transform], history }
     guard?.()
     set((s) => ({ plate: [...s.plate, entry], selection: id, selectedIds: [id] }))
+    committed?.()
     markStale()
   }
 

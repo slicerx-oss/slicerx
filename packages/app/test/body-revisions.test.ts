@@ -96,3 +96,18 @@ it('keeps surface metadata through both app replay conversion paths', async () =
   await host.replay(design)
   expect(design.parts[0]?.faces?.table[0]).toMatchObject({ kind: 'cylinder', radius: 3 })
 })
+
+it.each([true, false])('captures a detached app commit receipt with an initially empty body: %s', async (empty) => {
+  const mesh = { name: 'Part', slot: 1, positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], indices: [0, 1, 2] }
+  const host = appDesignHost({ loadParts: async () => entry().handle })
+  const d = await host.create('Body', empty ? [] : [mesh])
+  const first = host.addWithReceipt!(d, -1, { op: 'parts.add', label: 'Add part', parts: [mesh] }, undefined, { expectedRevision: host.revision!(d.id) })
+  await first.then(() => host.add(d, -1, { op: 'parts.add', label: 'Add part', parts: [mesh] }))
+  const receipt = await first
+  expect(receipt.design.parts).toHaveLength(empty ? 1 : 2)
+  expect(receipt.design.history.steps).toHaveLength(1)
+  expect(receipt.step.id).toBe(receipt.design.history.steps[0]!.id)
+  expect(receipt.revision).not.toBe(host.revision!(d.id))
+  ;(receipt.design.parts[0]!.positions as number[])[0] = 100
+  expect(host.get(d.id).parts[0]!.positions[0]).toBe(0)
+})
