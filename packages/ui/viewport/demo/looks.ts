@@ -3,7 +3,7 @@
 // Look lab candidates (look.html). A look is two independent halves: the shading (lights, materials, edges, occlusion,
 // exposure) and the studio (backdrop and plate). The lab composes any shading with any studio, so a backdrop never
 // decides how a model is judged. Everything here goes through the viewport's setLook; nothing changes the shipped look.
-import { BASELINE_LOOK, mergeLook, type ViewportLook, type ViewportLookPatch } from '../src/index'
+import { BASELINE_LOOK, DARK_PRECISION_LOOK as A, LIGHT_STUDIO_LOOK as C, mergeLook, type ViewportLook, type ViewportLookPatch } from '../src/index'
 
 export type ShadeId = 'base' | 'new'
 export type StudioId = 'dark' | 'light' | 'precision' | 'graphite' | 'lightnew'
@@ -25,20 +25,7 @@ export const SHADES: Record<ShadeId, { name: string; line: string; shade: Shade 
   new: {
     name: 'Studio satin',
     line: 'A high key that stays in the room, a soft fill that turns with the view, the room light cut to what the faces need, satin materials, thin soft edges, light occlusion.',
-    shade: {
-      lighting: {
-        key: { intensity: 0.7, direction: [-190, 330, -20], shadow: true },
-        fill: { intensity: 0.2, direction: [-0.3, 0.3, 0.9], camera: true },
-        rim: { intensity: 0.5, direction: [160, 150, -280], camera: false },
-        environment: 0.35,
-        exposure: 1,
-      },
-      materials: {
-        cad: { light: '#b9bdc2', dark: '#b9bdc2', roughness: 0.62, specular: 0.55, clearcoat: 0, sheen: 0, environment: 0.15 },
-        filament: { roughness: 0.62, specular: 1, clearcoat: 0, sheen: 0.7 },
-      },
-      geometry: { aoRadiusMm: 6, aoStrength: 0.55, edgeWidthPx: 1, edgeOpacity: 0.8, edgeLight: '#252b31', edgeDark: '#252b31', silhouette: 0.6, silhouetteWidthPx: 1 },
-    },
+    shade: { lighting: A.lighting, materials: A.materials, geometry: A.geometry },
   },
 }
 
@@ -48,11 +35,12 @@ export const STUDIOS: Record<StudioId, Studio> = {
   precision: {
     theme: 'dark',
     name: 'Dark Precision',
-    backdrop: { top: '#2a2e3a', bottom: '#1b1e26', center: '#333847', centerStrength: 0.55, vignette: 0.22, vignetteOnModels: false, dither: 2, ditherTriangular: true },
-    plate: { border: null, borderGlow: 0.35, grid: 0.7, fill: 0.8, contactDarkness: 1.8, contactOpacity: 0.75 },
+    backdrop: A.backdrop,
+    plate: A.plate,
   },
   graphite: {
     theme: 'dark',
+    // kept in the lab only: not a preset the app ships
     name: 'Neutral Graphite',
     backdrop: { top: '#2f3033', bottom: '#1d1e20', center: '#37383c', centerStrength: 0.55, vignette: 0.22, vignetteOnModels: false, dither: 2, ditherTriangular: true },
     plate: { border: '#8e8a9c', borderGlow: 0.2, grid: 0.7, fill: 0.8, contactDarkness: 1.8, contactOpacity: 0.75 },
@@ -60,9 +48,8 @@ export const STUDIOS: Record<StudioId, Studio> = {
   lightnew: {
     theme: 'light',
     name: 'Light Studio (refined)',
-    // a touch darker than the theme's own light studio, so white parts keep their outline against it
-    backdrop: { top: '#e3e6ea', bottom: '#c3c8cf', center: '#eceef1', centerStrength: 0.5, vignette: 0.12, vignetteOnModels: false, dither: 2, ditherTriangular: true },
-    plate: { border: null, borderGlow: 0.35, grid: 0.8, fill: 0.8, contactDarkness: 1.8, contactOpacity: 0.7 },
+    backdrop: C.backdrop,
+    plate: C.plate,
   },
 }
 
