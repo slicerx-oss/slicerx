@@ -97,4 +97,12 @@ A fillet or chamfer edge keeps the keys of the two faces either side (`keys`, th
 
 ## Limits
 
+### Developer exact designs
+
+`design.new` accepts `exact: true` with `SX_BREP_DEV=1` on the native MCP server, or the developer exact-solids option in the app. New app extrusions made with that option also require exact replay. Imported meshes keep their existing representation; this option does not convert STL geometry into a solid.
+
+Required exact intent is saved as `exact: true` on the object's history and timeline body. Replay stops with a reason if a feature needs the mesh path or the kernel fails. Failed edits preserve the previous geometry and history. A damaged required exact history refuses project opening instead of discarding the history and using the saved mesh. Older applications do not understand this requirement, so reopen these development projects in a build that supports it.
+
+The app's exact extrusion and hole tools use strict replay. Its plane cut currently keeps above or below on a single-part body, without connectors. Unsupported modeling commands refuse to replace required exact geometry. App undo restores parameter edits; `design.undo` removes the last feature and `design.redo` restores it. Measurement tools inspect the display tessellation, so their values are not kernel surface measurements.
+
 No constraint solver and no parametric expressions between steps. References are found again by position, so a step whose face an earlier edit removed or moved sideways breaks in words rather than guessing.

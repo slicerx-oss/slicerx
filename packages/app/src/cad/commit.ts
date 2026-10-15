@@ -13,11 +13,12 @@ export type Made = Pick<PlateEntry, 'handle' | 'parts'> & Partial<Pick<PlateEntr
  * objects that followed the change. False when the object is gone, and then nothing is written. An instance no longer
  * shares the new geometry; paint, per triangle of the old mesh, goes too unless `keepPaint`.
  */
-export function commitMade(objectId: string, made: (latest: PlateEntry) => Made, o: { others?: ReadonlyMap<string, Pick<PlateEntry, 'dimensions'>>; keepPaint?: boolean } = {}): boolean {
+export function commitMade(objectId: string, made: (latest: PlateEntry) => Made, o: { others?: ReadonlyMap<string, Pick<PlateEntry, 'dimensions'>>; keepPaint?: boolean; exactReplay?: boolean } = {}): boolean {
   let done = false
   set((s) => {
     const latest = s.plate.find((p) => p.id === objectId)
     if (!latest) return s
+    if (latest.history?.exact && !o.exactReplay) throw new Error('This operation does not preserve the required exact history. The design is unchanged.')
     done = true
     const { instanceOf: _was, paint, ...rest } = latest
     const next: PlateEntry = { ...rest, ...(o.keepPaint && paint ? { paint } : {}), ...made(latest) }

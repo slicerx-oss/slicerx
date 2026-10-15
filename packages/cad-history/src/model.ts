@@ -109,6 +109,8 @@ export interface Step {
 
 export interface History {
   version: 1
+  /** Requires exact replay; unsupported steps stop instead of changing representation. */
+  exact?: true
   /** The parts before the first step. Empty for a body a step made. */
   base: HistoryMesh[]
   steps: Step[]

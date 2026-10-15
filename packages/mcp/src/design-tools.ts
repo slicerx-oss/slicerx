@@ -60,6 +60,10 @@ export async function partsAt(host: DesignHost, d: HostDesign, step?: number | s
   const k = stepIndex(d, step)
   if (k === d.history.steps.length - 1) return d.parts
   const r = await replayHistory((op, request) => host.call(op, request), { history: { ...d.history, steps: d.history.steps.slice(0, k + 1) } })
+  if (d.history.exact) {
+    const broken = r.status.find(s => s.state === 'broken' || s.state === 'skipped')
+    if (broken || r.exactFellBack?.length) throw new ToolInputError(`Exact history could not be inspected: ${broken?.message ?? 'a step requires the mesh path'}.`)
+  }
   return r.parts
 }
 
@@ -159,6 +163,7 @@ export function designSummary(d: Design): Record<string, unknown> {
   return {
     design: d.id,
     name: d.name,
+    exact: d.history.exact === true,
     steps: d.history.steps.length,
     ...(last ? { lastStep: last } : {}),
     ...(all ? { minMm: all.minMm, sizeMm: all.bboxMm } : {}),
@@ -198,6 +203,12 @@ export function stepIndex(d: HostDesign, step: number | string): number {
 /** The largest main number a step takes when edited, as its tool takes it (the rest stop at 10000). */
 const EDIT_MAX: Partial<Record<string, number>> = { 'edge.fillet': 1000, 'edge.chamfer': 1000, hollow: 50, shell: 50 }
 
+async function replayChange(host: DesignHost, design: HostDesign, history: History, redo = design.redo): Promise<void> {
+  const candidate = { ...design, history, redo: [...redo] }
+  await host.replay(candidate)
+  Object.assign(design, candidate)
+}
+
 /** The design tools on a host; `files` reads the models design.new starts from and the 3MF files design.open and design.save use. */
 export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<never>[] {
   const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
@@ -211,11 +222,12 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
       `Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. Every step lands in the design's editable history, the same one ${productName()} keeps for a person, so slicerx_design_save writes a 3MF that opens with every step editable. Start empty (the first step makes a body) or from an STL. Units are mm, Z up, the bed at Z = 0.`,
     input: z.object({
       name: z.string().min(1).max(120).default('Design'),
+      exact: z.boolean().optional().describe('Require native exact features, with developer opt-in. Unsupported operations refuse instead of using mesh geometry.'),
       from: z.string().min(1).optional().describe('Start from this model: an STL path, URL or sample: name. Absent: an empty design'),
     }),
     async run(i) {
       const base = i.from ? await files.model(i.from, i.name) : []
-      const d = await designs.create(i.name, base)
+      const d = await designs.create(i.name, base, undefined, undefined, { exact: i.exact === true })
       return { summary: `Started ${d.name} (${d.id})${base.length ? ' from the model' : ''}`, output: designSummary(d) }
     },
   })
@@ -301,8 +313,7 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
         next = i.label.trim() ? { ...rest, label: i.label.trim() } : rest
       }
       const { broken: _b, ...clean } = next
-      d.history = { ...d.history, steps: d.history.steps.map((x, j) => (j === k ? clean : x)) }
-      await designs.replay(d)
+      await replayChange(designs, d, { ...d.history, steps: d.history.steps.map((x, j) => (j === k ? clean : x)) })
       const rows = d.history.steps.map((_, j) => stepRow(d, j))
       const broken = rows.filter((r) => r['state'] === 'broken')
       return { ok: broken.length === 0, summary: `Edited step ${k + 1}, ${stepName(clean)}${broken.length ? `; step ${String(broken[0]!['index'])} broke: ${String(broken[0]!['message'] ?? '')}` : ''}`, output: { ...designSummary(d), steps: rows } }
@@ -320,10 +331,8 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
       const d = designs.get(i.design)
       const last = d.history.steps[d.history.steps.length - 1]
       if (!last) throw new ToolInputError('The design has no steps to undo.')
-      d.history = { ...d.history, steps: d.history.steps.slice(0, -1) }
-      d.redo.push(last)
       // Every host replays, even to no steps: the app's takes the body off the plate then.
-      await designs.replay(d)
+      await replayChange(designs, d, { ...d.history, steps: d.history.steps.slice(0, -1) }, [...d.redo, last])
       return { summary: `Removed ${stepName(last)}`, output: designSummary(d) }
     },
   })
@@ -337,10 +346,9 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     input: z.object({ design: designArg }),
     async run(i) {
       const d = designs.get(i.design)
-      const step = d.redo.pop()
+      const step = d.redo.at(-1)
       if (!step) throw new ToolInputError('Nothing to redo.')
-      d.history = { ...d.history, steps: [...d.history.steps, step] }
-      await designs.replay(d)
+      await replayChange(designs, d, { ...d.history, steps: [...d.history.steps, step] }, d.redo.slice(0, -1))
       return { summary: `Put back ${stepName(step)}`, output: designSummary(d) }
     },
   })

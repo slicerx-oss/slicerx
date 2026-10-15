@@ -39,6 +39,7 @@ export type Item = SketchItem | FeatureItem
 export interface Body {
   id: string
   base: HistoryMesh[]
+  exact?: true
   ended?: string
 }
 
@@ -116,7 +117,7 @@ export function timelineOf(objects: readonly { id: string; history: History }[])
     if (isSketch(s.params)) items.push(...split(s, o.id, `Sketch ${++sketches}`, items))
     else items.push({ ...s, kind: 'feature', body: o.id })
   }
-  const bodies = objects.map((o) => ({ id: o.id, base: o.history.base, ...(o.history.ended ? { ended: o.history.ended } : {}) }))
+  const bodies = objects.map((o) => ({ id: o.id, base: o.history.base, ...(o.history.exact ? { exact: true as const } : {}), ...(o.history.ended ? { ended: o.history.ended } : {}) }))
   return { bodies, items, marker: items.length }
 }
 
@@ -145,7 +146,7 @@ export function historyOf(d: Timeline, body: string): History | null {
     const { kind: _k, body: _b, ...step } = i
     steps.push({ ...step, params })
   }
-  return { version: 1, base: b.base, steps, ...(b.ended ? { ended: b.ended } : {}) }
+  return { version: 1, base: b.base, steps, ...(b.exact ? { exact: true } : {}), ...(b.ended ? { ended: b.ended } : {}) }
 }
 
 /** Every body's history, by body id. */
@@ -232,7 +233,7 @@ export function withHistory(t: Timeline, body: string, h: History): Timeline {
     place.set(s.id, at + add.length - 1)
     if (at < marker || (!atEnd && at === marker)) marker += add.length
   })
-  const b: Body = { id: body, base: h.base, ...(h.ended ? { ended: h.ended } : {}) }
+  const b: Body = { id: body, base: h.base, ...(h.exact ? { exact: true } : {}), ...(h.ended ? { ended: h.ended } : {}) }
   const bodies = t.bodies.some((x) => x.id === body) ? t.bodies.map((x) => (x.id === body ? b : x)) : [...t.bodies, b]
   return { bodies, items, marker: atEnd ? items.length : marker }
 }

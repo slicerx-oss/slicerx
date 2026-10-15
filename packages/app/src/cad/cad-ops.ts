@@ -3,12 +3,14 @@
 // What the modeling tools do to the plate, on the typed geometry calls in geom/cad.ts: extrude a shape
 // from a face or the bed, copy an object in a line, a grid or a circle, and describe a measurement.
 // Each change lands in one store update, so undo takes it back in one step. No React in here.
-import type { Pattern, SketchConstraint, StepParams } from '@slicerx/cad-history'
+import type { History, Pattern, SketchConstraint, StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { arrayCopies, arrayMerged, extrudeShape, revolveSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
 import { bake } from '../plate/mesh-ops'
 import { bodyHistory, historyField, rememberFont, reserveStepId, withStep } from './history/record'
+import { applyHistory, runReplay, toPart } from './history/ops'
+import { exactSolids } from './history/exact-flag'
 import { commitMade } from './commit'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
@@ -71,6 +73,31 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput): Promise<{
   const operation = input.spec.operation ?? 'new'
   const target = targetOf(input.target, operation)
   reserveStepId()
+  if (target?.entry.history?.exact || (!target && exactSolids())) {
+    const params = extrudeParams(input)
+    if (target && input.target) {
+      const next = withStep(target.entry, input.target.partIndex, params, undefined, true)
+      await applyHistory(host, target.entry.id, next, next.steps.at(-1)!.id)
+      return { message: `${operation === 'cut' ? 'Cut' : 'Joined'} ${input.name} ${operation === 'cut' ? 'from' : 'to'} ${target.entry.name}.`, warn: false }
+    }
+    const history: History = { ...bodyHistory(params, identity()), exact: true }
+    const result = await runReplay({ history })
+    if (result.parts.length !== 1) throw new Error('The exact extrusion did not produce one body. Nothing was added.')
+    const world = result.parts.map(toPart)
+    const b = bounds(world, identity())
+    if (!b) throw new Error('The exact extrusion has no bounds. Nothing was added.')
+    const cx = (b.min[0] + b.max[0]) / 2
+    const cy = (b.min[1] + b.max[1]) / 2
+    const transform = compose({ position: [cx, cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
+    const move = compose({ position: [-cx, -cy, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
+    const parts = world.map(p => bake(p, move))
+    const handle = await host.loadParts(input.name, parts)
+    const saved: History = { ...history, steps: history.steps.map(s => ({ ...s, transform: [...transform] })) }
+    const made: PlateEntry = { id: newId(), name: input.name, handle, parts, colors: [brandAccent()], transform, history: saved }
+    set(s => ({ plate: [...s.plate, made], selection: made.id, selectedIds: [made.id] }))
+    markStale()
+    return { message: `Added ${input.name}.`, warn: false }
+  }
   const r = await extrudeShape({
     frame: input.frame,
     shape: input.shape,

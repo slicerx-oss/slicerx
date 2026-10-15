@@ -79,6 +79,7 @@ describe('the app design host', () => {
     await host.add(d, 0, plate)
     await host.add(d, 0, hole(30))
     const last = d.history.steps.at(-1)!
+    const first = d.history.steps[0]!
     d.history = { ...d.history, steps: d.history.steps.slice(0, -1) }
     d.redo = [...d.redo, last]
     await host.replay(d)
@@ -88,9 +89,17 @@ describe('the app design host', () => {
     await host.replay(d)
     expect(get().plate).toHaveLength(0)
     expect(host.get(d.id).parts).toEqual([])
+    d.history = { ...d.history, steps: [first] }
+    d.redo = [last]
+    await host.replay(d)
+    expect(get().plate).toHaveLength(1)
+    expect(host.get(d.id).history.steps).toHaveLength(1)
+    expect(host.get(d.id).redo).toEqual([last])
+    expect(volume(get().plate[0]!.parts)).toBeCloseTo(150.4 * 110.4 * 3, -1)
   })
 
   it('says a design id names nothing', () => {
     expect(() => appDesignHost(loader).get('obj_nope')).toThrow(DesignNotFound)
   })
+
 })
