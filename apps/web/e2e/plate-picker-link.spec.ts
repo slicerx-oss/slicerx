@@ -27,7 +27,7 @@ const repo = join(import.meta.dirname, '../../..')
 const mcpDir = join(repo, 'packages/mcp')
 const from = createRequire(join(mcpDir, 'package.json'))
 
-type Plates = { shown: number; count: number; plates: { number: number; name: string; shown: boolean; slice: string }[] }
+type Plates = { shown: number; drawn?: number | null; count: number; plates: { number: number; name: string; shown: boolean; slice: string }[] }
 type Answer = { isError?: boolean; structuredContent?: { ok: boolean; summary: string; output: Plates } }
 
 /** The keychain item the client's credential is under, as Connect your AI agent names it for a test build of the app. */
@@ -124,13 +124,14 @@ test('a client lists the plates and steps through them over MCP and the command 
       return a.structuredContent!.output
     }
     const listed = await allowWhenAsked(page, call('slicerx_app_plates'))
-    expect(listed).toMatchObject({ shown: 1, count: 3 })
+    // The view draws the plate shown: plate 1 after the open, not the last plate it loaded.
+    expect(listed).toMatchObject({ shown: 1, drawn: 1, count: 3 })
     expect(listed.plates.map((p) => p.name)).toEqual(SMALL_3)
 
     // A step, read back, and the picker on screen shows the same plate.
-    expect(await call('slicerx_app_plate_show', { step: 'next' })).toMatchObject({ shown: 2, plates: [{ shown: false }, { shown: true }, { shown: false }] })
+    expect(await call('slicerx_app_plate_show', { step: 'next' })).toMatchObject({ shown: 2, drawn: 2, plates: [{ shown: false }, { shown: true }, { shown: false }] })
     await expect(shownInApp(page)).toHaveText('Plate 2')
-    expect(await call('slicerx_app_plate_show', { plate: 3 })).toMatchObject({ shown: 3 })
+    expect(await call('slicerx_app_plate_show', { plate: 3 })).toMatchObject({ shown: 3, drawn: 3 })
     await expect(shownInApp(page)).toHaveText('Plate 3')
     await expect(page.getByTestId('plate-picker-next')).toBeDisabled()
     // Past the last plate: refused, and nothing moves.
@@ -143,7 +144,7 @@ test('a client lists the plates and steps through them over MCP and the command 
     await page.locator('canvas.vp-canvas').focus()
     await page.keyboard.press('Shift+BracketLeft')
     await expect(shownInApp(page)).toHaveText('Plate 2')
-    expect(await call('slicerx_app_plates')).toMatchObject({ shown: 2 })
+    expect(await call('slicerx_app_plates')).toMatchObject({ shown: 2, drawn: 2 })
   } finally {
     await client.close()
   }
@@ -157,7 +158,7 @@ test('a client lists the plates and steps through them over MCP and the command 
     expect(lines).toHaveLength(2)
     expect(lines.map((l) => l.ok)).toEqual([true, true])
     expect(lines[0]!.output.output).toMatchObject({ shown: 1 })
-    expect(lines[1]!.output.output).toMatchObject({ shown: 1, count: 3 })
+    expect(lines[1]!.output.output).toMatchObject({ shown: 1, drawn: 1, count: 3 })
     await expect(shownInApp(page)).toHaveText('Plate 1')
   } finally {
     rmSync(dir, { recursive: true, force: true })

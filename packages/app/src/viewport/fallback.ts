@@ -166,6 +166,9 @@ export function createFallbackViewport(canvas: HTMLCanvasElement): Drive {
       plate = p
       schedule()
     },
+    drawnObjects() {
+      return plate ? plate.objects.map((o) => o.id) : []
+    },
     setTransforms(t) {
       if (!plate) return
       plate = { ...plate, objects: plate.objects.map((o) => ({ ...o, transform: t[o.id] ?? o.transform })) }
