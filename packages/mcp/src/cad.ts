@@ -249,12 +249,12 @@ const sketchConstraint = z
 
 // a finished sketch's constraints name its loops: points by loop, place and segment, lines and circles by loop and segment
 const loopPoint = z.object({ e: z.number().int().min(-1), at: z.enum(['start', 'to', 'center', 'arcCenter']), seg: z.number().int().min(0).optional() })
-const loopCurve = z.object({ e: z.number().int().min(0), seg: z.number().int().min(0) })
+const loopCurve = z.object({ e: z.number().int().min(-1), seg: z.number().int().min(0) })
 const loopConstraint = z
   .object({ type: z.enum(SKETCH_CONSTRAINTS), driven: z.literal(true).optional(), expr: z.string().max(200).optional() })
   .catchall(z.union([z.number(), loopPoint, loopCurve]))
   .describe(
-    'Fields by type as for slicerx_geom_sketch_solve, naming the loops: a point is {e: loop, at: start | to | center | arcCenter, seg} (to and arcCenter take the segment; e -1 at start is the sketch origin), a line, arc or circle is {e: loop, seg} (a circle is seg 0). Dimensions (length, distance, horizontalDistance, verticalDistance, lineDistance, radius, diameter, angle) take value, mm or degrees, and offset, mm, where the dimension line sits',
+    'Fields by type as for slicerx_geom_sketch_solve, naming the loops: a point is {e: loop, at: start | to | center | arcCenter, seg} (to and arcCenter take the segment; e -1 at start is the sketch origin), a line, arc or circle is {e: loop, seg} (a circle is seg 0; e -1 seg 0 is the X axis of the sketch, so an angle from it sets the direction of a line). Dimensions (length, distance, horizontalDistance, verticalDistance, lineDistance, radius, diameter, angle) take value, mm or degrees, and offset, mm, where the dimension line sits',
   )
 
 const shape = z
