@@ -100,8 +100,8 @@ export function pastRim(c: { cx: number; cy: number; r: number }, box: FootBox):
  * Where each copy's front left corner goes on a rectangular bed: rows that end before the edge room at either side
  * (a part wider than that still gets a row), the whole layout then moved to the middle of the printable area.
  */
-export function boxRows(feet: readonly Foot[], bed: BedArea): [number, number][] {
-  const rowWidth = bed.widthMm - 2 * EDGE_MM
+export function boxRows(feet: readonly Foot[], bed: BedArea, edge = EDGE_MM, gap = GAP_MM): [number, number][] {
+  const rowWidth = bed.widthMm - 2 * edge
   const out: [number, number][] = []
   const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
   let x = 0
@@ -110,7 +110,7 @@ export function boxRows(feet: readonly Foot[], bed: BedArea): [number, number][]
   for (const f of feet) {
     if (x > 0 && x + f.w > rowWidth) {
       x = 0
-      y += rowDepth + GAP_MM
+      y += rowDepth + gap
       rowDepth = 0
     }
     out.push([x, y])
@@ -118,7 +118,7 @@ export function boxRows(feet: readonly Foot[], bed: BedArea): [number, number][]
     box.y0 = Math.min(box.y0, y)
     box.x1 = Math.max(box.x1, x + f.w)
     box.y1 = Math.max(box.y1, y + f.d)
-    x += f.w + GAP_MM
+    x += f.w + gap
     rowDepth = Math.max(rowDepth, f.d)
   }
   if (!out.length) return out
@@ -133,8 +133,8 @@ export function boxRows(feet: readonly Foot[], bed: BedArea): [number, number][]
  * farthest from the middle, and is centered across. The stack's height depends on how the rows fill, so the rows are
  * laid again from the height found until it holds (a few passes); every row is checked where it ends up.
  */
-export function roundRows(feet: readonly Foot[], c: { cx: number; cy: number; r: number }): [number, number][] {
-  const room = c.r - EDGE_MM
+export function roundRows(feet: readonly Foot[], c: { cx: number; cy: number; r: number }, edge = EDGE_MM, gap = GAP_MM): [number, number][] {
+  const room = c.r - edge
   const chord = (ya: number, yb: number): number => {
     const far = Math.max(Math.abs(ya - c.cy), Math.abs(yb - c.cy))
     return far >= room ? 0 : 2 * Math.sqrt(room * room - far * far)
@@ -143,11 +143,11 @@ export function roundRows(feet: readonly Foot[], c: { cx: number; cy: number; r:
     const rows: { items: number[]; width: number; depth: number; y: number }[] = []
     let row = { items: [] as number[], width: 0, depth: 0, y: top }
     feet.forEach((f, k) => {
-      const width = row.items.length ? row.width + GAP_MM + f.w : f.w
+      const width = row.items.length ? row.width + gap + f.w : f.w
       const depth = Math.max(row.depth, f.d)
       if (row.items.length && width > chord(row.y, row.y + depth)) {
         rows.push(row)
-        row = { items: [k], width: f.w, depth: f.d, y: row.y + row.depth + GAP_MM }
+        row = { items: [k], width: f.w, depth: f.d, y: row.y + row.depth + gap }
         return
       }
       row = { ...row, items: [...row.items, k], width, depth }
@@ -158,7 +158,7 @@ export function roundRows(feet: readonly Foot[], c: { cx: number; cy: number; r:
       let x = c.cx - rw.width / 2
       for (const k of rw.items) {
         spots[k] = [x, rw.y]
-        x += feet[k]!.w + GAP_MM
+        x += feet[k]!.w + gap
       }
     }
     const last = rows[rows.length - 1]

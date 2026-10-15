@@ -503,7 +503,7 @@ fn no_go(cfg: &PrintConfig) -> Vec<[f64; 4]> {
 /// Clear means on the bed with a 1 mm margin, the tower's brim included, outside the printer's
 /// no-go zones, 1 mm past everything an object's first layer lays down beyond its hull (`rooms`, one per
 /// object: its brim, its support's pad and brim, a skirt of its own around them; `room`). A skirt round the whole plate
-/// goes round the tower too (`session::skirt_loops`), so it needs no room here. `None` when the tower is off or
+/// goes round the tower too, so its distance and loops also stay inside the bed. `None` when the tower is off or
 /// not needed, an error when it fits nowhere. Every step is plain arithmetic in a fixed order, so
 /// native and WASM pick the same spot.
 pub(crate) fn place(
@@ -540,6 +540,14 @@ pub(crate) fn place(
         cfg.raw_number("prime_tower_width", 35.0).max(5.0)
     };
     let auto = flag_or(cfg, "prime_tower_auto_position", true);
+    // the plate skirt wraps the tower's brim as well as the objects.
+    let shield =
+        matches!(cfg.raw.get("draft_shield"), Some(serde_json::Value::String(value)) if value == "enabled");
+    let edge = if cfg.skirt_loops > 0 && (cfg.skirt_height > 0 || shield) {
+        1.0 + cfg.skirt_distance.max(0.0) + f64::from(cfg.skirt_loops) * crate::session::skirt_spacing_mm(cfg)
+    } else {
+        1.0
+    };
     let bed = cfg.bed_rect();
     let hull_box = |o: &crate::output::ObjectFootprint| {
         o.hull
@@ -586,10 +594,10 @@ pub(crate) fn place(
             let r = t.reach(t.brim.max(0.0));
             let clear = |x: f64, y: f64| {
                 let (lx, ly, hx, hy) = (x + r[0], y + r[1], x + r[2], y + r[3]);
-                lx >= bed[0] + 1.0
-                    && ly >= bed[1] + 1.0
-                    && hx <= bed[2] - 1.0
-                    && hy <= bed[3] - 1.0
+                lx >= bed[0] + edge
+                    && ly >= bed[1] + edge
+                    && hx <= bed[2] - edge
+                    && hy <= bed[3] - edge
                     && boxes
                         .iter()
                         .all(|b| hx <= b[0] || lx >= b[2] || hy <= b[1] || ly >= b[3])
@@ -610,8 +618,8 @@ pub(crate) fn place(
                 }
                 let inside = |v: f64, lo: f64, hi: f64| if hi < lo { v } else { v.clamp(lo, hi) };
                 let (cx, cy) = (
-                    inside(t0.x, bed[0] + 1.0 - r[0], bed[2] - 1.0 - r[2]),
-                    inside(t0.y, bed[1] + 1.0 - r[1], bed[3] - 1.0 - r[3]),
+                    inside(t0.x, bed[0] + edge - r[0], bed[2] - edge - r[2]),
+                    inside(t0.y, bed[1] + edge - r[1], bed[3] - edge - r[3]),
                 );
                 if clear(cx, cy) {
                     return done([cx, cy], TowerReason::MovedOntoBed);
@@ -628,12 +636,12 @@ pub(crate) fn place(
                 }
             };
             let mut best: Option<(f64, [f64; 2])> = None;
-            let x0 = (bed[0] + 1.0 - r[0]).ceil();
-            let y0 = (bed[1] + 1.0 - r[1]).ceil();
+            let x0 = (bed[0] + edge - r[0]).ceil();
+            let y0 = (bed[1] + edge - r[1]).ceil();
             let mut y = y0;
-            while y + r[3] <= bed[3] - 1.0 {
+            while y + r[3] <= bed[3] - edge {
                 let mut x = x0;
-                while x + r[2] <= bed[2] - 1.0 {
+                while x + r[2] <= bed[2] - edge {
                     if clear(x, y) {
                         let s = score(x, y);
                         if best.is_none_or(|(b, _)| s < b - 1e-9) {
@@ -1798,6 +1806,42 @@ mod tests {
             t.depth
         );
         assert!(t.depth > 40.0);
+    }
+
+    #[test]
+    fn placement_reserves_the_skirt_around_the_tower_at_the_bed_edge() {
+        for (auto, shield) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut c = tower_cfg(&[
+                ("prime_tower_auto_position", serde_json::json!(auto)),
+                ("wipe_tower_x", serde_json::json!([0.0])),
+                ("wipe_tower_y", serde_json::json!([200.0])),
+                ("skirt_loops", serde_json::json!(2)),
+                ("skirt_distance", serde_json::json!(6.0)),
+            ]);
+            c.skirt_loops = 2;
+            c.skirt_distance = 6.0;
+            if shield {
+                c.skirt_height = 0;
+                c.raw.insert("draft_shield".into(), serde_json::json!("enabled"));
+            }
+            let parts = [part(60.0, 20.0, 240.0, 240.0)];
+            let Ok(Some(p)) = place(&c, 3, &rows_for(60.0), None, &parts, &[], 15.0) else {
+                panic!("placed")
+            };
+            let t = p.tower(&c, 3).expect("tower");
+            let r = t.reach(t.brim.max(0.0));
+            let skirt =
+                c.skirt_distance + (f64::from(c.skirt_loops) - 0.5) * crate::session::skirt_spacing_mm(&c);
+            let bed = c.bed_rect();
+            assert!(
+                p.origin[0] + r[0] - skirt >= bed[0],
+                "left skirt edge {}",
+                p.origin[0] + r[0] - skirt
+            );
+            assert!(p.origin[1] + r[1] - skirt >= bed[1]);
+            assert!(p.origin[0] + r[2] + skirt <= bed[2]);
+            assert!(p.origin[1] + r[3] + skirt <= bed[3]);
+        }
     }
 
     #[test]

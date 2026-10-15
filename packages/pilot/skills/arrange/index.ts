@@ -111,7 +111,9 @@ export function createArrange(shared: ToolShared) {
 
       const plates: ProjectPlate[] = []
       let left = count
-      const caps = targets.map((t) => fitGrid(t.vol, ox, oy, spacing))
+      const caps = targets.map((t, k) => ctx.project?.arrangeCapacity
+        ? { perPlate: ctx.project.arrangeCapacity(obj.id, t.vol, spacing, k + 1), rotated: false }
+        : fitGrid(t.vol, ox, oy, spacing))
       const even = Math.ceil(count / targets.length)
       for (let k = 0; k < targets.length && left > 0; k++) {
         const t = targets[k]
