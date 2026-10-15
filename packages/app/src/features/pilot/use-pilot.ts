@@ -15,6 +15,7 @@ import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { hostSlices } from '../../state/model-mode'
 import { get } from '../../state/store'
+import { dockPilot, setDockPilot } from './dock-model'
 import { bundledKb } from './kb'
 import { dockLogs } from './dock-log'
 import { appProject, pilotSlicer } from './project'
@@ -39,6 +40,8 @@ export function dockPilotOptions(host: Host, parts: { printers: PrinterHost; llm
   return {
     host: { printers: guardedPrinters(host) ?? printers, slicer: pilotSlicer(host), geom: shapes, llm, approvals, projectExport: projectExportHost(host) },
     config,
+    // a local model in the dock gets the dock's own tools (@slicerx/pilot surfaces)
+    surface: 'dock',
     policy: DEFAULT_POLICY,
     // every event is logged, for the read-back over the app link (mimir.session)
     store: dockLogs,
@@ -64,6 +67,7 @@ export function usePilot(): Pilot | null {
     const llm = pilotTransport(host)
     if (!printers || !llm || !approvals) return
     let live = true
+    let mine: Pilot | null = null
     const chosen = pilotModel(edition, get().pilot)
     const base0 = chosen ? { ...DEFAULT_CONFIG, ...chosen } : DEFAULT_CONFIG
     // Who pays decides the models: the ChatGPT plan uses huginn and muninn, an API key one model.
@@ -74,10 +78,15 @@ export function usePilot(): Pilot | null {
       // mimir cloud is billed per token like a key: one model for every turn
       const config = base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' as const } : paid ? { ...base0, billing: paid } : base0
       const base = dockPilotOptions(host, { printers, llm, approvals, config, kb })
-      setPilot(createPilot(ok ? base : { ...base, client: createDemoClient() }))
+      const made = createPilot(ok ? base : { ...base, client: createDemoClient() })
+      // clients read back what answers here and the tools its model is offered (mimir.dock)
+      setDockPilot({ pilot: made, link: ok ? 'model' : 'demo', config })
+      mine = made
+      setPilot(made)
     })
     return () => {
       live = false
+      if (mine && dockPilot() === mine) setDockPilot(null)
     }
   }, [host, edition, cloud])
   return pilot
