@@ -90,7 +90,14 @@ pub struct Logo {
 #[serde(untagged)]
 pub enum Theme {
     Id(String),
-    Custom { base: String, tokens: serde_json::Value },
+    Custom {
+        base: String,
+        tokens: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        light: Option<serde_json::Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dark: Option<serde_json::Value>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -610,6 +617,17 @@ mod tests {
 
     fn fixture(name: &str) -> String {
         std::fs::read_to_string(format!("{}/../fixtures/{name}", env!("CARGO_MANIFEST_DIR"))).unwrap()
+    }
+
+    #[test]
+    fn keeps_theme_modes_when_services_pass_the_config_through() {
+        let input = serde_json::json!({
+            "base": "subban", "tokens": { "visuals": { "--ti-sk": "#abcdef" } },
+            "light": { "visuals": { "--accent": "#146676" } },
+            "dark": { "visuals": { "--accent": "#88ddcc" } }
+        });
+        let theme: Theme = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(serde_json::to_value(theme).unwrap(), input);
     }
 
     #[test]

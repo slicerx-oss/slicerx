@@ -8,6 +8,8 @@ Status: the schema, loaders and build helpers are in `packages/edition-config`, 
 
 ## What the configuration covers
 
+For separate light and dark accent, tool icon, tooltip loop and sketch glyph colors, see [Restyle tool icons and tooltip loops](integrators/restyle-icons-and-loops.md). They live in `brand.theme` and take effect without editing the app entry points.
+
 | Section | What it sets |
 | --- | --- |
 | `id` | a short machine id (`harbor`), used in file names, storage keys and user agents |

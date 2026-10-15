@@ -5,6 +5,7 @@
 // test checks the two lists match. Nothing here prints, queues, approves, signs in or changes connection settings.
 // look.set changes only two view preferences: Frame the view and Toolbar size.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
+import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
 import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { appName, currentEdition, editionHasCad } from '../edition'
@@ -202,7 +203,13 @@ const TOOLBAR_SIZES = ['large', 'medium', 'small'] as const
 /** The view preferences: Toolbar size, and Frame the view in an edition with Model's modeling tools. */
 function lookState() {
   const a = get().appearance
-  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}) }
+  const root = document.documentElement
+  const scheme = root.dataset['scheme'] === 'light' ? 'light' : 'dark'
+  const css = getComputedStyle(root)
+  const config = currentEdition().brand.theme
+  const overrides = typeof config === 'string' ? {} : { ...config.tokens.visuals, ...config[scheme]?.visuals }
+  const visuals = Object.fromEntries(VISUAL_TOKEN_NAMES.map((name) => [name, css.getPropertyValue(name).trim()]).filter(([, value]) => value))
+  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}), theme: { scheme, visuals, overrides } }
 }
 
 /**

@@ -57,10 +57,12 @@ export function editionTheme(edition: EditionConfig, scheme: 'dark' | 'light', c
   // Drop unset keys: the theme types do not accept explicit undefined.
   const defined = <T extends object>(o: T | undefined) => (o ? (Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]-?: Exclude<T[K], undefined> }) : undefined)
   const input: ThemeInput = { name: edition.id }
-  const colors = defined(t.tokens.colors)
+  const colors = defined({ ...t.tokens.colors, ...t[scheme]?.colors })
+  const visuals = defined({ ...t.tokens.visuals, ...t[scheme]?.visuals })
   const fonts = defined(t.tokens.fonts)
   const radius = defined(t.tokens.radius)
   if (colors) input.colors = colors as Partial<ThemeColors>
+  if (visuals) input.visuals = visuals
   // a family name alone would fall back to the browser's serif face wherever the font is missing
   if (fonts) input.fonts = Object.fromEntries(Object.entries(fonts).map(([k, v]) => [k, fontStack(v, k === 'mono' ? 'mono' : 'sans')]))
   if (radius) input.radius = radius
@@ -69,10 +71,10 @@ export function editionTheme(edition: EditionConfig, scheme: 'dark' | 'light', c
 
 const HEX = /^#[0-9a-fA-F]{6}$/
 
-/** The edition's accent as #rrggbb: its purple token, else Subban's. New objects take it, so an edition never shows the SlicerX purple. */
-export function brandAccent(edition: EditionConfig = current): string {
+/** New objects use the edition's accent for the active scheme, falling back to its shared purple token. */
+export function brandAccent(edition: EditionConfig = current, scheme: 'dark' | 'light' = typeof document !== 'undefined' && document.documentElement.dataset['scheme'] === 'light' ? 'light' : 'dark'): string {
   const t = edition.brand.theme
-  const purple = typeof t === 'string' ? undefined : t.tokens.colors?.['purple']
+  const purple = typeof t === 'string' ? undefined : t[scheme]?.visuals?.['--accent'] ?? t.tokens.visuals?.['--accent'] ?? t[scheme]?.colors?.['purple'] ?? t.tokens.colors?.['purple']
   return purple && HEX.test(purple) ? purple : subban.colors.purple
 }
 

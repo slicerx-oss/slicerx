@@ -185,7 +185,7 @@
   --stage-pill: #16171e;
   --stage-pill-text: #f8f8f2;
   --stage-pill-line: rgb(255 255 255 / 18%);
-  --stage-grid: #5a5e74;
+  --stage-grid-fallback: #5a5e74;
   --stage-ptr: white;
   --stage-ptr-line: #111218;
 
@@ -210,7 +210,7 @@
   --stage-a3: color-mix(in srgb, var(--accent) 80%, black);
   --stage-aol: color-mix(in srgb, var(--accent) 40%, black);
   --stage-pill: #2d2834;
-  --stage-grid: #8b8395;
+  --stage-grid-fallback: #8b8395;
   --ti-t1: color-mix(in srgb, var(--ink-0) 25%, white);
   --ti-t2: color-mix(in srgb, var(--fg) 18%, var(--ink-0));
   --ti-t3: color-mix(in srgb, var(--fg) 42%, var(--ink-0));

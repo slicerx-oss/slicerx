@@ -6,6 +6,7 @@
 // the mouse and keyboard conventions of those slicers and rename a tab or two; layout and look are
 // SlicerX's for everyone, and the theme owns color.
 import { LOOK_IDS, LOOK_OPTIONS, type LayoutSpec, type LookAndFeelPreset, type LookId, type LookSpec } from '@slicerx/contracts'
+import { reapplyVisualTokens } from './theme-visuals'
 
 export { LOOK_IDS, LOOK_OPTIONS }
 export type { LookAndFeelPreset, LookId, LayoutSpec, LookSpec }
@@ -110,6 +111,7 @@ export function applyPreset(preset: LookAndFeelPreset, el?: HTMLElement): void {
   if (!target) return
   for (const name of ALL_VAR_NAMES) target.style.removeProperty(name)
   for (const [k, v] of Object.entries(lookToVars(preset.look))) target.style.setProperty(k, v)
+  reapplyVisualTokens(target, ALL_VAR_NAMES)
   target.dataset['look'] = preset.id
   target.dataset['density'] = preset.look.density
   target.dataset['hairlines'] = preset.look.hairlines
@@ -122,6 +124,7 @@ export function clearPreset(el?: HTMLElement): void {
   const target = el ?? (typeof document !== 'undefined' ? document.documentElement : undefined)
   if (!target) return
   for (const name of ALL_VAR_NAMES) target.style.removeProperty(name)
+  reapplyVisualTokens(target, ALL_VAR_NAMES)
   for (const key of ['look', 'density', 'hairlines', 'gradient']) delete target.dataset[key]
 }
 

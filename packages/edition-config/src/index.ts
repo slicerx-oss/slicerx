@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/edition-config. Browser safe; Node loaders are in '@slicerx/edition-config/node'.
 export * from './schema.ts'
+export { VISUAL_TOKEN_NAMES, type VisualTokenName } from './visual-tokens.ts'
 export { NEUTRAL_EDITION } from './defaults.ts'
 export { defineEditionConfig, parseEditionConfig, checkEditionConfig, EditionConfigError, type EditionConfigLayer } from './define.ts'
 export { envLayer, ENV_VARS } from './env.ts'

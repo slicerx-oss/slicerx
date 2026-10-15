@@ -4,7 +4,7 @@
 // the file sets it): a dark theme gets a dark studio, a light theme a light one. The theme layer
 // publishes the colors as --scene-* variables; this reads them for the viewport.
 import type { ViewportTheme } from '@slicerx/viewport'
-import { COLORBLIND_THEME } from '@slicerx/viewport/palette'
+import { COLORBLIND_THEME, type GlyphColors } from '@slicerx/viewport/palette'
 import { parseHex } from '@slicerx/ui/theme'
 
 const MAP = [
@@ -20,6 +20,12 @@ const MAP = [
   ['--cyan', 'liveLayer'],
 ] as const
 
+const GLYPHS = {
+  '--glyph-line': 'line', '--glyph-picked-line': 'pickedLine',
+  '--glyph-node': 'node', '--glyph-picked-node': 'pickedNode', '--glyph-center': 'center',
+  '--glyph-halo': 'halo', '--glyph-picked-edge': 'pickedEdge', '--glyph-picked-halo': 'pickedHalo',
+} as const
+
 /** The scene colors for the theme applied to the document, or undefined for the default studio. */
 export function sceneThemeFromCss(root: HTMLElement = document.documentElement): ViewportTheme | undefined {
   const cs = getComputedStyle(root)
@@ -28,7 +34,15 @@ export function sceneThemeFromCss(root: HTMLElement = document.documentElement):
     const v = cs.getPropertyValue(name).trim()
     if (parseHex(v)) scene[key] = v
   }
-  return Object.keys(scene).length ? { scene } : undefined
+  // Only an explicit edition accent replaces the existing scene selection color.
+  const accent = root.style.getPropertyValue('--accent').trim()
+  if (/^#[0-9a-fA-F]{6}$/.test(accent)) scene.selection = accent
+  const glyphs: GlyphColors = {}
+  for (const [name, key] of Object.entries(GLYPHS)) {
+    const value = cs.getPropertyValue(name).trim()
+    if (/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value)) glyphs[key] = value
+  }
+  return Object.keys(scene).length || Object.keys(glyphs).length ? { scene, ...(Object.keys(glyphs).length ? { glyphs } : {}) } : undefined
 }
 
 /** The scene theme with the toolpath palette the person picked on top. */

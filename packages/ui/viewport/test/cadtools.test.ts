@@ -3,7 +3,7 @@
 import { InterleavedBufferAttribute, LineSegments, Matrix4, Mesh, Vector3 } from 'three'
 import { Line2 } from 'three/addons/lines/Line2.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DimensionLayer, EdgePreview, PLANE_EDGE, PLANE_EDGE_LIGHT, PLANE_FILL, PLANE_FILL_LIGHT, PushPreview, SketchLayer, frameMatrix, fromPlane, glyphInk, glyphPixels, prismMatrix, rayOnPlane, toPlane, type CadFrame, type SketchGlyphKind } from '../src/cadtools'
 import type { V3 } from '../src/scaling'
 
@@ -190,6 +190,30 @@ describe('edge preview', () => {
 })
 
 describe('constraint glyphs', () => {
+  it('uses custom pixel colors and redraws existing glyph textures only when their palette changes', () => {
+    const colors = { line: '#123456', pickedLine: '#234567', node: '#345678', pickedNode: '#456789', center: '#56789a', halo: '#6789abdd', pickedEdge: '#789abc', pickedHalo: '#89abcd' }
+    for (const light of [false, true]) {
+      expect(glyphInk(false, light, colors)).toEqual({ l: colors.line, o: colors.node, w: colors.center, e: colors.halo, h: colors.halo })
+      expect(glyphInk(true, light, colors)).toEqual({ l: colors.pickedLine, o: colors.pickedNode, w: colors.center, e: colors.pickedEdge, h: colors.pickedHalo })
+    }
+    const fills: string[] = []
+    const context = { fillStyle: '', fillRect() { fills.push(this.fillStyle) } }
+    vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => context }) })
+    const layer = new SketchLayer()
+    try {
+      layer.set({ frame: WALL, paths: [], handles: [], glyphs: [{ kind: 'horizontal', picked: true, at: [0, 0], slot: 0 }, { kind: 'coincident', picked: true, at: [2, 0], slot: 0 }] })
+      const redraw = vi.spyOn(layer, 'set')
+      layer.setLight(false, colors)
+      expect(redraw).toHaveBeenCalledTimes(1)
+      expect(fills).toContain(colors.pickedLine)
+      expect(fills).toContain(colors.center)
+      layer.setLight(false, { ...colors })
+      expect(redraw).toHaveBeenCalledTimes(1)
+      layer.setLight(false)
+      expect(redraw).toHaveBeenCalledTimes(2)
+      expect(fills.at(-1)).toBe(glyphInk(true, false).h)
+    } finally { layer.dispose(); vi.unstubAllGlobals() }
+  })
   const KINDS: SketchGlyphKind[] = ['coincident', 'horizontal', 'vertical', 'parallel', 'perpendicular', 'tangent', 'equal', 'midpoint', 'concentric', 'collinear', 'symmetric']
   // the halo's reach round a lit pixel
   const reach = (rows: string[], x: number, y: number) => {

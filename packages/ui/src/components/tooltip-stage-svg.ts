@@ -65,7 +65,7 @@ const CSS = `.sxs{overflow:visible}
 .sxs .s-n{fill:none}.sxs .s-hole{fill:var(--stage-ol);fill-opacity:.85}.sxs .s-wire{fill:none;stroke:var(--stage-ol);stroke-width:.8;stroke-opacity:.55}.sxs .s-cy{fill:url(#sxs-cy)}.sxs .s-cya{fill:url(#sxs-cya)}
 .sxs .s-still{display:none}
 .sxs .s-ghost{fill:none;stroke:var(--stage-cut);stroke-width:1.3;stroke-dasharray:3 2.5}
-.sxs-grid{fill:none;stroke:var(--scene-grid, var(--stage-grid));stroke-width:1;opacity:.55}
+.sxs-grid{fill:none;stroke:var(--stage-grid,var(--scene-grid,var(--stage-grid-fallback)));stroke-width:1;opacity:.55}
 .sxs-ptr{fill:var(--stage-ptr);stroke:var(--stage-ptr-line);stroke-width:1.5}.sxs-ptrs{fill:black;opacity:.35}
 .sxs-rip{fill:none;stroke:white;stroke-width:1.5;transform-box:fill-box;transform-origin:center;animation-name:sxs-rip}
 .sxs-pill{fill:var(--stage-pill);stroke:var(--stage-pill-line);stroke-width:1}

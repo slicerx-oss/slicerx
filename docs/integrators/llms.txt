@@ -6,6 +6,8 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 
 ## Docs
 
+- [restyle-icons-and-loops.md](restyle-icons-and-loops.md): recolor edition icons, tooltip loops and sketch glyphs with shared, light and dark config values; token defaults and build checks
+
 - [AGENTS.md](AGENTS.md): step-by-step instructions for coding agents, with MCP setup per client, the interview, recipes, theming and the rules
 - [Credit kit](credit-kit/README.md): "Made possible by SlicerX" badges, a Support SlicerX button, copy to paste, usage rules and screenshots
 - [../integrating.md](../integrating.md): the long guide to building your own edition, with a worked example

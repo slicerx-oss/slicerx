@@ -6,6 +6,8 @@ One typed configuration for every edition surface: the web and desktop apps, the
 
 ## Public API
 
+Edition themes support shared `brand.theme.tokens.visuals` and separate `brand.theme.light.visuals` / `brand.theme.dark.visuals` color overrides. `VISUAL_TOKEN_NAMES` lists the accepted accent, icon, tooltip loop and constraint glyph properties. See [the restyling guide](../../docs/integrators/restyle-icons-and-loops.md) for examples, defaults and checks.
+
 ```ts
 import { defineEditionConfig, viteDefines, tauriConfig, expoConfig, wellKnown, editionFromBuild } from '@slicerx/edition-config'
 import { loadEditionConfig } from '@slicerx/edition-config/node'

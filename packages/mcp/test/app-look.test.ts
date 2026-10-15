@@ -12,6 +12,11 @@ const refuse = (code: string) => (async () => {
 }) as AppLinkCaller['call']
 
 describe('app look tools', () => {
+  it('preserves edition color read-back from the running app', async () => {
+    const look: AppLook = { toolbarSize: 'large', theme: { scheme: 'light', visuals: { '--accent': '#146676' }, overrides: { '--accent': '#146676' } } }
+    const [tool] = appLookTools({ call: async () => look } as unknown as AppLinkCaller, 'Harbor')
+    expect((await tool!.run({} as never, {} as never)).output).toEqual(look)
+  })
   it('read the preferences and set them, each answer read back from the app', async () => {
     let look: AppLook = { toolbarSize: 'large', modelFraming: 'selection' }
     const call = vi.fn(async (method: string, args?: Record<string, unknown>) => {

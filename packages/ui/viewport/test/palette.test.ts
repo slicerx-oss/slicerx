@@ -56,6 +56,12 @@ describe('FEATURE_COLORS', () => {
 })
 
 describe('resolveTheme', () => {
+  it('keeps glyph defaults automatic and validates named glyph overrides with optional alpha', () => {
+    expect(resolveTheme().glyphs).toEqual({})
+    expect(resolveTheme({ glyphs: { halo: '#ffffffd9', pickedLine: '#123456' } }).glyphs).toEqual({ halo: '#ffffffd9', pickedLine: '#123456' })
+    expect(themeProblems({ glyphs: { halo: 'white' } })).toHaveLength(1)
+    expect(themeProblems({ glyphs: { unknown: '#123456' } } as unknown as ViewportTheme)).toHaveLength(1)
+  })
   it('returns the defaults for no theme', () => {
     const t = resolveTheme()
     expect(t.scene).toEqual(SCENE)

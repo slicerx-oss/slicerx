@@ -6,6 +6,7 @@ import { z } from 'zod'
 
 import { isFork, POWERED_BY } from './links.ts'
 import { EDITION_SCHEMA_VERSION } from './version.ts'
+import { VISUAL_TOKEN_NAMES, type VisualTokenName } from './visual-tokens.ts'
 export { EDITION_SCHEMA_VERSION }
 
 /** Edition features, the ones an integrator can switch on or off. Base features (`pilot`, printers) are here too. */
@@ -33,8 +34,20 @@ const fontFile = z.object({
   style: z.enum(['normal', 'italic']).optional(),
 })
 
+const visualColor = z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/, 'a six-digit hex color, optionally followed by two alpha digits').optional()
+const visualTokens = z.object({
+  ...Object.fromEntries(VISUAL_TOKEN_NAMES.map(name => [name, visualColor])) as Record<VisualTokenName, typeof visualColor>,
+  '--accent': z.string().regex(/^#[0-9a-fA-F]{6}$/, 'the accent must be an opaque six-digit hex color').optional(),
+}).strict()
+const schemeTokens = z.object({
+  colors: z.record(z.string(), z.string()).optional(),
+  visuals: visualTokens.optional(),
+}).strict()
+
 const themeTokens = z.object({
   colors: z.record(z.string(), z.string()).optional(),
+  /** Icon, tooltip loop and sketch glyph colors, applied after the look preset. */
+  visuals: visualTokens.optional(),
   /** Family names. The app adds a sans-serif (or monospace) fallback stack after each. */
   fonts: z.object({ display: z.string(), body: z.string(), mono: z.string() }).partial().optional(),
   /** Font files the build bundles, for families the base does not ship. */
@@ -59,7 +72,13 @@ export const brandSchema = z.object({
   theme: z.union([
     z.literal('subban'),
     z.literal('nocturne'),
-    z.object({ base: z.enum(['subban', 'nocturne']).default('subban'), tokens: themeTokens }),
+    z.object({
+      base: z.enum(['subban', 'nocturne']).default('subban'),
+      tokens: themeTokens.default({}),
+      /** Color overrides on top of the shared tokens, for the selected scheme. */
+      light: schemeTokens.optional(),
+      dark: schemeTokens.optional(),
+    }),
   ]).default('subban'),
   supportEmail: z.email().optional(),
   /**
