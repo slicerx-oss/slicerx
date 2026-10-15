@@ -32,10 +32,31 @@ async function nearFrontEdge(page: Page, id: string, px: number): Promise<{ x: n
   )
 }
 
+/**
+ * Frames the view once it draws the object and its camera has stopped: the view swaps a new plate in a frame after the
+ * store has it, and that swap can move the camera, so a screen point read before then would point somewhere else.
+ */
+async function settledFit(page: Page, id: string): Promise<void> {
+  await expect.poll(() => page.evaluate((id) => (window as unknown as { __vp: { drawnObjects(): string[] } }).__vp.drawnObjects().includes(id), id)).toBe(true)
+  const at = () => page.evaluate(() => (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp.screenOf([0, 0, 0]).map((v) => Math.round(v)).join(','))
+  await page.evaluate(() => (window as unknown as { __vp: { view(v: string, o?: unknown): void } }).__vp.view('fit', { animate: false }))
+  // still for a second: a panel that opens with Model moves the view's frame a little later
+  let last = ''
+  let still = 0
+  await expect
+    .poll(async () => {
+      const now = await at()
+      still = now === last ? still + 1 : 0
+      last = now
+      return still >= 4
+    }, { intervals: [250], timeout: 15_000 })
+    .toBe(true)
+}
+
 async function framedBox(page: Page): Promise<string> {
   const id = await freshBox(page)
   await page.locator('.sx-tab[data-mode="design"]').click()
-  await page.evaluate(() => (window as unknown as { __vp: { view(v: string, o?: unknown): void } }).__vp.view('fit', { animate: false }))
+  await settledFit(page, id)
   return id
 }
 
@@ -136,4 +157,29 @@ test.describe('Model pick feel (developer flag)', () => {
     await page.mouse.click(near.x, near.y)
     await expect(page.getByTestId('model-select-readout')).toHaveText('1 face on Box')
   })
+})
+
+// Review shots: before (flag off, as main is) and after (flag on), the pointer resting 3 px in from the box's front top
+// edge, in both themes, at the project's width. SX_SHOTS=1 only.
+test.describe('Model pick feel shots', () => {
+  for (const scheme of ['dark', 'light'] as const) {
+    for (const feel of [false, true]) {
+      test(`shots: ${feel ? 'after' : 'before'} in ${scheme}`, async ({ page }, info) => {
+        test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+        test.slow()
+        const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+        if (feel) await withFeel(page)
+        await openStudio(page, { settingsMode: 'developer', scheme, themeFollowsSystem: false })
+        const design = page.locator('.sx-tab[data-mode="design"]')
+        const id = await freshBox(page)
+        if (await design.isVisible()) await design.click()
+        await settledFit(page, id)
+        const near = await nearFrontEdge(page, id, 3)
+        await page.mouse.move(near.x - 30, near.y - 30)
+        await page.mouse.move(near.x, near.y, { steps: 4 })
+        await page.waitForTimeout(1200)
+        await page.screenshot({ path: `${dir}/pick-filter-${feel ? 'after' : 'before'}-${info.project.name === 'phone' ? 390 : 1440}-${scheme}.png` })
+      })
+    }
+  }
 })
