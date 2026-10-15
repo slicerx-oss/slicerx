@@ -319,7 +319,7 @@ const HANDLERS: Record<string, Handler> = {
   'app.info': () => {
     const s = get()
     const edition = currentEdition()
-    return { app: appName(), assistant: { ...assistantBrand(), enabled: edition.features.pilot }, tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS }
+    return { app: appName(), assistant: { ...assistantBrand(), enabled: edition.features.pilot }, tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS, toolheadSkipMatching: { ...s.toolheadSkipMatching } }
   },
   'plate.list': () => {
     const s = get()

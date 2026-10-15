@@ -35,6 +35,8 @@ export interface PrintCheck {
 /** Everything the sheet needs. `check` is null while the file is still being exported and checked. */
 export interface PrintSheetAsk {
   toolheads?: ToolheadPlan
+  showToolheads?: boolean
+  reviewToolheads?: (selected: Record<number, number>) => Promise<ToolheadPlan>
   printer: PrinterInfo
   status: PrinterStatus | null
   plateName: string
@@ -100,6 +102,10 @@ export function PrintSheet() {
   const [when, setWhen] = useState('')
   const [edits, setEdits] = useState<Record<number, string>>(() => ask?.refusal?.last.slotMap ?? {})
   const [busy, setBusy] = useState(false)
+  const skipMatching = useApp((s) => ask ? s.toolheadSkipMatching[ask.printer.id] === true : false)
+  const [expandedToolheads, setExpandedToolheads] = useState(false)
+  const [toolheadReview, setToolheadReview] = useState<{ plan?: ToolheadPlan; pending: boolean; error?: string }>({ pending: false })
+  const reviewSequence = useRef(0)
   const opened = useRef<PrintSheetAsk['resolve'] | null>(null)
   useEffect(() => {
     if (!ask) opened.current = null
@@ -112,6 +118,9 @@ export function PrintSheet() {
       setWhen('')
       setEdits(last?.slotMap ?? {})
       setBusy(false)
+      setExpandedToolheads(false)
+      setToolheadReview({ pending: false })
+      reviewSequence.current += 1
     }
   }, [ask])
   // The file name was decided with the plate; it is made fit for the printer here rather than asked for again.
@@ -121,7 +130,22 @@ export function PrintSheet() {
   // order and offers no choice it would ignore.
   const follows = ask ? followsSlotMap(ask.printer.plugin, fileName) : false
   const map: Record<number, string> = { ...(ask?.auto ?? {}), ...(follows || ask?.toolheads ? edits : {}) }
-  const missingToolhead = ask?.toolheads?.assignments.some((a) => !a.alternatives.includes(Number(map[a.tool + 1]) - 1)) ?? false
+  const toolheads = toolheadReview.plan ?? ask?.toolheads
+  const missingToolhead = toolheads?.assignments.some((a) => !a.alternatives.includes(Number(map[a.tool + 1]) - 1)) ?? false
+  const chooseToolhead = async (tool: number, value: string) => {
+    const next = { ...map, [tool + 1]: value }
+    setEdits(next)
+    if (!ask?.reviewToolheads) return
+    const sequence = ++reviewSequence.current
+    setToolheadReview((current) => ({ ...(current.plan ? { plan: current.plan } : {}), pending: true }))
+    const selected = Object.fromEntries(Object.entries(next).filter(([, head]) => head !== '').map(([filament, head]) => [Number(filament) - 1, Number(head) - 1]))
+    try {
+      const plan = await ask.reviewToolheads(selected)
+      if (reviewSequence.current === sequence) setToolheadReview({ plan, pending: false })
+    } catch (error) {
+      if (reviewSequence.current === sequence) setToolheadReview({ pending: false, error: error instanceof Error ? error.message : 'Could not check the toolhead choices' })
+    }
+  }
   const mapping = Boolean(ask && !(ask.connectOnly && !ask.refusal) && ask.filaments.length > 0 && ask.slots.length > 0 && mode !== 'upload')
   // Slots are picked here only when the automatic match leaves a filament without one or two on the same slot. The
   // choice stays open once shown, so a pick does not make the control vanish under the pointer.
@@ -135,7 +159,7 @@ export function PrintSheet() {
   const via = ask?.connectOnly && ask.bambuConnect && !ask.refusal ? ask.bambuConnect : null
   const start = mode === 'start'
   // A filament with no slot would go out as unmapped, and the printer would pick one: the person picks it here instead.
-  const blocked = busy || checking || errors.length > 0 || dups.length > 0 || missingToolhead || (follows && unmapped.length > 0)
+  const blocked = busy || checking || toolheadReview.pending || Boolean(toolheadReview.error) || errors.length > 0 || dups.length > 0 || missingToolhead || (follows && unmapped.length > 0)
   const finish = (result: SendChoice | null) => {
     set({ printSheet: null })
     ask?.resolve(result)
@@ -248,23 +272,31 @@ export function PrintSheet() {
         ) : null}
         {ask.refusal?.storageFull ? <StorageFullHelp printer={ask.printer} /> : null}
         <div className="ps-body">
-          {ask.toolheads ? (
+          {toolheads && ask.showToolheads === false && !expandedToolheads ? <Button variant="ghost" onClick={() => setExpandedToolheads(true)}>Change toolheads</Button> : null}
+          {toolheads && (ask.showToolheads !== false || expandedToolheads) ? (
             <div className="ps-map" role="group" aria-label="Choose toolheads">
-              <p className="ps-map-head">Choose a loaded toolhead for each filament</p>
-              {ask.toolheads.assignments.map((a) => (
+              <p className="ps-map-head">Choose a toolhead for each filament</p>
+              {toolheads.headDataAvailable === false ? <p className="sx-muted">Spool info unavailable</p> : null}
+              {toolheads.assignments.map((a) => (
                 <div key={a.tool} className="ps-map-row">
                   <label htmlFor={`ps-toolhead-${a.tool}`}>Filament {a.tool + 1}</label>
-                  <select id={`ps-toolhead-${a.tool}`} className="mini" value={map[a.tool + 1] ?? ''} onChange={(e) => setEdits((current) => ({ ...current, [a.tool + 1]: e.target.value }))}>
-                    <option value="">{a.alternatives.length ? 'Choose a toolhead' : 'Required material is not loaded'}</option>
+                  <select id={`ps-toolhead-${a.tool}`} className="mini" value={map[a.tool + 1] ?? ''} onChange={(e) => void chooseToolhead(a.tool, e.target.value)}>
+                    <option value="">Choose a toolhead</option>
                     {a.alternatives.map((tool) => {
-                      const head = ask.toolheads!.toolheads.find((h) => h.tool === tool)
-                      return <option key={tool} value={String(tool + 1)}>Toolhead {tool + 1}: {head?.material} {head?.color}</option>
+                      const head = toolheads.toolheads.find((h) => h.tool === tool)
+                      return <option key={tool} value={String(tool + 1)}>T{tool + 1}: {toolheads.headDataAvailable === false ? 'Spool info unavailable' : head?.loaded ? `${head.material ?? 'Unknown material'} ${head.color ?? ''}` : 'Empty'}</option>
                     })}
                   </select>
-                  <span className="sx-muted">{a.reason}</span>
+                  <span className={a.materialMismatch || a.empty ? 'ps-row-warn' : 'sx-muted'}>{a.materialMismatch && toolheads.headDataAvailable !== false ? <Icon name="warning" size={15} /> : null}{a.reason}</span>
                 </div>
               ))}
-              {missingToolhead ? <p className="ps-row-warn" role="alert">Choose a compatible loaded toolhead for every filament. If a material is missing, load it and reopen this sheet.</p> : null}
+              {missingToolhead ? <p className="ps-row-warn" role="alert">Choose a toolhead for every filament.</p> : null}
+              {toolheadReview.pending ? <p aria-live="polite">Checking toolhead choices</p> : null}
+              {toolheadReview.error ? <p className="ps-row-warn" role="alert">{toolheadReview.error}</p> : null}
+              <div className="ps-opt">
+                <label htmlFor="ps-toolhead-skip">Don't ask when everything matches</label>
+                <Switch id="ps-toolhead-skip" checked={skipMatching} onChange={(checked) => set((current) => ({ toolheadSkipMatching: { ...current.toolheadSkipMatching, [ask.printer.id]: checked } }))} />
+              </div>
             </div>
           ) : null}
           {pick && mapping ? (

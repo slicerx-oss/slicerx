@@ -55,18 +55,22 @@ Printer config: `host`, optional `port`, `credentialRef` (keychain entry that ho
 
 ### U1 toolhead choices
 
-The shared Print sheet reads the U1's loaded materials and colors before sending. It proposes exact matches, asks for a choice when colors differ or more than one head matches, and refuses a missing material. Carbon-fiber and glass-fiber materials remain distinct from their unfilled versions. Upload only prepares and uploads the same chosen mapping without starting it.
+The shared Print sheet reads the U1's loaded materials and colors before sending. It prefers unused loaded spools, exact colors (CIEDE2000 Delta E at most 2), then nearest colors, with material breaking ties. A different material, different color or empty head remains a warning for the person to review. Carbon-fiber and glass-fiber materials remain distinct from their unfilled versions. Upload only prepares and uploads the chosen mapping without starting it.
+
+The per-printer "Don't ask when everything matches" preference hides the mapping choices only when every filament matches. Mismatches always show the choices; a material mismatch has a warning mark. The preference is read back in `app.info.toolheadSkipMatching`. Without spool data, a single-filament job follows the original send path; a multi-filament job offers T1 through T4 with "Spool info unavailable". A failed connection remains an error. Cancel sends nothing, and starting always requires the person's approval.
 
 Kit hosts expose `planToolheads(printerId, needs, selected?)` and `prepareToolheads(printerId, file, needs, selected)`. Both use zero-based logical and physical tool indices. Preparation returns a new file and a plan; keep the original file for later changes. Neither call uploads, changes the printer's map, or starts a print. Preparation requires a complete selection and a plain G-code file with supported tool references.
 
-The MCP tool `toolhead_mapping` returns assignments, compatible alternatives, loaded toolheads and refusal reasons. The CLI uses the same tool:
+The MCP tool `toolhead_mapping` returns assignments, alternatives, loaded toolheads, mismatch flags, `headDataAvailable` and `requiresConfirmation`. The CLI uses the same tool:
 
 ```sh
 slicerx-mcp call toolhead_mapping '{"printerId":"u1","needs":[{"tool":0,"material":"PLA","color":"#ff0000"}]}'
 slicerx-mcp call toolhead_mapping '{"printerId":"u1","needs":[{"tool":0,"material":"PLA","color":"#ff0000"}],"selected":{"0":3},"preparePlate":1}'
 ```
 
-`preparePlate` retains a mapped copy of an already sliced plate for that printer. Its read-back includes the original and prepared hashes. A later `printer.queue` requires that copy for a U1 and still requires the person's approval. Reslicing discards the prepared copy.
+`preparePlate` retains a mapped copy of an already sliced plate for that printer. Its read-back includes the original and prepared hashes and `changedLines` (body lines, excluding the verification header). A later `printer.queue` requires that copy for a U1, except a single-filament job without spool data, and still requires the person's approval. Reslicing discards the prepared copy.
+
+Preparation rewrites tool changes, M104/M109/M116 tool parameters and `EXTRUDER=extruderN`, preserving comments and the saved slice. Supported U1 startup INDEX macros and M900 tool parameters also follow the choice; A0 references already address physical heads and remain unchanged. Unsupported templates or embedded mapping changes are refused rather than partially rewritten.
 
 The upload and separately approved start recheck the selected loaded materials. Before starting a prepared file, the U1 connection verifies its remote bytes, checks that the printer is idle, establishes and reads back an identity firmware map and the used physical heads, then starts. Failed verification prevents start. This avoids applying an old firmware map to already rewritten tool numbers. These paths require validation on physical U1 hardware in addition to the mock protocol tests.
 

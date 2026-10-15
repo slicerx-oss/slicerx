@@ -10,7 +10,7 @@ export function createToolheadMapping(shared: ToolShared) {
     name: 'toolhead_mapping',
     version: '1.0.0',
     permission: 'read',
-    description: 'Read the Snapmaker U1 loaded toolheads and match job filaments by material and color. Return proposed assignments, alternatives and missing materials. Pass selected to check the person\'s choices. With preparePlate, rewrite a copy of that sliced plate for those choices and retain it for a later separately approved printer.queue. All tool indices are zero based. Never uploads or starts a print.',
+    description: 'Read the Snapmaker U1 loaded toolheads and match each job filament by exact color (Delta E at most 2), then nearest color, with material breaking ties and unused spools preferred. Return choices and color, material or empty-head warnings. Without spool data, offer four manual heads for multi-filament jobs. Pass selected to check the person\'s choices. With preparePlate, rewrite a send copy, report changedLines and retain it for a separately approved printer.queue. All tool indices are zero based. Never uploads or starts a print.',
     input: z.object({
       printerId: z.string().min(1).describe('Connected U1 printer id'),
       preparePlate: z.number().int().min(1).optional().describe('Sliced plate number to prepare with explicit selected choices; omit to plan only'),
@@ -29,7 +29,7 @@ export function createToolheadMapping(shared: ToolShared) {
       if (i.preparePlate !== undefined) {
         const prepare = ctx.host.printers.prepareToolheads
         if (!prepare) return { ok: false, summary: 'This connection does not support preparing toolhead mappings yet' }
-        if (!output.ready || !i.selected || Object.keys(i.selected).length !== i.needs.length) return { ok: false, summary: 'Choose a loaded toolhead for every job filament before preparing the plate', output }
+        if (!output.ready || !i.selected || Object.keys(i.selected).length !== i.needs.length) return { ok: false, summary: 'Choose a toolhead for every job filament before preparing the plate', output }
         const job = await exportPlate(shared, ctx, i.preparePlate)
         const prepared = await prepare.call(ctx.host.printers, i.printerId, job.file, i.needs, i.selected)
         const entry = shared.slices.get(i.preparePlate)
@@ -39,7 +39,7 @@ export function createToolheadMapping(shared: ToolShared) {
       }
       return {
         ok: true,
-        summary: output.ready ? 'Toolhead choices are ready to review' : 'Choose toolheads or load the missing filament before preparing this job',
+        summary: output.ready ? 'Toolhead choices are ready to review' : 'Review the toolhead choices and warnings before preparing this job',
         output,
         untrusted: true,
         display: [{ kind: 'table' as const, head: ['Job filament', 'Toolhead', 'Status', 'Reason'], rows: output.assignments.map((a) => [String(a.tool + 1), a.physicalTool === null ? '' : String(a.physicalTool + 1), a.status, a.reason]) }],

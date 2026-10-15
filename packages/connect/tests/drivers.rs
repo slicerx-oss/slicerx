@@ -85,9 +85,10 @@ async fn u1_toolhead_planning_reads_loaded_filaments_without_printer_actions() {
             .plan_toolheads(&needs, &BTreeMap::from([(0, 0)]))
             .await
             .unwrap();
-        assert!(!wrong.ready);
-        assert_eq!(wrong.assignments[0].status, ToolheadMatch::Unavailable);
-        let data = b"M104 T0 S230\nT0\nG1 X10 E1\n".to_vec();
+        assert!(wrong.ready);
+        assert!(wrong.assignments[0].material_mismatch);
+        assert_eq!(wrong.assignments[0].status, ToolheadMatch::Selected);
+        let data = b"M104 T0 S230\nT0\nM109 T0 S230\nM116 T0 ; T0 untouched\nSET_PRESSURE_ADVANCE EXTRUDER=extruder0 ADVANCE=0.02\nG1 X10 E1\n".to_vec();
         let source = sx_connect::JobFile {
             name: "mapped.gcode".to_owned(),
             kind: JobKind::Gcode,
@@ -99,10 +100,11 @@ async fn u1_toolhead_planning_reads_loaded_filaments_without_printer_actions() {
             .await
             .unwrap();
         assert!(read_back.ready);
+        assert_eq!(read_back.changed_lines, 5);
         assert!(
             std::str::from_utf8(&prepared.data)
                 .unwrap()
-                .ends_with("M104 T1 S230\nT1\nG1 X10 E1\n")
+                .ends_with("M104 T1 S230\nT1\nM109 T1 S230\nM116 T1 ; T0 untouched\nSET_PRESSURE_ADVANCE EXTRUDER=extruder1 ADVANCE=0.02\nG1 X10 E1\n")
         );
         assert_eq!(prepared.sha256, toolhead_test_hash(&prepared.data));
         assert_eq!(mocks.state().await["log"], before["log"]);
@@ -111,6 +113,134 @@ async fn u1_toolhead_planning_reads_loaded_filaments_without_printer_actions() {
             before["snapmaker-u1"]["log"]
         );
     }
+}
+
+#[tokio::test]
+async fn u1_color_first_choices_and_missing_spool_data_are_read_only() {
+    use std::collections::BTreeMap;
+    use sx_connect::toolhead_map::ToolheadNeed;
+    let mocks = Mocks::start("snapmaker-u1", &[]).await;
+    let connector = SnapmakerConnector::new(Arc::new(MemoryGate::new()));
+    let cfg = config("u1", "snapmaker", mocks.port("snapmaker-u1"));
+    let session = connector.connect(&cfg, &secrets(&[])).await.unwrap();
+    let before = mocks.state().await["snapmaker-u1"]["log"].clone();
+    let mut needs = vec![ToolheadNeed {
+        tool: 0,
+        material: "PLA".into(),
+        color: "00ff00".into(),
+    }];
+    let plan = session.plan_toolheads(&needs, &BTreeMap::new()).await.unwrap();
+    assert_eq!(plan.assignments[0].physical_tool, Some(1));
+    assert!(plan.assignments[0].material_mismatch);
+    assert!(!plan.assignments[0].color_mismatch);
+    assert!(plan.requires_confirmation);
+    needs[0].color = "fe0000".into();
+    let plan = session.plan_toolheads(&needs, &BTreeMap::new()).await.unwrap();
+    assert_eq!(plan.assignments[0].physical_tool, Some(0));
+    assert!(!plan.requires_confirmation);
+    needs.push(ToolheadNeed {
+        tool: 1,
+        ..needs[0].clone()
+    });
+    let plan = session.plan_toolheads(&needs, &BTreeMap::new()).await.unwrap();
+    assert_ne!(
+        plan.assignments[0].physical_tool,
+        plan.assignments[1].physical_tool
+    );
+    assert!(plan.requires_confirmation);
+    let empty = session
+        .plan_toolheads(&needs, &BTreeMap::from([(0, 2), (1, 0)]))
+        .await
+        .unwrap();
+    assert!(empty.ready);
+    assert!(empty.assignments[0].empty);
+    assert!(empty.requires_confirmation);
+    assert_u1_color_preferences(session.as_ref(), &mocks).await;
+    mocks
+        .control("/u1", serde_json::json!({"omitSpoolData":true}))
+        .await;
+    let unknown = session.plan_toolheads(&needs, &BTreeMap::new()).await.unwrap();
+    assert!(!unknown.head_data_available);
+    assert!(!unknown.ready);
+    assert!(
+        unknown
+            .assignments
+            .iter()
+            .all(|a| a.alternatives == vec![0, 1, 2, 3])
+    );
+    let manual = session
+        .plan_toolheads(&needs, &BTreeMap::from([(0, 3), (1, 1)]))
+        .await
+        .unwrap();
+    assert!(manual.ready);
+    let mut source = toolhead_job_file();
+    source.data.extend_from_slice(b"T1\nG1 X20 E2\n");
+    source.sha256 = toolhead_test_hash(&source.data);
+    let (file, read_back) = session
+        .prepare_toolheads(source, &needs, &BTreeMap::from([(0, 3), (1, 1)]))
+        .await
+        .unwrap();
+    assert_eq!(read_back.changed_lines, 1);
+    assert!(
+        std::str::from_utf8(&file.data)
+            .unwrap()
+            .ends_with("T3\nG1 X10 E1\nT1\nG1 X20 E2\n")
+    );
+    assert_eq!(mocks.state().await["snapmaker-u1"]["log"], before);
+}
+
+async fn assert_u1_color_preferences(session: &dyn sx_connect::PrinterSession, mocks: &Mocks) {
+    use std::collections::BTreeMap;
+    use sx_connect::toolhead_map::ToolheadNeed;
+    let nearest = session
+        .plan_toolheads(
+            &[ToolheadNeed {
+                tool: 0,
+                material: "PETG".into(),
+                color: "ff3300".into(),
+            }],
+            &BTreeMap::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(nearest.assignments[0].physical_tool, Some(0));
+    assert!(nearest.assignments[0].color_mismatch);
+    assert!(nearest.assignments[0].material_mismatch);
+    mocks
+        .control(
+            "/u1",
+            serde_json::json!({"filamentColors":["FF0000FF","FF0000FF","","FF0000FF"]}),
+        )
+        .await;
+    let tied = session
+        .plan_toolheads(
+            &[ToolheadNeed {
+                tool: 0,
+                material: "PETG".into(),
+                color: "ff0000".into(),
+            }],
+            &BTreeMap::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(tied.assignments[0].physical_tool, Some(1));
+    let repeated = (0..5)
+        .map(|tool| ToolheadNeed {
+            tool,
+            material: "PLA".into(),
+            color: "ff0000".into(),
+        })
+        .collect::<Vec<_>>();
+    let spare = session.plan_toolheads(&repeated, &BTreeMap::new()).await.unwrap();
+    assert_eq!(
+        spare.assignments[..3]
+            .iter()
+            .filter_map(|a| a.physical_tool)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        3
+    );
+    assert!(spare.assignments[3..].iter().all(|a| a.physical_tool == Some(0)));
 }
 
 #[tokio::test]
