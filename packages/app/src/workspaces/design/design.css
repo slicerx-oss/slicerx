@@ -180,3 +180,11 @@ span.cad-step-n, span.cad-step-name { cursor: default; }
 @media (min-width: 901px) {
   .studio[data-model-mode="design"] .sx-edge-tab:not(:hover):not(:focus-visible):not([data-attention]) { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+
+/* Select Other (select-other-list.tsx): the list of everything under a held spot, and the tag after a click. */
+.so-list .sx-menu-item-aside { font: var(--fw-regular) var(--fs-sm) var(--f-body); }
+.so-list.so-touch .sx-menu-item { min-height: var(--h-lg); }
+@media (pointer: coarse) { .so-list .sx-menu-item { min-height: var(--h-lg); } }
+.so-tag { position: fixed; z-index: var(--z-menu); display: flex; align-items: center; gap: 8px; max-width: 280px; padding: 4px 12px; border-radius: var(--r-pill); color: var(--fg); font: var(--fw-medium) var(--fs-sm) var(--f-body); white-space: nowrap; pointer-events: none; }
+.so-tag > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.so-tag-count { color: var(--muted); font-variant-numeric: tabular-nums; }

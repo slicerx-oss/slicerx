@@ -30,6 +30,7 @@ import { appLookTools } from './app-look'
 import { appSketchTools } from './app-sketch'
 import { appModelPushTools } from './app-model-push'
 import { appModelOpPreviewTools } from './app-model-op-preview'
+import { appSelectTools } from './app-select'
 import { mimirAskTools } from './mimir-ask'
 import { appVolumeTools } from './app-volumes'
 import { appPlateTools } from './app-plates'
@@ -197,6 +198,8 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const look = appLookTools(appLink, productName())
   // The open sketch's dimension boxes, read and set as the person types them on the shape.
   const sketchBoxes = appSketchTools(appLink, productName())
+  // Model's Select Other: what is under a spot of the view, and picking one of those things.
+  const select = appSelectTools(appLink, productName())
   const volumes = appVolumeTools(appLink, productName())
   // Push and pull as the person has it open in Model: its face and pending distance, and a distance typed in for them.
   const push = appModelPushTools(appLink, productName())
@@ -206,7 +209,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
   // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...sketchBoxes, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,

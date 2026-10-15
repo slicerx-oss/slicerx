@@ -15,6 +15,7 @@ import { layerCountNow, stepLayer } from '../workspaces/preview/layer-step'
 import { toggleLegend, toggleOneLayer } from '../workspaces/preview/layer-keys'
 import { PICK_KINDS, pickKeysOn } from './pick-filter'
 import { clearPicks, setPickKind } from './sub-pick'
+import { otherPick, selectOtherOn } from './select-other'
 import { arrangePlate, centerSelected, clearSelection, dropSelectedToBed, selectAll } from './edit'
 import { history } from './history'
 import { stepPlate } from './plate-step'
@@ -161,6 +162,9 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
         if (matchShortcut(e, key)) return run(() => setPickKind(kind, 'only'))
         if (matchShortcut(e, `Shift+${key}`)) return run(() => setPickKind(kind, 'toggle'))
       }
+      // Select Other from the keyboard: the list of everything under the pointer's spot (plate/select-other.ts)
+      const other = map['select.other']
+      if (other && matchShortcut(e, other) && selectOtherOn(s)) return run(() => void otherPick().then((m) => m.openFromKeys()))
       // an open tool keeps its own Esc (cancel); the picks it uses stay
       if (e.key === 'Escape' && s.subPicks.length && s.objectTool === null) return run(() => void clearPicks())
     }

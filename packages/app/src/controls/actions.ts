@@ -47,6 +47,7 @@ export const ACTION_LABEL: Record<KeyAction, { label: string; group: ActionGroup
   'select.object': { label: 'Pick whole objects (Shift adds or drops)', group: 'Prepare' },
   'select.face': { label: 'Pick faces (Shift adds or drops)', group: 'Prepare' },
   'select.edge': { label: 'Pick edges (Shift adds or drops)', group: 'Prepare' },
+  'select.other': { label: 'Select other: list everything under the pointer', group: 'Prepare' },
   'preview.legend': { label: 'Show or hide the legend', group: 'Preview' },
   'preview.singleLayer': { label: 'One layer mode', group: 'Preview' },
   'preview.jumpToLayer': { label: 'Jump to a layer', group: 'Preview' },

@@ -61,6 +61,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'model.push_set': 'read',
   // The open Model tool's operation preview: ok or error, its message, and whether the last good one is kept.
   'model.op_preview': 'read',
+  // Model's Select Other: everything under a spot of the view, and picking one of them. Like the preview, a pick
+  // changes what is selected in the window, never the project.
+  'select.under': 'read',
+  'select.other': 'read',
   'values.list': 'read',
   'values.set': 'edit',
   'values.remove': 'edit',
@@ -376,6 +380,9 @@ const HANDLERS: Record<string, Handler> = {
   'model.push': async () => (await import('./model-push')).readPush(),
   'model.push_set': async (args) => (await import('./model-push')).setPush(args),
   'model.op_preview': async () => (await import('./model-op-preview')).readOpPreview(),
+  // Loaded when first used, with the rest of Select Other.
+  'select.under': async (args) => (await import('../plate/select-other-pick')).linkUnder(args),
+  'select.other': async (args) => (await import('../plate/select-other-pick')).linkPick(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),

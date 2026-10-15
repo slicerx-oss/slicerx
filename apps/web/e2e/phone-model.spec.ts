@@ -3,8 +3,8 @@
 // Model on a phone, in the browser build that models only: the tools are one bar along the bottom of the view with
 // fixed slots a finger can hit, the tree and the open tool are sheets the bar opens, the tool's sheet leaves the model
 // in view, the sketch's drawing tools move into the bar, and a finger selects, turns the view, drags a gizmo handle and
-// holds for the ring menu. Touch is real: taps through the touchscreen, drags and holds through the browser's touch
-// events. A desktop window keeps the shelf.
+// holds for Select Other and its ring menu. Touch is real: taps through the touchscreen, drags and holds through the
+// browser's touch events. A desktop window keeps the shelf.
 import { type CDPSession, type Page } from '@playwright/test'
 import { appReady, expect, test } from './fixtures'
 
@@ -154,7 +154,7 @@ test.describe('Model on a phone', () => {
     expect(Math.abs(x1[14]! - x0[14]!)).toBeLessThan(0.01)
   })
 
-  test('a finger held on the model opens the ring menu', async ({ page }) => {
+  test('a finger held on the model opens Select Other, whose More actions opens the ring menu', async ({ page }) => {
     await openModel(page)
     const id = await addBox(page)
     // nothing selected, so no move arrow starts under the finger: a hold on a handle drags it instead
@@ -162,6 +162,8 @@ test.describe('Model on a phone', () => {
     const cdp = await page.context().newCDPSession(page)
     const mid = await screenOf(page, await middleOf(page, id))
     await finger(cdp, mid, mid, 800, 1)
+    await expect(page.getByTestId('select-other')).toBeVisible()
+    await page.getByTestId('select-other-more').tap()
     await expect(page.getByTestId('model-ring')).toBeVisible()
   })
 

@@ -20,6 +20,7 @@ import { SHAPES } from '../prepare/object-actions'
 import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
+import { SelectOtherList } from './select-other-list'
 import { startFillet } from '../../cad/start-hint'
 import { requestFinish, useCanFinish, useSketchInUse } from '../../cad/sketches'
 import { useSketchMode } from '../../cad/sketch-mode'
@@ -266,6 +267,7 @@ export function Shelf() {
         )}
       </div>
       <ViewRing />
+      <SelectOtherList />
       {dialog ? (
         <Suspense fallback={null}>
           <ToolDialog tool={dialog} onClose={() => set({ objectTool: null })} />
