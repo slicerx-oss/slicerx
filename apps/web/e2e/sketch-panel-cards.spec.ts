@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The sketch panel's two cards and the numbers at the cursor: a line drawn with a typed length and angle (Tab between
-// the pills), the pills staying in the view and off the point with typed and live numbers reading apart, the solid card
+// The sketch panel's two cards and the numbers on the view: a line drawn with a typed length and angle in the boxes on
+// it (Tab between them), the first point's pills staying in the view and off the point, the boxes inside the view with
+// typed and live numbers reading apart, the solid card
 // folded with its reason until a closed profile opens it, the tool's name in the Drawing header, Flip beside Direction,
 // Grid and Snap on one row and independent, Other plane by the face label, the view's mode pill and Look at the sketch
 // among the camera buttons, and nothing in the panel moving as tools are picked or the solid card opens.
@@ -38,33 +39,35 @@ const viewBox = (page: Page) =>
     return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
   })
 
-test('a line takes a typed length and angle, Tab moving between the pills', async ({ page, isMobile }) => {
+test('a line takes a typed length and angle in the boxes on it, Tab moving between them', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Modeling tools are desktop only')
   await sketchOnTop(page)
   const pills = page.getByTestId('sketch-pills')
+  const boxes = page.getByRole('group', { name: 'Sizes of the shape being drawn' })
   // the first point's pills are X and Y, following the cursor
   await sketchAt(page, 'hover', [2, 3])
   await expect(pills).toBeVisible()
   await expect(pills.locator('[data-label="X"]')).toContainText('2.00')
   await expect(pills.locator('[data-label="Y"]')).toContainText('3.00')
   await sketchAt(page, 'click', [0, 0])
-  // then length and angle from it, length focused first
+  // then length and angle on the line, the keyboard in Length first; the pills are gone
   await sketchAt(page, 'hover', [5, 0])
-  await expect(pills.locator('[data-label="Length"]')).toContainText('5.00')
-  await expect(pills.locator('[data-label="Angle"]')).toContainText('0.0')
-  await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
-  // typing edits the focused pill; Tab goes on to the angle
-  await page.locator('body').press('2')
-  const length = pills.getByRole('textbox', { name: 'Length mm' })
+  const length = boxes.getByRole('textbox', { name: 'Length mm' })
+  const angle = boxes.getByRole('textbox', { name: 'Angle °' })
+  await expect(length).toHaveValue('5.00')
+  await expect(angle).toHaveValue('0.0')
+  await expect(boxes.locator('[data-box="length"]')).toHaveAttribute('data-focus', '')
   await expect(length).toBeFocused()
-  await length.press('0')
+  await expect(pills).toBeHidden()
+  // typing replaces the picked live value; Tab goes on to the angle
+  await page.keyboard.press('2')
+  await page.keyboard.press('0')
   await expect(length).toHaveValue('20')
   await length.press('Tab')
-  const angle = pills.getByRole('textbox', { name: 'Angle °' })
   await expect(angle).toBeFocused()
   await angle.fill('90')
   await angle.press('Enter')
-  await expect(length).toHaveCount(0)
+  await expect(boxes.locator('[data-typed]')).toHaveCount(0)
   // the line ends there: 20 mm straight up the face
   await page.locator('body').press('Escape')
   await toolPanel(page).getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Select' }).click()
@@ -276,29 +279,31 @@ test('Grid and Snap share a row and stay apart: snapping works with the grid hid
   await expect(row.locator('#sk-grid')).not.toBeChecked()
 })
 
-test('the pills stay in the view and off the point; typed numbers read apart; Tab, Enter and Esc', async ({ page, isMobile }) => {
+test('the pills stay in the view and off the point; the boxes stay in the view; typed numbers read apart; Tab, Enter and Esc', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Modeling tools are desktop only')
   await page.setViewportSize({ width: 1440, height: 900 })
   await sketchOnTop(page)
   const pills = page.getByTestId('sketch-pills')
+  const boxes = page.getByRole('group', { name: 'Sizes of the shape being drawn' })
   const view = await viewBox(page)
   const frame = async (name: string) => page.screenshot({ path: test.info().outputPath(`pills-${name}.png`), clip: { x: view.left, y: view.top, width: view.right - view.left, height: view.bottom - view.top } })
-  const clear = async (cursor: [number, number]) => {
-    const b = (await pills.boundingBox())!
-    // inside the view
+  const inside = (b: { x: number; y: number; width: number; height: number }) => {
     expect(b.x).toBeGreaterThanOrEqual(view.left)
     expect(b.y).toBeGreaterThanOrEqual(view.top)
     expect(b.x + b.width).toBeLessThanOrEqual(view.right)
     expect(b.y + b.height).toBeLessThanOrEqual(view.bottom)
+  }
+  const clear = async (cursor: [number, number]) => {
+    const b = (await pills.boundingBox())!
+    inside(b)
     // and not over the point under the cursor, with room for the point's mark
     const off = cursor[0] < b.x - 4 || cursor[0] > b.x + b.width + 4 || cursor[1] < b.y - 4 || cursor[1] > b.y + b.height + 4
     expect(off).toBe(true)
   }
-  await sketchAt(page, 'click', [0, 0])
-  // in the middle: below and right of the cursor
+  // the first point's pills follow the cursor: in the middle, below and right of it
   const mid: [number, number] = [Math.round((view.left + view.right) / 2), Math.round((view.top + view.bottom) / 2)]
-  await sketchAtScreen(page, 'hover', [5, 0], mid)
-  await expect(pills.locator('[data-label="Length"]')).toContainText('5.00')
+  await sketchAtScreen(page, 'hover', [0, 0], mid)
+  await expect(pills.locator('[data-label="X"]')).toContainText('0.00')
   await clear(mid)
   await frame('1-live')
   // at the right edge, the bottom edge and the corner: flipped to the other side, still inside
@@ -308,57 +313,66 @@ test('the pills stay in the view and off the point; typed numbers read apart; Ta
     ['4-corner', [view.right - 6, view.bottom - 6]],
   ]
   for (const [name, at] of edges) {
-    await sketchAtScreen(page, 'hover', [5, 0], at)
+    await sketchAtScreen(page, 'hover', [0, 0], at)
     await clear(at)
     await frame(name)
   }
+  await sketchAt(page, 'click', [0, 0])
+  // from the first click the sizes are boxes on the line, inside the view
   await sketchAtScreen(page, 'hover', [5, 0], mid)
-  // live: plain numbers. Typing turns the pills to fields, the typed one marked, so typed and live read apart
-  await expect(pills).not.toHaveAttribute('data-typing')
-  const liveBg = await pills.locator('[data-label="Length"]').evaluate((el) => getComputedStyle(el).backgroundColor)
-  await page.locator('body').press('1')
-  await expect(pills).toHaveAttribute('data-typing', '')
-  const length = pills.getByRole('textbox', { name: 'Length mm' })
+  const length = boxes.getByRole('textbox', { name: 'Length mm' })
+  const angle = boxes.getByRole('textbox', { name: 'Angle °' })
+  const lengthBox = boxes.locator('[data-box="length"]')
+  const angleBox = boxes.locator('[data-box="angle"]')
+  await expect(length).toHaveValue('5.00')
+  await expect(pills).toBeHidden()
+  for (const b of [lengthBox, angleBox]) inside((await b.boundingBox())!)
+  // live: the keyboard is in Length with its value picked. Typing replaces it and marks the box, so typed and live
+  // read apart
   await expect(length).toBeFocused()
-  await length.press('2')
-  await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-typed', '')
-  await expect(pills.locator('[data-label="Angle"]')).not.toHaveAttribute('data-typed')
-  expect(await pills.locator('[data-label="Length"]').evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(liveBg)
-  // the angle still shows the live value as its hint
-  await expect(pills.getByRole('textbox', { name: 'Angle °' })).toHaveAttribute('placeholder', '0.0')
+  await expect(lengthBox).not.toHaveAttribute('data-typed')
+  const liveBg = await lengthBox.evaluate((el) => getComputedStyle(el).backgroundColor)
+  await page.keyboard.press('1')
+  await page.keyboard.press('2')
+  await expect(length).toHaveValue('12')
+  await expect(lengthBox).toHaveAttribute('data-typed', '')
+  await expect(angleBox).not.toHaveAttribute('data-typed')
+  expect(await lengthBox.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(liveBg)
+  // the angle still shows the live value
+  await expect(angle).toHaveValue('0.0')
   await frame('5-typed')
   // Tab goes to the angle, Shift+Tab back
   await length.press('Tab')
-  const angle = pills.getByRole('textbox', { name: 'Angle °' })
   await expect(angle).toBeFocused()
   await angle.press('Shift+Tab')
   await expect(length).toBeFocused()
   await length.press('Tab')
   await angle.fill('30')
-  // the pills hold still while typing, wherever the cursor goes
-  const held = await pills.boundingBox()
-  await sketchAtScreen(page, 'hover', [5, 0], [mid[0] - 200, mid[1] - 120])
-  // the snap's name may come and go beside them; the pills' own corner stays put
-  const now = (await pills.boundingBox())!
-  expect([now.x, now.y]).toEqual([held!.x, held!.y])
+  // with both typed the line is set: its boxes hold still wherever the cursor goes
+  const held = (await lengthBox.boundingBox())!
+  await sketchAtScreen(page, 'hover', [-5, 4], [mid[0] - 200, mid[1] - 120])
+  const now = (await lengthBox.boundingBox())!
+  expect([now.x, now.y]).toEqual([held.x, held.y])
   await frame('6-tab-angle')
-  // Esc clears the typed angle first (it follows the cursor again), then in the empty pill ends typing: back to the
-  // live numbers, the line still waiting, and typing starts over at Length
+  // Esc clears the typed angle first (it shows the live angle again, Length still typed), then in a box with nothing
+  // typed it drops the line being drawn; the tool stays
   await angle.press('Escape')
-  await expect(angle).toHaveValue('')
-  await expect(pills).toHaveAttribute('data-typing', '')
+  await expect(angleBox).not.toHaveAttribute('data-typed')
+  await expect(lengthBox).toHaveAttribute('data-typed', '')
+  await expect(angle).toBeFocused()
   await angle.press('Escape')
-  await expect(pills).not.toHaveAttribute('data-typing')
-  await expect(pills.locator('[data-label="Length"]')).toContainText('5.00')
-  await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
+  await expect(boxes).toHaveCount(0)
+  await expect(page.getByTestId('sketch-drawing').locator('h4')).toHaveText('Drawing · Line')
   await frame('7-escape')
   // Enter places the typed point: 12 mm at 90 degrees from the start
-  await page.locator('body').press('1')
-  await length.press('2')
+  await sketchAt(page, 'click', [0, 0])
+  await sketchAt(page, 'hover', [5, 0])
+  await expect(length).toBeFocused()
+  await page.keyboard.type('12')
   await length.press('Tab')
   await angle.fill('90')
   await angle.press('Enter')
-  await expect(pills).not.toHaveAttribute('data-typing')
+  await expect(boxes.locator('[data-typed]')).toHaveCount(0)
   await frame('8-enter')
   await page.locator('body').press('Escape')
   await toolPanel(page).getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Select' }).click()

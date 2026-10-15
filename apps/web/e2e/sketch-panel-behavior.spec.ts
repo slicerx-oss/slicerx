@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// How the sketch panel behaves, beyond how it looks: typed lengths and angles land the committed end where they say,
-// the sketch steps back and on with its own undo, the keyboard never gets stuck in the cursor pills and Esc steps
-// back one level at a time, Finish sketch and Extrude stay apart (one primary at a time, Finish sketch while drawing
+// How the sketch panel behaves, beyond how it looks: lengths and angles typed in the boxes on the line land the
+// committed end where they say, the sketch steps back and on with its own undo, the keyboard never gets stuck in the
+// boxes and Esc steps back one level at a time, Finish sketch and Extrude stay apart (one primary at a time, Finish sketch while drawing
 // and Extrude for a valid profile, and a bare Enter finishes nothing), every reason Extrude or Revolve is off shows, the footer never covers a setting at 900 px tall or less,
 // and Other plane asks before it drops a drawing. On a phone, the folded sheet opens to every control and stays open.
 import { type Page } from '@playwright/test'
@@ -61,15 +61,16 @@ async function undoAll(page: Page): Promise<void> {
   await expect.poll(async () => (await read(page))?.profile).toBe('none')
 }
 
-/** Types into the pills from the view: the first key opens the focused pill, Tab goes on to the next. */
+/** The boxes on the shape being drawn: a line's Length and Angle sit on it from its first click. */
+const drawBoxes = (page: Page) => page.getByRole('group', { name: 'Sizes of the shape being drawn' })
+
+/** Types into the boxes on the line: the keyboard is in Length from the first click, Tab goes on to Angle. */
 async function typeSegment(page: Page, length: string, angle: string): Promise<void> {
-  const pills = page.getByTestId('sketch-pills')
-  await page.locator('body').press(length[0]!)
-  const len = pills.getByRole('textbox', { name: 'Length mm' })
+  const len = drawBoxes(page).getByRole('textbox', { name: 'Length mm' })
   await expect(len).toBeFocused()
   await len.fill(length)
   await len.press('Tab')
-  const ang = pills.getByRole('textbox', { name: 'Angle °' })
+  const ang = drawBoxes(page).getByRole('textbox', { name: 'Angle °' })
   await expect(ang).toBeFocused()
   await ang.fill(angle)
 }
@@ -78,13 +79,13 @@ test('typed length and angle put the committed end where they say, the next segm
   test.skip(isMobile, 'Modeling tools are desktop only')
   const id = await sketchOnTop(page)
   const before = (await steps(page)).length
-  const pills = page.getByTestId('sketch-pills')
+  const boxes = drawBoxes(page)
   await sketchAt(page, 'click', [1, 2])
   // the cursor is far from where the numbers say; the numbers win
   await sketchAt(page, 'hover', [-7, 9])
   await typeSegment(page, '12', '30')
-  await pills.getByRole('textbox', { name: 'Angle °' }).press('Enter')
-  await expect(pills).not.toHaveAttribute('data-typing')
+  await boxes.getByRole('textbox', { name: 'Angle °' }).press('Enter')
+  await expect(boxes.locator('[data-typed]')).toHaveCount(0)
   const first: [number, number] = [1 + 12 * Math.cos(30 * DEG), 2 + 12 * Math.sin(30 * DEG)]
   await expect.poll(async () => (await read(page))?.loops?.[0]?.segments?.length).toBe(1)
   let s = (await read(page))!
@@ -92,7 +93,7 @@ test('typed length and angle put the committed end where they say, the next segm
   near(s.loops![0]!.segments![0]!.to, first)
   // the next segment starts at the typed end: the live length reads from there
   await hoverFree(page, [first[0] + 3, first[1] + 4])
-  await expect(pills.locator('[data-label="Length"]')).toContainText('5.00')
+  await expect(boxes.getByRole('textbox', { name: 'Length mm' })).toHaveValue('5.00')
   // a second typed segment, 5 mm at 120 degrees, measured the same way
   await typeSegment(page, '5', '120')
   await page.keyboard.press('Enter')
@@ -105,9 +106,10 @@ test('typed length and angle put the committed end where they say, the next segm
   await page.keyboard.press('Enter')
   await expect(toolPanel(page)).toContainText('The length must be more than 0 mm.')
   expect((await read(page))!.loops![0]!.segments!.length).toBe(2)
-  await pills.getByRole('textbox', { name: 'Angle °' }).press('Escape')
-  await pills.getByRole('textbox', { name: 'Angle °' }).press('Escape')
-  await page.locator('body').press('Escape')
+  // Esc frees the typed angle, then drops the segment being drawn
+  await boxes.getByRole('textbox', { name: 'Angle °' }).press('Escape')
+  await boxes.getByRole('textbox', { name: 'Angle °' }).press('Escape')
+  await expect(boxes).toHaveCount(0)
   // Ctrl/Cmd+Z steps the drawing back one segment at a time and redo brings it again; the model's history is untouched
   await page.locator('body').press('ControlOrMeta+z')
   await expect.poll(async () => (await read(page))?.loops?.[0]?.segments?.length ?? 0).toBe(1)
@@ -139,14 +141,14 @@ test('typed numbers move the preview before Enter and land exactly: decimals, a 
   test.skip(isMobile, 'Modeling tools are desktop only')
   await sketchOnTop(page)
   await watchPreview(page)
-  const pills = page.getByTestId('sketch-pills')
-  const len = () => pills.getByRole('textbox', { name: /^Length / })
-  const ang = () => pills.getByRole('textbox', { name: /^Angle / })
+  const boxes = drawBoxes(page)
+  const len = () => boxes.getByRole('textbox', { name: /^Length / })
+  const ang = () => boxes.getByRole('textbox', { name: /^Angle / })
   // the snap is on (a hover without Alt): the typed numbers still win over the grid
   await sketchAt(page, 'click', [0, 0])
   await sketchAt(page, 'hover', [5, 5])
   // a decimal length moves the preview at once, along the cursor's direction, before any Enter
-  await page.locator('body').press('7')
+  await expect(len()).toBeFocused()
   await len().fill('7.25')
   await expect.poll(() => lastPreview(page)).not.toBeNull()
   near((await lastPreview(page))!, [7.25 * Math.cos(45 * DEG), 7.25 * Math.sin(45 * DEG)])
@@ -183,13 +185,12 @@ test('typed numbers move the preview before Enter and land exactly: decimals, a 
     for (const g of now) expect(g.to.every(Number.isFinite)).toBe(true)
   }
   for (const [bad, why] of [['abc', 'Type numbers only.'], ['-5', 'The length must be more than 0 mm.'], ['0', 'The length must be more than 0 mm.']] as const) {
-    if (!(await len().isVisible())) await page.locator('body').press('1')
     await len().fill(bad)
     await len().press('Enter')
     await expect(toolPanel(page).getByRole('status').filter({ hasText: why })).toBeVisible()
     await same()
   }
-  // emptied pills take the cursor, as a click there would
+  // emptied boxes take the cursor, as a click there would
   await len().fill('')
   await free('hover', [clicked[0] + 4, clicked[1] + 1.3])
   await len().press('Enter')
@@ -197,8 +198,7 @@ test('typed numbers move the preview before Enter and land exactly: decimals, a 
   near((await segments(page))[2]!.to, [clicked[0] + 4, clicked[1] + 1.3])
   // inches: a bare 1 is 25.4 mm, and a typed unit wins over the setting; the level and upright ends get their constraints
   await units(page, 'in')
-  await page.locator('body').press('1')
-  await expect(pills.getByRole('textbox', { name: 'Length in' })).toBeFocused()
+  await expect(boxes.getByRole('textbox', { name: 'Length in' })).toBeFocused()
   await len().fill('1')
   await len().press('Tab')
   await ang().fill('0')
@@ -206,7 +206,7 @@ test('typed numbers move the preview before Enter and land exactly: decimals, a 
   await expect.poll(async () => (await segments(page)).length).toBe(4)
   const start = (await segments(page))[2]!.to
   near((await segments(page))[3]!.to, [start[0] + 25.4, start[1]])
-  await page.locator('body').press('1')
+  await expect(len()).toBeFocused()
   await len().fill('10mm')
   await len().press('Tab')
   await ang().fill('90')
@@ -218,6 +218,7 @@ test('typed numbers move the preview before Enter and land exactly: decimals, a 
   await units(page, 'mm')
   // undo steps back the typed point and redo puts it back where it was
   await page.locator('body').press('Escape')
+  await expect(boxes).toHaveCount(0)
   await page.locator('body').press('ControlOrMeta+z')
   await expect.poll(async () => (await segments(page)).length).toBe(4)
   await page.locator('body').press('ControlOrMeta+Shift+z')
@@ -225,51 +226,51 @@ test('typed numbers move the preview before Enter and land exactly: decimals, a 
   near((await segments(page))[4]!.to, [start[0] + 25.4, start[1] + 10])
 })
 
-test('the keyboard is never stuck in the pills, and Esc steps back one level at a time without closing the sketch', async ({ page, isMobile }) => {
+test('the keyboard is never stuck in the boxes, and Esc steps back one level at a time without closing the sketch', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Modeling tools are desktop only')
   await sketchOnTop(page)
   const panel = toolPanel(page)
-  const pills = page.getByTestId('sketch-pills')
+  const boxes = drawBoxes(page)
   await sketchAt(page, 'click', [0, 0])
   await sketchAt(page, 'hover', [4, 3])
   await typeSegment(page, '10', '90')
-  // Tab past the last pill goes on into the panel, the numbers kept; Tab goes on through the panel from there
-  await pills.getByRole('textbox', { name: 'Angle °' }).press('Tab')
+  // Tab past the last box goes on into the panel, the numbers kept; Tab goes on through the panel from there
+  await boxes.getByRole('textbox', { name: 'Angle °' }).press('Tab')
   await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[data-section="cad-tool"]'))).toBe(true)
-  await expect(pills.getByRole('textbox', { name: 'Length mm' })).toHaveValue('10')
+  await expect(boxes.getByRole('textbox', { name: 'Length mm' })).toHaveValue('10')
   await page.keyboard.press('Tab')
   expect(await page.evaluate(() => !!document.activeElement?.closest('[data-section="cad-tool"]'))).toBe(true)
-  // Shift+Tab before the first pill goes back to the view
-  await pills.getByRole('textbox', { name: 'Length mm' }).focus()
-  await pills.getByRole('textbox', { name: 'Length mm' }).press('Shift+Tab')
+  // Shift+Tab before the first box goes back to the view
+  await boxes.getByRole('textbox', { name: 'Length mm' }).focus()
+  await boxes.getByRole('textbox', { name: 'Length mm' }).press('Shift+Tab')
   await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('CANVAS')
   // Enter back in the view places the kept numbers
   await page.locator('canvas.vp-canvas').focus()
   await page.keyboard.press('Enter')
   await expect.poll(async () => (await read(page))?.loops?.[0]?.segments?.[0]?.to?.[1]).toBeCloseTo(10, 4)
-  // Esc ladder: typed value, typing, the pending segment, the tool, and the sketch stays open
+  // Esc ladder: the typed value, the pending segment, the tool, and the sketch stays open
   await typeSegment(page, '4', '0')
-  const angle = pills.getByRole('textbox', { name: 'Angle °' })
+  const angle = boxes.getByRole('textbox', { name: 'Angle °' })
   await angle.press('Escape')
-  await expect(angle).toHaveValue('')
+  await expect(boxes.locator('[data-box="angle"]')).not.toHaveAttribute('data-typed')
+  await expect(angle).toBeFocused()
   await angle.press('Escape')
-  await expect(pills).not.toHaveAttribute('data-typing')
-  await page.locator('body').press('Escape')
+  await expect(boxes).toHaveCount(0)
   await expect(page.getByTestId('sketch-drawing').locator('h4')).toHaveText('Drawing · Line')
   await page.locator('body').press('Escape')
   await expect(page.getByTestId('sketch-drawing').locator('h4')).toHaveText('Drawing · Select')
   await page.locator('body').press('Escape')
   await expect(panel).toBeVisible()
   await expect(panel).toContainText('A face of')
-  // while a line is drawn, Tab in the panel walks the panel's controls; it no longer moves between pills
+  // while a line is drawn, Tab in the panel walks the panel's controls; it no longer moves between boxes
   await page.locator('body').press('l')
   await expect(page.getByTestId('sketch-drawing').locator('h4')).toHaveText('Drawing · Line')
   await sketchAt(page, 'click', [0, 0])
   await sketchAt(page, 'hover', [2, 2])
-  await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
+  await expect(boxes.locator('[data-box="length"]')).toHaveAttribute('data-focus', '')
   await panel.locator('#sk-grid').focus()
   await page.keyboard.press('Tab')
-  await expect(pills.locator('[data-label="Length"]')).toHaveAttribute('data-focus', '')
+  await expect(boxes.locator('[data-box="length"]')).toHaveAttribute('data-focus', '')
   expect(await page.evaluate(() => document.activeElement?.id)).not.toBe('sk-grid')
   expect(await page.evaluate(() => !!document.activeElement?.closest('[data-section="cad-tool"]'))).toBe(true)
 })
@@ -611,7 +612,7 @@ test('Other plane asks before it drops a drawing: Keep and Esc keep all of it, D
 })
 
 for (const scheme of ['dark', 'light'] as const) {
-  test(`in ${scheme}: every panel control and pill shows its focus, has a name, and no text is cut off`, async ({ page, isMobile }) => {
+  test(`in ${scheme}: every panel control and box shows its focus, has a name, and no text is cut off`, async ({ page, isMobile }) => {
     test.skip(isMobile, 'Modeling tools are desktop only')
     await sketchOnTop(page)
     await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
@@ -689,17 +690,16 @@ for (const scheme of ['dark', 'light'] as const) {
     const cut = (root: string) =>
       page.evaluate((root) => [...document.querySelectorAll<HTMLElement>(`${root} *`)].filter((e) => e.getClientRects().length && e.children.length === 0 && (e.textContent ?? '').trim() && e.scrollWidth > e.clientWidth + 0.5 && getComputedStyle(e).overflowX !== 'visible').map((e) => e.textContent), root)
     expect(await cut('[data-section="cad-tool"]')).toEqual([])
-    // the pills while typing: their field shows the focus ring, and their text fits
+    // the boxes on the line while typing: their field shows the focus ring, and their text fits
     await page.locator('body').press('l')
     await sketchAt(page, 'click', [8, 8])
     await sketchAt(page, 'hover', [12, 11])
-    await page.locator('body').press('2')
-    const len = page.getByTestId('sketch-pills').getByRole('textbox', { name: 'Length mm' })
+    const len = drawBoxes(page).getByRole('textbox', { name: 'Length mm' })
     await expect(len).toBeFocused()
     await len.fill('123.456')
-    const pill = await focusMark()
-    expect(pill.visible || (await len.evaluate((e) => getComputedStyle(e.closest('.sketch-pill')!).outlineStyle !== 'none' || getComputedStyle(e.closest('.sketch-pill')!).boxShadow !== 'none'))).toBe(true)
-    expect(await cut('[data-testid="sketch-pills"]')).toEqual([])
+    const box = await focusMark()
+    expect(box.visible || (await len.evaluate((e) => getComputedStyle(e.closest('.shape-box')!).outlineStyle !== 'none' || getComputedStyle(e.closest('.shape-box')!).boxShadow !== 'none'))).toBe(true)
+    expect(await cut('[data-testid="shape-boxes"]')).toEqual([])
     expect(await len.evaluate((e: HTMLInputElement) => e.scrollWidth <= e.clientWidth + 0.5)).toBe(true)
   })
 }
@@ -939,15 +939,17 @@ test.describe('the slow 3D view notice', () => {
     const [tb, pb] = [(await t.boundingBox())!, (await toolPanel(page).boundingBox())!]
     const apart = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) => a.x + a.width <= b.x || a.x >= b.x + b.width || a.y + a.height <= b.y || a.y >= b.y + b.height
     expect(apart(tb, pb)).toBe(true)
-    // and of the pills at the cursor while drawing: a press on a pill reaches the pill, not the notice
+    // and of the boxes on the line while drawing: a press on a box reaches the box, not the notice
     await page.locator('body').press('l')
     await sketchAt(page, 'click', [0, 0])
     await sketchAt(page, 'hover', [4, 3])
-    const pills = page.getByTestId('sketch-pills')
-    await expect(pills).toBeVisible()
-    const pl = (await pills.boundingBox())!
-    expect(apart((await t.boundingBox())!, pl)).toBe(true)
-    expect(await page.evaluate(([x, y]) => !!document.elementFromPoint(x!, y!)?.closest('[data-testid="toast"]'), [pl.x + pl.width / 2, pl.y + pl.height / 2])).toBe(false)
+    const shown = page.locator('[data-testid="shape-box"]:not([hidden])')
+    await expect(shown).toHaveCount(2)
+    for (const b of await shown.all()) {
+      const pl = (await b.boundingBox())!
+      expect(apart((await t.boundingBox())!, pl)).toBe(true)
+      expect(await page.evaluate(([x, y]) => !!document.elementFromPoint(x!, y!)?.closest('[data-testid="shape-box"]'), [pl.x + pl.width / 2, pl.y + pl.height / 2])).toBe(true)
+    }
     // nor over the panel's footer, where the primary is
     expect(apart((await t.boundingBox())!, (await toolPanel(page).getByTestId('model-tool-apply').boundingBox())!)).toBe(true)
     await page.locator('body').press('Escape')

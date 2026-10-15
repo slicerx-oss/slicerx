@@ -39,14 +39,16 @@ test('a sketch on XZ finishes into the timeline, then extrudes from its menu', a
   await sketchAt(page, 'hover', [0, 0])
   await page.locator('body').press('5')
   const field = page.getByRole('group', { name: 'Exact size' })
+  // the size of the shape after its first point: the boxes on the shape
+  const sizes = page.getByRole('group', { name: 'Sizes of the shape being drawn' })
   await field.getByLabel('X mm').fill('0')
   await field.getByLabel('Y mm').fill('0')
   await field.getByLabel('Y mm').press('Enter')
   await sketchAt(page, 'hover', [0, 0])
   await page.locator('body').press('3')
-  await field.getByLabel('Width mm').fill('20')
-  await field.getByLabel('Height mm').fill('10')
-  await field.getByLabel('Height mm').press('Enter')
+  await sizes.getByLabel('Width mm').fill('20')
+  await sizes.getByLabel('Height mm').fill('10')
+  await sizes.getByLabel('Height mm').press('Enter')
 
   // Section clips the models at the sketch plane while it is on
   const clipped = () => page.evaluate(() => (window as unknown as { __vp: { section: unknown } }).__vp.section !== null)
