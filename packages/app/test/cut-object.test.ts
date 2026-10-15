@@ -141,3 +141,42 @@ it.each([
   expect(call).not.toHaveBeenCalled()
   expect(get().plate).toBe(plate)
 })
+
+it('preserves copies on another plate and restores their measurements with one Undo', async () => {
+  const source = get().plate[0]!
+  const anchor = (object: string) => ({ object, pick: { triangle: 0, at: [0,0,0] as [number,number,number] }, snapMm: 0, feature: { kind: 'point' as const, at: [0,0,0] as [number,number,number] } })
+  const retained = { id: 'local', kind: 'distance' as const, a: anchor('copy-a'), b: anchor('copy-b') }
+  const removed = { id: 'source', kind: 'distance' as const, a: anchor('cube'), b: anchor('copy-a') }
+  const copyA = { ...source, id: 'copy-a', instanceOf: 'cube', dimensions: [retained, removed] }
+  const copyB = { ...source, id: 'copy-b', instanceOf: 'cube' }
+  const plates = [{ id: 'other-plate', name: 'Other plate', objects: [copyA,copyB], settings: { sequence: 'by-layer' as const } }]
+  set({ plates })
+  const settings = get().objectSettings
+  const undo = history()
+  undo.clear()
+  const result = await cutObject(host, 'cube', spec)
+  const [a,b] = get().plates[0]!.objects
+  expect(a!.instanceOf).toBeUndefined()
+  expect(b!.instanceOf).toBe(a!.id)
+  expect(a!.parts).toBe(source.parts)
+  expect(a!.partSettings).toEqual(source.partSettings)
+  expect(get().objectSettings[a!.id]).toEqual(settings['cube'])
+  expect(a!.dimensions).toEqual([retained])
+  expect(result.warnings.some((message) => message.includes('1 measurement'))).toBe(true)
+  expect(undo.undo()).toBe(true)
+  expect(get().plate).toEqual([source])
+  expect(get().plates).toEqual(plates)
+  expect(get().objectSettings).toEqual(settings)
+  expect(undo.canUndo()).toBe(false)
+})
+
+it('leaves geometry and metadata untouched when loading a cut piece fails', async () => {
+  const before = get()
+  const undo = history()
+  undo.clear()
+  await expect(cutObject({ loadParts: async () => { throw new Error('Cannot load mesh') } }, 'cube', spec)).rejects.toThrow('Cannot load mesh')
+  expect(get().plate).toBe(before.plate)
+  expect(get().plates).toBe(before.plates)
+  expect(get().objectSettings).toBe(before.objectSettings)
+  expect(undo.canUndo()).toBe(false)
+})
