@@ -12,7 +12,7 @@ Spoolhouse is a made-up filament tracker that uses SlicerX the way an outside ap
 ## Run it
 
 ```sh
-node ../../scripts/pack-integrator-kit.mjs .kit --engine engine-v0.1.5   # packs the three packages and the engine
+node ../../scripts/pack-integrator-kit.mjs .kit --engine engine-v0.1.6   # packs the three packages and the engine
 npm install .kit/*.tgz                                  # the line the pack script prints
 npm run slice                                           # slices, writes out/report.json and public/
 npm run build && npm run preview                        # the window on http://127.0.0.1:4388
