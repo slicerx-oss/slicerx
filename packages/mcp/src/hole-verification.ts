@@ -5,9 +5,10 @@ type Request = { diameter_mm?: number | undefined; depth_mm?: number | undefined
 
 /** Verifies shaft measurements; head dimensions require a separate measurement. */
 export function verifyHole(before: Hole, shaft: Hole, request: Request) {
-  const toleranceMm = 0.01
   const diameterMm = request.diameter_mm ?? before.diameterMm
   const depthMm = before.through ? before.depthMm : request.depth_mm ?? before.depthMm
+  const changes = [Math.abs(diameterMm - before.diameterMm), Math.abs(depthMm - before.depthMm)].filter(v => Number.isFinite(v) && v > 0)
+  const toleranceMm = Math.min(0.01, ...changes.map(v => v * 0.01))
   const finite = [before.entry, before.axis, shaft.entry, shaft.axis].every(v => v.length === 3 && v.every(Number.isFinite))
     && [diameterMm, depthMm, shaft.diameterMm, shaft.depthMm].every(Number.isFinite)
   const dot = (a: number[], b: number[]) => a.reduce((sum, v, k) => sum + v * b[k]!, 0)

@@ -7,9 +7,10 @@ import { join } from 'node:path'
 import { connect, data, text } from './helpers'
 import { Designs } from '../src/design'
 import { cadTools } from '../src/cad'
+import { clearReplayCache } from '@slicerx/cad-history'
 
 const directories: string[] = []
-afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => { clearReplayCache(); for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 it.each(['measure.feature', 'measure', 'hole.find'])('rejects a scoped operation when the body changes during %s', async (changeAt) => {
   const mesh = { name: 'Surface', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [17], table: [{ kind: 'plane', normal: [0, 0, 1], offset: 0 }] } }
@@ -87,12 +88,12 @@ it('refuses a stale scoped push through the public tool before modeling', async 
   expect(engine).not.toHaveBeenCalled()
 })
 
-it('reports the scoped push receipt even when another edit lands before the response', async () => {
+it.each([0, 2])('reports the scoped push receipt after a second edit: displacement=%s', async (moved) => {
   const mesh = { name: 'Surface', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [17], table: [{ kind: 'plane', normal: [0, 0, 1], offset: 0 }] } }
   const outDir = mkdtempSync(join(tmpdir(), 'topology-receipt-')); directories.push(outDir)
   const engine = async (op: string) => {
     if (op !== 'face.push') throw new Error(`unexpected modeling ${op}`)
-    return { mesh: { ...mesh, positions: [0, 0, 2, 2, 0, 2, 0, 2, 2] } }
+    return { mesh: { ...mesh, positions: [0, 0, moved, 2, 0, moved, 0, 2, moved] } }
   }
   const designs = new Designs({ engine, policy: { outDir, allowDirs: undefined, allowUrls: false } })
   const d = await designs.create('Surface', [mesh])
@@ -110,7 +111,7 @@ it('reports the scoped push receipt even when another edit lands before the resp
   const output = data<{ output: { steps: number; topology: { revision: string }; operationResult: { status: string; revision: string; priorRevision: string } } }>(result).output
   expect(d.history.steps).toHaveLength(2)
   expect(output.steps).toBe(1)
-  expect(output.operationResult).toMatchObject({ status: 'applied', priorRevision: revision, revision: output.topology.revision })
+  expect(output.operationResult).toMatchObject({ status: 'applied', priorRevision: revision, revision: output.topology.revision, verification: { status: moved === 2 ? 'verified' : 'failed', measuredDistanceMm: moved } })
   expect(output.topology.revision).not.toBe(designs.revision(d.id))
 })
 

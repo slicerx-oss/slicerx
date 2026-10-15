@@ -18,6 +18,7 @@ import { ToolInputError } from './errors'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
 import { verifyHole } from './hole-verification'
+import { verifyPush } from './push-verification'
 
 type V3 = [number, number, number]
 
@@ -701,6 +702,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           f = pickIn(d, i.face)
           before = i.face.topology ? manifestOf(d) : undefined
           if (before && topologyFace(before, i.face.topology!).surfaceType !== 'plane') throw new ToolInputError('Push/pull requires a planar face. Inspect the surface and choose a supported edit.', 'not_supported')
+          if (before && verifyPush(d.parts[f.part], d.transform, topologyFace(before, i.face.topology!).face, f.at, f.normal, 0).status !== 'verified') throw new ToolInputError('The selected face has no valid planar measurement.', 'invalid_model')
           dimensionsBefore = before ? measurements(d) : undefined
           const params: StepParams = { op: 'face.push', at: f.at, normal: f.normal, distanceMm: i.distance_mm, ...(f.key ? { faceKey: f.key } : {}) }
           const host = designs()
@@ -724,11 +726,13 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         if (!before) return result
         const after = manifestOf(commit!.design, commit!.revision)
         const targetsAfter = after.faces.filter(face => face.part === f.part && face.faceKey === f.key)
-        return { ...result, output: { ...result.output, topology: compactManifest(after), operationResult: {
+        const targetAfter = targetsAfter.length === 1 && targetsAfter[0]!.ambiguity === 'none' ? targetsAfter[0]! : null
+        const verification = verifyPush(commit!.design.parts[f.part], commit!.design.transform, targetAfter?.surfaceType === 'plane' ? targetAfter.face : undefined, f.at, f.normal, i.distance_mm)
+        return { ...result, summary: `${result.summary}${verification.status !== 'verified' ? '; the edit was applied but its displacement is not verified' : ''}`, output: { ...result.output, topology: compactManifest(after), operationResult: {
           operation: 'geom.push_pull', status: 'applied', bodyId: d.id, priorRevision: before.revision, revision: after.revision,
-          target: i.face.topology, distanceMm: i.distance_mm,
+          target: i.face.topology, distanceMm: i.distance_mm, verification,
           targetBefore: topologyFace(before, i.face.topology!),
-          targetAfter: targetsAfter.length === 1 && targetsAfter[0]!.ambiguity === 'none' ? targetsAfter[0] : null,
+          targetAfter,
           measurements: { source: 'tessellation', before: dimensionsBefore, after: measurements(commit!.design) },
         } } }
       }
