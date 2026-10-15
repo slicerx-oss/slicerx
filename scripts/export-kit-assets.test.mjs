@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { exportAssets, fallbacks, namespaceSvg, scopeCss, mergeSvgStyles } from './export-kit-assets.mjs'
+import { exportAssets, fallbacks, namespaceSvg, namespaceClasses, mergeSvgStyles } from './export-kit-assets.mjs'
 import { TOOL_ICONS } from '../packages/ui/src/icons/tool-icons.ts'
 import { DEMOS, SETTING_DEMOS } from '../packages/app/src/lib/demos.ts'
 
@@ -43,9 +43,15 @@ test('nested fallbacks preserve overrides and reject missing or cyclic tokens', 
   assert.equal(namespaceSvg('<g id="a"/><use href="#a"/><path fill="url(#a)"/>', 'one'), '<g id="one-a"/><use href="#one-a"/><path fill="url(#one-a)"/>')
 })
 
-test('nested readout selectors stay within one SVG, including reduced-motion rules', () => {
-  const css = '.sxs-rows .sxs-cut{fill:red}@media (prefers-reduced-motion:reduce){.sxs .s-a{animation-play-state:paused}}@keyframes a{0%,100%{opacity:1}}'
-  assert.equal(scopeCss(css, 'svg.one'), 'svg.one .sxs-rows .sxs-cut{fill:red}@media (prefers-reduced-motion:reduce){svg.one.sxs .s-a{animation-play-state:paused}}@keyframes a{0%,100%{opacity:1}}')
+test('asset classes isolate rules without adding ancestry to use-clone styles', () => {
+  const input = '<style>.sxs-rows text{fill:white}.sxs-rows .sxs-cut{fill:red}.sxs-ptr{stroke:black}:where(.sxs .s-a){opacity:1}</style><g class="sxs-rows"><text class="sxs-cut"/></g><path class="sxs-ptr s-a"/>'
+  const out = namespaceClasses(input, 'push-dark', 'sxs')
+  assert.match(out, /\.push-dark-sxs-rows text\{fill:white\}/)
+  assert.match(out, /\.push-dark-sxs-rows \.push-dark-sxs-cut\{fill:red\}/)
+  assert.match(out, /\.push-dark-sxs-ptr\{stroke:black\}/)
+  assert.match(out, /:where\(\.push-dark-sxs \.push-dark-s-a\)/)
+  assert.match(out, /class="sxs-ptr s-a push-dark-sxs-ptr push-dark-s-a"/)
+  assert.doesNotMatch(out, /svg\[/)
 })
 
 test('the packaging CLI includes assets without building packages', () => {
