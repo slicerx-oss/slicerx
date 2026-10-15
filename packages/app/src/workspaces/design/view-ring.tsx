@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Model's menu in the 3D view: a ring of up to six verbs at the pointer for what was right clicked (a part, a face,
-// an edge or empty space), with More in the middle for the full list. A touch held still and Shift+F10 open it too
-// (the viewport reports all three as `contextpick`). The verbs run the same commands and tools as the shelf and the
-// command bar. Delete stays in More: a flick that lands one slice over must never remove a part.
+// an edge or empty space), with More in the middle for the full list. Shift+F10 opens it too (the viewport reports
+// both as `contextpick`), and so does More actions in the Select Other list a finger held still opens. The verbs run
+// the same commands and tools as the shelf and the command bar. Delete stays in More: a flick that lands one slice over must never remove a part.
 //
 // Agents do the same through MCP: each verb names its tool. Drop to bed names slicerx_project_move, since every
 // object a client places already sits on the bed. The verbs under More name theirs in MORE_AGENT_TOOLS.

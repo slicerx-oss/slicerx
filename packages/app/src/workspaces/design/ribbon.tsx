@@ -23,6 +23,7 @@ import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { modKey } from '../../lib/keys'
 import { openTool } from './open-tool'
 import { ViewRing } from './view-ring'
+import { SelectOtherList } from './select-other-list'
 import { startFillet } from '../../cad/start-hint'
 import { openSketch, requestFinish, useCanFinish, useSketchDraw, useSketchInUse } from '../../cad/sketches'
 import { shownSketches } from './finished-sketches'
@@ -319,6 +320,7 @@ export function Ribbon() {
         </div>
       </div>
       <ViewRing />
+      <SelectOtherList />
       {dialog ? (
         <Suspense fallback={null}>
           <ToolDialog tool={dialog} onClose={() => set({ objectTool: null })} />

@@ -54,6 +54,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // The open sketch's dimension boxes: read them, and type a value into one (it drives the shape, or frees it).
   'sketch.boxes': 'read',
   'sketch.box_set': 'edit',
+  // Model's Select Other: everything under a spot of the view, and picking one of them. Like the preview, a pick
+  // changes what is selected in the window, never the project.
+  'select.under': 'read',
+  'select.other': 'read',
   'values.list': 'read',
   'values.set': 'edit',
   'values.remove': 'edit',
@@ -366,6 +370,9 @@ const HANDLERS: Record<string, Handler> = {
   'look.set': (args) => setLook(args),
   'sketch.boxes': async () => (await import('./sketch-boxes')).readBoxes(),
   'sketch.box_set': async (args) => (await import('./sketch-boxes')).setBox(args),
+  // Loaded when first used, with the rest of Select Other.
+  'select.under': async (args) => (await import('../plate/select-other-pick')).linkUnder(args),
+  'select.other': async (args) => (await import('../plate/select-other-pick')).linkPick(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),

@@ -100,7 +100,7 @@ pub(crate) enum LinkClass {
 }
 
 /// methods on the open project, classified as read or edit. no printing, accounts or connection settings.
-/// geometry volumes and two view preferences are allowed. each method needs its pinned test entry.
+/// geometry volumes, two view preferences and Model's selection are allowed. each method needs its pinned test entry.
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("history.get", LinkClass::Read),
@@ -132,6 +132,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // The open sketch's dimension boxes: read them, and type a value into one, as the person does on the shape.
     ("sketch.boxes", LinkClass::Read),
     ("sketch.box_set", LinkClass::Edit),
+    // Model's Select Other: what is under a spot of the view, and picking one of those things.
+    // Read: a pick changes what the window has selected, never the project.
+    ("select.under", LinkClass::Read),
+    ("select.other", LinkClass::Read),
     ("values.list", LinkClass::Read),
     ("values.set", LinkClass::Edit),
     ("values.remove", LinkClass::Edit),
@@ -389,6 +393,8 @@ mod tests {
         ("look.set", LinkClass::Read),
         ("sketch.boxes", LinkClass::Read),
         ("sketch.box_set", LinkClass::Edit),
+        ("select.under", LinkClass::Read),
+        ("select.other", LinkClass::Read),
         ("values.list", LinkClass::Read),
         ("values.set", LinkClass::Edit),
         ("values.remove", LinkClass::Edit),

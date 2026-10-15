@@ -107,6 +107,9 @@ test.describe('Model ring menu', () => {
     await page.waitForTimeout(700)
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+    // on the box it opens Select Other, whose More actions is the ring
+    await expect(page.getByTestId('select-other')).toBeVisible()
+    await page.getByTestId('select-other-more').click()
     await expect(ring(page)).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(ring(page)).toHaveCount(0)
