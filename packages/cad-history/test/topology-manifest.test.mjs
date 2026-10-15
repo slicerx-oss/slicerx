@@ -60,3 +60,13 @@ test('invalid placement cannot produce a misleading measurement envelope', () =>
   assert.throws(() => topologyManifest('body', 'revision', [part()], transform.map(() => NaN), true))
   assert.throws(() => topologyManifest('body', '', [part()], transform, true))
 })
+
+test('plane displacement read-back uses millimeters even with a scaled equation', () => {
+  const before = topologyFaces([part(1, { kind: 'plane', normal: [0, 0, 2], offset: 4 })], true)
+  const after = topologyFaces([part(1, { kind: 'plane', normal: [0, 0, 2], offset: 10 })], true)
+  assert.equal(before.faces[0].dimensions.planeOffsetMm, 2)
+  assert.equal(after.faces[0].dimensions.planeOffsetMm, 5)
+  const missing = topologyFaces([part(1, { kind: 'plane', normal: [0, 0, 0], offset: 4 })], true)
+  assert.equal(missing.metadataComplete, false)
+  assert.equal(missing.faces[0].dimensions.planeOffsetMm, undefined)
+})

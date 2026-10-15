@@ -8,7 +8,7 @@ export interface TopologyFace {
   faceKey: number | null
   surfaceType: 'plane' | 'cylinder' | 'cone' | 'sphere' | 'unknown'
   ambiguity: 'none' | 'missing_key' | 'duplicate_key'
-  dimensions: { areaMm2: number | null; diameterMm?: number; halfAngleRad?: number }
+  dimensions: { areaMm2: number | null; diameterMm?: number; halfAngleRad?: number; planeOffsetMm?: number }
   measurementSource: { area: 'tessellation'; surface: 'kernel_metadata' | 'mesh_metadata' | 'unavailable' }
 }
 
@@ -45,11 +45,17 @@ export function topologyFaces(parts: readonly HistoryMesh[], exact: boolean): { 
       const radius = raw['radius']
       const angle = raw['halfAngle']
       const dimensions: TopologyFace['dimensions'] = { areaMm2: valid[face] && Number.isFinite(areas[face]) ? areas[face]! : null }
+      const normal = raw['normal'], offset = raw['offset']
+      if (type === 'plane' && Array.isArray(normal) && normal.length === 3 && normal.every(n => typeof n === 'number' && Number.isFinite(n)) && typeof offset === 'number') {
+        const length = Math.hypot(...normal)
+        if (length > 0 && Number.isFinite(length) && Number.isFinite(offset / length)) dimensions.planeOffsetMm = offset / length
+      }
       if ((type === 'cylinder' || type === 'sphere') && typeof radius === 'number' && Number.isFinite(2 * radius) && radius > 0) dimensions.diameterMm = 2 * radius
       if (type === 'cone' && typeof angle === 'number' && Number.isFinite(angle) && angle > 0 && angle < Math.PI / 2) dimensions.halfAngleRad = angle
       if (dimensions.areaMm2 === null) metadataComplete = false
       if ((type === 'cylinder' || type === 'sphere') && dimensions.diameterMm === undefined) metadataComplete = false
       if (type === 'cone' && dimensions.halfAngleRad === undefined) metadataComplete = false
+      if (type === 'plane' && dimensions.planeOffsetMm === undefined) metadataComplete = false
       if (type === 'unknown' || faceKey === null || counts.get(faceKey)! > 1) metadataComplete = false
       faces.push({ part: partIndex, face, faceKey, surfaceType: type,
         ambiguity: faceKey === null ? 'missing_key' : counts.get(faceKey)! > 1 ? 'duplicate_key' : 'none',
