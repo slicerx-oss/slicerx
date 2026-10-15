@@ -3,7 +3,8 @@
 // What an agent may do with the open project over the app link, and the page's answer to each. The hub keeps the same
 // list (packages/connect/link/src/roles.rs, APP_LINK_METHODS) and refuses every other name before it reaches here; a
 // test checks the two lists match. Project geometry and its modifier print values are editable, as are two view
-// preferences. Nothing here prints, queues, approves, signs in or changes printer connections.
+// preferences. model.push_set only types a distance into the open Push and pull for the person to apply. Nothing here
+// prints, queues, approves, signs in or changes printer connections.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
 import { assistantBrand } from '@slicerx/contracts'
@@ -54,6 +55,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // The open sketch's dimension boxes: read them, and type a value into one (it drives the shape, or frees it).
   'sketch.boxes': 'read',
   'sketch.box_set': 'edit',
+  // Push and pull as the person has it open: the picked face and the pending distance read back, and a distance typed
+  // into its box. Nothing changes in the project until the person applies it.
+  'model.push': 'read',
+  'model.push_set': 'read',
   'values.list': 'read',
   'values.set': 'edit',
   'values.remove': 'edit',
@@ -366,6 +371,8 @@ const HANDLERS: Record<string, Handler> = {
   'look.set': (args) => setLook(args),
   'sketch.boxes': async () => (await import('./sketch-boxes')).readBoxes(),
   'sketch.box_set': async (args) => (await import('./sketch-boxes')).setBox(args),
+  'model.push': async () => (await import('./model-push')).readPush(),
+  'model.push_set': async (args) => (await import('./model-push')).setPush(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),
