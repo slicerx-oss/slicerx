@@ -1,0 +1,1 @@
+a 60-character name ellipsizes closed and reads whole on hover, focus and in the list at 1440 px | doo-sx | 2026-10-15 | 2026-10-16 | https://github.com/slicerx-oss/slicerx/issues/1194 | failed then passed on its rerun in merge queue runs (desktop shard 4/12), removing two PRs
