@@ -1,0 +1,51 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Push and pull in the view (push-in-view.tsx): a thin arrow on the picked face and a Distance box at its tip. The
+   layer lets the view have every pointer event except on the arrow and the box. */
+.pp-layer { position: absolute; inset: 0; pointer-events: none; z-index: var(--z-hud); overflow: hidden; }
+.pp-arrow { position: absolute; inset: 0; overflow: visible; }
+.pp-arrow { --pp-tone: var(--green); }
+.pp-arrow[data-tone="cut"] { --pp-tone: var(--red); }
+.pp-halo { stroke: var(--surface-page); fill: var(--surface-page); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; }
+.pp-shaft { stroke: var(--pp-tone); stroke-width: 2; stroke-linecap: round; }
+.pp-head { fill: var(--pp-tone); }
+.pp-base { fill: var(--pp-tone); stroke: var(--surface-page); stroke-width: 2; }
+.pp-grab { stroke: transparent; stroke-width: 16; fill: transparent; pointer-events: all; cursor: grab; touch-action: none; }
+.pp-grab:active { cursor: grabbing; }
+
+/* the box: a floating HUD surface (spec 4), the value in the body font with tabular figures (spec 2) */
+.pp-box {
+  position: absolute; left: 0; top: 0; pointer-events: auto;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px;
+  border-radius: var(--r-md); color: var(--muted); font-family: var(--f-body); font-size: var(--fs-sm);
+  max-width: 240px; white-space: nowrap;
+}
+.pp-row { display: flex; align-items: center; gap: 8px; }
+.pp-label { color: var(--muted); font-size: var(--fs-sm); }
+.pp-num {
+  width: 72px; height: var(--h-sm); padding: 0 8px; box-sizing: border-box;
+  font: var(--fw-medium) var(--fs-body) / 1 var(--f-body); font-variant-numeric: tabular-nums; text-align: right;
+  color: var(--fg); background: var(--field-bg); border: 1px solid var(--field-line); border-radius: var(--r-sm); outline: none;
+}
+.pp-num:focus-visible { border-color: var(--accent); box-shadow: var(--focus-field, 0 0 0 2px var(--accent-ring)); }
+.pp-num[aria-invalid="true"] { border-color: var(--red); }
+.pp-unit { color: var(--muted); font-size: var(--fs-sm); }
+.pp-op {
+  font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1; padding: 4px 8px; border-radius: var(--r-pill);
+  color: var(--muted); background: var(--field-bg);
+}
+.pp-op[data-op="pull"] { color: var(--green); background: var(--green-tint); }
+.pp-op[data-op="cut"], .pp-op[data-op="through"] { color: var(--red); background: var(--red-tint); }
+.pp-msg { color: var(--red); white-space: normal; font-size: var(--fs-sm); max-width: 224px; }
+
+/* a phone's finger: a 44 px target round the value */
+@media (pointer: coarse) {
+  .pp-num { height: var(--h-lg); width: 88px; }
+  .pp-grab { stroke-width: 44; }
+}
+
+/* Light studio: the bright Dracula green and red are too pale on white, so the arrow and the chip's words go deeper
+   (3:1 for the arrow, 4.5:1 for the words, spec 5). */
+:root[data-scheme="light"] .pp-arrow { --pp-tone: color-mix(in srgb, var(--green) 50%, #000); }
+:root[data-scheme="light"] .pp-arrow[data-tone="cut"] { --pp-tone: color-mix(in srgb, var(--red) 80%, #000); }
+:root[data-scheme="light"] .pp-op[data-op="pull"] { color: color-mix(in srgb, var(--green) 40%, #000); }
+:root[data-scheme="light"] .pp-op[data-op="cut"], :root[data-scheme="light"] .pp-op[data-op="through"], :root[data-scheme="light"] .pp-msg { color: color-mix(in srgb, var(--red) 70%, #000); }

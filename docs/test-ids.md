@@ -504,6 +504,12 @@ Ids that tests read for their text:
 | `model-select-clear` | Clears the faces, edges and objects picked |
 | `model-select-object` | In the readout, the object the faces or edges are on: selects that object alone |
 | `model-select-made-by` | The step that made the one face picked: opens it; `data-step` is its index, or `base` for "from the original mesh" |
+| `push-in-view` | Push and pull in the view, while it has a face: the arrow and the Distance box; `data-op` is `pull`, `cut`, `through` or `none` |
+| `push-arrow` | The arrow's shaft on the picked face; a drag on it sets the distance (Shift whole millimeters, Alt free values) |
+| `push-arrow-tip` | The grab area round the arrow's tip |
+| `push-view-box` | The Distance box at the arrow's tip |
+| `push-view-distance` | The distance in that box; Enter applies, Escape closes the tool |
+| `push-view-op` | The operation under the value: Pull out, Cut or Cut through; `data-op` as on `push-in-view` |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
 | `sketch-dof` | The drawing card's status from the solver, in its header in short ("Defined", "4 DOF left", "Over-defined", "Not solved"), the whole line in its tooltip and accessible name; `data-dof` is the count |
 | `sketch-drawing` | The sketch panel's drawing card: the tools, grid and snap, what shows, and the picked loop's actions; `sketch-drawing-sub` is the tool's name after the card's title ("Drawing · Line") |

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The push and pull tool's panel. Hover lights the flat face under the cursor; a click picks it and a
-// drag moves it, in the view (viewport cadtools.ts stretches a 1 mm prism, no boolean) or by the
-// typed distance. The field and the drag stay in step. The push itself runs once, on release or Enter.
+// The push and pull tool. Hover lights the flat face under the cursor; a click picks it and a drag moves it, in the
+// view (viewport cadtools.ts stretches a 1 mm prism, no boolean), on the arrow (push-in-view.tsx) or by the typed
+// distance. The tool's state lives with the view (usePushTool, mounted by push-in-view.tsx), so it works with the right
+// pane shut; the panel here shows the same state (push-session.ts). The push itself runs once, on release or Enter.
 import type { PickEvent, PushEvent } from '@slicerx/viewport'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { pushPreview, type Vec3 } from '../geom/cad'
 import type { GeomMesh } from '../geom/client'
 import { useHost } from '../host'
@@ -14,11 +15,13 @@ import { findTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
-import { close, errorText, Message, Note, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
+import { errorText, Message, Note, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, useRestored } from './park'
 import { applyPush, onFace, parseDistance, pickPushFace, pushWords, type PushFace } from './push'
+import { OP_LABEL, publishPush, pushActions as pushActionsOf, pushOperation, usePushSnapshot } from './push-session'
 
-export function PushTool() {
+/** The tool's state and its ties to the view. Mounted once while the tool is open, with the pane open or shut. */
+export function usePushTool(): void {
   const host = useHost()
   const restored = useRestored()
   const [face, setFace] = useDraft<PushFace | null>('face', null, follow((f, now) => f && { ...f, frame: now.frame(f.frame), pick: { ...f.pick, at: now.point(f.pick.at) } }))
@@ -95,7 +98,7 @@ export function PushTool() {
           await saveEdit(host.slicer, { op: 'face.push', at: f.pick.at, normal: f.frame.normal, distanceMm: d })
           toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')
           set({ objectTool: null })
-          return
+          return true
         }
         const r = await applyPush(host.slicer, f, d)
         toast(r.message, r.warn ? 'warn' : 'ok')
@@ -179,26 +182,54 @@ export function PushTool() {
     })
   }, [view, pick, apply])
 
+  // The panel, the view's Distance box and the link read the tool here, and change it through these.
+  const run = useCallback(async () => {
+    const l = live.current
+    const d = parseDistance(l.text)
+    // a typed distance can follow a named value; a dragged one is a plain number
+    bindNext(l.text)
+    try {
+      return (await apply(d, l.face)) === true
+    } finally {
+      bindNext(undefined)
+    }
+  }, [apply])
+  const actions = useMemo(() => ({ setText, apply: run }), [run])
+  useEffect(() => {
+    publishPush(
+      {
+        face: face ? { objectId: face.objectId, partIndex: face.partIndex, at: face.pick.at, normal: face.frame.normal, thicknessMm: face.thicknessMm } : null,
+        text,
+        distanceMm: distance,
+        busy,
+        note,
+        editStep: edit ? edit.index + 1 : null,
+      },
+      actions,
+    )
+  }, [face, text, distance, busy, note, edit, actions])
+  useEffect(() => () => publishPush(null, null), [])
+}
+
+/** The tool's panel in the right pane: the same face and distance as the arrow in the view. */
+export function PushTool() {
+  const s = usePushSnapshot()
+  const face = s?.face ?? null
+  const text = s?.text ?? ''
+  const distance = s?.distanceMm ?? null
   const words = face ? pushWords(distance, face.thicknessMm) : null
   const bad = text.trim() !== '' && distance === null
+  const op = pushOperation(distance, face?.thicknessMm ?? null)
   return (
-    <Shell title="Push and pull" aside={edit ? `Editing step ${edit.index + 1}` : face ? 'A face is picked' : 'No face yet'}>
+    <Shell title="Push and pull" aside={s?.editStep ? `Editing step ${s.editStep}` : face ? 'A face is picked' : 'No face yet'}>
       {!face ? <PointerHint text="Click a flat face, or drag one in or out. Hold Shift to move in 1 mm steps." /> : <Note status>{words}</Note>}
-      <Num id="push-dist" label="Distance along the face normal" unit="mm" value={text} onChange={setText} />
-      {note || bad ? <Message text={note ?? 'Type a number, such as 5 or -3.'} /> : null}
+      <Num id="push-dist" label="Distance along the face normal" unit="mm" value={text} onChange={(t) => s && pushActionsOf()?.setText(t)} />
+      {s?.note || bad ? <Message text={s?.note ?? 'Type a number, such as 5 or -3.'} /> : null}
       <ToolFooter
-        verb={distance !== null && distance < 0 ? 'Push in' : 'Pull out'}
-        verbs={['Push in', 'Pull out']}
-        onApply={async () => {
-          // a typed distance can follow a named value; a dragged one is a plain number
-          bindNext(text)
-          try {
-            return await apply(distance, face)
-          } finally {
-            bindNext(undefined)
-          }
-        }}
-        busy={busy}
+        verb={op === 'pull' || op === null ? OP_LABEL.pull : OP_LABEL.cut}
+        verbs={[OP_LABEL.cut, OP_LABEL.pull]}
+        onApply={() => pushActionsOf()?.apply()}
+        busy={s?.busy ?? false}
         disabled={!face || !distance}
       />
     </Shell>
