@@ -119,6 +119,46 @@ test('a toast sits above the plate bar, over the viewport, on no control', { tag
   }).toBeLessThanOrEqual(1)
 })
 
+test('a toast is moved clear of a panel in the frame the panel opens', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The timeline is a desktop panel')
+  await open(page)
+  await page.locator('.sx-tab[data-mode="design"]').click()
+  await expect(page.getByTestId('edge-tab-bottom')).toBeVisible()
+  await expect(page.locator('.bpanel-body')).toBeHidden()
+  // All in the page, since a toast leaves after 2.6 s. A second observer on the panel, made after the stack's own, is
+  // told of the panel's new size in the same frame and before it paints: where the toast lies then is where the first
+  // frame of the open panel shows it.
+  const covered = await page.evaluate(async () => {
+    const sx = (window as unknown as { __sx: Sx }).__sx
+    const nextFrame = () => new Promise((r) => requestAnimationFrame(r))
+    sx.setState({ toast: { id: Date.now(), text: 'Saved the plate.', tone: 'info' } })
+    let stack = document.querySelector<HTMLElement>('[data-testid="toasts"]')
+    for (let i = 0; !stack && i < 100; i++) {
+      await nextFrame()
+      stack = document.querySelector<HTMLElement>('[data-testid="toasts"]')
+    }
+    if (!stack) throw new Error('no toast stack')
+    await Promise.all(stack.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => undefined)))
+    await nextFrame()
+    await nextFrame()
+    const body = document.querySelector<HTMLElement>('.bpanel-body')!
+    const tab = document.querySelector<HTMLElement>('[data-testid="edge-tab-bottom"]')!
+    const apart = (a: DOMRect, b: DOMRect) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top
+    const firstFrame = new Promise<string[]>((resolve) => {
+      const ro = new ResizeObserver(() => {
+        if (body.hidden) return
+        ro.disconnect()
+        const toast = stack.getBoundingClientRect()
+        resolve([['tab', tab], ['panel', body]].filter(([, el]) => !apart(toast, (el as HTMLElement).getBoundingClientRect())).map(([name]) => name as string))
+      })
+      ro.observe(body)
+    })
+    tab.click()
+    return Promise.race([firstFrame, new Promise<string[]>((_, no) => setTimeout(() => no(new Error('the panel did not open')), 5000))])
+  })
+  expect(covered).toEqual([])
+})
+
 test('on a phone, a toast floats above an open sheet and leaves it where it is', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Phone width')
   await open(page)
