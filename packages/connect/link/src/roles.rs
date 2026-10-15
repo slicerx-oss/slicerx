@@ -129,6 +129,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: they change how the window behaves, never the project. No other setting is reachable.
     ("look.get", LinkClass::Read),
     ("look.set", LinkClass::Read),
+    // The open sketch's dimension boxes: read them, and type a value into one, as the person does on the shape.
+    ("sketch.boxes", LinkClass::Read),
+    ("sketch.box_set", LinkClass::Edit),
     ("values.list", LinkClass::Read),
     ("values.set", LinkClass::Edit),
     ("values.remove", LinkClass::Edit),
@@ -384,6 +387,8 @@ mod tests {
         ("plates.show", LinkClass::Read),
         ("look.get", LinkClass::Read),
         ("look.set", LinkClass::Read),
+        ("sketch.boxes", LinkClass::Read),
+        ("sketch.box_set", LinkClass::Edit),
         ("values.list", LinkClass::Read),
         ("values.set", LinkClass::Edit),
         ("values.remove", LinkClass::Edit),

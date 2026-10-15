@@ -51,6 +51,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // window behaves, never the project.
   'look.get': 'read',
   'look.set': 'read',
+  // The open sketch's dimension boxes: read them, and type a value into one (it drives the shape, or frees it).
+  'sketch.boxes': 'read',
+  'sketch.box_set': 'edit',
   'values.list': 'read',
   'values.set': 'edit',
   'values.remove': 'edit',
@@ -361,6 +364,8 @@ const HANDLERS: Record<string, Handler> = {
   'plates.show': (args) => showPlate(args),
   'look.get': () => lookState(),
   'look.set': (args) => setLook(args),
+  'sketch.boxes': async () => (await import('./sketch-boxes')).readBoxes(),
+  'sketch.box_set': async (args) => (await import('./sketch-boxes')).setBox(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),
