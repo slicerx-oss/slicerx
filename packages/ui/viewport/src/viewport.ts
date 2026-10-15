@@ -265,6 +265,8 @@ class ViewportImpl implements Viewport {
   private pickFn: (e: { clientX: number; clientY: number }) => PickHit | null = () => null
   private faceOverlay: Mesh | null = null
   private pickFaces = false
+  /** Asks face hover again at the pointer's resting spot; set with the pointer listeners. */
+  private rehoverFace: (() => void) | null = null
   private pickEdges = false
   private readonly edgeMarks = new EdgeMarks()
   private edgeHoverAt = '' 
@@ -1485,8 +1487,12 @@ class ViewportImpl implements Viewport {
 
   /** Model's face filter: the face under the pointer lights up as it does for lay on face, outside a tool too. */
   setPickFaces(on: boolean): void {
+    const was = this.pickFaces
     this.pickFaces = on
     if (!on && this.tool !== 'face' && this.tool !== 'probe') this.hoverFace(null)
+    // Turned on again while the pointer rests (a late edge answer said the edge no longer wins): light the face under
+    // it now rather than on the next move.
+    if (on && !was && this.tool !== 'probe') this.rehoverFace?.()
   }
 
   /** A bed point (mm) on screen, in client pixels. */
@@ -3332,7 +3338,13 @@ class ViewportImpl implements Viewport {
       el.setPointerCapture(e.pointerId)
       e.stopPropagation()
     }
+    // The pointer's last spot over the view with no button down, so face hover can be asked again where it rests.
+    let resting: { clientX: number; clientY: number } | null = null
+    this.rehoverFace = () => {
+      if (resting && !this.drag && this.mode === 'prepare') this.hoverFace(pick(resting))
+    }
     const onMove = (e: PointerEvent): void => {
+      resting = e.buttons === 0 ? { clientX: e.clientX, clientY: e.clientY } : null
       if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > LONG_PRESS_SLOP_PX) stopPress()
       if (this.boxDrag) {
         const bx = this.boxDrag
@@ -3678,7 +3690,10 @@ class ViewportImpl implements Viewport {
     el.addEventListener('pointermove', onMove)
     el.addEventListener('pointerup', onUp)
     el.addEventListener('pointercancel', onCancel)
-    const onLeave = () => this.hoverSolid(null)
+    const onLeave = () => {
+      resting = null
+      this.hoverSolid(null)
+    }
     el.addEventListener('pointerleave', onLeave)
     this.cleanups.push(() => el.removeEventListener('pointerleave', onLeave))
     el.addEventListener('keydown', onKey)
