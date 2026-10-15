@@ -1,0 +1,1 @@
+a dropped bridge connection comes back on its own; the cards stay in place, dimmed and off, until it does | doo-sx | 2026-10-15 | 2026-10-16 | https://github.com/slicerx-oss/slicerx/issues/1195 | passed only on retry in a merge queue run (desktop shard 1/12)
