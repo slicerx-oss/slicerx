@@ -89,6 +89,7 @@ export async function useObjectAsVolume(host: Loader, role: VolumeRole, sourceId
   const target = need(targetId)
   const src = get().plate.find((p) => p.id === sourceId)
   if (!src || src.id === target.id) throw new Error('Pick a different object.')
+  if (src.history?.exact) throw new Error('Using this object as a mesh volume would remove its required exact history. The design is unchanged.')
   const world = src.parts.map((p) => bake(p, src.transform))
   // Into the target's coordinates: undo the target's transform.
   const inv = invertRigid(target.transform)
