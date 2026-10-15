@@ -137,6 +137,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // box for the person to apply. Read: nothing changes in the project until the person applies it.
     ("model.push", LinkClass::Read),
     ("model.push_set", LinkClass::Read),
+    // The open Model tool's operation preview (push and pull, fillet and chamfer): ok or error, and its message.
+    ("model.op_preview", LinkClass::Read),
     ("values.list", LinkClass::Read),
     ("values.set", LinkClass::Edit),
     ("values.remove", LinkClass::Edit),
@@ -396,6 +398,7 @@ mod tests {
         ("sketch.box_set", LinkClass::Edit),
         ("model.push", LinkClass::Read),
         ("model.push_set", LinkClass::Read),
+        ("model.op_preview", LinkClass::Read),
         ("values.list", LinkClass::Read),
         ("values.set", LinkClass::Edit),
         ("values.remove", LinkClass::Edit),

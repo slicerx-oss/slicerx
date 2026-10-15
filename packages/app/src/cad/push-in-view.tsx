@@ -75,7 +75,8 @@ function PushArrow({ s, face }: { s: PushSnapshot; face: NonNullable<PushSnapsho
     return () => ro.disconnect()
   }, [])
 
-  const d = s.distanceMm ?? 0
+  // While the box holds something that does not read, the arrow stays at the last good distance with the preview.
+  const d = s.distanceMm ?? s.shownMm ?? 0
   const rect = layer.current?.getBoundingClientRect()
   const g = view?.screenOf && rect ? arrowGeom((p) => view.screenOf!(p), face.at, face.normal, d, { x: rect.left, y: rect.top }) : null
   // first render: the layer is not measured yet
@@ -156,9 +157,10 @@ function PushArrow({ s, face }: { s: PushSnapshot; face: NonNullable<PushSnapsho
   }
 
   const op = pushOperation(s.distanceMm, face.thicknessMm)
-  const bad = s.text.trim() !== '' && s.distanceMm === null
-  const message = s.note ?? (bad ? 'Type a number, such as 5 or -3.' : null)
-  const tone = op === 'cut' || op === 'through' ? 'cut' : 'pull'
+  const message = s.note ?? s.previewError
+  // the arrow takes the color of what the preview shows, the last good distance while the box does not read
+  const shownOp = pushOperation(d, face.thicknessMm)
+  const tone = shownOp === 'cut' || shownOp === 'through' ? 'cut' : 'pull'
   // The shaft stops short of the head.
   const len = g ? Math.hypot(g.tip.x - g.base.x, g.tip.y - g.base.y) || 1 : 1
   const ux = g ? (g.tip.x - g.base.x) / len : 0
@@ -216,7 +218,7 @@ function PushArrow({ s, face }: { s: PushSnapshot; face: NonNullable<PushSnapsho
           {s.busy ? 'Working' : op ? OP_LABEL[op] : 'No change'}
         </span>
         {message ? (
-          <span className="pp-msg" role="status">
+          <span className="pp-msg" role="status" data-testid="push-view-error">
             {message}
           </span>
         ) : null}

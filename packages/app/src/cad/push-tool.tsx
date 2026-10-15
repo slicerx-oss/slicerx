@@ -19,6 +19,7 @@ import { errorText, Message, Note, Num, pickWords, PointerHint, Shell, useProbe,
 import { follow, useDraft, useDraftObject, useRestored } from './park'
 import { applyPush, onFace, parseDistance, pickPushFace, pushWords, type PushFace } from './push'
 import { OP_LABEL, publishPush, pushActions as pushActionsOf, pushOperation, usePushSnapshot } from './push-session'
+import { previewMessage, publishPreview, reportOf, useOpPreview } from './op-preview'
 
 /** The tool's state and its ties to the view. Mounted once while the tool is open, with the pane open or shut. */
 export function usePushTool(): void {
@@ -28,6 +29,9 @@ export function usePushTool(): void {
   useDraftObject(face?.objectId)
   const [text, setText] = useDraft('text', '')
   const [prism, setPrism] = useState<GeomMesh | null>(null)
+  const [prismError, setPrismError] = useState<string | null>(null)
+  // What the view draws: the last distance that read, kept while the box holds something that does not.
+  const [prev, step] = useOpPreview<number>()
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   // The handlers below run outside React's render: they read the latest values from here.
@@ -141,19 +145,34 @@ export function usePushTool(): void {
   // The prism for a 1 mm push; the view stretches it, so a drag asks the engine for nothing.
   useEffect(() => {
     setPrism(null)
+    setPrismError(null)
     if (!face) return
     const ac = new AbortController()
     pushPreview(face, 1, ac.signal).then(
       (r) => !ac.signal.aborted && setPrism(r.tool),
-      () => undefined,
+      (e: unknown) => !ac.signal.aborted && setPrismError(errorText(e)),
     )
     return () => ac.abort()
   }, [face])
 
+  // The preview follows the box while it reads; a value that does not read keeps the last one that did.
   useEffect(() => {
-    view?.setPush({ face: face ? { objectId: face.objectId, point: face.pick.at, normal: face.frame.normal } : null, distanceMm: distance ?? 0, prism })
+    if (!face || text.trim() === '') step({ type: 'clear' })
+    else if (distance === null) step({ type: 'fail', message: 'Type a number, such as 5 or -3.' })
+    else if (prismError) step({ type: 'fail', message: prismError })
+    else if (!prism) step({ type: 'request' })
+    else step({ type: 'ok', value: distance })
+  }, [face, text, distance, prism, prismError])
+  const shownMm = prev.shown
+  useEffect(() => {
+    publishPreview(reportOf('push', prev, { adds: (prev.shown ?? 0) > 0, removes: (prev.shown ?? 0) < 0 }))
+  }, [prev])
+  useEffect(() => () => publishPreview(null), [])
+
+  useEffect(() => {
+    view?.setPush({ face: face ? { objectId: face.objectId, point: face.pick.at, normal: face.frame.normal } : null, distanceMm: shownMm ?? 0, prism })
     cameraBus()?.guides?.(face ? { loops: loopsOf(face.frame, face.outline).map((points) => ({ points })) } : {})
-  }, [view, face, distance, prism])
+  }, [view, face, shownMm, prism])
   useEffect(() => () => view?.setPush(null), [view])
 
   // Drags in the view. Moves update the field at most once a frame.
@@ -194,7 +213,12 @@ export function usePushTool(): void {
       bindNext(undefined)
     }
   }, [apply])
-  const actions = useMemo(() => ({ setText, apply: run }), [run])
+  // A new value clears an earlier engine error; the preview says whether the new one reads.
+  const typeText = useCallback((t: string) => {
+    setNote(null)
+    setText(t)
+  }, [])
+  const actions = useMemo(() => ({ setText: typeText, apply: run }), [run, typeText])
   useEffect(() => {
     publishPush(
       {
@@ -203,11 +227,13 @@ export function usePushTool(): void {
         distanceMm: distance,
         busy,
         note,
+        previewError: previewMessage(prev),
+        shownMm,
         editStep: edit ? edit.index + 1 : null,
       },
       actions,
     )
-  }, [face, text, distance, busy, note, edit, actions])
+  }, [face, text, distance, busy, note, prev, shownMm, edit, actions])
   useEffect(() => () => publishPush(null, null), [])
 }
 
@@ -218,13 +244,13 @@ export function PushTool() {
   const text = s?.text ?? ''
   const distance = s?.distanceMm ?? null
   const words = face ? pushWords(distance, face.thicknessMm) : null
-  const bad = text.trim() !== '' && distance === null
+  const message = s?.note ?? s?.previewError ?? null
   const op = pushOperation(distance, face?.thicknessMm ?? null)
   return (
     <Shell title="Push and pull" aside={s?.editStep ? `Editing step ${s.editStep}` : face ? 'A face is picked' : 'No face yet'}>
       {!face ? <PointerHint text="Click a flat face, or drag one in or out. Hold Shift to move in 1 mm steps." /> : <Note status>{words}</Note>}
       <Num id="push-dist" label="Distance along the face normal" unit="mm" value={text} onChange={(t) => s && pushActionsOf()?.setText(t)} />
-      {s?.note || bad ? <Message text={s?.note ?? 'Type a number, such as 5 or -3.'} /> : null}
+      {message ? <Message text={message} testId="op-preview-error" /> : null}
       <ToolFooter
         verb={op === 'pull' || op === null ? OP_LABEL.pull : OP_LABEL.cut}
         verbs={[OP_LABEL.cut, OP_LABEL.pull]}
