@@ -226,6 +226,7 @@ fn main() {
             llm::llm_billing,
             #[cfg(feature = "pilot")]
             llm::llm_local_models,
+            llm::llm_provider_models,
             #[cfg(feature = "pilot")]
             llm::llm_stream,
             #[cfg(feature = "pilot")]

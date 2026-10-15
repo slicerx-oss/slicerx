@@ -13,5 +13,6 @@ export function createTauriChatGpt(): ChatGptHost {
     hasApiKey: (provider) => invoke<boolean>('chatgpt_has_api_key', { provider }),
     clearApiKey: (provider) => invoke<void>('chatgpt_clear_api_key', { provider }),
     localModels: (baseUrl) => invoke<string>('llm_local_models', { baseUrl }),
+    providerModels: (provider, baseUrl, key) => invoke<string>('llm_provider_models', { provider, baseUrl, key }),
   }
 }

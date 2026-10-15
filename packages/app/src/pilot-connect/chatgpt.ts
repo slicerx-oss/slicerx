@@ -37,6 +37,11 @@ export interface ChatGptHost {
    * key from the keychain (the webview cannot reach the network or read the key).
    */
   localModels?(baseUrl: string): Promise<string>
+  /**
+   * The model listing of OpenAI or Anthropic, fetched by the host for the connect test with `key` (typed, not saved yet)
+   * or, when null, the key in the keychain. The host sends it to that provider's own address only.
+   */
+  providerModels?(provider: 'openai' | 'anthropic', baseUrl: string, key: string | null): Promise<string>
 }
 
 type Factory = (host: Host) => ChatGptHost
