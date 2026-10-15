@@ -26,12 +26,13 @@ async function nearFrontEdge(page: Page, id: string, px: number): Promise<{ x: n
   return page.evaluate(
     ({ ends, center, px }) => {
       const vp = (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp
-      const [a, e] = ends.map((p) => vp.screenOf(p))
+      const a = vp.screenOf(ends[0])
+      const e = vp.screenOf(ends[1])
       const c = vp.screenOf(center)
-      const m = [(a[0] + e[0]) / 2, (a[1] + e[1]) / 2]
+      const m: [number, number] = [(a[0] + e[0]) / 2, (a[1] + e[1]) / 2]
       const len = Math.hypot(e[0] - a[0], e[1] - a[1])
       // the edge's normal on screen, turned toward the face
-      let n = [-(e[1] - a[1]) / len, (e[0] - a[0]) / len]
+      let n: [number, number] = [-(e[1] - a[1]) / len, (e[0] - a[0]) / len]
       if (n[0] * (c[0] - m[0]) + n[1] * (c[1] - m[1]) < 0) n = [-n[0], -n[1]]
       return { x: m[0] + n[0] * px, y: m[1] + n[1] * px }
     },
