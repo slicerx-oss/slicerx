@@ -126,6 +126,8 @@ export async function exportAssets(dest) {
     }
   }
   for (const [id, demo] of Object.entries(DEMOS).sort(([a], [b]) => a.localeCompare(b))) {
+    // Recorded clips are raster takes, not stage loops: the kit ships loops only.
+    if (!demo.stage) continue
     // The registry's loader is the source of truth, including aliases such as holefit -> hole.
     const module = demo.stage?.toString().match(/import\(['"]\.\.\/demos\/([^'"]+)['"]\)/)?.[1]
     if (!module || !/^[\w-]+$/.test(module)) throw new Error(`Unsupported loop loader: ${id}`)
