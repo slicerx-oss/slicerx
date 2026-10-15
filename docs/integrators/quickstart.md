@@ -11,6 +11,8 @@ Everything in this guide runs locally with no SlicerX account and no token, exce
 
 ## Before you start
 
+To name and style an edition's assistant, or name it in embedded packages without an edition config, see [Assistant branding](assistant-brand.md). It also covers reading the open app's identity over MCP and the command line.
+
 The npm packages are not published yet: use the source-kit command below to build and install the tarballs with the engine. The following npm command is for use after publication:
 
 ```sh

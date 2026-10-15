@@ -3,10 +3,26 @@
 // The app's name and brand colors for a server run on its own: brand.name and brand.colors of the resolved edition config
 // SLICERX_CONFIG names (the file cloud slicing, locked projects and local AI read too). Inside an app, the app sets them.
 import { existsSync, readFileSync } from 'node:fs'
+import { DEFAULT_ASSISTANT_BRAND, type AssistantBrand } from '@slicerx/contracts'
+import { z } from 'zod'
 
 interface Brand {
   name?: unknown
   colors?: unknown
+  assistant?: unknown
+}
+
+/** Assistant identity from a resolved edition. No config leaves Path B's explicit name in place. */
+export function editionAssistantFromEnv(env: NodeJS.ProcessEnv): AssistantBrand | undefined {
+  const brand = brandFromEnv(env)
+  if (!brand) return undefined
+  const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+  const parsed = z.object({
+    name: z.string().trim().min(1).max(40).regex(/^[^\x00-\x1f\x7f]+$/).default(DEFAULT_ASSISTANT_BRAND.name),
+    icon: z.string().min(1).default(DEFAULT_ASSISTANT_BRAND.icon),
+    accent: z.union([hex, z.object({ light: hex, dark: hex })]).optional(),
+  }).parse(brand.assistant ?? {})
+  return { name: parsed.name.toLowerCase() === 'mimir' ? 'mimir' : parsed.name, icon: parsed.icon, ...(parsed.accent === undefined ? {} : { accent: parsed.accent }) }
 }
 
 function brandFromEnv(env: NodeJS.ProcessEnv): Brand | undefined {

@@ -7,6 +7,7 @@
 // holes are the sizes insert makers publish for printed parts and are used as
 // modeled. The fit clearances come from fit_check's rules.
 import { assessFit, faceGrowth, type FitInput } from '../fit_check/index'
+import { assistantText } from '@slicerx/contracts'
 import { round } from '../geom_common/index'
 
 export interface MetricSize {
@@ -106,7 +107,7 @@ export function holeFor(kind: HoleKind, b: PrintBasis, o: { size?: string | unde
     spec = { kind, label: `${m.name} heat-set insert`, targetMm: s.insertHole, modeledMm: s.insertHole, depthMm: o.depthMm ?? round(s.insertLength + 1, 1), why: [`insert hole ${s.insertHole} mm as published for printed parts, ${round(s.insertLength + 1, 1)} mm deep for a ${s.insertLength} mm insert`] }
   } else if (kind === 'tap' || kind === 'thread') {
     spec = { kind, label: `${m.name} tap hole`, targetMm: s.tapDrill, modeledMm: round(s.tapDrill + add, 2), why: [`tap drill ${s.tapDrill} mm`, ...corr.why] }
-    if (kind === 'thread') spec.why.push('mimir does not model printed threads; tap this hole, or use a heat-set insert for threads that last')
+    if (kind === 'thread') spec.why.push(assistantText('mimir does not model printed threads; tap this hole, or use a heat-set insert for threads that last'))
     if (o.depthMm !== undefined) spec.depthMm = o.depthMm
   } else {
     spec = { kind, label: `${m.name} clearance hole`, targetMm: s.clearance, modeledMm: round(s.clearance + add, 2), why: [`medium clearance ${s.clearance} mm`, ...corr.why] }

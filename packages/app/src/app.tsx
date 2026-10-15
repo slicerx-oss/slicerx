@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { AppFeature, Host } from '@slicerx/contracts'
+import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { AppTooltips } from './lib/tip-host'
 import { startAutoSlice } from './state/auto-slice'
 import { QueueWatcher } from './queue/watcher'
 import { ProfileFollow } from './shell/profile-follow'
-import { Frame, keepPressedControlsInPlace, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
+import { AssistantStyle, Frame, keepPressedControlsInPlace, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
 import { applyType, DEFAULT_THEMES, themeForScheme, themeFromFile } from '@slicerx/ui/theme'
 import '@slicerx/ui/styles.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { builtinCommands, toggleRail } from './commands/builtin'
 import { getCommand, registerCommands, runCommand } from './commands/registry'
 import { useNativeMenu } from './commands/use-native-menu'
@@ -83,6 +84,7 @@ const PilotDock = lazy(() => import('./features/pilot/dock').then((m) => ({ defa
 export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo }: { host: Host; features?: readonly AppFeature[]; theme?: Theme; edition?: EditionConfig; logo?: ReactNode }) {
   // Text outside React (toasts, errors, menus) names the app through appName(); set before anything renders.
   setCurrentEdition(edition)
+  useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
   // A host that cannot slice (the CAD-only browser build) keeps the app in Model; set before anything renders.
   setHostSlices(host.capabilities.slicing !== false)
   const brandLogo = useMemo(() => logo ?? editionLogo(edition), [logo, edition])
@@ -146,6 +148,7 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
       <FeaturesContext value={featureSet}>
         <QueryClientProvider client={client}>
           <ThemeProvider theme={active} logo={brandLogo}>
+            <AssistantStyle />
             <ToastProvider>
               <Shell />
               <ToastBridge />
@@ -160,6 +163,7 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
 
 function Shell() {
   const host = useHost()
+  const assistant = useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
   // Anything that asks for Slice (a key, a link, a saved pref) lands back in Model when the host cannot slice.
   useEffect(() => (hostSlices() ? undefined : stayInModel()), [])
   useAskForPrinter()
@@ -236,8 +240,8 @@ function Shell() {
   const cad = useCadShown()
   const shownName = workspace === 'prepare' && cad && mode !== 'slice' ? (mode === 'mimir' ? ASSISTANT_NAME : 'Model') : (current?.label ?? 'This workspace')
 
-  useEffect(() => registerCommands(builtinCommands(host, workspaces)), [host, workspaces])
-  useEffect(() => registerCommands(features.flatMap((f) => f.commands?.(host) ?? [])), [host, features])
+  useEffect(() => registerCommands(builtinCommands(host, workspaces)), [host, workspaces, assistant.name])
+  useEffect(() => registerCommands(features.flatMap((f) => f.commands?.(host) ?? [])), [host, features, assistant.name])
   useEffect(() => registerCommands(setupCommands()), [])
   // The desktop app starts its own bridge and connects to it without asking.
   useEffect(() => {

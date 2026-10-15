@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The integrations list Settings > mimir shows, read the same way (pluginLoads), for a client.
+import { assistantText } from '@slicerx/contracts'
 import { pluginLoads } from '@slicerx/contracts'
 import { z } from 'zod'
 import { serverTool, type ServerToolDeps } from './deps'
@@ -17,7 +18,7 @@ export default (d: ServerToolDeps) => {
     toolset: 'printers',
     ungated: true,
     description:
-      'List the integrations mimir can use, as Settings > mimir shows them: each one with its state (connected or off) and the printers (bays) assigned to it. A printer integration with no printers assigned is off.',
+      assistantText('List the integrations mimir can use, as Settings > mimir shows them: each one with its state (connected or off) and the printers (bays) assigned to it. A printer integration with no printers assigned is off.'),
     input: z.object({}),
     hints: { idempotent: true, openWorld: true },
     async run() {

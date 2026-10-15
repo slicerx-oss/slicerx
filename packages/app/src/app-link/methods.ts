@@ -6,6 +6,7 @@
 // look.set changes only two view preferences: Frame the view and Toolbar size.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
+import { assistantBrand } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { appName, currentEdition, editionHasCad } from '../edition'
@@ -311,7 +312,8 @@ function bedShape() {
 const HANDLERS: Record<string, Handler> = {
   'app.info': () => {
     const s = get()
-    return { app: appName(), tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS }
+    const edition = currentEdition()
+    return { app: appName(), assistant: { ...assistantBrand(), enabled: edition.features.pilot }, tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS }
   },
   'plate.list': () => {
     const s = get()

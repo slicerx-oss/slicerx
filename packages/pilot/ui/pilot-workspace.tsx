@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
+import { AssistantStyle } from '@slicerx/ui'
 import {
   PERMISSION_LABELS,
   type ApprovalRequest,
@@ -71,6 +73,7 @@ export function runTitle(first: string | null): string {
 
 /** The mimir page: sessions rail, terminal and inspector, driven by real PilotEvents. */
 export function PilotWorkspace(props: PilotWorkspaceProps) {
+  useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
   const { pilot, sessionId, context, replay, onPolicyChange, onSwitchMachine, onEditPlan } = props
   const runOpts = context === undefined ? {} : { context }
   const run = usePilotRun(pilot, sessionId, runOpts)
@@ -169,6 +172,7 @@ export function PilotWorkspace(props: PilotWorkspaceProps) {
 
   return (
     <div className="sx-pilot">
+      <AssistantStyle />
       <SessionsRail sessions={props.sessions ?? []} currentId={sessionId} onNew={props.onNewSession} onSelect={props.onSelectSession} now={clock} />
       <Terminal
         sessionTitle={runTitle(transcript.turns.find((t) => t.user)?.user ?? null)}

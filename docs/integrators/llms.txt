@@ -22,6 +22,8 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 
 ## Packages
 
+- [Assistant branding](assistant-brand.md): edition name, icon and light/dark accent, setAssistantName for embedded packages, and MCP/CLI read-back
+
 - @slicerx/mcp: the MCP server; `node_modules/@slicerx/mcp/dist/cli.js`, or `require.resolve('@slicerx/mcp/cli')`. Local AI tools: `slicerx_local_ai_check` (read), `slicerx_local_ai_setup` (always asks the user; downloads through Ollama), `slicerx_local_ai_status` (read)
 - @slicerx/embed: Viewport, SettingsPanel, Agreement, LocalAiSetup and useLocalAi (Set up local AI), EmbedTheme, createTheme, the custom elements, and `@slicerx/embed/sxlock` for optional locked projects
 - @slicerx/viewport: the three.js viewport under Viewport

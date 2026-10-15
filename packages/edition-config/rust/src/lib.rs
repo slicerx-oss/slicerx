@@ -66,6 +66,8 @@ pub struct EditionConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Brand {
     pub name: String,
+    #[serde(default)]
+    pub assistant: AssistantBrand,
     pub short_name: Option<String>,
     pub tagline: Option<String>,
     pub description: Option<String>,
@@ -75,6 +77,39 @@ pub struct Brand {
     /// Named brand colors (`brand.colors`), such as `black` to `#17181f`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub colors: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AssistantBrand {
+    pub name: String,
+    pub icon: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<AssistantAccent>,
+}
+
+impl Default for AssistantBrand {
+    fn default() -> Self {
+        Self {
+            name: "mimir".into(),
+            icon: "builtin:mimir".into(),
+            accent: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AssistantAccent {
+    Color(String),
+    Themes(AssistantThemeAccents),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AssistantThemeAccents {
+    pub light: String,
+    pub dark: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -642,6 +677,39 @@ mod tests {
         let colors = harbor.brand.colors.as_ref().unwrap();
         assert_eq!(colors.get("navy").map(String::as_str), Some("#1b2a41"));
         assert_eq!(neutral.brand.colors, None);
+        assert_eq!(neutral.brand.assistant, AssistantBrand::default());
+    }
+
+    #[test]
+    fn reads_assistant_identity_and_defaults_older_configs() {
+        let older = neutral_with(|v| {
+            v["brand"].as_object_mut().unwrap().remove("assistant");
+        });
+        assert_eq!(
+            EditionConfig::from_json(&older).unwrap().brand.assistant,
+            AssistantBrand::default()
+        );
+        let custom = neutral_with(|v| {
+            v["brand"]["assistant"] = serde_json::json!({
+                "name": "YourMate", "icon": "helper.svg",
+                "accent": { "light": "#006b65", "dark": "#63e6d4" }
+            })
+        });
+        let brand = EditionConfig::from_json(&custom).unwrap().brand.assistant;
+        assert_eq!(brand.name, "YourMate");
+        assert_eq!(brand.icon, "helper.svg");
+        assert_eq!(
+            brand.accent,
+            Some(AssistantAccent::Themes(AssistantThemeAccents {
+                light: "#006b65".into(),
+                dark: "#63e6d4".into()
+            }))
+        );
+        let solid = neutral_with(|v| v["brand"]["assistant"]["accent"] = serde_json::json!("#006b65"));
+        assert_eq!(
+            EditionConfig::from_json(&solid).unwrap().brand.assistant.accent,
+            Some(AssistantAccent::Color("#006b65".into()))
+        );
     }
 
     // The Motion setting added firstRun.defaultMotion to the TypeScript schema; sx-cloud refused
