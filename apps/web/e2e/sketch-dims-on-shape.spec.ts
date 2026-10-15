@@ -19,9 +19,6 @@ type W = {
 }
 type Boxes = { dof: number | null; shapes: { shape: string; loop: number; seg?: number; boxes: { box: string; value: number; set: string | null }[] }[] }
 
-/** Turns the developer flag on before the app starts, as the palette command leaves it. */
-const withFeel = (page: Page) => page.addInitScript(() => localStorage.setItem('sx.modelFeel', '1'))
-
 /** Where plane point `p` of the open sketch is on screen. */
 const screenAt = (page: Page, p: V2) =>
   page.evaluate((p) => {
@@ -91,10 +88,9 @@ async function clickAt(page: Page, p: V2): Promise<void> {
   await page.mouse.up()
 }
 
-/** A sketch on the bed with the new feel on; the bed plane's coordinates are bed millimeters. */
+/** A sketch on the bed, in the default settings mode; the bed plane's coordinates are bed millimeters. */
 async function sketchOnBed(page: Page): Promise<void> {
-  await withFeel(page)
-  await openStudio(page, { settingsMode: 'developer' })
+  await openStudio(page)
   await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
   await page.locator('.sx-tab[data-mode="design"]').click()
   await command(page, 'Sketch on the bed or a face')
@@ -377,13 +373,12 @@ test.describe('sketch dimension boxes on the shape, phone', () => {
   test.skip(({ isMobile }) => !isMobile, 'Phone only')
 
   async function sketchOnPlane(page: Page): Promise<void> {
-    await withFeel(page)
     await page.addInitScript(() => {
       if (sessionStorage.getItem('sx-e2e')) return
       sessionStorage.setItem('sx-e2e', '1')
       localStorage.setItem('slicerx.debug', '1')
       localStorage.setItem('slicerx.e2e.cadOnly', '1')
-      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'developer', pilot: { mode: 'off' } }))
+      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
     })
     await page.goto('./')
     await page.locator('html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: 120_000 })

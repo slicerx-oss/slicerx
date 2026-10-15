@@ -42,7 +42,7 @@ import { goesIntoFace } from './extrude-direction'
 import { CursorPills, type CursorPillsHandle } from './cursor-pills'
 import { ShapeBoxes, type ShapeBoxesHandle, type ShapeBoxField } from './shape-boxes'
 import { boxesOf, boxesState, boxKeyOf, boxValues, draftShape, keptShape, onShapeTool, placedShape, setBox, shapeAt, typedConstraints, type BoxKey, type BoxShape, type ScreenShape } from './sketch-boxes'
-import { modelFeelFor, onModelFeel } from './model-feel-flag'
+import { onModelFeel, sketchBoxesFor } from './model-feel-flag'
 import { applyReason, CHECKING, profileState, provideSketchBoxes, provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
 import { Actions, Card, Choice, close, type ChoiceOption, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
@@ -432,12 +432,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [typed, setTyped] = useState<string[] | null>(null)
   const [pillFocus, setPillFocus] = useState(0)
   const pills = useRef<CursorPillsHandle | null>(null)
-  // The new Model feel (developer flag): the drawing tools' sizes sit on the shape as boxes, and a picked shape shows
-  // its sizes there to change. `boxToken` puts the keyboard in a drawing box; the edit boxes keep their own text.
+  // The Model feel (on unless a developer turned it off): the drawing tools' sizes sit on the shape as boxes, and a
+  // picked shape shows its sizes there to change. `boxToken` puts the keyboard in a drawing box; the edit boxes keep
+  // their own text.
   const settingsMode = useApp((s) => s.settingsMode)
   const [, feelTurned] = useState(0)
   useEffect(() => onModelFeel(() => feelTurned((n) => n + 1)), [])
-  const feel = modelFeelFor(settingsMode)
+  const feel = sketchBoxesFor(settingsMode)
   const boxes = useRef<ShapeBoxesHandle | null>(null)
   const editBoxes = useRef<ShapeBoxesHandle | null>(null)
   const [boxToken, setBoxToken] = useState(0)

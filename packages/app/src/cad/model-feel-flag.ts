@@ -25,6 +25,14 @@ export function modelFeelFor(settingsMode: string): boolean {
   return !(settingsMode === 'developer' && modelFeelOffStored())
 }
 
+/**
+ * Whether sketching shows its sizes as boxes on the shape (instead of the cursor pills): whenever the Model feel is on,
+ * which is everyone unless a developer turned the feel off.
+ */
+export function sketchBoxesFor(settingsMode: string): boolean {
+  return modelFeelFor(settingsMode)
+}
+
 const listeners = new Set<(on: boolean) => void>()
 
 /** Calls `fn` with the new value each time the palette command turns the flag over. Returns the unsubscribe. */

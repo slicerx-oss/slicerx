@@ -4,7 +4,7 @@
 // The Model feel's flag: on by default in every settings mode, turned off only by a developer on this device, and heard
 // by whoever listens when the palette command turns it over.
 import { afterEach, describe, expect, it } from 'vitest'
-import { MODEL_FEEL_KEY, modelFeelFor, modelFeelOffStored, onModelFeel, toggleModelFeel } from '../src/cad/model-feel-flag'
+import { MODEL_FEEL_KEY, modelFeelFor, modelFeelOffStored, onModelFeel, sketchBoxesFor, toggleModelFeel } from '../src/cad/model-feel-flag'
 
 afterEach(() => localStorage.removeItem(MODEL_FEEL_KEY))
 
@@ -19,6 +19,13 @@ describe('the Model feel flag', () => {
     // the old "on" value from the developer flag keeps it on
     localStorage.setItem(MODEL_FEEL_KEY, '1')
     expect(modelFeelFor('developer')).toBe(true)
+  })
+
+  it('shows the sketch boxes in every mode, until a developer turns the feel off', () => {
+    for (const mode of ['simple', 'advanced', 'expert', 'developer']) expect(sketchBoxesFor(mode)).toBe(true)
+    localStorage.setItem(MODEL_FEEL_KEY, '0')
+    expect(sketchBoxesFor('developer')).toBe(false)
+    expect(sketchBoxesFor('simple')).toBe(true)
   })
 
   it('turns over, tells its listeners, and stops telling one that left', () => {
