@@ -62,8 +62,10 @@ The build is committed so the web build needs no C++ toolchain. Rebuild it after
 
 ```sh
 sh packages/brep/scripts/fetch-smlib.sh
-sh packages/brep/scripts/build-wasm.sh
+sh packages/brep/scripts/build-wasm.sh /tmp/sx-brep-build
 ```
+
+Cached objects include the source, recursive wrapper and kernel headers, compiler identity and flags in their stamps. `sh packages/brep/tests/wasm-cache.sh` checks invalidation for nested headers, both kernel header trees, compiler changes and flags.
 
 | File | Bytes | gzip | SHA-256 |
 | --- | --- | --- | --- |
