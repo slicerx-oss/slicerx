@@ -162,6 +162,23 @@ it.each([
   expect(after).not.toHaveProperty('head')
 })
 
+it('returns a scoped refusal for a removed push body before modeling', async () => {
+  const mesh = { name: 'Surface', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2] }
+  const outDir = mkdtempSync(join(tmpdir(), 'push-removed-')); directories.push(outDir)
+  const engine = vi.fn(async () => ({ mesh }))
+  const designs = new Designs({ engine, policy: { outDir, allowDirs: undefined, allowUrls: false } })
+  const d = await designs.create('Surface', [mesh]), revision = designs.revision(d.id)
+  const unused = async (): Promise<never> => { throw new Error('must not read a file') }
+  const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
+  await h.client.listTools()
+  designs.get = () => { throw Object.assign(new Error('The body was removed.'), { code: 'not_found' }) }
+  const result = await h.call('slicerx_geom_push_pull', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, distance_mm: 2 })
+  expect(result.isError, text(result)).toBe(true)
+  expect(result.structuredContent).toMatchObject({ error: { code: 'stale_body', details: { topology: null, operationResult: { status: 'refused', reason: 'stale_body', bodyId: d.id, priorRevision: revision, revision: null } } } })
+  expect(engine).not.toHaveBeenCalled()
+  expect(d.history.steps).toHaveLength(0)
+})
+
 it.each([false, true])('refuses invalid or removed scoped holes before committing: removed=%s', async (removed) => {
   const mesh = { name: 'Hole', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [17], table: [{ kind: 'cylinder', origin: [0, 0, 0], axis: [0, 0, 1], radius: 2 }] } }
   const outDir = mkdtempSync(join(tmpdir(), 'hole-invalid-')); directories.push(outDir)
