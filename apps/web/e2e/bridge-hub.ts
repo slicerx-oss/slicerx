@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import type { MockName } from '../../../packages/connect/mock-printers/src/index.ts'
+import type { ApprovalDone } from '../../../packages/connect/link-client/src/index.ts'
 
 const bin = process.env['SX_LINK_BIN']
 const required = process.env['SX_LINK_REQUIRE'] === '1'
@@ -29,6 +30,7 @@ export interface Admin {
   setSecret(n: string, v: string): Promise<void>
   status(id: string): Promise<{ state: string; message?: string; live?: { monitorOnly?: boolean; needsDeveloperMode?: boolean } }>
   settings: { set(s: Record<string, unknown>): Promise<unknown> }
+  onApprovalDone(callback: (done: ApprovalDone) => void): () => void
   clients: { create(name: string, role: 'agent' | 'watch', opts?: { partner?: boolean }): Promise<{ clientKey?: string }> }
 }
 
