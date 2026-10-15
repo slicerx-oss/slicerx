@@ -7,15 +7,21 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 const PACKAGE_ENTRY: &str = "node_modules/@slicerx/mcp/dist/cli.js";
-const HELP: &str = "usage: sx call [server options] <tool> [json] [<tool> [json] ...]\n\nRun SlicerX tools in order, with one JSON result per call. Tool names may omit\nthe slicerx_ prefix. Use --app to edit the open app, or --no-app for server designs.\n\nExamples:\n  sx call --app design_list\n  sx call --app design_steps '{\"design\":\"obj_1\"}'\n  sx call --no-app design_new '{\"name\":\"Bracket\"}' design_list\n\nRequires Node.js 24+ and @slicerx/mcp installed in this project or beside sx.\nSLICERX_MCP_CLI selects a built cli.js or standalone slicerx-mcp.mjs explicitly.\nSLICERX_NODE_BIN selects Node.js (default: node on PATH).\nServer options, permissions, approvals and read-back are the same as slicerx-mcp call.";
+
+fn help() -> String {
+    let name = sx_core::api::app_name();
+    format!(
+        "usage: sx call [server options] <tool> [json] [<tool> [json] ...]\n\nRun {name} tools in order, with one JSON result per call. Tool names may omit\nthe slicerx_ prefix. Use --app to edit the open app, or --no-app for server designs.\n\nExamples:\n  sx call --app design_list\n  sx call --app design_steps '{{\"design\":\"obj_1\"}}'\n  sx call --no-app design_new '{{\"name\":\"Bracket\"}}' design_list\n\nRequires Node.js 24+ and @slicerx/mcp installed in this project or beside sx.\nSLICERX_MCP_CLI selects a built cli.js or standalone slicerx-mcp.mjs explicitly.\nSLICERX_NODE_BIN selects Node.js (default: node on PATH).\nServer options, permissions, approvals and read-back are the same as slicerx-mcp call."
+    )
+}
 
 pub(crate) fn run(args: &[String]) -> crate::Res<ExitCode> {
     if args.is_empty() {
-        eprintln!("{HELP}");
+        eprintln!("{}", help());
         return Ok(ExitCode::from(2));
     }
     if args.len() == 1 && matches!(args[0].as_str(), "--help" | "-h") {
-        println!("{HELP}");
+        println!("{}", help());
         return Ok(ExitCode::SUCCESS);
     }
     let exe = std::env::current_exe()?;
