@@ -32,6 +32,21 @@ it('refuses an unavailable exact kernel without creating a mesh design', async (
   expect(listed.designs).toEqual([])
 })
 
+it('checks a persistent exact engine without allocating a probe body', async () => {
+  vi.stubEnv('SX_BREP_DEV', '1')
+  let bodies = 0
+  const h = await connect({ geomEngine: async op => {
+    if (op === 'brep.count') return { bodies }
+    if (op === 'brep.box') return { body: ++bodies, bodySmb: 'probe' }
+    throw new Error(`unexpected operation ${op}`)
+  } })
+  for (let i = 0; i < 2; i++) {
+    const result = await h.call('slicerx_design_new', { exact: true })
+    expect(result.isError, text(result)).toBeFalsy()
+  }
+  expect(bodies).toBe(0)
+})
+
 it.skipIf(!bin)('selects the real native exact path and reads back its representation', async () => {
   vi.stubEnv('SX_BREP_DEV', '1')
   const calls: string[] = []
@@ -39,6 +54,7 @@ it.skipIf(!bin)('selects the real native exact path and reads back its represent
   const h = await connect({ geomEngine: async (op, request) => { calls.push(op); return native(op, request) } })
   const created = await h.call('slicerx_design_new', { name: 'Exact bracket', exact: true })
   expect(created.isError, text(created)).toBeFalsy()
+  expect(calls).toEqual(['brep.count'])
   const d = data<{ output: { design: string; exact: boolean } }>(created).output
   expect(d.exact).toBe(true)
   const extruded = await h.call('slicerx_geom_extrude', { design: d.design, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [15, 5] }, distance_mm: 3 })
