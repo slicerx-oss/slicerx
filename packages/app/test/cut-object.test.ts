@@ -58,6 +58,19 @@ it('refuses a stale cut when print settings change while loading its pieces', as
   expect(get().objectSettings).toEqual({ cube: { wall_loops: 9 } })
 })
 
+it.each(['changed', 'removed'])('refuses a nonintersecting result when the target was %s during geometry work', async (state) => {
+  const original = get().plate[0]!
+  const changed = state === 'removed' ? [] : [{ ...original, parts: [...original.parts] }]
+  const loadParts = vi.fn(async () => handle)
+  setGeomProvider({ call: async <T>() => {
+    set({ plate: changed })
+    return { below: box([0,0,0], [20,20,20]), report: { warnings: [], connectors: [] } } as T
+  } })
+  await expect(cutObject({ loadParts }, 'cube', { ...spec, atMm: 30 })).rejects.toMatchObject({ code: 'busy' })
+  expect(get().plate).toBe(changed)
+  expect(loadParts).not.toHaveBeenCalled()
+})
+
 it('keeps surviving copies attached to their original geometry and settings', async () => {
   const source = get().plate[0]!
   const copy = { ...source, id: 'copy', instanceOf: source.id }

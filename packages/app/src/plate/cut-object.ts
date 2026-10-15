@@ -110,6 +110,7 @@ export async function cutObject(host: Loader, id: string, spec: CutSpec): Promis
     add(r.above, above)
     for (const x of r.extras ?? []) add(x, extras, 'Connector')
   }
+  check()
   const warnings = reports.flatMap((r) => r.report.warnings)
   const pieces: { name: string; parts: MeshPart[]; side: 'below' | 'above' | 'connector' }[] = []
   if (spec.keep !== 'above' && below.length) pieces.push({ name: `${e.name} lower`, parts: below, side: 'below' })
