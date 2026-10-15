@@ -9,7 +9,7 @@
 //
 // With --engine it also lays out the prebuilt engine (sx, sx-geom and sx-link, libslicerx and its header) for
 // macOS, Windows and Linux, from an engine release's archives, each checked against the release's SHA256SUMS.txt:
-//   node scripts/pack-integrator-kit.mjs ~/slicerx-kit --engine engine-v0.1.5     # a published engine release
+//   node scripts/pack-integrator-kit.mjs ~/slicerx-kit --engine engine-v0.1.6     # a published engine release
 //   node scripts/pack-integrator-kit.mjs ~/slicerx-kit --engine ./engine-draft    # a folder of archives (a draft)
 // The kit then has engine/macos-universal, engine/windows-x64 and engine/linux-x64, each with bin/, lib/ and include/
 // as the archive has them. --engine-only skips the packages (no pnpm build).

@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-15
+
 ### Added
 
 - The slice report's `featureFilaments`: for each plate object, the filament slots each feature (`outerWall`, `sparseInfill`, `support` and the rest, `Feature::key`) printed with, read from the sliced paths. `Feature::ALL` lists the features.
