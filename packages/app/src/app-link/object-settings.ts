@@ -2,13 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 import type { SettingValue } from '@slicerx/contracts'
 import { appObjectSettingsInputs, type AppObjectSettings } from '@slicerx/mcp/toolset'
-import { checkValues, coerce, SETTINGS, settingDef } from '@slicerx/settings'
+import { checkValues, SETTINGS, settingDef } from '@slicerx/settings'
 import { history } from '../plate/history'
 import { layerHeightConflict, objectOverrides, partOverridesOf, sourceId } from '../plate/object-settings'
 import { activeMeta, allPlates } from '../plate/plates'
 import { variesPerObject } from '../plate/plate-wide'
 import { plateSequence } from '../plate/plate-sequence'
 import { setScopedMany } from '../plate/scope'
+import { settingEditValue } from '../plate/setting-edit-value'
 import { plateSliceConfig } from '../state/slice-plate'
 import { get, toast, type AppState, type PlateEntry } from '../state/store'
 import { LinkError } from './methods-error'
@@ -65,9 +66,12 @@ export async function editObjectSettings(args: Record<string, unknown>, client: 
   const i = parsed.data
   const typed: Record<string, SettingValue> = {}
   for (const [key, value] of Object.entries(i.set)) {
-    const converted = coerce(definition(key), value)
-    if (converted.ok !== true) throw new LinkError('invalid_input', `${key} has an invalid value`)
-    typed[key] = converted.value
+    const def = definition(key)
+    try {
+      typed[key] = settingEditValue(def, value)
+    } catch (e) {
+      throw new LinkError('invalid_input', e instanceof Error ? e.message : String(e))
+    }
   }
   i.clear.forEach(definition)
   const errors = checkValues(typed).filter((e) => e.severity === 'error' || e.code === 'unknown_key' || e.code === 'enum_value_unavailable')

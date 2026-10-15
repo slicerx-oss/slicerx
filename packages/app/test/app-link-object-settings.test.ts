@@ -57,6 +57,23 @@ it('validates the entire patch before mutation and keeps connection settings out
   await expect(call('object.settings', { object: 'source', keys: ['print_host'] })).rejects.toMatchObject({ code: 'invalid_input' })
 })
 
+it.each([
+  { wall_loops: 2.5 },
+  { wall_loops: '2.5' },
+  { wall_loops: [4, -2] },
+  { line_width: '1e999%' },
+  { line_width: '-5%' },
+])('refuses lossy or nonfinite explicit values on objects and parts: %j', async (setValues) => {
+  for (const part of [undefined, 'body']) {
+    const before = get()
+    await expect(call('object.settings_set', { object: 'copy', part, set: { sparse_infill_density: 25, ...setValues } })).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(get().objectSettings).toBe(before.objectSettings)
+    expect(get().plate).toBe(before.plate)
+    expect(get().plates).toBe(before.plates)
+    expect(history().canUndo()).toBe(false)
+  }
+})
+
 it('reports copies on other plates and refuses while their source is being edited', async () => {
   set({ plate: [entry('copy', { instanceOf: 'source' })], plates: [
     { id: 'shown', name: 'Shown', objects: [], settings: {} },
