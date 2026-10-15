@@ -112,15 +112,27 @@ describe('the runtime and the context', () => {
     },
   }) as PilotTool<never>
 
-  async function lastRequest(provider: string) {
+  async function requests(provider: string, scope: 'full' | 'cad' = 'full') {
     const steps = [...Array.from({ length: 6 }, () => ({ calls: [{ name: 'test.big_read', args: {} }] })), { text: 'done' }]
     const client = createScriptedClient(steps, { provider })
-    const env = createEvalEnv({ client, machine: MACHINE, objects: [], tools: [bigRead] })
+    const env = createEvalEnv({ client, machine: MACHINE, objects: [], tools: [bigRead], scope })
     for await (const _ of env.pilot.run('t', 'read the reports', { context: { machine: MACHINE } })) void _
-    const req = client.requests.at(-1)
-    if (!req) throw new Error('no request')
-    return req
+    if (client.requests.length === 0) throw new Error('no request')
+    return client.requests
   }
+  async function lastRequest(provider: string) {
+    return (await requests(provider)).at(-1)!
+  }
+  const requestCost = (req: { messages: readonly LlmMessage[]; tools: readonly LlmToolDef[] }): number => req.messages.reduce((a, m) => a + messageTokens(m), 0) + toolsTokens(req.tools)
+
+  /** Room a local model keeps for the conversation after the system prompt, the tools, the request and the reply. */
+  const CONVERSATION_ROOM = 1500
+
+  // Every surface a local model runs on; the conversation trims to fit, but the prompt and tool schemas cannot.
+  it.each(['full', 'cad'] as const)('leaves a local model in the dock (%s) at least 1,500 tokens for the conversation', async (scope) => {
+    const [first] = await requests('openai-compatible', scope)
+    expect(requestCost(first!) + REPLY_RESERVE + CONVERSATION_ROOM).toBeLessThanOrEqual(MIMIR_CONTEXT)
+  })
 
   it('trims what it sends to a local model, and sends a cloud model everything', async () => {
     const local = await lastRequest('openai-compatible')
