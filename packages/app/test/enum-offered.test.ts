@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { createElement } from 'react'
+import { flushSync } from 'react-dom'
+import { createRoot, type Root } from 'react-dom/client'
 import { formatValue, SETTINGS, settingDef } from '../src/adapters/settings'
-import { offeredValues } from '../src/workspaces/prepare/expert-settings'
+import { Field, offeredValues, unsupportedNote } from '../src/workspaces/prepare/expert-settings'
 
 describe('enum pickers', () => {
   const def = { enumValues: ['a', 'b', 'c'], enumLabels: ['A', 'B', 'C'], unavailableValues: ['b'] }
@@ -41,5 +44,53 @@ describe('enum option labels', () => {
 
   it('shows fuzzy skin as Orca names it', () => {
     expect(offeredValues(settingDef('fuzzy_skin')!, undefined).map((o) => o.label)).toEqual(['Painted only', 'Contour', 'Hole', 'Contour and hole', 'All walls', 'Disabled'])
+  })
+})
+
+describe('a value the engine cannot print', () => {
+  let root: Root | null = null
+  let el: HTMLElement | null = null
+  afterEach(() => {
+    if (root) flushSync(() => root!.unmount())
+    el?.remove()
+    root = null
+  })
+  /** The prime tower wall row holding `value`, re-rendered with `next` when given (a pick in the menu). */
+  function wallRow(value: string, next?: string): HTMLLIElement {
+    el = document.createElement('div')
+    document.body.append(el)
+    root = createRoot(el)
+    const def = settingDef('wipe_tower_wall_type')!
+    flushSync(() => root!.render(createElement(Field, { def, value, overridden: true, onSet: () => {} })))
+    if (next !== undefined) flushSync(() => root!.render(createElement(Field, { def, value: next, overridden: true, onSet: () => {} })))
+    return el.querySelector('li')!
+  }
+
+  it('names the fallback from the setting default, not a fixed word', () => {
+    const def = { default: 'b', enumValues: ['a', 'b', 'c'], enumLabels: ['Ay', 'Bee', 'Cee'], unavailableValues: ['c'] }
+    expect(unsupportedNote(def, 'c')).toBe('Cee is unsupported; slicing uses Bee.')
+    expect(unsupportedNote(def, 'a')).toBeUndefined()
+    expect(unsupportedNote({ ...def, default: 'c' }, 'c')).toBe('Cee is unsupported; slicing uses the default.')
+  })
+
+  it('shows a cone prime tower wall as unsupported under the select, tied to it, and nothing for rib', () => {
+    const li = wallRow('cone')
+    const note = li.querySelector('[data-testid="slice-setting-unsupported"]')!
+    expect(note.textContent).toBe('Cone is unsupported; slicing uses Rectangle.')
+    expect(li.querySelector('select')!.getAttribute('aria-describedby')).toBe(note.id)
+    expect([...li.querySelectorAll('option')].map((o) => o.textContent)).toContain('Cone (unsupported)')
+    root && flushSync(() => root!.unmount())
+    el?.remove()
+    root = null
+    const rib = wallRow('rib')
+    expect(rib.querySelector('[data-testid="slice-setting-unsupported"]')).toBeNull()
+    expect(rib.querySelector('select')!.hasAttribute('aria-describedby')).toBe(false)
+    expect([...rib.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Rectangle', 'Rib'])
+  })
+
+  it('clears the line when a supported value is picked', () => {
+    const li = wallRow('cone', 'rectangle')
+    expect(li.querySelector('[data-testid="slice-setting-unsupported"]')).toBeNull()
+    expect(li.querySelector('select')!.hasAttribute('aria-describedby')).toBe(false)
   })
 })

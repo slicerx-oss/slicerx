@@ -37,6 +37,20 @@ pub struct SettingIssue {
     pub fix: Option<Fix>,
 }
 
+/// What a value the engine cannot print falls back to: the setting's default, by its label.
+fn fallback_name(def: &SettingDef) -> String {
+    let d = match &def.default {
+        serde_json::Value::Array(a) => a.first().and_then(|v| v.as_str()),
+        v => v.as_str(),
+    };
+    d.filter(|d| !def.unavailable_values.iter().any(|u| u == d))
+        .and_then(|d| def.enum_values.iter().position(|v| v == d))
+        .map_or_else(
+            || "the default".to_owned(),
+            |i| format!("the default, {}", def.enum_labels.get(i).unwrap_or(&def.enum_values[i])),
+        )
+}
+
 fn issue(code: &str, severity: Severity, keys: &[&str], message: String) -> SettingIssue {
     SettingIssue {
         code: code.to_owned(),
@@ -168,8 +182,10 @@ pub fn check_values(config: &PrintConfig) -> Vec<SettingIssue> {
                     Severity::Warning,
                     &[key],
                     format!(
-                        "{}: \"{}\" is not supported by this engine yet, so it prints with the default.",
-                        def.label, m
+                        "{}: \"{}\" is not supported by this engine yet, so it prints with {}.",
+                        def.label,
+                        m,
+                        fallback_name(def)
                     ),
                 ));
             }

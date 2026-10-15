@@ -108,4 +108,10 @@ describe('pattern lists and unavailable values', () => {
     expect(issues.map((i) => i.code)).toEqual(['enum_value_unavailable'])
     expect(issues[0]?.severity).toBe('warning')
   })
+  it('warns on the prime tower wall the engine does not build, naming what it prints instead', () => {
+    expect(validate(cfg({ wipe_tower_wall_type: 'rib' }))).toEqual([])
+    const issues = validate(cfg({ wipe_tower_wall_type: 'cone' }))
+    expect(issues.map((i) => i.code)).toEqual(['enum_value_unavailable'])
+    expect(issues[0]?.message).toMatch(/prints with the default, Rectangle\.$/)
+  })
 })

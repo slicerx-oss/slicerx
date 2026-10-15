@@ -65,7 +65,7 @@ export function checkValues(config: Readonly<Record<string, SettingValue>>): Set
       }
       const missing = items.find((x) => typeof x === 'string' && def.unavailableValues?.includes(x))
       if (missing !== undefined) {
-        issues.push({ code: 'enum_value_unavailable', severity: 'warning', keys: [key], message: `${def.label}: "${String(missing)}" is not supported by the ${productName()} engine yet, so it prints with the default.` })
+        issues.push({ code: 'enum_value_unavailable', severity: 'warning', keys: [key], message: `${def.label}: "${String(missing)}" is not supported by the ${productName()} engine yet, so it prints with ${fallbackName(def)}.` })
       }
     }
     if ((def.min !== undefined || def.max !== undefined || def.orcaMin !== undefined || def.orcaMax !== undefined) && !isVectorType(def.type) === !Array.isArray(v)) {
@@ -245,6 +245,13 @@ export function checkConflicts(config: PrintConfig, opts: { filament?: string } 
 }
 
 /** Value checks plus conflicts, errors first. */
+/** What a value the engine cannot print falls back to: the setting's default, by its label. */
+function fallbackName(def: SettingDef): string {
+  const d = Array.isArray(def.default) ? def.default[0] : def.default
+  const i = typeof d === 'string' && !def.unavailableValues?.includes(d) ? (def.enumValues?.indexOf(d) ?? -1) : -1
+  return i < 0 ? 'the default' : `the default, ${def.enumLabels?.[i] ?? d}`
+}
+
 export function validate(config: PrintConfig, opts: { filament?: string } = {}): SettingIssue[] {
   const rank = { error: 0, warning: 1, info: 2 } as const
   return [...checkValues(config), ...checkConflicts(config, opts)].sort((a, b) => rank[a.severity] - rank[b.severity] || a.code.localeCompare(b.code) || (a.keys[0] ?? '').localeCompare(b.keys[0] ?? ''))

@@ -98,3 +98,17 @@ fn schema_defaults_have_no_errors() {
         .collect();
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+#[test]
+fn only_the_prime_tower_wall_the_engine_does_not_build_warns_and_names_its_fallback() {
+    // the engine builds the rib wall on a type 1 tower; a cone wall prints as the plain box, the schema's default
+    let rib = validate(&config_from(&json!({"wipe_tower_wall_type": "rib"})));
+    assert!(rib.iter().all(|i| i.code != "enum_value_unavailable"), "{rib:?}");
+    let cone = validate(&config_from(&json!({"wipe_tower_wall_type": "cone"})));
+    let w = cone
+        .iter()
+        .find(|i| i.code == "enum_value_unavailable")
+        .expect("a cone warning");
+    assert_eq!(w.severity, Severity::Warning);
+    assert!(w.message.ends_with("prints with the default, Rectangle."), "{}", w.message);
+}

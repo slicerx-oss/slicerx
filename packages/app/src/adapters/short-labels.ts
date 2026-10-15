@@ -19,14 +19,17 @@ export const SHORT_LABELS: Readonly<Record<string, Readonly<Record<string, strin
   sparse_infill_pattern: { ...SURFACE_PATTERNS, 'lateral-honeycomb': 'Lat. honeycomb' },
   top_surface_expansion_direction: { inward_and_outward: 'Both ways' },
   fuzzy_skin_noise_type: { ridgedmulti: 'Ridged' },
-  wall_sequence: { 'inner wall/outer wall': 'Inner first', 'outer wall/inner wall': 'Outer first', 'inner-outer-inner wall': 'Inner both sides' },
+  wall_sequence: { 'inner wall/outer wall': 'Inner first', 'outer wall/inner wall': 'Outer first', 'inner-outer-inner wall': 'Inner/outer/inner' },
   brim_type: { outer_and_inner: 'Outer and inner' },
   seam_slope_type: { all: 'Contour + hole' },
   fuzzy_skin: { all: 'Contour + hole' },
 }
 
-/** Selects that keep a wider control than the column's 128 px, where a short name would not read (Counterclockwise). */
-export const WIDE_SELECTS: Readonly<Record<string, number>> = { wall_direction: 136 }
+/**
+ * Selects that keep a wider control than the column's 128 px, where a short name would not read: Counterclockwise,
+ * and the wall order Inner/outer/inner, a sequence that loses its meaning when cut.
+ */
+export const WIDE_SELECTS: Readonly<Record<string, number>> = { wall_direction: 136, wall_sequence: 136 }
 
 /** The name a closed select shows for a value: its short name, else its full one. */
 export function shortLabel(def: Pick<SettingDef, 'key'>, value: string, full: string): string {
