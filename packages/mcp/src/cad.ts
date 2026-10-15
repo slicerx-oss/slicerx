@@ -1019,67 +1019,88 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const verb = (h: FoundHole, s: HoleSpec) => `Made the ${r3(h.diameterMm)} mm hole ${r3(s.diameterMm)} mm${s.counterbore ? ' with a counterbore' : s.countersink ? ' with a countersink' : ''}`
       const onAxis = (h: FoundHole) => ({ at: h.entry, axis: h.axis })
       if (i.design) {
-        const d = designOf(i.design)
         const reference = i.face?.topology
-        if (reference && i.part !== undefined && i.part !== reference.part) throw new ToolInputError('The part conflicts with the scoped face reference.')
-        const host = designs()
-        if (reference && !host.addWithReceipt) throw new ToolInputError('This host cannot return an atomic edit receipt.', 'not_supported')
-        const find = (part: number, req: Record<string, unknown>, body = d) => findHole((r) => engine('hole.find', r), { mesh: item(body, part), ...req })
-        let part: number
-        let before: FoundHole
-        if (i.face) {
-          const f = pickIn(d, i.face)
-          part = f.part
-          before = await find(part, { triangle: f.triangle, at: f.at })
-        } else {
-          // the first part with a hole on that line; with none, the most telling refusal (a round face there that is not a hole)
-          const tries = i.part !== undefined ? [i.part] : d.parts.map((_, k) => k)
-          const misses: unknown[] = []
-          let hit: { part: number; hole: FoundHole } | null = null
-          for (const k of tries) {
-            try {
-              hit = { part: k, hole: await find(k, { at: i.center, axis: i.axis }) }
-              break
-            } catch (err) {
-              misses.push(pickError(err))
-            }
-          }
-          if (!hit) throw misses.find((e) => !/on that axis line/.test(e instanceof Error ? e.message : '')) ?? misses[0] ?? new ToolInputError('part: the design has no parts')
-          part = hit.part
-          before = hit.hole
-        }
-        const s = spec(before)
-        if (reference) checkedManifest(d.id, reference.revision)
-        let commit: DesignCommit | undefined
+        let applied = false
         try {
-          const params = plain<StepParams>({ op: 'hole.apply', hole: before, spec: s, label: i.label ?? `Hole ${Math.round(s.diameterMm * 100) / 100} mm` })
-          if (reference) commit = await host.addWithReceipt!(d, part, params, undefined, { expectedRevision: reference.revision })
-          else await host.add(d, part, params)
-        } catch (e) {
-          if (e instanceof StaleBody) throw new ToolInputError(e.message, 'stale_body', { bodyId: e.bodyId, currentRevision: e.currentRevision })
-          throw e
-        }
-        if (commit && reference) {
-          const topology = manifestOf(commit.design, commit.revision)
-          const out = stepOut(commit.design, verb(before, s))
-          let after: Record<string, unknown> | null = null
-          let verification: ReturnType<typeof verifyHole> | { status: 'failed'; reason: string }
-          try {
-            const shaft = await find(part, onAxis(before), commit.design)
-            verification = verifyHole(before, shaft, i)
-            if (verification.checks.finite && verification.measuredDepthMm !== null) after = readHole({ ...before, diameterMm: shaft.diameterMm, depthMm: verification.measuredDepthMm, through: shaft.through })
+          const d = designOf(i.design)
+          if (reference && i.part !== undefined && i.part !== reference.part) throw new ToolInputError('The part conflicts with the scoped face reference.')
+          const host = designs()
+          if (reference && !host.addWithReceipt) throw new ToolInputError('This host cannot return an atomic edit receipt.', 'not_supported')
+          const find = (part: number, req: Record<string, unknown>, body = d) => findHole((r) => engine('hole.find', r), { mesh: item(body, part), ...req })
+          let part: number
+          let before: FoundHole
+          if (i.face) {
+            const f = pickIn(d, i.face)
+            part = f.part
+            before = await find(part, { triangle: f.triangle, at: f.at })
+          } else {
+            // the first part with a hole on that line; with none, the most telling refusal (a round face there that is not a hole)
+            const tries = i.part !== undefined ? [i.part] : d.parts.map((_, k) => k)
+            const misses: unknown[] = []
+            let hit: { part: number; hole: FoundHole } | null = null
+            for (const k of tries) {
+              try {
+                hit = { part: k, hole: await find(k, { at: i.center, axis: i.axis }) }
+                break
+              } catch (err) {
+                misses.push(pickError(err))
+              }
+            }
+            if (!hit) throw misses.find((e) => !/on that axis line/.test(e instanceof Error ? e.message : '')) ?? misses[0] ?? new ToolInputError('part: the design has no parts')
+            part = hit.part
+            before = hit.hole
           }
-          catch (e) { verification = { status: 'failed', reason: e instanceof Error ? e.message : String(e) } }
-          return { summary: `${out.summary}${verification.status === 'failed' ? '; the edit was applied but its read-back failed' : verification.status === 'unverified' ? '; head dimensions remain unverified' : ''}`, output: {
-            ...out.output, part, before: readHole(before), after, topology: compactManifest(topology),
-            operationResult: { operation: 'geom.hole', status: 'applied', bodyId: d.id, priorRevision: reference.revision,
-              revision: commit.revision, target: reference, verification,
-              measurements: { source: 'tessellation', before: readHole(before), after } },
-          } }
+          const s = spec(before)
+          if (reference) {
+            checkedManifest(d.id, reference.revision)
+            const initial = verifyHole(before, before, {})
+            if (initial.status !== 'verified' || before.diameterMm <= 0 || before.depthMm <= 0 || typeof before.through !== 'boolean') throw new ToolInputError('The hole measurement is invalid. Inspect the body again before editing.', 'invalid_model')
+          }
+          let commit: DesignCommit | undefined
+          try {
+            const params = plain<StepParams>({ op: 'hole.apply', hole: before, spec: s, label: i.label ?? `Hole ${Math.round(s.diameterMm * 100) / 100} mm` })
+            if (reference) commit = await host.addWithReceipt!(d, part, params, undefined, { expectedRevision: reference.revision })
+            else await host.add(d, part, params)
+          } catch (e) {
+            if (e instanceof StaleBody) throw new ToolInputError(e.message, 'stale_body', { bodyId: e.bodyId, currentRevision: e.currentRevision })
+            throw e
+          }
+          applied = true
+          if (commit && reference) {
+            const topology = manifestOf(commit.design, commit.revision)
+            const out = stepOut(commit.design, verb(before, s))
+            let after: Record<string, unknown> | null = null
+            let verification: ReturnType<typeof verifyHole> | { status: 'failed'; reason: string }
+            try {
+              const shaft = await find(part, onAxis(before), commit.design)
+              verification = verifyHole(before, shaft, i)
+              if (verification.checks.finite && verification.measuredDepthMm !== null) after = readHole({ ...before, diameterMm: shaft.diameterMm, depthMm: verification.measuredDepthMm, through: shaft.through })
+            }
+            catch (e) { verification = { status: 'failed', reason: e instanceof Error ? e.message : String(e) } }
+            return { summary: `${out.summary}${verification.status === 'failed' ? '; the edit was applied but its read-back failed' : verification.status === 'unverified' ? '; head dimensions remain unverified' : ''}`, output: {
+              ...out.output, part, before: readHole(before), after, topology: compactManifest(topology),
+              operationResult: { operation: 'geom.hole', status: 'applied', bodyId: d.id, priorRevision: reference.revision,
+                revision: commit.revision, target: reference, verification,
+                measurements: { source: 'tessellation', before: readHole(before), after } },
+            } }
+          }
+          const after = readMade(before, await find(part, onAxis(before)), i)
+          const out = stepOut(d, verb(before, s))
+          return { summary: out.summary, output: { ...out.output, part, before: readHole(before), after } }
+        } catch (e) {
+          if (!reference || applied) throw e
+          let current: ReturnType<typeof manifestOf> | undefined
+          try { current = manifestOf(designOf(i.design)) } catch { /* the body may have been removed */ }
+          const rawCode = e instanceof StaleBody ? 'stale_body' : e instanceof ToolInputError ? e.code : e instanceof Error && 'code' in e && e.code === 'not_found' ? 'not_found' : 'internal_error'
+          const code = rawCode === 'not_found' ? 'stale_body' : rawCode
+          throw new ToolInputError(e instanceof Error ? e.message : 'The edit was refused.', code, {
+            ...(e instanceof ToolInputError ? e.details : {}),
+            bodyId: i.design, currentRevision: current?.revision ?? null,
+            topology: current ? compactManifest(current) : null,
+            operationResult: { operation: 'geom.hole', status: 'refused', reason: code, bodyId: i.design,
+              priorRevision: reference.revision, revision: current?.revision ?? null, target: reference },
+          })
         }
-        const after = readMade(before, await find(part, onAxis(before)), i)
-        const out = stepOut(d, verb(before, s))
-        return { summary: out.summary, output: { ...out.output, part, before: readHole(before), after } }
       }
       const stlPath = await path(i.model!)
       const find = (mesh: string, req: Record<string, unknown>) => findHole((r) => call('hole.find', r), { mesh: { stlPath: mesh }, ...req })
