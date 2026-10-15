@@ -20,11 +20,18 @@ import { plainToolRefusals } from './sdk-errors'
 import { explainSetting } from './settings'
 import type { SlicerBackend } from './slicer'
 import { SERVER_TOOLS } from './toolbox'
+import packageInfo from '../package.json' with { type: 'json' }
 export { noPrinterMessage } from './toolbox/slice'
 
 export const SERVER_NAME = 'slicerx-mcp-server'
-export const SERVER_VERSION = '0.1.0'
+export const SERVER_VERSION = packageInfo.version
 const CHARACTER_LIMIT = 25_000
+
+const refusalOutput = z.union([
+  z.looseObject({ error: z.object({ code: z.string().min(1), message: z.string(), details: z.record(z.string(), z.unknown()).optional() }) }),
+  z.looseObject({ status: z.literal('off'), permission: z.string() }),
+  z.looseObject({ status: z.enum(['denied', 'needs_person']), request_id: z.string() }),
+])
 
 export interface ServerContext {
   store: DataStore
@@ -154,7 +161,8 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       name: mcpName(tool.name),
       ...config,
       inputSchema: jsonSchema(tool.input, 'input') as Tool['inputSchema'],
-      ...(tool.outputShape ? { outputSchema: jsonSchema(z.object(tool.outputShape), 'output') as Tool['outputSchema'] } : {}),
+      // The SDK client validates structured refusals too; the server still checks successful output against outputShape.
+      ...(tool.outputShape ? { outputSchema: jsonSchema(z.union([z.object(tool.outputShape), refusalOutput]), 'output') as Tool['outputSchema'] } : {}),
     })
   }
   // The SDK lists tool schemas in JSON Schema draft-07, where a tuple is `items: [...]`. Model APIs take 2020-12 only
