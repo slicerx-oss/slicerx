@@ -60,6 +60,25 @@ describe('SceneHold', () => {
     expect(v.shown()).toBe('plate 1')
   })
 
+  it('waits again when held again before the swap frame, then draws the last plate given', () => {
+    // Opening a two-plate project over an open one: plate 1 ends the hold, the open moves on to an empty plate 2 (which
+    // holds again), plate 2 loads, then plate 1 is shown again, all before the next frame.
+    const v = view()
+    v.setPlate(plate('old', 'a'))
+    v.hold.hold()
+    v.setPlate(plate('empty'))
+    v.setPlate(plate('plate 1', 'white'))
+    v.hold.hold()
+    v.setPlate(plate('plate 2 empty'))
+    v.frame()
+    expect(v.shown()).toBe('old')
+    v.setPlate(plate('plate 2', 'charcoal'))
+    v.setPlate(plate('plate 1', 'white'))
+    v.frame()
+    expect(v.shown()).toBe('plate 1')
+    expect(v.hold.waiting).toBe(false)
+  })
+
   it('takes a preview given before the swap frame over the one held', () => {
     const v = view()
     v.setPreview('old paths')
