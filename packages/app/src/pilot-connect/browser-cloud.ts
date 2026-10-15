@@ -4,6 +4,7 @@
 // v1/messages), straight from the page, for signed-in members only. Each call carries the member's session token,
 // which the proxy checks against the project's signing keys; the proxy keys the web edition's caps by the user, so
 // there is no install token and nothing to register. Signed out, the host says so (needsSignIn) and sends nothing.
+import { assistantText } from '@slicerx/contracts'
 import { registerMimirCloud, type MimirCloudHost, type MimirQuota } from './cloud'
 
 export interface BrowserCloudOptions {
@@ -18,7 +19,7 @@ const TIMEOUT_MS = 20_000
 
 /** The proxy's error, read for its message, its code (`day_used`, `paused`, ...) and the database's reason. */
 async function refusal(res: Response): Promise<Error & { status: number; code?: string; reason?: string }> {
-  let message = `mimir cloud answered ${res.status}`
+  let message = assistantText(`mimir cloud answered ${res.status}`)
   let code: string | undefined
   let reason: string | undefined
   try {
@@ -41,7 +42,7 @@ export interface BrowserMimirCloud extends MimirCloudHost {
 export function createBrowserMimirCloud(o: BrowserCloudOptions): BrowserMimirCloud {
   const base = o.base.replace(/\/+$/, '')
   const go = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a))
-  const signedOut = () => Object.assign(new Error('Sign in to use mimir.'), { status: 401, reason: 'sign_in' })
+  const signedOut = () => Object.assign(new Error(assistantText('Sign in to use mimir.')), { status: 401, reason: 'sign_in' })
 
   const call = async (url: string, init: RequestInit): Promise<Response> => {
     const t = o.session()
@@ -67,7 +68,7 @@ export function createBrowserMimirCloud(o: BrowserCloudOptions): BrowserMimirClo
     // the member's account is the install; there is nothing to register
     async register(): Promise<void> {},
     send(url, init, signal) {
-      if (url !== `${base}/v1/messages`) return Promise.reject(new Error('mimir cloud sends only to its own proxy'))
+      if (url !== `${base}/v1/messages`) return Promise.reject(new Error(assistantText('mimir cloud sends only to its own proxy')))
       return call(url, { method: init.method, headers: init.headers, ...(init.body !== undefined ? { body: init.body } : {}), ...(signal ? { signal } : {}) })
     },
   }
@@ -85,7 +86,7 @@ export interface SessionSource {
  * Kept here, out of the app's entry, so the startup bundle does not carry it.
  */
 export function startBrowserMimirCloud(supabaseUrl: string, auth: SessionSource): void {
-  const base = `${new URL(supabaseUrl).origin}/functions/v1/mimir`
+  const base = assistantText(`${new URL(supabaseUrl).origin}/functions/v1/mimir`)
   let token: string | null = null
   registerMimirCloud(createBrowserMimirCloud({ base, session: () => token }))
   const seen = (t: string | null) => {

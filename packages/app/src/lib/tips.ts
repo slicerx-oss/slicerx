@@ -70,7 +70,7 @@ export const TIPS = {
   get 'mode.design'() {
     return modelTip()
   },
-  'mode.mimir': f(ASSISTANT_NAME, `Describe a part and watch ${ASSISTANT_NAME} model it, step by step, in the same history as Model.`),
+  get 'mode.mimir'() { return f(ASSISTANT_NAME, `Describe a part and watch ${ASSISTANT_NAME} model it, step by step, in the same history as Model.`) },
   'mode.slice': a('Slice', 'The plate, print settings and the sliced layers.', 'model.mode'),
   get 'nav.openInApp'() {
     return f(`Open in ${appName()}`, `Save this design and open it in the ${appName()} app on this computer, to slice and print it.`)
@@ -80,12 +80,12 @@ export const TIPS = {
   },
   'account.open': f('Account', 'Open your account settings.'),
   'volume.copy': f('Copy part', 'Copy this part, then paste it into another object.'),
-  'pilot.ask': f(`Ask ${ASSISTANT_NAME}`, 'Ask a question about your print.', 'Mod+/'),
+  get 'pilot.ask'() { return f(`Ask ${ASSISTANT_NAME}`, 'Ask a question about your print.', 'Mod+/') },
   'pilot.newChat': f('New conversation', 'Start over with an empty chat; the design and its history stay as they are.'),
   'pilot.attach': f('Attach a file', 'Add photos or PDF drawings of what the part must fit, up to 4 files of 10 MB each.'),
-  'pilot.expand': f(`Expand ${ASSISTANT_NAME}`, 'Open the panel.'),
-  'pilot.collapse': f(`Collapse ${ASSISTANT_NAME}`, 'Shrink the panel to a button.'),
-  'pilot.close': f(`Close ${ASSISTANT_NAME}`, 'Hide the panel until you ask again.', 'Mod+/'),
+  get 'pilot.expand'() { return f(`Expand ${ASSISTANT_NAME}`, 'Open the panel.') },
+  get 'pilot.collapse'() { return f(`Collapse ${ASSISTANT_NAME}`, 'Shrink the panel to a button.') },
+  get 'pilot.close'() { return f(`Close ${ASSISTANT_NAME}`, 'Hide the panel until you ask again.', 'Mod+/') },
   'preset.update': f('Update preset', 'Replace this preset with your current changes.'),
   'pane.resize': f('Resize', 'Drag to resize. Double-click to collapse.'),
   'theme.import': f('Import theme', 'Add a theme from a JSON file.'),

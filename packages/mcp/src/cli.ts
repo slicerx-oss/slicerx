@@ -12,9 +12,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import type { CallToolResult, JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
 import { createContext, createSlicerxServer, startHttp, SERVER_VERSION, type EngineMode } from './index'
-import { setProductColors, setProductName } from '@slicerx/contracts'
+import { assistantText, setAssistantBrand, setProductColors, setProductName } from '@slicerx/contracts'
 import { cloudFromEnv } from './cloud'
-import { editionColorsFromEnv, editionNameFromEnv } from './edition'
+import { editionAssistantFromEnv, editionColorsFromEnv, editionNameFromEnv } from './edition'
 import { localAiFromEnv } from './localai'
 import { plainSdkText } from './sdk-errors'
 import { sxlockFromEnv } from './sxlock'
@@ -143,7 +143,11 @@ async function main(): Promise<void> {
     },
     strict: true,
   })
-  if (values.help) return void process.stdout.write(HELP)
+  if (values.help) {
+    const assistant = editionAssistantFromEnv(process.env)
+    if (assistant) setAssistantBrand(assistant)
+    return void process.stdout.write(assistantText(HELP))
+  }
   const status = values['mimir-cloud-status'] === true
   jsonErrors = status
   if (status && positionals.length) throw new Error('--mimir-cloud-status runs on its own, without call or other tools')
@@ -158,6 +162,8 @@ async function main(): Promise<void> {
   if (name) setProductName(name)
   const colors = editionColorsFromEnv(process.env)
   if (colors) setProductColors(colors)
+  const assistant = editionAssistantFromEnv(process.env)
+  if (assistant) setAssistantBrand(assistant)
 
   const http = values.http ?? flag('HTTP')
   const engine = values.engine ?? env('ENGINE') ?? 'auto'

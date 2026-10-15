@@ -59,6 +59,17 @@ export const brandSchema = z.object({
   /** Product name shown in title bars, the About screen, emails and store listings. */
   name: z.string().min(1).max(40),
   shortName: z.string().min(1).max(16).optional(),
+  /** The assistant's public identity. Other names keep their spelling and capitalization. */
+  assistant: z.object({
+    name: z.string().trim().min(1).max(40).regex(/^[^\x00-\x1f\x7f]+$/, 'a plain display name').transform((name) => name.toLowerCase() === 'mimir' ? 'mimir' : name).default('mimir'),
+    /** An image next to the edition config, an HTTPS image, or the built-in assistant mark. */
+    icon: asset.refine((value) => value === 'builtin:mimir' || /^(https:\/\/|data:image\/)/.test(value) || !/^[a-z][a-z0-9+.-]*:/i.test(value), 'an image file, HTTPS image or builtin:mimir').default('builtin:mimir'),
+    /** One accent for both themes, or a separate accent for each. Unset follows the app theme. */
+    accent: z.union([
+      z.string().regex(/^#[0-9a-fA-F]{6}$/, 'a six-digit hex color'),
+      z.object({ light: z.string().regex(/^#[0-9a-fA-F]{6}$/), dark: z.string().regex(/^#[0-9a-fA-F]{6}$/) }),
+    ]).optional(),
+  }).prefault({}),
   tagline: z.string().max(120).optional(),
   /** One line for installers and package listings. Defaults to the tagline. */
   description: z.string().max(200).optional(),

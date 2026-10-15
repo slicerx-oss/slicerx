@@ -12,5 +12,6 @@ import { fileURLToPath } from 'node:url'
 const docs = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'integrators')
 const dest = resolve(process.argv[2] ?? '.')
 const read = (f) => readFileSync(join(docs, f), 'utf8')
-for (const f of ['AGENTS.md', 'quickstart.md', 'restyle-icons-and-loops.md', 'updates.md', 'kit-manifest.md', 'llms.txt']) writeFileSync(join(dest, f), read(f))
+for (const f of ['AGENTS.md', 'quickstart.md', 'restyle-icons-and-loops.md', 'updates.md', 'kit-manifest.md', 'assistant-brand.md', 'llms.txt']) writeFileSync(join(dest, f), read(f))
 writeFileSync(join(dest, 'llms-full.txt'), `${read('AGENTS.md')}\n\n${read('quickstart.md')}\n\n${read('restyle-icons-and-loops.md')}`)
+

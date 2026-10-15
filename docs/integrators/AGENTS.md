@@ -177,6 +177,8 @@ pnpm edition:build editions/<id>/edition.config.ts --target desktop
 
 ### What a config rebrands, and what it leaves
 
+`brand.assistant` sets the assistant's name, icon and optional accent. Path B can call `setAssistantName(name)` from `@slicerx/embed` or `@slicerx/mcp` before rendering or creating the server. Read [assistant-brand.md](assistant-brand.md) for defaults, light and dark colors, and MCP/CLI read-back. Keep tool identifiers and the product credit unchanged.
+
 The config sets the window title, the installer's publisher, copyright and description, the file type names ("Acme Layer 3MF file", "Locked Acme Layer project"), the app icons (made from `brand.logo.appIcon` at build), the app bar logo and About mark (`brand.logo.mark` or `wordmark`), the menus, the text in the app, the Help and download links (`links`), the "Open in" link scheme, and the MCP server name AI clients list. Tell the user what stays:
 
 - `.sx3mf` and `.sxlock` are SlicerX's file formats and keep their extensions everywhere.

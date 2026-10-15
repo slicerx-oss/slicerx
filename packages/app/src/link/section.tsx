@@ -4,6 +4,7 @@
 // its own bridge; in the browser the person runs sx-link and types the pairing code it prints. Once connected,
 // the print watch is set up here too. Spoolman and other apps are in Settings, Connected apps.
 import { hubFingerprint, type PrinterInfo } from '@slicerx/contracts/printers'
+import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, Dialog, Input, Pill, Switch } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { useHost } from '../host'
@@ -66,11 +67,11 @@ function WatchRows() {
   return (
     <div className="watch-rows">
       <h4>Print watch</h4>
-      <p className="sx-small sx-muted">When the detector on this computer is suspicious, it can send one frame from the printer's camera to your connected AI account (mimir) to confirm before pausing. Nothing leaves this computer unless a printer below is on.</p>
+      <p className="sx-small sx-muted">When the detector on this computer is suspicious, it can send one frame from the printer's camera to your connected AI account ({ASSISTANT_NAME}) to confirm before pausing. Nothing leaves this computer unless a printer below is on.</p>
       {printers.map((p) => (
         <div className="sx-switchrow" key={p.id}>
           <label htmlFor={`huginn-${p.id}`}>
-            Let mimir confirm with one camera frame
+            Let {ASSISTANT_NAME} confirm with one camera frame
             <small>{p.name}</small>
           </label>
           <Switch id={`huginn-${p.id}`} checked={on.has(p.id)} onChange={(v) => change(p.id, v)} />

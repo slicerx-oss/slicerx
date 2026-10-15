@@ -40,6 +40,7 @@ export function editionAssetPath(configFile: string, asset: string | undefined):
 /** The edition's mark and wordmark files as data URLs, so a build shows them without serving the files. */
 export function inlineLogo(config: EditionConfig, configFile: string): EditionConfig {
   const logo = { ...config.brand.logo }
+  const assistant = { ...config.brand.assistant }
   for (const key of ['mark', 'wordmark'] as const) {
     const path = editionAssetPath(configFile, logo[key])
     const type = path ? IMAGE_TYPES[extname(path).toLowerCase()] : undefined
@@ -47,7 +48,14 @@ export function inlineLogo(config: EditionConfig, configFile: string): EditionCo
     if (!existsSync(path)) throw new Error(`brand.logo.${key} not found: ${path}`)
     logo[key] = `data:${type};base64,${readFileSync(path).toString('base64')}`
   }
-  return Object.freeze({ ...config, brand: { ...config.brand, logo } })
+  const iconPath = editionAssetPath(configFile, assistant.icon)
+  if (iconPath) {
+    const type = IMAGE_TYPES[extname(iconPath).toLowerCase()]
+    if (!type) throw new Error(`brand.assistant.icon must be an SVG, PNG, JPEG or WebP image: ${iconPath}`)
+    if (!existsSync(iconPath)) throw new Error(`brand.assistant.icon not found: ${iconPath}`)
+    assistant.icon = `data:${type};base64,${readFileSync(iconPath).toString('base64')}`
+  }
+  return Object.freeze({ ...config, brand: { ...config.brand, logo, assistant } })
 }
 
 /** A font file the edition bundles, resolved to its path on disk. */
@@ -94,6 +102,7 @@ export const INLINE_LOGO_BYTES = 8 * 1024
 /** The edition's mark and wordmark for a build: small files inlined, bigger ones as assets under static/brand. */
 export function editionLogoAssets(config: EditionConfig, configFile: string, base: string): { config: EditionConfig; assets: BuildAsset[] } {
   const logo = { ...config.brand.logo }
+  const assistant = { ...config.brand.assistant }
   const assets: BuildAsset[] = []
   for (const key of ['mark', 'wordmark'] as const) {
     const path = editionAssetPath(configFile, logo[key])
@@ -109,7 +118,20 @@ export function editionLogoAssets(config: EditionConfig, configFile: string, bas
     assets.push(asset)
     logo[key] = `${base}${asset.name}`
   }
-  return { config: Object.freeze({ ...config, brand: { ...config.brand, logo } }), assets }
+  const iconPath = editionAssetPath(configFile, assistant.icon)
+  if (iconPath) {
+    const type = IMAGE_TYPES[extname(iconPath).toLowerCase()]
+    if (!type) throw new Error(`brand.assistant.icon must be an SVG, PNG, JPEG or WebP image: ${iconPath}`)
+    if (!existsSync(iconPath)) throw new Error(`brand.assistant.icon not found: ${iconPath}`)
+    const bytes = readFileSync(iconPath)
+    if (bytes.length <= INLINE_LOGO_BYTES) assistant.icon = `data:${type};base64,${bytes.toString('base64')}`
+    else {
+      const asset = buildAsset(iconPath, 'brand')
+      assets.push(asset)
+      assistant.icon = `${base}${asset.name}`
+    }
+  }
+  return { config: Object.freeze({ ...config, brand: { ...config.brand, logo, assistant } }), assets }
 }
 
 /** The parts of a Vite plugin the asset bundler uses, so this package needs no Vite dependency. */

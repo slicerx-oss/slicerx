@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Tool and resource registration for the SlicerX MCP server.
+import { assistantText } from '@slicerx/contracts'
 import { readFileSync } from 'node:fs'
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'
@@ -114,7 +115,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       instructions:
-        `${productName()}, the AI-ready slicer. Tools slice and estimate models, plan and check OrcaSlicer settings, run mimir skills on a project (orient, arrange, cut, slice), and read and control printers. Anything that changes a printer, a saved profile or spends money follows the permission policy the user set: it runs, asks the user first, or is refused. When a tool returns status "approval_required", show the request to the user and call slicerx_approve only with their answer. Resources hold the knowledge base, the settings reference, printer setup guides and the theming and embedding docs.`,
+        assistantText(`${productName()}, the AI-ready slicer. Tools slice and estimate models, plan and check OrcaSlicer settings, run mimir skills on a project (orient, arrange, cut, slice), and read and control printers. Anything that changes a printer, a saved profile or spends money follows the permission policy the user set: it runs, asks the user first, or is refused. When a tool returns status "approval_required", show the request to the user and call slicerx_approve only with their answer. Resources hold the knowledge base, the settings reference, printer setup guides and the theming and embedding docs.`),
     },
   )
   // Before the first tool is registered, which is when the SDK sets its tools/call handler.
@@ -245,8 +246,8 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     server.registerResource(
       'skill-catalog',
       'slicerx://pilot/skills',
-      { title: 'mimir skill catalog', description: 'Multi-step jobs mimir plans and runs, with the tools and permission classes each one uses', mimeType: 'application/yaml' },
-      (uri) => ({ contents: [{ uri: uri.href, mimeType: 'application/yaml', text: skills.text }] }),
+      { title: assistantText('mimir skill catalog'), description: assistantText('Multi-step jobs mimir plans and runs, with the tools and permission classes each one uses'), mimeType: 'application/yaml' },
+      (uri) => ({ contents: [{ uri: uri.href, mimeType: 'application/yaml', text: assistantText(skills.text) }] }),
     )
   }
 

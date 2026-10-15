@@ -7,6 +7,7 @@ export { SettingsPanel, type SettingsPanelProps, type SettingsChange } from './s
 export { defineSlicerXElements } from './elements'
 // The app's name in the pieces' text (the SlicerX controls preset, locked project messages): a white-label app sets its own.
 export { productName, setProductName } from '@slicerx/contracts/brand'
+export { assistantBrand, assistantName, setAssistantBrand, setAssistantName } from '@slicerx/contracts/assistant-brand'
 export { injectStyles, EMBED_CSS } from './styles'
 export { decodeStl, decodeQuantized, fileTransform, type DecodedModel } from './mesh'
 export { EmbedTheme, sceneFor, type EmbedThemeProps } from './theme'

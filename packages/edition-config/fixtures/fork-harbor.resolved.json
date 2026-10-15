@@ -4,6 +4,10 @@
   "brand": {
     "name": "Harbor Slice",
     "shortName": "Harbor",
+    "assistant": {
+      "name": "mimir",
+      "icon": "builtin:mimir"
+    },
     "tagline": "Slicing and print management for Harbor Print Co. customers",
     "logo": {
       "mark": "brand/harbor-mark.svg",

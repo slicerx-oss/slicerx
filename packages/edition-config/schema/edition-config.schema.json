@@ -23,6 +23,48 @@
           "minLength": 1,
           "maxLength": 16
         },
+        "assistant": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "icon": {
+              "default": "builtin:mimir",
+              "type": "string",
+              "minLength": 1
+            },
+            "accent": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "light": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "dark": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    }
+                  },
+                  "required": [
+                    "light",
+                    "dark"
+                  ]
+                }
+              ]
+            }
+          }
+        },
         "tagline": {
           "type": "string",
           "maxLength": 120

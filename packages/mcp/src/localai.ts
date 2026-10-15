@@ -4,6 +4,7 @@
 // app runs (@slicerx/pilot/local-ai), with this machine's hardware read in Node. Requests go only
 // to Ollama and LM Studio on 127.0.0.1. The setup tool downloads gigabytes, so it always asks the
 // user, whatever the policy says for its class.
+import { assistantText } from '@slicerx/contracts'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { availableParallelism, homedir, totalmem } from 'node:os'
@@ -155,7 +156,7 @@ export function localAiTools(opts: LocalAiOptions = {}): PilotTool<never>[] {
     source: 'command',
     permission: 'read',
     description:
-      "Check whether this computer can run mimir's model locally: the graphics card and its memory, system memory and cores, one recommended model with the reason in plain words, its download size and license, and whether Ollama or LM Studio is running. Reads only this machine and 127.0.0.1; downloads nothing.",
+      assistantText("Check whether this computer can run mimir's model locally: the graphics card and its memory, system memory and cores, one recommended model with the reason in plain words, its download size and license, and whether Ollama or LM Studio is running. Reads only this machine and 127.0.0.1; downloads nothing."),
     input: z.object({}),
     async run() {
       const [hw, runners] = await Promise.all([hardware(), detectRunners(net)])
@@ -197,7 +198,7 @@ export function localAiTools(opts: LocalAiOptions = {}): PilotTool<never>[] {
           in_use: state ? { ...state, available: running } : null,
           installed,
           runners: runners.map((r) => ({ app: r.label, base_url: r.base })),
-          note: `The ${productName()} app switches mimir in Settings > mimir or after its own setup; this server records the model it set up for MCP clients.`,
+          note: assistantText(`The ${productName()} app switches mimir in Settings > mimir or after its own setup; this server records the model it set up for MCP clients.`),
         },
       }
     },
@@ -237,7 +238,7 @@ export function localAiTools(opts: LocalAiOptions = {}): PilotTool<never>[] {
         ctx.progress(`Downloading ${m.name}`, 0)
         await pullModel(net, m.ollama, (p) => ctx.progress(p.totalBytes ? `${formatGb(p.completedBytes, 'bytes')} of ${formatGb(p.totalBytes, 'bytes')}` : p.status, p.totalBytes ? (p.completedBytes / p.totalBytes) * 0.9 : 0), ctx.signal)
       }
-      ctx.progress('Setting the model up for mimir', 0.91)
+      ctx.progress(assistantText('Setting the model up for mimir'), 0.91)
       const tag = await ensureContext(net, m.ollama, ctx.signal)
       ctx.progress('Checking a tool call and the speed', 0.92)
       const result = await checkModel(net, ollama.base, tag, { signal: ctx.signal })

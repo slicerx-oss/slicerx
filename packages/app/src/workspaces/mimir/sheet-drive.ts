@@ -3,6 +3,7 @@
 // A confirmed sheet drives its design: editing a bound row after the build edits the step it set, through the design
 // tool a client calls (design.edit_step), so the history replays as a person's edit would. A row that shapes a sketch
 // rather than one number is not bound; editing it asks mimir to build again.
+import { assistantText } from '@slicerx/contracts'
 import type { PilotSheetBind } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 
@@ -14,7 +15,7 @@ export const stepValue = (b: PilotSheetBind, value: number): number => Math.roun
 /** Edits the steps a row is bound to, in order. */
 export async function editRow(tools: readonly PilotTool<never>[], bound: { design: string; binds: PilotSheetBind[] }, key: string, value: number): Promise<RowEdit> {
   const binds = bound.binds.filter((x) => x.key === key)
-  if (!binds.length) return { ok: false, reason: 'unbound', summary: 'This size shapes the sketch; ask mimir to build again with it.' }
+  if (!binds.length) return { ok: false, reason: 'unbound', summary: assistantText('This size shapes the sketch; ask mimir to build again with it.') }
   const edit = tools.find((t) => t.name === 'design.edit_step')
   if (!edit) return { ok: false, reason: 'refused', summary: 'The design tools are not loaded.' }
   const done: string[] = []

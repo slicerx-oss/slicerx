@@ -28,7 +28,7 @@ export const STEP_TITLES: Readonly<Record<SetupStep, string>> = {
   printer: 'Printer',
   look: 'Your slicer',
   open: 'Opens in',
-  mimir: ASSISTANT_NAME,
+  get mimir() { return ASSISTANT_NAME },
 }
 
 /** Any stored or requested step name, mapped onto the screens in `steps`. Old names (welcome, cad, done) open the first screen. */

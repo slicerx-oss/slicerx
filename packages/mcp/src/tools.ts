@@ -4,6 +4,7 @@
 // outside client works on, and printer controls the app exposes as buttons
 // (temperatures, filament load and unload, a G-code line). They are written
 // as mimir tools so the same permission gate and approval tokens apply.
+import { assistantText } from '@slicerx/contracts'
 import { readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import type { ApprovalToken, PrinterHost } from '@slicerx/contracts'
@@ -102,7 +103,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     source: 'command',
     permission: 'read',
     description:
-      'Start a new project for mimir skills to work on (replaces the current one). Name the printer and filament by knowledge id or name, and optionally extra profiles such as "intent:strong" or "process:fine". Then add models with slicerx_project_add_model.',
+      assistantText('Start a new project for mimir skills to work on (replaces the current one). Name the printer and filament by knowledge id or name, and optionally extra profiles such as "intent:strong" or "process:fine". Then add models with slicerx_project_add_model.'),
     input: z.object({
       name: z.string().min(1).max(80).default('Untitled'),
       printer: z.string().optional().describe('Printer id or name, such as "bambu_p1s" or "Prusa MK4S"'),

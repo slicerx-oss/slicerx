@@ -2,12 +2,17 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The still mark lives apart from the animated ravens, so only the pages that show it load it.
 import { RAVEN_BODY, RAVEN_EYE, RAVEN_WING, RING, RUNES } from './raven'
+import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
+import { useSyncExternalStore } from 'react'
+import { Icon } from '../icons/icon'
 
 /**
  * The battle ravens as a still mark: huginn and muninn face each other inside the rune ring, a spark between them.
  * Drawn in currentColor only, so a host can tint it as a watermark. Never animated. Decorative.
  */
 export function RavenMark({ className }: { className?: string }) {
+  const brand = useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
+  if (brand.icon !== 'builtin:mimir') return <Icon name="mimir" className={['sx-raven-mark', className].filter(Boolean).join(' ')} style={{ opacity: 0.08 }} />
   const bird = (at: string) => (
     <g transform={at}>
       <path d={RAVEN_BODY} />
