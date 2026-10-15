@@ -67,8 +67,12 @@ for (const width of [1440, 1100, 390]) {
     if (!isMobile) {
       await printer.hover()
       await expect(tip(page)).toContainText(LONG)
+      // The hover tip closes once the pointer leaves. Only focus moved by the keyboard opens a tip (focus set by code or
+      // handed back by a popover does not), so Tab to the card rather than focusing it from script.
       await page.mouse.move(700, 450)
-      await printer.focus()
+      await expect(tip(page)).toHaveCount(0)
+      for (let i = 0; i < 40 && !(await printer.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab')
+      await expect(printer).toBeFocused()
       await expect(tip(page)).toContainText(LONG)
     }
     await noSideways(page)
