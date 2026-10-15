@@ -506,6 +506,11 @@ export interface Viewport {
    * so a switch to another plate and back costs no rebuild either.
    */
   setPlate(plate: ViewportPlate, opts?: { keepCamera?: boolean }): void
+  /**
+   * The ids of the objects the scene draws now, in plate order. While a newly opened model waits to swap in, these are
+   * still the objects on screen, so a caller can check that what is drawn is the plate it asked for.
+   */
+  drawnObjects(): string[]
   /** Move objects without rebuilding geometry. */
   setTransforms(transforms: Record<string, number[]>): void
   setPartStyle(objectId: string, partIndex: number, style: PartStyle): void

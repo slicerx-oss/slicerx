@@ -18,6 +18,7 @@ import { get, pilotState, set, setCamera, showsLayers, type CameraView, type Col
 import { slicePanes } from '../lib/slice-panes'
 import { findPlate, plateRows, stepTarget } from '../plate/plate-step'
 import { switchPlate } from '../plate/plates'
+import { drawnObjects } from '../viewport/drawn'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -211,11 +212,35 @@ function setLook(args: Record<string, unknown>) {
   return lookState()
 }
 
-/** The project's plates in order, the one in view marked, as the plate picker shows them. */
+/** The objects the view draws, when they are exactly some plate's; the plate in view first, for empty plates. */
+function drawnPlate(): number | null | undefined {
+  const ids = drawnObjects()
+  if (ids === null) return undefined
+  const s = get()
+  const on = (p: { id: string; objects: { id: string }[] }) => (p.id === s.activePlate ? s.plate : p.objects).map((o) => o.id)
+  // Only plate objects count: the view also draws its own extras (the prime tower).
+  const known = new Set(s.plates.flatMap(on))
+  const drawn = new Set(ids.filter((id) => known.has(id)))
+  const same = (p: { id: string; objects: { id: string }[] }) => {
+    const mine = on(p)
+    return mine.length === drawn.size && mine.every((id) => drawn.has(id))
+  }
+  const order = [...s.plates.entries()].sort(([, a], [, b]) => Number(b.id === s.activePlate) - Number(a.id === s.activePlate))
+  const hit = order.find(([, p]) => same(p))
+  return hit ? hit[0] + 1 : null
+}
+
+/**
+ * The project's plates in order, the one in view marked, as the plate picker shows them. `drawn` is the plate whose
+ * objects the view draws (it matches `shown` once the view has caught up; null while it draws none of them as they are),
+ * left out when no view is up.
+ */
 function platesState() {
   const rows = plateRows()
+  const drawn = drawnPlate()
   return {
     shown: rows.find((r) => r.shown)?.number ?? 1,
+    ...(drawn !== undefined ? { drawn } : {}),
     count: rows.length,
     plates: rows.map((r) => ({ number: r.number, id: r.id, name: r.name, objects: r.objects, slice: r.state, shown: r.shown })),
   }
@@ -263,20 +288,27 @@ const HANDLERS: Record<string, Handler> = {
     const s = get()
     return { app: appName(), tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS }
   },
-  'plate.list': () => ({
-    bed: bedShape(),
-    objects: get().plate.map((e) => {
-      const b = bounds(e.parts, e.transform)
-      return {
-        id: e.id,
-        name: e.name,
-        parts: e.parts.length,
-        transform: e.transform.map(round),
-        ...(b ? { minMm: b.min.map(round), maxMm: b.max.map(round), sizeMm: b.max.map((v, i) => round(v - b.min[i]!)) } : {}),
-        ...(e.history ? { steps: e.history.steps.length } : {}),
-      }
-    }),
-  }),
+  'plate.list': () => {
+    const s = get()
+    const at = s.plates.findIndex((p) => p.id === s.activePlate) + 1
+    const drawn = drawnPlate()
+    return {
+      bed: bedShape(),
+      // The view draws these objects, the plate shown; left out when no view is up.
+      ...(drawn !== undefined ? { drawn: drawn === at } : {}),
+      objects: s.plate.map((e) => {
+        const b = bounds(e.parts, e.transform)
+        return {
+          id: e.id,
+          name: e.name,
+          parts: e.parts.length,
+          transform: e.transform.map(round),
+          ...(b ? { minMm: b.min.map(round), maxMm: b.max.map(round), sizeMm: b.max.map((v, i) => round(v - b.min[i]!)) } : {}),
+          ...(e.history ? { steps: e.history.steps.length } : {}),
+        }
+      }),
+    }
+  },
   // Loaded when first used, so arranging stays out of the link's startup.
   'project.move': async (args, client) => (await import('./plate-edits')).move(args, client.name),
   'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client.name),

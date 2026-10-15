@@ -47,6 +47,7 @@ import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
 import { markOpenStage, markViewDrawn, onOpenStage, openStagesPassed } from '../lib/open-mark'
+import { drawnFrom } from './drawn'
 import { currentSlice, sliceStage } from '../lib/slice-timing'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
@@ -63,7 +64,7 @@ export function modelLook(s: Pick<AppState, 'workspace' | 'modelMode' | 'look'>)
   return s.look
 }
 
-export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 'setRenderMode' | 'view' | 'setPreview' | 'setLayerRange' | 'setMoveCut' | 'setColorMode' | 'setToolColors' | 'setSelection' | 'on' | 'dispose'> & {
+export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'setTransforms' | 'setRenderMode' | 'view' | 'setPreview' | 'setLayerRange' | 'setMoveCut' | 'setColorMode' | 'setToolColors' | 'setSelection' | 'on' | 'dispose'> & {
   backendName(): string
   /** Camera and mouse controls, tools and camera calls; the 2D fallback has none of them. */
   setControls?: Viewport['setControls']
@@ -359,6 +360,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         return
       }
       vpRef.current = vp
+      offs.push(drawnFrom(() => vp.drawnObjects()))
       set({ viewportBackend: vp.backendName() })
       let prev = appStore.getState()
       // Paint the viewport already holds (a stroke it just made) is not pushed back.

@@ -19,6 +19,8 @@ export interface AppPlate {
 }
 export interface AppPlates {
   shown: number
+  /** The plate whose objects the window's view draws: `shown` once the view has caught up, null while it draws none of them. Left out when the window has no view up. */
+  drawn?: number | null
   count: number
   plates: AppPlate[]
 }
@@ -44,7 +46,8 @@ function summary(p: AppPlates): string {
   const cur = p.plates.find((x) => x.shown)
   const notSliced = p.plates.filter((x) => x.slice === 'not-sliced' || x.slice === 'stale').length
   const name = cur && cur.name !== `Plate ${cur.number}` ? ` (${cur.name})` : ''
-  return `Plate ${p.shown}${name} of ${p.count} is shown${cur ? `, ${SLICE_WORDS[cur.slice]}` : ''}; ${notSliced} ${notSliced === 1 ? 'plate needs' : 'plates need'} a slice.`
+  const view = p.drawn === undefined || p.drawn === p.shown ? '' : p.drawn === null ? ' The view has not drawn it yet.' : ` The view still draws plate ${p.drawn}.`
+  return `Plate ${p.shown}${name} of ${p.count} is shown${cur ? `, ${SLICE_WORDS[cur.slice]}` : ''}; ${notSliced} ${notSliced === 1 ? 'plate needs' : 'plates need'} a slice.${view}`
 }
 
 export function appPlateTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
@@ -53,7 +56,7 @@ export function appPlateTools(link: AppLinkCaller | undefined, appName: string):
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `List the plates of the project open in ${appName}, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), and which plate the window shows. Reads through the app link; the app must be open with the link on.`,
+    description: `List the plates of the project open in ${appName}, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), which plate the window shows, and which plate its view draws (drawn; the same as shown once the view has caught up). Reads through the app link; the app must be open with the link on.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'plates.list', {})
