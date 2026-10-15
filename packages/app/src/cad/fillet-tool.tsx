@@ -16,7 +16,7 @@ import { edgePreview, pickEdge, type EdgePick, type EdgeRef } from './edge-api'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
-import { get, set, toast, type PlateEntry } from '../state/store'
+import { get, set, toast, useApp, type PlateEntry, type SubPick } from '../state/store'
 import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, type Kind } from './edges'
 import { followed } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
@@ -148,15 +148,19 @@ export function FilletTool() {
     }
   }, [view, ask, draw])
 
+  // Where each picked edge was clicked, so Model's pick can name it (the pill) and hand it back when a tool opens again.
+  const hits = useRef<{ edge: EdgeRef; triangle: number; point: Vec3 }[]>([])
   const onPick = useCallback(
     (hit: PickEvent) => {
-      if (!hit.objectId || hit.triangle === null || !hit.point) return
-      const objectId = hit.objectId
-      const partIndex = hit.partIndex ?? 0
+      // A click on an outline edge, or just past it, misses the model: the view's nearest hit finds the edge there.
+      const at = hit.objectId && hit.triangle !== null && hit.point ? { objectId: hit.objectId, partIndex: hit.partIndex ?? 0, triangle: hit.triangle, point: hit.point } : hit.near
+      if (!at || at.triangle < 0) return
+      const { objectId, partIndex, triangle, point } = at
       setNote(null)
-      void ask(objectId, partIndex, hit.triangle, hit.point).then(
+      void ask(objectId, partIndex, triangle, point).then(
         (p) => {
           if (!p.supported) return setNote(p.reason ?? 'This edge cannot be rounded or beveled.')
+          hits.current = [...hits.current.filter((h) => !sameEdge(h.edge, p.edge)), { edge: p.edge, triangle, point }]
           const cur = live.current.picked
           const same = cur && cur.objectId === objectId && cur.partIndex === partIndex
           setPicked({ objectId, partIndex, edges: addEdge(same ? cur.edges : [], p.edge, Boolean(hit.shift) && Boolean(same)), last: p })
@@ -167,6 +171,32 @@ export function FilletTool() {
     [ask],
   )
   useProbe(onPick, false)
+
+  // The pill says what the tool works on: the picked edges show as Model's edge picks while the tool has them, and stay
+  // picked when the tool closes. Clearing the pick (the pill's clear) drops the tool's edges too.
+  const mirrored = useRef<SubPick[] | null>(null)
+  useEffect(() => {
+    if (picked && picked.edges.length) {
+      const subs: SubPick[] = picked.edges.map((e) => {
+        const h = hits.current.find((x) => sameEdge(x.edge, e))
+        const mid: Vec3 = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2, (e.a[2] + e.b[2]) / 2]
+        const lines = edgeLines(e)
+        return { kind: 'edge', objectId: picked.objectId, partIndex: picked.partIndex, triangle: h?.triangle ?? -1, point: h?.point ?? mid, lines, ...(lines.length > 1 ? { round: true } : {}) }
+      })
+      mirrored.current = subs
+      set({ subPicks: subs, selection: picked.objectId, selectedIds: [picked.objectId], towerSelected: false })
+    } else if (mirrored.current) {
+      const was = mirrored.current
+      mirrored.current = null
+      set((s) => ({ subPicks: s.subPicks.filter((x) => !was.includes(x)) }))
+    }
+  }, [picked])
+  const picksGone = useApp((s) => mirrored.current !== null && !mirrored.current.some((p) => s.subPicks.includes(p)))
+  useEffect(() => {
+    if (!picksGone || busy) return
+    mirrored.current = null
+    setPicked(null)
+  }, [picksGone, busy, setPicked])
 
   const wholeLoop = () => {
     const p = picked?.last
