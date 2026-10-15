@@ -193,6 +193,12 @@ export interface PickEvent {
   toggle?: boolean
   /** Where the click was, in client pixels: Model measures how near an edge it was. */
   screen?: [number, number]
+  /**
+   * A click that missed the model by a few pixels (an edge on its outline, or just past it), in Model's edge picks and
+   * the modeling tools: the nearest hit within NEAR_PICK_PX. The click itself still reads as a miss above, so a tool
+   * that wants a face gets none; an edge pick uses this to find the outline edge.
+   */
+  near?: { objectId: string; partIndex: number; triangle: number; point: [number, number, number] }
 }
 
 /** Probe tool with hover on: the model point under the cursor, at most once a frame. */
