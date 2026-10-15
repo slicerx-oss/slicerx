@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { setGeomProvider } from '../src/geom/client'
 import { cutObject } from '../src/plate/cut-object'
-import { boxMesh } from '../src/plate/mesh-ops'
-import { identity } from '../src/plate/transform'
+import { bake, boxMesh } from '../src/plate/mesh-ops'
+import { bounds, compose, identity } from '../src/plate/transform'
 import { get, set } from '../src/state/store'
 
 const bin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release', process.platform === 'win32' ? 'sx-geom.exe' : 'sx-geom')
@@ -61,4 +61,39 @@ describe.skipIf(!existsSync(bin))('Prepare cuts through the real geometry engine
     expect(result.changed).toBe(false)
     expect(get().plate).toBe(before)
   })
+
+  it('cuts translated, rotated and scaled geometry in bed coordinates', async () => {
+    const entry = get().plate[0]!
+    set({ plate: [{ ...entry, transform: compose({ position: [70,40,12], rotation: [0,0,30], scale: [1.5,0.75,2] }) }] })
+    const result = await cutObject(host, 'body', { axis: 'z', atMm: 42, keep: 'both' })
+    expect(result.ids).toHaveLength(2)
+    const report = result.reports[0]!.report
+    expect(report.belowVolumeMm3).toBeCloseTo(81_000, 0)
+    expect(report.aboveVolumeMm3).toBeCloseTo(81_000, 0)
+    for (const piece of get().plate) {
+      const box = bounds(piece.parts, piece.transform)!
+      expect(box.min[2]).toBeCloseTo(0, 5)
+      expect(box.max[2]).toBeCloseTo(30, 5)
+    }
+  })
+
+  it('keeps multipart material and settings when only one part crosses the plane', async () => {
+    const entry = get().plate[0]!
+    const body = { ...entry.parts[0]!, name: 'body', slot: 1 }
+    const cap = { ...bake(boxMesh(10,10,10), compose({ position: [55,0,25], rotation: [0,0,0], scale: [1,1,1] })), name: 'cap', slot: 2 }
+    set({ plate: [{ ...entry, parts: [body,cap], colors: ['#ff0000','#0000ff'], slotOverrides: { cap: 3 }, partSettings: { cap: { wall_loops: 7 } } }] })
+    const result = await cutObject(host, 'body', { axis: 'z', atMm: 15, keep: 'both' })
+    expect(result.ids).toHaveLength(2)
+    expect(result.reports).toHaveLength(2)
+    const below = get().plate.find((piece) => piece.name.endsWith('lower'))!
+    const above = get().plate.find((piece) => piece.name.endsWith('upper'))!
+    expect(below.parts.map((part) => part.name)).toEqual(['body'])
+    expect(above.parts.map((part) => part.name)).toEqual(['body','cap'])
+    expect(above.parts.map((part) => part.slot)).toEqual([1,3])
+    expect(above.colors).toEqual(['#ff0000','#0000ff'])
+    expect(above.partSettings).toEqual({ cap: { wall_loops: 7 } })
+    expect(Math.abs(result.reports[1]!.report.belowVolumeMm3)).toBe(0)
+    expect(result.reports[1]!.report.aboveVolumeMm3).toBeCloseTo(1000, 4)
+  })
+
 })
