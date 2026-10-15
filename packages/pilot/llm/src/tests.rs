@@ -398,6 +398,15 @@ async fn missing_anthropic_key_is_reported_without_sending() {
 
 /// Serves one GET with `body` and returns the raw request it received.
 async fn get_once(path: &str, body: &'static str) -> (String, tokio::task::JoinHandle<String>) {
+    get_reply(path, "200 OK", body.to_owned()).await
+}
+
+/// Serves one GET with `status` and `body` and returns the raw request it received.
+async fn get_reply(
+    path: &str,
+    status: &'static str,
+    body: String,
+) -> (String, tokio::task::JoinHandle<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://127.0.0.1:{}{path}", listener.local_addr().unwrap().port());
     let handle = tokio::spawn(async move {
@@ -412,7 +421,7 @@ async fn get_once(path: &str, body: &'static str) -> (String, tokio::task::JoinH
             seen.extend_from_slice(&buf[..n]);
         }
         let response = format!(
-            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
             body.len()
         );
         sock.write_all(response.as_bytes()).await.unwrap();
@@ -476,4 +485,113 @@ fn the_system_store_asks_for_the_service_the_app_names() {
         keychain_service("slicerx-pair"),
         "slicerx-pair.app.slicerx.desktop.agent-bridge"
     );
+}
+
+#[tokio::test]
+async fn provider_models_checks_the_provider_and_address_before_any_key() {
+    let keys = anthropic_keys().with_keychain(FAKE_KEY);
+    for provider in ["openai-compatible", "mimir-cloud", "other"] {
+        assert!(
+            matches!(
+                provider_models_with(&keys, provider, "http://127.0.0.1:1/v1", None).await,
+                Err(Error::UnknownProvider { .. })
+            ),
+            "{provider}"
+        );
+    }
+    for (provider, base) in [
+        ("anthropic", "https://evil.example/v1"),
+        ("anthropic", "https://api.openai.com/v1"),
+        ("anthropic", "http://api.anthropic.com/v1"),
+        ("openai", "https://api.anthropic.com/v1"),
+        ("openai", "https://user:pw@api.openai.com/v1"),
+        ("openai", "http://127.0.0.1:8080/v1"),
+    ] {
+        assert!(
+            matches!(
+                provider_models_with(&keys, provider, base, Some(FAKE_KEY.into())).await,
+                Err(Error::UrlNotAllowed { .. })
+            ),
+            "{provider} {base}"
+        );
+    }
+    assert_eq!(keys.reads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn provider_models_needs_a_typed_or_saved_key() {
+    let none = FakeKeys::default();
+    for provider in ["anthropic", "openai"] {
+        let base = if provider == "openai" {
+            "https://api.openai.com/v1"
+        } else {
+            "https://api.anthropic.com/v1"
+        };
+        assert!(
+            matches!(
+                provider_models_with(&none, provider, base, Some("  ".into())).await,
+                Err(Error::MissingKey { .. })
+            ),
+            "{provider}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn provider_get_sends_each_provider_its_own_header() {
+    let (url, server) = get_once("/v1/models", r#"{"data":[]}"#).await;
+    let got = provider_get(
+        Provider::Anthropic,
+        "anthropic",
+        Url::parse(&url).unwrap(),
+        &ApiKey::new(FAKE_KEY.into()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(got, r#"{"data":[]}"#);
+    let seen = server.await.unwrap().to_ascii_lowercase();
+    assert!(seen.starts_with("get /v1/models"), "{seen}");
+    assert!(seen.contains(&format!("x-api-key: {FAKE_KEY}")), "{seen}");
+    assert!(seen.contains("anthropic-version: 2023-06-01"), "{seen}");
+    assert!(!seen.contains("authorization"), "{seen}");
+
+    let (url, server) = get_once("/v1/models", r#"{"data":[]}"#).await;
+    provider_get(
+        Provider::OpenAi,
+        "openai",
+        Url::parse(&url).unwrap(),
+        &ApiKey::new(FAKE_KEY.into()),
+    )
+    .await
+    .unwrap();
+    let seen = server.await.unwrap().to_ascii_lowercase();
+    assert!(
+        seen.contains(&format!("authorization: bearer {FAKE_KEY}")),
+        "{seen}"
+    );
+    assert!(!seen.contains("x-api-key"), "{seen}");
+}
+
+#[tokio::test]
+async fn provider_get_reports_a_refused_key_without_the_key() {
+    let body = format!(
+        r#"{{"type":"error","error":{{"type":"authentication_error","message":"invalid x-api-key {FAKE_KEY}"}}}}"#
+    );
+    let (url, server) = get_reply("/v1/models", "401 Unauthorized", body).await;
+    let err = provider_get(
+        Provider::Anthropic,
+        "anthropic",
+        Url::parse(&url).unwrap(),
+        &ApiKey::new(FAKE_KEY.into()),
+    )
+    .await
+    .unwrap_err();
+    let _ = server.await.unwrap();
+    let Error::Http { status, message, .. } = &err else {
+        panic!("expected Http, got {err:?}");
+    };
+    assert_eq!(*status, 401);
+    assert!(message.starts_with("invalid x-api-key"), "{message}");
+    let shown = format!("{err} {err:?}");
+    assert!(!shown.contains("sk-test"), "{shown}");
 }

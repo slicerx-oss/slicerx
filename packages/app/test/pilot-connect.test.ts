@@ -9,7 +9,7 @@ import { cloudBase, cloudReady } from '../src/pilot-connect/cloud-edition'
 import { pilotModel } from '../src/pilot-connect/llm'
 import { AUTO_MODEL, modelChoices } from '../src/pilot-connect/models'
 import { normalizePrefs } from '../src/state/prefs'
-import { authHeaders, browserTransport, hostLocalFetch, localAllowed, testConnection } from '../src/pilot-connect/transport'
+import { authHeaders, browserTransport, connectFetch, hostLocalFetch, localAllowed, testConnection } from '../src/pilot-connect/transport'
 import { NEUTRAL } from '../src/edition'
 
 function memStorage(): Storage {
@@ -131,6 +131,37 @@ describe('mimir transport', () => {
     expect(refused.message).toMatch(/The key was refused/)
     const down = await testConnection({ provider: 'local', baseUrl: 'http://192.168.1.50:8080/v1' }, null, hostLocalFetch(async () => { throw new Error('timed out') }))
     expect(down.message).toMatch(/Nothing answered/)
+  })
+
+  it('on the desktop tests OpenAI and Anthropic through the host, never from the page', async () => {
+    // the desktop webview's CSP refuses the network: a page fetch there fails like this
+    const orig = globalThis.fetch
+    let pageFetches = 0
+    globalThis.fetch = (async () => {
+      pageFetches++
+      throw new TypeError('Failed to fetch')
+    }) as typeof fetch
+    try {
+      const asked: [string, string, string | null][] = []
+      const host = { providerModels: async (p: 'openai' | 'anthropic', base: string, key: string | null) => (asked.push([p, base, key]), '{"data":[{"id":"claude-haiku-5-5"}]}') }
+      const ok = await testConnection({ provider: 'anthropic', model: 'claude-haiku-5-5' }, KEY, connectFetch('anthropic', host, KEY))
+      expect(ok).toEqual({ ok: true, message: 'Connected to Anthropic. 1 model available.' })
+      expect(asked).toEqual([['anthropic', 'https://api.anthropic.com/v1', KEY]])
+      // a saved key the webview cannot read: the host sends it, nothing is pasted
+      expect((await testConnection({ provider: 'openai' }, null, connectFetch('openai', host, null), true)).ok).toBe(true)
+      expect(asked[1]).toEqual(['openai', 'https://api.openai.com/v1', null])
+      const refused = await testConnection({ provider: 'anthropic' }, KEY, connectFetch('anthropic', { providerModels: async () => { throw new Error('401: invalid x-api-key') } }, KEY))
+      expect(refused).toEqual({ ok: false, message: 'The key was refused: invalid x-api-key' })
+      const down = await testConnection({ provider: 'anthropic' }, KEY, connectFetch('anthropic', { providerModels: async () => { throw new Error('error sending request') } }, KEY))
+      expect(down.message).toBe('Could not reach Anthropic. Check the network connection.')
+      expect(pageFetches).toBe(0)
+    } finally {
+      globalThis.fetch = orig
+    }
+    // the browser build has no such host and fetches from the page, as before
+    expect(connectFetch('anthropic', null, KEY)).toBeUndefined()
+    expect(connectFetch('openai', { localModels: async () => '' }, KEY)).toBeUndefined()
+    expect(connectFetch('local', null, null)).toBeUndefined()
   })
 
   it('tests a connection with one call and explains failures without the key', async () => {
