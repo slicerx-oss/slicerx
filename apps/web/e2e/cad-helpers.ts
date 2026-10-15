@@ -179,7 +179,7 @@ export async function pushTop(page: Page, objectId: string, mm: number | string)
   await pick(page, await facePick(page, objectId, [0, 0, 1]))
   await expect(panel).toContainText('A face is picked')
   await panel.locator('#push-dist').fill(String(mm))
-  await panel.getByRole('button', { name: String(mm).startsWith('-') ? 'Push in' : 'Pull out' }).click()
+  await panel.getByRole('button', { name: String(mm).startsWith('-') ? 'Cut' : 'Pull out', exact: true }).click()
   // Apply runs the push and closes the tool.
   await expect(panel).toHaveCount(0, { timeout: 30_000 })
 }
