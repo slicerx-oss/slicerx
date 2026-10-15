@@ -701,6 +701,10 @@ impl PrintConfig {
     /// Same as [`Self::from_json`] for an already parsed value.
     pub fn from_value(v: &Value) -> Result<Self> {
         let mut c = Self::default();
+        // omitted gaps follow the layer height; explicit values replace these below.
+        for key in ["support_top_z_distance", "support_bottom_z_distance"] {
+            c.raw.insert(key.to_owned(), Value::String("auto".to_owned()));
+        }
         c.apply_value(v)?;
         c.check()?;
         Ok(c)
@@ -2895,6 +2899,12 @@ mod tests {
         assert_eq!(
             gaps(br#"{"layer_height":0.08,"support_top_z_distance":0.2}"#),
             (0.2, 0.08)
+        );
+        let mut c = PrintConfig::from_json(br#"{"layer_height":0.08}"#).unwrap();
+        c.apply_value(&serde_json::json!({"layer_height": 0.16})).unwrap();
+        assert_eq!(
+            (c.support.top_z_distance, c.support.bottom_z_distance),
+            (0.16, 0.16)
         );
     }
 
