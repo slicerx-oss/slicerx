@@ -34,6 +34,8 @@ test('exports all registered tools, loops and setting mappings as self-contained
     assert.match(push, /@keyframes loop-push-dark-296-/)
     assert.match(push, /prefers-reduced-motion/)
     assert.match(push, /var\(--accent,#bd93f9\)/)
+    // a filled part in currentColor takes the accent, not black, in an isolated image
+    assert.match(readFileSync(join(out, 'icons/dark/step-broken-24.svg'), 'utf8'), /style="color:var\(--accent,#bd93f9\)"/)
     assert.match(readFileSync(join(out, 'tokens.css'), 'utf8'), /\[data-sx-theme="light"\]/)
   } finally { rmSync(out, { recursive: true, force: true }) }
 })

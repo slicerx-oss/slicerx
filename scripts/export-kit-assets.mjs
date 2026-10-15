@@ -117,7 +117,8 @@ export async function exportAssets(dest) {
       } else {
         const small = size === 16 && SMALL_ICON_PATHS[id]
         const grid = small ? 16 : 24
-        body = `<g transform="scale(${size / grid})" fill="none" stroke="var(--accent)" stroke-width="${small ? 1.5 : 1.75}" stroke-linecap="round" stroke-linejoin="round">${small || table[id]}</g>`
+        // the app draws these in currentColor; color carries the accent to fills too
+        body = `<g transform="scale(${size / grid})" style="color:var(--accent)" fill="none" stroke="var(--accent)" stroke-width="${small ? 1.5 : 1.75}" stroke-linecap="round" stroke-linejoin="round">${small || table[id]}</g>`
         cls = 'sx-ic'
       }
       save(file, documentSvg(kind, id, scheme, size, size, cls, body, title(id), vars))
