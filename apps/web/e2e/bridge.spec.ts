@@ -11,6 +11,7 @@ import { type Locator, type Page, type WebSocketRoute } from '@playwright/test'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { ApprovalDone } from '../../../packages/connect/link-client/src/index.ts'
 import { bridgeOn, connectApp, ctl, hub, mockLog, reportHand, resumeFromCard, sawToast, seed, sheetFor, start, useBridge } from './bridge-hub'
 
 /** The describe the Bambu Lab printers belong to. addBambu refuses to run outside it. */
@@ -368,6 +369,8 @@ test.describe(BAMBU, () => {
     const target = pla.filter((s) => /^A[1-4]$/.test(s.id) && !pla.some((o) => o.id !== s.id && o.color?.toLowerCase() === s.color?.toLowerCase())).at(-1)
     if (!target?.color) throw new Error(`no PLA slot of its own color in the AMS lite: ${JSON.stringify(slots)}`)
     const mcp = await mcpClient()
+    let completed: ApprovalDone | undefined
+    let stopWatching = () => {}
     try {
       for (const [tool, args] of [
         ['slicerx_project_open', { name: 'Queue', printer: 'bambu_a1', filament: 'pla' }],
@@ -380,8 +383,11 @@ test.describe(BAMBU, () => {
       }
       const q = await mcp.call('slicerx_printer_queue', { printerId: 'a1', plate: 1 })
       // Read back: the file and the slot map the hub was handed.
-      expect(q.structuredContent, JSON.stringify(q.content)).toMatchObject({ status: 'needs_person', slot_map: { 0: target.id } })
+      expect(q.structuredContent, JSON.stringify(q.content)).toMatchObject({ status: 'needs_person', request_id: expect.any(String), slot_map: { 0: target.id } })
       expect(String(q.structuredContent?.['file'])).toMatch(/\.gcode\.3mf$/)
+      stopWatching = hub.admin.onApprovalDone((done) => {
+        if (done.requestId === q.structuredContent?.['request_id']) completed = done
+      })
       // The Bambu mock writes the commands it reads to the mocks' shared log; its own log has only the job.
       const starts = async () => ((await ctl('/state'))['log'] as string[]).filter((l) => l.startsWith('project_file {'))
       const before = (await starts()).length
@@ -396,7 +402,10 @@ test.describe(BAMBU, () => {
       // AMS lite slot A<n> is tray n - 1.
       expect(start.ams_mapping).toEqual([Number(target.id.slice(1)) - 1])
       expect(start.use_ams).toBe(true)
+      // Receipt at the printer can precede the hub recording the start. Finish before resetting it.
+      await expect.poll(() => completed, { timeout: 60_000 }).toMatchObject({ ok: true })
     } finally {
+      stopWatching()
       await mcp.close()
       await idleAgain('a1')
     }
