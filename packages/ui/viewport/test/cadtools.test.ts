@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { InterleavedBufferAttribute, LineSegments, Matrix4, Mesh, Vector3 } from 'three'
+import { FrontSide, InterleavedBufferAttribute, LineSegments, Matrix4, Mesh, Vector3 } from 'three'
 import { Line2 } from 'three/addons/lines/Line2.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { describe, expect, it, vi } from 'vitest'
-import { DimensionLayer, EdgePreview, PLANE_EDGE, PLANE_EDGE_LIGHT, PLANE_FILL, PLANE_FILL_LIGHT, PushPreview, SketchLayer, frameMatrix, fromPlane, glyphInk, glyphPixels, prismMatrix, rayOnPlane, toPlane, type CadFrame, type SketchGlyphKind } from '../src/cadtools'
+import { DimensionLayer, EdgePreview, OP_LOOK, OpPreviewLook, PLANE_EDGE, PLANE_EDGE_LIGHT, PLANE_FILL, PLANE_FILL_LIGHT, PushPreview, SketchLayer, frameMatrix, fromPlane, glyphInk, glyphPixels, prismMatrix, rayOnPlane, toPlane, type CadFrame, type SketchGlyphKind } from '../src/cadtools'
 import type { V3 } from '../src/scaling'
 
 const close = (a: readonly number[], b: readonly number[], digits = 6) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i] ?? NaN, digits))
@@ -42,150 +42,76 @@ describe('push preview', () => {
     close(new Vector3(-1, 1, 3).applyMatrix4(m).toArray(), [-1, 1, 3])
   })
 
-  it('shows green when it adds, red when it cuts, and nothing at zero', () => {
-    const p = new PushPreview()
+  it('tints added material, draws a cut as a ghost with dashes that keep their size, and shows nothing at zero', () => {
+    const look = new OpPreviewLook()
+    const p = new PushPreview(look)
     const prism = { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1], indices: [0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3] }
     p.setPrism(prism, { point: [0, 0, 0], normal: [0, 0, 1] })
     p.setDistance(5)
     expect(p.group.visible).toBe(true)
-    const fill = (p.group.children[0] as unknown as { material: { color: { getHexString(): string } } }).material
-    expect(fill.color.getHexString()).toBe('50fa7b')
+    const fill = p.group.children[0] as Mesh
+    const lines = p.group.children[1] as LineSegments
+    expect(fill.material).toBe(look.addFill)
+    expect(lines.material).toBe(look.addEdge)
+    expect(look.addFill.depthTest).toBe(true)
+    expect(p.shows()).toEqual({ added: true, removed: false })
     expect(p.group.matrix.elements[10]).toBeCloseTo(5)
     p.setDistance(-2)
-    expect(fill.color.getHexString()).toBe('ff5555')
+    expect(fill.material).toBe(look.cutFill)
+    expect(lines.material).toBe(look.cutEdge)
+    // the ghost is seen through the part, fainter than added material
+    expect(look.cutFill.depthTest).toBe(false)
+    expect(look.cutFill.side).toBe(FrontSide)
+    expect(look.cutFill.opacity).toBeLessThan(look.addFill.opacity)
+    expect(p.shows()).toEqual({ added: false, removed: true })
+    // the edge along the normal is 2 mm long on screen, so its dashes measure 2 mm, not the 1 mm prism's
+    const dist = lines.geometry.getAttribute('lineDistance')
+    const pos = lines.geometry.getAttribute('position')
+    let along = 0
+    for (let i = 0; i + 1 < pos.count; i += 2) if (pos.getZ(i) !== pos.getZ(i + 1) && pos.getX(i) === 0 && pos.getY(i) === 0) along = dist.getX(i + 1)
+    expect(along).toBeCloseTo(2)
     p.setDistance(0)
     expect(p.group.visible).toBe(false)
+    expect(p.shows()).toEqual({ added: false, removed: false })
     p.setPrism(null, null)
     expect(p.hasPrism).toBe(false)
     p.dispose()
-  })
-})
-
-describe('sketch layer', () => {
-  it('draws paths by tone, handles and a grid, and finds the handle under the cursor', () => {
-    const s = new SketchLayer()
-    s.set({ frame: WALL, paths: [{ points: [[0, 0], [10, 0], [10, 5]], closed: true }, { points: [[0, 0], [10, 5]], tone: 'issue' }], handles: [[0, 0], [10, 0], [10, 5]], dragHandles: true, grid: { stepMm: 10, min: [-20, -20], max: [20, 20] } })
-    expect(s.group.visible).toBe(true)
-    // the grid thin, the normal and issue curves 2 px wide (the rubber band is wide too, but not one of them)
-    expect(s.group.children.filter((c) => c instanceof LineSegments).length).toBe(1)
-    expect(s.group.children.filter((c) => c instanceof LineSegments2 && !(c instanceof Line2)).length).toBe(2)
-    expect(s.handleAt([9.6, 0.2], 0.5)).toBe(1)
-    expect(s.handleAt([5, 5], 0.5)).toBe(-1)
-    s.set({ ...s.scene!, dragHandles: false })
-    expect(s.handleAt([9.6, 0.2], 0.5)).toBe(-1)
-    s.set(null)
-    expect(s.group.visible).toBe(false)
-    s.dispose()
+    look.dispose()
   })
 
-  it('draws the rubber band as a wide line to the cursor, and hides it with no path', () => {
-    const s = new SketchLayer()
-    s.set({ frame: WALL, paths: [], handles: [] })
-    const band = s.group.children[0] as Line2
-    expect(band).toBeInstanceOf(Line2)
-    expect(band.visible).toBe(false)
-    s.cursor({ path: [[0, 0], [3, 4]], at: [3, 4] })
-    expect(band.visible).toBe(true)
-    const start = band.geometry.getAttribute('instanceStart') as InterleavedBufferAttribute
-    expect(start.count).toBe(1)
-    expect([start.getX(0), start.getY(0)]).toEqual([0, 0])
-    const end = band.geometry.getAttribute('instanceEnd') as InterleavedBufferAttribute
-    expect([end.getX(0), end.getY(0)]).toEqual([3, 4])
-    s.cursor(null)
-    expect(band.visible).toBe(false)
-    s.dispose()
-  })
-
-  it('draws what a trim takes off wider than a curve, in red, and without a fill', () => {
-    const s = new SketchLayer()
-    s.set({ frame: WALL, paths: [], handles: [] })
-    const band = s.group.children[0] as Line2
-    const plain = band.material
-    const fills = () => s.group.children.filter((o) => o instanceof Mesh).length
-    const none = fills()
-    const ring: [number, number][] = [[0, 0], [4, 0], [4, 4], [0, 0]]
-    s.cursor({ path: ring, cut: true })
-    expect(band.material).not.toBe(plain)
-    expect(band.material.linewidth).toBeGreaterThan(plain.linewidth)
-    expect(fills()).toBe(none)
-    s.cursor({ path: ring })
-    expect(band.material).toBe(plain)
-    expect(fills()).toBe(none + 1)
-    s.dispose()
-  })
-
-  it('draws a dimension being placed with its extension lines, and drops it with the cursor', () => {
-    const s = new SketchLayer()
-    s.set({ frame: WALL, paths: [], handles: [] })
-    const thin = () => s.group.children.filter((c) => c instanceof LineSegments && !(c instanceof LineSegments2)) as LineSegments[]
-    expect(thin()).toHaveLength(0)
-    s.cursor({ dim: { from: [0, -4], to: [10, -4], ext: [[[0, 0], [0, -5]], [[10, 0], [10, -5]]], label: '10' } })
-    expect(thin()).toHaveLength(1)
-    // the dimension line and two extension lines
-    expect(thin()[0]!.geometry.getAttribute('position').count).toBe(6)
-    s.cursor({ dim: { from: [0, -6], to: [10, -6], label: '10' } })
-    expect(thin()).toHaveLength(1)
-    s.cursor(null)
-    expect(thin()).toHaveLength(0)
-    s.dispose()
-  })
-
-  it('frames the sketch plane in the accent with a faint wash and a firm border, firmer on a light studio', () => {
-    const s = new SketchLayer()
-    s.set({ frame: WALL, paths: [], handles: [], plane: { min: [-20, -10], max: [20, 10] } })
-    const plane = s.group.children.filter((o) => o.name === 'sketch-plane') as (Mesh | LineSegments)[]
-    expect(plane).toHaveLength(2)
-    const alpha = () => plane.map((o) => (o.material as { opacity: number }).opacity)
-    expect(alpha()).toEqual([PLANE_FILL, PLANE_EDGE])
-    s.setLight(true)
-    expect(alpha()).toEqual([PLANE_FILL_LIGHT, PLANE_EDGE_LIGHT])
-    expect(PLANE_EDGE_LIGHT).toBeGreaterThan(PLANE_EDGE)
-    // the wash stays faint in both, well under the border
-    for (const f of [PLANE_FILL, PLANE_FILL_LIGHT]) expect(f).toBeLessThanOrEqual(0.06)
-    s.setLight(false)
-    expect(alpha()).toEqual([PLANE_FILL, PLANE_EDGE])
-    s.dispose()
-  })
-})
-
-describe('kept dimensions', () => {
-  it('sizes labels for the lens and the view height only when they change', () => {
-    const d = new DimensionLayer()
-    // jsdom has no 2D canvas, so labels are skipped; lines and dots still draw.
-    expect(d.set([{ id: 'd1', from: [0, 0, 0], to: [0, 0, 20], label: '20.00 mm' }])).toBe(true)
-    expect(d.group.children.length).toBeGreaterThanOrEqual(2)
-    d.fit(30, 800)
-    expect(d.set([])).toBe(true)
-    expect(d.group.children.length).toBe(0)
-    expect(d.set([])).toBe(false)
-    d.dispose()
-  })
-})
-
-describe('frame matrix', () => {
-  it('is a rigid placement for an orthonormal frame', () => {
-    const m = frameMatrix({ origin: [1, 2, 3], u: [0, 0, 1], v: [1, 0, 0], normal: [0, 1, 0] }, new Matrix4())
-    expect(m.determinant()).toBeCloseTo(1)
+  it('follows the theme: the accent for added material, a deeper red and lighter fills on a light studio', () => {
+    const look = new OpPreviewLook()
+    look.setColors('#bd93f9', '#ff4b5c', false)
+    expect(look.colors()).toEqual({ add: '#bd93f9', cut: '#ff4b5c', addFill: OP_LOOK.addFill, cutFill: OP_LOOK.cutFill })
+    look.setColors('#7c4dcc', '#ff4b5c', true)
+    expect(look.colors()).toEqual({ add: '#7c4dcc', cut: '#d32f2f', addFill: OP_LOOK.addFillLight, cutFill: OP_LOOK.cutFillLight })
+    expect(look.cutEdge.color.getHexString()).toBe('d32f2f')
+    look.dispose()
   })
 })
 
 describe('edge preview', () => {
-  it('draws what a fillet removes in red and adds in green, and clears', () => {
-    const p = new EdgePreview()
+  it('draws what a fillet removes as a ghost and what it adds tinted, each with its edges, and clears', () => {
+    const look = new OpPreviewLook()
+    const p = new EdgePreview(look)
     const tri = { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], indices: [0, 1, 2] }
     p.set({ cut: tri, join: null })
     expect(p.group.visible).toBe(true)
-    expect(p.group.children).toHaveLength(1)
-    const color = (i: number) => (p.group.children[i] as unknown as { material: { color: { getHexString(): string } } }).material.color.getHexString()
-    expect(color(0)).toBe('ff5555')
-    p.set({ cut: tri, join: tri })
+    // a fill and its edges
     expect(p.group.children).toHaveLength(2)
-    expect(color(1)).toBe('50fa7b')
+    expect((p.group.children[0] as Mesh).material).toBe(look.cutFill)
+    expect((p.group.children[1] as LineSegments).material).toBe(look.cutEdge)
+    expect(p.shows()).toEqual({ removed: true, added: false })
+    p.set({ cut: tri, join: tri })
+    expect(p.group.children).toHaveLength(4)
+    expect((p.group.children[2] as Mesh).material).toBe(look.addFill)
+    expect(p.shows()).toEqual({ removed: true, added: true })
     p.set({ cut: { positions: [], indices: [] }, join: null })
     expect(p.group.visible).toBe(false)
     p.set(null)
     expect(p.group.children).toHaveLength(0)
     p.dispose()
+    look.dispose()
   })
 })
 

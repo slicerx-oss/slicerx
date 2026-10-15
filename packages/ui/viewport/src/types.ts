@@ -210,6 +210,13 @@ export interface ProbeHover {
   point: [number, number, number]
 }
 
+/** What the operation previews draw: added material (tinted), removed material (a ghost), and the look in use. */
+export interface OperationPreviewShown {
+  added: boolean
+  removed: boolean
+  look: { add: string; cut: string; addFill: number; cutFill: number }
+}
+
 /** What an edge op would remove (`cut`) and add (`join`), bed coordinates; either may be empty. */
 export interface EdgePreviewSpec {
   cut: { positions: ArrayLike<number>; indices: ArrayLike<number> } | null
@@ -565,8 +572,10 @@ export interface Viewport {
   setProbeFaces(on: boolean): void
   /** Probe tool: report the model point under the cursor as `probehover`, at most once a frame. Off by default. */
   setProbeHover(on: boolean): void
-  /** Fillet and chamfer: the pieces the op would remove (red) and add (green), drawn through the model. Null clears them. */
+  /** Fillet and chamfer: the pieces the op would remove (a ghost seen through the part) and add (tinted). Null clears them. */
   setEdgePreview(preview: EdgePreviewSpec | null): void
+  /** What the operation previews (push and pull, fillet and chamfer) draw now, and the shared look's colors. */
+  operationPreview(): OperationPreviewShown
   /** Screen positions (CSS pixels from the canvas corner) of the scale handles of the selected model, or null when the scale tool is off. */
   scaleHandles(): Partial<Record<'xn' | 'xp' | 'yn' | 'yp' | 'zn' | 'zp' | 'cnn' | 'cpn' | 'cpp' | 'cnp', [number, number]>> | null
   /** Rotate tool: whether the rings turn the model about the bed's axes (`world`, the default) or its own (`local`). */
