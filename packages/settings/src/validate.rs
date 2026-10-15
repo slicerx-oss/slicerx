@@ -37,6 +37,32 @@ pub struct SettingIssue {
     pub fix: Option<Fix>,
 }
 
+/// True when the engine builds a type 1 (Bambu Lab) prime tower for this printer: a Bambu G-code flavor, a Bambu
+/// Lab model, or `wipe_tower_type` type1. The same three inputs the engine reads; a key the config leaves out reads
+/// as the schema default, as the app sends it.
+#[must_use]
+pub fn type_one_tower(config: &PrintConfig) -> bool {
+    let text = |k: &str| match scalar_of(config, k, true) {
+        Some(Scalar::Str(s)) => s,
+        _ => String::new(),
+    };
+    text("gcode_flavor") == "bambu"
+        || text("printer_model").starts_with("Bambu Lab")
+        || text("wipe_tower_type") == "type1"
+}
+
+/// The values of an enum setting the engine cannot print for this printer: the schema's `unavailableValues`, and the
+/// rib prime tower wall on a printer whose tower is not type 1 (the engine builds the rib wall on a type 1 tower only;
+/// elsewhere it prints the plain wall).
+#[must_use]
+pub fn unavailable_in(def: &SettingDef, config: &PrintConfig) -> Vec<String> {
+    let mut out = def.unavailable_values.clone();
+    if def.key == "wipe_tower_wall_type" && !type_one_tower(config) && !out.iter().any(|v| v == "rib") {
+        out.push("rib".to_owned());
+    }
+    out
+}
+
 /// What a value the engine cannot print falls back to: the setting's default, by its label.
 fn fallback_name(def: &SettingDef) -> String {
     let d = match &def.default {
@@ -44,11 +70,11 @@ fn fallback_name(def: &SettingDef) -> String {
         v => v.as_str(),
     };
     d.filter(|d| !def.unavailable_values.iter().any(|u| u == d))
-        .and_then(|d| def.enum_values.iter().position(|v| v == d))
-        .map_or_else(
-            || "the default".to_owned(),
-            |i| format!("the default, {}", def.enum_labels.get(i).unwrap_or(&def.enum_values[i])),
-        )
+        .and_then(|d| {
+            let i = def.enum_values.iter().position(|v| v == d)?;
+            def.enum_labels.get(i).or_else(|| def.enum_values.get(i))
+        })
+        .map_or_else(|| "the default".to_owned(), |l| format!("the default, {l}"))
 }
 
 fn issue(code: &str, severity: Severity, keys: &[&str], message: String) -> SettingIssue {
@@ -171,18 +197,24 @@ pub fn check_values(config: &PrintConfig) -> Vec<SettingIssue> {
                 ));
                 continue;
             }
+            let gone = unavailable_in(def, config);
             let missing = match v {
-                Value::Str(s) if def.unavailable_values.contains(s) => Some(s.clone()),
-                Value::Strs(xs) => xs.iter().find(|s| def.unavailable_values.contains(s)).cloned(),
+                Value::Str(s) if gone.contains(s) => Some(s.clone()),
+                Value::Strs(xs) => xs.iter().find(|s| gone.contains(s)).cloned(),
                 _ => None,
             };
             if let Some(m) = missing {
+                let why = if def.unavailable_values.contains(&m) {
+                    "by this engine yet"
+                } else {
+                    "on this printer"
+                };
                 issues.push(issue(
                     "enum_value_unavailable",
                     Severity::Warning,
                     &[key],
                     format!(
-                        "{}: \"{}\" is not supported by this engine yet, so it prints with {}.",
+                        "{}: \"{}\" is not supported {why}, so it prints with {}.",
                         def.label,
                         m,
                         fallback_name(def)

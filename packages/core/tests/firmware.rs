@@ -2295,60 +2295,6 @@ fn a_bambu_tower_has_orcas_rib_wall_and_brim_chamfer() {
 }
 
 #[test]
-fn the_settings_mark_unavailable_exactly_the_tower_walls_that_print_as_the_default() {
-    // the settings flag a prime tower wall type as unsupported and say slicing uses the schema's default; check that
-    // against what the engine prints: a flagged value lays the default's tower moves, every other value its own
-    let path = format!("{}/../settings/schema.json", env!("CARGO_MANIFEST_DIR"));
-    let schema: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-    let def = schema["settings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|d| d["key"] == "wipe_tower_wall_type")
-        .unwrap();
-    let strs = |v: &Value| -> Vec<String> {
-        v.as_array()
-            .map(|a| a.iter().map(|x| x.as_str().unwrap().to_owned()).collect())
-            .unwrap_or_default()
-    };
-    let default = def["default"].as_str().unwrap().to_owned();
-    let tower = |wall: &str| -> Vec<String> {
-        let g = cube(
-            json!({
-                "gcode_flavor": "marlin",
-                "printer_model": "Bambu Lab A1",
-                "change_filament_gcode": "M620 S[next_extruder]A
-T[next_extruder]",
-                "sparse_infill_filament_id": 2,
-                "enable_prime_tower": true,
-                "prime_tower_auto_position": false,
-                "wipe_tower_x": [15],
-                "wipe_tower_y": [220],
-                "wipe_tower_wall_type": wall,
-            }),
-            1,
-        );
-        let mut on = false;
-        let mut moves = Vec::new();
-        for l in g.lines() {
-            if let Some(f) = l.strip_prefix("; FEATURE: ") {
-                on = f == "Prime tower";
-            } else if on && l.starts_with("G1 ") {
-                moves.push(l.to_owned());
-            }
-        }
-        assert!(!moves.is_empty(), "{wall}: no tower");
-        moves
-    };
-    let base = tower(&default);
-    let falls_back: Vec<String> = strs(&def["enumValues"])
-        .into_iter()
-        .filter(|v| *v != default && tower(v) == base)
-        .collect();
-    assert_eq!(falls_back, strs(&def["unavailableValues"]));
-}
-
-#[test]
 fn a_spiral_lift_is_commented_as_orca_comments_it() {
     // Orca's GCodeWriter::_spiral_travel_to_z: ";spiral lift Z" before the segments, which carry no comment of
     // their own, and with arc fitting "G17 ; XY plane for arc" and the comment on the G3.

@@ -5,7 +5,7 @@ import type { PrintConfig } from '@slicerx/contracts/settings'
 import cases from '../fixtures/validate-cases.json'
 import { disabledKeys, isEnabled } from './config'
 import { defaultConfig, settingDef } from './schema'
-import { validate } from './validate'
+import { typeOneTower, unavailableIn, validate } from './validate'
 import { loadProfile } from './testkit'
 import { mergeConfigs } from './import'
 
@@ -113,5 +113,21 @@ describe('pattern lists and unavailable values', () => {
     const issues = validate(cfg({ wipe_tower_wall_type: 'cone' }))
     expect(issues.map((i) => i.code)).toEqual(['enum_value_unavailable'])
     expect(issues[0]?.message).toMatch(/prints with the default, Rectangle\.$/)
+  })
+  it('marks the rib prime tower wall only on a printer whose tower is not type 1', () => {
+    const prusa = { printer_model: 'Prusa CORE One', wipe_tower_type: 'type2' }
+    const issues = validate(cfg({ ...prusa, wipe_tower_wall_type: 'rib' })).filter((i) => i.code === 'enum_value_unavailable' && i.keys[0] === 'wipe_tower_wall_type')
+    expect(issues.map((i) => i.message)).toEqual(['Prime tower wall type: "rib" is not supported on this printer, so it prints with the default, Rectangle.'])
+    expect(validate(cfg({ printer_model: 'Bambu Lab A1', wipe_tower_type: 'type2', wipe_tower_wall_type: 'rib' })).filter((i) => i.keys[0] === 'wipe_tower_wall_type')).toEqual([])
+    expect(validate(cfg({ printer_model: 'Prusa CORE One', wipe_tower_type: 'type1', wipe_tower_wall_type: 'rib' })).filter((i) => i.keys[0] === 'wipe_tower_wall_type')).toEqual([])
+  })
+  it('reads a type 1 tower from the same inputs as the engine', () => {
+    expect(typeOneTower(cfg({ gcode_flavor: 'bambu', printer_model: 'Voron 2.4', wipe_tower_type: 'type2' }))).toBe(true)
+    expect(typeOneTower(cfg({ gcode_flavor: 'klipper', printer_model: 'Bambu Lab H2D', wipe_tower_type: 'type2' }))).toBe(true)
+    expect(typeOneTower(cfg({ gcode_flavor: 'klipper', printer_model: 'Voron 2.4', wipe_tower_type: 'type1' }))).toBe(true)
+    expect(typeOneTower(cfg({ gcode_flavor: 'klipper', printer_model: 'Voron 2.4', wipe_tower_type: 'type2' }))).toBe(false)
+    const def = settingDef('wipe_tower_wall_type')!
+    expect(unavailableIn(def, cfg({ wipe_tower_type: 'type2', printer_model: 'Voron 2.4' }))).toEqual(['cone', 'rib'])
+    expect(unavailableIn(def, cfg({ printer_model: 'Bambu Lab A1' }))).toEqual(['cone'])
   })
 })

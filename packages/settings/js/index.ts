@@ -4,7 +4,7 @@
 export { applyEasy, goalEasy, matchGoal, easyControlFor, EASY_MAP } from './easy'
 export { SETTINGS, SETTING_NOTES, PROJECT_KEYS, ORCA_COMMIT, registerSettingText, clearSettingText, settingDef, settingsFor, invalidates, defaultConfig } from './schema'
 export { importFlat, importOrcaProfile, exportOrcaProfile, mergeConfigs, mergeLayers, ProfileError, PROFILE_META_KEYS, LEGACY_KEYS, LEGACY_GROUPS } from './import'
-export { validate, checkValues, checkConflicts, missingKeys } from './validate'
+export { validate, checkValues, checkConflicts, missingKeys, typeOneTower, unavailableIn } from './validate'
 export { diffConfigs, firstStage, formatValue, sameValue, toSettingsPlan } from './diff'
 export { isVisible, settingsForTier, isEnabled, failedConditions, disabledKeys, scalarOf, numberOf, widthOf } from './config'
 export type { VisibilityContext, UserTier } from './config'

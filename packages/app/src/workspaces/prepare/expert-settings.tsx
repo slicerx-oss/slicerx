@@ -4,7 +4,7 @@
 // Advanced lists 42 process keys; Expert adds the rest behind a "more" link per section, and a search reaches every
 // one. Edits are plate overrides on top of Easy mode; saved profiles are never written from here.
 import type { SettingDef, SettingIntent, SettingValue } from '@slicerx/contracts'
-import { EASY_MAP } from '@slicerx/settings'
+import { EASY_MAP, unavailableIn } from '@slicerx/settings'
 import { Icon, keepInPlace, LinkButton, Select, Seg, SettingRow, Switch, tipAttrs, type IconName } from '@slicerx/ui'
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
@@ -69,11 +69,14 @@ function parseInput(def: SettingDef, raw: string): SettingValue | undefined {
   return def.type.endsWith('s') ? [v] : v
 }
 
-/** The enum values a picker offers. Values the engine cannot print yet are left out; one the setting already holds (an imported project) stays, flagged. */
-export function offeredValues(def: Pick<SettingDef, 'enumValues' | 'enumLabels' | 'unavailableValues'>, current: unknown): { value: string; label: string; gone: boolean }[] {
+/**
+ * The enum values a picker offers. Values the engine cannot print (`unavailable`: the schema's, or for this printer,
+ * from unavailableIn) are left out; one the setting already holds (an imported project) stays, flagged.
+ */
+export function offeredValues(def: Pick<SettingDef, 'enumValues' | 'enumLabels' | 'unavailableValues'>, current: unknown, unavailable: readonly string[] = def.unavailableValues ?? []): { value: string; label: string; gone: boolean }[] {
   const out: { value: string; label: string; gone: boolean }[] = []
   ;(def.enumValues ?? []).forEach((v, i) => {
-    const gone = def.unavailableValues?.includes(v) ?? false
+    const gone = unavailable.includes(v)
     if (gone && v !== String(current ?? '')) return
     out.push({ value: v, label: def.enumLabels?.[i] ?? v, gone })
   })
@@ -81,16 +84,18 @@ export function offeredValues(def: Pick<SettingDef, 'enumValues' | 'enumLabels' 
 }
 
 /**
- * The line under a select that holds a value the engine cannot print yet: what slicing uses instead, which is the
- * setting's default (the engine falls back to it). Undefined for a value the engine prints.
+ * The line under a select that holds a value the engine cannot print: what slicing uses instead, which is the
+ * setting's default (the engine falls back to it). A value unsupported only on some printers says "on this printer".
+ * Undefined for a value the engine prints.
  */
-export function unsupportedNote(def: Pick<SettingDef, 'default' | 'enumValues' | 'enumLabels' | 'unavailableValues'>, value: unknown): string | undefined {
+export function unsupportedNote(def: Pick<SettingDef, 'default' | 'enumValues' | 'enumLabels' | 'unavailableValues'>, value: unknown, unavailable: readonly string[] = def.unavailableValues ?? []): string | undefined {
   const v = String((Array.isArray(value) ? value[0] : value) ?? '')
-  if (!def.unavailableValues?.includes(v)) return undefined
+  if (!unavailable.includes(v)) return undefined
   const labelOf = (x: string) => def.enumLabels?.[def.enumValues?.indexOf(x) ?? -1] ?? x
   const d = String((Array.isArray(def.default) ? def.default[0] : def.default) ?? '')
-  const fallback = d && !def.unavailableValues.includes(d) && def.enumValues?.includes(d) ? labelOf(d) : 'the default'
-  return `${labelOf(v)} is unsupported; slicing uses ${fallback}.`
+  const fallback = d && !unavailable.includes(d) && def.enumValues?.includes(d) ? labelOf(d) : 'the default'
+  const where = def.unavailableValues?.includes(v) ? '' : ' on this printer'
+  return `${labelOf(v)} is unsupported${where}; slicing uses ${fallback}.`
 }
 
 function optionTipAttrs(key: string, value: unknown): Record<string, string> {
@@ -117,7 +122,7 @@ export interface FieldPin {
   toggle: () => void
 }
 
-export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 'set', note, scoped, pin, chips }: { def: SettingDef; value: SettingValue | undefined; overridden: boolean; onSet?: (key: string, value: SettingValue | undefined) => void; idPrefix?: string; note?: ReactNode; scoped?: FieldScope; pin?: FieldPin; chips?: ReactNode }) {
+export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 'set', note, scoped, pin, chips, unavailable = def.unavailableValues ?? [] }: { def: SettingDef; value: SettingValue | undefined; overridden: boolean; onSet?: (key: string, value: SettingValue | undefined) => void; idPrefix?: string; note?: ReactNode; scoped?: FieldScope; pin?: FieldPin; chips?: ReactNode; /** The values the engine cannot print for this printer (unavailableIn). */ unavailable?: readonly string[] }) {
   const id = `${idPrefix}-${def.key}`
   const setOverride = onSet
   const mixed = scoped?.source === 'mixed'
@@ -142,7 +147,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
   } else if (def.type === 'floatsOrPercents') {
     control = <MmOrPercentSetting id={id} def={def} unit={unitText || 'mm'} value={value} mixed={mixed} disabled={Boolean(locked)} onSet={(v) => setOverride(def.key, v)} />
   } else if (def.type === 'enum' && marks) {
-    const options = offeredValues(def, scalar).map(({ value: v, label }) => {
+    const options = offeredValues(def, scalar, unavailable).map(({ value: v, label }) => {
       const icon = marks[v]
       const tip = OPTION_TIPS[`${def.key}.${v}`]
       // The option keeps its own name; its tip has the name as title and the longer copy under it.
@@ -150,14 +155,14 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     })
     control = <Seg label={def.label ?? def.key} size="sm" full value={String(scalar ?? '')} options={locked ? options.map((o) => ({ ...o, disabled: true })) : options} onChange={(v) => setOverride(def.key, v)} className="tier-seg" />
   } else if (def.type === 'enum') {
-    const offered = offeredValues(def, scalar)
+    const offered = offeredValues(def, scalar, unavailable)
     const current = offered.find((o) => o.value === String(scalar ?? ''))
     // A closed select shows a short name for a long value; the menu, the tooltip and the accessible name keep the full one.
     const face = mixed ? 'Mixed' : current ? shortLabel(def, current.value, current.label) : undefined
     const full = current ? `${current.label}${current.gone ? ' (not supported yet, prints with the default)' : ''}` : undefined
     const optionTip = optionTipAttrs(def.key, scalar)
     const wide = WIDE_SELECTS[def.key]
-    const gone = mixed ? undefined : unsupportedNote(def, scalar)
+    const gone = mixed ? undefined : unsupportedNote(def, scalar, unavailable)
     if (gone) helper = <p className="sx-small sx-muted unsupported-note" id={`${id}-unsupported`} data-testid="slice-setting-unsupported">{gone}</p>
     control = (
       <Select
@@ -426,7 +431,7 @@ export function ExpertSettings() {
   const field = (def: SettingDef, o: { idPrefix?: string; note?: ReactNode } = {}) => {
     const pin = { on: pins.includes(def.key), toggle: () => togglePin(def.key) }
     const key = `${o.idPrefix ?? 'set'}-${def.key}`
-    const extra = { ...(o.idPrefix ? { idPrefix: o.idPrefix } : {}), ...(o.note ? { note: o.note } : {}) }
+    const extra = { ...(o.idPrefix ? { idPrefix: o.idPrefix } : {}), ...(o.note ? { note: o.note } : {}), unavailable: unavailableIn(def, config) }
     if (scoped) {
       const sv = scopeValue({ plate, objectSettings }, config, def.key, scope)
       const locked = variesPerObject(def) ? undefined : 'Set for the whole plate'

@@ -90,8 +90,8 @@ pub use smart_layer::{
 };
 pub use thin_layers::{HEAT_CREEP_SHARE, heat_creep_warning, layer_time_guard};
 pub use validate::{
-    Fix, SettingIssue, Severity, check_conflicts, check_conflicts_for, check_values, missing_keys, validate,
-    validate_for,
+    Fix, SettingIssue, Severity, check_conflicts, check_conflicts_for, check_values, missing_keys,
+    type_one_tower, unavailable_in, validate, validate_for,
 };
 pub use value::{
     Coerced, PrintConfig, Scalar, Value, coerce, parse_number, parse_percent_or_number, to_orca,
