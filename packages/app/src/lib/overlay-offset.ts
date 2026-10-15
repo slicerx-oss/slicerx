@@ -119,7 +119,12 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
     const queue = () => {
       if (!frame) frame = requestAnimationFrame(measure)
     }
-    const ro = new ResizeObserver(queue)
+    // A size change reaches the observer after layout and before paint, so the stack is placed there and then: a frame
+    // asked for now would run after that paint, and a panel that just opened would show with the toast over it.
+    const ro = new ResizeObserver(() => {
+      if (frame) cancelAnimationFrame(frame)
+      measure()
+    })
     ro.observe(vp)
     // A side pane that opens, closes or is resized moves the viewport without always resizing it first.
     for (const el of Array.from(vp.parentElement?.children ?? [])) if (el !== vp) ro.observe(el)
