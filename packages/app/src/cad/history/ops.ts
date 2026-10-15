@@ -103,7 +103,7 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * show (a body whose only step fails), or when the step `need` (a new step) does not go through.
  * A newer call for the same object cancels this one.
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
@@ -134,6 +134,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
     const made = commitMade(objectId, (latest) => ({ handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}) }), { exactReplay: next.exact === true })
     if (!made && still?.objectId !== objectId) throw abortError()
+    committed?.()
     markStale()
     return { status: r.status, moved: r.moved }
   } finally {
