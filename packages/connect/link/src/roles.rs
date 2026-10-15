@@ -438,6 +438,15 @@ mod tests {
             ] {
                 // mesh repair does not pair clients.
                 let mesh_repair = *m == "geom.repair" && word == "pair";
+                // only these print overrides may contain "setting"; connection settings stay private.
+                if word == "setting"
+                    && matches!(
+                        *m,
+                        "project.object_settings" | "object.settings" | "object.settings_set"
+                    )
+                {
+                    continue;
+                }
                 assert!(
                     mesh_repair
                         || !m.to_ascii_lowercase().contains(word)
@@ -450,6 +459,9 @@ mod tests {
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
+        for m in ["settings.set", "printer.settings", "object.settings_printer"] {
+            assert_eq!(link_class(m), None, "{m}");
+        }
         for m in ["design.open", "design.save"] {
             assert_eq!(link_class(m), None, "{m} reads or writes files");
         }
