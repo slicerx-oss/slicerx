@@ -4,7 +4,7 @@
 // optionally saves a PNG and evaluates measuring calls on window.__lab (look.ts), printing one JSON line per job.
 // Usage: PW_FROM=<path to packages/ui/viewport/package.json> node look-shots.mjs <base url> <out dir> <jobs.json> [gl]
 // jobs.json: [{ "name": "...", "q": "scene=block&shade=new&studio=precision&tab=model&cam=close", "shot": true,
-//               "eval": ["__lab.stats()", "__lab.perf()"] }]
+//               "eval": ["__lab.stats()", "__lab.perf()"], "mouse": [x, y] (optional pointer position, CSS px) }]
 // gl: metal, vulkan, gl or swiftshader (default metal).
 import { mkdirSync, readFileSync, appendFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -37,6 +37,11 @@ for (const job of jobs) {
   try {
     await page.goto(`${base}?${job.q}`)
     await page.waitForFunction(() => window.__lookReady === true, null, { timeout: 120000 })
+    if (job.mouse) {
+      // a pointer over the canvas (CSS px), then two frames so a hover highlight is drawn
+      await page.mouse.move(job.mouse[0], job.mouse[1])
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 300)))))
+    }
     if (job.shot !== false) await page.screenshot({ path: `${out}/${job.name}.png` })
     for (const e of job.eval ?? []) res[e] = await page.evaluate(`(async () => ${e})()`)
     if (job.frames) {

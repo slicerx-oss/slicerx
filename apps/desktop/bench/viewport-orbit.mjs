@@ -15,7 +15,7 @@
 // Usage:
 //   node apps/desktop/bench/viewport-orbit.mjs [--runs 3] [--scene preview|prepare|stress|all]
 //        [--size 1280x800] [--dpr 2] [--headed] [--out result.json]
-//        [--save-dist dir] [--baseline-dist dir --change "what changed" --log]
+//        [--save-dist dir] [--baseline-dist dir --change "what changed" --log] [--query look=dark-precision]
 //   --save-dist copies the built demo so it can serve as the next baseline.
 //   --baseline-dist runs that saved build interleaved with the current tree.
 //   --candidate-dist uses a saved build as the candidate instead of building the tree.
@@ -50,6 +50,8 @@ const sceneArg = opt('scene', 'all')
 const [cssW, cssH] = opt('size', '1280x800').split('x').map(Number)
 const dpr = Number(opt('dpr', 2))
 const orbitMs = Number(opt('ms', 10000))
+// extra query for the demo page, for example look=dark-precision (applies to the baseline build too)
+const extraQuery = opt('query', '')
 const scenes = {
   preview: 'copies=1&mode=preview',
   prepare: 'copies=1&mode=prepare',
@@ -107,7 +109,7 @@ async function measure(browser, port, name, withStill) {
     page.on('console', (m) => {
       if (m.type() === 'error') errors.push(m.text())
     })
-    await page.goto(`http://127.0.0.1:${port}/?bare=1&adaptive=0&reveal=0&pr=${dpr}&${scenes[name]}`)
+    await page.goto(`http://127.0.0.1:${port}/?bare=1&adaptive=0&reveal=0&pr=${dpr}&${scenes[name]}${extraQuery ? `&${extraQuery}` : ''}`)
     await page.waitForFunction(() => window.sxDemo !== undefined)
     await page.evaluate(() => window.sxDemo.ready)
     // Warm up: compile shaders, upload buffers, fill the shadow map.
