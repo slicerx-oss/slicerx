@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // What an agent may do with the open project over the app link, and the page's answer to each. The hub keeps the same
 // list (packages/connect/link/src/roles.rs, APP_LINK_METHODS) and refuses every other name before it reaches here; a
-// test checks the two lists match. Nothing here prints, queues, approves, signs in or changes connection settings.
-// look.set changes only two view preferences: Frame the view and Toolbar size.
+// test checks the two lists match. Project geometry and its modifier print values are editable, as are two view
+// preferences. Nothing here prints, queues, approves, signs in or changes printer connections.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
 import { assistantBrand } from '@slicerx/contracts'
@@ -33,6 +33,12 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'project.move': 'edit',
   'project.rotate': 'edit',
   'project.scale': 'edit',
+  'volumes.list': 'read',
+  'volumes.add': 'edit',
+  'volumes.from_object': 'edit',
+  'volumes.set': 'edit',
+  'volumes.copy': 'edit',
+  'volumes.remove': 'edit',
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
@@ -340,6 +346,12 @@ const HANDLERS: Record<string, Handler> = {
   'project.move': async (args, client) => (await import('./plate-edits')).move(args, client.name),
   'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client.name),
   'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client.name),
+  'volumes.list': async (args) => (await import('./volumes')).readVolumes(args),
+  'volumes.add': async (args, client) => (await import('./volumes')).volumeAction('add', args, client.name, linkLoader),
+  'volumes.from_object': async (args, client) => (await import('./volumes')).volumeAction('fromObject', args, client.name, linkLoader),
+  'volumes.set': async (args, client) => (await import('./volumes')).volumeAction('set', args, client.name, linkLoader),
+  'volumes.copy': async (args, client) => (await import('./volumes')).volumeAction('copy', args, client.name, linkLoader),
+  'volumes.remove': async (args, client) => (await import('./volumes')).volumeAction('remove', args, client.name, linkLoader),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
   'plates.list': () => platesState(),
