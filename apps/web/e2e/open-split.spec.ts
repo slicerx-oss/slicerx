@@ -51,13 +51,14 @@ test('a model split into two bodies keeps its pieces in place: nothing moves aft
     await page.keyboard.press('ControlOrMeta+o')
     await page.waitForTimeout(500)
   }
+  const previous = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.map((e) => e.id))
   await seen[0]!.setFiles(twoCubes())
-  // The world X spans of everything on the plate, sampled through the open until it is done.
-  const samples: { loading: boolean; spans: [number, number][] }[] = []
+  // Sample the opened model from its first appearance; file selection can return before the old example clears.
+  const samples: { loading: boolean; count: number; spans: [number, number][] }[] = []
   for (let i = 0; i < 300; i++) {
-    const s = await page.evaluate(() => {
+    const s = await page.evaluate((previous) => {
       const st = (window as unknown as { __sx: Sx }).__sx.getState()
-      const spans = st.plate.map((e) => {
+      const spans = st.plate.filter((e) => !previous.includes(e.id)).map((e) => {
         let lo = Infinity
         let hi = -Infinity
         for (const p of e.parts) for (let k = 0; k + 2 < p.positions.length; k += 3) {
@@ -67,13 +68,16 @@ test('a model split into two bodies keeps its pieces in place: nothing moves aft
         }
         return [Math.round(lo * 100) / 100, Math.round(hi * 100) / 100] as [number, number]
       })
-      return { loading: st.plateLoading, spans: spans.sort((a, b) => a[0] - b[0]) }
-    })
+      return { loading: st.plateLoading, count: st.plate.length, spans: spans.sort((a, b) => a[0] - b[0]) }
+    }, previous)
     if (s.spans.length) samples.push(s)
-    if (!s.loading && s.spans.length === 2) break
+    if (!s.loading && s.count === 2 && s.spans.length === 2) break
     await page.waitForTimeout(100)
   }
+  expect(samples.length).toBeGreaterThan(0)
   const last = samples.at(-1)!
+  expect(last.loading).toBe(false)
+  expect(last.count).toBe(2)
   expect(last.spans).toHaveLength(2)
   // the pieces are 30 mm apart, as in the file
   expect(last.spans[1]![0] - last.spans[0]![1]).toBeCloseTo(30, 1)
