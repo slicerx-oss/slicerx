@@ -14,15 +14,15 @@ export interface TopologyFace {
 
 /** Compact local-coordinate metadata. The caller supplies placement and live revision separately. */
 export function topologyFaces(parts: readonly HistoryMesh[], exact: boolean): { faces: TopologyFace[]; metadataComplete: boolean } {
-  const counts = new Map<number, number>()
-  for (const part of parts) for (const key of part.faces?.keys ?? []) {
-    if (Number.isSafeInteger(key) && key > 0) counts.set(key, (counts.get(key) ?? 0) + 1)
-  }
   let metadataComplete = true
   const faces: TopologyFace[] = []
   parts.forEach((part, partIndex) => {
     const metadata = part.faces
     if (!metadata || metadata.ids.length !== part.indices.length / 3) { metadataComplete = false; return }
+    const counts = new Map<number, number>()
+    for (const key of metadata.keys ?? []) {
+      if (Number.isSafeInteger(key) && key > 0) counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
     const areas = metadata.table.map(() => 0)
     const valid = metadata.table.map(() => true)
     for (let triangle = 0; triangle < metadata.ids.length; triangle++) {
