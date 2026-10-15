@@ -160,3 +160,26 @@ it.each([
   expect(after).not.toHaveProperty('counterbore')
   expect(after).not.toHaveProperty('head')
 })
+
+it.each([false, true])('refuses invalid or removed scoped holes before committing: removed=%s', async (removed) => {
+  const mesh = { name: 'Hole', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [17], table: [{ kind: 'cylinder', origin: [0, 0, 0], axis: [0, 0, 1], radius: 2 }] } }
+  const outDir = mkdtempSync(join(tmpdir(), 'hole-invalid-')); directories.push(outDir)
+  const engine = vi.fn(async (op: string) => {
+    if (op === 'hole.apply') return { mesh }
+    if (op === 'hole.find') return { entry: [0, 0, 1], axis: [0, 0, 1], diameterMm: NaN, depthMm: 1, through: true }
+    throw new Error(`unexpected operation ${op}`)
+  })
+  const designs = new Designs({ engine, policy: { outDir, allowDirs: undefined, allowUrls: false } })
+  const d = await designs.create('Hole', [mesh]), revision = designs.revision(d.id)
+  const unused = async (): Promise<never> => { throw new Error('must not read a file') }
+  const h = await connect({ extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('must not read an STL') } } }) })
+  if (removed) designs.get = () => { throw Object.assign(new Error('The body was removed.'), { code: 'not_found' }) }
+  const result = await h.call('slicerx_geom_hole', { design: d.id, face: { topology: { bodyId: d.id, revision, part: 0, faceKey: 17 } }, diameter_mm: 6 })
+  expect(result.isError, text(result)).toBe(true)
+  const code = removed ? 'stale_body' : 'invalid_model'
+  expect(result.structuredContent).toMatchObject({ error: { code, details: { operationResult: { status: 'refused', reason: code, priorRevision: revision, revision: removed ? null : revision } } } })
+  expect(engine.mock.calls.map(([op]) => op)).toEqual(removed ? [] : ['hole.find'])
+  expect(d.history.steps).toHaveLength(0)
+  if (removed) expect(() => designs.revision(d.id)).toThrow('The body was removed.')
+  else expect(designs.revision(d.id)).toBe(revision)
+})
