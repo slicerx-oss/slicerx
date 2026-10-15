@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-187 tools.
+189 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -12,6 +12,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_history` |  |  | read | Read the open project's Undo and Redo counts, history revision and current project state: plates, objects and transforms, bounds, design step summaries, object settings, filaments, flush settings and timeline. |
 | `slicerx_app_look` |  |  | read | Read two view preferences of SlicerX (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). |
 | `slicerx_app_look_set` |  |  | read | Set SlicerX's Frame the view (modelFraming: selection or open) or Toolbar size (toolbarSize: large, medium or small), or both, the way the person does in Settings, Look and feel. |
+| `slicerx_app_objects` |  |  | read | Read the objects on the shown plate in SlicerX: ids and names, parts and filament slots, stored object and part overrides, locks and print inclusion, transforms and world bounds, volumes, paint counts, height ranges, brim points and history counts. |
 | `slicerx_app_plate_show` |  |  | read | Show one plate of the project open in SlicerX, as its plate picker does: plate (a number from 1, or an id from slicerx_app_plates), or step: next or previous (stepping stops at the first and last plate). |
 | `slicerx_app_plates` |  |  | read | List the plates of the project open in SlicerX, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), which plate the window shows, and which plate its view draws (drawn; the same as shown once the view has caught up). |
 | `slicerx_app_redo` |  |  | slice | Redo one project edit from the toolbar history. |
@@ -144,6 +145,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_add_model` |  |  | read | Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. |
 | `slicerx_project_add_volume` |  |  | slice | Add a volume to an object, in the object's own coordinates (as modeled, before rotation and scale; slicerx_project_show gives each object's model_bounds): negative cuts it away, support_blocker keeps support out, support_enforcer asks for support there (with supports on), and modifier prints the object inside it with its own settings (walls, infill, speeds, flow). |
 | `slicerx_project_center` |  |  | slice | Center an object on the bed of its plate, as Center on the bed does in the app: the center of its footprint goes to the middle of the printable area (the circle's center on a round bed), and it stays there as if placed with slicerx_project_move. |
+| `slicerx_project_cut` |  |  | slice | Cut one object on SlicerX's shown plate into separate objects, as Prepare's Cut tool does. |
 | `slicerx_project_duplicate` |  |  | slice | Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows. |
 | `slicerx_project_height_ranges` |  |  | slice | Set the project's settings by height (replaces the list; an empty list clears it): each range has z_from_mm and z_to_mm above the bed, the settings, and optionally the objects it is for (every object when left out). |
 | `slicerx_project_lay_on_face` |  |  | slice | Lay an object on one of its faces, as Lay on bed does in the app: it turns so that face points straight down and sits on the bed. |

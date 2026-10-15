@@ -110,6 +110,8 @@ A refused call has `isError: true`, text of the form `Error: <code>: <message>`,
 
 Use `slicerx_project_cut` over MCP or `sx call --app project_cut` from the command line. Choose an object id or an unambiguous name on the shown plate. The plane uses bed coordinates in millimeters: `{ "axis": "z", "at": 15 }` or `{ "point": [0, 0, 15], "normal": [0, 0, 1] }`. `keep` accepts `both` (the default), `above` or `below`.
 
+Read object ids and complete state with `slicerx_app_objects` or `sx call --app app_objects '{}'`. Read again after cutting to verify the returned pieces independently. This reader needs only a read grant and never reads a server-owned project.
+
 ```sh
 sx call --app project_cut '{"object":"Bracket","plane":{"axis":"z","at":15},"connector":{"kind":"dowel","diameter_mm":5,"depth_mm":6,"count":2}}'
 ```

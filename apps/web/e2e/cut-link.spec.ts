@@ -46,16 +46,22 @@ test('a client cuts the shown object with dowels, reads the actual pieces and re
     const [a,b] = InMemoryTransport.createLinkedPair()
     await Promise.all([server.connect(a), client.connect(b)])
     const call = (name: string, args = {}) => client.callTool({ name: `slicerx_${name}`, arguments: args }, undefined, { timeout: 60_000 }) as Promise<Answer>
-    const pending = call('design_list')
+    const pending = call('app_objects')
     const grant = page.getByTestId(readOnly ? 'app-link-read' : 'app-link-allow')
     await expect(grant).toBeEnabled({ timeout: 30_000 })
     await grant.click()
     expect((await pending).isError).not.toBe(true)
-    return { call, read: () => ctx.printers.appLink.call('plate.list') as Promise<{ objects: Row[] }>, close: async () => { await client.close(); await server.close(); ctx.printers?.close?.() } }
+    const read = async () => {
+      const result = await call('app_objects')
+      expect(result.isError, JSON.stringify(result)).not.toBe(true)
+      return result.structuredContent!.output as { objects: Row[] }
+    }
+    return { call, read, close: async () => { await client.close(); await server.close(); ctx.printers?.close?.() } }
   }
   try {
     const reader = await session('cut-reader', true)
     try {
+      expect((await reader.read()).objects.length).toBeGreaterThan(0)
       expect(await reader.call('project_cut', { object: 'unknown', plane: { axis: 'z', at: 15 } })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
     } finally { await reader.close() }
     const editor = await session('cut-editor', false)
@@ -92,14 +98,18 @@ test('a client cuts the shown object with dowels, reads the actual pieces and re
           const env = { ...process.env }
           for (const name of Object.keys(env)) if (name.startsWith('SLICERX_MCP_')) delete env[name]
           Object.assign(env, { SLICERX_MCP_LINK_KEY_REF: ref, SLICERX_MCP_APP_IDENTIFIER: identifier, SLICERX_MCP_LINK_URL: hub.linkUrl, SLICERX_MCP_LINK_HUB_KEY: hub.admin.hubKey, SLICERX_MCP_CLI: cli, SLICERX_NODE_BIN: process.execPath })
-          const pending = promisify(execFile)(native, ['call', '--app', '--engine', 'sx', '--sx-bin', native, '--out-dir', join(dir, 'native'), '--profiles-dir', join(dir, 'profiles'), '--policy', policyFile, 'project_cut', JSON.stringify({ object: design, plane: { axis: 'z', at: z }, keep: 'both', connector: { kind: 'pin', diameter_mm: 5, depth_mm: 6, count: 2 } })], { env, windowsHide: true, timeout: 60_000 })
+          const pending = promisify(execFile)(native, ['call', '--app', '--engine', 'sx', '--sx-bin', native, '--out-dir', join(dir, 'native'), '--profiles-dir', join(dir, 'profiles'), '--policy', policyFile, 'project_cut', JSON.stringify({ object: design, plane: { axis: 'z', at: z }, keep: 'both', connector: { kind: 'pin', diameter_mm: 5, depth_mm: 6, count: 2 } }), 'app_objects', '{}'], { env, windowsHide: true, timeout: 60_000 })
           await expect(page.getByTestId('app-link-allow')).toBeEnabled({ timeout: 30_000 })
           await page.getByTestId('app-link-allow').click()
           const result = await pending
           expect(result.stdout + result.stderr).not.toContain(clientKey)
-          const row = JSON.parse(result.stdout.trim())
+          const rows = result.stdout.trim().split('\n').map((line) => JSON.parse(line))
+          expect(rows).toHaveLength(2)
+          const row = rows[0]
           expect(row).toMatchObject({ tool: 'slicerx_project_cut', ok: true })
           const nativeCut = row.output.output as Output
+          expect(rows[1]).toMatchObject({ tool: 'slicerx_app_objects', ok: true })
+          expect(rows[1].output.output.objects.filter((entry: Row) => nativeCut.ids!.includes(entry.id))).toEqual(nativeCut.objects)
           expect(nativeCut.ids).toHaveLength(2)
           expect(nativeCut.reports![0]!.report.connectors).toHaveLength(2)
           expect((await editor.read()).objects.filter((entry) => nativeCut.ids!.includes(entry.id))).toEqual(nativeCut.objects)
