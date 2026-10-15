@@ -124,7 +124,8 @@ void main(){
   float inset = 1.1, th = 0.8, len = 14.0;
   float bx = (1.0 - smoothstep(th, th + px, abs(c.y - inset))) * step(0.0, c.x) * (1.0 - smoothstep(len, len + px, c.x));
   float by = (1.0 - smoothstep(th, th + px, abs(c.x - inset))) * step(0.0, c.y) * (1.0 - smoothstep(len, len + px, c.y));
-  float br = rnd > 0.5 ? 0.0 : max(bx, by);
+  // a look's quieter glow quiets the corner marks too, never below 30 percent of the shipped marks
+  float br = rnd > 0.5 ? 0.0 : max(bx, by) * mix(0.3, 1.0, clamp(look.x, 0.0, 1.0));
   vec2 r = abs(vP) / hb;
   float edgeR = rnd > 0.5 ? length(vP) / hb.x : max(r.x, r.y);
   // ground: no outline or corner marks, the grid reaches well past the bed (GROUND_REACH times its half size), round,
