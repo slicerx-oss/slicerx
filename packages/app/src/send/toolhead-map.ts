@@ -1,7 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import type { ToolheadNeed, ToolheadPlan } from '@slicerx/contracts'
+import type { LoadedToolhead, ToolheadAssignment, ToolheadNeed, ToolheadPlan } from '@slicerx/contracts'
+import { colorName } from '../filament/rail'
 import type { MapFilament } from './options'
+
+/** What a toolhead holds, in words: "PLA HIGH SPEED Red". Empty for an empty head or one that reports nothing. */
+export function headFilament(head: LoadedToolhead | undefined, dataAvailable: boolean): string {
+  if (!dataAvailable || !head?.loaded) return ''
+  return [head.material ?? 'Unknown material', head.color ? colorName(head.color) : ''].filter(Boolean).join(' ')
+}
+
+/**
+ * The one reason a toolhead row shows, most important first: an empty head, then a different material, then a different
+ * color. `more` holds the others for the tooltip, `warn` is false for a color-only difference.
+ */
+export function toolheadWarning(a: ToolheadAssignment, dataAvailable: boolean): { text: string; more: string[]; warn: boolean } {
+  if (!dataAvailable) return { text: a.reason, more: [], warn: false }
+  // the plan's own wording for each reason, in its own order; the ranking below is the sheet's
+  const pieces = a.reason.split('; ')
+  const say = (pattern: RegExp, fallback: string) => pieces.find((p) => pattern.test(p)) ?? fallback
+  const ranked: Array<[string, boolean]> = []
+  if (a.empty) ranked.push([say(/empty/i, 'The selected toolhead is empty'), true])
+  if (a.materialMismatch) ranked.push([say(/material/i, 'Material differs from the print filament'), true])
+  if (a.colorMismatch) ranked.push([say(/colou?r/i, 'Color differs from the print filament'), false])
+  const first = ranked[0]
+  if (!first) return { text: a.reason, more: [], warn: false }
+  return { text: first[0], more: ranked.slice(1).map(([text]) => text), warn: first[1] }
+}
 
 /** The selected spools must still be the ones the person reviewed. */
 export function sameSelectedSpools(before: ToolheadPlan, after: ToolheadPlan, selected: Record<number, number>): boolean {

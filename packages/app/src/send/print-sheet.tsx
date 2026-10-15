@@ -14,6 +14,7 @@ import { VendorMark } from '../lib/vendor-mark'
 import { startAfterFromLocal } from '../queue/queue'
 import { set, useApp } from '../state/store'
 import { startLabel, type BedState } from './bed-state'
+import { headFilament, toolheadWarning } from './toolhead-map'
 import { CheckLines, checkLines } from './check-lines'
 import type { SheetNote } from '../plate/lint'
 import type { PreflightSpot } from '../plate/preflight'
@@ -104,6 +105,7 @@ export function PrintSheet() {
   const [busy, setBusy] = useState(false)
   const skipMatching = useApp((s) => ask ? s.toolheadSkipMatching[ask.printer.id] === true : false)
   const [expandedToolheads, setExpandedToolheads] = useState(false)
+  const [headMenu, setHeadMenu] = useState<number | null>(null)
   const [toolheadReview, setToolheadReview] = useState<{ plan?: ToolheadPlan; pending: boolean; error?: string }>({ pending: false })
   const reviewSequence = useRef(0)
   const opened = useRef<PrintSheetAsk['resolve'] | null>(null)
@@ -119,6 +121,7 @@ export function PrintSheet() {
       setEdits(last?.slotMap ?? {})
       setBusy(false)
       setExpandedToolheads(false)
+      setHeadMenu(null)
       setToolheadReview({ pending: false })
       reviewSequence.current += 1
     }
@@ -244,7 +247,7 @@ export function PrintSheet() {
   if (!ask) return null
   return (
     <Dialog open onClose={() => finish(null)} className={ask.refusal ? 'print-sheet ps-anchored' : 'print-sheet'} title={<SheetTitle ask={ask} />} footer={footer}>
-        <Summary ask={ask} fileName={fileName} map={toolheads || mapping ? map : null} />
+        <Summary ask={ask} fileName={fileName} map={toolheads || mapping ? map : null} {...(toolheads && ask.showToolheads === false && !expandedToolheads ? { changeToolheads: () => setExpandedToolheads(true) } : {})} />
         {checking ? (
           <p className="ps-checking" aria-live="polite">
             <i className="ps-spin" aria-hidden="true" /> Checking the file against {ask.printer.name}
@@ -272,24 +275,68 @@ export function PrintSheet() {
         ) : null}
         {ask.refusal?.storageFull ? <StorageFullHelp printer={ask.printer} /> : null}
         <div className="ps-body">
-          {toolheads && ask.showToolheads === false && !expandedToolheads ? <Button variant="ghost" onClick={() => setExpandedToolheads(true)}>Change toolheads</Button> : null}
           {toolheads && (ask.showToolheads !== false || expandedToolheads) ? (
             <div className="ps-map" role="group" aria-label="Choose toolheads">
               <p className="ps-map-head">Choose a toolhead for each filament</p>
               {toolheads.headDataAvailable === false ? <p className="sx-muted">Spool info unavailable</p> : null}
-              {toolheads.assignments.map((a) => (
-                <div key={a.tool} className="ps-map-row">
-                  <label htmlFor={`ps-toolhead-${a.tool}`}>Filament {a.tool + 1}</label>
-                  <select id={`ps-toolhead-${a.tool}`} className="mini" value={map[a.tool + 1] ?? ''} onChange={(e) => void chooseToolhead(a.tool, e.target.value)}>
-                    <option value="">Choose a toolhead</option>
-                    {a.alternatives.map((tool) => {
-                      const head = toolheads.toolheads.find((h) => h.tool === tool)
-                      return <option key={tool} value={String(tool + 1)}>T{tool + 1}: {toolheads.headDataAvailable === false ? 'Spool info unavailable' : head?.loaded ? `${head.material ?? 'Unknown material'} ${head.color ?? ''}` : 'Empty'}</option>
-                    })}
-                  </select>
-                  <span className={a.materialMismatch || a.empty ? 'ps-row-warn' : 'sx-muted'}>{a.materialMismatch && toolheads.headDataAvailable !== false ? <Icon name="warning" size={15} /> : null}{a.reason}</span>
-                </div>
-              ))}
+              {toolheads.assignments.map((a) => {
+                const id = `ps-toolhead-${a.tool}`
+                const dataAvailable = toolheads.headDataAvailable !== false
+                const chosen = map[a.tool + 1] ?? ''
+                const picked = chosen === '' ? undefined : toolheads.toolheads.find((h) => h.tool === Number(chosen) - 1)
+                const pickedName = picked ? headFilament(picked, dataAvailable) : ''
+                const why = toolheadWarning(a, dataAvailable)
+                return (
+                  <div key={a.tool} className="ps-map-row ps-head-row">
+                    <label htmlFor={id}>Filament {a.tool + 1}</label>
+                    <MenuAnchor className="ps-head-pick" onKeyDown={(e) => { if (e.key === 'Escape' && headMenu === a.tool) { e.preventDefault(); setHeadMenu(null); document.getElementById(id)?.focus() } }}>
+                      <button
+                        type="button"
+                        id={id}
+                        className="ps-head-btn"
+                        aria-haspopup="menu"
+                        aria-expanded={headMenu === a.tool}
+                        {...(pickedName ? { title: `T${Number(chosen)} ${pickedName}` } : {})}
+                        onClick={() => setHeadMenu((open) => (open === a.tool ? null : a.tool))}
+                      >
+                        {picked ? <HeadSwatch head={picked} /> : null}
+                        <span className="ps-head-text">{chosen === '' ? 'Choose' : `T${Number(chosen)}${pickedName ? ` ${pickedName}` : picked && dataAvailable ? ' Empty' : ''}`}</span>
+                        <Icon name="chevron-down" size={14} />
+                      </button>
+                      <Menu open={headMenu === a.tool} onClose={() => setHeadMenu(null)} label={`Toolhead for filament ${a.tool + 1}`} className="ps-head-menu">
+                        {a.alternatives.map((tool) => {
+                          const head = toolheads.toolheads.find((h) => h.tool === tool)
+                          const name = headFilament(head, dataAvailable)
+                          return (
+                            <MenuItem
+                              key={tool}
+                              checked={chosen === String(tool + 1)}
+                              iconNode={head ? <HeadSwatch head={head} /> : <i className="ps-swatch" aria-hidden="true" />}
+                              aside={chosen === String(tool + 1) ? <Icon name="check" size={14} /> : undefined}
+                              onClick={() => {
+                                setHeadMenu(null)
+                                void chooseToolhead(a.tool, String(tool + 1))
+                                document.getElementById(id)?.focus()
+                              }}
+                            >
+                              {`T${tool + 1}${name ? ` ${name}` : dataAvailable ? ' Empty' : ''}`}
+                            </MenuItem>
+                          )
+                        })}
+                      </Menu>
+                    </MenuAnchor>
+                    <p className={why.warn ? 'ps-row-warn ps-head-why' : 'sx-muted ps-head-why'}>
+                      {why.warn ? <Icon name="warning" size={15} /> : null}
+                      <span>{why.text}</span>
+                      {why.more.length > 0 ? (
+                        <button type="button" className="ps-tip-btn" aria-label={`More about filament ${a.tool + 1}`} data-tip-click="" {...tipAttrs({ title: why.text, body: [why.text, ...why.more].join('. ') + '.' })}>
+                          <Icon name="info" size={14} />
+                        </button>
+                      ) : null}
+                    </p>
+                  </div>
+                )
+              })}
               {missingToolhead ? <p className="ps-row-warn" role="alert">Choose a toolhead for every filament.</p> : null}
               {toolheadReview.pending ? <p aria-live="polite">Checking toolhead choices</p> : null}
               {toolheadReview.error ? <p className="ps-row-warn" role="alert">{toolheadReview.error}</p> : null}
@@ -471,7 +518,7 @@ function SheetTitle({ ask }: { ask: PrintSheetAsk }) {
 }
 
 /** What will print, decided before the sheet opened: the picture, the file, time and weight, each filament and its slot. */
-function Summary({ ask, fileName, map }: { ask: PrintSheetAsk; fileName: string; map: Record<number, string> | null }) {
+function Summary({ ask, fileName, map, changeToolheads }: { ask: PrintSheetAsk; fileName: string; changeToolheads?: () => void; map: Record<number, string> | null }) {
   return (
     <section className="ps-summary" aria-label="What will print">
       <div className="ps-sum-top">
@@ -497,8 +544,18 @@ function Summary({ ask, fileName, map }: { ask: PrintSheetAsk; fileName: string;
               {map ? <span className="ps-fil-slot">{ask.toolheads ? (map[f.index] ? `Toolhead T${map[f.index]}` : 'Not selected') : slotText(map[f.index], externalSlots(ask.printer.plugin, ask.slots))}</span> : null}
             </li>
           ))}
+          {changeToolheads ? (
+            <li className="ps-fils-act">
+              <Button size="sm" onClick={changeToolheads}>Change toolheads</Button>
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </section>
   )
+}
+
+/** A toolhead's spool color as a dot; an empty head is a dashed ring. */
+function HeadSwatch({ head }: { head: { loaded: boolean; color: string | null } }) {
+  return head.loaded && head.color ? <i className="ps-swatch" style={{ background: head.color }} aria-hidden="true" /> : <i className="ps-swatch ps-swatch-empty" aria-hidden="true" />
 }

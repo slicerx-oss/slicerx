@@ -40,11 +40,32 @@
 .ps-fil-slot { font: var(--fw-medium) var(--fs-sm) var(--f-mono); color: var(--muted); }
 .ps-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); flex: none; }
 .ps-map { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); }
-.ps-map-head { display: flex; align-items: center; gap: 7px; margin: 0; font-weight: var(--fw-semibold); }
+.ps-map-head { display: flex; align-items: center; gap: 7px; margin: 0; font-weight: var(--fw-semibold); font-size: var(--fs-md); color: var(--fg); }
 .ps-map-head .sx-ic { color: var(--orange); }
 .ps-map-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: var(--fs-md); }
 .ps-map-row label { color: var(--fg); font-weight: var(--fw-medium); }
 .ps-row-warn { margin: 0; font-size: var(--fs-sm); color: var(--orange); }
+.ps-swatch-empty { background: transparent; border-style: dashed; }
+.ps-fils-act { display: flex; justify-content: flex-end; padding-top: 4px; }
+/* Toolhead rows: label, a 128 px picker, then why it is or is not a match, at most two lines. On a phone the row stacks
+   (label, picker, reason) and the picker takes the row, since its text needs the width. */
+.ps-head-row { grid-template-columns: 76px var(--w-pick) minmax(0, 1fr); align-items: start; --w-pick: 128px; }
+.ps-head-row label { line-height: var(--h-md); }
+.ps-head-pick { display: block; width: var(--w-pick); }
+.ps-head-btn { display: flex; align-items: center; gap: 7px; width: 100%; height: var(--h-md); padding: 0 8px 0 10px; border-radius: 8px; border: 1px solid var(--field-line); background: var(--field-bg); color: var(--fg); font: var(--fw-regular) var(--fs-md) var(--f-body); text-align: left; transition: border-color var(--t-fast) var(--ease); }
+.ps-head-btn:hover, .ps-head-btn[aria-expanded="true"] { border-color: var(--line); }
+.ps-head-btn:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-field); }
+.ps-head-btn .sx-ic { flex: none; margin-left: auto; color: var(--dim); }
+.ps-head-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-head-menu { min-width: 240px; }
+.ps-head-menu .sx-menu-item { white-space: nowrap; }
+.ps-head-menu .sx-menu-item .ps-swatch { margin: 0 1px; }
+.ps-head-menu .sx-menu-item-aside { padding-left: 8px; }
+.ps-head-menu .sx-menu-item[aria-checked="true"] .sx-menu-item-aside .sx-ic { color: var(--accent); }
+.ps-head-why { display: flex; align-items: center; gap: 6px; min-height: var(--h-md); margin: 0; }
+.ps-head-why .sx-ic { flex: none; }
+.ps-head-why > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; font-size: var(--fs-sm); line-height: 1.35; }
+.ps-head-why .ps-tip-btn { flex: none; width: 18px; height: 18px; }
 /* The printer's steps before the print: shown as toggles, each with its tooltip. */
 .ps-opts { display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
 .ps-opts-head { margin: 0 0 4px; font: var(--fw-semibold) var(--fs-xs) var(--f-body); letter-spacing: 0.02em; color: var(--dim); }
@@ -81,6 +102,10 @@
 .ps-go[data-mode="upload"] .ps-go-more, .ps-go[data-mode="queue"] .ps-go-more { background: var(--ink-4); color: var(--fg); border-color: var(--line); box-shadow: inset 1px 0 0 var(--line); }
 
 @media (max-width: 560px) {
+  .ps-head-row { grid-template-columns: minmax(0, 1fr); gap: 6px; --w-pick: 100%; }
+  .ps-head-row label { line-height: 1.3; }
+  .ps-head-btn { height: var(--h-lg); }
+  .ps-head-why { min-height: 0; }
   .print-sheet .sx-dialog-foot { flex-wrap: wrap; }
   .ps-go { width: 100%; }
   .ps-go .ps-go-main { flex: 1; }
