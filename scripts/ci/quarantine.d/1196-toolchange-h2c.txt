@@ -1,0 +1,1 @@
+playback through a tool change on the H2C runs clean and keeps its frame rate | doo-sx | 2026-10-15 | https://github.com/slicerx-oss/slicerx/issues/1196 | fails both tries in the GPU lane of merge queue runs, so every group fails until the fix for #1196 lands
