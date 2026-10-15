@@ -32,3 +32,50 @@ export function gpuDone(gl: FenceGl | WebGLRenderingContext, fallback: () => voi
     setTimeout(look, 0)
   })
 }
+
+/** A look at the fence later than this after the one before, ms, was held up by the page, so the time is not the GPU's. */
+export const FENCE_LATE_MS = 12
+
+/**
+ * Times frames on the GPU without stalling the page: `time` sets a fence after a frame's commands and calls back with
+ * the time from `t0` until the GPU finished them. One frame is timed at once; frames drawn meanwhile go untimed. When
+ * the page was busy between two looks (opening a project, building meshes), the fence may have signaled long before it
+ * was seen, so that frame is dropped instead of reported slow.
+ */
+export class FrameFence {
+  private pending = false
+  private disposed = false
+
+  constructor(private readonly gl: FenceGl) {}
+
+  /** False when a frame is still being timed or the context has no fences. */
+  time(t0: number, done: (ms: number) => void): boolean {
+    const g = this.gl
+    if (this.pending || this.disposed || typeof g.fenceSync !== 'function') return false
+    const sync = g.fenceSync(g.SYNC_GPU_COMMANDS_COMPLETE, 0)
+    if (!sync) return false
+    g.flush()
+    this.pending = true
+    let last = performance.now()
+    let held = last - t0 > FENCE_LATE_MS * 4
+    const look = (): void => {
+      if (this.disposed) {
+        g.deleteSync(sync)
+        return
+      }
+      const now = performance.now()
+      if (now - last > FENCE_LATE_MS) held = true
+      last = now
+      if (g.clientWaitSync(sync, 0, 0) === g.TIMEOUT_EXPIRED) return void setTimeout(look, 1)
+      g.deleteSync(sync)
+      this.pending = false
+      if (!held) done(now - t0)
+    }
+    setTimeout(look, 0)
+    return true
+  }
+
+  dispose(): void {
+    this.disposed = true
+  }
+}

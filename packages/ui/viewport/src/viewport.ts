@@ -9,6 +9,8 @@ import { PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
 import { crossfadeFrom } from './crossfade'
 import { LoadingWisp, lightStudio } from './wisp'
 import { gpuProfile } from './gpu'
+import { DegradeGuard } from './frame-budget'
+import { FrameFence } from './gpudone'
 import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
 import type { HeadModel } from './heads'
@@ -193,6 +195,8 @@ const LONG_PRESS_MS = 500
 const LONG_PRESS_SLOP_PX = 8
 /** Side length of moving frames, as a share of the still frame, that a high density screen starts with (0.7 is half the pixels). */
 const MOTION_START_HIDPI = 0.7
+/** Moving frames shrink no further than this side length. */
+const MOTION_FLOOR = 0.3
 
 /** A ring drag in progress (rotate tool and cut tilt): the turn so far follows the cursor around `center` on the ring's plane, or along its screen tangent when the ring was grabbed edge on. */
 interface RingDrag {
@@ -299,13 +303,15 @@ class ViewportImpl implements Viewport {
   private frames = 0
   /** Frames left in the fade-in of full-quality effects after the camera stops. */
   private settle = 0
-  private slow = 0
   private scrubbed = false
   private motionSeeded = false
   private slowFrames = 0
   private fastFrames = 0
   private raiseAfter = 45
   private raisedAt = 0
+  /** Turns AO off and the pixel ratio down when even small moving frames are slow, and back on when they are fast again. */
+  private readonly guard = new DegradeGuard()
+  private fence!: FrameFence
   private onscreen = true
   private gpuTiming = false
   private probe: FrameProbe | null = null
@@ -428,6 +434,7 @@ class ViewportImpl implements Viewport {
       // Listeners attach after construction, so tell them on the next turn.
       setTimeout(() => this.emit('degrade', note), 0)
     }
+    this.fence = new FrameFence(renderer.getContext() as WebGL2RenderingContext)
     this.quality = opts.quality ?? (this.weak ? 'low' : 'high')
     this.adaptive = opts.adaptive ?? true
     this.maxPr = opts.maxPixelRatio ?? (this.weak ? 1.25 : 2)
@@ -673,7 +680,10 @@ class ViewportImpl implements Viewport {
       this.lastRenderT = 0
       return
     }
-    let moving = this.rig.step(now) || this.cameraMoved
+    // A camera on its way to a view (a preset, a fit, the reframe after a plate swap) is a short transition, drawn at
+    // full quality like a still frame; only motion a person drives draws cheaper frames.
+    let transition = this.rig.step(now)
+    let moving = transition || this.cameraMoved
     this.cameraMoved = false
     // Real motion from the update comes back through the change event, which ignores changes that move nothing.
     this.controls.update()
@@ -681,7 +691,10 @@ class ViewportImpl implements Viewport {
       moving = true
       this.cameraMoved = false
     }
-    if (this.arrangeAnim && this.arrangeAnim(now)) moving = true
+    if (this.arrangeAnim && this.arrangeAnim(now)) {
+      moving = true
+      transition = true
+    }
     // Scrubbing layers or moves redraws like orbiting: cheap frames while it changes, full quality once it stops.
     const camMoving = moving
     if (this.scrubbed) {
@@ -697,21 +710,22 @@ class ViewportImpl implements Viewport {
     } else if (this.settle > 0) this.dirty = true
     if (this.dirty) {
       this.dirty = false
-      // Moving frames skip AO and MSAA; once the camera stops, full quality returns and AO fades in.
-      let aoMix: number
-      if (moving) {
+      // Moving frames skip AO and MSAA; once the camera stops, full quality returns and AO fades in. Transitions are drawn
+      // at full quality throughout.
+      const low = moving && !transition
+      if (low) {
         // Fade AO out over a few frames instead of cutting it, so starting to orbit does not pop the plate and shadows.
         this.aoLevel = Math.max(0, this.aoLevel - 0.34)
-        aoMix = this.aoLevel
-      } else {
-        aoMix = this.settle > 0 ? (SETTLE_FRAMES - this.settle + 1) / SETTLE_FRAMES : 1
-        this.aoLevel = aoMix
-      }
+      } else this.aoLevel = Math.min(1, this.aoLevel + 1 / SETTLE_FRAMES)
+      const aoMix = this.aoLevel
       if (!moving && this.settle > 0) this.settle--
-      this.renderFrame(aoMix, moving)
-      // Reveal frames are an animation over a still view, not a measure of how the GPU keeps up with orbiting.
-      if (this.lastRenderT && !revealing) this.trackFrame(now - this.lastRenderT)
-      if (this.lastRenderT && moving) this.tuneMotionScale(now - this.lastRenderT)
+      const programs = this.compileClock.programs
+      const t0 = performance.now()
+      this.renderFrame(aoMix, low)
+      // Only frames a person moves are timed: reveal frames and transitions are animations over a view, and a frame that
+      // compiled shaders says nothing about the next one.
+      if (low && !revealing && !this.gpuTiming && programs === this.compileClock.programs) this.timeFrame(t0)
+      if (this.lastRenderT && !revealing) this.frameMs.push(now - this.lastRenderT)
       this.lastRenderT = now
       if (camMoving) this.emit('camera', { preset: this.rig.preset })
     } else {
@@ -766,7 +780,28 @@ class ViewportImpl implements Viewport {
   private readonly setRevealPlate = (trace: number, gridMs: number, tint: number): void => this.stage.setReveal(trace, gridMs, tint)
 
   /**
-   * Resolution of moving frames follows the frame time: a GPU that cannot hold 60 fps at the full pixel count
+   * Times a moving frame on the GPU, from `t0` when its drawing started until the GPU finished it (frame-budget.ts), and
+   * tunes quality with it. The time between animation frames is not used: it also counts the page's own work (opening a
+   * project, building meshes), which says nothing about the GPU.
+   */
+  private timeFrame(t0: number): void {
+    const scale = this.pipeline.motionScale
+    const pr = this.pr
+    this.fence.time(t0, (ms) => {
+      if (this.disposed) return
+      this.tuneMotionScale(ms)
+      if (!this.adaptive) return
+      const full = Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, this.maxPr)
+      // pixels the full pixel ratio draws over the pixels this frame drew
+      const areaRatio = (full / pr) ** 2 / (scale * scale)
+      const step = this.guard.sample(ms, this.pipeline.motionScale <= MOTION_FLOOR, areaRatio)
+      if (step === 'degrade') this.degrade()
+      else if (step === 'recover') this.recover()
+    })
+  }
+
+  /**
+   * Resolution of moving frames follows their GPU time: a GPU that cannot hold 60 fps at the full pixel count
    * draws orbit frames smaller (the last pass upsamples them) and sharpens again once frames are cheap.
    */
   private tuneMotionScale(dt: number): void {
@@ -775,7 +810,7 @@ class ViewportImpl implements Viewport {
       this.fastFrames = 0
       if (++this.slowFrames >= (dt > 45 ? 2 : 4)) {
         this.slowFrames = 0
-        if (p.motionScale > 0.3) {
+        if (p.motionScale > MOTION_FLOOR) {
           // Area scales the cost, so the side length scales with the square root of the time to win back.
           p.motionScale = Math.min(p.motionScale - 0.05, p.motionScale * Math.sqrt(17 / dt))
           if (this.raisedAt && this.frames - this.raisedAt < 240) this.raiseAfter = Math.min(this.raiseAfter * 2, 960)
@@ -791,22 +826,25 @@ class ViewportImpl implements Viewport {
     } else this.slowFrames = Math.max(0, this.slowFrames - 1)
   }
 
-  private trackFrame(dt: number): void {
-    this.frameMs.push(dt)
-    if (!this.adaptive || !this.aoOn) return
-    if (dt > 55) {
-      if (++this.slow > 14) this.degrade()
-    } else this.slow = Math.max(0, this.slow - 1)
-  }
-
   private degrade(): void {
+    if (!this.aoOn && this.pr <= 1) return
     this.aoOn = false
-    this.slow = 0
     if (this.pr > 1) {
       this.pr = 1
       this.resize()
     }
     this.emit('degrade', { message: 'Ambient occlusion paused to keep the view smooth on this GPU.' })
+  }
+
+  /** Back to full quality after degrade(), once frames show the GPU has room again. */
+  private recover(): void {
+    this.aoOn = this.quality !== 'low'
+    const full = Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, this.maxPr)
+    if (this.pr !== full) {
+      this.pr = full
+      this.resize()
+    }
+    this.invalidate()
   }
 
   /** The origin planes' names as page text over the canvas, with a halo of the background, so nothing draws over them. */
@@ -964,7 +1002,8 @@ class ViewportImpl implements Viewport {
     const w = Math.max(1, this.canvas.clientWidth)
     const h = Math.max(1, this.canvas.clientHeight)
     const dpr = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1
-    if (this.frames === 0 || this.pr > 1 || !this.adaptive) this.pr = Math.min(dpr, this.maxPr)
+    // a view stepped down by degrade() stays at 1 until recover(); any other follows the screen
+    if (!this.guard.degraded) this.pr = Math.min(dpr, this.maxPr)
     if (w === this.width && h === this.height && this.pr === this.bufferRatio) return
     this.width = w
     this.height = h
@@ -4154,6 +4193,7 @@ class ViewportImpl implements Viewport {
     this.gizmoLabel?.remove()
     for (const el of this.planeNames) el.remove()
     this.probe?.dispose()
+    this.fence.dispose()
     this.probe = null
     this.reveal?.finish()
     this.reveal = null

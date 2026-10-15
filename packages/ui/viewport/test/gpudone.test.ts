@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The first preview frame is timed with a fence, polled across tasks, never a readback that holds the page.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FENCE_POLL_MS, gpuDone, type FenceGl } from '../src/gpudone'
+import { FENCE_POLL_MS, FrameFence, gpuDone, type FenceGl } from '../src/gpudone'
 
 function fakeGl(doneAfterLooks: number): FenceGl & { looks: number; deleted: number; flushed: number } {
   const g = {
@@ -46,5 +46,50 @@ describe('gpuDone', () => {
     const t = await gpuDone({} as WebGLRenderingContext, fallback)
     expect(fallback).toHaveBeenCalledOnce()
     expect(typeof t).toBe('number')
+  })
+})
+
+describe('FrameFence', () => {
+  let clock = 0
+  beforeEach(() => {
+    vi.useFakeTimers()
+    clock = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => clock)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('reports the time from the frame start until the GPU finished, one frame at a time', async () => {
+    const gl = fakeGl(2)
+    const f = new FrameFence(gl)
+    const got: number[] = []
+    const t0 = clock
+    clock += 6
+    expect(f.time(t0, (ms) => got.push(ms))).toBe(true)
+    // a second frame while the first is timed goes untimed
+    expect(f.time(t0, (ms) => got.push(ms))).toBe(false)
+    // the GPU is through by the third look, 4 ms on: 10 ms from the frame's start
+    clock += 4
+    await vi.advanceTimersByTimeAsync(4)
+    expect(got).toEqual([10])
+    expect(gl.deleted).toBe(1)
+    expect(f.time(clock, (ms) => got.push(ms))).toBe(true)
+  })
+
+  it('drops a frame whose fence the page could not look at for a while: a stall is not GPU time', async () => {
+    const gl = fakeGl(2)
+    const f = new FrameFence(gl)
+    const got: number[] = []
+    f.time(clock, (ms) => got.push(ms))
+    await vi.advanceTimersByTimeAsync(0)
+    // the page is busy building a plate: the next look comes 300 ms later
+    clock += 300
+    for (let i = 0; i < 3; i++) await vi.advanceTimersByTimeAsync(4)
+    expect(gl.deleted).toBe(1)
+    expect(got).toEqual([])
+    // and the fence is free for the next frame
+    expect(f.time(clock, (ms) => got.push(ms))).toBe(true)
   })
 })
