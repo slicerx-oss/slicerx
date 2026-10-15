@@ -11,7 +11,7 @@
 import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type HoleSpec, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { DesignHost } from '@slicerx/cad-history'
+import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, faceAt, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
@@ -319,10 +319,20 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     return deps.designs.get(id)
   }
   const designs = (): DesignHost => deps.designs!
-  const manifestOf = (d: Design) => {
+  const manifestOf = (d: Design, revision?: string) => {
     const host = designs()
     if (!host.revision) throw new ToolInputError('This host cannot bind topology to a body revision.', 'not_supported')
-    return topologyManifest(d.id, host.revision(d.id), d.parts, d.transform, 'exact' in d.history && d.history.exact === true)
+    return topologyManifest(d.id, revision ?? host.revision(d.id), d.parts, d.transform, 'exact' in d.history && d.history.exact === true, !!host.addWithReceipt)
+  }
+  const compactManifest = (manifest: ReturnType<typeof manifestOf>) => ({ ...manifest, faceCount: manifest.faces.length, truncated: manifest.faces.length > 40, faces: manifest.faces.slice(0, 40) })
+  const checkedManifest = (id: string, revision: string) => {
+    let current: ReturnType<typeof manifestOf>
+    try { current = manifestOf(designOf(id)) } catch (e) {
+      if (e instanceof Error && 'code' in e && e.code === 'not_found') throw new ToolInputError('The body was removed. Inspect the current project again.', 'stale_body', { bodyId: id, currentRevision: null })
+      throw e
+    }
+    if (current.revision !== revision) throw new ToolInputError('The body changed during the operation. Inspect it again.', 'stale_body', { bodyId: id, currentRevision: current.revision })
+    return current
   }
   const target = async (model: string | undefined, op: string): Promise<Record<string, unknown>> => {
     if (op === 'new') return {}
@@ -347,7 +357,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const manifest = manifestOf(d)
       let selected: ReturnType<typeof topologyFace>
       try { selected = topologyFace(manifest, face.topology) } catch (e) {
-        if (e instanceof TopologyReferenceError) throw new ToolInputError(e.message, e.code, { topology: { ...manifest, faceCount: manifest.faces.length, truncated: manifest.faces.length > 40, faces: manifest.faces.slice(0, 40) } })
+        if (e instanceof TopologyReferenceError) throw new ToolInputError(e.message, e.code, { topology: compactManifest(manifest) })
         throw e
       }
       const part = d.parts[selected.part]!
@@ -434,7 +444,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         if (i.face.topology) {
           const current = manifestOf(designOf(d.id))
           if (current.revision !== i.face.topology.revision) throw new ToolInputError('The body changed during inspection. Inspect it again.', 'stale_body', { bodyId: d.id, currentRevision: current.revision })
-          out = { ...out, topology: current, measurementSource: 'tessellation' }
+          out = { ...out, topology: compactManifest(current), measurementSource: 'tessellation' }
         }
       } else {
         const stlPath = await path(i.model!)
@@ -685,12 +695,18 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         let f: ReturnType<typeof pickIn>
         let before: ReturnType<typeof manifestOf> | undefined
         let dimensionsBefore: ReturnType<typeof measurements> | undefined
+        let commit: DesignCommit | undefined
         try {
           f = pickIn(d, i.face)
           before = i.face.topology ? manifestOf(d) : undefined
           if (before && topologyFace(before, i.face.topology!).surfaceType !== 'plane') throw new ToolInputError('Push/pull requires a planar face. Inspect the surface and choose a supported edit.', 'not_supported')
           dimensionsBefore = before ? measurements(d) : undefined
-          await designs().add(d, f.part, { op: 'face.push', at: f.at, normal: f.normal, distanceMm: i.distance_mm, ...(f.key ? { faceKey: f.key } : {}) }, undefined, i.face.topology ? { expectedRevision: i.face.topology.revision } : undefined)
+          const params: StepParams = { op: 'face.push', at: f.at, normal: f.normal, distanceMm: i.distance_mm, ...(f.key ? { faceKey: f.key } : {}) }
+          const host = designs()
+          if (i.face.topology) {
+            if (!host.addWithReceipt) throw new ToolInputError('This host cannot return an atomic edit receipt.', 'not_supported')
+            commit = await host.addWithReceipt(d, f.part, params, undefined, { expectedRevision: i.face.topology.revision })
+          } else await host.add(d, f.part, params)
         } catch (e) {
           if (!i.face.topology) throw e
           const code = e instanceof StaleBody ? 'stale_body' : e instanceof ToolInputError ? e.code : 'internal_error'
@@ -698,21 +714,21 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           try { current = manifestOf(designOf(d.id)) } catch { /* the body may have been removed */ }
           throw new ToolInputError(e instanceof Error ? e.message : 'The edit was refused.', code, {
             ...(e instanceof ToolInputError ? e.details : {}),
-            topology: current ? { ...current, faceCount: current.faces.length, truncated: current.faces.length > 40, faces: current.faces.slice(0, 40) } : null,
+            topology: current ? compactManifest(current) : null,
             operationResult: { operation: 'geom.push_pull', status: 'refused', reason: code, bodyId: d.id,
               priorRevision: i.face.topology.revision, revision: current?.revision ?? null, target: i.face.topology },
           })
         }
-        const result = stepOut(d, verb)
+        const result = stepOut(commit?.design ?? d, verb)
         if (!before) return result
-        const after = manifestOf(designOf(d.id))
+        const after = manifestOf(commit!.design, commit!.revision)
         const targetsAfter = after.faces.filter(face => face.part === f.part && face.faceKey === f.key)
-        return { ...result, output: { ...result.output, topology: after, operationResult: {
+        return { ...result, output: { ...result.output, topology: compactManifest(after), operationResult: {
           operation: 'geom.push_pull', status: 'applied', bodyId: d.id, priorRevision: before.revision, revision: after.revision,
           target: i.face.topology, distanceMm: i.distance_mm,
           targetBefore: topologyFace(before, i.face.topology!),
           targetAfter: targetsAfter.length === 1 && targetsAfter[0]!.ambiguity === 'none' ? targetsAfter[0] : null,
-          measurements: { source: 'tessellation', before: dimensionsBefore, after: measurements(designOf(d.id)) },
+          measurements: { source: 'tessellation', before: dimensionsBefore, after: measurements(commit!.design) },
         } } }
       }
       const stlPath = await path(i.model!)
@@ -871,7 +887,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const measure = defineTool({
     name: 'geom.measure',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
@@ -881,16 +897,34 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       oneOf(i)
       let feature: (f: z.infer<typeof faceRef>) => Promise<unknown>
       let measureCall: (req: Record<string, unknown>) => Promise<Record<string, unknown>>
+      let readGuard: (() => ReturnType<typeof manifestOf>) | undefined
       if (i.design) {
         const d = designOf(i.design)
+        const reference = i.a.topology ?? i.b?.topology
+        if (reference) {
+          if (i.step !== undefined) throw new ToolInputError('A live topology reference cannot select a historical step.')
+          if (i.a.topology) pickIn(d, i.a)
+          if (i.b?.topology) pickIn(d, i.b)
+          readGuard = () => checkedManifest(d.id, reference.revision)
+          readGuard()
+        }
         const parts = await partsAt(designs(), d, i.step)
+        readGuard?.()
         feature = async (f) => {
+          if (f.topology) {
+            readGuard?.()
+            const hit = pickIn(d, f)
+            const result = (await engine('measure.feature', { mesh: item(d, hit.part), pick: { triangle: hit.triangle, at: hit.at }, snapMm: i.snap_mm }))['feature']
+            readGuard?.()
+            return result
+          }
           if (!f.at) throw new ToolInputError('a, b: give "at" (a point on the face) and its "normal"')
           const hit = faceAt(d, f.at as V3, f.normal as V3 | undefined, parts)
           return (await engine('measure.feature', { mesh: item(d, hit.part, parts), pick: { triangle: hit.triangle, at: f.at }, snapMm: i.snap_mm }))['feature']
         }
         measureCall = (req) => engine('measure', req)
       } else {
+        if (i.a.topology || i.b?.topology) throw new ToolInputError('Topology references require a live design.', 'not_supported')
         const stlPath = await path(i.model!)
         feature = async (f) => (await call('measure.feature', { mesh: { stlPath }, pick: await pick(stlPath, f), snapMm: i.snap_mm }))['feature']
         measureCall = (req) => call('measure', req)
@@ -898,7 +932,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const a = await feature(i.a)
       const b = i.b ? await feature(i.b) : undefined
       const m = await measureCall({ a, ...(b !== undefined ? { b } : {}) })
-      return { summary: `Measured: ${words(m)}`, output: { measurement: m, a: lean(a), ...(b !== undefined ? { b: lean(b) } : {}) } }
+      const topology = readGuard?.()
+      return { summary: `Measured: ${words(m)}`, output: { measurement: m, a: lean(a), ...(b !== undefined ? { b: lean(b) } : {}), ...(topology ? { topology: compactManifest(topology), measurementSource: 'tessellation' } : {}) } }
     },
   })
 
@@ -950,7 +985,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
 
   const holeTool = defineTool({
     name: 'geom.hole',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
@@ -984,7 +1019,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       const onAxis = (h: FoundHole) => ({ at: h.entry, axis: h.axis })
       if (i.design) {
         const d = designOf(i.design)
-        const find = (part: number, req: Record<string, unknown>) => findHole((r) => engine('hole.find', r), { mesh: item(d, part), ...req })
+        const reference = i.face?.topology
+        if (reference && i.part !== undefined && i.part !== reference.part) throw new ToolInputError('The part conflicts with the scoped face reference.')
+        const host = designs()
+        if (reference && !host.addWithReceipt) throw new ToolInputError('This host cannot return an atomic edit receipt.', 'not_supported')
+        const find = (part: number, req: Record<string, unknown>, body = d) => findHole((r) => engine('hole.find', r), { mesh: item(body, part), ...req })
         let part: number
         let before: FoundHole
         if (i.face) {
@@ -1009,7 +1048,30 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           before = hit.hole
         }
         const s = spec(before)
-        await designs().add(d, part, plain<StepParams>({ op: 'hole.apply', hole: before, spec: s, label: i.label ?? `Hole ${Math.round(s.diameterMm * 100) / 100} mm` }))
+        if (reference) checkedManifest(d.id, reference.revision)
+        let commit: DesignCommit | undefined
+        try {
+          const params = plain<StepParams>({ op: 'hole.apply', hole: before, spec: s, label: i.label ?? `Hole ${Math.round(s.diameterMm * 100) / 100} mm` })
+          if (reference) commit = await host.addWithReceipt!(d, part, params, undefined, { expectedRevision: reference.revision })
+          else await host.add(d, part, params)
+        } catch (e) {
+          if (e instanceof StaleBody) throw new ToolInputError(e.message, 'stale_body', { bodyId: e.bodyId, currentRevision: e.currentRevision })
+          throw e
+        }
+        if (commit && reference) {
+          const topology = manifestOf(commit.design, commit.revision)
+          const out = stepOut(commit.design, verb(before, s))
+          let after: Record<string, unknown> | null = null
+          let verification: { status: 'measured' | 'failed'; reason?: string } = { status: 'measured' }
+          try { after = readMade(before, await find(part, onAxis(before), commit.design), i) }
+          catch (e) { verification = { status: 'failed', reason: e instanceof Error ? e.message : String(e) } }
+          return { summary: `${out.summary}${verification.status === 'failed' ? '; the edit was applied but its read-back failed' : ''}`, output: {
+            ...out.output, part, before: readHole(before), after, topology: compactManifest(topology),
+            operationResult: { operation: 'geom.hole', status: 'applied', bodyId: d.id, priorRevision: reference.revision,
+              revision: commit.revision, target: reference, verification,
+              measurements: { source: 'tessellation', before: readHole(before), after } },
+          } }
+        }
         const after = readMade(before, await find(part, onAxis(before)), i)
         const out = stepOut(d, verb(before, s))
         return { summary: out.summary, output: { ...out.output, part, before: readHole(before), after } }

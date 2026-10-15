@@ -64,3 +64,19 @@ it('keeps the committed body and revision if exporting the candidate fails', asy
   expect(d).toEqual(before)
   expect(designs.revision(d.id)).toBe(revision)
 })
+
+it('keeps an edit receipt detached when a second edit lands before it is consumed', async () => {
+  const { designs } = host(async () => { throw new Error('unused') })
+  const d = await designs.create('Body', [])
+  const first = designs.addWithReceipt(d, -1, { op: 'parts.add', label: 'Add part', parts: [mesh('First')] }, undefined, { expectedRevision: designs.revision(d.id) })
+  const second = first.then(() => designs.add(d, -1, { op: 'parts.add', label: 'Add part', parts: [mesh('Second')] }))
+  await second
+  const receipt = await first
+  expect(receipt.design.parts.map(p => p.name)).toEqual(['First'])
+  expect(receipt.design.history.steps).toHaveLength(1)
+  expect(receipt.step.id).toBe(receipt.design.history.steps[0]!.id)
+  expect(receipt.revision).not.toBe(designs.revision(d.id))
+  expect(d.parts.map(p => p.name)).toEqual(['First', 'Second'])
+  ;(receipt.design.parts[0]!.positions as number[])[0] = 100
+  expect(d.parts[0]!.positions[0]).toBe(0)
+})

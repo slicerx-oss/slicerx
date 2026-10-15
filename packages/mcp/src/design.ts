@@ -66,6 +66,14 @@ export class Designs implements DesignHost {
 
   /** Adds a step on part `part` (-1 for every part) and keeps it only when it goes through. */
   async add(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string }): Promise<Step> {
+    return (await this.addStep(d, part, params, label, opts, false)).step
+  }
+
+  async addWithReceipt(d: Design, part: number, params: StepParams, label?: string, opts?: { sketch?: string; expectedRevision?: string }) {
+    return this.addStep(d, part, params, label, opts, true)
+  }
+
+  private async addStep(d: Design, part: number, params: StepParams, label: string | undefined, opts: { sketch?: string; expectedRevision?: string } | undefined, receipt: boolean) {
     const guard = () => { if (opts?.expectedRevision !== undefined) this.revisions.assert(d.id, opts.expectedRevision) }
     guard()
     const step: Step = { id: stepId(), part, transform: [...d.transform], params, ...(label ? { label } : {}), ...(opts?.sketch ? { sketch: opts.sketch } : {}) }
@@ -76,7 +84,8 @@ export class Designs implements DesignHost {
     guard()
     this.keep(d, history, r)
     d.redo = []
-    return history.steps[history.steps.length - 1]!
+    const committed = receipt ? structuredClone(d) : d
+    return { step: committed.history.steps[committed.history.steps.length - 1]!, revision: this.revision(d.id), design: committed }
   }
 
   /** Replays the design as it is, after an edit of its steps. */
