@@ -71,6 +71,12 @@ Pairing with the hub's code, including through `--link-state-dir`, does not regi
 
 An `unauthorized` app-link response means this setup is missing or the connection was revoked. Reconnect the client instead of waiting for a prompt from a code-only connection. The CLI and MCP keep the `not_configured` error code and `details.appLink: unauthorized` for these refusals.
 
+### Read the open viewport
+
+`slicerx_app_viewport` over MCP, or `slicerx-mcp --printers link call app_viewport` with the connected client's configuration, returns `{ viewport }` from the existing read-only `app.info` route. The live values are `pixelRatio`, `motionScale`, `motionFull`, `drawnPlate` (one-based, or null while no plate matches the drawn objects), and `degrade: { count, lastAt }`.
+
+`lastAt` is a UTC ISO 8601 timestamp, or null before the first notice. The count covers every `degrade` event emitted by the current viewport, including startup and plate-fit notices as well as GPU slowdowns. It persists across statistics resets and quality recovery, and starts over when a new viewport is created. It does not count repeated reads. `viewport` is null before a GPU view mounts, in the 2D fallback, and after unmount; older apps without this field return `not_supported` rather than invented values. Reading it changes nothing and does not require a debug build.
+
 ### Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.

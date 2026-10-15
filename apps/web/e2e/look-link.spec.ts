@@ -201,3 +201,52 @@ test('a code-only CLI client gets setup guidance without waiting for a grant pro
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// Both public client paths read the live renderer, including notices emitted before any client reads them.
+test('a client reads viewport telemetry over MCP and the CLI without changing the view', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The app link is hosted by the desktop shell')
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await openAsDesktop(page)
+  type Telemetry = { pixelRatio: number; motionScale: number; motionFull: boolean; degrade: { count: number; lastAt: string | null }; drawnPlate: number | null }
+  await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { __vp?: unknown }).__vp))).toBe(true)
+  const { clientKey } = await hub.admin.clients.create('e2e viewport', 'agent')
+  const dir = mkdtempSync(join(tmpdir(), 'sx-e2e-viewport-'))
+  const bin = fakeKeychain(dir, clientKey!)
+  type ViewClient = { connect(t: unknown): Promise<void>; callTool(p: { name: string; arguments: Record<string, unknown> }): Promise<unknown>; close(): Promise<void> }
+  const { Client } = (await import(pathToFileURL(from.resolve('@modelcontextprotocol/sdk/client/index.js')).href)) as { Client: new (i: { name: string; version: string }) => ViewClient }
+  const { StdioClientTransport } = (await import(pathToFileURL(from.resolve('@modelcontextprotocol/sdk/client/stdio.js')).href)) as { StdioClientTransport: new (p: { command: string; args: string[]; cwd: string; env: Record<string, string>; stderr: 'inherit' }) => unknown }
+  const client = new Client({ name: 'e2e-viewport', version: '0.0.0' })
+  try {
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: serverArgs(dir), cwd: mcpDir, env: env(bin), stderr: 'inherit' }))
+    const read = async () => {
+      const answer = await client.callTool({ name: 'slicerx_app_viewport', arguments: {} }) as { isError?: boolean; structuredContent?: { output: { viewport: Telemetry | null } } }
+      expect(answer.isError, JSON.stringify(answer)).toBeFalsy()
+      return answer.structuredContent!.output.viewport!
+    }
+    const first = await allowWhenAsked(page, read())
+    expect(first.pixelRatio).toBeGreaterThan(0)
+    expect(first.motionScale).toBeGreaterThan(0)
+    expect(typeof first.motionFull).toBe('boolean')
+    expect(first.drawnPlate).toBe(1)
+    const emitted = await page.evaluate(() => {
+      const vp = (window as unknown as { __vp: { emit(name: string, event: { message: string }): void; stats(): Omit<Telemetry, 'drawnPlate'>; resetStats(): void } }).__vp
+      vp.emit('degrade', { message: 'Viewport telemetry test notice.' })
+      vp.resetStats()
+      const { pixelRatio, motionScale, motionFull, degrade } = vp.stats()
+      return { pixelRatio, motionScale, motionFull, degrade }
+    })
+    expect(emitted.degrade.count).toBe(first.degrade.count + 1)
+    expect(emitted.degrade.lastAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect(await read()).toMatchObject(emitted)
+    const { stdout } = await promisify(execFile)(process.execPath, [...serverArgs(dir), 'call', 'app_viewport', 'app_viewport'], { cwd: mcpDir, env: env(bin), timeout: 60_000 })
+    const answers = stdout.trim().split('\n').map((line) => JSON.parse(line))
+    expect(answers).toHaveLength(2)
+    for (const answer of answers) {
+      expect(answer.ok, JSON.stringify(answer)).toBe(true)
+      expect(answer.output.output.viewport).toMatchObject({ ...emitted, drawnPlate: 1 })
+    }
+  } finally {
+    await client.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

@@ -315,6 +315,7 @@ class ViewportImpl implements Viewport {
   private gpuTiming = false
   private probe: FrameProbe | null = null
   private disposed = false
+  private degradeEvents = { count: 0, lastAt: null as string | null }
   private previewSetAt: number | null = null
   private previewGen = 0
   private readonly firstFrame = new FirstFrameGate()
@@ -653,6 +654,7 @@ class ViewportImpl implements Viewport {
   }
 
   private emit<E extends keyof ViewportEvents>(event: E, payload: ViewportEvents[E]): void {
+    if (event === 'degrade') this.degradeEvents = { count: this.degradeEvents.count + 1, lastAt: new Date().toISOString() }
     const set = this.listeners.get(event)
     if (!set) return
     for (const l of set) (l as (p: ViewportEvents[E]) => void)(payload)
@@ -4164,6 +4166,7 @@ class ViewportImpl implements Viewport {
       aoOn: this.aoOn,
       motionScale: this.motion.level.scale,
       motionFull: this.motion.full,
+      degrade: { ...this.degradeEvents },
       cameraMoving: this.rig.move !== null,
       refiningParts: this.refining,
     }

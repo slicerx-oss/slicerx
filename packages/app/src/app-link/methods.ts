@@ -21,6 +21,7 @@ import { findPlate, plateRows, stepTarget } from '../plate/plate-step'
 import { switchPlate } from '../plate/plates'
 import { drawnObjects } from '../viewport/drawn'
 import { viewportLookState } from '../viewport/viewport-look'
+import { readViewportStats } from '../viewport/stats'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -325,7 +326,8 @@ const HANDLERS: Record<string, Handler> = {
   'app.info': () => {
     const s = get()
     const edition = currentEdition()
-    return { app: appName(), assistant: { ...assistantBrand(), enabled: edition.features.pilot }, tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS }
+    const viewport = readViewportStats()
+    return { app: appName(), assistant: { ...assistantBrand(), enabled: edition.features.pilot }, tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS, viewport: viewport ? { ...viewport, drawnPlate: drawnPlate() ?? null } : null }
   },
   'plate.list': () => {
     const s = get()
