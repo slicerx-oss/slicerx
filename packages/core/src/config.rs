@@ -2899,6 +2899,50 @@ mod tests {
     }
 
     #[test]
+    fn support_gaps_survive_partial_settings_updates() {
+        let mut c = PrintConfig::from_value(&serde_json::json!({
+            "layer_height": 0.12,
+            "support_top_z_distance": 0.1,
+            "support_bottom_z_distance": 0.3,
+        }))
+        .unwrap();
+        c.apply_value(&serde_json::json!({"outer_wall_speed": 80}))
+            .unwrap();
+        assert_eq!(
+            (c.support.top_z_distance, c.support.bottom_z_distance),
+            (0.1, 0.3)
+        );
+        c.apply_value(&serde_json::json!({"layer_height": 0.08})).unwrap();
+        assert_eq!(
+            (c.support.top_z_distance, c.support.bottom_z_distance),
+            (0.1, 0.3)
+        );
+        c.apply_value(&serde_json::json!({"support_top_z_distance": "auto"}))
+            .unwrap();
+        c.apply_value(&serde_json::json!({"layer_height": 0.16})).unwrap();
+        assert_eq!(
+            (c.support.top_z_distance, c.support.bottom_z_distance),
+            (0.16, 0.3)
+        );
+    }
+
+    #[test]
+    fn support_gaps_survive_variant_refresh() {
+        let mut c = PrintConfig::from_value(&serde_json::json!({
+            "print_extruder_id": ["1", "1"],
+            "print_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"],
+            "outer_wall_speed": [80, 120],
+            "enable_support": true,
+            "support_top_z_distance": 0.1,
+            "support_bottom_z_distance": 0.3,
+        }))
+        .unwrap();
+        let before = c.support.clone();
+        c.refresh_variants().unwrap();
+        assert_eq!(c.support, before);
+    }
+
+    #[test]
     fn rejects_out_of_range() {
         assert!(PrintConfig::from_json(br#"{"layer_height":5}"#).is_err());
     }
