@@ -66,7 +66,7 @@ fn mesh_check(mesh: &Value, offset: &[f64; 3], expected: f64) {
     assert_eq!(mesh["faceIds"].as_array().unwrap().len() * 3, ix.len());
     let mut edges = HashMap::<(usize, usize), (usize, i32)>::new();
     let mut volume = 0.0;
-    for ids in ix.chunks_exact(3) {
+    for ids in ix.as_chunks::<3>().0 {
         assert!(ids[0] != ids[1] && ids[1] != ids[2] && ids[2] != ids[0]);
         for j in 0..3 {
             let (a, b) = (ids[j], ids[(j + 1) % 3]);
