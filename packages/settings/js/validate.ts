@@ -262,9 +262,10 @@ export function typeOneTower(config: PrintConfig): boolean {
  * rib prime tower wall on a printer whose tower is not type 1 (the engine builds the rib wall on a type 1 tower only;
  * elsewhere it prints the plain wall).
  */
-export function unavailableIn(def: Pick<SettingDef, 'key' | 'unavailableValues'>, config: PrintConfig): string[] {
+export function unavailableIn(def: Pick<SettingDef, 'key' | 'unavailableValues'>, config: Readonly<Record<string, SettingValue>>): string[] {
   const out = [...(def.unavailableValues ?? [])]
-  if (def.key === 'wipe_tower_wall_type' && !typeOneTower(config) && !out.includes('rib')) out.push('rib')
+  // typeOneTower reads three keys and falls back to schema defaults for any the config leaves out
+  if (def.key === 'wipe_tower_wall_type' && !typeOneTower(config as PrintConfig) && !out.includes('rib')) out.push('rib')
   return out
 }
 
