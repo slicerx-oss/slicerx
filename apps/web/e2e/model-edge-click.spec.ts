@@ -44,6 +44,23 @@ async function frontTopEdge(page: Page, id: string): Promise<{ x: number; y: num
   return { x, y }
 }
 
+/**
+ * The middle of the box's back top edge on screen, where the top face meets the back face the camera cannot see, moved
+ * `px` pixels off the box (square to the edge, away from the top face): an outline edge, with nothing behind a click
+ * just past it.
+ */
+async function backTopEdge(page: Page, id: string, px: number): Promise<{ x: number; y: number }> {
+  const b = await bounds(page, id)
+  const a = await screenOf(page, [b.min[0], b.max[1], b.max[2]])
+  const e = await screenOf(page, [b.max[0], b.max[1], b.max[2]])
+  const c = await screenOf(page, [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, b.max[2]])
+  const m = [(a[0] + e[0]) / 2, (a[1] + e[1]) / 2] as const
+  const len = Math.hypot(e[0] - a[0], e[1] - a[1])
+  let n = [-(e[1] - a[1]) / len, (e[0] - a[0]) / len]
+  if (n[0]! * (c[0] - m[0]) + n[1]! * (c[1] - m[1]) > 0) n = [-n[0]!, -n[1]!]
+  return { x: m[0] + n[0]! * px, y: m[1] + n[1]! * px }
+}
+
 const readout = (page: Page) => page.getByTestId('model-select-readout')
 const filter = (page: Page, kind: string) => page.locator(`[data-testid="model-select-filter"][data-kind="${kind}"]`)
 const subPicks = (page: Page) => page.evaluate(() => (window as unknown as { __sx: { getState(): { subPicks: { kind: string }[] } } }).__sx.getState().subPicks.map((p) => p.kind))
@@ -104,6 +121,32 @@ test.describe('Model edge click', () => {
     await expect(panel).toContainText('1 edge')
     await expect(readout(page)).toHaveText('1 edge on Box')
   })
+
+  for (const px of [0, 3]) {
+    test(`Fillet: a click ${px ? `${px} px outside` : 'on'} an outline edge picks it`, async ({ page }) => {
+      test.slow()
+      await openStudio(page)
+      const id = await framedBox(page)
+      await ribbon(page, 'model-shelf-tool', 'fillet')
+      const panel = toolPanel(page)
+      await expect(panel).toContainText('No edge yet')
+      await settled(page)
+      const at = await backTopEdge(page, id, px)
+      await page.mouse.click(at.x, at.y)
+      await expect(panel).toContainText('1 edge')
+      await expect(readout(page)).toHaveText('1 edge on Box')
+    })
+
+    test(`no tool, Face: a click ${px ? `${px} px outside` : 'on'} an outline edge picks the edge`, async ({ page }) => {
+      test.slow()
+      await openStudio(page)
+      const id = await framedBox(page)
+      const at = await backTopEdge(page, id, px)
+      await page.mouse.click(at.x, at.y)
+      await expect(readout(page)).toHaveText('1 edge on Box')
+      expect(await subPicks(page)).toEqual(['edge'])
+    })
+  }
 
   test('no tool, Face: a click on an edge picks the edge', async ({ page }) => {
     test.slow()
