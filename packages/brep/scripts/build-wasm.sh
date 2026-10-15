@@ -43,7 +43,7 @@ list="$work/sources"
 # their hashes beside it); file times are no guide when a tree is copied in
 if command -v sha256sum > /dev/null; then sum=sha256sum; else sum="shasum -a 256"; fi
 export SX_SUM="$sum"
-SX_COMMON=$( (cat "$here"/cpp/*.h; echo "$flags") | $sum | cut -c1-64)
+SX_COMMON=$(sh "$here/scripts/wasm-stamp.sh" "$here" "$kernel" "$flags" "$EMSDK_VERSION: $("$emxx" --version)")
 export SX_COMMON
 xargs -P "$jobs" -L 1 sh -c 'f=$1 o=$2; s=$( (cat "$f"; echo "$SX_COMMON") | $SX_SUM | cut -c1-64)
   [ -f "$o" ] && [ "$(cat "$o.stamp" 2> /dev/null)" = "$s" ] && exit 0
