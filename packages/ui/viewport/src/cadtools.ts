@@ -38,6 +38,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
 import type { V3 } from './scaling'
+import { GLYPH_COLOR_NAMES, type GlyphColors } from './palette'
 
 export type V2 = [number, number]
 
@@ -348,6 +349,7 @@ export class SketchLayer {
   private readonly guidePos = new Float32Array(6)
   scene: SketchScene | null = null
   private light = false
+  private glyphColors: GlyphColors = {}
 
   constructor() {
     this.group.name = 'sketch'
@@ -521,7 +523,7 @@ export class SketchLayer {
       })
     }
     for (const [i, g] of (scene.glyphs ?? []).entries()) {
-      const sprite = makeGlyph(g.kind, g.picked, this.light)
+      const sprite = makeGlyph(g.kind, g.picked, this.light, this.glyphColors)
       if (!sprite) continue
       // up and to the right of the spot, side by side when several share it
       sprite.center.set(-0.25 - g.slot * 1.15, -0.25)
@@ -679,11 +681,13 @@ export class SketchLayer {
   }
 
   /** Darker curves, points and snap marker on a light studio, so they read on it. */
-  setLight(light: boolean): void {
+  setLight(light: boolean, glyphColors: GlyphColors = {}): void {
     const was = this.light
+    const changed = GLYPH_COLOR_NAMES.some((key) => this.glyphColors[key] !== glyphColors[key])
+    this.glyphColors = { ...glyphColors }
     this.light = light
     // the glyphs are drawn into textures, so they redraw in the new colors
-    if (was !== light && this.scene?.glyphs?.length) this.set(this.scene)
+    if ((was !== light || changed) && this.scene?.glyphs?.length) this.set(this.scene)
     for (const [tone, t] of Object.entries(TONE) as [SketchTone, { color: string }][]) {
       if (tone === 'soft') continue
       this.mats.get(tone)?.color.set(light ? (LIGHT_TONE[tone] ?? t.color) : t.color)
@@ -900,7 +904,7 @@ export function glyphPixels(kind: SketchGlyphKind): string[] {
  * dark strokes sit in a gold outline. Picked on a light studio, the line takes the darker gold and the halo beside it
  * turns dark, so the glyph reads as picked without color; its corner halo stays light.
  */
-export function glyphInk(picked = false, light = false): Record<'l' | 'o' | 'w' | 'e' | 'h', string> {
+function defaultGlyphInk(picked: boolean, light: boolean): Record<'l' | 'o' | 'w' | 'e' | 'h', string> {
   if (picked && !light) return { l: '#191a21', o: '#191a21', w: '#ffffff', e: TONE.selected.color, h: TONE.selected.color }
   const h = light ? 'rgba(255, 255, 255, 0.85)' : 'rgba(25, 26, 33, 0.85)'
   return {
@@ -912,7 +916,18 @@ export function glyphInk(picked = false, light = false): Record<'l' | 'o' | 'w' 
   }
 }
 
-function makeGlyph(kind: SketchGlyphKind, picked = false, light = false): Sprite | null {
+export function glyphInk(picked = false, light = false, colors: GlyphColors = {}): Record<'l' | 'o' | 'w' | 'e' | 'h', string> {
+  const defaults = defaultGlyphInk(picked, light)
+  return {
+    l: colors[picked ? 'pickedLine' : 'line'] ?? defaults.l,
+    o: colors[picked ? 'pickedNode' : 'node'] ?? defaults.o,
+    w: colors.center ?? defaults.w,
+    e: colors[picked ? 'pickedEdge' : 'halo'] ?? defaults.e,
+    h: colors[picked ? 'pickedHalo' : 'halo'] ?? defaults.h,
+  }
+}
+
+function makeGlyph(kind: SketchGlyphKind, picked = false, light = false, colors: GlyphColors = {}): Sprite | null {
   if (typeof document === 'undefined') return null
   // one texel per device pixel, sampled nearest, so the pixel drawing stays crisp
   const s = Math.max(1, Math.round(globalThis.devicePixelRatio ?? 1))
@@ -920,7 +935,7 @@ function makeGlyph(kind: SketchGlyphKind, picked = false, light = false): Sprite
   cv.width = cv.height = GLYPH_PX * s
   const c = cv.getContext('2d')
   if (!c) return null
-  const ink: Record<string, string> = glyphInk(picked, light)
+  const ink: Record<string, string> = glyphInk(picked, light, colors)
   glyphPixels(kind).forEach((row, y) =>
     [...row].forEach((ch, x) => {
       if (ch === '.') return

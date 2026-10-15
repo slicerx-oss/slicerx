@@ -94,6 +94,9 @@ export const SCENE = {
 
 export type SceneColors = Record<keyof typeof SCENE, string>
 
+export const GLYPH_COLOR_NAMES = ['line', 'pickedLine', 'node', 'pickedNode', 'center', 'halo', 'pickedEdge', 'pickedHalo'] as const
+export type GlyphColors = Partial<Record<(typeof GLYPH_COLOR_NAMES)[number], string>>
+
 /**
  * Colors of the 3D scene an integrator can change. Every field is optional and
  * falls back to the SlicerX default. Colors are `#rrggbb`. Meaning colors
@@ -101,6 +104,8 @@ export type SceneColors = Record<keyof typeof SCENE, string>
  * them apart from the toolpath colors so a color never reads as a status.
  */
 export interface ViewportTheme {
+  /** Constraint glyph colors; omitted values follow the studio background. Alpha hex is supported. */
+  glyphs?: GlyphColors
   /** Background gradient, selection outline, bed, overhang heat map, travel and live layer colors. */
   scene?: Partial<SceneColors>
   /** Toolpath color per SXPV feature id. */
@@ -112,6 +117,7 @@ export interface ViewportTheme {
 }
 
 export interface ResolvedTheme {
+  glyphs: GlyphColors
   scene: SceneColors
   /** In FEATURE_COLORS order. */
   featureColors: string[]
@@ -125,6 +131,10 @@ const HEX = /^#[0-9a-fA-F]{6}$/
 export function themeProblems(theme: ViewportTheme | undefined): string[] {
   const out: string[] = []
   if (!theme) return out
+  for (const [key, value] of Object.entries(theme.glyphs ?? {})) {
+    if (!(GLYPH_COLOR_NAMES as readonly string[]).includes(key)) out.push(`glyphs.${key} is not a glyph color`)
+    else if (value !== undefined && !/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value)) out.push(`glyphs.${key} must be a #rrggbb or #rrggbbaa color`)
+  }
   const check = (where: string, v: unknown): void => {
     if (typeof v !== 'string' || !HEX.test(v)) out.push(`${where} must be a #rrggbb color, got ${String(v)}`)
   }
@@ -155,6 +165,7 @@ export function resolveTheme(theme?: ViewportTheme): ResolvedTheme {
   // the hidden outline is the selection sunk halfway into the backdrop, so a new accent never leaves the old one behind
   if (theme?.scene?.selection && !theme.scene.selectionHidden) scene.selectionHidden = mixHex(scene.selection, scene.bgBottom, 0.5)
   return {
+    glyphs: { ...theme?.glyphs },
     scene,
     featureColors: FEATURE_COLORS.map((f) => theme?.features?.[f.id] ?? f.color),
     heatRamp: theme?.heatRamp ?? HEAT_RAMP,

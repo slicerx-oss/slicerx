@@ -249,6 +249,8 @@ Write the opened `.sx3mf` somewhere only your app reads (mode 0600), slice it, a
 
 `EmbedTheme` takes `dark`, `light` or a theme made with `createTheme` (exported by `@slicerx/embed`), and every piece inside it takes the theme: the settings panel, the agreement, and the viewport, whose 3D scene follows the theme's accent, its light or dark scheme and its `scene` colors. `sceneTheme` on `Viewport` sets any scene or toolpath color on top. The custom elements take a `theme` attribute (`dark` or `light`) or a `theme` property (a full theme). [AGENTS.md](AGENTS.md#step-6-theming) has the color roles and worked examples.
 
+Full editions can set separate light and dark colors for the accent, icons, tooltip loops and constraint glyphs in `brand.theme`. [Restyle tool icons and tooltip loops](restyle-icons-and-loops.md) lists the properties and defaults. With the open app's link enabled, `slicerx_app_look` reads `theme.scheme`, active CSS properties in `theme.visuals`, and the edition's merged `theme.overrides`. Omitted glyph properties use defaults based on studio lightness. The read-back does not expose a settings write route.
+
 ### The pre-alpha agreement
 
 SlicerX is pre-alpha, and an app that shows SlicerX pieces shows the agreement before their first use:

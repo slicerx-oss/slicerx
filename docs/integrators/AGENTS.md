@@ -34,6 +34,7 @@ The default path is local. Everything runs on the user's machine from the app's 
 The other files in this folder:
 
 - [quickstart.md](quickstart.md): the reference for every tool, option, result field and error code.
+- [restyle-icons-and-loops.md](restyle-icons-and-loops.md): edition colors for tool icons, tooltip loops and sketch glyphs, with separate light and dark values, defaults and checks.
 - [partner-app-key.md](partner-app-key.md): how an app on the same computer reaches the user's printers through SlicerX's bridge, with a key the user makes in SlicerX and can revoke.
 - [mimir-cloud.md](mimir-cloud.md): how an app that runs its own mimir chat calls SlicerX's hosted model proxy: register, messages, quota, refusals and testing.
 - [connected-apps.md](connected-apps.md): the user's Spoolman, Home Assistant and BamBuddy through SlicerX's bridge: the MCP tools an agent reads them with, what needs an approval or a person, and how a new connected app is added. A runnable sample is in `connected-apps/`.
@@ -438,6 +439,8 @@ return mustAgree ? <Agreement appName="My App" onAccept={(record) => { setMustAg
 - Crash reports: pass `onError` to `Viewport` (or listen for `error` on `<sx-viewport>`) and send the error to the app's own crash reporting, tagged with the SlicerX release. Remove tokens, keys, addresses and user names before anything leaves the machine. The agreement tells people crash reports may be sent.
 
 ## Step 6: theming
+
+For a full edition, use `brand.theme.tokens.visuals` plus `brand.theme.light.visuals` and `brand.theme.dark.visuals` for the accent, icons, tooltip loops and constraint glyphs. These override the look preset. See [Restyle tool icons and tooltip loops](restyle-icons-and-loops.md) for the working config, every supported token and validation steps.
 
 Every SlicerX UI part takes the host app's brand. Themes are typed objects made with `createTheme` from `@slicerx/embed`. The parts read CSS variables, so nothing in the host page is touched.
 
