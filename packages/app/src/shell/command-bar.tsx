@@ -3,8 +3,8 @@
 // Cmd+K. Search results load on demand; @slicerx/ui's CommandPalette
 // renders the list and handles the keys.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { CommandPalette, type PaletteGroup } from '@slicerx/ui'
-import { useEffect, useMemo, useState } from 'react'
+import { CommandPalette, type PaletteGroup, type PaletteItem } from '@slicerx/ui'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadSettings, settingsIfLoaded, type SettingsApi } from '../adapters/load'
 import { getCommand, runCommand, useCommands } from '../commands/registry'
 import { useFleet } from '../lib/queries'
@@ -47,6 +47,7 @@ export function CommandBar() {
     })
   }, [registered, mode, workspace])
   const [query, setQuery] = useState('')
+  const pendingSubmit = useRef(false)
   const { workspaces: available, ids } = useFeatures()
   const layout = useLayout()
   // Named the way the active look names its tabs, so a hint says Model where the tab says Model.
@@ -81,10 +82,40 @@ export function CommandBar() {
     return results?.commandGroups({ open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet, actions, pilotLabel, settingsApi }) ?? []
   }, [results, open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet.data, actions, pilotLabel, settingsApi])
 
-  const close = () => {
+  const close = useCallback(() => {
+    pendingSubmit.current = false
     set({ commandOpen: false })
     setQuery('')
-  }
+  }, [])
+
+  const select = useCallback((item: PaletteItem) => {
+    const text = query.trim()
+    close()
+    if (item.id === ASK) {
+      // The question goes with what is selected and on the plate, so the answer is about this project.
+      const s = get()
+      const printer = (fleet.data ?? []).find((r) => r.id === s.printerId)
+      if (results) void runCommand(ASK, results.askPrompt(text, results.askContext(s, printer?.name)))
+      return
+    }
+    const hub = actions.get(item.id)
+    if (hub) {
+      hub()
+      return
+    }
+    pushRecent(item.id)
+    void runCommand(item.id).then((r) => {
+      if (!r.ok) toast(r.message)
+    })
+  }, [query, close, fleet.data, results, actions])
+
+  useEffect(() => {
+    if (!open) pendingSubmit.current = false
+    if (!results || !pendingSubmit.current) return
+    pendingSubmit.current = false
+    const first = groups.flatMap((group) => group.items).find((item) => !item.disabled)
+    if (first) select(first)
+  }, [open, results, groups, select])
 
   const count = shownCommands(groups)
 
@@ -93,31 +124,13 @@ export function CommandBar() {
       open={open}
       onClose={close}
       query={query}
-      onQueryChange={setQuery}
+      onQueryChange={(value) => { pendingSubmit.current = false; setQuery(value) }}
       groups={groups}
       placeholder={hostSlices() ? 'Type a command, a setting or a printer' : 'Type a command'}
       empty={`No command matches "${query}"`}
       footerRight={`${count} of ${all.length} commands`}
-      onSelect={(item) => {
-        const text = query.trim()
-        close()
-        if (item.id === ASK) {
-          // The question goes with what is selected and on the plate, so the answer is about this project.
-          const s = get()
-          const printer = (fleet.data ?? []).find((r) => r.id === s.printerId)
-          if (results) void runCommand(ASK, results.askPrompt(text, results.askContext(s, printer?.name)))
-          return
-        }
-        const hub = actions.get(item.id)
-        if (hub) {
-          hub()
-          return
-        }
-        pushRecent(item.id)
-        void runCommand(item.id).then((r) => {
-          if (!r.ok) toast(r.message)
-        })
-      }}
+      onSelect={select}
+      onSubmitEmpty={() => { if (!results) pendingSubmit.current = true }}
     />
   )
 }
