@@ -81,6 +81,17 @@ These commands require the app link and an edit grant. They can reverse the pers
 
 From the command line, use `slicerx-mcp --printers link call app_history`, then `slicerx-mcp --printers link call app_undo '{"revision":"<revision from the read>"}'`. `app_redo` takes the same argument. The app stays the source of the history; these commands do not fall back to a separate server project.
 
+### Slice preview
+
+`slicerx_app_preview` reads the open app's slice preview, including its visible layer range, colors, camera and toolhead/gantry switches. `slicerx_app_preview_set` changes those view settings and returns the resulting state. Both use the existing read grant. A loaded slice is required for layers and colors; changes refuse while Model or an object tool is active. Project geometry, settings and Undo history are preserved. Active playback is not paused, so visible layers may continue changing after a response.
+
+```sh
+sx call --app app_preview
+sx call --app app_preview_set '{"range":[2,10],"oneLayer":true,"colorMode":"speed","camera":"top"}' app_preview
+```
+
+Layers are 1-based. When combined, `range` applies first, then `layer` moves the top handle, then `oneLayer` chooses only that layer or restores the first layer to 1. Layer fields are absent when no slice is loaded. The read-back also reports whether toolpaths are shown, the top layer height in mm and whether the right pane and playback drawer are open.
+
 ### Shell and measure the open project
 
 With `--app`, `geom_shell`, `geom_info` and `geom_measure` use a design from the open app. Shell adds an editable history step. Information and measurements accept a read-only app grant and report world coordinates; `step` reads an earlier result without rolling the current body back. Model file arguments still use the local engine.
