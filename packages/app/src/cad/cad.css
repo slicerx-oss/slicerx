@@ -59,6 +59,7 @@
 .cad-value:hover { background: var(--ink-2); }
 .cad-issues { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--fg); }
 .sketch-corner-actions { flex-wrap: wrap; justify-content: flex-start; gap: 4px; }
+.sketch-loop-actions { flex-wrap: wrap; justify-content: flex-start; gap: var(--s-2); }
 .cad-issues li { display: flex; gap: 6px; align-items: flex-start; }
 .cad-issues .sx-ic { flex: none; margin-top: 2px; color: var(--red); }
 .sketch-readout { min-height: 1.35em; padding-left: 19px; color: var(--fg); }

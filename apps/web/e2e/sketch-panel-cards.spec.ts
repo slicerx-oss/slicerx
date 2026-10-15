@@ -404,3 +404,34 @@ test('Show chips: one row when the four fit the real width, two by two when not,
   expect(m.pressed).toEqual(['true', 'true', 'true', 'true'])
   test.info().annotations.push({ type: 'chips', description: `row ${m.width}px, one row needs ${m.oneRow.toFixed(1)}px: ${m.rows} rows` })
 })
+
+for (const scheme of ['dark', 'light'] as const) {
+  test(`selected loop actions fit the tool pane in ${scheme}`, async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Modeling tools are desktop only')
+    await sketchOnTop(page)
+    await page.evaluate((scheme) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme, themeFollowsSystem: false }), scheme)
+    await sketchAt(page, 'click', [0, 0])
+    await sketchAt(page, 'click', [0, 6])
+    await page.locator('body').press('Escape')
+    await toolPanel(page).getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Select' }).click()
+    await sketchAt(page, 'click', [0, 3])
+    await expect(page.getByTestId('sketch-picked')).toContainText('Line')
+    const actions = toolPanel(page).locator('.sketch-loop-actions')
+    for (const name of ['Mirror', 'Construction', 'Delete loop']) {
+      const button = actions.getByRole('button', { name, exact: true })
+      await button.scrollIntoViewIfNeeded()
+      const [b, row] = [(await button.boundingBox())!, (await actions.boundingBox())!]
+      expect(b.x, name).toBeGreaterThanOrEqual(row.x)
+      expect(b.x + b.width, name).toBeLessThanOrEqual(row.x + row.width + 1)
+      expect(await button.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        return el.contains(document.elementFromPoint(r.right - 2, r.y + r.height / 2))
+      }), `${name} is not clipped`).toBe(true)
+    }
+    const construction = actions.getByRole('button', { name: 'Construction', exact: true })
+    await construction.click()
+    await expect(construction).toHaveAttribute('aria-pressed', 'true')
+    await actions.getByRole('button', { name: 'Delete loop', exact: true }).click()
+    await expect(page.getByTestId('sketch-picked')).toBeHidden()
+  })
+}
