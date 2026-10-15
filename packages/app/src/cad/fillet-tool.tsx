@@ -2,13 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Fillet and chamfer (docs/cad-fillet.md): round or bevel the straight edges where two flat faces
 // meet. Hover lights the edge under the cursor, a click picks it, Shift and a click add more, and
-// "Whole loop" takes every edge around the face. A typed radius or distance shows what would go (red)
-// and what would be added (green) before the op runs once on Apply, as a step of the object's history.
+// "Whole loop" takes every edge around the face. A typed radius or distance shows what would go (a ghost
+// seen through the part) and what would be added (tinted) before the op runs once on Apply, as a step of the
+// object's history. A size the engine refuses keeps the last good preview on screen, with the error in the panel.
 //
 // Speed: the view reports the cursor at most once a frame and only while this tool is open. The
 // engine is asked about a face once (edge.pick gives the ring of edges around it); moving along that
 // face picks the nearest edge of the ring here, with no engine call and no React render.
-import type { PickEvent, ProbeHover } from '@slicerx/viewport'
+import type { EdgePreviewSpec, PickEvent, ProbeHover } from '@slicerx/viewport'
 import { Button } from '@slicerx/ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Vec3 } from '../geom/cad'
@@ -25,6 +26,7 @@ import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Sh
 import { follow, useDraft, useDraftObject, type Now } from './park'
 import { filletKindHint } from './start-hint'
 import { useLengthWords } from './use-units'
+import { previewMessage, publishPreview, reportOf, sizeWords, useOpPreview } from './op-preview'
 
 interface Picked {
   objectId: string
@@ -65,7 +67,8 @@ export function FilletTool() {
   const [size2, setSize2] = useDraft('size2', edit?.size2 ?? '')
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [previewOk, setPreviewOk] = useState(false)
+  // What the view draws: the newest good preview, kept through a size the engine refuses.
+  const [prev, step] = useOpPreview<EdgePreviewSpec>()
   // The hover path reads and writes here, outside React.
   const live = useRef({ picked, hover: null as EdgeRef | null, ring: null as { objectId: string; partIndex: number; point: Vec3; normal: Vec3; edges: EdgeRef[] } | null, asking: null as AbortController | null })
   live.current.picked = picked
@@ -144,7 +147,6 @@ export function FilletTool() {
       off()
       live.current.asking?.abort()
       view.setProbeHover(false)
-      view.setEdgePreview(null)
     }
   }, [view, ask, draw])
 
@@ -212,34 +214,34 @@ export function FilletTool() {
   const sizeOk = Number.isFinite(s1) && s1 > 0 && (s2 === null || (Number.isFinite(s2) && s2 > 0))
   const limit = picked?.last ? (kind === 'fillet' ? picked.last.maxRadiusMm : Math.min(...picked.last.maxDistanceMm)) : null
 
-  // The live preview, a moment after the last change. A newer change cancels the one running.
+  // The live preview, a moment after the last change. A newer change cancels the one running; a size that does not
+  // read or that the engine refuses keeps the last good preview, with the error.
   useEffect(() => {
-    setPreviewOk(false)
-    if (!view || !picked || !picked.edges.length || !sizeOk) return void view?.setEdgePreview(null)
+    if (!picked || !picked.edges.length) return void step({ type: 'clear' })
+    if (!sizeOk) return void step({ type: 'fail', message: kind === 'fillet' ? 'Type a radius above 0 mm.' : 'Type a distance above 0 mm.' })
     const e = entryOf(picked.objectId)
     const part = e?.parts[picked.partIndex]
     if (!e || !part) return
+    step({ type: 'request' })
     const ac = new AbortController()
     const t = setTimeout(() => {
       edgePreview({ mesh: { mesh: toGeom(part), transform: e.transform }, edges: picked.edges, profile: kind === 'fillet' ? { kind, radiusMm: s1 } : { kind, distanceMm: s1, ...(s2 !== null ? { distance2Mm: s2 } : {}) } }, ac.signal).then(
-        (r) => {
-          if (ac.signal.aborted) return
-          view.setEdgePreview(r)
-          setPreviewOk(true)
-          setNote(null)
-        },
-        (err: unknown) => {
-          if (ac.signal.aborted) return
-          view.setEdgePreview(null)
-          setNote(errorText(err))
-        },
+        (r) => !ac.signal.aborted && step({ type: 'ok', value: r }),
+        (err: unknown) => !ac.signal.aborted && step({ type: 'fail', message: sizeWords(errorText(err)) }),
       )
     }, 120)
     return () => {
       clearTimeout(t)
       ac.abort()
     }
-  }, [view, picked, kind, s1, s2, sizeOk])
+  }, [picked, kind, s1, s2, sizeOk])
+  useEffect(() => view?.setEdgePreview(prev.shown), [view, prev.shown])
+  useEffect(() => () => view?.setEdgePreview(null), [view])
+  useEffect(() => {
+    const shown = prev.shown
+    publishPreview(reportOf(kind, prev, { adds: !!shown?.join && shown.join.indices.length >= 3, removes: !!shown?.cut && shown.cut.indices.length >= 3 }))
+  }, [prev, kind])
+  useEffect(() => () => publishPreview(null), [])
 
   const apply = async () => {
     if (!picked || !picked.edges.length || !sizeOk || busy) return
@@ -268,6 +270,7 @@ export function FilletTool() {
   }
 
   const n = picked?.edges.length ?? 0
+  const previewWords = previewMessage(prev)
   return (
     <Shell title="Fillet and chamfer" aside={edit ? `Editing step ${edit.index + 1}` : n ? `${n} ${n === 1 ? 'edge' : 'edges'}` : 'No edge yet'}>
       <PointerHint text={n ? 'Shift and click to add or remove an edge.' : 'Click an edge between two flat faces. Shift and click adds more.'} />
@@ -278,8 +281,9 @@ export function FilletTool() {
       <Row label={picked?.last ? `${picked.last.loop.length} edges around this face` : 'Pick an edge to offer its loop'}>
         <Button size="sm" className="tp-pill" data-tip="cad.edgeLoop" disabled={!picked?.last || busy} onClick={wholeLoop}>Whole loop</Button>
       </Row>
+      {previewWords ? <Message text={previewWords} tone="error" testId="op-preview-error" /> : null}
       {note ? <Message text={note} /> : null}
-      <ToolFooter verb={kind === 'fillet' ? 'Round' : 'Bevel'} verbs={['Round', 'Bevel']} onApply={apply} busy={busy} disabled={!n || !sizeOk || (!previewOk && note !== null)} repeat={!edit} />
+      <ToolFooter verb={kind === 'fillet' ? 'Round' : 'Bevel'} verbs={['Round', 'Bevel']} onApply={apply} busy={busy} disabled={!n || !sizeOk || prev.status === 'error'} repeat={!edit} />
     </Shell>
   )
 }

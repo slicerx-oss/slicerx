@@ -61,6 +61,10 @@ export interface PushSnapshot {
   busy: boolean
   /** A problem to show (a pick that failed, an engine error). */
   note: string | null
+  /** The preview's problem (a value that does not read), saying the view keeps the last good preview; null when none. */
+  previewError: string | null
+  /** The distance the view's preview shows, mm: the box's value, or the last one that read while it does not. */
+  shownMm: number | null
   /** Editing a step of the history: its number from 1. */
   editStep: number | null
 }

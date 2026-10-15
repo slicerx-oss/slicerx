@@ -103,7 +103,7 @@ describe('app link: the open Push and pull', () => {
   const face = { objectId: 'box', partIndex: 0, at: [1, 2, 10] as V3, normal: [0, 0, 1] as V3, thicknessMm: 10 }
   let typed: string[] = []
   const open = (s: Partial<PushSnapshot> = {}) => {
-    const snap: PushSnapshot = { face, text: '', distanceMm: null, busy: false, note: null, editStep: null, ...s }
+    const snap: PushSnapshot = { face, text: '', distanceMm: null, busy: false, note: null, previewError: null, shownMm: null, editStep: null, ...s }
     set({ objectTool: 'push' })
     publishPush(snap, {
       setText: (t) => {
