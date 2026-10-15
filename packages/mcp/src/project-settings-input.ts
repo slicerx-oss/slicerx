@@ -13,5 +13,5 @@ export const projectSettingsInput = z.object({
   .refine((i) => !i.clear.some((k) => Object.hasOwn(i.changes, k)), 'A setting cannot be changed and cleared in one patch')
 
 export const projectSettingsReadInput = z.object({
-  keys: z.array(key).max(512).optional().describe('Only these print setting keys; omitted, read all supported numeric, switch and choice settings'),
+  keys: z.array(key).max(512).optional().describe('Only these print setting keys; omitted, read all supported settings and read-only plate configuration keys'),
 }).strict()
