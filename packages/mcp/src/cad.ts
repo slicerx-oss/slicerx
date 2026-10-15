@@ -17,6 +17,7 @@ import { designArg, designSummary, faceAt, item, partAt, partsAt, type Design } 
 import { ToolInputError } from './errors'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
+import { verifyHole } from './hole-verification'
 
 type V3 = [number, number, number]
 
@@ -1062,10 +1063,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           const topology = manifestOf(commit.design, commit.revision)
           const out = stepOut(commit.design, verb(before, s))
           let after: Record<string, unknown> | null = null
-          let verification: { status: 'measured' | 'failed'; reason?: string } = { status: 'measured' }
-          try { after = readMade(before, await find(part, onAxis(before), commit.design), i) }
+          let verification: ReturnType<typeof verifyHole> | { status: 'failed'; reason: string }
+          try {
+            const shaft = await find(part, onAxis(before), commit.design)
+            verification = verifyHole(before, shaft, i)
+            if (verification.checks.finite && verification.measuredDepthMm !== null) after = readHole({ ...before, diameterMm: shaft.diameterMm, depthMm: verification.measuredDepthMm, through: shaft.through })
+          }
           catch (e) { verification = { status: 'failed', reason: e instanceof Error ? e.message : String(e) } }
-          return { summary: `${out.summary}${verification.status === 'failed' ? '; the edit was applied but its read-back failed' : ''}`, output: {
+          return { summary: `${out.summary}${verification.status === 'failed' ? '; the edit was applied but its read-back failed' : verification.status === 'unverified' ? '; head dimensions remain unverified' : ''}`, output: {
             ...out.output, part, before: readHole(before), after, topology: compactManifest(topology),
             operationResult: { operation: 'geom.hole', status: 'applied', bodyId: d.id, priorRevision: reference.revision,
               revision: commit.revision, target: reference, verification,
