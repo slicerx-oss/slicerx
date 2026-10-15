@@ -11,14 +11,11 @@ import { commitMade } from '../cad/commit'
 import { selectedEntry } from './select'
 import { bake, invert } from './mesh-ops'
 import { repairHeadline, showRepairReport, sumRepair, type RepairCounts, type RepairEntry } from './repair-report'
-import { bounds, compose, dropToBed, identity, multiply, type Box, type Mat4, type Vec3 } from './transform'
-import { modelPlace } from './edit'
-import { objectOverrides, partOverridesOf } from './object-settings'
+import { bounds, compose, dropToBed, identity, multiply, type Mat4, type Vec3 } from './transform'
+import { cutObject, type CutSpec } from './cut-object'
+export { cutObject, type CutSpec } from './cut-object'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
-
-let seq = 0
-const newId = () => `obj_${Date.now().toString(36)}g${(++seq).toString(36)}`
 
 function need(): PlateEntry {
   const e = selectedEntry()
@@ -68,8 +65,6 @@ async function replace(host: Loader, e: PlateEntry, parts: MeshPart[], transform
 
 /** The line a tool's message gets when it cleared paint. */
 const paintNote = (dropped: boolean): string => (dropped ? ' Its paint was cleared, since the triangles changed. Undo brings it back.' : '')
-
-const nonEmpty = (m: GeomMesh | undefined): m is GeomMesh => Boolean(m && m.indices.length >= 3)
 
 export async function repairSelected(host: Loader): Promise<string> {
   // The faces this makes get the keys of the history step it records.
@@ -125,106 +120,11 @@ export async function hollowSelected(host: Loader, wallMm: number): Promise<stri
   return msg
 }
 
-export interface CutSpec {
-  axis: 'x' | 'y' | 'z'
-  /** Plane position in bed coordinates, mm. */
-  atMm: number
-  /** Any plane in bed coordinates (the cut tool's gizmo); used instead of `axis` and `atMm` when given. */
-  plane?: { point: Vec3; normal: Vec3 }
-  keep: 'both' | 'above' | 'below'
-  /** Connectors; `positions` (bed coordinates, mm, on the plane) place pins and dowels, otherwise they go in automatically (`count` of them when given). */
-  connector?: { kind: 'pin' | 'dowel' | 'dovetail'; diameterMm: number; depthMm: number; toleranceMm: number; count?: number; positions?: Vec3[] }
-}
-
-/** Cuts the selected object with a plane. The pieces become objects standing on the bed, side by side. */
+/** Cuts the selected object with a plane, placing the pieces on the bed. */
 export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> {
-  const e = need()
-  return cutObject(host, e.id, spec)
-}
-
-/** Cut one concrete object, even if the selection changes while geometry is running. */
-export async function cutObject(host: Loader, id: string, spec: CutSpec): Promise<number> {
-  const initial = get()
-  const e = initial.plate.find((entry) => entry.id === id)
-  if (!e) throw new Error('The object is no longer on the shown plate.')
-  if (e.locked) throw new Error(`${e.name} is locked; unlock it first.`)
-  const all = [...initial.plate, ...initial.plates.filter((p) => p.id !== initial.activePlate).flatMap((p) => p.objects)]
-  const source = e.instanceOf ? all.find((entry) => entry.id === e.instanceOf) : undefined
-  const settings = objectOverrides(initial, e)
-  const partSettings = partOverridesOf(all, e)
-  const { replaying } = await import('../cad/history/ops')
-  const check = () => {
-    const now = get()
-    if (now.rollback || now.historyEdit?.objectId === id || replaying(id)) throw new Error('Finish editing the object and return to the end of the timeline before cutting.')
-    if (now.activePlate !== initial.activePlate || now.plates !== initial.plates || now.objectSettings !== initial.objectSettings || now.plate.find((entry) => entry.id === id) !== e) throw new Error('The object or its plate changed while cutting; read it and try again.')
-    if (source && [...now.plate, ...now.plates.flatMap((p) => p.objects)].find((entry) => entry.id === source.id) !== source) throw new Error('The source of this copy changed while cutting; read it and try again.')
-  }
-  check()
-  const below: MeshPart[] = []
-  const above: MeshPart[] = []
-  const extras: MeshPart[] = []
-  for (const p of worldParts(e)) {
-    const r = await geom().call<{ below?: GeomMesh; above?: GeomMesh; extras?: GeomMesh[] }>('cut', { mesh: toGeom(p), plane: spec.plane ?? { axis: spec.axis, at: spec.atMm }, options: spec.connector ? { connector: spec.connector } : {} })
-    if (nonEmpty(r.below)) below.push(fromGeom(r.below, p.name, p.slot))
-    if (nonEmpty(r.above)) above.push(fromGeom(r.above, p.name, p.slot))
-    for (const x of r.extras ?? []) if (nonEmpty(x)) extras.push(fromGeom(x, 'Connector', p.slot))
-  }
-  const pieces: { name: string; parts: MeshPart[] }[] = []
-  if (spec.keep !== 'above' && below.length) pieces.push({ name: `${e.name} lower`, parts: below })
-  if (spec.keep !== 'below' && above.length) pieces.push({ name: `${e.name} upper`, parts: above })
-  extras.forEach((x, i) => pieces.push({ name: `${e.name} connector ${i + 1}`, parts: [x] }))
-  if (pieces.length === 0 || (below.length === 0 && spec.keep !== 'above') || (above.length === 0 && spec.keep !== 'below')) {
-    toast('The plane does not cross the object. Pick a height inside it.', 'warn')
-    return 0
-  }
-  const entries: PlateEntry[] = await Promise.all(
-    pieces.map(async (piece) => {
-      const up = standUp(piece.parts)
-      const handle = await host.loadParts(piece.name, up.parts)
-      const names = new Set(piece.parts.map((p) => p.name))
-      const slots = Object.fromEntries(Object.entries(e.slotOverrides ?? {}).filter(([name]) => names.has(name)))
-      const overrides = Object.fromEntries(Object.entries(partSettings).filter(([name]) => names.has(name)))
-      return {
-        id: newId(), name: piece.name, handle, parts: up.parts, colors: [...e.colors], transform: up.transform,
-        ...(e.printable !== undefined ? { printable: e.printable } : {}),
-        ...(Object.keys(slots).length ? { slotOverrides: slots } : {}),
-        ...(Object.keys(overrides).length ? { partSettings: overrides } : {}),
-        ...(e.source ? { source: e.source } : {}),
-        ...(e.history ? { history: { version: e.history.version, base: up.parts, steps: [], ended: 'History ends here: the object was cut into separate objects.' } } : {}),
-      }
-    }),
-  )
-  check()
-  const plate = get().plate
-  // the pieces stand side by side, each beside the one before and clear of the other objects, not on top of each other
-  const boxOf = (x: PlateEntry) => bounds(x.parts, x.transform)
-  const taken = plate.filter((p) => p.id !== e.id).map(boxOf).filter((b): b is Box => b !== null)
-  for (let i = 1; i < entries.length; i++) {
-    const prev = boxOf(entries[i - 1]!)
-    const own = boxOf(entries[i]!)
-    if (!prev || !own) continue
-    taken.push(prev)
-    const size: Vec3 = [own.max[0] - own.min[0], own.max[1] - own.min[1], 0]
-    const [x, y] = modelPlace(size, [0, 0, 0], prev, taken)
-    const move = compose({ position: [x - (own.min[0] + own.max[0]) / 2, y - (own.min[1] + own.max[1]) / 2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
-    entries[i] = { ...entries[i]!, transform: multiply(move, entries[i]!.transform) }
-  }
-  const at = plate.findIndex((p) => p.id === e.id)
-  const copies = e.instanceOf ? [] : all.filter((entry) => entry.instanceOf === e.id)
-  const root = copies[0]?.id
-  const objectSettings = { ...initial.objectSettings }
-  delete objectSettings[e.id]
-  for (const entry of entries) objectSettings[entry.id] = { ...settings }
-  if (root) objectSettings[root] = { ...settings }
-  const detach = (entry: PlateEntry): PlateEntry => {
-    if (!root || entry.instanceOf !== e.id) return entry
-    const { instanceOf: _source, ...plain } = entry
-    return entry.id === root ? { ...plain, partSettings: { ...partSettings } } : { ...plain, instanceOf: root }
-  }
-  const plates = initial.plates.map((p) => p.id === initial.activePlate ? p : { ...p, objects: p.objects.map(detach) })
-  set({ plate: [...plate.slice(0, at), ...entries, ...plate.slice(at + 1)].map(detach), plates, objectSettings, selection: entries[0]?.id ?? null, selectedIds: entries.map((x) => x.id) })
-  markStale()
-  return entries.length
+  const result = await cutObject(host, need().id, spec)
+  if (result.warnings.length) toast([...new Set(result.warnings)].join(' '), 'warn')
+  return result.changed ? result.ids.length : 0
 }
 
 /** The outline the plane leaves on an object, as closed loops in bed coordinates: the section view of the cut tool. */
