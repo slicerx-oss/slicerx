@@ -95,6 +95,20 @@ A fillet or chamfer edge keeps the keys of the two faces either side (`keys`, th
 - Base meshes and `parts.add` meshes go in one binary part each, `Metadata/slicerx_history/<object>-<n>.bin` (little endian: magic `SXHM`, version, part count, then per part vertex count, triangle count, float32 positions, uint32 indices), named from the JSON. A binary part rather than a second model object, so no slicer can show or print the base. The size cost is measured in tests and reported with the commit.
 - Text steps store the font name, not the font: fonts may not allow embedding. A text step whose custom font is not loaded on this computer replays as broken ("Pick the font again: Foo is not loaded."), fixed by editing the step.
 
+## Revision-bound face tools
+
+MCP clients can inspect a design with `slicerx_geom_faces` using `format: "topology"`. The manifest includes an opaque `bodyId` and `revision`, body-local face dimensions, a placement transform, representation and capabilities. Each face identifies its part, face key, surface type, ambiguity and measurement source. Area comes from tessellation; analytic surface dimensions come from the reported kernel or mesh metadata. A mesh manifest does not imply an exact solid.
+
+Pass an inspected face to a supported tool as `face: { topology: { bodyId, revision, part, faceKey } }`, with the matching `design`. Do not combine this reference with a legacy point or face selection. Face keys are scoped to a part and revision. A missing or ambiguous key refuses instead of choosing a nearby face. A face reference cannot identify an edge.
+
+Geometry and placement changes invalidate the reference. Undo, body replacement and reopening a project do not revive it. Reinspect after those changes. Selection and color changes alone do not invalidate the geometry revision. Revisions are session identities, not saved feature names or portable references.
+
+Scoped push/pull and hole edits check the revision before modeling and before committing. Their `operationResult` distinguishes `refused` from `applied` and identifies the prior and resulting revisions. An atomic receipt keeps read-back bound to the committed body even if another edit follows before the response. If an edit applied but verification failed, do not blindly repeat the mutation: inspect the current body first.
+
+Push verification measures signed world-space displacement along the original planar face normal. Hole verification checks measured shaft diameter, depth and axis. The response declares its tolerance, capped at one percent of a nonzero requested change and at 0.01 mm. Requested counterbore or countersink dimensions remain separate from measured shaft dimensions; unmeasured head geometry is explicitly unverified. Invalid pre-edit measurements refuse before mutation.
+
+The `scopedEdits` capability means the host supports guarded commits and atomic receipts, not that all face types support all operations. Compact response manifests include `faceCount` and `truncated`; inspect again with a larger `limit` when needed. Exact edits retain the developer gate and refusal rules below.
+
 ## Limits
 
 ### Developer exact designs
