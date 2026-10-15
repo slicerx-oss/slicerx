@@ -66,6 +66,21 @@ export function namespaceSvg(text, prefix) {
     .replace(/href="#([^"]+)"/g, (_, id) => `href="#${ids.get(id) ?? id}"`)
 }
 
+// Stage paths may combine their generated paint with a second inline style.
+export function mergeSvgStyles(text) {
+  return text.replace(/<[a-zA-Z][^>]*>/g, (tag) => {
+    const styles = [...tag.matchAll(/\sstyle="([^"]*)"/g)]
+    if (styles.length < 2) return tag
+    const merged = styles.map((m) => m[1].replace(/;?$/, ';')).join('')
+    let first = true
+    return tag.replace(/\sstyle="[^"]*"/g, () => {
+      if (!first) return ''
+      first = false
+      return ` style="${merged}"`
+    })
+  })
+}
+
 export function scopeCss(css, selector) {
   return css.replace(/(^|[{}])([^{}]+)(?=\{)/g, (match, lead, rules) => {
     if (/^\s*(?:@|from\b|to\b|[\d.]+%)/.test(rules)) return match
@@ -84,7 +99,7 @@ function documentSvg(id, scheme, width, height, cls, body, label, vars) {
     css = css.replace(/(@keyframes\s+|animation-name:)([\w-]+)/g, (match, lead, name) => names.has(name) ? `${lead}${prefix}-${name}` : match)
     return `<style>${scopeCss(css, selector)}</style>`
   })
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="${cls}" data-sx-asset="${xml(id)}" data-sx-variant="${scheme}" data-sx-size="${width}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(label)}"><title>${xml(label)}</title>${namespaceSvg(fallbacks(body, vars), prefix)}</svg>\n`
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${cls}" data-sx-asset="${xml(id)}" data-sx-variant="${scheme}" data-sx-size="${width}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(label)}"><title>${xml(label)}</title>${namespaceSvg(fallbacks(mergeSvgStyles(body), vars), prefix)}</svg>\n`
 }
 
 export async function exportAssets(dest) {
