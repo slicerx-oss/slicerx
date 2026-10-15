@@ -23,7 +23,7 @@ import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, type Now } from './park'
-import { takeFilletKind } from './start-hint'
+import { filletKindHint } from './start-hint'
 import { useLengthWords } from './use-units'
 
 interface Picked {
@@ -58,7 +58,7 @@ export function FilletTool() {
   const view = cameraBus()?.cad
   const words = useLengthWords()
   const [edit] = useState(editState)
-  const [kind, setKind] = useDraft<Kind>('kind', () => edit?.kind ?? takeFilletKind() ?? 'fillet')
+  const [kind, setKind] = useDraft<Kind>('kind', () => edit?.kind ?? filletKindHint() ?? 'fillet')
   const [picked, setPicked] = useDraft<Picked | null>('picked', edit?.picked ?? null, follow((p, now) => p && { ...p, edges: p.edges.map((e) => movedEdge(e, now)), last: null }))
   useDraftObject(picked?.objectId)
   const [size, setSize] = useDraft('size', edit?.size ?? '1')
