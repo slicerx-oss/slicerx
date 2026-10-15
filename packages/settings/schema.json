@@ -2309,7 +2309,7 @@
     "Rib"
    ],
    "unavailableValues": [
-    "rib"
+    "cone"
    ],
    "intent": "multicolor",
    "showWhen": "multicolor"

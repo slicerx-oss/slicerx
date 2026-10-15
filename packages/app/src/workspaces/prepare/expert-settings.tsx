@@ -80,6 +80,19 @@ export function offeredValues(def: Pick<SettingDef, 'enumValues' | 'enumLabels' 
   return out
 }
 
+/**
+ * The line under a select that holds a value the engine cannot print yet: what slicing uses instead, which is the
+ * setting's default (the engine falls back to it). Undefined for a value the engine prints.
+ */
+export function unsupportedNote(def: Pick<SettingDef, 'default' | 'enumValues' | 'enumLabels' | 'unavailableValues'>, value: unknown): string | undefined {
+  const v = String((Array.isArray(value) ? value[0] : value) ?? '')
+  if (!def.unavailableValues?.includes(v)) return undefined
+  const labelOf = (x: string) => def.enumLabels?.[def.enumValues?.indexOf(x) ?? -1] ?? x
+  const d = String((Array.isArray(def.default) ? def.default[0] : def.default) ?? '')
+  const fallback = d && !def.unavailableValues.includes(d) && def.enumValues?.includes(d) ? labelOf(d) : 'the default'
+  return `${labelOf(v)} is unsupported; slicing uses ${fallback}.`
+}
+
 function optionTipAttrs(key: string, value: unknown): Record<string, string> {
   const tip = OPTION_TIPS[`${key}.${String(value ?? '')}`]
   return tip ? tipAttrs(tip) : {}
@@ -116,6 +129,8 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
   const marks = MARKED[def.key]
   const own = presetOwnValue(def.key)
   let control
+  // A persistent line under the row, tied to the control as its description.
+  let helper: ReactNode = null
   // A number's unit, as a person reads it.
   const unitText = def.unit && def.unit !== '%' ? (UNIT_TEXT[def.unit] ?? def.unit) : def.type === 'percent' ? '%' : ''
   if (def.type === 'bool') {
@@ -142,11 +157,14 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     const full = current ? `${current.label}${current.gone ? ' (not supported yet, prints with the default)' : ''}` : undefined
     const optionTip = optionTipAttrs(def.key, scalar)
     const wide = WIDE_SELECTS[def.key]
+    const gone = mixed ? undefined : unsupportedNote(def, scalar)
+    if (gone) helper = <p className="sx-small sx-muted unsupported-note" id={`${id}-unsupported`} data-testid="slice-setting-unsupported">{gone}</p>
     control = (
       <Select
         id={id}
         size="sm"
         face={face}
+        aria-describedby={gone ? `${id}-unsupported` : undefined}
         wrap={{ ...(Object.keys(optionTip).length || !full || full === face ? optionTip : tipAttrs({ title: full })), ...(wide ? { style: { width: `${wide}px` } } : {}) }}
         value={mixed ? '' : String(scalar ?? '')}
         disabled={Boolean(locked)}
@@ -240,6 +258,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
           <LinkButton onClick={() => setOverride(def.key, own)}>Use this preset's own ({String(Array.isArray(own) ? own[0] : own)})</LinkButton>
         </p>
       ) : null}
+      {helper}
       {note ? <p className="sx-small sx-muted plate-own">{note}</p> : null}
       {chips ? <p className="obj-chips">{chips}</p> : null}
     </SettingRow>
