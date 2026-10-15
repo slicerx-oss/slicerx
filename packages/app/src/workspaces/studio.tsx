@@ -162,8 +162,9 @@ export function Studio() {
   useEffect(() => {
     if (toolOpen && objectsRight && !railOpen(get().rails, 'preview', other, true)) setRail('preview', other, true)
   }, [toolOpen, objectsRight, other])
-  // Model's tools live in its right pane, which renders nothing while shut: opening a tool there opens the pane, so the
-  // tool hears its clicks and shows its controls.
+  // Model's tools live in its right pane: opening a tool there opens the pane, so the tool shows its controls. Shutting
+  // the pane while a tool is open only hides it: the tool stays mounted (keepMounted below), so a sketch keeps drawing,
+  // its boxes and keys keep working, and Finish sketch still ends it. Nothing ends a tool but the person.
   const modelToolOpen = design && !compact && (objectTool === 'cut' || isCadTool(objectTool))
   useEffect(() => {
     if (!modelToolOpen) return
@@ -347,7 +348,7 @@ export function Studio() {
       </section>
 
       {mimir ? null : design ? (
-        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={280} tab={{ panel: 'model-inspector', shutFully: true }} docked={phone} sheetTab={!phone}>
+        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={280} tab={{ panel: 'model-inspector', shutFully: true }} docked={phone} sheetTab={!phone} keepMounted={modelToolOpen}>
           <Suspense fallback={<Loading />}>
             <DesignRight />
           </Suspense>

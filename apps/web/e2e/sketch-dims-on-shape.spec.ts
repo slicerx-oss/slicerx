@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Sketch dimension boxes on the shape (the new Model feel, developer flag), with a real mouse and keyboard: Width and
+// Sketch dimension boxes on the shape (the Model feel, on for everyone), with a real mouse and keyboard: Width and
 // Height sit on the rectangle's sides, Length and Angle on the line, Diameter on the circle. The first click puts the
 // keyboard in the first box, typing replaces its value, Tab moves to the next box and on out of them, Enter places the
 // shape and the typed sizes drive it as dimensions, Esc frees a typed value and then drops the shape. A picked shape
-// shows its boxes again to change, and they stay on it with the side panes shut. A phone taps the boxes. The open
-// sketch's boxes read and set the same way a client does over the app link.
+// shows its boxes again to change, and they stay on it with the side panes shut. With the tool pane shut a sketch keeps
+// going and finishes from the keyboard or the ribbon. A phone taps the boxes. The open sketch's boxes read and set the
+// same way a client does over the app link.
 import type { Locator, Page } from '@playwright/test'
 import { command, openStudio, pick, toolPanel } from './cad-helpers'
 import { expect, test } from './fixtures'
@@ -308,14 +309,95 @@ test.describe('sketch dimension boxes on the shape, desktop', () => {
     await clickAt(page, [190, 190])
     await expect(boxOf(page, 'width')).toHaveCount(0)
     await expect.poll(() => dimsDrawn(page)).toEqual({ all: 2, hidden: 0 })
-    // shutting the tool pane closes the sketch panel and the sketch with it: no box is left hanging over the view
+    // shutting the tool pane keeps the sketch: the picked shape's boxes stay on it as the view grows, with its labels
+    // still left off, and the pane opens again on the same sketch
     const canvasWidth = () => page.evaluate(() => Math.round((window as unknown as W).__vp.canvas.getBoundingClientRect().width))
     const open = await canvasWidth()
     await clickAt(page, [110, 120])
     await expect(boxOf(page, 'width')).toBeVisible()
     await page.getByTestId('edge-tab-right').click()
     await expect.poll(canvasWidth).toBeGreaterThan(open + 100)
+    await expect(page.getByTestId('model-inspector')).toBeHidden()
+    await expect(boxOf(page, 'width')).toBeVisible()
+    await expect(inputOf(page, 'width')).toHaveValue('30.00')
+    await expect.poll(() => dimsDrawn(page)).toEqual({ all: 2, hidden: 2 })
+    await page.getByTestId('edge-tab-right').click()
+    await expect.poll(canvasWidth).toBe(open)
+    await expect(toolPanel(page)).toContainText('The bed')
+    await expect(boxOf(page, 'width')).toBeVisible()
+  })
+
+  test('with the tool pane shut a sketch keeps going: boxes typed, Tab never stuck, Finish sketch from the keyboard and the ribbon', async ({ page }) => {
+    test.slow()
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await sketchOnBed(page)
+    const pane = page.getByTestId('model-inspector')
+    const canvasWidth = () => page.evaluate(() => Math.round((window as unknown as W).__vp.canvas.getBoundingClientRect().width))
+    const sketches = () => page.evaluate(() => (window as unknown as { __sx: { getState(): { timeline: { items: { kind: string }[] } } } }).__sx.getState().timeline.items.filter((i) => i.kind === 'sketch').length)
+    const tool = () => page.evaluate(() => (window as unknown as { __sx: { getState(): { objectTool: string | null } } }).__sx.getState().objectTool)
+    const open = await canvasWidth()
+    const shut = async (drawing = true) => {
+      await page.getByTestId('edge-tab-right').click()
+      await expect(pane).toBeHidden()
+      await expect.poll(canvasWidth).toBeGreaterThan(open + 100)
+      if (drawing) await still(page)
+    }
+    await shut()
+    // the sketch is still open with the pane shut
+    expect(await tool()).toBe('sketch')
+    await expect(page.getByTestId('sketch-finish')).toBeVisible()
+    // a rectangle drawn with a real mouse, its sizes typed in the boxes on it
+    await page.keyboard.press('r')
+    await clickAt(page, [110, 110])
+    await move(page, [130, 120])
+    await expect(inputOf(page, 'width')).toBeFocused()
+    await page.keyboard.type('30')
+    await page.keyboard.press('Tab')
+    await expect(inputOf(page, 'height')).toBeFocused()
+    await page.keyboard.type('20')
+    await page.mouse.move(900, 760, { steps: 2 })
+    await page.screenshot({ path: test.info().outputPath('pane-shut-typed.png') })
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => size((await loops(page))[0])).toEqual([30, 20])
+    await expect.poll(() => labels(page)).toEqual(['20', '30'])
+    // Tab past the last box goes back to the view while the panel is hidden, never stuck in the boxes
+    await clickAt(page, [160, 110])
+    await move(page, [170, 120])
+    await expect(inputOf(page, 'width')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Tab')
+    await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe('CANVAS')
+    await page.keyboard.press('Escape')
     await expect(page.locator('[data-testid="shape-box"]')).toHaveCount(0)
+    expect(await tool()).toBe('sketch')
+    // the pane opens on the same sketch, and shuts again
+    await page.getByTestId('edge-tab-right').click()
+    await expect(toolPanel(page)).toContainText('The bed')
+    expect((await loops(page)).length).toBe(1)
+    await shut()
+    // Ctrl/Cmd+Enter finishes it into the timeline with the pane shut
+    await page.keyboard.press('ControlOrMeta+Enter')
+    await expect.poll(sketches).toBe(1)
+    await expect.poll(tool).toBe(null)
+
+    // a second sketch: opening it opens the pane; shut again, it takes its plane, a circle, and the ribbon's Finish sketch
+    await command(page, 'Sketch on the bed or a face')
+    await expect(pane).toBeVisible()
+    await shut(false)
+    await pick(page, { objectId: null, partIndex: null, triangle: null, point: null, bed: [100, 100] })
+    await expect.poll(() => page.evaluate(() => (window as unknown as W).__sketch() !== null)).toBe(true)
+    await still(page)
+    await page.keyboard.press('c')
+    await clickAt(page, [120, 120])
+    await move(page, [126, 120])
+    await expect(inputOf(page, 'diameter')).toBeFocused()
+    await page.keyboard.type('10')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => (await loops(page))[0]?.diameterMm).toBe(10)
+    await page.getByTestId('sketch-finish').click()
+    await expect.poll(sketches).toBe(2)
+    await expect.poll(tool).toBe(null)
+    await expect(pane).toBeHidden()
   })
 
   test('a picked shape under the view buttons keeps its boxes clear of them', async ({ page }) => {
