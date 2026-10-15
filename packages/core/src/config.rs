@@ -701,9 +701,13 @@ impl PrintConfig {
     /// Same as [`Self::from_json`] for an already parsed value.
     pub fn from_value(v: &Value) -> Result<Self> {
         let mut c = Self::default();
-        // omitted gaps follow the layer height; explicit values replace these below.
-        for key in ["support_top_z_distance", "support_bottom_z_distance"] {
-            c.raw.insert(key.to_owned(), Value::String("auto".to_owned()));
+        // a new layer height gets matching gaps unless the request supplies them.
+        if v.get("layer_height").is_some() {
+            for key in ["support_top_z_distance", "support_bottom_z_distance"] {
+                if v.get(key).is_none() {
+                    c.raw.insert(key.to_owned(), Value::String("auto".to_owned()));
+                }
+            }
         }
         c.apply_value(v)?;
         c.check()?;
