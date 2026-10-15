@@ -418,7 +418,7 @@ const CLIPS = {
       }
     },
   },
-  // Add at this layer: drag the layer down, add a pause there, and its pin shows on the track
+  // Add layer action: drag the layer down, add a pause there, and its pin shows on the track
   'layer-add': {
     async setup() {
       await tab('Slice')
@@ -436,7 +436,7 @@ const CLIPS = {
       await page.mouse.move(VIEW.width / 2, VIEW.height - 40)
     },
     async frame() {
-      const add = page.getByRole('button', { name: 'Add at this layer' })
+      const add = page.getByRole('button', { name: 'Add layer action' })
       const track = await page.locator('.layer-track').boundingBox()
       const a = (await centerOf(add)).box
       // the menu opens above the button
@@ -450,7 +450,7 @@ const CLIPS = {
       await page.mouse.move(track.x + track.width * 0.64, track.y + track.height / 2, { steps: 12 })
       await page.mouse.up()
       await sleep(500)
-      await clickOn(page.getByRole('button', { name: 'Add at this layer' }))
+      await clickOn(page.getByRole('button', { name: 'Add layer action' }))
       await sleep(500)
       await clickOn(page.getByRole('menuitem', { name: 'Add pause' }), 300)
       await page.getByRole('menu').waitFor({ state: 'detached', timeout: 3000 }).catch(() => undefined)
