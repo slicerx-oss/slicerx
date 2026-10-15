@@ -157,6 +157,13 @@ uniform vec3 edgeVis;
 uniform vec3 edgeHid;
 uniform float silOn;
 uniform vec3 silColor;
+uniform float silK;
+uniform float silPx;
+uniform float glowK;
+uniform float vigK;
+uniform float vigModel;
+uniform float ditherK;
+uniform float ditherTri;
 uniform sampler2D tDepth;
 uniform vec2 nearFar;
 varying vec2 vUv;
@@ -175,7 +182,7 @@ float silhouette(vec2 uv) {
   float z0 = viewZ(uv);
   float k = 0.035 * z0 + 0.5;
   float e = 0.0;
-  vec2 d = texel * edgePx * 0.75;
+  vec2 d = texel * silPx;
   vec2 o[4];
   o[0] = vec2(d.x, 0.0); o[1] = vec2(-d.x, 0.0); o[2] = vec2(0.0, d.y); o[3] = vec2(0.0, -d.y);
   for (int i = 0; i < 4; i++) {
@@ -215,9 +222,9 @@ void main() {
   col = neutral(col * exposure);
   vec2 q = vec2((vUv.x - 0.5) * aspect, vUv.y - 0.58);
   vec3 bg = mix(bgBot, bgTop, smoothstep(0.0, 1.0, vUv.y));
-  bg = mix(bg, bgGlow, (1.0 - smoothstep(0.0, 0.85, length(q))) * 0.8);
+  bg = mix(bg, bgGlow, (1.0 - smoothstep(0.0, 0.85, length(q))) * glowK);
   vec3 lin = col + pow(bg, vec3(2.2)) * (1.0 - a);
-  if (silOn > 0.5) lin = mix(lin, silColor, silhouette(tuv) * 0.95);
+  if (silOn > 0.5) lin = mix(lin, silColor, silhouette(tuv) * silK);
   if (outlineOn > 0.5) {
     float cov = texture2D(tMask, tuv).r;
     float mx = 0.0, vis = 0.0;
@@ -232,8 +239,11 @@ void main() {
   }
   vec3 o = toSRGB(lin);
   vec2 v = vUv - 0.5;
-  o *= 1.0 - dot(v, v) * 0.42;
-  o += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+  // the vignette darkens the whole picture, or with vigModel 0 only the backdrop around the models
+  o *= mix(1.0, 1.0 - dot(v, v) * vigK, mix(1.0 - a, 1.0, vigModel));
+  float n = hash(gl_FragCoord.xy) - 0.5;
+  if (ditherTri > 0.5) n = 0.5 * (n + hash(gl_FragCoord.yx + 17.0) - 0.5);
+  o += ditherK * n / 255.0;
   gl_FragColor = vec4(o, 1.0);
 }
 `
@@ -288,6 +298,28 @@ export class Pipeline {
   aoRadius = 6
   aoStrength = 0.9
   exposure = 1
+  /** How far the CAD silhouette reaches, in CSS pixels. */
+  silhouetteCssPx = 1.5
+
+  /** The grade pass's look knobs (look.ts): backdrop lift, vignette, dither and the CAD silhouette's strength. */
+  setGrade(o: { centerStrength: number; vignette: number; vignetteOnModels: boolean; dither: number; ditherTriangular: boolean; silhouette: number; silhouetteWidthPx: number }): void {
+    const u = this.gradeMat.uniforms
+    if (u.glowK) u.glowK.value = o.centerStrength
+    if (u.vigK) u.vigK.value = o.vignette
+    if (u.vigModel) u.vigModel.value = o.vignetteOnModels ? 1 : 0
+    if (u.ditherK) u.ditherK.value = o.dither
+    if (u.ditherTri) u.ditherTri.value = o.ditherTriangular ? 1 : 0
+    if (u.silK) u.silK.value = o.silhouette
+    this.silhouetteCssPx = o.silhouetteWidthPx
+  }
+
+  /** Overrides the backdrop colors (sRGB hex) the theme set; null keeps the theme's. */
+  setBackdrop(top: string | null, bottom: string | null, center: string | null, scene: SceneColors): void {
+    const u = this.gradeMat.uniforms
+    if (u.bgTop) u.bgTop.value = srgb01(top ?? scene.bgTop)
+    if (u.bgBot) u.bgBot.value = srgb01(bottom ?? scene.bgBottom)
+    if (u.bgGlow) u.bgGlow.value = srgb01(center ?? scene.bgGlow)
+  }
 
   /** Background gradient and selection outline colors. */
   /** The silhouette's color, a CSS hex (linear in the shader). */
@@ -385,6 +417,13 @@ export class Pipeline {
         edgeHid: { value: linearColor(SCENE.selectionHidden) },
         silOn: { value: 0 },
         silColor: { value: new Color(0, 0, 0) },
+        silK: { value: 0.95 },
+        silPx: { value: 1.5 },
+        glowK: { value: 0.8 },
+        vigK: { value: 0.42 },
+        vigModel: { value: 1 },
+        ditherK: { value: 1 },
+        ditherTri: { value: 0 },
         tDepth: { value: depthTexture },
         nearFar: { value: new Vector2(1, 1000) },
       },
@@ -453,6 +492,7 @@ export class Pipeline {
     if (g.aspect) g.aspect.value = width / Math.max(1, height)
     ;(g.texel?.value as Vector2).set(1 / w, 1 / h)
     if (g.edgePx) g.edgePx.value = 2 * pixelRatio
+    if (g.silPx) g.silPx.value = this.silhouetteCssPx * pixelRatio
   }
 
   private resizeFast(): void {
@@ -518,6 +558,7 @@ export class Pipeline {
     const ldr = opts.fast ? this.ldrFast : this.ldr
     ;(g.texel?.value as Vector2).set(1 / ldr.width, 1 / ldr.height)
     if (g.edgePx) g.edgePx.value = 2 * this.pixelRatio * (ldr.width / this.width)
+    if (g.silPx) g.silPx.value = this.silhouetteCssPx * this.pixelRatio * (ldr.width / this.width)
     if (this.fxaa && (opts.fast || this.fxaaAfterMsaa || opts.silhouette === true || this.main.samples === 0)) {
       ;(this.fxaaMat.uniforms.resolution?.value as Vector2).set(1 / ldr.width, 1 / ldr.height)
       if (this.fxaaMat.uniforms.tDiffuse) this.fxaaMat.uniforms.tDiffuse.value = ldr.texture

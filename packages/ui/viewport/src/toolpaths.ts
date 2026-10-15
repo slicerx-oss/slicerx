@@ -985,6 +985,12 @@ export class Toolpaths {
     old.dispose()
   }
 
+  /** Scales the room environment's light on beads lit per vertex, to match the scene's environment intensity (look.ts). */
+  setEnvironmentScale(k: number): void {
+    this.uniforms.uEnvDiffuse.value = 0.9 * k
+    this.uniforms.uEnvSpec.value = 0.9 * k
+  }
+
   /** How dark the groove between stacked layers is, 0 (none) to 1. */
   setCrease(amount: number): void {
     this.uniforms.uCrease.value = Math.max(0, Math.min(1, amount))

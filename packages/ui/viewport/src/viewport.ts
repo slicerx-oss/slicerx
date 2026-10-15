@@ -62,7 +62,8 @@ import { BrimEars } from './brim'
 import { GapLines, type GapLine } from './gaps'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, NO_INSETS, PoseWatch, reducedMotion, type Insets } from './camera'
-import { cadLook, edgeLook, MaterialCache, setEdgeResolution, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
+import { BASELINE_LOOK, lookProblems, type ViewportLook } from './look'
+import { cadLook, edgeLook, MaterialCache, setEdgeResolution, setMaterialLook, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
 import { buildObject, disposeObject, wideEdges, type AsyncPartBuild, type ObjectEntry, type PartEntry } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
@@ -255,6 +256,8 @@ class ViewportImpl implements Viewport {
   private readonly cleanups: (() => void)[] = []
   private mode: ViewportMode = 'prepare'
   private renderMode: RenderMode = 'studio'
+  /** The look set with setLook, or null for the shipped look. */
+  private lookSet: ViewportLook | null = null
   /** The filament slot picked out by setHighlightSlot, or null. */
   private highlightSlot: number | null = null
   private selection: string[] = []
@@ -904,6 +907,7 @@ class ViewportImpl implements Viewport {
     const ao = this.aoOn && aoMix > 0 && this.display !== 'wireframe' && !(this.mode === 'prepare' && this.renderMode === 'xray')
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
+    this.stage.placeViewLights(this.camera)
     this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
     // the new decor holds its programs now, so what it replaced can go without them being compiled again
     this.stage.releaseRetired()
@@ -2960,7 +2964,45 @@ class ViewportImpl implements Viewport {
     this.strikes.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     this.spot.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     this.toolpaths.setGantryColor(t.scene.overhangRed)
+    if (this.lookSet) this.applyLook(this.lookSet)
     this.applyMaterials()
+  }
+
+  /**
+   * Sets how the studio and models are lit and graded (look.ts); null goes back to the shipped look. A look changes
+   * no theme colors it leaves null, and the theme can change under it. Throws if `lookProblems` reports anything.
+   */
+  setLook(look: ViewportLook | null): void {
+    if (look) {
+      const problems = lookProblems(look)
+      if (problems.length) throw new Error(`Invalid viewport look: ${problems.join('; ')}`)
+    }
+    this.lookSet = look ? structuredClone(look) : null
+    this.applyLook(this.lookSet ?? BASELINE_LOOK)
+    // cached filament materials were made with the old values
+    this.mats.dispose()
+    this.applyMaterials()
+    this.invalidate()
+  }
+
+  /** The look the viewport draws with: the one set with setLook, or BASELINE_LOOK. */
+  look(): ViewportLook {
+    return structuredClone(this.lookSet ?? BASELINE_LOOK)
+  }
+
+  private applyLook(L: ViewportLook): void {
+    const scene = this.theme.scene
+    this.pipeline.setBackdrop(L.backdrop.top, L.backdrop.bottom, L.backdrop.center, scene)
+    this.pipeline.setGrade({ ...L.backdrop, silhouette: L.geometry.silhouette, silhouetteWidthPx: L.geometry.silhouetteWidthPx })
+    this.pipeline.exposure = L.lighting.exposure
+    this.pipeline.aoRadius = L.geometry.aoRadiusMm
+    this.pipeline.aoStrength = L.geometry.aoStrength
+    this.stage.setLights(L.lighting)
+    this.stage.setPlateLook(L.plate)
+    this.toolpaths.setEnvironmentScale(L.lighting.environment)
+    setMaterialLook(this.lookSet, scene.bgTop, this.stage.scene.environment)
+    this.pipeline.setSilhouetteColor(cadLook(scene.bgTop).edge)
+    this.shadowDirty = true
   }
 
   setControls(controls: ControlsPresetId | ControlsMap): void {

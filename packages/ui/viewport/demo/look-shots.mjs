@@ -1,57 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Renders the look lab (look.html) for every scene, look, studio and tab, one PNG each, at dpr 2.
-// Usage: PW_FROM=<path to packages/ui/viewport/package.json> node look-shots.mjs <base url> <out dir> [gl] [filter]
-// gl: metal, vulkan, gl or swiftshader (default swiftshader). filter: a substring the shot name must contain.
-import { mkdirSync, writeFileSync } from 'node:fs'
+// Drives the look lab (look.html) through a list of jobs: each opens the page with a query, waits for the still frame,
+// optionally saves a PNG and evaluates measuring calls on window.__lab (look.ts), printing one JSON line per job.
+// Usage: PW_FROM=<path to packages/ui/viewport/package.json> node look-shots.mjs <base url> <out dir> <jobs.json> [gl]
+// jobs.json: [{ "name": "...", "q": "scene=block&shade=new&studio=precision&tab=model&cam=close", "shot": true,
+//               "eval": ["__lab.stats()", "__lab.perf()"] }]
+// gl: metal, vulkan, gl or swiftshader (default metal).
+import { mkdirSync, readFileSync, appendFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 const require = createRequire(process.env.PW_FROM ?? import.meta.url)
 const { chromium } = require('playwright-core')
 
-const base = process.argv[2] ?? 'http://127.0.0.1:5191/look.html'
+const base = process.argv[2] ?? 'http://127.0.0.1:5291/look.html'
 const out = process.argv[3] ?? 'look-shots'
-const gl = process.argv[4] ?? 'swiftshader'
-const filter = process.argv[5] ?? ''
+const jobs = JSON.parse(readFileSync(process.argv[4], 'utf8'))
+const gl = process.argv[5] ?? 'metal'
 mkdirSync(out, { recursive: true })
 
 const args = { swiftshader: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'], metal: ['--use-angle=metal'], vulkan: ['--use-angle=vulkan', '--enable-features=Vulkan'], gl: ['--use-angle=gl'] }[gl]
 const browser = await chromium.launch({ headless: true, args: [...args, '--ignore-gpu-blocklist', '--enable-gpu'] })
-const ctx = await browser.newContext({ viewport: { width: 960, height: 600 }, deviceScaleFactor: 2 })
-
-const scenes = (process.env.SCENES ?? 'organic,mech,dark').split(',')
-const looks = (process.env.LOOKS ?? 'current,A,B,C,D').split(',')
-const studios = (process.env.STUDIOS ?? 'dark,light').split(',')
-const tabs = (process.env.TABS ?? 'slice,model').split(',')
-// PATCHES: optional JSON {tag: patch} of tuning variants; each shot is rendered once per tag
-const patches = Object.entries(JSON.parse(process.env.PATCHES ?? '{"":{}}'))
-// warm-up: the first page in a fresh browser compiles every program and can frame the plate late; its shot is thrown away
-{
+const ctx = await browser.newContext({ viewport: { width: Number(process.env.VW ?? 960), height: Number(process.env.VH ?? 600) }, deviceScaleFactor: 2 })
+// warm-up: the first page in a fresh browser compiles every program; its result is thrown away
+if (!process.env.NOWARM) {
   const page = await ctx.newPage()
-  await page.goto(`${base}?scene=organic&look=current&studio=dark&tab=slice`)
+  await page.goto(`${base}?scene=block&shade=new&studio=precision&tab=model`)
   await page.waitForFunction(() => window.__lookReady === true, null, { timeout: 120000 })
   await page.close()
 }
-const times = []
-for (const scene of scenes)
-  for (const studio of studios)
-    for (const tab of tabs)
-      for (const look of looks)
-       for (const [tag, patch] of patches) {
-        const name = `${scene}-${studio}-${tab}-${look}${tag ? '-' + tag : ''}`
-        if (filter && !name.includes(filter)) continue
-        const page = await ctx.newPage()
-        const errors = []
-        page.on('pageerror', (e) => errors.push(String(e)))
-        page.on('console', (m) => m.type() === 'error' && errors.push(m.text().slice(0, 300)))
-        const t0 = Date.now()
-        await page.goto(`${base}?scene=${scene}&look=${look}&studio=${studio}&tab=${tab}&p=${encodeURIComponent(JSON.stringify(patch))}`)
-        await page.waitForFunction(() => window.__lookReady === true, null, { timeout: 120000 })
-        const info = await page.evaluate(() => window.__lookInfo)
-        await page.screenshot({ path: `${out}/${name}.png` })
-        const ms = Date.now() - t0
-        times.push({ name, ms, info, errors })
-        console.log(JSON.stringify({ name, ms, ...info, errors: errors.length ? errors : undefined }))
-        await page.close()
+for (const job of jobs) {
+  const page = await ctx.newPage()
+  const errors = []
+  page.on('pageerror', (e) => errors.push(String(e)))
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text().slice(0, 300)))
+  const t0 = Date.now()
+  let res = {}
+  try {
+    await page.goto(`${base}?${job.q}`)
+    await page.waitForFunction(() => window.__lookReady === true, null, { timeout: 120000 })
+    if (job.shot !== false) await page.screenshot({ path: `${out}/${job.name}.png` })
+    for (const e of job.eval ?? []) res[e] = await page.evaluate(`(async () => ${e})()`)
+    if (job.frames) {
+      // a turn drawn by the viewport's own loop: the camera steps each animation frame, a PNG per step
+      const { n, deg } = job.frames
+      mkdirSync(`${out}/${job.name}`, { recursive: true })
+      for (let i = 0; i < n; i++) {
+        await page.evaluate(([i, n, deg]) => new Promise((r) => {
+          const c = window.__lab.cam
+          window.__lab.vp.setCamera({ ...c, azimuthDeg: c.azimuthDeg + (i / n) * deg }, { animate: false })
+          requestAnimationFrame(() => requestAnimationFrame(() => r(null)))
+        }), [i, n, deg])
+        await page.screenshot({ path: `${out}/${job.name}/f${String(i).padStart(4, '0')}.png` })
       }
-writeFileSync(`${out}/times.json`, JSON.stringify(times, null, 1))
+    }
+  } catch (e) {
+    errors.push(String(e).slice(0, 300))
+  }
+  const line = JSON.stringify({ name: job.name, ms: Date.now() - t0, res, errors: errors.length ? errors : undefined })
+  console.log(line)
+  appendFileSync(`${out}/results.jsonl`, line + '\n')
+  await page.close()
+}
 await browser.close()
