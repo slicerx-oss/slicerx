@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-194 tools.
+196 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -16,6 +16,8 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_plate_show` |  |  | read | Show one plate of the project open in SlicerX, as its plate picker does: plate (a number from 1, or an id from slicerx_app_plates), or step: next or previous (stepping stops at the first and last plate). |
 | `slicerx_app_plates` |  |  | read | List the plates of the project open in SlicerX, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), which plate the window shows, and which plate its view draws (drawn; the same as shown once the view has caught up). |
 | `slicerx_app_redo` |  |  | slice | Redo one project edit from the toolbar history. |
+| `slicerx_app_sketch_box_set` |  |  | slice | Type a value into one dimension box of the sketch open in SlicerX, as the person does on the shape: the value becomes a driving dimension and the sketch's solver moves the shape to meet it. |
+| `slicerx_app_sketch_boxes` |  |  | read | Read the dimension boxes of the sketch open in SlicerX: every rectangle (width, height), line (length, angle from the sketch's X axis) and circle (diameter) with its value now and whether a dimension sets it (driving moves the shape, driven only reports it), plus the sketch's dimensions and the degrees of freedom left. |
 | `slicerx_app_step_bind` |  |  | slice | Bind a history step's main number to an expression in the open project, or pass expression:null to keep the number and stop following it. |
 | `slicerx_app_undo` |  |  | slice | Undo one recorded project edit using the same history as the toolbar, including object transforms, plate edits and design changes. |
 | `slicerx_app_value_remove` |  |  | slice | Remove a named value from the open project. |
