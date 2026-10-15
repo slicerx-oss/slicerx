@@ -58,12 +58,13 @@ export function Icon(props: IconProps) {
   return props.name === 'mimir' || props.name === 'pilot' ? <AssistantIcon {...props} /> : <BaseIcon {...props} />
 }
 
-function AssistantIcon({ name, size, label, small, className, style, ...rest }: IconProps) {
+function AssistantIcon(props: IconProps) {
+  const { name, size, label, small, className, style, ...rest } = props
   const brand = useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
   const { theme } = useTheme()
   const accent = typeof brand.accent === 'string' ? brand.accent : brand.accent?.[theme.scheme]
   const color = accent ? { color: accent, ...style } : style
-  if (brand.icon === 'builtin:mimir') return <BaseIcon name={name} {...(size === undefined ? {} : { size })} {...(label === undefined ? {} : { label })} {...(small === undefined ? {} : { small })} {...(className === undefined ? {} : { className })} {...(color === undefined ? {} : { style: color })} {...rest} />
+  if (brand.icon === 'builtin:mimir') return <BaseIcon {...props} {...(color === undefined ? {} : { style: color })} />
   return (
     <svg className={className ? `sx-ic ${className}` : 'sx-ic'} width={size} height={size} viewBox="0 0 24 24"
       role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./assistant-style": "./src/assistant-style.tsx",
     "./tokens.css": "./src/tokens.css",
     "./styles.css": "./src/styles.css",
     "./gallery": "./src/gallery.tsx",

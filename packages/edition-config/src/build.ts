@@ -24,6 +24,7 @@ export function viteDefines(config: EditionConfig, env: Record<string, string | 
   const switches = list === undefined ? fromConfig : Object.fromEntries(Object.keys(fromConfig).map((k) => [k, list.split(',').map((s) => s.trim()).includes(k)]))
   return {
     [EDITION_GLOBAL]: JSON.stringify(config),
+    __SX_ASSISTANT_BRAND__: JSON.stringify(config.brand.assistant),
     ...Object.fromEntries(Object.entries(switches).map(([k, v]) => [`__SX_FEATURE_${k.toUpperCase()}__`, JSON.stringify(v)])),
   }
 }

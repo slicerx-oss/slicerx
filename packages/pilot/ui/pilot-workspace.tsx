@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
-import { AssistantStyle } from '@slicerx/ui'
+import { AssistantStyle } from '@slicerx/ui/assistant-style'
 import {
   PERMISSION_LABELS,
   type ApprovalRequest,
