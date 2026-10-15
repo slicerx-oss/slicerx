@@ -31,6 +31,7 @@ import { setPhoneSketchSlot, usePhoneSketchUsed } from './phone-slot'
 import { nextPick } from './shelf'
 import { availableTools, nextSlot, pickWords, SHELF_GROUPS, type DialogTool, type ShelfTool } from './shelf-tools'
 import { ViewRing } from './view-ring'
+import { SelectOtherList } from './select-other-list'
 import './phone-model.css'
 
 const ToolDialog = lazy(() => import('../prepare/tool-dialog').then((m) => ({ default: m.ToolDialog })))
@@ -272,6 +273,7 @@ export function PhoneShelf({ sheetKeys }: { sheetKeys: PhoneSheets }) {
         </div>
       </div>
       <ViewRing />
+      <SelectOtherList />
       {dialog ? (
         <Suspense fallback={null}>
           <ToolDialog tool={dialog} onClose={() => set({ objectTool: null })} />
