@@ -129,6 +129,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: they change how the window behaves, never the project. No other setting is reachable.
     ("look.get", LinkClass::Read),
     ("look.set", LinkClass::Read),
+    ("select.filter", LinkClass::Read),
+    ("select.filter_set", LinkClass::Read),
     ("values.list", LinkClass::Read),
     ("values.set", LinkClass::Edit),
     ("values.remove", LinkClass::Edit),
@@ -384,6 +386,8 @@ mod tests {
         ("plates.show", LinkClass::Read),
         ("look.get", LinkClass::Read),
         ("look.set", LinkClass::Read),
+        ("select.filter", LinkClass::Read),
+        ("select.filter_set", LinkClass::Read),
         ("values.list", LinkClass::Read),
         ("values.set", LinkClass::Edit),
         ("values.remove", LinkClass::Edit),

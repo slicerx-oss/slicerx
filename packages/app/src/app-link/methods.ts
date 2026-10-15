@@ -51,6 +51,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // window behaves, never the project.
   'look.get': 'read',
   'look.set': 'read',
+  'select.filter': 'read',
+  'select.filter_set': 'read',
   'values.list': 'read',
   'values.set': 'edit',
   'values.remove': 'edit',
@@ -361,6 +363,8 @@ const HANDLERS: Record<string, Handler> = {
   'plates.show': (args) => showPlate(args),
   'look.get': () => lookState(),
   'look.set': (args) => setLook(args),
+  'select.filter': async () => (await import('./pick-filter')).readPickFilter(),
+  'select.filter_set': async (args) => (await import('./pick-filter')).setPickFilter(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),
