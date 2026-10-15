@@ -58,6 +58,9 @@ export function PushTool() {
   const onPick = useCallback(
     (hit: PickEvent) => {
       if (live.current.busy) return
+      // The face the tool already has (handed back as Model's pick when the tool opens again) keeps its distance.
+      const f = live.current.face
+      if (f && hit.objectId === f.objectId && (hit.partIndex ?? 0) === f.partIndex && hit.triangle === f.pick.triangle) return
       if (hit.objectId && hit.point && hit.triangle !== null) {
         setText('')
         void pick(hit.objectId, hit.partIndex ?? 0, hit.triangle, hit.point)
