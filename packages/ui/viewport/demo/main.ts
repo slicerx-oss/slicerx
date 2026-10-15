@@ -5,7 +5,7 @@
 // mode (prepare or preview), quality, pr (max pixel ratio), sxpv (URL of a
 // real SXPV file to load instead of the synthetic one).
 import { readPreview, type Bed, type PreviewBuffers } from '@slicerx/contracts'
-import { createViewport, FEATURE_COLORS, HEAT_RAMP, summarizePreview, type ColorMode, type Quality, type RenderMode, type ViewportObject, type ViewportStats } from '../src/index'
+import { createViewport, FEATURE_COLORS, HEAT_RAMP, LOOK_PRESETS, summarizePreview, type ColorMode, type LookPresetId, type Quality, type RenderMode, type ViewportObject, type ViewportStats } from '../src/index'
 import { referenceModel } from './models'
 import { synthesizePreview, type SynthPart } from './synth-sxpv'
 
@@ -23,6 +23,9 @@ const $ = <T extends HTMLElement>(id: string): T => {
 if (q.get('bare') === '1') document.body.classList.add('bare')
 const canvas = $<HTMLCanvasElement>('vp')
 const vp = createViewport(canvas, { controls: (q.get('controls') as 'slicerx' | 'bambu-studio' | 'prusaslicer' | 'orcaslicer' | null) ?? 'slicerx', quality, maxPixelRatio: maxPr, adaptive: q.get('adaptive') !== '0', reveal: q.get('reveal') !== '0' })
+// look=dark-precision or look=light-studio draws that studio preset instead of the shipped look (the bench compares them)
+const lookId = q.get('look')
+if (lookId && lookId in LOOK_PRESETS) vp.setLook(LOOK_PRESETS[lookId as LookPresetId])
 vp.on('degrade', (e) => console.warn(e.message))
 vp.on('error', (e) => console.error(e.message))
 

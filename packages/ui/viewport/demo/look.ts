@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Look lab: one still of a lab scene with a shading and a studio, for side by side picks, plus measurements.
 // Query: scene (look-models.ts), shade (base, new), studio (dark, light, precision, graphite, lightnew), tab (model, slice,
-// lines, paths), cam (wide, close), sel (1 selects the first object), p (JSON patch on the look), nolook (1: never call setLook).
+// lines, paths), cam (wide, close), sel (1 selects the first object), p (JSON patch on the look), nolook (1: never call setLook),
+// fit (largest part side in mm), lift (mm off the bed), proj (ortho), hover (1: lay on face tool, for a pointer hover).
 // Sets window.__lookReady once the still frame has settled; window.__lab has the measuring helpers.
 import type { ViewportLookPatch, ViewportTheme } from '../src/index'
 import { createViewport, readPreview } from '../src/index'
@@ -29,6 +30,13 @@ const tab = q.get('tab') ?? 'slice'
 const camName = q.get('cam') ?? 'close'
 const patch = JSON.parse(q.get('p') ?? '{}') as ViewportLookPatch
 const noLook = q.get('nolook') === '1'
+// fit: scale every part so its largest side is this many mm, laid out in a row at the bed center (small and large parts)
+const fitMm = q.get('fit') ? Number(q.get('fit')) : null
+// lift: raise every part this many mm off the bed (a floating part's contact shadow)
+const liftMm = Number(q.get('lift') ?? 0)
+// proj=ortho draws the orthographic view; hover=1 turns on the lay on face tool, whose hover lights the face under the pointer
+const ortho = q.get('proj') === 'ortho'
+const hover = q.get('hover') === '1'
 
 function lightTheme(): ViewportTheme {
   const s = subbanLight.scene!
@@ -51,14 +59,41 @@ function lightTheme(): ViewportTheme {
 const canvas = document.getElementById('vp') as HTMLCanvasElement
 const vp = createViewport(canvas, { quality: 'high', maxPixelRatio: 2, adaptive: false, reveal: false, ...(studio.theme === 'light' ? { theme: lightTheme() } : {}) })
 const bed = { widthMm: 256, depthMm: 256, heightMm: 256 }
-const parts = labParts(scene)
+// first=1 keeps only the scene's first part (one large part on the bed)
+const parts = fitParts(q.get('first') === '1' ? labParts(scene).slice(0, 1) : labParts(scene), fitMm)
+
+/** Scales each part so its largest side is `fit` mm and sets them in a row across the bed center; null leaves them. */
+function fitParts(list: ReturnType<typeof labParts>, fit: number | null): ReturnType<typeof labParts> {
+  if (fit === null) return list
+  const gap = Math.max(2, fit * 0.25)
+  let x = 128 - ((list.length - 1) * (fit + gap)) / 2
+  return list.map((p) => {
+    const lo = [Infinity, Infinity, Infinity]
+    const hi = [-Infinity, -Infinity, -Infinity]
+    for (let k = 0; k < p.positions.length; k++) {
+      lo[k % 3] = Math.min(lo[k % 3]!, p.positions[k]!)
+      hi[k % 3] = Math.max(hi[k % 3]!, p.positions[k]!)
+    }
+    const k = fit / Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!)
+    const c = [(lo[0]! + hi[0]!) / 2, (lo[1]! + hi[1]!) / 2]
+    const positions = new Float32Array(p.positions.length)
+    for (let i = 0; i < positions.length; i += 3) {
+      positions[i] = (p.positions[i]! - c[0]!) * k
+      positions[i + 1] = (p.positions[i + 1]! - c[1]!) * k
+      positions[i + 2] = (p.positions[i + 2]! - lo[2]!) * k
+    }
+    const at: [number, number] = [x, 128]
+    x += fit + gap
+    return { ...p, positions, at }
+  })
+}
 vp.setPlate({
   bed,
   surfaceLabel: 'Textured PEI',
   objects: parts.map((p, i) => ({
     id: `p${i}`,
     name: p.name,
-    transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, p.at[0], p.at[1], 0, 1],
+    transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, p.at[0], p.at[1], liftMm, 1],
     parts: [{ name: p.name, positions: p.positions, indices: p.indices, color: p.color, finish: 'basic' as const }],
   })),
 })
@@ -81,7 +116,12 @@ const CLOSE: Record<LabScene, Cam> = {
   color: { target: [150, 110, 14], azimuthDeg: -28, elevationDeg: 34, distanceMm: 300 },
   mixed: { target: [128, 120, 18], azimuthDeg: -30, elevationDeg: 32, distanceMm: 420 },
 }
-const cam: Cam = camName === 'wide' ? WIDE : CLOSE[scene]
+const fitCam = (fit: number, n: number): Cam => {
+  const span = n * fit * 1.25
+  return { target: [128, 128, fit * 0.35], azimuthDeg: -30, elevationDeg: 30, distanceMm: Math.max(span * 1.7, fit * 2.6) }
+}
+const cam: Cam = camName === 'wide' ? WIDE : fitMm !== null ? fitCam(fitMm, parts.length) : CLOSE[scene]
+if (hover) vp.setTool('face')
 
 interface Internals {
   camera: PerspectiveCamera
@@ -297,6 +337,11 @@ void (async () => {
   // a slow first build can frame the plate after the first call, so set the view again once it has settled
   vp.setCamera(cam, { animate: false })
   await settle()
+  // orthographic from the framed view, as the app's projection toggle does
+  if (ortho) {
+    vp.setProjection('orthographic')
+    await settle()
+  }
   const t0 = performance.now()
   if (!noLook) vp.setLook(compose(shade, studioId, patch))
   await sleep(500)
