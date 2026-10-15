@@ -228,6 +228,66 @@ export function place(anchor: Rect, tip: { w: number; h: number }, prefer: Side,
   return { x, y, side }
 }
 
+/** Anything a person can press, drag or type into: what a tip must not cover. */
+const CONTROLS = 'button, a[href], input, select, textarea, summary, [role=button], [role=slider], [role=tab], [role=menuitem], [role=switch], [role=radio], [role=checkbox]'
+
+/**
+ * Where a tip opens above a whole bar, level with its anchor: just over the bar's painted top edge (its box and the
+ * parts that stick out of it, such as a tab on its edge or a panel opening upward), then higher while it would cover a
+ * control. `controls` are the boxes of the controls outside the bar. Null when there is no room above.
+ */
+export function placeAbove(bar: Rect, anchorX: number, tip: { w: number; h: number }, controls: readonly Rect[], view = { w: window.innerWidth, h: window.innerHeight }): { x: number; y: number; side: Side } | null {
+  const x = Math.max(EDGE, Math.min(anchorX - tip.w / 2, view.w - EDGE - tip.w))
+  let y = bar.top - GAP - tip.h
+  // each pass lifts the tip over the highest control it still touches, so a handful settles it
+  for (let i = 0; i < 8; i++) {
+    const hit = controls.filter((c) => c.width > 0 && c.height > 0 && x < c.right && c.left < x + tip.w && y < c.bottom && c.top < y + tip.h)
+    if (!hit.length) break
+    y = Math.min(...hit.map((c) => c.top)) - GAP - tip.h
+  }
+  return y >= EDGE ? { x, y, side: 'top' } : null
+}
+
+/** True for a part that is hidden or see-through, which takes no room on screen. */
+function unseen(el: HTMLElement): boolean {
+  const st = getComputedStyle(el)
+  return st.visibility === 'hidden' || st.opacity === '0'
+}
+
+/** The box an element paints: its own and those of its parts that stick out of it. */
+function paintedBox(el: HTMLElement): Rect {
+  const r = el.getBoundingClientRect()
+  let { left, right, top, bottom } = r
+  for (const d of Array.from(el.querySelectorAll<HTMLElement>('*'))) {
+    const b = d.getBoundingClientRect()
+    if (!b.width || !b.height || (b.top >= r.top && b.bottom <= r.bottom && b.left >= r.left && b.right <= r.right) || unseen(d)) continue
+    left = Math.min(left, b.left)
+    right = Math.max(right, b.right)
+    top = Math.min(top, b.top)
+    bottom = Math.max(bottom, b.bottom)
+  }
+  return { left, right, top, bottom, width: right - left, height: bottom - top }
+}
+
+/**
+ * The tip's place for an anchor that names a bar to open over (data-tip-above, a selector for an ancestor such as the
+ * playback bar): over the bar's top edge and clear of every control there. Null when the anchor names none, or the
+ * view has no room above the bar.
+ */
+function aboveBar(anchor: HTMLElement, tip: { w: number; h: number }, view: { w: number; h: number }): { x: number; y: number; side: Side } | null {
+  const sel = anchor.getAttribute('data-tip-above')
+  const bar = sel ? (anchor.closest(sel) as HTMLElement | null) : null
+  if (!bar) return null
+  const a = anchor.getBoundingClientRect()
+  const controls: Rect[] = []
+  for (const c of Array.from(document.querySelectorAll<HTMLElement>(CONTROLS))) {
+    if (bar.contains(c) || c.closest('#sx-tip')) continue
+    const b = c.getBoundingClientRect()
+    if (b.width && b.height && !unseen(c)) controls.push(b)
+  }
+  return placeAbove(paintedBox(bar), a.left + a.width / 2, tip, controls, view)
+}
+
 /** Where a tip renders: inside the anchor's open dialog, so a modal dialog's inert backdrop does not swallow it, else the body. */
 function layerFor(anchor: HTMLElement): HTMLElement {
   const d = anchor.closest('dialog')
@@ -487,7 +547,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       const r = el.getBoundingClientRect()
       const tip = { w: r.width, h: r.height }
       const view = { w: window.innerWidth, h: window.innerHeight }
-      setPos(shown.touch ? place(avoidBox(shown.anchor).getBoundingClientRect(), tip, 'top', view) : place(anchorRect(shown.anchor), tip, sideFor(shown.anchor), view, rowList(shown.anchor) !== null))
+      setPos(aboveBar(shown.anchor, tip, view) ?? (shown.touch ? place(avoidBox(shown.anchor).getBoundingClientRect(), tip, 'top', view) : place(anchorRect(shown.anchor), tip, sideFor(shown.anchor), view, rowList(shown.anchor) !== null)))
     }
     measure()
     const ro = new ResizeObserver(measure)

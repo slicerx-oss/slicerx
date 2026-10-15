@@ -278,7 +278,8 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
             data-z={m.z}
             data-swatch={color ? '' : undefined}
             data-selected={ids.some((id) => selected.includes(id)) || undefined}
-            // the tip opens above the pin, so it never covers the Moves track under it
+            // the tip opens over the bar's top edge, level with the pin and clear of the controls there, so it covers none of the bar's
+            data-tip-above=".dock"
             data-tip-side="top"
             style={{ left: p.off ? `calc(${x(layer) * 100}% + ${p.off}px)` : `${x(layer) * 100}%`, ...(p.lane ? ({ '--lane': p.lane } as CSSProperties) : {}), ...(p.off ? ({ '--off': `${p.off}px`, '--jog': `${p.elbow}px` } as CSSProperties) : {}), ...(color ? ({ '--c': color } as CSSProperties) : {}) }}
             aria-label={label}
