@@ -316,6 +316,24 @@ Use the design and step ids from `design_list` and `design_steps`. A null bindin
 | `--profiles-dir <dir>` | `SLICERX_MCP_PROFILES_DIR` | `~/.config/slicerx/profiles` |
 | `--data-dir <dir>` | `SLICERX_MCP_DATA_DIR` or `SLICERX_DATA_DIR` | bundled `data/`, else the clone |
 
+## Volumes in the open app
+
+With the app link enabled, `slicerx_app_volumes` reads the volumes of an object on the shown plate. Use an object id or a unique name. Each volume includes its id, role, local position and rotation, dimensions along its own axes, local and world matrices, world bounds and modifier print overrides.
+
+The person grants this client edit access before it can change volumes:
+
+| Tool | Change |
+| --- | --- |
+| `slicerx_app_volume_add` | Add a box, cylinder, sphere or cone as a negative volume, support blocker, support enforcer or modifier. |
+| `slicerx_app_volume_from_object` | Use another shown object's mesh as the volume, preserving its world placement and consuming that object. |
+| `slicerx_app_volume_set` | Set absolute position, rotation, dimensions, role or modifier values; `clear` removes named overrides. |
+| `slicerx_app_volume_copy` | Duplicate a volume in place, or copy it beside another object using the same placement as Paste. The clipboard stays unchanged. |
+| `slicerx_app_volume_remove` | Remove one volume by id. |
+
+For example, call `slicerx_app_volume_add` with `{"object":"Bracket","role":"modifier","shape":"box","sizeMm":[8,10,12],"settings":{"wall_loops":4}}`. Use the returned `changed` id in later calls, and read `slicerx_app_volumes` again to check the result. Mutations return the full resulting list. `removed` and `consumedObject` identify removals.
+
+Placement uses object coordinates in mm and degrees. Modifier values use the same eligible print keys and validation as the app's panel. Other roles cannot carry these values, and changing away from modifier clears them. Overrides are returned as stored; their effective values depend on each intersected part. Invalid patches leave the project unchanged. Each edit is one toolbar Undo, including conversion from another object; an unchanged patch adds no Undo. Read-only grants cannot edit, locked targets refuse changes, and loading or history edits must finish first. These tools require the live app and never switch to a server-owned project.
+
 ## Adding tools
 
 An edition or another host can start the server in-process and add its own tools, written as mimir tools, without the base package importing them. They go through the same permission policy and approvals:

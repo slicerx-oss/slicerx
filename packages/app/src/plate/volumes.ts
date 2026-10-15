@@ -10,8 +10,16 @@ import { selectedEntry } from './select'
 import { bake } from './mesh-ops'
 import { primitive, type PrimitiveShape } from './mesh-ops'
 import { bounds, compose, decompose, identity, multiply, type Mat4, type Trs, type Vec3 } from './transform'
+import { inStep } from './history'
+import { removeObjects } from './remove'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
+
+export interface VolumeCreation {
+  /** Pure validation and optional placement/settings before the new volume enters the project. */
+  prepare?: (volume: PlateVolumeEntry) => PlateVolumeEntry
+  beforeCommit?: () => void
+}
 
 export const ROLE_LABEL: Record<VolumeRole, string> = {
   negative: 'Negative volume',
@@ -50,26 +58,34 @@ function objectBox(e: PlateEntry): { center: Vec3; size: Vec3 } {
 }
 
 /** Adds a shape as a volume of the object, at its center, a third of its largest side across. */
-export async function addPrimitiveVolume(host: Loader, role: VolumeRole, shape: PrimitiveShape, objectId?: string): Promise<string> {
+export async function addPrimitiveVolume(host: Loader, role: VolumeRole, shape: PrimitiveShape, objectId?: string, options: VolumeCreation = {}): Promise<string> {
   const e = need(objectId)
   const { center, size } = objectBox(e)
   const side = Math.max(2, Math.round(Math.max(...size) / 3))
-  return addVolumeMesh(host, e, role, centered(primitive(shape, side)), center)
-}
-
-async function addVolumeMesh(host: Loader, e: PlateEntry, role: VolumeRole, part: MeshPart, position: Vec3): Promise<string> {
-  const name = `${ROLE_LABEL[role]} ${(e.volumes ?? []).filter((v) => v.role === role).length + 1}`
-  const handle = await host.loadParts(name, [part])
-  const v: PlateVolumeEntry = { id: newId(), name, role, handle, part, local: at(position) }
+  const loaded = await loadVolumeMesh(host, e, role, centered(primitive(shape, side)), center)
+  const v = options.prepare?.(loaded) ?? loaded
+  options.beforeCommit?.()
+  unchanged([e])
   update(e.id, (list) => [...list, v])
   return v.id
+}
+
+function unchanged(entries: readonly PlateEntry[]): void {
+  if (entries.some((e) => get().plate.find((p) => p.id === e.id) !== e)) throw new Error('The object changed or was removed while the volume was loading. Try again.')
+}
+
+async function loadVolumeMesh(host: Loader, e: PlateEntry, role: VolumeRole, part: MeshPart, position: Vec3): Promise<PlateVolumeEntry> {
+  const name = `${ROLE_LABEL[role]} ${(e.volumes ?? []).filter((v) => v.role === role).length + 1}`
+  if (!part.positions.every(Number.isFinite)) throw new Error('The volume has nonfinite coordinates.')
+  const handle = await host.loadParts(name, [part])
+  return { id: newId(), name, role, handle, part, local: at(position) }
 }
 
 /**
  * Turns another object on the plate into a volume of the selected one, keeping where it sits: the
  * way to bring a custom shape in as a cutter or a support blocker. The other object leaves the plate.
  */
-export async function useObjectAsVolume(host: Loader, role: VolumeRole, sourceId: string, targetId?: string): Promise<string> {
+export async function useObjectAsVolume(host: Loader, role: VolumeRole, sourceId: string, targetId?: string, options: VolumeCreation = {}): Promise<string> {
   const target = need(targetId)
   const src = get().plate.find((p) => p.id === sourceId)
   if (!src || src.id === target.id) throw new Error('Pick a different object.')
@@ -80,9 +96,16 @@ export async function useObjectAsVolume(host: Loader, role: VolumeRole, sourceId
   const merged = mergeOne(local, src.name)
   const box = bounds([merged], identity())
   const c: Vec3 = box ? [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, (box.min[2] + box.max[2]) / 2] : [0, 0, 0]
-  const id = await addVolumeMesh(host, target, role, bake(merged, at([-c[0], -c[1], -c[2]])), c)
-  set({ plate: get().plate.filter((p) => p.id !== src.id), selection: target.id, selectedIds: [target.id] })
-  return id
+  const loaded = await loadVolumeMesh(host, target, role, bake(merged, at([-c[0], -c[1], -c[2]])), c)
+  const v = options.prepare?.(loaded) ?? loaded
+  options.beforeCommit?.()
+  unchanged([target, src])
+  inStep({}, () => {
+    update(target.id, (list) => [...list, v])
+    removeObjects([src.id])
+    set({ selection: target.id, selectedIds: [target.id] })
+  })
+  return v.id
 }
 
 function mergeOne(parts: MeshPart[], name: string): MeshPart {
@@ -100,6 +123,7 @@ function mergeOne(parts: MeshPart[], name: string): MeshPart {
 function invertRigid(m: Mat4): Mat4 {
   const t = decompose(m)
   const s = t.scale
+  if (!m.every(Number.isFinite) || s.some((n) => !Number.isFinite(n) || n === 0)) throw new Error('The object scale must be finite and nonzero.')
   const inv = compose({ position: [0, 0, 0], rotation: t.rotation, scale: [1, 1, 1] })
   // R^T, then scale by 1/s, then the translation that undoes the position.
   const rt = [inv[0]!, inv[4]!, inv[8]!, 0, inv[1]!, inv[5]!, inv[9]!, 0, inv[2]!, inv[6]!, inv[10]!, 0, 0, 0, 0, 1]

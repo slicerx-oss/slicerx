@@ -6,6 +6,8 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { apply, bounds, compose, identity } from '../src/plate/transform'
 import { addPrimitiveVolume, removeVolume, requestVolumes, setModifierSetting, setVolumeRole, setVolumeSize, setVolumeTrs, useObjectAsVolume, volumeSize } from '../src/plate/volumes'
 import { get, set, type PlateEntry } from '../src/state/store'
+import { history } from '../src/plate/history'
+import { clipboard, copySelection, pasteVolumesInto } from '../src/plate/clipboard'
 
 const loader = {
   loadParts: async (name: string, parts: MeshPart[]): Promise<MeshHandle> => ({ id: `h-${name}-${Math.random()}`, hash: name, name, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: parts.map((p) => ({ name: p.name, slot: 1, triangles: 12 })) }),
@@ -18,7 +20,8 @@ async function entry(id: string, size: number, position: [number, number, number
 }
 
 beforeEach(async () => {
-  set({ plate: [await entry('a', 30, [100, 100, 15])], selection: 'a', selectedIds: ['a'], slice: { status: 'idle' } })
+  set({ plate: [await entry('a', 30, [100, 100, 15])], activePlate: 'shown', plates: [{ id: 'shown', name: 'Shown', objects: [], settings: {} }], objectSettings: {}, selection: 'a', selectedIds: ['a'], slice: { status: 'idle' } })
+  history().clear()
 })
 
 describe('volumes', () => {
@@ -88,5 +91,73 @@ describe('volumes', () => {
     await expect(useObjectAsVolume(loader, 'negative', 'a', 'a')).rejects.toThrow(/different/)
     set({ selection: null, plate: [] })
     await expect(addPrimitiveVolume(loader, 'negative', 'box')).rejects.toThrow(/Select an object/)
+  })
+
+  it('restores the source and removes its volume together in one Undo', async () => {
+    const source = await entry('cutter', 10, [110, 100, 15])
+    set({ plate: [...get().plate, source] })
+    history().clear()
+    await useObjectAsVolume(loader, 'negative', 'cutter', 'a')
+    expect(get().plate).toHaveLength(1)
+    expect(history().snapshots()).toHaveLength(1)
+    expect(history().undo()).toBe(true)
+    expect(get().plate).toHaveLength(2)
+    expect(get().plate[0]?.volumes).toBeUndefined()
+    expect(get().plate[1]).toBe(source)
+    expect(history().redo()).toBe(true)
+    expect(get().plate).toHaveLength(1)
+    expect(get().plate[0]?.volumes).toHaveLength(1)
+  })
+
+  it('does not consume a source when its target disappears during mesh loading', async () => {
+    const source = await entry('cutter', 10, [110, 100, 15])
+    set({ plate: [...get().plate, source] })
+    const delayed = { loadParts: async (name: string, parts: MeshPart[]) => {
+      set({ plate: get().plate.filter((p) => p.id !== 'a') })
+      return loader.loadParts(name, parts)
+    } }
+    await expect(useObjectAsVolume(delayed, 'negative', 'cutter', 'a')).rejects.toThrow(/changed|removed/i)
+    expect(get().plate).toEqual([source])
+  })
+
+  it('keeps a converted source\'s surviving copies and shared settings valid on other plates', async () => {
+    const source = { ...await entry('cutter', 10, [110, 100, 15]), partSettings: { body: { wall_loops: 3 } } }
+    const { partSettings: _settings, ...mesh } = source
+    const copy = { ...mesh, id: 'copy', instanceOf: 'cutter' }
+    set({ plate: [...get().plate, source], objectSettings: { cutter: { wall_loops: 4 } }, plates: [get().plates[0]!, { id: 'other', name: 'Other', objects: [copy], settings: {} }] })
+    history().clear()
+    await useObjectAsVolume(loader, 'negative', 'cutter', 'a')
+    const survivor = get().plates[1]!.objects[0]!
+    expect(survivor.instanceOf).toBeUndefined()
+    expect(survivor.partSettings).toEqual(source.partSettings)
+    expect(get().objectSettings).toEqual({ copy: { wall_loops: 4 } })
+    history().undo()
+    expect(get().plates[1]!.objects[0]).toBe(copy)
+    expect(get().objectSettings).toEqual({ cutter: { wall_loops: 4 } })
+  })
+
+  it('copies a volume directly without replacing the clipboard, preserving the UI paste placement', async () => {
+    await addPrimitiveVolume(loader, 'modifier', 'box')
+    const volume = get().plate[0]!.volumes![0]!
+    const target = await entry('other', 20, [50, 60, 10])
+    set({ plate: [...get().plate, target] })
+    copySelection()
+    const copied = clipboard()
+    history().clear()
+    const same = pasteVolumesInto([volume], 'a', 'a')
+    expect(same).toHaveLength(1)
+    expect(get().plate[0]!.volumes![1]!.local).toEqual(volume.local)
+    expect(clipboard()).toBe(copied)
+    history().undo()
+    const other = pasteVolumesInto([volume], 'a', 'other')
+    expect(other).toHaveLength(1)
+    const pasted = get().plate[1]!.volumes![0]!
+    const box = bounds([pasted.part], pasted.local)!
+    const body = bounds(target.parts, identity())!
+    expect(box.min[0]).toBeCloseTo(body.max[0])
+    expect(box.min[1]).toBeCloseTo(body.min[1])
+    expect(box.min[2]).toBeCloseTo(body.min[2])
+    expect(clipboard()).toBe(copied)
+    expect(history().snapshots()).toHaveLength(1)
   })
 })

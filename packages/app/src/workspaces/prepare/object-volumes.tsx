@@ -7,6 +7,7 @@ import { Button, LinkButton, Select, VectorField } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
 import { useHost } from '../../host'
 import { copyVolume } from '../../plate/clipboard'
+import { modifierSetting } from '../../plate/modifier-settings'
 import type { PrimitiveShape } from '../../plate/mesh-ops'
 import { addPrimitiveVolume, removeVolume, ROLE_LABEL, setModifierSetting, setVolumeRole, setVolumeSize, setVolumeTrs, useObjectAsVolume, volumeSize } from '../../plate/volumes'
 import { plateScrub } from '../../plate/scrub'
@@ -15,7 +16,7 @@ import { toast, useApp, type PlateVolumeEntry, type VolumeRole } from '../../sta
 import { isVisible, resolveConfig, SETTINGS } from '../../adapters/settings'
 import { useFilamentCount } from '../../filament/count'
 import { fuzzyScore } from '../../commands/fuzzy'
-import { EDITABLE, Field, visibleLevels } from './expert-settings'
+import { Field, visibleLevels } from './expert-settings'
 import { effectiveMode, useLayout } from '../../first-run/look'
 import './object-volumes.css'
 
@@ -28,9 +29,6 @@ const SHAPES: { value: PrimitiveShape; label: string }[] = [
 ]
 const DOT: Record<VolumeRole, string> = { negative: 'var(--red)', support_blocker: 'var(--orange)', support_enforcer: 'var(--green)', modifier: 'var(--cyan)' }
 
-/** The walls, infill, speed and flow settings a modifier changes inside its shape. Anything else the engine does not apply by region. */
-const MODIFIER_GROUPS = new Set(['strength', 'speed', 'quality', 'extrusion'])
-
 function ModifierSettings({ objectId, v }: { objectId: string; v: PlateVolumeEntry }) {
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
@@ -41,7 +39,7 @@ function ModifierSettings({ objectId, v }: { objectId: string; v: PlateVolumeEnt
   const [adding, setAdding] = useState(false)
   const [query, setQuery] = useState('')
   const own = v.settings ?? {}
-  const pool = useMemo(() => SETTINGS.filter((d) => d.section === 'process' && EDITABLE.has(d.type) && MODIFIER_GROUPS.has(d.group)), [])
+  const pool = useMemo(() => SETTINGS.filter(modifierSetting), [])
   const filamentCount = useFilamentCount()
   const hits = useMemo(() => {
     const q = query.trim()
