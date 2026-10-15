@@ -43,7 +43,7 @@ function typeMatches(def: SettingDef, v: SettingValue): boolean {
 }
 
 /** Schema level checks for every key present: type, range, enum membership. */
-export function checkValues(config: PrintConfig): SettingIssue[] {
+export function checkValues(config: Readonly<Record<string, SettingValue>>): SettingIssue[] {
   const issues: SettingIssue[] = []
   for (const key of Object.keys(config)) {
     const def = settingDef(key)

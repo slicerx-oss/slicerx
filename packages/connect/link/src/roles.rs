@@ -99,10 +99,8 @@ pub(crate) enum LinkClass {
     Edit,
 }
 
-/// Every method an agent may call on the project open in the app (`app.call`, `app_link.rs`), and
-/// whether it reads or edits. The hub refuses any other name. None of them prints, queues, starts
-/// or sends a job, answers a card, signs in, buys, deletes files, or changes printers, the network or
-/// connection settings. look.set changes only two view preferences. additions need a test entry below.
+/// methods on the open project, classified as read or edit. no printing, accounts or connection settings.
+/// geometry volumes and two view preferences are allowed. each method needs its pinned test entry.
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("history.get", LinkClass::Read),
@@ -113,6 +111,12 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("project.move", LinkClass::Edit),
     ("project.rotate", LinkClass::Edit),
     ("project.scale", LinkClass::Edit),
+    ("volumes.list", LinkClass::Read),
+    ("volumes.add", LinkClass::Edit),
+    ("volumes.from_object", LinkClass::Edit),
+    ("volumes.set", LinkClass::Edit),
+    ("volumes.copy", LinkClass::Edit),
+    ("volumes.remove", LinkClass::Edit),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
@@ -368,6 +372,12 @@ mod tests {
         ("project.move", LinkClass::Edit),
         ("project.rotate", LinkClass::Edit),
         ("project.scale", LinkClass::Edit),
+        ("volumes.list", LinkClass::Read),
+        ("volumes.add", LinkClass::Edit),
+        ("volumes.from_object", LinkClass::Edit),
+        ("volumes.set", LinkClass::Edit),
+        ("volumes.copy", LinkClass::Edit),
+        ("volumes.remove", LinkClass::Edit),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
         ("plates.list", LinkClass::Read),
@@ -433,6 +443,10 @@ mod tests {
             ] {
                 // mesh repair does not pair clients.
                 let mesh_repair = *m == "geom.repair" && word == "pair";
+                // volume removal affects project geometry only.
+                if word == "remove" && *m == "volumes.remove" {
+                    continue;
+                }
                 assert!(
                     mesh_repair
                         || !m.to_ascii_lowercase().contains(word)
@@ -445,6 +459,9 @@ mod tests {
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
+        for m in ["volumes.remove_file", "volumes.remove_printer", "printer.remove"] {
+            assert_eq!(link_class(m), None, "{m}");
+        }
         for m in ["design.open", "design.save"] {
             assert_eq!(link_class(m), None, "{m} reads or writes files");
         }

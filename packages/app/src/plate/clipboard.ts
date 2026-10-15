@@ -192,14 +192,21 @@ function withOffset(m: Mat4, dx: number, dy: number): Mat4 {
 
 /** Volumes from another object go beside the selected object; from the same object they stay where they were. */
 function pasteVolumes(c: Extract<Clipboard, { kind: 'volumes' }>): string[] {
-  const s = get()
-  const target = s.plate.find((p) => p.id === s.selection)
-  if (!target) {
+  const targetId = get().selection
+  if (!targetId || !get().plate.some((p) => p.id === targetId)) {
     toast('Select the object to paste into.', 'info')
     return []
   }
-  const same = c.fromObject === target.id
-  const copies = c.volumes.map((v) => ({ ...v, id: newId('vol') }))
+  return pasteVolumesInto(c.volumes, c.fromObject, targetId)
+}
+
+/** Paste these volumes directly, preserving the clipboard and the same placement as the UI. */
+export function pasteVolumesInto(volumes: readonly PlateVolumeEntry[], fromObject: string, targetId: string, validate?: (volume: PlateVolumeEntry) => void): string[] {
+  const s = get()
+  const target = s.plate.find((p) => p.id === targetId)
+  if (!target || !volumes.length) return []
+  const same = fromObject === target.id
+  const copies = volumes.map((v) => ({ ...v, id: newId('vol') }))
   let shifted = copies
   if (!same) {
     // Beside the object, at its right edge, keeping the volumes' relative places (Orca: from another object).
@@ -213,6 +220,7 @@ function pasteVolumes(c: Extract<Clipboard, { kind: 'volumes' }>): string[] {
       shifted = copies.map((v) => ({ ...v, local: multiplyLocal(move, v.local) }))
     }
   }
+  shifted.forEach((v) => validate?.(v))
   set({ plate: s.plate.map((p) => (p.id === target.id ? { ...p, volumes: [...(p.volumes ?? []), ...shifted] } : p)) })
   markStale()
   return shifted.map((v) => v.id)
