@@ -12,7 +12,8 @@ import { ToolInputError } from './models'
 import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import { positionsFromParts, type NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
-import { bedArea, boxRows, describeBed, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
+import { objectPrintMargins } from '@slicerx/settings/print-margins'
+import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
 
 /** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
@@ -268,6 +269,36 @@ export class McpProject implements PilotProject {
     return bedArea(this.config(plateIndex))
   }
 
+  private rowMargins(plateIndex: number, entries: readonly Entry[]): { edge: number; gap: number } {
+    let edge = EDGE_MM
+    let gap = GAP_MM
+    for (const e of entries) {
+      if (!e.meshId) continue
+      const [w, h, height] = this.placedBounds(e as Entry & { meshId: string }).size
+      const margins = objectPrintMargins({ ...this.config(plateIndex), ...e.settings })
+      edge = Math.max(edge, margins.reach({ w, h, height }) + 1)
+      gap = Math.max(gap, 2 * margins.grow({ w, h, height }) + 1)
+    }
+    return { edge, gap }
+  }
+
+  arrangeCapacity(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number {
+    const e = this.entries.get(objectId)
+    if (!e?.meshId) return 0
+    const [w, d] = this.placedBounds(e as Entry & { meshId: string }).size
+    const actual = this.bed(plateIndex)
+    bed = { x: Math.min(bed.x, actual.widthMm), y: Math.min(bed.y, actual.depthMm), round: bed.round || Boolean(actual.circle) }
+    const margins = this.rowMargins(plateIndex, [e])
+    const gap = Math.max(spacing, margins.gap)
+    const { edge } = margins
+    let n = Math.min(500, Math.max(0, Math.floor((bed.x - 2 * edge + gap) / (w + gap))) * Math.max(0, Math.floor((bed.y - 2 * edge + gap) / (d + gap))))
+    if (bed.round) {
+      const c = { cx: bed.x / 2, cy: bed.y / 2, r: Math.min(bed.x, bed.y) / 2 }
+      while (n > 0 && roundRows(Array.from({ length: n }, () => ({ w, d })), c, edge, margins.gap).some(([x, y]) => pastRim({ ...c, r: c.r - edge }, { x0: x, y0: y, x1: x + w, y1: y + d }))) n--
+    }
+    return n
+  }
+
   /** The object's rotation and scale as one 4x4 (column-major, scale first), with no move. */
   private orientation(e: Entry): number[] {
     const m = e.rotate ? [...rotationMatrix(e.rotate)] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -323,7 +354,12 @@ export class McpProject implements PilotProject {
         placements.push({ id, objectId: item.objectId, copy: c + 1, centerMm: [at[0] + w / 2, at[1] + d / 2], sizeMm: placed.size, manual: Boolean(e.position), ...(e.printable === false ? { printable: false as const } : {}) })
       }
     }
-    const spots = bed.circle ? roundRows(feet, bed.circle) : boxRows(feet, bed)
+    const entries = plate.items.flatMap((item) => {
+      const entry = this.entries.get(item.objectId)
+      return entry ? [entry] : []
+    })
+    const { edge, gap } = this.rowMargins(plateIndex, entries)
+    const spots = bed.circle ? roundRows(feet, bed.circle, edge, gap) : boxRows(feet, bed, edge, gap)
     rowed.forEach((i, k) => {
       const o = objects[i]
       const p = placements[i]
