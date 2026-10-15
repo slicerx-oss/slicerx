@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A client reads and sets two view preferences of the open app, Frame the view and Toolbar size, over MCP and from the
-// command line: slicerx-mcp on a real sx-link with the app link on, the person allowing it in the app. The page stands
-// in for the desktop shell and the client brings a remembered agent key, as in plate-picker-link.spec.ts. Each answer
-// is the preferences read back, the ribbon on screen agrees, a bad value changes nothing, and a change the person makes
+// A client reads and sets two view preferences of the open app, Frame the view and Toolbar size, and reads the 3D view's
+// look back, over MCP and from the command line: slicerx-mcp on a real sx-link with the app link on, the person
+// allowing it in the app. The page stands in for the desktop shell and the client brings a remembered agent key, as in
+// plate-picker-link.spec.ts. Each answer is the preferences read back, the ribbon on screen agrees, a bad value changes nothing, and a change the person makes
 // in Settings reads back too. Runs only when SX_LINK_BIN names a built sx-link (e2e/bridge-hub.ts).
 import { execFile } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -25,7 +25,7 @@ const repo = join(import.meta.dirname, '../../..')
 const mcpDir = join(repo, 'packages/mcp')
 const from = createRequire(join(mcpDir, 'package.json'))
 
-type Look = { toolbarSize: string; modelFraming?: string }
+type Look = { toolbarSize: string; modelFraming?: string; viewport?: { preset: string; themeBackdrop: boolean; look: { backdrop: { top: string | null } } } }
 type Answer = { isError?: boolean; structuredContent?: { ok: boolean; summary: string; output: Look } }
 
 /** The keychain item the client's credential is under, as Connect your AI agent names it for a test build of the app. */
@@ -133,6 +133,15 @@ test('a client reads and sets Frame the view and Toolbar size over MCP and the c
     const bad = (await client.callTool({ name: 'slicerx_app_look_set', arguments: { toolbarSize: 'huge' } }, undefined, { timeout: 90_000 })) as Answer
     expect(bad.isError).toBe(true)
     await expect(ribbon).toHaveAttribute('data-setting', 'small')
+
+    // The 3D view's look reads back with the preset the theme picked, and follows a scheme change.
+    expect((await call('slicerx_app_look')).viewport).toMatchObject({ preset: 'dark-precision', themeBackdrop: false, look: { backdrop: { top: '#2a2e3a' } } })
+    const setScheme = (scheme: string) => page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
+    await setScheme('light')
+    await expect.poll(async () => (await call('slicerx_app_look')).viewport?.preset).toBe('light-studio')
+    expect((await call('slicerx_app_look')).viewport?.look.backdrop.top).toBe('#e3e6ea')
+    await setScheme('dark')
+    await expect.poll(async () => (await call('slicerx_app_look')).viewport?.preset).toBe('dark-precision')
 
     // The person changes Toolbar size in Settings; the client reads it back.
     await page.getByRole('button', { name: 'Settings', exact: true }).click()

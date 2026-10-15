@@ -64,4 +64,13 @@ describe('app look tools', () => {
       expect(((await set!.run({ modelFraming: 'open' } as never, {} as never).catch((x: unknown) => x)) as ToolInputError).code, code).toBe(want)
     }
   })
+  it('reads the 3D view look back, preset named in the summary', async () => {
+    const look: AppLook = { toolbarSize: 'large', modelFraming: 'selection', viewport: { preset: 'light-studio', themeBackdrop: false, look: { version: 1, plate: { borderGlow: 0.35 } } } }
+    const [get] = appLookTools({ call: async () => look } as unknown as AppLinkCaller, 'SlicerX')
+    const read = await get!.run({} as never, {} as never)
+    expect(read.output).toEqual(look)
+    expect(read.summary).toBe('Toolbar size Large (32 px); Frame the view: Always; 3D view look: Light studio.')
+    const own = await appLookTools({ call: async () => ({ ...look, viewport: { ...look.viewport!, preset: 'dark-precision', themeBackdrop: true } }) } as unknown as AppLinkCaller, 'SlicerX')[0]!.run({} as never, {} as never)
+    expect(own.summary).toBe("Toolbar size Large (32 px); Frame the view: Always; 3D view look: Dark precision with the theme's backdrop.")
+  })
 })
