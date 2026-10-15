@@ -317,7 +317,7 @@ export function moveCount(p: PreviewBuffers | null, layerHi: number, cut: number
   return (end - startIdx) * cut
 }
 
-/** Whether this session has started the pick filter on Face for the new Model feel. */
+/** Whether this session has checked the Model feel's off switch for the pick filter. */
 let feelStarted = false
 
 /** The plate's viewport. `layers`: Slice shows the toolpaths, with the layer dock and legend over the view. */
@@ -698,11 +698,11 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         )
       }))
       showPicks(appStore.getState())
-      // The new Model feel starts the filter on Face, once a session (the store starts on objects, keeping the flag out
-      // of the startup shell); turning the flag over sets Face with it, whole objects without.
+      // The store starts on Face. A developer who turned the Model feel off starts on whole objects instead, once a
+      // session (the flag stays out of the startup shell); turning the flag over sets Face with it, whole objects without.
       if (!feelStarted) {
         feelStarted = true
-        if (modelFeelFor(appStore.getState().settingsMode)) set({ pickFilter: ['face'] })
+        if (!modelFeelFor(appStore.getState().settingsMode)) set({ pickFilter: ['object'] })
       }
       offs.push(onModelFeel((on) => set({ pickFilter: on ? ['face'] : ['object'], subPicks: [] })))
       offs.push(appStore.subscribe((s, prev) => {
