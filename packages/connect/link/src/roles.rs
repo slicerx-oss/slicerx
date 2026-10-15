@@ -160,6 +160,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("mimir.share", LinkClass::Read),
     // mimir cloud at a glance: offered, in use, signed in, and today's use while in use. No key or token.
     ("mimir.status", LinkClass::Read),
+    // What answers in the docked chat (a model or the demo) and the tools its model is offered. No key or token.
+    ("mimir.dock", LinkClass::Read),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -381,6 +383,7 @@ mod tests {
             ("mimir.quota", LinkClass::Read),
             ("mimir.share", LinkClass::Read),
             ("mimir.status", LinkClass::Read),
+            ("mimir.dock", LinkClass::Read),
         ];
         assert_eq!(APP_LINK_METHODS, pinned);
         for (m, _) in APP_LINK_METHODS {
