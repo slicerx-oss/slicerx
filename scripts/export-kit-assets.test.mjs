@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { exportAssets, fallbacks, namespaceSvg, scopeCss } from './export-kit-assets.mjs'
+import { exportAssets, fallbacks, namespaceSvg, scopeCss, mergeSvgStyles } from './export-kit-assets.mjs'
 import { TOOL_ICONS } from '../packages/ui/src/icons/tool-icons.ts'
 import { DEMOS, SETTING_DEMOS } from '../packages/app/src/lib/demos.ts'
 
@@ -55,4 +55,9 @@ test('the packaging CLI includes assets without building packages', () => {
     const manifest = JSON.parse(readFileSync(join(out, 'assets/manifest.json'), 'utf8'))
     assert.ok(manifest.assets.some((a) => a.id === 'push' && a.kind === 'loop'))
   } finally { rmSync(out, { recursive: true, force: true }) }
+})
+
+test('stage paint and line-cap styles form one XML attribute', () => {
+  assert.equal(mergeSvgStyles('<path style="stroke:red;stroke-width:4" style="stroke-linecap:round" d="M0 0h0"/>'), '<path style="stroke:red;stroke-width:4;stroke-linecap:round;" d="M0 0h0"/>')
+  assert.equal(mergeSvgStyles('<path style="fill:none"/>'), '<path style="fill:none"/>')
 })
