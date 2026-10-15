@@ -62,8 +62,10 @@ export function Fleet() {
   const bridgeError = useApp((s) => (s.bridgeStatus.state === 'error' && bridgeConnector()?.automatic ? (s.bridgeStatus.message ?? 'The printer bridge did not start.') : null))
   const host = useHost()
   // While the bridge reconnects the wall shows the rows it had when the connection dropped: a refetch on the dead
-  // connection would turn every printer offline and change what the cards hold, and so their size.
-  const rows = useHeld(fleet.data ?? [], reconnecting)
+  // connection would turn every printer offline and change what the cards hold, and so their size. It keeps them until
+  // the reconnected bridge's own rows arrive: until then the list shows the last connection's rows as a placeholder,
+  // and those are the offline ones when a refresh was out as the connection dropped.
+  const rows = useHeld(fleet.data ?? [], reconnecting || fleet.isPlaceholderData)
   const now = useNow(30_000)
   const refresh = useApp((s) => s.fleetRefresh)
   const refetch = fleet.refetch
