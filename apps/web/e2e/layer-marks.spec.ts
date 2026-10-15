@@ -129,8 +129,67 @@ async function staticBoxes(page: Page): Promise<Record<string, string>> {
 }
 const moved = (a: Record<string, string>, b: Record<string, string>) => Object.keys(a).filter((k) => a[k] !== b[k]).map((k) => `${k}: ${a[k]} -> ${b[k] ?? 'gone'}`)
 
+/**
+ * Every control on the page whose box the settled tip touches: the tip covers none of the playback bar's controls
+ * (play, back, the sliders, the plate chip over it) and no other pin.
+ */
+async function tipCovers(page: Page, tip: Locator): Promise<string[]> {
+  await expect(tip).toHaveAttribute('data-ready', 'true')
+  let last = ''
+  await expect.poll(async () => {
+    const was = last
+    last = JSON.stringify(await tip.boundingBox())
+    return was === last
+  }).toBe(true)
+  const t = (await tip.boundingBox())!
+  return page.evaluate((t) => {
+    const out: string[] = []
+    const controls = 'button, a[href], input, select, textarea, summary, [role=button], [role=slider], [role=tab], [role=menuitem], [role=switch], [role=radio], [role=checkbox]'
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(controls))) {
+      if (el.closest('#sx-tip')) continue
+      const r = el.getBoundingClientRect()
+      const st = getComputedStyle(el)
+      if (!r.width || !r.height || st.visibility === 'hidden' || st.opacity === '0') continue
+      if (r.left < t.x + t.width - 0.5 && t.x + 0.5 < r.right && r.top < t.y + t.height - 0.5 && t.y + 0.5 < r.bottom) out.push(`${(el.getAttribute('aria-label') ?? el.textContent ?? el.className).toString().trim().slice(0, 30)} ${[r.x, r.y, r.width, r.height].map(Math.round).join(' ')}`)
+    }
+    return out
+  }, t)
+}
+
+/** The bar's play and back buttons, which a tip over the bar must never touch. */
+const transport = (dock: Locator) => ['Play print', 'Previous layer', 'Next layer'].map((n) => dock.getByRole('button', { name: n }))
+
+const clear = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) => a.y + a.height <= b.y || a.y >= b.y + b.height || a.x + a.width <= b.x || a.x >= b.x + b.width
+
 test.describe('layer pins', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop bar; the phone has its own case below')
+
+  for (const [width, height] of [[1920, 1080], [1440, 900], [960, 900]] as const) {
+    test(`a pin's tip covers no control of the bar at ${width} px, and opens over the bar's top edge`, async ({ page }) => {
+      test.slow()
+      await page.setViewportSize({ width, height })
+      const dock = await sliced(page)
+      await marks(page, [[5, 'pause'], [20, 'color_change'], [150, 'custom'], [250, 'pause']])
+      const bar = (await dock.boundingBox())!
+      for (const [i, text] of ['Layer 5, Pause', 'Layer 20, Color change', 'Layer 150, Custom G-code', 'Layer 250, Pause'].entries()) {
+        const head = page.locator('.layer-mark:not(.strike-mark)').nth(i)
+        await head.hover()
+        const tip = page.getByRole('tooltip').filter({ hasText: text })
+        await expect(tip).toBeVisible()
+        expect(await tipCovers(page, tip), text).toEqual([])
+        const t = (await tip.boundingBox())!
+        // over the bar's top edge, inside the view, and over its own pin
+        expect(t.y + t.height, text).toBeLessThanOrEqual(bar.y)
+        expect(t.y, text).toBeGreaterThanOrEqual(0)
+        const p = await center(head)
+        expect(p.x, text).toBeGreaterThanOrEqual(t.x - 1)
+        expect(p.x, text).toBeLessThanOrEqual(t.x + t.width + 1)
+        for (const b of transport(dock)) expect(clear(t, (await b.boundingBox())!), `${text} and ${await b.getAttribute('aria-label')}`).toBe(true)
+        await page.mouse.move(2, 2)
+        await expect(tip).toBeHidden()
+      }
+    })
+  }
 
   test('pins stand on stems over their layer, clear of the Time and Moves tracks, with tips above', async ({ page }) => {
     await sliced(page)
@@ -729,5 +788,35 @@ test('on a phone the pins stand over the Layer track in the opened bar', async (
   for (const b of await page.locator('.layer-mark:not(.strike-mark)').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))) {
     expect(b.y + b.height).toBeLessThanOrEqual(track.y + 0.5)
     expect(b.y).toBeGreaterThanOrEqual(time.y + time.height)
+  }
+})
+
+test("on a phone a pin's tip covers no control, and opens over the opened bar", async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Phone layout')
+  await sliced(page)
+  await page.mouse.click(1, 1)
+  const more = page.getByRole('button', { name: 'More playback controls' })
+  await tapFor(page, () => center(more), () => expect(page.getByRole('button', { name: 'Fewer playback controls' })).toBeVisible({ timeout: 2000 }))
+  await marks(page, [[20, 'color_change'], [21, 'pause'], [200, 'custom']])
+  const dock = page.getByRole('group', { name: 'Layers and moves' })
+  for (const [name, text] of [['Color change at layer 20', 'Layer 20, Color change'], ['Custom G-code at layer 200', 'Layer 200, Custom G-code']] as const) {
+    // a press held past half a second shows the tip above the finger and takes no tap
+    const at = await center(pin(page, name))
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] })
+    const tip = page.getByRole('tooltip').filter({ hasText: text })
+    await expect(tip).toBeVisible({ timeout: 10_000 })
+    expect(await tipCovers(page, tip), text).toEqual([])
+    const t = (await tip.boundingBox())!
+    const top = Math.min(...(await dock.locator('button, input').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width && r.height).map((r) => r.top))))
+    expect(t.y + t.height, text).toBeLessThanOrEqual(top)
+    expect(t.x, text).toBeGreaterThanOrEqual(0)
+    expect(t.x + t.width, text).toBeLessThanOrEqual(390)
+    expect(t.y, text).toBeGreaterThanOrEqual(0)
+    for (const b of transport(dock)) expect(clear(t, (await b.boundingBox())!), `${text} and ${await b.getAttribute('aria-label')}`).toBe(true)
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await cdp.detach()
+    await expect(tip).toBeHidden()
+    await page.keyboard.press('Escape')
   }
 })
