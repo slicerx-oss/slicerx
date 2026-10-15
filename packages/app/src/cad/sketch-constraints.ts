@@ -42,6 +42,11 @@ export interface SolverMap {
 /** The sketch origin: a point at (0, 0) that never moves, for dimensions to measure from. */
 export const ORIGIN: SketchPointRef = { e: -1, at: 'start' }
 
+/** The sketch's X axis, from the origin along +X: a line that never moves, for a line's angle to measure from. */
+export const X_AXIS: SketchCurveRef = { e: -1, seg: 0 }
+
+const namesAxis = (c: SketchConstraint): boolean => Object.values(c).some((v) => !!v && typeof v === 'object' && (v as { e?: number }).e === -1 && 'seg' in v && !('at' in v))
+
 const namesOrigin = (c: SketchConstraint): boolean => Object.values(c).some((v) => !!v && typeof v === 'object' && (v as { e?: number }).e === -1)
 
 export const pointKey = (r: SketchPointRef): string => ('seg' in r ? `${r.e}:${r.at}:${r.seg}` : `${r.e}:${r.at}`)
@@ -84,8 +89,13 @@ export function toSolver(sketch: readonly Entity[], constraints: readonly Sketch
       from = to
     })
   })
-  // the origin is in the solve only when something names it
+  // the origin is in the solve only when something names it, and the X axis only when an angle measures from it
   const origin = constraints.some(namesOrigin) ? add([0, 0], pointKey(ORIGIN)) : -1
+  const axisEnd = origin >= 0 && constraints.some(namesAxis) ? add([1, 0], '-1:axis') : -1
+  if (axisEnd >= 0) {
+    curve.set(curveKey(X_AXIS), entities.length)
+    entities.push({ type: 'line', a: origin, b: axisEnd })
+  }
   const dropped: number[] = []
   const from: number[] = []
   const out: Record<string, unknown>[] = []
@@ -115,6 +125,10 @@ export function toSolver(sketch: readonly Entity[], constraints: readonly Sketch
   if (origin >= 0) {
     from.push(-1)
     out.push({ type: 'fix', point: origin })
+  }
+  if (axisEnd >= 0) {
+    from.push(-1)
+    out.push({ type: 'fix', point: axisEnd })
   }
   return { solver: { points, entities, constraints: out }, map: { point, curve, dropped, from } }
 }
@@ -392,8 +406,16 @@ export function dimMark(sketch: readonly Entity[], c: SketchConstraint, value: n
       return { from: p, to: plus(a, u, t), label, of }
     }
     case 'angle': {
-      const ea = sketch[c.a.e]
       const eb = sketch[c.b.e]
+      if (c.a.e === -1) {
+        // from the X axis: the value sits between a level ray from the line's start and the line itself
+        if (eb?.kind !== 'chain' || !eb.segs[c.b.seg]) return null
+        const b0 = segStartOf(eb, c.b.seg)
+        const b1 = eb.segs[c.b.seg]!.to
+        const r = Math.max(2, 0.4 * Math.hypot(b1[0] - b0[0], b1[1] - b0[1]))
+        return { from: plus(b0, [1, 0], r), to: plus(b0, unitOf(b0, b1), r), label, of }
+      }
+      const ea = sketch[c.a.e]
       if (ea?.kind !== 'chain' || eb?.kind !== 'chain' || !ea.segs[c.a.seg] || !eb.segs[c.b.seg]) return null
       const a0 = segStartOf(ea, c.a.seg)
       const a1 = ea.segs[c.a.seg]!.to

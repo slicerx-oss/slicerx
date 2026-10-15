@@ -76,7 +76,7 @@ export type SketchSegment =
  * of the arc that is segment `seg`. Loop -1 is the sketch origin, `{ e: -1, at: 'start' }`, held at (0, 0).
  */
 export type SketchPointRef = { e: number; at: 'start' } | { e: number; at: 'to'; seg: number } | { e: number; at: 'center' } | { e: number; at: 'arcCenter'; seg: number }
-/** A line or arc of a loop by loop and segment index; a circle is segment 0. */
+/** A line or arc of a loop by loop and segment index; a circle is segment 0. Loop -1 segment 0 is the sketch's X axis, for an angle measured from it. */
 export type SketchCurveRef = { e: number; seg: number }
 
 /** A constraint between sketch loops' points and curves, kept with the sketch. Values are mm, angles degrees. */

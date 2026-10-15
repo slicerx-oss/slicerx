@@ -90,6 +90,7 @@ export function remapConstraints(old: Sketch, next: Sketch, from: readonly (read
     return null
   }
   const curves = (r: SketchCurveRef, c: SketchConstraint): SketchCurveRef[] => {
+    if (r.e === -1) return [r]
     const k = kept.get(r.e)
     if (k !== undefined) return [{ ...r, e: k }]
     const was = curveOf(old, r)

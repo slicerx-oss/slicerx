@@ -60,6 +60,8 @@ export function pointHit(sketch: Sketch, at: V2, tol: number): SketchPointRef | 
 type Curve = { kind: 'line'; a: V2; b: V2 } | { kind: 'circle'; center: V2; r: number } | { kind: 'arc'; center: V2; r: number }
 
 function curveAt(sketch: Sketch, r: SketchCurveRef): Curve | null {
+  // the sketch's X axis
+  if (r.e === -1) return { kind: 'line', a: [0, 0], b: [1, 0] }
   const e: Entity | undefined = sketch[r.e]
   if (!e) return null
   if (e.kind === 'circle') return { kind: 'circle', center: e.center, r: e.diameterMm / 2 }
