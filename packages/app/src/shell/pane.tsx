@@ -146,9 +146,10 @@ function useChord(action: 'panel.left' | 'panel.right'): string | undefined {
 /**
  * `docked`: on a phone the sheet sits low over the view without a scrim, so the view above it still takes taps (a tool
  * panel that waits for a pick), and its handle folds it to its header. `sheetTab: false`: on a phone the sheet has no
- * tab on the screen edge; something else opens it (Model's bar).
+ * tab on the screen edge; something else opens it (Model's bar). `keepMounted`: the content stays mounted while the pane
+ * is shut, hidden, so an open tool keeps working (and keeps what it holds) until the pane opens again.
  */
-export function SidePane({ side, ws, label, sections, children, footer, pinned, headExtra, width, tab, attention, docked, sheetTab = true }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; pinned?: ReactNode; headExtra?: ReactNode; width?: number; tab?: PaneTab; attention?: boolean; docked?: boolean; sheetTab?: boolean }) {
+export function SidePane({ side, ws, label, sections, children, footer, pinned, headExtra, width, tab, attention, docked, sheetTab = true, keepMounted }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; pinned?: ReactNode; headExtra?: ReactNode; width?: number; tab?: PaneTab; attention?: boolean; docked?: boolean; sheetTab?: boolean; keepMounted?: boolean }) {
   const wide = useMediaQuery('(min-width: 1280px)')
   const compact = useCompactLayout()
   const open = useApp((s) => railOpen(s.rails, ws, side, wide))
@@ -257,6 +258,7 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
       items={compact || open || full ? [] : sections.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
       onSelect={onSelect}
       dropActive={dragging && side === 'right' && ws === 'prepare'}
+      keepMounted={keepMounted ?? false}
       className={['pane', resizing ? 'resizing' : '', edgeTab ? 'edged' : '', full ? 'shuts' : '', sheet ? 'sheet' : '', sheet && sheetOpen ? 'sheet-open' : '', dock ? 'sheet-docked' : '', dock && folded ? 'sheet-folded' : ''].filter(Boolean).join(' ')}
       railRef={railRef}
       style={{ '--w-side': `${side === 'right' ? size - 24 : size}px` } as CSSProperties}

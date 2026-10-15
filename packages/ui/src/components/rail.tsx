@@ -33,8 +33,10 @@ export interface RailProps {
   peekDelay?: number
   /** Set while a drag hovers this rail: the edge glows pink as a drop target. */
   dropActive?: boolean
-  /** Rendered only when expanded, under the items. */
+  /** Rendered only when expanded, under the items (or kept mounted and hidden, with `keepMounted`). */
   children?: ReactNode
+  /** The children stay mounted while the rail is collapsed, hidden, so what they hold (an open tool) keeps going. */
+  keepMounted?: boolean
   /** Rendered only when expanded, pinned at the bottom. */
   footer?: ReactNode
   /** Rendered only when expanded, pinned under the header: it stays put while the body scrolls. */
@@ -58,7 +60,7 @@ export interface RailProps {
  * decides the window is wide enough. The inner edge glows as the pointer approaches. The parent
  * owns and remembers the collapsed state per workspace.
  */
-export function Rail({ side, label, collapsed, onCollapsedChange, items = [], onSelect, peekOnHover = true, peekDelay = 320, dropActive, children, footer, pinned, headExtra, className, style, edge, railRef, toggle = true }: RailProps) {
+export function Rail({ side, label, collapsed, onCollapsedChange, items = [], onSelect, peekOnHover = true, peekDelay = 320, dropActive, children, keepMounted, footer, pinned, headExtra, className, style, edge, railRef, toggle = true }: RailProps) {
   const own = useRef<HTMLElement>(null)
   const ref = railRef ?? own
   const [peek, setPeek] = useState(false)
@@ -146,7 +148,7 @@ export function Rail({ side, label, collapsed, onCollapsedChange, items = [], on
         </nav>
       ) : null}
       {pinned && showExpanded ? <div className="sx-rail-pin">{pinned}</div> : null}
-      <div className="sx-rail-body">{showExpanded ? children : null}</div>
+      <div className="sx-rail-body">{showExpanded || keepMounted ? children : null}</div>
       {footer ? <div className="sx-rail-foot">{footer}</div> : null}
     </aside>
   )
