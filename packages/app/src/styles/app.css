@@ -94,7 +94,7 @@ input.bare::placeholder { color: var(--dim); }
    gaps and the 216 px choice take 286 px, so under 406 px every such row puts the choice under its label, from the
    label's x to the right edge, all of them at once (a segmented control with three options is full width by nature). */
 .expert { container: pset / inline-size; }
-@container pset (max-width: 405px) {
+@container pset (width < 406px) {
   .field:has(> .tier-seg) > :nth-child(2) { grid-column: 2 / -1; }
   .field:has(> .tier-seg) > :nth-child(3) { grid-row: 2; grid-column: 2 / 4; justify-self: stretch; }
   .field:has(> .tier-seg) > :nth-child(4) { grid-row: 2; }
