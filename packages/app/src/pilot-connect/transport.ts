@@ -101,21 +101,45 @@ export function browserTransport(store: KeyStore, config: () => ConnectConfig | 
   }
 }
 
+/** A host listing call as a fetch: the listing, or an HTTP failure (`<status>: <message>`) as that status and message. */
+function hostFetch(list: (baseUrl: string) => Promise<string>): typeof fetch {
+  return async (input) => {
+    const base = String(input).replace(/\/models$/, '')
+    try {
+      return new Response(await list(base), { status: 200 })
+    } catch (e) {
+      const m = /^(\d{3}): ?([\s\S]*)$/.exec(e instanceof Error ? e.message : String(e))
+      if (m) return new Response(m[2] ? JSON.stringify({ error: { message: m[2] } }) : null, { status: Number(m[1]) })
+      throw e
+    }
+  }
+}
+
 /**
  * A fetch that asks the desktop host for a local server's model listing, so the webview needs no
  * network access and never holds the server's key. HTTP failures come back as that status.
  */
 export function hostLocalFetch(localModels: (baseUrl: string) => Promise<string>): typeof fetch {
-  return async (input) => {
-    const base = String(input).replace(/\/models$/, '')
-    try {
-      return new Response(await localModels(base), { status: 200 })
-    } catch (e) {
-      const status = /^(\d{3}): /.exec(e instanceof Error ? e.message : String(e))?.[1]
-      if (status) return new Response(null, { status: Number(status) })
-      throw e
-    }
-  }
+  return hostFetch(localModels)
+}
+
+/** The host commands the connect test can go through. */
+export interface ConnectHost {
+  localModels?(baseUrl: string): Promise<string>
+  providerModels?(provider: 'openai' | 'anthropic', baseUrl: string, key: string | null): Promise<string>
+}
+
+/**
+ * The fetch the connect test uses for `provider`. The desktop app's webview has no network access (its CSP allows only
+ * the app itself), so there the host makes the call: a local server through `localModels`, OpenAI and Anthropic through
+ * `providerModels` with the typed key, or the saved one when `key` is null. Undefined means the page's own fetch, as in
+ * the browser build.
+ */
+export function connectFetch(provider: PilotProvider, host: ConnectHost | null, key: string | null): typeof fetch | undefined {
+  if (provider === 'local') return host?.localModels ? hostLocalFetch(host.localModels) : undefined
+  if (provider === 'mimir-cloud' || !host?.providerModels) return undefined
+  const list = host.providerModels
+  return hostFetch((base) => list(provider, base, key))
 }
 
 export interface TestResult {
@@ -125,11 +149,12 @@ export interface TestResult {
 
 /**
  * One cheap call that proves the key and address work: the provider's model list. The key goes
- * only to the chosen provider's address.
+ * only to the chosen provider's address. On the desktop `fetcher` is the host's (connectFetch).
  */
-export async function testConnection(config: ConnectConfig, key: string | null, fetcher: typeof fetch = fetch): Promise<TestResult> {
+export async function testConnection(config: ConnectConfig, key: string | null, fetcher: typeof fetch = fetch, keySaved = false): Promise<TestResult> {
   const p = PROVIDERS[config.provider]
-  if (p.needsKey && !key) return { ok: false, message: 'Paste the API key first.' }
+  // keySaved: the host holds a saved key the webview cannot read, and its fetcher sends it
+  if (p.needsKey && !key && !keySaved) return { ok: false, message: 'Paste the API key first.' }
   const base = (config.baseUrl?.trim() || p.defaultBase).replace(/\/+$/, '')
   let url: URL
   try {

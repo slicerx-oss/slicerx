@@ -17,7 +17,7 @@ import { detectRunners, useLocalAi } from './local-ai'
 import { pilotState, set, useApp, type PilotPref } from '../state/store'
 import { keyStoreFor, PROVIDERS, type PilotProvider } from './keys'
 import { modelChoices, AUTO_MODEL } from './models'
-import { hostLocalFetch, testConnection, type TestResult } from './transport'
+import { connectFetch, testConnection, type TestResult } from './transport'
 import './connect.css'
 
 // Anthropic before OpenAI: its Auto pairs Haiku with Sonnet, and it leads the bench
@@ -150,10 +150,14 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, o
       const typed = keyRef.current?.value.trim() ?? ''
       const key = info.needsKey || localKey ? typed || (await store.get(provider)) : null
       const picked = savedModel(model)
+      // only a local server takes an address; a key provider always goes to its own
+      const address = provider === 'local' ? baseUrl.trim() : ''
       // the test call runs Auto as the provider default; the pref keeps Auto for mimir's routing
-      const config = { provider, ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}), ...(picked !== AUTO_MODEL ? { model: picked } : {}) }
-      const viaHost = provider === 'local' ? chatGptFor(host)?.localModels : undefined
-      const r = await testConnection(config, key, viaHost ? hostLocalFetch(viaHost) : undefined)
+      const config = { provider, ...(address ? { baseUrl: address } : {}), ...(picked !== AUTO_MODEL ? { model: picked } : {}) }
+      const viaHost = connectFetch(provider, chatGptFor(host), key)
+      // the desktop keychain is write only from here: with nothing typed, the host tests the saved key
+      const keySaved = Boolean(viaHost) && info.needsKey && !key && (await store.has(provider as 'openai' | 'anthropic'))
+      const r = await testConnection(config, key, viaHost, keySaved)
       setResult(r)
       if (!r.ok) return
       if ((info.needsKey || localKey) && typed) {

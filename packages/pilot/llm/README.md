@@ -77,6 +77,11 @@ pub fn available(provider: &str) -> bool;
 // A local model server's listing (GET, loopback http only, no key, 3 s, at most 1 MiB).
 pub async fn local_get(url: &str) -> Result<String, Error>;
 
+// The connect test for `openai` or `anthropic`: GET <base>/models on the allowlisted host with the typed key, or the
+// saved one when `key` is None (20 s, at most 1 MiB). The desktop's Test and connect runs it, so the webview stays off
+// the network.
+pub async fn provider_models(provider: &str, base: &str, key: Option<String>) -> Result<String, Error>;
+
 // Same, over an explicit key source. Tests use these so they never touch the keychain.
 pub trait KeySource: Send + Sync {
     fn keychain(&self, service: &str, account: &str) -> Option<String>;

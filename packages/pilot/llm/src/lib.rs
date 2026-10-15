@@ -273,6 +273,119 @@ pub async fn local_models_with(keys: &dyn KeySource, base: &str) -> Result<Strin
     get_text(url, keys::local_key(keys)).await
 }
 
+/// How long [`provider_models`] waits for the provider's answer.
+const PROVIDER_GET_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// GETs `<base>/models` from `openai` or `anthropic` for the connect test: the provider's
+/// model list proves the key works and the provider can be reached. `key` is a key typed in
+/// and not saved yet; without one the saved key is read (keychain, then the environment).
+/// The URL must pass the provider's allowlist before any key is read, the key is sent the
+/// way [`stream`] sends it, and the ChatGPT plan is never used here. Other providers are
+/// refused (`openai-compatible` has [`local_models`]). A non-2xx reply becomes
+/// [`Error::Http`] with the provider's redacted message. The body is capped at 1 MiB.
+/// Needs a tokio runtime.
+pub async fn provider_models(provider: &str, base: &str, key: Option<String>) -> Result<String> {
+    let (p, url) = provider_models_url(provider, base)?;
+    let key = if let Some(k) = typed_key(key) {
+        k
+    } else {
+        let rt = tokio::runtime::Handle::try_current()
+            .map_err(|_| Error::Transport("no tokio runtime".to_owned()))?;
+        rt.spawn_blocking(move || saved_key(&SystemKeySource, p))
+            .await
+            .map_err(|_| Error::Transport("key lookup failed".to_owned()))?
+            .ok_or_else(|| Error::MissingKey {
+                provider: provider.to_owned(),
+            })?
+    };
+    provider_get(p, provider, url, &key).await
+}
+
+/// [`provider_models`] over an explicit key source, read on the calling task.
+pub async fn provider_models_with(
+    keys: &dyn KeySource,
+    provider: &str,
+    base: &str,
+    key: Option<String>,
+) -> Result<String> {
+    let (p, url) = provider_models_url(provider, base)?;
+    let key = match typed_key(key) {
+        Some(k) => k,
+        None => saved_key(keys, p).ok_or_else(|| Error::MissingKey {
+            provider: provider.to_owned(),
+        })?,
+    };
+    provider_get(p, provider, url, &key).await
+}
+
+/// The checked `<base>/models` URL of a keyed provider.
+fn provider_models_url(provider: &str, base: &str) -> Result<(Provider, Url)> {
+    let Some(p @ (Provider::OpenAi | Provider::Anthropic)) = Provider::parse(provider) else {
+        return Err(Error::UnknownProvider {
+            provider: provider.to_owned(),
+        });
+    };
+    let raw = format!("{}/models", base.trim_end_matches('/'));
+    Ok((p, guard::check_url(p, provider, &raw)?))
+}
+
+/// A typed key, trimmed; blank counts as none.
+fn typed_key(key: Option<String>) -> Option<ApiKey> {
+    key.map(|k| k.trim().to_owned())
+        .filter(|k| !k.is_empty())
+        .map(ApiKey::new)
+}
+
+fn saved_key(keys: &(impl KeySource + ?Sized), provider: Provider) -> Option<ApiKey> {
+    match provider {
+        Provider::OpenAi => keys::openai_key(keys),
+        Provider::Anthropic => keys::anthropic_key(keys),
+        Provider::OpenAiCompatible | Provider::MimirCloud => None,
+    }
+}
+
+/// GETs `url` with `key` added for `provider`. Takes an already checked URL; tests call it
+/// with a loopback one.
+async fn provider_get(provider: Provider, provider_id: &str, url: Url, key: &ApiKey) -> Result<String> {
+    let send = async {
+        let mut headers = HeaderMap::new();
+        add_key(&mut headers, provider, key, provider_id)?;
+        let mut response = client()?
+            .get(url)
+            .headers(headers)
+            .send()
+            .await
+            .map_err(Error::transport)?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = read_capped(response).await;
+            let mut message = redact::provider_message(&body, Some(key.expose()));
+            if message.is_empty() {
+                status
+                    .canonical_reason()
+                    .unwrap_or_default()
+                    .clone_into(&mut message);
+            }
+            return Err(Error::Http {
+                status: status.as_u16(),
+                message,
+                code: None,
+            });
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(Error::transport)? {
+            if body.len() + chunk.len() > MAX_LOCAL_BODY {
+                return Err(Error::Transport("the listing is too large".to_owned()));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        String::from_utf8(body).map_err(|_| Error::Transport("the listing is not text".to_owned()))
+    };
+    tokio::time::timeout(PROVIDER_GET_TIMEOUT, send)
+        .await
+        .map_err(|_| Error::Transport("timed out".to_owned()))?
+}
+
 async fn get_text(url: Url, key: Option<ApiKey>) -> Result<String> {
     let send = async {
         let mut request = client()?.get(url);
@@ -385,6 +498,31 @@ fn body_stream(response: reqwest::Response) -> impl Stream<Item = Result<Bytes>>
         .map(|chunk| chunk.map_err(Error::transport))
 }
 
+/// Adds `key` the way `provider` takes it: `x-api-key` with `anthropic-version` for
+/// `anthropic`, `Authorization: Bearer` for the others. The value is marked sensitive.
+fn add_key(headers: &mut HeaderMap, provider: Provider, key: &ApiKey, provider_id: &str) -> Result<()> {
+    let text = if provider == Provider::Anthropic {
+        key.expose().to_owned()
+    } else {
+        format!("Bearer {}", key.expose())
+    };
+    let mut value = HeaderValue::from_str(&text).map_err(|_| Error::InvalidKey {
+        provider: provider_id.to_owned(),
+    })?;
+    // Keeps the value out of reqwest's and hyper's Debug output.
+    value.set_sensitive(true);
+    if provider == Provider::Anthropic {
+        headers.insert(HeaderName::from_static("x-api-key"), value);
+        headers.insert(
+            HeaderName::from_static("anthropic-version"),
+            HeaderValue::from_static("2023-06-01"),
+        );
+    } else {
+        headers.insert(AUTHORIZATION, value);
+    }
+    Ok(())
+}
+
 async fn send_response(
     checked: Checked,
     req: LlmHttpRequest,
@@ -396,25 +534,7 @@ async fn send_response(
         mut headers,
     } = checked;
     if let Some(key) = &key {
-        let text = if provider == Provider::Anthropic {
-            key.expose().to_owned()
-        } else {
-            format!("Bearer {}", key.expose())
-        };
-        let mut value = HeaderValue::from_str(&text).map_err(|_| Error::InvalidKey {
-            provider: req.provider.clone(),
-        })?;
-        // Keeps the value out of reqwest's and hyper's Debug output.
-        value.set_sensitive(true);
-        if provider == Provider::Anthropic {
-            headers.insert(HeaderName::from_static("x-api-key"), value);
-            headers.insert(
-                HeaderName::from_static("anthropic-version"),
-                HeaderValue::from_static("2023-06-01"),
-            );
-        } else {
-            headers.insert(AUTHORIZATION, value);
-        }
+        add_key(&mut headers, provider, key, &req.provider)?;
     }
     let response = client()?
         .post(url)

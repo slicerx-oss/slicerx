@@ -106,6 +106,26 @@ pub async fn llm_local_models(base_url: String) -> Result<String, String> {
     })
 }
 
+/// Lists the models of `openai` or `anthropic` for the connect test, with `key` when the person
+/// typed one that is not saved yet, else the saved key from the keychain. The request goes only
+/// to the provider's allowlisted host (sx-llm checks it before any key is read), so the webview
+/// needs no network access and its CSP stays closed. The key is never logged or written here;
+/// saving it stays with `chatgpt_set_api_key` once the test passes. HTTP failures come back as
+/// `<status>: <message>`, with the key redacted.
+#[tauri::command]
+pub async fn llm_provider_models(
+    provider: String,
+    base_url: String,
+    key: Option<String>,
+) -> Result<String, String> {
+    sx_llm::provider_models(&provider, &base_url, key)
+        .await
+        .map_err(|e| match e {
+            sx_llm::Error::Http { status, message, .. } => format!("{status}: {message}"),
+            other => other.to_string(),
+        })
+}
+
 /// Who pays for `openai` requests now: `plan`, `key`, or none.
 #[tauri::command]
 pub async fn llm_billing() -> Option<&'static str> {
