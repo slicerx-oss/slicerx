@@ -6,6 +6,7 @@ import { verifyHole } from '../src/hole-verification'
 const before = { entry: [0, 0, 3], axis: [0, 0, 1], diameterMm: 4, depthMm: 3, through: true }
 it('detects a no-op edit and verifies the requested measured diameter', () => {
   expect(verifyHole(before, before, { diameter_mm: 6 })).toMatchObject({ status: 'failed', checks: { diameter: false } })
+  expect(verifyHole(before, before, { diameter_mm: 4.001 }).status).toBe('failed')
   expect(verifyHole(before, { ...before, diameterMm: 6 }, { diameter_mm: 6 })).toMatchObject({ status: 'verified', toleranceMm: 0.01 })
 })
 it('does not verify nonfinite measurements or a different hole axis', () => {
