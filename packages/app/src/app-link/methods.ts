@@ -59,6 +59,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // into its box. Nothing changes in the project until the person applies it.
   'model.push': 'read',
   'model.push_set': 'read',
+  // The open Model tool's operation preview: ok or error, its message, and whether the last good one is kept.
+  'model.op_preview': 'read',
   'values.list': 'read',
   'values.set': 'edit',
   'values.remove': 'edit',
@@ -373,6 +375,7 @@ const HANDLERS: Record<string, Handler> = {
   'sketch.box_set': async (args) => (await import('./sketch-boxes')).setBox(args),
   'model.push': async () => (await import('./model-push')).readPush(),
   'model.push_set': async (args) => (await import('./model-push')).setPush(args),
+  'model.op_preview': async () => (await import('./model-op-preview')).readOpPreview(),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),
