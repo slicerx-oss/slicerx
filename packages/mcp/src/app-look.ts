@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Two view preferences of the open app, through the app link: Frame the view (whether Model frames each pick, or only
 // when it opens or an object is added) and Toolbar size (the Model ribbon's icons). They change how the window behaves,
-// never the project, so both tools read. Each answer is the preferences read back. No other setting is reachable.
+// never the project, so both tools read. Each answer is the preferences read back, with the 3D view's look (the preset
+// the theme picked and its values). No other setting is reachable.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { appClientSetupMessage, type AppLinkCaller } from './app-route'
@@ -15,6 +16,12 @@ export interface AppLook {
   modelFraming?: 'selection' | 'open'
   /** Present on apps with edition visual tokens. Omitted glyph colors follow the studio background. */
   theme?: { scheme: 'dark' | 'light'; visuals: Record<string, string>; overrides: Record<string, string> }
+  /**
+   * The 3D view's look, absent while no 3D view is up: the preset the theme picked (dark-precision on a dark theme,
+   * light-studio on a light one), whether the theme kept its own backdrop colors, and the full look as the view reads
+   * it back (backdrop, plate, lighting, materials, geometry; @slicerx/viewport ViewportLook).
+   */
+  viewport?: { preset: 'dark-precision' | 'light-studio'; themeBackdrop: boolean; look: { version: number } & Record<string, unknown> }
 }
 
 const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_supported', busy: 'busy', read_only: 'not_supported', denied: 'not_supported' }
@@ -35,9 +42,11 @@ async function call(link: AppLinkCaller | undefined, appName: string, method: st
 
 const SIZE_WORDS: Record<AppLook['toolbarSize'], string> = { large: 'Large (32 px)', medium: 'Medium (24 px)', small: 'Small (16 px)' }
 const FRAMING_WORDS: Record<NonNullable<AppLook['modelFraming']>, string> = { selection: 'Always', open: 'On open and add' }
+const PRESET_WORDS: Record<NonNullable<AppLook['viewport']>['preset'], string> = { 'dark-precision': 'Dark precision', 'light-studio': 'Light studio' }
 
 function summary(l: AppLook): string {
-  return `Toolbar size ${SIZE_WORDS[l.toolbarSize]}${l.modelFraming ? `; Frame the view: ${FRAMING_WORDS[l.modelFraming]}` : ''}.`
+  const view = l.viewport ? `; 3D view look: ${PRESET_WORDS[l.viewport.preset] ?? l.viewport.preset}${l.viewport.themeBackdrop ? " with the theme's backdrop" : ''}` : ''
+  return `Toolbar size ${SIZE_WORDS[l.toolbarSize]}${l.modelFraming ? `; Frame the view: ${FRAMING_WORDS[l.modelFraming]}` : ''}${view}.`
 }
 
 export function appLookTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
@@ -46,7 +55,7 @@ export function appLookTools(link: AppLinkCaller | undefined, appName: string): 
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Read two view preferences of ${appName} (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). Also reads theme.scheme, theme.visuals (the active CSS color properties) and theme.overrides (shared plus active edition overrides); omitted glyph colors follow the studio background. Reads through the app link; the app must be open with the link on.`,
+    description: `Read two view preferences of ${appName} (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). Also reads theme.scheme, theme.visuals (the active CSS color properties) and theme.overrides (shared plus active edition overrides); omitted glyph colors follow the studio background. Also reads viewport, the 3D view's look: preset (dark-precision on a dark theme, light-studio on a light one; the theme picks it), themeBackdrop (true when a theme other than Subban keeps its own backdrop colors) and look (backdrop, plate, lighting, materials and geometry values the view draws with); absent while no 3D view is up. Reads through the app link; the app must be open with the link on.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'look.get', {})
