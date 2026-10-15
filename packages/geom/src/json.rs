@@ -86,6 +86,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("nest.step", "nest"),
     ("nest.end", "nest"),
     ("format.read3mf", "formats"),
+    ("brep.count", "brep"),
     ("brep.box", "brep"),
     ("brep.cylinder", "brep"),
     ("brep.primitive", "brep"),
