@@ -56,6 +56,7 @@ export function onHeadDiameter(cb: () => void): () => void {
 }
 
 export function setHeadDiameter(d: number): void {
+  if (!Number.isFinite(d)) return
   chosen.setState({ diameter: clampDiameter(d) })
 }
 
@@ -75,7 +76,7 @@ function invert(m: Mat4): Mat4 | null {
   const c01 = m12 * m20 - m10 * m22
   const c02 = m10 * m21 - m11 * m20
   const det = m00 * c00 + m01 * c01 + m02 * c02
-  if (Math.abs(det) < 1e-12) return null
+  if (!m.every(Number.isFinite) || !Number.isFinite(det) || Math.abs(det) < 1e-12) return null
   const i00 = c00 / det
   const i01 = (m02 * m21 - m01 * m22) / det
   const i02 = (m01 * m12 - m02 * m11) / det
@@ -92,17 +93,23 @@ function invert(m: Mat4): Mat4 | null {
 }
 
 function write(id: string, fn: (pts: BrimPoint[]) => BrimPoint[]): boolean {
-  const { plate } = get()
-  const ids = new Set(group(plate, id).map((p) => p.id))
+  const { plate, plates, activePlate } = get()
+  const family = group([...plate, ...plates.filter((p) => p.id !== activePlate).flatMap((p) => p.objects)], id)
+  const ids = new Set(family.map((p) => p.id))
   const base = plate.find((p) => p.id === id)
   if (!base) return false
   const next = fn([...(base.brimPoints ?? [])])
+  if (next.some((p) => !p.every(Number.isFinite))) return false
+  const same = (p: PlateEntry): boolean => (p.brimPoints?.length ?? 0) === next.length && next.every((q, i) => q.every((v, j) => v === p.brimPoints![i]![j]))
+  if (family.every(same)) return false
+  const update = (p: PlateEntry): PlateEntry => {
+    if (!ids.has(p.id) || same(p)) return p
+    const { brimPoints: _old, ...rest } = p
+    return next.length ? { ...rest, brimPoints: next } : rest
+  }
   set({
-    plate: plate.map((p) => {
-      if (!ids.has(p.id)) return p
-      const { brimPoints: _old, ...rest } = p
-      return (next.length ? { ...rest, brimPoints: next } : rest) as PlateEntry
-    }),
+    plate: plate.map(update),
+    plates: plates.map((p) => p.id === activePlate || !p.objects.some((e) => ids.has(e.id) && !same(e)) ? p : { ...p, objects: p.objects.map(update) }),
   })
   markStale()
   return true
@@ -110,6 +117,7 @@ function write(id: string, fn: (pts: BrimPoint[]) => BrimPoint[]): boolean {
 
 /** Adds an ear where the click hit the model, in bed coordinates. Returns false for a duplicate or a full list. */
 export function addEar(objectId: string, bedX: number, bedY: number, diameter: number = headDiameter()): boolean {
+  if (![bedX, bedY, diameter].every(Number.isFinite)) return false
   const e = get().plate.find((p) => p.id === objectId)
   if (!e) return false
   const inv = invert(e.transform as Mat4)
@@ -183,7 +191,13 @@ export function removeSelectedEars(objectId: string): boolean {
 
 /** The selected ears take the diameter (Orca changes the selected points with the slider, and the next ear's size with them). */
 export function resizeSelectedEars(objectId: string, diameter: number): boolean {
-  const sel = new Set(selectedEars(objectId))
+  return resizeEars(objectId, selectedEars(objectId), diameter)
+}
+
+/** Resize explicit ears without changing the viewport selection. */
+export function resizeEars(objectId: string, indices: readonly number[], diameter: number): boolean {
+  if (!Number.isFinite(diameter)) return false
+  const sel = new Set(indices)
   const e = get().plate.find((p) => p.id === objectId)
   if (!sel.size || !e?.brimPoints?.length) return false
   const r = clampDiameter(diameter) / 2
@@ -194,6 +208,7 @@ let dragStart: { objectId: string; index: number; point: BrimPoint } | null = nu
 
 /** Drags an ear along the model: x and y follow the hit, z stays (Orca's on_dragging). The whole drag is one undo step. */
 export function moveEar(objectId: string, index: number, bedX: number, bedY: number, final: boolean): boolean {
+  if (![bedX, bedY].every(Number.isFinite)) return false
   const e = get().plate.find((p) => p.id === objectId)
   const inv = e ? invert(e.transform as Mat4) : null
   const cur = e?.brimPoints?.[index]
@@ -212,6 +227,7 @@ export function moveEar(objectId: string, index: number, bedX: number, bedY: num
 
 /** Orca's Auto-generate: ears at the first layer's convex corners and the concave corners of its holes. Returns how many were added. */
 export function autoGenerateEars(objectId: string, opts: { maxAngle: number; detection: number; diameter?: number }): number {
+  if (![opts.maxAngle, opts.detection, opts.diameter ?? headDiameter()].every(Number.isFinite) || opts.maxAngle < 0 || opts.maxAngle > 180 || opts.detection < 0) return 0
   const e = get().plate.find((p) => p.id === objectId)
   const inv = e ? invert(e.transform as Mat4) : null
   if (!e || !inv) return 0
@@ -227,8 +243,25 @@ export function autoGenerateEars(objectId: string, opts: { maxAngle: number; det
     added.push([x, y, z, r])
   }
   if (!added.length) return 0
-  write(objectId, (pts) => [...pts, ...added])
-  return added.length
+  return write(objectId, (pts) => [...pts, ...added]) ? added.length : 0
+}
+
+/** Move one ear as one edit, independently of a viewport drag. */
+export function positionEar(objectId: string, index: number, bedX: number, bedY: number): boolean {
+  if (![bedX, bedY].every(Number.isFinite)) return false
+  const e = get().plate.find((p) => p.id === objectId)
+  const inv = e ? invert(e.transform as Mat4) : null
+  const cur = e?.brimPoints?.[index]
+  if (!cur || !inv) return false
+  const [x, y] = apply(inv, [bedX, bedY, BED_Z])
+  if (Math.hypot(cur[0] - x, cur[1] - y) < 1e-3) return false
+  return write(objectId, (pts) => pts.map((q, i) => i === index ? [x, y, q[2], q[3]] : q))
+}
+
+/** Remove explicit ears without changing the viewport selection. */
+export function removeEars(objectId: string, indices: readonly number[]): boolean {
+  const remove = new Set(indices)
+  return write(objectId, (pts) => pts.filter((_, i) => !remove.has(i)))
 }
 
 /** How far the detection length can go before it stops changing the outline, for the slider. */
