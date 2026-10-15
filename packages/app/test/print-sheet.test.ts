@@ -22,7 +22,7 @@ beforeAll(() => {
 const roots: (() => void)[] = []
 afterEach(() => {
   for (const u of roots.splice(0)) u()
-  set({ printSheet: null })
+  set({ printSheet: null, toolheadSkipMatching: {} })
 })
 
 function ask(over: Partial<PrintSheetAsk> = {}): PrintSheetAsk {
@@ -64,7 +64,82 @@ function open(a: PrintSheetAsk): HTMLElement {
   return el
 }
 
+/** Open a toolhead picker and read its items, or choose one by its T number. */
+const headItems = (el: HTMLElement, tool: number): HTMLButtonElement[] => {
+  const trigger = el.querySelector<HTMLButtonElement>(`#ps-toolhead-${tool}`)!
+  if (trigger.getAttribute('aria-expanded') !== 'true') flushSync(() => trigger.click())
+  return [...el.ownerDocument.querySelectorAll<HTMLButtonElement>('.ps-head-menu [role=menuitemcheckbox]')]
+}
+const pickHead = (el: HTMLElement, tool: number, head: number) => {
+  const item = headItems(el, tool).find((i) => i.textContent?.startsWith(`T${head}`))!
+  flushSync(() => item.click())
+}
+
 describe('Print sheet summary', () => {
+  it('keeps matching choices on approval when the mapping question is skipped', () => {
+    const resolve = vi.fn()
+    const el = open(ask({ printer: { id: 'u1', name: 'U1', model: 'U1', vendor: 'Snapmaker', plugin: 'snapmaker' } as PrintSheetAsk['printer'], slots: [], auto: { 1: '2' }, resolve, showToolheads: false, toolheads: { ready: true, headDataAvailable: true, toolheads: [], assignments: [{ tool: 0, physicalTool: 1, alternatives: [0, 1, 2, 3], status: 'match', reason: 'Matched' }] } }))
+    expect(el.querySelector('select')).toBeNull()
+    expect(el.textContent).toContain('Change toolheads')
+    expect(el.querySelector('.ps-summary')?.textContent).toContain('Toolhead T2')
+    expect(el.querySelector('.ps-summary')?.textContent).not.toContain('External spool')
+    flushSync(() => el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!.click())
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ toolheadMap: { 0: 1 } }))
+  })
+
+  it('shows material warnings for the chosen head and waits for its review', async () => {
+    const plan: NonNullable<PrintSheetAsk['toolheads']> = { ready: true, headDataAvailable: true, assignments: [{ tool: 0, physicalTool: 0, alternatives: [0, 1, 2, 3], status: 'match', reason: 'Matched' }], toolheads: [{ tool: 0, loaded: true, material: 'PLA', color: '#ff0000' }, { tool: 1, loaded: true, material: 'PETG', color: '#ff0000' }] }
+    let complete!: (result: typeof plan) => void
+    const reviewToolheads = vi.fn(() => new Promise<typeof plan>((resolve) => { complete = resolve }))
+    const el = open(ask({ slots: [], auto: { 1: '1' }, toolheads: plan, reviewToolheads }))
+    const go = el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!
+    pickHead(el, 0, 2)
+    expect(reviewToolheads).toHaveBeenCalledWith({ 0: 1 })
+    expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(true)
+    complete({ ...plan, assignments: [{ ...plan.assignments[0]!, physicalTool: 1, status: 'selected', materialMismatch: true, reason: 'Different material: PETG instead of PLA' }] })
+    await vi.waitFor(() => expect(el.textContent).toContain('Different material: PETG instead of PLA'))
+    expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(false)
+    expect(el.querySelector('.ps-map-row .ps-row-warn svg')).not.toBeNull()
+  })
+
+  it('offers four manual heads without spool data and stores the preference for only this printer', () => {
+    const el = open(ask({ slots: [], auto: {}, toolheads: { ready: false, headDataAvailable: false, toolheads: [], assignments: [0, 1].map((tool) => ({ tool, physicalTool: null, alternatives: [0, 1, 2, 3], status: 'unavailable', reason: 'Spool info unavailable' })) } }))
+    expect(el.querySelectorAll('.ps-head-btn')).toHaveLength(2)
+    expect(headItems(el, 0).map((o) => o.textContent)).toEqual([1, 2, 3, 4].map((head) => `T${head}`))
+    flushSync(() => el.querySelector<HTMLButtonElement>('#ps-toolhead-skip')!.click())
+    expect(get().toolheadSkipMatching).toEqual({ h2d: true })
+    expect(el.querySelectorAll('.ps-head-btn')).toHaveLength(2)
+  })
+
+  it('requires a U1 color choice and returns physical toolheads separately from slot maps', () => {
+    const resolve = vi.fn()
+    const el = open(ask({
+      printer: { id: 'u1', name: 'U1', model: 'U1', vendor: 'Snapmaker', plugin: 'snapmaker' } as PrintSheetAsk['printer'],
+      ending: '.gcode', name: 'part.gcode', auto: {}, resolve,
+      toolheads: { ready: false, assignments: [{ tool: 0, physicalTool: 1, alternatives: [1], status: 'choice_required', reason: 'Loaded color differs' }], toolheads: [{ tool: 1, loaded: true, material: 'PLA', color: '#00ff00' }] },
+    }))
+    const go = el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!
+    expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(true)
+    const trigger = el.querySelector<HTMLButtonElement>('#ps-toolhead-0')!
+    // a name and a color word, never the hex
+    expect(headItems(el, 0).map((o) => o.textContent)).toEqual(['T2 PLA Green'])
+    pickHead(el, 0, 2)
+    expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(false)
+    flushSync(() => set((state) => ({ printSheet: { ...state.printSheet!, check: { errors: [], warnings: [{ text: 'Check the plate' }], sha256: 'updated' } } })))
+    expect(trigger.textContent).toBe('T2 PLA Green')
+    expect(trigger.textContent).not.toContain('#')
+    flushSync(() => go.click())
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ toolheadMap: { 0: 1 } }))
+    expect(resolve.mock.calls[0]![0].slotMap).toBeUndefined()
+  })
+
+  it('blocks a U1 filament with no toolhead choice', () => {
+    const el = open(ask({ slots: [], auto: {}, toolheads: { ready: false, assignments: [{ tool: 0, physicalTool: null, alternatives: [], status: 'unavailable', reason: 'Load PETG' }], toolheads: [] } }))
+    expect(el.textContent).toContain('Load PETG')
+    const go = el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!
+    expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(true)
+  })
+
   it('shows the file and the filaments as text, with no field or slot picker', () => {
     const el = open(ask())
     expect(el.querySelector('.ps-file')?.textContent).toBe('benchy.gcode.3mf')

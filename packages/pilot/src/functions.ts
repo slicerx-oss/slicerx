@@ -61,6 +61,7 @@ export const APP_FUNCTIONS = [
   'smart_layer',
   'multicolor_assign',
   'ams_mapping',
+  'toolhead_mapping',
   'region_modifiers',
 ] as const
 export type AppFunctionName = (typeof APP_FUNCTIONS)[number]

@@ -128,6 +128,12 @@ describe('the app functions over stdio', () => {
     expect((await s.call('slicerx_printer_config_check', { printerId: 'bay-1' })).summary).toBeTruthy()
   })
 
+  it('exposes U1 mapping and explains an unsupported connection', async () => {
+    const out = await s.call('slicerx_toolhead_mapping', { printerId: 'bay-1', needs: [{ tool: 0, material: 'PLA', color: '#ff0000' }] })
+    expect(out.ok).toBe(false)
+    expect(out.summary).toContain('does not support toolhead mapping')
+  })
+
   it.skipIf(!hasGeom)(
     'repairs and hollows a mesh, and the project and a new slice show the change',
     async () => {

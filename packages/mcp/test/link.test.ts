@@ -4,17 +4,18 @@
 // calls go to sx-link's broker, which is what the bridge verifies. Skipped when sx-link is not built.
 // The printer scan case needs sx-link's test hooks: `cargo build -p sx-link --features test-hooks`, then point
 // SX_LINK_BIN at that binary. A build without them fails that case with a message saying so.
-import { spawn, type ChildProcessByStdio } from 'node:child_process'
+import { execFile, spawn, type ChildProcessByStdio } from 'node:child_process'
+import { promisify } from 'node:util'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { connectLink } from '@slicerx/link-client'
 import { MOCK_HA_TOKEN, startMocks, type RunningMocks } from '@slicerx/mock-printers'
 // The connected apps sample in the integrator kit, run here against the same hub.
 import { readConnectedApps } from '../../../docs/integrators/connected-apps/read-connected-apps.mjs'
-import { connect, data, text } from './helpers'
+import { connect, data, noSx, sxBin, text } from './helpers'
 
 // Runs only when SX_LINK_BIN names a built sx-link, with a throwaway state directory and file
 // secrets, so a test never touches the real hub state or the keychain.
@@ -28,7 +29,7 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
   let code = ''
 
   beforeAll(async () => {
-    mocks = await startMocks({ only: ['moonraker', 'prusalink', 'spoolman', 'home-assistant'], state: 'idle' })
+    mocks = await startMocks({ only: ['moonraker', 'snapmaker-u1', 'prusalink', 'spoolman', 'home-assistant'], state: 'idle' })
     proc = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     await new Promise<void>((done, fail) => {
@@ -47,6 +48,8 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     const setup = await connectLink({ url, code })
     await setup.addPrinter({ id: 'bay-4', name: 'Bay 4', plugin: 'moonraker', host: '127.0.0.1', port: mocks.ports.moonraker ?? 0 }, { model: 'Voron 2.4 350' })
     await setup.addPrinter({ id: 'bay-6', name: 'Bay 6', plugin: 'prusalink', host: '127.0.0.1', port: mocks.ports.prusalink ?? 0 }, { model: 'MK4S' })
+    await setup.settings.set({ experimentalConnectors: true })
+    await setup.addPrinter({ id: 'u1', name: 'U1', plugin: 'snapmaker', protocol: 'moonraker', host: '127.0.0.1', port: mocks.ports['snapmaker-u1'] ?? 0 }, { model: 'U1' })
     // The connected apps, added the way Settings, Connected apps adds them: the key into the bridge's secret store, then the address.
     await setup.configureService('spoolman', `http://127.0.0.1:${mocks.ports.spoolman ?? 0}`)
     await setup.setSecret('connected-apps/home-assistant', MOCK_HA_TOKEN)
@@ -59,6 +62,25 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     if (dir) rmSync(dir, { recursive: true, force: true })
     await mocks?.stop()
   })
+
+  it.skipIf(noSx())('reads U1 toolhead choices through MCP and the CLI without printer actions', async () => {
+    const changes = async () => ((await (await fetch(`http://127.0.0.1:${mocks.control}/state`)).json()) as Record<string, { log: string[] }>)['snapmaker-u1']?.log.filter((line) => line !== 'webcams list')
+    const before = await changes()
+    const args = { printerId: 'u1', needs: [{ tool: 0, material: 'PETG', color: '#00ff00' }] }
+    const h = await connect({ engine: 'sx', sxBin, printers: 'link', linkUrl: url, linkCode: code })
+    const result = await h.call('slicerx_toolhead_mapping', args)
+    expect(result.isError, text(result)).toBeFalsy()
+    expect(data(result)).toMatchObject({ ok: true, output: { ready: true, assignments: [{ tool: 0, physicalTool: 1, status: 'match' }] } })
+    const missing = await h.call('slicerx_toolhead_mapping', { printerId: 'u1', needs: [{ tool: 0, material: 'ABS', color: '#ffffff' }] })
+    expect(data(missing)).toMatchObject({ output: { ready: false, requiresConfirmation: true, assignments: [{ status: 'choice_required', materialMismatch: true }] } })
+    const cli = await promisify(execFile)(process.execPath, [
+      '--import', 'tsx', 'src/cli.ts', '--engine', 'sx', '--sx-bin', sxBin, '--printers', 'link', '--link-url', url,
+      '--out-dir', join(dir, 'cli-out'), '--profiles-dir', join(dir, 'profiles'), 'call', 'toolhead_mapping', JSON.stringify(args),
+    ], { cwd: resolve(__dirname, '..'), env: { ...process.env, SLICERX_MCP_LINK_CODE: code }, timeout: 30_000, windowsHide: true })
+    expect(JSON.parse(cli.stdout.trim())).toMatchObject({ tool: 'slicerx_toolhead_mapping', ok: true, output: { output: { ready: true, assignments: [{ physicalTool: 1 }] } } })
+    expect(await changes()).toEqual(before)
+    await h.client.close()
+  }, 60_000)
 
   it('reads status, and leaves a heater change for a person to approve in SlicerX', async () => {
     const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import type { ApprovalToken, PilotMachine, PluginManifest, PrinterHost } from '@slicerx/contracts'
 import { hashParams } from '@slicerx/contracts'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createEvalEnv, createEvalSlicer, type EvalObject } from '../evals/harness'
 import { createFakeHosts, HISTORY, PETG_V1, type FakeHosts } from '../evals/fakes'
 import { runScenario } from '../evals/runner'
@@ -15,6 +15,7 @@ import { toolSpec, type PilotTool, type ToolContext } from '../src/tool'
 import { create as batchD } from '../skills/batch-d'
 import { colorDistance } from '../skills/d_common/index'
 import { createSlice } from '../skills/slice/index'
+import { printerTools } from '../src/tools/printers'
 
 const MACHINE: PilotMachine = { printer: 'bambu_x1c', material: 'petg', nozzle: 0.4 }
 const OBJECTS: EvalObject[] = [{ id: 'bracket', name: 'Shelf bracket', bboxMm: [80, 40, 30] }]
@@ -88,6 +89,95 @@ describe('tool definitions', () => {
     for (const n of ['kb.sources', 'ams_mapping', 'multicolor_assign', 'region_modifiers', 'printer_config_check']) {
       expect(names).toContain(n)
     }
+  })
+})
+
+describe('toolhead_mapping', () => {
+  it('allows an unchanged single-filament queue without spool data but requires manual choices for multiple filaments', async () => {
+    const { ctxFor, shared } = setup()
+    const ctx = ctxFor('no-spools')
+    await createSlice(shared).run({}, ctx)
+    const plate = [...shared.slices.keys()][0]!
+    const upload = vi.fn()
+    const start = vi.fn()
+    ctx.host.printers = { ...ctx.host.printers, upload, start, planToolheads: async () => ({ ready: false, headDataAvailable: false, assignments: [], toolheads: [] }), list: async () => [{ id: 'u1', name: 'U1', model: 'U1', plugin: 'snapmaker', vendor: 'Snapmaker', nozzleCount: 4 }] as import('@slicerx/contracts').PrinterInfo[] }
+    const queue = printerTools(shared).find((t) => t.name === 'printer.queue') as unknown as PilotTool<Record<string, unknown>>
+    const entry = shared.slices.get(plate)!
+    entry.result.stats.filamentG = [2]
+    expect(await queue.approval!({ printerId: 'u1', plate }, ctx)).toMatchObject({ actions: expect.arrayContaining([expect.objectContaining({ action: 'printer.upload' })]) })
+    entry.result.stats.filamentG = [2, 1]
+    await expect(queue.approval!({ printerId: 'u1', plate }, ctx)).rejects.toThrow('toolhead_mapping')
+    expect(upload).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('requires reviewed toolhead preparation before queuing a U1 plate', async () => {
+    const { ctxFor, shared } = setup()
+    const ctx = ctxFor('unprepared')
+    await createSlice(shared).run({}, ctx)
+    const plate = [...shared.slices.keys()][0]!
+    const upload = vi.fn()
+    const start = vi.fn()
+    ctx.host.printers = { ...ctx.host.printers, upload, start, list: async () => [{ id: 'u1', name: 'U1', model: 'U1', plugin: 'snapmaker', vendor: 'Snapmaker', nozzleCount: 4 }] as import('@slicerx/contracts').PrinterInfo[] }
+    const queue = printerTools(shared).find((t) => t.name === 'printer.queue') as unknown as PilotTool<Record<string, unknown>>
+    await expect(queue.approval!({ printerId: 'u1', plate }, ctx)).rejects.toThrow('toolhead_mapping')
+    expect(upload).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('retains a prepared copy for the chosen printer without changing the source or sending it', async () => {
+    const { tool, ctxFor, shared } = setup()
+    const ctx = ctxFor('prepare')
+    await createSlice(shared).run({}, ctx)
+    const plate = [...shared.slices.keys()][0]!
+    const plan = { ready: true, assignments: [{ tool: 0, physicalTool: 2, alternatives: [2], status: 'selected' as const, reason: 'Chosen loaded head' }], toolheads: [] }
+    const upload = vi.fn()
+    const start = vi.fn()
+    const prepare = vi.fn(async (_printer: string, file: import('@slicerx/contracts').JobFile) => ({ file: { ...file, data: new TextEncoder().encode('T2\n').buffer, sha256: 'mapped-hash' }, plan }))
+    ctx.host.printers = { ...ctx.host.printers, planToolheads: async () => plan, prepareToolheads: prepare, upload, start }
+    const result = await tool('toolhead_mapping').run({ printerId: 'u1', needs: [{ tool: 0, material: 'PLA', color: '#ff0000' }], selected: { '0': 2 }, preparePlate: plate }, ctx)
+    expect(result.ok).toBe(true)
+    expect(prepare).toHaveBeenCalledOnce()
+    const entry = shared.slices.get(plate)!
+    const mapped = entry.preparedToolheads!.get('u1')!
+    expect(mapped.file.sha256).toBe('mapped-hash')
+    expect(entry.data).not.toBe(mapped.file.data)
+    expect(mapped.sourceSha256).toBe(prepare.mock.calls[0]![1].sha256)
+    expect(upload).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+    ctx.host.printers.list = async () => [{ id: 'u1', name: 'U1', model: 'U1', plugin: 'snapmaker', vendor: 'Snapmaker', nozzleCount: 4 }] as import('@slicerx/contracts').PrinterInfo[]
+    const queue = printerTools(shared).find((t) => t.name === 'printer.queue') as unknown as PilotTool<Record<string, unknown>>
+    const approval = await queue.approval!({ printerId: 'u1', plate }, ctx)
+    expect(approval).toMatchObject({ lines: expect.arrayContaining(['Toolheads: filament 1 to toolhead 3']), actions: expect.arrayContaining([expect.objectContaining({ action: 'printer.upload', params: expect.objectContaining({ sha256: 'mapped-hash' }) })]) })
+    entry.data = new TextEncoder().encode('changed original').buffer
+    await expect(queue.approval!({ printerId: 'u1', plate }, ctx)).rejects.toThrow('plate changed')
+    expect(upload).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('returns the connect read-back without uploading or starting', async () => {
+    const { tool, ctxFor } = setup()
+    const ctx = ctxFor('map')
+    const output = { ready: true, assignments: [{ tool: 0, physicalTool: 2, alternatives: [2], status: 'selected' as const, reason: 'Selected loaded toolhead' }], toolheads: [] }
+    const plan = vi.fn(async () => output)
+    const upload = vi.fn()
+    const start = vi.fn()
+    ctx.host.printers = { ...ctx.host.printers, planToolheads: plan, upload, start }
+    const needs = [{ tool: 0, material: 'PLA', color: '#ff0000' }]
+    const result = await tool('toolhead_mapping').run({ printerId: 'u1', needs, selected: { '0': 2 } }, ctx)
+    expect(result.output).toEqual(output)
+    expect(plan).toHaveBeenCalledWith('u1', needs, { '0': 2 })
+    expect(upload).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('explains when the connected host has no mapping operation', async () => {
+    const { tool, ctxFor } = setup()
+    const ctx = ctxFor('old-host')
+    delete ctx.host.printers.planToolheads
+    const result = await tool('toolhead_mapping').run({ printerId: 'u1', needs: [{ tool: 0, material: 'PLA', color: '#ff0000' }] }, ctx)
+    expect(result.ok).toBe(false)
+    expect(result.summary).toContain('does not support toolhead mapping')
   })
 })
 

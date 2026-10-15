@@ -4,6 +4,27 @@
 import type { ApprovalToken, PermissionClass } from './pilot'
 
 export type PluginKind = 'printer' | 'inventory' | 'home'
+
+export interface ToolheadNeed { tool: number; material: string; color: string }
+export interface LoadedToolhead { tool: number; loaded: boolean; material: string | null; color: string | null }
+export interface ToolheadAssignment {
+  tool: number
+  physicalTool: number | null
+  alternatives: number[]
+  status: 'match' | 'selected' | 'choice_required' | 'unavailable'
+  reason: string
+  colorMismatch?: boolean
+  materialMismatch?: boolean
+  empty?: boolean
+}
+export interface ToolheadPlan {
+  ready: boolean
+  assignments: ToolheadAssignment[]
+  toolheads: LoadedToolhead[]
+  headDataAvailable?: boolean
+  requiresConfirmation?: boolean
+  changedLines?: number
+}
 export type Capability = 'status' | 'events' | 'upload' | 'start' | 'pause' | 'resume' | 'cancel' | 'camera' | 'filament_slots' | 'gcode_console' | 'project_file' | 'slot_write' | 'rewrites_upload'
 
 /** What every printer plugin can do. */
@@ -307,6 +328,10 @@ export interface PrinterHost {
   addToFleet(fleetId: string, printerId: string): Promise<Fleet>
   removeFromFleet(fleetId: string, printerId: string): Promise<Fleet>
   status(printerId: string): Promise<PrinterStatus>
+  /** Read loaded U1 toolheads and propose or check choices. No file or printer changes. Indices are zero based. */
+  planToolheads?(printerId: string, needs: ToolheadNeed[], selected?: Record<string, number>): Promise<ToolheadPlan>
+  /** Prepare a separate mapped file for review. Does not upload, change the printer or start a print. */
+  prepareToolheads?(printerId: string, file: JobFile, needs: ToolheadNeed[], selected: Record<string, number>): Promise<{ file: JobFile; plan: ToolheadPlan }>
   subscribe(printerId: string, onEvent: (e: PrinterEvent) => void): () => void
   /**
    * The bytes `upload` will send, with `sha256` of those bytes. Only call it for a plugin

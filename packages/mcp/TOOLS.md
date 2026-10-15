@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-194 tools.
+195 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -198,5 +198,6 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_theme_create` | Create a theme | theme | read, ungated | Build a theme for an embedded SlicerX: overrides on top of a built-in base, covering colors (Subban role names: purple is the accent, pink commerce, cyan live data, green ok, orange attention, red error), the gradient, fonts, radii and the spacing unit. |
 | `slicerx_theme_get` | Get a built-in theme | theme | read, ungated | Return a built-in theme (subban, the dark default; subbanLight; forge, an example rebrand) as the theme object, its CSS variables and a ready stylesheet. |
 | `slicerx_threads_and_fits` |  |  | slice | Size holes for heat-set inserts, tapping, bolt clearance (plain or countersunk) and press or slip fits on pins and shafts, corrected for how much printed holes close up with this nozzle, line width, layer height and material. |
+| `slicerx_toolhead_mapping` |  |  | read | Read the Snapmaker U1 loaded toolheads and match each job filament by exact color (Delta E at most 2), then nearest color, with material breaking ties and unused spools preferred. |
 | `slicerx_update_fleet` | Change a fleet color or icon | fleets | read, ungated | Set or clear (null) the color and icon of a fleet. |
 | `slicerx_validate_config` | Validate a config | settings | read, ungated | Check a full or partial OrcaSlicer config: unknown keys, wrong types, values outside OrcaSlicer limits or the usual range, keys that have no effect, and cross-key problems (layer height against nozzle, fan order, nozzle temperature against the filament). |
