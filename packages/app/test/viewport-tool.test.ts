@@ -18,9 +18,9 @@ describe('the viewport tool', () => {
     for (const t of ['scale', 'move', 'rotate'] as const) expect(viewportTool(t, 'slim', true)).toBe('select')
   })
 
-  it('keeps the move, rotate and scale handles on a phone in Model, and selects for every other tool', () => {
-    for (const t of ['scale', 'move', 'rotate'] as const) expect(viewportTool(t, 'model', true)).toBe(t)
-    for (const t of ['face', 'paint', 'probe', 'brim', 'select'] as const) expect(viewportTool(t, 'model', true)).toBe('select')
+  it('keeps the move, rotate and scale handles and an open modeling tool on a phone in Model, and selects for every other tool', () => {
+    for (const t of ['scale', 'move', 'rotate', 'probe'] as const) expect(viewportTool(t, 'model', true)).toBe(t)
+    for (const t of ['face', 'paint', 'brim', 'select'] as const) expect(viewportTool(t, 'model', true)).toBe('select')
   })
 
   it('runs the brim tool as a selection when the view has no brim mode', () => {

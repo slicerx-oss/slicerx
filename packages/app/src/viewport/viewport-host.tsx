@@ -189,12 +189,12 @@ export function phoneView(s: { workspace: string }): PhoneView {
 /**
  * The viewport tool for the app's tool. Scale shows the viewport's handles (x, y, z and the uniform corners), as move
  * and rotate show theirs. A phone in Slice views and prints, so it only selects; a phone in Model keeps the move,
- * rotate and scale handles, and every other tool selects there. The brim tool without the viewport's brim mode is a
- * plain selection.
+ * rotate and scale handles and an open modeling tool's taps (a sketch draws with them), and every other tool selects
+ * there. The brim tool without the viewport's brim mode is a plain selection.
  */
 export function viewportTool(tool: Tool, phone: PhoneView, brimMode: boolean): PlateTool {
   if (phone === 'slim') return 'select'
-  if (phone === 'model') return tool === 'move' || tool === 'rotate' || tool === 'scale' ? tool : 'select'
+  if (phone === 'model') return tool === 'move' || tool === 'rotate' || tool === 'scale' || tool === 'probe' ? tool : 'select'
   if (tool === 'brim' && !brimMode) return 'select'
   return tool
 }
