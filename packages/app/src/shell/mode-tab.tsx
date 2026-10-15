@@ -12,7 +12,7 @@ import { setModelMode, useApp, type ModelMode } from '../state/store'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 
 const MODES: readonly { mode: ModelMode; label: string; icon: 'mimir' | 'model' | 'slice'; tab: string; tip: string }[] = [
-  { mode: 'mimir', label: ASSISTANT_NAME, icon: 'mimir', tab: 'mimir', tip: 'mode.mimir' },
+  { mode: 'mimir', get label() { return ASSISTANT_NAME }, icon: 'mimir', tab: 'mimir', tip: 'mode.mimir' },
   { mode: 'design', label: 'Model', icon: 'model', tab: 'model', tip: 'mode.model' },
   // Slice keeps the workspace's id (and test id, tab-prepare), so links and tests that open `prepare` land on the plate.
   { mode: 'slice', label: 'Slice', icon: 'slice', tab: 'prepare', tip: 'mode.slice' },

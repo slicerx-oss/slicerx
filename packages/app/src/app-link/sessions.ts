@@ -4,6 +4,7 @@
 // what mimir did each turn (its tool calls and how they ended, its questions and the answers, what it looked up). The
 // chat that keeps them registers its log here; nothing is registered until it does. Text is cut to a readable length
 // and nothing else in the app is reachable from here.
+import { assistantText } from '@slicerx/contracts'
 import type { PilotEvent, SessionStore } from '@slicerx/contracts'
 import { reduceTranscript, startTurn, emptyTranscript, type Transcript, type Turn } from '@slicerx/pilot/reduce'
 import { LinkError } from './methods-error'
@@ -91,8 +92,8 @@ export async function listSessions(): Promise<unknown> {
 /** `mimir.session {id}`: one conversation, turn by turn, the latest `MAX_TURNS`. */
 export async function readSession(args: Record<string, unknown>): Promise<unknown> {
   const id = args['id']
-  if (typeof id !== 'string' || !id || id.length > 200) throw new LinkError('invalid_input', 'id is a session id from mimir.sessions')
-  if (!source || !(await source.store.list()).some((s) => s.id === id)) throw new LinkError('not_found', `no mimir session ${id}`)
+  if (typeof id !== 'string' || !id || id.length > 200) throw new LinkError('invalid_input', assistantText('id is a session id from mimir.sessions'))
+  if (!source || !(await source.store.list()).some((s) => s.id === id)) throw new LinkError('not_found', assistantText(`no mimir session ${id}`))
   const events = await source.store.read(id)
   // Each run starts with a start event; the person's messages line up with the runs in order.
   const runs: PilotEvent[][] = []

@@ -9,6 +9,10 @@ export const NEUTRAL_PARSED: EditionConfig = {
   "brand": {
     "name": "Reference Slicer",
     "shortName": "Slicer",
+    "assistant": {
+      "name": "mimir",
+      "icon": "builtin:mimir"
+    },
     "logo": {
       "mark": "builtin:generic-mark"
     },

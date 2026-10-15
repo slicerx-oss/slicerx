@@ -3,6 +3,7 @@
 // mimir before a model is connected to the tab: the real runtime with a client that plays scripted turns in place of
 // a model. Each message picks the script whose words it matches; the script streams text and makes real tool calls,
 // which run through the same tools a model would call. When the real agent arrives, only the client changes.
+import { assistantText } from '@slicerx/contracts'
 import { DEFAULT_CONFIG, RUNTIME_NOTES, askTool, createPilot, createScriptedClient, lookupTool, sheetBindTool, sheetTool, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type Pilot, type PrinterHost, type SessionStore } from '@slicerx/contracts'
 
@@ -68,7 +69,7 @@ export const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as 
 export const NO_APPROVALS: ApprovalHost = {
   register: async () => undefined,
   grant: async () => {
-    throw new Error('Approvals are not available in the mimir tab')
+    throw new Error(assistantText('Approvals are not available in the mimir tab'))
   },
   deny: async () => undefined,
 } as unknown as ApprovalHost

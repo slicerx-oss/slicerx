@@ -4,6 +4,7 @@
 // showcase requests and drives the real runtime, tools, printers and approval
 // gate with them. Steps read earlier tool results, so what it says matches the
 // printers it actually sees. Anything else gets a short explanation.
+import { assistantText } from '@slicerx/contracts'
 import type { LlmClient, LlmEvent, LlmMessage, LlmRequest } from './provider/types'
 import type { ScriptStep, ScriptStepData } from './provider/scripted'
 
@@ -211,7 +212,7 @@ export function createDemoClient(opts: { delayMs?: number; callDelayMs?: number 
         return
       }
       if (!active) {
-        yield* say('No model provider is set up in this build, so mimir can only replay its showcase runs: a batch of 12 strong PETG brackets, diagnosing a layer shift, fitting a model on an A1 mini and tuning a new PETG spool. Pick one from the suggestions.')
+        yield* say(assistantText('No model provider is set up in this build, so mimir can only replay its showcase runs: a batch of 12 strong PETG brackets, diagnosing a layer shift, fitting a model on an A1 mini and tuning a new PETG spool. Pick one from the suggestions.'))
         yield { type: 'done', stop: 'end' }
         return
       }

@@ -5,6 +5,7 @@
 // sizes are typed, row numbers matching the callouts. Nothing builds until the record's build button. After the build
 // a panel docked on the right comes back from the record, and editing a tied row there edits the step it set. Picking
 // a callout picks its row and the other way round.
+import { assistantText } from '@slicerx/contracts'
 import type { PilotDim, PilotSheet } from '@slicerx/contracts'
 import { Button, Icon, ScrubNumber, tipAttrs, type IconName } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -172,7 +173,7 @@ function Chip({ dim, changed }: { dim: PilotDim; changed: boolean }) {
 /** What the hint line says for the row being edited, or for the sheet. */
 function hintFor(dim: PilotDim | undefined, mode: 'confirm' | 'drive', tied: boolean): string {
   if (!dim) return mode === 'confirm' ? 'Pick a row or a callout to change it. Enter saves, Escape puts it back.' : 'Rows tied to a step edit it in Model, like your own edit.'
-  if (mode === 'drive' && !tied) return 'This size shapes the sketch, so it needs a rebuild: ask mimir to build again with it.'
+  if (mode === 'drive' && !tied) return assistantText('This size shapes the sketch, so it needs a rebuild: ask mimir to build again with it.')
   const range = dim.min !== undefined && dim.max !== undefined ? ` ${dim.min} to ${dim.max} ${unitText(dim.unit)}.` : ''
   const guess = mode === 'confirm' && dim.source === 'guess' ? ' A guess, so check it.' : ''
   return `${dim.note ? `${dim.note.replace(/\.$/, '')}.` : dim.label + '.'}${range}${guess}`

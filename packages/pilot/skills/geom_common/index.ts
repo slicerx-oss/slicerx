@@ -3,7 +3,7 @@
 // Helpers for the skills that change or measure geometry through sx-geom:
 // mesh conversion, host calls, response parsing, in-place replacement of an
 // object's geometry and the numbers skills read from the project config.
-import type { MeshPart } from '@slicerx/contracts'
+import { assistantText, onAssistantBrand, type MeshPart } from '@slicerx/contracts'
 import type { KnowledgeBase } from '../../src/kb/kb'
 import type { PilotProject, ProjectObject } from '../../src/project'
 import type { ToolContext, ToolOutput } from '../../src/tool'
@@ -72,14 +72,18 @@ export function meshVolume(parts: MeshPart[]): number {
 // ---------------------------------------------------------------------------
 // Host calls
 
-export const NO_GEOMETRY_NOTE = 'Geometry operations (sx-geom) are not available on this host, so mimir cannot read or change the mesh here.'
+export let NO_GEOMETRY_NOTE = assistantText('Geometry operations (sx-geom) are not available on this host, so mimir cannot read or change the mesh here.')
 
 /** The result for a tool that needs geometry on a host without it. */
 export function needsGeometry(what: string): ToolOutput {
   return { ok: false, summary: `${what} needs geometry, which this host does not have`, output: { note: NO_GEOMETRY_NOTE } }
 }
 
-export const NO_MESH_NOTE = 'The project gives mimir no mesh data for this object on this host.'
+export let NO_MESH_NOTE = assistantText('The project gives mimir no mesh data for this object on this host.')
+onAssistantBrand(() => {
+  NO_GEOMETRY_NOTE = assistantText('Geometry operations (sx-geom) are not available on this host, so mimir cannot read or change the mesh here.')
+  NO_MESH_NOTE = assistantText('The project gives mimir no mesh data for this object on this host.')
+})
 
 export function isUnknownOp(e: unknown): boolean {
   return /unknown operation/i.test(e instanceof Error ? e.message : String(e))

@@ -39,14 +39,16 @@ import { sxlockTools, type SxlockOptions } from './sxlock'
 import { localTools, type ProjectRef } from './tools'
 import { localAiTools, type LocalAiOptions } from './localai'
 import { mimirQuotaTools } from './mimir-quota'
+import { appAssistantTools } from './app-assistant'
 
 export { createSlicerxServer, SERVER_NAME, SERVER_VERSION, serverTools, type ServerContext } from './server'
 export { startHttp, type HttpOptions } from './http'
 export { AGENT_CLIENTS, agentKeyRef, installSteps, keychainService, serverEnv, SERVER_ID, SHIPPING_APP_IDENTIFIER, type AgentClient, type AgentClientId, type InstallInput, type InstallStep } from './agents'
 export { CLOUD_NOT_CONFIGURED, cloudFromEnv, type CloudOptions } from './cloud'
-export { editionColorsFromEnv, editionNameFromEnv } from './edition'
+export { editionAssistantFromEnv, editionColorsFromEnv, editionNameFromEnv } from './edition'
 // The app's name in tool text and messages: an app that runs the server in its own process sets its edition's name.
 export { productColors, productName, setProductColors, setProductName } from '@slicerx/contracts'
+export { assistantBrand, assistantName, setAssistantBrand, setAssistantName } from '@slicerx/contracts'
 export { SXLOCK_NOT_CONFIGURED, sxlockFromEnv, type SxlockOptions } from './sxlock'
 export { DataStore, resolveDataPaths } from './data'
 export { DEFAULT_POLICY_PATH, loadPolicy } from './policy'
@@ -183,7 +185,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
-  const mimir = [...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName()), ...mimirTabTools(appLink, productName())]
+  const mimir = [...appAssistantTools(appLink, productName()), ...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName()), ...mimirTabTools(appLink, productName())]
   // The app's plates, and showing one of them as its plate picker does.
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   const history = appHistoryTools(appLink, productName())

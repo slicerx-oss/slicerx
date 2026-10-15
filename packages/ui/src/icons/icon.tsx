@@ -1,7 +1,8 @@
 'use client'
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useEffect, useReducer, type SVGProps } from 'react'
+import { useEffect, useReducer, useSyncExternalStore, type SVGProps } from 'react'
+import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
 import { useTheme } from '../theme-provider'
 import { ICON_NAMES, type IconName } from './icon-names'
 import { STARTUP_ICON_PATHS } from './icon-startup'
@@ -53,7 +54,26 @@ if (typeof window !== 'undefined') {
  * One line icon from the SlicerX set, drawn on a 24px grid at stroke 1.75 in currentColor, or at 16px or less its
  * 16px version on a 16px grid at stroke 1.5 when it has one. An integrator's override always draws as given.
  */
-export function Icon({ name, size, label, small, className, ...rest }: IconProps) {
+export function Icon(props: IconProps) {
+  return props.name === 'mimir' || props.name === 'pilot' ? <AssistantIcon {...props} /> : <BaseIcon {...props} />
+}
+
+function AssistantIcon({ name, size, label, small, className, style, ...rest }: IconProps) {
+  const brand = useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
+  const { theme } = useTheme()
+  const accent = typeof brand.accent === 'string' ? brand.accent : brand.accent?.[theme.scheme]
+  const color = accent ? { color: accent, ...style } : style
+  if (brand.icon === 'builtin:mimir') return <BaseIcon name={name} {...(size === undefined ? {} : { size })} {...(label === undefined ? {} : { label })} {...(small === undefined ? {} : { small })} {...(className === undefined ? {} : { className })} {...(color === undefined ? {} : { style: color })} {...rest} />
+  return (
+    <svg className={className ? `sx-ic ${className}` : 'sx-ic'} width={size} height={size} viewBox="0 0 24 24"
+      role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}
+      style={color} data-assistant-icon={brand.icon} {...rest}>
+      <image href={brand.icon} width="24" height="24" preserveAspectRatio="xMidYMid meet" />
+    </svg>
+  )
+}
+
+function BaseIcon({ name, size, label, small, className, ...rest }: IconProps) {
   const { icons } = useTheme()
   const [, wake] = useReducer((n: number) => n + 1, 0)
   // Paths come from the generated icon files or the integrator's overrides, never from user input.
