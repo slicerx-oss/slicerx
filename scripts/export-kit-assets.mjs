@@ -84,14 +84,14 @@ export function mergeSvgStyles(text) {
 // Unique classes isolate assets without adding ancestors that break SVG use clones.
 export function namespaceClasses(text, prefix, rootClass) {
   const names = new Set([rootClass])
-  for (const m of text.matchAll(/\bclass="([^"]+)"/g)) for (const name of m[1].split(/\s+/)) names.add(name)
+  for (const m of text.matchAll(/\bclass="([^"]+)"/g)) for (const name of m[1].trim().split(/\s+/).filter(Boolean)) names.add(name)
   return text.replace(/<style>([\s\S]*?)<\/style>/g, (_, css) =>
     `<style>${css.replace(/\.([a-zA-Z_][\w-]*)/g, (match, name) => names.has(name) ? `.${prefix}-${name}` : match)}</style>`)
-    .replace(/\bclass="([^"]+)"/g, (_, classes) => `class="${classes} ${classes.split(/\s+/).map((name) => `${prefix}-${name}`).join(' ')}"`)
+    .replace(/\bclass="([^"]+)"/g, (_, classes) => `class="${classes} ${classes.trim().split(/\s+/).filter(Boolean).map((name) => `${prefix}-${name}`).join(' ')}"`)
 }
 
-function documentSvg(id, scheme, width, height, cls, body, label, vars) {
-  const prefix = `${id}-${scheme}-${width}`
+function documentSvg(kind, id, scheme, width, height, cls, body, label, vars) {
+  const prefix = `${kind}-${id}-${scheme}-${width}`
   body = body.replace(/<style>([\s\S]*?)<\/style>/g, (_, css) => {
     const names = new Set([...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]))
     css = css.replace(/(@keyframes\s+|animation-name:)([\w-]+)/g, (match, lead, name) => names.has(name) ? `${lead}${prefix}-${name}` : match)
@@ -120,7 +120,7 @@ export async function exportAssets(dest) {
         body = `<g transform="scale(${size / grid})" fill="none" stroke="var(--accent)" stroke-width="${small ? 1.5 : 1.75}" stroke-linecap="round" stroke-linejoin="round">${small || table[id]}</g>`
         cls = 'sx-ic'
       }
-      save(file, documentSvg(id, scheme, size, size, cls, body, title(id), vars))
+      save(file, documentSvg(kind, id, scheme, size, size, cls, body, title(id), vars))
       assets.push({ kind, id, settingKey: null, title: title(id), theme: scheme, file, size: { width: size, height: size } })
     }
   }
@@ -133,7 +133,7 @@ export async function exportAssets(dest) {
     for (const [scheme, vars] of Object.entries(themes)) {
       const file = `loops/${scheme}/${id}.svg`
       const bg = `<defs><linearGradient id="background" x2="0" y2="1"><stop offset="0" style="stop-color:var(--scene-top)"/><stop offset="1" style="stop-color:var(--scene-bottom)"/></linearGradient></defs><rect width="${STAGE_W}" height="${STAGE_H}" fill="url(#background)"/>`
-      save(file, documentSvg(id, scheme, STAGE_W, STAGE_H, 'sxs', bg + stageInner(loop), demo.label, vars))
+      save(file, documentSvg('loop', id, scheme, STAGE_W, STAGE_H, 'sxs', bg + stageInner(loop), demo.label, vars))
       for (const key of settings.length ? settings : [null]) assets.push({ kind: 'loop', id, settingKey: key, title: demo.label, theme: scheme, file, size: { width: STAGE_W, height: STAGE_H } })
     }
   }
