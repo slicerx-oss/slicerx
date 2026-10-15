@@ -19,6 +19,7 @@ test('exports all registered tools, loops and setting mappings as self-contained
     }
     for (const id of Object.keys(DEMOS)) for (const theme of ['dark', 'light']) assert.ok(manifest.assets.find((a) => a.kind === 'loop' && a.id === id && a.theme === theme), id)
     for (const [key, id] of Object.entries(SETTING_DEMOS)) assert.ok(manifest.assets.find((a) => a.kind === 'loop' && a.id === id && a.settingKey === key), key)
+    const allIds = new Set()
     for (const file of new Set(manifest.assets.map((a) => a.file))) {
       const svg = readFileSync(join(out, file), 'utf8')
       assert.match(svg, /^<svg xmlns=/)
@@ -26,10 +27,11 @@ test('exports all registered tools, loops and setting mappings as self-contained
       assert.match(svg, /var\(--/)
       const ids = [...svg.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1])
       assert.equal(ids.length, new Set(ids).size, file)
+      for (const id of ids) { assert.ok(!allIds.has(id), `Cross-file ID collision: ${id}`); allIds.add(id) }
       for (const m of svg.matchAll(/(?:url\(#|href="#)([^)"]+)/g)) assert.ok(ids.includes(m[1]), `${file}: ${m[1]}`)
     }
     const push = readFileSync(join(out, 'loops/dark/push.svg'), 'utf8')
-    assert.match(push, /@keyframes push-dark-296-/)
+    assert.match(push, /@keyframes loop-push-dark-296-/)
     assert.match(push, /prefers-reduced-motion/)
     assert.match(push, /var\(--accent,#bd93f9\)/)
     assert.match(readFileSync(join(out, 'tokens.css'), 'utf8'), /\[data-sx-theme="light"\]/)
