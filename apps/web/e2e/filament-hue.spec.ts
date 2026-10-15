@@ -58,7 +58,9 @@ async function measure(page: Page, withModel: string, again: string, without: st
       for (let p = 0; p < px; p++) {
         const i = p * 4
         const d = Math.abs(a[i]! - b[i]!) + Math.abs(a[i + 1]! - b[i + 1]!) + Math.abs(a[i + 2]! - b[i + 2]!)
-        if (d < 30) continue
+        // the dark studio sits close to a black part's lit front face (about 27 apart, summed over the channels), so a
+        // model pixel is one 20 or more from the empty view; the output dither moves a pixel by at most 6
+        if (d < 20) continue
         // the view without the model, before and after: where they differ, something else moved, not the model
         // and the view with the model, shot twice: where those differ, something passed over it (a toast, a fade)
         const still = (x: Uint8ClampedArray, y: Uint8ClampedArray) => Math.abs(x[i]! - y[i]!) + Math.abs(x[i + 1]! - y[i + 1]!) + Math.abs(x[i + 2]! - y[i + 2]!) < 30
