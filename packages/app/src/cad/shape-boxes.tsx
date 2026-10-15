@@ -11,6 +11,20 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, type KeyboardEvent 
 import { createPortal } from 'react-dom'
 import { placeBoxes, type Area, type BoxKey, type ScreenShape } from './sketch-boxes'
 
+// the controls that float over the view: the pill and view buttons along the top (a phone's undo group and handles
+// too), the plate HUD, and a phone's bottom bar and open tool sheet. A box never sits under one.
+const FLOATING = '.hud-top .hud-row, .hud-top .phandles, .hud-top .hud-col.end > *, .hud-bl > *, .pbar-wrap > *, .pane.sheet.sheet-open'
+
+/** Where those controls are on screen, client px. */
+export function floatingControls(): Area[] {
+  return Array.from(document.querySelectorAll<HTMLElement>(FLOATING))
+    .map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0)
+    .map((r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }))
+}
+
+const signature = (rects: readonly Area[]): string => JSON.stringify(rects.map((r) => [r.left, r.top, r.right, r.bottom].map(Math.round)))
+
 export interface ShapeBoxField {
   key: BoxKey
   label: string
@@ -59,6 +73,8 @@ export const ShapeBoxes = forwardRef<ShapeBoxesHandle, ShapeBoxesProps>(function
   const touched = useRef(new Set<number>())
   // set when a click or tap picks a box's live value, until the button comes up
   const picked = useRef(false)
+  // the floating controls the boxes were last placed clear of
+  const placedAgainst = useRef('')
   const textRef = useRef(text)
   textRef.current = text
   if (text === null) touched.current.clear()
@@ -85,13 +101,26 @@ export const ShapeBoxes = forwardRef<ShapeBoxesHandle, ShapeBoxesProps>(function
       const w = wraps.current[i]
       if (w) sizes[f.key] = { w: w.offsetWidth, h: w.offsetHeight }
     })
-    for (const s of placeBoxes(l.shape, sizes, area())) {
+    const floating = floatingControls()
+    placedAgainst.current = signature(floating)
+    for (const s of placeBoxes(l.shape, sizes, area(), floating)) {
       const w = wraps.current[fields.findIndex((f) => f.key === s.key)]
       if (!w) continue
       w.style.left = `${s.left}px`
       w.style.top = `${s.top}px`
     }
   }
+
+  const paintNow = useRef(paint)
+  paintNow.current = paint
+  // The floating controls come and go and move (a phone's sheet folds, a bar grows), which no event of the view reports:
+  // while the boxes show, look at them a few times a second and place the boxes again when one has moved.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (last.current && signature(floatingControls()) !== placedAgainst.current) paintNow.current()
+    }, 200)
+    return () => window.clearInterval(id)
+  }, [])
 
   useImperativeHandle(ref, () => ({
     show(shape, live) {

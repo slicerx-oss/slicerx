@@ -715,6 +715,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // The drawn sketch to the view: on edits, never per cursor move.
   const marks = useMemo(() => sketchMarks(sketch, constraints, (c) => measured(sketch, c), (mm) => formatLength(mm, units)), [sketch, constraints, units])
   const arcFrom = useMemo(() => lineArcFrom(sketch, draft), [sketch, draft])
+  const editShape: BoxShape | null = feel && !featureOnly && draft.tool === 'select' ? shapeAt(sketch, selected) : null
+  const editKey = editShape ? JSON.stringify(editShape) : ''
+  const editValues = useMemo(() => (editShape ? boxValues(sketch, constraints, editShape) : []), [editKey, sketch, constraints])
   useEffect(() => {
     if (!view) return
     const paths: SketchScene['paths'][number][] = engineSnaps.edges.map((e) => ({ points: [e.a, e.b], tone: 'soft' as SketchTone }))
@@ -738,6 +741,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const glyphs = pal.constraints ? marks.glyphs : []
     live.current.dims = pal.dimensions ? dims : []
     live.current.glyphs = glyphs
+    const boxed = new Set(editValues.flatMap((v) => (v.index >= 0 ? [v.index] : [])))
     const dimPoints = dimPicks.flatMap((p) => ('point' in p ? [pointAt(sketch, p.point)] : [])).filter((p): p is V2 => p !== null)
     view.setSketch({
       frame: plane.frame,
@@ -750,13 +754,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       ...(arcFrom && !featureOnly ? { dragFrom: arcFrom } : {}),
       ...(pal.grid && !featureOnly ? { grid: { stepMm: Number(pal.step) * 10, min: plane.min, max: plane.max } } : {}),
       marks: shown.flatMap((i) => (i.at ? [i.at] : [])),
-      ...(pal.dimensions ? { dims: dims.map((d) => (d.of === editing || d.of === -1 ? { ...d, picked: true } : d)) } : {}),
+      // a picked shape's box shows each of its sizes, so the label at its side's middle steps out from under it
+      ...(pal.dimensions ? { dims: dims.map((d) => ({ ...d, ...(d.of === editing || d.of === -1 ? { picked: true } : {}), ...(boxed.has(d.of) ? { hideLabel: true } : {}) })) } : {}),
       // the origin always shows, for dimensions to measure from
       fixed: featureOnly ? [] : [[0, 0], ...(pal.constraints ? marks.fixed : [])],
       ...(pal.constraints ? { glyphs: glyphs.map((g) => (g.of === pickedCon ? { ...g, picked: true } : g)) } : {}),
       ...(pal.profiles ? { profiles: profileRings(sketch) } : {}),
     })
-  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom, marks, dimPicks, dimField, pickedCon, units])
+  }, [view, plane, sketch, constraints, draft, selected, issues, hs, pal, engineSnaps, finish, axis, states, featureOnly, arcFrom, marks, dimPicks, dimField, pickedCon, units, editValues])
 
   // Section cuts away the model in front of the sketch plane while the sketch is open.
   useEffect(() => {
@@ -1336,9 +1341,6 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   }
 
   // A picked shape's boxes: its sizes now, and Enter sets the typed ones (an emptied box frees its size).
-  const editShape: BoxShape | null = feel && !featureOnly && draft.tool === 'select' ? shapeAt(sketch, selected) : null
-  const editKey = editShape ? JSON.stringify(editShape) : ''
-  const editValues = useMemo(() => (editShape ? boxValues(sketch, constraints, editShape) : []), [editKey, sketch, constraints])
   useEffect(() => {
     setEditText(null)
     setEditFocus(0)
