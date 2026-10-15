@@ -4,7 +4,8 @@
 // and from the command line: slicerx-mcp on a real sx-link with the app link on, the person allowing it in the app, as
 // in look-link.spec.ts. The client reads the picked face and the pending distance back, its typed distance shows in the
 // box with the operation it makes, the project does not change until the person presses Enter, and a value the person
-// types reads back too. Runs only when SX_LINK_BIN names a built sx-link (e2e/bridge-hub.ts).
+// types reads back too, and so does the operation preview, with the last good one kept through a value that does not
+// read. Runs only when SX_LINK_BIN names a built sx-link (e2e/bridge-hub.ts).
 import { execFile } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -155,6 +156,13 @@ test('a client reads the open Push and pull and types a distance for the person 
     // The person types over it; the client reads that back.
     await page.getByTestId('push-view-distance').fill('2')
     expect(await call('slicerx_app_model_push')).toMatchObject({ distanceMm: 2, operation: 'pull' })
+
+    // The client reads the operation preview: a pull, tinted; then a value that does not read keeps it with an error.
+    expect(await call('slicerx_app_model_op_preview')).toMatchObject({ open: true, tool: 'push', status: 'ok', adds: true, removes: false, showingLastGood: false, message: null })
+    await page.getByTestId('push-view-distance').fill('2x')
+    await expect(page.getByTestId('push-view-error')).toBeVisible()
+    expect(await call('slicerx_app_model_op_preview')).toMatchObject({ status: 'error', adds: true, showingLastGood: true, message: 'Type a number, such as 5 or -3. Showing the last good preview.' })
+    await page.getByTestId('push-view-distance').fill('2')
 
     // A bad value is refused before it leaves.
     const bad = (await client.callTool({ name: 'slicerx_app_model_push_set', arguments: { distanceMm: 'deep' } }, undefined, { timeout: 90_000 })) as Answer

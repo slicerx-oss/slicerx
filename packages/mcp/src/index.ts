@@ -29,6 +29,7 @@ import { appSheetTools } from './app-sheet'
 import { appLookTools } from './app-look'
 import { appSketchTools } from './app-sketch'
 import { appModelPushTools } from './app-model-push'
+import { appModelOpPreviewTools } from './app-model-op-preview'
 import { mimirAskTools } from './mimir-ask'
 import { appVolumeTools } from './app-volumes'
 import { appPlateTools } from './app-plates'
@@ -199,11 +200,13 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const volumes = appVolumeTools(appLink, productName())
   // Push and pull as the person has it open in Model: its face and pending distance, and a distance typed in for them.
   const push = appModelPushTools(appLink, productName())
+  // The open Model tool's operation preview: ok or error, its message, and whether the last good one is kept.
+  const opPreview = appModelOpPreviewTools(appLink, productName())
   // A client's dimension sheets go to the person through the open app, while the link is in use.
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
   // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...sketchBoxes, ...push, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...sketchBoxes, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,
