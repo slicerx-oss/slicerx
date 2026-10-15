@@ -135,6 +135,7 @@ const moved = (a: Record<string, string>, b: Record<string, string>) => Object.k
  */
 async function tipCovers(page: Page, tip: Locator): Promise<string[]> {
   await expect(tip).toHaveAttribute('data-ready', 'true')
+  await tip.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
   let last = ''
   await expect.poll(async () => {
     const was = last
@@ -583,8 +584,13 @@ test.describe('layer pins', () => {
     for (const [w, phone] of [[901, false], [899, true]] as const) {
       await page.setViewportSize({ width: w, height: 900 })
       await expect(dock).toBeVisible()
-      if (phone) await expect(dock).toHaveAttribute('data-phone', 'true')
-      else await expect(dock).not.toHaveAttribute('data-phone', 'true')
+      if (phone) {
+        await expect(dock).toHaveAttribute('data-phone', 'true')
+        await expect(dock).not.toHaveAttribute('data-narrow', 'true')
+      } else {
+        await expect(dock).not.toHaveAttribute('data-phone', 'true')
+        await expect(dock).toHaveAttribute('data-narrow', 'true')
+      }
       const seen = await frames()
       expect(new Set(seen).size, `window ${w}: ${seen.join(', ')}`).toBe(1)
     }
