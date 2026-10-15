@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { readFileSync } from 'node:fs'
 import type { Page } from '@playwright/test'
+import { FEATURE, SXPV_SEGMENT, SXPV_SEGMENT_BYTES, type PreviewBuffers } from '@slicerx/contracts'
 import { command, openStudio, pick, roundWall, sketchAt, toolPanel } from './cad-helpers'
 import { addMenu, expect, plateReady, sliceCount, sliced, tab, test } from './fixtures'
 
@@ -163,5 +164,38 @@ test('an exact bracket hole edit survives downstream replay, undo, project reope
   const beforeSlice = await sliceCount(page)
   await command(page, 'Slice the plate')
   await expect(sliced(page, beforeSlice)).toBeVisible({ timeout: 60000 })
+  const paths = await page.evaluate(({ center, offsets, stride, outerWall }) => {
+    const preview = (window as unknown as { __sx: { getState(): { preview: PreviewBuffers | null } } }).__sx.getState().preview
+    if (!preview) throw new Error('The completed slice has no preview paths')
+    const view = new DataView(preview.raw, preview.segmentsOffset, preview.segmentCount * stride)
+    let clearance = Infinity, ringSegments = 0, quadrants = 0
+    for (let i = 0; i < preview.segmentCount; i++) {
+      const at = i * stride
+      const z = view.getFloat32(at + offsets.z, true)
+      // inspect interior layers, away from first-layer expansion and top surfaces
+      if (z < 0.5 || z > 1.5) continue
+      const x = view.getFloat32(at + offsets.x0, true) - center[0]!
+      const y = view.getFloat32(at + offsets.y0, true) - center[1]!
+      const dx = view.getFloat32(at + offsets.x1, true) - center[0]! - x
+      const dy = view.getFloat32(at + offsets.y1, true) - center[1]! - y
+      const length2 = dx * dx + dy * dy
+      if (length2 === 0) continue
+      const t = Math.max(0, Math.min(1, -(x * dx + y * dy) / length2))
+      const distance = Math.hypot(x + t * dx, y + t * dy)
+      const halfWidth = view.getUint16(at + offsets.widthUm, true) / 2000
+      clearance = Math.min(clearance, distance - halfWidth)
+      if (view.getUint8(at + offsets.feature) === outerWall && distance < 3.8) {
+        ringSegments++
+        quadrants |= 1 << ((x + dx / 2 >= 0 ? 1 : 0) + (y + dy / 2 >= 0 ? 2 : 0))
+      }
+    }
+    return { clearance, ringSegments, quadrants }
+  }, { center: [reopened.min[0]! + 5, reopened.min[1]! + 5], offsets: SXPV_SEGMENT, stride: SXPV_SEGMENT_BYTES, outerWall: FEATURE.outerWall })
+  await test.info().attach('resliced-hole-paths', { body: JSON.stringify(paths), contentType: 'application/json' })
+  // bead edges must leave the 6 mm opening; all four quadrants need an actual wall
+  expect(paths.clearance).toBeGreaterThan(2.8)
+  expect(paths.clearance).toBeLessThan(3.2)
+  expect(paths.ringSegments).toBeGreaterThan(8)
+  expect(paths.quadrants).toBe(15)
   expect(fallbacks).toEqual([])
 })

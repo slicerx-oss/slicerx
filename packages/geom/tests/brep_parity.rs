@@ -866,11 +866,13 @@ fn the_cli_runs_each_call_in_its_own_process() {
         );
         serde_json::from_slice(&out.stdout).expect("reply is JSON")
     };
+    assert_eq!(run("brep.count", &json!({}))["bodies"], 0);
     let b = run(
         "brep.box",
         &json!({ "min": [0, 0, 0], "max": [2, 3, 4], "save": true }),
     );
     let smb = b["bodySmb"].as_str().expect("bodySmb");
+    assert_eq!(run("brep.count", &json!({}))["bodies"], 0);
     let i = run("brep.info", &json!({ "body": { "smb": smb } }));
     assert!(near(i["volumeMm3"].as_f64().expect("volume"), 24.0), "{i}");
     // without the developer flag a body as text is refused before the kernel reads it

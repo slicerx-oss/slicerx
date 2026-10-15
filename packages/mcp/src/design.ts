@@ -45,9 +45,8 @@ export class Designs implements DesignHost {
     if (exact) {
       if (process.env['SX_BREP_DEV'] !== '1') throw new ToolInputError('Exact designs require the developer opt-in SX_BREP_DEV=1.')
       if ((history?.base ?? base).length) throw new ToolInputError('Exact designs start from native features. Imported meshes cannot be converted by this option.')
-      // this host's native engine runs each call in a fresh process
-      const probe = await this.deps.engine('brep.box', { min: [0, 0, 0], max: [1, 1, 1], save: true }) as { bodySmb?: string }
-      if (!probe.bodySmb) throw new ToolInputError('The exact kernel did not return a native solid.')
+      const count = await this.deps.engine('brep.count', {}) as { bodies?: number }
+      if (!count || !Number.isInteger(count.bodies) || count.bodies! < 0) throw new ToolInputError('The exact kernel did not return its body count.')
     }
     const id = `d${++this.seq}`
     const source = history ?? { version: HISTORY_VERSION, base, steps: [] }
