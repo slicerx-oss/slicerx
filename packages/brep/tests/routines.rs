@@ -83,15 +83,17 @@ fn matches_the_original_routines() {
             bad.push(format!("{key}: missing"));
             continue;
         };
-        let (mut got, mut want) = (numbers(got), numbers(want));
         // a singular matrix's solution is rounding noise around a substituted pivot, and the noise differs between
         // the x86 and arm64 builds: only the status has to agree
         if key.starts_with("lu.rank") {
-            if got.first() != want.first() {
-                bad.push(format!("{key}: status {:?} != {:?}", got.first(), want.first()));
+            let status = |v: &Value| v.get(0).and_then(Value::as_f64).filter(|n| n.is_finite());
+            let (got, want) = (status(got), status(want));
+            if got.is_none() || got != want {
+                bad.push(format!("{key}: status {got:?} != {want:?}"));
             }
             continue;
         }
+        let (mut got, mut want) = (numbers(got), numbers(want));
         if key == SKEWED_CYLINDER.0 {
             let (i, exact) = (SKEWED_CYLINDER.1, SKEWED_CYLINDER.2);
             let off = (got[i] - exact).abs() / exact;
