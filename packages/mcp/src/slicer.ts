@@ -61,9 +61,10 @@ export interface SliceSummary {
   tool_changes?: number
   /**
    * The filaments each object's features printed with, read from the engine's sliced paths (sx engine): the plate
-   * object's id when it has one, its name, and each feature's filament slots.
+   * object's id when it has one, its name, and each feature's filament slots. The engine id distinguishes objects
+   * expanded from one file, including objects with the same name; it is local to this slice.
    */
-  feature_filaments?: { object?: string; name: string; features: Record<string, number[]> }[]
+  feature_filaments?: { object?: string; engine_object?: string; name: string; features: Record<string, number[]> }[]
   /** The plate that was sliced, for a 3MF or .sx3mf project. */
   plate?: number
   gcode_path?: string

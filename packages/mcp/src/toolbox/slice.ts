@@ -91,7 +91,12 @@ export const summaryShape = {
   filaments: z.array(z.object({ slot: z.number(), filament_mm: z.number(), filament_g: z.number() })),
   tool_changes: z.number().optional(),
   /** sx engine: the filaments each object's features printed with (outerWall, sparseInfill, support and the rest), slots 1-based. */
-  feature_filaments: z.array(z.object({ object: z.string().optional(), name: z.string(), features: z.record(z.string(), z.array(z.number())) })).optional(),
+  feature_filaments: z.array(z.object({
+    object: z.string().optional().describe('The request object id, when the request supplied one'),
+    engine_object: z.string().optional().describe('Unique engine object id within this slice, including objects expanded from one file; not a persistent project id'),
+    name: z.string(),
+    features: z.record(z.string(), z.array(z.number())),
+  })).optional(),
   plate: z.number().optional(),
   gcode_path: z.string().optional(),
   gcode_sha256: z.string().optional(),

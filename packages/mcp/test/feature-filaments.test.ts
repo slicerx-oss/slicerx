@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { connect, data, noSx, sxBin, sxTimeout, text } from './helpers'
 
 type Features = Record<string, number[]>
-type Plate = { plate: number; featureFilaments?: { object: string; name: string; features: Features }[] }
+type Plate = { plate: number; featureFilaments?: { object: string; engineObject?: string; name: string; features: Features }[] }
 
 describe.skipIf(noSx())('feature filaments read back', () => {
   it("reports each feature of each project object with its filament after the project's and the object's settings", async () => {
@@ -28,6 +28,7 @@ describe.skipIf(noSx())('feature filaments read back', () => {
     const objects = data<{ output: { plates: Plate[] } }>(sliced).output.plates[0]!.featureFilaments!
     // Each copy on the plate is an entry: object obj-1's first copy is obj-1-1.
     expect(objects.map((o) => o.object)).toEqual(['obj-1-1', 'obj-2-1'])
+    expect(objects.map((o) => o.engineObject)).toEqual(['o0', 'o1'])
     const [a, b] = objects.map((o) => o.features)
     // The project's setting: sparse infill on filament 2, and (on a printer that isn't a Bambu Lab one) the solid
     // infill and surfaces with it. The walls stay on the object's own filament.

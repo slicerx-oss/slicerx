@@ -295,6 +295,8 @@ export interface FilamentMapInfo {
 export interface FeatureFilaments {
   /** The plate object's id. */
   object: string
+  /** The native object's id within this slice, when a file expands into several objects. Not a persistent project id. */
+  engineObject?: string
   name: string
   /**
    * Each feature the object printed, by its name in FEATURE (outerWall, sparseInfill, support and the rest), with the

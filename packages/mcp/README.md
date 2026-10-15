@@ -71,6 +71,10 @@ Pairing with the hub's code, including through `--link-state-dir`, does not regi
 
 An `unauthorized` app-link response means this setup is missing or the connection was revoked. Reconnect the client instead of waiting for a prompt from a code-only connection. The CLI and MCP keep the `not_configured` error code and `details.appLink: unauthorized` for these refusals.
 
+### Feature filament read-back
+
+Native slice results include `feature_filaments`: each object's name and the 1-based filament slots used by its printed features. A multi-object 3MF keeps a separate row for every expanded object, even when names repeat. `engine_object` identifies that row within this slice; it is not a persistent project id. `object`, when present, remains the original request object's id. The shared slicer-host result exposes the same per-slice identity as `engineObject`.
+
 ### Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.

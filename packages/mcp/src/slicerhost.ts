@@ -189,7 +189,7 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
         stageMicros: {},
         wallMs: performance.now() - started,
         warnings: [...summary.warnings.map((message) => ({ code: 'unsupported_setting' as const, message })), ...(summary.note ? [{ code: 'unsupported_setting' as const, message: summary.note }] : [])],
-        ...(summary.feature_filaments?.length ? { featureFilaments: summary.feature_filaments.map((f) => ({ object: f.object ?? f.name, name: f.name, features: f.features })) } : {}),
+        ...(summary.feature_filaments?.length ? { featureFilaments: summary.feature_filaments.map((f) => ({ object: f.object ?? f.name, ...(f.engine_object ? { engineObject: f.engine_object } : {}), name: f.name, features: f.features })) } : {}),
       }
       slices.set(id, { result, summary, config: req.config as unknown as Record<string, SettingValue>, ...(summary.gcode_path ? { gcodePath: summary.gcode_path } : {}), ...(summary.preview_path ? { previewPath: summary.preview_path } : {}) })
       opts?.onProgress?.({ stage: 'gcode', fraction: 1 })
