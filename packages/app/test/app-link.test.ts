@@ -16,6 +16,7 @@ import type { BridgeAppLink } from '../src/link/bridge'
 const bridge = vi.hoisted(() => ({ appLink: null as unknown }))
 vi.mock('../src/link/bridge', () => ({ liveBridge: () => (bridge.appLink ? { appLink: bridge.appLink } : null) }))
 import { toolStore } from '../src/plate/tools'
+import { drawnFrom } from '../src/viewport/drawn'
 import { get, set } from '../src/state/store'
 import { currentEdition, NEUTRAL, setCurrentEdition } from '../src/edition'
 import { CLOUD_NOTICE_VERSION } from '../src/pilot-connect/cloud-notice'
@@ -316,6 +317,34 @@ describe('the plates over the link', () => {
     expect(await runCall('plates.show', { plate: 'p2' })).toMatchObject({ shown: 2, plates: [{ shown: false }, { shown: true, objects: 1 }, { shown: false }] })
     // The plate shown before keeps its objects: showing a plate changes the view, never the project.
     expect((await runCall('plates.list', {})) as { plates: { objects: number }[] }).toMatchObject({ plates: [{ objects: 1 }, { objects: 1 }, { objects: 0 }] })
+  })
+
+  it('read back the plate the view draws, so a client sees when it is not the one shown', async () => {
+    three()
+    // No view up: the read-back leaves drawn out.
+    expect(await runCall('plates.list', {})).not.toHaveProperty('drawn')
+    expect(await runCall('plate.list', {})).not.toHaveProperty('drawn')
+    let drawn = ['obj_1']
+    const off = drawnFrom(() => drawn)
+    try {
+      expect(await runCall('plates.list', {})).toMatchObject({ shown: 1, drawn: 1 })
+      expect(await runCall('plate.list', {})).toMatchObject({ drawn: true })
+      // The view's own extras (the prime tower) do not count.
+      drawn = ['obj_1', 'prime-tower']
+      expect(await runCall('plates.list', {})).toMatchObject({ drawn: 1 })
+      // The view drawing another plate's objects than the plate shown, as an open of a project once left it.
+      drawn = ['obj_2']
+      expect(await runCall('plates.list', {})).toMatchObject({ shown: 1, drawn: 2 })
+      expect(await runCall('plate.list', {})).toMatchObject({ drawn: false })
+      drawn = []
+      expect(await runCall('plates.list', {})).toMatchObject({ shown: 1, drawn: 3 })
+      expect(await runCall('plates.show', { plate: 3 })).toMatchObject({ shown: 3, drawn: 3 })
+      // An empty view and an empty plate shown: the plate shown is the one drawn.
+      expect(await runCall('plate.list', {})).toMatchObject({ drawn: true })
+    } finally {
+      off()
+    }
+    expect(await runCall('plates.list', {})).not.toHaveProperty('drawn')
   })
 
   it('refuse a bad argument or a plate that is not there, and show nothing', async () => {

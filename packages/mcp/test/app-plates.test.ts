@@ -42,6 +42,15 @@ describe('app plate tools', () => {
     expect(byNumber.output).toMatchObject({ shown: 3, plates: [{ shown: false }, { shown: false }, { shown: true }] })
   })
 
+  it('say when the view draws another plate than the one shown', async () => {
+    const answer = (drawn: number | null | undefined) => ({ call: vi.fn(async () => ({ ...plates(1), ...(drawn !== undefined ? { drawn } : {}) })) }) as unknown as AppLinkCaller
+    const summary = async (drawn: number | null | undefined) => (await appPlateTools(answer(drawn), 'SlicerX')[0]!.run({} as never, {} as never)).summary
+    expect(await summary(1)).toBe('Plate 1 of 3 is shown, sliced; 1 plate needs a slice.')
+    expect(await summary(undefined)).toBe('Plate 1 of 3 is shown, sliced; 1 plate needs a slice.')
+    expect(await summary(2)).toBe('Plate 1 of 3 is shown, sliced; 1 plate needs a slice. The view still draws plate 2.')
+    expect(await summary(null)).toBe('Plate 1 of 3 is shown, sliced; 1 plate needs a slice. The view has not drawn it yet.')
+  })
+
   it('check the arguments before anything leaves', () => {
     const [, show] = appPlateTools({ call: vi.fn() } as unknown as AppLinkCaller, 'SlicerX')
     for (const bad of [{}, { plate: 1, step: 'next' }, { plate: 0 }, { plate: 1.5 }, { step: 'last' }]) expect(show!.input.safeParse(bad).success, JSON.stringify(bad)).toBe(false)

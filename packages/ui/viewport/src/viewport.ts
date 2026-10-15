@@ -7,6 +7,7 @@ import { OriginPlanes } from './originplanes'
 import { FirstFrameGate } from './firstframe'
 import { PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
 import { crossfadeFrom } from './crossfade'
+import { SceneHold, type Held } from './scene-hold'
 import { LoadingWisp, lightStudio } from './wisp'
 import { gpuProfile } from './gpu'
 import type { ToolChangerSpec } from './toolchanger'
@@ -555,7 +556,7 @@ class ViewportImpl implements Viewport {
 
   /** Something the warm-up would hold back waits: a file opening, or a plate set and not drawn yet. */
   private warmWaits(): boolean {
-    return this.warmHeld || this.plateSet !== null || this.swapNext !== null || this.held !== null
+    return this.warmHeld || this.plateSet !== null || this.hold.waiting
   }
 
   /**
@@ -897,12 +898,11 @@ class ViewportImpl implements Viewport {
     this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
     // the new decor holds its programs now, so what it replaced can go without them being compiled again
     this.stage.releaseRetired()
-    if (this.swapNext) {
+    const swap = this.hold.takeSwap()
+    if (swap) {
       // the old scene is in the drawing buffer now: copy it over the view, then swap the new one in beneath
-      const swap = this.swapNext
-      this.swapNext = null
       crossfadeFrom(this.canvas, reducedMotion())
-      swap()
+      this.applyHeld(swap)
       this.dirty = true
     }
     this.probe?.end()
@@ -1190,20 +1190,18 @@ class ViewportImpl implements Viewport {
    */
   holdScene(on: boolean): void {
     if (on) {
-      this.held ??= {}
+      this.hold.hold()
       return
     }
-    const h = this.held
-    this.held = null
+    const h = this.hold.release()
     if (h) this.applyHeld(h)
   }
 
-  private held: { plate?: [ViewportPlate, { keepCamera?: boolean }]; preview?: PreviewBuffers | null } | null = null
-  private swapNext: (() => void) | null = null
+  private readonly hold = new SceneHold<ViewportPlate, PreviewBuffers>()
 
   private swapping = false
 
-  private applyHeld(h: NonNullable<ViewportImpl['held']>): void {
+  private applyHeld(h: Held<ViewportPlate, PreviewBuffers>): void {
     this.swapping = true
     try {
       if (h.preview !== undefined) this.setPreview(h.preview)
@@ -1213,19 +1211,19 @@ class ViewportImpl implements Viewport {
     }
   }
 
+  drawnObjects(): string[] {
+    return [...this.objects.keys()]
+  }
+
   setPlate(plate: ViewportPlate, opts: { keepCamera?: boolean } = {}): void {
-    if (this.held) {
-      if (plate.objects.length === 0) {
-        this.held.plate = [plate, opts]
+    if (!this.swapping) {
+      const at = this.hold.plate(plate, opts)
+      if (at === 'held') return
+      if (at === 'swap') {
+        // the new model is here: the next frame still shows the old scene, copied over the view, then this swaps in
+        this.invalidate()
         return
       }
-      // the new model is here: the next frame still shows the old scene, copied over the view, then this swaps in
-      const h = this.held
-      this.held = null
-      h.plate = [plate, opts]
-      this.swapNext = () => this.applyHeld(h)
-      this.invalidate()
-      return
     }
     const t0 = performance.now()
     this.stage.setBed(plate.bed, plate.surfaceLabel)
@@ -3792,10 +3790,7 @@ class ViewportImpl implements Viewport {
   // ---------- preview ----------
 
   setPreview(buffers: PreviewBuffers | null): void {
-    if (this.held) {
-      this.held.preview = buffers
-      return
-    }
+    if (!this.swapping && this.hold.preview(buffers)) return
     this.previewGen++
     this.previewSetAt = performance.now()
     this.firstFrameMs = null
