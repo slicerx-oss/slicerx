@@ -166,7 +166,7 @@ export function CutPanel() {
           ) : null}
         </>
       ) : null}
-      {entry.history?.steps.length ? <Note>Cutting ends this object's CAD history: the pieces start without one.</Note> : null}
+      {entry.history?.exact ? <Note>Exact cuts keep one side without connectors and remain editable in the history.</Note> : entry.history?.steps.length ? <Note>Cutting ends this object's CAD history: the pieces start without one.</Note> : null}
       <ToolFooter verb="Cut" onApply={cut} busy={busy} />
     </Shell>
   )
