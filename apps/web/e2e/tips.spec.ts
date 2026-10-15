@@ -113,6 +113,50 @@ test('a tip on a row of the Preview legend opens beside the legend and covers no
   }
 })
 
+test('a real-app clip shows its poster on the first hover, fetches the clip only then, and stays still under reduced motion', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Hover tips need a mouse')
+  const fetched: string[] = []
+  page.on('request', (r) => {
+    if (/\/(paint|arrange|color-by|layer-add|toolhead|follow)-(dark|light)-[^/]*\.webp/.test(r.url())) fetched.push(r.url())
+  })
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', printerId: 'bay-1', pilot: { mode: 'off' } }))
+  })
+  await page.goto('./')
+  await plateReady(page)
+  // nothing of any clip loads with the app
+  expect(fetched).toEqual([])
+  const arrange = page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Arrange all' })
+  const tip = page.locator('#sx-tip')
+  await arrange.hover()
+  await expect(tip).toContainText('Nest every object')
+  await expect.poll(() => tip.locator('.sx-demo-poster').evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(320)
+  const loop = tip.locator('.sx-demo-loop')
+  await expect(loop).toHaveAttribute('data-ready', 'true')
+  expect(await loop.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(320)
+  // its own clip and poster, for the theme in use, and no other clip
+  expect(fetched.length).toBeGreaterThanOrEqual(2)
+  expect(fetched.every((u) => /\/arrange-(dark|light)-/.test(u))).toBe(true)
+  expect(fetched.some((u) => /\/arrange-(dark|light)-poster-/.test(u))).toBe(true)
+  expect(fetched.some((u) => /\/arrange-(dark|light)-(?!poster)/.test(u))).toBe(true)
+  await page.mouse.move(5, 5)
+  await expect(tip).toHaveCount(0)
+  // reduced motion: the poster, never the clip
+  await page.evaluate(() => {
+    const prefs = JSON.parse(localStorage.getItem('slicerx.prefs.v1') ?? '{}') as Record<string, unknown>
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ ...prefs, motion: 'reduced' }))
+  })
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-motion', 'reduced', { timeout: 30_000 })
+  await plateReady(page)
+  await arrange.hover()
+  await expect(tip.locator('.sx-demo-poster')).toBeVisible()
+  await page.waitForTimeout(1200)
+  await expect(tip.locator('.sx-demo-loop')).toBeHidden()
+})
+
 test('a tip with a loop holds its size while the loop loads, waits on its finished frame, then plays, in either theme', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Hover tips need a mouse')
   await page.addInitScript(() => {

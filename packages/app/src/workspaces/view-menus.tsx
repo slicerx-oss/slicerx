@@ -99,7 +99,7 @@ export function ColorBy() {
     <div className="legend-color-by">
       <span id="legend-color-by-label">Color by</span>
       <MenuAnchor>
-        <Button variant="ghost" size="sm" iconEnd="chevron-down" data-testid="legend-color-by" aria-haspopup="menu" aria-expanded={open} aria-labelledby="legend-color-by-label legend-color-by-value" tip={{ title: 'Toolpath colors', body: 'Color the toolpaths by feature, filament, speed, flow or layer time.' }} onClick={() => setOpen(!open)}>
+        <Button variant="ghost" size="sm" iconEnd="chevron-down" data-testid="legend-color-by" aria-haspopup="menu" aria-expanded={open} aria-labelledby="legend-color-by-label legend-color-by-value" tip={{ title: 'Toolpath colors', body: 'Color the toolpaths by feature, filament, speed, flow or layer time.', demo: 'rec-color-by' }} onClick={() => setOpen(!open)}>
           <span id="legend-color-by-value">{cur.label}</span>
         </Button>
         <Menu open={open} onClose={() => setOpen(false)} label="Color toolpaths by">

@@ -347,7 +347,7 @@ function LayerMarksMenu({ top, layerZ, menu, setMenu, onJump }: { top: number; l
   return (
     <div className="lmarks-add">
       <MenuAnchor>
-        <Button variant="ghost" size="sm" icon="plus" aria-haspopup="menu" aria-expanded={menu !== null && menu.at === null} aria-label="Add layer action" tip={{ title: 'Add layer action', body: 'Pause, change the filament or insert G-code at the top layer.', key: 'Right-click' }} onClick={(e) => (menu ? close() : setMenu({ at: null, layer: top, ids: marksOn(marks, top, layerZ), from: e.currentTarget }))} />
+        <Button variant="ghost" size="sm" icon="plus" aria-haspopup="menu" aria-expanded={menu !== null && menu.at === null} aria-label="Add layer action" tip={{ title: 'Add layer action', body: 'Pause, change the filament or insert G-code at the top layer.', key: 'Right-click', demo: 'rec-layer-add' }} onClick={(e) => (menu ? close() : setMenu({ at: null, layer: top, ids: marksOn(marks, top, layerZ), from: e.currentTarget }))} />
         <Menu key={`${picking ? 'pick' : 'main'} ${(menu?.ids ?? []).join(' ')}`} open={menu !== null} onClose={() => close()} label={label} align="end" at={menu?.at ?? undefined}>
           {picking ? (
             <>
