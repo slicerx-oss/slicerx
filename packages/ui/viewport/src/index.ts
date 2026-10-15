@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/viewport: the SlicerX 3D viewport. Framework free; see README.md.
 export { createViewport } from './viewport'
+export { BASELINE_LOOK, lookProblems, mergeLook, type LookLight, type LookVec3, type ViewportLook, type ViewportLookPatch } from './look'
 // The SXPV reader, so a page can load a .sxpv file (from sx slice --request --out-dir) with this package alone.
 export { readPreview, type PreviewBuffers } from '@slicerx/contracts'
 // The app's name in the viewport's text (the default controls preset's label): a white-label app sets its own.
