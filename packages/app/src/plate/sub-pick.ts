@@ -49,6 +49,8 @@ export async function pickSub(e: PickEvent, edgeAt: EdgeAt, faceRound?: FaceRoun
   const edges = filter.includes('edge')
   if (!faces && !edges) return false
   if (!e.objectId || e.partIndex === null || e.triangle === null || !e.point) {
+    // A click just past the outline picks the edge there when it is near enough; anything else is a miss.
+    if (e.near && (await nearEdge(e, edgeAt, edgeWins))) return true
     if (get().subPicks.length) set({ subPicks: [] })
     return false
   }
@@ -77,6 +79,20 @@ export async function pickSub(e: PickEvent, edgeAt: EdgeAt, faceRound?: FaceRoun
       () => undefined,
     )
   }
+  return true
+}
+
+/**
+ * A click that missed the model by a few pixels (the view's `near` hit): the edge on the outline there, when Edge only
+ * is on or the edge is within the pick radius of the click. True when it picked one.
+ */
+async function nearEdge(e: PickEvent, edgeAt: EdgeAt, edgeWins?: EdgeWins): Promise<boolean> {
+  const n = e.near
+  if (!n) return false
+  const lines = await edgeAt(n.objectId, n.partIndex, n.triangle, n.point).catch(() => null)
+  if (!lines || (edgeWins && e.screen && !edgeWins(lines, e.screen))) return false
+  const pick: SubPick = { kind: 'edge', ...n, lines, ...(lines.length > 1 ? { round: true } : {}) }
+  set((s) => ({ subPicks: addPick(s.subPicks, pick, e), selection: n.objectId, selectedIds: [n.objectId], towerSelected: false }))
   return true
 }
 

@@ -192,6 +192,9 @@ const HANDLE_REACH_PX = 7
 const TOUCH_REACH_PX = 22
 const handleReach = (e: { pointerType?: string }): number => (e.pointerType === 'touch' ? TOUCH_REACH_PX : HANDLE_REACH_PX)
 
+/** How far past the model's outline, in screen pixels, a click still reaches an edge on it (Model's edge pick radius). */
+const NEAR_PICK_PX = 6
+
 /** A touch held still this long, ms, within this many pixels, opens the menu a right click would. */
 const LONG_PRESS_MS = 500
 const LONG_PRESS_SLOP_PX = 8
@@ -3153,6 +3156,16 @@ class ViewportImpl implements Viewport {
       return entry ? { entry, part: (h.object.userData.partIndex as number) ?? 0, point: h.point, face: h.faceIndex ?? -1, dir: ray.ray.direction.clone() } : null
     }
     this.pickFn = pick
+    /** A miss by a few pixels: the first hit on rings around the click, out to NEAR_PICK_PX, nearest ring first. */
+    const pickNear = (e: { clientX: number; clientY: number }): PickHit | null => {
+      for (let r = NEAR_PICK_PX / 3; r <= NEAR_PICK_PX + 1e-6; r += NEAR_PICK_PX / 3) {
+        for (let k = 0; k < 8; k++) {
+          const h = pick({ clientX: e.clientX + r * Math.cos((k * Math.PI) / 4), clientY: e.clientY + r * Math.sin((k * Math.PI) / 4) })
+          if (h && h.face >= 0) return h
+        }
+      }
+      return null
+    }
     /** The menu event for a point: what is under it, as a pick reports it. */
     const contextAt = (e: { clientX: number; clientY: number }): ViewportEvents['contextpick'] => {
       const p = pick(e)
@@ -3623,13 +3636,17 @@ class ViewportImpl implements Viewport {
       }
       if (moved >= 5 || e.button !== 0) return
       const p = pick(e)
+      // Model's edge picks and the modeling tools: a click on an outline edge, or just past it, misses the model, so the
+      // nearest hit a few pixels away goes along for the edge pick (only on a miss, so a click costs no more otherwise).
+      const nearHit = !p && this.mode === 'prepare' && (this.tool === 'probe' || this.pickEdges) ? pickNear(e) : null
+      const near = nearHit ? { objectId: nearHit.entry.id, partIndex: nearHit.part, triangle: nearHit.face, point: this.worldToBed(nearHit.point) } : null
       // the selection as it was before the pick: a host may set its own selection while it answers the pick
       const was = [...this.selection]
       // an origin plane counts when nothing solid is in front of it
       setRay(e)
       const op = this.originPlanes.at(ray)
       const onPlane = op && (!p || op.distance < p.point.distanceTo(ray.ray.origin)) ? op.plane : null
-      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(onPlane ? { originPlane: onPlane } : {}), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}), screen: [e.clientX, e.clientY] })
+      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(onPlane ? { originPlane: onPlane } : {}), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}), screen: [e.clientX, e.clientY], ...(near ? { near } : {}) })
       if (this.pathsShown() && !p) {
         // A click on a toolpath: which path it is, so the app can show the setting that made it.
         setRay(e)
