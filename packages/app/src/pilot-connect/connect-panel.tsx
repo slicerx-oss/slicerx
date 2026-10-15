@@ -185,6 +185,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, o
               role="radio"
               aria-checked={on}
               className="pc-provider"
+              data-testid={`pc-provider-${id}`}
               data-on={on ? true : undefined}
               onClick={() => {
                 if (id !== provider) setModel(pref?.provider === id ? savedModel(pref.model) : AUTO_MODEL)
@@ -224,7 +225,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, o
             </button>
           }
         >
-          <input id={`${idPrefix}-key`} ref={keyRef} className="sx-input" data-mono="true" type={shown ? 'text' : 'password'} autoComplete="off" spellCheck={false} placeholder={saved ? 'A key is stored. Paste a new one to replace it.' : info.keyHint} />
+          <input id={`${idPrefix}-key`} ref={keyRef} className="sx-input" data-testid="pc-key" data-mono="true" type={shown ? 'text' : 'password'} autoComplete="off" spellCheck={false} placeholder={saved ? 'A key is stored. Paste a new one to replace it.' : info.keyHint} />
         </Field>
       ) : (
         <>
@@ -313,11 +314,11 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, o
               : `What leaves ${host.capabilities.secureStorage ? 'this computer' : 'the browser'}: ${sentToModel()}, sent to ${info.label} only.${hostSlices() ? ' Access codes and printer keys are never sent.' : ''}`}
           </p>
           <div className="pc-act">
-            <Button variant="primary" icon="link" onClick={() => void connect()} disabled={busy}>
+            <Button variant="primary" icon="link" data-testid="pc-test" onClick={() => void connect()} disabled={busy}>
               {busy ? 'Testing' : 'Test and connect'}
             </Button>
             {result ? (
-              <p className={result.ok ? 'pc-result ok' : 'pc-result bad'} role="status">
+              <p className={result.ok ? 'pc-result ok' : 'pc-result bad'} role="status" data-testid="pc-result" data-state={result.ok ? 'ok' : 'failed'}>
                 <Icon name={result.ok ? 'check' : 'alert'} size={16} /> {result.message}
               </p>
             ) : saved ? (

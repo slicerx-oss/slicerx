@@ -400,6 +400,10 @@ Shown only in a build whose edition runs mimir cloud (the desktop app).
 | `ms-cloud-saved` | Settings and the mimir panel: the line under mimir cloud saying free chats are saved for 30 days, and where to turn that off |
 | `ms-cloud-signin` | The inline sign-in form under "Sign in to use mimir free" where mimir cloud needs a signed-in person |
 | `pc-model` | The model list under your own key or a local server: Auto first, each with a cost hint, then Other model id |
+| `pc-provider-<id>` | A provider under Use your own API key or a local model: `pc-provider-anthropic`, `pc-provider-openai`, `pc-provider-local`, `pc-provider-mimir-cloud` |
+| `pc-key` | The API key field for OpenAI or Anthropic |
+| `pc-test` | Test and connect: one call to the provider's model list; the connection is saved when it passes |
+| `pc-result` | The line under Test and connect; `data-state` is `ok` or `failed` |
 
 ## Settings: Account > Usage
 
