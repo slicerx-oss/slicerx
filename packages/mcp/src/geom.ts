@@ -33,23 +33,26 @@ function runGeom(bin: string, op: string, request: unknown, outDir: string | und
     const child = spawn(bin, outDir ? [op, '--out-dir', outDir] : [op], { stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs })
     let stdout = ''
     let stderr = ''
+    let inputError: Error | undefined
+    const interruption = (reason: string) => Object.assign(new Error(`sx-geom ${op} ${reason}. Retry the operation.`), { name: 'AbortError' })
+    child.stdin.on('error', (error: Error) => { inputError = error })
     child.stdout.setEncoding('utf8').on('data', (d: string) => (stdout += d))
     child.stderr.setEncoding('utf8').on('data', (d: string) => (stderr += d))
     child.on('error', reject)
     child.on('close', (code) => {
       if (child.killed) {
-        const error = new Error(`sx-geom ${op} exceeded its execution deadline (${timeoutMs} ms). Retry the operation.`)
-        error.name = 'AbortError'
-        return reject(error)
+        return reject(interruption(`exceeded its execution deadline (${timeoutMs} ms)`))
       }
       let parsed: unknown
       try {
         parsed = JSON.parse(stdout)
       } catch {
+        if (inputError) return reject(interruption(`could not complete its input stream: ${inputError.message}`))
         return reject(new Error(`sx-geom ${op} exited with code ${code}: ${stderr.trim().split('\n').slice(-3).join(' ') || 'no readable output'}`))
       }
       const err = (parsed as { error?: unknown }).error
       if (code !== 0 || typeof err === 'string') return reject(new ToolInputError(typeof err === 'string' ? err : `sx-geom ${op} failed with code ${code}`))
+      if (inputError) return reject(interruption(`could not complete its input stream: ${inputError.message}`))
       resolve(parsed)
     })
     child.stdin.end(JSON.stringify(request))

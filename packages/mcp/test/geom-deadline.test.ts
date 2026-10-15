@@ -32,3 +32,17 @@ it('kills a busy process at its deadline and permits a fresh call', async () => 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+it.each([
+  [1, { error: 'request: exceeds input limit' }, 'request: exceeds input limit'],
+  [0, { ok: true }, 'input stream'],
+] as const)('refuses an incomplete request with exit code %s without an unhandled pipe error', async (code, reply, reason) => {
+  const dir = mkdtempSync(join(tmpdir(), 'sx-geom-input-refusal-'))
+  const refusing = join(dir, 'refusing.cjs')
+  writeFileSync(refusing, `require("node:fs").closeSync(0); process.stdout.write(${JSON.stringify(JSON.stringify(reply))}); setTimeout(() => process.exit(${code}), 20);`)
+  try {
+    await expect(geomEngine(process.execPath, 2000)(refusing, { data: 'x'.repeat(1024 * 1024) })).rejects.toThrow(reason)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
