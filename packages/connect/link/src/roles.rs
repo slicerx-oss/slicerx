@@ -100,7 +100,8 @@ pub(crate) enum LinkClass {
 }
 
 /// methods on the open project, classified as read or edit. no printing, accounts or connection settings.
-/// geometry volumes and two view preferences are allowed. each method needs its pinned test entry.
+/// geometry volumes and two view preferences are allowed, and `model.push_set` only types a distance into the
+/// open Push and pull. each method needs its pinned test entry.
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("history.get", LinkClass::Read),
@@ -132,6 +133,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // The open sketch's dimension boxes: read them, and type a value into one, as the person does on the shape.
     ("sketch.boxes", LinkClass::Read),
     ("sketch.box_set", LinkClass::Edit),
+    // Push and pull as the person has it open: its face and pending distance read back, and a distance typed into its
+    // box for the person to apply. Read: nothing changes in the project until the person applies it.
+    ("model.push", LinkClass::Read),
+    ("model.push_set", LinkClass::Read),
     ("values.list", LinkClass::Read),
     ("values.set", LinkClass::Edit),
     ("values.remove", LinkClass::Edit),
@@ -389,6 +394,8 @@ mod tests {
         ("look.set", LinkClass::Read),
         ("sketch.boxes", LinkClass::Read),
         ("sketch.box_set", LinkClass::Edit),
+        ("model.push", LinkClass::Read),
+        ("model.push_set", LinkClass::Read),
         ("values.list", LinkClass::Read),
         ("values.set", LinkClass::Edit),
         ("values.remove", LinkClass::Edit),
