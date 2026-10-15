@@ -9,6 +9,7 @@ web
 rust (ubuntu-latest)
 rust (macos-latest)
 rust (windows-latest)
+rust (windows-slow)
 wasm
 devkit
 secrets

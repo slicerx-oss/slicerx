@@ -22,6 +22,10 @@ on:
         description: Run the rust test parts on the self-hosted Linux runners as the merge queue does (core, and crates unless RUST_CRATES_ON_PC is false)
         type: boolean
         default: true
+      windows_rust:
+        description: Run both Windows Rust jobs to validate their split before merging
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -197,14 +201,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # a pull request gets Linux only; main also gets macOS and Windows
-        os: ${{ github.event_name != 'push' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') }}
+        # Main covers all platforms; full-ci and an explicit dispatch also exercise the Windows split.
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') || (contains(github.event.pull_request.labels.*.name, 'full-ci') || inputs.windows_rust) && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
       # also on Linux after a push the merge queue already tested (detect's queued): it reports passed in seconds
       DUP: >-
         ${{ needs.detect.result == 'skipped' || (needs.detect.outputs.queued == 'true' && matrix.os == 'ubuntu-latest') }}
+      FULL_TESTS: ${{ github.event_name == 'push' || matrix.os == 'windows-latest' }}
     steps:
       - if: env.DUP != 'true'
         uses: actions/checkout@v4
@@ -214,6 +219,8 @@ jobs:
           components: clippy, rustfmt
       - if: env.DUP != 'true'
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.os == 'windows-latest' && 'windows-rust' || '' }}
       # A Cargo.lock that no longer matches the manifests fails here, before a build quietly rewrites it.
       - if: env.DUP != 'true'
         run: cargo metadata --locked --format-version 1 > /dev/null
@@ -223,16 +230,34 @@ jobs:
       - if: env.DUP != 'true'
         run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
       # A pull request and the merge queue run the unit tests and the G-code goldens here, and the integration tests in
-      # rust-tests below; main runs every test here.
-      - if: env.DUP != 'true' && github.event_name != 'push'
+      # rust-tests below; Windows separates its two slow core binaries into rust-windows-slow.
+      - if: env.DUP != 'true' && env.FULL_TESTS != 'true'
         run: cargo test --workspace --exclude slicerx-desktop --lib --bins
-      - if: env.DUP != 'true' && github.event_name != 'push'
+      - if: env.DUP != 'true' && env.FULL_TESTS != 'true'
         run: cargo test -p sx-core --test reference
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
-      - if: env.DUP != 'true' && github.event_name == 'push'
+      - if: env.DUP != 'true' && env.FULL_TESTS == 'true'
         run: cargo build -p sx-cloud
-      - if: env.DUP != 'true' && github.event_name == 'push'
+      - if: env.DUP != 'true' && env.FULL_TESTS == 'true' && matrix.os != 'windows-latest'
         run: cargo test --workspace --exclude slicerx-desktop
+      - if: env.DUP != 'true' && matrix.os == 'windows-latest'
+        run: node scripts/ci/windows-rust-tests.mjs main
+
+  rust-windows-slow:
+    name: rust (windows-slow)
+    needs: detect
+    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci') || inputs.windows_rust)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-rust
+          # The main Windows job saves the full workspace dependency cache.
+          save-if: false
+      - run: node scripts/ci/windows-rust-tests.mjs slow
 
   # The integration tests (each crate's tests/) for the merge queue and for a pull request labeled full-ci, so one that
   # breaks never lands; main runs them in the rust job. One run takes about 18 minutes, so they are split in four that

@@ -14,7 +14,7 @@
     "lint": "pnpm -r lint && node scripts/check-dashes.mjs && node scripts/check-brand-strings.mjs",
     "lint:dashes": "node scripts/check-dashes.mjs",
     "lint:brand": "node scripts/check-brand-strings.mjs",
-    "test:scripts": "node --test scripts/check-dashes.test.mjs scripts/check-brand-strings.test.mjs scripts/edition-build.test.mjs scripts/pack-integrator-kit.test.mjs scripts/export-kit-assets.test.mjs scripts/ci/playwright-results.test.mjs scripts/ci/vitest-quarantine.test.mjs scripts/gate/gate.test.mjs",
+    "test:scripts": "node --test scripts/check-dashes.test.mjs scripts/check-brand-strings.test.mjs scripts/edition-build.test.mjs scripts/pack-integrator-kit.test.mjs scripts/export-kit-assets.test.mjs scripts/ci/playwright-results.test.mjs scripts/ci/vitest-quarantine.test.mjs scripts/ci/windows-rust-tests.test.mjs scripts/gate/gate.test.mjs",
     "edition:build": "node scripts/edition-build.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
