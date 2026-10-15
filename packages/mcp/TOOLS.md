@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-187 tools.
+188 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -15,6 +15,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_plate_show` |  |  | read | Show one plate of the project open in SlicerX, as its plate picker does: plate (a number from 1, or an id from slicerx_app_plates), or step: next or previous (stepping stops at the first and last plate). |
 | `slicerx_app_plates` |  |  | read | List the plates of the project open in SlicerX, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), which plate the window shows, and which plate its view draws (drawn; the same as shown once the view has caught up). |
 | `slicerx_app_redo` |  |  | slice | Redo one project edit from the toolbar history. |
+| `slicerx_app_settings` |  |  | read | Read project print settings in SlicerX: explicit overrides and effective values for the shown plate, including filament calibration and plate choices. |
 | `slicerx_app_step_bind` |  |  | slice | Bind a history step's main number to an expression in the open project, or pass expression:null to keep the number and stop following it. |
 | `slicerx_app_undo` |  |  | slice | Undo one recorded project edit using the same history as the toolbar, including object transforms, plate edits and design changes. |
 | `slicerx_app_value_remove` |  |  | slice | Remove a named value from the open project. |
@@ -161,7 +162,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_rotate` |  |  | slice | Set an object's rotation in degrees about X, then Y, then Z (absolute, not added to the current one; [0, 0, 0] is as modeled). |
 | `slicerx_project_scale` |  |  | slice | Scale an object: one factor for all axes (1.2 is 120 %), or one per axis in the object's own coordinates. |
 | `slicerx_project_set_filament` |  |  | slice | Change a filament of the open project: its material type, its color, or both (the app's filament dialog, opened by clicking a ring on the Slice filament rail). |
-| `slicerx_project_set_overrides` |  |  | slice | Set OrcaSlicer settings for the open project, such as the config_patch from slicerx_plan_settings. |
+| `slicerx_project_set_overrides` |  |  | slice | Set or clear setting overrides for the open project, such as the config_patch from slicerx_plan_settings. |
 | `slicerx_project_show` |  |  | read | Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides. |
 | `slicerx_project_split_objects` |  |  | slice | Split an object to objects, as Split to objects does in the app: each separate body of its model becomes an object of its own, named after it with a number, with its rotation, scale, settings, volumes, lock and print state, on the same plates; one placed with slicerx_project_move leaves each piece where it was. |
 | `slicerx_project_split_parts` |  |  | slice | Split an object to parts, as Split to parts does in the app: each separate body of its model becomes a part of the same object, which keeps its id, place, rotation, scale and settings. |
