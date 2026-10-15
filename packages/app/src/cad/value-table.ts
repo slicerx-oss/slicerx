@@ -5,7 +5,8 @@
 import { tuneContext } from '../calibration/tuned'
 import { clearanceFor } from '../plate/clearance'
 import { get } from '../state/store'
-import { evaluate, resolveValues } from './values'
+import { evaluate } from './values'
+import { resolveValues } from './value-resolve'
 
 export function builtIns(s: ReturnType<typeof get>): Record<string, number> {
   return { clearance: clearanceFor(s).mm, nozzle: tuneContext(s).nozzleMm }

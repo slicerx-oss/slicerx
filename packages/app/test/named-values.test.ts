@@ -4,7 +4,8 @@
 // only: numbers, names, + - * /, parentheses. A value can use others, but not itself through a loop; the built-in
 // clearance and nozzle come from the printer and the hole test.
 import { describe, expect, it } from 'vitest'
-import { bindFor, evaluate, namesIn, resolveValues, validName } from '../src/cad/values'
+import { bindFor, evaluate, namesIn, validName } from '../src/cad/values'
+import { resolveValues } from '../src/cad/value-resolve'
 
 const get = (v: Record<string, number>) => (n: string) => v[n]
 
