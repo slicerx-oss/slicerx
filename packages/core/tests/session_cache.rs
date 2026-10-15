@@ -503,3 +503,26 @@ fn memory_of_kept_sessions() {
     }
     drop(kept);
 }
+
+#[test]
+fn variant_support_gaps_slice_through_a_prepared_session() {
+    let case = Case::new(
+        "variant support gaps",
+        vec![("w", wedge(12.0, 10.0, 1.0, 2.0), None)],
+        &json!({
+            "print_extruder_id": ["1", "1"],
+            "print_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"],
+            "outer_wall_speed": [80, 120],
+            "enable_support": true,
+            "support_type": "normal(auto)",
+            "support_top_z_distance": 0.1,
+            "support_bottom_z_distance": 0.3,
+        }),
+    );
+    let load = |id: &str| case.mesh(id);
+    let prepared = api::prepare(&case.req, &load).unwrap();
+    let kept = api::run_prepared(&case.req, &prepared, &sx_core::NoProgress).unwrap();
+    let fresh = api::run_request(&case.req, &load).unwrap();
+    assert!(kept.report.layer_count > 0);
+    assert_eq!(kept.gcode, fresh.gcode);
+}
