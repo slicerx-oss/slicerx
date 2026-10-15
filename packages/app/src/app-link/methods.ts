@@ -20,6 +20,7 @@ import { slicePanes } from '../lib/slice-panes'
 import { findPlate, plateRows, stepTarget } from '../plate/plate-step'
 import { switchPlate } from '../plate/plates'
 import { drawnObjects } from '../viewport/drawn'
+import { viewportLookState } from '../viewport/viewport-look'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -216,7 +217,9 @@ function lookState() {
   const config = currentEdition().brand.theme
   const overrides = typeof config === 'string' ? {} : { ...config.tokens.visuals, ...config[scheme]?.visuals }
   const visuals = Object.fromEntries(VISUAL_TOKEN_NAMES.map((name) => [name, css.getPropertyValue(name).trim()]).filter(([, value]) => value))
-  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}), theme: { scheme, visuals, overrides } }
+  // the 3D view's look, absent while no 3D view is up (viewport-look.ts)
+  const viewport = viewportLookState()
+  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}), theme: { scheme, visuals, overrides }, ...(viewport ? { viewport } : {}) }
 }
 
 /**

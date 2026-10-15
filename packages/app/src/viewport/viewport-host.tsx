@@ -36,6 +36,7 @@ import { createFallbackViewport } from './fallback'
 import { OVERLAY_GAP, overlayInsets } from './overlay-insets'
 import { shellGpu } from './shell-gpu'
 import { viewportTheme } from './scene-theme'
+import { clearViewportLook, syncViewportLook } from './viewport-look'
 import { commitStroke } from '../plate/paint'
 import { addEar, headDiameter, moveEar, onEarSelection, onHeadDiameter, removeEar, resizeSelectedEars, selectedEars, selectEars, setHeadDiameter, worldEars } from '../plate/brim-ears'
 import { paintBusChanged, setPaintBus } from '../plate/tools'
@@ -71,6 +72,8 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
   /** Camera and mouse controls, tools and camera calls; the 2D fallback has none of them. */
   setControls?: Viewport['setControls']
   setTheme?: Viewport['setTheme']
+  setLook?: Viewport['setLook']
+  look?: Viewport['look']
   setTool?: Viewport['setTool']
   setRotateSpace?: Viewport['setRotateSpace']
   setMoveHandles?: Viewport['setMoveHandles']
@@ -367,6 +370,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       vpRef.current = vp
       offs.push(drawnFrom(() => vp.drawnObjects()))
+      offs.push(clearViewportLook)
       set({ viewportBackend: vp.backendName() })
       let prev = appStore.getState()
       // Paint the viewport already holds (a stroke it just made) is not pushed back.
@@ -550,7 +554,11 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       vp.setMode(modeRef.current)
       apply(prev, true)
       // The backdrop follows the theme, now and on every change.
-      const syncScene = () => vp.setTheme?.(viewportTheme(appStore.getState().appearance.colorVision === 'standard' ? 'standard' : 'colorblind'))
+      // The look (lights, materials, plate and backdrop) follows it too: one preset per scheme, viewport-look.ts.
+      const syncScene = () => {
+        vp.setTheme?.(viewportTheme(appStore.getState().appearance.colorVision === 'standard' ? 'standard' : 'colorblind'))
+        if (vp.setLook && vp.look) syncViewportLook({ setLook: vp.setLook.bind(vp), look: vp.look.bind(vp) })
+      }
       syncScene()
       offs.push(onThemeChange(syncScene))
       offs.push(appStore.subscribe((s, p) => s.appearance.colorVision !== p.appearance.colorVision && syncScene()))
