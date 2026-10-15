@@ -70,3 +70,12 @@ it('reports an unavailable link and never invents a default for an older app', a
   const [denied] = appAssistantTools({ call: async () => { throw Object.assign(new Error('denied'), { code: 'forbidden' }) } }, 'LayerMate')
   await expect(denied!.run({} as never, {} as never)).rejects.toMatchObject({ code: 'not_configured' })
 })
+
+it('explains client setup when a hub code cannot request an app grant', async () => {
+  const [tool] = appAssistantTools({ call: async () => { throw Object.assign(new Error('unauthorized'), { code: 'unauthorized' }) } }, 'LayerMate')
+  await expect(tool!.run({} as never, {} as never)).rejects.toMatchObject({
+    code: 'not_configured',
+    details: { appLink: 'unauthorized' },
+    message: expect.stringContaining('Connect it in Settings and use the generated client configuration'),
+  })
+})

@@ -161,3 +161,34 @@ test('a client reads and sets Frame the view and Toolbar size over MCP and the c
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// A hub code authenticates the CLI to the hub, but does not register a client that the app can grant access to.
+test('a code-only CLI client gets setup guidance without waiting for a grant prompt', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The app link is hosted by the desktop shell')
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await openAsDesktop(page)
+  const dir = mkdtempSync(join(tmpdir(), 'sx-e2e-unregistered-'))
+  try {
+    const cleanEnv = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string' && !e[0].startsWith('SLICERX_MCP_')))
+    for (const tool of ['app_plates', 'app_history', 'app_look', 'app_values', 'app_assistant']) {
+      const result = await promisify(execFile)(process.execPath, [...serverArgs(dir), 'call', tool], {
+        cwd: mcpDir, env: cleanEnv, timeout: 30_000,
+      }).then(
+        (out) => ({ ...out, code: 0 }),
+        (error: { code: number; stdout: string; stderr: string }) => error,
+      )
+      expect(result.code, tool).toBe(1)
+      const answers = result.stdout.trim().split(/\r?\n/).map((line) => JSON.parse(line))
+      expect(answers, tool).toHaveLength(1)
+      const answer = answers[0]
+      expect(answer.ok, tool).toBe(false)
+      expect(answer.output.error).toMatchObject({ code: 'not_configured', details: { appLink: 'unauthorized' } })
+      expect(answer.output.error.message).toContain('Connect it in Settings and use the generated client configuration')
+      expect(answer.output.error.message).toContain('A hub pairing code alone does not open a permission prompt')
+    }
+    await expect(page.getByTestId('app-link-read')).toBeHidden()
+    await expect(page.getByTestId('app-link-allow')).toBeHidden()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

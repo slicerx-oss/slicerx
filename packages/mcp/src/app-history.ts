@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { AppLinkCaller } from './app-route'
+import { appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
 const codes: Record<string, ErrorCode> = { busy: 'busy', invalid_input: 'invalid_input', read_only: 'not_supported', denied: 'not_supported', not_ready: 'busy' }
@@ -23,6 +23,7 @@ export function appHistoryTools(link: AppLinkCaller | undefined, appName: string
       let out: HistoryResult
       try { out = await link.call<HistoryResult>(method, args) } catch (e) {
         const code = String((e as { code?: unknown })?.code ?? '')
+        if (code === 'unauthorized') throw new ToolInputError(appClientSetupMessage(appName), 'not_configured', { appLink: code })
         if (['app_link_off', 'app_closed', 'forbidden', 'unauthorized'].includes(code)) throw new ToolInputError(`${appName}'s project history is unavailable. Open the app and allow this client on its app link.`, 'not_configured')
         throw new ToolInputError(e instanceof Error ? e.message : String(e), codes[code] ?? 'internal_error')
       }

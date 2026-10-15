@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import type { AppLinkCaller } from './app-route'
+import { appClientSetupMessage, type AppLinkCaller } from './app-route'
 import { ToolInputError } from './errors'
 
 const identity = z.object({
@@ -27,6 +27,7 @@ export function appAssistantTools(link: AppLinkCaller | undefined, appName: stri
       try { info = await link.call('app.info', {}) }
       catch (error) {
         const code = String((error as { code?: unknown }).code ?? '')
+        if (code === 'unauthorized') throw new ToolInputError(appClientSetupMessage(appName), 'not_configured', { appLink: code })
         if (['app_link_off', 'app_closed', 'forbidden', 'unauthorized'].includes(code)) throw new ToolInputError(`${appName}'s app link is unavailable or this client is not allowed to read it.`, 'not_configured')
         throw error
       }
