@@ -637,6 +637,25 @@ jobs:
         with:
           name: wasm-modules
           path: packages
+      - name: real mixed exact replay
+        if: matrix.project == 'desktop' && startsWith(matrix.shard, '1/')
+        run: |
+          eval "$SX_GROUP_CHECK"
+          run=""
+          [ "$RUNNER_ENVIRONMENT" = self-hosted ] && run="bash scripts/ci/heavy.sh --class engine timeout 180"
+          $run pnpm --filter @slicerx/app exec vitest run test/exact-mixed.test.ts --maxWorkers=1
+        env:
+          SX_HEAVY_LOCK: /mnt/c/builds/heavy-lock/lock
+          SX_HEAVY_WAIT: 1200
+          SX_BREP_REQUIRE_MIXED: '1'
+          SX_BREP_PROFILE_PATH: ${{ runner.temp }}/mixed-exact-profile.json
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.project == 'desktop' && startsWith(matrix.shard, '1/')
+        with:
+          name: mixed-exact-profile
+          path: ${{ runner.temp }}/mixed-exact-profile.json
+          retention-days: 3
+          if-no-files-found: warn
       # an artifact does not keep the file mode
       - uses: actions/download-artifact@v4
         with:
