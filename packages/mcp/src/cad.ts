@@ -689,7 +689,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       oneOf(i)
       const verb = i.distance_mm > 0 ? 'Pulled' : 'Pushed'
       if (i.design) {
-        const d = designOf(i.design)
+        let d: Design
         const measurements = (body: Design) => {
           const summary = designSummary(body)
           return { sizeMm: summary['sizeMm'], volumeMm3: summary['volumeMm3'] }
@@ -699,6 +699,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
         let dimensionsBefore: ReturnType<typeof measurements> | undefined
         let commit: DesignCommit | undefined
         try {
+          d = designOf(i.design)
           f = pickIn(d, i.face)
           before = i.face.topology ? manifestOf(d) : undefined
           if (before && topologyFace(before, i.face.topology!).surfaceType !== 'plane') throw new ToolInputError('Push/pull requires a planar face. Inspect the surface and choose a supported edit.', 'not_supported')
@@ -712,13 +713,14 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
           } else await host.add(d, f.part, params)
         } catch (e) {
           if (!i.face.topology) throw e
-          const code = e instanceof StaleBody ? 'stale_body' : e instanceof ToolInputError ? e.code : 'internal_error'
+          const rawCode = e instanceof StaleBody ? 'stale_body' : e instanceof ToolInputError ? e.code : e instanceof Error && 'code' in e && e.code === 'not_found' ? 'not_found' : 'internal_error'
+          const code = rawCode === 'not_found' ? 'stale_body' : rawCode
           let current: ReturnType<typeof manifestOf> | null = null
-          try { current = manifestOf(designOf(d.id)) } catch { /* the body may have been removed */ }
+          try { current = manifestOf(designOf(i.design)) } catch { /* the body may have been removed */ }
           throw new ToolInputError(e instanceof Error ? e.message : 'The edit was refused.', code, {
             ...(e instanceof ToolInputError ? e.details : {}),
             topology: current ? compactManifest(current) : null,
-            operationResult: { operation: 'geom.push_pull', status: 'refused', reason: code, bodyId: d.id,
+            operationResult: { operation: 'geom.push_pull', status: 'refused', reason: code, bodyId: i.design,
               priorRevision: i.face.topology.revision, revision: current?.revision ?? null, target: i.face.topology },
           })
         }
