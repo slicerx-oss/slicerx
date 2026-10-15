@@ -14,7 +14,7 @@
 // renders no React. React renders on clicks, drags of points and edits only.
 import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
 import { afterLoopChange, afterReverse, curveStates, dimMark, dofShort, dofText, dofTone, fromSolver, sketchMarks, toSolver, type DefState, type SketchConstraint, type SketchDim, type SketchGlyph, type Solved, type SolverMap } from './sketch-constraints'
-import { dimensionFor, isDimension, measured, pointAt, pointHit, type DimPick } from './sketch-dimension'
+import { dimensionFor, isDimension, measured, pointAt, pointHit, settle, type DimPick } from './sketch-dimension'
 import { evaluate, namesIn } from './values'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import { originFrame, type PickEvent, type SketchEvent, type SketchScene, type SketchTone } from '@slicerx/viewport'
@@ -40,7 +40,10 @@ import { chamferSketch, filletSketch } from './edge-api'
 import { afterEdit, endNear, mirrorConstraints } from './sketch-edit'
 import { goesIntoFace } from './extrude-direction'
 import { CursorPills, type CursorPillsHandle } from './cursor-pills'
-import { applyReason, CHECKING, profileState, provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
+import { ShapeBoxes, type ShapeBoxesHandle, type ShapeBoxField } from './shape-boxes'
+import { boxesOf, boxesState, boxKeyOf, boxValues, draftShape, keptShape, onShapeTool, placedShape, setBox, shapeAt, typedConstraints, type BoxKey, type BoxShape, type ScreenShape } from './sketch-boxes'
+import { modelFeelFor, onModelFeel } from './model-feel-flag'
+import { applyReason, CHECKING, profileState, provideSketchBoxes, provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
 import { Actions, Card, Choice, close, type ChoiceOption, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { formatLength, fraction, parseLength, type UnitPrefs } from './units'
@@ -429,6 +432,18 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [typed, setTyped] = useState<string[] | null>(null)
   const [pillFocus, setPillFocus] = useState(0)
   const pills = useRef<CursorPillsHandle | null>(null)
+  // The new Model feel (developer flag): the drawing tools' sizes sit on the shape as boxes, and a picked shape shows
+  // its sizes there to change. `boxToken` puts the keyboard in a drawing box; the edit boxes keep their own text.
+  const settingsMode = useApp((s) => s.settingsMode)
+  const [, feelTurned] = useState(0)
+  useEffect(() => onModelFeel(() => feelTurned((n) => n + 1)), [])
+  const feel = modelFeelFor(settingsMode)
+  const boxes = useRef<ShapeBoxesHandle | null>(null)
+  const editBoxes = useRef<ShapeBoxesHandle | null>(null)
+  const [boxToken, setBoxToken] = useState(0)
+  const [editText, setEditText] = useState<string[] | null>(null)
+  const [editFocus, setEditFocus] = useState(0)
+  const [editToken, setEditToken] = useState(0)
   // a phone keeps its readout line under the hint, where a desktop has the cursor pills; a new tool starts it empty
   // and Select's says what is picked
   const readoutRef = useRef<HTMLSpanElement | null>(null)
@@ -494,8 +509,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // What the hover path reads without a render.
   // landed: the clicks of the shape being drawn and what each snapped to, for the constraints it leaves
   // dims and glyphs: what the view shows, to read its picks by
-  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, pending, copies, pillFocus, typed, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null })
-  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, pending, copies, pillFocus, typed, solved: solved?.solved ?? null }
+  const live = useRef({ sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, cursor: [0, 0] as V2, screen: [0, 0] as [number, number], landed: [] as Landing[], dimPicks, dimField, pickedCon, pending, copies, pillFocus, typed, dims: [] as SketchDim[], glyphs: [] as SketchGlyph[], solved: solved?.solved ?? null, feel, editText, editFocus })
+  live.current = { ...live.current, sketch, draft, selected, gridMm, engineSnaps, constraints, sides: sidesN, dimPicks, dimField, pickedCon, pending, copies, pillFocus, typed, solved: solved?.solved ?? null, feel, editText, editFocus }
 
   // The typed numbers as the point they stand for, the cursor filling in a pill left empty; null while nothing is typed
   // or the numbers can't make a point (the pills then say why on Enter).
@@ -546,8 +561,43 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     if (at) view.setSketchCursor({ path: preview(l.draft, at, { sides: l.sides }, l.sketch), at, guide: null })
   }, [typed, view])
 
+  // The boxes follow the shape as the step changes or numbers are typed, before the pointer moves (a phone has no
+  // hover: its boxes sit on the shape from the first tap).
+  const boxStep = `${draft.tool}:${draft.points.length}:${draft.points[0]?.join(',') ?? ''}`
+  useEffect(() => {
+    showBoxes(live.current.draft, live.current.cursor)
+  }, [boxStep, typed, feel, view])
+  // A shape's first click puts the keyboard in its first box, its value picked so typing replaces it. Not on a phone,
+  // where it would raise the keyboard over the view.
+  useEffect(() => {
+    if (!feel || featureOnly || phone || !onShapeTool(draft)) return
+    setPillFocus(0)
+    setBoxToken((n) => n + 1)
+  }, [boxStep, feel])
+  // The boxes stay on their shape while the view turns, zooms or changes size (a side pane opened or shut).
+  const redrawBoxes = useRef(() => undefined as void)
+  redrawBoxes.current = () => {
+    showBoxes(live.current.draft, live.current.cursor)
+    showEditBoxes()
+  }
+  useEffect(() => {
+    if (!view) return
+    const off = view.on('camera', () => redrawBoxes.current())
+    const canvas = view.canvas
+    const ro = canvas && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => redrawBoxes.current()) : null
+    if (canvas) ro?.observe(canvas)
+    const onResize = () => redrawBoxes.current()
+    window.addEventListener('resize', onResize)
+    return () => {
+      off()
+      ro?.disconnect()
+      window.removeEventListener('resize', onResize)
+    }
+  }, [view])
+
   // The live numbers beside the cursor for the tool's next step, or the step's readout when it takes no typed number.
   const showPills = (d: Draft, at: V2, screen: readonly [number, number], snapName: string | null): void => {
+    if (showBoxes(d, at)) return pills.current?.hide()
     const p = pills.current
     if (!p) return
     if (!drawingTool(d.tool)) return p.hide()
@@ -555,6 +605,47 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const kinds = fieldsFor(d)
     const values = kinds.length ? liveValues(d, at).map((v, i) => (v === null ? '' : kinds[i]?.unit === 'mm' ? f(v) : v.toFixed(1))) : [readout(d, at, f, u)]
     p.show(screen[0], screen[1], values, snapName)
+  }
+
+  // A plane point on screen, client px, or null while the view can't say.
+  const screenAt = (p: V2): V2 | null => {
+    const s = view?.screenOf?.(frameToBed(plane.frame, p))
+    return s && Number.isFinite(s[0]) && Number.isFinite(s[1]) ? [s[0], s[1]] : null
+  }
+  const onScreen = (sh: ReturnType<typeof draftShape>): ScreenShape | null => {
+    if (!sh) return null
+    if (sh.kind === 'rect') {
+      const c = sh.corners.map(screenAt)
+      return c.every((x): x is V2 => x !== null) ? { kind: 'rect', corners: c as [V2, V2, V2, V2] } : null
+    }
+    if (sh.kind === 'line') {
+      const a = screenAt(sh.a)
+      const b = screenAt(sh.b)
+      return a && b ? { kind: 'line', a, b } : null
+    }
+    const c = screenAt(sh.center)
+    const r = screenAt(sh.rim)
+    return c && r ? { kind: 'circle', center: c, rim: r } : null
+  }
+  // The boxes for the drawing tool's step on the shape it would leave with the pointer at `at` (typed values hold
+  // their sizes); false when the step has none, so the cursor pills take it.
+  const showBoxes = (d: Draft, at: V2): boolean => {
+    const b = boxes.current
+    if (!live.current.feel || featureOnly || !onShapeTool(d)) {
+      b?.hide()
+      return false
+    }
+    const held = typedAt(d, live.current.typed, at) ?? at
+    const sh = onScreen(draftShape(d, held))
+    if (!b) return true
+    if (!sh) {
+      b.hide()
+      return true
+    }
+    const [f] = readoutUnits(get().units)
+    const kinds = fieldsFor(d)
+    b.show(sh, liveValues(d, held).map((v, i) => (v === null ? '' : kinds[i]?.unit === 'mm' ? f(v) : v.toFixed(1))))
+    return true
   }
 
   // Snap targets on the plane: the picked face's outline, and edges of bodies lying in the plane.
@@ -953,6 +1044,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             const u = readoutUnits(get().units)
             const base = l.draft.tool === 'select' ? pickedText(l.sketch, l.selected, ...u) : readout(l.draft, s.at, ...u)
             r.textContent = `${base}${s.kind ? `${base ? ', ' : ''}snap: ${SNAP_NAMES[s.kind].toLowerCase()}` : ''}`
+            showBoxes(l.draft, s.at)
           } else showPills(l.draft, s.at, ev.screen, s.kind ? SNAP_NAMES[s.kind] : null)
           return
         }
@@ -975,6 +1067,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           setSelected(hitTest(l.sketch, ev.at, tol))
           return
         }
+        // typed sizes in the boxes on the shape: a click places it with them, as Enter does
+        if (l.feel && onShapeTool(l.draft) && l.typed?.some((v) => v.trim() !== '')) return commitRef.current()
         apply(click(l.sketch, l.draft, s.at, { sides: l.sides }), { at: s.at, kind: ev.alt ? null : s.kind }, !!ev.ctrl)
         return
       }
@@ -1068,6 +1162,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         const at = Math.min(l.pillFocus, kinds.length - 1)
         showPills(l.draft, l.cursor, l.screen, null)
         setTyped(kinds.map((_, i) => (i === at ? e.key : '')))
+        if (l.feel && onShapeTool(l.draft)) setBoxToken((n) => n + 1)
+      } else if (/^[0-9.]$/.test(e.key) && l.feel && l.draft.tool === 'select' && !featureOnly && shapeAt(l.sketch, l.selected) && !e.metaKey && !e.ctrlKey) {
+        // a number with a shape picked goes into its first box
+        e.preventDefault()
+        const n = boxesOf(shapeAt(l.sketch, l.selected)!.kind).length
+        const at = Math.min(l.editFocus, n - 1)
+        setEditText(Array.from({ length: n }, (_, i) => (i === at ? e.key : '')))
+        setEditToken((k) => k + 1)
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && l.draft.tool === 'select' && !featureOnly) {
         const sel = l.selected
         if (sel) {
@@ -1116,7 +1218,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       }
       if (!(e.metaKey || e.ctrlKey) || e.altKey || featureOnly) return
       const t = e.target as HTMLElement | null
-      const field = t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.isContentEditable)
+      // a box on the shape showing only its live size is no text being edited: undo still steps the sketch
+      const liveBox = t instanceof HTMLInputElement && t.classList.contains('shape-box-input') && !t.closest('[data-typed]')
+      const field = liveBox ? false : t instanceof HTMLInputElement ? t.type !== 'radio' && t.type !== 'checkbox' : t && (t.tagName === 'TEXTAREA' || t.isContentEditable)
       const k = e.key.toLowerCase()
       if (e.key === 'Enter') {
         // only a sketch that finishes on its own; a body's step being edited leaves Ctrl/Cmd+Enter to the app (slice)
@@ -1145,9 +1249,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   // starts from it. Numbers that can't make a point change nothing and say why.
   const commitField = () => {
     const l = live.current
-    const text = l.typed
-    if (!text) return
     const kinds = fieldsFor(l.draft)
+    // the boxes on the shape place it with the live size where nothing is typed
+    const onShape = l.feel && !featureOnly && onShapeTool(l.draft)
+    const text = l.typed ?? (onShape ? kinds.map(() => '') : null)
+    if (!text) return
     const read = (v: string, i: number) => {
       try {
         return kinds[i]?.unit === 'mm' ? parseLength(v, get().units, currentValues()) : num(v)
@@ -1160,13 +1266,166 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     const p = typedPoint(l.draft, values, l.cursor)
     if (typeof p === 'string') return setNote(p)
     setNote(null)
+    const before = l.sketch
+    const tool = l.draft.tool
     apply(click(l.sketch, l.draft, p, { sides: l.sides }), { at: p, kind: null }, false)
+    if (onShape) keepTyped(before, tool, kinds.map((k) => k.label), values)
     setPillFocus(0)
     // the preview starts from the new point at once, before the cursor moves again
     view?.setSketchCursor({ path: preview(live.current.draft, l.cursor, { sides: l.sides }, live.current.sketch), at: l.cursor, guide: null })
   }
   const commitRef = useRef(commitField)
   commitRef.current = commitField
+
+  // The sizes typed in the boxes of a shape just placed drive it from now on: each becomes a dimension. One the sketch
+  // can't take (it would over-define it) is kept driven, as the dimension tool keeps it.
+  const keepTyped = (before: Entity[], tool: DrawTool, labels: readonly string[], values: readonly (number | null)[]): void => {
+    const l = live.current
+    const shape = placedShape(before, l.sketch, tool)
+    if (!shape) return
+    const typed: Partial<Record<BoxKey, number>> = {}
+    labels.forEach((label, i) => {
+      const k = boxKeyOf(label)
+      const v = values[i]
+      if (k && v !== null && v !== undefined) typed[k] = v
+    })
+    const more = typedConstraints(shape, typed, l.constraints)
+    if (!more.length) return
+    const list = [...l.constraints, ...more]
+    l.constraints = list
+    setConstraints(list)
+    const sk = l.sketch
+    void settle(sk, list).then(
+      (r) => {
+        const now = live.current
+        if (now.constraints !== list || now.sketch !== sk) return
+        if (!r.constraints.some((c, i) => isDimension(c) && c.driven && !(isDimension(list[i]!) && list[i]!.driven))) return
+        mergeNext.current = true
+        now.constraints = r.constraints
+        setConstraints(r.constraints)
+      },
+      () => undefined,
+    )
+  }
+
+  // Esc in a drawing box with nothing typed: the shape being drawn goes, the tool stays; the view takes the keys again.
+  const dropShape = (): void => {
+    const l = live.current
+    setDraft(emptyDraft(l.draft.tool))
+    l.draft = emptyDraft(l.draft.tool)
+    setTyped(null)
+    setPillFocus(0)
+    view?.setSketchCursor(null)
+    boxes.current?.hide()
+    view?.canvas?.focus()
+  }
+
+  // A tool key (L, R, C, D, T) from a box showing only its live size picks that tool, as it does in the view.
+  const boxToolKey = (k: string): boolean => {
+    const t = TOOL_KEYS[k]
+    if (!t || featureOnly) return false
+    pickRef.current(t)
+    view?.canvas?.focus()
+    return true
+  }
+
+  // Tab past the last box goes on to the panel, Shift+Tab before the first back to the view.
+  const leaveBoxes = (back: boolean): void => {
+    const first = back ? null : document.querySelector<HTMLElement>('[data-section="cad-tool"] :is(button, input, select, [tabindex="0"]):not(:disabled)')
+    ;(first ?? view?.canvas)?.focus()
+  }
+
+  // A picked shape's boxes: its sizes now, and Enter sets the typed ones (an emptied box frees its size).
+  const editShape: BoxShape | null = feel && !featureOnly && draft.tool === 'select' ? shapeAt(sketch, selected) : null
+  const editKey = editShape ? JSON.stringify(editShape) : ''
+  const editValues = useMemo(() => (editShape ? boxValues(sketch, constraints, editShape) : []), [editKey, sketch, constraints])
+  useEffect(() => {
+    setEditText(null)
+    setEditFocus(0)
+  }, [editKey])
+  const showEditBoxes = (): void => {
+    const b = editBoxes.current
+    if (!b) return
+    const sh = editShape ? onScreen(keptShape(sketch, editShape)) : null
+    if (!sh) return b.hide()
+    const [f] = readoutUnits(get().units)
+    b.show(sh, editValues.map((v) => (v.unit === '°' ? v.value.toFixed(1) : f(v.value))))
+  }
+  useEffect(showEditBoxes)
+
+  // A box's text as a value: mm in the display unit (names from the value table work), degrees for an angle.
+  const readBox = (key: BoxKey, text: string): number => {
+    const t = text.trim()
+    return key === 'angle' ? evaluate(t, (n) => currentValues()[n]) : parseLength(t, get().units, currentValues())
+  }
+
+  const commitEdit = async (cleared: readonly number[]): Promise<void> => {
+    const l = live.current
+    const shape = shapeAt(l.sketch, l.selected)
+    if (!shape) return
+    const vals = boxValues(l.sketch, l.constraints, shape)
+    let sk: Entity[] = l.sketch
+    let cons = l.constraints
+    let driven = false
+    try {
+      for (const [i, v] of vals.entries()) {
+        const text = l.editText?.[i] ?? ''
+        let value: number | null
+        let expr: string | undefined
+        if (text.trim() !== '') {
+          value = readBox(v.key, text)
+          if (!Number.isFinite(value)) throw new Error('Type a number.')
+          if (namesIn(text).length) expr = text.trim()
+        } else if (cleared.includes(i) && v.index >= 0) value = null
+        else continue
+        const r = await setBox(sk, cons, shape, v.key, value, expr ? { expr } : {})
+        sk = r.sketch
+        cons = r.constraints
+        driven ||= r.driven
+      }
+    } catch (e) {
+      return setNote(errorText(e))
+    }
+    setNote(driven ? 'The other constraints already set that size, so it is kept driven and changes nothing.' : null)
+    l.sketch = sk
+    l.constraints = cons
+    setSketch(sk)
+    setConstraints(cons)
+    setEditText(null)
+    view?.canvas?.focus()
+  }
+
+  // The open sketch's boxes for the app link: read them, and set one as the person does by typing in it.
+  useEffect(() => {
+    if (featureOnly) return
+    return provideSketchBoxes({
+      read: () => {
+        const l = live.current
+        return boxesState(l.sketch, l.constraints, l.solved?.dof ?? null)
+      },
+      set: async (req) => {
+        const l = live.current
+        const shape = shapeAt(l.sketch, { e: req.loop, seg: req.seg ?? 0 })
+        if (!shape) throw new Error(`loop ${req.loop}${req.seg !== undefined ? ` segment ${req.seg}` : ''} has no boxes: pick a rectangle, a straight line or a circle that is not construction`)
+        const key = boxesOf(shape.kind).find((b) => b.key === req.box)?.key
+        if (!key) throw new Error(`a ${shape.kind === 'rect' ? 'rectangle' : shape.kind} has ${boxesOf(shape.kind).map((b) => b.key).join(' and ')}, not ${req.box}`)
+        let value: number | null = null
+        let expr: string | undefined
+        if (typeof req.value === 'string') {
+          // an expression in mm, as a client's numbers are, whatever the person shows
+          value = key === 'angle' ? evaluate(req.value, (n) => currentValues()[n]) : parseLength(req.value, { ...get().units, length: 'mm' }, currentValues())
+          if (namesIn(req.value).length) expr = req.value.trim()
+        } else value = req.value
+        const r = await setBox(l.sketch, l.constraints, shape, key, value, expr ? { expr } : {})
+        const now = live.current
+        now.sketch = r.sketch
+        now.constraints = r.constraints
+        setSketch(r.sketch)
+        setConstraints(r.constraints)
+        return { ...boxesState(r.sketch, r.constraints, r.solved.dof), driven: r.driven }
+      },
+    })
+  }, [featureOnly])
 
   const pickRef = useRef<(t: DrawTool) => void>(() => undefined)
   const pickTool = (t: DrawTool) => {
@@ -1700,7 +1959,47 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         // the sketch steps its own Esc and Enter; Extrude or Revolve from a finished sketch is a plain tool
         keys={featureOnly}
       />
-      {featureOnly || !drawingTool(draft.tool) ? null : (
+      {feel && !featureOnly && onShapeTool(draft) ? (
+        <ShapeBoxes
+          key={`draw:${draft.tool}`}
+          ref={boxes}
+          mode="draw"
+          fields={fields.map((f): ShapeBoxField => ({ key: boxKeyOf(f.label)!, label: f.label, unit: f.unit === 'mm' ? units.length : f.unit }))}
+          area={() => view?.canvas?.getBoundingClientRect() ?? null}
+          focus={Math.min(pillFocus, Math.max(0, fields.length - 1))}
+          text={typed}
+          focusToken={boxToken}
+          onFocus={setPillFocus}
+          onChange={(t) => setTyped(t.some((v) => v !== '') ? t : null)}
+          onCommit={() => commitField()}
+          onEscape={dropShape}
+          onLeave={leaveBoxes}
+          onToolKey={boxToolKey}
+          view={() => view?.canvas}
+        />
+      ) : null}
+      {editShape ? (
+        <ShapeBoxes
+          key={`edit:${editKey}`}
+          ref={editBoxes}
+          mode="edit"
+          fields={editValues.map((v): ShapeBoxField => ({ key: v.key, label: v.label, unit: v.unit === 'mm' ? units.length : v.unit, set: v.set }))}
+          area={() => view?.canvas?.getBoundingClientRect() ?? null}
+          focus={Math.min(editFocus, Math.max(0, editValues.length - 1))}
+          text={editText}
+          focusToken={editToken}
+          onFocus={setEditFocus}
+          onChange={(t) => setEditText(t)}
+          onCommit={(cleared) => void commitEdit(cleared)}
+          onEscape={() => {
+            setEditText(null)
+            view?.canvas?.focus()
+          }}
+          onLeave={leaveBoxes}
+          onToolKey={boxToolKey}
+        />
+      ) : null}
+      {featureOnly || !drawingTool(draft.tool) || (feel && onShapeTool(draft)) ? null : (
         <CursorPills
           ref={pills}
           area={() => view?.canvas?.getBoundingClientRect() ?? null}

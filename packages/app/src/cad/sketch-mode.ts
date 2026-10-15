@@ -60,6 +60,44 @@ export function lookAtSketch(): boolean {
   return true
 }
 
+/** One shape's dimension boxes as a client reads them: values in mm, or degrees for an angle. */
+export interface SketchBoxRead {
+  shape: 'rectangle' | 'line' | 'circle'
+  loop: number
+  /** The line's segment; a rectangle and a circle have none. */
+  seg?: number
+  boxes: { box: string; label: string; value: number; unit: 'mm' | 'deg'; set: 'driving' | 'driven' | null }[]
+}
+
+/** The open sketch's boxes and dimensions, as the app link reads them back. */
+export interface SketchBoxesState {
+  /** Degrees of freedom left, 0 when fully defined; null before the solver has run. */
+  dof: number | null
+  shapes: SketchBoxRead[]
+  /** Every dimension of the sketch with its index, value and whether it drives. */
+  dimensions: { index: number; type: string; value: number; driven: boolean; expr?: string }[]
+}
+
+/** What the open sketch lets a client do with its boxes: read them, and set one as the person does by typing in it. */
+export interface SketchBoxesLink {
+  read(): SketchBoxesState
+  /** `value` in mm (degrees for an angle), an expression as the box takes it, or null to free the size again. */
+  set(req: { loop: number; seg?: number; box: string; value: number | string | null }): Promise<SketchBoxesState & { driven: boolean }>
+}
+
+let boxes: SketchBoxesLink | null = null
+
+/** The open sketch's boxes for the app link. Returns the release. */
+export function provideSketchBoxes(link: SketchBoxesLink): () => void {
+  boxes = link
+  return () => {
+    if (boxes === link) boxes = null
+  }
+}
+
+/** The open sketch's boxes, or null when no sketch is open. */
+export const sketchBoxes = (): SketchBoxesLink | null => boxes
+
 const subscribe = (f: () => void) => {
   subs.add(f)
   return () => void subs.delete(f)
@@ -152,9 +190,9 @@ export function applyReason(s: {
 }
 
 // Test hook: with localStorage 'slicerx.debug' set (as for window.__sx), scripts read the open sketch as app_state's
-// `sketch` is built from it.
+// `sketch` is built from it, and reach its boxes as the app link's sketch.boxes and sketch.box_set do.
 try {
-  if (typeof window !== 'undefined' && localStorage.getItem('slicerx.debug')) Object.assign(window, { __sketch: sketchMode })
+  if (typeof window !== 'undefined' && localStorage.getItem('slicerx.debug')) Object.assign(window, { __sketch: sketchMode, __sketchBoxes: sketchBoxes })
 } catch {
   // storage blocked: no hook
 }

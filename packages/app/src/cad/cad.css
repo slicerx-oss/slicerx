@@ -273,3 +273,21 @@
 .sketch-grid-snap > .sx-selectwrap { width: var(--tp-ctl); }
 .sketch-grid-snap > .sx-selectwrap > select { width: 100%; }
 
+/* Dimension boxes on the shape (sketch-boxes.ts, shape-boxes.tsx): floating fields over the view (spec 4), 28 px tall
+   (2: dense), radius 6, the body font with tabular figures (2). A typed or set value fills with the accent; a driven
+   one reads muted. Focus is the accent ring (2c). */
+.shape-boxes { display: contents; }
+.shape-box { position: fixed; z-index: 30; display: inline-flex; align-items: center; gap: var(--s-1); height: var(--h-sm); padding: 0 var(--s-2); border: 1px solid var(--field-line); border-radius: var(--r-sm); background: var(--surface-float); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); font-family: var(--f-body); font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; cursor: text; }
+.shape-box[hidden] { display: none; }
+.shape-box-label { color: var(--muted); }
+.shape-box-unit { color: var(--muted); }
+.shape-box-input { width: 7ch; min-width: 7ch; height: calc(var(--h-sm) - 2 * var(--s-1)); padding: 0 var(--s-1); border: 0; border-radius: var(--r-xs); background: var(--field-bg); color: var(--fg); font: var(--fw-medium) var(--fs-md) / 1 var(--f-body); font-variant-numeric: tabular-nums; text-align: right; outline: none; }
+.shape-box-input::placeholder { color: var(--muted); }
+.shape-box:focus-within { border-color: var(--accent); }
+.shape-box-input:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.shape-box[data-typed], .shape-box[data-set='driving'] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--surface-float)); color: var(--fg); }
+.shape-box[data-typed] .shape-box-input, .shape-box[data-set='driving'] .shape-box-input { font-weight: var(--fw-semibold); }
+.shape-box[data-set='driven'] .shape-box-input { color: var(--muted); font-style: italic; }
+:root[data-scheme='light'] .shape-box { border-color: rgba(0, 0, 0, 0.12); }
+:root[data-scheme='light'] .shape-box[data-typed], :root[data-scheme='light'] .shape-box[data-set='driving'], :root[data-scheme='light'] .shape-box:focus-within { border-color: var(--accent); }
+@media (pointer: coarse) { .shape-box { height: var(--h-lg); } .shape-box-input { height: calc(var(--h-lg) - 2 * var(--s-1)); font-size: var(--fs-body); } }
