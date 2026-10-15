@@ -781,6 +781,10 @@ test('a dropped bridge connection comes back on its own; the cards stay in place
   // Every connection the page opens to the hub goes through here, so the test can drop one as a suspended page would,
   // and hold the reconnect off for a while.
   let refuse = false
+  // While on, the hub's answers to status requests wait here instead of reaching the page, as from slow printers: the
+  // printer list's refresh is still out when the connection drops, and after the reconnect the new list waits for them.
+  let holdStatus = false
+  const heldStatus: (() => void)[] = []
   const routes: WebSocketRoute[] = []
   await page.routeWebSocket(hub.route, (ws) => {
     if (refuse) {
@@ -789,13 +793,35 @@ test('a dropped bridge connection comes back on its own; the cards stay in place
     }
     const server = ws.connectToServer()
     routes.push(ws)
-    ws.onMessage((m) => server.send(m))
+    const statusIds = new Set<unknown>()
+    const idOf = (m: string | Buffer, method?: string): unknown => {
+      if (typeof m !== 'string') return undefined
+      try {
+        const msg = JSON.parse(m) as { id?: unknown; method?: unknown }
+        return method === undefined || msg.method === method ? msg.id : undefined
+      } catch {
+        return undefined
+      }
+    }
+    ws.onMessage((m) => {
+      const id = idOf(m, 'status')
+      if (holdStatus && id !== undefined) statusIds.add(id)
+      server.send(m)
+    })
+    server.onMessage((m) => {
+      const id = idOf(m)
+      if (id !== undefined && statusIds.delete(id)) heldStatus.push(() => ws.send(m))
+      else ws.send(m)
+    })
     ws.onClose(() => server.close())
   })
   await connectApp(page)
+  holdStatus = true
+  // Opening the tab refreshes the printer list; its status requests stay unanswered until the connection drops.
   await page.getByRole('button', { name: 'Printers', exact: true }).first().click()
   const card = page.getByTestId('printer-card').filter({ hasText: 'Voron' })
   await expect(card).toBeVisible()
+  await expect.poll(() => heldStatus.length).toBeGreaterThan(0)
   // Where everything on the page sits: the heading's row, the counts and every card.
   const layout = () =>
     page.evaluate(() =>
@@ -806,16 +832,24 @@ test('a dropped bridge connection comes back on its own; the cards stay in place
     )
   const connected = await layout()
   const cardsBefore = await page.getByTestId('printer-card').count()
-  // Count the cards all through the drop and the reconnect: none may leave, even for a frame.
-  await page.evaluate(() => {
-    const w = window as unknown as { __cardsMin: number }
+  // Every frame from the drop to the end: no card may leave and nothing may move, even for a frame.
+  await page.evaluate((want) => {
+    const w = window as unknown as { __cardsMin: number; __moved: string[]; __watch: boolean }
     w.__cardsMin = Infinity
+    w.__moved = []
+    w.__watch = true
     const tick = () => {
+      if (!w.__watch) return
       w.__cardsMin = Math.min(w.__cardsMin, document.querySelectorAll('[data-testid="printer-card"]').length)
+      const now = [...document.querySelectorAll('.page.fleet .wall-h > *:not(.wall-away-note), .page.fleet .wall-counts, [data-testid="printer-card"]')].map((el) => {
+        const b = el.getBoundingClientRect()
+        return `${el.className || el.tagName}:${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.width)},${Math.round(b.height)}`
+      })
+      if (now.join('|') !== want.join('|') && w.__moved.length < 5) w.__moved.push(now.join('|'))
       requestAnimationFrame(tick)
     }
     requestAnimationFrame(tick)
-  })
+  }, connected)
   const before = routes.length
   refuse = true
   await routes.at(-1)!.close()
@@ -827,6 +861,7 @@ test('a dropped bridge connection comes back on its own; the cards stay in place
   await expect(card.getByTestId('printer-card-open')).toBeDisabled()
   await expect(card.getByTestId('printer-card-options')).toBeDisabled()
   expect(await layout(), 'nothing moves while reconnecting').toEqual(connected)
+  const heldBefore = heldStatus.length
   refuse = false
   // It reconnects with the code this session used, without asking again.
   await expect.poll(() => routes.length, { timeout: 30_000 }).toBeGreaterThan(before)
@@ -834,8 +869,22 @@ test('a dropped bridge connection comes back on its own; the cards stay in place
   await expect(page.getByTestId('bridge-reconnecting')).toHaveCount(0)
   await expect(card).not.toHaveAttribute('data-away', 'true')
   await expect(card.getByTestId('printer-card-options')).toBeEnabled()
+  // The new connection's printer list is still waiting for its printers.
+  await expect.poll(() => heldStatus.length, { timeout: 30_000 }).toBeGreaterThan(heldBefore)
   expect(await layout(), 'nothing moves once reconnected').toEqual(connected)
-  expect(await page.evaluate(() => (window as unknown as { __cardsMin: number }).__cardsMin)).toBe(cardsBefore)
+  // Then the printers answer and the cards take the new rows, in the same places.
+  holdStatus = false
+  for (const send of heldStatus.splice(0)) send()
+  await expect(card.locator('.wall-meta')).toBeVisible()
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))))
+  expect(await layout(), 'nothing moves once the printers answer').toEqual(connected)
+  const watched = await page.evaluate(() => {
+    const w = window as unknown as { __cardsMin: number; __moved: string[]; __watch: boolean }
+    w.__watch = false
+    return { cardsMin: w.__cardsMin, moved: w.__moved }
+  })
+  expect(watched.moved, 'no frame from the drop on moves anything').toEqual([])
+  expect(watched.cardsMin).toBe(cardsBefore)
 })
 
 test('a send whose connection drops part way is never sent again, and says what the printer reports', async ({ page }) => {
