@@ -112,6 +112,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("project.rotate", LinkClass::Edit),
     ("project.scale", LinkClass::Edit),
     ("volumes.list", LinkClass::Read),
+    ("dimensions.list", LinkClass::Read),
+    ("dimensions.keep", LinkClass::Edit),
+    ("dimensions.remove", LinkClass::Edit),
+    ("dimensions.show", LinkClass::Read),
     ("volumes.add", LinkClass::Edit),
     ("volumes.from_object", LinkClass::Edit),
     ("volumes.set", LinkClass::Edit),
@@ -373,6 +377,10 @@ mod tests {
         ("project.rotate", LinkClass::Edit),
         ("project.scale", LinkClass::Edit),
         ("volumes.list", LinkClass::Read),
+        ("dimensions.list", LinkClass::Read),
+        ("dimensions.keep", LinkClass::Edit),
+        ("dimensions.remove", LinkClass::Edit),
+        ("dimensions.show", LinkClass::Read),
         ("volumes.add", LinkClass::Edit),
         ("volumes.from_object", LinkClass::Edit),
         ("volumes.set", LinkClass::Edit),
@@ -444,7 +452,7 @@ mod tests {
                 // mesh repair does not pair clients.
                 let mesh_repair = *m == "geom.repair" && word == "pair";
                 // volume removal affects project geometry only.
-                if word == "remove" && *m == "volumes.remove" {
+                if word == "remove" && matches!(*m, "volumes.remove" | "dimensions.remove") {
                     continue;
                 }
                 assert!(
@@ -459,6 +467,10 @@ mod tests {
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("dimensions.keep"), Some(LinkClass::Edit));
+        assert_eq!(link_class("dimensions.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("dimensions.list"), Some(LinkClass::Read));
+        assert_eq!(link_class("dimensions.show"), Some(LinkClass::Read));
         for m in ["volumes.remove_file", "volumes.remove_printer", "printer.remove"] {
             assert_eq!(link_class(m), None, "{m}");
         }

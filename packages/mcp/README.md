@@ -384,3 +384,13 @@ Dependencies:
 ## Status
 
 Working: stdio and HTTP transports, the permission policy with elicitation and approval requests, the action log, file slicing with the `sx` engine or the stub, the MCP project with mimir's skills, the simulated printers, and every resource listed above. Theming tools build and check themes; applying one happens in your page with `applyTheme()` or `<ThemeProvider>`. Printer actions on real printers go through sx-link's broker (tested with the mock printers). Planned: publishing `@slicerx/mcp` to npm, and testing on physical printers.
+
+### Kept reference dimensions in the app
+
+`app_dimensions` reads the shown plate's kept measurements, re-evaluated against current geometry. Each row includes the owner and ID, kind, status, measured value and unit, local anchors, world-space annotation and visibility. A lost anchor has no value or visible mark. `geom_measure` remains available for a measurement that does not create an annotation.
+
+`app_dimension_keep` matches **Keep this dimension** in Measure. Give `kind` and pick `a`; distance and angle also require pick `b`. Each pick has an object ID, zero-based `part` and `triangle`, and world `at: [x,y,z]` in mm. Use `app_history` to find the object ID, then `geom_faces` with that ID as `design` to get `part`, `triangle` and `at` for a surface pick. These mesh references are transient; pick again after geometry changes. The geometry engine supplies the value, so the request cannot set a fabricated measurement. Unsupported feature/kind combinations refuse before any change.
+
+Use `app_dimension_remove` with a `dimension` ID to remove it. Keep and remove need the person's edit grant and each create one toolbar Undo step. Locked objects, active edits and stale asynchronous measurements refuse. `app_dimensions_show` sets `showAll` with the existing read grant and no history step; selected objects still show dimensions when it is false. These are reference annotations that follow geometry, not dimensions that drive a sketch or solid.
+
+All four tools also work through native `sx call --app`. Read `app_dimensions` again after an edit to verify the actual measurements and status.
