@@ -17,6 +17,7 @@ const bridge = vi.hoisted(() => ({ appLink: null as unknown }))
 vi.mock('../src/link/bridge', () => ({ liveBridge: () => (bridge.appLink ? { appLink: bridge.appLink } : null) }))
 import { toolStore } from '../src/plate/tools'
 import { drawnFrom } from '../src/viewport/drawn'
+import { viewportStatsFrom } from '../src/viewport/stats'
 import { get, set } from '../src/state/store'
 import { currentEdition, NEUTRAL, setCurrentEdition } from '../src/edition'
 import { CLOUD_NOTICE_VERSION } from '../src/pilot-connect/cloud-notice'
@@ -82,6 +83,28 @@ afterEach(() => {
 const ask = (askId: number, clientId = 'c1', name = 'Claude Code') => ({ askId, clientId, name, createdAt: '2026-10-01T09:00:00Z' })
 
 describe('app link methods', () => {
+  it('reads live viewport telemetry and clears it when the current view unmounts', async () => {
+    expect(await runCall('app.info', {})).toMatchObject({ viewport: null })
+    const old = viewportStatsFrom(() => ({ pixelRatio: 1, motionScale: 0.5, motionFull: false, degrade: { count: 2, lastAt: '2026-10-15T09:00:00.000Z' } }))
+    const stats = { pixelRatio: 2, motionScale: 1, motionFull: true, degrade: { count: 0, lastAt: null as string | null } }
+    const stop = viewportStatsFrom(() => stats)
+    try {
+      old()
+      expect(await runCall('app.info', {})).toMatchObject({ viewport: stats })
+      stats.motionScale = 0.5
+      stats.motionFull = false
+      stats.degrade = { count: 1, lastAt: '2026-10-15T09:01:00.000Z' }
+      const info = await runCall('app.info', {}) as { viewport: typeof stats }
+      expect(info.viewport).toMatchObject(stats)
+      info.viewport.degrade.count = 99
+      expect(await runCall('app.info', {})).toMatchObject({ viewport: { degrade: { count: 1 } } })
+    } finally { stop() }
+    expect(await runCall('app.info', {})).toMatchObject({ viewport: null })
+    const fallback = viewportStatsFrom(() => null)
+    try { expect(await runCall('app.info', {})).toMatchObject({ viewport: null }) }
+    finally { fallback() }
+  })
+
   it('are exactly the hub pinned list, with the same classes', () => {
     expect(Object.keys(hubMethods()).length).toBeGreaterThan(0)
     expect(APP_LINK_METHODS).toEqual(hubMethods())

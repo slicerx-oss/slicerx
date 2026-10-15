@@ -528,6 +528,8 @@ export interface ViewportStats {
   motionScale: number
   /** Moving frames are drawn exactly like still frames, with MSAA and AO. */
   motionFull: boolean
+  /** Degrade notices emitted since this viewport was created; lastAt is UTC ISO 8601, or null before the first. */
+  degrade: { count: number; lastAt: string | null }
   /** The camera is on its way to a view (a preset, a fit or a zoom), so the picture is not where it will stop. */
   cameraMoving: boolean
   /** Big parts still showing their stand-in while the mesh workers make their final geometry. */
