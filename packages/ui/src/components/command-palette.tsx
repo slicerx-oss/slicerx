@@ -30,6 +30,8 @@ export interface CommandPaletteProps {
   /** Already filtered by the caller. The palette only renders and navigates. */
   groups: readonly PaletteGroup[]
   onSelect: (item: PaletteItem) => void
+  /** Enter was pressed before a selectable row was ready. */
+  onSubmitEmpty?: () => void
   placeholder?: string
   /** Text shown when there are no items. */
   empty?: ReactNode
@@ -44,7 +46,7 @@ export interface CommandPaletteProps {
  * keystroke over 500 commands); this renders the list, tracks the active row,
  * and handles arrows, Enter, and Escape.
  */
-export function CommandPalette({ open, onClose, query, onQueryChange, groups, onSelect, placeholder = 'Search commands, models, settings, printers', empty = 'No commands match', footerRight, label = 'Commands' }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, query, onQueryChange, groups, onSelect, onSubmitEmpty, placeholder = 'Search commands, models, settings, printers', empty = 'No commands match', footerRight, label = 'Commands' }: CommandPaletteProps) {
   const flat = useMemo(() => groups.flatMap((g) => g.items.filter((i) => !i.disabled)), [groups])
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -79,6 +81,7 @@ export function CommandPalette({ open, onClose, query, onQueryChange, groups, on
     } else if (e.key === 'Enter') {
       e.preventDefault()
       if (activeItem) onSelect(activeItem)
+      else onSubmitEmpty?.()
     } else if (e.key === 'Escape') {
       e.preventDefault()
       onClose()

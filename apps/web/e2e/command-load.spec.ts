@@ -27,6 +27,7 @@ test('the command bar keeps typing and reopening usable while search downloads',
     await expect(input).toHaveValue('clone')
     await expect.poll(() => requested).toBe(true)
     await expect(page.locator('.sx-palette-item')).toHaveCount(0)
+    await page.keyboard.press('Enter')
     await page.keyboard.press('Escape')
     await expect(input).toBeHidden()
     await page.keyboard.press('ControlOrMeta+k')
@@ -42,6 +43,77 @@ test('the command bar keeps typing and reopening usable while search downloads',
     await page.keyboard.press('Enter')
     await expect(input).toBeHidden()
     await expect(rows).toHaveCount(before + 1)
+  } finally {
+    release()
+  }
+})
+
+test('Enter during the search download runs the typed command once results arrive', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', cadTools: true }))
+  })
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  let requested = false
+  await page.route(/\/command-results-[^/]+\.js$/, async (route) => {
+    requested = true
+    await held
+    await route.continue()
+  })
+  try {
+    await page.goto('./')
+    await plateReady(page)
+    const rows = page.getByTestId('object-row')
+    const before = await rows.count()
+    await page.keyboard.press('ControlOrMeta+k')
+    const input = page.locator('.sx-palette-input')
+    await expect(input).toBeFocused()
+    await page.keyboard.type('clone')
+    await expect.poll(() => requested).toBe(true)
+    await expect(page.locator('.sx-palette-item')).toHaveCount(0)
+    await page.keyboard.press('Enter')
+    await expect(rows).toHaveCount(before)
+    release()
+    await expect(input).toBeHidden()
+    await expect(rows).toHaveCount(before + 1)
+  } finally {
+    release()
+  }
+})
+
+test('editing the query cancels Enter while search is downloading', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', cadTools: true }))
+  })
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  let requested = false
+  await page.route(/\/command-results-[^/]+\.js$/, async (route) => {
+    requested = true
+    await held
+    await route.continue()
+  })
+  try {
+    await page.goto('./')
+    await plateReady(page)
+    const rows = page.getByTestId('object-row')
+    const before = await rows.count()
+    await page.keyboard.press('ControlOrMeta+k')
+    const input = page.locator('.sx-palette-input')
+    await expect(input).toBeFocused()
+    await page.keyboard.type('clone')
+    await expect.poll(() => requested).toBe(true)
+    await page.keyboard.press('Enter')
+    await input.fill('copy')
+    release()
+    await expect(page.locator('.sx-palette-item').first()).toBeVisible()
+    await expect(input).toHaveValue('copy')
+    await expect(input).toBeFocused()
+    await expect(rows).toHaveCount(before)
   } finally {
     release()
   }
