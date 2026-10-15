@@ -43,6 +43,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
+  'preview.playback': 'read',
+  'preview.playback_set': 'read',
   // The plates with their slice states, and showing one (by number or id, or the next or previous): like the
   // preview, showing a plate changes only what the window shows, never the project.
   'plates.list': 'read',
@@ -357,6 +359,8 @@ const HANDLERS: Record<string, Handler> = {
   'volumes.remove': async (args, client) => (await import('./volumes')).volumeAction('remove', args, client.name, linkLoader),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
+  'preview.playback': async () => (await import('./preview-playback')).readPlayback(),
+  'preview.playback_set': async (args) => (await import('./preview-playback')).setPlayback(args),
   'plates.list': () => platesState(),
   'plates.show': (args) => showPlate(args),
   'look.get': () => lookState(),

@@ -27,6 +27,7 @@ import { mimirCloudTools } from './mimir-cloud'
 import { mimirTabTools } from './mimir-tab'
 import { appSheetTools } from './app-sheet'
 import { appLookTools } from './app-look'
+import { appPreviewPlaybackTools } from './app-preview-playback'
 import { mimirAskTools } from './mimir-ask'
 import { appVolumeTools } from './app-volumes'
 import { appPlateTools } from './app-plates'
@@ -191,7 +192,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   const history = appHistoryTools(appLink, productName())
   // Two view preferences from Settings: Frame the view and Toolbar size.
-  const look = appLookTools(appLink, productName())
+  const look = [...appLookTools(appLink, productName()), ...appPreviewPlaybackTools(appLink, productName())]
   const volumes = appVolumeTools(appLink, productName())
   // A client's dimension sheets go to the person through the open app, while the link is in use.
   const sheets = appLink ? appSheetTools(appLink, productName()) : []

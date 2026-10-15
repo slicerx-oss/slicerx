@@ -71,7 +71,13 @@ Pairing with the hub's code, including through `--link-state-dir`, does not regi
 
 An `unauthorized` app-link response means this setup is missing or the connection was revoked. Reconnect the client instead of waiting for a prompt from a code-only connection. The CLI and MCP keep the `not_configured` error code and `details.appLink: unauthorized` for these refusals.
 
-### Undo and redo in the open project
+### Slice playback
+
+With the app link on, `app_preview_playback` reads the playback bar's clock and `app_preview_playback_set` controls `playing`, `timeS`, `speed` and `followNozzle`. Both work through `sx call --app` with the existing read grant. The sliced toolpath bar must be open for changes; active modeling and object tools refuse them. No project or printer state changes.
+
+Time is in print seconds, including startup and tool changes. Read `durationS` before seeking. All inputs validate before any change. A combined request applies pause, preferences, seek, then play. Seek alone preserves playing; playing at the end restarts. A paused seek to the end stays there. Replacing or closing the bar pauses playback. Unavailable clocks return null times. Read again to observe ongoing playback or a person's UI changes.
+
+## Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.
 
