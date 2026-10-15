@@ -79,6 +79,10 @@ An `unauthorized` app-link response means this setup is missing or the connectio
 
 `lastAt` is a UTC ISO 8601 timestamp, or null before the first notice. The count covers every `degrade` event emitted by the current viewport, including startup and plate-fit notices as well as GPU slowdowns. It persists across statistics resets and quality recovery, and starts over when a new viewport is created. It does not count repeated reads. `viewport` is null before a GPU view mounts, in the 2D fallback, and after unmount; older apps without this field return `not_supported` rather than invented values. Reading it changes nothing and does not require a debug build.
 
+### Feature filament read-back
+
+Native slice results include `feature_filaments`: each object's name and the 1-based filament slots used by its printed features. A multi-object 3MF keeps a separate row for every expanded object, even when names repeat. `engine_object` identifies that row within this slice; it is not a persistent project id. `object`, when present, remains the original request object's id. The shared slicer-host result exposes the same per-slice identity as `engineObject`.
+
 ### Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.
