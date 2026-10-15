@@ -6,6 +6,8 @@
 import { cameraBus, toolStore } from '../plate/tools'
 import { viewRing } from '../plate/view-ring'
 import { selectedIds, type AppState } from '../state/store'
+import { EDGE_WINS_PX } from '../plate/pick-filter'
+import { modelFeelFor } from '../cad/model-feel-flag'
 
 /** The store's open flags that are a panel or window on screen, by the name a client reads. */
 export const OPEN_PANELS = {
@@ -34,7 +36,7 @@ const round = (v: number, digits = 2): number => {
 }
 
 /** The selection: the primary object, every selected one in order, and the faces and edges picked on them. */
-export function selectionState(s: Pick<UiSource, 'selection' | 'selectedIds' | 'subPicks' | 'pickFilter' | 'plate'>): Record<string, unknown> {
+export function selectionState(s: Pick<UiSource, 'selection' | 'selectedIds' | 'subPicks' | 'pickFilter' | 'plate'> & { settingsMode?: string }): Record<string, unknown> {
   const ids = selectedIds(s)
   const name = (id: string): string | null => s.plate.find((p) => p.id === id)?.name ?? null
   return {
@@ -42,6 +44,8 @@ export function selectionState(s: Pick<UiSource, 'selection' | 'selectedIds' | '
     objects: ids.map((id) => ({ id, name: name(id) })),
     // What a click picks in Model: objects, faces or edges.
     pickFilter: [...s.pickFilter],
+    // With the new Model feel and faces in the filter, an edge this near the pointer (px) is picked instead of the face.
+    ...(s.pickFilter.includes('face') && modelFeelFor(s.settingsMode ?? '') ? { edgeWinsPx: EDGE_WINS_PX } : {}),
     picks: s.subPicks.map((p) => ({ kind: p.kind, objectId: p.objectId, part: p.partIndex, triangle: p.triangle, pointMm: p.point.map((v) => round(v)), ...(p.round ? { round: true } : {}) })),
   }
 }
@@ -103,6 +107,6 @@ export function cameraState(): Record<string, unknown> | null {
 }
 
 /** The four together, as app_state carries them. */
-export function uiState(s: UiSource, doc: Document = document): Record<string, unknown> {
+export function uiState(s: UiSource & { settingsMode?: string }, doc: Document = document): Record<string, unknown> {
   return { selection: selectionState(s), tool: toolState(s), panels: panelState(s, doc), camera: cameraState() }
 }

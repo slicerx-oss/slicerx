@@ -20,6 +20,34 @@ export const PICK_LABEL: Readonly<Record<PickKind, { label: string; tip: string 
 
 export const DEFAULT_FILTER: readonly PickKind[] = ['object']
 
+/** With the new Model feel, the labels read as modes: Face (edges near the pointer still win), Edge only, Body. */
+export const PICK_LABEL_FEEL: Readonly<Record<PickKind, { label: string; tip: string }>> = {
+  object: { label: 'Body', tip: 'Pick whole bodies' },
+  face: { label: 'Face', tip: 'Pick faces; an edge within 6 px of the pointer is picked instead' },
+  edge: { label: 'Edge only', tip: 'Pick edges only' },
+}
+
+/** How near the pointer (client px) an edge must be to win over the face under it, with the new Model feel. */
+export const EDGE_WINS_PX = 6
+
+type P2 = readonly [number, number]
+
+/** The pointer's distance in pixels to the nearest of the lines, each end put on screen by `toScreen`. */
+export function screenDistance(at: P2, lines: readonly { from: [number, number, number]; to: [number, number, number] }[], toScreen: (p: [number, number, number]) => P2 | null): number {
+  let best = Infinity
+  for (const l of lines) {
+    const a = toScreen(l.from)
+    const b = toScreen(l.to)
+    if (!a || !b) continue
+    const dx = b[0] - a[0]
+    const dy = b[1] - a[1]
+    const len2 = dx * dx + dy * dy
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((at[0] - a[0]) * dx + (at[1] - a[1]) * dy) / len2)) : 0
+    best = Math.min(best, Math.hypot(at[0] - (a[0] + dx * t), at[1] - (a[1] + dy * t)))
+  }
+  return best
+}
+
 /** `only` picks just this kind; `toggle` adds or drops it, and never leaves nothing picked. Kept in PICK_KINDS order. */
 export function nextFilter(cur: readonly PickKind[], kind: PickKind, mode: 'only' | 'toggle'): PickKind[] {
   if (mode === 'only') return [kind]

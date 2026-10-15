@@ -190,6 +190,8 @@ export interface PickEvent {
   shift?: boolean
   /** Cmd (macOS) or Ctrl was down: Model's select toggles the face or edge under the click. */
   toggle?: boolean
+  /** Where the click was, in client pixels: Model measures how near an edge it was. */
+  screen?: [number, number]
 }
 
 /** Probe tool with hover on: the model point under the cursor, at most once a frame. */
@@ -395,7 +397,7 @@ export interface ViewportEvents {
   /** Model's box select: the objects the box picked, and how (left to right inside, right to left touch). */
   boxselect: { ids: string[]; dir: 'inside' | 'touch' }
   /** Model's edge filter: the triangle and point under the pointer, or null off the models. */
-  edgehover: { objectId: string; partIndex: number; triangle: number; point: [number, number, number] } | null
+  edgehover: { objectId: string; partIndex: number; triangle: number; point: [number, number, number]; screen: [number, number] } | null
   /** Brim tool: an ear dragged. `point` is the hit on the model under the cursor (bed frame, mm). One event per move with `final: false`, then one with `final: true` on release. */
   brimmove: { objectId: string; index: number; point: [number, number, number]; final: boolean }
   /** Brim tool: Ctrl and the wheel (the wheel does not zoom). `delta` is 1 or -1 per notch. */
@@ -609,6 +611,8 @@ export interface Viewport {
   /** Model's picked edges as solid bars, and a hovered one fainter. */
   setPickedEdges?(picked: readonly { from: [number, number, number]; to: [number, number, number] }[], hover?: readonly { from: [number, number, number]; to: [number, number, number] }[]): void
   setPickFaces?(on: boolean): void
+  /** A bed point (mm) on screen, in client pixels, or null with no camera yet. */
+  screenOf?(p: [number, number, number]): [number, number] | null
   /** The faces picked in Model, drawn until changed: each the patch around a triangle. */
   setSelectedFaces?(faces: readonly { objectId: string; partIndex: number; triangle: number }[]): void
   /** The face around a triangle as lay on face takes it (normal and center), for a face picked in Model. */
