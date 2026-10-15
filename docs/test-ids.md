@@ -235,6 +235,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-setting-pin` | A row's pin, with `data-key` and `aria-pressed` |
 | `slice-setting-object-chip` | On a plate row, an object that prints the setting with its own value, with `data-object`; a click selects it |
 | `slice-setting-reset` | A row's reset, with `data-key`: back to the Easy value, or in the selection's scope to the plate's |
+| `slice-setting-unsupported` | Under a select holding a value the engine cannot print: what slicing uses instead; the select's `aria-describedby` |
 | `setting-text` | A text setting's field in its row (an infill angle template, extra solid infill layers, notes) |
 | `setting-mm-or-percent` | A number-or-percent setting's unit toggle and number field, in its row |
 | `export-save-project`, `export-locked-project`, `export-gcode-3mf`, `export-all-plates` | Its items (each opens the system's save dialog) |
