@@ -519,6 +519,8 @@ test('with mimir off the command bar does not offer it', async ({ page }) => {
   await page.goto('./')
   await plateReady(page)
   await page.keyboard.press('ControlOrMeta+k')
+  await page.locator('.sx-palette-input').fill('clone')
+  await expect(page.locator('.sx-palette-item', { hasText: 'Duplicate the selected objects' }).first()).toBeVisible()
   await page.locator('.sx-palette-input').fill('how do I stop stringing?')
   await expect(page.locator('.sx-palette-item', { hasText: 'Ask mimir' })).toHaveCount(0)
 })
