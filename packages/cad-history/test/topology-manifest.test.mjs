@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { topologyFaces } from '../src/topology-manifest.ts'
+import { topologyFaces, topologyManifest, topologyFace } from '../src/topology-manifest.ts'
 const part = (key = 10, surface = { kind: 'cylinder', radius: 3 }) => ({ name: 'part', slot: 0, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], table: [surface], keys: [key] } })
 test('groups curved face metadata and labels tessellated area separately', () => {
   const { faces, metadataComplete } = topologyFaces([part()], true)
@@ -31,4 +31,32 @@ test('invalid and absent face data are explicit, never converted to a planar ide
   assert.equal(result.faces[0].dimensions.areaMm2, null)
   const missing = part(); delete missing.faces
   assert.deepEqual(topologyFaces([missing], true), { faces: [], metadataComplete: false })
+})
+
+const transform = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 12, 0, 0, 1]
+test('the manifest keeps local measurements separate from world placement', () => {
+  const manifest = topologyManifest('body', 'revision', [part()], transform, true)
+  assert.equal(manifest.coordinates, 'body_local')
+  assert.equal(manifest.faces[0].dimensions.diameterMm, 6)
+  assert.deepEqual(manifest.transform, transform)
+  assert.equal(manifest.capabilities.meshFallback, false)
+  assert.equal(topologyFace(manifest, { bodyId: 'body', revision: 'revision', part: 0, faceKey: 10 }), manifest.faces[0])
+})
+
+test('a scoped reference refuses another body, stale revision, missing key or ambiguity', () => {
+  const manifest = topologyManifest('body', 'revision', [part()], transform, true)
+  const reference = { bodyId: 'body', revision: 'revision', part: 0, faceKey: 10 }
+  for (const changed of [{ bodyId: 'other' }, { revision: 'old' }]) {
+    assert.throws(() => topologyFace(manifest, { ...reference, ...changed }), { code: 'stale_body' })
+  }
+  assert.throws(() => topologyFace(manifest, { ...reference, faceKey: 11 }), { code: 'missing_face' })
+  const ambiguous = topologyManifest('body', 'revision', [part(), part()], transform, true)
+  assert.equal(ambiguous.metadataComplete, false)
+  assert.throws(() => topologyFace(ambiguous, reference), { code: 'ambiguous_face' })
+})
+
+test('invalid placement cannot produce a misleading measurement envelope', () => {
+  assert.throws(() => topologyManifest('body', 'revision', [part()], [], true))
+  assert.throws(() => topologyManifest('body', 'revision', [part()], transform.map(() => NaN), true))
+  assert.throws(() => topologyManifest('body', '', [part()], transform, true))
 })
