@@ -119,6 +119,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("volumes.remove", LinkClass::Edit),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
+    ("paint.get", LinkClass::Read),
+    ("paint.preview", LinkClass::Read),
+    ("paint.apply", LinkClass::Edit),
+    ("paint.clear", LinkClass::Edit),
     ("preview.get", LinkClass::Read),
     ("preview.set", LinkClass::Read),
     // The project's plates with their slice states, and showing one of them (by number, or the next or previous).
@@ -378,6 +382,10 @@ mod tests {
         ("volumes.set", LinkClass::Edit),
         ("volumes.copy", LinkClass::Edit),
         ("volumes.remove", LinkClass::Edit),
+        ("paint.get", LinkClass::Read),
+        ("paint.preview", LinkClass::Read),
+        ("paint.apply", LinkClass::Edit),
+        ("paint.clear", LinkClass::Edit),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
         ("plates.list", LinkClass::Read),

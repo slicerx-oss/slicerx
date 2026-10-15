@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/mcp: a Model Context Protocol server for SlicerX. See README.md.
+import { appPaintTools } from './app-paint'
 import { readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -197,7 +198,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
   // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...appPaintTools(appLink, productName()), ...look, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,

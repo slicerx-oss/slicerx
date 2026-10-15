@@ -41,6 +41,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'volumes.copy': 'edit',
   'volumes.remove': 'edit',
   // The slice preview only changes what the window shows, never the project.
+  'paint.get': 'read',
+  'paint.preview': 'read',
+  'paint.apply': 'edit',
+  'paint.clear': 'edit',
   'preview.get': 'read',
   'preview.set': 'read',
   // The plates with their slice states, and showing one (by number or id, or the next or previous): like the
@@ -355,6 +359,10 @@ const HANDLERS: Record<string, Handler> = {
   'volumes.set': async (args, client) => (await import('./volumes')).volumeAction('set', args, client.name, linkLoader),
   'volumes.copy': async (args, client) => (await import('./volumes')).volumeAction('copy', args, client.name, linkLoader),
   'volumes.remove': async (args, client) => (await import('./volumes')).volumeAction('remove', args, client.name, linkLoader),
+  'paint.get': async (args) => (await import('./paint')).readPaint(args),
+  'paint.preview': async (args, client) => (await import('./paint')).previewPaint(args, client),
+  'paint.apply': async (args, client) => (await import('./paint')).applyPaint(args, client),
+  'paint.clear': async (args, client) => (await import('./paint')).clearLayer(args, client),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
   'plates.list': () => platesState(),
