@@ -111,4 +111,8 @@ describe('a value the engine cannot print', () => {
     expect(li.querySelector('select')!.getAttribute('aria-describedby')).toBe(note.id)
     expect([...li.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Rectangle', 'Rib (unsupported)'])
   })
+
+  it('says what the engine builds for a type 2 prime tower, not the default type', () => {
+    expect(unsupportedNote(settingDef('wipe_tower_type')!, 'type2')).toBe('Type 2 is unsupported; slicing uses a plain tower as wide as the prime tower width.')
+  })
 })

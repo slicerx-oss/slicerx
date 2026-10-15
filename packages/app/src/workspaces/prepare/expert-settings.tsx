@@ -88,12 +88,12 @@ export function offeredValues(def: Pick<SettingDef, 'enumValues' | 'enumLabels' 
  * setting's default (the engine falls back to it). A value unsupported only on some printers says "on this printer".
  * Undefined for a value the engine prints.
  */
-export function unsupportedNote(def: Pick<SettingDef, 'default' | 'enumValues' | 'enumLabels' | 'unavailableValues'>, value: unknown, unavailable: readonly string[] = def.unavailableValues ?? []): string | undefined {
+export function unsupportedNote(def: Pick<SettingDef, 'default' | 'enumValues' | 'enumLabels' | 'unavailableValues' | 'unavailableFallback'>, value: unknown, unavailable: readonly string[] = def.unavailableValues ?? []): string | undefined {
   const v = String((Array.isArray(value) ? value[0] : value) ?? '')
   if (!unavailable.includes(v)) return undefined
   const labelOf = (x: string) => def.enumLabels?.[def.enumValues?.indexOf(x) ?? -1] ?? x
   const d = String((Array.isArray(def.default) ? def.default[0] : def.default) ?? '')
-  const fallback = d && !unavailable.includes(d) && def.enumValues?.includes(d) ? labelOf(d) : 'the default'
+  const fallback = def.unavailableFallback?.[v] ?? (d && !unavailable.includes(d) && def.enumValues?.includes(d) ? labelOf(d) : 'the default')
   const where = def.unavailableValues?.includes(v) ? '' : ' on this printer'
   return `${labelOf(v)} is unsupported${where}; slicing uses ${fallback}.`
 }

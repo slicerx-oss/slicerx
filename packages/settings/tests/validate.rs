@@ -142,3 +142,16 @@ fn the_rib_prime_tower_wall_warns_only_on_a_printer_whose_tower_is_not_type_1() 
     assert!(rib(json!({"printer_model": "Bambu Lab A1", "wipe_tower_type": "type2"})).is_empty());
     assert!(rib(json!({"printer_model": "Prusa CORE One", "wipe_tower_type": "type1"})).is_empty());
 }
+
+#[test]
+fn a_type_2_prime_tower_says_what_the_engine_builds_instead() {
+    let issues = validate(&config_from(&json!({"wipe_tower_type": "type2"})));
+    let w = issues
+        .iter()
+        .find(|i| i.code == "enum_value_unavailable")
+        .expect("a type 2 warning");
+    assert_eq!(
+        w.message,
+        "Prime tower type: \"type2\" is not supported by this engine yet, so it prints with a plain tower as wide as the prime tower width."
+    );
+}

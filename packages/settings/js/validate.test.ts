@@ -107,6 +107,8 @@ describe('pattern lists and unavailable values', () => {
     const issues = validate(cfg({ wipe_tower_type: 'type2' }))
     expect(issues.map((i) => i.code)).toEqual(['enum_value_unavailable'])
     expect(issues[0]?.severity).toBe('warning')
+    // The engine builds its own plain tower for type 2, not a type 1 tower.
+    expect(issues[0]?.message).toBe('Prime tower type: "type2" is not supported by the SlicerX engine yet, so it prints with a plain tower as wide as the prime tower width.')
   })
   it('warns on the prime tower wall the engine does not build, naming what it prints instead', () => {
     expect(validate(cfg({ wipe_tower_wall_type: 'rib' }))).toEqual([])

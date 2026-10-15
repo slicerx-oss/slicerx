@@ -64,7 +64,10 @@ pub fn unavailable_in(def: &SettingDef, config: &PrintConfig) -> Vec<String> {
 }
 
 /// What a value the engine cannot print falls back to: the setting's default, by its label.
-fn fallback_name(def: &SettingDef) -> String {
+fn fallback_name(def: &SettingDef, value: &str) -> String {
+    if let Some(f) = def.unavailable_fallback.get(value) {
+        return f.clone();
+    }
     let d = match &def.default {
         serde_json::Value::Array(a) => a.first().and_then(|v| v.as_str()),
         v => v.as_str(),
@@ -217,7 +220,7 @@ pub fn check_values(config: &PrintConfig) -> Vec<SettingIssue> {
                         "{}: \"{}\" is not supported {why}, so it prints with {}.",
                         def.label,
                         m,
-                        fallback_name(def)
+                        fallback_name(def, &m)
                     ),
                 ));
             }
