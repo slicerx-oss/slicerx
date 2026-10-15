@@ -67,7 +67,7 @@ export function checkValues(config: Readonly<Record<string, SettingValue>>): Set
       const missing = items.find((x) => typeof x === 'string' && gone.includes(x))
       if (missing !== undefined) {
         const why = def.unavailableValues?.includes(String(missing)) ? `by the ${productName()} engine yet` : 'on this printer'
-        issues.push({ code: 'enum_value_unavailable', severity: 'warning', keys: [key], message: `${def.label}: "${String(missing)}" is not supported ${why}, so it prints with ${fallbackName(def)}.` })
+        issues.push({ code: 'enum_value_unavailable', severity: 'warning', keys: [key], message: `${def.label}: "${String(missing)}" is not supported ${why}, so it prints with ${fallbackName(def, String(missing))}.` })
       }
     }
     if ((def.min !== undefined || def.max !== undefined || def.orcaMin !== undefined || def.orcaMax !== undefined) && !isVectorType(def.type) === !Array.isArray(v)) {
@@ -269,7 +269,9 @@ export function unavailableIn(def: Pick<SettingDef, 'key' | 'unavailableValues'>
 }
 
 /** What a value the engine cannot print falls back to: the setting's default, by its label. */
-function fallbackName(def: SettingDef): string {
+function fallbackName(def: SettingDef, value: string): string {
+  const own = def.unavailableFallback?.[value]
+  if (own) return own
   const d = Array.isArray(def.default) ? def.default[0] : def.default
   const i = typeof d === 'string' && !def.unavailableValues?.includes(d) ? (def.enumValues?.indexOf(d) ?? -1) : -1
   return i < 0 ? 'the default' : `the default, ${def.enumLabels?.[i] ?? d}`

@@ -81,6 +81,12 @@ fn config(vendor: &str, id: &str) -> Value {
 fn tower(cfg: &Value, wall: &str) -> Vec<String> {
     let mut cfg = cfg.clone();
     cfg["wipe_tower_wall_type"] = json!(wall);
+    tower_moves(&cfg, wall)
+}
+
+/// The tower's moves for a config as given.
+fn tower_moves(cfg: &Value, what: &str) -> Vec<String> {
+    let cfg = cfg.clone();
     let a = Arc::new(cuboid([100.0, 120.0], 1));
     let b = Arc::new(cuboid([130.0, 150.0], 2));
     let req: SliceRequest = serde_json::from_value(json!({
@@ -108,7 +114,7 @@ fn tower(cfg: &Value, wall: &str) -> Vec<String> {
             moves.push(l.to_owned());
         }
     }
-    assert!(!moves.is_empty(), "{wall}: no tower");
+    assert!(!moves.is_empty(), "{what}: no tower");
     moves
 }
 
@@ -139,4 +145,42 @@ fn on_a_type_1_tower_only_cone_prints_as_the_plain_wall() {
 #[test]
 fn on_a_type_2_tower_rib_and_cone_print_as_the_plain_wall() {
     check("prusa", "prusa-core-one", false);
+}
+
+/// The width (x extent) of the tower's extruding moves, mm.
+fn width(moves: &[String]) -> f64 {
+    let xs: Vec<f64> = moves
+        .iter()
+        .filter(|l| l.contains(" E") && !l.contains(" E-"))
+        .filter_map(|l| {
+            l.split(' ')
+                .find_map(|w| w.strip_prefix('X'))
+                .and_then(|x| x.parse().ok())
+        })
+        .collect();
+    xs.iter().copied().fold(f64::MIN, f64::max) - xs.iter().copied().fold(f64::MAX, f64::min)
+}
+
+#[test]
+fn a_type_2_tower_prints_as_a_plain_tower_the_prime_tower_width_wide_not_as_type_1() {
+    // the settings say a type 2 tower prints as "a plain tower as wide as the prime tower width": the engine does
+    // not build type 2, and it does not switch to type 1 either
+    let mut cfg = config("prusa", "prusa-core-one");
+    cfg["wipe_tower_rotation_angle"] = json!(0);
+    cfg["wipe_tower_wall_type"] = json!("rectangle");
+    cfg["prime_tower_width"] = json!(40);
+    // no first layer brim, so the x extent is the tower itself
+    cfg["prime_tower_brim_width"] = json!(0);
+    cfg["wipe_tower_type"] = json!("type2");
+    let two = tower_moves(&cfg, "type2");
+    cfg["wipe_tower_type"] = json!("type1");
+    let one = tower_moves(&cfg, "type1");
+    assert_ne!(two, one, "type 2 prints as type 1");
+    let w = width(&two);
+    assert!((w - 40.0).abs() < 1.0, "a type 2 tower {w} mm wide");
+    let def = setting_def("wipe_tower_type").expect("the setting");
+    assert_eq!(
+        def.unavailable_fallback.get("type2").map(String::as_str),
+        Some("a plain tower as wide as the prime tower width")
+    );
 }

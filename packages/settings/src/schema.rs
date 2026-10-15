@@ -204,6 +204,14 @@ pub struct SettingDef {
     /// Enum values the schema lists but the engine cannot print yet; validation warns when one is chosen.
     #[serde(default, rename = "unavailableValues", skip_serializing_if = "Vec::is_empty")]
     pub unavailable_values: Vec<String>,
+    /// What the engine prints instead of an unavailable value, where that is not the setting's default (a noun phrase:
+    /// "prints with ..."). Values left out fall back to the default.
+    #[serde(
+        default,
+        rename = "unavailableFallback",
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub unavailable_fallback: std::collections::BTreeMap<String, String>,
     pub label: String,
     #[serde(default)]
     pub help: Option<String>,

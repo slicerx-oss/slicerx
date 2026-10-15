@@ -11996,6 +11996,9 @@
    "unavailableValues": [
     "type2"
    ],
+   "unavailableFallback": {
+    "type2": "a plain tower as wide as the prime tower width"
+   },
    "enumLabels": [
     "Type 1",
     "Type 2"
