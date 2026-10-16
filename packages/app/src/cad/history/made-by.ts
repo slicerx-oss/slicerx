@@ -6,13 +6,15 @@
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
 import { keyOfTriangle, usedBy, type HistoryMesh, type Step } from '@slicerx/cad-history'
-import { runReplay } from './ops'
+import { runReplay, withStatus } from './ops'
 
 type Faces = HistoryMesh['faces']
 interface Known {
   faces: Faces[]
   triangles: number[]
   made: Record<number, string>
+  /** The steps with the face keys the replay found for them: a pull made on a mesh with no keys yet has none saved. */
+  steps: Step[]
 }
 
 // By the parts a replay put on the object: a new result is a new array, so a stale answer is never read.
@@ -21,7 +23,7 @@ const known = new WeakMap<readonly MeshPart[], Promise<Known | null>>()
 async function learn(entry: PlateEntry): Promise<Known | null> {
   const r = await runReplay({ history: entry.history! })
   if (!r.madeBy) return null
-  return { faces: r.parts.map((p) => p.faces), triangles: r.parts.map((p) => p.indices.length / 3), made: r.madeBy }
+  return { faces: r.parts.map((p) => p.faces), triangles: r.parts.map((p) => p.indices.length / 3), made: r.madeBy, steps: withStatus(entry.history!.steps, r.status, r.found) }
 }
 
 /** What a replay knows of the object's faces, when its parts are the object's own (not one rolled back to edit a step). */
@@ -61,7 +63,7 @@ export async function faceSource(entry: PlateEntry, part: number, triangle: numb
   const faces = got?.faces[part]
   const key = faces ? keyOfTriangle({ faces }, triangle) : 0
   if (!got || !key) return null
-  return { made: got.made[key] ?? 'base', used: usedBy(entry.history.steps).get(key) ?? [] }
+  return { made: got.made[key] ?? 'base', used: usedBy(got.steps).get(key) ?? [] }
 }
 
 /** The step id that made a face, or `base`, or null; see faceSource. */
@@ -83,7 +85,7 @@ export async function facesMadeBy(entry: PlateEntry, stepId: string): Promise<{ 
       seen.add(face)
       const key = f.keys[face] ?? 0
       if (!key) continue
-      const maker = got.made[key] ?? movedBy(entry.history!.steps, usedBy(entry.history!.steps).get(key) ?? [])
+      const maker = got.made[key] ?? movedBy(got.steps, usedBy(got.steps).get(key) ?? [])
       if (maker === stepId) out.push({ partIndex, triangle: t })
     }
   })
