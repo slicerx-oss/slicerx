@@ -47,14 +47,14 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   expect(info.changes).toBe(info.points)
   // The head drives to the chute and back, on top of the firmware's own seconds for the change.
   expect(info.first!.duration).toBeGreaterThan(10)
-  // Play at 2x from 20 s of print time before the first change to just after it, and time the frames the view draws.
-  // The change lasts about 16 s of print time, so it plays for about eight seconds, after ten of plain playback.
+  // At 2x, sample plain playback for as long as the tool change, after 10 s of print-time warmup.
+  // Equal windows give the minimum sample count the same duration on both sides.
   // A frame counts when the viewport's own frame counter moved since the last tick, so each interval is between two
   // drawn frames at whatever pace the browser runs: a fixed cutoff on tick length (once 30 ms, for software WebGL's
   // ticks that drew nothing) sat right on the GPU lane's own pace of about 31 ms a tick and would drop every frame of
   // a 60 Hz one. The plain window opens once playback is warmed up, after WARM_UP drawn frames and a second after Play
   // (the first frames after Play come at an uneven pace, with many short intervals, which would pull the plain median
-  // down), and only in the last 10 s of print time before the change (about five seconds).
+  // down), and only in the matching window before the change.
   // a segmented control on a wide bar, one menu button on a folded one
   const seg = page.getByRole('radio', { name: '2 times real time' })
   if (await seg.isVisible()) await seg.click()
@@ -62,7 +62,10 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     await page.getByRole('button', { name: /^Playback speed/ }).click()
     await page.getByRole('menuitemcheckbox', { name: '2x' }).click()
   }
-  await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), Math.max(0, info.first!.start - 20))
+  const plainStart = info.first!.start - info.first!.duration
+  const warmupStart = plainStart - 10
+  expect(warmupStart).toBeGreaterThanOrEqual(0)
+  await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), warmupStart)
   const result = await page.evaluate(async ({ from, until, warmUp }) => {
     const w = window as unknown as { __pv: Hook; __vp: { stats(): { frames: number } } }
     const plain: number[] = []
@@ -94,12 +97,12 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     if (w.__pv.playing()) w.__pv.toggle()
     const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0
     return { drawn, plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), longestPlain: Math.max(0, ...plain), longestInChange: Math.max(0, ...inChange), reached, plainFrames: plain.map(Math.round), changeFrames: inChange.map(Math.round) }
-  }, { from: info.first!.start - 10, until: info.first!.start + info.first!.duration + 2, warmUp: WARM_UP })
+  }, { from: plainStart, until: info.first!.start + info.first!.duration + 2, warmUp: WARM_UP })
   test.info().annotations.push({ type: 'frames', description: JSON.stringify(result) })
   expect(errors).toEqual([])
   expect(result.reached).toBe(true)
   // Enough drawn frames on each side for a median to mean something. The GPU lane draws about 32 frames a second
-  // (about 160 plain and 255 in the change); fewer than MIN_FRAMES is a view that stopped drawing, or a machine too slow
+  // (about 255 frames in each window); fewer than MIN_FRAMES is a view that stopped drawing, or a machine too slow
   // to time a frame rate on, and either way the comparison below would rest on a handful of frames.
   expect(result.plain).toBeGreaterThanOrEqual(MIN_FRAMES)
   expect(result.inChange).toBeGreaterThanOrEqual(MIN_FRAMES)
