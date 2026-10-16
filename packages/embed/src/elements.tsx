@@ -4,13 +4,13 @@
 // the React piece into its own shadow root with the embed styles.
 import type { PrintConfig } from '@slicerx/contracts'
 import type { Theme } from '@slicerx/ui'
-import type { BedOutline, ColorMode, PlateStyle, RenderMode, ToolpathFinish, ViewPreset, Viewport as Handle, ViewportPlate, ViewportTheme } from '@slicerx/viewport'
+import { resolveTheme as resolveViewportTheme, type BedOutline, type ColorMode, type PlateStyle, type RenderMode, type SceneColors, type ToolpathFinish, type ViewPreset, type Viewport as Handle, type ViewportPlate, type ViewportTheme } from '@slicerx/viewport'
 import { createRoot, type Root } from 'react-dom/client'
 import { Agreement } from './agreement'
 import { decodeQuantized, decodeStl } from './mesh'
 import { SettingsPanel, type SettingsChange } from './settings-panel'
 import { EMBED_CSS } from './styles'
-import { EmbedTheme } from './theme'
+import { EmbedTheme, editionOverrides, resolveTheme, sceneFor, type EmbedEdition } from './theme'
 import { EMBED_ACTIONS, type EmbedAction, type EmbedTool } from './tools'
 import { Viewport } from './viewport'
 
@@ -21,6 +21,68 @@ const Base: typeof HTMLElement = typeof HTMLElement === 'undefined' ? (class {} 
 function themeOf(el: HTMLElement, own: Theme | null): Theme | 'dark' | 'light' {
   if (own) return own
   return el.getAttribute('theme') === 'light' ? 'light' : 'dark'
+}
+
+/** Edition configs loaded from an `edition-src` URL, one fetch per URL for every element on the page. */
+const editions = new Map<string, Promise<EmbedEdition>>()
+
+function loadEdition(url: string): Promise<EmbedEdition> {
+  let p = editions.get(url)
+  if (!p) {
+    p = fetch(url).then(async (res) => {
+      if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`)
+      return (await res.json()) as EmbedEdition
+    })
+    // a failed load is tried again next time, not remembered
+    p.catch(() => editions.delete(url))
+    editions.set(url, p)
+  }
+  return p
+}
+
+/**
+ * The edition part every element shares: an `edition` property (the config object) that wins over an `edition-src`
+ * attribute (a URL of the edition JSON, fetched at runtime). Either one restyles the element with no kit release.
+ */
+class EditionSlot {
+  value: EmbedEdition | null = null
+  own: EmbedEdition | null = null
+  src = ''
+  readonly host: HTMLElement
+  readonly render: () => void
+  constructor(host: HTMLElement, render: () => void) {
+    this.host = host
+    this.render = render
+  }
+
+  get current(): EmbedEdition | null {
+    return this.own ?? this.value
+  }
+
+  set(e: EmbedEdition | null): void {
+    this.own = e
+    this.render()
+  }
+
+  async load(): Promise<void> {
+    const src = this.host.getAttribute('edition-src') ?? ''
+    if (src === this.src) return
+    this.src = src
+    if (!src) {
+      this.value = null
+      this.render()
+      return
+    }
+    try {
+      const edition = await loadEdition(new URL(src, document.baseURI).href)
+      if (this.src !== src) return
+      this.value = edition
+      this.render()
+      this.host.dispatchEvent(new CustomEvent('edition', { detail: edition }))
+    } catch (e) {
+      this.host.dispatchEvent(new CustomEvent('error', { detail: e instanceof Error ? e.message : String(e) }))
+    }
+  }
 }
 
 const LOOKS: readonly string[] = ['studio', 'clay', 'xray', 'overhang', 'filament', 'cad']
@@ -68,8 +130,9 @@ async function plateFrom(url: string): Promise<ViewportPlate> {
 }
 
 class SxViewportElement extends Base {
-  static observedAttributes = ['src', 'look', 'color-mode', 'view', 'layer', 'theme', 'finish', 'plate-style', 'tools', 'tool', 'reveal', 'bed-outline']
+  static observedAttributes = ['src', 'look', 'color-mode', 'view', 'layer', 'theme', 'edition-src', 'finish', 'plate-style', 'tools', 'tool', 'reveal', 'bed-outline']
   #root: Root | null = null
+  #edition = new EditionSlot(this, () => this.#render())
   #vp: Handle | null = null
   #selection: string[] | undefined
   #plate: ViewportPlate | null = null
@@ -96,6 +159,26 @@ class SxViewportElement extends Base {
     this.#theme = t
     this.#render()
   }
+  /** An edition config object (`{ brand: { theme } }` or the theme block); wins over the edition-src attribute. */
+  get edition(): EmbedEdition | null {
+    return this.#edition.current
+  }
+  set edition(e: EmbedEdition | null) {
+    this.#edition.set(e)
+  }
+
+  /**
+   * The theme in use, read back: its scheme, the edition's overrides for that scheme, the accent, and the scene colors
+   * the 3D view was given over its defaults (bgTop, bgBottom, floorGrid, selection and the rest).
+   */
+  get activeTheme(): { name: string; scheme: 'dark' | 'light'; accent: string; overrides: { visuals: Record<string, string>; scene: Record<string, string> }; scene: SceneColors } {
+    const theme = resolveTheme(themeOf(this, this.#theme), this.#edition.current)
+    const auto = sceneFor(theme)
+    const merged = this.#sceneTheme ? { ...auto, ...this.#sceneTheme, scene: { ...auto?.scene, ...this.#sceneTheme.scene } } : auto
+    const scene = resolveViewportTheme(merged).scene
+    return { name: theme.name, scheme: theme.scheme, accent: scene.selection, overrides: editionOverrides(this.#edition.current, theme.scheme), scene }
+  }
+
   /** Colors of the 3D scene, over the ones that follow the theme. */
   get sceneTheme(): ViewportTheme | undefined {
     return this.#sceneTheme
@@ -144,6 +227,7 @@ class SxViewportElement extends Base {
 
   connectedCallback(): void {
     this.#root ??= shadow(this).root
+    void this.#edition.load()
     this.#render()
   }
 
@@ -155,6 +239,7 @@ class SxViewportElement extends Base {
 
   attributeChangedCallback(name: string): void {
     if (name === 'src') void this.#load()
+    else if (name === 'edition-src') void this.#edition.load()
     else this.#render()
   }
 
@@ -181,7 +266,7 @@ class SxViewportElement extends Base {
     const tool = this.getAttribute('tool') ?? ''
     const reveal = this.getAttribute('reveal')
     this.#root.render(
-      <EmbedTheme theme={themeOf(this, this.#theme)}>
+      <EmbedTheme theme={themeOf(this, this.#theme)} edition={this.#edition.current}>
       <Viewport
         plate={this.#plate}
         preview={this.#preview}
@@ -216,10 +301,19 @@ class SxViewportElement extends Base {
 }
 
 class SxSettingsPanelElement extends Base {
-  static observedAttributes = ['mode', 'theme']
+  static observedAttributes = ['mode', 'theme', 'edition-src']
   #root: Root | null = null
   #config: PrintConfig | undefined
   #theme: Theme | null = null
+  #edition = new EditionSlot(this, () => this.#render())
+
+  /** An edition config object; wins over the edition-src attribute. */
+  get edition(): EmbedEdition | null {
+    return this.#edition.current
+  }
+  set edition(e: EmbedEdition | null) {
+    this.#edition.set(e)
+  }
 
   /** A full theme from createTheme; overrides the theme attribute. */
   get theme(): Theme | null {
@@ -237,6 +331,7 @@ class SxSettingsPanelElement extends Base {
 
   connectedCallback(): void {
     this.#root ??= shadow(this).root
+    void this.#edition.load()
     this.#render()
   }
 
@@ -245,13 +340,14 @@ class SxSettingsPanelElement extends Base {
     this.#root = null
   }
 
-  attributeChangedCallback(): void {
-    this.#render()
+  attributeChangedCallback(name: string): void {
+    if (name === 'edition-src') void this.#edition.load()
+    else this.#render()
   }
 
   #render(): void {
     this.#root?.render(
-      <EmbedTheme theme={themeOf(this, this.#theme)}>
+      <EmbedTheme theme={themeOf(this, this.#theme)} edition={this.#edition.current}>
       <SettingsPanel
         mode={this.getAttribute('mode') === 'advanced' ? 'advanced' : 'easy'}
         {...(this.#config ? { config: this.#config } : {})}
@@ -264,9 +360,18 @@ class SxSettingsPanelElement extends Base {
 
 /** The pre-alpha agreement. Attribute `app-name`; property `theme`; an `accept` event with the record. */
 class SxAgreementElement extends Base {
-  static observedAttributes = ['app-name', 'theme']
+  static observedAttributes = ['app-name', 'theme', 'edition-src']
   #root: Root | null = null
   #theme: Theme | null = null
+  #edition = new EditionSlot(this, () => this.#render())
+
+  /** An edition config object; wins over the edition-src attribute. */
+  get edition(): EmbedEdition | null {
+    return this.#edition.current
+  }
+  set edition(e: EmbedEdition | null) {
+    this.#edition.set(e)
+  }
 
   get theme(): Theme | null {
     return this.#theme
@@ -278,6 +383,7 @@ class SxAgreementElement extends Base {
 
   connectedCallback(): void {
     this.#root ??= shadow(this).root
+    void this.#edition.load()
     this.#render()
   }
 
@@ -286,13 +392,14 @@ class SxAgreementElement extends Base {
     this.#root = null
   }
 
-  attributeChangedCallback(): void {
-    this.#render()
+  attributeChangedCallback(name: string): void {
+    if (name === 'edition-src') void this.#edition.load()
+    else this.#render()
   }
 
   #render(): void {
     this.#root?.render(
-      <EmbedTheme theme={themeOf(this, this.#theme)}>
+      <EmbedTheme theme={themeOf(this, this.#theme)} edition={this.#edition.current}>
         <Agreement appName={this.getAttribute('app-name') ?? 'this app'} onAccept={(record) => this.dispatchEvent(new CustomEvent('accept', { detail: record }))} />
       </EmbedTheme>,
     )
