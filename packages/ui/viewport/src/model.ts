@@ -110,6 +110,20 @@ function partOffset(i: number): Mesh['onBeforeRender'] {
   }
 }
 
+/**
+ * A paint overlay sits just in front of the part it paints: the part's own offset plus a fixed step toward the camera.
+ * Part i is drawn with `partOffset(i)`, so an overlay with a fixed offset falls behind its part from the third part on.
+ */
+export function overlayOffset(i: number): Mesh['onBeforeRender'] {
+  return (_r, _s, _c, _g, mat) => {
+    const m = mat as Material
+    if (m.polygonOffset) {
+      m.polygonOffsetFactor = -2 - 0.12 * i
+      m.polygonOffsetUnits = -6 - 4 * i
+    }
+  }
+}
+
 export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => Material, edgeMaterial: Material, async?: AsyncPartBuild): ObjectEntry {
   const group = new Group()
   group.name = obj.name

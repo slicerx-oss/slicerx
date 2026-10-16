@@ -9,7 +9,7 @@ import {
 } from 'three'
 import { planeContour } from './contour'
 import type { PaintBindings } from './gizmobindings'
-import type { ObjectEntry } from './model'
+import { overlayOffset, type ObjectEntry } from './model'
 import {
   autoDetail, cylinderRegion, decodeTree, decodedEntries, encodeTree, fillByAngle, fillConnected, forEachPaintedLeaf, forEachPaintedLeafOfText, gapFill, gridFor, isLeaf, LazyPaintMap, lazyPaintTexts, paintDab, paintedLeafCount, paintLeafAt, paintPatch, paintTextLeafCount, replaceEverywhere,
   slabRegion, sphereRegion, stateAt, trianglePoints, withPointFilter,
@@ -723,6 +723,7 @@ export class Painter {
       const o = new Mesh(g, m)
       o.raycast = () => {}
       o.castShadow = false
+      o.onBeforeRender = overlayOffset(Number(partS))
       o.renderOrder = 1
       this.applyClip(m)
       o.visible = layerS === 'color' || (this.active && layerS === this.settings.layer)
