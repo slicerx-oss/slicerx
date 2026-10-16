@@ -1,0 +1,1 @@
+a finger drags a move arrow and moves the model along it only | doo-sx | 2026-10-16 | 2026-10-17 | https://github.com/slicerx-oss/slicerx/issues/1241 | passed only on retry in phone e2e of merge group run 38881464901
