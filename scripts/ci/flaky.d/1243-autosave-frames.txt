@@ -1,0 +1,1 @@
+the viewport keeps drawing while a big project autosaves | doo-sx | 2026-10-16 | 2026-10-17 | https://github.com/slicerx-oss/slicerx/issues/1243 | passed only on retry in e2e desktop 1/12 of merge group run 38884566953

@@ -1,0 +1,1 @@
+a real right click on the model, the menu key, and a touch held still | doo-sx | 2026-10-16 | 2026-10-17 | https://github.com/slicerx-oss/slicerx/issues/1244 | passed only on retry in e2e desktop 6/12 of merge group run 38884566953; also seen on #1235
