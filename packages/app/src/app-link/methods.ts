@@ -479,6 +479,8 @@ export async function useDesignHost(loader: Loader): Promise<void> {
 }
 
 const TOOL_CODES = new Set(['invalid_input', 'not_found'])
+/** Refusals about a body reference keep their code and facts, so a client can tell a stale reference from other refusals. */
+const BODY_CODES = new Set(['stale_body', 'missing_face', 'ambiguous_face'])
 
 /** An agent's edit waits for the person: not while they edit a step of that object, or while it replays. */
 async function personBusy(design: unknown): Promise<boolean> {
@@ -499,6 +501,10 @@ async function runTool(tool: PilotTool<never>, args: Record<string, unknown>): P
     return { summary: out.summary, output: out.output ?? null }
   } catch (e) {
     const code = (e as { code?: unknown }).code
+    if (typeof code === 'string' && BODY_CODES.has(code)) {
+      const details = (e as { details?: unknown }).details
+      throw new LinkError(code as 'stale_body', e instanceof Error ? e.message : String(e), details && typeof details === 'object' ? (details as Record<string, unknown>) : undefined)
+    }
     throw new LinkError(typeof code === 'string' && TOOL_CODES.has(code) ? (code as 'invalid_input' | 'not_found') : 'refused', e instanceof Error ? e.message : String(e))
   }
 }
