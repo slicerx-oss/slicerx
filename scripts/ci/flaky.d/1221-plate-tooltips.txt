@@ -1,0 +1,1 @@
+feature tooltips show with their key, hand over quickly, explain a disabled tool, and switch off in Settings | doo-sx | 2026-10-16 | 2026-10-17 | https://github.com/slicerx-oss/slicerx/issues/1221 | passed only on retry in merge group run 38839651187
