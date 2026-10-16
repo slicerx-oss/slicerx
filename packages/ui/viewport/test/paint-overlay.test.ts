@@ -2,12 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The paint overlay is built in one pass into arrays of their final size. It must draw exactly what the earlier build
 // drew: the painted leaf pieces in leavesOf order, their state's color, and the face normals computeVertexNormals gives.
-import { BufferAttribute, BufferGeometry, Color, Group, Mesh } from 'three'
+import { BufferAttribute, BufferGeometry, Color, Group, Mesh, MeshStandardMaterial } from 'three'
 import { describe, expect, it } from 'vitest'
 import { decodeTree, encodeTree, forEachPaintedLeaf, forEachPaintedLeafOfText, lazyPaintTexts, leavesOf, paintedLeafCount, paintTextLeafCount, readPaintTexts, trianglePoints, type PaintNode, type Tri } from '../src/paint'
 import { Painter } from '../src/painter'
 import { CONTROL_PRESETS } from '../src/controls'
-import type { ObjectEntry } from '../src/model'
+import { buildObject, type ObjectEntry } from '../src/model'
 
 // Two triangles, the second tilted, so normals differ.
 const positions = new Float32Array([0, 0, 0, 10, 0, 0, 0, 10, 0, 10, 0, 0, 10, 10, 3, 0, 10, 0])
@@ -94,6 +94,31 @@ function randomTree(rand: () => number, depth = 0): PaintNode {
   const splits = (1 + Math.floor(rand() * 3)) as 1 | 2 | 3
   return { splits, special: Math.floor(rand() * 3) as 0 | 1 | 2, kids: Array.from({ length: splits + 1 }, () => randomTree(rand, depth + 1)) }
 }
+
+describe('paint overlay depth', () => {
+  it('stays in front of its own part for every part of an object', () => {
+    const parts = Array.from({ length: 6 }, (_, i) => ({ name: `p${i}`, positions, indices, color: '#cccccc' }))
+    const obj = buildObject({ id: 'o', name: 'o', parts, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }, () => new MeshStandardMaterial({ polygonOffset: true }), new MeshStandardMaterial())
+    const painter = new Painter((id) => (id === 'o' ? obj : undefined), new Group(), () => {}, () => {}, () => CONTROL_PRESETS['orcaslicer'].gizmo.paint)
+    painter.setColors(['#ff0000'])
+    for (let i = 0; i < parts.length; i++) painter.setData('o', i, 'color', { 0: encodeTree({ splits: 1, special: 0, kids: [leaf(1), leaf(1)] })! })
+    painter.sync()
+    // What three.js sets on a material just before it draws a mesh: a lower value is nearer the camera.
+    const drawn = (m: Mesh): { factor: number; units: number } => {
+      const mat = m.material as MeshStandardMaterial
+      ;(m.onBeforeRender as unknown as (...a: unknown[]) => void)(null, null, null, null, mat)
+      return { factor: mat.polygonOffsetFactor, units: mat.polygonOffsetUnits }
+    }
+    for (let i = 0; i < parts.length; i++) {
+      const part = obj.parts[i]!.mesh
+      const overlay = part.children.find((c) => c !== obj.parts[i]!.edges) as Mesh
+      expect(overlay, `part ${i} has an overlay`).toBeDefined()
+      const a = drawn(part), b = drawn(overlay)
+      expect(b.units, `part ${i} units`).toBeLessThan(a.units)
+      expect(b.factor, `part ${i} factor`).toBeLessThan(a.factor)
+    }
+  })
+})
 
 describe('paint texts read in place', () => {
   let seed = 7
