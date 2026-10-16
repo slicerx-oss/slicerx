@@ -4,7 +4,7 @@
 // the app was built with. Without one the neutral defaults apply.
 import { setAssistantBrand, setProductColors, setProductName } from '@slicerx/contracts'
 import { fontStack, neutralEdition, type EditionConfig, type PrinterFamily } from '@slicerx/edition-config'
-import { createTheme, subban, subbanLight, type Theme, type ThemeColors, type ThemeInput } from '@slicerx/ui'
+import { subban, subbanLight, themeFromEdition, type Theme } from '@slicerx/ui'
 import { createContext, useContext } from 'react'
 
 export const NEUTRAL: EditionConfig = neutralEdition()
@@ -51,24 +51,16 @@ export function branded(text: string): string {
   return text.replaceAll('{app}', appName())
 }
 
-/** The edition's theme on top of the user's light or dark choice. */
+/**
+ * The edition's theme on top of the user's light or dark choice: colors, visual properties, studio (scene) colors,
+ * fonts and radii from `brand.theme`, with SlicerX values for anything it leaves out.
+ */
 export function editionTheme(edition: EditionConfig, scheme: 'dark' | 'light', chosen?: Theme): Theme {
   const base = chosen ?? (scheme === 'light' ? subbanLight : subban)
   const t = edition.brand.theme
   if (typeof t === 'string') return base
-  // Drop unset keys: the theme types do not accept explicit undefined.
-  const defined = <T extends object>(o: T | undefined) => (o ? (Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]-?: Exclude<T[K], undefined> }) : undefined)
-  const input: ThemeInput = { name: edition.id }
-  const colors = defined({ ...t.tokens.colors, ...t[scheme]?.colors })
-  const visuals = defined({ ...t.tokens.visuals, ...t[scheme]?.visuals })
-  const fonts = defined(t.tokens.fonts)
-  const radius = defined(t.tokens.radius)
-  if (colors) input.colors = colors as Partial<ThemeColors>
-  if (visuals) input.visuals = visuals
   // a family name alone would fall back to the browser's serif face wherever the font is missing
-  if (fonts) input.fonts = Object.fromEntries(Object.entries(fonts).map(([k, v]) => [k, fontStack(v, k === 'mono' ? 'mono' : 'sans')]))
-  if (radius) input.radius = radius
-  return createTheme(input, base)
+  return themeFromEdition(t, scheme, base, { name: edition.id, font: (family, role) => fontStack(family, role === 'mono' ? 'mono' : 'sans') })
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/

@@ -17,6 +17,16 @@ describe('app look tools', () => {
     const [tool] = appLookTools({ call: async () => look } as unknown as AppLinkCaller, 'Harbor')
     expect((await tool!.run({} as never, {} as never)).output).toEqual(look)
   })
+  it('passes the edition studio colors and the scene the view was given through unchanged', async () => {
+    const look: AppLook = {
+      toolbarSize: 'large',
+      theme: { scheme: 'dark', visuals: { '--accent': '#b8f34a' }, overrides: { '--accent': '#b8f34a' }, scene: { top: '#1a1d23', bottom: '#0a0c10' }, sceneOverrides: { top: '#1a1d23', bottom: '#0a0c10' } },
+      viewport: { preset: 'dark-precision', themeBackdrop: true, look: { version: 1 }, scene: { bgTop: '#1a1d23', bgBottom: '#0a0c10', selection: '#b8f34a' } },
+    }
+    const [tool] = appLookTools({ call: async () => look } as unknown as AppLinkCaller, 'Harbor')
+    expect((await tool!.run({} as never, {} as never)).output).toEqual(look)
+    expect(tool!.version).toBe('1.1.0')
+  })
   it('read the preferences and set them, each answer read back from the app', async () => {
     let look: AppLook = { toolbarSize: 'large', modelFraming: 'selection' }
     const call = vi.fn(async (method: string, args?: Record<string, unknown>) => {

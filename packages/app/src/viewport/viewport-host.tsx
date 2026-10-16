@@ -561,8 +561,9 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       // The backdrop follows the theme, now and on every change.
       // The look (lights, materials, plate and backdrop) follows it too: one preset per scheme, viewport-look.ts.
       const syncScene = () => {
-        vp.setTheme?.(viewportTheme(appStore.getState().appearance.colorVision === 'standard' ? 'standard' : 'colorblind'))
-        if (vp.setLook && vp.look) syncViewportLook({ setLook: vp.setLook.bind(vp), look: vp.look.bind(vp) })
+        const theme = viewportTheme(appStore.getState().appearance.colorVision === 'standard' ? 'standard' : 'colorblind')
+        vp.setTheme?.(theme)
+        if (vp.setLook && vp.look) syncViewportLook({ setLook: vp.setLook.bind(vp), look: vp.look.bind(vp) }, undefined, theme)
       }
       syncScene()
       offs.push(onThemeChange(syncScene))

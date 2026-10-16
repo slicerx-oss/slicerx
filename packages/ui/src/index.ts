@@ -72,6 +72,8 @@ export type { ToastHold, ToastTone, ToastOptions } from './components/toast'
 
 export { SCENE_VARS, subban, nocturne, createTheme, themeToVars, themeToCss, applyTheme, clearTheme, onThemeChange, resolveColor, THEME_EVENT } from './theme'
 export type { Theme, ThemeInput, ThemeColors, ThemeGradient, ThemeFonts, ThemeRadius, ThemeSpacing, ThemeScene, ColorScheme } from './theme'
+export { themeFromEdition, editionSceneOverrides, editionVisualOverrides, SUBBAN_SCENE, EDITION_SCENE_KEYS } from './edition-theme'
+export type { EditionThemeConfig, EditionThemeScheme, EditionScene, EditionThemeOptions } from './edition-theme'
 export { THEME_FILE_VERSION, TEXT_CONTRAST, GLYPH_CONTRAST, HIGH_TEXT_CONTRAST, COLOR_VISION, MAX_THEME_BYTES, derivePalette, deriveScene, SCENE_KEYS, themeColors, themeFromFile, validateThemeFile, parseThemeText, serializeTheme, themeWarnings, mixHex, contrast, readable, rehue } from './themefile'
 export type { ThemeFile, DerivedPalette, ThemeResult, PaletteOptions, ContrastLevel, ColorVision } from './themefile'
 export { DEFAULT_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, DEFAULT_THEME_IDS, LEGACY_THEME_IDS, allThemes, findTheme, pickTheme, pickFamily, familyId, themeFamilies, migrateThemeId, themeForScheme, slugify } from './theme-library'

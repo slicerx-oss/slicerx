@@ -3,6 +3,8 @@
 // React-free entry: "@slicerx/ui/theme". Safe for Node tools and servers.
 export { SCENE_VARS, subban, nocturne, createTheme, themeToVars, themeToCss, applyTheme, clearTheme, onThemeChange, resolveColor, THEME_EVENT } from './theme'
 export type { Theme, ThemeInput, ThemeColors, ThemeGradient, ThemeFonts, ThemeRadius, ThemeSpacing, ThemeScene, ColorScheme } from './theme'
+export { themeFromEdition, editionSceneOverrides, editionVisualOverrides, SUBBAN_SCENE, EDITION_SCENE_KEYS } from './edition-theme'
+export type { EditionThemeConfig, EditionThemeScheme, EditionScene, EditionThemeOptions } from './edition-theme'
 export { subbanLight, nocturneLight, forge, themes } from './themes'
 export type { ThemeName } from './themes'
 export { THEME_FILE_VERSION, TEXT_CONTRAST, GLYPH_CONTRAST, HIGH_TEXT_CONTRAST, COLOR_VISION, MAX_THEME_BYTES, derivePalette, deriveScene, SCENE_KEYS, themeColors, themeFromFile, validateThemeFile, parseThemeText, serializeTheme, themeWarnings, mixHex, contrast, readable, rehue, parseHex, formatHex } from './themefile'

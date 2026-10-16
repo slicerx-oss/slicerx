@@ -7,6 +7,7 @@
 // prints, queues, approves, signs in or changes printer connections.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
+import { editionSceneOverrides, SCENE_VARS } from '@slicerx/ui/theme'
 import { assistantBrand } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
@@ -233,9 +234,12 @@ function lookState() {
   const config = currentEdition().brand.theme
   const overrides = typeof config === 'string' ? {} : { ...config.tokens.visuals, ...config[scheme]?.visuals }
   const visuals = Object.fromEntries(VISUAL_TOKEN_NAMES.map((name) => [name, css.getPropertyValue(name).trim()]).filter(([, value]) => value))
+  // the studio colors in use (--scene-*), and the ones the edition sets for this scheme
+  const scene = Object.fromEntries(Object.entries(SCENE_VARS).map(([key, name]) => [key, css.getPropertyValue(name).trim()]).filter(([, value]) => value))
+  const sceneOverrides = editionSceneOverrides(config, scheme)
   // the 3D view's look, absent while no 3D view is up (viewport-look.ts)
   const viewport = viewportLookState()
-  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}), theme: { scheme, visuals, overrides }, ...(viewport ? { viewport } : {}) }
+  return { toolbarSize: a.toolbarSize, ...(editionHasCad(currentEdition()) ? { modelFraming: a.modelFraming } : {}), theme: { scheme, visuals, overrides, scene, sceneOverrides }, ...(viewport ? { viewport } : {}) }
 }
 
 /**
