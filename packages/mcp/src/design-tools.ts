@@ -80,7 +80,7 @@ export function partAt(d: HostDesign, at: V3): number {
 export function item(d: HostDesign, part: number, parts: readonly HistoryMesh[] = d.parts): { mesh: { positions: number[]; indices: number[]; faces?: unknown }; transform: Mat4 } {
   const p = parts[part]
   if (!p) throw new ToolInputError(`part: the design has ${parts.length} part${parts.length === 1 ? '' : 's'}`)
-  return { mesh: { positions: Array.from(p.positions), indices: Array.from(p.indices), ...(p.faces ? { faces: p.faces } : {}) }, transform: d.transform }
+  return { mesh: { positions: Array.from(p.positions), indices: Array.from(p.indices), ...(p.faces ? { faces: { ...p.faces, ids: Array.from(p.faces.ids) } } : {}) }, transform: d.transform }
 }
 
 /** STL coordinates are float32, so a point typed from a reply can be off by a few micrometers. */
