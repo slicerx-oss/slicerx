@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ElicitRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { DEFAULT_POLICY } from '@slicerx/contracts'
+import { afterAll } from 'vitest'
 import { createContext, createSlicerxServer, type ServerContext, type SlicerxMcpOptions } from '../src/index'
 
 /** A closed axis-aligned box as a binary STL, 12 triangles, outward normals. */
@@ -33,8 +34,17 @@ export interface Harness {
   call(name: string, args?: Record<string, unknown>): Promise<CallToolResult>
 }
 
+// Every connect makes a temp folder, and a test file opens many. Each file runs in its own module scope, so this hook
+// removes that file's folders when it ends (about 13,000 of them had piled up on one CI machine).
+const dirs = new Set<string>()
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true })
+  dirs.clear()
+})
+
 export async function connect(opts: SlicerxMcpOptions = {}, clientOpts: { elicit?: (message: string) => boolean } = {}): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'slicerx-mcp-test-'))
+  dirs.add(dir)
   writeFileSync(join(dir, 'cube.stl'), boxStl(20, 20, 20))
   const ctx = await createContext({ engine: 'stub', allowDirs: [dir], outDir: join(dir, 'out'), profilesDir: join(dir, 'profiles'), policy: DEFAULT_POLICY, ...opts })
   const server = createSlicerxServer(ctx)

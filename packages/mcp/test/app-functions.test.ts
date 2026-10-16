@@ -3,7 +3,7 @@
 // The checks and project operations the app runs from its panels (gcode_inspect, risk_report, supports,
 // mesh_repair and the rest), driven the way a client drives them: the server over stdio, a tool call,
 // then a read-back of the project or the check.
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -45,7 +45,10 @@ async function stdioSession(): Promise<{ call<T = Record<string, unknown>>(name:
     realSx,
     raw,
     call: async <T,>(name: string, args: Record<string, unknown> = {}) => data<Out<T>>(await raw(name, args)),
-    close: () => client.close(),
+    close: async () => {
+      await client.close()
+      rmSync(dir, { recursive: true, force: true })
+    },
   }
 }
 

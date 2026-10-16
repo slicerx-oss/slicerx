@@ -2,7 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! `sx slice --request` and `sx schema`: the CLI's JSON surface.
 
+use std::ffi::OsStr;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 fn sx() -> Command {
@@ -13,9 +15,41 @@ fn fixture(name: &str) -> String {
     format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))
 }
 
+/// A temp dir that is removed when it drops, so a failed assert does not leave it behind.
+struct TempDir(PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for TempDir {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for TempDir {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<OsStr> for TempDir {
+    fn as_ref(&self) -> &OsStr {
+        self.0.as_os_str()
+    }
+}
+
+fn temp_dir(name: String) -> TempDir {
+    TempDir(std::env::temp_dir().join(name))
+}
+
 #[test]
 fn request_file_round_trip() {
-    let dir = std::env::temp_dir().join(format!("sx-cli-test-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-test-{}", std::process::id()));
     let out = sx()
         .args(["slice", "--request", &fixture("cube-request.json"), "--out-dir"])
         .arg(&dir)
@@ -30,7 +64,6 @@ fn request_file_round_trip() {
     let gcode = std::fs::read(dir.join("slice.gcode")).unwrap();
     assert_eq!(v["gcodeBytes"], gcode.len());
     assert!(String::from_utf8_lossy(&gcode).contains("SET_PRINT_STATS_INFO TOTAL_LAYER=50"));
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -89,7 +122,7 @@ fn slice_stdout_is_only_gcode() {
 
 #[test]
 fn plain_slice_summary_uses_final_file_time() {
-    let dir = std::env::temp_dir().join(format!("sx-cli-final-time-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-final-time-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = dir.join("config.json");
     let target = dir.join("slice.gcode");
@@ -121,12 +154,11 @@ fn plain_slice_summary_uses_final_file_time() {
             "summary differs from final file ({total} s): {stderr}"
         );
     }
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn plain_slice_preview_includes_end_wait() {
-    let dir = std::env::temp_dir().join(format!("sx-cli-preview-time-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-preview-time-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = dir.join("config.json");
     let preview = dir.join("slice.sxpv");
@@ -163,12 +195,11 @@ fn plain_slice_preview_includes_end_wait() {
         "preview omitted end wait: {plain:?} -> {waited:?}"
     );
     assert_eq!(&plain[..plain.len() - 1], &waited[..waited.len() - 1]);
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn plain_slice_first_layer_headers_agree() {
-    let dir = std::env::temp_dir().join(format!("sx-cli-first-layer-time-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-first-layer-time-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = dir.join("config.json");
     let settings = serde_json::json!({
@@ -189,7 +220,6 @@ fn plain_slice_first_layer_headers_agree() {
         .collect();
     assert_eq!(first.len(), 2, "header and footer: {first:?}");
     assert_eq!(first.first(), first.last(), "header and footer disagree");
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -220,7 +250,7 @@ fn a_bambu_projects_auto_values_slice() {
     let meta: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let settings = meta["projectSettings"].clone();
     assert_eq!(settings["raft_first_layer_expansion"], "-1");
-    let dir = std::env::temp_dir().join(format!("sx-cli-bambu-auto-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-bambu-auto-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let run = |extra: &[(&str, &str)]| {
         let mut config = settings.clone();
@@ -248,14 +278,13 @@ fn a_bambu_projects_auto_values_slice() {
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         assert!(v["layerCount"].as_u64().unwrap() > 90, "{v}");
     }
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// A 3MF plate given as one mesh prints as its objects: by object each one finishes before the
 /// next starts, and objects too close for the toolhead are refused as bad input.
 #[test]
 fn a_3mf_plate_slices_as_its_objects() {
-    let dir = std::env::temp_dir().join(format!("sx-cli-3mf-objects-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-3mf-objects-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let run = |radius: u32, rod: u32, allow: bool| {
         let req = serde_json::json!({
@@ -304,7 +333,6 @@ fn a_3mf_plate_slices_as_its_objects() {
         "{err}"
     );
     assert!(run(40, 3, true).status.success());
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// Paths into a zone the printer keeps clear are the plate's own, in any print order: refused in their own words,
@@ -317,7 +345,7 @@ fn keep_out_paths_are_refused_in_their_own_words() {
     req["meshes"]["t"] = serde_json::Value::String(fixture("table.stl"));
     // an A1 style nozzle wrap check corner over the cube
     req["config"]["head_wrap_detect_zone"] = serde_json::json!(["80x95", "115x95", "115x125", "80x125"]);
-    let dir = std::env::temp_dir().join(format!("sx-cli-keep-out-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-keep-out-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("request.json");
     std::fs::write(&path, req.to_string()).unwrap();
@@ -336,7 +364,6 @@ fn keep_out_paths_are_refused_in_their_own_words() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -503,7 +530,7 @@ fn a_solid_join_never_crosses_another_objects_path() {
 
 /// Slices a request body (mesh paths relative to the fixtures) and gives the result.
 fn slice_body(body: &serde_json::Value) -> (std::process::ExitStatus, serde_json::Value, String) {
-    let dir = std::env::temp_dir().join(format!("sx-cli-paint-{}-{}", std::process::id(), rand_tag()));
+    let dir = temp_dir(format!("sx-cli-paint-{}-{}", std::process::id(), rand_tag()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("request.json");
     std::fs::write(&path, serde_json::to_vec(body).unwrap()).unwrap();
@@ -515,7 +542,6 @@ fn slice_body(body: &serde_json::Value) -> (std::process::ExitStatus, serde_json
         .output()
         .unwrap();
     let v = serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null);
-    let _ = std::fs::remove_dir_all(dir);
     (out.status, v, String::from_utf8_lossy(&out.stderr).into_owned())
 }
 
@@ -656,7 +682,7 @@ fn settings_the_engine_does_not_use_are_listed_and_strict_refuses() {
     assert_eq!(out.status.code(), Some(3));
     assert!(String::from_utf8_lossy(&out.stderr).contains("zz_made_up_key"));
     // The plain path reads a config file the same way.
-    let dir = std::env::temp_dir().join(format!("sx-cli-strict-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-strict-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let cfg = dir.join("cfg.json");
     std::fs::write(&cfg, req["config"].to_string()).unwrap();
@@ -672,7 +698,6 @@ fn settings_the_engine_does_not_use_are_listed_and_strict_refuses() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 /// A stored ZIP of the given entries.
@@ -758,7 +783,7 @@ fn layers(stderr: &[u8]) -> u32 {
 /// at a height are in the G-code, as they are when the project is sliced in the app.
 #[test]
 fn a_project_slices_with_its_painted_ears_and_layer_marks() {
-    let dir = std::env::temp_dir().join(format!("sx-cli-project-marks-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-project-marks-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     // The box stands at 100, 100 in the file; its ears are in the box's own space, at two corners of its foot.
     let ears = "brim_points_format_version=0\nobject_id=1|0 0 0 5 20 20 0 5\n";
@@ -801,12 +826,11 @@ fn a_project_slices_with_its_painted_ears_and_layer_marks() {
     );
     assert!(marked.contains(";TYPE:Brim"), "the painted ears are not printed");
     assert_eq!(marked.matches("M601").count(), 1, "the pause is not written once");
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn a_project_slices_with_its_own_settings() {
-    let dir = std::env::temp_dir().join(format!("sx-cli-project-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-project-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     // As Bambu Studio writes them: strings, one entry per filament, and the keys the person changed listed apart.
     let settings = serde_json::json!({
@@ -894,7 +918,6 @@ fn a_project_slices_with_its_own_settings() {
     let err = String::from_utf8_lossy(&slice(&project, &["--config", arachne.to_str().unwrap()]).stderr)
         .into_owned();
     assert!(err.contains("sx: walls: arachne walls, set by --config"), "{err}");
-    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -930,7 +953,7 @@ fn a_mesh_named_by_several_objects_and_a_volume_slices_for_each() {
 
 #[test]
 fn plain_and_request_slices_select_project_filament_variants() {
-    let dir = std::env::temp_dir().join(format!("sx-cli-variants-{}", std::process::id()));
+    let dir = temp_dir(format!("sx-cli-variants-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = serde_json::json!({
         "filament_settings_id": ["one"],
@@ -973,5 +996,4 @@ fn plain_and_request_slices_select_project_filament_variants() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let gcode = std::fs::read_to_string(dir.join("request/slice.gcode")).unwrap();
     assert!(gcode.lines().any(|line| line == "; selected 215"));
-    std::fs::remove_dir_all(dir).unwrap();
 }
