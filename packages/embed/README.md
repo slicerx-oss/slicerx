@@ -26,6 +26,8 @@ injectStyles() // once, on a page that does not load @slicerx/ui
 - `Viewport` props: `plate`, `preview` (SXPV bytes or parsed buffers), `look` (`studio`, `clay`, `xray`, `overhang`, `filament`, `cad`), `colorMode` (`feature`, `tool`, `speed`, `flow`, `layerTime`), `layer` (top visible layer, 1-based), `view` (`iso`, `top`, `front`, `fit`), `quality` (`auto`, the default, picks from the graphics it finds: `low` without ambient occlusion on a weak or software GPU; or `high`, `balanced`, `low`), `onPick`, `onReady` (the live viewport handle), `label`, `className`, `style`.
 - `SettingsPanel` props: `config` (a base profile; schema defaults when omitted), `easy`, `mode` (`easy` or `advanced`), `onChange`, which receives the Easy values, the Advanced overrides and the resolved config keyed by Orca setting names.
 - `EmbedTheme` takes `dark`, `light` or any theme made with `createTheme` (exported here), and themes only its children. The 3D scene follows it: the accent marks the selection, and a light theme gets a light studio. `sceneTheme` on `Viewport` sets any scene, toolpath or heat ramp color on top.
+- `EmbedTheme` also takes `edition`: your edition config as JSON, either the whole file or its `brand.theme` block. Its colors, visual properties (`--accent` and the rest) and studio colors (`scene`: `top`, `bottom`, `glow`, `plate`, `grid`, `edge`, `xray`) for the theme's scheme go on top of the theme, and anything unset or invalid keeps the SlicerX value. `editionTheme(edition, scheme)` returns the same theme for a host that passes full themes, and `editionOverrides(edition, scheme)` lists what the edition sets. See `docs/integrators/restyle-icons-and-loops.md` in the repository.
+- To restyle a live viewport handle (from `onReady`), call `handle.setTheme(sceneFor(theme))`. A theme from `createTheme` is not a viewport theme, and passing one straight to `setTheme` throws.
 - `Viewport` also takes `toolColors` (the filament color per slot, for `colorMode="tool"`) and `onError`, called when the 3D view cannot start or fails.
 - Plain STL files open in white PLA (`#ebebe6`), so the accent selection outline shows on them.
 - Prepare tools: `tools` (`true`, or a list of `select`, `move`, `rotate`, `scale`, `arrange` and `drop`) puts a toolbar over the view, with the keys M, R, S and A. With a model selected, move shows X, Y and Z arrows, each a drag along its axis (Z stops at the bed); a drag on the model itself still moves it freely on the plate. `tool` with `onToolChange` and `selection` with `onSelect` control the active tool and the selection; without them the view keeps its own. `onTransform` reports each move, turn, scale, arrange and drop; store the transform when `final` is true. The handle from `onReady` also has `arrange()` and `dropToBed(ids?)`.
@@ -46,9 +48,15 @@ injectStyles() // once, on a page that does not load @slicerx/ui
 <sx-settings-panel mode="advanced"></sx-settings-panel>
 ```
 
-- `<sx-viewport>`: attributes `src` (an STL file), `look`, `color-mode`, `view`, `layer`, `theme`, `finish` (`matte`, `satin`, `glossy` or `silk`, one for every slot or one per slot), `plate-style` (`grid`, `textured-pei`, `smooth-pei`, `cool`, `engineering`), `tools` (present for every tool, or a list), `tool`, `reveal` (`each-plate` or `off`, read when the element starts) and `bed-outline` (`subtle`); properties `plate`, `preview` (SXPV bytes), `theme` (a full theme), `sceneTheme`, `toolColors` and `selection`; methods `playReveal()`, `arrange()` and `dropToBed(ids?)`; `pick`, `select`, `transform`, `tool` and `error` events.
-- `<sx-settings-panel>`: attributes `mode` and `theme`; properties `config` and `theme`; a `change` event with `{ easy, overrides, config }`.
-- `<sx-agreement>`: attribute `app-name`, property `theme`, an `accept` event with `{ version, acceptedAt }`.
+- `<sx-viewport>`: attributes `src` (an STL file), `look`, `color-mode`, `view`, `layer`, `theme`, `edition-src`, `finish` (`matte`, `satin`, `glossy` or `silk`, one for every slot or one per slot), `plate-style` (`grid`, `textured-pei`, `smooth-pei`, `cool`, `engineering`), `tools` (present for every tool, or a list), `tool`, `reveal` (`each-plate` or `off`, read when the element starts) and `bed-outline` (`subtle`); properties `plate`, `preview` (SXPV bytes), `theme` (a full theme), `edition`, `sceneTheme`, `toolColors` and `selection`, and `activeTheme` to read back the scheme, accent, edition overrides and scene colors in use; methods `playReveal()`, `arrange()` and `dropToBed(ids?)`; `pick`, `select`, `transform`, `tool`, `edition` and `error` events.
+- `<sx-settings-panel>`: attributes `mode`, `theme` and `edition-src`; properties `config`, `theme` and `edition`; a `change` event with `{ easy, overrides, config }`.
+- `<sx-agreement>`: attributes `app-name` and `edition-src`, properties `theme` and `edition`, an `accept` event with `{ version, acceptedAt }`.
+
+`edition-src` is the URL of your edition JSON. Each element fetches it at runtime (once per URL for the whole page), applies its theme, and fires `edition` with the config, or `error` with the reason when the fetch fails. The `edition` property, when set, wins over the attribute:
+
+```html
+<sx-viewport src="bracket.stl" edition-src="/editions/harbor.json"></sx-viewport>
+```
 
 Each element renders into its own shadow root, so page styles and the pieces do not affect each other.
 

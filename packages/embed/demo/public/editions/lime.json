@@ -1,0 +1,20 @@
+{
+  "brand": {
+    "theme": {
+      "base": "subban",
+      "tokens": {
+        "colors": { "ink0": "#111318", "ink1": "#1a1d23", "ink2": "#22262e", "line": "#2a2e37", "fg": "#f5f5f0", "purple": "#b8f34a" },
+        "scene": { "grid": "#4a5363" }
+      },
+      "dark": {
+        "visuals": { "--accent": "#b8f34a" },
+        "scene": { "top": "#1a1d23", "bottom": "#0a0c10", "glow": "#22262e", "plate": "#2a2e37", "edge": "#050608" }
+      },
+      "light": {
+        "colors": { "ink0": "#f4f6f2", "ink1": "#ffffff", "ink2": "#edf1e9", "line": "#ccd4c6", "fg": "#20271c", "purple": "#456b0b" },
+        "visuals": { "--accent": "#456b0b" },
+        "scene": { "top": "#f1f4ee", "bottom": "#cdd6c4", "glow": "#ffffff", "plate": "#dfe6d8", "grid": "#a9b89c", "edge": "#7d8c70" }
+      }
+    }
+  }
+}
