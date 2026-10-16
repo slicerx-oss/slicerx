@@ -23,6 +23,7 @@ export function originFrame(plane: OriginPlane, center: V3): CadFrame {
 }
 
 const PLANES: readonly OriginPlane[] = ['xy', 'xz', 'yz']
+/** The default fill, the selection color of the default studio; setColor follows the theme. */
 const FILL = '#bd93f9'
 
 // each name at its own corner, in the plane's u, v: XY front right on the bed, XZ top left, YZ top back. the
@@ -80,6 +81,20 @@ export class OriginPlanes {
       const rim = q.parent!.children.find((c): c is LineSegments => c instanceof LineSegments)
       if (rim) (rim.material as LineBasicMaterial).opacity = light ? 0.95 : 0.6
     }
+  }
+
+  /** The planes' fill and edge color (the theme's originPlane scene color). */
+  setColor(hex: string): void {
+    for (const q of this.quads.values()) {
+      ;(q.material as MeshBasicMaterial).color.set(hex)
+      const rim = q.parent!.children.find((c): c is LineSegments => c instanceof LineSegments)
+      if (rim) (rim.material as LineBasicMaterial).color.set(hex)
+    }
+  }
+
+  /** Read back for checks: the planes' color in use. */
+  color(): string {
+    return `#${(this.quads.get('xy')!.material as MeshBasicMaterial).color.getHexString()}`
   }
 
   /** Where each plane's name goes, in world space (after the group's matrices are current). */

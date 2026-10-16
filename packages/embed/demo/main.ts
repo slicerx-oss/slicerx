@@ -13,6 +13,8 @@ for (const el of document.querySelectorAll('sx-viewport, sx-settings-panel')) {
   if (edition) el.setAttribute('edition-src', edition)
   if (params.get('theme') === 'light') el.setAttribute('theme', 'light')
 }
+// ?planes swaps the view for one showing the origin planes, in the edition's accent
+if (params.has('planes')) void import('./planes').then((m) => m.mountPlanes(params.get('edition'), params.get('theme') === 'light'))
 
 function box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): string {
   const v = [

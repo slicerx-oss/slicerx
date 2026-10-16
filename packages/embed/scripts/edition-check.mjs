@@ -154,6 +154,49 @@ await step('lime edition at phone width', async () => {
   assert.equal(r.state.accent, '#b8f34a')
 })
 
+/** The demo's origin planes view: how many pixels lean to the given hue family (green or purple) over the plane. */
+async function planes(query, label) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto(`${base}/${query}`)
+  const canvas = page.locator('#planes canvas')
+  await canvas.waitFor({ timeout: 240_000 })
+  let shot = null
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(1500)
+    const next = await canvas.screenshot({ timeout: 60_000 })
+    if (shot && next.equals(shot)) break
+    shot = next
+  }
+  if (shots) await page.screenshot({ path: join(shots, `${label}.png`), fullPage: true })
+  const tally = await page.evaluate(async (b64) => {
+    const img = new Image()
+    img.src = `data:image/png;base64,${b64}`
+    await img.decode()
+    const c = new OffscreenCanvas(img.width, img.height)
+    const g = c.getContext('2d')
+    g.drawImage(img, 0, 0)
+    const d = g.getImageData(0, 0, img.width, img.height).data
+    let green = 0, purple = 0
+    for (let i = 0; i < d.length; i += 4) {
+      const [r, gr, b] = [d[i], d[i + 1], d[i + 2]]
+      if (gr > r + 25 && gr > b + 25) green++
+      if (r > gr + 25 && b > gr + 25) purple++
+    }
+    return { green, purple }
+  }, shot.toString('base64'))
+  await page.close()
+  assert.deepEqual(errors, [], `${label}: page errors`)
+  return tally
+}
+await step('the origin planes take the edition accent: purple by default, lime with the lime edition', async () => {
+  const slicerxPlanes = await planes('?planes', 'planes-default-dark')
+  const limePlanes = await planes('?planes&edition=editions/lime.json', 'planes-lime-dark')
+  assert.ok(slicerxPlanes.purple > 500 && slicerxPlanes.green < 50, `default: ${JSON.stringify(slicerxPlanes)}`)
+  assert.ok(limePlanes.green > 500 && limePlanes.purple < 50, `lime: ${JSON.stringify(limePlanes)}`)
+})
+
 async function loop(file, label) {
   const page = await browser.newPage({ viewport: { width: 420, height: 360 } })
   await page.emulateMedia({ reducedMotion: 'reduce' })
