@@ -1,0 +1,13 @@
+diff --git a/dist/chunks/index.C-uw7tH9.js b/dist/chunks/index.C-uw7tH9.js
+index cdf7f640a05be5e7fd0b3b1b8905cafc1672fdec..ef53a188f647a73886f503d360c604df7343e58b 100644
+--- a/dist/chunks/index.C-uw7tH9.js
++++ b/dist/chunks/index.C-uw7tH9.js
+@@ -21430,6 +21430,8 @@ class Vitest {
+ 			// it's possible that it's not initialized at all because it's not running any tests
+ 			if (this.coreWorkspaceProject && !this.projects.includes(this.coreWorkspaceProject)) closePromises.push(this.coreWorkspaceProject.close().then(() => this.vite = void 0));
+ 			closePromises.push(...this._onClose.map((fn) => fn()));
++			// slicerx patch: the core fetcher's temp dir (_tmpDir) is never removed upstream
++			closePromises.push(rm(this._tmpDir, { recursive: true, force: true }).catch(noop$1));
+ 			await Promise.allSettled(closePromises).then((results) => {
+ 				const errors = [...results.filter((r) => r.status === "rejected").map((r) => r.reason), ...teardownErrors];
+ 				for (const error of errors) this.logger.error("error during close", error);
