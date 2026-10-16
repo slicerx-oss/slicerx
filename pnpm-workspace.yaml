@@ -18,3 +18,7 @@ onlyBuiltDependencies: []
 # conflict, and which one pnpm hoists for packages like undici-types differs from install to install.
 overrides:
   "@types/node": "24.19.0"
+# Vitest 5.0.2 never removes its core temp dir (<tmpdir>/<nanoid>/{ssr,client}); the patch removes it on
+# close. Drop it once upstream fixes the leak.
+patchedDependencies:
+  vitest@5.0.2: patches/vitest@5.0.2.patch
