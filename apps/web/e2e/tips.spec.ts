@@ -51,13 +51,34 @@ test('a tip in the settings sidebar opens beside it, level with its control, and
   const pane = (await page.locator('.pane[data-side="left"]').boundingBox())!
   const tip = page.locator('#sx-tip')
   const beside = async (anchor: Locator, text: string) => {
+    // Watch from the first positioned frame, not only after the entrance transition has finished.
+    const positions = page.evaluate(() => new Promise<number[]>((resolve, reject) => {
+      const xs: number[] = []
+      const timeout = window.setTimeout(() => { observer.disconnect(); reject(new Error('Tip did not become positioned')) }, 5000)
+      const observer = new MutationObserver(() => {
+        const el = document.querySelector<HTMLElement>('#sx-tip[data-ready]')
+        if (!el) return
+        observer.disconnect()
+        window.clearTimeout(timeout)
+        const start = performance.now()
+        const sample = () => {
+          xs.push(el.getBoundingClientRect().left)
+          if (performance.now() - start < 180) requestAnimationFrame(sample)
+          else resolve(xs)
+        }
+        sample()
+      })
+      observer.observe(document.body, { subtree: true, childList: true, attributes: true })
+    }))
     await anchor.hover()
     await expect(tip).toContainText(text)
     await expect(tip).toHaveAttribute('data-ready', 'true')
     const t = (await tip.boundingBox())!
     const a = (await anchor.boundingBox())!
+    const xs = await positions
     // clear of the sidebar, so the next row and the control under it stay in view
     expect(t.x).toBeGreaterThanOrEqual(pane.x + pane.width)
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(pane.x + pane.width)
     // level with its control
     expect(t.y).toBeLessThanOrEqual(a.y + a.height)
     expect(t.y + t.height).toBeGreaterThanOrEqual(a.y)
@@ -65,6 +86,8 @@ test('a tip in the settings sidebar opens beside it, level with its control, and
     await expect(tip).toHaveCount(0)
   }
   // sleipnir on the layer height, over Supports' segment before
+  await beside(page.locator('#easy-layer'), 'sleipnir changes the layer height')
+  // Reopen while the tip is warm, without scrolling to a different control.
   await beside(page.locator('#easy-layer'), 'sleipnir changes the layer height')
   // aegis on the wall generator, in the open Walls section of Quality: the option keeps its name, and its tip names it over the longer copy
   await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ expertOpen: true, settingsTab: 'quality', settingsSections: { 'quality/walls': true } }))
