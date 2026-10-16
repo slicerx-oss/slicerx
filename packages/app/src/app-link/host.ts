@@ -55,6 +55,7 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
             ok: false,
             code: e instanceof LinkError ? e.code : 'app_error',
             message: e instanceof Error ? e.message : String(e),
+            ...(e instanceof LinkError && e.details ? { details: e.details } : {}),
           }),
       )
       .catch(() => undefined)

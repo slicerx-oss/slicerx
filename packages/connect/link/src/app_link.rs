@@ -69,7 +69,18 @@ const MAX_CALL: Duration = Duration::from_secs(120);
 pub(crate) const MAX_ARGS: usize = 64 * 1024;
 
 /// The error codes the app may answer with; anything else reads as `app_error`.
-const APP_CODES: &[&str] = &["invalid_input", "not_found", "not_ready", "refused", "busy"];
+const APP_CODES: &[&str] = &[
+    "invalid_input",
+    "not_found",
+    "not_ready",
+    "refused",
+    "busy",
+    "stale_body",
+    "missing_face",
+    "ambiguous_face",
+];
+/// The largest `details` object an answer may carry, as JSON; a larger one is dropped, the refusal still goes through.
+const MAX_DETAILS: usize = 32 * 1024;
 
 type Pending<T> = StdMutex<HashMap<u64, (u64, T)>>;
 
@@ -373,6 +384,26 @@ pub(crate) fn may_host(origin: Option<&str>, extra: &[String], dev: bool) -> boo
         || (dev && o.starts_with("http://") && crate::net::origin_allowed(o, &[]))
 }
 
+/// The refusal the app answered a call with: a known code (anything else reads as `app_error`), its message, and any
+/// facts it attached. An oversized or non-object `details` is dropped and the refusal still goes through.
+fn app_error(p: &Value) -> RpcError {
+    let code = p.get("code").and_then(Value::as_str).unwrap_or("");
+    let code = APP_CODES
+        .iter()
+        .find(|c| **c == code)
+        .copied()
+        .unwrap_or("app_error");
+    let message = p
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("the app could not do that");
+    let err = RpcError::new(code, message.chars().take(500).collect::<String>());
+    match p.get("details") {
+        Some(d) if d.is_object() && d.to_string().len() <= MAX_DETAILS => err.with_details(d.clone()),
+        _ => err,
+    }
+}
+
 /// The app's side: `appLink.host`, `appLink.reply`, `appLink.answer`, `appLink.grants` and
 /// `appLink.revoke`. App role only (roles.rs).
 pub(crate) async fn app_call(
@@ -411,17 +442,7 @@ pub(crate) async fn app_call(
             let out = if p.get("ok").and_then(Value::as_bool) == Some(true) {
                 Ok(p.get("value").cloned().unwrap_or(Value::Null))
             } else {
-                let code = p.get("code").and_then(Value::as_str).unwrap_or("");
-                let code = APP_CODES
-                    .iter()
-                    .find(|c| **c == code)
-                    .copied()
-                    .unwrap_or("app_error");
-                let message = p
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("the app could not do that");
-                Err(RpcError::new(code, message.chars().take(500).collect::<String>()))
+                Err(app_error(p))
             };
             let _ = tx.send(out);
             Ok(json!({ "delivered": true }))

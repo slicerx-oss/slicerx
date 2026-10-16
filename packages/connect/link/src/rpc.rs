@@ -285,6 +285,8 @@ impl Bridge {
 pub(crate) struct RpcError {
     pub(crate) code: String,
     pub(crate) message: String,
+    /// Structured facts the app attached to a refusal; sent on as `error.details`.
+    pub(crate) details: Option<Value>,
 }
 
 impl RpcError {
@@ -292,7 +294,13 @@ impl RpcError {
         Self {
             code: code.to_owned(),
             message: message.into(),
+            details: None,
         }
+    }
+
+    pub(crate) fn with_details(mut self, details: Value) -> Self {
+        self.details = Some(details);
+        self
     }
 }
 
@@ -314,6 +322,7 @@ impl From<ConnectError> for RpcError {
         Self {
             code,
             message: e.to_string(),
+            details: None,
         }
     }
 }
@@ -747,7 +756,12 @@ fn parse_request(text: &str) -> Rpc<(Value, String, Value)> {
 fn reply(id: &Value, r: Rpc<Value>) -> Message {
     let body = match r {
         Ok(result) => json!({ "id": id, "result": result }),
-        Err(e) => json!({ "id": id, "error": { "code": e.code, "message": e.message } }),
+        Err(e) => match e.details {
+            Some(details) => {
+                json!({ "id": id, "error": { "code": e.code, "message": e.message, "details": details } })
+            }
+            None => json!({ "id": id, "error": { "code": e.code, "message": e.message } }),
+        },
     };
     Message::text(body.to_string())
 }
