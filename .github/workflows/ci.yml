@@ -769,7 +769,8 @@ jobs:
   # Chrome draws WebGL on the GPU, so they run fast and steady. Six workers: each page also starts the app's own slicer
   # workers, and the machine's CPU is the limit, not the GPU. Several runners share the machine: the @gpu specs run
   # under a shared GPU hold of the heavy lock (heavy.sh --gpu, as many at once as <lock>.gpu-slots allows), and the
-  # frame timing specs (@gpu-timing) after them under the exclusive e2e hold, with no other browser suite running.
+  # frame timing specs (@gpu-timing) after them under the e2e hold (heavy.sh --e2e): no other browser suite or --gpu run
+  # holds the lock beside it, but builds and engine tests in the lock's other slots still can.
   # Each runner serves on its own port, SX_E2E_PORT from the runner's .env (sx-gpu-1 has 4419, the others 4420 and
   # on). Steps run in Git Bash, named by path (the runners' accounts have no bash on their PATH and Windows' default
   # PowerShell script policy). Never for pull requests. If the runners are offline, set E2E_GPU_LANE to false.
@@ -824,7 +825,9 @@ jobs:
           SX_E2E_GPU: '1'
           PLAYWRIGHT_BLOB_OUTPUT_NAME: report-desktop-gpu.zip
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
-      # The frame timing specs, alone on the machine: they measure frame gaps, which another suite's load would skew.
+      # The frame timing specs, under the e2e hold: no other browser suite runs beside them, but the lock's other slots
+      # can hold builds and engine tests, and the six workers run the timing files side by side, so the machine is not
+      # theirs alone. That is why the tool change playback spec judges its frames against plain playback in the same run.
       # Their blob joins the first run's (PWTEST_BLOB_DO_NOT_REMOVE) and their failures go to their own folder.
       - run: eval "$SX_GROUP_CHECK"; SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --e2e timeout 300 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu-timing --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure --output=test-results/timing || { sx_rc=$?; eval "$SX_GPU_RUN_EXIT"; }
         env:
