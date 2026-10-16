@@ -43,7 +43,7 @@ describe('sleipnir window', () => {
     expect(isSmartLayerOn('off')).toBe(false)
     expect(SMART_LAYER_LABELS.quality).toBe('sleipnir: Quality')
     expect(settingDef('smart_layer')?.enumLabels).toEqual(['Off', 'sleipnir: Quality', 'sleipnir: Strength'])
-    expect(settingDef('smart_layer')?.label).toBe('sleipnir')
+    expect(settingDef('smart_layer')?.label).toBe('Adaptive layer height')
   })
 })
 
