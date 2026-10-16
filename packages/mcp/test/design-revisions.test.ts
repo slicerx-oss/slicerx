@@ -56,10 +56,10 @@ it('rejects a prepared result when another edit commits during its engine call',
 })
 
 it('keeps the committed body and revision if exporting the candidate fails', async () => {
-  const { designs, outDir } = host(async () => { throw new Error('unused') })
+  const { designs } = host(async () => { throw new Error('unused') })
   const d = await designs.create('Body', [mesh('Original')])
   const revision = designs.revision(d.id), before = structuredClone(d)
-  mkdirSync(join(outDir, 'designs', d.id, 'body-2.stl'))
+  mkdirSync(d.stl!.replace(/-1\.stl$/, '-2.stl'))
   await expect(designs.add(d, -1, { op: 'parts.add', label: 'Add part', parts: [mesh('Candidate')] }, undefined, { expectedRevision: revision })).rejects.toThrow()
   expect(d).toEqual(before)
   expect(designs.revision(d.id)).toBe(revision)
