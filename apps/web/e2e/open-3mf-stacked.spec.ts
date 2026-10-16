@@ -71,7 +71,8 @@ test('a 3MF with stacked objects keeps each at its height from the file, joined 
   const heights = (objects: NonNullable<Awaited<ReturnType<typeof plate>>>) => new Map(objects.flatMap((o) => o.parts.map((p) => [p.name, p.z] as [string, number])))
 
   // Opened as one object with the two bands as parts, each band where the file puts it and on its own filament.
-  await expect.poll(async () => (await plate())?.map((o) => o.parts.length), { timeout: 60_000 }).toEqual([2])
+  // The startup example also has two parts; wait for the imported object itself.
+  await expect.poll(async () => (await plate())?.map((o) => ({ name: o.name, parts: o.parts.length })), { timeout: 60_000 }).toEqual([{ name: 'x-mark-2color', parts: 2 }])
   const joined = (await plate())!
   expect(joined[0]!.name).toBe('x-mark-2color')
   expect(joined[0]!.parts.map((p) => p.slot)).toEqual([1, 2])
