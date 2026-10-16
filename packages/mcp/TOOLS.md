@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-199 tools.
+200 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -131,6 +131,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_paint_apply` |  |  | slice | Apply a paint preview as a step in the design's history (it replays, saves with slicerx_design_save and undoes with slicerx_design_undo). |
 | `slicerx_paint_preview` |  |  | read | See what painting a design would do, without changing it: the triangles and area a target paints on each part, its connected regions, and a picture framed on them (the PNG only with image: true). |
 | `slicerx_paint_regions` |  |  | read | Read a design's paint back: for one layer, each part's painted states (for color, filament slots) with their area in mm2, triangles and connected regions with bounds. |
+| `slicerx_parts_lookup` |  |  | read | Published sizes, with sources, of a standard part or product: 608 bearing, NEMA 17, M3, Pi 4, iPhone 15. |
 | `slicerx_pending_approvals` | Pending approvals | core | read, ungated | List approval requests this session raised: the ones waiting for your user (approve with slicerx_approve), the ones waiting for a person in SlicerX or on the phone, and how those went once the hub ran them. |
 | `slicerx_plan_settings` | Plan settings | settings | read, ungated | Work out which OrcaSlicer settings to change for a filament, printer, nozzle and print intent. |
 | `slicerx_print_adjust` |  |  | start | Make one change to a running print: part fan, speed factor, nozzle or bed temperature, or pause. |
