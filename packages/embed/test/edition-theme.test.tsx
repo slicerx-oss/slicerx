@@ -108,9 +108,9 @@ describe('the embedded view', () => {
       await loaded
     })
     expect(fetch).toHaveBeenCalledTimes(1)
-    expect(el.activeTheme).toMatchObject({ scheme: 'dark', accent: '#b8f34a', scene: { bgTop: '#1a1d23', bgBottom: '#0a0c10', floorGrid: '#4a5363' } })
+    expect(el.activeTheme).toMatchObject({ scheme: 'dark', accent: '#b8f34a', scene: { bgTop: '#1a1d23', bgBottom: '#0a0c10', floorGrid: '#4a5363', originPlane: '#b8f34a', addPreview: '#b8f34a' } })
     await act(() => el.setAttribute('theme', 'light'))
-    expect(el.activeTheme).toMatchObject({ scheme: 'light', accent: '#456b0b', scene: { bgTop: '#f1f4ee' } })
+    expect(el.activeTheme).toMatchObject({ scheme: 'light', accent: '#456b0b', scene: { bgTop: '#f1f4ee', originPlane: '#456b0b', addPreview: '#456b0b' } })
     // the property wins over the attribute
     await act(() => void (el.edition = { brand: { theme: { light: { scene: { top: '#ffffff' } } } } }))
     expect(el.activeTheme.scene['bgTop']).toBe('#ffffff')

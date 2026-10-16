@@ -30,9 +30,11 @@ export interface ViewportScene {
   edgeXray: string
   selection: string
   liveLayer: string
+  originPlane: string
+  addPreview: string
 }
 
-const SCENE_READ = ['bgTop', 'bgBottom', 'bgGlow', 'plateSide', 'floorGrid', 'edgeDark', 'edgeXray', 'selection', 'liveLayer'] as const
+const SCENE_READ = ['bgTop', 'bgBottom', 'bgGlow', 'plateSide', 'floorGrid', 'edgeDark', 'edgeXray', 'selection', 'liveLayer', 'originPlane', 'addPreview'] as const
 
 /** The look for the theme on the root element: its scheme picks the preset, its name whether the backdrop is the preset's. */
 export function themeLook(root: HTMLElement = document.documentElement): { preset: LookPresetId; themeBackdrop: boolean; look: ViewportLook } {
