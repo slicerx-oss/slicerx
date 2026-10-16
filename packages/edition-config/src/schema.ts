@@ -39,15 +39,29 @@ const visualTokens = z.object({
   ...Object.fromEntries(VISUAL_TOKEN_NAMES.map(name => [name, visualColor])) as Record<VisualTokenName, typeof visualColor>,
   '--accent': z.string().regex(/^#[0-9a-fA-F]{6}$/, 'the accent must be an opaque six-digit hex color').optional(),
 }).strict()
+const sceneColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'a six-digit hex color').optional()
+/** The 3D studio behind the model: backdrop gradient, glow, plate side, floor grid and edges. The loop backdrop uses top and bottom. */
+const sceneTokens = z.object({
+  top: sceneColor,
+  bottom: sceneColor,
+  glow: sceneColor,
+  plate: sceneColor,
+  grid: sceneColor,
+  edge: sceneColor,
+  xray: sceneColor,
+}).strict()
 const schemeTokens = z.object({
   colors: z.record(z.string(), z.string()).optional(),
   visuals: visualTokens.optional(),
+  scene: sceneTokens.optional(),
 }).strict()
 
 const themeTokens = z.object({
   colors: z.record(z.string(), z.string()).optional(),
   /** Icon, tooltip loop and sketch glyph colors, applied after the look preset. */
   visuals: visualTokens.optional(),
+  /** Studio colors for both schemes; `light.scene` and `dark.scene` override them. Unset keys keep SlicerX's studio. */
+  scene: sceneTokens.optional(),
   /** Family names. The app adds a sans-serif (or monospace) fallback stack after each. */
   fonts: z.object({ display: z.string(), body: z.string(), mono: z.string() }).partial().optional(),
   /** Font files the build bundles, for families the base does not ship. */

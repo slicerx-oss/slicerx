@@ -24,6 +24,21 @@ describe('edition visual tokens', () => {
     }
   })
 
+  it('accepts studio colors shared and per scheme, and rejects unknown keys and non-hex values', () => {
+    const theme = {
+      base: 'subban',
+      tokens: { scene: { grid: '#4a5363' } },
+      dark: { visuals: { '--accent': '#b8f34a' }, scene: { top: '#1a1d23', bottom: '#0a0c10', glow: '#22262e', plate: '#2a2e37', edge: '#050608', xray: '#c9d2ff' } },
+      light: { scene: { top: '#f1f4ee', bottom: '#cdd6c4' } },
+    }
+    expect(brandSchema.parse({ ...brand, theme }).theme).toEqual(theme)
+    for (const scene of [{ sky: '#123456' }, { top: 'lime' }, { top: '#12345688' }, { bottom: 'rgb(0 0 0)' }]) {
+      for (const location of ['tokens', 'light', 'dark']) {
+        expect(brandSchema.safeParse({ ...brand, theme: { base: 'subban', [location]: { scene } } }).success, JSON.stringify({ location, scene })).toBe(false)
+      }
+    }
+  })
+
   it('keeps the default theme unchanged', () => {
     expect(brandSchema.parse(brand).theme).toBe('subban')
   })
