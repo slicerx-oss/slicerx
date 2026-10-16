@@ -210,6 +210,8 @@ Deno.test('a conversation with a PDF is counted exactly before it reserves, and 
   const res = await handle(post('/v1/messages', { messages: [{ role: 'user', content: [pdf, { type: 'text', text: 'Make this.' }] }] }, { 'x-sx-install': TOKEN }), h.env)
   assertEquals(res.status, 200)
   await res.text()
+  // the settle and the stored transcript (a digest) run after the reply, under waitUntil
+  await Promise.all(h.pending)
   assertEquals(h.calls.find((c) => c.fn === 'mimir_reserve')!.args['p_input'], 5_000)
   assertEquals(h.sent.map((x) => x.url.split('/').at(-1)), ['count_tokens', 'messages'])
   assertEquals((h.sent[1]!.body['messages'] as Obj[])[0]!['content'], [pdf, { type: 'text', text: 'Make this.' }])
@@ -452,6 +454,7 @@ Deno.test('when the byte estimate hits a daily cap, the exact count gets one mor
   const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
   assertEquals(res.status, 200)
   await res.text()
+  await Promise.all(h.pending)
   const reserves = h.calls.filter((c) => c.fn === 'mimir_reserve')
   assertEquals(reserves.length, 2)
   assertEquals(reserves[1]!.args['p_input'], 10)
@@ -491,6 +494,7 @@ Deno.test('the exact count leaves out thinking blocks signed in another conversa
   const res = await handle(post('/v1/messages', turn, { 'x-sx-install': TOKEN }), h.env)
   assertEquals(res.status, 200)
   await res.text()
+  await Promise.all(h.pending)
   const counted = h.sent.find((x) => x.url.endsWith('/count_tokens'))!.body
   assert(!('thinking' in counted))
   const msgs = counted['messages'] as Obj[]
