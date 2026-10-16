@@ -75,6 +75,21 @@ describe('schema', () => {
   })
 })
 
+describe('labels', () => {
+  // Named features (design/NAMES.md) are values or marks, never a row's whole label: a partner page that lists rows
+  // from this schema shows the label alone, so "sleipnir" by itself tells a maker nothing.
+  const NAMED = ['mimir', 'aegis', 'sleipnir', 'atlas', 'norn', 'heimdall', 'huginn', 'muninn']
+  it('gives every setting a plain label, not a feature name or a raw key', () => {
+    const bad = SETTINGS.filter((d) => NAMED.includes(d.label.trim().toLowerCase()) || d.label === d.key).map((d) => `${d.key}: ${d.label}`)
+    expect(bad).toEqual([])
+  })
+  it('names adaptive layer height in plain words, with sleipnir in its choices', () => {
+    const d = settingDef('smart_layer')
+    expect(d?.label).toBe('Adaptive layer height')
+    expect(d?.enumLabels).toEqual(['Off', 'sleipnir: Quality', 'sleipnir: Strength'])
+  })
+})
+
 describe('knowledge/settings.yaml', () => {
   const NORM: Record<string, string> = {
     floats: 'float', ints: 'int', bools: 'bool', percents: 'percent', strings: 'string', enums: 'enum', gcode: 'string',
