@@ -122,3 +122,10 @@ path = "packages/settings/tests/fixtures/cura-ultimaker.json"
 precedence = "aggregate"
 SPDX-FileCopyrightText = ["UltiMaker B.V. and the UltiMaker Cura contributors", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "LGPL-3.0-or-later"
+
+# pnpm patches to npm dependencies keep the license of the package they change.
+[[annotations]]
+path = "patches/vitest@*.patch"
+precedence = "aggregate"
+SPDX-FileCopyrightText = ["VoidZero Inc. and Vitest contributors", "2026 The SlicerX contributors"]
+SPDX-License-Identifier = "MIT"
