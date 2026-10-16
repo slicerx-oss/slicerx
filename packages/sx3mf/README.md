@@ -18,7 +18,7 @@ pub fn stamp(zip_bytes: &[u8], meta: &Sx3mfMetadata, thumbnail_png: Option<&[u8]
 
 ## Dependencies
 
-- `zip` 8.6.0 (deflate through zlib-rs only)
+- `zip` 9.0.3 (deflate through zlib-rs only)
 - `quick-xml` 0.42.0
 - `thiserror` 2.0.21
 - `serde` 1.0.229

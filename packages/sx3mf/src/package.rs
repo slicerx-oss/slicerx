@@ -78,7 +78,7 @@ fn open<R: Read + Seek>(reader: R) -> Result<ZipArchive<R>, Error> {
         });
     }
     for name in archive.file_names() {
-        check_entry_name(name)?;
+        check_entry_name(&name?)?;
     }
     Ok(archive)
 }
@@ -334,7 +334,7 @@ pub fn stamp(zip_bytes: &[u8], meta: &Sx3mfMetadata, thumbnail_png: Option<&[u8]
     let mut out = ZipWriter::new(Cursor::new(Vec::new()));
     for i in 0..archive.len() {
         let file = archive.by_index_raw(i)?;
-        let name = file.name().to_owned();
+        let name = file.name()?.into_owned();
         if name == model_entry {
             drop(file);
             add_part(&mut out, &name, deflate, model.as_bytes())?;

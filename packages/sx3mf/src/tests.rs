@@ -72,7 +72,7 @@ fn entries(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
             let mut f = z.by_index(i).unwrap();
             let mut d = Vec::new();
             f.read_to_end(&mut d).unwrap();
-            (f.name().to_owned(), d)
+            (f.name().unwrap().into_owned(), d)
         })
         .collect()
 }

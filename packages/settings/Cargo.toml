@@ -25,4 +25,4 @@ stock-profiles = ["dep:sx-profiles"]
 # The UltiMaker tests slice a plate from the shipped profiles.
 sx-core = { workspace = true }
 # The preset bundle tests open real OrcaSlicer and Bambu Studio bundles, which are zips.
-zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "=9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }

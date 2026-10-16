@@ -155,7 +155,7 @@ pub fn audit<R: Read + Seek>(
     let mut entries = Vec::with_capacity(zip.len());
     for index in 0..zip.len() {
         let f = zip.by_index_raw(index).map_err(|e| zip_err(&e))?;
-        let name = f.name().to_owned();
+        let name = f.name().map_err(|e| zip_err(&e))?.into_owned();
         check_name(&name, limits)?;
         let lower = name.to_ascii_lowercase();
         if !seen.insert(lower.clone()) {
