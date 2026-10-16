@@ -577,6 +577,14 @@ try {
 
 Write an opened `.sx3mf` only where the app alone reads it (mode 0600) and the server may read it, slice it, and delete it. The server reads files inside its `--allow-dir` folders and its own `--out-dir`. With the server instead of the library, `slicerx_sxlock_open` writes the opened `.sx3mf` into `--out-dir` and returns its `path`, which `slicerx_slice_file` takes as `model` as is. The SlicerX team gives integrators `supabaseUrl` and `anonKey`; the token comes from the user's SlicerX account settings, with only the scopes the app needs.
 
+## Working in the SlicerX repository
+
+When you change the SlicerX repository itself (a Path A fork, or a fix you send upstream):
+
+- Do not add a spec file under `apps/web/e2e` for a bug fix or a small feature. Add a Vitest test, or a test in the matching journey in `apps/web/e2e/journeys/`.
+- Never leave build archives (`.tar.gz`, `.zip`, `.dmg`) or a `target-bak/` copy in the repository root or the home folder. Remove each temp dir you make when its script, test or process ends (`trap`, `finally`, or a `Drop` guard in Rust).
+- With less than 45 GB free before a heavy build, run `sh scripts/janitor-mac.sh` or `powershell -File scripts\janitor-win.ps1`. Read its dry run, then run it with `--execute` (`-Execute`).
+
 ## Before you finish
 
 Check each of these and tell the user the result:
