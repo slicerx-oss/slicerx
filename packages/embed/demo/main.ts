@@ -6,6 +6,14 @@ import { defineSlicerXElements } from '../src/index'
 
 defineSlicerXElements()
 
+// ?edition=editions/lime.json themes every piece from an edition config, fetched at runtime; ?theme=light picks the scheme.
+const params = new URLSearchParams(location.search)
+for (const el of document.querySelectorAll('sx-viewport, sx-settings-panel')) {
+  const edition = params.get('edition')
+  if (edition) el.setAttribute('edition-src', edition)
+  if (params.get('theme') === 'light') el.setAttribute('theme', 'light')
+}
+
 function box(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): string {
   const v = [
     [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
