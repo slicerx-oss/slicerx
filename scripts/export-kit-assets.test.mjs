@@ -2,11 +2,11 @@
 // Copyright (C) 2026 The SlicerX contributors
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { exportAssets, fallbacks, namespaceSvg, namespaceClasses, mergeSvgStyles } from './export-kit-assets.mjs'
+import { cliOptions, editionVars, exportAssets, fallbacks, namespaceSvg, namespaceClasses, mergeSvgStyles } from './export-kit-assets.mjs'
 import { TOOL_ICONS } from '../packages/ui/src/icons/tool-icons.ts'
 import { DEMOS, SETTING_DEMOS } from '../packages/app/src/lib/demos.ts'
 
@@ -40,6 +40,75 @@ test('exports all registered tools, loops and setting mappings as self-contained
   } finally { rmSync(out, { recursive: true, force: true }) }
 })
 
+const lime = {
+  id: 'lime',
+  brand: {
+    theme: {
+      base: 'subban',
+      tokens: { scene: { grid: '#4a5363' } },
+      dark: { visuals: { '--accent': '#b8f34a' }, scene: { top: '#1a1d23', bottom: '#0a0c10' } },
+      light: { colors: { purple: '#456b0b' }, scene: { top: '#f1f4ee', bottom: '#cdd6c4' } },
+    },
+  },
+}
+
+test('loops are transparent by default, with no backdrop baked into the files or tokens.css', async () => {
+  const out = mkdtempSync(join(tmpdir(), 'sx-kit-assets-clear-'))
+  try {
+    const manifest = await exportAssets(out)
+    assert.equal(manifest.loopBackdrop, 'transparent')
+    assert.equal(manifest.edition, null)
+    for (const file of new Set(manifest.assets.filter((a) => a.kind === 'loop').map((a) => a.file))) {
+      const svg = readFileSync(join(out, file), 'utf8')
+      assert.doesNotMatch(svg, /--scene-top|--scene-bottom/, file)
+      // one runtime control for the ground, transparent unless the host sets it
+      assert.match(svg, /^<svg [^>]*style="background:var\(--sx-loop-backdrop,transparent\)"/, file)
+    }
+    const tokens = readFileSync(join(out, 'tokens.css'), 'utf8')
+    assert.doesNotMatch(tokens, /--scene-top|--scene-bottom/)
+    // the grid still has its studio fallback
+    assert.match(tokens, /--scene-grid: #9aa4c1;/)
+  } finally { rmSync(out, { recursive: true, force: true }) }
+})
+
+test('an edition supplies the accent and studio colors, and a backdrop on request', async () => {
+  const out = mkdtempSync(join(tmpdir(), 'sx-kit-assets-edition-'))
+  try {
+    const manifest = await exportAssets(out, { backdrop: true, edition: lime })
+    assert.equal(manifest.loopBackdrop, 'scene')
+    assert.equal(manifest.edition, 'lime')
+    const dark = readFileSync(join(out, 'loops/dark/push.svg'), 'utf8')
+    assert.match(dark, /style="background:var\(--sx-loop-backdrop,linear-gradient\(180deg,var\(--scene-top,#1a1d23\),var\(--scene-bottom,#0a0c10\)\)\)"/)
+    assert.match(dark, /var\(--accent,#b8f34a\)/)
+    assert.doesNotMatch(dark, /#bd93f9/)
+    const light = readFileSync(join(out, 'loops/light/push.svg'), 'utf8')
+    assert.match(light, /var\(--scene-top,#f1f4ee\)/)
+    assert.match(light, /var\(--accent,#456b0b\)/)
+    const tokens = readFileSync(join(out, 'tokens.css'), 'utf8')
+    assert.match(tokens, /\[data-sx-theme="dark"\] \{[^}]*--accent: #b8f34a;[^}]*--scene-grid: #4a5363;[^}]*--scene-top: #1a1d23;/)
+    // an edition without a backdrop still recolors, and its loops stay transparent
+    const clear = await exportAssets(out, { edition: lime })
+    assert.equal(clear.loopBackdrop, 'transparent')
+    assert.match(readFileSync(join(out, 'loops/dark/push.svg'), 'utf8'), /style="background:var\(--sx-loop-backdrop,transparent\)"/)
+  } finally { rmSync(out, { recursive: true, force: true }) }
+})
+
+test('edition values are checked and the command line takes JSON only', () => {
+  assert.deepEqual(editionVars({ brand: { theme: 'subban' } }, 'dark'), {})
+  assert.deepEqual(editionVars({ dark: { visuals: { '--accent': 'lime', '--width': '#123456', '--stage-a1': '#11223344' }, scene: { top: 'green', sky: '#123456', bottom: '#000000' } } }, 'dark'), { '--stage-a1': '#11223344', '--scene-bottom': '#000000' })
+  const dir = mkdtempSync(join(tmpdir(), 'sx-kit-assets-cli-opts-'))
+  try {
+    const file = join(dir, 'edition.json')
+    writeFileSync(file, JSON.stringify(lime))
+    const opts = cliOptions([join(dir, 'out'), '--backdrop', '--edition', file])
+    assert.equal(opts.backdrop, true)
+    assert.equal(opts.edition.id, 'lime')
+    assert.equal(cliOptions([join(dir, 'out')]).backdrop, false)
+    assert.throws(() => cliOptions(['out', '--edition', 'edition.config.ts']), /resolve a TypeScript config first/)
+    assert.throws(() => cliOptions(['out', '--shiny']), /Unknown option/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 test('nested fallbacks preserve overrides and reject missing or cyclic tokens', () => {
   assert.equal(fallbacks('fill:var(--shade)', { '--shade': 'var(--accent)', '--accent': '#123456' }), 'fill:var(--shade,var(--accent,#123456))')
   assert.throws(() => fallbacks('var(--absent)', {}), /Missing default/)
@@ -64,6 +133,9 @@ test('the packaging CLI includes assets without building packages', () => {
     execFileSync(process.execPath, ['scripts/pack-integrator-kit.mjs', out, '--assets-only'])
     const manifest = JSON.parse(readFileSync(join(out, 'assets/manifest.json'), 'utf8'))
     assert.ok(manifest.assets.some((a) => a.id === 'push' && a.kind === 'loop'))
+    // the kit ships transparent loops unless --backdrop is given
+    assert.equal(manifest.loopBackdrop, 'transparent')
+    assert.match(readFileSync(join(out, 'assets/loops/dark/push.svg'), 'utf8'), /background:var\(--sx-loop-backdrop,transparent\)/)
   } finally { rmSync(out, { recursive: true, force: true }) }
 })
 

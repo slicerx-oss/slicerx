@@ -13,12 +13,15 @@
 //   node scripts/pack-integrator-kit.mjs ~/slicerx-kit --engine ./engine-draft    # a folder of archives (a draft)
 // The kit then has engine/macos-universal, engine/windows-x64 and engine/linux-x64, each with bin/, lib/ and include/
 // as the archive has them. --engine-only skips the packages (no pnpm build).
+//
+// The tooltip loops in assets/ are transparent. --backdrop draws the studio gradient behind them, and
+// --edition <edition.json> colors tokens.css and the SVG fallbacks from that edition's brand.theme block.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { exportAssets } from './export-kit-assets.mjs'
+import { exportAssets, readEdition } from './export-kit-assets.mjs'
 
 const REPO = 'slicerx-oss/slicerx'
 /** The platforms an engine release builds, by the suffix of its archive names. */
@@ -161,7 +164,7 @@ function packPackages(dest) {
 }
 
 async function main(args) {
-  const values = new Set(['--engine', '--repo'])
+  const values = new Set(['--engine', '--repo', '--edition'])
   const dest = resolve(args.find((a, i) => !a.startsWith('--') && !values.has(args[i - 1] ?? '')) ?? 'slicerx-kit')
   const engineSource = flag(args, '--engine')
   const repo = flag(args, '--repo')
@@ -170,7 +173,8 @@ async function main(args) {
   if (engineOnly && !engineSource) throw new Error('--engine-only needs --engine <tag | folder>')
   mkdirSync(dest, { recursive: true })
   if (!engineOnly && !assetsOnly) packPackages(dest)
-  await exportAssets(join(dest, 'assets'))
+  const editionFile = flag(args, '--edition')
+  await exportAssets(join(dest, 'assets'), { backdrop: args.includes('--backdrop'), edition: editionFile ? readEdition(editionFile) : undefined })
   if (!engineSource) return
   const archives = await engineArchives(engineSource, repo ? { repo } : {})
   const label = existsSync(engineSource)
