@@ -767,6 +767,11 @@ export class SketchLayer {
     this.planeEdgeMat.color.set(hex)
   }
 
+  /** Read back for checks: the soft lines' and sketch plane's color. */
+  accent(): string {
+    return `#${this.planeEdgeMat.color.getHexString()}`
+  }
+
   /** Darker curves, points and snap marker on a light studio, so they read on it. */
   setLight(light: boolean, glyphColors: GlyphColors = {}): void {
     const was = this.light

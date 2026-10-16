@@ -73,6 +73,10 @@ export const SCENE = {
   bgGlow: '#3c3f50',
   selection: '#bd93f9',
   selectionHidden: '#6a58a0',
+  /** Create Sketch's origin planes. Unset, they follow the selection color. */
+  originPlane: '#bd93f9',
+  /** Material a Model operation adds, in its preview (push and pull, fillet and chamfer). Unset, the selection color. */
+  addPreview: '#bd93f9',
   liveLayer: '#8be9fd',
   overhangRed: '#ff4b5c',
   overhangAmber: '#ffb86c',
@@ -226,6 +230,9 @@ export function resolveTheme(theme?: ViewportTheme): ResolvedTheme {
   for (const [k, v] of Object.entries(theme?.scene ?? {})) if (v !== undefined) scene[k as keyof SceneColors] = v
   // the hidden outline is the selection sunk halfway into the backdrop, so a new accent never leaves the old one behind
   if (theme?.scene?.selection && !theme.scene.selectionHidden) scene.selectionHidden = mixHex(scene.selection, scene.bgBottom, 0.5)
+  // the CAD accents follow the selection unless set, so a new accent reaches the origin planes and the add preview
+  if (!theme?.scene?.originPlane) scene.originPlane = scene.selection
+  if (!theme?.scene?.addPreview) scene.addPreview = scene.selection
   return {
     glyphs: { ...theme?.glyphs },
     scene,
