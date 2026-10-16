@@ -682,7 +682,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 
 ### `smart_layer`
 
-**sleipnir**
+**Adaptive layer height**
 
 Automatic variable layer height. Off keeps one layer height. Quality thins layers where curved and detailed surfaces need it; Strength thins layers where the part carries load and keeps them thick elsewhere.
 
@@ -705,7 +705,7 @@ The thickest layer sleipnir may use. Keep it at most three quarters of the nozzl
 - Unit: mm
 - Default: 0.2
 - Recommended range: 0.04 to 0.8
-- Used only when: sleipnir (`smart_layer`) is not "off"
+- Used only when: Adaptive layer height (`smart_layer`) is not "off"
 - Tier: Expert, quality
 - Changing it redoes: layers (the whole slice)
 - Easy mode: Set by the sleipnir control. At most half the nozzle in both modes, and about one and a half times the layer height the Detail slider gives, never closer than one step to the thinnest layer.
@@ -721,7 +721,7 @@ The biggest change in layer height from one layer to the next, as a fraction of 
 - Type: number
 - Default: 0.25
 - Recommended range: 0.05 to 1
-- Used only when: sleipnir (`smart_layer`) is not "off"
+- Used only when: Adaptive layer height (`smart_layer`) is not "off"
 - Tier: Expert, quality
 - Changing it redoes: layers (the whole slice)
 - mimir class: edit (may change in a plate override)
@@ -737,7 +737,7 @@ The thinnest layer sleipnir may use. Keep it at least a quarter of the nozzle di
 - Unit: mm
 - Default: 0.15
 - Recommended range: 0.04 to 0.8
-- Used only when: sleipnir (`smart_layer`) is not "off"
+- Used only when: Adaptive layer height (`smart_layer`) is not "off"
 - Tier: Expert, quality
 - Changing it redoes: layers (the whole slice)
 - Easy mode: Set by the sleipnir control. At least 20 percent of the nozzle in Quality and 30 percent in Strength, and about three quarters of the layer height the Detail slider gives (0.15 mm at 0.20 mm), at most one step under the thickest layer the nozzle allows.
@@ -754,7 +754,7 @@ How strongly neighboring layer heights are blended. 0 follows the surface exactl
 - Unit: %
 - Default: 70
 - Recommended range: 0 to 100
-- Used only when: sleipnir (`smart_layer`) is not "off"
+- Used only when: Adaptive layer height (`smart_layer`) is not "off"
 - Tier: Expert, quality
 - Changing it redoes: layers (the whole slice)
 - mimir class: edit (may change in a plate override)
@@ -770,7 +770,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Unit: mm
 - Default: 0
 - Recommended range: 0 to 20
-- Used only when: sleipnir (`smart_layer`) is not "off"
+- Used only when: Adaptive layer height (`smart_layer`) is not "off"
 - Tier: Expert, quality
 - Changing it redoes: layers (the whole slice)
 - mimir class: edit (may change in a plate override)

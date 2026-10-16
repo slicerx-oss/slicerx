@@ -1715,7 +1715,7 @@
    "section": "process",
    "type": "enum",
    "default": "off",
-   "label": "sleipnir",
+   "label": "Adaptive layer height",
    "help": "Automatic variable layer height. Off keeps one layer height. Quality thins layers where curved and detailed surfaces need it; Strength thins layers where the part carries load and keeps them thick elsewhere.",
    "mode": "simple",
    "enumValues": [

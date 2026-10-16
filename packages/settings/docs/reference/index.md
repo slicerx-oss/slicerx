@@ -620,7 +620,7 @@ Alphabetical, each linking to its group file.
 - `small_perimeter_threshold`: Small perimeter threshold, [process/speed](process-speed.md#small_perimeter_threshold)
 - `small_support_perimeter_speed`: Small support perimeter speed, [process/speed](process-speed.md#small_support_perimeter_speed)
 - `small_support_perimeter_threshold`: Small support perimeter threshold, [process/speed](process-speed.md#small_support_perimeter_threshold)
-- `smart_layer`: sleipnir, [process/quality](process-quality.md#smart_layer)
+- `smart_layer`: Adaptive layer height, [process/quality](process-quality.md#smart_layer)
 - `smart_layer_max_height`: sleipnir thickest layer, [process/quality](process-quality.md#smart_layer_max_height)
 - `smart_layer_max_step_ratio`: sleipnir largest step, [process/quality](process-quality.md#smart_layer_max_step_ratio)
 - `smart_layer_min_height`: sleipnir thinnest layer, [process/quality](process-quality.md#smart_layer_min_height)
