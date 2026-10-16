@@ -116,6 +116,68 @@ export interface ViewportTheme {
   toolColors?: readonly string[]
 }
 
+/**
+ * The parts of a full UI theme (@slicerx/ui createTheme) the 3D scene reads: its scheme, palette, studio block and
+ * visual properties. setTheme takes one in place of a ViewportTheme.
+ */
+export interface UiThemeLike {
+  scheme?: 'dark' | 'light'
+  colors: Partial<Record<string, string>>
+  scene?: Partial<Record<'top' | 'bottom' | 'glow' | 'plate' | 'grid' | 'edge' | 'xray', string>>
+  visuals?: Partial<Record<string, string>>
+}
+
+const VIEWPORT_THEME_KEYS = new Set(['glyphs', 'scene', 'features', 'heatRamp', 'toolColors'])
+const isHex = (v: unknown): v is string => typeof v === 'string' && HEX.test(v)
+
+/**
+ * The 3D scene colors for a UI theme: its own `scene` block when it has one, a light studio built from its surfaces
+ * when it is light, and its accent (`--accent` when set, else the palette purple) for the selection outline. Values
+ * that are not #rrggbb are left out, so the result is always a valid theme. Undefined keeps the default dark studio.
+ */
+export function sceneFromUiTheme(theme: UiThemeLike): ViewportTheme | undefined {
+  const c = theme.colors
+  const scene: Partial<SceneColors> = {}
+  const set = (key: keyof SceneColors, v: string | undefined) => {
+    if (isHex(v)) scene[key] = v
+  }
+  if (theme.scene) {
+    set('bgTop', theme.scene.top)
+    set('bgBottom', theme.scene.bottom)
+    set('bgGlow', theme.scene.glow)
+    set('plateSide', theme.scene.plate)
+    set('floorGrid', theme.scene.grid)
+    set('edgeDark', theme.scene.edge)
+    set('edgeXray', theme.scene.xray)
+  } else if (theme.scheme === 'light' && isHex(c['ink0']) && isHex(c['ink2']) && isHex(c['line']) && isHex(c['fg'])) {
+    set('bgTop', mixHex(c['ink0'], '#ffffff', 0.55))
+    set('bgBottom', mixHex(c['ink2'], c['line'], 0.6))
+    set('bgGlow', mixHex('#ffffff', c['ink0'], 0.25))
+    set('plateSide', mixHex(c['line'], c['fg'], 0.18))
+    set('floorGrid', mixHex(c['line'], c['fg'], 0.45))
+    set('edgeDark', mixHex(c['fg'], '#000000', 0.15))
+  }
+  // an explicit accent wins over the palette purple, as in the app
+  set('selection', theme.visuals?.['--accent'] ?? c['purple'])
+  set('liveLayer', c['cyan'])
+  return Object.keys(scene).length ? { scene } : undefined
+}
+
+/**
+ * What setTheme was given, as a ViewportTheme: a ViewportTheme as is, a full UI theme (it has `colors`) through
+ * sceneFromUiTheme, nothing as the defaults. Anything else is null, after a warning, and the view keeps its look.
+ */
+export function viewportThemeOf(input: unknown, warn: (message: string) => void = console.warn): { theme: ViewportTheme | undefined } | null {
+  if (input === undefined || input === null) return { theme: undefined }
+  if (typeof input === 'object' && !Array.isArray(input)) {
+    const o = input as Record<string, unknown>
+    if (o['colors'] && typeof o['colors'] === 'object') return { theme: sceneFromUiTheme(o as unknown as UiThemeLike) }
+    if (Object.keys(o).every((k) => VIEWPORT_THEME_KEYS.has(k))) return { theme: o as ViewportTheme }
+  }
+  warn('SlicerX viewport: setTheme takes a ViewportTheme or a theme from createTheme; the look is unchanged')
+  return null
+}
+
 export interface ResolvedTheme {
   glyphs: GlyphColors
   scene: SceneColors

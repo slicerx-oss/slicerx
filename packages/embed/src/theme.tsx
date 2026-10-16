@@ -4,8 +4,8 @@
 // apply to this subtree only. An edition config (its brand.theme block) sets
 // the accent, the studio colors and the rest at runtime, over the theme.
 import { subban, subbanLight, ThemeProvider, type Theme } from '@slicerx/ui'
-import { editionSceneOverrides, editionVisualOverrides, mixHex, parseHex, themeFromEdition, type EditionThemeConfig } from '@slicerx/ui/theme'
-import type { ViewportTheme } from '@slicerx/viewport'
+import { editionSceneOverrides, editionVisualOverrides, themeFromEdition, type EditionThemeConfig } from '@slicerx/ui/theme'
+import { sceneFromUiTheme, type UiThemeLike, type ViewportTheme } from '@slicerx/viewport'
 import type { ReactNode } from 'react'
 
 /**
@@ -69,37 +69,11 @@ export function EmbedTheme({ theme, edition, children }: EmbedThemeProps) {
   )
 }
 
-const hex = (v: string | undefined): string | undefined => (v && parseHex(v) ? v : undefined)
-
 /**
  * The 3D scene colors for a theme: its own `scene` block when it has one, a light studio built from
  * its surfaces when it is light, and its accent (`--accent` when set, else the palette purple) for the selection
- * outline. Undefined keeps the default dark studio.
+ * outline. Undefined keeps the default dark studio. The viewport's setTheme does the same with a full theme.
  */
 export function sceneFor(theme: Theme): ViewportTheme | undefined {
-  const c = theme.colors
-  const scene: Record<string, string> = {}
-  const set = (key: string, v: string | undefined) => {
-    if (hex(v)) scene[key] = v as string
-  }
-  if (theme.scene) {
-    set('bgTop', theme.scene.top)
-    set('bgBottom', theme.scene.bottom)
-    set('bgGlow', theme.scene.glow)
-    set('plateSide', theme.scene.plate)
-    set('floorGrid', theme.scene.grid)
-    set('edgeDark', theme.scene.edge)
-    set('edgeXray', theme.scene.xray)
-  } else if (theme.scheme === 'light' && hex(c.ink0) && hex(c.line) && hex(c.fg)) {
-    set('bgTop', mixHex(c.ink0, '#ffffff', 0.55))
-    set('bgBottom', mixHex(c.ink2, c.line, 0.6))
-    set('bgGlow', mixHex('#ffffff', c.ink0, 0.25))
-    set('plateSide', mixHex(c.line, c.fg, 0.18))
-    set('floorGrid', mixHex(c.line, c.fg, 0.45))
-    set('edgeDark', mixHex(c.fg, '#000000', 0.15))
-  }
-  // an edition's explicit accent wins over the palette purple, as in the app
-  set('selection', theme.visuals?.['--accent'] ?? c.purple)
-  set('liveLayer', c.cyan)
-  return Object.keys(scene).length ? { scene } : undefined
+  return sceneFromUiTheme(theme as unknown as UiThemeLike)
 }

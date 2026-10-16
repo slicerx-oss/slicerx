@@ -54,7 +54,7 @@ import { DimensionLayer, EdgePreview, OpPreviewLook, PushPreview, SketchLayer, f
 import { clampScale, factorsFor, handleAxis, handleLocal, minFactorFor, nearestOnLine, pivotFor, ratioLine, ratioPivotFor, ratioPlane, ratioPoint, scaleTransform, snapScale, type HandleId, type V3 } from './scaling'
 import type { ModKey } from './gizmobindings'
 import { layerTopsProblems } from './layerheights'
-import { FEATURE_COLORS, SCENE, resolveTheme, type ResolvedTheme, type ViewportTheme } from './palette'
+import { FEATURE_COLORS, SCENE, resolveTheme, viewportThemeOf, type ResolvedTheme, type UiThemeLike, type ViewportTheme } from './palette'
 import { summarizePreview, type PreviewSummary } from './summary'
 import { CONTROL_PRESETS, buttonName, dragStartsOnModel, modifiersOf, orbitCodeFor, resolveDrag, resolveWheel, type ControlsMap, type ControlsPresetId } from './controls'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -3006,8 +3006,10 @@ class ViewportImpl implements Viewport {
     return [b.x, b.y, b.z]
   }
 
-  setTheme(theme?: ViewportTheme): void {
-    const t = resolveTheme(theme)
+  setTheme(theme?: ViewportTheme | UiThemeLike): void {
+    const input = viewportThemeOf(theme)
+    if (!input) return
+    const t = resolveTheme(input.theme)
     this.theme = t
     setSharedBandColors(t.heatRamp[0] ?? '#4f6bed', t.heatRamp[Math.floor((t.heatRamp.length - 1) / 2)] ?? '#f1fa8c', t.heatRamp[Math.floor((t.heatRamp.length - 1) * 0.75)] ?? '#ffb86c')
     this.pipeline.setSceneColors(t.scene)
