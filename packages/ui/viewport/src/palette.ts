@@ -178,7 +178,7 @@ export function viewportThemeOf(input: unknown, warn: (message: string) => void 
     if (o['colors'] && typeof o['colors'] === 'object') return { theme: sceneFromUiTheme(o as unknown as UiThemeLike) }
     if (Object.keys(o).every((k) => VIEWPORT_THEME_KEYS.has(k))) return { theme: o as ViewportTheme }
   }
-  warn('SlicerX viewport: setTheme takes a ViewportTheme or a theme from createTheme; the look is unchanged')
+  warn('viewport: setTheme takes a ViewportTheme or a theme from createTheme; the look is unchanged')
   return null
 }
 
