@@ -1086,7 +1086,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - run: bash scripts/ci/heavy-test.sh
+        with:
+          # a pull request checks out its merge commit, whose first parent is the base it merges into
+          fetch-depth: 2
+      # The tests take two minutes and cover only heavy.sh, so they run when it, its tests or this file changed.
+      - run: |
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(scripts/ci/heavy(-test)?\.sh|\.github/workflows/ci\.yml)$'; then
+            bash scripts/ci/heavy-test.sh
+          else
+            echo "heavy.sh and its tests are unchanged"
+          fi
 
   secrets:
     # nothing to do in a duplicate run (the concurrency comment at the top); a skipped job counts as passed
