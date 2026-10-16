@@ -1,0 +1,90 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Exact published motor models in NEMA 14/17/23 families. Not a claim that all motors in a family have identical hole type or depth.",
+  "verified_note": "Only measurements whose value was re-read in the cited source at checked_utc. Mismatched, not-stated, unsourced and null items were removed. Verification time is the file-level checked_utc.",
+  "records": [
+    {
+      "id": "SY42STH38-1684A",
+      "frame_family": "nema17",
+      "manufacturer": "SOYO",
+      "face_square": {
+        "value": 42.3,
+        "unit": "mm",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+        "limit": "maximum"
+      },
+      "hole_pitch_xy": {
+        "value": [
+          31,
+          31
+        ],
+        "unit": "mm",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+      },
+      "hole_pitch_tolerance": {
+        "value": [
+          -0.2,
+          0.2
+        ],
+        "unit": "mm",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+      },
+      "hole_centers": {
+        "value": [
+          [
+            -15.5,
+            -15.5
+          ],
+          [
+            15.5,
+            -15.5
+          ],
+          [
+            -15.5,
+            15.5
+          ],
+          [
+            15.5,
+            15.5
+          ]
+        ],
+        "unit": "mm",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+        "status": "derived",
+        "derivation": "Square pattern centered on shaft; each coordinate is signed pitch/2."
+      },
+      "hole_count": {
+        "value": 4,
+        "unit": "count",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+      },
+      "pilot_boss_diameter": {
+        "value": 22,
+        "unit": "mm",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+      },
+      "pilot_boss_tolerance": {
+        "value": [
+          -0.05,
+          0
+        ],
+        "unit": "mm",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+      },
+      "locator": "PDF page 1",
+      "coordinate_system": "Shaft center is origin; face viewed from shaft end.",
+      "hole_thread": {
+        "value": "M3",
+        "unit": "designation",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+      },
+      "thread_depth": {
+        "value": 4.5,
+        "unit": "mm",
+        "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+        "limit": "nominal"
+      }
+    }
+  ]
+}

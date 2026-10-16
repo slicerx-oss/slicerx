@@ -1,0 +1,48 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Selected common metric 6xx, 6000 and 6200 series. No suffix substitution or fit allowance is implied.",
+  "verified_note": "Only measurements whose value was re-read in the cited source at checked_utc. Mismatched, not-stated, unsourced and null items were removed. Verification time is the file-level checked_utc.",
+  "records": [
+    {
+      "id": "608",
+      "manufacturer": "NSK",
+      "bore": {
+        "value": 8,
+        "unit": "mm",
+        "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+      },
+      "outside_diameter": {
+        "value": 22,
+        "unit": "mm",
+        "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+      },
+      "width": {
+        "value": 7,
+        "unit": "mm",
+        "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+      },
+      "locator": "PDF page 29"
+    },
+    {
+      "id": "6000",
+      "manufacturer": "NSK",
+      "bore": {
+        "value": 10,
+        "unit": "mm",
+        "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+      },
+      "outside_diameter": {
+        "value": 26,
+        "unit": "mm",
+        "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+      },
+      "width": {
+        "value": 8,
+        "unit": "mm",
+        "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+      },
+      "locator": "PDF page 30"
+    }
+  ]
+}
