@@ -1,0 +1,1 @@
+controls never move when pressed › mimir lookup cards | doo-sx | 2026-10-16 | 2026-10-17 | https://github.com/slicerx-oss/slicerx/issues/1223 | passed only on retry in merge group run 38841494249 (e2e desktop 4/12)
