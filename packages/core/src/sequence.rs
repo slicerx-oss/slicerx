@@ -254,7 +254,7 @@ fn slice_interleaved(
     let mut below_wipe = crate::output::WipeTail::default();
     if lo < layers.start && !out.layers.is_empty() {
         let below = out.layers.remove(0);
-        below_end = below.points.last().copied();
+        below_end = below.exit_point();
         below_wipe = below.wipe_tail();
         // An empty layer below leaves the nozzle where the last layer with paths ended, as one range over the
         // whole plate carries it up.
@@ -265,14 +265,14 @@ fn slice_interleaved(
                 .iter()
                 .rev()
                 .find(|l| !l.paths.is_empty())
-                .map(|l| (l.points.last().copied(), l.wipe_tail()))
+                .map(|l| (l.exit_point(), l.wipe_tail()))
                 .or_else(|| under.layers.first().map(|l| (l.enter_from, l.below_wipe.clone())))
                 .unwrap_or_default();
         }
     }
     for l in &mut out.layers {
         l.enter_from = below_end;
-        below_end = l.points.last().copied().or(below_end);
+        below_end = l.exit_point().or(below_end);
         let tail = l.wipe_tail();
         l.below_wipe = if tail.points.is_empty() {
             below_wipe.clone()
