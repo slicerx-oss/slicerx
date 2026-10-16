@@ -510,7 +510,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # the first Windows build compiles the kernel from scratch (about 35 minutes with a cold cache)
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 90 || 45 }}
     defaults:
       run:
         shell: bash
@@ -536,10 +537,13 @@ jobs:
           kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
           if [ "$RUNNER_OS" = Windows ]; then kernel=$(cygpath -m "$kernel"); fi
           echo "SX_SMLIB_DIR=$kernel" >> "$GITHUB_ENV"
-      - run: cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings
+      # lints run on the other systems; Windows only builds and tests, so the kernel compiles once there
+      - if: runner.os != 'Windows'
+        run: cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings
       - run: cargo test -p sx-brep --release --features routine-probe
       # the exact solid ops through sx-geom's JSON and CLI, against exact values and the mesh path
-      - run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
+      - if: runner.os != 'Windows'
+        run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
       - run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
