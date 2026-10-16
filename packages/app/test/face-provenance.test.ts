@@ -71,6 +71,15 @@ describe('the step that made a face', () => {
     // what the person sees: the pull that moved the cap is its maker, unless that pull is suppressed
     expect(movedBy(history.steps, [step.id])).toBe(step.id)
     expect(movedBy([{ ...step, suppressed: true }], [step.id])).toBeUndefined()
+    // the first pull saved no key (the box had none yet), and is still the user of the top it moved
+    expect(h.steps[0]!.params).not.toHaveProperty('faceKey')
+    const first = { ...entry, parts: parts.map((p) => ({ name: p.name, slot: p.slot, positions: new Float32Array(p.positions), indices: new Uint32Array(p.indices) })), history: h } as unknown as PlateEntry
+    const triangleOf = (key: number | undefined) => Array.from({ length: parts[0]!.indices.length / 3 }, (_, t) => t).find((t) => keyOfTriangle(parts[0]!, t) === key)!
+    const moved = await faceSource(first, 0, triangleOf(top))
+    expect(moved).toEqual({ made: 'base', used: [h.steps[0]!.id] })
+    expect(movedBy(h.steps, moved!.used)).toBe(h.steps[0]!.id)
+    // a side wall the pull stretched is not the face it moved
+    expect((await faceSource(first, 0, triangleOf(faceKeyAt(parts[0]!, T, [80, 95, 5], [-1, 0, 0]))))?.used).toEqual([])
   })
 
   it('reads the base keys the way the engine makes them', async () => {
