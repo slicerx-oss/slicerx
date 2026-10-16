@@ -560,7 +560,8 @@ pub type OpenUrl<'a> = &'a (dyn Fn(&str) -> Result<()> + Send + Sync);
 pub struct ConnectOptions<'a> {
     /// Auth server and API.
     pub endpoints: Endpoints,
-    /// Callback port on 127.0.0.1.
+    /// Callback port on 127.0.0.1. The app passes [`DEFAULT_REDIRECT_PORT`]; 0 takes any free
+    /// port and the redirect URI names the one bound, so tests can run side by side.
     pub redirect_port: u16,
     /// Shown by OpenAI when the app is registered: "SlicerX".
     pub app_name: &'a str,

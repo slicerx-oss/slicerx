@@ -219,15 +219,6 @@ async fn get(url: &str) -> String {
     out.lines().next().unwrap_or_default().to_owned()
 }
 
-async fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 /// Plays the browser: reads the authorize URL, records what the server would, and sends
 /// the callbacks given (each as (state override, code)).
 fn browser(mock: Arc<Mutex<Mock>>, forged_first: bool) -> impl Fn(&str) -> crate::Result<()> + Send + Sync {
@@ -274,7 +265,8 @@ async fn connected(
     let open = browser(mock.clone(), forged_first);
     let opts = ConnectOptions {
         endpoints: endpoints.clone(),
-        redirect_port: free_port().await,
+        // 0: the listener takes a free port and the redirect URI names it.
+        redirect_port: 0,
         app_name: "SlicerX",
         open_url: &open,
         timeout: Duration::from_secs(10),
