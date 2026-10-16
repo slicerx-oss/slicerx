@@ -3,6 +3,7 @@
 # Copyright (C) 2026 The SlicerX contributors
 # Queues the nightly run of the CI branch's tip and starts the worker. Run it at 02:00 local from the scheduler
 # (scripts/ci/launchd.plist.example on macOS); with SX_CI_REMOTES set it starts the remote runners' nightly too.
+# Each machine's nightly run starts with the temp dir sweep, scripts/janitor-mac.sh --execute (run.sh, "Nightly").
 CI_HOME=${SX_CI_HOME:-$HOME/ci}
 [ -f "$CI_HOME/ci.env" ] && . "$CI_HOME/ci.env"
 BRANCH=${SX_CI_BRANCH:-refs/heads/main}

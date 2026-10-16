@@ -314,6 +314,9 @@ jobs:
           ln -s "$HOME/target/$RUNNER_NAME" "$GITHUB_WORKSPACE/target"
           echo "SX_HEAVY_LOCK=/mnt/c/builds/heavy-lock/lock" >> "$GITHUB_ENV"
           echo "SX_HEAVY_WAIT=1200" >> "$GITHUB_ENV"
+          # no incremental cache: a test build never edits and rebuilds in place, and debug/incremental grew to 43 GB
+          # per runner (scripts/ci/README.md, "Disk")
+          echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
           # engine test suites: a GPU lane run starts beside one of them at most (heavy.sh --class engine)
           echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh --class engine timeout 1500" >> "$GITHUB_ENV"
       - if: matrix.part == 'firmware' || matrix.part == 'requests'
@@ -380,6 +383,12 @@ jobs:
         run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
+      # Temp dirs that tests and tools left on this machine, two hours old or more (scripts/janitor-mac.sh). It never
+      # touches the build directories while a cargo or runner job runs, so the runner's own target stays.
+      - if: always() && runner.environment == 'self-hosted' && hashFiles('scripts/janitor-mac.sh') != ''
+        name: temp cleanup
+        continue-on-error: true
+        run: sh scripts/janitor-mac.sh --execute
 
   # One result for the integration test parts: the name to require. Passes when they were not run (a pull request
   # without full-ci, or no Rust change).
@@ -772,6 +781,12 @@ jobs:
           name: e2e-failures-${{ matrix.project }}-${{ strategy.job-index }}
           path: apps/web/test-results/
           retention-days: 14
+      # Temp dirs that tests and tools left on this machine, two hours old or more (scripts/janitor-mac.sh). It never
+      # touches the build directories while a cargo or runner job runs, so the runner's own target stays.
+      - if: always() && runner.environment == 'self-hosted' && hashFiles('scripts/janitor-mac.sh') != ''
+        name: temp cleanup
+        continue-on-error: true
+        run: sh scripts/janitor-mac.sh --execute
 
   # A pull request that touches the app but does not run the browser suite runs these few quick specs in one job: the
   # app starts, loads the plate, slices, and draws each workspace (detect, "smoke"). Software WebGL, no sx-link.
@@ -865,6 +880,13 @@ jobs:
         with:
           clean: false
       - run: git clean -ffdxq -e node_modules
+      # A temp folder for this job alone, removed in the last step. Windows ends the e2e native host with a hard kill,
+      # so what it and the browsers leave in TEMP stayed behind: about 1,900 dirs, 74 GB, in the runners' temp folders.
+      - run: |
+          mkdir -p "$RUNNER_TEMP/job-tmp"
+          w=$(cygpath -w "$RUNNER_TEMP/job-tmp")
+          echo "TEMP=$w" >> "$GITHUB_ENV"
+          echo "TMP=$w" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -931,6 +953,14 @@ jobs:
           name: e2e-failures-desktop-gpu
           path: apps/web/test-results/
           retention-days: 14
+      # What earlier runs left in the runners' temp folders (sx-e2e-native-* and the rest of scripts/janitor-win.ps1's
+      # list), two hours old or more, then this job's temp folder. Sizes come from a small sample to keep it short.
+      - if: always()
+        name: temp cleanup
+        continue-on-error: true
+        run: |
+          [ ! -f scripts/janitor-win.ps1 ] || powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/janitor-win.ps1 -Execute -MeasureMax 20
+          rm -rf "$RUNNER_TEMP/job-tmp"
 
   # One result for the shards and the @gpu run, and their reports merged into one HTML report, with the traces of
   # failures.
