@@ -551,6 +551,17 @@ For a product that does not build or embed SlicerX and only opens models in the 
 
 What would have to change for an installed-app integration to match Path B: ship `sx` and a version command with the installer, document the resource folder on Windows and Linux, and register a documented way to ask the app to slice and return a result.
 
+## Running the SlicerX tests
+
+When you change the SlicerX repository itself (a Path A fork, or a fix you send upstream), test only what the change reaches:
+
+- `pnpm test:affected` prints the smallest set: Vitest files, `cargo test -p` per crate and the Playwright journeys. `--run` runs all but the browser tests.
+- Never run the whole Playwright suite, `cargo test --workspace` or a bare `cargo test` at the root on a laptop. CI runs them.
+- Run browser tests on a build machine, under `scripts/ci/heavy.sh --e2e` when others share it, on your own `SX_E2E_PORT`.
+- One Playwright run per change. After a failure, rerun only the failing test (`-g "<title>"`).
+- `--repeat-each` is for a test you added or changed, never for whole journeys.
+- Leave the rest to CI, and reproduce a CI failure with the one test it names: `playwright test e2e/<file>.spec.ts:<line> --project=<desktop|phone>` or `cargo test -p <crate> --test <binary> <test name>`.
+
 ## Optional: cloud and locked projects
 
 Only when the user asks for cloud slicing, sharing or locked files. These are the only features that need a SlicerX account, an `sxk_` token and the network. Everything above works without them.
