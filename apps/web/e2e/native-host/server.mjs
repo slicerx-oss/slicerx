@@ -6,7 +6,7 @@
 // posts the desktop's slice request, and reads the G-code and the preview back.
 //   node server.mjs --port <port> --origin <app origin>
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,7 +21,35 @@ const sx = process.env.SX_CLI_BIN ?? ''
 if (!Number.isInteger(port) || port <= 0) throw new Error('native-host: --port is required')
 if (!sx || !existsSync(sx)) throw new Error(`native-host: SX_CLI_BIN (${sx || 'unset'}) is not the sx binary; build it with cargo build --release -p sx-cli`)
 
+// Windows ends this process with a hard kill, so the SIGTERM handler below never runs there and the root stays behind
+// (about 1,900 of them on the GPU runners). Each host writes its pid into its root, and the next one to start removes
+// the roots older than two hours whose host is gone. A root without a pid comes from a host before this change.
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e) {
+    return e?.code === 'EPERM'
+  }
+}
+function sweep() {
+  const cutoff = Date.now() - 2 * 3600_000
+  for (const name of readdirSync(tmpdir())) {
+    if (!name.startsWith('sx-e2e-native-')) continue
+    const dir = join(tmpdir(), name)
+    try {
+      if (statSync(dir).mtimeMs > cutoff) continue
+      const pid = Number(existsSync(join(dir, 'owner.pid')) ? readFileSync(join(dir, 'owner.pid'), 'utf8') : 0)
+      if (pid > 0 && alive(pid)) continue
+      rmSync(dir, { recursive: true, force: true })
+    } catch {
+      // another host removed it first, or a file in it is still open (Windows): the next start tries again
+    }
+  }
+}
+sweep()
 const root = mkdtempSync(join(tmpdir(), 'sx-e2e-native-'))
+writeFileSync(join(root, 'owner.pid'), String(process.pid))
 /** Slices in flight, by session and job: the child process, so a cancel stops it. */
 const running = new Map()
 const safe = (s) => /^[A-Za-z0-9._-]{1,128}$/.test(s)
