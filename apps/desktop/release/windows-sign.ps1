@@ -183,12 +183,15 @@ if ($Release) {
     [IO.File]::WriteAllText((Join-Path $repo "$gen/edition.signed.conf.json"), ($conf | ConvertTo-Json -Depth 30), (New-Object Text.UTF8Encoding($false)))
     # The edition's mimir cloud registration key comes from the environment; without it the app has no mimir cloud.
     if (-not $env:SX_MIMIR_REGISTER_KEY) { Write-Warning 'no SX_MIMIR_REGISTER_KEY, so this build has no mimir cloud' }
+    # Earlier releases' installers stay in the bundle folders and add up on the build machine; clear them so the
+    # folders hold only what this build makes.
+    $target = Join-Path $repo "target\$triple\release"
+    foreach ($b in 'nsis', 'msi') { Remove-Item -LiteralPath "$target\bundle\$b" -Recurse -Force -ErrorAction SilentlyContinue }
     Push-Location apps/desktop
     try { Run 'signed build' { pnpm tauri build --config src-tauri/gen/edition.signed.conf.json --target $triple --bundles 'nsis,msi' } } finally { Pop-Location }
-    $target = Join-Path $repo "target\$triple\release"
     # The app the installers carry and the frontend inside it, checked for the agent bridge before anything is copied out.
     Run 'no agent bridge' { node apps/desktop/release/check-agent-bridge.mjs --binary "$target\slicerx.exe" --dist apps/desktop/dist }
-    # Only this version's installers: an earlier release's can still sit in the bundle folders.
+    # Exactly one installer of each kind, of this version.
     $version = (Get-Content (Join-Path $repo 'apps/desktop/src-tauri/tauri.conf.json') -Raw | ConvertFrom-Json).version
     function One([string]$dir, [string]$filter) {
       $found = @(Get-ChildItem $dir -Filter $filter -ErrorAction SilentlyContinue)

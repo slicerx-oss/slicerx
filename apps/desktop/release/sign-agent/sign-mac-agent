@@ -24,6 +24,13 @@ if ! mkdir "$lock" 2>/dev/null; then
 fi
 print $$ > "$lock/pid"
 trap 'rm -rf "$lock"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Leftovers: sign-mac's own temp dirs (sx-sign.*) that a killed run left in $TMPDIR for over two hours, and results
+# older than 14 days. Nothing else in $TMPDIR is touched.
+rm -rf -- ${TMPDIR:-/tmp}/sx-sign*(N/mm+120U)
+rm -f -- "$res"/*.(log|result)(N.md+14)
 
 under() { local p=${1:A}; [[ $p == $allowed/* ]]; }
 
