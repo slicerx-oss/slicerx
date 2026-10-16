@@ -28,7 +28,8 @@ function stub(): Handle {
   })
 }
 
-vi.mock('@slicerx/viewport', () => ({
+vi.mock('@slicerx/viewport', async (actual) => ({
+  ...(await actual<typeof import('@slicerx/viewport')>()),
   createViewport: (_: HTMLCanvasElement, opts: Record<string, unknown>) => {
     created.push(opts)
     return stub()
