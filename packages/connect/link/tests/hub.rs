@@ -14,7 +14,7 @@ mod common;
 #[path = "support/pairing.rs"]
 mod pairing;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -201,10 +201,32 @@ async fn mock_log(mocks: &common::Mocks) -> Vec<String> {
         .collect()
 }
 
-fn temp_dir(name: &str) -> PathBuf {
+/// A temp dir that is removed when it drops, so a failed assert does not leave it behind.
+struct TempDir(PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for TempDir {
+    type Target = PathBuf;
+    fn deref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for TempDir {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+fn temp_dir(name: &str) -> TempDir {
     let d = std::env::temp_dir().join(format!("sx-hub-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
-    d
+    TempDir(d)
 }
 
 // ---- the local Print click ----
@@ -927,7 +949,6 @@ async fn printers_fleets_queue_approvals_and_clients_survive_a_restart() {
     );
     let text = std::fs::read_to_string(dir.join("hub.json")).unwrap();
     assert!(!text.contains(&key), "only the key's hash is stored");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[tokio::test]
@@ -955,7 +976,6 @@ async fn a_hub_that_was_down_treats_a_clear_bed_as_unknown() {
         (Some("unknown"), Some(true)),
         "{b}"
     );
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 // ---- phone alerts ----
@@ -2056,7 +2076,7 @@ async fn m5_n9_the_hub_proves_its_key_and_the_code_is_never_testable_offline() {
     assert_eq!(r["error"]["code"], "unauthorized", "a replayed confirm: {r}");
     // The key survives a restart, so a pinned key keeps working.
     drop(link);
-    let again = hub(Some(dir)).await;
+    let again = hub(Some(dir.clone())).await;
     assert_eq!(again.hub_key(), key);
 }
 
@@ -2611,7 +2631,6 @@ async fn a_partner_key_is_named_shown_once_listed_and_kept_across_a_restart() {
     );
     let r = call(&mut p, 2, "approvals.grant", json!({ "requestId": "x" })).await;
     assert_eq!(r["error"]["code"], "forbidden", "{r}");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[tokio::test]
