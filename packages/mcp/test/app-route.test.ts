@@ -146,6 +146,18 @@ describe('design tools over the app link', () => {
     expect(e.code).toBe('busy')
     expect(e.message).toMatch(/wait a moment and call again/)
   })
+
+  it('keep a stale body reference typed, with the facts the app attached', async () => {
+    const details = { currentRevision: 'r2', operationResult: { status: 'refused' } }
+    for (const code of ['stale_body', 'missing_face', 'ambiguous_face']) {
+      const { run } = routed((async () => {
+        throw Object.assign(new Error('Inspect it again.'), { code, details })
+      }) as AppLinkCaller['call'])
+      const e = (await run('design.undo', { design: 'obj_1' }).catch((x: unknown) => x)) as ToolInputError
+      expect(e.code).toBe(code)
+      expect(e.details).toEqual(details)
+    }
+  })
 })
 
 describe('design tools with --app', () => {

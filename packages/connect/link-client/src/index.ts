@@ -43,11 +43,14 @@ export class LinkError extends Error implements Omit<PrinterError, 'code'> {
    * trusting it. Nothing was sent to that program.
    */
   readonly presentedKey?: string
-  constructor(code: LinkErrorCode, message: string, presentedKey?: string) {
+  /** Structured facts the app attached to a refusal of an app link call (`error.details`). */
+  readonly details?: Record<string, unknown>
+  constructor(code: LinkErrorCode, message: string, presentedKey?: string, details?: Record<string, unknown>) {
     super(message)
     this.name = 'LinkError'
     this.code = code
     if (presentedKey) this.presentedKey = presentedKey
+    if (details) this.details = details
   }
 }
 
@@ -638,7 +641,7 @@ export interface LinkHost extends PrinterHost {
     onAsk(cb: (a: AppLinkAsk) => void): () => void
     /** A question ended on the hub (answered, timed out, the link turned off or the client revoked). */
     onAskEnded(cb: (askId: number) => void): () => void
-    reply(callId: number, out: { ok: true; value: unknown } | { ok: false; code: string; message: string }): Promise<void>
+    reply(callId: number, out: { ok: true; value: unknown } | { ok: false; code: string; message: string; details?: Record<string, unknown> }): Promise<void>
     answer(askId: number, decision: AppLinkDecision): Promise<void>
     grants(): Promise<AppLinkGrant[]>
     revoke(clientId: string): Promise<void>
@@ -943,7 +946,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       } else for (const cb of k.frame) cb(frame)
       return
     }
-    const msg = JSON.parse(m.data) as { id?: number; result?: unknown; error?: { code: LinkErrorCode; message: string }; event?: string; subscription?: number; data?: PrinterEvent }
+    const msg = JSON.parse(m.data) as { id?: number; result?: unknown; error?: { code: LinkErrorCode; message: string; details?: Record<string, unknown> }; event?: string; subscription?: number; data?: PrinterEvent }
     if (msg.event === 'pair' || msg.event === 'pair.closed') {
       const p = msg as unknown as { conn: string; frame?: string }
       if (msg.event === 'pair' && typeof p.frame === 'string') for (const cb of frameListeners) cb(p.conn, p.frame)
@@ -1028,7 +1031,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     const p = pending.get(msg.id)
     if (!p) return
     pending.delete(msg.id)
-    if (msg.error) p.reject(new LinkError(msg.error.code, msg.error.message))
+    if (msg.error) p.reject(new LinkError(msg.error.code, msg.error.message, undefined, msg.error.details))
     else p.resolve(msg.result)
   })
   ws.addEventListener('close', () => {

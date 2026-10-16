@@ -74,7 +74,7 @@ function whyNotThere(code: string, appName: string): string {
   return `this client is not allowed on the app link: allow it when ${appName} asks, or run without --app`
 }
 /** Codes the app may answer with that the server's error codes have. */
-const PASSED: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_found', read_only: 'not_supported', denied: 'not_supported', refused: 'not_supported', busy: 'busy', pending: 'busy', not_answered: 'busy' }
+const PASSED: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_found', read_only: 'not_supported', denied: 'not_supported', refused: 'not_supported', stale_body: 'stale_body', missing_face: 'missing_face', ambiguous_face: 'ambiguous_face', busy: 'busy', pending: 'busy', not_answered: 'busy' }
 
 /** Whether a call works on a design (the app's), rather than a model file (this server's). */
 function onDesign(name: string, input: Record<string, unknown>): boolean {
@@ -119,7 +119,8 @@ export function routeToApp(tools: PilotTool<never>[], link: AppLinkCaller, appNa
         }
         const mapped = PASSED[code] ?? 'internal_error'
         // busy: the person is working in the app, or a question is up; the same call can go again shortly.
-        throw new ToolInputError(mapped === 'busy' ? `${message} (busy in ${appName}: wait a moment and call again)` : message, mapped)
+        const details = (e as { details?: unknown }).details
+        throw new ToolInputError(mapped === 'busy' ? `${message} (busy in ${appName}: wait a moment and call again)` : message, mapped, details && typeof details === 'object' ? (details as Record<string, unknown>) : undefined)
       }
       // The first reply says where designs live now, once per session.
       const note = told || opts.required || APP_PROJECT_TOOLS.has(t.name) ? '' : ` Designs now live in the project open in ${appName}, with their steps in its history; start the server with --no-app to keep them here.`

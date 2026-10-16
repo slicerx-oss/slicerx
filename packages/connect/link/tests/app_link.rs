@@ -318,6 +318,36 @@ async fn the_person_allows_a_client_once_and_its_calls_go_through_the_host() {
     .await;
     let (_, r) = pending.await.unwrap();
     assert_eq!(code(&r), "app_error", "{r}");
+    // A refusal about a body reference keeps its code and the facts the app attached; an oversized or non-object
+    // `details` is dropped and the refusal still goes through.
+    let pending = spawn_call(reconnect(&link, &key).await, "app.info", json!({}));
+    let c = event(&mut a, "appLink.call").await;
+    call(
+        &mut a,
+        71,
+        "appLink.reply",
+        json!({ "callId": c["callId"], "ok": false, "code": "stale_body", "message": "inspect again",
+            "details": { "currentRevision": "r2", "operationResult": { "status": "refused" } } }),
+    )
+    .await;
+    let (_, r) = pending.await.unwrap();
+    assert_eq!(code(&r), "stale_body", "{r}");
+    assert_eq!(
+        r["error"]["details"]["operationResult"]["status"], "refused",
+        "{r}"
+    );
+    let pending = spawn_call(reconnect(&link, &key).await, "app.info", json!({}));
+    let c = event(&mut a, "appLink.call").await;
+    call(
+        &mut a,
+        72,
+        "appLink.reply",
+        json!({ "callId": c["callId"], "ok": false, "code": "missing_face", "message": "gone", "details": "not an object" }),
+    )
+    .await;
+    let (_, r) = pending.await.unwrap();
+    assert_eq!(code(&r), "missing_face", "{r}");
+    assert!(r["error"].get("details").is_none(), "{r}");
 
     let grants = call(&mut a, 8, "appLink.grants", json!({})).await;
     let g = grants["result"]
