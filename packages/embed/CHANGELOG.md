@@ -4,14 +4,25 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-18
+
+### Added
+
+- Edition theming at runtime: `EmbedTheme` takes `edition` (an edition config, or its `brand.theme` block), and `<sx-viewport>`, `<sx-settings-panel>` and `<sx-agreement>` take an `edition` property or an `edition-src` URL fetched at runtime, with `edition` and `error` events. The edition's colors, visual properties and studio colors (`scene`: top, bottom, glow, plate, grid, edge, xray) for the active scheme go over the theme; anything unset or invalid keeps the SlicerX value. `editionTheme`, `editionOverrides` and `editionThemeConfig` are exported, and `<sx-viewport>`'s `activeTheme` reads back the scheme, accent, edition overrides and scene colors in use.
+
+### Fixed
+
+- In a light `EmbedTheme`, the view's tool bar is light with readable icons. Tokens built from the palette (surfaces, the overlay, tool icon shades) are declared again on the theme wrapper, so they come from the theme instead of the default dark palette.
+- The selection outline takes the theme's `--accent` when one is set, instead of always the palette purple.
+
+## [0.1.7] and earlier
+
 ### Changed
 
 - `RELEASE.bugReportsUrl` can be null. A fork built with its own edition config (`viteDefines`) gets its own bug link, or none, never SlicerX's channel; `defaultBugReportsUrl(edition)` gives the same answer for a given edition. With no link, the agreement asks people to report bugs to the app's makers.
 
 ### Fixed
 
-- In a light `EmbedTheme`, the view's tool bar is light with readable icons. Tokens built from the palette (surfaces, the overlay, tool icon shades) are declared again on the theme wrapper, so they come from the theme instead of the default dark palette.
-- The selection outline takes the theme's `--accent` when one is set, instead of always the palette purple.
 - `Viewport` no longer forces `quality="high"`: its default is `auto`, which lets the viewport pick `low` without ambient occlusion on a weak or software GPU. A host's `quality` still overrides it.
 - `<sx-viewport>` fills the element's height again; the view stopped at 240 px inside its theme wrapper.
 - `tokenKeys` sends a publishable key (`sb_publishable_`) only as `apikey`, since it is not a JWT; the account token stays in the body. A legacy anon JWT is still also sent as the bearer.
@@ -23,7 +34,6 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ### Added
 
-- Edition theming at runtime: `EmbedTheme` takes `edition` (an edition config, or its `brand.theme` block), and `<sx-viewport>`, `<sx-settings-panel>` and `<sx-agreement>` take an `edition` property or an `edition-src` URL fetched at runtime, with `edition` and `error` events. The edition's colors, visual properties and studio colors (`scene`: top, bottom, glow, plate, grid, edge, xray) for the active scheme go over the theme; anything unset or invalid keeps the SlicerX value. `editionTheme`, `editionOverrides` and `editionThemeConfig` are exported, and `<sx-viewport>`'s `activeTheme` reads back the scheme, accent, edition overrides and scene colors in use.
 - Prepare tools in `Viewport` and `<sx-viewport>`: `tools` puts a toolbar over the view with select, move, rotate, scale, arrange and drop to bed (keys M, R, S and A). Move shows X, Y and Z arrows on the selected model, each a drag along its axis, Z stopping at the bed. `tool`, `selection`, `onToolChange`, `onSelect` and `onTransform` (`tool`, `select` and `transform` events on the element), and `arrange()` and `dropToBed()` on the element.
 - `reveal: 'each-plate'` (`reveal="each-plate"`) plays the plate reveal for every new plate; `playReveal()` on the element plays it on demand.
 - `bedOutline: 'subtle'` (`bed-outline="subtle"`): a faint hairline bed outline without the glow.
