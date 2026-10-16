@@ -246,7 +246,10 @@ fn read_identity(data: &[u8]) -> Result<Identity, String> {
         if file.is_dir() {
             continue;
         }
-        let name = file.name().to_owned();
+        let name = file
+            .name()
+            .map_err(|e| format!("cannot read the sliced file: {e}"))?
+            .into_owned();
         let kind = entry_kind(&name);
         if kind == Kind::Other {
             continue;
@@ -283,7 +286,10 @@ fn rewrite(data: &[u8], model: &Model) -> Result<Vec<u8>, String> {
         let mut file = zip
             .by_index(index)
             .map_err(|e| format!("cannot read the sliced file: {e}"))?;
-        let name = file.name().to_owned();
+        let name = file
+            .name()
+            .map_err(|e| format!("cannot read the sliced file: {e}"))?
+            .into_owned();
         let dir = file.is_dir();
         let mut buf = Vec::new();
         if !dir {
