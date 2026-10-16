@@ -231,13 +231,24 @@ fn split_projects(
             reason: e.to_string(),
         })?;
         let plates = api::load_3mf_plate_objects(&bytes, rel)?;
-        let items = match plate {
+        let (plate_no, items) = match plate {
             Some(n) => plates.into_iter().find(|(p, _)| *p == n),
             None => plates.into_iter().next(),
         }
-        .map(|(_, items)| items)
         .unwrap_or_default();
+        // The marks the project sets on this plate's layers go in unless the request brings its own.
+        if req.options.layer_gcode.is_none() {
+            let marks = api::load_3mf_layer_gcode(&bytes, plate_no);
+            if !marks.is_empty() {
+                req.options.layer_gcode = Some(marks);
+            }
+        }
         if items.len() < 2 {
+            // One object keeps its mesh; the ears the file paints on it go with it.
+            let mut o = o;
+            if let Some(one) = items.first() {
+                o.brim_points.clone_from(&one.brim_points);
+            }
             out.push(o);
             continue;
         }
@@ -255,6 +266,7 @@ fn split_projects(
             one.name.clone_from(&mesh.name);
             one.mesh = Value::String(id.clone());
             one.transform = Some(at.to_vec());
+            one.brim_points.clone_from(&mesh.brim_points);
             cache.insert(id, std::sync::Arc::new(mesh));
             out.push(one);
         }
