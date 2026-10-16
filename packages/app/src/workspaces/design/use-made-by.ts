@@ -3,7 +3,7 @@
 // The step that made the one face picked in Model, for the pill's crumb and the marks in the tree and timeline, and
 // the step menu's Select its faces.
 import { useEffect, useState } from 'react'
-import { faceSource, facesMadeBy } from '../../cad/history/made-by'
+import { faceSource, facesMadeBy, movedBy } from '../../cad/history/made-by'
 import { point } from '@slicerx/cad-history'
 import { setPickKind } from '../../plate/sub-pick'
 import { get, set, toast, useApp } from '../../state/store'
@@ -31,7 +31,9 @@ export function useMadeBy(): MadeBy | null {
     void faceSource(entry, one.partIndex, one.triangle).then((src) => {
       if (!live || !src) return
       const at = (id: string) => entry.history?.steps.findIndex((s) => s.id === id) ?? -1
-      const index = src.made === 'base' ? -1 : at(src.made)
+      // a moved cap keeps the base's key, so the pull that moved it is the maker the pill names
+      const moved = src.made === 'base' ? movedBy(entry.history?.steps ?? [], src.used) : undefined
+      const index = moved ? at(moved) : src.made === 'base' ? -1 : at(src.made)
       if (src.made !== 'base' && index < 0) return
       setMade({ objectId: entry.id, index, used: src.used.map(at).filter((i) => i >= 0) })
     })

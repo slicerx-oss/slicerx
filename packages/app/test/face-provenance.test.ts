@@ -9,7 +9,7 @@ import { withStep } from '../src/cad/history/record'
 import { runReplay } from '../src/cad/history/ops'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
-import { faceMadeBy, faceSource } from '../src/cad/history/made-by'
+import { faceMadeBy, faceSource, movedBy } from '../src/cad/history/made-by'
 import type { PlateEntry } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
@@ -68,6 +68,9 @@ describe('the step that made a face', () => {
     const entry = { id: 'o', parts: replay.parts.map((p) => ({ name: p.name, slot: p.slot, positions: new Float32Array(p.positions), indices: new Uint32Array(p.indices) })), history } as unknown as PlateEntry
     const triangle = Array.from({ length: replay.parts[0]!.indices.length / 3 }, (_, t) => t).find((t) => keyOfTriangle(replay.parts[0]!, t) === top)!
     expect(await faceSource(entry, 0, triangle)).toEqual({ made: 'base', used: [step.id] })
+    // what the person sees: the pull that moved the cap is its maker, unless that pull is suppressed
+    expect(movedBy(history.steps, [step.id])).toBe(step.id)
+    expect(movedBy([{ ...step, suppressed: true }], [step.id])).toBeUndefined()
   })
 
   it('reads the base keys the way the engine makes them', async () => {

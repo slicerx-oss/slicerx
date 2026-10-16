@@ -5,7 +5,7 @@
 // the step that made each key.
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
-import { keyOfTriangle, usedBy, type HistoryMesh } from '@slicerx/cad-history'
+import { keyOfTriangle, usedBy, type HistoryMesh, type Step } from '@slicerx/cad-history'
 import { runReplay } from './ops'
 
 type Faces = HistoryMesh['faces']
@@ -34,6 +34,14 @@ async function knownFor(entry: PlateEntry): Promise<Known | null> {
   const got = await k
   if (!got || got.triangles.length !== entry.parts.length) return null
   return got.triangles.every((n, i) => n === (entry.parts[i]?.indices.length ?? 0) / 3) ? got : null
+}
+
+/**
+ * A pull keeps the key of the face it moves, so a moved cap is still the base's face by key. For what the person sees,
+ * the pull that moved it is its maker: the last live push among the steps that used the face, or undefined.
+ */
+export function movedBy(steps: readonly Step[], used: readonly string[]): string | undefined {
+  return used.findLast((id) => steps.some((s) => s.id === id && !s.suppressed && s.params.op === 'face.push'))
 }
 
 export interface FaceSource {
@@ -74,7 +82,9 @@ export async function facesMadeBy(entry: PlateEntry, stepId: string): Promise<{ 
       if (face < 0 || seen.has(face)) continue
       seen.add(face)
       const key = f.keys[face] ?? 0
-      if (key && got.made[key] === stepId) out.push({ partIndex, triangle: t })
+      if (!key) continue
+      const maker = got.made[key] ?? movedBy(entry.history!.steps, usedBy(entry.history!.steps).get(key) ?? [])
+      if (maker === stepId) out.push({ partIndex, triangle: t })
     }
   })
   return out
