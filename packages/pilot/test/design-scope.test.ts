@@ -102,11 +102,11 @@ describe('the design scope runtime', () => {
   it('has the design tools and the lookups, and no part generator or printer tool', () => {
     const { pilot } = tabPilot([{ text: 'Hi.' }])
     const names = pilot.tools().map((t) => t.name)
-    expect(names).toEqual(expect.arrayContaining(['design.new', 'geom.extrude', 'geom.fillet', 'geom.info', 'kb.search', 'web.lookup']))
-    for (const n of names) expect(n.startsWith('kb.') || n === 'web.lookup' || /^(design|geom)\./.test(n), n).toBe(true)
+    expect(names).toEqual(expect.arrayContaining(['design.new', 'geom.extrude', 'geom.fillet', 'geom.info', 'kb.search', 'parts.lookup', 'web.lookup']))
+    for (const n of names) expect(n.startsWith('kb.') || n === 'parts.lookup' || n === 'web.lookup' || /^(design|geom)\./.test(n), n).toBe(true)
     expect(names).not.toContain('text_to_part')
     expect(names).not.toContain('make_model')
-    expect([...DESIGN_SCOPE_TOOLS].every((n) => n.startsWith('kb.') || n === 'web.lookup')).toBe(true)
+    expect([...DESIGN_SCOPE_TOOLS].every((n) => n.startsWith('kb.') || n === 'parts.lookup' || n === 'web.lookup')).toBe(true)
   })
 
   it('tells the model to build feature by feature with the design tools', async () => {
