@@ -31,6 +31,7 @@ export default defineConfig({
   // own ready mark (e2e/fixtures.ts) instead of a fixed time, so a test gets room for it.
   timeout: 120_000,
   retries: 0,
+  preserveOutput: 'failures-only',
   // Each page starts a pool of one slicer worker per core and draws with software WebGL. Five pages booting at once
   // (the default here) starve each other: a cold start goes from 3 s alone to 14 s, past the 15 s wait, and the first
   // tests of a run fail. Three at a time stays clear (three full runs in a row) and is no slower overall.
