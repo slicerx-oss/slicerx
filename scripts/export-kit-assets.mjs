@@ -16,7 +16,33 @@ const xml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const title = (id) => id.replace(/[-_]/g, ' ').replace(/^./, (s) => s.toUpperCase())
 const declarations = (s) => Object.fromEntries([...s.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]))
 
-export function palettes() {
+const HEX6 = /^#[0-9a-fA-F]{6}$/
+const HEX8 = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/
+const SCENE_KEYS = ['top', 'bottom', 'glow', 'plate', 'grid', 'edge', 'xray']
+
+/**
+ * An edition's colors for one scheme as CSS properties: its visual properties (`--accent`, `--stage-*`, `--ti-*`),
+ * the palette purple as the accent when no `--accent` is set, and its studio colors as `--scene-*`. Takes the whole
+ * edition JSON or its `brand.theme` block; invalid values are left out, so the SlicerX value stays.
+ */
+export function editionVars(edition, scheme) {
+  const t = edition?.brand ? edition.brand.theme : edition
+  if (!t || typeof t !== 'object') return {}
+  const vars = {}
+  const purple = t[scheme]?.colors?.purple ?? t.tokens?.colors?.purple
+  if (typeof purple === 'string' && HEX6.test(purple)) vars['--accent'] = purple
+  for (const block of [t.tokens, t[scheme]]) {
+    for (const [k, v] of Object.entries(block?.visuals ?? {})) if (/^--(accent|ti-|stage-|glyph-)/.test(k) && typeof v === 'string' && (k === '--accent' ? HEX6 : HEX8).test(v)) vars[k] = v
+    for (const k of SCENE_KEYS) if (typeof block?.scene?.[k] === 'string' && HEX6.test(block.scene[k])) vars[`--scene-${k}`] = block.scene[k]
+  }
+  return vars
+}
+
+/**
+ * The token values per scheme: SlicerX's, then the edition's when one is given. The backdrop properties
+ * (--scene-top, --scene-bottom) are kept only for loops drawn with a backdrop; transparent loops never read them.
+ */
+export function palettes({ edition, backdrop = false } = {}) {
   const css = read('packages/ui/src/tokens.css').replace(/\/\*[\s\S]*?\*\//g, '')
   const base = declarations(css.match(/:root\s*\{([^}]+)\}/)[1])
   const light = declarations(css.match(/:root\[style\*="color-scheme: light"\]\s*\{([^}]+)\}/)[1])
@@ -27,8 +53,10 @@ export function palettes() {
       '--red': theme.ansi[1], '--cyan': theme.ansi[6], '--green': theme.ansi[2],
       '--scene-top': theme.scene.top, '--scene-bottom': theme.scene.bottom, '--scene-grid': theme.scene.grid,
       '--f-body': 'system-ui, -apple-system, sans-serif',
+      ...editionVars(edition, scheme),
     }
-    const keep = new Set(Object.keys(vars).filter((k) => /^--(?:stage-|ti-|scene-)/.test(k)))
+    if (!backdrop) for (const k of ['--scene-top', '--scene-bottom']) delete vars[k]
+    const keep = new Set(Object.keys(vars).filter((k) => /^--(?:stage-|ti-|scene-|glyph-)/.test(k)))
     for (const k of ['--accent', '--fg', '--ink-0', '--red', '--cyan', '--green', '--f-body']) keep.add(k)
     for (const k of keep) for (const m of vars[k]?.matchAll(/var\((--[\w-]+)/g) ?? []) keep.add(m[1])
     return [scheme, Object.fromEntries([...keep].sort().filter((k) => vars[k]).map((k) => [k, vars[k]]))]
@@ -90,19 +118,26 @@ export function namespaceClasses(text, prefix, rootClass) {
     .replace(/\bclass="([^"]+)"/g, (_, classes) => `class="${classes} ${classes.trim().split(/\s+/).filter(Boolean).map((name) => `${prefix}-${name}`).join(' ')}"`)
 }
 
-function documentSvg(kind, id, scheme, width, height, cls, body, label, vars) {
+function documentSvg(kind, id, scheme, width, height, cls, body, label, vars, rootStyle = '') {
   const prefix = `${kind}-${id}-${scheme}-${width}`
   body = body.replace(/<style>([\s\S]*?)<\/style>/g, (_, css) => {
     const names = new Set([...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]))
     css = css.replace(/(@keyframes\s+|animation-name:)([\w-]+)/g, (match, lead, name) => names.has(name) ? `${lead}${prefix}-${name}` : match)
     return `<style>${css}</style>`
   })
-  return `<svg xmlns="http://www.w3.org/2000/svg" class="${cls} ${prefix}-${cls}" data-sx-asset="${xml(id)}" data-sx-variant="${scheme}" data-sx-size="${width}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(label)}"><title>${xml(label)}</title>${namespaceSvg(fallbacks(namespaceClasses(mergeSvgStyles(body), prefix, cls), vars), prefix)}</svg>\n`
+  return `<svg xmlns="http://www.w3.org/2000/svg" class="${cls} ${prefix}-${cls}" data-sx-asset="${xml(id)}" data-sx-variant="${scheme}" data-sx-size="${width}" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${xml(label)}"${rootStyle ? ` style="${xml(fallbacks(rootStyle, vars))}"` : ''}><title>${xml(label)}</title>${namespaceSvg(fallbacks(namespaceClasses(mergeSvgStyles(body), prefix, cls), vars), prefix)}</svg>\n`
 }
 
-export async function exportAssets(dest) {
+/**
+ * Writes every icon and loop, tokens.css and the manifest into `dest`. Each loop's ground is
+ * `background: var(--sx-loop-backdrop, <default>)` on its root, so a host restyles or removes it with that property.
+ * The default is transparent, so loops sit over the host's own viewport color; `backdrop: true` makes it the studio
+ * gradient (--scene-top to --scene-bottom). `edition` (the edition JSON, or its brand.theme block) supplies the accent,
+ * visual properties and studio colors for tokens.css and every file's fallbacks, SlicerX's where it is silent.
+ */
+export async function exportAssets(dest, { backdrop = false, edition } = {}) {
   mkdirSync(dest, { recursive: true })
-  const themes = palettes(), assets = []
+  const themes = palettes({ edition, backdrop }), assets = []
   const save = (file, content) => { mkdirSync(dirname(join(dest, file)), { recursive: true }); writeFileSync(join(dest, file), content) }
   save('tokens.css', '/* SPDX-License-Identifier: Apache-2.0 */\n/* Copyright (C) 2026 The SlicerX contributors */\n' + Object.entries(themes).map(([scheme, vars]) => `[data-sx-theme="${scheme}"] {\n  color-scheme: ${scheme};\n${Object.entries(vars).map(([k, v]) => `  ${k}: ${v};`).join('\n')}\n}`).join('\n') + '\n')
   const iconCss = read('packages/ui/src/icons/tool-icons.css')
@@ -133,12 +168,16 @@ export async function exportAssets(dest) {
     const settings = Object.entries(SETTING_DEMOS).filter(([, value]) => value === id).map(([key]) => key)
     for (const [scheme, vars] of Object.entries(themes)) {
       const file = `loops/${scheme}/${id}.svg`
-      const bg = `<defs><linearGradient id="background" x2="0" y2="1"><stop offset="0" style="stop-color:var(--scene-top)"/><stop offset="1" style="stop-color:var(--scene-bottom)"/></linearGradient></defs><rect width="${STAGE_W}" height="${STAGE_H}" fill="url(#background)"/>`
-      save(file, documentSvg('loop', id, scheme, STAGE_W, STAGE_H, 'sxs', bg + stageInner(loop), demo.label, vars))
+      // The loop's ground is one CSS property, --sx-loop-backdrop, so a host restyles or removes it at runtime. Its
+      // default is transparent (the host's viewport color shows through, docs/design/spec.md, demo loops), or the
+      // studio gradient when the backdrop is asked for.
+      const ground = backdrop ? 'linear-gradient(180deg,var(--scene-top),var(--scene-bottom))' : 'transparent'
+      save(file, documentSvg('loop', id, scheme, STAGE_W, STAGE_H, 'sxs', stageInner(loop), demo.label, vars, `background:var(--sx-loop-backdrop,${ground})`))
       for (const key of settings.length ? settings : [null]) assets.push({ kind: 'loop', id, settingKey: key, title: demo.label, theme: scheme, file, size: { width: STAGE_W, height: STAGE_H } })
     }
   }
-  const manifest = { schemaVersion: 1, tokens: 'tokens.css', example: 'example.html', assets }
+  const editionId = edition?.brand ? (typeof edition.id === 'string' ? edition.id : null) : null
+  const manifest = { schemaVersion: 1, tokens: 'tokens.css', example: 'example.html', loopBackdrop: backdrop ? 'scene' : 'transparent', edition: edition ? editionId ?? 'custom' : null, assets }
   save('manifest.json', JSON.stringify(manifest, null, 2) + '\n')
   save('example.css', '/* Change this one stylesheet to recolor every inline icon and loop. */\n[data-sx-theme] { --accent: #009b87; }\n')
   save('example.html', example())
@@ -176,7 +215,30 @@ try {
 `
 }
 
+/** Reads an edition JSON file for `--edition`. A TypeScript config has to be resolved to JSON first. */
+export function readEdition(file) {
+  if (!file) throw new Error('--edition needs a JSON file')
+  if (!/\.json$/i.test(file)) throw new Error(`--edition takes JSON; resolve a TypeScript config first: node packages/edition-config/src/cli.ts resolve ${file} > edition.json`)
+  return JSON.parse(readFileSync(resolve(file), 'utf8'))
+}
+
+/** Command line options: `<dest> [--backdrop] [--edition <edition.json>]`. */
+export function cliOptions(argv) {
+  const args = [...argv]
+  let dest, backdrop = false, edition
+  while (args.length) {
+    const a = args.shift()
+    if (a === '--backdrop') backdrop = true
+    else if (a === '--edition') {
+      edition = readEdition(args.shift())
+    } else if (a.startsWith('--')) throw new Error(`Unknown option ${a}`)
+    else dest = a
+  }
+  return { dest: resolve(dest ?? 'slicerx-kit/assets'), backdrop, edition }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const manifest = await exportAssets(resolve(process.argv[2] ?? 'slicerx-kit/assets'))
-  console.log(`Exported ${new Set(manifest.assets.map((a) => a.file)).size} SVG files`)
+  const { dest, ...opts } = cliOptions(process.argv.slice(2))
+  const manifest = await exportAssets(dest, opts)
+  console.log(`Exported ${new Set(manifest.assets.map((a) => a.file)).size} SVG files, loops ${manifest.loopBackdrop === 'scene' ? 'with the studio backdrop' : 'transparent'}`)
 }

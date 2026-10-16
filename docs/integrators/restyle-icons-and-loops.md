@@ -63,6 +63,39 @@ applyTheme(createTheme({
 
 Apply the new theme when your host switches modes. Values are set at the document root by default, so tooltip portals inherit them. The edition app does this automatically. Keep the generated icon files unchanged.
 
+## Studio colors
+
+The 3D view's studio (the backdrop gradient, its glow, the plate side, the floor grid and the model edges) comes from the same `brand.theme` block. Set shared values in `tokens.scene` and per-mode values in `dark.scene` and `light.scene`:
+
+```ts
+theme: {
+  base: 'subban',
+  tokens: { scene: { grid: '#4a5363' } },
+  dark: {
+    visuals: { '--accent': '#b8f34a' },
+    scene: { top: '#1a1d23', bottom: '#0a0c10', glow: '#22262e', plate: '#2a2e37', edge: '#050608' },
+  },
+  light: {
+    visuals: { '--accent': '#456b0b' },
+    scene: { top: '#f1f4ee', bottom: '#cdd6c4', glow: '#ffffff', plate: '#dfe6d8', grid: '#a9b89c', edge: '#7d8c70' },
+  },
+},
+```
+
+| Key | CSS property | What it colors |
+| --- | --- | --- |
+| `top` | `--scene-top` | Top of the backdrop gradient, and of the tooltip loop frame's default gradient |
+| `bottom` | `--scene-bottom` | Bottom of the backdrop gradient, and of the loop frame's default gradient |
+| `glow` | `--scene-glow` | Soft light behind the plate |
+| `plate` | `--scene-plate` | Side of the build plate |
+| `grid` | `--scene-grid` | Floor grid, and the grid in tooltip loops unless `--stage-grid` is set |
+| `edge` | `--scene-edge` | Dark model edges |
+| `xray` | `--scene-xray` | Edges seen through the model in X-ray |
+
+Values are six-digit hex colors. A key you leave out keeps the SlicerX studio for that mode, and an invalid value is dropped at runtime, so a typo leaves that color at its default. The selection outline follows `--accent` when the edition sets one, and the palette purple otherwise.
+
+Your edition build applies these colors, so changing them needs only a rebuild of your edition, not a new kit. The embed pieces read the config at runtime: give `<sx-viewport>`, `<sx-settings-panel>` or `<sx-agreement>` an `edition-src` attribute with the URL of your resolved edition JSON, or set the element's `edition` property to the object. React hosts pass the same object as `edition` on `EmbedTheme`. Either form takes the whole edition file or just its `brand.theme` block. `<sx-viewport>`'s `activeTheme` property reads back the scheme, accent, the edition's overrides and the scene colors the view was given. See [the embed README](../../packages/embed/README.md).
+
 ## Tool icon tokens
 
 Defaults come from [`packages/ui/src/tokens.css`](../../packages/ui/src/tokens.css). In this table, `mix(A, p, B)` means `color-mix(in srgb, A p%, B)`, and a name beginning with `--` means `var(--name)`. These are formulas, not fixed screenshots: changing the underlying palette changes their resolved values.
@@ -112,7 +145,7 @@ Tooltip loops render inline SVG and inherit the root's CSS variables. A theme sw
 | `--stage-ptr` | Pointer fill | `white` | Same |
 | `--stage-ptr-line` | Pointer contour | `#111218` | Same |
 
-An explicit `--stage-grid` overrides the grid independently of the scene. Without one, the SVG reads `--scene-grid` in its own scope, then the internal `--stage-grid-fallback` value shown above. The frame's background uses `--scene-top` and `--scene-bottom`, with `--ink-2` and `--ink-0` as fallbacks. Its border uses `--line-soft`.
+An explicit `--stage-grid` overrides the grid independently of the scene. Without one, the SVG reads `--scene-grid` in its own scope, then the internal `--stage-grid-fallback` value shown above. In the app, the frame's background is `--sx-loop-backdrop` when it is set, and otherwise a gradient from `--scene-top` to `--scene-bottom`, with `--ink-2` and `--ink-0` as fallbacks. The loops in the integrator kit are transparent by default and read the same `--sx-loop-backdrop` property, so you can change or remove a loop's ground at runtime from your own stylesheet; see [Standalone icons and tooltip loops](kit-assets.md#loop-backdrop-and-your-edition). Its border uses `--line-soft`.
 
 The stage has some fixed details: the pointer shadow is black at 35% opacity, the click ripple is white, and keycaps mix white with transparency. The token table does not promise control over those details. See [the stage renderer](../../packages/ui/src/components/tooltip-stage-svg.ts) and [frame styling](../../packages/ui/src/styles.css).
 
@@ -174,4 +207,4 @@ The browser tests use the repository's [Playwright configuration](../../apps/web
 
 The edition-color browser spec also needs a real `sx-link` (`cargo build --release -p sx-link`); set `SX_LINK_BIN` to that executable and `SX_LINK_REQUIRE=1`. It opens a temporary hub, grants a read client access, checks MCP read-back and saves desktop and 390 px screenshots in the Playwright results. To check your exact overrides, pass a JSON edition file in `SLICERX_CONFIG`; resolve a TypeScript config with `node packages/edition-config/src/cli.ts resolve <config>` first. The other specs cover the default control geometry and tooltip behavior.
 
-The open app's `slicerx_app_look` response includes `theme.scheme`, `theme.visuals` (active CSS property values) and `theme.overrides` (shared and active edition values). A missing glyph property means the renderer uses the studio-dependent default above. This is read-only; recoloring comes from your build configuration. Keep screenshots of the actual edition build alongside the results: passing tests alone does not prove your custom palette's contrast.
+The open app's `slicerx_app_look` response includes `theme.scheme`, `theme.visuals` (active CSS property values), `theme.overrides` (shared and active edition values), `theme.scene` (the studio colors in use), `theme.sceneOverrides` (the studio colors your edition sets) and `viewport.scene` (the colors the 3D view was given). A missing glyph property means the renderer uses the studio-dependent default above. This is read-only; recoloring comes from your build configuration. Keep screenshots of the actual edition build alongside the results: passing tests alone does not prove your custom palette's contrast.

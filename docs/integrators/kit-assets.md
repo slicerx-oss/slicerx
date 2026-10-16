@@ -27,6 +27,33 @@ Every SVG also contains fallback colors, so opening the file by itself works. CS
 
 Exported ids, CSS classes and animation names are prefixed per asset kind, id, theme, and size, allowing different assets and both themes on one page. If inserting the same file more than once, give each copy a unique id prefix and update its `href` and `url(#...)` references, or use separate image documents.
 
+## Loop backdrop and your edition
+
+Tooltip loops are transparent by default, so they sit on whatever your popover, tooltip or viewport draws behind them. `--scene-top` and `--scene-bottom` are left out of `tokens.css` in that case, because nothing reads them.
+
+Each loop's ground is one CSS custom property on its root, `--sx-loop-backdrop`, read as a CSS `background`. Set it on any element around an inline loop to change or remove the ground at runtime, with no new kit:
+
+```css
+/* a ground of your own behind every loop in your setting popovers */
+.settings-popover { --sx-loop-backdrop: linear-gradient(180deg, #2a2e37, #0a0c10); }
+/* no ground at all, even in a kit exported with --backdrop */
+.settings-popover { --sx-loop-backdrop: transparent; }
+```
+
+Any `background` value works: a color, a gradient or `none`. Unset, the loop uses the default it was exported with. Like the other tokens, it reaches only inline SVG markup; a loop shown through `<img>` keeps its default.
+
+Two options change the export, on either command:
+
+```sh
+node scripts/pack-integrator-kit.mjs ./slicerx-kit --assets-only --edition harbor.json
+node scripts/export-kit-assets.mjs ./assets --backdrop --edition harbor.json
+```
+
+- `--backdrop` makes the studio gradient, from `--scene-top` to `--scene-bottom`, each loop's default ground and keeps those two properties in `tokens.css`. `--sx-loop-backdrop` still overrides it.
+- `--edition <file>` reads an edition JSON (the whole file, or just its `brand.theme` block) and uses its accent, visual properties and `scene` colors in `tokens.css` and in each SVG's fallback colors. Values it leaves out stay SlicerX's. Without `--accent`, the palette's `purple` is the accent. A TypeScript config has to be resolved first: `node packages/edition-config/src/cli.ts resolve editions/harbor/edition.config.ts > harbor.json`.
+
+`manifest.json` records both: `loopBackdrop` is `transparent` or `scene`, and `edition` is the edition's id, `custom` for a config without one, or `null`. The scene keys are listed in [Restyle tool icons and tooltip loops](restyle-icons-and-loops.md#studio-colors).
+
 ## Plain HTML example
 
 Serve the `assets` folder over HTTP and open `example.html`. It loads three shaded tool icons and three loops in both themes, using `example.css` to change the accent. The only JavaScript fetches trusted local SVG files and inserts their markup. The example does not load any app bundle, framework, font service, or backend.

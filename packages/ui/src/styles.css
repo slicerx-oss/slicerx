@@ -557,7 +557,7 @@ button { cursor: pointer; }
 /* A tip with a demo loop is wide enough for it; the poster holds the loop's place from the first frame, so nothing grows.
    The loops are transparent: the box paints the person's own viewport colors behind them. */
 .sx-tip[data-demo] { width: 320px; max-width: 320px; }
-.sx-demo { position: relative; margin-top: 8px; width: 100%; border-radius: var(--r-sm); overflow: hidden; background: linear-gradient(180deg, var(--scene-top, var(--ink-2)), var(--scene-bottom, var(--ink-0))); outline: 1px solid var(--line-soft); outline-offset: -1px; line-height: 0; }
+.sx-demo { position: relative; margin-top: 8px; width: 100%; border-radius: var(--r-sm); overflow: hidden; background: var(--sx-loop-backdrop, linear-gradient(180deg, var(--scene-top, var(--ink-2)), var(--scene-bottom, var(--ink-0)))); outline: 1px solid var(--line-soft); outline-offset: -1px; line-height: 0; }
 .sx-stage > svg { display: block; }
 /* waiting for the media stage: the finished frame, paused */
 .sx-stage:not([data-play]) .sxs .s-a { animation-delay: -1.6s; animation-play-state: paused; }
