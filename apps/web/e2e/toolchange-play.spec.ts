@@ -12,9 +12,18 @@ interface Hook {
   clock(): number
 }
 
+interface RendererInfo {
+  programs: unknown[] | null
+  memory: { geometries: number; textures: number }
+}
+
 // Drawn frames after Play before the plain window may open, and the fewest drawn frames each window must hold.
 const WARM_UP = 30
 const MIN_FRAMES = 100
+// The fewest main thread CPU samples each window must hold, and how much more CPU time the change's busiest stretch
+// may use than plain playback's (ms).
+const MIN_CPU_SAMPLES = 20
+const CPU_ALLOWANCE = 50
 
 async function slicedOnTheH2C(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -66,13 +75,42 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   const warmupStart = plainStart - 10
   expect(warmupStart).toBeGreaterThanOrEqual(0)
   await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), warmupStart)
+  // While playback runs, the main thread's own CPU time (the protocol's ThreadTime) is read every 10 ms or so, each
+  // reading paired with the page clock. A reading waits for the task in progress, so a long task falls between two
+  // readings, and the CPU time between them tells the app's own work apart from time the system ran other processes.
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Performance.enable')
+  const readings: { at: number; cpu: number }[] = []
+  let sampling = true
+  const sampler = (async () => {
+    while (sampling) {
+      const [metrics, clock] = await Promise.all([cdp.send('Performance.getMetrics'), cdp.send('Runtime.evaluate', { expression: 'performance.now()', returnByValue: true })])
+      const cpu = metrics.metrics.find((m) => m.name === 'ThreadTime')?.value
+      if (cpu !== undefined && typeof clock.result.value === 'number') readings.push({ at: clock.result.value, cpu: cpu * 1000 })
+      await new Promise((r) => setTimeout(r, 10))
+    }
+  })()
   const result = await page.evaluate(async ({ from, until, warmUp }) => {
-    const w = window as unknown as { __pv: Hook; __vp: { stats(): { frames: number } } }
+    const w = window as unknown as { __pv: Hook; __vp: { stats(): { frames: number }; renderer: { info: RendererInfo } } }
     const plain: number[] = []
     const inChange: number[] = []
+    const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0
+    // What the renderer holds: compiled shader programs, uploaded geometries and textures.
+    const held = () => {
+      const i = w.__vp.renderer.info
+      return { programs: i.programs?.length ?? 0, geometries: i.memory.geometries, textures: i.memory.textures }
+    }
     let frames = w.__vp.stats().frames
     let drawn = 0
     let lastDrawn = -1
+    // Where each window starts and ends on the page clock, for the CPU readings.
+    let plainFrom = -1
+    let changeFrom = -1
+    let changeTo = -1
+    // The renderer before the change's first frame, after its last, and the most programs it held during it.
+    let before = held()
+    let after = before
+    let mostPrograms = 0
     w.__pv.toggle()
     const t0 = performance.now()
     await new Promise<void>((resolve) => {
@@ -83,10 +121,19 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
           drawn++
           if (lastDrawn >= 0) {
             const dt = now - lastDrawn
-            if (document.querySelector('[data-testid="pv-change"]')) inChange.push(dt)
-            else if (drawn > warmUp && now - t0 >= 1000 && w.__pv.clock() >= from && inChange.length === 0) plain.push(dt)
+            if (document.querySelector('[data-testid="pv-change"]')) {
+              if (changeFrom < 0) changeFrom = lastDrawn
+              changeTo = now
+              inChange.push(dt)
+              after = held()
+              mostPrograms = Math.max(mostPrograms, after.programs)
+            } else if (drawn > warmUp && now - t0 >= 1000 && w.__pv.clock() >= from && inChange.length === 0) {
+              if (plainFrom < 0) plainFrom = lastDrawn
+              plain.push(dt)
+            }
           }
           lastDrawn = now
+          if (inChange.length === 0) before = held()
         }
         if (w.__pv.clock() >= until || !w.__pv.playing()) return resolve()
         requestAnimationFrame(tick)
@@ -95,10 +142,19 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     })
     const reached = w.__pv.clock() >= until
     if (w.__pv.playing()) w.__pv.toggle()
-    const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0
-    return { drawn, plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), longestPlain: Math.max(0, ...plain), longestInChange: Math.max(0, ...inChange), reached, plainFrames: plain.map(Math.round), changeFrames: inChange.map(Math.round) }
+    return { plainFrom, changeFrom, changeTo, drawn, plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), reached, renderer: { before, after, mostPrograms } }
   }, { from: plainStart, until: info.first!.start + info.first!.duration + 2, warmUp: WARM_UP })
+  sampling = false
+  await sampler
+  await cdp.detach()
+  // The CPU time between each pair of readings: the busiest stretch in plain playback, and in the change (a stretch
+  // that overlaps the change counts for it).
+  const spans = readings.slice(1).map((r, i) => ({ from: readings[i]!.at, to: r.at, cpu: r.cpu - readings[i]!.cpu }))
+  const plainSpans = spans.filter((s) => s.from >= result.plainFrom && s.to <= result.changeFrom)
+  const changeSpans = spans.filter((s) => s.to > result.changeFrom && s.from < result.changeTo)
+  const cpu = { plain: plainSpans.length, inChange: changeSpans.length, busiestPlain: Math.max(0, ...plainSpans.map((s) => s.cpu)), busiestInChange: Math.max(0, ...changeSpans.map((s) => s.cpu)) }
   test.info().annotations.push({ type: 'frames', description: JSON.stringify(result) })
+  test.info().annotations.push({ type: 'cpu', description: JSON.stringify(cpu) })
   expect(errors).toEqual([])
   expect(result.reached).toBe(true)
   // Enough drawn frames on each side for a median to mean something. The GPU lane draws about 32 frames a second
@@ -109,12 +165,22 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   // The change keeps the frame rate of plain playback, measured in the same run; a limit in milliseconds would
   // measure the machine and not the app. Drawing the head at the rack, the rack and the purge may cost a little more:
   // the change's median frame stays within 1.5 times the plain median.
-  // Single frames are not compared one to one: entering the change is cheap, nothing compiles a shader during it and
-  // the viewport's own script takes about a millisecond a frame, and the occasional missed frame deadline comes anywhere
-  // in plain playback as well as in the change. A frame over five times the plain median is past those misses: a real
-  // stall, as is playback that never reaches the end of the change (`reached` above).
   expect(result.medianInChange).toBeLessThanOrEqual(1.5 * result.medianPlain)
-  expect(result.longestInChange).toBeLessThanOrEqual(5 * result.medianPlain)
+  // No limit on single long frames: when the system runs other processes for a while, the main thread waits several
+  // display frames while using almost no CPU time, in either window (a blank page beside the other timing specs
+  // shows the same gaps), so the longest frame measures the machine and not the app. A stall of the app's own
+  // (synchronous work at the change, a long garbage collection) uses the main thread's CPU, whatever else the system
+  // runs: the change's busiest stretch between two readings stays within plain playback's busiest stretch plus
+  // CPU_ALLOWANCE. Plain playback's own stretches reach about 40 ms on a loaded machine; a stall of 120 ms is far over.
+  expect(cpu.plain).toBeGreaterThanOrEqual(MIN_CPU_SAMPLES)
+  expect(cpu.inChange).toBeGreaterThanOrEqual(MIN_CPU_SAMPLES)
+  expect(cpu.busiestInChange).toBeLessThanOrEqual(cpu.busiestPlain + CPU_ALLOWANCE)
+  // Work on the GPU's side at the change (a shader compiled, a mesh or texture uploaded) shows in the renderer: the
+  // change adds no shader program, geometry or texture.
+  const { before, after, mostPrograms } = result.renderer
+  expect(mostPrograms).toBeLessThanOrEqual(before.programs)
+  expect(after.geometries).toBeLessThanOrEqual(before.geometries)
+  expect(after.textures).toBeLessThanOrEqual(before.textures)
   // Scrubbing the time slider onto the change places the head away from the paths, and back.
   const mid = info.first!.start + info.first!.duration / 2
   await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), mid)
