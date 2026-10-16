@@ -20,6 +20,7 @@ test('scoped exact hole edits use app revisions across a visible undo', async ({
     if (/exact solids:.*ran on the mesh/.test(m.text())) fallbacks.push(m.text())
   })
   await page.addInitScript(shell => Object.assign(window, { __sxTestShell: shell }), { url: hub.linkUrl, code: hub.code, hubKey: hub.admin.hubKey })
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
   await seed(page)
   await plateReady(page)
   await page.evaluate(() => {
