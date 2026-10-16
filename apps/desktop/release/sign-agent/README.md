@@ -4,7 +4,7 @@ A small LaunchAgent that signs release builds without anyone at the keyboard. It
 
 ## How it works
 
-A build, run over ssh or anywhere else, drops a request file in `~/Library/Application Support/sign-mac/requests`. launchd notices the folder change and starts `sign-mac-agent`. The agent reads each request as plain data, checks it, runs `~/bin/sign-mac` on the file, writes the log and a result to `results/`, and deletes the request. One job runs at a time, behind a lock, with a one hour limit.
+A build, run over ssh or anywhere else, drops a request file in `~/Library/Application Support/sign-mac/requests`. launchd notices the folder change and starts `sign-mac-agent`. The agent reads each request as plain data, checks it, runs `~/bin/sign-mac` on the file, writes the log and a result to `results/`, and deletes the request. One job runs at a time, behind a lock, with a one hour limit. Before it starts, the agent removes `sx-sign.*` temp dirs in `$TMPDIR` that are older than two hours (sign-mac removes its own on exit; these are from runs that were killed) and logs and results older than 14 days.
 
 Rules the agent enforces:
 

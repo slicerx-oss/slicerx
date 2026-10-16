@@ -53,6 +53,9 @@ if ls "$dir"/SlicerX_"$version"_*.sig >/dev/null 2>&1; then
   updates=$dir/latest.json
 fi
 body=$(mktemp)
+trap 'rm -f "$body"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # a hand-written changed.md in the folder replaces the generated list when a release has many small lines
 if [ -f "$dir/changed.md" ]; then cat "$dir/changed.md"; else (cd "$repo" && node "$here/whats-changed.mjs" --since "$since" --to "$commit" 2>/dev/null || true); fi |
   node -e '

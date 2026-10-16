@@ -28,6 +28,13 @@ keychain=$HOME/Library/Keychains/login.keychain-db
 self=${0:A}
 
 die() { print -u2 -- "FAIL: $1"; exit ${2:-1}; }
+# Every temp dir (the probe, the notarization zip of the whole app, productsign's output) goes on this list and is
+# removed on any exit, die included. newtmp sets REPLY rather than printing, so the list is kept in this shell.
+tmps=()
+trap 'rm -rf -- "${tmps[@]}"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+newtmp() { REPLY=$(mktemp -d -t sx-sign) || die "mktemp failed"; tmps+=("$REPLY"); }
 step() { print -- "-- $*"; }
 
 while (( $# )); do
@@ -70,7 +77,8 @@ fi
 preflight() {
   security find-identity -v -p codesigning 2>/dev/null | grep -qF "$identity" \
     || die "certificate not found: $identity" 3
-  local probe; probe=$(mktemp -d)/probe
+  newtmp
+  local probe=$REPLY/probe
   cp /usr/bin/true "$probe"
   local msg
   msg=$(codesign --force --sign "$identity" --options runtime --timestamp "$probe" 2>&1) || {
@@ -166,7 +174,7 @@ case $kind in
     step "verify the signature"
     codesign --verify --deep --strict --verbose=2 "$target" || die "codesign --verify failed"
     if (( notarize )); then
-      zip=$(mktemp -d)/${target:t}.zip
+      newtmp; zip=$REPLY/${target:t}.zip
       ditto -c -k --keepParent "$target" "$zip"
       submit "$zip"
       xcrun stapler staple "$target" || die "stapling failed"
@@ -197,7 +205,7 @@ case $kind in
     }
     preflight
     step "sign the installer package"
-    out=$(mktemp -d)/${target:t}
+    newtmp; out=$REPLY/${target:t}
     productsign --sign "$installer" --timestamp "$target" "$out" || die "productsign failed"
     mv -f "$out" "$target"
     pkgutil --check-signature "$target" || die "package signature check failed"
@@ -224,7 +232,7 @@ case $kind in
     if (( notarize )); then
       # A bare binary cannot be stapled: Apple notarizes it in a zip, and macOS checks the ticket online the
       # first time a downloaded copy runs. Ship it in a dmg or pkg to staple the ticket instead.
-      zip=$(mktemp -d)/${target:t}.zip
+      newtmp; zip=$REPLY/${target:t}.zip
       ditto -c -k --keepParent "$target" "$zip"
       submit "$zip"
     fi

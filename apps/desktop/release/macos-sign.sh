@@ -27,6 +27,11 @@ out=${SX_OUT:-$repo/target/signed}
 export PATH=/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:$HOME/.cargo/bin:$PATH
 
 say() { print -- "\n== $*"; }
+# The disk image's stage holds a full copy of the app (about 300 MB): removed on any exit, including a failed step.
+tmps=()
+trap 'rm -rf -- "${tmps[@]}"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 say "keychain and credentials"
 export SX_SIGN_IDENTITY=$identity SX_NOTARY_PROFILE=$profile
@@ -75,7 +80,8 @@ say "sign, notarize and staple the app"
 
 say "disk image"
 dmg=$out/${name}_${version}_universal.dmg
-stage=$(mktemp -d)
+stage=$(mktemp -d -t sx-sign)
+tmps+=("$stage")
 cp -R "$app" "$stage/"
 ln -s /Applications "$stage/Applications"
 rm -f "$dmg"

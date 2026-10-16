@@ -10,6 +10,9 @@ base=$HOME/Library/Application\ Support/sign-mac
 [[ $# -ge 1 ]] || { print -u2 "usage: sign-mac-request <file> [--entitlements FILE] [--inherit FILE] [--no-notarize]"; exit 2; }
 target=${1:A}; shift
 id=$(date +%Y%m%d-%H%M%S)-$$
+trap 'rm -f "$base/requests/.$id.tmp"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 body="path=$target"
 while (( $# )); do
   case $1 in
