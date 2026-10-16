@@ -56,7 +56,7 @@ interface Flat {
 /** Positions rounded to f32, as the app keeps them (Float32Array). */
 const asStored = (p: ArrayLike<number>): number[] => Array.from(p, Math.fround)
 
-const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: m.faces } : {}), ...(m.paint ? { paint: m.paint } : {}), ...(m.primitive ? { primitive: m.primitive } : {}) })
+const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: { ...m.faces, ids: Array.from(m.faces.ids) } } : {}), ...(m.paint ? { paint: m.paint } : {}), ...(m.primitive ? { primitive: m.primitive } : {}) })
 
 /** What a step that changed a painted part's triangles notes. */
 export const PAINT_DROPPED = 'This step changed the part, so its paint was cleared.'
