@@ -21,7 +21,7 @@ sha2 = "=0.11.0"
 sx-core.workspace = true
 sx3mf.workspace = true
 tokio = { version = "=1.53.1", features = ["rt", "net", "io-util", "time"] }
-zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "=9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

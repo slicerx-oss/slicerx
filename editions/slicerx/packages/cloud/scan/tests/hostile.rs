@@ -283,7 +283,7 @@ fn zip_names(bytes: &[u8]) -> Vec<String> {
     ZipArchive::new(Cursor::new(bytes))
         .unwrap()
         .file_names()
-        .map(str::to_owned)
+        .map(|n| n.unwrap().into_owned())
         .collect()
 }
 
@@ -537,7 +537,13 @@ async fn a_model_that_lies_about_its_size_is_refused() {
     let o = scan("lie.3mf", z).await;
     assert_eq!(o.report.verdict, Verdict::Rejected);
     assert!(o.library_file.is_none());
-    assert_eq!(o.report.reason_codes, vec!["zip_size_mismatch"]);
+    // zip 9 checks an entry's checksum while it reads, so a size that lies is caught there as a corrupt entry; the
+    // scanner's own size check names it when the reader lets the bytes through.
+    assert!(
+        matches!(o.report.reason_codes.as_slice(), [c] if *c == "zip_size_mismatch" || *c == "zip_corrupt"),
+        "{:?}",
+        o.report.reason_codes
+    );
 }
 
 #[tokio::test]

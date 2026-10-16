@@ -11,7 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "=9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 quick-xml = "=0.42.0"
 thiserror = "=2.0.21"
 serde = { version = "=1.0.229", features = ["derive"] }
