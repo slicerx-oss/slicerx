@@ -104,6 +104,33 @@ test.describe('Model ribbon sizes', () => {
     await expect(ribbon).toHaveAttribute('data-setting', 'medium')
   })
 
+  for (const size of ['large', 'medium', 'small'] as const) {
+    test(`${size}: while the ribbon's code loads, its place is held and the view does not move when it arrives`, async ({ page }) => {
+      // Hold Model's panes (the ribbon's code) until the empty ribbon has been measured, as on a slow first open.
+      let release!: () => void
+      const held = new Promise<void>((r) => (release = r))
+      let asked = false
+      await page.route(/\/design-panes[^/]*\.js$/, async (route) => {
+        asked = true
+        await held
+        await route.continue()
+      })
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await openStudio(page, { appearance: { toolbarSize: size } })
+      await page.locator('.sx-tab[data-mode="design"]').click()
+      await expect.poll(() => asked).toBe(true)
+      const ribbon = page.locator('.studio > .ribbon')
+      await expect(ribbon).toHaveAttribute('aria-hidden', 'true')
+      const view = page.locator('.vp-canvas').first()
+      const waiting = { ribbon: (await ribbon.boundingBox())!, view: (await view.boundingBox())! }
+      release()
+      await expect(page.getByTestId('model-shelf')).toBeVisible()
+      await expect(page.getByTestId('model-shelf')).toHaveAttribute('data-size', size)
+      expect((await ribbon.boundingBox())!.height).toBeCloseTo(waiting.ribbon.height, 1)
+      expect(await view.boundingBox()).toEqual(waiting.view)
+    })
+  }
+
   test('each tab shows each tool once, with an object picked too, and Solid has Extrude', async ({ page }) => {
     const ribbon = await openModel(page, 'large', 1440)
     // every button in the row, by the tool, action or menu it opens
