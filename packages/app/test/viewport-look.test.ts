@@ -53,7 +53,8 @@ describe('the 3D view look', () => {
     expect(vp.calls).toEqual([DARK_PRECISION_LOOK])
     syncViewportLook(vp, root('light', 'subban-light'))
     expect(vp.calls).toHaveLength(2)
-    expect(viewportLookState()).toEqual({ preset: 'light-studio', themeBackdrop: false, look: LIGHT_STUDIO_LOOK })
+    // with no theme given, the view draws its own default studio, and the read-back says so
+    expect(viewportLookState()).toEqual({ preset: 'light-studio', themeBackdrop: false, look: LIGHT_STUDIO_LOOK, scene: expect.objectContaining({ bgTop: '#2f3241', selection: '#bd93f9' }) })
     // a read-back is a copy
     viewportLookState()!.look.plate.borderGlow = 9
     expect(viewportLookState()!.look.plate.borderGlow).toBe(LIGHT_STUDIO_LOOK.plate.borderGlow)
