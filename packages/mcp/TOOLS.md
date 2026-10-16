@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-202 tools.
+203 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -28,6 +28,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_value_remove` |  |  | slice | Remove a named value from the open project. |
 | `slicerx_app_value_set` |  |  | slice | Add or change a named value in the open project, using the same arithmetic and millimeter units as Named values for sizes. |
 | `slicerx_app_values` |  |  | read | Read the open project's named values, expressions, resolved numbers or errors, built-in nozzle and clearance values, and step bindings on every plate. |
+| `slicerx_app_viewport` |  |  | read | Read SlicerX's live viewport pixelRatio, motionScale, motionFull, drawnPlate and degrade notices (count and lastAt, a UTC ISO 8601 time). |
 | `slicerx_app_volume_add` |  |  | slice | Add a box, cylinder, sphere or cone volume to an open object, as in Prepare. |
 | `slicerx_app_volume_copy` |  |  | slice | Copy a volume into this or another shown object without changing the clipboard. |
 | `slicerx_app_volume_from_object` |  |  | slice | Turn another shown object into a volume of this object, keeping its world placement. |
