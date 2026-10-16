@@ -506,6 +506,10 @@ test.describe('controls never move when pressed', () => {
       await page.mouse.up()
       await expect(page.getByTestId('mimir-transcript').locator('[data-lookup-id]')).toHaveCount(i + 1)
     }
+    // The last Confirm starts a build that runs on after its card shows. Wait for it to finish (its closing line, and
+    // Send back), or its steps land mid-measure: the caption names the running step ("Extrude, Z") and the part arrives.
+    await expect(page.getByTestId('mimir-transcript').getByText('The backplate is on the plate')).toHaveCount(asks.length, { timeout: 30_000 })
+    await expect(composer.getByRole('button', { name: 'Send' })).toBeVisible()
     await expect(cards).toHaveCount(2)
     await expect(page.locator('.mimir-lookup-more')).toBeVisible()
     // the timeline stays shut once the pointer is away from the view's bottom band
