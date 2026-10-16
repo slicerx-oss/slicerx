@@ -114,10 +114,33 @@ async function demo(query, label, width = 1280, height = 900) {
   const state = await page.evaluate(() => document.querySelector('sx-viewport').activeTheme)
   const accent = await page.evaluate(() => getComputedStyle(document.querySelector('sx-settings-panel').shadowRoot.querySelector('.sx-theme-scope')).getPropertyValue('--accent').trim())
   const corner = await pixel(page, shot, 4, 4)
+  // the view's tool bar and its icons, as drawn: background and icon color from the shadow root
+  const bar = await page.evaluate(() => {
+    const root = document.querySelector('sx-viewport').shadowRoot
+    const tools = root.querySelector('.sxe-tools')
+    const icon = root.querySelector('.sxe-tool:not([aria-pressed=true])')
+    return tools && icon ? { bg: getComputedStyle(tools).backgroundColor, ink: getComputedStyle(icon).color } : null
+  })
   if (shots) await page.screenshot({ path: join(shots, `${label}.png`), fullPage: true })
   await page.close()
   assert.deepEqual(errors, [], `${label}: page errors`)
-  return { state, accent, corner }
+  return { state, accent, corner, bar }
+}
+
+/** Relative luminance of a computed CSS color (rgb() or color(srgb ...)), ignoring alpha. */
+function luminance(css) {
+  const n = css.match(/[\d.]+/g).map(Number)
+  const rgb = css.startsWith('color(') ? n.slice(0, 3) : n.slice(0, 3).map((v) => v / 255)
+  const lin = rgb.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+}
+const contrast = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+/** The tool bar follows the scheme, and its idle icons keep 3:1 against it. */
+function checkBar(r, scheme) {
+  assert.ok(r.bar, 'the tool bar is drawn')
+  const bg = luminance(r.bar.bg)
+  assert.ok(scheme === 'light' ? bg > 0.7 : bg < 0.1, `${scheme} bar ${r.bar.bg}`)
+  assert.ok(contrast(bg, luminance(r.bar.ink)) >= 3, `icons ${r.bar.ink} on ${r.bar.bg}: ${contrast(bg, luminance(r.bar.ink)).toFixed(2)}:1`)
 }
 
 let slicerx
@@ -127,6 +150,7 @@ await step('SlicerX default: the studio and accent are unchanged', async () => {
   assert.equal(slicerx.state.scene.bgBottom, '#20222b')
   assert.equal(slicerx.state.accent, '#bd93f9')
   assert.deepEqual(slicerx.state.overrides, { visuals: {}, scene: {} })
+  checkBar(slicerx, 'dark')
 })
 await step('lime edition, dark: the edition config sets the studio, grid and accent at runtime', async () => {
   const r = await demo('?edition=editions/lime.json', 'embed-lime-dark')
@@ -140,6 +164,7 @@ await step('lime edition, dark: the edition config sets the studio, grid and acc
   const want = hexRgb('#1a1d23').map((v, i) => v - hexRgb('#2f3241')[i])
   const got = r.corner.map((v, i) => v - slicerx.corner[i])
   const cos = want.reduce((sum, v, i) => sum + v * got[i], 0) / (Math.hypot(...want) * Math.hypot(...got) || 1)
+  checkBar(r, 'dark')
   assert.ok(Math.hypot(...got) > 10 && cos > 0.8, `corner ${r.corner} against SlicerX ${slicerx.corner}: shift ${got}, cosine ${cos.toFixed(2)}`)
 })
 await step('lime edition, light: the light block applies with the scheme', async () => {
@@ -148,6 +173,12 @@ await step('lime edition, light: the light block applies with the scheme', async
   assert.equal(r.state.scene.bgTop, '#f1f4ee')
   assert.equal(r.state.accent, '#456b0b')
   assert.equal(r.accent, '#456b0b')
+  checkBar(r, 'light')
+})
+await step('SlicerX light: the tool bar is light, with readable icons', async () => {
+  const r = await demo('?theme=light', 'embed-default-light')
+  assert.equal(r.state.scheme, 'light')
+  checkBar(r, 'light')
 })
 await step('lime edition at phone width', async () => {
   const r = await demo('?edition=editions/lime.json', 'embed-lime-dark-phone', 390, 844)

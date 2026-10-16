@@ -10,6 +10,7 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ### Fixed
 
+- In a light `EmbedTheme`, the view's tool bar is light with readable icons. Tokens built from the palette (surfaces, the overlay, tool icon shades) are declared again on the theme wrapper, so they come from the theme instead of the default dark palette.
 - The selection outline takes the theme's `--accent` when one is set, instead of always the palette purple.
 - `Viewport` no longer forces `quality="high"`: its default is `auto`, which lets the viewport pick `low` without ambient occlusion on a weak or software GPU. A host's `quality` still overrides it.
 - `<sx-viewport>` fills the element's height again; the view stopped at 240 px inside its theme wrapper.

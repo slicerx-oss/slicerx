@@ -9,7 +9,25 @@ import tokens from '@slicerx/ui/tokens.css?raw'
 // win over the theme's variables, which the piece inherits from the EmbedTheme wrapper.
 const SCOPE = ':is(.sxe-viewport, .sxe-settings, .sxe-agreement, .sxe-localai):not(.sx-theme-scope *), :host'
 
-export const EMBED_CSS = tokens.replace(/:root\b/g, SCOPE) + `
+/**
+ * Inside an EmbedTheme the theme sets its palette on the wrapper (.sx-theme-scope). Tokens built from the palette
+ * (surfaces, the overlay, tool icon shades) are computed where they are declared, so declared only on the piece's
+ * host they would come from the default dark palette and reach a light theme as fixed dark colors. They are declared
+ * again on the wrapper, with the light blocks keyed on its data-scheme and color-scheme (applyTheme sets both there).
+ */
+export function themedTokens(css: string): string {
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  return [...clean.matchAll(/:root([^{]*)\{([^}]*)\}/g)]
+    .map(([, sel = '', body = '']) => {
+      const scheme = sel.trim() !== ''
+      // the base block: only what is built from other tokens; a scheme block: all of it
+      const decls = [...body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].filter(([, , v = '']) => scheme || v.includes('var('))
+      return decls.length ? `.sx-theme-scope${sel.trim()} {\n${decls.map(([, k, v = '']) => `  ${k}: ${v.trim()};`).join('\n')}\n}\n` : ''
+    })
+    .join('')
+}
+
+export const EMBED_CSS = tokens.replace(/:root\b/g, SCOPE) + themedTokens(tokens) + `
 .sxe-viewport { position: relative; min-height: 240px; background: var(--ink-1); border-radius: 12px; overflow: hidden; }
 .sxe-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
 .sxe-tools { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 10px; background: var(--overlay); border: 1px solid var(--line-soft); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); }
