@@ -1,0 +1,1 @@
+away from the plate tab, toasts keep their place at the window bottom | doo-sx | 2026-10-16 | 2026-10-17 | https://github.com/slicerx-oss/slicerx/issues/1231 | passed only on retry in the GPU lane of merge group run 38852530859
