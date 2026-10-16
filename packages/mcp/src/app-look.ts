@@ -15,13 +15,21 @@ export interface AppLook {
   /** Absent in an edition without Model's modeling tools. */
   modelFraming?: 'selection' | 'open'
   /** Present on apps with edition visual tokens. Omitted glyph colors follow the studio background. */
-  theme?: { scheme: 'dark' | 'light'; visuals: Record<string, string>; overrides: Record<string, string> }
+  theme?: {
+    scheme: 'dark' | 'light'
+    visuals: Record<string, string>
+    overrides: Record<string, string>
+    /** The studio colors in use (top, bottom, glow, plate, grid, edge, xray: the --scene-* properties). */
+    scene?: Record<string, string>
+    /** The studio colors the edition config sets for this scheme (brand.theme tokens.scene, then light or dark scene). */
+    sceneOverrides?: Record<string, string>
+  }
   /**
    * The 3D view's look, absent while no 3D view is up: the preset the theme picked (dark-precision on a dark theme,
    * light-studio on a light one), whether the theme kept its own backdrop colors, and the full look as the view reads
    * it back (backdrop, plate, lighting, materials, geometry; @slicerx/viewport ViewportLook).
    */
-  viewport?: { preset: 'dark-precision' | 'light-studio'; themeBackdrop: boolean; look: { version: number } & Record<string, unknown> }
+  viewport?: { preset: 'dark-precision' | 'light-studio'; themeBackdrop: boolean; look: { version: number } & Record<string, unknown>; scene?: Record<string, string> }
 }
 
 const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_supported', busy: 'busy', read_only: 'not_supported', denied: 'not_supported' }
@@ -52,10 +60,10 @@ function summary(l: AppLook): string {
 export function appLookTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const get = defineTool({
     name: 'app.look',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: `Read two view preferences of ${appName} (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). Also reads theme.scheme, theme.visuals (the active CSS color properties) and theme.overrides (shared plus active edition overrides); omitted glyph colors follow the studio background. Also reads viewport, the 3D view's look: preset (dark-precision on a dark theme, light-studio on a light one; the theme picks it), themeBackdrop (true when a theme other than Subban keeps its own backdrop colors) and look (backdrop, plate, lighting, materials and geometry values the view draws with); absent while no 3D view is up. Reads through the app link; the app must be open with the link on.`,
+    description: `Read two view preferences of ${appName} (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). Also reads theme.scheme, theme.visuals (the active CSS color properties), theme.overrides (shared plus active edition overrides), theme.scene (the studio colors in use: top, bottom, glow, plate, grid, edge, xray) and theme.sceneOverrides (the studio colors the edition config sets); omitted glyph colors follow the studio background. Also reads viewport, the 3D view's look: preset (dark-precision on a dark theme, light-studio on a light one; the theme picks it), themeBackdrop (true when a theme other than Subban keeps its own backdrop colors) and look (backdrop, plate, lighting, materials and geometry values the view draws with) and scene (the colors the view was given: bgTop, bgBottom, bgGlow, plateSide, floorGrid, edgeDark, edgeXray, selection, liveLayer); absent while no 3D view is up. Reads through the app link; the app must be open with the link on.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'look.get', {})

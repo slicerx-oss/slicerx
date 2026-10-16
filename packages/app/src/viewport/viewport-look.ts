@@ -3,7 +3,7 @@
 // The 3D view's look follows the theme: Dark precision on a dark theme, Light studio on a light one. The Subban themes
 // take the preset whole; any other theme keeps its own backdrop colors and takes the lighting, materials and plate. The
 // look in use is kept here so the app link can read it back (look.get).
-import { lookForScheme, type LookPresetId, type Viewport, type ViewportLook } from '@slicerx/viewport'
+import { lookForScheme, resolveTheme, type LookPresetId, type Viewport, type ViewportLook, type ViewportTheme } from '@slicerx/viewport'
 
 /** The themes whose studio the presets were drawn for; their backdrop comes from the preset. */
 const PRESET_THEMES = new Set(['subban', 'subban-dark', 'subban-light'])
@@ -15,7 +15,24 @@ export interface ViewportLookState {
   themeBackdrop: boolean
   /** The full look the 3D view draws with, as the viewport reads it back. */
   look: ViewportLook
+  /** The studio colors the view was given, over its defaults: backdrop, glow, plate side, grid, edges, selection. */
+  scene?: ViewportScene
 }
+
+/** The scene colors a client can check, as the view resolves them (@slicerx/viewport SceneColors). */
+export interface ViewportScene {
+  bgTop: string
+  bgBottom: string
+  bgGlow: string
+  plateSide: string
+  floorGrid: string
+  edgeDark: string
+  edgeXray: string
+  selection: string
+  liveLayer: string
+}
+
+const SCENE_READ = ['bgTop', 'bgBottom', 'bgGlow', 'plateSide', 'floorGrid', 'edgeDark', 'edgeXray', 'selection', 'liveLayer'] as const
 
 /** The look for the theme on the root element: its scheme picks the preset, its name whether the backdrop is the preset's. */
 export function themeLook(root: HTMLElement = document.documentElement): { preset: LookPresetId; themeBackdrop: boolean; look: ViewportLook } {
@@ -27,11 +44,13 @@ export function themeLook(root: HTMLElement = document.documentElement): { prese
 
 let active: ViewportLookState | null = null
 
-/** Sets the theme's look on the view (the one path that sets it) and records it for read-back. */
-export function syncViewportLook(vp: Pick<Viewport, 'setLook' | 'look'>, root?: HTMLElement): ViewportLookState {
+/** Sets the theme's look on the view (the one path that sets it) and records it, with the scene colors the view was given, for read-back. */
+export function syncViewportLook(vp: Pick<Viewport, 'setLook' | 'look'>, root?: HTMLElement, theme?: ViewportTheme): ViewportLookState {
   const t = themeLook(root)
   vp.setLook(t.look)
-  active = { preset: t.preset, themeBackdrop: t.themeBackdrop, look: vp.look() }
+  const resolved = resolveTheme(theme).scene
+  const scene = Object.fromEntries(SCENE_READ.map((k) => [k, resolved[k]])) as unknown as ViewportScene
+  active = { preset: t.preset, themeBackdrop: t.themeBackdrop, look: vp.look(), scene }
   return active
 }
 
