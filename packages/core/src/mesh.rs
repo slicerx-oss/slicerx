@@ -75,6 +75,9 @@ pub struct Mesh {
     /// The object's own setting overrides from a project file (an object of setting keys), `Null` when it has none:
     /// the settings it prints with over the plate's.
     pub settings: serde_json::Value,
+    /// Painted brim ears a project file gives this object: x, y, z in the space of the parts and the radius of the
+    /// ear head, mm each. Empty without any.
+    pub brim_points: Vec<[f32; 4]>,
 }
 
 /// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].

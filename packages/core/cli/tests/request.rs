@@ -731,12 +731,18 @@ fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
 
 /// A 20 x 20 x 10 mm box as a 3MF, with `settings` as its `Metadata/project_settings.config` when given.
 fn box_3mf(settings: Option<&serde_json::Value>) -> Vec<u8> {
+    box_3mf_with(settings, &[])
+}
+
+/// [`box_3mf`] with more files of the project, such as its brim ears or layer marks.
+fn box_3mf_with(settings: Option<&serde_json::Value>, extra: &[(&str, &str)]) -> Vec<u8> {
     let model = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-01.10.02.73</metadata><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#;
     let text = settings.map(ToString::to_string);
     let mut entries: Vec<(&str, &[u8])> = vec![("3D/3dmodel.model", model.as_bytes())];
     if let Some(t) = &text {
         entries.push(("Metadata/project_settings.config", t.as_bytes()));
     }
+    entries.extend(extra.iter().map(|(n, t)| (*n, t.as_bytes())));
     zip(&entries)
 }
 
@@ -746,6 +752,56 @@ fn layers(stderr: &[u8]) -> u32 {
     text.lines()
         .find_map(|l| l.split_once(" layers, ").and_then(|(n, _)| n.trim().parse().ok()))
         .unwrap_or_else(|| panic!("no layer count in {text}"))
+}
+
+/// What a project paints or marks on its own travels with it: the brim ears it paints on an object and the pause it sets
+/// at a height are in the G-code, as they are when the project is sliced in the app.
+#[test]
+fn a_project_slices_with_its_painted_ears_and_layer_marks() {
+    let dir = std::env::temp_dir().join(format!("sx-cli-project-marks-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // The box stands at 100, 100 in the file; its ears are in the box's own space, at two corners of its foot.
+    let ears = "brim_points_format_version=0\nobject_id=1|0 0 0 5 20 20 0 5\n";
+    let marks = r#"<?xml version="1.0"?><custom_gcodes_per_layer><plate><plate_info id="1"/><layer top_z="4.0" type="1" extruder="1" color="" extra="" gcode="M601"/></plate></custom_gcodes_per_layer>"#;
+    let slice = |name: &str, extra: &[(&str, &str)]| {
+        let path = dir.join(name);
+        std::fs::write(&path, box_3mf_with(None, extra)).unwrap();
+        let out_dir = dir.join(format!("out-{name}"));
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": path},
+            "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+            "config": {
+                "layer_height": 0.2, "initial_layer_print_height": 0.2, "brim_type": "painted", "brim_width": 6,
+                "skirt_loops": 0
+            },
+            "options": {"emitGcode": true},
+        });
+        let request = dir.join(format!("request-{name}.json"));
+        std::fs::write(&request, req.to_string()).unwrap();
+        let out = sx()
+            .args(["slice", "--request"])
+            .arg(&request)
+            .arg("--out-dir")
+            .arg(&out_dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap()
+    };
+    let bare = slice("bare.3mf", &[]);
+    assert!(!bare.contains(";TYPE:Brim"), "ears came from nowhere");
+    assert!(!bare.contains("M601"));
+    let marked = slice(
+        "marked.3mf",
+        &[
+            ("Metadata/brim_ear_points.txt", ears),
+            ("Metadata/custom_gcode_per_layer.xml", marks),
+        ],
+    );
+    assert!(marked.contains(";TYPE:Brim"), "the painted ears are not printed");
+    assert_eq!(marked.matches("M601").count(), 1, "the pause is not written once");
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
