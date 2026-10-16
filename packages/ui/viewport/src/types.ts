@@ -13,7 +13,7 @@ import type { Guides } from './guides'
 import type { DimensionMark, SketchCursor, SketchScene } from './cadtools'
 import type { Bed, PreviewBuffers } from '@slicerx/contracts'
 import type { ControlsMap, ControlsPresetId } from './controls'
-import type { ViewportTheme } from './palette'
+import type { UiThemeLike, ViewportTheme } from './palette'
 
 export type Backend = 'auto' | 'webgl2' | 'webgpu'
 export type Quality = 'high' | 'balanced' | 'low'
@@ -688,8 +688,12 @@ export interface Viewport {
   /** Switches and returns the new projection. */
   toggleProjection(): Projection
   /** Switch camera and mouse controls at runtime: a preset id or a full map. */
-  /** Change scene colors at runtime. Omit to return to the defaults. Throws on an invalid color. */
-  setTheme(theme?: ViewportTheme): void
+  /**
+   * Change scene colors at runtime: a ViewportTheme, or a full theme from createTheme (its scene colors are derived as
+   * the embed pieces derive them). Omit to return to the defaults. Throws on an invalid color in a ViewportTheme; any
+   * other shape logs a warning and keeps the current look.
+   */
+  setTheme(theme?: ViewportTheme | UiThemeLike): void
   setControls(controls: ControlsPresetId | ControlsMap): void
   getControls(): ControlsMap
   getCamera(): CameraState
