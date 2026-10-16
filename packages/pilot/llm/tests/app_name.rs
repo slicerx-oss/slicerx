@@ -115,12 +115,10 @@ async fn the_sign_in_pages_and_errors_name_the_edition() {
         });
         Ok(())
     };
-    let free = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = free.local_addr().unwrap().port();
-    drop(free);
     let opts = ConnectOptions {
         endpoints: endpoints.clone(),
-        redirect_port: port,
+        // 0: the listener takes a free port and the redirect URI names it.
+        redirect_port: 0,
         app_name: "Acme Slicer",
         open_url: &open,
         timeout: Duration::from_millis(1500),
