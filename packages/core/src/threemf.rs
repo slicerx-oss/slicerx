@@ -110,7 +110,13 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
     let mut plates: std::collections::BTreeMap<u32, Vec<Mesh>> = std::collections::BTreeMap::new();
     let mut work = MAX_WORK;
     let mut costs = HashMap::new();
-    for item in &main.build {
+    let ears = zip
+        .read("Metadata/brim_ear_points.txt")
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .map(|t| parse_brim_ears(&t))
+        .unwrap_or_default();
+    for (item_no, item) in main.build.iter().enumerate() {
         let plate = plate_of.get(&item.object).copied().unwrap_or(1);
         let mut parts = Vec::new();
         let mut volumes = Vec::new();
@@ -190,6 +196,7 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
             part_settings,
             notes,
             settings,
+            brim_points: ears_of(&ears, item_no, &item.transform, scale),
         });
     }
     if plates.is_empty() {
@@ -237,10 +244,17 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             .collect()
     };
     let mut plates: std::collections::BTreeMap<u32, Vec<Mesh>> = std::collections::BTreeMap::new();
-    for o in project.objects {
+    let ears = project
+        .files
+        .brim_ears
+        .as_deref()
+        .map(parse_brim_ears)
+        .unwrap_or_default();
+    for (item_no, o) in project.objects.into_iter().enumerate() {
         if !o.printable {
             continue;
         }
+        let brim_points = ears_of(&ears, item_no, &o.transform, scale);
         let object = to_map(&o.settings);
         let mut parts: Vec<MeshPart> = Vec::new();
         let mut volumes: Vec<MeshVolume> = Vec::new();
@@ -383,6 +397,7 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             part_settings,
             notes,
             settings,
+            brim_points,
         });
     }
     if plates.is_empty() {
@@ -516,6 +531,73 @@ fn parse_brim_ears(text: &str) -> Vec<(u32, Vec<[f32; 4]>)> {
             (id > 0 && !points.is_empty()).then_some((id, points))
         })
         .collect()
+}
+
+/// The painted brim ears of the build item at `item_no` (0-based; the file numbers them from 1), placed by the item's
+/// transform and the file's unit, as the geometry loads.
+fn ears_of(ears: &[(u32, Vec<[f32; 4]>)], item_no: usize, t: &Transform, scale: f32) -> Vec<[f32; 4]> {
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let Ok(number) = u32::try_from(item_no + 1) else {
+        return Vec::new();
+    };
+    ears.iter()
+        .filter(|(object, _)| *object == number)
+        .flat_map(|(_, points)| points.iter())
+        .map(|p| {
+            let q = apply(t, [p[0], p[1], p[2]]);
+            [q[0] * scale, q[1] * scale, q[2] * scale, p[3]]
+        })
+        .collect()
+}
+
+/// The pause, color change and custom G-code marks a project sets on one plate's layers
+/// (`Metadata/custom_gcode_per_layer.xml`), by height. Types follow Orca's slider: 0 color change, 1 pause, 4 custom;
+/// others are left out, as are marks with no usable height. At most 200. A damaged file gives none.
+pub(crate) fn project_layer_marks(bytes: &[u8], plate: u32) -> Vec<crate::api::LayerGcodeSpec> {
+    let Ok(zip) = Zip::open(bytes) else {
+        return Vec::new();
+    };
+    let Ok(xml) = zip.read("Metadata/custom_gcode_per_layer.xml") else {
+        return Vec::new();
+    };
+    let mut current: Option<u32> = None;
+    let mut out = Vec::new();
+    for t in tags(&xml) {
+        if t.closing {
+            continue;
+        }
+        match t.name {
+            "plate_info" => current = t.attr("id").and_then(|v| v.trim().parse().ok()),
+            "layer" if current == Some(plate) => {
+                let Some(z) = t
+                    .attr("top_z")
+                    .and_then(|v| v.trim().parse::<f64>().ok())
+                    .filter(|z| z.is_finite() && *z > 0.0)
+                else {
+                    continue;
+                };
+                let kind = match t.attr("type").map(str::trim) {
+                    Some("0") => "color_change",
+                    Some("1") => "pause",
+                    Some("4") => "custom",
+                    _ => continue,
+                };
+                let gcode = (kind == "custom")
+                    .then(|| unescape(t.attr("extra").or_else(|| t.attr("gcode")).unwrap_or_default()));
+                out.push(crate::api::LayerGcodeSpec {
+                    layer: None,
+                    z_mm: Some(z),
+                    kind: kind.to_owned(),
+                    gcode,
+                });
+                if out.len() >= 200 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// The app that wrote a 3MF (its main model's `Application` metadata, such as `BambuStudio-01.10.02.73`).
@@ -2341,6 +2423,55 @@ mod tests {
         assert_eq!(plates[1].0, 2);
         assert_eq!(plates[1].1.bounds().unwrap().0[0], 300.0);
         assert_eq!(Mesh::load(&bytes, "p.3mf").unwrap().parts.len(), 1);
+    }
+
+    /// A two-item model (build items 1 and 2, the second moved 60 mm along X) with the files a project adds.
+    fn two_items_with(extra: &[(&str, &str)]) -> Vec<u8> {
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{CUBE_OBJECT}<object id="3" type="model"><components><component objectid="2" transform="1 0 0 0 1 0 0 0 1 60 0 0"/></components></object></resources><build><item objectid="2"/><item objectid="3"/></build></model>"#
+        );
+        let mut files: Vec<(&str, &[u8], bool)> = vec![("3D/3dmodel.model", model.as_bytes(), true)];
+        files.extend(extra.iter().map(|(n, t)| (*n, t.as_bytes(), false)));
+        zip(&files)
+    }
+
+    #[test]
+    fn painted_ears_go_to_the_build_item_they_name() {
+        let ears = "brim_points_format_version=0\nobject_id=2|1 2 0 5\n";
+        let bytes = two_items_with(&[("Metadata/brim_ear_points.txt", ears)]);
+        let items = &load_plate_objects(&bytes, "p.3mf").unwrap()[0].1;
+        assert!(items[0].brim_points.is_empty());
+        assert_eq!(items[1].brim_points, vec![[1.0, 2.0, 0.0, 5.0]]);
+        // The second item sits at the loader's own build position for the first object's ears.
+        let first = "object_id=1|1 2 0 5\n";
+        let bytes = two_items_with(&[("Metadata/brim_ear_points.txt", first)]);
+        let items = &load_plate_objects(&bytes, "p.3mf").unwrap()[0].1;
+        assert_eq!(items[0].brim_points, vec![[1.0, 2.0, 0.0, 5.0]]);
+        assert!(items[1].brim_points.is_empty());
+    }
+
+    #[test]
+    fn project_layer_marks_are_read_by_plate_and_type() {
+        let xml = r##"<?xml version="1.0"?><custom_gcodes_per_layer>
+<plate><plate_info id="1"/>
+<layer top_z="2.24" type="4" extruder="1" color="" extra="M117 MARK&#10;M300" gcode="custom"/>
+<layer top_z="4.48" type="1" extruder="1" color="" extra="" gcode="M601"/>
+<layer top_z="6.0" type="0" extruder="2" color="#FF0000" extra="" gcode="M600"/>
+<layer top_z="7.0" type="3" extruder="1" color="" extra="" gcode=""/>
+<layer top_z="-1" type="1" extruder="1" color="" extra="" gcode=""/></plate>
+<plate><plate_info id="2"/><layer top_z="9.0" type="1" extruder="1" color="" extra="" gcode="M601"/></plate>
+</custom_gcodes_per_layer>"##;
+        let bytes = two_items_with(&[("Metadata/custom_gcode_per_layer.xml", xml)]);
+        let one = project_layer_marks(&bytes, 1);
+        let kinds: Vec<(&str, f64)> = one.iter().map(|m| (m.kind.as_str(), m.z_mm.unwrap())).collect();
+        assert_eq!(
+            kinds,
+            vec![("custom", 2.24), ("pause", 4.48), ("color_change", 6.0)]
+        );
+        assert_eq!(one[0].gcode.as_deref(), Some("M117 MARK\nM300"));
+        assert_eq!(project_layer_marks(&bytes, 2).len(), 1);
+        assert!(project_layer_marks(&bytes, 3).is_empty());
+        assert!(project_layer_marks(&two_items_with(&[]), 1).is_empty());
     }
 
     #[test]

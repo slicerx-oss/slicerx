@@ -4,6 +4,14 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- `load_3mf_layer_gcode`: the pause, color change and custom G-code marks a project sets on a plate's layers, as `layerGcode` entries by height. `Mesh::brim_points`: the painted brim ears a project gives each object, placed where the mesh loads.
+
+### Changed
+
+- `sx slice --request` on a 3MF plate now takes the project's painted brim ears (per object) and its layer marks, unless the request brings its own `layerGcode` or `brimPoints`. Slices of such projects through `slicerx_slice_file` change accordingly.
+
 ## [0.1.7] - 2026-10-16
 
 ## [0.1.6] - 2026-10-15

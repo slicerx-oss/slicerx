@@ -74,6 +74,12 @@ pub fn load_3mf_plate_objects(bytes: &[u8], file_name: &str) -> Result<Vec<(u32,
     crate::threemf::load_plate_objects(bytes, file_name)
 }
 
+/// The pause, color change and custom G-code marks a project file sets on plate `plate` (1-based), as the
+/// `layerGcode` option takes them. Empty when the file has none.
+pub fn load_3mf_layer_gcode(bytes: &[u8], plate: u32) -> Vec<LayerGcodeSpec> {
+    crate::threemf::project_layer_marks(bytes, plate)
+}
+
 /// [`load_3mf_plate_objects`] with the engine's own 3MF reader, for the format corpus while the readers are
 /// compared.
 #[doc(hidden)]
