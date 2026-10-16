@@ -61,6 +61,19 @@ abort() {
   exit 1
 }
 
+# Nightly: first the temp dirs that tests and tools leave behind, two hours old or more (scripts/janitor-mac.sh of the
+# commit under test, read from the bare repo because the checkout comes later), so the disk guard below counts the
+# space they held. SX_CI_JANITOR=0 turns it off; SX_CI_JANITOR_ARGS adds options, such as --target-dir for the runner
+# builds on a machine whose nightly runs as another user.
+if [ "$tier" = nightly ] && [ "${SX_CI_JANITOR:-1}" != 0 ]; then
+  if git -C "$REPO" show "$sha:scripts/janitor-mac.sh" > "$STATE/janitor.sh" 2>/dev/null; then
+    # shellcheck disable=SC2086
+    sh "$STATE/janitor.sh" --execute ${SX_CI_JANITOR_ARGS:-} > "$out/janitor.log" 2>&1 || log "janitor failed (rc $?, see janitor.log)"
+    log "janitor: $(grep '^total:' "$out/janitor.log")"
+  fi
+  rm -f "$STATE/janitor.sh"
+fi
+
 # Disk guard: a full disk fails every step at once and can corrupt caches. Below SX_CI_MIN_FREE_GB (15) the run is
 # skipped and says so; past SX_CI_MAX_TARGET_GB (10) the checkout's cargo target directory is trimmed first.
 free_gb() { df -Pk "$CI_HOME" | awk 'NR==2 { print int($4 / 1048576) }'; }

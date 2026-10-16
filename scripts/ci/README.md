@@ -64,6 +64,35 @@ one shared target beside the lock and every command run under `heavy.sh` builds 
 
 A `CARGO_TARGET_DIR` the caller sets still wins, and `sccache` becomes the `RUSTC_WRAPPER` when it is installed.
 
+The self-hosted Rust test jobs in `ci.yml` keep one target per runner (`$HOME/target/<runner name>`) and build with
+`CARGO_INCREMENTAL=0`: a test build never rebuilds in place, and `debug/incremental` had grown to 43 GB on one runner.
+
+Temp dirs: tests and tools leave dirs in the temp folder that nothing else removes. `scripts/janitor-mac.sh` (macOS,
+Linux, WSL) and `scripts/janitor-win.ps1` (Windows) remove these, and only these, once nothing has written to them for
+two hours:
+
+- `<21-character id>/` holding only `ssr/` and `client/`: Vitest's own temp dir (below)
+- `sx-e2e-native-*`: the browser suite's native slicer host, when the pid in its `owner.pid` is gone
+- `slicerx-mcp-test-*`, `slicerx-mcp-fn-*`, `sx-hub-test-*`, `sx-cli-*`, `sx-starters-*`, `sx-updater-e2e-*`: Node and Rust tests
+- `sx-sign*`: the Mac signing scripts' stage and notarization dirs
+- `playwright-artifacts-*`: Playwright
+- with `janitor-mac.sh` only: `<target dir>/*/debug/incremental` (default `$HOME/target`, `--target-dir` for others)
+  while no `cargo`, `rustc` or `Runner.Worker` runs
+
+Both look at depth 1 of the temp folders only, skip anything that holds a `.git`, and make a dry run by default: each
+dir with its size and age, a total, and the free space before and after. `--execute` (`-Execute`) deletes, and
+`--below-gb N` (`-BelowGB N`) does nothing while more than N GB are free. `janitor-win.ps1` also reads the GPU
+runners' temp folders when it runs elevated, measures with `robocopy /L`, and estimates the size of a name with
+thousands of dirs from a sample (`-MeasureMax`). They run with `--execute` at the start of every nightly run
+(`run.sh`; `SX_CI_JANITOR=0` turns it off, `SX_CI_JANITOR_ARGS` adds options) and in an `always()` step at the end of
+the self-hosted jobs in `ci.yml`. The GPU lane also gives each job a temp folder of its own under `RUNNER_TEMP` and
+removes it at the end, since Windows ends the native host with a hard kill and its `SIGTERM` cleanup never runs there.
+
+Vitest 5.0.2 makes `<tmpdir>/<21-character id>/{ssr,client}` for its core module runner on every run and never
+removes it: 995 dirs (27.9 GB) piled up on one CI machine and 4,238 (73.7 GB) on another.
+`patches/vitest@5.0.2.patch` (`patchedDependencies` in `pnpm-workspace.yaml`) removes it when Vitest closes. A Vitest
+upgrade has to move the patch to the new version, or drop it once Vitest removes the dir itself.
+
 When a PR merges, remove its worktree if it is clean (`git worktree remove <dir>`) and delete the local branch. A dirty
 one is left for its owner. Build outputs that are kept (release and tester DMGs, logs) go to an archive machine on a
 weekly schedule: tar each one, check the byte count on the far side, then delete the local copy.
