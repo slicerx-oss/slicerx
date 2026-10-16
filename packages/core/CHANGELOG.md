@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-18
+
 ### Added
 
 - `load_3mf_layer_gcode`: the pause, color change and custom G-code marks a project sets on a plate's layers, as `layerGcode` entries by height. `Mesh::brim_points`: the painted brim ears a project gives each object, placed where the mesh loads.
