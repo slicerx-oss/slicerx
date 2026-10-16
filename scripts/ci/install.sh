@@ -25,6 +25,7 @@ if [ ! -f "$CI_HOME/ci.env" ]; then
 # SX_CI_REMOTE_pc_wsl="ssh user@host wsl -d Ubuntu-24.04 -- bash -lc"
 # SX_CI_REMOTE_HOME_pc_wsl=/root/builds/ci
 # SX_HEAVY_LOCK=/mnt/c/Users/<user>/.slicerx-heavy.lock   # WSL on Windows: share the Windows side's heavy lock
+# SX_CI_JANITOR_ARGS="--target-dir /home/<runner>/target"   # nightly temp sweep options (scripts/janitor-mac.sh)
 EOF
 fi
 echo "CI home: $CI_HOME"
