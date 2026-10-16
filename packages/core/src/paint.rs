@@ -1235,18 +1235,35 @@ mod tests {
         // A cap just past the floor: three layers of a third of the floor each fit, a fourth waits.
         let cap = GRID_FLOOR + 1;
         let third = GRID_FLOOR / 3;
+        let held = || *B.held.lock().unwrap();
+        let first = B.hold(third, || cap);
+        let second = B.hold(third, || cap);
+        let last = B.hold(third, || cap);
+        assert_eq!(held(), 3 * third);
+        // A fourth layer does not fit beside them, so it waits until one lets go. The wait is checked from the state
+        // alone: nothing here depends on how the threads are scheduled, and only a budget that failed to space the
+        // layer out could let it in early.
+        let got = std::sync::atomic::AtomicBool::new(false);
         std::thread::scope(|s| {
-            for _ in 0..12 {
-                s.spawn(|| {
-                    let _h = B.hold(third, || cap);
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                });
-            }
+            let fourth = s.spawn(|| {
+                let _h = B.hold(third, || cap);
+                got.store(true, std::sync::atomic::Ordering::SeqCst);
+            });
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            assert!(
+                !got.load(std::sync::atomic::Ordering::SeqCst),
+                "the fourth layer ran past the cap"
+            );
+            assert_eq!(held(), 3 * third);
+            drop(first);
+            fourth.join().unwrap();
+            assert!(got.load(std::sync::atomic::Ordering::SeqCst));
         });
         let most = B.most.load(std::sync::atomic::Ordering::Relaxed);
         assert!(most <= cap, "{most} > {cap}");
-        assert!(most >= 2 * third, "{most}");
-        assert_eq!(*B.held.lock().unwrap(), 0);
+        assert_eq!(most, 3 * third);
+        drop((second, last));
+        assert_eq!(held(), 0);
         // One layer over the cap alone still runs.
         drop(B.hold(2 * cap, || cap));
     }
