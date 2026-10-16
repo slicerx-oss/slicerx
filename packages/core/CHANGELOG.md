@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-16
+
 ## [0.1.6] - 2026-10-15
 
 ### Added
