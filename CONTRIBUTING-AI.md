@@ -60,6 +60,14 @@ These apply to every pull request. AI-assisted ones get checked against them lin
 - No secrets, tokens or personal data in code, tests, logs or fixtures.
 - Safety rules for printers do not change in a pull request about something else. An AI tool connected through mimir or the MCP server can never start a print, resume one or send raw G-code without the user's confirmation, and no change may weaken that.
 
+## Tests and disk space
+
+Rules for coding agents working in this repository:
+
+- Do not add a spec file under `apps/web/e2e` for a bug fix or a small feature. Add a Vitest test next to the code, or a test in the matching journey in `apps/web/e2e/journeys/`. The browser suite is the heaviest job CI runs, and every spec file adds to it.
+- Never leave build archives (`.tar.gz`, `.zip`, `.dmg`) or a `target-bak/` copy in the repository root or your home folder. A temp dir you make is removed when its script, test or process ends: `trap` in shell, `finally` in PowerShell and JavaScript, a `Drop` guard in Rust.
+- Before a heavy build, check the free disk space. Under 45 GB, run `sh scripts/janitor-mac.sh` (macOS, Linux, WSL) or `powershell -File scripts\janitor-win.ps1` (Windows). It does a dry run first: read the list, then run it again with `--execute` (`-Execute` on Windows).
+
 ## Licensing and provenance
 
 Your sign-off (`git commit -s`) certifies that you have the right to submit the code under Apache-2.0. That includes code an assistant wrote for you. If a tool reproduced a recognizable block of code from somewhere else, find where it came from and either credit it with a compatible license or rewrite it.
