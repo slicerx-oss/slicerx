@@ -1267,14 +1267,92 @@ pub(crate) fn walls_for_top(
         } else {
             i32::midpoint(pitch(ext), pitch(inner))
         };
-        walls_gapped(
-            region,
-            wall_loops,
-            ext,
-            inner,
-            overlap,
-            Some((pitch(inner), spacing2, layer_height)),
-        )
+        let normal = |shapes: &Shapes| {
+            walls_gapped(
+                shapes,
+                wall_loops,
+                ext,
+                inner,
+                overlap,
+                Some((pitch(inner), spacing2, layer_height)),
+            )
+        };
+        let Some(top) = top.filter(|_| wall_loops > 1) else {
+            return normal(region);
+        };
+        let threshold = match cfg.raw.get("min_width_top_surface") {
+            Some(serde_json::Value::Array(a)) => a.first(),
+            other => other,
+        };
+        let threshold = match threshold {
+            Some(serde_json::Value::String(s)) if s.trim().ends_with('%') => {
+                mm(cfg.raw_number("min_width_top_surface", 300.0) * cfg.inner_wall_width() / 100.0)
+            }
+            Some(_) => mm(cfg.raw_number("min_width_top_surface", 0.0)),
+            None => inner * 3,
+        };
+        let trim = (ext / 4 + 1).max(threshold / 4);
+        let mut islands = Vec::new();
+        let mut cores = Vec::new();
+        for shape in region {
+            let one = vec![shape.clone()];
+            if difference(&one, top.upper).is_empty() {
+                let (walls, core) = normal(&one);
+                islands.extend(walls);
+                cores.extend(core);
+                continue;
+            }
+            let (mut outer, outer_core) = walls_gapped(
+                &one,
+                1,
+                ext,
+                inner,
+                overlap,
+                Some((pitch(inner), spacing2, layer_height)),
+            );
+            let mut exposed = difference(&outer_core, top.upper);
+            if let Some(lower) = top.lower {
+                let unsupported = offset(&difference(&exposed, lower), ext.max(inner));
+                exposed = difference(&exposed, &unsupported);
+            }
+            exposed = intersection(
+                &offset(&offset(&exposed, -trim), trim + inner * 85 / 100),
+                &outer_core,
+            );
+            if exposed.is_empty() {
+                let (walls, core) = normal(&one);
+                islands.extend(walls);
+                cores.extend(core);
+                continue;
+            }
+            // preserve the first inner wall's centerline distance from the outer wall.
+            let remaining = difference(&offset(&one, -(ext / 2 + spacing2 - inner / 2)), &exposed);
+            let (inside, core) = walls_gapped(
+                &remaining,
+                wall_loops - 1,
+                inner,
+                inner,
+                overlap,
+                Some((pitch(inner), pitch(inner), layer_height)),
+            );
+            let mut joined = IslandWalls::default();
+            for mut island in inside {
+                for (index, _) in &mut island.loops {
+                    *index += 1;
+                }
+                joined.loops.extend(island.loops);
+                joined.gaps.extend(island.gaps);
+                joined.gap_lines.extend(island.gap_lines);
+            }
+            for island in outer.drain(..) {
+                joined.loops.extend(island.loops);
+                joined.gaps.extend(island.gaps);
+                joined.gap_lines.extend(island.gap_lines);
+            }
+            islands.push(joined);
+            cores.extend(union_all(&[&exposed, &core]));
+        }
+        (islands, cores)
     }
 }
 
@@ -1427,6 +1505,64 @@ fn has_gaps(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classic_top_keeps_covered_bridging_and_narrow_ledge_walls() {
+        let cfg = crate::config::PrintConfig::from_json(br#"{"wall_generator":"classic","wall_loops":3,"outer_wall_line_width":0.42,"inner_wall_line_width":0.45,"min_width_top_surface":"300%"}"#).unwrap();
+        let region = vec![vec![rect(0, 0, 300_000, 300_000)]];
+        let empty = Vec::new();
+        let narrow = vec![vec![rect(1_000, 0, 300_000, 300_000)]];
+        let run = |top: Option<&TopCtx>| walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, top);
+        let expected = format!("{:?}", run(None));
+        for context in [
+            TopCtx {
+                upper: &region,
+                lower: Some(&region),
+            },
+            TopCtx {
+                upper: &empty,
+                lower: Some(&empty),
+            },
+            TopCtx {
+                upper: &narrow,
+                lower: Some(&region),
+            },
+        ] {
+            assert_eq!(format!("{:?}", run(Some(&context))), expected);
+        }
+    }
+
+    #[test]
+    fn classic_top_preserves_holes_and_separate_islands() {
+        let cfg = crate::config::PrintConfig::from_json(br#"{"wall_generator":"classic","wall_loops":3,"outer_wall_line_width":0.42,"inner_wall_line_width":0.45}"#).unwrap();
+        let mut hole = rect(100_000, 100_000, 200_000, 200_000);
+        hole.reverse();
+        let region = vec![
+            vec![rect(0, 0, 300_000, 300_000), hole],
+            vec![rect(400_000, 0, 600_000, 200_000)],
+        ];
+        let upper = Vec::new();
+        let context = TopCtx {
+            upper: &upper,
+            lower: Some(&region),
+        };
+        let (old, old_core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, None);
+        let (new, core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, Some(&context));
+        let outer = |walls: &[IslandWalls]| {
+            walls
+                .iter()
+                .flat_map(|s| &s.loops)
+                .filter(|(i, _)| *i == 0)
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(outer(&old), outer(&new));
+        assert_eq!(new.len(), region.len());
+        assert!(new.iter().flat_map(|s| &s.loops).all(|(i, _)| *i == 0));
+        assert!(difference(&core, &region).is_empty());
+        assert!(difference(&old_core, &core).is_empty());
+        assert!(!difference(&core, &old_core).is_empty());
+    }
 
     #[test]
     fn square_gets_two_walls_and_a_smaller_core() {

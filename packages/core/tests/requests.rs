@@ -4717,6 +4717,15 @@ fn an_alternate_extra_wall_and_one_wall_on_top_change_the_wall_count() {
 
 #[test]
 fn only_one_wall_top_with_arachne_thins_the_walls_under_an_exposed_top_surface() {
+    check_one_wall_on_exposed_top("arachne");
+}
+
+#[test]
+fn only_one_wall_top_with_classic_thins_the_walls_under_an_exposed_top_surface() {
+    check_one_wall_on_exposed_top("classic");
+}
+
+fn check_one_wall_on_exposed_top(generator: &str) {
     // A 30 mm square 2 mm tall with a 10 mm block on it: the ring around the block is a top surface.
     let mesh = Arc::new(Mesh {
         name: "step".into(),
@@ -4729,7 +4738,7 @@ fn only_one_wall_top_with_arachne_thins_the_walls_under_an_exposed_top_surface()
     let run = |one_wall: bool| {
         let req: SliceRequest = serde_json::from_value(json!({
             "plate": {"objects": [{"mesh": "s", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
-            "config": {"wall_generator": "arachne", "wall_loops": 3, "brim_width": 0,
+            "config": {"wall_generator": generator, "wall_loops": 3, "brim_width": 0,
                        "only_one_wall_top": one_wall, "sparse_infill_density": 15},
             "options": {"flavor": "marlin2"},
         }))

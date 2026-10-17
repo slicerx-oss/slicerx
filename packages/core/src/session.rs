@@ -6863,14 +6863,12 @@ impl SliceSession {
                     (islands, perimeters::union_all(&[&inner, &counterbore]))
                 }
                 _ => {
-                    // A region that is the whole outline, walled as the neighbors see it, shares the walls
-                    // the layers around already asked for (the infill area memo). Classic walls do not read
-                    // the top context.
+                    // share neighbor walls only when this layer does not need its top context.
                     let whole = self
                         .cache_for_walls()
                         .filter(|_| {
                             loops == cfg.wall_loops
-                                && (top_ctx.is_none() || !cfg.arachne_walls())
+                                && top_ctx.is_none()
                                 && !top_or_bottom
                                 && *shapes == slice_shapes(here)
                         })
