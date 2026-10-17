@@ -551,7 +551,7 @@ function SendSeveral({ open, onClose, rows }: { open: boolean; onClose: () => vo
   )
 }
 
-function QueuedList({ rows }: { rows: FleetRow[] }) {
+export function QueuedList({ rows }: { rows: FleetRow[] }) {
   const host = useHost()
   const queue = useApp((s) => s.queue)
   const go = useMemo(() => startable(queue), [queue])
