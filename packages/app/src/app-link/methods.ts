@@ -19,12 +19,12 @@ import { listSessions, readSession } from './sessions'
 import { toolStore } from '../plate/tools'
 import { get, pilotState, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
 import { slicePanes } from '../lib/slice-panes'
-import { findPlate, plateRows, stepTarget } from '../plate/plate-step'
+import { findPlate, stepTarget } from '../plate/plate-step'
 import { switchPlate } from '../plate/plates'
-import { drawnObjects } from '../viewport/drawn'
 import { viewportLookState } from '../viewport/viewport-look'
 import { readViewportStats } from '../viewport/stats'
 import { previewIdle, PREVIEW_BUSY_TOOLS as BUSY_TOOLS } from './preview-guard'
+import { drawnPlate, platesState } from './plate-state'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -57,6 +57,12 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // preview, showing a plate changes only what the window shows, never the project.
   'plates.list': 'read',
   'plates.show': 'read',
+  'plates.add': 'edit',
+  'plates.duplicate': 'edit',
+  'plates.rename': 'edit',
+  'plates.settings': 'edit',
+  'plates.remove': 'edit',
+  'plates.move': 'edit',
   // Settings > Look and feel's view preferences, Frame the view and Toolbar size: like the preview, they change how the
   // window behaves, never the project.
   'look.get': 'read',
@@ -270,40 +276,6 @@ function setLook(args: Record<string, unknown>) {
   return lookState()
 }
 
-/** The objects the view draws, when they are exactly some plate's; the plate in view first, for empty plates. */
-function drawnPlate(): number | null | undefined {
-  const ids = drawnObjects()
-  if (ids === null) return undefined
-  const s = get()
-  const on = (p: { id: string; objects: { id: string }[] }) => (p.id === s.activePlate ? s.plate : p.objects).map((o) => o.id)
-  // Only plate objects count: the view also draws its own extras (the prime tower).
-  const known = new Set(s.plates.flatMap(on))
-  const drawn = new Set(ids.filter((id) => known.has(id)))
-  const same = (p: { id: string; objects: { id: string }[] }) => {
-    const mine = on(p)
-    return mine.length === drawn.size && mine.every((id) => drawn.has(id))
-  }
-  const order = [...s.plates.entries()].sort(([, a], [, b]) => Number(b.id === s.activePlate) - Number(a.id === s.activePlate))
-  const hit = order.find(([, p]) => same(p))
-  return hit ? hit[0] + 1 : null
-}
-
-/**
- * The project's plates in order, the one in view marked, as the plate picker shows them. `drawn` is the plate whose
- * objects the view draws (it matches `shown` once the view has caught up; null while it draws none of them as they are),
- * left out when no view is up.
- */
-function platesState() {
-  const rows = plateRows()
-  const drawn = drawnPlate()
-  return {
-    shown: rows.find((r) => r.shown)?.number ?? 1,
-    ...(drawn !== undefined ? { drawn } : {}),
-    count: rows.length,
-    plates: rows.map((r) => ({ number: r.number, id: r.id, name: r.name, objects: r.objects, slice: r.state, shown: r.shown })),
-  }
-}
-
 /**
  * Shows one plate, as the plate picker does: `plate` (its number from 1, or its id) or `step` ('next' or 'previous';
  * stepping stops at the first and last plate). Like the preview, it answers busy unless the window is on Slice with no
@@ -385,11 +357,17 @@ const HANDLERS: Record<string, Handler> = {
   'preview.markers_set': async (args) => (await import('./preview-markers')).setMarkers(args),
   'preview.playback': async () => (await import('./preview-playback')).readPlayback(),
   'preview.playback_set': async (args) => (await import('./preview-playback')).setPlayback(args),
-  'plates.list': () => platesState(),
-  'plates.show': (args) => showPlate(args),
-  'look.get': () => lookState(),
   'preview.gcode': async (args) => (await import('./preview-gcode')).previewGcode(args, false),
   'preview.gcode_jump': async (args) => (await import('./preview-gcode')).previewGcode(args, true),
+  'plates.list': () => platesState(),
+  'plates.show': (args) => showPlate(args),
+  ...Object.fromEntries(['add', 'duplicate', 'rename', 'settings', 'remove', 'move'].map((action) => [
+    `plates.${action}`, async (args: Record<string, unknown>, client: LinkClient) => {
+      const { editPlate } = await import('./plates')
+      return editPlate(action as Parameters<typeof editPlate>[0], args, client.name)
+    },
+  ])),
+  'look.get': () => lookState(),
   'look.set': (args) => setLook(args),
   'sketch.boxes': async () => (await import('./sketch-boxes')).readBoxes(),
   'sketch.box_set': async (args) => (await import('./sketch-boxes')).setBox(args),

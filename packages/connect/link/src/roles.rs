@@ -132,6 +132,12 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: showing a plate changes only what the window shows, never the project.
     ("plates.list", LinkClass::Read),
     ("plates.show", LinkClass::Read),
+    ("plates.add", LinkClass::Edit),
+    ("plates.duplicate", LinkClass::Edit),
+    ("plates.rename", LinkClass::Edit),
+    ("plates.settings", LinkClass::Edit),
+    ("plates.remove", LinkClass::Edit),
+    ("plates.move", LinkClass::Edit),
     // Two view preferences from Settings, Look and feel: Frame the view and Toolbar size, read and set.
     // Read: they change how the window behaves, never the project. No other setting is reachable.
     ("look.get", LinkClass::Read),
@@ -412,6 +418,12 @@ mod tests {
         ("preview.gcode_jump", LinkClass::Read),
         ("plates.list", LinkClass::Read),
         ("plates.show", LinkClass::Read),
+        ("plates.add", LinkClass::Edit),
+        ("plates.duplicate", LinkClass::Edit),
+        ("plates.rename", LinkClass::Edit),
+        ("plates.settings", LinkClass::Edit),
+        ("plates.remove", LinkClass::Edit),
+        ("plates.move", LinkClass::Edit),
         ("look.get", LinkClass::Read),
         ("look.set", LinkClass::Read),
         ("sketch.boxes", LinkClass::Read),
@@ -487,9 +499,15 @@ mod tests {
                 }
                 // these read preview text or move its cursor, never execute g-code.
                 let preview_text = word == "gcode" && matches!(*m, "preview.gcode" | "preview.gcode_jump");
+                // these edit project plates, never files or printer configuration.
+                let plate_edit = matches!(
+                    (*m, word),
+                    ("plates.remove", "remove") | ("plates.settings", "setting")
+                );
                 assert!(
                     mesh_repair
                         || preview_text
+                        || plate_edit
                         || !m.to_ascii_lowercase().contains(word)
                         || (*m == "values.remove" && word == "remove"),
                     "{m} looks like something a person keeps ({word})"
@@ -500,6 +518,8 @@ mod tests {
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("plates.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("plates.settings"), Some(LinkClass::Edit));
         for m in ["preview.gcode", "preview.gcode_jump"] {
             assert_eq!(link_class(m), Some(LinkClass::Read));
         }
