@@ -25,12 +25,28 @@ export interface LineIndex {
 export interface LineSource {
   count: number
   /** Lines from..to (1-based, inclusive, clamped to the text) as an index over just their bytes. */
-  window(from: number, to: number): Promise<LineIndex>
+  window(from: number, to: number, maxBytes?: number, offsetBytes?: number): Promise<LineIndex>
 }
 
 /** A source over a text that is all in hand: every window is the whole index. */
 export function wholeSource(ix: LineIndex): LineSource {
-  return { count: ix.count, window: () => Promise.resolve(ix) }
+  return { count: ix.count, window: (from, to, maxBytes, offsetBytes = 0) => {
+    if (maxBytes === undefined) return Promise.resolve(ix)
+    const [a, b] = byteWindow(ix.starts, ix.count, from, to, maxBytes, offsetBytes)
+    return Promise.resolve({ bytes: ix.bytes.subarray(a, b), starts: ix.starts, count: ix.count, base: a })
+  } }
+}
+
+/** A bounded byte window, optionally continuing inside its first line. */
+function byteWindow(starts: Uint32Array, count: number, from: number, to: number, maxBytes: number, offsetBytes: number): [number, number] {
+  const first = Math.max(1, from)
+  const last = Math.min(count, to)
+  if (last < first) return [0, 0]
+  const start = starts[first - 1]!
+  const next = starts[first]!
+  if (!Number.isInteger(offsetBytes) || offsetBytes < 0 || offsetBytes > next - start) throw new RangeError('byteOffset is outside the first line')
+  const a = start + offsetBytes
+  return [a, Math.min(starts[last]!, a + Math.max(0, Math.floor(maxBytes)))]
 }
 
 /** A source over line starts (count + 1 offsets) and a reader of byte ranges. */
@@ -38,12 +54,12 @@ export function rangeSource(starts: Uint32Array, read: (start: number, end: numb
   const count = Math.max(0, starts.length - 1)
   return {
     count,
-    async window(from, to) {
+    async window(from, to, maxBytes, offsetBytes = 0) {
       const a = Math.max(1, from)
       const b = Math.min(count, to)
       if (b < a) return { bytes: new Uint8Array(0), starts, count, base: 0 }
-      const base = starts[a - 1]!
-      return { bytes: await read(base, starts[b]!), starts, count, base }
+      const [base, end] = byteWindow(starts, count, a, b, maxBytes ?? Infinity, offsetBytes)
+      return { bytes: await read(base, end), starts, count, base }
     },
   }
 }

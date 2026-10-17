@@ -3,8 +3,10 @@
 // The app's side of the app link: this window hosts the link on the hub, answers agents' calls through the methods in
 // methods.ts, and puts the hub's questions about new clients in front of the person (prompt.tsx).
 import { createStore, useStore } from 'zustand'
+import type { Host } from '@slicerx/contracts'
 import type { BridgeAppLink } from '../link/bridge'
 import { LinkError, runCall, useDesignHost, useLinkSession } from './methods'
+import { bindPreviewSource } from './preview-source'
 
 export interface LinkAsk {
   askId: number
@@ -34,7 +36,8 @@ export async function answerAsk(ask: LinkAsk, decision: 'allow' | 'read' | 'deny
 }
 
 /** Hosts the link on the hub; returns how to stop. */
-export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useDesignHost>[0], session?: () => Promise<boolean>): () => void {
+export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useDesignHost>[0], session?: () => Promise<boolean>, host?: Host): () => void {
+  const releasePreviewSource = bindPreviewSource(host)
   linkAsks.setState({ link, asks: [] })
   if (loader) void useDesignHost(loader).catch(() => undefined)
   useLinkSession(session ?? null)
@@ -80,6 +83,7 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
     (e: unknown) => console.warn(`[app link] this window cannot host the app link: ${e instanceof Error ? e.message : String(e)}`),
   )
   return () => {
+    releasePreviewSource()
     stopCall()
     stopAsk()
     stopEnded()

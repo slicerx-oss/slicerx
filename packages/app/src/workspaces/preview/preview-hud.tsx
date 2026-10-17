@@ -4,7 +4,9 @@ import { EdgeTab, Icon, keymapFor, Menu, MenuAnchor, MenuItem, Range, ResizeEdge
 import { COLORBLIND_THEME, FEATURE_COLORS, SCENE } from '@slicerx/viewport/palette'
 import type { MarkerKind } from '@slicerx/viewport'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { buildTimeline, clock, fitOf, movesAt, leadInStart, movesOf, positionAt, sliderOf, timeAt, timeOfSlider } from '../../lib/preview-timeline'
+import { useStore } from 'zustand'
+import { playback, playbackTime } from './playback'
+import { buildTimeline, clock, fitOf, movesAt, movesOf, positionAt, sliderOf, timeOfSlider } from '../../lib/preview-timeline'
 import { toolChangerFor } from '../../lib/toolchanger'
 import { lengthLabel, previewStats } from '../../lib/preview-stats'
 import { resolveSlots } from '../../filament/slots'
@@ -189,116 +191,39 @@ export function LayerDock() {
   const gcodeOn = useGcodeView((s) => s.panel)
   const showToolhead = useApp((s) => s.showToolhead)
   const showGantry = useApp((s) => s.showGantry)
-  const [playing, setPlayingState] = useState(false)
-  // Ticks check this ref, so a pause lands on the next frame instead of after React commits.
-  const playingRef = useRef(false)
-  const setPlaying = (on: boolean) => {
-    playingRef.current = on
-    setPlayingState(on)
-  }
+  const playing = useStore(playback.state, (s) => s.playing)
+  const clockT = useStore(playback.state, (s) => s.time)
+  const setPlaying = (on: boolean) => on ? playback.play() : playback.pause()
   // The last speed chosen, kept between sessions; a first view plays at half speed, since a fast printer at real
   // speed is faithful but too quick to follow.
   const speed = useApp((s) => s.playbackSpeed)
   const followNozzle = useApp((s) => s.followNozzle)
-  const raf = useRef(0)
   const changer = useApp(toolChangerFor)
   const stats = useApp((s) => shownSlice(s.slice)?.result.stats ?? null)
   const timeline = useMemo(() => (preview ? buildTimeline(preview, changer, fitOf(stats)) : null), [preview, changer, stats])
   const toolChange = useApp((s) => s.toolChange)
   // heimdall: a jump to a strike plays the seconds before it and stops on it.
   const strikeJump = useApp((s) => s.strikeJump)
-  const stopAt = useRef<number | null>(null)
   // The purge at the chute (Bambu printers), read from the G-code once the preview is up.
   const purges = usePurgeView((s) => (s.timeline === timeline ? s.plans : NO_PURGES))
-  // Playback and scrubbing keep their own float clock; the store only holds the layer and move share it maps
-  // to. `clockT` is the same clock as state, so the Time slider follows it smoothly, inside a change too,
-  // instead of jumping to the end of the last drawn move.
-  const clockRef = useRef(0)
-  const [clockT, setClockT] = useState(0)
-  const speedRef = useRef(Number(speed))
-  speedRef.current = Number(speed)
+  useLayoutEffect(() => preview && timeline ? playback.bind(preview, timeline) : undefined, [preview, timeline])
 
   const n = preview?.layerCount ?? 0
   const top = Math.max(1, Math.min(layerHi, n))
-  const t = preview && timeline ? timeAt(timeline, preview, top, moveCut) : 0
-  /** True when the store shows exactly what print time `time` maps to (so `time` can stand for it). */
-  const synced = (time: number) => {
-    if (!preview || !timeline) return false
-    const p = positionAt(timeline, preview, time)
-    return p.layerHi === top && Math.abs(p.moveCut - moveCut) < 1e-9 && (p.change?.segment ?? -1) === (toolChange?.segment ?? -1) && Math.abs((p.change?.seconds ?? 0) - (toolChange?.seconds ?? 0)) < 1e-6
-  }
-  const now = synced(clockT) ? clockT : t
+  const now = preview && timeline ? playbackTime(preview, timeline, clockT) : 0
 
-  const seek = (time: number) => {
-    if (!preview || !timeline) return
-    const at = Math.min(Math.max(time, 0), timeline.total)
-    clockRef.current = at
-    setClockT(at)
-    const pos = positionAt(timeline, preview, at)
-    set({ layerHi: pos.layerHi, moveCut: pos.moveCut, toolChange: pos.change ?? null })
-  }
-
-  useEffect(() => {
-    if (!playing || !preview || !timeline) return
-    let last = performance.now()
-    const tick = (now: number) => {
-      if (!playingRef.current) return
-      // A frame's time can be from before the effect read the clock, so the first step can come out negative; the
-      // clock only goes forward, or a lead-in that starts just inside a layer would show the layer below for a frame.
-      clockRef.current = Math.min(timeline.total, clockRef.current + (Math.max(0, now - last) / 1000) * speedRef.current)
-      last = now
-      if (stopAt.current !== null && clockRef.current >= stopAt.current) {
-        clockRef.current = stopAt.current
-        stopAt.current = null
-        setPlaying(false)
-      }
-      setClockT(clockRef.current)
-      const pos = positionAt(timeline, preview, clockRef.current)
-      const s = get()
-      if (pos.layerHi !== s.layerHi || pos.moveCut !== s.moveCut || (pos.change ?? null) !== s.toolChange) set({ layerHi: pos.layerHi, moveCut: pos.moveCut, toolChange: pos.change ?? null })
-      if (clockRef.current >= timeline.total || !playingRef.current) {
-        setPlaying(false)
-        return
-      }
-      raf.current = requestAnimationFrame(tick)
-    }
-    raf.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf.current)
-  }, [playing, preview, timeline])
-
-  // Something else moved the range (the layer slider, a command, a new slice): playback continues from there.
-  // A scrub's own time stays as it is, since it maps to what the store shows. Only the ref moves: the render
-  // already shows `t` when the clock is out of step, and a state update here would give every layer key a
-  // second render, which a held key on a slow machine stacks into React's nested update limit.
-  useEffect(() => {
-    if (!playing && !synced(clockRef.current)) clockRef.current = t
-  })
-
+  const seek = playback.seek
+  const toggle = playback.toggle
   useEffect(() => {
     if (!strikeJump || !timeline || !preview) return
-    // Two seconds of playback at the chosen speed lead up to the strike, but they never start in an earlier layer:
-    // the layer readout would read one below the strike's layer while they play.
-    const lead = 2 * Math.max(0.25, speedRef.current)
-    stopAt.current = strikeJump.timeS
-    seek(leadInStart(timeline, preview, strikeJump.timeS, lead))
-    setPlaying(true)
-    // Taken: a later mount of the bar does not play it again.
+    playback.strike(strikeJump.timeS)
     set({ strikeJump: null })
-    // Only a new jump starts this; the timeline and preview it reads are the current ones then.
   }, [strikeJump?.seq])
-
-  const toggle = () => {
-    stopAt.current = null
-    if (!timeline) return
-    if (!playing && clockRef.current >= timeline.total - 0.001) seek(0)
-    else if (!playing) clockRef.current = now
-    setPlaying(!playing)
-  }
 
   // Profiling hook (localStorage 'slicerx.debug', like the viewport's __vp): the timeline and a seek, for scripts.
   useEffect(() => {
     try {
-      if (localStorage.getItem('slicerx.debug')) Object.assign(window, { __pv: { timeline, seek, toggle, playing: () => playingRef.current, clock: () => clockRef.current, track: (time: number) => (timeline ? sliderOf(timeline, time) : 0), moves: (time: number) => { if (!timeline || !preview) return 0; const q = positionAt(timeline, preview, time); return { layerHi: q.layerHi, value: 1000 * movesOf(timeline, preview, q.layerHi, q.moveCut, q.change ?? null) } } } })
+      if (localStorage.getItem('slicerx.debug')) Object.assign(window, { __pv: { timeline, seek, toggle, playing: () => playback.read().playing, clock: () => playback.read().timeS ?? 0, track: (time: number) => (timeline ? sliderOf(timeline, time) : 0), moves: (time: number) => { if (!timeline || !preview) return 0; const q = positionAt(timeline, preview, time); return { layerHi: q.layerHi, value: 1000 * movesOf(timeline, preview, q.layerHi, q.moveCut, q.change ?? null) } } } })
     } catch {
       // No storage: no hook.
     }
@@ -314,7 +239,7 @@ export function LayerDock() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  })
+  }, [toggle])
 
   const dockRef = useRef<HTMLDivElement>(null)
   const [startOpen] = useState(drawerStartsOpen)
@@ -523,7 +448,7 @@ export function LayerDock() {
               max={Math.max(1, timeline.total)}
               step={0.001}
               value={sliderOf(timeline, now)}
-              onChange={(v) => ((stopAt.current = null), seek(timeOfSlider(timeline, v)))}
+              onChange={(v) => seek(timeOfSlider(timeline, v))}
               onKeyDown={(e) => {
                 // The track is in fine steps for dragging; the keys step by print time.
                 const by = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : e.key === 'PageUp' ? 60 : e.key === 'PageDown' ? -60 : 0
@@ -562,7 +487,6 @@ export function LayerDock() {
                 step={0.01}
                 value={1000 * movesOf(timeline, preview, top, moveCut, toolChange)}
                 onChange={(v) => {
-                  stopAt.current = null
                   setPlaying(false)
                   // A tool change inside the layer has its own stretch of this track: dragging through it plays it.
                   const at = movesAt(timeline, preview, top, v / 1000)

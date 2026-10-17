@@ -199,7 +199,7 @@ async function connect(host: Host, code?: string, again = false): Promise<boolea
       void import('../app-link/host').then((m) => {
         // the edition's store, when it has one, tells the link whether the person is signed in (mimir.status)
         const store = (host as Host & { store?: StoreClient }).store
-        if (live?.bridge === bridge) stopLink = m.hostAppLink(bridge.appLink!, host.slicer, store ? async () => (await store.session()) !== null : undefined)
+        if (live?.bridge === bridge) stopLink = m.hostAppLink(bridge.appLink!, host.slicer, store ? async () => (await store.session()) !== null : undefined, host)
       })
     }
     // The camera guard brings a tripped printer's card up on the Printers tab. It listens before the bridge counts as

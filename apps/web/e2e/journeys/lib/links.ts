@@ -92,7 +92,7 @@ async function loadSdk(): Promise<{ Client: new (i: { name: string; version: str
 const cleanEnv = (drop: string): Record<string, string> => Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string' && !e[0].startsWith(drop)))
 
 /** slicerx-mcp as a client runs it from source, checking the hub's key from the hub's state directory. */
-const serverArgs = (link: Link['hub'], dir: string) => [mcpRequire.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'stub', '--printers', 'link', '--link-url', link.url, '--link-state-dir', link.stateDir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
+const serverArgs = (link: Link['hub'], dir: string) => [mcpRequire.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'sx', ...(process.env['SX_CLI_BIN'] ? ['--sx-bin', process.env['SX_CLI_BIN']] : []), '--printers', 'link', '--link-url', link.url, '--link-state-dir', link.stateDir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
 
 /**
  * `slicerx-mcp call` with only a hub code, as a script would run it: no key the hub remembers, so the app never asks

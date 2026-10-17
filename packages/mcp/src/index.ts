@@ -24,6 +24,7 @@ import { cloudTools, type CloudOptions } from './cloud'
 import { Designs, designFiles, designTools } from './design'
 import { paintTools } from './paint'
 import { APP_DESIGN_TOOLS, routeToApp } from './app-route'
+import { appSettingsTools } from './app-settings'
 import { mimirCloudTools } from './mimir-cloud'
 import { mimirTabTools } from './mimir-tab'
 import { mimirDockTools } from './mimir-dock'
@@ -34,6 +35,9 @@ import { appModelPushTools } from './app-model-push'
 import { appModelOpPreviewTools } from './app-model-op-preview'
 import { appSelectTools } from './app-select'
 import { appViewportTools } from './app-viewport'
+import { appPreviewMarkerTools } from './app-preview-markers'
+import { appPreviewPlaybackTools } from './app-preview-playback'
+import { appPreviewGcodeTools } from './app-preview-gcode'
 import { appUnitTools } from './app-units'
 import { appPickFilterTools } from './app-pick-filter'
 import { appBrimTools } from './app-brim'
@@ -41,6 +45,7 @@ import { mimirAskTools } from './mimir-ask'
 import { appVolumeTools } from './app-volumes'
 import { appDimensionTools } from './app-dimensions'
 import { appPlateTools } from './app-plates'
+import { appPreviewTools } from './app-preview'
 import { appValueTools } from './app-values'
 import { appHistoryTools } from './app-history'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
@@ -195,7 +200,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const here = appLink && !designs ? [...built, ...designToolset(NO_ENGINE_HOST).filter((t) => APP_DESIGN_TOOLS.has(t.name) && !built.some((b) => b.name === t.name))] : built
   // The plate edits go to the app's shown plate too, unless this server's own project has the object.
   const serverHas = (object: string): boolean => project.current?.objects().some((o) => o.id === object || o.name === object) ?? false
-  const route = (t: PilotTool<never>[]) => (appLink ? routeToApp(t, appLink, productName(), { required: opts.app === 'required', serverHas }) : t)
+  const route = (t: PilotTool<never>[]) => (appLink ? routeToApp(t, appLink, productName(), { required: opts.app === 'required', serverHas, serverProject: () => project.current !== undefined }) : t)
   const geom = route(here)
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
@@ -204,13 +209,18 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   // The app's plates, and showing one of them as its plate picker does.
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   const history = appHistoryTools(appLink, productName())
-  // View preferences (framing, toolbar size, Model display units and pick filter), live viewport telemetry and the shown plate's brim ears.
+  // View preferences (framing, toolbar size, Model display units and pick filter), live viewport telemetry, the shown
+  // plate's brim ears and the slice preview.
   const look = [
     ...appLookTools(appLink, productName()),
     ...appUnitTools(appLink, productName()),
     ...appPickFilterTools(appLink, productName()),
     ...appViewportTools(appLink, productName()),
     ...appBrimTools(appLink, productName()),
+    ...appPreviewTools(appLink, productName()),
+    ...appPreviewMarkerTools(appLink, productName()),
+    ...appPreviewPlaybackTools(appLink, productName()),
+    ...appPreviewGcodeTools(appLink, productName()),
   ]
   // The open sketch's dimension boxes, read and set as the person types them on the shape.
   const sketchBoxes = appSketchTools(appLink, productName())
@@ -225,7 +235,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
   // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...appPaintTools(appLink, productName()), ...look, ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...appPaintTools(appLink, productName()), ...look, ...appSettingsTools(appLink, productName()), ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,

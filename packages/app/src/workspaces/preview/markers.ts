@@ -4,6 +4,7 @@
 // with the slice; wipes, tool changes and pauses are read from the G-code when one of them is first turned on
 // (marker-data.ts).
 import type { MarkerKind } from '@slicerx/viewport'
+import type { PreviewBuffers } from '@slicerx/contracts'
 import { createStore, useStore } from 'zustand'
 
 /** `demo` is the tip's loop, which turns that kind on over two small towers. */
@@ -20,11 +21,13 @@ interface MarkerState {
   shown: Record<MarkerKind, boolean>
   /** Markers found in the G-code, per kind, once read. */
   counts: Partial<Record<MarkerKind, number>>
+  countsFor: PreviewBuffers | null
 }
 
 export const markerView = createStore<MarkerState>()(() => ({
   shown: { retractions: false, seams: false, lifts: false, wipes: false, toolChanges: false, pauses: false },
   counts: {},
+  countsFor: null,
 }))
 
 export function useMarkers<T>(pick: (s: MarkerState) => T): T {
