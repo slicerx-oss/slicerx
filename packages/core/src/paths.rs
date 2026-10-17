@@ -271,6 +271,14 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
+    /// Puts the cursor where the nozzle stops after the paths so far: the end of the last path as it is
+    /// written, which a reorder moves away from the last point stored.
+    fn settle_cursor(&mut self) {
+        if let Some(q) = self.out.exit_point() {
+            self.cursor = q;
+        }
+    }
+
     /// A speed held to the filament's volumetric limit (Orca: `filament_max_volumetric_speed` over the bead's
     /// cross-section, a rectangle with rounded ends, times the flow ratio).
     #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
@@ -2333,6 +2341,8 @@ pub(crate) fn plan_layer_paths(
                 tail.rotate_left(walls_to - walls_from);
             }
         }
+        // The next work (another region, object or filament) starts from where these paths really end.
+        b.settle_cursor();
         if let Some(q) = w.quality.as_deref() {
             vary.push((work_from, b.out.paths.len(), q));
         }

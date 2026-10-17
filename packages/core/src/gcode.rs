@@ -1721,6 +1721,29 @@ fn emit_layer(
         || crate::firmware::truthy(&rc, "retract_when_changing_layer");
     let style = Retraction::of(c, flavor);
     let retracts = style.active(retract) && !l.paths.is_empty() && layer_retract && !spiral;
+    // Where the layer below left the nozzle: the end of its last path as written, moved a little into the part
+    // when a wipe on loops left a closed outer wall there.
+    let below_spiral = spiral && !l.spiral_start;
+    let entry = l.enter_from.map(|at| {
+        let tail = &l.below_wipe;
+        let wiped_in = !below_spiral
+            && crate::firmware::truthy(prev, "wipe_on_loops")
+            && tail.outer_loop
+            && tail.points.len() > 3
+            && tail.points.last() == Some(&at);
+        if wiped_in {
+            inward_wipe_point(&tail.points, at).unwrap_or(at)
+        } else {
+            at
+        }
+    });
+    // The height the nozzle is at when the layer starts (thousandths): the layer below's, when it is known.
+    #[allow(clippy::cast_possible_truncation, reason = "z in thousandths fits in i64")]
+    let z_below = if l.below_wipe.z_mm > 0.0 {
+        (f64::from(l.below_wipe.z_mm) * 1000.0).round() as i64
+    } else {
+        z
+    };
     // orca's change_layer retract wipes along the layer below's last path when wipe is on
     let tail = &l.below_wipe;
     let mut layer_wiped: Option<Wiped> = None;
@@ -1733,7 +1756,7 @@ fn emit_layer(
         } else {
             -1
         };
-        match l.enter_from {
+        match entry {
             Some(at) => {
                 layer_wiped = retract_wiping(
                     b,
@@ -1993,17 +2016,16 @@ fn emit_layer(
     let mut cursor: Option<Point> = if spiral && !l.spiral_start {
         l.paths.first().and_then(|p| l.path_points(p).first().copied())
     } else {
-        start_at.or(layer_wiped.as_ref().map(|w| w.end)).or(l.enter_from)
+        start_at.or(layer_wiped.as_ref().map(|w| w.end)).or(entry)
     };
-    // Where the nozzle really is when the layer starts, for the travel round the keep-out zones: the end of the
-    // layer below's last path, which `enter_from` (its last point stored) is not when its paths were reordered.
+    // Where the nozzle really is when the layer starts, for the travel round the keep-out zones.
     let mut zone_from: Option<Point> = if spiral && !l.spiral_start {
         cursor
     } else {
         start_at
             .or(layer_wiped.as_ref().map(|w| w.end))
+            .or(entry)
             .or(l.below_wipe.points.last().copied())
-            .or(l.enter_from)
     };
     let mut feature: Option<Feature> = None;
     // Extrusion role change G-code (`change_extrusion_role_gcode` and the filament's and process's).
@@ -2074,9 +2096,19 @@ fn emit_layer(
         ));
     }
     blocks.retain(|(_, t)| !t.is_empty());
+    // The printer's keep-out zones, which travels go round (zoneroute.rs) and lifts keep out of.
+    let zone_router = crate::zoneroute::Router::of(c);
     for (_, text) in blocks.iter().filter(|(s, _)| *s == crate::timelapse::Spot::Start) {
         if pending_lift.take().is_some() {
-            write_eager_lift(b, &rc, Lift::of_block(&rc), cursor, z, hop, z_feed);
+            write_eager_lift(
+                b,
+                &rc,
+                Lift::of_block(&rc),
+                cursor,
+                [z_below, z + hop],
+                z_feed,
+                zone_router.as_ref(),
+            );
             pending_drop = true;
         }
         push_lines(b, text);
@@ -2104,8 +2136,6 @@ fn emit_layer(
     let travel_layout = (comb || reduce_infill)
         .then(|| crate::travel::Layout::for_travels(l, c, comb))
         .flatten();
-    // The printer's keep-out zones, which travels go round (zoneroute.rs).
-    let zone_router = crate::zoneroute::Router::of(c);
     let accel_on = crate::motion::accel_enabled(c);
     // Extrusion rate smoothing turns arc fitting off (as Orca's tooltip says): it works on straight moves.
     let smoothing = crate::equalizer::Params::of(c, out.tool_count);
@@ -2158,8 +2188,16 @@ fn emit_layer(
             // Orca retracts and lifts at once before the block (`GCode::retract` with `apply_instantly`); the
             // travel after it keeps the height and comes down at the path.
             if lift_ok && retracted && !pending_drop {
-                pending_lift = None;
-                write_eager_lift(b, &rc, Lift::of_block(&rc), cursor, z, hop, z_feed);
+                let z0 = if pending_lift.take().is_some() { z_below } else { z };
+                write_eager_lift(
+                    b,
+                    &rc,
+                    Lift::of_block(&rc),
+                    cursor,
+                    [z0, z + hop],
+                    z_feed,
+                    zone_router.as_ref(),
+                );
                 pending_drop = true;
             }
             push_lines(b, text);
@@ -2236,6 +2274,10 @@ fn emit_layer(
                     speed_feed,
                 ) {
                     speed_feed = w.feed;
+                    // The wipe moved the nozzle: the lift below starts where it stopped.
+                    if cursor.is_some() {
+                        cursor = Some(w.end);
+                    }
                 }
                 retracted = true;
                 retracted_by = tc;
@@ -2250,8 +2292,16 @@ fn emit_layer(
                 && style.active(retract)
                 && lift_allowed(&rc, l.index == 0, last_fill)
             {
-                pending_lift = None;
-                write_eager_lift(b, &rc, Lift::Spiral, cursor, z, hop, z_feed);
+                let z0 = if pending_lift.take().is_some() { z_below } else { z };
+                write_eager_lift(
+                    b,
+                    &rc,
+                    Lift::Spiral,
+                    cursor,
+                    [z0, z + hop],
+                    z_feed,
+                    zone_router.as_ref(),
+                );
                 pending_drop = true;
             }
             match (from, ctx.as_mut()) {
@@ -2524,67 +2574,24 @@ fn emit_layer(
         first_path = false;
         // Travel.
         let dist = cursor.map_or(f64::INFINITY, |cur| cur.dist_mm(start));
-        // Combing and the internal-region test, when the profile asks for either.
-        let plan = match (cursor, travel_layout.as_ref()) {
-            (Some(cur), Some(lay)) => {
-                let limit = match detour {
-                    Detour::Mm(v) => v,
-                    Detour::Percent(p) => dist * p / 100.0,
-                };
-                Some(lay.plan(cur, start, comb, limit))
-            }
-            _ => None,
+        // Combing and the internal-region test, when the profile asks for either, then round the keep-out zones,
+        // leg by leg, or over them: the same router the collision check asks. A travel routed round a zone leaves
+        // the part, so the retraction rule below reads it as any travel out of it. The zones are read only while
+        // the nozzle's place is known: a change or custom G-code before the first path leaves it unknown (`cursor`
+        // None), and the first travel of the layer uses up where the layer started.
+        let zoned = feature != Some(Feature::Custom) && p.feature != Feature::Custom;
+        let planner = TravelPlanner {
+            layout: travel_layout.as_ref(),
+            comb,
+            detour,
+            zones: zone_router.as_ref().filter(|_| zoned),
+            z_mm: f64::from(l.z),
         };
-        // Round the keep-out zones, leg by leg, or over them: the same router the collision check asks. A travel
-        // routed round a zone leaves the part, so the retraction rule below reads it as any travel out of it.
-        let mut zone_lift: Option<i64> = None;
-        // Only while the nozzle is where the layer started: a change or custom G-code before the first path leaves it
-        // unknown (`cursor` None), and the first travel of the layer uses it up.
-        let travel_from = cursor.and_then(|c| zone_from.take().or(Some(c)));
+        let travel_from = cursor.map(|c| zone_from.take().unwrap_or(c));
         zone_from = None;
-        let plan = match (travel_from, zone_router.as_ref()) {
-            (Some(cur), Some(zr))
-                if cur != start && feature != Some(Feature::Custom) && p.feature != Feature::Custom =>
-            {
-                // The planned route starts at `cursor`; from anywhere else the travel goes straight.
-                let legs = match plan.as_ref() {
-                    Some(p) if Some(cur) == cursor => p.route.clone(),
-                    _ => vec![start],
-                };
-                let mut from = cur;
-                let mut routed: Vec<Point> = Vec::with_capacity(legs.len());
-                let mut around = false;
-                for q in legs {
-                    match zr.route([from.x_mm(), from.y_mm()], [q.x_mm(), q.y_mm()], f64::from(l.z)) {
-                        crate::zoneroute::Route::Around(way) => {
-                            around = true;
-                            let k = way.len().saturating_sub(1);
-                            routed.extend(way.iter().take(k).map(|w| Point::from_mm(w[0], w[1])));
-                            routed.push(q);
-                        }
-                        crate::zoneroute::Route::Lift(h) => {
-                            #[allow(
-                                clippy::cast_possible_truncation,
-                                reason = "a lift of a few mm in thousandths"
-                            )]
-                            let h = (h * 1000.0).round() as i64;
-                            zone_lift = Some(zone_lift.map_or(h, |v| v.max(h)));
-                            routed.push(q);
-                        }
-                        crate::zoneroute::Route::Clear | crate::zoneroute::Route::Blocked => routed.push(q),
-                    }
-                    from = q;
-                }
-                if around || zone_lift.is_some() {
-                    Some(crate::travel::Plan {
-                        route: routed,
-                        internal: false,
-                    })
-                } else {
-                    plan
-                }
-            }
-            _ => plan,
+        let (mut plan, mut zone_lift) = match (cursor, travel_from) {
+            (Some(cur), Some(zf)) => planner.plan(cur, zf, start),
+            _ => (None, None),
         };
         // Orca's rule (GCode::needs_retraction): leaving an outer or overhang wall always retracts; a travel to
         // anything but a wall needs none when it stays inside an internal region of the layer and sparse infill is on.
@@ -2649,10 +2656,24 @@ fn emit_layer(
         let mut lift_on_travel: Option<i64> = None;
         // The layer change's lift, made by the layer's first travel; with no travel to make it on, the nozzle
         // just moves to the layer's height.
+        // A lift heads along the travel's first leg, which a planned route turns away from the straight line.
+        let toward = |plan: &Option<crate::travel::Plan>| {
+            plan.as_ref()
+                .and_then(|p| p.route.first().copied())
+                .unwrap_or(start)
+        };
         if let Some(kind) = pending_lift.take() {
             match cursor.filter(|&from| from != start) {
                 Some(from) => {
-                    lift_on_travel = write_lift(b, &rc, kind, from, start, z, hop, travel_feed, z_feed);
+                    lift_on_travel = write_lift(
+                        b,
+                        &rc,
+                        kind,
+                        [from, toward(&plan)],
+                        [z_below, z + hop],
+                        [travel_feed, z_feed],
+                        zone_router.as_ref(),
+                    );
                     lifted = true;
                 }
                 None => write_normal_lift(b, z, z_feed),
@@ -2669,6 +2690,12 @@ fn emit_layer(
                 speed_feed,
             ) {
                 speed_feed = w.feed;
+                // The wipe moved the nozzle along the last path: the lift and the travel start where it stopped,
+                // so the route is planned again from there.
+                if cursor.is_some() && w.end != at {
+                    cursor = Some(w.end);
+                    (plan, zone_lift) = planner.plan(w.end, w.end, start);
+                }
             }
             retracted = true;
             retracted_by = retract;
@@ -2676,10 +2703,7 @@ fn emit_layer(
                 // A travel that retracts lifts as Orca's needs_retraction picks: Auto Lift slopes, the others are
                 // their own kind.
                 if let Some(from) = cursor {
-                    let first = plan
-                        .as_ref()
-                        .and_then(|p| p.route.first().copied())
-                        .unwrap_or(start);
+                    let first = toward(&plan);
                     let over = || {
                         l.lift_overhangs
                             .as_ref()
@@ -2689,12 +2713,10 @@ fn emit_layer(
                         b,
                         &rc,
                         Lift::of_travel(&rc, over),
-                        from,
-                        start,
-                        z,
-                        hop,
-                        travel_feed,
-                        z_feed,
+                        [from, first],
+                        [z, z + hop],
+                        [travel_feed, z_feed],
+                        zone_router.as_ref(),
                     );
                 } else {
                     write_normal_lift(b, z + hop, z_feed);
@@ -3066,7 +3088,15 @@ fn emit_layer(
             }
         }
         if lift_ok && style.active(retract) {
-            write_eager_lift(b, &rc, Lift::of_block(&rc), cursor, cur_z, hop, z_feed);
+            write_eager_lift(
+                b,
+                &rc,
+                Lift::of_block(&rc),
+                cursor,
+                [cur_z, cur_z + hop],
+                z_feed,
+                zone_router.as_ref(),
+            );
         }
         push_lines(b, text);
         // A block that parked the head off the part: back to where the layer's last path ended, still lifted, before
@@ -3538,6 +3568,80 @@ fn inward_wipe_point(pts: &[Point], end: Point) -> Option<Point> {
     ))
 }
 
+/// What a travel's route reads: the layer's combing layout, the detour limit and the keep-out zones.
+struct TravelPlanner<'a> {
+    layout: Option<&'a crate::travel::Layout>,
+    comb: bool,
+    detour: Detour,
+    /// The zones the travel goes round, None when it has none or ignores them (to or from custom G-code).
+    zones: Option<&'a crate::zoneroute::Router>,
+    z_mm: f64,
+}
+
+impl TravelPlanner<'_> {
+    /// The route of a travel to `start`: combed from `from`, then round the zones from `zone_from` (where the
+    /// nozzle really is, when that differs at the start of a layer). With no layout the travel is straight. Also the
+    /// lift over a zone no way round clears, thousandths.
+    fn plan(
+        &self,
+        from: Point,
+        zone_from: Point,
+        start: Point,
+    ) -> (Option<crate::travel::Plan>, Option<i64>) {
+        let plan = self.layout.map(|lay| {
+            let limit = match self.detour {
+                Detour::Mm(v) => v,
+                Detour::Percent(p) => from.dist_mm(start) * p / 100.0,
+            };
+            lay.plan(from, start, self.comb, limit)
+        });
+        let Some(zr) = self.zones.filter(|_| zone_from != start) else {
+            return (plan, None);
+        };
+        // The planned route starts at `from`; from anywhere else the travel goes straight.
+        let legs = match plan.as_ref() {
+            Some(p) if zone_from == from => p.route.clone(),
+            _ => vec![start],
+        };
+        let mut at = zone_from;
+        let mut routed: Vec<Point> = Vec::with_capacity(legs.len());
+        let mut around = false;
+        let mut zone_lift: Option<i64> = None;
+        for q in legs {
+            match zr.route([at.x_mm(), at.y_mm()], [q.x_mm(), q.y_mm()], self.z_mm) {
+                crate::zoneroute::Route::Around(way) => {
+                    around = true;
+                    let k = way.len().saturating_sub(1);
+                    routed.extend(way.iter().take(k).map(|w| Point::from_mm(w[0], w[1])));
+                    routed.push(q);
+                }
+                crate::zoneroute::Route::Lift(h) => {
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        reason = "a lift of a few mm in thousandths"
+                    )]
+                    let h = (h * 1000.0).round() as i64;
+                    zone_lift = Some(zone_lift.map_or(h, |v| v.max(h)));
+                    routed.push(q);
+                }
+                crate::zoneroute::Route::Clear | crate::zoneroute::Route::Blocked => routed.push(q),
+            }
+            at = q;
+        }
+        if around || zone_lift.is_some() {
+            (
+                Some(crate::travel::Plan {
+                    route: routed,
+                    internal: false,
+                }),
+                zone_lift,
+            )
+        } else {
+            (plan, None)
+        }
+    }
+}
+
 /// The most a combed route may be longer than the straight travel.
 #[derive(Debug, Clone, Copy)]
 enum Detour {
@@ -3729,25 +3833,48 @@ fn write_normal_lift(b: &mut Vec<u8>, z_to: i64, z_feed: i64) {
     b.push(b'\n');
 }
 
-/// The radius of a spiral lift of `hop_mm` (Orca `GCodeWriter`: one turn at the `travel_slope` angle).
-fn spiral_radius(rc: &PrintConfig, hop_mm: f64) -> f64 {
-    let slope = crate::motion::raw_f(rc, "travel_slope")
-        .unwrap_or(3.0)
-        .to_radians();
-    hop_mm / (std::f64::consts::TAU * slope.m_atan())
+/// `travel_slope`, the angle a lift climbs at, degrees from horizontal: 3 when it is unset, not a number, or
+/// at or under 0.5 (a climb over 40 times its rise); 90 and over climb straight up.
+fn travel_slope_deg(rc: &PrintConfig) -> f64 {
+    crate::motion::raw_f(rc, "travel_slope")
+        .filter(|a| a.is_finite() && *a > 0.5)
+        .map_or(3.0, |a| a.min(90.0))
 }
 
-/// Whether the turn of a spiral lift from `from` around the point `ij` (mm) away stays on the printable area.
-/// Orca leaves this check as a to-do (`GCodeWriter::travel_to_xyz`), so a part near the edge sends the nozzle
-/// past it, which Klipper refuses as a move out of range. The center must be on the bed and the circle clear
-/// of every edge; an unknown bed always fits.
-fn spiral_fits(rc: &PrintConfig, from: Point, ij: [f64; 2]) -> bool {
+/// How far a lift of `rise_mm` runs across at the `travel_slope` angle, mm; 0 at 90 degrees.
+fn lift_run(rc: &PrintConfig, rise_mm: f64) -> f64 {
+    let angle = travel_slope_deg(rc);
+    if angle >= 90.0 {
+        return 0.0;
+    }
+    rise_mm / angle.to_radians().m_tan()
+}
+
+/// The radius of a spiral lift that climbs `rise_mm` in one turn at the `travel_slope` angle: the turn's
+/// circumference is the run of that rise at that angle.
+fn spiral_radius(rc: &PrintConfig, rise_mm: f64) -> f64 {
+    lift_run(rc, rise_mm) / std::f64::consts::TAU
+}
+
+/// Whether the turn of a spiral lift from `from` around the point `ij` (mm) away stays on the printable area and
+/// clear of the keep-out zones. Leaving this to the firmware sends the nozzle past the edge of a part near it,
+/// which Klipper refuses as a move out of range. The center must be on the bed and the circle clear of every edge
+/// and zone; an unknown bed always fits.
+fn spiral_fits(
+    rc: &PrintConfig,
+    zones: Option<&crate::zoneroute::Router>,
+    from: Point,
+    ij: [f64; 2],
+) -> bool {
+    let (cx, cy) = (from.x_mm() + ij[0], from.y_mm() + ij[1]);
+    let r = ij[0].m_hypot(ij[1]);
+    if zones.is_some_and(|z| !z.circle_clear([cx, cy], r)) {
+        return false;
+    }
     let bed = &rc.printable_area;
     if bed.len() < 3 {
         return true;
     }
-    let (cx, cy) = (from.x_mm() + ij[0], from.y_mm() + ij[1]);
-    let r = ij[0].m_hypot(ij[1]);
     let mut inside = false;
     for (a, b) in bed.iter().zip(bed.iter().cycle().skip(1)) {
         let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
@@ -3865,76 +3992,96 @@ fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2
     b.push(b'\n');
 }
 
-/// Orca's lift for a travel from `from` to `to` (`GCodeWriter::travel_to_xyz` with a lift to make), up `hop`
-/// from the layer's `z` (thousandths): a spiral turning to the travel's left, a slope ramp along it, or a plain
-/// lift. Returns the height the travel itself climbs to when the lift rides on it (a slope too short for its
-/// ramp).
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the lift's geometry and the writer's settings"
-)]
+/// The lift of a travel along `way` (from where the nozzle is toward the travel's first stop), from the height
+/// the nozzle is really at to the lifted one (`z`, thousandths), which at a layer change is the layer's own lift
+/// plus the step up from the layer below: a spiral beside the travel, a slope ramp along it, or a plain lift.
+/// The spiral turns to the travel's left, else to its right, else the nozzle lifts straight up: its whole turn
+/// stays on the bed and out of the keep-out zones. Returns the height the travel itself climbs to when the lift
+/// rides on it (a slope too short for its ramp). `feeds` are the travel's and the Z moves'.
 fn write_lift(
     b: &mut Vec<u8>,
     rc: &PrintConfig,
     kind: Lift,
-    from: Point,
-    to: Point,
-    z: i64,
-    hop: i64,
-    travel_feed: i64,
-    z_feed: i64,
+    way: [Point; 2],
+    z: [i64; 2],
+    feeds: [i64; 2],
+    zones: Option<&crate::zoneroute::Router>,
 ) -> Option<i64> {
+    let [from, to] = way;
+    let [z_from, z_to] = z;
+    let [travel_feed, z_feed] = feeds;
     let (dx, dy) = (to.x_mm() - from.x_mm(), to.y_mm() - from.y_mm());
     let len = dx.m_hypot(dy);
+    #[allow(clippy::cast_precision_loss, reason = "z in thousandths")]
+    let rise = (z_to - z_from) as f64 / 1000.0;
+    if rise <= 0.0 {
+        // Nothing to climb: the nozzle is already that high.
+        write_normal_lift(b, z_to, z_feed);
+        return None;
+    }
     match kind {
         Lift::Spiral if len > 0.0 => {
-            #[allow(clippy::cast_precision_loss, reason = "z in thousandths")]
-            let r = spiral_radius(rc, hop as f64 / 1000.0);
-            let ij = [-dy / len * r, dx / len * r];
-            if spiral_fits(rc, from, ij) {
-                write_spiral_lift(b, rc, from, ij, [z, z + hop], z_feed);
-            } else {
-                write_normal_lift(b, z + hop, z_feed);
+            let r = spiral_radius(rc, rise);
+            let left = [-dy / len * r, dx / len * r];
+            let right = [-left[0], -left[1]];
+            match [left, right]
+                .into_iter()
+                .find(|&ij| r > 0.0 && spiral_fits(rc, zones, from, ij))
+            {
+                Some(ij) => write_spiral_lift(b, rc, from, ij, [z_from, z_to], z_feed),
+                None => write_normal_lift(b, z_to, z_feed),
             }
             None
         }
-        Lift::Slope if len > 0.0 => match slope_point(rc, from, to) {
+        Lift::Slope if len > 0.0 => match slope_point(rc, from, to, rise) {
             Some(mid) => {
                 // The ramp is part of the travel and runs at the travel speed.
                 b.extend_from_slice(b"G1");
                 put_xy(b, mid);
                 b.extend_from_slice(b" Z");
-                put_fixed(b, z + hop, 3);
+                put_fixed(b, z_to, 3);
                 b.extend_from_slice(b" F");
                 put_int(b, travel_feed);
                 b.push(b'\n');
                 None
             }
-            None => Some(z + hop),
+            None if lift_run(rc, rise) <= 0.0 => {
+                write_normal_lift(b, z_to, z_feed);
+                None
+            }
+            None => Some(z_to),
         },
         _ => {
-            write_normal_lift(b, z + hop, z_feed);
+            write_normal_lift(b, z_to, z_feed);
             None
         }
     }
 }
 
-/// Orca's lift made at once before custom G-code (`GCodeWriter::eager_lift`): for a spiral, one around the
-/// point beside the nozzle on +X when the nozzle's place is known, else straight up.
+/// The lift made at once before custom G-code, from the height the nozzle is at to the lifted one (`z`,
+/// thousandths): for a spiral, a turn beside the nozzle on +X, else on -X, when the nozzle's place is known and
+/// the turn fits ([`spiral_fits`]); otherwise straight up.
 fn write_eager_lift(
     b: &mut Vec<u8>,
     rc: &PrintConfig,
     kind: Lift,
     at: Option<Point>,
-    z: i64,
-    hop: i64,
+    z: [i64; 2],
     z_feed: i64,
+    zones: Option<&crate::zoneroute::Router>,
 ) {
+    let [z_from, z_to] = z;
     #[allow(clippy::cast_precision_loss, reason = "z in thousandths")]
-    let r = spiral_radius(rc, hop as f64 / 1000.0);
-    match at.filter(|&from| kind == Lift::Spiral && spiral_fits(rc, from, [r, 0.0])) {
-        Some(from) => write_spiral_lift(b, rc, from, [r, 0.0], [z, z + hop], z_feed),
-        None => write_normal_lift(b, z + hop, z_feed),
+    let r = spiral_radius(rc, (z_to - z_from) as f64 / 1000.0);
+    let turn = at.filter(|_| kind == Lift::Spiral && r > 0.0).and_then(|from| {
+        [[r, 0.0], [-r, 0.0]]
+            .into_iter()
+            .find(|&ij| spiral_fits(rc, zones, from, ij))
+            .map(|ij| (from, ij))
+    });
+    match turn {
+        Some((from, ij)) => write_spiral_lift(b, rc, from, ij, z, z_feed),
+        None => write_normal_lift(b, z_to, z_feed),
     }
 }
 
@@ -4008,10 +4155,7 @@ fn over_overhang(
         _ => c.z_hop,
     }
     .max(rc.z_hop);
-    let slope = crate::motion::raw_f(rc, "travel_slope")
-        .unwrap_or(3.0)
-        .to_radians();
-    let reach = most / slope.m_tan();
+    let reach = lift_run(rc, most);
     let len = from.dist_mm(to);
     let end = if len > reach && len > 0.0 {
         let t = reach / len;
@@ -4062,24 +4206,22 @@ fn z_hop_kind(cfg: &PrintConfig) -> String {
     }
 }
 
-/// Where a slope lift reaches its height along a travel from `from` to `to`: the rise is
-/// `travel_slope` degrees from horizontal, and a travel too short for it lifts straight up.
 /// Whether lifts are slope lifts (`z_hop_types` Slope Lift, or Auto Lift on a travel).
 fn slope_kind(cfg: &PrintConfig) -> bool {
     let kind = z_hop_kind(cfg);
     (kind.contains("Slope") || kind.contains("Auto")) && cfg.z_hop > 0.0
 }
 
-fn slope_point(cfg: &PrintConfig, from: Point, to: Point) -> Option<Point> {
+/// Where a slope lift of `rise_mm` reaches its height along a travel from `from` to `to`: the rise is
+/// `travel_slope` degrees from horizontal. None when the travel is too short for it (the travel climbs on
+/// itself) or the angle is vertical.
+fn slope_point(cfg: &PrintConfig, from: Point, to: Point, rise_mm: f64) -> Option<Point> {
     if !slope_kind(cfg) {
         return None;
     }
-    let angle = crate::motion::raw_f(cfg, "travel_slope")
-        .filter(|a| *a > 0.5 && *a < 90.0)
-        .unwrap_or(3.0);
-    let run = cfg.z_hop / angle.to_radians().m_tan();
+    let run = lift_run(cfg, rise_mm);
     let dist = from.dist_mm(to);
-    if dist <= run + 0.01 {
+    if run <= 0.0 || dist <= run + 0.01 {
         return None;
     }
     let t = run / dist;
@@ -4487,12 +4629,14 @@ mod tests {
         };
         let lift = |from: Point, to: Point, kind: Lift| {
             let mut b = Vec::new();
-            write_lift(&mut b, &rc, kind, from, to, 200, 2000, 18_000, 600);
+            write_lift(&mut b, &rc, kind, [from, to], [200, 2200], [18_000, 600], None);
             String::from_utf8(b).unwrap()
         };
         let edge = lift(Point::from_mm(80.6, 4.2), Point::from_mm(30.0, 4.2), Lift::Spiral);
         assert!(lowest_y(&edge) >= 0.0, "{edge}");
         assert!(edge.contains("Z2.2"), "{edge}");
+        // The turn on the travel's left would leave the bed; the one on its right fits.
+        assert!(edge.lines().count() > 3, "turns to the other side: {edge}");
         let middle = lift(
             Point::from_mm(125.0, 105.0),
             Point::from_mm(175.0, 105.0),
@@ -4502,18 +4646,211 @@ mod tests {
             middle.lines().count() > 3,
             "the turn stays where it fits: {middle}"
         );
-        let mut b = Vec::new();
-        write_eager_lift(
-            &mut b,
-            &rc,
-            Lift::Spiral,
-            Some(Point::from_mm(248.0, 105.0)),
-            200,
-            2000,
-            600,
+        // Beside the right edge the turn made at once goes to -X instead; on a bed too narrow for either side
+        // the nozzle lifts straight up.
+        let eager = |rc: &PrintConfig, at: Point| {
+            let mut b = Vec::new();
+            write_eager_lift(&mut b, rc, Lift::Spiral, Some(at), [200, 2200], 600, None);
+            String::from_utf8(b).unwrap()
+        };
+        let right = eager(&rc, Point::from_mm(248.0, 105.0));
+        assert!(right.lines().count() > 3, "{right}");
+        assert!(
+            right
+                .split_whitespace()
+                .filter_map(|w| w.strip_prefix('X'))
+                .filter_map(|v| v.parse::<f64>().ok())
+                .all(|x| x <= 250.0),
+            "{right}"
         );
-        let eager = String::from_utf8(b).unwrap();
-        assert_eq!(eager, "G1 Z2.2 F600\n");
+        let narrow = PrintConfig {
+            printable_area: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 210.0], [0.0, 210.0]],
+            ..PrintConfig::default()
+        };
+        assert_eq!(eager(&narrow, Point::from_mm(5.0, 105.0)), "G1 Z2.2 F600\n");
+    }
+
+    /// A config on a 250 by 210 bed with `raw` settings.
+    fn lift_config(raw: serde_json::Value) -> PrintConfig {
+        let mut rc = PrintConfig {
+            printable_area: vec![[0.0, 0.0], [250.0, 0.0], [250.0, 210.0], [0.0, 210.0]],
+            z_hop: 0.4,
+            ..PrintConfig::default()
+        };
+        if let serde_json::Value::Object(m) = raw {
+            rc.raw.extend(m);
+        }
+        rc
+    }
+
+    /// The `I`, `J` and `Z` of a helical spiral lift's `G3` line.
+    fn arc_of(g: &str) -> Option<(f64, f64, f64)> {
+        let line = g.lines().find(|l| l.starts_with("G3 "))?;
+        let word = |k: char| {
+            line.split_whitespace()
+                .find_map(|w| w.strip_prefix(k))
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        Some((word('I')?, word('J')?, word('Z')?))
+    }
+
+    #[test]
+    fn a_spiral_lift_climbs_at_the_set_angle_over_the_rise_it_really_makes() {
+        // One turn whose circumference is the run of the rise at `travel_slope`: rise over circumference is the
+        // tangent of the angle. At a layer change the rise is the lift plus the step up from the layer below.
+        let rc = lift_config(serde_json::json!({"travel_slope": 10, "enable_arc_fitting": true}));
+        let from = Point::from_mm(100.0, 100.0);
+        let to = Point::from_mm(150.0, 100.0);
+        for (z_from, z_to) in [(200, 600), (200, 800), (0, 1000)] {
+            let mut b = Vec::new();
+            write_lift(
+                &mut b,
+                &rc,
+                Lift::Spiral,
+                [from, to],
+                [z_from, z_to],
+                [18_000, 600],
+                None,
+            );
+            let g = String::from_utf8(b).unwrap();
+            let (i, j, z) = arc_of(&g).unwrap();
+            #[allow(clippy::cast_precision_loss, reason = "z in thousandths")]
+            let rise = (z_to - z_from) as f64 / 1000.0;
+            assert!(near(z, f64::from(i32::try_from(z_to).unwrap()) / 1000.0), "{g}");
+            let angle = (rise / (std::f64::consts::TAU * i.m_hypot(j)))
+                .m_atan()
+                .to_degrees();
+            assert!((angle - 10.0).abs() < 0.05, "{angle} degrees: {g}");
+        }
+    }
+
+    #[test]
+    fn the_lift_angle_reads_its_limits() {
+        // Unset, zero, negative or not a number: 3 degrees. 90 and over: straight up.
+        for v in [
+            serde_json::Value::Null,
+            serde_json::json!(0),
+            serde_json::json!(-5),
+            serde_json::json!("x"),
+        ] {
+            let rc = lift_config(serde_json::json!({ "travel_slope": v }));
+            assert!(near(travel_slope_deg(&rc), 3.0), "{v}");
+        }
+        let rc = lift_config(serde_json::json!({"travel_slope": 30}));
+        assert!(near(travel_slope_deg(&rc), 30.0));
+        let steep = lift_config(serde_json::json!({"travel_slope": 120, "z_hop_types": "Slope Lift"}));
+        assert!(near(travel_slope_deg(&steep), 90.0));
+        assert!(near(spiral_radius(&steep, 0.4), 0.0));
+        for kind in [Lift::Slope, Lift::Spiral] {
+            let mut b = Vec::new();
+            let lifted = write_lift(
+                &mut b,
+                &steep,
+                kind,
+                [Point::from_mm(100.0, 100.0), Point::from_mm(150.0, 100.0)],
+                [200, 600],
+                [18_000, 600],
+                None,
+            );
+            assert_eq!(lifted, None);
+            assert_eq!(String::from_utf8(b).unwrap(), "G1 Z0.6 F600\n", "{kind:?}");
+        }
+        // A slope ramp runs the rise over the tangent of the angle along the travel.
+        let rc = lift_config(serde_json::json!({"travel_slope": 30, "z_hop_types": "Slope Lift"}));
+        let mid = slope_point(&rc, Point::from_mm(0.0, 0.0), Point::from_mm(10.0, 0.0), 0.6).unwrap();
+        assert!((mid.x_mm() - 0.6 / 30f64.to_radians().m_tan()).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_lift_with_nothing_to_climb_moves_straight_to_its_height() {
+        let rc = lift_config(serde_json::json!({"enable_arc_fitting": true}));
+        for kind in [Lift::Slope, Lift::Spiral, Lift::Normal] {
+            let mut b = Vec::new();
+            write_lift(
+                &mut b,
+                &rc,
+                kind,
+                [Point::from_mm(100.0, 100.0), Point::from_mm(150.0, 100.0)],
+                [900, 600],
+                [18_000, 600],
+                None,
+            );
+            assert_eq!(String::from_utf8(b).unwrap(), "G1 Z0.6 F600\n", "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_zero_upper_lift_limit_means_no_limit() {
+        let rc = lift_config(serde_json::json!({}));
+        for z in [0.2, 5.0, 250.0] {
+            assert!(lift_and_restart(&rc, z).1, "lifts at {z}");
+        }
+        let capped = PrintConfig {
+            retract_lift_below: 5.0,
+            retract_lift_above: 1.0,
+            ..rc
+        };
+        assert!(!lift_and_restart(&capped, 0.6).1);
+        assert!(lift_and_restart(&capped, 3.0).1);
+        assert!(!lift_and_restart(&capped, 5.2).1);
+    }
+
+    #[test]
+    fn a_spiral_lift_keeps_its_turn_out_of_the_keep_out_zones() {
+        // A zone on the travel's left: the turn goes to its right. Zones on both sides: straight up.
+        let rc = lift_config(serde_json::json!({
+            "enable_arc_fitting": true,
+            "head_wrap_detect_zone": ["90x101", "110x101", "110x110", "90x110"],
+        }));
+        let zones = crate::zoneroute::Router::of(&rc).unwrap();
+        let lift = |rc: &PrintConfig, zones| {
+            let mut b = Vec::new();
+            write_lift(
+                &mut b,
+                rc,
+                Lift::Spiral,
+                [Point::from_mm(100.0, 100.0), Point::from_mm(150.0, 100.0)],
+                [200, 600],
+                [18_000, 600],
+                zones,
+            );
+            String::from_utf8(b).unwrap()
+        };
+        let (_, j_free, _) = arc_of(&lift(&rc, None)).unwrap();
+        assert!(j_free > 0.0, "the turn goes to the travel's left");
+        let (_, j, _) = arc_of(&lift(&rc, Some(&zones))).unwrap();
+        assert!(j < 0.0, "round the zone, to the right");
+        // At the front edge with a zone just behind: the left turn meets the zone, the right one leaves the bed.
+        let both = lift_config(serde_json::json!({
+            "enable_arc_fitting": true,
+            "head_wrap_detect_zone": ["90x2.5", "110x2.5", "110x10", "90x10"],
+        }));
+        let zones = crate::zoneroute::Router::of(&both).unwrap();
+        let mut b = Vec::new();
+        write_lift(
+            &mut b,
+            &both,
+            Lift::Spiral,
+            [Point::from_mm(100.0, 1.0), Point::from_mm(150.0, 1.0)],
+            [200, 600],
+            [18_000, 600],
+            Some(&zones),
+        );
+        assert_eq!(String::from_utf8(b).unwrap(), "G1 Z0.6 F600\n");
+        let mut b = Vec::new();
+        write_lift(
+            &mut b,
+            &both,
+            Lift::Spiral,
+            [Point::from_mm(100.0, 1.0), Point::from_mm(150.0, 1.0)],
+            [200, 600],
+            [18_000, 600],
+            None,
+        );
+        assert!(
+            arc_of(&String::from_utf8(b).unwrap()).is_some(),
+            "the zone is what stops it"
+        );
     }
 
     #[test]

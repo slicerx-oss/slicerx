@@ -181,6 +181,14 @@ impl Router {
             })
     }
 
+    /// Whether a circle of radius `r` (mm) round `center`, the turn of a spiral lift, keeps the nozzle's width
+    /// clear of every zone. The whole disc counts, so a zone inside the turn fails too.
+    pub(crate) fn circle_clear(&self, center: Pt, r: f64) -> bool {
+        self.zones
+            .iter()
+            .all(|z| !inside(z, center) && edge_dist(z, center) >= r + self.clearance)
+    }
+
     /// The route of a travel from `a` to `b` at height `z` (mm).
     pub(crate) fn route(&self, a: Pt, b: Pt, z: f64) -> Route {
         let Some(zone) = self
