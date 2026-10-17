@@ -390,7 +390,7 @@ export function LayerDock() {
     </>
   ) : (
     <>
-      <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.', demo: 'heimdall' })}>
+      <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.', demo: 'rec-toolhead' })}>
         <input type="checkbox" data-testid="pv-show-toolhead" aria-label="Show toolhead" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
         <span className="dock-pre">Show </span>
         toolhead
@@ -400,7 +400,7 @@ export function LayerDock() {
         <span className="dock-pre">Show </span>
         gantry
       </label>
-      <label className="dock-check" {...tipAttrs({ title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.' })}>
+      <label className="dock-check" {...tipAttrs({ title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.', demo: 'rec-follow' })}>
         <input type="checkbox" checked={followNozzle} onChange={(e) => set({ followNozzle: e.target.checked })} />
         Follow nozzle
       </label>
