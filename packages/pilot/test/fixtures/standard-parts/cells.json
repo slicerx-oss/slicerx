@@ -1,0 +1,65 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Bare cell envelope limits from the manufacturer datasheet for the named cell only. Other 18650 cells differ; do not generalize. Excludes protection circuits, tabs and wrappers.",
+  "records": [
+    {
+      "id": "energizer-e91-aa",
+      "format": "AA",
+      "designation": "ANSI-15A, IEC-LR6",
+      "manufacturer": "Energizer",
+      "model": "E91",
+      "chemistry": "alkaline",
+      "diameter_max": {
+        "value": 14.5,
+        "unit": "mm",
+        "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+        "locator": "Specifications drawing, form E91NA1018",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "diameter_min": {
+        "value": 13.5,
+        "unit": "mm",
+        "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+        "locator": "Specifications drawing, form E91NA1018",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "height_max": {
+        "value": 50.5,
+        "unit": "mm",
+        "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+        "locator": "Specifications drawing, form E91NA1018",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "height_min": {
+        "value": 49.5,
+        "unit": "mm",
+        "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+        "locator": "Specifications drawing, form E91NA1018",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "note": "The datasheet drawing prints two values per dimension without Max/Min labels; the larger is recorded as the upper limit and the smaller as the lower limit."
+    },
+    {
+      "id": "molicel-inr18650-m35a",
+      "format": "18650",
+      "manufacturer": "Molicel (E-One Moli Energy)",
+      "model": "INR-18650-M35A",
+      "chemistry": "lithium-ion",
+      "diameter_max": {
+        "value": 18.6,
+        "unit": "mm",
+        "source_url": "https://www.molicel.com/wp-content/uploads/INR18650M35A-V2-80096.pdf",
+        "locator": "Physical characteristics: Diameter 18.6 mm (Max)",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "height_max": {
+        "value": 65.2,
+        "unit": "mm",
+        "source_url": "https://www.molicel.com/wp-content/uploads/INR18650M35A-V2-80096.pdf",
+        "locator": "Physical characteristics: Height 65.2 mm (Max)",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      }
+    }
+  ]
+}

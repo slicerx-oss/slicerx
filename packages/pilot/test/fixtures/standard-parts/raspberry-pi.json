@@ -1,0 +1,239 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Published PCB envelopes and explicitly dimensioned port centerlines. Not complete enclosure manufacturing data.",
+  "verified_note": "Only measurements whose value was re-read in the cited source at checked_utc. Mismatched, not-stated, unsourced and null items were removed. Verification time is the file-level checked_utc.",
+  "records": [
+    {
+      "id": "pi4",
+      "title": "Raspberry Pi 4 Model B",
+      "outline_xy": {
+        "value": [
+          85,
+          56
+        ],
+        "unit": "mm",
+        "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+      },
+      "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+      "locator": "PDF page 1",
+      "ports": [
+        {
+          "name": "USB-C power",
+          "edge": "bottom",
+          "centerline_axis": "x",
+          "centerline": {
+            "value": 11.2,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+            "status": "derived",
+            "derivation": "Mount center x 3.5 plus spacing 7.7."
+          }
+        },
+        {
+          "name": "micro-HDMI left",
+          "edge": "bottom",
+          "centerline_axis": "x",
+          "centerline": {
+            "value": 26,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+            "status": "derived",
+            "derivation": "3.5 + 7.7 + 14.8."
+          }
+        },
+        {
+          "name": "micro-HDMI right",
+          "edge": "bottom",
+          "centerline_axis": "x",
+          "centerline": {
+            "value": 39.5,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+            "status": "derived",
+            "derivation": "3.5 + 7.7 + 14.8 + 13.5."
+          }
+        },
+        {
+          "name": "CSI ribbon",
+          "edge": "internal",
+          "centerline_axis": "x",
+          "centerline": {
+            "value": 46.5,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+            "status": "derived",
+            "derivation": "Right micro-HDMI center 39.5 plus spacing 7."
+          }
+        },
+        {
+          "name": "audio/video jack",
+          "edge": "bottom",
+          "centerline_axis": "x",
+          "centerline": {
+            "value": 54,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+            "status": "derived",
+            "derivation": "CSI center 46.5 plus spacing 7.5."
+          }
+        },
+        {
+          "name": "USB lower stack",
+          "edge": "right",
+          "centerline_axis": "y",
+          "centerline": {
+            "value": 9,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+          }
+        },
+        {
+          "name": "USB upper stack",
+          "edge": "right",
+          "centerline_axis": "y",
+          "centerline": {
+            "value": 27,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+          }
+        },
+        {
+          "name": "Ethernet",
+          "edge": "right",
+          "centerline_axis": "y",
+          "centerline": {
+            "value": 45.75,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+          }
+        }
+      ],
+      "mount_hole_centers": {
+        "value": [
+          [
+            3.5,
+            3.5
+          ],
+          [
+            61.5,
+            3.5
+          ],
+          [
+            3.5,
+            52.5
+          ],
+          [
+            61.5,
+            52.5
+          ]
+        ],
+        "unit": "mm",
+        "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+        "status": "derived",
+        "derivation": "Left offset 3.5 plus horizontal pitch 58; lower offset 3.5 plus vertical pitch 49. For Zero 2 W right center is width 65 minus 3.5."
+      },
+      "mount_hole_diameter": {
+        "value": 2.7,
+        "unit": "mm",
+        "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+      },
+      "corner_radius": {
+        "value": 3,
+        "unit": "mm",
+        "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+      }
+    },
+    {
+      "id": "pi5",
+      "title": "Raspberry Pi 5",
+      "outline_xy": {
+        "value": [
+          85,
+          56
+        ],
+        "unit": "mm",
+        "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+      },
+      "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+      "locator": "PDF page 1",
+      "ports": [
+        {
+          "name": "USB-C power",
+          "edge": "bottom",
+          "centerline_axis": "x",
+          "centerline": {
+            "value": 11.2,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+          }
+        },
+        {
+          "name": "micro-HDMI left",
+          "edge": "bottom",
+          "centerline_axis": "x",
+          "centerline": {
+            "value": 25.8,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+          }
+        },
+        {
+          "name": "micro-HDMI right",
+          "edge": "bottom",
+          "centerline_axis": "x",
+          "centerline": {
+            "value": 39.2,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+          }
+        },
+        {
+          "name": "Ethernet",
+          "edge": "right",
+          "centerline_axis": "y",
+          "centerline": {
+            "value": 10.2,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+          }
+        },
+        {
+          "name": "USB lower stack",
+          "edge": "right",
+          "centerline_axis": "y",
+          "centerline": {
+            "value": 29.1,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+          }
+        },
+        {
+          "name": "USB upper stack",
+          "edge": "right",
+          "centerline_axis": "y",
+          "centerline": {
+            "value": 47,
+            "unit": "mm",
+            "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+          }
+        }
+      ],
+      "mount_hole_diameter": {
+        "value": 2.7,
+        "unit": "mm",
+        "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+      },
+      "accuracy": "Manufacturer labels all dimensions approximate and for reference only, unsuitable as production data.",
+      "mount_hole_pitch_xy": {
+        "value": [
+          58,
+          49
+        ],
+        "unit": "mm",
+        "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf",
+        "note": "Dimensioned 58 horizontal and 49 vertical on the drawing. The vertical edge offset is not dimensioned on this drawing, so no absolute hole centers are given."
+      }
+    }
+  ]
+}

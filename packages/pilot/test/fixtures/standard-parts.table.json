@@ -1,0 +1,891 @@
+{
+  "schema_version": 1,
+  "license": "Facts transcribed from the published datasheets, drawings and charts each value names in source_url. The table is Apache-2.0; see REUSE.toml.",
+  "categories": [
+    {
+      "id": "arduino",
+      "words": [
+        "arduino",
+        "arduino board"
+      ],
+      "scope": "Board mounting data transcribed from the official Arduino datasheet drawings (docs.arduino.cc). Uno overall outline is not dimensioned in the official datasheet and is intentionally absent.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "bearings",
+      "words": [
+        "bearing",
+        "ball bearing"
+      ],
+      "scope": "Selected common metric 6xx, 6000 and 6200 series. No suffix substitution or fit allowance is implied.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "cells",
+      "words": [
+        "battery",
+        "cell"
+      ],
+      "scope": "Bare cell envelope limits from the manufacturer datasheet for the named cell only. Other 18650 cells differ; do not generalize. Excludes protection circuits, tabs and wrappers.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "heat-set-inserts",
+      "words": [
+        "insert",
+        "heat set insert",
+        "threaded insert"
+      ],
+      "scope": "Vendor-specific holes; actual insert length, material and polymer must be chosen before use.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "motors",
+      "words": [
+        "motor",
+        "stepper",
+        "stepper motor",
+        "nema"
+      ],
+      "scope": "Exact published motor models in NEMA 14/17/23 families. Not a claim that all motors in a family have identical hole type or depth.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "phones",
+      "words": [
+        "phone",
+        "smartphone",
+        "iphone",
+        "pixel"
+      ],
+      "scope": "Phone body height, width and depth as printed on the manufacturer tech specs pages. Both manufacturers state that size varies by configuration and manufacturing process. No case, camera bump or tolerance is implied.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "raspberry-pi",
+      "words": [
+        "raspberry pi",
+        "rpi"
+      ],
+      "scope": "Published PCB envelopes and explicitly dimensioned port centerlines. Not complete enclosure manufacturing data.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "screw-holes",
+      "words": [
+        "screw",
+        "bolt",
+        "clearance hole",
+        "tap drill"
+      ],
+      "scope": "Metric coarse cutting tap and clearance sizes. Close/normal/loose are separate fit choices; no printer compensation included.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "spools",
+      "words": [
+        "spool",
+        "filament spool",
+        "reel"
+      ],
+      "scope": "Published Polymaker spool variants; capacity is not a universal dimensional standard. Check the actual supplied revision.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    }
+  ],
+  "records": [
+    {
+      "category": "arduino",
+      "id": "arduino-uno-r3",
+      "name": "Arduino UNO R3 (A000066)",
+      "aliases": [
+        "UNO R3",
+        "UNO",
+        "Arduino UNO R3",
+        "Arduino UNO",
+        "A000066"
+      ],
+      "info": {
+        "manufacturer": "Arduino",
+        "model": "UNO R3 (A000066)",
+        "coordinate_system": "Mounting-hole drawing, view from top side. Origin at the top-left corner of the board outline as drawn, x right, y down. The drawing does not dimension the overall board length or width."
+      },
+      "sizes": [
+        {
+          "key": "mount_hole_count",
+          "value": 4,
+          "unit": "count",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 3.2,
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_top_left_xy",
+          "value": [
+            15.24,
+            2.54
+          ],
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_right_upper_xy",
+          "value": [
+            66.04,
+            17.78
+          ],
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_right_lower_xy",
+          "value": [
+            66.04,
+            45.72
+          ],
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_bottom_left_y",
+          "value": 50.8,
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z",
+          "note": "Only the vertical distance from the top edge is dimensioned for this hole; its x position is not."
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "608",
+      "name": "608 bearing",
+      "aliases": [
+        "608ZZ",
+        "6082RS",
+        "608-2RS",
+        "608RS",
+        "608Z",
+        "6082Z",
+        "608-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 29"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 8,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 22,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 7,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6000",
+      "name": "6000 bearing",
+      "aliases": [
+        "6000ZZ",
+        "60002RS",
+        "6000-2RS",
+        "6000RS",
+        "6000Z",
+        "60002Z",
+        "6000-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 30"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 10,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 26,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 8,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "cells",
+      "id": "energizer-e91-aa",
+      "name": "Energizer E91 (AA)",
+      "aliases": [
+        "E91",
+        "Energizer E91",
+        "AA",
+        "AA battery",
+        "AA cell",
+        "15A",
+        "LR6"
+      ],
+      "info": {
+        "format": "AA",
+        "designation": "ANSI-15A, IEC-LR6",
+        "manufacturer": "Energizer",
+        "model": "E91",
+        "chemistry": "alkaline",
+        "note": "The datasheet drawing prints two values per dimension without Max/Min labels; the larger is recorded as the upper limit and the smaller as the lower limit."
+      },
+      "sizes": [
+        {
+          "key": "diameter_max",
+          "value": 14.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+          "locator": "Specifications drawing, form E91NA1018",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "diameter_min",
+          "value": 13.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+          "locator": "Specifications drawing, form E91NA1018",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "height_max",
+          "value": 50.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+          "locator": "Specifications drawing, form E91NA1018",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "height_min",
+          "value": 49.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+          "locator": "Specifications drawing, form E91NA1018",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "cells",
+      "id": "molicel-inr18650-m35a",
+      "name": "Molicel INR-18650-M35A (18650)",
+      "aliases": [
+        "INR-18650-M35A",
+        "Molicel INR-18650-M35A",
+        "18650",
+        "18650 battery",
+        "18650 cell"
+      ],
+      "info": {
+        "format": "18650",
+        "manufacturer": "Molicel (E-One Moli Energy)",
+        "model": "INR-18650-M35A",
+        "chemistry": "lithium-ion"
+      },
+      "sizes": [
+        {
+          "key": "diameter_max",
+          "value": 18.6,
+          "unit": "mm",
+          "source_url": "https://www.molicel.com/wp-content/uploads/INR18650M35A-V2-80096.pdf",
+          "locator": "Physical characteristics: Diameter 18.6 mm (Max)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "height_max",
+          "value": 65.2,
+          "unit": "mm",
+          "source_url": "https://www.molicel.com/wp-content/uploads/INR18650M35A-V2-80096.pdf",
+          "locator": "Physical characteristics: Height 65.2 mm (Max)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M3x0.5",
+      "name": "SPIROL M3 heat-set insert",
+      "aliases": [
+        "M3 insert",
+        "M3 heat set insert",
+        "M3 threaded insert",
+        "M3x0.5 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M3x0.5",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 3.99,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "motors",
+      "id": "SY42STH38-1684A",
+      "name": "SOYO SY42STH38-1684A (NEMA 17)",
+      "aliases": [
+        "NEMA 17",
+        "NEMA17"
+      ],
+      "info": {
+        "frame_family": "nema17",
+        "manufacturer": "SOYO",
+        "locator": "PDF page 1",
+        "coordinate_system": "Shaft center is origin; face viewed from shaft end."
+      },
+      "sizes": [
+        {
+          "key": "face_square",
+          "value": 42.3,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+          "limit": "maximum"
+        },
+        {
+          "key": "hole_pitch_xy",
+          "value": [
+            31,
+            31
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "hole_pitch_tolerance",
+          "value": [
+            -0.2,
+            0.2
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "hole_centers",
+          "value": [
+            [
+              -15.5,
+              -15.5
+            ],
+            [
+              15.5,
+              -15.5
+            ],
+            [
+              -15.5,
+              15.5
+            ],
+            [
+              15.5,
+              15.5
+            ]
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+          "status": "derived",
+          "derivation": "Square pattern centered on shaft; each coordinate is signed pitch/2."
+        },
+        {
+          "key": "hole_count",
+          "value": 4,
+          "unit": "count",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "pilot_boss_diameter",
+          "value": 22,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "pilot_boss_tolerance",
+          "value": [
+            -0.05,
+            0
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "hole_thread",
+          "value": "M3",
+          "unit": "designation",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "thread_depth",
+          "value": 4.5,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+          "limit": "nominal"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-15",
+      "name": "Apple iPhone 15",
+      "aliases": [
+        "iPhone 15"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 15"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 147.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111831",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 71.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111831",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111831",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-15-pro",
+      "name": "Apple iPhone 15 Pro",
+      "aliases": [
+        "iPhone 15 Pro"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 15 Pro"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 146.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111829",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 70.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111829",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.25,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111829",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "raspberry-pi",
+      "id": "pi4",
+      "name": "Raspberry Pi 4 Model B",
+      "aliases": [
+        "Raspberry Pi 4",
+        "Pi 4",
+        "RPi 4"
+      ],
+      "info": {
+        "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+        "locator": "PDF page 1",
+        "ports.USB-C power.edge": "bottom",
+        "ports.USB-C power.centerline_axis": "x",
+        "ports.micro-HDMI left.edge": "bottom",
+        "ports.micro-HDMI left.centerline_axis": "x",
+        "ports.micro-HDMI right.edge": "bottom",
+        "ports.micro-HDMI right.centerline_axis": "x",
+        "ports.CSI ribbon.edge": "internal",
+        "ports.CSI ribbon.centerline_axis": "x",
+        "ports.audio/video jack.edge": "bottom",
+        "ports.audio/video jack.centerline_axis": "x",
+        "ports.USB lower stack.edge": "right",
+        "ports.USB lower stack.centerline_axis": "y",
+        "ports.USB upper stack.edge": "right",
+        "ports.USB upper stack.centerline_axis": "y",
+        "ports.Ethernet.edge": "right",
+        "ports.Ethernet.centerline_axis": "y"
+      },
+      "sizes": [
+        {
+          "key": "outline_xy",
+          "value": [
+            85,
+            56
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB-C power.centerline",
+          "value": 11.2,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "Mount center x 3.5 plus spacing 7.7."
+        },
+        {
+          "key": "ports.micro-HDMI left.centerline",
+          "value": 26,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "3.5 + 7.7 + 14.8."
+        },
+        {
+          "key": "ports.micro-HDMI right.centerline",
+          "value": 39.5,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "3.5 + 7.7 + 14.8 + 13.5."
+        },
+        {
+          "key": "ports.CSI ribbon.centerline",
+          "value": 46.5,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "Right micro-HDMI center 39.5 plus spacing 7."
+        },
+        {
+          "key": "ports.audio/video jack.centerline",
+          "value": 54,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "CSI center 46.5 plus spacing 7.5."
+        },
+        {
+          "key": "ports.USB lower stack.centerline",
+          "value": 9,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB upper stack.centerline",
+          "value": 27,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.Ethernet.centerline",
+          "value": 45.75,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "mount_hole_centers",
+          "value": [
+            [
+              3.5,
+              3.5
+            ],
+            [
+              61.5,
+              3.5
+            ],
+            [
+              3.5,
+              52.5
+            ],
+            [
+              61.5,
+              52.5
+            ]
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "Left offset 3.5 plus horizontal pitch 58; lower offset 3.5 plus vertical pitch 49. For Zero 2 W right center is width 65 minus 3.5."
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 2.7,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "corner_radius",
+          "value": 3,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        }
+      ]
+    },
+    {
+      "category": "raspberry-pi",
+      "id": "pi5",
+      "name": "Raspberry Pi 5",
+      "aliases": [
+        "Pi 5",
+        "RPi 5"
+      ],
+      "info": {
+        "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+        "locator": "PDF page 1",
+        "ports.USB-C power.edge": "bottom",
+        "ports.USB-C power.centerline_axis": "x",
+        "ports.micro-HDMI left.edge": "bottom",
+        "ports.micro-HDMI left.centerline_axis": "x",
+        "ports.micro-HDMI right.edge": "bottom",
+        "ports.micro-HDMI right.centerline_axis": "x",
+        "ports.Ethernet.edge": "right",
+        "ports.Ethernet.centerline_axis": "y",
+        "ports.USB lower stack.edge": "right",
+        "ports.USB lower stack.centerline_axis": "y",
+        "ports.USB upper stack.edge": "right",
+        "ports.USB upper stack.centerline_axis": "y",
+        "accuracy": "Manufacturer labels all dimensions approximate and for reference only, unsuitable as production data."
+      },
+      "sizes": [
+        {
+          "key": "outline_xy",
+          "value": [
+            85,
+            56
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB-C power.centerline",
+          "value": 11.2,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.micro-HDMI left.centerline",
+          "value": 25.8,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.micro-HDMI right.centerline",
+          "value": 39.2,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.Ethernet.centerline",
+          "value": 10.2,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB lower stack.centerline",
+          "value": 29.1,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB upper stack.centerline",
+          "value": 47,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 2.7,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "mount_hole_pitch_xy",
+          "value": [
+            58,
+            49
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf",
+          "note": "Dimensioned 58 horizontal and 49 vertical on the drawing. The vertical edge offset is not dimensioned on this drawing, so no absolute hole centers are given."
+        }
+      ]
+    },
+    {
+      "category": "screw-holes",
+      "id": "M3",
+      "name": "M3 screw",
+      "aliases": [
+        "M3 bolt"
+      ],
+      "info": {
+        "thread_series": "coarse"
+      },
+      "sizes": [
+        {
+          "key": "clearance_close",
+          "value": 3.2,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_normal",
+          "value": 3.4,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_loose",
+          "value": 3.6,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        }
+      ]
+    },
+    {
+      "category": "spools",
+      "id": "polymaker-1kg-cardboard",
+      "name": "Polymaker 1 kg cardboard spool",
+      "aliases": [
+        "Polymaker 1 kg",
+        "Polymaker 1kg spool"
+      ],
+      "info": {
+        "material": "cardboard"
+      },
+      "sizes": [
+        {
+          "key": "nominal_capacity",
+          "value": 1,
+          "unit": "kg",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore",
+          "value": 55,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 200,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width",
+          "value": 65.6,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width_tolerance",
+          "value": [
+            -2,
+            2
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        }
+      ]
+    }
+  ]
+}

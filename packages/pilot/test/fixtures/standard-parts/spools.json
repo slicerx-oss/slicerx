@@ -1,0 +1,56 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Published Polymaker spool variants; capacity is not a universal dimensional standard. Check the actual supplied revision.",
+  "verified_note": "Only measurements whose value was re-read in the cited source at checked_utc. Mismatched, not-stated, unsourced and null items were removed. Verification time is the file-level checked_utc.",
+  "records": [
+    {
+      "id": "polymaker-1kg-cardboard",
+      "nominal_capacity": {
+        "value": 1,
+        "unit": "kg",
+        "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+      },
+      "bore": {
+        "value": 55,
+        "unit": "mm",
+        "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+      },
+      "bore_tolerance": {
+        "value": [
+          -1,
+          1
+        ],
+        "unit": "mm",
+        "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+      },
+      "outside_diameter": {
+        "value": 200,
+        "unit": "mm",
+        "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+      },
+      "outside_diameter_tolerance": {
+        "value": [
+          -1,
+          1
+        ],
+        "unit": "mm",
+        "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+      },
+      "width": {
+        "value": 65.6,
+        "unit": "mm",
+        "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+      },
+      "width_tolerance": {
+        "value": [
+          -2,
+          2
+        ],
+        "unit": "mm",
+        "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+      },
+      "material": "cardboard"
+    }
+  ]
+}

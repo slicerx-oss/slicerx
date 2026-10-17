@@ -11,6 +11,14 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 The SlicerX contributors"
 SPDX-License-Identifier = "Apache-2.0"
 
+# The standard parts table: published sizes and formulas restated as facts, each value with its source page
+# (source_url), for attribution. No text or drawings of the sources are copied; see its README.md.
+[[annotations]]
+path = ["packages/pilot/src/parts/generated/standard-parts.json", "packages/pilot/test/fixtures/standard-parts/**", "packages/pilot/test/fixtures/standard-parts.table.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The SlicerX contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
 # The makers' stock printer, filament and process profiles, from the profile resources of
 # OrcaSlicer and Bambu Studio.
 [[annotations]]

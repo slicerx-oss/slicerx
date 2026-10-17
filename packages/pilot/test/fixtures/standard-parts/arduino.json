@@ -1,0 +1,65 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Board mounting data transcribed from the official Arduino datasheet drawings (docs.arduino.cc). Uno overall outline is not dimensioned in the official datasheet and is intentionally absent.",
+  "records": [
+    {
+      "id": "arduino-uno-r3",
+      "manufacturer": "Arduino",
+      "model": "UNO R3 (A000066)",
+      "coordinate_system": "Mounting-hole drawing, view from top side. Origin at the top-left corner of the board outline as drawn, x right, y down. The drawing does not dimension the overall board length or width.",
+      "mount_hole_count": {
+        "value": 4,
+        "unit": "count",
+        "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+        "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "mount_hole_diameter": {
+        "value": 3.2,
+        "unit": "mm",
+        "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+        "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "mount_hole_top_left_xy": {
+        "value": [
+          15.24,
+          2.54
+        ],
+        "unit": "mm",
+        "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+        "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "mount_hole_right_upper_xy": {
+        "value": [
+          66.04,
+          17.78
+        ],
+        "unit": "mm",
+        "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+        "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "mount_hole_right_lower_xy": {
+        "value": [
+          66.04,
+          45.72
+        ],
+        "unit": "mm",
+        "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+        "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "mount_hole_bottom_left_y": {
+        "value": 50.8,
+        "unit": "mm",
+        "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+        "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+        "verified_utc": "2026-10-16T00:48:59Z",
+        "note": "Only the vertical distance from the top edge is dimensioned for this hole; its x position is not."
+      }
+    }
+  ]
+}

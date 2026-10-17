@@ -1,0 +1,42 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Vendor-specific holes; actual insert length, material and polymer must be chosen before use.",
+  "verified_note": "Only measurements whose value was re-read in the cited source at checked_utc. Mismatched, not-stated, unsourced and null items were removed. Verification time is the file-level checked_utc.",
+  "records": [
+    {
+      "id": "SPIROL-29-30-M3x0.5",
+      "thread": {
+        "value": "M3x0.5",
+        "unit": "designation",
+        "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+      },
+      "hole_diameter": {
+        "value": 3.99,
+        "unit": "mm",
+        "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+      },
+      "hole_diameter_tolerance": {
+        "value": [
+          0,
+          0.08
+        ],
+        "unit": "mm",
+        "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+      },
+      "locator": "PDF page 11, printed page 9",
+      "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+      "minimum_hole_depth": {
+        "value": "insert_length + 2 * thread_pitch",
+        "unit": "formula:mm",
+        "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+      },
+      "maximum_included_taper": {
+        "value": 1,
+        "unit": "degree",
+        "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+      },
+      "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+    }
+  ]
+}

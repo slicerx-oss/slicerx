@@ -22,6 +22,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "kb:build": "tsx scripts/build-kb.ts",
+    "parts:build": "tsx scripts/build-parts.ts",
     "eval": "tsx evals/cli.ts"
   },
   "dependencies": {

@@ -47,6 +47,8 @@ No SlicerX code is translated or copied from OrcaSlicer, Bambu Studio, PrusaSlic
 
 The settings schema (`packages/settings/schema.json`, `defaults.json`, `legacy.json`, `prusa-map.json`) holds setting names, types, ranges, defaults and the legacy renames OrcaSlicer and PrusaSlicer accept. These are interoperability facts, with labels and help text written for SlicerX, and they are Apache-2.0 like the rest of the settings package.
 
+The standard parts table (`packages/pilot/src/parts/generated/standard-parts.json`, read by `parts.lookup`) holds published sizes of common parts and products: bearings, stepper motor faces, screw holes, heat-set insert holes, boards, spools, phones, cells and gear formulas. Each value is a fact restated from a maker's datasheet, drawing or spec page, with that page in its `source_url`. No source text or drawing is copied, and none of the sources grants a data license, so the values are used as facts with attribution. The table is Apache-2.0 like the rest of the package.
+
 ## What this means for a build
 
 - `sx-core`, `sx` and `libslicerx` do not use `packages/profiles`. A program that links them, or ships the binaries, can use either license.
