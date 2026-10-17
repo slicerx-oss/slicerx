@@ -62,6 +62,7 @@ Files
   --out-dir <dir>          Where G-code and downloads go (default <tmp>/slicerx-mcp)
   --no-urls                Refuse http(s) model URLs
   --data-dir <dir>         Knowledge base and guides location (default: bundled)
+  --parts-table <file>     Standard parts table for slicerx_parts_lookup (default: bundled)
 
 Engine
   --engine auto|sx|stub    auto uses sx when found, else the stub estimator (default auto)
@@ -127,6 +128,7 @@ async function main(): Promise<void> {
       'out-dir': { type: 'string' },
       'no-urls': { type: 'boolean' },
       'data-dir': { type: 'string' },
+      'parts-table': { type: 'string' },
       engine: { type: 'string' },
       'sx-bin': { type: 'string' },
       'sx-geom-bin': { type: 'string' },
@@ -187,6 +189,7 @@ async function main(): Promise<void> {
 
   const ctx = await createContext({
     dataDir: values['data-dir'] ?? env('DATA_DIR') ?? process.env['SLICERX_DATA_DIR'],
+    partsTable: values['parts-table'],
     allowDirs,
     outDir: values['out-dir'] ?? env('OUT_DIR'),
     engine: engine as EngineMode,

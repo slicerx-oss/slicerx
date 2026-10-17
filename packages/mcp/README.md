@@ -37,6 +37,7 @@ Reading is always allowed. The permission class of the other tools decides what 
 | `slicerx_supports`, `slicerx_orientation_search`, `slicerx_mesh_repair`, `slicerx_hollow`, `slicerx_emboss`, `slicerx_scale_with_tolerance`, `slicerx_threads_and_fits`, `slicerx_smart_layer`, `slicerx_multicolor_assign`, `slicerx_region_modifiers` | The app's project operations: support settings for an object, the best rotation by slicing candidates, repair, hollow, emboss, scale while keeping holes and fits, threads and fits, variable layer heights, colors per region, and settings per region (a plan until the project can hold modifier volumes). Each changes the open project and says what it did; `slicerx_project_show` reads the result back. The mesh tools need `sx-geom`. | slice |
 | `slicerx_estimate`, `slicerx_calibrate`, `slicerx_diagnose` | Totals and schedule, calibration plans, and failure diagnosis from printer status and the knowledge base. | read |
 | `slicerx_kb_filament`, `slicerx_kb_printer`, `slicerx_kb_troubleshoot`, `slicerx_kb_workflow`, `slicerx_kb_search`, `slicerx_kb_intent` | mimir's knowledge tools, with citations. | read |
+| `slicerx_parts_lookup` | Published sizes of a standard part or product (a 608 bearing, a NEMA 17 motor face, an M3 clearance hole, a Raspberry Pi 4, an iPhone 15), each with its unit and source link, or not found with the nearest entries. For example `slicerx-mcp call parts_lookup '{"name":"608ZZ"}'`. | read |
 | `slicerx_settings_plan`, `slicerx_settings_apply` | mimir's settings planner, and applying values to the plate, the project or a saved profile. | read; slice or profile |
 | `slicerx_printer_list`, `slicerx_printer_status`, `slicerx_printer_snapshot` | Printers, their state and temperatures, and a camera image. | read |
 | `slicerx_printer_history` | A printer's past jobs as it keeps them (through sx-link): file name, result, start and end time, duration. | read |
@@ -328,6 +329,7 @@ Use the design and step ids from `design_list` and `design_steps`. A null bindin
 | `--log <file>` | `SLICERX_MCP_LOG` | `<out-dir>/actions.jsonl` |
 | `--profiles-dir <dir>` | `SLICERX_MCP_PROFILES_DIR` | `~/.config/slicerx/profiles` |
 | `--data-dir <dir>` | `SLICERX_MCP_DATA_DIR` or `SLICERX_DATA_DIR` | bundled `data/`, else the clone |
+| `--parts-table <file>` | (flag only) | the standard parts table bundled with mimir, read by `slicerx_parts_lookup` |
 
 ## Volumes in the open app
 
