@@ -86,6 +86,7 @@ export interface OverlaySelectors {
 }
 
 const VARS = ['--overlay-bottom', '--overlay-top', '--overlay-center', '--overlay-width'] as const
+const SLIDE_ENDS = ['transitionend', 'transitioncancel', 'animationend'] as const
 
 /** Keeps the toast offsets current while `viewport` is mounted. Unmounting puts the defaults back. */
 export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, selectors: OverlaySelectors = { bottom: '.hud-bl, .dock' }): void {
@@ -142,7 +143,10 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
     const studio = vp.parentElement
     const slides = new MutationObserver(queue)
     if (cover && studio) for (const el of Array.from(studio.children)) if (el !== vp) slides.observe(el, { attributes: true, attributeFilter: ['class', 'style'] })
-    if (cover) studio?.addEventListener('transitionend', queue)
+    // A control that only moves (the plate pills rising over an open bottom panel) resizes nothing either, and neither
+    // does a sliding sheet: the place is measured again when the slide stops.
+    const slid = (cover ? studio : null) ?? vp
+    for (const e of SLIDE_ENDS) slid.addEventListener(e, queue)
     // A chat pane opens, shuts or is resized outside the viewport's tree: the app root's data-mimir flips, and the
     // pane itself is watched for size while it is up.
     const app = chat ? vp.closest('.app') : null
@@ -164,7 +168,7 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
       mo.disconnect()
       slides.disconnect()
       chats.disconnect()
-      studio?.removeEventListener('transitionend', queue)
+      for (const e of SLIDE_ENDS) slid.removeEventListener(e, queue)
       window.removeEventListener('resize', queue)
       window.removeEventListener('scroll', queue)
       for (const v of VARS) root.style.removeProperty(v)
