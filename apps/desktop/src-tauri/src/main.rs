@@ -161,6 +161,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             prefs::prefs_save,
             slicing::load_mesh,
+            slicing::review_scripts,
             slicing::slice,
             slicing::cancel_slice,
             slicing::get_preview,

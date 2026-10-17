@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Projects another slicer wrote and the person's own, opened on the person's A1 mini, on one page: Bambu Studio's -1
-// values, a project's import report, a project with its own start G-code, a P1S 0.2 project that opens as its own
+// values, a project's import report, a project with its own start G-code, a cosmetic stock script, a P1S 0.2 project that opens as its own
 // printer, the saved .sx3mf and its metadata, and the CAD-only build's real STL download. Each project is made here (projectZip). Each step starts over
 // with the example plate on the A1 mini and opens its own project.
 import { readFileSync } from 'node:fs'
@@ -187,6 +187,30 @@ test.describe("a project's own G-code", () => {
     if (before) await page.setViewportSize(before)
     await page.evaluate((t) => (window as unknown as Theme).__sx.setState(t), theme)
   }
+
+  test('a cosmetic stock script keeps its text and slices without person approval', async ({ page }) => {
+    try {
+      const text = '  M400 U1 ; pause\r\n'
+      await fresh(page)
+      await openProject(page, 'bracket.sx3mf', { printer_model: 'Bambu Lab A1 mini', gcode_flavor: 'marlin', machine_pause_gcode: text }, [90, 90])
+      const read = () => page.evaluate(() => {
+        const state = (window as unknown as { __sx: { getState(): {
+          overrides: Record<string, unknown>; vouchedGcode: Record<string, unknown>;
+          projectScriptReviews: { records: { review: { decision: string } }[] } | null;
+        } } }).__sx.getState()
+        return { text: state.overrides.machine_pause_gcode, vouched: state.vouchedGcode.machine_pause_gcode, decision: state.projectScriptReviews?.records[0]?.review.decision }
+      })
+      await expect.poll(read).toEqual({ text, vouched: undefined, decision: 'cosmetic' })
+      const before = await sliceCount(page)
+      await page.getByRole('button', { name: 'Slice plate' }).click()
+      await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
+      await expect(page.getByTestId('project-gcode-dialog')).toBeHidden()
+      expect(await read()).toEqual({ text, vouched: undefined, decision: 'cosmetic' })
+    } finally {
+      // The project's script stays among the person's own settings after a new project; the tests after this one start without it.
+      await setState(page, { overrides: {}, vouchedGcode: {} })
+    }
+  })
 
   test("a project's own G-code asks in one line, with the differences folded until opened", async ({ page }) => {
     test.slow()

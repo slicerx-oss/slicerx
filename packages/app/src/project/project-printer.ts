@@ -13,6 +13,7 @@ import { slotConfig } from '../filament/slot-config'
 import { profileReady } from '../state/profile-sync'
 import { isExportOnly } from '../lib/hand-printers'
 import { gcodeValues } from '../state/project-gcode'
+import { recognizedScript } from './script-review'
 import { appStore, get, set, setWorkspace, toast, type AppState, type ProjectPrinter, type ToastAction } from '../state/store'
 import { profileIdFor } from '../workspaces/prepare/printer-base'
 
@@ -157,13 +158,15 @@ export function applyProjectSettings(source: string, settings: Record<string, un
   // Its machine G-code, on its own printer. Text with lines the checker never allows stays the profile's.
   const project = importFlat(Object.fromEntries(Object.entries(settings).filter(([k]) => GCODE_TEXT_KEYS.includes(k)))).config as Record<string, unknown>
   const review = reviewProjectGcode({ project, profile: { ...resolveConfig(s.easy, s.overrides), ...slotConfig(s) }, model: s.profile?.printerId, limits: s.profile?.limits })
-  const gcode = gcodeValues(review.changes.filter((c) => c.approvable))
-  const blocked = review.changes.filter((c) => !c.approvable)
+  const recognized = new Set(Object.entries(project).filter(([key, value]) => recognizedScript(key, value, s.profile?.printerId, { ...s.overrides, ...applied }, s.projectScriptReviews?.records ?? [])).map(([key]) => key))
+  const gcode = gcodeValues(review.changes.filter((c) => c.approvable || recognized.has(c.key)))
+  const vouched = gcodeValues(review.changes.filter((c) => c.approvable && !recognized.has(c.key)))
+  const blocked = review.changes.filter((c) => !c.approvable && !recognized.has(c.key))
   set((st) => ({
     overrides: { ...st.overrides, ...applied, ...gcode },
-    vouchedGcode: { ...st.vouchedGcode, ...gcode },
+    vouchedGcode: { ...st.vouchedGcode, ...vouched },
     projectGcode: null,
-    projectPrinter: st.projectPrinter ? { ...st.projectPrinter, gcodeKeys: Object.keys(gcode) } : null,
+    projectPrinter: st.projectPrinter ? { ...st.projectPrinter, gcodeKeys: Object.keys(gcode), recognizedGcodeKeys: [...recognized] } : null,
     goal: 'custom' as const,
   }))
   let note = match.asked
@@ -207,7 +210,7 @@ export function returnToProjectPrinter(): void {
   const pp = get().projectPrinter
   if (!pp?.parked) return
   const parked = pp.parked
-  const gcode = Object.fromEntries(Object.entries(parked).filter(([k]) => pp.gcodeKeys.includes(k)))
+  const gcode = Object.fromEntries(Object.entries(parked).filter(([k]) => pp.gcodeKeys.includes(k) && !pp.recognizedGcodeKeys?.includes(k)))
   set((s) => ({ overrides: { ...s.overrides, ...parked }, vouchedGcode: { ...s.vouchedGcode, ...gcode }, projectPrinter: { ...pp, parked: null } }))
 }
 

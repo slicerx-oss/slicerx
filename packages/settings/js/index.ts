@@ -35,6 +35,7 @@ export { BundleError, MAX_BUNDLE_PRESETS, MAX_PRESET_BYTES, importPresetFiles, p
 export type { ImportedPreset, ImportOptions, PresetBundle, PresetFile } from './presetfile'
 export { printerForPresetName, printerForProfile, printerName, processForProfile, vendorParent } from './vendorparent'
 export type { VendorParent } from './vendorparent'
+export { scriptDeclarations } from './script-identity'
 export type { PrusaPreset } from './prusa'
 export { ConditionError, evaluateCondition } from './conditions'
 export { FILAMENT_LIBRARY_VENDOR, filamentsForPrinter, isCompatibleWithPrint, isCompatibleWithPrinter, libraryExclusions, printerContext } from './compat'

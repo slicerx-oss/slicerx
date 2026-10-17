@@ -78,6 +78,41 @@ pub extern "C" fn sx_error_len() -> u32 {
     with(|s| u32::try_from(s.error.len()).unwrap_or(0))
 }
 
+/// canonicalizes the input script with the same parser as the native command.
+#[unsafe(no_mangle)]
+pub extern "C" fn sx_canonical_script() -> u32 {
+    let result = with(|s| {
+        let text = std::str::from_utf8(&s.input).map_err(|e| e.to_string())?;
+        let value = match sx_core::script_canonical::canonicalize(text) {
+            Ok(script) => serde_json::to_value(script).map_err(|e| e.to_string())?,
+            Err(reason) => {
+                serde_json::json!({"version": 1, "error": "script_review_required", "reason": reason})
+            }
+        };
+        s.out[2] = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    });
+    match result {
+        Ok(()) => 0,
+        Err(reason) => fail(reason),
+    }
+}
+
+/// reads a script review request and returns the shared decision in output 2.
+#[unsafe(no_mangle)]
+pub extern "C" fn sx_review_script() -> u32 {
+    let result = with(|s| {
+        let input = serde_json::from_slice(&s.input).map_err(|e| e.to_string())?;
+        let review = sx_core::script_review::review_known(&input)?;
+        s.out[2] = serde_json::to_vec(&review).map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    });
+    match result {
+        Ok(()) => 0,
+        Err(reason) => fail(reason),
+    }
+}
+
 /// Address of output `which` (0 G-code, 1 SXPV, 2 JSON info, 3 mesh parts).
 #[unsafe(no_mangle)]
 pub extern "C" fn sx_out_ptr(which: u32) -> u32 {

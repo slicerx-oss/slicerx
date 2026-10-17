@@ -3,6 +3,7 @@
 // Messages between the pool and its workers.
 
 import type { Collision, CollisionFix, FilamentMapInfo, PrimeTowerPlacement, VaryLayerCost } from '@slicerx/contracts'
+import type { ScriptReview, ScriptReviewInput } from '@slicerx/contracts'
 
 export type ToWorker =
   | { type: 'init'; module: WebAssembly.Module; warmUp: boolean }
@@ -10,6 +11,7 @@ export type ToWorker =
   | { type: 'release'; meshId: string }
   | { type: 'parts'; call: number; meshId: string }
   | { type: 'metadata'; call: number; fileName: string; data: ArrayBuffer }
+  | { type: 'reviewScripts'; call: number; inputs: ScriptReviewInput[] }
   | { type: 'slice'; call: number; request: string; shard: number; shards: number }
   | { type: 'finalize'; call: number; data: ArrayBuffer; thumbnail?: { width: number; height: number; rgba: ArrayBuffer }; request?: string; collide?: string }
 
@@ -49,6 +51,7 @@ export type FromWorker =
   | { type: 'loaded'; call: number; info: MeshInfo }
   | { type: 'parts'; call: number; data: ArrayBuffer }
   | { type: 'metadata'; call: number; info: unknown }
+  | { type: 'reviewScripts'; call: number; reviews: ScriptReview[] }
   | { type: 'sliced'; call: number; gcode: ArrayBuffer; sxpv: ArrayBuffer; info: ShardInfo; ms: number }
   | { type: 'finalized'; call: number; data: ArrayBuffer; format: 'gcode' | 'bgcode'; timeS?: number; prepareS?: number; layerTimeS?: number[]; fileName?: string; layerLines?: number[]; progressLines?: number[]; collisions?: Collision[]; collisionFixes?: CollisionFix[] }
   | { type: 'error'; call: number; message: string }

@@ -131,6 +131,7 @@ export function overallProgress(): (stage: SliceStage, fraction: number) => numb
 export function createTauriSlicer(): SlicerHost {
   return {
     loadModel: (data, fileName) => load(new Uint8Array(data), fileName),
+    reviewScripts: (inputs) => invoke('review_scripts', { inputs }),
     loadParts: (name, parts) => load(encodeParts(parts), `${name}.sxmp`),
     async slice(req: SliceRequest, opts): Promise<SliceResult> {
       const started = performance.now()

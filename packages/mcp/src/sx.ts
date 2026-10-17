@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { accessSync, constants, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, delimiter, extname, join } from 'node:path'
-import type { SettingValue } from '@slicerx/contracts'
+import type { SettingValue, ScriptReview, ScriptReviewInput } from '@slicerx/contracts'
 import { collisionError } from './collide'
 import { ToolInputError } from './models'
 import type { SlicerBackend, SliceSummary } from './slicer'
@@ -56,9 +56,11 @@ export function findSx(explicit?: string): string | undefined {
   return findBinary('sx', explicit, [process.env['SLICERX_SX_BIN']])
 }
 
-function run(bin: string, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
+function run(bin: string, args: string[], timeoutMs: number, input?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs })
+    const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs, windowsHide: true })
+    child.stdin.on('error', reject)
+    child.stdin.end(input)
     let stdout = ''
     let stderr = ''
     child.stdout.setEncoding('utf8').on('data', (d: string) => (stdout += d))
@@ -160,7 +162,20 @@ function featureFilaments(reported: { object?: string; features?: Record<string,
  * JSON carries the time, filament per slot (length and grams) and warnings.
  */
 export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBackend {
+  async function reviewScripts(inputs: ScriptReviewInput[]): Promise<ScriptReview[]> {
+    if (inputs.length === 0) return []
+    const result = await run(bin, ['review-script', '-', '--batch'], Math.min(timeoutMs, 30_000), JSON.stringify(inputs))
+    if (result.code !== 0) throw new ToolInputError('The engine could not review the printer scripts', 'engine_unavailable')
+    let reviews: unknown
+    try { reviews = JSON.parse(result.stdout) } catch { throw new ToolInputError('The engine returned an unreadable script review', 'engine_unavailable') }
+    if (!Array.isArray(reviews) || reviews.length !== inputs.length || reviews.some((r) => !r || r.schemaVersion !== 1 || !['exact', 'cosmetic', 'review'].includes(r.decision) || typeof r.reason !== 'string')) throw new ToolInputError('The engine returned an unsupported script review', 'engine_unavailable')
+    return reviews as ScriptReview[]
+  }
   return {
+    reviewScripts,
+    async reviewScript(input) {
+      return (await reviewScripts([input]))[0]!
+    },
     kind: 'sx',
     async slice(job) {
       mkdirSync(job.outDir, { recursive: true })
