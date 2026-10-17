@@ -166,18 +166,31 @@ jobs:
       # Windows, devkit, and the jobs no queue run has. A skipped check counts as green for releases
       # (scripts/ci/require-green.sh). Any other push (an earlier commit of a group, or one made outside the queue), or
       # a lookup that fails, runs everything.
+      # The queue merges as soon as the required checks pass, while jobs it does not wait for (brep) may still be
+      # running, so the merge_group run is often not finished yet when this push starts. Asking for a finished,
+      # successful run missed most queued commits and ran the whole Linux set again; this asks whether the jobs this
+      # push would skip passed in that run (latest attempt), finished or not.
       - id: q
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          runs="repos/$GITHUB_REPOSITORY/actions/runs?event=merge_group&status=success&head_sha=$GITHUB_SHA"
-          n=$(gh api "$runs" --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length' 2>/dev/null) || n=0
-          if [ "${n:-0}" -gt 0 ] 2>/dev/null; then
-            echo "queued=true" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Tested in the merge queue::${GITHUB_SHA:0:8} passed a merge_group run; its Linux jobs skip"
-          else
-            echo "queued=false" >> "$GITHUB_OUTPUT"
+          queued=false
+          ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=merge_group&head_sha=$GITHUB_SHA" \
+            --jq '.workflow_runs[] | select(.path == ".github/workflows/ci.yml") | .id' 2>/dev/null) || ids=
+          for id in $ids; do
+            jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?filter=latest&per_page=100" \
+              --jq '.jobs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null) || continue
+            ok=true
+            for name in web wasm licenses 'rust (ubuntu-latest)'; do
+              row=$(awk -F'\t' -v n="$name" '$1 == n { print $2 " " $3 }' <<< "$jobs")
+              case $row in "completed success" | "completed skipped") ;; *) ok=false ;; esac
+            done
+            if [ "$ok" = true ]; then queued=true; break; fi
+          done
+          echo "queued=$queued" >> "$GITHUB_OUTPUT"
+          if [ "$queued" = true ]; then
+            echo "::notice title=Tested in the merge queue::${GITHUB_SHA:0:8} passed web, wasm, licenses and rust (ubuntu-latest) in merge_group run $id; those jobs and brep skip"
           fi
 
   web:
