@@ -11,12 +11,14 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
+import type { Page } from '@playwright/test'
 import type { TopologyManifest } from '../../../../packages/cad-history/src/topology-manifest'
 import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
-import { viewSized, viewportReady } from '../fixtures'
+import { sliced, tab, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
-import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, type Answer } from './lib/links'
+import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
+import { boxOnPlate, calm, layeredX, patch, plain } from './lib/slice'
 
 test.use({ journeyPrefs: linkPrefs })
 test.skip(linkMissing, 'SX_LINK_BIN is not set')
@@ -431,6 +433,67 @@ test('scoped exact hole edits use app revisions across a visible undo', async ({
       ;(window as unknown as { __sx: { setState(v: unknown): void } }).__sx.setState({ settingsMode: mode })
     }, mode)
   }
+})
+
+/** An app that has sliced nothing: the example plate (or a 20 mm box) on the Slice tab with no result, as a client finds it before the first slice. */
+async function unsliced(page: Page, plate: 'layered' | 'box' = 'layered'): Promise<void> {
+  // The printer stays as the example plate set it; `calm` would put back the one the page was first showing.
+  await calm(page, 'advanced', { keepPrinter: true })
+  await plain(page)
+  if (plate === 'box') await boxOnPlate(page)
+  else await layeredX(page)
+  await patch(page, { slice: { status: 'idle' }, preview: null })
+  await expect(page.getByRole('button', { name: 'Slice plate', exact: true })).toBeVisible()
+}
+
+test('a read client controls the live slice preview through MCP and native CLI with independent read-back', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page, 'box')
+  const look = { showToolhead: await sx.get(page, 'showToolhead'), showGantry: await sx.get(page, 'showGantry'), colorMode: await sx.get(page, 'colorMode'), camera: await sx.get(page, 'camera') }
+  await scratch('preview', async (dir) => {
+    const reader = await session(link, page, dir, 'preview-reader', 'read')
+    try {
+      const empty = await reader.ok('app_preview')
+      expect(empty).toMatchObject({ sliced: false, toolpaths: false })
+      expect(empty.range).toBeUndefined()
+      expect(await reader.call('app_preview_set', { layer: 1 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      expect(await reader.ok('app_preview')).toEqual(empty)
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page)).toBeVisible({ timeout: 120_000 })
+      const initial = await reader.ok('app_preview')
+      expect(initial).toMatchObject({ sliced: true, toolpaths: true })
+      expect(initial.layers).toBeGreaterThan(6)
+      const history = await reader.ok('app_history')
+      expect(await reader.call('app_preview_set', { layer: initial.layers + 1, camera: 'top', toolhead: false })).toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } })
+      expect(await reader.ok('app_preview')).toEqual(initial)
+      const settings = { range: [2, 6], oneLayer: true, colorMode: 'speed', camera: 'front', toolhead: false, gantry: true }
+      expect(await reader.ok('app_preview_set', settings)).toMatchObject({ range: [6, 6], oneLayer: true, colorMode: 'speed', camera: 'front', toolhead: false, gantry: true })
+      expect(await reader.ok('app_preview')).toMatchObject({ range: [6, 6], colorMode: 'speed' })
+      await expect(page.locator('#pv-layer')).toHaveValue('6')
+      await expect(page.getByTestId('pv-show-toolhead')).not.toBeChecked()
+      await expect(page.getByTestId('pv-show-gantry')).toBeChecked()
+      await page.getByRole('button', { name: 'Next layer', exact: true }).click()
+      expect(await reader.ok('app_preview')).toMatchObject({ range: [6, 7], oneLayer: false })
+
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_preview_set', { layer: 4, oneLayer: false, colorMode: 'flow', toolhead: true }, 'app_preview')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) expect(row).toMatchObject({ ok: true, output: { output: { range: [1, 4], oneLayer: false, colorMode: 'flow', toolhead: true } } })
+          expect(await reader.ok('app_preview')).toMatchObject(rows[1].output.output)
+          await expect(page.locator('#pv-layer')).toHaveValue('4')
+        })
+      }
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await tab(page, 'model').click()
+      expect(await reader.call('app_preview_set', { layer: 2 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await expect(tab(page, 'model')).toHaveAttribute('aria-current', 'page')
+    } finally {
+      await reader.close()
+      // The Preview switches are the person's; the next test finds them as a first slice leaves them.
+      await sx.set(page, look)
+    }
+  })
 })
 
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the

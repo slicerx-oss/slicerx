@@ -36,6 +36,7 @@ import { appViewportTools } from './app-viewport'
 import { mimirAskTools } from './mimir-ask'
 import { appVolumeTools } from './app-volumes'
 import { appPlateTools } from './app-plates'
+import { appPreviewTools } from './app-preview'
 import { appValueTools } from './app-values'
 import { appHistoryTools } from './app-history'
 import { NO_ENGINE_HOST, designToolset } from './toolset'
@@ -199,8 +200,8 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   // The app's plates, and showing one of them as its plate picker does.
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   const history = appHistoryTools(appLink, productName())
-  // View preferences and live viewport telemetry.
-  const look = [...appLookTools(appLink, productName()), ...appViewportTools(appLink, productName())]
+  // View preferences, live viewport telemetry and the slice preview.
+  const look = [...appLookTools(appLink, productName()), ...appViewportTools(appLink, productName()), ...appPreviewTools(appLink, productName())]
   // The open sketch's dimension boxes, read and set as the person types them on the shape.
   const sketchBoxes = appSketchTools(appLink, productName())
   // Model's Select Other: what is under a spot of the view, and picking one of those things.
