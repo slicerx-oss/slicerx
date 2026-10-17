@@ -27,6 +27,13 @@ const dirOf = (file, dirs) => dirs.filter((d) => file === d || file.startsWith(`
 // run unless their own file changed or --slow is given. CI runs them on every push to main.
 export const slowTests = { 'sx-core': ['firmware', 'requests', 'cancel_rerun', 'session_cache', 'organic2'] }
 
+// A change is wide when it touches this many files, Node packages or crates, or any lockfile, root manifest, workflow or
+// e2e harness file. The plan then says where a full run comes from.
+const wideFileCount = 40
+const widePackageCount = 5
+const wideCrateCount = 4
+export const fullCiHint = 'This change is wide. For a full run, open or update the pull request and add the `full-ci` label: GitHub\'s hosted runners run the whole suite, and nothing waits for a shared machine.'
+
 // Ports the e2e config and the shared machines already use, never handed out here.
 const takenPorts = new Set([4317, 4417, 4418, 4525, 4535, 4717, 4817, 4917, 5017, 5117])
 
@@ -254,7 +261,11 @@ export function plan(files, { base = root, pkgs = nodePackages(base), rust = cra
   if (list.length) playwright.push({ what: 'specs', args: ['playwright', 'test', ...list, '--project=desktop', ...(phone ? ['--project=phone'] : [])] })
   if ((smoke || harnessChanged) && journeys.rows.length) playwright.push({ what: 'smoke', args: ['playwright', 'test', 'e2e/journeys', '--grep', '@smoke', '--project=desktop'] })
 
-  if (files.some((f) => wide.test(f))) notes.push('A lockfile, a root manifest or a workflow changed. That reaches every package: test what you meant to change here and let CI run the rest.')
+  const wideFiles = files.some((f) => wide.test(f))
+  if (wideFiles) notes.push('A lockfile, a root manifest or a workflow changed. That reaches every package: test what you meant to change here and let CI run the rest.')
+  // A change this size is for GitHub's runners, not for this machine's tests.
+  const wideChange = wideFiles || harnessChanged || files.length >= wideFileCount || vitest.length >= widePackageCount || cargo.length >= wideCrateCount
+  if (wideChange) notes.push(fullCiHint)
   if (!files.length) notes.push('No changed files.')
   return { files, vitest, cargo, playwright, notes }
 }

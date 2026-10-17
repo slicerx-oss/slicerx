@@ -560,6 +560,7 @@ When you change the SlicerX repository itself (a Path A fork, or a fix you send 
 - Run browser tests on a build machine, under `scripts/ci/heavy.sh --e2e` when others share it, on your own `SX_E2E_PORT`.
 - One Playwright run per change. After a failure, rerun only the failing test (`-g "<title>"`).
 - `--repeat-each` is for a test you added or changed, never for whole journeys.
+- For a full run, open or update the pull request and add the `full-ci` label: GitHub's hosted runners run the whole suite.
 - Leave the rest to CI, and reproduce a CI failure with the one test it names: `playwright test e2e/<file>.spec.ts:<line> --project=<desktop|phone>` or `cargo test -p <crate> --test <binary> <test name>`.
 
 ## Optional: cloud and locked projects

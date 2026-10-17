@@ -82,6 +82,7 @@ Rules for coding agents. Test time on the shared machines is the scarce part of 
 - One Playwright run per change. When a test fails, fix it and rerun that test alone with `-g "<title>"`, not the whole set again.
 - Use `--repeat-each` only on a test you added or changed, to show it is stable. Never on whole journeys.
 - Leave everything else to CI. Push, then read the CI result before running anything wider.
+- To get a full run (the whole Playwright and Rust suites), open or update the pull request and add the `full-ci` label. GitHub's hosted runners run it, so it does not wait for a shared machine.
 - To reproduce a CI failure, run the one test the report names: `scripts/ci/heavy.sh --e2e pnpm --filter @slicerx/web exec playwright test e2e/<file>.spec.ts:<line> --project=<desktop|phone>`, or `cargo test -p <crate> --test <binary> <test name>` for Rust.
 
 ## Before you open the pull request

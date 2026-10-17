@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { crates, e2ePort, loadJourneys, nodePackages, plan } from './test-affected.mjs'
+import { crates, e2ePort, fullCiHint, loadJourneys, nodePackages, plan } from './test-affected.mjs'
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'test-affected.mjs')
 const dirs = []
@@ -152,6 +152,14 @@ test('docs alone plan nothing, and a lockfile says CI covers the rest', () => {
   const d = cmds(['docs/a.md', 'packages/app/README.md'])
   assert.deepEqual([d.vitest, d.cargo, d.playwright], [[], [], []])
   assert.match(cmds(['pnpm-lock.yaml']).notes.join('\n'), /lockfile/)
+})
+
+test('a wide change points at the full-ci label, a small one does not', () => {
+  assert.ok(cmds(['pnpm-lock.yaml']).notes.includes(fullCiHint))
+  assert.ok(cmds(['apps/web/e2e/fixtures.ts']).notes.includes(fullCiHint))
+  assert.ok(cmds(Array.from({ length: 40 }, (_, i) => `docs/page-${i}.md`)).notes.includes(fullCiHint))
+  assert.ok(!cmds(['packages/app/src/plate/arrange.ts']).notes.includes(fullCiHint))
+  assert.match(fullCiHint, /full-ci/)
 })
 
 test('the e2e port is stable for a path and never one the shared machines use', () => {
