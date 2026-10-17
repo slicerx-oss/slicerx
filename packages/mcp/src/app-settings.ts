@@ -13,7 +13,7 @@ export function appSettingsTools(link: AppLinkCaller | undefined, appName: strin
     version: '1.0.0',
     source: 'settings',
     permission: 'read',
-    description: `Read project print settings in ${appName}: explicit overrides and effective values for the shown plate, including filament calibration and plate choices. shadowed lists overrides superseded by those choices. supported lists numeric, switch and choice process and filament keys, plus checked infill rotation templates and extra solid layers; scripts, free text and printer settings are omitted. Optional keys narrows the values. Change or clear overrides with project.set_overrides and --app. Requires the open app with its link on.`,
+    description: `Read project print settings in ${appName}: explicit overrides and effective values for the shown plate, including filament calibration and plate choices. shadowed lists overrides superseded by those choices. supported lists editable numeric, switch and choice process and filament keys, plus checked infill rotation templates and extra solid layers. readOnly lists plate type, filament mapping, print order and flush keys supplied by their own controls. Scripts, free text and printer settings are omitted. Optional keys narrows the values. Change or clear overrides with project.set_overrides and --app. Requires the open app with its link on.`,
     input: projectSettingsReadInput,
     async run(i) {
       if (!link) throw new ToolInputError(`Open ${appName} with its app link on and start this server with --printers link.`, 'not_configured')

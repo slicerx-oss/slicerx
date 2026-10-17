@@ -15,7 +15,7 @@ import type { Page } from '@playwright/test'
 import type { TopologyManifest } from '../../../../packages/cad-history/src/topology-manifest'
 import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
-import { sliced, tab, viewSized, viewportReady } from '../fixtures'
+import { sliceCount, sliced, tab, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
 import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
 import { boxOnPlate, calm, handPrinter, layeredX, patch, plain } from './lib/slice'
@@ -766,6 +766,74 @@ test('plate edits through the hub preserve read grants, read back objects, and s
   } finally {
     await cleanPlate(page)
   }
+})
+
+test('clients edit and reset live print settings, the panel reads them back, and the real slice uses them', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page)
+  type Settings = { overrides: Record<string, unknown>; effective: Record<string, unknown>; shadowed: string[] }
+  const was = await sx.get(page, 'overrides')
+  await scratch('settings', async (dir) => {
+    const reader = await session(link, page, dir, 'settings-reader', 'read')
+    try {
+      expect(await reader.call('project_set_overrides', { changes: { wall_loops: 5 } })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+    } finally {
+      await reader.close()
+    }
+    const editor = await session(link, page, dir, 'settings-editor', 'edit')
+    try {
+      const call = (name: string, args = {}): Promise<Settings> => editor.ok(name, args)
+      const initial = await call('app_settings', { keys: ['layer_height', 'wall_loops'] })
+      await call('project_set_overrides', { changes: { layer_height: 0.24, wall_loops: 4 } })
+      expect((await call('app_settings', { keys: ['layer_height', 'wall_loops'] })).effective).toEqual({ layer_height: 0.24, wall_loops: 4 })
+      await page.keyboard.press('ControlOrMeta+k')
+      await page.locator('.sx-palette-input').fill('layer height')
+      await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+      const row = page.locator('#expert-panel').getByLabel('Layer height', { exact: true })
+      await expect(row).toHaveValue('0.24')
+      await row.fill('0.28')
+      await row.press('Enter')
+      expect((await call('app_settings', { keys: ['layer_height'] })).effective.layer_height).toBe(0.28)
+      const before = await call('app_settings')
+      expect(await editor.call('project_set_overrides', { changes: { wall_loops: 8, missing_key: 1 } })).toMatchObject({ isError: true })
+      expect((await call('app_settings')).overrides).toEqual(before.overrides)
+      const commands = [
+        ['project_set_overrides', { clear: ['layer_height'] }],
+        ['app_settings', { keys: ['layer_height', 'wall_loops'] }],
+        ['project_set_overrides', { changes: { layer_height: 0.2, initial_layer_print_height: 0.2, smart_layer: 'off' } }],
+        ['app_settings', { keys: ['layer_height', 'smart_layer'] }],
+      ] as const
+      const answers: Settings[] = []
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, editor.clientKey!, async (run) => {
+          const lines = await run(...commands.flat())
+          expect(lines).toHaveLength(commands.length)
+          for (const line of lines) {
+            expect(line.ok, JSON.stringify(line)).toBe(true)
+            answers.push(line.output.output as Settings)
+          }
+        })
+      } else {
+        for (const [name, args] of commands) answers.push(await call(name, args))
+      }
+      expect(answers[1]!.overrides).toEqual({ wall_loops: 4 })
+      expect(answers[1]!.effective.layer_height).toBe(initial.effective.layer_height)
+      expect(answers[3]!.effective).toEqual({ layer_height: 0.2, smart_layer: 'off' })
+      expect((await call('app_settings', { keys: ['layer_height', 'smart_layer'] })).effective).toEqual(answers[3]!.effective)
+      const count = await sliceCount(page)
+      await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
+      await expect(sliced(page, count)).toBeVisible({ timeout: 120_000 })
+      await page.evaluate(() => Reflect.deleteProperty(window, 'showSaveFilePicker'))
+      const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
+      const gcode = readFileSync((await download.path())!, 'utf8')
+      expect(gcode).toMatch(/^; layer_height = 0\.2$/m)
+      expect(gcode).toMatch(/^; wall_loops = 4$/m)
+      expect(gcode).toMatch(/^G1 .*E[0-9]/m)
+    } finally {
+      await editor.close()
+      await sx.set(page, { overrides: was })
+    }
+  })
 })
 
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the
