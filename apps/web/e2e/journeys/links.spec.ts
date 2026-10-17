@@ -625,7 +625,8 @@ test('clients keep real dimensions with visible read-back, permissions, native C
       await page.getByRole('button', { name: 'Done', exact: true }).click()
       await editor.ok('project_scale', { object: id, scale: [1, 1, 2] })
       expect((await read()).dimensions[0].value).toBeCloseTo(height * 2)
-      const undo = page.getByTestId('plate-tools-group').getByRole('button', { name: 'Undo', exact: true })
+      // The test is on the Model tab, where the plate toolbar is not mounted; its Undo is the ribbon's quick button.
+      const undo = page.locator('.rb-quick').getByRole('button', { name: 'Undo', exact: true })
       await undo.click()
       expect((await read()).dimensions[0].value).toBeCloseTo(height)
       if (process.platform === 'win32') {
