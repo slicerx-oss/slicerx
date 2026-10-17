@@ -1,0 +1,1 @@
+a picked shape shows its sizes in boxes and not twice | subydoo-ci | 2026-10-17 | 2026-10-18 | https://github.com/slicerx-oss/slicerx/issues/1258 | cad-sketch journey on GitHub runners: passed only on retry on #1255 and this PR (e2e desktop 2/6); does not reproduce on the PC
