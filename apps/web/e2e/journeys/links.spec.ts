@@ -557,6 +557,101 @@ test('a read client changes the real Model pick filter and reads UI picks throug
   })
 })
 
+test('clients keep real dimensions with visible read-back, permissions, native CLI and toolbar Undo', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page, 'design')
+  await scratch('dimensions', async (dir) => {
+    const editor = await session(link, page, dir, 'dimension-editor', 'edit')
+    try {
+      const prior = await editor.ok('app_history')
+      const known = new Set(prior.plates.flatMap((p: { objects: { id: string }[] }) => p.objects.map((o) => o.id)))
+      await command(page, 'Add a box')
+      const added = async () => {
+        const current = await editor.ok('app_history')
+        return current.plates.flatMap((p: { objects: { id: string; sizeMm: number[] }[] }) => p.objects).filter((o: { id: string }) => !known.has(o.id))
+      }
+      await expect.poll(async () => (await added()).length).toBe(1)
+      const box = (await added())[0]
+      const id: string = box.id
+      const height: number = box.sizeMm[2]
+      expect(height).toBeCloseTo(20)
+      const listed = await editor.ok('geom_faces', { design: id })
+      type Face = { part: number; triangle: number; at: number[]; normal: number[] }
+      const top = listed.faces.find((f: Face) => f.normal[2]! > 0.99) as Face
+      const bottom = listed.faces.find((f: Face) => f.normal[2]! < -0.99) as Face
+      expect(top).toBeTruthy()
+      expect(bottom).toBeTruthy()
+      const pick = (p: Face) => ({ object: id, part: p.part, triangle: p.triangle, at: p.at })
+      const request = { kind: 'distance', a: pick(top), b: pick(bottom) }
+      const read = () => editor.ok('app_dimensions')
+      const before = await editor.ok('app_history')
+      await command(page, 'Measure distance, angle and radius')
+      const kept = await editor.ok('app_dimension_keep', request)
+      expect(kept.dimensions).toHaveLength(1)
+      expect(kept.dimensions[0]).toMatchObject({ id: kept.kept, status: 'ok', unit: 'mm', visible: true })
+      expect(kept.dimensions[0].value).toBeCloseTo(height)
+      expect((await read()).dimensions).toEqual(kept.dimensions)
+      expect((await editor.ok('app_history')).undo).toBe(before.undo + 1)
+      const list = page.getByRole('list', { name: 'Kept dimensions' })
+      await expect(list).toContainText(`${height.toFixed(2)} mm`)
+      const drawn = () => page.evaluate(() => {
+        const group = (window as unknown as { __vp: { dims: { group: { children: { type: string; geometry?: { attributes: { position: { array: ArrayLike<number> } } } }[] } } } }).__vp.dims.group
+        return Array.from(group.children.find((c) => c.type === 'LineSegments')?.geometry?.attributes.position.array ?? [])
+      })
+      await expect.poll(async () => (await drawn()).length).toBe(6)
+      const vertices = await drawn()
+      const annotation = kept.dimensions[0].annotation
+      vertices.forEach((v, i) => expect(v).toBeCloseTo([...annotation.from, ...annotation.to][i], 3))
+      const show = page.getByRole('switch', { name: 'Show all kept dimensions' })
+      const revision = (await editor.ok('app_history')).revision
+      await expect(show).toHaveAttribute('aria-checked', 'false')
+      await show.click()
+      await expect(show).toHaveAttribute('aria-checked', 'true')
+      expect((await read()).showAll).toBe(true)
+      await editor.ok('app_dimensions_show', { showAll: false })
+      await expect(show).toHaveAttribute('aria-checked', 'false')
+      expect((await editor.ok('app_history')).revision).toBe(revision)
+      const reader = await session(link, page, dir, 'dimension-reader', 'read')
+      try {
+        expect(await reader.ok('app_dimensions')).toMatchObject({ dimensions: [{ id: kept.kept }] })
+        expect(await reader.call('app_dimension_keep', request)).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+        expect(await reader.call('app_dimension_remove', { dimension: kept.kept })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+      } finally {
+        await reader.close()
+      }
+      expect(await editor.call('app_dimension_keep', { ...request, value: 999 })).toMatchObject({ isError: true })
+      expect((await read()).dimensions).toEqual(kept.dimensions)
+      await page.getByRole('button', { name: 'Done', exact: true }).click()
+      await editor.ok('project_scale', { object: id, scale: [1, 1, 2] })
+      expect((await read()).dimensions[0].value).toBeCloseTo(height * 2)
+      const undo = page.getByTestId('plate-tools-group').getByRole('button', { name: 'Undo', exact: true })
+      await undo.click()
+      expect((await read()).dimensions[0].value).toBeCloseTo(height)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, editor.clientKey!, async (run) => {
+          const rows = await run('app_dimension_remove', { dimension: kept.kept }, 'app_dimensions')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output.dimensions).toEqual([])
+          }
+          expect(rows[0].output.output.removed).toBe(kept.kept)
+          expect((await read()).dimensions).toEqual([])
+        })
+        await expect.poll(async () => (await drawn()).length).toBe(0)
+        await undo.click()
+        expect((await read()).dimensions[0].id).toBe(kept.kept)
+      }
+      await command(page, 'Measure distance, angle and radius')
+      await expect(list).toContainText(`${height.toFixed(2)} mm`)
+      await list.getByRole('button', { name: 'Remove the distance' }).click()
+      expect((await read()).dimensions).toEqual([])
+    } finally {
+      await editor.close()
+    }
+  })
+})
+
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the
 // client read-back. The computed CSS on the SVG icons and loops is what no unit test sees, so this keeps all of it.
 test('edition colors reach icons, loops, the viewport and MCP in both themes', async ({ page, link }, info) => {

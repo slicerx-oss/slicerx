@@ -401,3 +401,13 @@ Working: stdio and HTTP transports, the permission policy with elicitation and a
 `app_units` reads the active display unit, precision and remembered mm/inch preferences. `app_units_set` accepts `length: "mm"` or `"in"`, `precision: {decimals: n}`, or `precision: {fraction: n}`. Millimeters support 0-3 decimals; inches support 2-4 decimals or fractions to 1/16, 1/32 or 1/64. A precision applies to the requested unit, or the current unit when omitted. Switching units preserves each unit's last precision. Invalid combinations refuse before changing anything.
 
 Both tools use the app link's read grant and work through native `sx call --app`. They follow Settings, Display units and Precision, including normal preference persistence. They add no Undo step. Only Model display and bare-number input interpretation change: geometry, project files, print settings and all tool coordinates stay in mm. Read `app_units` again to verify the result.
+
+### Kept reference dimensions in the app
+
+`app_dimensions` reads the shown plate's kept measurements, re-evaluated against current geometry. Each row includes the owner and ID, kind, status, measured value and unit, local anchors, world-space annotation and visibility. A lost anchor has no value or visible mark. `geom_measure` remains available for a measurement that does not create an annotation.
+
+`app_dimension_keep` matches **Keep this dimension** in Measure. Give `kind` and pick `a`; distance and angle also require pick `b`. Each pick has an object ID, zero-based `part` and `triangle`, and world `at: [x,y,z]` in mm. Use `app_history` to find the object ID, then `geom_faces` with that ID as `design` to get `part`, `triangle` and `at` for a surface pick. These mesh references are transient; pick again after geometry changes. The geometry engine supplies the value, so the request cannot set a fabricated measurement. Unsupported feature/kind combinations refuse before any change.
+
+Use `app_dimension_remove` with a `dimension` ID to remove it. Keep and remove need the person's edit grant and each create one toolbar Undo step. Locked objects, active edits and stale asynchronous measurements refuse. `app_dimensions_show` sets `showAll` with the existing read grant and no history step; selected objects still show dimensions when it is false. These are reference annotations that follow geometry, not dimensions that drive a sketch or solid.
+
+All four tools also work through native `sx call --app`. Read `app_dimensions` again after an edit to verify the actual measurements and status.
