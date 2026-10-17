@@ -157,6 +157,10 @@ pub struct WipeTail {
     pub speed_mm_s: f32,
     /// its line width; 0 after the prime tower, after which orca writes the width again
     pub width_mm: f32,
+    /// The height the nozzle prints the path at, mm (the layer's top); 0 when unknown.
+    pub z_mm: f32,
+    /// A closed outer wall, which a wipe on loops leaves by a short move into the part.
+    pub outer_loop: bool,
 }
 
 /// The ordered toolpath of one layer. Travels are implicit: from the end of
@@ -303,8 +307,20 @@ impl LayerPaths {
                 } else {
                     p.width_mm
                 },
+                z_mm: self.z,
+                outer_loop: p.feature == Feature::OuterWall && crate::gcode::is_loop(pts),
             }
         })
+    }
+
+    /// Where the nozzle stops at the end of the layer: the last point of its last path, as written. Paths
+    /// reordered after they were built keep their points where they were stored, so the last stored point is
+    /// not this then. None for a layer without paths.
+    pub(crate) fn exit_point(&self) -> Option<Point> {
+        self.paths
+            .iter()
+            .rev()
+            .find_map(|p| self.path_points(p).last().copied())
     }
 }
 

@@ -1072,3 +1072,75 @@ fn raw_retraction_modes_match_the_switch_through_both_cli_inputs() {
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+// The check measures the output with the standard math functions; the engine's rounding rule is for G-code.
+#[allow(clippy::disallowed_methods)]
+fn lifts_climb_at_the_set_angle_from_where_the_nozzle_is() {
+    // Slope lifts after a wiping retraction and at each layer change: every ramp starts where the nozzle really
+    // is (the wipe's end, the layer below's height) and climbs at `travel_slope` degrees.
+    use serde_json::json;
+    let dir = std::env::temp_dir().join(format!("sx-cli-lifts-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("config.json");
+    let gcode = dir.join("slice.gcode");
+    let config = json!({
+        "layer_height": 0.2,
+        "wall_loops": 2,
+        "sparse_infill_density": 15,
+        "sparse_infill_pattern": "grid",
+        "brim_width": 0,
+        "retraction_minimum_travel": 1,
+        "z_hop": 0.4,
+        "z_hop_types": "Slope Lift",
+        "travel_slope": 5,
+        "retract_lift_above": 0,
+        "retract_lift_below": 0,
+        "retract_when_changing_layer": true,
+        "wipe": true,
+        "wipe_distance": 2,
+    });
+    std::fs::write(&input, config.to_string()).unwrap();
+    let out = sx()
+        .args(["slice", &fixture("cube.stl"), "--config"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&gcode)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = std::fs::read_to_string(&gcode).unwrap();
+    let word = |line: &str, k: char| -> Option<f64> {
+        line.split_whitespace()
+            .skip(1)
+            .find_map(|w| w.strip_prefix(k))
+            .and_then(|v| v.parse().ok())
+    };
+    let mut at = [0.0f64; 3];
+    let (mut ramps, mut layer_changes) = (0, 0);
+    for line in text.lines().map(|l| l.split(';').next().unwrap_or("").trim()) {
+        let cmd = line.split_whitespace().next().unwrap_or("");
+        if !matches!(cmd, "G0" | "G1" | "G2" | "G3") {
+            continue;
+        }
+        let before = at;
+        for (i, k) in ['X', 'Y', 'Z'].into_iter().enumerate() {
+            if let Some(v) = word(line, k) {
+                at[i] = v;
+            }
+        }
+        if cmd == "G1" && line.contains(" X") && line.contains(" Z") && !line.contains(" E") {
+            let run = (at[0] - before[0]).hypot(at[1] - before[1]);
+            let rise = at[2] - before[2];
+            let angle = rise.atan2(run).to_degrees();
+            assert!((angle - 5.0).abs() < 0.1, "{angle:.3} degrees: {line}");
+            ramps += 1;
+            if rise > 0.5 {
+                layer_changes += 1;
+            }
+        }
+    }
+    assert!(ramps > 20, "{ramps} ramps");
+    assert!(layer_changes > 10, "{layer_changes} ramps at a layer change");
+    let _ = std::fs::remove_dir_all(dir);
+}
