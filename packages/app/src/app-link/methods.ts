@@ -5,6 +5,7 @@
 // test checks the two lists match. Project geometry and its modifier print values are editable, as are two view
 // preferences. model.push_set only types a distance into the open Push and pull for the person to apply. Nothing here
 // prints, queues, approves, signs in or changes printer connections.
+// Project print overrides have their own methods and read-back.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
 import { editionSceneOverrides, SCENE_VARS } from '@slicerx/ui/theme'
@@ -44,6 +45,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'volumes.set': 'edit',
   'volumes.copy': 'edit',
   'volumes.remove': 'edit',
+  'project.set_overrides': 'edit',
+  'settings.get': 'read',
   // The slice preview only changes what the window shows, never the project.
   'preview.get': 'read',
   'preview.set': 'read',
@@ -351,6 +354,8 @@ const HANDLERS: Record<string, Handler> = {
   'volumes.set': async (args, client) => (await import('./volumes')).volumeAction('set', args, client.name, linkLoader),
   'volumes.copy': async (args, client) => (await import('./volumes')).volumeAction('copy', args, client.name, linkLoader),
   'volumes.remove': async (args, client) => (await import('./volumes')).volumeAction('remove', args, client.name, linkLoader),
+  'project.set_overrides': async (args, client) => (await import('./project-settings')).editProjectSettings(args, client.name),
+  'settings.get': async (args) => (await import('./project-settings')).readProjectSettings(args),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
   'preview.markers': async () => (await import('./preview-markers')).readMarkers(),
