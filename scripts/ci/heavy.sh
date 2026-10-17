@@ -34,6 +34,15 @@
 #   SX_HEAVY_POLL=<seconds>                    how often a waiter looks again (default 5; the tests use 1)
 #   SX_HEAVY_ORPHAN=<seconds>                  how old a lock with no holder record must be before it is cleared
 #                                              (default 60; a holder writes its record right after taking the lock)
+#   SX_HEAVY_MAX_HOLD=<seconds>                the longest the command may run under the lock (0: no limit; default:
+#                                              the number in <lock>.max-hold, or 7200 for --e2e and --gpu and no
+#                                              limit for the rest). Past it the command and its children get TERM,
+#                                              KILL after SX_HEAVY_KILL_GRACE seconds (default 60), and heavy.sh exits
+#                                              124; a command that outlives KILL as well (stuck in a GPU driver) is left
+#                                              running and its slots are freed after that many seconds more
+#   SX_HEAVY_PROMOTE_AFTER=<seconds>           how old a waiter's ticket that is not a CI job's (and not --all) must
+#                                              be before it queues as one, ahead of the CI tickets that came after it
+#                                              (default: the number in <lock>.promote-after, or 1800; 0: never)
 #   SX_HEAVY_LABEL=<text>                      who is asking, in the holder record and the history (optional)
 #   SX_HEAVY_SESSION=<text>                    the session that asks (default: the run and job of a GitHub Actions
 #                                              job; nothing else is read from the environment)
@@ -92,9 +101,16 @@
 # free slot it needs is kept for it, and the --gpu waiters behind it wait, so it is never starved. Each time what
 # blocks a waiter changes, it prints one line naming the holders or tickets in its way.
 #
-# The history log gets a line for every take, release, take-over and give-up: the time, the event, the mode, the slots,
-# the side and pid, the user, the label, the session, the details and the command, separated by tabs. It is renamed to
-# <history>.1 at about 1 MB.
+# A holder's record names its max hold ("hold <seconds> grace <seconds>"). A waiter takes over a slot whose record is
+# older than that hold, twice the grace and 5 minutes more, even when the holder cannot be proved dead: by then the
+# holder's own heavy.sh should have stopped the command and let go, so it is stuck, or gone on a side that cannot be
+# asked. A record with no hold line (from an older heavy.sh) gets the max hold of its class on this machine. A holder
+# whose slot was taken over leaves it alone when it ends. A waiter's ticket that is not a CI job's is renamed to a CI
+# one once it is SX_HEAVY_PROMOTE_AFTER seconds old, so a steady stream of CI jobs cannot starve it.
+#
+# The history log gets a line for every take, release, take-over, give-up, timeout, kill, abandon and promotion: the
+# time, the event, the mode, the slots, the side and pid, the user, the label, the session, the details and the
+# command, separated by tabs. It is renamed to <history>.1 at about 1 MB.
 #
 # Windows (Git Bash) and WSL on one machine share one lock when both name the same directory on the Windows drive,
 # for example C:\Users\<user>\.slicerx-heavy.lock (a C:\ path works on both sides). The record names the holder's
@@ -162,8 +178,22 @@ setting() {
 reserve_read() {
   setting reserve_after "${SX_HEAVY_RESERVE_AFTER:-}" reserve-after 900
   setting gpu_holdback "${SX_HEAVY_GPU_HOLDBACK:-}" gpu-holdback 300
+  setting promote_after "${SX_HEAVY_PROMOTE_AFTER:-}" promote-after 1800
 }
 reserve_read
+# The max hold on this machine for a holder of class $2 (e2e, gpu or anything else), into variable $1: the machine
+# setting, or 2 hours for a browser run (a hung browser or GPU driver must not keep the lock all day) and none for the
+# rest (a nightly run or a release build may take long).
+hold_for() {
+  local mh
+  setting mh "" max-hold ""
+  [ -n "$mh" ] || case $2 in e2e | gpu) mh=7200 ;; *) mh=0 ;; esac
+  printf -v "$1" %s "$mh"
+}
+hold_for max_hold "$mode"
+case ${SX_HEAVY_MAX_HOLD:-} in '' | *[!0-9]*) ;; *) max_hold=$SX_HEAVY_MAX_HOLD ;; esac
+grace=${SX_HEAVY_KILL_GRACE:-60}
+case $grace in '' | *[!0-9]*) grace=60 ;; esac
 # The GPU slot directories, for --gpu holders only: <lock>.gpu.1 up to <lock>.gpu.<gslots>.
 gpu_dirs=()
 for ((i = 1; i <= gslots; i++)); do gpu_dirs+=("$lock.gpu.$i"); done
@@ -198,7 +228,15 @@ wslx() { local o rc; o=$(set -o pipefail; winrun wsl.exe "$@" 2> /dev/null | tr 
 # Runs a Windows program, for at most 30 s. WSL runs it through /init, as its binfmt entry would: a distro that runs
 # systemd can lose that entry, and then a plain call fails.
 winrun() {
-  local exe; exe=$(command -v "$1") || return 127; shift
+  local exe sys
+  # A WSL distro with appendWindowsPath=false has no Windows directories on PATH: look in System32 itself, or a
+  # Windows holder could never be judged dead from there.
+  if ! exe=$(command -v "$1"); then
+    [ "$side" = wsl ] && sys=$(wslpath -u 'C:\Windows\System32' 2> /dev/null) || return 127
+    case $1 in powershell.exe) exe=$sys/WindowsPowerShell/v1.0/powershell.exe ;; *) exe=$sys/$1 ;; esac
+    [ -x "$exe" ] || return 127
+  fi
+  shift
   if [ "$side" = wsl ]; then timeout 30 /init "$exe" "${exe##*/}" "$@"; else MSYS_NO_PATHCONV=1 timeout 30 "$exe" "$@"; fi
 }
 
@@ -282,7 +320,7 @@ mkdir -p "$q" 2> /dev/null
 # CI jobs (a self-hosted runner, or SX_HEAVY_PRIORITY=ci) queue ahead of other waiters; a holder always finishes.
 prio=1
 if [ "${SX_HEAVY_PRIORITY:-}" = ci ] || [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then prio=0; fi
-ticket= held=() gated= ran= t_run=
+ticket= held=() gated= ran= t_run= timed_out=
 if stat -c %Y / > /dev/null 2>&1; then gnu_stat=1; else gnu_stat=; fi
 mtime() { if [ -n "$gnu_stat" ]; then stat -c %Y "$1" 2> /dev/null; else stat -f %m "$1" 2> /dev/null; fi; }
 now() { date +%s; }
@@ -344,10 +382,20 @@ release() {
   [ -z "$ticket" ] || rm -f "$ticket"
   slots_held=$(slot_names)
   for d in ${held[@]+"${held[@]}"}; do
+    if ! ours "$d"; then
+      [ ! -e "$d" ] || echo "heavy.sh: ${d##*/} was taken over while this held it; left to its new holder" >&2
+      continue
+    fi
     for i in 1 2 3 4 5; do rm -rf "$d" 2> /dev/null; [ -e "$d" ] || break; sleep 1; done
   done
   gate_drop
-  [ -z "$ran" ] || hist_line release "$slots_held" "rc $rc, held $((SECONDS - t_run)) s"
+  [ -z "$ran" ] || hist_line release "$slots_held" "rc $rc, held $((SECONDS - t_run)) s${timed_out:+, stopped at the max hold of $max_hold s}"
+}
+# Whether slot $1 still holds this holder's record: a slot taken over (its holder judged stale) may have a new holder.
+ours() {
+  local o
+  o=$(cat "$1/owner" 2> /dev/null) || return 1
+  [[ $o == "pid $$ since "* && $o == *"$nl$me$nl"* ]]
 }
 trap release EXIT
 trap 'exit 130' INT
@@ -355,8 +403,8 @@ trap 'exit 143' TERM
 # Takes a free slot: writes this holder's record into it at once, so no waiter ever finds it without one for long.
 take() {
   mkdir "$1" 2> /dev/null || return 1
-  printf 'pid %s since %s: %s\n%s\nuser %s\n%s%s%s' $$ "$(date '+%F %T')" "${all:+(all slots) }$(one_line "$cmd")" "$me" \
-    "$user" "${label:+label $label
+  printf 'pid %s since %s: %s\n%s\nuser %s\nhold %s grace %s\n%s%s%s' $$ "$(date '+%F %T')" "${all:+(all slots) }$(one_line "$cmd")" \
+    "$me" "$user" "$max_hold" "$grace" "${label:+label $label
 }" "${session:+session $session
 }" "${e2e:+class e2e
 }${gpu:+class gpu
@@ -376,24 +424,50 @@ read_rec() {
 }
 # The holders, for the waiting message.
 holders_of() {
-  local d s=
+  local d s= age lim grc
   for d in "$@"; do
     mine "$d" && continue
     [ -e "$d" ] || continue
     read_rec "$d"
     s="$s${s:+; }${r_head:-holder starting}${r_label:+ [$r_label]}"
+    held_for "$d" && s="$s (held $age s${lim:+, max hold $lim s})"
   done
   printf %s "$s"
 }
-# Judges the holder of slot $1 and frees the slot when the holder is dead (or it was left with no record).
+# How long the holder of slot $1 has held it, on the lock's own clock (our ticket's mtime) into age, and its max hold
+# into lim (empty when it has none), from its record or, for a record with no hold line, the max hold of its class
+# here; grc its grace. Fails when the record cannot be read.
+held_for() {
+  local m t0 rec h cls=
+  rec=$(cat "$1/owner" 2> /dev/null) && m=$(mtime "$1/owner") && [ -n "$m" ] || return 1
+  t0=$([ -n "$ticket" ] && mtime "$ticket"); [ -n "$t0" ] || t0=$(now)
+  age=$((t0 - m)) grc=60
+  h=$(sed -n 's/^hold \([0-9]*\) grace \([0-9]*\)$/\1 \2/p' <<< "$rec")
+  if [ -n "$h" ]; then grc=${h#* } lim=${h% *}
+  else
+    case $rec in *"${nl}class e2e"*) cls=e2e ;; *"${nl}class gpu"*) cls=gpu ;; esac
+    hold_for lim "$cls"
+  fi
+  [ "$lim" -gt 0 ] || lim=
+  [ "$age" -ge 0 ] || age=0
+}
+# Judges the holder of slot $1 and frees the slot when the holder is dead (or it was left with no record), or alive
+# but past its max hold by more than its own heavy.sh needs to stop it.
 judge_slot() {
-  local d=$1 rec t m
+  local d=$1 rec t m age lim grc
   rec=$(cat "$d/owner" 2> /dev/null)
   # Take over only the record judged dead, not one a new holder wrote meanwhile.
   if [ -n "$rec" ] && ! alive "$rec" && [ "$(cat "$d/owner" 2> /dev/null)" = "$rec" ]; then
     echo "heavy.sh: taking over a lock left by $(sed -n '1s/ since.*//p' <<< "$rec") ($(sed -n 's/^side //p' <<< "$rec"))" >&2
     rm -rf "$d"
     hist_line clear "${d##*/}" "dead holder: $(one_line "$(sed -n '1p' <<< "$rec")")"
+    return 0
+  fi
+  if [ -n "$rec" ] && held_for "$d" && [ -n "$lim" ] && [ "$age" -ge $((lim + 2 * grc + 300)) ] &&
+    [ "$(cat "$d/owner" 2> /dev/null)" = "$rec" ]; then
+    echo "heavy.sh: taking over a lock held past its max hold by $(sed -n '1s/ since.*//p' <<< "$rec") ($(sed -n 's/^side //p' <<< "$rec"), held $age s, max hold $lim s); the holder is left running" >&2
+    rm -rf "$d"
+    hist_line clear "${d##*/}" "stale holder: held $age s, max hold $lim s: $(one_line "$(sed -n '1p' <<< "$rec")")"
     return 0
   fi
   # No record: a holder between mkdir and writing it, or a slot whose removal failed half way. Only one older than
@@ -595,6 +669,76 @@ redact() {
 }
 cmd=$(redact "$@")
 
+# Renames this waiter's ticket from class 1 to class 0 once it is $promote_after s old, under the gate: it then sorts
+# with the CI tickets by its time, ahead of every CI job that queued after it. A --all waiter is never promoted (it
+# would take the whole machine from CI).
+promote() {
+  local tt tnow new
+  [ "$promote_after" -gt 0 ] && [ -z "$all" ] && [ -n "$ticket" ] || return 0
+  case ${ticket##*/} in 1-*) ;; *) return 0 ;; esac
+  tnow=$(now); ticket_time "$ticket"
+  [ $((tnow - tt)) -ge "$promote_after" ] || return 0
+  new=$q/0-${ticket##*/1-}
+  mv -f "$ticket" "$new" 2> /dev/null || return 0
+  ticket=$new
+  echo "heavy.sh: waited $((tnow - tt)) s behind CI jobs; now queued as one, ahead of those that came after it" >&2
+  hist_line promote "" "ticket ${ticket##*/}, waited $((tnow - tt)) s"
+}
+
+# Signals process $2 and every process under it with $1 (TERM or KILL). The tree is read before any signal, so the
+# children of a process that dies first are still found. In Git Bash, ps lists the MSYS processes (its own format: an
+# optional status letter, then the pid and the parent pid), and taskkill ends the native Windows ones under the command.
+kill_tree() {
+  local sig=$1 p=$2 w= tree
+  if [ "$side" = msys ]; then
+    w=$(cat "/proc/$p/winpid" 2> /dev/null)
+    tree=$(ps -e 2> /dev/null | awk 'NR > 1 { sub(/^[ \t]*[A-Za-z][ \t]/, " "); print $1, $2 }')
+  else
+    tree=$(ps -A -o pid= -o ppid= 2> /dev/null)
+  fi
+  tree=$(awk -v root="$p" '{ kids[$2] = kids[$2] " " $1 }
+    END { n = split(root, q, " "); out = root; for (i = 1; i <= n; i++) { m = split(kids[q[i]], k, " "); for (j = 1; j <= m; j++) { q[++n] = k[j]; out = out " " k[j] } } print out }' <<< "$tree")
+  case $w in
+    '' | *[!0-9]*) ;;
+    *) if [ "$sig" = KILL ]; then MSYS_NO_PATHCONV=1 taskkill /T /F /PID "$w"; else MSYS_NO_PATHCONV=1 taskkill /T /PID "$w"; fi > /dev/null 2>&1 ;;
+  esac
+  kill "-$sig" ${tree:-$p} 2> /dev/null
+  return 0
+}
+# Whether process $1 ended (or this holder let go: file $2 is gone) within $grace seconds.
+gone_within() {
+  local i
+  for ((i = 0; i < grace; i++)); do kill -0 "$1" 2> /dev/null && [ -e "$2" ] || return 0; sleep 1; done
+  ! kill -0 "$1" 2> /dev/null || [ ! -e "$2" ]
+}
+# Runs beside the command while a max hold is set, and ends with heavy.sh. Past the max hold it stops the command
+# (pid in file $1, which goes with the slot): TERM to it and its children, KILL after $grace s. One that outlives KILL
+# too (stuck in a GPU driver) is left running, and after $grace s more its slots are freed so the queue moves on.
+watchdog() {
+  local pidf=$1 end=$((SECONDS + max_hold)) p step d
+  trap - EXIT INT TERM
+  while [ "$SECONDS" -lt "$end" ]; do
+    kill -0 $$ 2> /dev/null && [ -e "$pidf" ] || exit 0
+    step=$((end - SECONDS)); [ "$step" -le 15 ] || step=15
+    sleep "$step" < /dev/null > /dev/null 2>&1
+  done
+  p=$(cat "$pidf" 2> /dev/null)
+  [ -n "$p" ] && [ -e "$pidf" ] || exit 0
+  : > "${pidf%/*}/timed-out"
+  echo "heavy.sh: the command ran past the max hold of $max_hold s; stopping it (pid $p)" >&2
+  hist_line timeout "$(slot_names)" "held $((SECONDS - t_run)) s, max hold $max_hold s: TERM to pid $p and its children"
+  kill_tree TERM "$p"
+  gone_within "$p" "$pidf" && exit 0
+  echo "heavy.sh: the command did not stop within $grace s; killing it (pid $p)" >&2
+  hist_line kill "$(slot_names)" "pid $p still ran $grace s after TERM: KILL to it and its children"
+  kill_tree KILL "$p"
+  gone_within "$p" "$pidf" && exit 0
+  echo "heavy.sh: the command outlived KILL (pid $p, stuck in a driver?); freeing the lock and leaving it running" >&2
+  hist_line abandon "$(slot_names)" "pid $p still ran $grace s after KILL: slots freed, process left running"
+  for d in "${held[@]}"; do ours "$d" && rm -rf "$d" 2> /dev/null; done
+  exit 0
+}
+
 t0=$SECONDS next=0 judged=0
 while :; do
   refresh
@@ -602,11 +746,12 @@ while :; do
   if gate_take; then
     [ -n "$ticket" ] || new_ticket "$(seq_next)"
     refresh
+    promote
     decide
     if [ -n "$admitted" ]; then
       rm -f "$ticket"; ticket=
       hist_rotate
-      hist_line take "$(slot_names)" "waited $((SECONDS - t0)) s"
+      hist_line take "$(slot_names)" "waited $((SECONDS - t0)) s$([ "$max_hold" = 0 ] || echo ", max hold $max_hold s")"
       gate_drop
       break
     fi
@@ -669,7 +814,24 @@ case $sx_jobs in
   '' | *[!0-9]*) ;;
   *) export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-$sx_jobs} RUST_TEST_THREADS=${RUST_TEST_THREADS:-$sx_jobs} ;;
 esac
-"$@"
-rc=$?
+if [ "$max_hold" -gt 0 ]; then
+  # The command runs in the foreground as before, through sh, which writes its pid for the watchdog and execs it.
+  pidf=${held[0]}/cmd.pid
+  : > "$pidf"
+  watchdog "$pidf" &
+  wd=$!
+  sh -c 'echo $$ > "$1"; shift; exec "$@"' sh "$pidf" "$@"
+  rc=$?
+  kill "$wd" 2> /dev/null
+  wait "$wd" 2> /dev/null
+  if [ -e "${held[0]}/timed-out" ]; then
+    timed_out=1
+    echo "heavy.sh: stopped at the max hold of $max_hold s (exit status $rc), reported as 124" >&2
+    rc=124
+  fi
+else
+  "$@"
+  rc=$?
+fi
 [ "$rc" != 75 ] || { echo "heavy.sh: the command exited 75, reported as 1 (75 means heavy.sh gave up)" >&2; rc=1; }
 exit $rc

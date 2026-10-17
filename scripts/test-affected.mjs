@@ -325,10 +325,14 @@ async function main(argv) {
   const run = (cmd) => {
     console.log(`\n$ ${show(cmd)}`)
     const r = spawnSync(cmd[0], cmd.slice(1), { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' })
+    if (r.status === 75) console.log(`test-affected: the heavy lock stayed busy for ${process.env.SX_HEAVY_WAIT} s, so no tests ran; see the heavy.sh lines above`)
     if (r.status !== 0) rc = r.status || 1
   }
   for (const v of p.vitest) run(v.cmd)
   for (const c of p.cargo) run(c.cmd)
+  // An agent's browser run waits at most 30 minutes for the heavy lock (heavy.sh exits 75 then, with no tests run),
+  // so a busy or wedged machine fails the run instead of leaving the agent idle; a wait the caller set wins.
+  if (flags.has('--e2e')) process.env.SX_HEAVY_WAIT ??= '1800'
   if (flags.has('--e2e')) for (const x of p.playwright) run(e2eCmd(x.args, port))
   else if (p.playwright.length) console.log('\nPlaywright not run: add --e2e on the CI machine.')
   return rc

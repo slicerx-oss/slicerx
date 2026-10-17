@@ -78,7 +78,7 @@ Rules for coding agents. Test time on the shared machines is the scarce part of 
 
 - Run the tests your change reaches, not the suites. `pnpm test:affected` prints them: Vitest files, `cargo test -p` per crate and the Playwright journeys. `pnpm test:affected --run` runs all but the browser ones.
 - Never run the whole Playwright suite, `cargo test --workspace` or a bare `cargo test` at the root on your own machine. CI runs those.
-- Browser tests run on the project's CI machine under its heavy lock, never on a laptop: `scripts/ci/heavy.sh --e2e` with your own `SX_E2E_PORT` (`pnpm test:affected --run --e2e` does both).
+- Browser tests run on the project's CI machine under its heavy lock, never on a laptop: `scripts/ci/heavy.sh --e2e` with your own `SX_E2E_PORT` (`pnpm test:affected --run --e2e` does both). It waits at most 30 minutes for the lock (`SX_HEAVY_WAIT`) and exits 75 with no tests run when the machine stays busy; a browser run is stopped after 2 hours under the lock (exit 124).
 - One Playwright run per change. When a test fails, fix it and rerun that test alone with `-g "<title>"`, not the whole set again.
 - Use `--repeat-each` only on a test you added or changed, to show it is stable. Never on whole journeys.
 - Leave everything else to CI. Push, then read the CI result before running anything wider.
