@@ -6,7 +6,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { EngineCall } from '@slicerx/cad-history'
 import { productName, type PermissionPolicy } from '@slicerx/contracts'
-import { createApprovalBroker, normalizePolicy, type ApprovalBroker, type PilotTool } from '@slicerx/pilot'
+import { createApprovalBroker, loadPartsTable, normalizePolicy, type ApprovalBroker, type PartsTable, type PilotTool } from '@slicerx/pilot'
 import { createGeomCli } from '@slicerx/pilot/node'
 import { createActionLog } from './actionlog'
 import { DataStore, resolveDataPaths } from './data'
@@ -65,6 +65,8 @@ export type EngineMode = 'auto' | 'sx' | 'stub'
 
 export interface SlicerxMcpOptions {
   dataDir?: string | undefined
+  /** The standard parts table slicerx_parts_lookup reads, or the path of its JSON file; default: the bundled table. */
+  partsTable?: PartsTable | string | undefined
   /** Directories models may be read from. Undefined: any path the process can read. */
   allowDirs?: string[] | undefined
   outDir?: string | undefined
@@ -176,7 +178,8 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
     const waiting = gate.waiting
     printers.handOff.onDone((d) => waiting?.get(d.requestId)?.(d))
   }
-  const registry = [...pilotTools(createCombinedPlanner(kb)), ...(await servicePluginTools(printers?.host))]
+  const parts = typeof opts.partsTable === 'string' ? loadPartsTable(JSON.parse(readFileSync(resolve(opts.partsTable), 'utf8'))) : opts.partsTable
+  const registry = [...pilotTools(createCombinedPlanner(kb), parts), ...(await servicePluginTools(printers?.host))]
   const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project })
   const geomCall = opts.geomEngine ?? (geomBin ? geomEngine(geomBin) : undefined)
   const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
