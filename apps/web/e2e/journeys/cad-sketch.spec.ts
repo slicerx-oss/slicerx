@@ -1385,6 +1385,9 @@ test.describe('sketch-panel-cards', () => {
 
   test('the pills stay in the view and off the point; the boxes stay in the view; typed numbers read apart; Tab, Enter and Esc', async ({ page }) => {
     await sketchOnTop(page)
+    // the sketch turns the camera square on as it opens, and the boxes follow the shape through it: wait for the view
+    // to stop before reading where a box is, or the read before the hover and the read after it differ by the camera's move
+    await still(page)
     const pills = page.getByTestId('sketch-pills')
     const boxes = page.getByRole('group', { name: 'Sizes of the shape being drawn' })
     const view = await viewBox(page)
