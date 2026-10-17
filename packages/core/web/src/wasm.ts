@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Typed access to the sx-wasm C ABI (packages/core/wasm/src/lib.rs).
-import type { Collision, CollisionFix } from '@slicerx/contracts'
+import type { Collision, CollisionFix, ScriptReviewInput, ScriptReview } from '@slicerx/contracts'
 
 interface SxExports {
   memory: WebAssembly.Memory
@@ -19,7 +19,13 @@ interface SxExports {
   sx_set_thumbnail?(width: number, height: number): number
   sx_set_request?(): number
   sx_set_collisions?(): number
+  sx_canonical_script?(): number
+  sx_review_script?(): number
 }
+
+export type CanonicalScriptResult =
+  | { version: number; text: string; fingerprint: string; ignored: string[] }
+  | { version: number; error: 'script_review_required'; reason: string }
 
 export const OUT_GCODE = 0
 export const OUT_SXPV = 1
@@ -62,6 +68,20 @@ export class SxWasm {
 
   outJson(): unknown {
     return JSON.parse(new TextDecoder().decode(this.out(OUT_INFO)))
+  }
+
+  canonicalScript(text: string): CanonicalScriptResult {
+    if (!this.x.sx_canonical_script) return { version: 1, error: 'script_review_required', reason: 'Script review is unavailable in this engine version' }
+    this.put(new TextEncoder().encode(text))
+    if (this.x.sx_canonical_script() !== 0) throw this.error()
+    return this.outJson() as CanonicalScriptResult
+  }
+
+  reviewScript(input: ScriptReviewInput): ScriptReview {
+    if (!this.x.sx_review_script) return { schemaVersion: 1, decision: 'review', reason: 'script_review_unavailable', identity: input.selected, source: null, stockVersion: null, fingerprint: null, ignored: [] }
+    this.put(new TextEncoder().encode(JSON.stringify(input)))
+    if (this.x.sx_review_script() !== 0) throw this.error()
+    return this.outJson() as ScriptReview
   }
 
   /** Loads a model; returns the module's mesh id. */

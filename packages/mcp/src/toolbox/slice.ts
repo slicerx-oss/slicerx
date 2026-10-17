@@ -14,6 +14,7 @@ import { resolveModel, ToolInputError } from '../models'
 import { readPresetFiles } from '../presets'
 import { importReportLines, readProjectFile, sliceWalls, type WallsNote } from '../projectfile'
 import { toSchemaValue } from '../settings'
+import { reviewProjectScripts } from '../project-script-review'
 import type { SliceSummary } from '../slicer'
 import type { ServerToolDeps } from './deps'
 
@@ -23,6 +24,7 @@ const overridesSchema = z
   .describe('OrcaSlicer setting keys to values, applied last. Example: {"layer_height": 0.16, "sparse_infill_density": 25, "enable_support": true}')
 
 export const sliceInput = {
+  script_printer: z.object({ model: z.string().min(1), firmware: z.string().min(1) }).optional().describe('Explicit target model id and firmware for comparing imported scripts with known stock, without replacing project settings. Conflicting project identity or changed executable text still requires review.'),
   model: z.string().min(1).describe('Absolute path to an STL, OBJ, 3MF or .sx3mf file, an http(s) URL to download one, or a built-in test model: sample:cube-20, sample:tower-20x60, sample:plate-60x40x3 or sample:x-mark (an X mark)'),
   plate: z.number().int().min(1).max(999).optional().describe('For a 3MF or .sx3mf project, the plate to slice (1-based, see slicerx_inspect_project). Default: the first plate.'),
   project_settings: z
@@ -81,6 +83,13 @@ export const sliceFileInput = {
 }
 
 export const summaryShape = {
+  script_reviews: z.array(z.object({
+    key: z.string(), slot: z.number().optional(), schemaVersion: z.literal(1),
+    decision: z.enum(['exact', 'cosmetic', 'review']), reason: z.string(),
+    identity: z.object({ model: z.string(), firmware: z.string() }).nullable(),
+    source: z.string().nullable(), stockVersion: z.string().nullable(), fingerprint: z.string().nullable(),
+    ignored: z.array(z.string()),
+  })).optional(),
   engine: z.enum(['sx', 'stub']),
   model: z.object({ name: z.string(), triangles: z.number().optional(), bbox_mm: z.array(z.number()).optional() }),
   layer_count: z.number(),
@@ -132,7 +141,7 @@ export function noPrinterMessage(config: Record<string, unknown>): string {
 }
 
 export type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-export type SliceArgs = { model: string; plate?: number | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
+export type SliceArgs = { script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
 
 /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
 async function slotLayers(d: ServerToolDeps, slots: SlotArg[]): Promise<SlotLayer[]> {
@@ -198,7 +207,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   await profiles.prepare([...args.profiles, ...(args.filaments ?? []).flatMap((s) => (s.profile ? [s.profile] : []))])
   const presets = args.profile_files.length ? await readPresetFiles(d.policy, args.profile_files) : undefined
   const slots = args.filaments?.length ? await slotLayers(d, args.filaments) : undefined
-  const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced, noPrinter } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots })
+  const scriptReviews = await reviewProjectScripts(profiles, args.profiles, { project, presets, slots }, args.overrides, slicer, args.script_printer)
+  const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced, noPrinter } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots, scriptReviews })
   const projectGcode = [
     ...gcodeKept.map((k) => ({ key: k.key, ...(k.slot !== undefined ? { slot: k.slot } : {}), use: 'project' as const, message: `The project's ${k.label} ${k.message}.` })),
     ...gcodeReplaced.map((k) => ({ key: k, use: 'profile' as const, message: `Used the printer profile's ${gcodeLabel(k)} instead of the project's.` })),
@@ -243,6 +253,6 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     ...(importReport ? importReportLines(importReport, false).map((l) => `Project settings: ${l}`) : []),
     ...(result.note ? [result.note] : []),
   ]
-  return { summary: lines[0] ?? 'Sliced', structured: { ...result, applied, ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}), walls }, text: [...lines, ...projectGcode.map((g) => g.message)].join('\n') }
+  return { summary: lines[0] ?? 'Sliced', structured: { ...result, applied, ...(scriptReviews.length ? { script_reviews: scriptReviews.map(({ key, slot, review }) => ({ key, ...(slot === undefined ? {} : { slot }), ...review })) } : {}), ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}), walls }, text: [...lines, ...projectGcode.map((g) => g.message)].join('\n') }
 }
 

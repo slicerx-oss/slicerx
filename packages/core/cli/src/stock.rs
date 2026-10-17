@@ -107,6 +107,98 @@ pub fn stock_keys(config: &Map<String, Value>) -> Vec<String> {
         .collect()
 }
 
+/// an explicit target uses the shared versioned review, including every declared identity.
+pub fn reviewed_keys(
+    config: &Map<String, Value>,
+    selected: &sx_core::script_review::Identity,
+) -> Result<(Vec<String>, Vec<Value>), String> {
+    use sx_core::script_review::{Identity, ReviewInput, review_known};
+    let t = table();
+    let firmware = first_str(config.get("gcode_flavor")).unwrap_or("unknown");
+    let mut declared = vec![Identity {
+        model: selected.model.clone(),
+        firmware: firmware.into(),
+    }];
+    if let Some(Value::Array(flavors)) = config.get("gcode_flavor") {
+        declared.extend(flavors.iter().map(|flavor| Identity {
+            model: selected.model.clone(),
+            firmware: flavor.as_str().unwrap_or("unknown").into(),
+        }));
+    }
+    for key in ["printer_settings_id", "inherits", "printer_model"] {
+        let Some(value) = config.get(key) else { continue };
+        let values = match value {
+            Value::Array(values) => values.iter().collect(),
+            _ => vec![value],
+        };
+        for value in values {
+            let Some(name) = value.as_str().map(str::trim).filter(|name| !name.is_empty()) else {
+                continue;
+            };
+            let models = t["names"][name]
+                .as_array()
+                .or_else(|| t["names"][without_nozzle(name)].as_array());
+            let models: Vec<String> = models
+                .map(|models| {
+                    models
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_else(|| {
+                    if t["models"].get(name).is_some() {
+                        vec![name.to_owned()]
+                    } else {
+                        vec![format!("unknown:{name}")]
+                    }
+                });
+            declared.extend(models.into_iter().map(|model| Identity {
+                model,
+                firmware: firmware.into(),
+            }));
+        }
+    }
+    let mut trusted = Vec::new();
+    let mut results = Vec::new();
+    for (key, value) in config.iter().filter(|(key, _)| key.ends_with("_gcode")) {
+        let per_slot = value.is_array();
+        let values = match value {
+            Value::Array(values) => values.iter().collect(),
+            _ => vec![value],
+        };
+        let mut accepted = !values.is_empty();
+        let mut nonempty = false;
+        for (slot, value) in values.into_iter().enumerate() {
+            let Some(text) = value.as_str() else {
+                accepted = false;
+                continue;
+            };
+            if text.trim().is_empty() {
+                continue;
+            }
+            nonempty = true;
+            let review = review_known(&ReviewInput {
+                selected: Some(selected.clone()),
+                declared: declared.clone(),
+                key: key.clone(),
+                text: text.into(),
+            })?;
+            accepted &= matches!(review.decision, "exact" | "cosmetic");
+            let mut entry = serde_json::to_value(review).map_err(|e| e.to_string())?;
+            entry["key"] = Value::String(key.clone());
+            if per_slot {
+                entry["slot"] = Value::from(slot);
+            }
+            results.push(entry);
+        }
+        if accepted && nonempty {
+            trusted.push(key.clone());
+        }
+    }
+    Ok((trusted, results))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

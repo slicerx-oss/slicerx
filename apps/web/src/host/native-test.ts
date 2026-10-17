@@ -121,6 +121,10 @@ export function createNativeTestSlicer(url: string): SlicerHost {
     },
     loadParts: (name, parts) => meshes.loadParts(name, parts),
     meshParts: (id) => meshes.meshParts!(id),
+    async reviewScripts(inputs) {
+      const r = await call('/script-review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(inputs) })
+      return r.json()
+    },
     async projectMetadata(data: ArrayBuffer, fileName: string): Promise<ProjectMetadata> {
       const r = await call(`/metadata?name=${encodeURIComponent(fileName)}`, { method: 'POST', body: data })
       return (await r.json()) as ProjectMetadata
