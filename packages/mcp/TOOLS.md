@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-206 tools.
+220 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -10,12 +10,23 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_add_to_fleet` | Add a printer to a fleet | fleets | read, ungated | Add a printer to a fleet. |
 | `slicerx_ams_mapping` |  |  | read | Map the filaments a job needs (material and color per part) onto the slots loaded on one printer. |
 | `slicerx_app_assistant` |  |  | read | Read the assistant identity of the edition open in SlicerX: its display name, icon image or builtin:mimir, optional accent (one color or light/dark colors), and whether the edition enables the assistant. |
+| `slicerx_app_brim_ears` |  |  | read | Read brim ears on the shown plate in SlicerX, optionally for one object: zero-based indices, local and bed coordinates in mm, world diameter, connectivity to the first layer, effective brim type, linked copies, generation defaults and a revision for edits. |
+| `slicerx_app_dimension_keep` |  |  | slice | Keep a reference dimension on the model, as Keep this dimension in Measure does. |
+| `slicerx_app_dimension_remove` |  |  | slice | Remove one kept reference dimension by its ID from app_dimensions. |
+| `slicerx_app_dimensions` |  |  | read | Read every kept reference dimension on the shown plate, evaluated against the current geometry. |
+| `slicerx_app_dimensions_show` |  |  | read | Set Show all kept dimensions, the Measure panel switch. |
 | `slicerx_app_history` |  |  | read | Read the open project's Undo and Redo counts, history revision and current project state: plates, objects and transforms, bounds, design step summaries, object settings, filaments, flush settings and timeline. |
 | `slicerx_app_look` |  |  | read | Read two view preferences of SlicerX (Settings, Look and feel): toolbarSize (large, medium or small, the Model ribbon's icons at 32, 24 or 16 px) and modelFraming (selection: Model frames the view on every pick; open: only when Model opens or an object is added; absent in an edition without Model's modeling tools). |
 | `slicerx_app_look_set` |  |  | read | Set SlicerX's Frame the view (modelFraming: selection or open) or Toolbar size (toolbarSize: large, medium or small), or both, the way the person does in Settings, Look and feel. |
 | `slicerx_app_model_op_preview` |  |  | read | Read the operation preview of the Model tool the person has open in SlicerX (push and pull, fillet and chamfer): status (none, pending, ok, or error when the last edit failed, such as a value that does not read or a size the engine refuses), the error shown next to the tool, whether the view keeps the last good preview through it, and whether the shown preview adds material (tinted) or removes it (a ghost). |
 | `slicerx_app_model_push` |  |  | read | Read Push and pull as the person has it open in SlicerX's Model: open (false while it is not), the picked face (object, part, a point "at" on it, its outward normal, and how thick the body is behind it), the Distance box as typed and the distance it reads as (mm), and the operation that makes (pull: Pull out adds material; cut: a negative distance cuts; through: the cut opens a hole). |
 | `slicerx_app_model_push_set` |  |  | read | Type a distance into the Distance box of the Push and pull the person has open in SlicerX's Model, as the person would: positive pulls the face out, negative cuts. |
+| `slicerx_app_paint` |  |  | read | Read an object's color, seam, support or fuzzy paint in SlicerX's shown plate. |
+| `slicerx_app_paint_apply` |  |  | slice | Apply this client's live paint preview in SlicerX. |
+| `slicerx_app_paint_clear` |  |  | slice | Clear one object's paint layer on SlicerX's shown plate, as Clear layer in the paint panel. |
+| `slicerx_app_paint_preview` |  |  | read | Preview paint on an object in SlicerX's shown plate without changing it. |
+| `slicerx_app_pick_filter` |  |  | read | Read SlicerX's Model pick filter and selected bodies, faces and edges. |
+| `slicerx_app_pick_filter_set` |  |  | read | Change SlicerX's Model pick filter through the same command as its Body, Face and Edge only buttons. |
 | `slicerx_app_plate_show` |  |  | read | Show one plate of the project open in SlicerX, as its plate picker does: plate (a number from 1, or an id from slicerx_app_plates), or step: next or previous (stepping stops at the first and last plate). |
 | `slicerx_app_plates` |  |  | read | List the plates of the project open in SlicerX, in order: each plate's number (from 1), id, name, object count and slice state (empty, not-sliced, slicing, sliced, or stale when the settings changed after the slice), which plate the window shows, and which plate its view draws (drawn; the same as shown once the view has caught up). |
 | `slicerx_app_redo` |  |  | slice | Redo one project edit from the toolbar history. |
@@ -25,6 +36,8 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_sketch_boxes` |  |  | read | Read the dimension boxes of the sketch open in SlicerX: every rectangle (width, height), line (length, angle from the sketch's X axis) and circle (diameter) with its value now and whether a dimension sets it (driving moves the shape, driven only reports it), plus the sketch's dimensions and the degrees of freedom left. |
 | `slicerx_app_step_bind` |  |  | slice | Bind a history step's main number to an expression in the open project, or pass expression:null to keep the number and stop following it. |
 | `slicerx_app_undo` |  |  | slice | Undo one recorded project edit using the same history as the toolbar, including object transforms, plate edits and design changes. |
+| `slicerx_app_units` |  |  | read | Read Model display units and precision from Settings, including the remembered precision of each unit. |
+| `slicerx_app_units_set` |  |  | read | Set Model display units (mm or in) and precision as in Settings. |
 | `slicerx_app_value_remove` |  |  | slice | Remove a named value from the open project. |
 | `slicerx_app_value_set` |  |  | slice | Add or change a named value in the open project, using the same arithmetic and millimeter units as Named values for sizes. |
 | `slicerx_app_values` |  |  | read | Read the open project's named values, expressions, resolved numbers or errors, built-in nozzle and clearance values, and step bindings on every plate. |
@@ -160,6 +173,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_project_add_filament` |  |  | slice | Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. |
 | `slicerx_project_add_model` |  |  | read | Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. |
 | `slicerx_project_add_volume` |  |  | slice | Add a volume to an object, in the object's own coordinates (as modeled, before rotation and scale; slicerx_project_show gives each object's model_bounds): negative cuts it away, support_blocker keeps support out, support_enforcer asks for support there (with supports on), and modifier prints the object inside it with its own settings (walls, infill, speeds, flow). |
+| `slicerx_project_brim_ears` |  |  | slice | Edit brim ears for an explicit object on SlicerX's shown plate. |
 | `slicerx_project_center` |  |  | slice | Center an object on the bed of its plate, as Center on the bed does in the app: the center of its footprint goes to the middle of the printable area (the circle's center on a round bed), and it stays there as if placed with slicerx_project_move. |
 | `slicerx_project_duplicate` |  |  | slice | Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows. |
 | `slicerx_project_height_ranges` |  |  | slice | Set the project's settings by height (replaces the list; an empty list clears it): each range has z_from_mm and z_to_mm above the bed, the settings, and optionally the objects it is for (every object when left out). |
