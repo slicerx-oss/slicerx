@@ -1961,6 +1961,9 @@ test.describe('sketch-panel-behavior', () => {
       await sketchAt(page, 'click', [3, 3])
       const solid = page.getByTestId('sketch-solid')
       await expect(solid).not.toHaveAttribute('data-muted')
+      // the tool pane slides open beside the view: measure once it has, or a control read mid-slide sits in a pane
+      // still narrow and moves, or is gone, by the next read
+      await still(page)
       const panel = toolPanel(page)
       const footer = panel.locator('.cad-footer')
       // every control of the solid card, focused in turn as Tab would, sits clear of the footer
