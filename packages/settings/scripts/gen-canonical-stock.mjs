@@ -56,7 +56,7 @@ for (const [model, machine] of Object.entries(machines)) {
     const profile = resolve(files, name)
     if (!profile || typeof profile.gcode_flavor !== 'string' || !profile.gcode_flavor) continue
     for (const [key, value] of Object.entries(profile)) {
-      if (!key.endsWith('_gcode')) continue
+      if (!key.endsWith('_gcode') || key === 'emit_machine_limits_to_gcode') continue
       for (const text of Array.isArray(value) ? value : [value]) {
         if (typeof text !== 'string' || !text.trim()) continue
         pending.push({ identity: { model, firmware: profile.gcode_flavor }, key, text })
