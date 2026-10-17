@@ -1158,6 +1158,8 @@ test.describe('Snapmaker U1', () => {
     const sheet = await sheetOn(page, 'U1 Bay')
     await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
     await pickHead(page, sheet, 0, 4)
+    // Start stays disabled while the sheet re-checks the pick, so wait for that to clear before reading it.
+    await expect(sheet.getByText('Checking toolhead choices', { exact: true })).toBeHidden()
     const before = await printerActions()
     await start(sheet)
     await sawToast(page, /started on U1 Bay/, { timeout: 30_000 })
