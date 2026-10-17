@@ -18,7 +18,7 @@ import { expectFileDialog } from '../file-dialog'
 import { sliced, tab, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
 import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
-import { boxOnPlate, calm, layeredX, patch, plain } from './lib/slice'
+import { boxOnPlate, calm, handPrinter, layeredX, patch, plain } from './lib/slice'
 
 test.use({ journeyPrefs: linkPrefs })
 test.skip(linkMissing, 'SX_LINK_BIN is not set')
@@ -545,6 +545,93 @@ test('a read client controls every preview marker and reads UI and native CLI ch
       expect(await reader.call('app_preview_markers_set', { wipes: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
     } finally {
       await reader.close()
+    }
+  })
+})
+
+test('a read client plays, pauses and seeks the same clock as the UI and native CLI', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page)
+  // A Snapmaker U1, as the example plate's two filaments change at its tools; the page paired with the hub has no printer.
+  await handPrinter(page, { id: 'e2e-u1', name: 'Desk U1', profileId: 'snapmaker-u1', vendor: 'Snapmaker', model: 'U1', nozzleCount: 4 })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { profile?: { printerId: string } } } }).__sx.getState().profile?.printerId)).toBe('snapmaker-u1')
+  await patch(page, { slice: { status: 'idle' }, preview: null })
+  await scratch('playback', async (dir) => {
+    const reader = await session(link, page, dir, 'playback-reader', 'read')
+    try {
+      const read = () => reader.ok('app_preview_playback')
+      expect(await read()).toMatchObject({ available: false, timeS: null, durationS: null })
+      expect(await reader.call('app_preview_playback_set', { playing: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page)).toBeVisible({ timeout: 120_000 })
+      await expect.poll(async () => (await read()).available).toBe(true)
+      const initial = await read()
+      const history = await reader.ok('app_history')
+      const total = initial.durationS as number
+      expect(total).toBeGreaterThan(10)
+      const dock = page.getByRole('group', { name: 'Layers and moves' })
+      const time = page.locator('#pv-time')
+      const drawn = () => page.evaluate(() => {
+        const tp = (window as unknown as { __vp: { toolpaths: { visibleRange(): [number, number]; hi: number; head: { visible: boolean } } } }).__vp.toolpaths
+        return { hi: tp.hi, to: tp.visibleRange()[1], head: tp.head.visible }
+      })
+      const seek = await reader.ok('app_preview_playback_set', { playing: false, timeS: total / 2, speed: 2, followNozzle: true })
+      await expect(dock.getByRole('button', { name: 'Play print', exact: true })).toBeVisible()
+      await expect(dock.getByRole('checkbox', { name: 'Follow nozzle', exact: true })).toBeChecked()
+      await expect.poll(async () => (await drawn()).hi).toBe(seek.layer - 1)
+      await expect.poll(async () => (await drawn()).head).toBe(true)
+      expect((await read()).timeS).toBeCloseTo(total / 2, 6)
+      const unchanged = await read()
+      expect(await reader.call('app_preview_playback_set', { playing: true, timeS: total + 1, speed: 5 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } })
+      expect(await read()).toEqual(unchanged)
+      await reader.ok('app_preview_playback_set', { timeS: total / 3, playing: true, speed: 10 })
+      await expect(dock.getByRole('button', { name: 'Pause playback' })).toBeVisible()
+      await expect.poll(async () => (await read()).timeS).toBeGreaterThan(total / 3 + 1)
+      await dock.getByRole('button', { name: 'Pause playback' }).click()
+      const paused = await read()
+      expect(paused.playing).toBe(false)
+      await expect(dock.getByRole('button', { name: 'Play print', exact: true })).toBeVisible()
+      await time.focus()
+      await page.keyboard.press('Home')
+      await expect.poll(async () => (await read()).timeS).toBe(0)
+      await page.keyboard.press('ArrowRight')
+      await expect.poll(async () => (await read()).timeS).toBe(1)
+      await dock.getByRole('button', { name: 'Play print', exact: true }).click()
+      await expect.poll(async () => (await read()).playing).toBe(true)
+      await reader.ok('app_preview_playback_set', { playing: false })
+      const stopped = await read()
+      await expect(dock.getByRole('button', { name: 'Play print', exact: true })).toBeVisible()
+      // Several independent reads after UI work must all keep the paused clock.
+      for (let i = 0; i < 3; i++) expect((await read()).timeS).toBe(stopped.timeS)
+      const change = await page.evaluate(() => (window as unknown as { __pv: { timeline: { changes: { segment: number; start: number; duration: number }[] } } }).__pv.timeline.changes[0])
+      expect(change).toBeDefined()
+      await reader.ok('app_preview_playback_set', { timeS: change!.start + change!.duration / 3 })
+      await page.locator('#pv-moves').focus()
+      await page.keyboard.press('ArrowRight')
+      const scrubbed = await read()
+      expect(scrubbed.toolChange.segment).toBe(change!.segment)
+      expect(scrubbed.timeS).toBeCloseTo(change!.start + scrubbed.toolChange.seconds, 6)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_preview_playback_set', { playing: false, timeS: total / 4, speed: 0.5, followNozzle: false }, 'app_preview_playback')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output).toMatchObject({ playing: false, timeS: total / 4, speed: 0.5, followNozzle: false })
+          }
+          expect(await read()).toMatchObject(rows[1].output.output)
+          await expect(dock.getByRole('checkbox', { name: 'Follow nozzle', exact: true })).not.toBeChecked()
+        })
+      }
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await reader.ok('app_preview_playback_set', { timeS: 1, playing: true })
+      await tab(page, 'model').click()
+      await expect.poll(async () => (await read()).available).toBe(false)
+      expect(await read()).toMatchObject({ playing: false, timeS: null })
+      expect(await reader.call('app_preview_playback_set', { playing: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+    } finally {
+      await reader.close()
+      await handPrinter(page, null)
     }
   })
 })

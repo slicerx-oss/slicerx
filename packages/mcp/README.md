@@ -85,6 +85,12 @@ An `unauthorized` app-link response means this setup is missing or the connectio
 
 `slicerx_app_preview_markers_set` accepts one or more boolean switches, for example `{"seams":true,"wipes":true}`. It uses the same switches as the legend and returns read-back; poll the read command for later counts. The app must have a loaded slice on Slice with no paint, brim or face tool active. All inputs validate before anything changes. These view commands use the existing read grant, leave the project and its Undo history unchanged, and are also available through `sx call --app app_preview_markers_set '{"seams":true}' app_preview_markers`.
 
+### Slice playback
+
+With the app link on, `app_preview_playback` reads the playback bar's clock and `app_preview_playback_set` controls `playing`, `timeS`, `speed` and `followNozzle`. Both work through `sx call --app` with the existing read grant. The sliced toolpath bar must be open for changes; active modeling and object tools refuse them. No project or printer state changes.
+
+Time is in print seconds, including startup and tool changes. Read `durationS` before seeking. All inputs validate before any change. A combined request applies pause, preferences, seek, then play. Seek alone preserves playing; playing at the end restarts. A paused seek to the end stays there. Replacing or closing the bar pauses playback. Unavailable clocks return null times. Read again to observe ongoing playback or a person's UI changes.
+
 ### Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.
