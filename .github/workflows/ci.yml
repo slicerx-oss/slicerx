@@ -923,6 +923,8 @@ jobs:
           SX_HEAVY_LOCK: C:/builds/heavy-lock/lock
           SX_HEAVY_WAIT: 1200
           SX_E2E_GPU: '1'
+          # The timing specs live in e2e/nightly; this lane is the only one with a real GPU, so it runs them too.
+          SX_E2E_NIGHTLY: '1'
           PWTEST_BLOB_DO_NOT_REMOVE: '1'
           PLAYWRIGHT_BLOB_OUTPUT_NAME: report-desktop-gpu-timing.zip
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results-timing.json
