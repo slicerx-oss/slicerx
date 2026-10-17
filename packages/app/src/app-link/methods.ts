@@ -51,6 +51,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'preview.markers_set': 'read',
   'preview.playback': 'read',
   'preview.playback_set': 'read',
+  'preview.gcode': 'read',
+  'preview.gcode_jump': 'read',
   // The plates with their slice states, and showing one (by number or id, or the next or previous): like the
   // preview, showing a plate changes only what the window shows, never the project.
   'plates.list': 'read',
@@ -386,6 +388,8 @@ const HANDLERS: Record<string, Handler> = {
   'plates.list': () => platesState(),
   'plates.show': (args) => showPlate(args),
   'look.get': () => lookState(),
+  'preview.gcode': async (args) => (await import('./preview-gcode')).previewGcode(args, false),
+  'preview.gcode_jump': async (args) => (await import('./preview-gcode')).previewGcode(args, true),
   'look.set': (args) => setLook(args),
   'sketch.boxes': async () => (await import('./sketch-boxes')).readBoxes(),
   'sketch.box_set': async (args) => (await import('./sketch-boxes')).setBox(args),

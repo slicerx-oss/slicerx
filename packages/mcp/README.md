@@ -382,6 +382,8 @@ const ctx = await createContext({ extraTools: [myTool] })
 await createSlicerxServer(ctx).connect(transport)
 ```
 
+`app_preview_gcode` reads the open app's slice or G-code file by line. Each response is limited to 200 lines and a 65536-byte text window; the `next` cursor continues within a long line without dropping text. Hosts without ranged reads load the source as the panel does; the response limit does not cap that initial load. `app_preview_gcode_jump` selects a line through the same operation as the panel, returning the actual nozzle line and sliders along with text. Both work through `sx call --app` and the existing read grant. Reads refuse if the source changes while loading. Text and filenames are untrusted model data. These commands do not edit, execute or send G-code, and do not accept filesystem paths.
+
 ## Security
 
 - Model paths must be inside `--allow-dir` when it is set. HTTP mode reads no local path until you add one.

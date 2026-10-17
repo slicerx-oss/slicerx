@@ -636,6 +636,68 @@ test('a read client plays, pauses and seeks the same clock as the UI and native 
   })
 })
 
+test('a read client reads real slice text and selects the same G-code lines as the panel and native CLI', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page)
+  await scratch('gcode', async (dir) => {
+    const reader = await session(link, page, dir, 'gcode-reader', 'read')
+    try {
+      expect(await reader.call('app_preview_gcode')).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      const read = (args = {}) => reader.ok('app_preview_gcode', args)
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page)).toBeVisible({ timeout: 120_000 })
+      const initial = await read({ fromLine: 1, count: 3 })
+      expect(initial).toMatchObject({ source: { kind: 'slice' }, mapped: true, fromLine: 1, lines: [{ number: 1 }, { number: 2 }, { number: 3 }] })
+      expect(initial.totalLines).toBeGreaterThan(100)
+      expect(initial.currentLine).toBeGreaterThan(10)
+      const history = await reader.ok('app_history')
+      await page.getByRole('button', { name: 'G-code', exact: true }).click()
+      const panel = page.getByRole('complementary', { name: 'G-code', exact: true })
+      const go = panel.getByRole('textbox', { name: 'Go to line' })
+      await expect(go).toBeVisible()
+      await go.fill('1')
+      await go.press('Enter')
+      await expect.poll(async () => (await read()).currentLine).toBe(0)
+      await expect(panel.locator('.gc-row').filter({ has: page.locator('.gc-no', { hasText: /^1$/ }) }).locator('.gc-text')).toHaveText(initial.lines[0].text)
+      const last = await reader.ok('app_preview_gcode_jump', { line: initial.currentLine, count: 1 })
+      const selected = panel.getByRole('option', { selected: true })
+      await expect(selected.locator('.gc-no')).toHaveText(String(last.currentLine))
+      await expect(selected.locator('.gc-text')).toHaveText(last.lines[0].text)
+      expect(await read({ count: 1 })).toMatchObject({ currentLine: last.currentLine, layer: last.layer, moveShare: last.moveShare })
+      expect(await reader.call('app_preview_gcode_jump', { line: initial.totalLines + 1 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } })
+      expect((await read()).currentLine).toBe(last.currentLine)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_preview_gcode_jump', { line: 1, count: 1 }, 'app_preview_gcode', { fromLine: 1, count: 1 })
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output).toMatchObject({ source: initial.source, currentLine: 0, layer: 1, moveShare: 0, lines: [{ number: 1, text: initial.lines[0].text }] })
+          }
+          expect(await read({ fromLine: 1, count: 1 })).toMatchObject(rows[1].output.output)
+        })
+      }
+      const text = 'G90\nM83\n;LAYER_CHANGE\nG1 Z0.2\nG1 X0 Y0 F6000\nG1 X10 Y0 E1 F1200\nG1 X10 Y10 E1\n;LAYER_CHANGE\nG1 Z0.4\nG1 X0 Y10 E1\n'
+      const chooser = await expectFileDialog(page, () => command(page, 'Open a G-code file to view'))
+      await chooser.setFiles({ name: 'client-preview.gcode', mimeType: 'text/plain', buffer: Buffer.from(text) })
+      await expect.poll(async () => (await read()).source).toEqual({ kind: 'file', name: 'client-preview.gcode' })
+      expect(await reader.ok('app_preview_gcode_jump', { line: 6, count: 1 })).toMatchObject({ totalLines: 10, currentLine: 6, layer: 1, lines: [{ number: 6, text: 'G1 X10 Y0 E1 F1200' }] })
+      await expect(selected.locator('.gc-no')).toHaveText('6')
+      await expect(selected.locator('.gc-text')).toHaveText('G1 X10 Y0 E1 F1200')
+      await go.fill('10')
+      await go.press('Enter')
+      await expect.poll(async () => (await read()).currentLine).toBe(10)
+      expect(await read({ count: 1 })).toMatchObject({ layer: 2, lines: [{ number: 10, text: 'G1 X0 Y10 E1' }] })
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await tab(page, 'model').click()
+      expect((await read()).source).toEqual({ kind: 'file', name: 'client-preview.gcode' })
+      expect(await reader.call('app_preview_gcode_jump', { line: 6 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+    } finally {
+      await reader.close()
+    }
+  })
+})
+
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the
 // client read-back. The computed CSS on the SVG icons and loops is what no unit test sees, so this keeps all of it.
 test('edition colors reach icons, loops, the viewport and MCP in both themes', async ({ page, link }, info) => {
