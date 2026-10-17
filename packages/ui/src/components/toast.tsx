@@ -210,6 +210,11 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
   useEffect(() => {
     if (open.size === 0) setAnchor(null)
   }, [open])
+  // A focused button that leaves with its line (an action, or a close) takes the focus out of the card without a blur,
+  // so the card lets go of focus once it no longer holds it. Keyboard focus that stays on the card keeps its hold.
+  useEffect(() => {
+    if (!stack.current?.contains(document.activeElement)) card.current?.release('focus')
+  }, [toasts])
   useEffect(() => () => card.current?.stop(), [])
   const value = useMemo(() => toast, [toast])
   return (

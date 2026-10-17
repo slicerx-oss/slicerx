@@ -242,6 +242,19 @@ describe('toasts on screen', () => {
     expect(shown()).toBe(0)
   })
 
+  it('lets go of the focus hold when a pressed button leaves the card, so the lines left still go on time', () => {
+    act(() => post('Saved'))
+    act(() => post('Loaded as one object', { action: { label: 'Keep separate', run: () => {} } }))
+    act(() => void vi.advanceTimersByTime(20))
+    const button = host.querySelector<HTMLButtonElement>('[data-testid=toast-action]')!
+    act(() => button.focus())
+    act(() => button.click())
+    // The pressed button is gone with its line, and nothing blurred: the line left beside it still runs out.
+    expect(shown()).toBe(1)
+    act(() => void vi.advanceTimersByTime(2600))
+    expect(shown()).toBe(0)
+  })
+
   describe('a warning', () => {
     const lines = () => [...host.querySelectorAll('[data-testid=toast]')].map((l) => l.querySelector('.sx-toast-lead')!.textContent)
     const dismiss = (n = 0) => host.querySelectorAll<HTMLButtonElement>('[data-testid=toast-dismiss]')[n]!.click()
