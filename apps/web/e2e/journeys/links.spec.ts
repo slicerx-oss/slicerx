@@ -548,7 +548,8 @@ test('a read client changes the real Model pick filter and reads UI picks throug
       await command(page, 'Push or pull a face')
       await expect.poll(async () => (await read()).available).toBe(false)
       expect(await reader.call('app_pick_filter_set', { kind: 'face' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
-      expect((await read()).pickFilter).toEqual(['edge'])
+      // Only the Windows block above narrows the filter to edge (it needs the Windows credential store); elsewhere it is still the earlier shift-click state.
+      expect((await read()).pickFilter).toEqual(process.platform === 'win32' ? ['edge'] : ['object', 'face'])
     } finally {
       await reader.close()
       await page.keyboard.press('Escape')
