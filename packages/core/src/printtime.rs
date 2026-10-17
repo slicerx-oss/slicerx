@@ -191,6 +191,15 @@ fn recalculate_trapezoids(blocks: &mut [Block]) {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CurveMotion {
+    distance: f64,
+    plane: f64,
+    radius: f64,
+    enter: [f64; 3],
+    exit: [f64; 3],
+}
+
 /// The machine envelope (Orca's `MachineEnvelopeConfig`, normal mode), X, Y, Z, E order.
 #[derive(Debug, Clone)]
 struct Envelope {
@@ -728,6 +737,10 @@ impl Reader {
 
     /// `process_G1`: a straight move to absolute `target`, with the feed rate in mm/min when given.
     fn move_to(&mut self, target: [f64; 4], feed: Option<f64>) {
+        self.plan_move(target, feed, None);
+    }
+
+    fn plan_move(&mut self, target: [f64; 4], feed: Option<f64>, curve: Option<CurveMotion>) {
         self.end = target;
         if let Some(f) = feed {
             self.feedrate = f / 60.0;
@@ -738,16 +751,16 @@ impl Reader {
             self.end[2] - self.start[2],
             self.end[3] - self.start[3],
         ];
-        if d.iter().all(|v| *v == 0.0) {
+        if curve.is_none() && d.iter().all(|v| *v == 0.0) {
             return;
         }
-        let xyz = d[0] != 0.0 || d[1] != 0.0 || d[2] != 0.0;
+        let xyz = curve.is_some() || d[0] != 0.0 || d[1] != 0.0 || d[2] != 0.0;
         let kind = if self.wiping {
             Kind::Wipe
         } else if d[3] < 0.0 {
             if xyz { Kind::Travel } else { Kind::Retract }
         } else if d[3] > 0.0 {
-            if d[0] == 0.0 && d[1] == 0.0 {
+            if curve.is_none() && d[0] == 0.0 && d[1] == 0.0 {
                 if d[2] == 0.0 {
                     Kind::Unretract
                 } else {
@@ -762,7 +775,9 @@ impl Reader {
             Kind::Noop
         };
         let sq = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-        let distance = if sq > 0.0 { sq.sqrt() } else { d[3].abs() };
+        let distance = curve.map_or_else(|| if sq > 0.0 { sq.sqrt() } else { d[3].abs() }, |c| c.distance);
+        // curved axes use their peak speed share, not the endpoint chord.
+        let envelope_delta = curve.map_or(d, |c| [c.plane, c.plane, d[2], d[3]]);
         let inv = 1.0 / distance;
         let extrusion_only = !xyz && d[3] != 0.0;
         let m = &mut self.m;
@@ -780,9 +795,24 @@ impl Reader {
         } else {
             [d[0] / norm, d[1] / norm, d[2] / norm]
         };
+        if let Some(c) = curve {
+            curr.dir = c.enter;
+            let requested = if kind == Kind::Travel {
+                m.travel
+            } else {
+                m.acceleration
+            };
+            let radial = requested.min(m.env.accel[0]).min(m.env.accel[1]);
+            curr.feedrate = curr
+                .feedrate
+                .min((radial * c.radius).sqrt() * c.distance / c.plane);
+        }
         let prev = m.prev;
         // Centripetal limit on gentle corners (Bambu's planner).
-        if (prev.dir[0] != 0.0 || prev.dir[1] != 0.0) && (curr.dir[0] != 0.0 || curr.dir[1] != 0.0) {
+        if curve.is_none()
+            && (prev.dir[0] != 0.0 || prev.dir[1] != 0.0)
+            && (curr.dir[0] != 0.0 || curr.dir[1] != 0.0)
+        {
             let unit = |v: [f64; 3]| {
                 let l = v[0].m_hypot(v[1]);
                 [v[0] / l, v[1] / l]
@@ -799,7 +829,12 @@ impl Reader {
             }
         }
         let mut factor = 1.0f64;
-        for ((axis, index), (dv, max)) in curr.axis.iter_mut().zip(0..4).zip(d.iter().zip(m.env.speed)) {
+        for ((axis, index), (dv, max)) in curr
+            .axis
+            .iter_mut()
+            .zip(0..4)
+            .zip(envelope_delta.iter().zip(m.env.speed))
+        {
             *axis = curr.feedrate * dv * inv;
             if index == 3 {
                 *axis *= m.e_factor;
@@ -823,7 +858,7 @@ impl Reader {
         } else {
             m.acceleration
         };
-        for (dv, max) in d.iter().zip(m.env.accel) {
+        for (dv, max) in envelope_delta.iter().zip(m.env.accel) {
             let share = dv.abs() * inv;
             if acceleration * share > max {
                 acceleration = max / share;
@@ -928,6 +963,12 @@ impl Reader {
             line: self.line,
         };
         block.calculate_trapezoid();
+        if let Some(c) = curve {
+            curr.dir = c.exit;
+            for (axis, direction) in curr.axis.iter_mut().zip(c.exit) {
+                *axis = cruise * direction;
+            }
+        }
         m.prev = curr;
         m.blocks.push(block);
         if m.blocks.len() > REFRESH {
@@ -1014,6 +1055,30 @@ impl Reader {
         }
         let feed = value(words, b'F');
         let extrusion = has(words, b'E').then(|| end[3] - self.start[3]);
+        if self.bbl && self.m.fw == Fw::MarlinLegacy && start_radius > 0.0 {
+            let plane = length.abs();
+            let distance = plane.m_hypot(dz);
+            let sense = if clockwise { -1.0 } else { 1.0 };
+            let tangent = |radial: (f64, f64)| {
+                let radius = radial.0.m_hypot(radial.1);
+                [
+                    -sense * radial.1 / radius * plane / distance,
+                    sense * radial.0 / radius * plane / distance,
+                    dz / distance,
+                ]
+            };
+            if re.0.m_hypot(re.1) > 0.0 && plane > 0.0 {
+                let curve = CurveMotion {
+                    distance,
+                    plane,
+                    radius: start_radius,
+                    enter: tangent(rs),
+                    exit: tangent(re),
+                };
+                self.plan_move(end, feed, Some(curve));
+                return;
+            }
+        }
         let segments = if self.m.fw == Fw::Marlin2 {
             let feed_mm_s = feed.map_or(self.feedrate, |f| f / 60.0);
             let radius = rel_center.0.m_hypot(rel_center.1);
