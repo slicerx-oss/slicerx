@@ -182,6 +182,34 @@ pub fn truthy(cfg: &PrintConfig, key: &str) -> bool {
     }
 }
 
+// raw profiles can bypass the settings importer.
+pub(crate) fn reduce_infill_retraction(cfg: &PrintConfig) -> bool {
+    use serde_json::Value;
+    let mode = cfg
+        .raw
+        .get("reduce_infill_retraction_mode")
+        .and_then(|v| match v {
+            Value::Array(a) if a.len() == 1 => a.first().and_then(Value::as_str),
+            other => other.as_str(),
+        });
+    match mode.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        Some("enabled") => true,
+        Some("disabled") => false,
+        Some("auto") => {
+            let low = |v: &Value| {
+                v.as_str()
+                    .is_some_and(|s| matches!(s.trim().to_ascii_lowercase().as_str(), "none" | "low" | "nil"))
+            };
+            match cfg.raw.get("filament_metal_stickiness") {
+                None => true,
+                Some(Value::Array(a)) => a.iter().all(low),
+                Some(v) => low(v),
+            }
+        }
+        _ => truthy(cfg, "reduce_infill_retraction"),
+    }
+}
+
 impl<'a> Labels<'a> {
     /// None when the profile asks for no labels or the plate has no objects.
     pub fn new(objects: &'a [ObjectFootprint], cfg: &PrintConfig, flavor: GcodeFlavor) -> Option<Self> {
@@ -1528,6 +1556,32 @@ mod tests {
         let mut s = SequenceE::default();
         s.feed(text.as_bytes());
         s.units(slots, 0).iter().map(|&u| u as f64 / 1e5).collect()
+    }
+
+    #[test]
+    fn raw_infill_retraction_modes_match_imported_settings() {
+        use serde_json::json;
+        for (mode, sticky, old, expected) in [
+            (json!("Auto"), json!(["None", "Low"]), false, true),
+            (json!(["Auto"]), json!(["Low", "High"]), true, false),
+            (json!("Auto"), json!("Medium"), true, false),
+            (json!("Enabled"), json!("High"), false, true),
+            (json!("Disabled"), json!("Low"), true, false),
+            (json!("unknown"), json!("Low"), true, true),
+            (json!(null), json!("Low"), false, false),
+        ] {
+            let cfg = PrintConfig::from_json(
+                &serde_json::to_vec(&json!({
+                    "reduce_infill_retraction_mode": mode,
+                    "filament_metal_stickiness": sticky,
+                    "reduce_infill_retraction": old,
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(reduce_infill_retraction(&cfg), expected);
+            assert_eq!(crate::travel::wants_areas(&cfg), expected);
+        }
     }
 
     #[test]
