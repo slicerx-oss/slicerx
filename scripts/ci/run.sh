@@ -43,7 +43,10 @@ done
 export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" CI=true
 # Tests that drive the real engine (sx) or the cloud service (target/debug/sx-cloud) look for them here. sx-build
 # makes both from this commit before vitest: a binary left by an earlier run answered the cloud test from older code.
-export SLICERX_TEST_SX_BIN="$WORK/target/release/sx" SLICERX_SX_BIN="$WORK/target/release/sx"
+# A machine with a shared cargo target (heavy.sh's <lock>.target-dir) builds there, so the binaries are looked up there too:
+# the checkout's own target holds whatever an earlier run left.
+target=${CARGO_TARGET_DIR:-$WORK/target}
+export SLICERX_TEST_SX_BIN="$target/release/sx" SLICERX_SX_BIN="$target/release/sx" SX_CLI_BIN="$target/release/sx"
 
 run_id="$(date +%Y%m%dT%H%M%S)-$platform-$tier-${sha:0:8}"
 out="$LOGS/$run_id"; mkdir -p "$out"
@@ -277,8 +280,10 @@ else
   else skip pgtap "no local Supabase stack on $platform"; fi
   step e2e-browsers pnpm --filter @slicerx/web exec playwright install chromium
   # the list reporter names each failing test, which the rerun needs (CI=true would pick the dot reporter)
-  step e2e pnpm --filter @slicerx/web e2e --reporter=list
-  step devkit sh -c 'cargo build -p sx-cli --release && SLICERX_SX_BIN="$PWD/target/release/sx" node examples/integrator-sample/scripts/integration.mjs'
+  # @gpu specs draw and time frames on a GPU: this machine's browsers draw in software, so toolchange-play counts 2 frames
+  # where it needs 100 and fails every night. The project's GPU runners run them on main and in the merge queue.
+  step e2e pnpm --filter @slicerx/web e2e --reporter=list --grep-invert @gpu
+  step devkit sh -c 'cargo build -p sx-cli --release && SLICERX_SX_BIN="${CARGO_TARGET_DIR:-$PWD/target}/release/sx" node examples/integrator-sample/scripts/integration.mjs'
   if [ "${SX_CI_BENCH:-0}" = 1 ]; then step speed-benchmark pnpm bench; else skip speed-benchmark "not the reference machine"; fi
 fi
 

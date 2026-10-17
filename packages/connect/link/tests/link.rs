@@ -2570,10 +2570,13 @@ fn stop_cloud() {
 async fn cloud_sliced_job_through_the_real_service() {
     const TOKEN: &str = "sxk_test_dev";
     use sx_link::{BrokerGate, InboxConfig, serve_with_approvals};
-    let bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-        "../../../target/debug/sx-cloud{}",
-        std::env::consts::EXE_SUFFIX
-    ));
+    // Cargo's own target directory when CARGO_TARGET_DIR names one (a machine that shares one build directory across
+    // checkouts), else this checkout's. Reading the checkout's directory there would run a service built from older code.
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target"));
+    let bin = target.join(format!("debug/sx-cloud{}", std::env::consts::EXE_SUFFIX));
     if !bin.exists() {
         // CI builds it before the tests, so there a missing service is a failure, not a skip.
         assert!(
