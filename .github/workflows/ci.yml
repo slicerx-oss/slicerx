@@ -549,11 +549,22 @@ jobs:
       # lints run on the other systems; Windows only builds and tests, so the kernel compiles once there
       - if: runner.os != 'Windows'
         run: cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings
-      - run: cargo test -p sx-brep --release --features routine-probe
+      - if: runner.os != 'Windows'
+        run: cargo test -p sx-brep --release --features routine-probe
       # the exact solid ops through sx-geom's JSON and CLI, against exact values and the mesh path
       - if: runner.os != 'Windows'
         run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
-      - run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input
+      - if: runner.os != 'Windows'
+        run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input
+      # Windows runs both in one cargo call. Two calls build sx-brep twice (the second with other feature unification), and
+      # each build compiles the kernel from scratch, about 42 minutes apiece: with the 90 minute limit that timed out 3 of 4
+      # runs. One call compiles it once. The --test list is every test target of packages/brep (it has no unit
+      # tests) and of packages/geom's brep suites; add a new packages/brep/tests file here too.
+      - if: runner.os == 'Windows'
+        run: >-
+          cargo test -p sx-brep -p sx-geom --release --features sx-brep/routine-probe,sx-geom/brep
+          --test face_identity --test input_limits --test kernel --test kernel_detection --test routines --test solids
+          --test brep_parity --test brep_input
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
   # so the specs test what the desktop slices, and no spec needs the WebAssembly slicer. Built once per run beside the
