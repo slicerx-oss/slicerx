@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { accessSync, constants, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, delimiter, extname, join } from 'node:path'
-import type { SettingValue, ScriptReview, ScriptReviewInput, ScriptReplacement } from '@slicerx/contracts'
+import type { SettingValue, ScriptReview, ScriptReviewInput, ScriptReplacement, AppliedScriptReplacement } from '@slicerx/contracts'
 import { collisionError } from './collide'
 import { ToolInputError } from './models'
 import type { SlicerBackend, SliceSummary } from './slicer'
@@ -217,6 +217,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       }))
       const request = {
         schemaVersion: 1,
+        ...(job.scriptReplacements ? { script_replacements: job.scriptReplacements } : {}),
         plate: {
           ...(bed ? { bed } : {}),
           objects: requestObjects,
@@ -229,7 +230,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       }
       const requestPath = join(job.outDir, 'request.json')
       writeFileSync(requestPath, JSON.stringify(request))
-      const { code, stdout, stderr } = await run(bin, ['slice', '--request', requestPath, '--out-dir', job.outDir, ...(job.allowCollisions ? ['--allow-collisions'] : [])], timeoutMs)
+      const { code, stdout, stderr } = await run(bin, ['slice', '--request', requestPath, '--out-dir', job.outDir, ...(job.scriptPrinter ? ['--script-printer', job.scriptPrinter.model, '--script-firmware', job.scriptPrinter.firmware] : []), ...(job.allowCollisions ? ['--allow-collisions'] : [])], timeoutMs)
       if (code !== 0) {
         const why = stderr.trim().split('\n').slice(-3).join(' ') || 'no error output'
         // Collisions come back as their own code, in words for a person and with the objects and layers as details.
@@ -238,6 +239,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         throw sxFailure(code, why)
       }
       const out = JSON.parse(stdout.trim()) as {
+        script_replacements?: AppliedScriptReplacement[]
         layerCount?: number
         gcodeSha256?: string
         stats?: { timeS?: number; filamentMm?: number[]; filamentG?: number[]; toolChanges?: number }
@@ -246,11 +248,16 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         featureFilaments?: { object?: string; features?: Record<string, number[]> }[]
       }
       const sum = (v: number[] | undefined): number => (v ?? []).reduce((a, b) => a + b, 0)
+      if (job.scriptReplacements && (!Array.isArray(out.script_replacements) || out.script_replacements.length !== job.scriptReplacements.length || job.scriptReplacements.some((choice, i) => {
+        const record = out.script_replacements?.[i]
+        return !record || record.decision !== 'applied' || record.reason !== 'stock_replacement_applied' || record.key !== choice.key || record.slot !== (choice.slot ?? null) || record.original !== choice.original || record.replacement !== choice.replacement
+      }))) throw new ToolInputError('The engine did not acknowledge every requested script replacement', 'engine_unavailable')
       const timeS = out.stats?.timeS ?? 0
       const files = out.files ?? {}
       const gcodePath = typeof files.gcode === 'string' ? files.gcode : join(job.outDir, 'slice.gcode')
       const previewPath = typeof files.preview === 'string' ? files.preview : join(job.outDir, 'slice.sxpv')
       const summary: SliceSummary = {
+        ...(out.script_replacements ? { script_replacements: out.script_replacements } : {}),
         engine: 'sx',
         model: { name: job.plate ? `${objects.length} object${objects.length === 1 ? '' : 's'}` : basename(job.modelPath) },
         layer_count: out.layerCount ?? 0,

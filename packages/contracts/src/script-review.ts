@@ -32,6 +32,18 @@ export interface ScriptReplacementInput {
   replacement: string
 }
 
+export interface ScriptReplacementChoice {
+  key: string
+  slot?: number
+  original: string
+  replacement: string
+}
+
+export interface AppliedScriptReplacement extends Omit<ScriptReplacement, 'decision'> {
+  decision: 'applied'
+  slot: number | null
+}
+
 /** An inspectable proposal. Applying it must recheck current text and identity. */
 export interface ScriptReplacement {
   schemaVersion: 1

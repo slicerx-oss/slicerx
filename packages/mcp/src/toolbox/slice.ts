@@ -7,7 +7,7 @@ import { basename, extname, join } from 'node:path'
 import { gcodeLabel, printerForProfile } from '@slicerx/settings'
 import type { ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
-import { productName } from '@slicerx/contracts'
+import { productName, type ScriptReplacementChoice } from '@slicerx/contracts'
 import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, type ExtraLayers, type SlotLayer } from '../config'
 import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
@@ -15,6 +15,7 @@ import { readPresetFiles } from '../presets'
 import { importReportLines, readProjectFile, sliceWalls, type WallsNote } from '../projectfile'
 import { toSchemaValue } from '../settings'
 import { reviewProjectScripts } from '../project-script-review'
+import { replacementConfig } from '../script-replacement'
 import type { SliceSummary } from '../slicer'
 import type { ServerToolDeps } from './deps'
 
@@ -24,6 +25,7 @@ const overridesSchema = z
   .describe('OrcaSlicer setting keys to values, applied last. Example: {"layer_height": 0.16, "sparse_infill_density": 25, "enable_support": true}')
 
 export const sliceInput = {
+  script_replacements: z.array(z.object({ key: z.string().min(1), slot: z.number().int().min(0).max(63).optional(), original: z.string().max(1_048_576), replacement: z.string().max(1_048_576) })).min(1).max(64).optional().describe('Explicit choices to replace imported script slots with verified stock. Requires project_settings, project_gcode review and script_printer. Supply exact original text from inspection and the chosen stock text. The engine rechecks identity and text, retains originals in script_replacements, and never starts a printer.'),
   script_printer: z.object({ model: z.string().min(1), firmware: z.string().min(1) }).optional().describe('Explicit target model id and firmware for comparing imported scripts with known stock, without replacing project settings. Conflicting project identity or changed executable text still requires review.'),
   model: z.string().min(1).describe('Absolute path to an STL, OBJ, 3MF or .sx3mf file, an http(s) URL to download one, or a built-in test model: sample:cube-20, sample:tower-20x60, sample:plate-60x40x3 or sample:x-mark (an X mark)'),
   plate: z.number().int().min(1).max(999).optional().describe('For a 3MF or .sx3mf project, the plate to slice (1-based, see slicerx_inspect_project). Default: the first plate.'),
@@ -83,6 +85,14 @@ export const sliceFileInput = {
 }
 
 export const summaryShape = {
+  script_replacements: z.array(z.object({
+    schemaVersion: z.literal(1), decision: z.literal('applied'), reason: z.string(),
+    key: z.string(), slot: z.number().nullable(), original: z.string(), replacement: z.string(),
+    originalFingerprint: z.string(), replacementFingerprint: z.string(),
+    originalReview: z.object({ schemaVersion: z.literal(1), decision: z.enum(['exact', 'cosmetic', 'review']), reason: z.string(), identity: z.object({ model: z.string(), firmware: z.string() }).nullable(), source: z.string().nullable(), stockVersion: z.string().nullable(), fingerprint: z.string().nullable(), ignored: z.array(z.string()) }),
+    stockReview: z.object({ schemaVersion: z.literal(1), decision: z.enum(['exact', 'cosmetic', 'review']), reason: z.string(), identity: z.object({ model: z.string(), firmware: z.string() }).nullable(), source: z.string().nullable(), stockVersion: z.string().nullable(), fingerprint: z.string().nullable(), ignored: z.array(z.string()) }),
+    diff: z.array(z.object({ operation: z.enum(['equal', 'remove', 'add']), originalLine: z.number().nullable(), replacementLine: z.number().nullable(), text: z.string() })),
+  })).optional(),
   script_reviews: z.array(z.object({
     key: z.string(), slot: z.number().optional(), schemaVersion: z.literal(1),
     decision: z.enum(['exact', 'cosmetic', 'review']), reason: z.string(),
@@ -141,7 +151,7 @@ export function noPrinterMessage(config: Record<string, unknown>): string {
 }
 
 export type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-export type SliceArgs = { script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
+export type SliceArgs = { script_replacements?: ScriptReplacementChoice[]; script_printer?: { model: string; firmware: string }; model: string; plate?: number | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; paint?: Record<string, Record<string, Record<string, string>>> | undefined; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
 
 /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
 async function slotLayers(d: ServerToolDeps, slots: SlotArg[]): Promise<SlotLayer[]> {
@@ -207,10 +217,14 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   await profiles.prepare([...args.profiles, ...(args.filaments ?? []).flatMap((s) => (s.profile ? [s.profile] : []))])
   const presets = args.profile_files.length ? await readPresetFiles(d.policy, args.profile_files) : undefined
   const slots = args.filaments?.length ? await slotLayers(d, args.filaments) : undefined
+  if (args.script_replacements) {
+    if (!project || !args.script_printer || args.project_gcode !== 'review' || slicer.kind !== 'sx') throw new ToolInputError('Explicit stock replacement requires project settings, project_gcode review, script_printer and the sx engine', 'invalid_input')
+    project = { ...project, config: replacementConfig(project.config, args.script_replacements, 'candidate') }
+  }
   const scriptReviews = await reviewProjectScripts(profiles, args.profiles, { project, presets, slots }, args.overrides, slicer, args.script_printer)
   const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced, noPrinter } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots, scriptReviews })
   const projectGcode = [
-    ...gcodeKept.map((k) => ({ key: k.key, ...(k.slot !== undefined ? { slot: k.slot } : {}), use: 'project' as const, message: `The project's ${k.label} ${k.message}.` })),
+    ...gcodeKept.filter((k) => !args.script_replacements?.some((c) => c.key === k.key && c.slot === k.slot)).map((k) => ({ key: k.key, ...(k.slot !== undefined ? { slot: k.slot } : {}), use: 'project' as const, message: `The project's ${k.label} ${k.message}.` })),
     ...gcodeReplaced.map((k) => ({ key: k, use: 'profile' as const, message: `Used the printer profile's ${gcodeLabel(k)} instead of the project's.` })),
   ]
   // A .gcode.3mf carries the plate picture: ask the engine to draw one when the settings name no thumbnail sizes.
@@ -221,7 +235,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     modelPath,
     ...(args.plate !== undefined ? { modelPlate: args.plate } : {}),
     config,
-    explicitConfig: explicit,
+    explicitConfig: args.script_replacements ? replacementConfig(explicit, args.script_replacements, 'original') : explicit,
+    ...(args.script_replacements ? { scriptReplacements: args.script_replacements, scriptPrinter: args.script_printer } : {}),
     profileNames: args.profiles,
     overrides: Object.fromEntries(Object.entries(args.overrides ?? {}).map(([k, v]) => [k, toSchemaValue(store.setting(k), v)])),
     outDir,
