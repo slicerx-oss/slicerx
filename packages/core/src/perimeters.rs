@@ -1302,6 +1302,14 @@ pub(crate) fn walls_for_top(
                 cores.extend(core);
                 continue;
             }
+            // this superset cannot hold a top region if even its widest strips disappear.
+            let possible = difference(&offset(&one, -(ext - overlap)), top.upper);
+            if offset(&possible, -trim).is_empty() {
+                let (walls, core) = normal(&one);
+                islands.extend(walls);
+                cores.extend(core);
+                continue;
+            }
             let (mut outer, outer_core) = walls_gapped(
                 &one,
                 1,
