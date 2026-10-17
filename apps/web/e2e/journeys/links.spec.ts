@@ -14,9 +14,9 @@ import { promisify } from 'node:util'
 import type { TopologyManifest } from '../../../../packages/cad-history/src/topology-manifest'
 import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
-import { viewSized, viewportReady } from '../fixtures'
+import { plateReady, sliceCount, sliced, tab, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
-import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, type Answer } from './lib/links'
+import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
 
 test.use({ journeyPrefs: linkPrefs })
 test.skip(linkMissing, 'SX_LINK_BIN is not set')
@@ -431,6 +431,391 @@ test('scoped exact hole edits use app revisions across a visible undo', async ({
       ;(window as unknown as { __sx: { setState(v: unknown): void } }).__sx.setState({ settingsMode: mode })
     }, mode)
   }
+})
+
+test('clients change display units with visible read-back, native CLI and persistent preferences', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page, 'design')
+  await scratch('units', async (dir) => {
+    const reader = await session(link, page, dir, 'units-reader', 'read')
+    try {
+      await command(page, 'Add a box')
+      await expect(page.getByLabel('Model size')).toContainText('20')
+      const before = await reader.ok('app_history')
+      const read = () => reader.ok('app_units')
+      const inches = await reader.ok('app_units_set', { length: 'in', precision: { decimals: 3 } })
+      expect(inches).toMatchObject({ available: true, length: 'in', precision: { decimals: 3 }, millimetersPerUnit: 25.4, dataUnit: 'mm' })
+      expect(await read()).toEqual(inches)
+      await expect(page.getByLabel('Model size')).toContainText('0.787 x 0.787 x 0.787 in')
+      const settings = async () => {
+        await page.getByRole('button', { name: 'Settings', exact: true }).click()
+        const dialog = page.getByRole('dialog', { name: 'Settings' })
+        await dialog.getByRole('button', { name: /Slicing and modeling|Modeling/ }).first().click()
+        return dialog
+      }
+      const dialog = await settings()
+      await expect(dialog.getByTestId('set-precision-pick')).toHaveValue('d3')
+      await dialog.getByTestId('set-precision-pick').selectOption('f32')
+      expect(await read()).toMatchObject({ length: 'in', precision: { fraction: 32 }, inchDigits: 3, inchFraction: 32 })
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+      await expect(page.getByLabel('Model size')).toContainText('25/32 x 25/32 x 25/32 in')
+      const unchanged = await read()
+      expect(await reader.call('app_units_set', { length: 'mm', precision: { fraction: 32 } })).toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } })
+      expect(await read()).toEqual(unchanged)
+      expect(await reader.ok('app_history')).toEqual(before)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_units_set', { length: 'mm', precision: { decimals: 2 } }, 'app_units')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output).toMatchObject({ length: 'mm', precision: { decimals: 2 }, millimetersPerUnit: 1, dataUnit: 'mm' })
+          }
+          expect(rows[0].output.output).toEqual(rows[1].output.output)
+          expect(await read()).toEqual(rows[1].output.output)
+        })
+        await expect(page.getByLabel('Model size')).toContainText('20 x 20 x 20 mm')
+      }
+      await reader.ok('app_units_set', { length: 'in' })
+      expect(await read()).toMatchObject({ length: 'in', precision: { fraction: 32 } })
+      expect(await reader.ok('app_history')).toEqual(before)
+      // A reload keeps the choice; the page pairs with the hub again on its own.
+      await page.reload()
+      await plateReady(page)
+      await expect.poll(async () => (await sx.get(page, 'bridgeStatus')).state, { timeout: 30_000 }).toBe('on')
+      const restored = await settings()
+      await expect(restored.getByTestId('set-precision-pick')).toHaveValue('f32')
+      await restored.getByTestId('set-units-mm').click()
+      await expect(restored.getByTestId('set-precision-pick')).toHaveValue(process.platform === 'win32' ? 'd2' : `d${inches.mmDigits}`)
+      await page.keyboard.press('Escape')
+    } finally {
+      await reader.close()
+    }
+  })
+})
+
+test('a read client changes the real Model pick filter and reads UI picks through the SDK and native CLI', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page)
+  await scratch('pick-filter', async (dir) => {
+    const reader = await session(link, page, dir, 'pick-filter-reader', 'read')
+    try {
+      const read = () => reader.ok('app_pick_filter')
+      expect(await read()).toMatchObject({ available: false })
+      expect(await reader.call('app_pick_filter_set', { kind: 'object' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await tab(page, 'model').click()
+      await command(page, 'Add a box')
+      await expect.poll(async () => (await read()).objects.some((o: { name: string }) => o.name === 'Box')).toBe(true)
+      const id = (await read()).primary as string
+      const filter = (kind: string) => page.locator(`[data-testid="model-select-filter"][data-kind="${kind}"]`)
+      await expect(filter('face')).toBeVisible()
+      const history = await reader.ok('app_history')
+      const face = await reader.ok('app_pick_filter_set', { kind: 'face' })
+      expect(face).toMatchObject({ available: true, pickFilter: ['face'], primary: id })
+      await expect(filter('face')).toHaveAttribute('aria-pressed', 'true')
+      await expect(filter('object')).toHaveAttribute('aria-pressed', 'false')
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)).toBe(true)
+      const box = await bounds(page, id)
+      const point = await page.evaluate((p) => (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp.screenOf(p), [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, box.max[2]])
+      await page.mouse.click(point[0], point[1])
+      await expect.poll(async () => (await read()).picks.length).toBe(1)
+      expect((await read()).picks[0]).toMatchObject({ kind: 'face', objectId: id })
+      await reader.ok('app_pick_filter_set', { kind: 'edge', mode: 'toggle' })
+      expect(await read()).toMatchObject({ pickFilter: ['face', 'edge'], primary: id, picks: [{ kind: 'face' }] })
+      await expect(filter('edge')).toHaveAttribute('aria-pressed', 'true')
+      await filter('object').click()
+      expect(await read()).toMatchObject({ pickFilter: ['object'], primary: id, picks: [] })
+      await filter('face').click({ modifiers: ['Shift'] })
+      expect(await read()).toMatchObject({ pickFilter: ['object', 'face'] })
+      const before = await read()
+      expect(await reader.call('app_pick_filter_set', { kind: 'edge', mode: 'invalid' })).toMatchObject({ isError: true })
+      expect(await read()).toEqual(before)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_pick_filter_set', { kind: 'edge', mode: 'only' }, 'app_pick_filter')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output).toMatchObject({ available: true, pickFilter: ['edge'], primary: id, picks: [] })
+          }
+          expect(await read()).toMatchObject(rows[1].output.output)
+          await expect(filter('edge')).toHaveAttribute('aria-pressed', 'true')
+          await expect(filter('face')).toHaveAttribute('aria-pressed', 'false')
+        })
+      }
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await command(page, 'Push or pull a face')
+      await expect.poll(async () => (await read()).available).toBe(false)
+      expect(await reader.call('app_pick_filter_set', { kind: 'face' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      // Only the Windows block above narrows the filter to edge (it needs the Windows credential store); elsewhere it is still the earlier shift-click state.
+      expect((await read()).pickFilter).toEqual(process.platform === 'win32' ? ['edge'] : ['object', 'face'])
+    } finally {
+      await reader.close()
+      await page.keyboard.press('Escape')
+      await sx.set(page, { pickFilter: ['face'] })
+    }
+  })
+})
+
+test('clients keep real dimensions with visible read-back, permissions, native CLI and toolbar Undo', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page, 'design')
+  await scratch('dimensions', async (dir) => {
+    const editor = await session(link, page, dir, 'dimension-editor', 'edit')
+    try {
+      const prior = await editor.ok('app_history')
+      const known = new Set(prior.plates.flatMap((p: { objects: { id: string }[] }) => p.objects.map((o) => o.id)))
+      await command(page, 'Add a box')
+      const added = async () => {
+        const current = await editor.ok('app_history')
+        return current.plates.flatMap((p: { objects: { id: string; sizeMm: number[] }[] }) => p.objects).filter((o: { id: string }) => !known.has(o.id))
+      }
+      await expect.poll(async () => (await added()).length).toBe(1)
+      const box = (await added())[0]
+      const id: string = box.id
+      const height: number = box.sizeMm[2]
+      expect(height).toBeCloseTo(20)
+      const listed = await editor.ok('geom_faces', { design: id })
+      type Face = { part: number; triangle: number; at: number[]; normal: number[] }
+      const top = listed.faces.find((f: Face) => f.normal[2]! > 0.99) as Face
+      const bottom = listed.faces.find((f: Face) => f.normal[2]! < -0.99) as Face
+      expect(top).toBeTruthy()
+      expect(bottom).toBeTruthy()
+      const pick = (p: Face) => ({ object: id, part: p.part, triangle: p.triangle, at: p.at })
+      const request = { kind: 'distance', a: pick(top), b: pick(bottom) }
+      const read = () => editor.ok('app_dimensions')
+      const before = await editor.ok('app_history')
+      await command(page, 'Measure distance, angle and radius')
+      const kept = await editor.ok('app_dimension_keep', request)
+      expect(kept.dimensions).toHaveLength(1)
+      expect(kept.dimensions[0]).toMatchObject({ id: kept.kept, status: 'ok', unit: 'mm', visible: true })
+      expect(kept.dimensions[0].value).toBeCloseTo(height)
+      expect((await read()).dimensions).toEqual(kept.dimensions)
+      expect((await editor.ok('app_history')).undo).toBe(before.undo + 1)
+      const list = page.getByRole('list', { name: 'Kept dimensions' })
+      await expect(list).toContainText(`${height.toFixed(2)} mm`)
+      const drawn = () => page.evaluate(() => {
+        const group = (window as unknown as { __vp: { dims: { group: { children: { type: string; geometry?: { attributes: { position: { array: ArrayLike<number> } } } }[] } } } }).__vp.dims.group
+        return Array.from(group.children.find((c) => c.type === 'LineSegments')?.geometry?.attributes.position.array ?? [])
+      })
+      await expect.poll(async () => (await drawn()).length).toBe(6)
+      const vertices = await drawn()
+      const annotation = kept.dimensions[0].annotation
+      vertices.forEach((v, i) => expect(v).toBeCloseTo([...annotation.from, ...annotation.to][i], 3))
+      const show = page.getByRole('switch', { name: 'Show all kept dimensions' })
+      const revision = (await editor.ok('app_history')).revision
+      await expect(show).toHaveAttribute('aria-checked', 'false')
+      await show.click()
+      await expect(show).toHaveAttribute('aria-checked', 'true')
+      expect((await read()).showAll).toBe(true)
+      await editor.ok('app_dimensions_show', { showAll: false })
+      await expect(show).toHaveAttribute('aria-checked', 'false')
+      expect((await editor.ok('app_history')).revision).toBe(revision)
+      const reader = await session(link, page, dir, 'dimension-reader', 'read')
+      try {
+        expect(await reader.ok('app_dimensions')).toMatchObject({ dimensions: [{ id: kept.kept }] })
+        expect(await reader.call('app_dimension_keep', request)).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+        expect(await reader.call('app_dimension_remove', { dimension: kept.kept })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+      } finally {
+        await reader.close()
+      }
+      expect(await editor.call('app_dimension_keep', { ...request, value: 999 })).toMatchObject({ isError: true })
+      expect((await read()).dimensions).toEqual(kept.dimensions)
+      await page.getByRole('button', { name: 'Done', exact: true }).click()
+      await editor.ok('project_scale', { object: id, scale: [1, 1, 2] })
+      expect((await read()).dimensions[0].value).toBeCloseTo(height * 2)
+      // The test is on the Model tab, where the plate toolbar is not mounted; its Undo is the ribbon's quick button.
+      const undo = page.locator('.rb-quick').getByRole('button', { name: 'Undo', exact: true })
+      await undo.click()
+      expect((await read()).dimensions[0].value).toBeCloseTo(height)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, editor.clientKey!, async (run) => {
+          const rows = await run('app_dimension_remove', { dimension: kept.kept }, 'app_dimensions')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output.dimensions).toEqual([])
+          }
+          expect(rows[0].output.output.removed).toBe(kept.kept)
+          expect((await read()).dimensions).toEqual([])
+        })
+        await expect.poll(async () => (await drawn()).length).toBe(0)
+        await undo.click()
+        expect((await read()).dimensions[0].id).toBe(kept.kept)
+      }
+      await command(page, 'Measure distance, angle and radius')
+      await expect(list).toContainText(`${height.toFixed(2)} mm`)
+      await list.getByRole('button', { name: 'Remove the distance' }).click()
+      expect((await read()).dimensions).toEqual([])
+    } finally {
+      await editor.close()
+    }
+  })
+})
+
+test('clients paint the live object through MCP and native CLI, read brush layers and undo', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page)
+  await command(page, 'Add a box')
+  await expect.poll(async () => (await sx.get(page, 'plate')).length).toBe(1)
+  type Paint = { preview?: string; revision: string; changed?: boolean; object: string; parts: { states: { state: number; areaMm2: number }[] }[] }
+  await scratch('paint', async (dir) => {
+    const objectOf = async (client: { ok(tool: string): Promise<any> }): Promise<string> => {
+      const state = await client.ok('app_history')
+      return state.plates.find((p: { id: string }) => p.id === state.activePlate).objects[0].id
+    }
+    const reader = await session(link, page, dir, 'paint-reader', 'read')
+    try {
+      const object = await objectOf(reader)
+      const pv: Paint = (await reader.ok('app_paint_preview', { object, layer: 'seam', state: 1, target: { kind: 'direction', direction: 'top' } }))
+      expect(pv.preview).toBeTruthy()
+      expect(await reader.call('app_paint_apply', { preview: pv.preview })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+    } finally {
+      await reader.close()
+    }
+    const editor = await session(link, page, dir, 'paint-editor', 'edit')
+    try {
+      const object = await objectOf(editor)
+      const call = (name: string, args: Record<string, unknown>): Promise<Paint> => editor.ok(name, args)
+      const undo = page.getByTestId('plate-tools-group').getByRole('button', { name: 'Undo', exact: true })
+      const exercise = async (native?: (name: string, args: Record<string, unknown>) => Promise<Paint>) => {
+        const invoke = native ?? call
+        for (const layer of ['color', 'seam', 'support', 'fuzzy']) {
+          const initial = await invoke('app_paint', { object, layer })
+          const pv = await invoke('app_paint_preview', { object, layer, state: 1, target: { kind: 'direction', direction: 'top' } })
+          expect(pv.changed).toBe(true)
+          expect((await call('app_paint', { object, layer })).parts).toEqual(initial.parts)
+          const applied = await invoke('app_paint_apply', { preview: pv.preview })
+          expect(applied.parts).toEqual(pv.parts)
+          expect(applied.parts.flatMap((p) => p.states).some((s) => s.state === 1 && s.areaMm2 > 0)).toBe(true)
+          expect((await call('app_paint', { object, layer })).parts).toEqual(applied.parts)
+          await undo.click()
+          expect((await call('app_paint', { object, layer })).parts).toEqual(initial.parts)
+          const again = await call('app_paint_preview', { object, layer, state: 1, target: { kind: 'part' } })
+          await call('app_paint_apply', { preview: again.preview })
+          const painted = await call('app_paint', { object, layer })
+          const cleared = await invoke('app_paint_clear', { object, layer, revision: painted.revision })
+          expect(cleared.parts.every((p) => p.states.length === 0)).toBe(true)
+          await undo.click()
+          expect((await call('app_paint', { object, layer })).parts).toEqual(painted.parts)
+          await undo.click()
+          expect((await call('app_paint', { object, layer })).parts).toEqual(initial.parts)
+        }
+      }
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, editor.clientKey!, async (run) => {
+          await exercise(async (name, args) => {
+            const [row] = await run(name, args)
+            expect(row.ok, JSON.stringify(row)).toBe(true)
+            return row.output.output
+          })
+        })
+      } else await exercise()
+      const pv = await call('app_paint_preview', { object, state: 1, target: { kind: 'part' } })
+      const next = await call('app_paint_preview', { object, layer: 'support', state: 1, target: { kind: 'part' } })
+      await call('app_paint_apply', { preview: next.preview })
+      expect(await editor.call('app_paint_apply', { preview: pv.preview })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await undo.click()
+    } finally {
+      await editor.close()
+    }
+  })
+})
+
+test('clients edit brim ears through MCP and the native CLI, read them back, undo and slice actual discs', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page)
+  await command(page, 'Add a box')
+  await expect.poll(async () => (await sx.get(page, 'plate')).length).toBe(1)
+  type Ear = { index: number; bedMm: number[]; localMm: number[]; diameterMm: number; connected: boolean }
+  type Brim = { revision: string; changed?: boolean; objects: { id: string; enabled: boolean; ears: Ear[] }[] }
+  const brimType = page.locator('#expert-panel').getByLabel('Brim type', { exact: true })
+  let wasType: string | undefined
+  await scratch('brim', async (dir) => {
+    const reader = await session(link, page, dir, 'brim-reader', 'read')
+    try {
+      const state: Brim = await reader.ok('app_brim_ears')
+      expect(await reader.call('project_brim_ears', { object: state.objects[0]!.id, revision: state.revision, action: 'generate' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+    } finally {
+      await reader.close()
+    }
+    const editor = await session(link, page, dir, 'brim-editor', 'edit')
+    try {
+      const initial: Brim = await editor.ok('app_brim_ears')
+      const object = initial.objects[0]!.id
+      const read = (): Promise<Brim> => editor.ok('app_brim_ears', { object })
+      const edit = async (args: Record<string, unknown>): Promise<Brim> => editor.ok('project_brim_ears', { object, revision: (await read()).revision, ...args })
+      await edit({ action: 'generate', diameter_mm: 10 })
+      const generated = await read()
+      expect(generated.objects[0]!.ears.length).toBeGreaterThanOrEqual(3)
+      expect(generated.objects[0]!.ears.every((e) => e.connected)).toBe(true)
+      expect(await editor.call('project_brim_ears', { object, revision: initial.revision, action: 'clear' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      const undo = page.getByTestId('plate-tools-group').getByRole('button', { name: 'Undo', exact: true })
+      await undo.click()
+      expect((await read()).objects[0]!.ears).toEqual([])
+      const [x, y] = generated.objects[0]!.ears[0]!.bedMm
+      const actions = [
+        { action: 'add', x_mm: x, y_mm: y, diameter_mm: 10 },
+        { action: 'move', indices: [0], x_mm: x! + 0.5, y_mm: y },
+        { action: 'resize', indices: [0], diameter_mm: 12 },
+        { action: 'remove', indices: [0] },
+        { action: 'generate', diameter_mm: 10 },
+        { action: 'clear' },
+      ]
+      const outputs: Brim[] = []
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, editor.clientKey!, async (run) => {
+          for (const action of actions) {
+            const args = { object, revision: (await read()).revision, ...action }
+            const rows = await run('project_brim_ears', args, 'app_brim_ears', { object })
+            expect(rows).toHaveLength(2)
+            expect(rows.every((row) => row.ok)).toBe(true)
+            expect(rows[0].output.output.changed).toBe(true)
+            expect(rows[1].output.output.objects).toEqual(rows[0].output.output.objects)
+            expect((await read()).objects).toEqual(rows[1].output.output.objects)
+            outputs.push(rows[1].output.output)
+          }
+        })
+      } else {
+        for (const action of actions) {
+          await edit(action)
+          outputs.push(await read())
+        }
+      }
+      expect(outputs[0]!.objects[0]!.ears[0]!.bedMm[0]).toBeCloseTo(x!, 3)
+      expect(outputs[1]!.objects[0]!.ears[0]!.bedMm[0]).toBeCloseTo(x! + 0.5, 3)
+      expect(outputs[2]!.objects[0]!.ears[0]!.diameterMm).toBe(12)
+      expect(outputs[3]!.objects[0]!.ears).toEqual([])
+      expect(outputs[4]!.objects[0]!.ears.length).toBeGreaterThanOrEqual(3)
+      expect(outputs[5]!.objects[0]!.ears).toEqual([])
+      for (let i = outputs.length - 1; i >= 0; i--) {
+        await undo.click()
+        const ears = (await read()).objects[0]!.ears
+        expect(ears).toEqual(i === 0 ? [] : outputs[i - 1]!.objects[0]!.ears)
+      }
+      await edit({ action: 'generate', diameter_mm: 10 })
+      await page.keyboard.press('ControlOrMeta+k')
+      await page.locator('.sx-palette-input').fill('brim type')
+      await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+      wasType = await brimType.inputValue()
+      await brimType.selectOption('painted')
+      expect((await read()).objects[0]!.enabled).toBe(true)
+      const count = await sliceCount(page)
+      await page.getByRole('main').getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page, count)).toBeVisible({ timeout: 120_000 })
+      await page.evaluate(() => Reflect.deleteProperty(window, 'showSaveFilePicker'))
+      const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
+      const text = readFileSync(await download.path(), 'utf8')
+      const mark = text.includes('\n; CHANGE_LAYER\n') ? '; CHANGE_LAYER' : ';LAYER_CHANGE'
+      const firstLayer = text.slice(text.indexOf(mark), text.indexOf(mark, text.indexOf(mark) + 1))
+      expect(firstLayer).toMatch(/;\s*(?:TYPE|FEATURE):\s*Brim/)
+    } finally {
+      await editor.close()
+      // The brim type is a print setting the next test would find still on painted.
+      if (wasType !== undefined) await brimType.selectOption(wasType)
+    }
+  })
 })
 
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the

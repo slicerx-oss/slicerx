@@ -11,8 +11,10 @@ import { ToolInputError } from './errors'
 import { modelingTools, type ModelingFiles } from './modeling-tools'
 
 export { appValueInputs, type AppValuesResult } from './app-values'
+export { brimEditInput, brimReadInput } from './brim-input'
 
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
+export { appDimensionInputs, type AppDimensions } from './app-dimensions'
 
 const noFiles = (): never => {
   throw new ToolInputError('Model files are for the MCP server; here, give a design instead.', 'not_supported')
@@ -41,3 +43,6 @@ function noEngine(): never {
 export function designToolset(host: DesignHost, files: { design?: DesignFiles; cad?: CadFiles; modeling?: ModelingFiles } = {}): PilotTool<never>[] {
   return [...designTools(host, files.design ?? NO_DESIGN_FILES), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host })]
 }
+
+export { appUnitInputs, type AppUnits } from './app-units'
+export { appPaintReadInput, appPaintPreviewInput, appPaintApplyInput, appPaintClearInput, storedTarget } from './app-paint-input'

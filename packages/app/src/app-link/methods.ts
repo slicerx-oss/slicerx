@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // What an agent may do with the open project over the app link, and the page's answer to each. The hub keeps the same
 // list (packages/connect/link/src/roles.rs, APP_LINK_METHODS) and refuses every other name before it reaches here; a
-// test checks the two lists match. Project geometry and its modifier print values are editable, as are two view
+// test checks the two lists match. Project geometry and its modifier print values are editable, as are view
 // preferences. model.push_set only types a distance into the open Push and pull for the person to apply. Nothing here
 // prints, queues, approves, signs in or changes printer connections.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
@@ -30,20 +30,32 @@ export type LinkClass = 'read' | 'edit'
 export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'app.info': 'read',
   'history.get': 'read',
+  'units.get': 'read',
+  'units.set': 'read',
   'history.undo': 'edit',
   'history.redo': 'edit',
   'plate.list': 'read',
+  'brim.get': 'read',
+  'brim.edit': 'edit',
   // Moving, turning and scaling objects on the shown plate, each one undo step; the person sees who did it.
   'project.move': 'edit',
   'project.rotate': 'edit',
   'project.scale': 'edit',
   'volumes.list': 'read',
+  'dimensions.list': 'read',
+  'dimensions.keep': 'edit',
+  'dimensions.remove': 'edit',
+  'dimensions.show': 'read',
   'volumes.add': 'edit',
   'volumes.from_object': 'edit',
   'volumes.set': 'edit',
   'volumes.copy': 'edit',
   'volumes.remove': 'edit',
   // The slice preview only changes what the window shows, never the project.
+  'paint.get': 'read',
+  'paint.preview': 'read',
+  'paint.apply': 'edit',
+  'paint.clear': 'edit',
   'preview.get': 'read',
   'preview.set': 'read',
   // The plates with their slice states, and showing one (by number or id, or the next or previous): like the
@@ -67,6 +79,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // changes what is selected in the window, never the project.
   'select.under': 'read',
   'select.other': 'read',
+  'select.filter': 'read',
+  'select.filter_set': 'read',
   'values.list': 'read',
   'values.set': 'edit',
   'values.remove': 'edit',
@@ -340,6 +354,8 @@ function bedShape() {
 }
 
 const HANDLERS: Record<string, Handler> = {
+  'brim.get': async (args) => (await import('./brim')).readBrim(args),
+  'brim.edit': async (args, client) => (await import('./brim')).editBrim(args, client.name),
   'app.info': () => {
     const s = get()
     const edition = currentEdition()
@@ -371,12 +387,22 @@ const HANDLERS: Record<string, Handler> = {
   'project.move': async (args, client) => (await import('./plate-edits')).move(args, client.name),
   'project.rotate': async (args, client) => (await import('./plate-edits')).rotate(args, client.name),
   'project.scale': async (args, client) => (await import('./plate-edits')).scale(args, client.name),
+  'units.get': async (args) => (await import('./units')).read(args),
+  'units.set': async (args) => (await import('./units')).change(args),
   'volumes.list': async (args) => (await import('./volumes')).readVolumes(args),
+  'dimensions.list': async (args) => (await import('./dimensions')).readDimensions(args),
+  'dimensions.keep': async (args, client) => (await import('./dimensions')).keep(args, client.name),
+  'dimensions.remove': async (args, client) => (await import('./dimensions')).remove(args, client.name),
+  'dimensions.show': async (args) => (await import('./dimensions')).show(args),
   'volumes.add': async (args, client) => (await import('./volumes')).volumeAction('add', args, client.name, linkLoader),
   'volumes.from_object': async (args, client) => (await import('./volumes')).volumeAction('fromObject', args, client.name, linkLoader),
   'volumes.set': async (args, client) => (await import('./volumes')).volumeAction('set', args, client.name, linkLoader),
   'volumes.copy': async (args, client) => (await import('./volumes')).volumeAction('copy', args, client.name, linkLoader),
   'volumes.remove': async (args, client) => (await import('./volumes')).volumeAction('remove', args, client.name, linkLoader),
+  'paint.get': async (args) => (await import('./paint')).readPaint(args),
+  'paint.preview': async (args, client) => (await import('./paint')).previewPaint(args, client),
+  'paint.apply': async (args, client) => (await import('./paint')).applyPaint(args, client),
+  'paint.clear': async (args, client) => (await import('./paint')).clearLayer(args, client),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
   'plates.list': () => platesState(),
@@ -391,6 +417,8 @@ const HANDLERS: Record<string, Handler> = {
   // Loaded when first used, with the rest of Select Other.
   'select.under': async (args) => (await import('../plate/select-other-pick')).linkUnder(args),
   'select.other': async (args) => (await import('../plate/select-other-pick')).linkPick(args),
+  'select.filter': async () => (await import('./pick-filter')).readPickFilter(),
+  'select.filter_set': async (args) => (await import('./pick-filter')).setPickFilter(args),
   // A client's dimension sheet for the person to confirm, and its answer read back by that client.
   'sheet.ask': async (args, client) => (await import('./sheets')).askSheet(args, client),
   'sheet.get': async (args, client) => (await import('./sheets')).getSheet(args, client),

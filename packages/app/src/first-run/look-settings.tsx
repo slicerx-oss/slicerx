@@ -7,6 +7,7 @@ import { LOOK_OPTIONS } from '@slicerx/contracts'
 import { Button, Seg, Select, SwitchRow } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
+import { INCH_DIGITS, INCH_FRACTIONS, MM_DIGITS, withUnitSettings } from '../cad/unit-settings'
 import { formatShortcut } from '../lib/keys'
 import { AccentGroup, AccessibilityGroup, SetRow, setAppearance, TextGroup, ToolbarGroup } from '../shell/appearance-settings'
 import { AUTO_SLICE_DETAIL, AUTO_SLICE_MODES, autoSliceFields, autoSliceMode } from '../state/auto-slice-mode'
@@ -195,8 +196,8 @@ export function SlicingSettingsSection() {
   )
 }
 
-const PRECISION_MM = [0, 1, 2, 3].map((d) => ({ value: `d${d}`, label: d ? (0).toFixed(d) : '0' }))
-const PRECISION_IN = [...[2, 3, 4].map((d) => ({ value: `d${d}`, label: (0).toFixed(d) })), ...[16, 32, 64].map((f) => ({ value: `f${f}`, label: `1/${f}` }))]
+const PRECISION_MM = MM_DIGITS.map((d) => ({ value: `d${d}`, label: d ? (0).toFixed(d) : '0' }))
+const PRECISION_IN = [...INCH_DIGITS.map((d) => ({ value: `d${d}`, label: (0).toFixed(d) })), ...INCH_FRACTIONS.map((f) => ({ value: `f${f}`, label: `1/${f}` }))]
 
 /** Display units for lengths in Model, and how precisely they show. Data stays in mm; Slice stays in mm. */
 function UnitRows() {
@@ -205,12 +206,12 @@ function UnitRows() {
   const precision = inches ? (u.inchFraction ? `f${u.inchFraction}` : `d${u.inchDigits}`) : `d${u.mmDigits}`
   const setPrecision = (v: string) => {
     const n = Number(v.slice(1))
-    set({ units: { ...u, ...(inches ? (v[0] === 'f' ? { inchFraction: n } : { inchDigits: n, inchFraction: 0 }) : { mmDigits: n }) } })
+    set((s) => ({ units: withUnitSettings(s.units, { precision: v[0] === 'f' ? { fraction: n } : { decimals: n } }) }))
   }
   return (
     <>
       <SetRow id="set-units" icon="ruler" label="Display units" detail="Lengths in Model show in this unit. A typed unit always works, such as 25.4mm, 1in, 1&quot; or 3/8 in. Files and print settings stay in mm.">
-        <Seg label="Display units" size="sm" value={u.length} onChange={(v) => set({ units: { ...u, length: v } })} options={[{ value: 'mm', label: 'mm', title: 'Millimeters', testId: 'set-units-mm' }, { value: 'in', label: 'in', title: 'Inches', testId: 'set-units-in' }]} />
+        <Seg label="Display units" size="sm" value={u.length} onChange={(v) => set((s) => ({ units: withUnitSettings(s.units, { length: v }) }))} options={[{ value: 'mm', label: 'mm', title: 'Millimeters', testId: 'set-units-mm' }, { value: 'in', label: 'in', title: 'Inches', testId: 'set-units-in' }]} />
       </SetRow>
       <SetRow id="set-precision" icon="tolerance" label="Precision" detail="Decimals shown, or in inches a fraction to the nearest 1/16, 1/32 or 1/64.">
         {/* a select, not a segment: the inch choices outnumber the mm ones, and a switch of unit must not move the rows below */}

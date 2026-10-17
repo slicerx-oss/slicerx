@@ -105,14 +105,22 @@ pub(crate) enum LinkClass {
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("history.get", LinkClass::Read),
+    ("units.get", LinkClass::Read),
+    ("units.set", LinkClass::Read),
     ("history.undo", LinkClass::Edit),
     ("history.redo", LinkClass::Edit),
     ("plate.list", LinkClass::Read),
+    ("brim.get", LinkClass::Read),
+    ("brim.edit", LinkClass::Edit),
     // Moving, turning and scaling objects on the shown plate, each one undo step the person can take back.
     ("project.move", LinkClass::Edit),
     ("project.rotate", LinkClass::Edit),
     ("project.scale", LinkClass::Edit),
     ("volumes.list", LinkClass::Read),
+    ("dimensions.list", LinkClass::Read),
+    ("dimensions.keep", LinkClass::Edit),
+    ("dimensions.remove", LinkClass::Edit),
+    ("dimensions.show", LinkClass::Read),
     ("volumes.add", LinkClass::Edit),
     ("volumes.from_object", LinkClass::Edit),
     ("volumes.set", LinkClass::Edit),
@@ -120,6 +128,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("volumes.remove", LinkClass::Edit),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
+    ("paint.get", LinkClass::Read),
+    ("paint.preview", LinkClass::Read),
+    ("paint.apply", LinkClass::Edit),
+    ("paint.clear", LinkClass::Edit),
     ("preview.get", LinkClass::Read),
     ("preview.set", LinkClass::Read),
     // The project's plates with their slice states, and showing one of them (by number, or the next or previous).
@@ -143,6 +155,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: a pick changes what the window has selected, never the project.
     ("select.under", LinkClass::Read),
     ("select.other", LinkClass::Read),
+    ("select.filter", LinkClass::Read),
+    ("select.filter_set", LinkClass::Read),
     ("values.list", LinkClass::Read),
     ("values.set", LinkClass::Edit),
     ("values.remove", LinkClass::Edit),
@@ -384,18 +398,30 @@ mod tests {
     const PINNED_APP_METHODS: &[(&str, LinkClass)] = &[
         ("app.info", LinkClass::Read),
         ("history.get", LinkClass::Read),
+        ("units.get", LinkClass::Read),
+        ("units.set", LinkClass::Read),
         ("history.undo", LinkClass::Edit),
         ("history.redo", LinkClass::Edit),
         ("plate.list", LinkClass::Read),
+        ("brim.get", LinkClass::Read),
+        ("brim.edit", LinkClass::Edit),
         ("project.move", LinkClass::Edit),
         ("project.rotate", LinkClass::Edit),
         ("project.scale", LinkClass::Edit),
         ("volumes.list", LinkClass::Read),
+        ("dimensions.list", LinkClass::Read),
+        ("dimensions.keep", LinkClass::Edit),
+        ("dimensions.remove", LinkClass::Edit),
+        ("dimensions.show", LinkClass::Read),
         ("volumes.add", LinkClass::Edit),
         ("volumes.from_object", LinkClass::Edit),
         ("volumes.set", LinkClass::Edit),
         ("volumes.copy", LinkClass::Edit),
         ("volumes.remove", LinkClass::Edit),
+        ("paint.get", LinkClass::Read),
+        ("paint.preview", LinkClass::Read),
+        ("paint.apply", LinkClass::Edit),
+        ("paint.clear", LinkClass::Edit),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
         ("plates.list", LinkClass::Read),
@@ -409,6 +435,8 @@ mod tests {
         ("model.op_preview", LinkClass::Read),
         ("select.under", LinkClass::Read),
         ("select.other", LinkClass::Read),
+        ("select.filter", LinkClass::Read),
+        ("select.filter_set", LinkClass::Read),
         ("values.list", LinkClass::Read),
         ("values.set", LinkClass::Edit),
         ("values.remove", LinkClass::Edit),
@@ -470,7 +498,7 @@ mod tests {
                 // mesh repair does not pair clients.
                 let mesh_repair = *m == "geom.repair" && word == "pair";
                 // volume removal affects project geometry only.
-                if word == "remove" && *m == "volumes.remove" {
+                if word == "remove" && matches!(*m, "volumes.remove" | "dimensions.remove") {
                     continue;
                 }
                 assert!(
@@ -482,9 +510,15 @@ mod tests {
             }
         }
         assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
+        assert_eq!(link_class("units.get"), Some(LinkClass::Read));
+        assert_eq!(link_class("units.set"), Some(LinkClass::Read));
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("dimensions.keep"), Some(LinkClass::Edit));
+        assert_eq!(link_class("dimensions.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("dimensions.list"), Some(LinkClass::Read));
+        assert_eq!(link_class("dimensions.show"), Some(LinkClass::Read));
         for m in ["volumes.remove_file", "volumes.remove_printer", "printer.remove"] {
             assert_eq!(link_class(m), None, "{m}");
         }

@@ -359,6 +359,25 @@ const ctx = await createContext({ extraTools: [myTool] })
 await createSlicerxServer(ctx).connect(transport)
 ```
 
+The open app's Model pick filter is available through `app_pick_filter` and `app_pick_filter_set`, including with `sx call --app`. The existing read grant covers these view commands. Set `kind` to `object` (the Body button), `face` or `edge`; `mode` is `only` by default, or `toggle` to add or drop a kind while keeping at least one. Both tools read back the filter and selected bodies, faces and edges. Changes use the UI command and drop excluded face or edge picks, preserving the body selection and project history. They refuse while Model is closed or a tool is active. Returned part and triangle indices describe the current mesh, not stable CAD references.
+
+## Brim ears in the open app
+
+`app_brim_ears` reads the shown plate's ears, including their zero-based indices, local and bed coordinates in millimeters, world diameter, first-layer connectivity and effective brim type. Pass an object id or unique name to read one object. Linked copies are listed with their plate ids.
+
+`project_brim_ears` supports `add`, `move`, `resize`, `remove`, `clear` and `generate`. Every edit takes the `revision` from a fresh read. If another edit changes the project, read again before choosing indices. A changed edit is one toolbar Undo step, including updates to linked copies on other plates. Unchanged edits add no step. An active viewport edit, slice or locked linked copy prevents the command.
+
+```sh
+sx call --app app_brim_ears '{}'
+# Use the returned object id and revision. Coordinates are on the bed, in mm.
+sx call --app project_brim_ears '{"object":"object-id","revision":"read-revision","action":"add","x_mm":80,"y_mm":90,"diameter_mm":10}'
+sx call --app app_brim_ears '{"object":"object-id"}'
+```
+
+`move` takes one index in `indices` and `x_mm`/`y_mm`. `resize` takes `indices` and `diameter_mm` (5 to 20 mm, rounded to 0.1 mm); `remove` takes `indices`; `clear` removes all ears. `generate` adds ears at corners using optional `max_angle`, `detection_mm` and `diameter_mm`; read-back includes their defaults and the object's detection limit. Disconnected ears are reported as `connected: false`.
+
+Stored ears print only when the effective `brim_type` is `painted`. These commands leave that setting unchanged. Choose Painted in the app's Brim type setting, or use the live `project_set_overrides` command when available. Read `enabled` and `brimType` to check. These tools require the app link and never fall back to a server-owned project.
+
 ## Security
 
 - Model paths must be inside `--allow-dir` when it is set. HTTP mode reads no local path until you add one.
@@ -393,3 +412,19 @@ Dependencies:
 ## Status
 
 Working: stdio and HTTP transports, the permission policy with elicitation and approval requests, the action log, file slicing with the `sx` engine or the stub, the MCP project with mimir's skills, the simulated printers, and every resource listed above. Theming tools build and check themes; applying one happens in your page with `applyTheme()` or `<ThemeProvider>`. Printer actions on real printers go through sx-link's broker (tested with the mock printers). Planned: publishing `@slicerx/mcp` to npm, and testing on physical printers.
+
+### Model display units
+
+`app_units` reads the active display unit, precision and remembered mm/inch preferences. `app_units_set` accepts `length: "mm"` or `"in"`, `precision: {decimals: n}`, or `precision: {fraction: n}`. Millimeters support 0-3 decimals; inches support 2-4 decimals or fractions to 1/16, 1/32 or 1/64. A precision applies to the requested unit, or the current unit when omitted. Switching units preserves each unit's last precision. Invalid combinations refuse before changing anything.
+
+Both tools use the app link's read grant and work through native `sx call --app`. They follow Settings, Display units and Precision, including normal preference persistence. They add no Undo step. Only Model display and bare-number input interpretation change: geometry, project files, print settings and all tool coordinates stay in mm. Read `app_units` again to verify the result.
+
+### Kept reference dimensions in the app
+
+`app_dimensions` reads the shown plate's kept measurements, re-evaluated against current geometry. Each row includes the owner and ID, kind, status, measured value and unit, local anchors, world-space annotation and visibility. A lost anchor has no value or visible mark. `geom_measure` remains available for a measurement that does not create an annotation.
+
+`app_dimension_keep` matches **Keep this dimension** in Measure. Give `kind` and pick `a`; distance and angle also require pick `b`. Each pick has an object ID, zero-based `part` and `triangle`, and world `at: [x,y,z]` in mm. Use `app_history` to find the object ID, then `geom_faces` with that ID as `design` to get `part`, `triangle` and `at` for a surface pick. These mesh references are transient; pick again after geometry changes. The geometry engine supplies the value, so the request cannot set a fabricated measurement. Unsupported feature/kind combinations refuse before any change.
+
+Use `app_dimension_remove` with a `dimension` ID to remove it. Keep and remove need the person's edit grant and each create one toolbar Undo step. Locked objects, active edits and stale asynchronous measurements refuse. `app_dimensions_show` sets `showAll` with the existing read grant and no history step; selected objects still show dimensions when it is false. These are reference annotations that follow geometry, not dimensions that drive a sketch or solid.
+
+All four tools also work through native `sx call --app`. Read `app_dimensions` again after an edit to verify the actual measurements and status.

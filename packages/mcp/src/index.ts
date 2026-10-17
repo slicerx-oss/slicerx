@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/mcp: a Model Context Protocol server for SlicerX. See README.md.
+import { appPaintTools } from './app-paint'
 import { readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -33,8 +34,12 @@ import { appModelPushTools } from './app-model-push'
 import { appModelOpPreviewTools } from './app-model-op-preview'
 import { appSelectTools } from './app-select'
 import { appViewportTools } from './app-viewport'
+import { appUnitTools } from './app-units'
+import { appPickFilterTools } from './app-pick-filter'
+import { appBrimTools } from './app-brim'
 import { mimirAskTools } from './mimir-ask'
 import { appVolumeTools } from './app-volumes'
+import { appDimensionTools } from './app-dimensions'
 import { appPlateTools } from './app-plates'
 import { appValueTools } from './app-values'
 import { appHistoryTools } from './app-history'
@@ -199,13 +204,19 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   // The app's plates, and showing one of them as its plate picker does.
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   const history = appHistoryTools(appLink, productName())
-  // View preferences and live viewport telemetry.
-  const look = [...appLookTools(appLink, productName()), ...appViewportTools(appLink, productName())]
+  // View preferences (framing, toolbar size, Model display units and pick filter), live viewport telemetry and the shown plate's brim ears.
+  const look = [
+    ...appLookTools(appLink, productName()),
+    ...appUnitTools(appLink, productName()),
+    ...appPickFilterTools(appLink, productName()),
+    ...appViewportTools(appLink, productName()),
+    ...appBrimTools(appLink, productName()),
+  ]
   // The open sketch's dimension boxes, read and set as the person types them on the shape.
   const sketchBoxes = appSketchTools(appLink, productName())
   // Model's Select Other: what is under a spot of the view, and picking one of those things.
   const select = appSelectTools(appLink, productName())
-  const volumes = appVolumeTools(appLink, productName())
+  const volumes = [...appVolumeTools(appLink, productName()), ...appDimensionTools(appLink, productName())]
   // Push and pull as the person has it open in Model: its face and pending distance, and a distance typed in for them.
   const push = appModelPushTools(appLink, productName())
   // The open Model tool's operation preview: ok or error, its message, and whether the last good one is kept.
@@ -214,7 +225,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
   // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...look, ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...appPaintTools(appLink, productName()), ...look, ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,
