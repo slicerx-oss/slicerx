@@ -64,6 +64,12 @@ one shared target beside the lock and every command run under `heavy.sh` builds 
 
 A `CARGO_TARGET_DIR` the caller sets still wins, and `sccache` becomes the `RUSTC_WRAPPER` when it is installed.
 
+A machine that shares its cores with other work can cap cargo and test threads under the lock the same way:
+
+    echo 4 > ~/.slicerx-heavy.lock.jobs
+
+`CARGO_BUILD_JOBS` and `RUST_TEST_THREADS` that the caller sets still win. Without the file nothing is capped.
+
 The self-hosted Rust test jobs in `ci.yml` keep one target per runner (`$HOME/target/<runner name>`) and build with
 `CARGO_INCREMENTAL=0`: a test build never rebuilds in place, and `debug/incremental` had grown to 43 GB on one runner.
 

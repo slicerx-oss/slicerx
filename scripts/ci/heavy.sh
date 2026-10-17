@@ -660,6 +660,15 @@ if [ -z "${CARGO_TARGET_DIR:-}" ]; then
     if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache > /dev/null 2>&1; then export RUSTC_WRAPPER=sccache; fi
   fi
 fi
+# A machine that shares its cores with other work caps cargo and test threads under the lock with a number in
+# "$lock.jobs" (one line). A value the caller already set wins; without the file nothing is capped.
+sx_jobs=
+{ read -r sx_jobs < "$lock.jobs"; } 2> /dev/null
+sx_jobs=${sx_jobs%"$cr"}
+case $sx_jobs in
+  '' | *[!0-9]*) ;;
+  *) export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-$sx_jobs} RUST_TEST_THREADS=${RUST_TEST_THREADS:-$sx_jobs} ;;
+esac
 "$@"
 rc=$?
 [ "$rc" != 75 ] || { echo "heavy.sh: the command exited 75, reported as 1 (75 means heavy.sh gave up)" >&2; rc=1; }
