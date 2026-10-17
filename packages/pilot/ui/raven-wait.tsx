@@ -5,9 +5,9 @@ import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
 import { Icon } from '@slicerx/ui'
 import { Raven, RuneRing } from '@slicerx/ui/raven'
 
-/** Tools that read the knowledge base or what the project remembers: muninn's work, not huginn's. */
+/** Tools that read the knowledge base, the parts table or what the project remembers: muninn's work, not huginn's. */
 export function isRecall(tool: string): boolean {
-  return tool.startsWith('kb.') || tool.startsWith('project.')
+  return tool.startsWith('kb.') || tool.startsWith('parts.') || tool.startsWith('project.')
 }
 
 /**
