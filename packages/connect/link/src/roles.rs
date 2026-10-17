@@ -145,6 +145,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // Read: a pick changes what the window has selected, never the project.
     ("select.under", LinkClass::Read),
     ("select.other", LinkClass::Read),
+    ("select.filter", LinkClass::Read),
+    ("select.filter_set", LinkClass::Read),
     ("values.list", LinkClass::Read),
     ("values.set", LinkClass::Edit),
     ("values.remove", LinkClass::Edit),
@@ -413,6 +415,8 @@ mod tests {
         ("model.op_preview", LinkClass::Read),
         ("select.under", LinkClass::Read),
         ("select.other", LinkClass::Read),
+        ("select.filter", LinkClass::Read),
+        ("select.filter_set", LinkClass::Read),
         ("values.list", LinkClass::Read),
         ("values.set", LinkClass::Edit),
         ("values.remove", LinkClass::Edit),

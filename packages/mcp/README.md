@@ -359,6 +359,8 @@ const ctx = await createContext({ extraTools: [myTool] })
 await createSlicerxServer(ctx).connect(transport)
 ```
 
+The open app's Model pick filter is available through `app_pick_filter` and `app_pick_filter_set`, including with `sx call --app`. The existing read grant covers these view commands. Set `kind` to `object` (the Body button), `face` or `edge`; `mode` is `only` by default, or `toggle` to add or drop a kind while keeping at least one. Both tools read back the filter and selected bodies, faces and edges. Changes use the UI command and drop excluded face or edge picks, preserving the body selection and project history. They refuse while Model is closed or a tool is active. Returned part and triangle indices describe the current mesh, not stable CAD references.
+
 ## Security
 
 - Model paths must be inside `--allow-dir` when it is set. HTTP mode reads no local path until you add one.
