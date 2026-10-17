@@ -72,7 +72,7 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     expect(result.isError, text(result)).toBeFalsy()
     expect(data(result)).toMatchObject({ ok: true, output: { ready: true, assignments: [{ tool: 0, physicalTool: 1, status: 'match' }] } })
     const missing = await h.call('slicerx_toolhead_mapping', { printerId: 'u1', needs: [{ tool: 0, material: 'ABS', color: '#ffffff' }] })
-    expect(data(missing)).toMatchObject({ output: { ready: false, assignments: [{ status: 'unavailable' }] } })
+    expect(data(missing)).toMatchObject({ output: { ready: false, requiresConfirmation: true, assignments: [{ status: 'choice_required', materialMismatch: true }] } })
     const cli = await promisify(execFile)(process.execPath, [
       '--import', 'tsx', 'src/cli.ts', '--engine', 'sx', '--sx-bin', sxBin, '--printers', 'link', '--link-url', url,
       '--out-dir', join(dir, 'cli-out'), '--profiles-dir', join(dir, 'profiles'), 'call', 'toolhead_mapping', JSON.stringify(args),

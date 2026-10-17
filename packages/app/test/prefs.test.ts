@@ -8,6 +8,14 @@ const KEY = 'slicerx.prefs.v1'
 describe('stored preferences', () => {
   beforeEach(() => localStorage.clear())
 
+  it('keeps the toolhead matching preference per printer and rejects non-booleans', () => {
+    localStorage.setItem(KEY, JSON.stringify({ toolheadSkipMatching: { u1: true, other: false, invalid: 'yes' } }))
+    const prefs = loadPrefs()
+    expect(prefs.toolheadSkipMatching).toEqual({ u1: true, other: false })
+    savePrefs(prefs)
+    expect(loadPrefs().toolheadSkipMatching).toEqual({ u1: true, other: false })
+  })
+
   it('falls back to defaults on corrupt JSON', () => {
     localStorage.setItem(KEY, '{not json')
     expect(loadPrefs().workspace).toBe('prepare')

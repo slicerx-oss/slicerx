@@ -987,7 +987,8 @@ impl PrinterSession for MoonrakerSession {
             .iter()
             .any(|name| name == "print_task_config")
         {
-            return Err(Error::not_supported("moonraker", "U1 toolhead mapping"));
+            return crate::toolhead_map::plan_toolheads(needs, &[], selected)
+                .map_err(|reason| Error::protocol(self.inner.id(), &reason));
         }
         let reply = self
             .inner
@@ -996,8 +997,10 @@ impl PrinterSession for MoonrakerSession {
         let status = reply
             .pointer("/result/status")
             .ok_or_else(|| Error::protocol(self.inner.id(), "The U1 did not report its loaded toolheads"))?;
-        let unit = filament::u1_unit(status)
-            .ok_or_else(|| Error::protocol(self.inner.id(), "The U1 did not report its loaded toolheads"))?;
+        let Some(unit) = filament::u1_unit(status) else {
+            return crate::toolhead_map::plan_toolheads(needs, &[], selected)
+                .map_err(|reason| Error::protocol(self.inner.id(), &reason));
+        };
         let config = status
             .get("print_task_config")
             .ok_or_else(|| Error::protocol(self.inner.id(), "The U1 filament report is missing"))?;

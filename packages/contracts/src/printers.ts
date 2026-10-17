@@ -13,8 +13,18 @@ export interface ToolheadAssignment {
   alternatives: number[]
   status: 'match' | 'selected' | 'choice_required' | 'unavailable'
   reason: string
+  colorMismatch?: boolean
+  materialMismatch?: boolean
+  empty?: boolean
 }
-export interface ToolheadPlan { ready: boolean; assignments: ToolheadAssignment[]; toolheads: LoadedToolhead[] }
+export interface ToolheadPlan {
+  ready: boolean
+  assignments: ToolheadAssignment[]
+  toolheads: LoadedToolhead[]
+  headDataAvailable?: boolean
+  requiresConfirmation?: boolean
+  changedLines?: number
+}
 export type Capability = 'status' | 'events' | 'upload' | 'start' | 'pause' | 'resume' | 'cancel' | 'camera' | 'filament_slots' | 'gcode_console' | 'project_file' | 'slot_write' | 'rewrites_upload'
 
 /** What every printer plugin can do. */

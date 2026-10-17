@@ -344,7 +344,7 @@ const HANDLERS: Record<string, Handler> = {
     const s = get()
     const edition = currentEdition()
     const viewport = readViewportStats()
-    return { app: appName(), assistant: { ...assistantBrand(), enabled: edition.features.pilot }, tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS, viewport: viewport ? { ...viewport, drawnPlate: drawnPlate() ?? null } : null }
+    return { app: appName(), assistant: { ...assistantBrand(), enabled: edition.features.pilot }, tab: s.modelMode, workspace: s.workspace, objects: s.plate.length, methods: APP_LINK_METHODS, viewport: viewport ? { ...viewport, drawnPlate: drawnPlate() ?? null } : null, toolheadSkipMatching: { ...s.toolheadSkipMatching } }
   },
   'plate.list': () => {
     const s = get()

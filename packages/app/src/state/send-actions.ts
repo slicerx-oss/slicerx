@@ -20,7 +20,7 @@ import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/ba
 import { openLink } from '../lib/links'
 import { askApproval, buildApproval, developerModeReason, jobFileName, jobName, refusalReason, STALE_SLICE, storageFullReason } from './actions'
 import { plateSliceConfig } from './slice-plate'
-import { toolheadNeedsForPlate } from '../send/toolhead-map'
+import { sameSelectedSpools, showToolheadChoices, toolheadNeedsForPlate } from '../send/toolhead-map'
 
 /** "Desk hook" becomes "desk-hook_plate-1.gcode". */
 /** What a printer that does not follow a slot map does with a plain G-code file: each filament from the slot of its number. */
@@ -115,6 +115,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
   const isU1 = ['snapmaker', 'moonraker'].includes(printer.plugin ?? '') && /\bU1\b/i.test(printer.model)
   const toolheadNeeds = toolheadNeedsForPlate(s.result.stats.filamentG, plateSliceConfig(st0, st0.plates.find((p) => p.id === st0.activePlate)), resolveSlots(st0))
   let toolheads: ToolheadPlan | undefined
+  let toolheadReviewSequence = 0
   if (isU1) {
     if (!conn.printers.planToolheads || !conn.printers.prepareToolheads) {
       toast('Update the printer connection to choose the U1 toolheads before sending', 'error')
@@ -122,7 +123,8 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     }
     try {
       toolheads = await conn.printers.planToolheads(printer.id, toolheadNeeds)
-      auto = Object.fromEntries(toolheads.assignments.filter((a) => a.status === 'match' && a.physicalTool !== null).map((a) => [a.tool + 1, String(a.physicalTool! + 1)]))
+      if (toolheads.headDataAvailable === false && toolheadNeeds.length === 1) toolheads = undefined
+      if (toolheads) auto = Object.fromEntries(toolheads.assignments.filter((a) => a.physicalTool !== null).map((a) => [a.tool + 1, String(a.physicalTool! + 1)]))
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not read the U1 toolheads', 'error')
       return
@@ -150,7 +152,16 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     filaments,
     slots: st0.printerSlots,
     auto,
-    ...(toolheads ? { toolheads } : {}),
+    ...(toolheads ? {
+      toolheads,
+      showToolheads: showToolheadChoices(toolheads, get().toolheadSkipMatching[printer.id] === true),
+      reviewToolheads: async (selected: Record<number, number>) => {
+        const sequence = ++toolheadReviewSequence
+        const plan = await conn.printers.planToolheads!(printer.id, toolheadNeeds, selected)
+        if (sequence === toolheadReviewSequence) toolheads = plan
+        return plan
+      },
+    } : {}),
     stats: { timeS: s.result.stats.timeS, grams, layers: s.result.layerCount },
     check: check0,
     ...(thumb0 ? { thumb: thumb0 } : {}),
@@ -228,13 +239,16 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     // "Send as plain G-code" sends the G-code itself, under the same name with a .gcode ending.
     const plain = !project || picked.plainGcode === true
     let file: JobFile = plain ? { name: withEnding(picked.name, '.gcode'), kind: 'gcode', data, sha256: plainSha } : { name: picked.name, kind: 'gcode.3mf', data: sent, sha256 }
-    if (isU1) {
+    if (toolheads) {
       if (!picked.toolheadMap || !conn?.printers.prepareToolheads) {
         toast('Choose the U1 toolheads before sending', 'error')
         return 'done'
       }
       try {
-        file = (await conn.printers.prepareToolheads(printer.id, file, toolheadNeeds, picked.toolheadMap)).file
+        const reviewed = toolheads
+        const prepared = await conn.printers.prepareToolheads(printer.id, file, toolheadNeeds, picked.toolheadMap)
+        if (!sameSelectedSpools(reviewed, prepared.plan, picked.toolheadMap)) throw new Error('A selected spool changed. Open Print again to review the toolheads.')
+        file = prepared.file
       } catch (e) {
         toast(e instanceof Error ? e.message : 'Could not prepare the U1 toolhead choices', 'error')
         return 'done'

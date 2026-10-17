@@ -45,6 +45,7 @@ export interface MoonrakerControl {
   usedToolheads?: boolean[]
   ignoreToolheadUpdates?: boolean
   filamentColors?: string[]
+  omitSpoolData?: boolean
 }
 
 /** The Klipper objects the fake has, as `/printer/objects/list` names them. */
@@ -70,6 +71,7 @@ function variantStatus(c: MoonrakerControl, m: MockMachine): Record<string, unkn
     }
   }
   if (c.variant === 'u1') {
+    if (c.omitSpoolData) return { print_task_config: { extruder_map_table: c.toolheadMap ?? [1, 0, 3, 2], extruders_used: c.usedToolheads ?? [false, false, false, false] } }
     // A runout empties the first toolhead.
     return { print_task_config: { extruder_map_table: c.toolheadMap ?? [1, 0, 3, 2], extruders_used: c.usedToolheads ?? [false, false, false, false], filament_exist: [!m.faults.has('runout'), true, false, true], filament_type: ['PLA', 'PETG', '', 'PLA'], filament_sub_type: ['SnapSpeed', 'NONE', '', 'Matte'], filament_color_rgba: c.filamentColors ?? ['FF0000FF', '00FF00FF', '', '000000FF'], filament_vendor: ['Snapmaker', 'Generic', '', 'Generic'] } }
   }
