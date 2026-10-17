@@ -2216,6 +2216,8 @@ cold.describe('the slow 3D view notice', () => {
   cold('one toast: Details opens in place, the close mark takes a finger-sized tap, and closed it stays closed', async ({ page }) => {
     await openStudio(page)
     await sketchOnTopRaw(page)
+    // the boxes below follow their shape through the camera's turn square on to the face: read their places once it ends
+    await still(page)
     const reason = 'Hardware acceleration looks off in this browser. Turn it on in the browser settings and reload.'
     const degrade = () => page.evaluate((r) => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('degrade', { message: 'The 3D view will be slow here.', details: r }), reason)
     // the view may have said it as it started (this browser draws without a GPU); said again, it is still one card
