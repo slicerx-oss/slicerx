@@ -70,7 +70,7 @@ A new connected app (Obico and OctoEverywhere are next) is a change to SlicerX. 
 3. The bridge: the app's id in `services.configure` and in `service_call` (`packages/connect/link/src/rpc.rs`). If a person must approve its changes, as with Home Assistant, add it to `person_only` and `tool_needs_person` in `roles.rs` and to `PLUGIN_WORK` in `agent_work.rs`, and teach the SlicerX card (`packages/app/src/link/agent-cards.ts`) and the phone (`work-card.ts` in the mobile app) to word its calls; until they can, its cards have no Approve.
 4. The card: an entry in `packages/app/src/connected-apps/registry.ts` (name, default port, key label, what it counts).
 5. A stand-in: a fake of the app's API in `packages/connect/mock-printers/src/services.ts`, so tests run without the real app.
-6. Tests: the plugin against the stand-in (`packages/connect/tests/services.rs`), the bridge (`packages/connect/link/tests/link.rs`), and the app's card (`apps/web/e2e/bridge.spec.ts`).
+6. Tests: the plugin against the stand-in (`packages/connect/tests/services.rs`), the bridge (`packages/connect/link/tests/link.rs`), and the app's card (`apps/web/e2e/journeys/printer-bridge.spec.ts`).
 7. Experimental first: add the id to `EXPERIMENTAL_PLUGINS` (`packages/connect/src/lib.rs`). The card then shows only in Developer mode with Try experimental connectors on. It leaves that list after a check against the real app, kept as an ignored test like `packages/connect/tests/home_assistant_live.rs`.
 
 ## Where each rule is tested
@@ -89,4 +89,4 @@ A new connected app (Obico and OctoEverywhere are next) is a change to SlicerX. 
 | The bridge switches the device once a person approves, and never before | `Home Assistant: an agent asks to switch a plug...` in `packages/mcp/test/link.test.ts`; `a_connected_app_tool_rides_a_card...` in `packages/connect/link/src/agent_work.rs` |
 | The card's words, and no Approve for a call it can't word | `words a Home Assistant call...` in `packages/app/test/agent-cards.test.ts` and in `editions/slicerx/apps/mobile/src/data/work-card.test.ts` |
 | Phones don't get these cards, and an older phone's list still parses | `a_connected_app_card_stays_in_the_app` in `packages/connect/link/src/remote_rpc.rs`; `packages/pair/test/connected-app-work.test.ts` |
-| The card in Settings, Connected apps | `Connected apps` tests in `apps/web/e2e/bridge.spec.ts` |
+| The card in Settings, Connected apps | `Connected apps` tests in `apps/web/e2e/journeys/printer-bridge.spec.ts` |

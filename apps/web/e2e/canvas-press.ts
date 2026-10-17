@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Helpers for specs that press or drag on the 3D view: where a bed point is on screen, and a wait until a press at a
 // screen point reaches the canvas. Something drawn over the point (a panel, the layer strip) takes the press, and
-// nothing moves. A toast does not: toasts let presses through (styles.css).
+// nothing moves. So does a toast card: it takes presses while it is up (journey.ts clears what an earlier test left on it).
 import { expect, type Page } from '@playwright/test'
 
 interface Projector {
@@ -25,9 +25,20 @@ export const screenOf = (page: Page, x: number, y: number, z = 0) =>
 export const onCanvas = (page: Page, x: number, y: number) =>
   page.evaluate(([x, y]) => document.elementFromPoint(x!, y!) === document.querySelector('.vp-canvas'), [x, y] as const)
 
+/** What is the topmost element at a screen point, as a short selector, for the message of a press that cannot land. */
+const coverAt = (page: Page, x: number, y: number) =>
+  page.evaluate(([x, y]) => {
+    const el = document.elementFromPoint(x!, y!)
+    return el ? `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${[...el.classList].map((c) => `.${c}`).join('')}` : 'nothing'
+  }, [x, y] as const)
+
 /** Waits until a press at the point reaches the canvas. Returns the point. */
 export async function pressable<T extends { x: number; y: number }>(page: Page, at: T): Promise<T> {
-  await expect.poll(() => onCanvas(page, at.x, at.y), { message: `something covers the spot to press (${Math.round(at.x)}, ${Math.round(at.y)})` }).toBe(true)
+  try {
+    await expect.poll(() => onCanvas(page, at.x, at.y), { message: `something covers the spot to press (${Math.round(at.x)}, ${Math.round(at.y)})` }).toBe(true)
+  } catch (e) {
+    throw new Error(`${String(e).split('\n')[0]}: ${await coverAt(page, at.x, at.y)} is on top of it`, { cause: e })
+  }
   return at
 }
 

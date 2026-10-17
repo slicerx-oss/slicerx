@@ -24,6 +24,10 @@ process.env['SX_E2E_NATIVE_PORT'] = nativePort
 const nativeUrl = `http://127.0.0.1:${nativePort}`
 // SX_E2E_GPU=1 runs the installed Chrome with hardware WebGL, on a machine with a GPU (the project's GPU runner).
 const gpu = process.env['SX_E2E_GPU'] === '1'
+// SX_E2E_NIGHTLY=1 (scripts/ci/run.sh nightly) adds the slow and frame-sampling tests: e2e/nightly/ and any test tagged
+// @nightly. Pull requests and the merge queue leave them out.
+const nightly = process.env['SX_E2E_NIGHTLY'] === '1'
+const leaveOut = nightly ? {} : { testIgnore: 'nightly/**', grepInvert: /@nightly/ }
 
 export default defineConfig({
   testDir: 'e2e',
@@ -50,9 +54,16 @@ export default defineConfig({
         : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
     },
   },
+  // The desktop project runs every spec; a phone-only describe in it skips. The phone project runs only the phone
+  // journeys (e2e/journeys/phone-*.spec.ts), plus the nightly specs at night.
   projects: [
-    { name: 'desktop', use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } } },
-    { name: 'phone', use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
+    { name: 'desktop', ...leaveOut, use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } } },
+    {
+      name: 'phone',
+      ...leaveOut,
+      testMatch: nightly ? ['journeys/phone-*.spec.ts', 'nightly/**/*.spec.ts'] : 'journeys/phone-*.spec.ts',
+      use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+    },
   ],
   // Always build and serve a fresh bundle with the test environment. A server left running from an earlier build hides changes (and lacks the relay URL the phone pairing tests need).
   // The build leaves the WebAssembly slicer out (SLICERX_WEB_SLICING=0) and slices through the native test host.

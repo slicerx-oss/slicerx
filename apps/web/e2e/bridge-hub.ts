@@ -29,6 +29,7 @@ export interface Admin {
   removePrinter(id: string): Promise<void>
   setSecret(n: string, v: string): Promise<void>
   status(id: string): Promise<{ state: string; message?: string; live?: { monitorOnly?: boolean; needsDeveloperMode?: boolean } }>
+  listServices(): Promise<{ pluginId: string }[]>
   settings: { set(s: Record<string, unknown>): Promise<unknown> }
   onApprovalDone(callback: (done: ApprovalDone) => void): () => void
   clients: { create(name: string, role: 'agent' | 'watch', opts?: { partner?: boolean }): Promise<{ clientKey?: string }> }
@@ -41,14 +42,19 @@ export interface Admin {
 export const hub = { code: '', linkUrl: '', port: 0, route: /^$/, controlPort: 0, ports: {} as Record<string, number>, stateDir: '', admin: undefined as unknown as Admin }
 
 /**
- * Sets up a bridge file: serial tests at desktop width, the mocks in `mocks` started once for the file (idle, every
- * printer with a camera), a hub on a free loopback port, and `setup` to add the file's printers. Call at the top of the file.
+ * Sets up a bridge file: tests at desktop width, the mocks in `mocks` started once per worker (idle, every printer with
+ * a camera), a hub on a free loopback port, and `setup` to add the file's printers. Call at the top of the file.
+ *
+ * The tests run in order and serial by default: one failure skips the rest of the file, which is what a file whose
+ * tests build on each other wants. A file whose tests each set up their own state passes `serial: false`: a failure
+ * then costs only that test, because the worker that failed is replaced and the file's hub and mocks start again
+ * (beforeAll runs again) for the tests after it.
  */
-export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>, options: { hostAppLink?: boolean } = {}): void {
+export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>, options: { hostAppLink?: boolean; serial?: boolean } = {}): void {
   let proc: ChildProcessByStdio<null, Readable, Readable> | undefined
   let stopMocks: (() => Promise<void>) | undefined
   test.skip(!bin && !required, 'SX_LINK_BIN is not set')
-  test.describe.configure({ mode: 'serial' })
+  if (options.serial !== false) test.describe.configure({ mode: 'serial' })
   test.skip(({ isMobile }) => isMobile, 'The bridge flow runs at desktop width')
 
   test.beforeAll(async ({}, testInfo) => {
