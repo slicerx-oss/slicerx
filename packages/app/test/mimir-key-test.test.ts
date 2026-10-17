@@ -57,7 +57,8 @@ describe('Test and connect with a key typed in the browser build', () => {
     await testKey()
     const result = await waitFor(() => screen.getByTestId('pc-result'))
     expect(result.getAttribute('data-state')).not.toBe('failed')
-    expect(get().pilot).toMatchObject({ mode: 'on', provider: 'anthropic' })
+    // the panel shows the result before it saves the key and turns the assistant on
+    await waitFor(() => expect(get().pilot).toMatchObject({ mode: 'on', provider: 'anthropic' }))
     expect(JSON.stringify({ ...localStorage })).not.toContain(KEY)
   })
 })
