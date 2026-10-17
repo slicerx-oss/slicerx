@@ -10,6 +10,15 @@ import type { StageDemo, TipDemo } from '@slicerx/ui'
 
 const demo = (stage: StageDemo['stage'], label: string): TipDemo => ({ stage, label, body: label })
 
+/** The clip and its still poster for one theme. */
+type Take = readonly [src: string, poster: string]
+/**
+ * A clip recorded in the running app (packages/app-bridge/scripts/tip-recordings.mjs) for a control whose lesson is
+ * where to click: a dark and a light take, each with its poster, 320 px wide. The tip shows the poster and fetches
+ * the clip on its first hover; under reduced motion it stays on the poster.
+ */
+const rec = (label: string, height: number, dark: Take, light: Take): TipDemo => ({ src: dark[0], poster: dark[1], light: { src: light[0], poster: light[1] }, width: 320, height, label })
+
 const OWN = {
   push: demo(() => import('../demos/push').then((m) => m.loop), 'Drag a face to push or pull it. Hold Shift to snap in 1 mm steps.'),
   sketch: demo(() => import('../demos/sketch').then((m) => m.loop), 'Draw a shape on a face, then pull it up into a solid.'),
@@ -303,6 +312,13 @@ const OWN = {
   'preview-markers-wipes': demo(() => import('../demos/preview-markers-wipes').then((m) => m.loop), 'Where the nozzle wipes along the path after a retraction.'),
   'preview-markers-tool-changes': demo(() => import('../demos/preview-markers-tool-changes').then((m) => m.loop), 'Where the printer changes to another filament or tool.'),
   'preview-markers-pauses': demo(() => import('../demos/preview-markers-pauses').then((m) => m.loop), 'Where the print pauses and waits for you.'),
+  // real-app clips: where to click
+  'rec-paint': rec('Paint picked, the second filament chosen, then brushed across the part.', 240, [new URL('../demos/rec/paint-dark.webp', import.meta.url).href, new URL('../demos/rec/paint-dark-poster.webp', import.meta.url).href], [new URL('../demos/rec/paint-light.webp', import.meta.url).href, new URL('../demos/rec/paint-light-poster.webp', import.meta.url).href]),
+  'rec-arrange': rec('Copies stacked on each other, then Arrange all nests them on the plate.', 240, [new URL('../demos/rec/arrange-dark.webp', import.meta.url).href, new URL('../demos/rec/arrange-dark-poster.webp', import.meta.url).href], [new URL('../demos/rec/arrange-light.webp', import.meta.url).href, new URL('../demos/rec/arrange-light-poster.webp', import.meta.url).href]),
+  'rec-color-by': rec('Color by changed from filament to speed, then to layer time.', 240, [new URL('../demos/rec/color-by-dark.webp', import.meta.url).href, new URL('../demos/rec/color-by-dark-poster.webp', import.meta.url).href], [new URL('../demos/rec/color-by-light.webp', import.meta.url).href, new URL('../demos/rec/color-by-light-poster.webp', import.meta.url).href]),
+  'rec-layer-add': rec('Add at this layer opened, Add pause picked, and the pause pin shows on the layer track.', 180, [new URL('../demos/rec/layer-add-dark.webp', import.meta.url).href, new URL('../demos/rec/layer-add-dark-poster.webp', import.meta.url).href], [new URL('../demos/rec/layer-add-light.webp', import.meta.url).href, new URL('../demos/rec/layer-add-light-poster.webp', import.meta.url).href]),
+  'rec-toolhead': rec('The print plays, then Show toolhead draws the toolhead at the current move.', 360, [new URL('../demos/rec/toolhead-dark.webp', import.meta.url).href, new URL('../demos/rec/toolhead-dark-poster.webp', import.meta.url).href], [new URL('../demos/rec/toolhead-light.webp', import.meta.url).href, new URL('../demos/rec/toolhead-light-poster.webp', import.meta.url).href]),
+  'rec-follow': rec('Follow nozzle on, and the view stays on the nozzle while the print plays.', 360, [new URL('../demos/rec/follow-dark.webp', import.meta.url).href, new URL('../demos/rec/follow-dark-poster.webp', import.meta.url).href], [new URL('../demos/rec/follow-light.webp', import.meta.url).href, new URL('../demos/rec/follow-light-poster.webp', import.meta.url).href]),
 } satisfies Record<string, TipDemo>
 
 /** The loops by id; a tool that shares another's loop (a shape, text or SVG on a face; simplify) or shows a still

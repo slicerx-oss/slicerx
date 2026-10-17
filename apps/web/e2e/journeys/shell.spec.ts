@@ -11,7 +11,7 @@ import { atSize, box, command, dismiss, exampleX, goSlice, layoutReset, mode, po
 
 test.skip(({ isMobile }) => isMobile, 'Desktop window; the phone legs are in phone-shell.spec.ts')
 
-type Sx = { getState(): { workspace: string; modelMode: string; sliceLook: string; plateLoading: boolean }; setState(p: unknown): void }
+type Sx = { getState(): { workspace: string; modelMode: string; sliceLook: string; plateLoading: boolean; motion: string | null }; setState(p: unknown): void }
 const sx = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
 
 // ---- minimal UI ----------------------------------------------------------------------------------------------
@@ -827,8 +827,8 @@ test.describe('the Slice sidebar at 1440 x 900', () => {
 
 // ---- tips ----------------------------------------------------------------------------------------------------
 
-// One hover per kind of tip: a tip that takes no presses, one beside the sidebar, one on the legend, one with a loop
-// and one with a still. The rest of the loops and stills are checked by packages/app/test/demo-loop.test.ts:138-266.
+// One hover per kind of tip: a tip that takes no presses, one beside the sidebar, one on the legend, one with a recorded
+// clip, one with a loop and one with a still. The rest of the loops and stills are checked by packages/app/test/demo-loop.test.ts:138-266.
 test.describe('tips', () => {
   test('the lock button\'s tip closes as the pointer moves to the name under it, and the name takes the click', async ({ page }) => {
     await exampleX(page)
@@ -942,6 +942,47 @@ test.describe('tips', () => {
       await expect.poll(overlaps, { message: `tip of row ${i}`, timeout: 2_000 }).toBe('clear')
       await page.mouse.move(5, 5)
       await expect(tip).toHaveCount(0)
+    }
+  })
+
+  test('a real-app clip shows its poster on the first hover, fetches the clip only then, and stays still under reduced motion', async ({ page }) => {
+    await exampleX(page)
+    await mode(page, 'simple')
+    const fetched: string[] = []
+    const onRequest = (r: { url(): string }) => {
+      if (/\/(paint|arrange|color-by|layer-add|toolhead|follow)-(dark|light)-[^/]*\.webp/.test(r.url())) fetched.push(r.url())
+    }
+    page.on('request', onRequest)
+    const motion = (await sx(page)).motion
+    try {
+      // no clip has loaded before the first hover
+      expect(fetched).toEqual([])
+      const arrange = page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Arrange all' })
+      const tip = page.locator('#sx-tip')
+      await arrange.hover()
+      await expect(tip).toContainText('Nest every object')
+      await expect.poll(() => tip.locator('.sx-demo-poster').evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(320)
+      const loop = tip.locator('.sx-demo-loop')
+      await expect(loop).toHaveAttribute('data-ready', 'true')
+      expect(await loop.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(320)
+      // its own clip and poster, for the theme in use, and no other clip
+      expect(fetched.length).toBeGreaterThanOrEqual(2)
+      expect(fetched.every((u) => /\/arrange-(dark|light)-/.test(u))).toBe(true)
+      expect(fetched.some((u) => /\/arrange-(dark|light)-poster-/.test(u))).toBe(true)
+      expect(fetched.some((u) => /\/arrange-(dark|light)-(?!poster)/.test(u))).toBe(true)
+      await page.mouse.move(5, 5)
+      await expect(tip).toHaveCount(0)
+      // reduced motion: the poster, never the clip
+      await setState(page, { motion: 'reduced' })
+      await expect(page.locator('html')).toHaveAttribute('data-motion', 'reduced', { timeout: 30_000 })
+      await arrange.hover()
+      await expect(tip.locator('.sx-demo-poster')).toBeVisible()
+      await page.waitForTimeout(1200)
+      await expect(tip.locator('.sx-demo-loop')).toBeHidden()
+    } finally {
+      page.off('request', onRequest)
+      await page.mouse.move(5, 5)
+      await setState(page, { motion })
     }
   })
 
