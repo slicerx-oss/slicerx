@@ -16,6 +16,10 @@ export { brimEditInput, brimReadInput } from './brim-input'
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
 export { appDimensionInputs, type AppDimensions } from './app-dimensions'
 
+export { appPlateInputs } from './app-plate-inputs'
+
+export { projectSettingsInput, projectSettingsReadInput } from './project-settings-input'
+
 const noFiles = (): never => {
   throw new ToolInputError('Model files are for the MCP server; here, give a design instead.', 'not_supported')
 }

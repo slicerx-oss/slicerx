@@ -5,6 +5,7 @@
 // test checks the two lists match. Project geometry and its modifier print values are editable, as are view
 // preferences. model.push_set only types a distance into the open Push and pull for the person to apply. Nothing here
 // prints, queues, approves, signs in or changes printer connections.
+// Project print overrides have their own methods and read-back.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
 import { editionSceneOverrides, SCENE_VARS } from '@slicerx/ui/theme'
@@ -19,11 +20,12 @@ import { listSessions, readSession } from './sessions'
 import { toolStore } from '../plate/tools'
 import { get, pilotState, set, setCamera, showsLayers, type CameraView, type ColorMode } from '../state/store'
 import { slicePanes } from '../lib/slice-panes'
-import { findPlate, plateRows, stepTarget } from '../plate/plate-step'
+import { findPlate, stepTarget } from '../plate/plate-step'
 import { switchPlate } from '../plate/plates'
-import { drawnObjects } from '../viewport/drawn'
 import { viewportLookState } from '../viewport/viewport-look'
 import { readViewportStats } from '../viewport/stats'
+import { previewIdle, PREVIEW_BUSY_TOOLS as BUSY_TOOLS } from './preview-guard'
+import { drawnPlate, platesState } from './plate-state'
 
 export type LinkClass = 'read' | 'edit'
 
@@ -51,6 +53,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'volumes.set': 'edit',
   'volumes.copy': 'edit',
   'volumes.remove': 'edit',
+  'project.set_overrides': 'edit',
+  'settings.get': 'read',
   // The slice preview only changes what the window shows, never the project.
   'paint.get': 'read',
   'paint.preview': 'read',
@@ -58,10 +62,22 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'paint.clear': 'edit',
   'preview.get': 'read',
   'preview.set': 'read',
+  'preview.markers': 'read',
+  'preview.markers_set': 'read',
+  'preview.playback': 'read',
+  'preview.playback_set': 'read',
+  'preview.gcode': 'read',
+  'preview.gcode_jump': 'read',
   // The plates with their slice states, and showing one (by number or id, or the next or previous): like the
   // preview, showing a plate changes only what the window shows, never the project.
   'plates.list': 'read',
   'plates.show': 'read',
+  'plates.add': 'edit',
+  'plates.duplicate': 'edit',
+  'plates.rename': 'edit',
+  'plates.settings': 'edit',
+  'plates.remove': 'edit',
+  'plates.move': 'edit',
   // Settings > Look and feel's view preferences, Frame the view and Toolbar size: like the preview, they change how the
   // window behaves, never the project.
   'look.get': 'read',
@@ -187,9 +203,6 @@ const layerArg = (v: unknown, n: number, key: string): number => {
   return v
 }
 
-/** Tools a person is in the middle of, which an agent's view change must not end. */
-const BUSY_TOOLS = ['paint', 'brim', 'face']
-
 /**
  * Moves the preview: `layer` (the top handle), `range` [bottom, top], `oneLayer`, `colorMode`, `camera`, and turns the
  * playback bar's Show toolhead (`toolhead`) and Show gantry (`gantry`) on or off. It never interrupts the person: it
@@ -198,10 +211,8 @@ const BUSY_TOOLS = ['paint', 'brim', 'face']
  * same ones the person sees in the playback bar, so they stay as the agent leaves them.
  */
 function setPreview(args: Record<string, unknown>) {
+  previewIdle()
   const s = get()
-  if (s.workspace !== 'prepare' || s.modelMode !== 'slice' || BUSY_TOOLS.includes(toolStore.getState().tool)) {
-    throw new LinkError('busy', 'the person is working elsewhere in the window; the preview moves only while Slice is open and no tool is in use')
-  }
   if (args['camera'] !== undefined && !CAMERAS.includes(args['camera'] as CameraView)) throw new LinkError('invalid_input', `camera is one of ${CAMERAS.join(', ')}`)
   if (args['colorMode'] !== undefined && !COLORS.includes(args['colorMode'] as ColorMode)) throw new LinkError('invalid_input', `colorMode is one of ${COLORS.join(', ')}`)
   if (args['oneLayer'] !== undefined && typeof args['oneLayer'] !== 'boolean') throw new LinkError('invalid_input', 'oneLayer is true or false')
@@ -280,40 +291,6 @@ function setLook(args: Record<string, unknown>) {
     },
   })
   return lookState()
-}
-
-/** The objects the view draws, when they are exactly some plate's; the plate in view first, for empty plates. */
-function drawnPlate(): number | null | undefined {
-  const ids = drawnObjects()
-  if (ids === null) return undefined
-  const s = get()
-  const on = (p: { id: string; objects: { id: string }[] }) => (p.id === s.activePlate ? s.plate : p.objects).map((o) => o.id)
-  // Only plate objects count: the view also draws its own extras (the prime tower).
-  const known = new Set(s.plates.flatMap(on))
-  const drawn = new Set(ids.filter((id) => known.has(id)))
-  const same = (p: { id: string; objects: { id: string }[] }) => {
-    const mine = on(p)
-    return mine.length === drawn.size && mine.every((id) => drawn.has(id))
-  }
-  const order = [...s.plates.entries()].sort(([, a], [, b]) => Number(b.id === s.activePlate) - Number(a.id === s.activePlate))
-  const hit = order.find(([, p]) => same(p))
-  return hit ? hit[0] + 1 : null
-}
-
-/**
- * The project's plates in order, the one in view marked, as the plate picker shows them. `drawn` is the plate whose
- * objects the view draws (it matches `shown` once the view has caught up; null while it draws none of them as they are),
- * left out when no view is up.
- */
-function platesState() {
-  const rows = plateRows()
-  const drawn = drawnPlate()
-  return {
-    shown: rows.find((r) => r.shown)?.number ?? 1,
-    ...(drawn !== undefined ? { drawn } : {}),
-    count: rows.length,
-    plates: rows.map((r) => ({ number: r.number, id: r.id, name: r.name, objects: r.objects, slice: r.state, shown: r.shown })),
-  }
 }
 
 /**
@@ -404,14 +381,28 @@ const HANDLERS: Record<string, Handler> = {
   'volumes.set': async (args, client) => (await import('./volumes')).volumeAction('set', args, client.name, linkLoader),
   'volumes.copy': async (args, client) => (await import('./volumes')).volumeAction('copy', args, client.name, linkLoader),
   'volumes.remove': async (args, client) => (await import('./volumes')).volumeAction('remove', args, client.name, linkLoader),
+  'project.set_overrides': async (args, client) => (await import('./project-settings')).editProjectSettings(args, client.name),
+  'settings.get': async (args) => (await import('./project-settings')).readProjectSettings(args),
   'paint.get': async (args) => (await import('./paint')).readPaint(args),
   'paint.preview': async (args, client) => (await import('./paint')).previewPaint(args, client),
   'paint.apply': async (args, client) => (await import('./paint')).applyPaint(args, client),
   'paint.clear': async (args, client) => (await import('./paint')).clearLayer(args, client),
   'preview.get': () => previewState(),
   'preview.set': (args) => setPreview(args),
+  'preview.markers': async () => (await import('./preview-markers')).readMarkers(),
+  'preview.markers_set': async (args) => (await import('./preview-markers')).setMarkers(args),
+  'preview.playback': async () => (await import('./preview-playback')).readPlayback(),
+  'preview.playback_set': async (args) => (await import('./preview-playback')).setPlayback(args),
+  'preview.gcode': async (args) => (await import('./preview-gcode')).previewGcode(args, false),
+  'preview.gcode_jump': async (args) => (await import('./preview-gcode')).previewGcode(args, true),
   'plates.list': () => platesState(),
   'plates.show': (args) => showPlate(args),
+  ...Object.fromEntries(['add', 'duplicate', 'rename', 'settings', 'remove', 'move'].map((action) => [
+    `plates.${action}`, async (args: Record<string, unknown>, client: LinkClient) => {
+      const { editPlate } = await import('./plates')
+      return editPlate(action as Parameters<typeof editPlate>[0], args, client.name)
+    },
+  ])),
   'look.get': () => lookState(),
   'look.set': (args) => setLook(args),
   'sketch.boxes': async () => (await import('./sketch-boxes')).readBoxes(),
