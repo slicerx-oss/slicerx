@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import type { ScriptIdentity, ScriptReview, SlicerHost } from '@slicerx/contracts'
 import { GCODE_TEXT_KEYS, importFlat, printerConfig, scriptDeclarations } from '@slicerx/settings'
+import { provideScriptRecognition } from './script-recognition'
 
 export interface ProjectScriptReview {
   key: string
@@ -26,6 +27,8 @@ export function recognizedScript(key: string, value: unknown, model: string | un
     flavors.every((flavor) => record.review.identity?.firmware === flavor) && record.review.source && record.review.stockVersion && record.review.fingerprint &&
     (record.review.decision === 'exact' || record.review.decision === 'cosmetic')))
 }
+
+provideScriptRecognition(recognizedScript)
 
 /** Read-back only. The caller supplies the selection made before importing the project's printer names. */
 export async function reviewImportedScripts(slicer: SlicerHost, settings: Record<string, unknown>, selected: ScriptIdentity | null): Promise<ProjectScriptReview[]> {
