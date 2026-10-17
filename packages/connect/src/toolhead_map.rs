@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod color;
+
 const MAP_HEADER: &str = "; slicerx_toolhead_map = ";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +22,9 @@ pub struct PreparedToolheadMap {
 
 impl PreparedToolheadMap {
     pub fn matches_loaded(&self, heads: &[LoadedToolhead]) -> bool {
+        if self.selected_heads.is_empty() {
+            return heads.is_empty();
+        }
         let selected: BTreeSet<_> = self.selected.values().copied().collect();
         self.selected_heads.len() == selected.len()
             && selected.iter().all(|tool| {
@@ -72,17 +77,17 @@ pub fn prepare_toolhead_file(
     if source_sha256 != file.sha256.to_ascii_lowercase() {
         return Err("The source file hash does not match its bytes".to_owned());
     }
-    let plan = plan_toolheads(needs, heads, selected)?;
+    let mut plan = plan_toolheads(needs, heads, selected)?;
     if selected.len() != needs.len() || !plan.ready {
         return Err("Choose a loaded toolhead for every job filament before preparing the file".to_owned());
     }
     let mut used = BTreeSet::new();
     let mut body = String::with_capacity(text.len());
     for (line_no, line) in text.split_inclusive('\n').enumerate() {
-        body.push_str(
-            &rewrite_line(line, selected, &mut used)
-                .map_err(|reason| format!("Line {}: {reason}", line_no + 1))?,
-        );
+        let rewritten = rewrite_line(line, selected, &mut used)
+            .map_err(|reason| format!("Line {}: {reason}", line_no + 1))?;
+        plan.changed_lines += usize::from(rewritten != line);
+        body.push_str(&rewritten);
     }
     let declared: BTreeSet<_> = needs.iter().map(|need| need.tool).collect();
     if used != declared {
@@ -122,7 +127,7 @@ fn checked_tool_command(code: &str, command: &str) -> Result<bool, String> {
     {
         return Err("Resolve templates and remove line numbers/checksums before toolhead mapping".to_owned());
     }
-    if ["M104", "M109", "M900"]
+    if ["M104", "M109", "M116", "M900"]
         .iter()
         .any(|prefix| command.starts_with(prefix) && command != *prefix)
     {
@@ -138,6 +143,7 @@ fn checked_tool_command(code: &str, command: &str) -> Result<bool, String> {
                 upper.as_str(),
                 "M104"
                     | "M109"
+                    | "M116"
                     | "M900"
                     | "SET_PRESSURE_ADVANCE"
                     | "SM_PRINT_PREEXTRUDE_FILAMENT"
@@ -166,7 +172,7 @@ fn checked_tool_command(code: &str, command: &str) -> Result<bool, String> {
 }
 
 fn physical_tool_reference(words: &[&str], command: &str, tool_command: bool) -> Result<bool, String> {
-    if !tool_command && !matches!(command, "M104" | "M109" | "M900") {
+    if !tool_command && !matches!(command, "M104" | "M109" | "M116" | "M900") {
         return Ok(false);
     }
     let mut flags = words.iter().skip(1).filter(|word| word.starts_with(['A', 'a']));
@@ -185,7 +191,8 @@ fn lowercase_tool_parameter(word: &str, command: &str, tool_command: bool) -> bo
     ["INDEX=", "TOOL=", "EXTRUDER="].iter().any(|prefix| {
         word.get(..prefix.len())
             .is_some_and(|name| name.eq_ignore_ascii_case(prefix) && name != *prefix)
-    }) || ((tool_command || matches!(command, "M104" | "M109" | "M900")) && word.starts_with(['t', 'a']))
+    }) || ((tool_command || matches!(command, "M104" | "M109" | "M116" | "M900"))
+        && word.starts_with(['t', 'a']))
 }
 
 fn rewrite_line(line: &str, selected: &BTreeMap<u8, u8>, used: &mut BTreeSet<u8>) -> Result<String, String> {
@@ -214,7 +221,7 @@ fn rewrite_line(line: &str, selected: &BTreeMap<u8, u8>, used: &mut BTreeSet<u8>
             used.insert(logical);
             Some(format!("T{}", mapped(index, selected)?))
         } else if word_index > 0
-            && matches!(command, "M104" | "M109" | "M900")
+            && matches!(command, "M104" | "M109" | "M116" | "M900")
             && word.starts_with('T')
             && !physical
         {
@@ -231,7 +238,7 @@ fn rewrite_line(line: &str, selected: &BTreeMap<u8, u8>, used: &mut BTreeSet<u8>
                 "INDEX={}",
                 mapped(word.trim_start_matches("INDEX="), selected)?
             ))
-        } else if command == "SET_PRESSURE_ADVANCE" && word.starts_with("EXTRUDER=extruder") {
+        } else if word.starts_with("EXTRUDER=extruder") {
             let index = word.trim_start_matches("EXTRUDER=extruder");
             let target = mapped(if index.is_empty() { "0" } else { index }, selected)?;
             Some(if target == 0 {
@@ -245,13 +252,16 @@ fn rewrite_line(line: &str, selected: &BTreeMap<u8, u8>, used: &mut BTreeSet<u8>
                 && word
                     .get(1..)
                     .is_some_and(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
-                && !matches!(command, "M104" | "M109" | "M900")
+                && !matches!(command, "M104" | "M109" | "M116" | "M900")
             {
                 return Err(format!(
                     "Indexed tool parameter in {command} is not supported for mapping"
                 ));
             }
-            if matches!(command, "M104" | "M109" | "M900") && word.contains('T') && !word.starts_with('T') {
+            if matches!(command, "M104" | "M109" | "M116" | "M900")
+                && word.contains('T')
+                && !word.starts_with('T')
+            {
                 return Err("Separate indexed temperature parameters with spaces before mapping".to_owned());
             }
             if word_index > 0
@@ -320,6 +330,9 @@ pub struct ToolheadAssignment {
     pub alternatives: Vec<u8>,
     pub status: ToolheadMatch,
     pub reason: String,
+    pub color_mismatch: bool,
+    pub material_mismatch: bool,
+    pub empty: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -328,6 +341,9 @@ pub struct ToolheadPlan {
     pub ready: bool,
     pub assignments: Vec<ToolheadAssignment>,
     pub toolheads: Vec<LoadedToolhead>,
+    pub head_data_available: bool,
+    pub requires_confirmation: bool,
+    pub changed_lines: usize,
 }
 
 fn material_key(s: &str) -> String {
@@ -358,13 +374,6 @@ fn rgb(s: &str) -> Option<[u8; 3]> {
     ])
 }
 
-fn distance(a: [u8; 3], b: [u8; 3]) -> u32 {
-    a.into_iter()
-        .zip(b)
-        .map(|(x, y)| u32::from(x.abs_diff(y)).pow(2))
-        .sum()
-}
-
 fn validate_inputs(
     needs: &[ToolheadNeed],
     heads: &[LoadedToolhead],
@@ -387,7 +396,7 @@ fn validate_inputs(
         }
     }
     let physical: BTreeSet<_> = heads.iter().map(|head| head.tool).collect();
-    if heads.len() != 4 || physical != BTreeSet::from([0, 1, 2, 3]) {
+    if !heads.is_empty() && (heads.len() != 4 || physical != BTreeSet::from([0, 1, 2, 3])) {
         return Err("The printer must report all four U1 toolheads".to_owned());
     }
     if selected
@@ -399,6 +408,95 @@ fn validate_inputs(
     Ok(())
 }
 
+fn color_distance(need: &ToolheadNeed, head: &LoadedToolhead) -> f64 {
+    rgb(&need.color)
+        .zip(head.color.as_deref().and_then(rgb))
+        .map_or(f64::INFINITY, |(left, right)| color::distance(left, right))
+}
+
+fn material_matches(need: &ToolheadNeed, head: &LoadedToolhead) -> bool {
+    head.material
+        .as_deref()
+        .is_some_and(|material| material_key(material) == material_key(&need.material))
+}
+
+fn proposed_head(need: &ToolheadNeed, heads: &[LoadedToolhead], used: &BTreeSet<u8>) -> Option<u8> {
+    let spare = heads.iter().any(|head| head.loaded && !used.contains(&head.tool));
+    let mut candidates: Vec<_> = heads
+        .iter()
+        .filter(|head| head.loaded && (!spare || !used.contains(&head.tool)))
+        .collect();
+    candidates.sort_by(|left, right| {
+        let left_distance = color_distance(need, left);
+        let right_distance = color_distance(need, right);
+        let left_exact = left_distance <= 2.0;
+        let right_exact = right_distance <= 2.0;
+        let material = material_matches(need, right).cmp(&material_matches(need, left));
+        right_exact
+            .cmp(&left_exact)
+            .then_with(|| {
+                if left_exact && right_exact {
+                    material
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+            .then_with(|| left_distance.total_cmp(&right_distance))
+            .then(material)
+            .then(left.tool.cmp(&right.tool))
+    });
+    candidates.first().map(|head| head.tool)
+}
+
+fn assignment(
+    need: &ToolheadNeed,
+    heads: &[LoadedToolhead],
+    chosen: Option<u8>,
+    explicit: bool,
+) -> ToolheadAssignment {
+    let head = chosen.and_then(|tool| heads.iter().find(|head| head.tool == tool));
+    let color_mismatch = head.is_none_or(|head| color_distance(need, head) > 2.0);
+    let material_mismatch = head.is_none_or(|head| !material_matches(need, head));
+    let empty = !heads.is_empty() && head.is_none_or(|head| !head.loaded);
+    let mismatch = color_mismatch || material_mismatch || empty;
+    let status = if chosen.is_none() {
+        ToolheadMatch::Unavailable
+    } else if explicit {
+        ToolheadMatch::Selected
+    } else if mismatch {
+        ToolheadMatch::ChoiceRequired
+    } else {
+        ToolheadMatch::Match
+    };
+    let mut reasons = Vec::new();
+    if heads.is_empty() {
+        reasons.push("Spool info unavailable".to_owned());
+    } else {
+        if empty {
+            reasons.push("The selected toolhead is empty".to_owned());
+        }
+        if color_mismatch {
+            reasons.push("Color differs from the print filament".to_owned());
+        }
+        if material_mismatch {
+            reasons.push(format!("Material differs from {}", need.material));
+        }
+    }
+    if reasons.is_empty() {
+        reasons.push("Material and color match".to_owned());
+    }
+    ToolheadAssignment {
+        tool: need.tool,
+        physical_tool: chosen,
+        alternatives: vec![0, 1, 2, 3],
+        status,
+        reason: reasons.join("; "),
+        color_mismatch,
+        material_mismatch,
+        empty,
+    }
+}
+
 /// Suggest choices or validate explicit selections. This never changes a printer or file.
 pub fn plan_toolheads(
     needs: &[ToolheadNeed],
@@ -406,98 +504,32 @@ pub fn plan_toolheads(
     selected: &BTreeMap<u8, u8>,
 ) -> Result<ToolheadPlan, String> {
     validate_inputs(needs, heads, selected)?;
-    let mut assignments = Vec::with_capacity(needs.len());
-    for need in needs {
-        let color = rgb(&need.color).ok_or("Invalid filament color")?;
-        let mut candidates: Vec<_> = heads
-            .iter()
-            .filter(|head| {
-                head.loaded
-                    && head.material.as_deref().is_some_and(|m| {
-                        !m.trim().is_empty() && material_key(m) == material_key(&need.material)
-                    })
-            })
-            .collect();
-        candidates.sort_by_key(|head| {
-            (
-                head.color
-                    .as_deref()
-                    .and_then(rgb)
-                    .map_or(u32::MAX, |c| distance(color, c)),
-                head.tool,
-            )
-        });
-        let alternatives = candidates.iter().map(|head| head.tool).collect();
-        let (physical_tool, status, reason) = if let Some(chosen) = selected.get(&need.tool) {
-            if candidates.iter().any(|head| head.tool == *chosen) {
-                (
-                    Some(*chosen),
-                    ToolheadMatch::Selected,
-                    "Selected loaded toolhead".to_owned(),
-                )
-            } else {
-                (
-                    None,
-                    ToolheadMatch::Unavailable,
-                    format!(
-                        "Toolhead {} does not report loaded {} for filament {}",
-                        chosen + 1,
-                        need.material,
-                        need.tool + 1
-                    ),
-                )
+    let mut used: BTreeSet<_> = selected.values().copied().collect();
+    let assignments: Vec<_> = needs
+        .iter()
+        .map(|need| {
+            let explicit = selected.get(&need.tool).copied();
+            let chosen = explicit.or_else(|| proposed_head(need, heads, &used));
+            if let Some(tool) = chosen {
+                used.insert(tool);
             }
-        } else if let Some(best) = candidates.first() {
-            let exact = candidates
-                .iter()
-                .filter(|head| head.color.as_deref().and_then(rgb) == Some(color))
-                .count();
-            if exact == 1 {
-                (
-                    Some(best.tool),
-                    ToolheadMatch::Match,
-                    "Material and color match".to_owned(),
-                )
-            } else {
-                (
-                    Some(best.tool),
-                    ToolheadMatch::ChoiceRequired,
-                    if exact > 1 {
-                        "Several toolheads match; choose the one to use".to_owned()
-                    } else {
-                        "No exact color match; choose a loaded toolhead or load the requested color"
-                            .to_owned()
-                    },
-                )
-            }
-        } else {
-            (
-                None,
-                ToolheadMatch::Unavailable,
-                format!(
-                    "Load {} for filament {}; no toolhead reports that material",
-                    need.material,
-                    need.tool + 1
-                ),
-            )
-        };
-        assignments.push(ToolheadAssignment {
-            tool: need.tool,
-            physical_tool,
-            alternatives,
-            status,
-            reason,
-        });
-    }
+            assignment(need, heads, chosen, explicit.is_some())
+        })
+        .collect();
     Ok(ToolheadPlan {
         ready: assignments
             .iter()
             .all(|a| matches!(a.status, ToolheadMatch::Match | ToolheadMatch::Selected)),
+        requires_confirmation: needs.len() > 1
+            || assignments
+                .iter()
+                .any(|a| a.color_mismatch || a.material_mismatch || a.empty),
+        head_data_available: !heads.is_empty(),
+        changed_lines: 0,
         assignments,
         toolheads: heads.to_vec(),
     })
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,6 +561,60 @@ mod tests {
             data: text.as_bytes().to_vec(),
             sha256: crate::types::hex(&Sha256::digest(text.as_bytes())),
         }
+    }
+
+    #[test]
+    fn owner_color_match_precedes_material_match() {
+        let mut loaded = heads();
+        loaded[0].material = Some("PETG".into());
+        let plan = plan_toolheads(&[need(0, "PLA", "ff0000")], &loaded, &BTreeMap::new()).unwrap();
+        assert_eq!(plan.assignments[0].physical_tool, Some(0));
+        assert_eq!(plan.assignments[0].status, ToolheadMatch::ChoiceRequired);
+    }
+
+    #[test]
+    fn owner_proposals_use_spares_before_reusing_a_head() {
+        let needs = [need(0, "PLA", "ff0000"), need(1, "PLA", "ff0000")];
+        let plan = plan_toolheads(&needs, &heads(), &BTreeMap::new()).unwrap();
+        assert_ne!(
+            plan.assignments[0].physical_tool,
+            plan.assignments[1].physical_tool
+        );
+    }
+
+    #[test]
+    fn owner_perceptually_matching_color_counts_as_exact() {
+        let plan = plan_toolheads(&[need(0, "PLA", "fe0000")], &heads(), &BTreeMap::new()).unwrap();
+        assert_eq!(plan.assignments[0].physical_tool, Some(0));
+        assert_eq!(plan.assignments[0].status, ToolheadMatch::Match);
+    }
+
+    #[test]
+    fn owner_no_spool_data_allows_manual_tool_choices() {
+        let needs = [need(0, "PLA", "ff0000"), need(1, "PLA", "00ff00")];
+        let plan = plan_toolheads(&needs, &[], &BTreeMap::from([(0, 3), (1, 2)])).unwrap();
+        assert!(plan.ready);
+        assert_eq!(plan.assignments[0].physical_tool, Some(3));
+    }
+
+    #[test]
+    fn owner_m116_tool_reference_changes_only_in_the_send_copy() {
+        let source = file("T0\nM116 T0 ; M116 T0 stays a comment\n");
+        let original = source.data.clone();
+        let (prepared, plan) = prepare_toolhead_file(
+            source.clone(),
+            &[need(0, "PLA", "ff0000")],
+            &heads(),
+            &BTreeMap::from([(0, 3)]),
+        )
+        .unwrap();
+        assert_eq!(source.data, original);
+        assert_eq!(plan.changed_lines, 2);
+        assert!(
+            std::str::from_utf8(&prepared.data)
+                .unwrap()
+                .ends_with("T3\nM116 T3 ; M116 T0 stays a comment\n")
+        );
     }
 
     #[test]
@@ -634,7 +720,7 @@ mod tests {
         );
     }
     #[test]
-    fn differing_colors_need_a_choice_and_materials_cannot_be_overridden() {
+    fn differing_colors_and_materials_require_review_but_allow_explicit_choices() {
         let needs = [need(7, "PLA", "#ffffff")];
         let plan = plan_toolheads(&needs, &heads(), &BTreeMap::new()).unwrap();
         assert!(!plan.ready);
@@ -644,11 +730,11 @@ mod tests {
                 .unwrap()
                 .ready
         );
-        assert!(
-            !plan_toolheads(&[need(7, "PETG", "ffffff")], &heads(), &BTreeMap::from([(7, 2)]))
-                .unwrap()
-                .ready
-        );
+        let selected =
+            plan_toolheads(&[need(7, "PETG", "ffffff")], &heads(), &BTreeMap::from([(7, 2)])).unwrap();
+        assert!(selected.ready);
+        assert!(selected.requires_confirmation);
+        assert!(selected.assignments[0].material_mismatch);
     }
     #[test]
     fn unknown_empty_and_composite_materials_do_not_match_plain_pla() {
@@ -659,14 +745,15 @@ mod tests {
         slots[3].material = Some("PETG".to_owned());
         let plan = plan_toolheads(&[need(0, "PLA", "ff0000")], &slots, &BTreeMap::new()).unwrap();
         assert!(!plan.ready);
-        assert!(plan.assignments[0].alternatives.is_empty());
+        assert!(plan.assignments[0].material_mismatch);
+        assert_eq!(plan.assignments[0].alternatives, [0, 1, 2, 3]);
     }
     #[test]
-    fn duplicate_matches_require_selection_and_invalid_input_is_refused() {
+    fn duplicate_matches_are_deterministic_and_invalid_input_is_refused() {
         let mut slots = heads();
         slots[1].color = Some("#ff0000".to_owned());
         assert!(
-            !plan_toolheads(&[need(0, "PLA", "ff0000")], &slots, &BTreeMap::new())
+            plan_toolheads(&[need(0, "PLA", "ff0000")], &slots, &BTreeMap::new())
                 .unwrap()
                 .ready
         );

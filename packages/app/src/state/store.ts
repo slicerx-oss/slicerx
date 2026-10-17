@@ -391,6 +391,7 @@ export interface AppState {
   printerNozzles: Record<string, number>
   /** Each extruder's nozzle on printers with more than one, by printer id, in the slicer's extruder order (left first on an H2D). */
   printerExtruders: Record<string, import('./prefs').ExtruderNozzle[]>
+  toolheadSkipMatching: Record<string, boolean>
   /** Printers added by hand that no host knows. They join the host's printers (lib/hand-printers). */
   handPrinters: HandPrinter[]
   /** Bays printers stand in, in the order Printers lists them. */
@@ -760,6 +761,7 @@ export const appStore = createStore<AppState>()(() => ({
   namedValues: [],
   printerNozzles: prefs.printerNozzles ?? {},
   printerExtruders: prefs.printerExtruders ?? {},
+  toolheadSkipMatching: prefs.toolheadSkipMatching ?? {},
   handPrinters: prefs.handPrinters ?? [],
   bays: prefs.bays ?? [],
   printerBays: prefs.printerBays ?? {},
@@ -869,7 +871,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
 
 // the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
 const setup0 = appStore.getState().setup
@@ -913,6 +915,7 @@ appStore.subscribe((s, prev) => {
       units: s.units,
       printerNozzles: s.printerNozzles,
       printerExtruders: s.printerExtruders,
+      toolheadSkipMatching: s.toolheadSkipMatching,
       handPrinters: s.handPrinters,
       bays: s.bays,
       printerBays: s.printerBays,

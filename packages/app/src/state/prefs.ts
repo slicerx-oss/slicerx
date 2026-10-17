@@ -83,6 +83,7 @@ export interface Prefs {
   presetSync?: { deleted: { id: string; at: number }[]; changes: { at: number; id: string; name: string; kind: 'printer' | 'filament' | 'process'; action: 'added' | 'updated' | 'removed'; keys?: string[]; conflict?: boolean }[]; lastAt: number } | undefined
   printerNozzles?: Record<string, number> | undefined
   printerExtruders?: Record<string, ExtruderNozzle[]> | undefined
+  toolheadSkipMatching?: Record<string, boolean> | undefined
   handPrinters?: HandPrinter[] | undefined
   /** Bays printers stand in (a rack, a desk), in the order Printers lists them. */
   bays?: PrinterBay[] | undefined
@@ -340,6 +341,7 @@ export function normalizePrefs(v: unknown): Prefs {
     presetSync: or(presetSync(r['presetSync']), { deleted: [], changes: [], lastAt: 0 }),
     printerNozzles: or(record(r['printerNozzles'], (k) => k.length <= 80, (x) => num(x, 0.1, 2)), {}),
     printerExtruders: or(record(r['printerExtruders'], (k) => k.length <= 80, (x) => list(x, 8, extruderNozzle)), {}),
+    toolheadSkipMatching: or(record(r['toolheadSkipMatching'], (k) => k.length <= 80, bool), {}),
     handPrinters: or(list(r['handPrinters'], 100, handPrinter), []),
     bays: or(list(r['bays'], 100, printerBay), []),
     printerBays: or(record(r['printerBays'], (k) => k.length <= 80, (x) => str(x, 80)), {}),

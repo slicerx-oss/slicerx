@@ -195,7 +195,11 @@ async function planQueue(shared: ToolShared, ctx: ToolContext, i: { printerId: s
   if (!info?.plugin || !pluginHas(info.plugin, 'project_file')) {
     const job = await exportPlate(shared, ctx, i.plate)
     const prepared = entry.preparedToolheads?.get(i.printerId)
-    if (!prepared && ['snapmaker', 'moonraker'].includes(info?.plugin ?? '') && /\bU1\b/i.test(info?.model ?? '')) throw new Error('Review the U1 toolheads with toolhead_mapping and preparePlate before queuing this plate.')
+    if (!prepared && ['snapmaker', 'moonraker'].includes(info?.plugin ?? '') && /\bU1\b/i.test(info?.model ?? '')) {
+      const needs = plateFilaments(entry.result.stats, entry.config, ctx.context?.machine?.material).map((f) => ({ tool: f.index - 1, material: f.type, color: f.color }))
+      const plan = await ctx.host.printers.planToolheads?.(i.printerId, needs)
+      if (needs.length !== 1 || plan?.headDataAvailable !== false) throw new Error('Review the U1 toolheads with toolhead_mapping and preparePlate before queuing this plate.')
+    }
     if (prepared && prepared.sourceSha256 !== job.file.sha256) throw new Error('This plate changed. Review its toolhead mapping again before sending.')
     const file = await uploadedFile(ctx, i.printerId, prepared?.file ?? job.file)
     const toolheadLine = prepared ? `Toolheads: ${prepared.plan.assignments.map((a) => `filament ${a.tool + 1} to toolhead ${Number(a.physicalTool) + 1}`).join(', ')}` : undefined
