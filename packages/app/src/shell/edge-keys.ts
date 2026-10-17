@@ -4,6 +4,8 @@
 // registers while it is on screen, so the keys follow the open mode and the look's sidebar side with no copy of
 // that layout here.
 import type { EdgeSide } from '@slicerx/ui'
+import { modelMode, railKey } from '../state/model-mode'
+import { get, setRail } from '../state/store'
 
 const toggles = new Map<EdgeSide, () => void>()
 
@@ -20,4 +22,14 @@ export function toggleEdge(side: EdgeSide): boolean {
   const t = toggles.get(side)
   t?.()
   return t !== undefined
+}
+
+/** The panel keys: the panel on that side. Moved here from the command list so app.tsx need not load it. */
+export function toggleRail(side: 'left' | 'right'): void {
+  // Model and Slice: the panel on that side with an edge tab, whichever key it keeps its state under.
+  if (toggleEdge(side)) return
+  const ws = railKey(get().workspace, modelMode())
+  const cur = get().rails[ws]?.[side]
+  const wide = window.matchMedia('(min-width: 1280px)').matches
+  setRail(ws, side, !(cur ?? wide))
 }

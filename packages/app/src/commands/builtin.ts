@@ -17,7 +17,9 @@ import { appName, currentEdition, editionHasCad } from '../edition'
 import { mimirShown, modelMode, railKey } from '../state/model-mode'
 import { bugReportsOff } from '../bugs/where'
 import { updaterRegistered } from '../updates/hold'
-import { toggleEdge } from '../shell/edge-keys'
+import { toggleEdge, toggleRail } from '../shell/edge-keys'
+
+export { toggleRail }
 
 /** Focuses an element once a lazy workspace has rendered it. */
 export function focusWhenReady(id: string, tries = 30): void {
@@ -166,11 +168,3 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   return out
 }
 
-export function toggleRail(side: 'left' | 'right'): void {
-  // Model and Slice: the panel on that side with an edge tab, whichever key it keeps its state under.
-  if (toggleEdge(side)) return
-  const ws = railKey(get().workspace, modelMode())
-  const cur = get().rails[ws]?.[side]
-  const wide = window.matchMedia('(min-width: 1280px)').matches
-  setRail(ws, side, !(cur ?? wide))
-}
