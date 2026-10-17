@@ -6,7 +6,7 @@ import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, Permi
 import { grantApproval, hashParams } from '@slicerx/contracts'
 import type { QueueItem } from '../queue/queue'
 import { clearProject } from '../project/new'
-import { recognizedScript } from '../project/script-review'
+import { isRecognizedScript } from '../project/script-recognition'
 import { get, markStale, set, toast, type AppState, selectedIds, type PendingApproval, type ModelSource } from './store'
 
 
@@ -79,7 +79,7 @@ export function trustOptions(s: Pick<AppState, 'profile' | 'overrides'> & Partia
   const p = s.profile
   if (!p) return {}
   const vouched = s.vouchedGcode ?? {}
-  const own = (k: string): boolean => k in s.overrides && !(k in vouched && JSON.stringify(s.overrides[k]) === JSON.stringify(vouched[k])) && !recognizedScript(k, s.overrides[k], p.printerId, s.overrides, s.projectScriptReviews?.records ?? [])
+  const own = (k: string): boolean => k in s.overrides && !(k in vouched && JSON.stringify(s.overrides[k]) === JSON.stringify(vouched[k])) && !isRecognizedScript(k, s.overrides[k], p.printerId, s.overrides, s.projectScriptReviews?.records ?? [])
   const edited = p.gcodeKeys.some(own) || GCODE_TEXT_KEYS.some(own)
   return { ...(p.shippedGcode && !edited ? { trustedGcode: true as const } : {}), ...(Object.keys(p.limits).length ? { machineLimits: p.limits } : {}) }
 }

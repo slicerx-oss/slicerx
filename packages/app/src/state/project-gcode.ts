@@ -8,14 +8,13 @@ import type { SettingValue } from '@slicerx/contracts'
 import type { GcodeChange } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { slotConfig } from '../filament/slot-config'
-import { recognizedScript } from '../project/script-review'
 import { get, set, toast } from './store'
 
 export type GcodeChoice = 'project' | 'profile'
 
 /** Reviews the G-code settings of a project just opened. Returns the number of settings that wait for a person. */
 export async function reviewOpenedGcode(source: string, settings: Record<string, unknown>): Promise<number> {
-  const { GCODE_TEXT_KEYS, importFlat, reviewProjectGcode } = await import('@slicerx/settings')
+  const [{ GCODE_TEXT_KEYS, importFlat, reviewProjectGcode }, { recognizedScript }] = await Promise.all([import('@slicerx/settings'), import('../project/script-review')])
   const project = importFlat(Object.fromEntries(Object.entries(settings).filter(([k]) => GCODE_TEXT_KEYS.includes(k)))).config as Record<string, unknown>
   const s = get()
   const profile = s.profile
