@@ -3,7 +3,8 @@
 // Journey: the app against a real sx-link and the mock printers, end to end: pair, list, camera, send with preflight and
 // approval on a Klipper printer, the bridge's settings, and, in the Bambu Lab describe, the Print sheet for an A1 with
 // an AMS lite and an A1 mini with only the external spool (slot choice, the .gcode.3mf start, a client's queue send
-// over MCP with its matched slots, a refused start with its reason and the plain G-code offer) and the camera guard, and, in the Snapmaker U1 describe, the Print sheet's toolhead choices.
+// over MCP with its matched slots, a refused start with its reason and the plain G-code offer) and the camera guard.
+// The Snapmaker U1 describe checks the Print sheet's toolhead choices and what reaches the printer.
 // The live view of one printer (printer-hud) runs first, on the demo fleet, before the page pairs, and the Print sheet
 // rows and the bridge section that need no hub follow it ('on the demo fleet'). The order is for speed only: every test
 // pairs the page itself when it is not paired, and loads it again when it needs the demo fleet.

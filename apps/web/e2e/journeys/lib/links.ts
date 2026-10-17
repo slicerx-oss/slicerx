@@ -7,7 +7,7 @@
 // Runs only when SX_LINK_BIN names a built sx-link (cargo build -p sx-link); SX_LINK_REQUIRE=1 (CI) makes a missing
 // binary a failure, as bridge-hub.ts does.
 import { spawn, execFile, type ChildProcessByStdio } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,6 +18,7 @@ import type { Page } from '@playwright/test'
 import { ONBOARDING_VERSION } from '../../../../../packages/app/src/first-run/onboarding.ts'
 import type { Admin } from '../../bridge-hub'
 import { COLD_START_MS, plateReady } from '../../fixtures'
+import { withClientCredential } from '../../client-credential'
 import { interceptFileDialogs } from '../../file-dialog'
 import { expect, journey } from '../../journey'
 
@@ -32,10 +33,6 @@ const root = join(import.meta.dirname, '../../../../..')
 export const mcpDir = join(root, 'packages/mcp')
 /** Resolves the MCP package's own dependencies (its SDK, tsx, esbuild), as its specs always have. */
 export const mcpRequire = createRequire(join(mcpDir, 'package.json'))
-
-/** The keychain item the stdio client's credential is under, as Connect your AI agent names it for a test build. */
-const KEY_REF = 'slicerx-agent-test-links'
-const APP_ID = 'app.slicerx.desktop.e2e'
 
 export type Answer = { isError?: boolean; content?: { text?: string }[]; structuredContent?: { ok?: boolean; summary?: string; output?: any; error?: { code: string; message?: string; details?: unknown } } }
 type McpClient = { connect(t: unknown): Promise<void>; callTool(p: { name: string; arguments: Record<string, unknown> }, s?: unknown, o?: { timeout?: number }): Promise<unknown>; listTools(): Promise<{ tools: { name: string }[] }>; close(): Promise<void> }
@@ -89,20 +86,6 @@ async function loadSdk(): Promise<{ Client: new (i: { name: string; version: str
   const { InMemoryTransport } = await at('@modelcontextprotocol/sdk/inMemory.js')
   const { StdioClientTransport } = await at('@modelcontextprotocol/sdk/client/stdio.js')
   return { Client, InMemoryTransport, StdioClientTransport } as never
-}
-
-/** A stand-in for the system keychain tools first on the PATH: it hands over the remembered key for this one item. */
-function fakeKeychain(dir: string, key: string): string {
-  const path = join(dir, 'bin')
-  const keyFile = join(dir, 'key')
-  writeFileSync(keyFile, key, { mode: 0o600 })
-  const script = `#!/bin/sh\nfor a in "$@"; do [ "$a" = "${KEY_REF}.${APP_ID}" ] && exec cat "${keyFile}"; done\nexit 44\n`
-  mkdirSync(path)
-  for (const tool of ['security', 'secret-tool']) {
-    writeFileSync(join(path, tool), script)
-    chmodSync(join(path, tool), 0o755)
-  }
-  return path
 }
 
 const cleanEnv = (drop: string): Record<string, string> => Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string' && !e[0].startsWith(drop)))
@@ -266,36 +249,45 @@ export const test = journey.extend<object, { sxLink: Link['hub']; paired: Page; 
       const home = mkdtempSync(join(tmpdir(), 'sx-link-agent-'))
       let agent: Promise<Agent> | undefined
       let client: McpClient | undefined
+      let held: Promise<void> | undefined
+      let release: (() => void) | undefined
       const link: Link = {
         hub: sxLink,
         runtime,
-        agent: () => (agent ??= (async () => {
-          const { Client, StdioClientTransport } = await loadSdk()
-          const { clientKey } = await sxLink.admin.clients.create('journey agent', 'agent')
-          const keys = fakeKeychain(home, clientKey!)
-          const env = { ...cleanEnv('SLICERX_MCP_LINK'), PATH: `${keys}:${process.env['PATH'] ?? ''}`, SLICERX_MCP_LINK_KEY_REF: KEY_REF, SLICERX_MCP_APP_IDENTIFIER: APP_ID }
-          const args = serverArgs(sxLink, home)
-          client = new Client({ name: 'journey-agent', version: '0.0.0' })
-          await client.connect(new StdioClientTransport({ command: process.execPath, args, cwd: mcpDir, env, stderr: 'inherit' }))
-          const page = paired
-          const raw = (tool: string, a: Record<string, unknown> = {}) => allowWhenAsked(page, client!.callTool({ name: tool, arguments: a }, undefined, { timeout: 90_000 }) as Promise<Answer>)
-          return {
-            raw: (tool, a) => raw(tool.startsWith('slicerx_') ? tool : `slicerx_${tool}`, a),
-            call: async (tool, a) => {
-              const answer = await raw(tool.startsWith('slicerx_') ? tool : `slicerx_${tool}`, a)
-              expect(answer.isError, JSON.stringify(answer)).toBeFalsy()
-              return answer.structuredContent!.output
-            },
-            cli: async (...calls) => {
-              const argv = calls.flatMap((c) => (typeof c === 'string' ? [c] : [JSON.stringify(c)]))
-              const { stdout } = await allowWhenAsked(page, promisify(execFile)(process.execPath, [...args, 'call', ...argv], { cwd: mcpDir, env, timeout: 120_000 }))
-              return stdout.trim().split('\n').map((l) => JSON.parse(l))
-            },
-          }
-        })()),
+        agent: () => (agent ??= new Promise<Agent>((resolve, reject) => {
+          // The remembered credential lives as long as the callback runs (it is removed after, on Windows too), so the
+          // callback stays open until the worker is done with the client.
+          held = (async () => {
+            const { Client, StdioClientTransport } = await loadSdk()
+            const { clientKey } = await sxLink.admin.clients.create('journey agent', 'agent')
+            await withClientCredential(home, clientKey!, async (env) => {
+              const args = serverArgs(sxLink, home)
+              client = new Client({ name: 'journey-agent', version: '0.0.0' })
+              await client.connect(new StdioClientTransport({ command: process.execPath, args, cwd: mcpDir, env, stderr: 'inherit' }))
+              const page = paired
+              const raw = (tool: string, a: Record<string, unknown> = {}) => allowWhenAsked(page, client!.callTool({ name: tool, arguments: a }, undefined, { timeout: 90_000 }) as Promise<Answer>)
+              resolve({
+                raw: (tool, a) => raw(tool.startsWith('slicerx_') ? tool : `slicerx_${tool}`, a),
+                call: async (tool, a) => {
+                  const answer = await raw(tool.startsWith('slicerx_') ? tool : `slicerx_${tool}`, a)
+                  expect(answer.isError, JSON.stringify(answer)).toBeFalsy()
+                  return answer.structuredContent!.output
+                },
+                cli: async (...calls) => {
+                  const argv = calls.flatMap((c) => (typeof c === 'string' ? [c] : [JSON.stringify(c)]))
+                  const { stdout } = await allowWhenAsked(page, promisify(execFile)(process.execPath, [...args, 'call', ...argv], { cwd: mcpDir, env, windowsHide: true, timeout: 120_000 }))
+                  return stdout.trim().split('\n').map((l) => JSON.parse(l))
+                },
+              })
+              await new Promise<void>((done) => (release = done))
+            })
+          })().catch(reject)
+        })),
       }
       await use(link)
       await client?.close().catch(() => undefined)
+      release?.()
+      await held
       rmSync(dir, { recursive: true, force: true })
       rmSync(home, { recursive: true, force: true })
     },
