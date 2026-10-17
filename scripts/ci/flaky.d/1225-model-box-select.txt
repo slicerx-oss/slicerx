@@ -1,1 +1,0 @@
-Model box select › left to right picks what is inside, right to left what it touches | doo-sx | 2026-10-16 | 2026-10-17 | https://github.com/slicerx-oss/slicerx/issues/1225 | passed only on retry in merge group run 38843383940 (e2e desktop 5/12)
