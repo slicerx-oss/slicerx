@@ -62,7 +62,7 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, what mimir said, the tools it ran and how each ended, its questions and lookups. Without an id, the newest conversation.`,
+    description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups. Without an id, the newest conversation.`,
     input: z.object({ id: z.string().min(1).max(200).optional().describe('A session id from slicerx_mimir_ask; the newest when left out') }),
     async run(i) {
       let id = i.id

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // mimir's conversations in the app, read back over the app link: the sessions, and for one session what was said and
-// what mimir did each turn (its tool calls and how they ended, its questions and the answers, what it looked up). The
-// chat that keeps them registers its log here; nothing is registered until it does. Text is cut to a readable length
-// and nothing else in the app is reachable from here.
+// what mimir did each turn (the model it ran on and why, its tool calls and how they ended, its questions and the
+// answers, what it looked up). The chat that keeps them registers its log here; nothing is registered until it does.
+// Text is cut to a readable length and nothing else in the app is reachable from here.
 import { assistantText } from '@slicerx/contracts'
 import type { PilotEvent, SessionStore } from '@slicerx/contracts'
 import { reduceTranscript, startTurn, emptyTranscript, type Transcript, type Turn } from '@slicerx/pilot/reduce'
@@ -107,7 +107,9 @@ export async function readSession(args: Record<string, unknown>): Promise<unknow
     let tr: Transcript = startTurn(emptyTranscript(), { user: said[i]?.text ?? null }, 0)
     for (const e of run) tr = reduceTranscript(tr, e, 0) ?? tr
     const t = tr.turns.at(-1)!
-    return compact(t, said[i])
+    // the model the turn started on, and on Auto why it was picked; a later move shows as a model step
+    const start = run.find((e): e is PilotEvent & { type: 'start' } => e.type === 'start')
+    return { ...(start ? { model: start.model, ...(start.route ? { route: { tier: start.route.tier, reason: start.route.reason } } : {}) } : {}), ...compact(t, said[i]) }
   })
   return { id, stats: statsOf(events), turns: turns.slice(-MAX_TURNS), ...(turns.length > MAX_TURNS ? { earlier: turns.length - MAX_TURNS } : {}) }
 }

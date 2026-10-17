@@ -32,7 +32,7 @@ export interface TabModel {
   link: Exclude<MimirLink, 'none'>
   provider: string
   model: string
-  /** Auto's two models when the person chose Auto: huginn to start, muninn for pictures and many-step parts. */
+  /** Auto's two models when the person chose Auto: huginn to start, muninn for pictures, many-step parts and sizes only the person knows. */
   auto?: { huginn: string; muninn: string }
 }
 
@@ -77,7 +77,8 @@ function scripted(loader: Loader): Pilot {
 /**
  * What the tab's model runtime is made from. The design scope builds every part with the design tools (no part
  * generator), so each step lands in the timeline; Auto starts on huginn and moves to muninn only for a picture or PDF,
- * or a part of many steps. Nothing in the tab reaches a printer or asks for an approval.
+ * a part of many steps, or one that needs a size only the person knows. Nothing in the tab reaches a printer or asks
+ * for an approval.
  */
 export function tabPilotOptions(parts: { llm: LlmTransport; config: PilotConfig; kb: KnowledgeBase; tools: readonly PilotTool<never>[]; client?: LlmClient; share?: CreatePilotOptions['share'] }): CreatePilotOptions {
   return {
