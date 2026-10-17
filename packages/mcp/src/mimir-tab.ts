@@ -25,7 +25,7 @@ export function mimirTabTools(link: AppLinkCaller | undefined, appName: string):
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Read what answers in the mimir tab of the open ${appName} app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF or a part of many steps), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens. Also lists the tools mimir has in the tab (the design tools, so each step lands in the timeline). Carries no key or token.`,
+    description: `Read what answers in the mimir tab of the open ${appName} app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens. Also lists the tools mimir has in the tab (the design tools, so each step lands in the timeline). Carries no key or token.`,
     input: z.object({}),
     async run() {
       if (!link) throw new ToolInputError(`reading the mimir tab needs the open ${appName} app: start the server with --printers link and turn on the app link`, 'not_configured')
@@ -48,7 +48,7 @@ export function mimirTabTools(link: AppLinkCaller | undefined, appName: string):
           : out.link === 'scripted'
             ? 'The mimir tab plays scripted replies: no model is set up in Settings > mimir.'
             : out.auto
-              ? `The mimir tab runs ${out.provider} on Auto: ${out.auto.huginn}, and ${out.auto.muninn} for a picture, a PDF or a part of many steps.`
+              ? `The mimir tab runs ${out.provider} on Auto: ${out.auto.huginn}, and ${out.auto.muninn} for a picture, a PDF, a part of many steps or one that needs a size only the person knows.`
               : `The mimir tab runs ${out.provider} with ${out.model}.`
       return { summary, output }
     },

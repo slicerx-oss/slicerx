@@ -45,7 +45,7 @@ import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, typ
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
 import { planToDiff } from './tools/settings'
-import { designTier, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tierForPrompt, type Tier } from './models'
+import { chatRoute, designRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, type Tier } from './models'
 
 export interface PilotHost extends ToolHost {
   llm: LlmTransport
@@ -735,10 +735,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const given: PilotContext = runOpts.context ?? {}
       const machine = given.machine ? undefined : opts.project?.()?.machine()
       const context: PilotContext = machine ? { ...given, machine } : given
-      // the tab routes by what the request carries; elsewhere by its words
-      const startTier = scope === 'design' ? designTier(message, runOpts.attachments) : tierForPrompt(message)
+      // the tab routes by what the request carries; elsewhere by its words, and for a build by its files too
+      const route = scope === 'design' ? designRoute(message, runOpts.attachments) : chatRoute(message, runOpts.attachments)
+      const startTier = route.tier
+      // the start says why Auto picked its model, so a client reading the session sees it; a pinned model has no pick
+      const auto = modelFor(opts.config, HUGINN) !== modelFor(opts.config, MUNINN)
       return drive(sessionId, async (emit) => {
-        emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString() })
+        emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString(), ...(auto ? { route } : {}) })
         if (scope !== 'full') pluginTools = []
         else if (pluginTools === null) {
           // First run: show the plugins loading, then what came up.

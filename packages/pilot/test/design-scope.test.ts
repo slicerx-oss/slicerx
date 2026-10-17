@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir tab's scope: parts are built with the design tools (no part generator), the prompt says how, and Auto
-// moves from huginn to muninn only for a picture or PDF, or a request of many steps; never on a tool call.
+// moves from huginn to muninn only for a picture or PDF, a request of many steps, or one that needs a size only the
+// person knows (route.test.ts); never on a tool call.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotAttachment, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'

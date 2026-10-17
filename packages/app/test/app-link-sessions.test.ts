@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // mimir's conversations over the app link: the sessions newest first, and one session turn by turn, with what the
-// person said, what mimir said and the tools it ran; long text is cut, and an unknown session is refused.
+// person said, the model each turn ran on, what mimir said and the tools it ran; long text is cut, and an unknown
+// session is refused.
 import type { PilotEvent } from '@slicerx/contracts'
 import { createMemorySessionStore } from '@slicerx/pilot'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -49,6 +50,7 @@ describe('mimir sessions over the app link', () => {
     const out = (await runCall('mimir.session', { id: 'mimir_a' })) as { turns: { said?: string; attachments?: string[]; steps: Record<string, unknown>[] }[] }
     expect(out.turns).toHaveLength(2)
     expect(out.turns[0]).toEqual({
+      model: 'scripted',
       said: 'A wall mount',
       attachments: ['thermostat.jpg'],
       steps: [
@@ -60,6 +62,29 @@ describe('mimir sessions over the app link', () => {
     expect(second.said).toBe('Round the edges')
     expect((second.steps[0]!['text'] as string).length).toBeLessThan(4_100)
     expect(second.steps[1]).toMatchObject({ kind: 'tool', tool: 'geom.fillet', state: 'bad', summary: 'No edge there' })
+  })
+
+  it('say which model each turn ran on, and on Auto why it was picked, with a later move as a step', async () => {
+    const s = createMemorySessionStore()
+    const add = (e: unknown) => s.append('mimir_d', e as PilotEvent)
+    for (const e of [
+      { ...start('mimir_d', '2026-10-12T13:00:00Z'), provider: 'anthropic', model: 'claude-sonnet-5-5', route: { tier: 'muninn', reason: 'person_sizes' } },
+      { type: 'model_switch', model: 'claude-sonnet-5-5', label: 'Sonnet 5.5', reason: 'request' },
+      { type: 'text', delta: 'How thick is the shelf board?' },
+      { type: 'done', stopReason: 'end', ms: 1 },
+      { ...start('mimir_d', '2026-10-12T13:01:00Z'), provider: 'anthropic', model: 'claude-haiku-5-5', route: { tier: 'huginn', reason: 'default' } },
+      { type: 'done', stopReason: 'end', ms: 1 },
+      { ...start('mimir_d', '2026-10-12T13:02:00Z'), provider: 'anthropic', model: 'claude-sonnet-5-5' },
+      { type: 'done', stopReason: 'end', ms: 1 },
+    ]) await add(e)
+    setSessionSource({ store: s })
+    const out = (await runCall('mimir.session', { id: 'mimir_d' })) as { turns: Record<string, unknown>[] }
+    expect(out.turns[0]).toMatchObject({ model: 'claude-sonnet-5-5', route: { tier: 'muninn', reason: 'person_sizes' } })
+    expect(out.turns[0]!['steps']).toContainEqual({ kind: 'model', model: 'claude-sonnet-5-5', label: 'Sonnet 5.5', reason: 'request' })
+    expect(out.turns[1]).toMatchObject({ model: 'claude-haiku-5-5', route: { tier: 'huginn', reason: 'default' } })
+    // a pinned model has no pick to explain
+    expect(out.turns[2]!['model']).toBe('claude-sonnet-5-5')
+    expect(out.turns[2]).not.toHaveProperty('route')
   })
 
   it('refuse a missing or odd id', async () => {

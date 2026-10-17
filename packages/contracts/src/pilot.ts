@@ -301,8 +301,15 @@ export interface PilotChoice {
   label: string
 }
 
+/** Where Auto started a run and why. */
+export interface PilotRoute {
+  tier: 'huginn' | 'muninn'
+  reason: 'deep' | 'attachment' | 'many_steps' | 'person_sizes' | 'default'
+}
+
 export type PilotEvent =
-  | { type: 'start'; runId: string; sessionId: string; provider: string; model: string; at: string }
+  /** `route`, on Auto only: the tier the request started on and why (deep work, a picture or PDF, many steps, sizes only the person knows). */
+  | { type: 'start'; runId: string; sessionId: string; provider: string; model: string; at: string; route?: PilotRoute }
   | { type: 'plugins'; plugins: PluginLoad[] }
   | { type: 'thinking'; delta: string }
   | { type: 'thinking_done'; ms: number }
