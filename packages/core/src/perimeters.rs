@@ -1232,6 +1232,50 @@ pub(crate) fn walls_for(
     )
 }
 
+fn classic_top_trim(cfg: &crate::config::PrintConfig, ext: i32, inner: i32) -> i32 {
+    let mm = crate::geom::mm;
+    let threshold = match cfg.raw.get("min_width_top_surface") {
+        Some(serde_json::Value::Array(a)) => a.first(),
+        other => other,
+    };
+    let threshold = match threshold {
+        Some(serde_json::Value::String(s)) if s.trim().ends_with('%') => {
+            mm(cfg.raw_number("min_width_top_surface", 300.0) * cfg.inner_wall_width() / 100.0)
+        }
+        Some(_) => mm(cfg.raw_number("min_width_top_surface", 0.0)),
+        None => inner * 3,
+    };
+    (ext / 4 + 1).max(threshold / 4)
+}
+
+// a false result guarantees that the context-free classic walls are unchanged.
+pub(crate) fn classic_top_candidate(
+    cfg: &crate::config::PrintConfig,
+    region: &Shapes,
+    w: i32,
+    overlap: i32,
+    top: &TopCtx,
+) -> bool {
+    let (ext, inner) = if cfg.has_feature_widths() {
+        (
+            crate::geom::mm(cfg.outer_wall_width()),
+            crate::geom::mm(cfg.inner_wall_width()),
+        )
+    } else {
+        (w, w)
+    };
+    let trim = classic_top_trim(cfg, ext, inner);
+    region.iter().any(|shape| {
+        let one = vec![shape.clone()];
+        if difference(&one, top.upper).is_empty() {
+            return false;
+        }
+        // this superset cannot hold a top region if even its widest strips disappear.
+        let possible = difference(&offset(&one, -(ext - overlap)), top.upper);
+        !offset(&possible, -trim).is_empty()
+    })
+}
+
 /// [`walls_for`] with the neighbor layers known, so `only_one_wall_top` can give top surfaces one wall.
 #[allow(
     clippy::too_many_arguments,
@@ -1280,31 +1324,12 @@ pub(crate) fn walls_for_top(
         let Some(top) = top.filter(|_| wall_loops > 1) else {
             return normal(region);
         };
-        let threshold = match cfg.raw.get("min_width_top_surface") {
-            Some(serde_json::Value::Array(a)) => a.first(),
-            other => other,
-        };
-        let threshold = match threshold {
-            Some(serde_json::Value::String(s)) if s.trim().ends_with('%') => {
-                mm(cfg.raw_number("min_width_top_surface", 300.0) * cfg.inner_wall_width() / 100.0)
-            }
-            Some(_) => mm(cfg.raw_number("min_width_top_surface", 0.0)),
-            None => inner * 3,
-        };
-        let trim = (ext / 4 + 1).max(threshold / 4);
+        let trim = classic_top_trim(cfg, ext, inner);
         let mut islands = Vec::new();
         let mut cores = Vec::new();
         for shape in region {
             let one = vec![shape.clone()];
-            if difference(&one, top.upper).is_empty() {
-                let (walls, core) = normal(&one);
-                islands.extend(walls);
-                cores.extend(core);
-                continue;
-            }
-            // this superset cannot hold a top region if even its widest strips disappear.
-            let possible = difference(&offset(&one, -(ext - overlap)), top.upper);
-            if offset(&possible, -trim).is_empty() {
+            if !classic_top_candidate(cfg, &one, w, overlap, top) {
                 let (walls, core) = normal(&one);
                 islands.extend(walls);
                 cores.extend(core);
