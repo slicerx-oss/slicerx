@@ -39,7 +39,7 @@ export function createDiagnose() {
         output: {
           printer: status ? { state: status.state, job: status.jobName, layer: status.layer, layerCount: status.layerCount, message: status.message } : null,
           guide: guide ? { id: guide.id, name: guide.name, tree: guide.data['tree'], causes: ranked.slice(0, 5) } : null,
-          note: 'Camera snapshots are not analyzed by this skill yet; ask the user what they see when the tree needs it.',
+          note: 'Answer first: name the most likely cause and its fix from causes. Then ask at most one question from the tree, and only when its answer would change the fix. Camera snapshots are not analyzed by this skill yet.',
         },
         untrusted: Boolean(status?.message),
         display: rows.length ? [{ kind: 'table', head: ['cause', 'likelihood'], rows }] : [],
