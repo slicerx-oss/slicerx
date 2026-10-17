@@ -21,8 +21,16 @@ it('reads back each printer preference without exposing mutable app state', asyn
 
 it('skips only complete matches and offers manual choices when multi-filament spool data is missing', () => {
   const plan: ToolheadPlan = { ready: true, headDataAvailable: true, toolheads: [], assignments: [{ tool: 0, physicalTool: 0, alternatives: [0, 1, 2, 3], status: 'match', reason: 'match' }] }
-  expect(showToolheadChoices(plan, false)).toBe(true)
+  expect(showToolheadChoices(plan, false)).toBe(false)
   expect(showToolheadChoices(plan, true)).toBe(false)
+  const multi = { ...plan, assignments: [...plan.assignments, { ...plan.assignments[0]!, tool: 1, physicalTool: 1 }] }
+  expect(showToolheadChoices(multi, false)).toBe(true)
+  expect(showToolheadChoices(multi, true)).toBe(false)
+  const selected = { ...multi, assignments: multi.assignments.map((a) => ({ ...a, status: 'selected' as const })) }
+  expect(showToolheadChoices(selected, true)).toBe(false)
+  const shared = { ...multi, assignments: multi.assignments.map((a) => ({ ...a, physicalTool: 0 })) }
+  expect(showToolheadChoices(shared, false)).toBe(true)
+  expect(showToolheadChoices(shared, true)).toBe(true)
   for (const warning of ['colorMismatch', 'materialMismatch', 'empty'] as const) {
     expect(showToolheadChoices({ ...plan, assignments: [{ ...plan.assignments[0]!, [warning]: true }] }, true)).toBe(true)
   }
