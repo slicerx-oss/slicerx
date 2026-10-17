@@ -33,7 +33,7 @@ fn cross(o: Pt, a: Pt, b: Pt) -> f64 {
 /// True when the profile plans travels, so the layer keeps its regions.
 pub(crate) fn wants_areas(cfg: &crate::config::PrintConfig) -> bool {
     crate::firmware::truthy(cfg, "reduce_crossing_wall")
-        || crate::firmware::truthy(cfg, "reduce_infill_retraction")
+        || crate::firmware::reduce_infill_retraction(cfg)
         || crate::ironing::kind(cfg).is_some()
 }
 

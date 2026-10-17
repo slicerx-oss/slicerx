@@ -2099,7 +2099,7 @@ fn emit_layer(
     let wipe_before_loop = crate::firmware::truthy(c, "wipe_before_external_loop")
         && c.wall_sequence == crate::config::WallSequence::OuterInner;
     let comb = crate::firmware::truthy(c, "reduce_crossing_wall");
-    let reduce_infill = crate::firmware::truthy(c, "reduce_infill_retraction");
+    let reduce_infill = crate::firmware::reduce_infill_retraction(c);
     let detour = detour_limit(c);
     let travel_layout = (comb || reduce_infill)
         .then(|| crate::travel::Layout::for_travels(l, c, comb))
