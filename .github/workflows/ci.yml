@@ -109,6 +109,7 @@ jobs:
       - id: f
         env:
           FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           [ -f package.json ] && echo "node=true" >> "$GITHUB_OUTPUT" || echo "node=false" >> "$GITHUB_OUTPUT"
           [ -f Cargo.toml ] && echo "rust=true" >> "$GITHUB_OUTPUT" || echo "rust=false" >> "$GITHUB_OUTPUT"
@@ -141,13 +142,27 @@ jobs:
           smoke=false
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$e2e" = false ] && printf '%s\n' "$changed" | grep -qE "$browser"; then smoke=true; fi
           echo "smoke=$smoke" >> "$GITHUB_OUTPUT"
-          # The B-rep kernel builds from source in about two minutes, so a pull request builds it only when it changes
-          # packages/brep or packages/geom (or this file); the merge queue and main always do, from the cache when nothing changed.
-          if [ "$GITHUB_EVENT_NAME" != pull_request ] || printf '%s\n' "$changed" | grep -qE '^(packages/brep/|packages/geom/|\.github/workflows/ci\.yml$)'; then brep=true; else brep=false; fi
+          # The B-rep kernel compiles from source on every run (the Rust cache keeps no workspace crate's build output,
+          # so about 40 minutes on Windows), and no release or required check waits on it. A pull request builds it
+          # only when it changes what the kernel build and its tests read; so does the merge queue, against the
+          # group's base (every pull request in the group). A run by hand and a push always do: a push the queue
+          # already tested skips the job instead (its if), and any other push builds it.
+          brep_paths='^(packages/brep/|packages/geom/|packages/vendor/i_overlay/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.cargo/|\.nvmrc$|\.github/workflows/ci\.yml$)'
+          brep=true
+          case $GITHUB_EVENT_NAME in
+            pull_request) printf '%s\n' "$changed" | grep -qE "$brep_paths" || brep=false ;;
+            merge_group)
+              # a base that cannot be fetched or compared builds it
+              if git fetch -q --depth=1 origin "$BASE_SHA" && group=$(git diff --name-only "$BASE_SHA" HEAD); then
+                printf '%s\n' "$group" | grep -qE "$brep_paths" || brep=false
+              fi
+              ;;
+          esac
+          if [ "$brep" = false ]; then echo "::notice title=B-rep skipped::nothing the B-rep kernel build reads changed"; fi
           echo "brep=$brep" >> "$GITHUB_OUTPUT"
       # A push to main whose commit already passed the merge queue: the queue merges by rebase, so the pushed commit is
-      # the exact tree a merge_group run of this workflow tested and passed. That push skips the Linux jobs the queue
-      # ran on it (web, wasm, licenses, rust on ubuntu-latest) and runs what only a push runs: rust on macOS and
+      # the exact tree a merge_group run of this workflow tested and passed. That push skips brep and the Linux jobs the
+      # queue ran on it (web, wasm, licenses, rust on ubuntu-latest) and runs what only a push runs: rust on macOS and
       # Windows, devkit, and the jobs no queue run has. A skipped check counts as green for releases
       # (scripts/ci/require-green.sh). Any other push (an earlier commit of a group, or one made outside the queue), or
       # a lookup that fails, runs everything.
@@ -513,7 +528,7 @@ jobs:
   # (tests/routines.rs). Every other Rust job builds the crate without it.
   brep:
     needs: detect
-    if: needs.detect.outputs.brep == 'true'
+    if: needs.detect.outputs.brep == 'true' && needs.detect.outputs.queued != 'true'
     strategy:
       fail-fast: false
       matrix:
