@@ -1019,6 +1019,12 @@ test.describe('Snapmaker U1', () => {
     printersChanged = true
   })
 
+  /** Choose toolhead T<head> for a filament from the picker's menu. */
+  const pickHead = async (page: Page, sheet: Locator, tool: number, head: number) => {
+    await sheet.locator(`#ps-toolhead-${tool}`).click()
+    await page.getByRole('menuitemcheckbox', { name: new RegExp(`^T${head}( |$)`) }).click()
+  }
+
   const printerActions = async () => (await logOf('snapmaker-u1')).filter((line) => line !== 'webcams list')
 
   test('U1 planning warns about different material and never uploads or starts', async () => {
@@ -1039,7 +1045,7 @@ test.describe('Snapmaker U1', () => {
     await expect(sheet.getByRole('group', { name: 'Choose toolheads' })).toHaveCount(0)
     await expect(sheet.locator('.ps-summary')).toContainText('Toolhead T1')
     await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
-    await sheet.locator('#ps-toolhead-0').selectOption('2')
+    await pickHead(page, sheet, 0, 2)
     await expect(sheet.locator('.ps-summary')).toContainText('Toolhead T2')
     await expect(sheet.locator('.ps-map-row .ps-row-warn')).toBeVisible()
     await expect(sheet.getByText('Checking toolhead choices', { exact: true })).toBeHidden()
@@ -1079,7 +1085,7 @@ test.describe('Snapmaker U1', () => {
     await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
     await expect(sheet.getByRole('group', { name: 'Choose toolheads' })).toBeVisible()
     const before = await printerActions()
-    await sheet.locator('#ps-toolhead-0').selectOption('4')
+    await pickHead(page, sheet, 0, 4)
     expect(await printerActions()).toEqual(before)
     await sheet.getByRole('button', { name: 'More ways to send' }).click()
     await page.getByRole('menuitemcheckbox', { name: 'Upload only', exact: true }).click()
@@ -1090,11 +1096,68 @@ test.describe('Snapmaker U1', () => {
     expect(log.some((line) => line.startsWith('start ') || line.includes('SET_PRINT_EXTRUDER_MAP'))).toBe(false)
   })
 
+  test('U1 toolhead picker keeps its width and the row stacks on a phone', async ({ page }) => {
+    test.slow()
+    const sheet = await sheetOn(page, 'U1 Bay')
+    await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
+    // the head with no spool carries the most reasons: only the first shows, the rest are in the tooltip
+    await pickHead(page, sheet, 0, 3)
+    await expect(sheet.locator('.ps-head-why')).toContainText('The selected toolhead is empty')
+    await expect(sheet.locator('.ps-head-why')).not.toContainText('Material differs')
+    await expect(sheet.getByRole('button', { name: 'More about filament 1' })).toBeVisible()
+    const rects = () =>
+      sheet.evaluate((dialog) => {
+        const box = (selector: string) => {
+          const el = dialog.querySelector<HTMLElement>(selector)!
+          const r = el.getBoundingClientRect()
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }
+        }
+        const why = dialog.querySelector<HTMLElement>('.ps-head-why > span')!
+        const lines = Math.round(why.getBoundingClientRect().height / parseFloat(getComputedStyle(why).lineHeight))
+        return { dialog: box('.sx-dialog-body'), label: box('.ps-head-row label'), select: box('#ps-toolhead-0'), why: box('.ps-head-why'), lines }
+      })
+    const was = page.viewportSize()!
+    try {
+      // desktop: label, a 128 px picker and the reason share one row
+      await page.setViewportSize({ width: 1440, height: 900 })
+      let r = await rects()
+      expect(Math.round(r.select.width)).toBe(128)
+      expect(r.select.left).toBeGreaterThanOrEqual(r.label.right)
+      expect(r.why.left).toBeGreaterThanOrEqual(r.select.right)
+      expect(r.lines).toBeLessThanOrEqual(2)
+      // phone: label, then picker, then reason, nothing overlapping, nothing past the dialog
+      await page.setViewportSize({ width: 390, height: 844 })
+      r = await rects()
+      expect(r.select.top).toBeGreaterThanOrEqual(r.label.bottom)
+      expect(r.why.top).toBeGreaterThanOrEqual(r.select.bottom)
+      expect(r.select.width).toBeGreaterThanOrEqual(128)
+      expect(r.select.height).toBeGreaterThanOrEqual(44)
+      expect(r.select.right).toBeLessThanOrEqual(r.dialog.right)
+      expect(r.lines).toBeLessThanOrEqual(2)
+    } finally {
+      await page.setViewportSize(was)
+    }
+  })
+
+  test('U1 toolhead choices show a swatch and the filament name, never a hex code', async ({ page }) => {
+    test.slow()
+    const sheet = await sheetOn(page, 'U1 Bay')
+    await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
+    await sheet.locator('#ps-toolhead-0').click()
+    const items = page.getByRole('menuitemcheckbox')
+    expect(await items.count()).toBe(4)
+    for (const text of await items.allTextContents()) expect(text).not.toMatch(/#[0-9a-f]{3,6}/i)
+    await expect(page.locator('.ps-head-menu .ps-swatch').first()).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(sheet.locator('#ps-toolhead-0')).toBeFocused()
+  })
+
+  // Last: it starts a print on the mock, after which the sheet is not offered again (afterAll removes the printer).
   test('U1 applies and verifies the map only after the person starts', async ({ page }) => {
     test.slow()
     const sheet = await sheetOn(page, 'U1 Bay')
     await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
-    await sheet.locator('#ps-toolhead-0').selectOption('4')
+    await pickHead(page, sheet, 0, 4)
     const before = await printerActions()
     await start(sheet)
     await sawToast(page, /started on U1 Bay/, { timeout: 30_000 })

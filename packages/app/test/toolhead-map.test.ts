@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { expect, it } from 'vitest'
 import type { ToolheadPlan } from '@slicerx/contracts'
-import { showToolheadChoices, toolheadNeedsForPlate } from '../src/send/toolhead-map'
+import { headFilament, showToolheadChoices, toolheadNeedsForPlate, toolheadWarning } from '../src/send/toolhead-map'
 import { runCall } from '../src/app-link/methods'
 import { get, set } from '../src/state/store'
 
@@ -43,4 +43,21 @@ it('uses only tools extruded on this plate and preserves composite and support m
   expect(toolheadNeedsForPlate([2, 0, 1], { filament_type: ['PLA-CF', 'PETG', 'PVA'], filament_colour: ['#000000', '#ffffff', '#eeeeee'] }, [
     { index: 1, type: 'PLA', color: '#ff0000' }, { index: 2, type: 'PETG', color: '#ffffff' },
   ])).toEqual([{ tool: 0, material: 'PLA-CF', color: '#000000' }, { tool: 2, material: 'PVA', color: '#eeeeee' }])
+})
+
+it('shows one reason for a toolhead, the empty head first, then material, then color, and keeps the rest for the tooltip', () => {
+  const base = { tool: 0, physicalTool: 2, alternatives: [0, 1, 2, 3], status: 'selected' as const }
+  const all = { ...base, empty: true, materialMismatch: true, colorMismatch: true, reason: 'The selected toolhead is empty; Color differs from the print filament; Material differs from PLA' }
+  expect(toolheadWarning(all, true)).toEqual({ text: 'The selected toolhead is empty', more: ['Material differs from PLA', 'Color differs from the print filament'], warn: true })
+  expect(toolheadWarning({ ...all, empty: false }, true)).toMatchObject({ text: 'Material differs from PLA', more: ['Color differs from the print filament'], warn: true })
+  expect(toolheadWarning({ ...all, empty: false, materialMismatch: false }, true)).toEqual({ text: 'Color differs from the print filament', more: [], warn: false })
+  expect(toolheadWarning({ ...base, reason: 'Material and color match' }, true)).toEqual({ text: 'Material and color match', more: [], warn: false })
+  expect(toolheadWarning({ ...base, empty: true, reason: 'Spool info unavailable' }, false)).toEqual({ text: 'Spool info unavailable', more: [], warn: false })
+})
+
+it('names what a toolhead holds without a hex code', () => {
+  expect(headFilament({ tool: 0, loaded: true, material: 'PLA HIGH SPEED', color: '#ff0000' }, true)).toBe('PLA HIGH SPEED Red')
+  expect(headFilament({ tool: 1, loaded: true, material: null, color: null }, true)).toBe('Unknown material')
+  expect(headFilament({ tool: 2, loaded: false, material: null, color: null }, true)).toBe('')
+  expect(headFilament({ tool: 3, loaded: true, material: 'PLA', color: '#ff0000' }, false)).toBe('')
 })
