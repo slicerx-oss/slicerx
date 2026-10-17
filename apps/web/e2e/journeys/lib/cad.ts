@@ -103,14 +103,15 @@ export function screenOf(page: Page, p: V3): Promise<[number, number]> {
   return page.evaluate((p) => (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp.screenOf(p), p)
 }
 
-/** Waits until the view's frame stops moving (a pane opening or a framing move resizes it a little later). */
+/** Waits until the view's frame stops moving (a pane opening or a framing move resizes it a little later). A camera move still running is not still. */
 export async function settled(page: Page): Promise<void> {
   let last = ''
   let still = 0
   await expect
     .poll(async () => {
       const now = (await screenOf(page, [0, 0, 0])).map((v) => Math.round(v)).join(',')
-      still = now === last ? still + 1 : 0
+      const moving = await page.evaluate(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move !== null)
+      still = now === last && !moving ? still + 1 : 0
       last = now
       return still >= 4
     }, { intervals: [250], timeout: 15_000 })
@@ -266,7 +267,11 @@ export const screenAt = (page: Page, p: V2) =>
     return { x: s[0], y: s[1] }
   }, p)
 
-/** Waits until the view holds still: the sketch turns the camera square on as it opens. */
+/**
+ * Waits until the view holds still: the sketch turns the camera square on as it opens. The turn is the camera rig's
+ * move, which starts from an effect and takes its first step on the next frame, so a slow machine can show the same
+ * spot for several reads before the camera goes. A move still running counts as not still, whatever the spot says.
+ */
 export async function still(page: Page): Promise<void> {
   let last = ''
   let n = 0
@@ -274,8 +279,9 @@ export async function still(page: Page): Promise<void> {
     .poll(
       async () => {
         const s = await screenAt(page, [0, 0])
+        const moving = await page.evaluate(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move !== null)
         const now = `${Math.round(s.x)},${Math.round(s.y)}`
-        n = now === last ? n + 1 : 0
+        n = now === last && !moving ? n + 1 : 0
         last = now
         return n >= 3
       },

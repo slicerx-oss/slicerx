@@ -273,14 +273,15 @@ type Vp = {
 /** A bed point (mm) on screen, in client pixels. */
 export const bedToScreen = (page: Page, p: V3): Promise<[number, number]> => page.evaluate((p) => (window as unknown as { __vp: Vp }).__vp.screenOf(p), p)
 
-/** Waits until the view's frame stops moving: the same spot four reads in a row (a pane opening resizes it a little later). */
+/** Waits until the view's frame stops moving: the same spot four reads in a row, with no camera move running (a pane opening resizes it a little later). */
 export async function settledView(page: Page): Promise<void> {
   let last = ''
   let still = 0
   await expect
     .poll(async () => {
       const now = (await bedToScreen(page, [0, 0, 0])).map((v) => Math.round(v)).join(',')
-      still = now === last ? still + 1 : 0
+      const moving = await page.evaluate(() => (window as unknown as { __vp: Vp }).__vp.rig.move !== null)
+      still = now === last && !moving ? still + 1 : 0
       last = now
       return still >= 4
     }, { intervals: [250], timeout: 15_000 })
