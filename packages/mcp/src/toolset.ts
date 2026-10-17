@@ -11,6 +11,7 @@ import { ToolInputError } from './errors'
 import { modelingTools, type ModelingFiles } from './modeling-tools'
 
 export { appValueInputs, type AppValuesResult } from './app-values'
+export { brimEditInput, brimReadInput } from './brim-input'
 
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
 export { appDimensionInputs, type AppDimensions } from './app-dimensions'
