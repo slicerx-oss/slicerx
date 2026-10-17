@@ -51,10 +51,14 @@ export function commitStroke(e: StrokeEdits): void {
  * would do nothing, so the object switches to Painted only (`fuzzy_skin` none) and says so; OrcaSlicer
  * shows a warning with a link to do the same.
  */
-function enablePaintedFuzzy(entry: PlateEntry): void {
+export function needsPaintedFuzzy(entry: PlateEntry): boolean {
   const s = get()
   const effective = { ...(resolveConfig(s.easy, s.overrides) as Record<string, SettingValue>), ...objectOverrides(s, entry) }
-  if (effective['fuzzy_skin'] !== undefined && effective['fuzzy_skin'] !== 'disabled_fuzzy') return
+  return effective['fuzzy_skin'] === undefined || effective['fuzzy_skin'] === 'disabled_fuzzy'
+}
+
+function enablePaintedFuzzy(entry: PlateEntry): void {
+  if (!needsPaintedFuzzy(entry)) return
   setObjectSetting(entry.id, 'fuzzy_skin', 'none')
   toast(`Fuzzy skin is on where you paint ${entry.name}; the rest of its walls stay smooth.`, 'info')
 }

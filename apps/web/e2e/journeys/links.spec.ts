@@ -652,6 +652,75 @@ test('clients keep real dimensions with visible read-back, permissions, native C
   })
 })
 
+test('clients paint the live object through MCP and native CLI, read brush layers and undo', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page)
+  await command(page, 'Add a box')
+  await expect.poll(async () => (await sx.get(page, 'plate')).length).toBe(1)
+  type Paint = { preview?: string; revision: string; changed?: boolean; object: string; parts: { states: { state: number; areaMm2: number }[] }[] }
+  await scratch('paint', async (dir) => {
+    const objectOf = async (client: { ok(tool: string): Promise<any> }): Promise<string> => {
+      const state = await client.ok('app_history')
+      return state.plates.find((p: { id: string }) => p.id === state.activePlate).objects[0].id
+    }
+    const reader = await session(link, page, dir, 'paint-reader', 'read')
+    try {
+      const object = await objectOf(reader)
+      const pv: Paint = (await reader.ok('app_paint_preview', { object, layer: 'seam', state: 1, target: { kind: 'direction', direction: 'top' } }))
+      expect(pv.preview).toBeTruthy()
+      expect(await reader.call('app_paint_apply', { preview: pv.preview })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+    } finally {
+      await reader.close()
+    }
+    const editor = await session(link, page, dir, 'paint-editor', 'edit')
+    try {
+      const object = await objectOf(editor)
+      const call = (name: string, args: Record<string, unknown>): Promise<Paint> => editor.ok(name, args)
+      const undo = page.getByTestId('plate-tools-group').getByRole('button', { name: 'Undo', exact: true })
+      const exercise = async (native?: (name: string, args: Record<string, unknown>) => Promise<Paint>) => {
+        const invoke = native ?? call
+        for (const layer of ['color', 'seam', 'support', 'fuzzy']) {
+          const initial = await invoke('app_paint', { object, layer })
+          const pv = await invoke('app_paint_preview', { object, layer, state: 1, target: { kind: 'direction', direction: 'top' } })
+          expect(pv.changed).toBe(true)
+          expect((await call('app_paint', { object, layer })).parts).toEqual(initial.parts)
+          const applied = await invoke('app_paint_apply', { preview: pv.preview })
+          expect(applied.parts).toEqual(pv.parts)
+          expect(applied.parts.flatMap((p) => p.states).some((s) => s.state === 1 && s.areaMm2 > 0)).toBe(true)
+          expect((await call('app_paint', { object, layer })).parts).toEqual(applied.parts)
+          await undo.click()
+          expect((await call('app_paint', { object, layer })).parts).toEqual(initial.parts)
+          const again = await call('app_paint_preview', { object, layer, state: 1, target: { kind: 'part' } })
+          await call('app_paint_apply', { preview: again.preview })
+          const painted = await call('app_paint', { object, layer })
+          const cleared = await invoke('app_paint_clear', { object, layer, revision: painted.revision })
+          expect(cleared.parts.every((p) => p.states.length === 0)).toBe(true)
+          await undo.click()
+          expect((await call('app_paint', { object, layer })).parts).toEqual(painted.parts)
+          await undo.click()
+          expect((await call('app_paint', { object, layer })).parts).toEqual(initial.parts)
+        }
+      }
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, editor.clientKey!, async (run) => {
+          await exercise(async (name, args) => {
+            const [row] = await run(name, args)
+            expect(row.ok, JSON.stringify(row)).toBe(true)
+            return row.output.output
+          })
+        })
+      } else await exercise()
+      const pv = await call('app_paint_preview', { object, state: 1, target: { kind: 'part' } })
+      const next = await call('app_paint_preview', { object, layer: 'support', state: 1, target: { kind: 'part' } })
+      await call('app_paint_apply', { preview: next.preview })
+      expect(await editor.call('app_paint_apply', { preview: pv.preview })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await undo.click()
+    } finally {
+      await editor.close()
+    }
+  })
+})
+
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the
 // client read-back. The computed CSS on the SVG icons and loops is what no unit test sees, so this keeps all of it.
 test('edition colors reach icons, loops, the viewport and MCP in both themes', async ({ page, link }, info) => {
