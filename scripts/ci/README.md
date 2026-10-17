@@ -128,6 +128,9 @@ the lock over only on evidence from the holder's own side:
   start time. `wsl.exe` runs nothing in a distro that is not already running, so a check never starts WSL.
 - Anything else counts as alive: the other side cannot be asked (no interop, a timeout), a start time cannot be read
   (an elevated holder), or the record comes from a side this one has no way to ask. The waiter keeps waiting.
+- A holder past its max hold (below) by twice its grace and 5 minutes more is taken over whether or not it can be
+  proved dead: its own `heavy.sh` should have stopped it by then. The history logs it as a `stale holder`, and the
+  process is left running.
 
 From WSL, Windows programs run through `/init`, as WSL's binfmt entry would run them: a distro with systemd can lose
 that entry, and then `powershell.exe` and `wsl.exe` fail when called directly.
@@ -142,8 +145,23 @@ is dropped. `mkdir` alone still decides who holds a slot, so an older `heavy.sh`
 before the ticket format sorts last and can wait a long time: every machine should run the same copy, and a waiter
 that sees an old ticket says so once.
 
+Max hold: no holder keeps the lock forever. `SX_HEAVY_MAX_HOLD` (the number in `<lock>.max-hold`, default 7200 for
+`--e2e` and `--gpu` and no limit for the other modes, 0 for none) is the longest the command may run under the lock.
+Past it, `heavy.sh` sends TERM to the command and its children (Git Bash: `taskkill /T`), KILL after
+`SX_HEAVY_KILL_GRACE` seconds (default 60), and exits 124. A command that outlives KILL too (a browser stuck in a GPU
+driver) is left running, and after the grace once more its slots are freed so the queue moves on. The record says
+`hold <seconds> grace <seconds>`, so waiters on every side know when a holder that cannot be asked is stale; a record
+from an older `heavy.sh` gets this machine's max hold for its class. A holder whose slot was taken over leaves it to
+its new holder when it ends.
+
+Promotion: a waiter that is not a CI job (and not `--all`) is queued as one once its ticket is
+`SX_HEAVY_PROMOTE_AFTER` seconds old (the number in `<lock>.promote-after`, default 1800, 0 for never): its ticket is
+renamed from class 1 to class 0 and sorts by its time with the CI tickets, so CI jobs that queued after it no longer
+go first and two CI runs per merge cannot starve an agent's run.
+
 Each take and release is also a line in `history.log` beside the lock (time, mode, slots, side and pid, user, label,
-session, rc and hold time on release, command), renamed to `history.log.1` at 1 MB. `SX_HEAVY_HISTORY` picks another
+session, rc and hold time on release, command), as are take-overs (`clear`, with `dead holder` or `stale holder`),
+give-ups, promotions and the max hold's `timeout`, `kill` and `abandon`, renamed to `history.log.1` at 1 MB. `SX_HEAVY_HISTORY` picks another
 file, and an empty value turns it off. `SX_HEAVY_LABEL` names a hold in its record and in the log (for example
 `"nightly bench"`), so a hold that is only a `sleep` still says whose it is; `SX_HEAVY_SESSION` adds a session id.
 
