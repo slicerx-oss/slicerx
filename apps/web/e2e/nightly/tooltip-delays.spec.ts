@@ -54,11 +54,17 @@ test('feature tooltips show with their key, hand over quickly, explain a disable
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ ...raw, tooltips: { enabled: false, media: true } }))
   })
   // The tip text arrives late, as on a busy machine: with tips off it still loads after startup, so ? finds it.
-  await page.route(/\/tips-[^/]+\.js$/, async (route) => {
-    await new Promise((done) => setTimeout(done, 600))
-    await route.continue()
+  // Only the tip chunks are held back. A page route would pause every request of the reload for a round trip through
+  // the test runner, which on a loaded machine adds seconds to the few hundred modules of the plate tab.
+  const cdp = await page.context().newCDPSession(page)
+  cdp.on('Fetch.requestPaused', ({ requestId }) => {
+    setTimeout(() => void cdp.send('Fetch.continueRequest', { requestId }).catch(() => undefined), 600)
   })
+  await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/tips-*.js', requestStage: 'Request' }] })
   await page.reload()
+  // After a reload the plate tab loads again and its 3D view warms up, which on a software-drawn runner can hold the
+  // page for many seconds: wait for the plate as the first load does, not the default assertion timeout.
+  await plateReady(page)
   await expect(move).toBeVisible()
   await move.hover()
   await page.waitForTimeout(700)
