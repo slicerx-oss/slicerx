@@ -11,8 +11,8 @@ import { applyType, DEFAULT_THEMES, themeForScheme, themeFromFile } from '@slice
 import '@slicerx/ui/styles.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { builtinCommands, toggleRail } from './commands/builtin'
-import { getCommand, registerCommands, runCommand } from './commands/registry'
+import { toggleRail } from './shell/edge-keys'
+import { registerCommands, registerCommandsLater, runCommand } from './commands/registry'
 import { useNativeMenu } from './commands/use-native-menu'
 import { EditionContext, editionTheme, NEUTRAL, setCurrentEdition, useEdition } from './edition'
 import { editionLogo } from './shell/edition-logo'
@@ -22,7 +22,6 @@ import { inTextField, matchShortcut } from './lib/keys'
 import { lookCommandFor, onControl } from './controls/global-keys'
 import { LazySlot, WorkspaceBoundary } from './shell/boundary'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { CommandBar } from './shell/command-bar'
 import { bridgeConnector } from './link/connector'
 import { Status, ToastBridge } from './shell/overlays'
 import { TopBar } from './shell/top-bar'
@@ -56,6 +55,7 @@ const ProjectGcodeDialog = lazy(() => import('./project/gcode-dialog').then((m) 
 const ProjectOpenDialog = lazy(() => import('./project/open-dialog').then((m) => ({ default: m.ProjectOpenDialog })))
 const ProjectsDialog = lazy(() => import('./project/projects-dialog').then((m) => ({ default: m.ProjectsDialog })))
 const CameraPlayer = lazy(() => import('./camera/player').then((m) => ({ default: m.CameraPlayer })))
+const CommandBar = lazy(() => import('./shell/command-bar').then((m) => ({ default: m.CommandBar })))
 const Studio = lazy(() => import('./workspaces/studio').then((m) => ({ default: m.Studio })))
 // The plate's fit check, wherever the person is (plate/fit-check.ts); its code stays out of the shell.
 const FitWatch = lazy(() => import('./plate/fit-check').then((m) => ({ default: m.FitWatch })))
@@ -242,7 +242,8 @@ function Shell() {
   const cad = useCadShown()
   const shownName = workspace === 'prepare' && cad && mode !== 'slice' ? (mode === 'mimir' ? ASSISTANT_NAME : 'Model') : (current?.label ?? 'This workspace')
 
-  useEffect(() => registerCommands(builtinCommands(host, workspaces)), [host, workspaces, assistant.name])
+  // The built-in commands load right after first paint; a command run before they land waits for them.
+  useEffect(() => registerCommandsLater(() => import('./commands/builtin').then((m) => m.builtinCommands(host, workspaces))), [host, workspaces, assistant.name])
   useEffect(() => registerCommands(features.flatMap((f) => f.commands?.(host) ?? [])), [host, features, assistant.name])
   useEffect(() => registerCommands(setupCommands()), [])
   // The desktop app starts its own bridge and connects to it without asking.
@@ -308,7 +309,7 @@ function Shell() {
           </LazySlot>
         )}
       </Frame>
-      <CommandBar />
+      <CommandBarSlot />
       <LazySlot>
         <ResumeDialog />
       </LazySlot>
@@ -410,11 +411,25 @@ function Shell() {
   )
 }
 
+/** Cmd+K's palette, its ranking and its hub load as soon as the app has painted (so the palette is there by the time anyone opens it), then stay mounted. */
+function CommandBarSlot() {
+  const open = useApp((s) => s.commandOpen)
+  const [used, setUsed] = useState(false)
+  useEffect(() => {
+    setUsed(true)
+  }, [])
+  return used || open ? (
+    <LazySlot>
+      <CommandBar />
+    </LazySlot>
+  ) : null
+}
+
 function runShortcut(id: string): void {
-  if (!getCommand(id)) return
-  pushRecent(id)
+  // The built-in commands may still be loading, so a shortcut asks the registry rather than looking first.
   void runCommand(id).then((r) => {
-    if (!r.ok) toast(r.message)
+    if (r.ok || r.reason !== 'unknown') pushRecent(id)
+    if (!r.ok && r.reason !== 'unknown') toast(r.message)
   })
 }
 
