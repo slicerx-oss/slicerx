@@ -14,6 +14,25 @@ use sx_connect::drivers::{
 };
 use sx_connect::{ErrorCode, JobKind, MemoryGate, PrinterConnector, PrinterState, StartOptions};
 
+fn toolhead_test_hash(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    Sha256::digest(data).iter().fold(String::new(), |mut out, byte| {
+        write!(&mut out, "{byte:02x}").unwrap();
+        out
+    })
+}
+
+fn toolhead_job_file() -> sx_connect::JobFile {
+    let data = b"T0\nG1 X10 E1\n".to_vec();
+    sx_connect::JobFile {
+        name: "mapped.gcode".into(),
+        kind: JobKind::Gcode,
+        sha256: toolhead_test_hash(&data),
+        data,
+    }
+}
+
 async fn http_case(
     connector: &dyn PrinterConnector,
     mock: &str,
@@ -36,6 +55,181 @@ async fn http_case(
         gcode,
     };
     run_contract(session.as_ref(), &case).await;
+}
+
+#[tokio::test]
+async fn u1_toolhead_planning_reads_loaded_filaments_without_printer_actions() {
+    use std::collections::BTreeMap;
+    use sx_connect::toolhead_map::{ToolheadMatch, ToolheadNeed};
+    let mocks = Mocks::start("snapmaker-u1", &[]).await;
+    let gate = Arc::new(MemoryGate::new());
+    let connectors: Vec<(&str, Box<dyn PrinterConnector>)> = vec![
+        ("moonraker", Box::new(MoonrakerConnector::new(gate.clone()))),
+        ("snapmaker", Box::new(SnapmakerConnector::new(gate))),
+    ];
+    for (plugin, connector) in connectors {
+        let cfg = config("u1", plugin, mocks.port("snapmaker-u1"));
+        let session = connector.connect(&cfg, &secrets(&[])).await.unwrap();
+        let before = mocks.state().await;
+        let needs = [ToolheadNeed {
+            tool: 0,
+            material: "PETG".into(),
+            color: "#00ff00".into(),
+        }];
+        let plan = session.plan_toolheads(&needs, &BTreeMap::new()).await.unwrap();
+        assert!(plan.ready);
+        assert_eq!(plan.assignments[0].physical_tool, Some(1));
+        assert_eq!(plan.assignments[0].status, ToolheadMatch::Match);
+        assert!(!plan.toolheads[2].loaded);
+        let wrong = session
+            .plan_toolheads(&needs, &BTreeMap::from([(0, 0)]))
+            .await
+            .unwrap();
+        assert!(!wrong.ready);
+        assert_eq!(wrong.assignments[0].status, ToolheadMatch::Unavailable);
+        let data = b"M104 T0 S230\nT0\nG1 X10 E1\n".to_vec();
+        let source = sx_connect::JobFile {
+            name: "mapped.gcode".to_owned(),
+            kind: JobKind::Gcode,
+            sha256: toolhead_test_hash(&data),
+            data,
+        };
+        let (prepared, read_back) = session
+            .prepare_toolheads(source, &needs, &BTreeMap::from([(0, 1)]))
+            .await
+            .unwrap();
+        assert!(read_back.ready);
+        assert!(
+            std::str::from_utf8(&prepared.data)
+                .unwrap()
+                .ends_with("M104 T1 S230\nT1\nG1 X10 E1\n")
+        );
+        assert_eq!(prepared.sha256, toolhead_test_hash(&prepared.data));
+        assert_eq!(mocks.state().await["log"], before["log"]);
+        assert_eq!(
+            mocks.state().await["snapmaker-u1"]["log"],
+            before["snapmaker-u1"]["log"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn u1_prepared_start_checks_bytes_and_loaded_filament_before_setting_the_map() {
+    use std::collections::BTreeMap;
+    use sx_connect::{Action, params, toolhead_map::ToolheadNeed};
+    let mocks = Mocks::start("snapmaker-u1", &[]).await;
+    let gate = Arc::new(MemoryGate::new());
+    let connector = MoonrakerConnector::new(gate.clone());
+    let cfg = config("u1", "moonraker", mocks.port("snapmaker-u1"));
+    let session = connector.connect(&cfg, &secrets(&[])).await.unwrap();
+    let source = toolhead_job_file();
+    let needs = [ToolheadNeed {
+        tool: 0,
+        material: "PLA".into(),
+        color: "ff0000".into(),
+    }];
+    let (file, _) = session
+        .prepare_toolheads(source, &needs, &BTreeMap::from([(0, 0)]))
+        .await
+        .unwrap();
+    let before = mocks.state().await["snapmaker-u1"]["log"].clone();
+    let mut corrupt = file.clone();
+    corrupt.data.extend_from_slice(b"G1 X20\n");
+    let token = gate.mint(
+        Action::Upload,
+        "u1",
+        &params::upload("u1", &corrupt.name, &corrupt.sha256),
+    );
+    assert!(session.upload(corrupt, &token).await.is_err());
+    assert_eq!(mocks.state().await["snapmaker-u1"]["log"], before);
+    let token = gate.mint(
+        Action::Upload,
+        "u1",
+        &params::upload("u1", &file.name, &file.sha256),
+    );
+    let remote = session.upload(file, &token).await.unwrap();
+    assert_eq!(mocks.state().await["snapmaker-u1"]["state"], "idle");
+    let mut changed = remote.clone();
+    changed.sha256 = Some("0".repeat(64));
+    let opts = StartOptions::default();
+    let token = gate.mint(Action::Start, "u1", &params::start("u1", &changed, &opts));
+    assert!(session.start(&changed, opts, &token).await.is_err());
+    mocks
+        .control(
+            "/fault",
+            serde_json::json!({"mock":"snapmaker-u1", "kind":"runout"}),
+        )
+        .await;
+    let before = mocks.state().await["snapmaker-u1"]["log"].clone();
+    let opts = StartOptions::default();
+    let token = gate.mint(Action::Start, "u1", &params::start("u1", &remote, &opts));
+    assert!(session.start(&remote, opts, &token).await.is_err());
+    assert_eq!(mocks.state().await["snapmaker-u1"]["log"], before);
+    mocks
+        .control(
+            "/fault",
+            serde_json::json!({"mock":"snapmaker-u1", "kind":"clear"}),
+        )
+        .await;
+    // a new session recovers the mapping from the remote file rather than a local cache.
+    let session = connector.connect(&cfg, &secrets(&[])).await.unwrap();
+    mocks
+        .control(
+            "/u1",
+            serde_json::json!({"filamentColors":["0000FFFF","00FF00FF","","000000FF"]}),
+        )
+        .await;
+    let before = mocks.state().await["snapmaker-u1"]["log"].clone();
+    let opts = StartOptions::default();
+    let token = gate.mint(Action::Start, "u1", &params::start("u1", &remote, &opts));
+    assert!(
+        session
+            .start(&remote, opts, &token)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("color changed")
+    );
+    assert_eq!(mocks.state().await["snapmaker-u1"]["log"], before);
+    mocks
+        .control(
+            "/u1",
+            serde_json::json!({"filamentColors":["FF0000FF","00FF00FF","","000000FF"]}),
+        )
+        .await;
+    mocks
+        .control("/u1", serde_json::json!({"ignoreToolheadUpdates":true}))
+        .await;
+    let opts = StartOptions::default();
+    let token = gate.mint(Action::Start, "u1", &params::start("u1", &remote, &opts));
+    let error = session.start(&remote, opts, &token).await.unwrap_err();
+    assert!(error.to_string().contains("did not confirm"));
+    assert_eq!(mocks.state().await["snapmaker-u1"]["state"], "idle");
+    mocks
+        .control("/u1", serde_json::json!({"ignoreToolheadUpdates":false}))
+        .await;
+    let opts = StartOptions::default();
+    let token = gate.mint(Action::Start, "u1", &params::start("u1", &remote, &opts));
+    session.start(&remote, opts, &token).await.unwrap();
+    let state = mocks.state().await;
+    assert_u1_mapping_precedes_start(&state);
+}
+
+fn assert_u1_mapping_precedes_start(state: &serde_json::Value) {
+    assert_eq!(state["snapmaker-u1"]["state"], "printing");
+    let log = state["snapmaker-u1"]["log"].as_array().unwrap();
+    let mapping = log
+        .iter()
+        .position(|line| {
+            line.as_str()
+                .is_some_and(|s| s.contains("SET_PRINT_EXTRUDER_MAP"))
+        })
+        .unwrap();
+    let start = log
+        .iter()
+        .position(|line| line.as_str().is_some_and(|s| s.starts_with("start ")))
+        .unwrap();
+    assert!(mapping < start);
 }
 
 #[tokio::test]

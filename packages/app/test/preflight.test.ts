@@ -20,6 +20,15 @@ function input(patch: Partial<PreflightInput> = {}): PreflightInput {
 }
 
 describe('preflight', () => {
+  it('accepts Klipper for the U1 but not older Snapmaker models', () => {
+    const snapmaker = { ...printer, vendor: 'Snapmaker', plugin: 'snapmaker', model: 'U1' }
+    const check = (model: string, reported?: string) => preflight(input({ printer: { ...snapmaker, model }, status: { ...idle, ...(reported ? { model: reported } : {}) }, config: { gcode_flavor: 'klipper' } })).errors
+    expect(check('U1')).toEqual([])
+    expect(check('A350', 'U1')).toEqual([])
+    expect(check('A350').join(' ')).toContain('runs marlin')
+    expect(check('U1', 'A350').join(' ')).toContain('runs marlin')
+  })
+
   it('passes a matching file and lists the facts with the hash', () => {
     const r = preflight(input())
     expect(r.errors).toEqual([])

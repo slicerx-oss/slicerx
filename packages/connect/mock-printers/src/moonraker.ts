@@ -41,6 +41,10 @@ export interface MoonrakerControl {
   /** Access tokens still valid, and refresh tokens. */
   tokens: Set<string>
   refresh: Set<string>
+  toolheadMap?: number[]
+  usedToolheads?: boolean[]
+  ignoreToolheadUpdates?: boolean
+  filamentColors?: string[]
 }
 
 /** The Klipper objects the fake has, as `/printer/objects/list` names them. */
@@ -67,7 +71,7 @@ function variantStatus(c: MoonrakerControl, m: MockMachine): Record<string, unkn
   }
   if (c.variant === 'u1') {
     // A runout empties the first toolhead.
-    return { print_task_config: { filament_exist: [!m.faults.has('runout'), true, false, true], filament_type: ['PLA', 'PETG', '', 'PLA'], filament_sub_type: ['SnapSpeed', 'NONE', '', 'Matte'], filament_color_rgba: ['FF0000FF', '00FF00FF', '', '000000FF'], filament_vendor: ['Snapmaker', 'Generic', '', 'Generic'] } }
+    return { print_task_config: { extruder_map_table: c.toolheadMap ?? [1, 0, 3, 2], extruders_used: c.usedToolheads ?? [false, false, false, false], filament_exist: [!m.faults.has('runout'), true, false, true], filament_type: ['PLA', 'PETG', '', 'PLA'], filament_sub_type: ['SnapSpeed', 'NONE', '', 'Matte'], filament_color_rgba: c.filamentColors ?? ['FF0000FF', '00FF00FF', '', '000000FF'], filament_vendor: ['Snapmaker', 'Generic', '', 'Generic'] } }
   }
   return {}
 }
@@ -80,6 +84,7 @@ function variantStatus(c: MoonrakerControl, m: MockMachine): Record<string, unkn
 export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; forceLogins?: boolean; variant?: MoonrakerControl['variant']; webcam?: boolean } = {}) {
   let port = 0
   let issued = 0
+  const uploadedBytes = new Map<string, Buffer>()
   const control: MoonrakerControl = { klippy: 'ready', message: '', tokens: new Set(), refresh: new Set(), ...(opts.variant ? { variant: opts.variant } : {}) }
   if (opts.webcam) m.faultProfile = { door: false }
   const unauthorized = { status: 401, json: { error: { code: 401, message: 'Unauthorized' } } }
@@ -168,7 +173,13 @@ export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; fo
       m.log.push(`moonraker upload checksum ${sum ? 'sent' : 'none'}`)
       if (m.uploadDelayMs > 0) await new Promise((r) => setTimeout(r, m.uploadDelayMs))
       m.upload(f.name, f.data)
+      uploadedBytes.set(f.name, Buffer.from(f.data))
       return { status: 201, json: { item: { path: f.name, root: 'gcodes' }, action: 'create_file' } }
+    }
+    if (p.startsWith('/server/files/gcodes/')) {
+      const data = uploadedBytes.get(decodeURIComponent(p.slice('/server/files/gcodes/'.length)))
+      if (!data) throw new MockError(404, 'no such file')
+      return { body: data, type: 'text/plain' }
     }
     if (p === '/server/files/list') return { json: { result: [...m.files.values()].map((f) => ({ path: f.name, modified: f.modified, size: f.size, permissions: 'rw' })) } }
     if (p === '/server/history/list') return { json: { result: { count: m.history.length, jobs: m.history } } }
@@ -183,7 +194,25 @@ export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; fo
     if (p === '/printer/print/pause') { m.pause(); return { json: { result: 'ok' } } }
     if (p === '/printer/print/resume') { m.resume(); return { json: { result: 'ok' } } }
     if (p === '/printer/print/cancel') { m.cancel(); return { json: { result: 'ok' } } }
-    if (p === '/printer/gcode/script') { m.gcode(req.query.get('script') ?? ''); return { json: { result: 'ok' } } }
+    if (p === '/printer/gcode/script') {
+      const script = req.query.get('script') ?? ''
+      if (control.variant === 'u1') {
+        for (const line of script.split('\n')) {
+          const map = /^SET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=([0-3]) MAP_EXTRUDER=([0-3])$/.exec(line)
+          const used = /^SET_PRINT_USED_EXTRUDERS EXTRUDERS=([0-3](?:,[0-3])*)$/.exec(line)
+          if ((map || used) && !control.ignoreToolheadUpdates) {
+            if (m.state !== 'idle' && m.state !== 'finished') throw new MockError(409, 'printer is not idle')
+            if (map) {
+              control.toolheadMap ??= [1, 0, 3, 2]
+              control.toolheadMap[Number(map[1])] = Number(map[2])
+            }
+            if (used) control.usedToolheads = [0, 1, 2, 3].map((n) => used[1]!.split(',').includes(String(n)))
+          }
+        }
+      }
+      m.gcode(script)
+      return { json: { result: 'ok' } }
+    }
     throw new MockError(404, p)
   }
   const { server, port: bound } = await listen(handler)

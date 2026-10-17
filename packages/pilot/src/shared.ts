@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // State shared by the tools of one mimir instance: slice results per plate,
 // so queueing sends exactly the G-code that was sliced and approved.
-import type { GcodeExport, PrintConfig, SliceResult } from '@slicerx/contracts'
+import type { GcodeExport, JobFile, PrintConfig, SliceResult, ToolheadPlan } from '@slicerx/contracts'
 
 export interface SlicedPlate {
   plate: number
@@ -16,6 +16,8 @@ export interface SlicedPlate {
   project?: { file: GcodeExport; data: ArrayBuffer }
   /** The slots matched for a send that the person was asked to approve, by printer id, so the start uses what the card showed. */
   autoSlots?: Map<string, Record<number, string>>
+  /** Prepared copies per printer; the original export remains available for another choice. */
+  preparedToolheads?: Map<string, { sourceSha256: string; file: JobFile; plan: ToolheadPlan }>
 }
 
 export interface ToolShared {
