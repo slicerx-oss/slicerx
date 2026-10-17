@@ -56,6 +56,9 @@ pub(crate) struct Quirks {
     /// The wall reach, tip pruning and straightening come from the nominal layer height instead of each
     /// layer's own thickness.
     pub nominal_height: bool,
+    /// A link that sits on the straight line between its neighbors is dropped however far apart they
+    /// are, instead of only when they lie within the straightening distance of each other.
+    pub any_span_drop: bool,
 }
 
 impl Quirks {
@@ -68,6 +71,7 @@ impl Quirks {
             loose_crossing: true,
             random_main: true,
             nominal_height: true,
+            any_span_drop: true,
         }
     }
 }
@@ -865,7 +869,7 @@ impl Ctx<'_> {
         }
         if straighten > 0.0 {
             let weight = if self.quirks.stuck_junctions { 1e-3 } else { 1.0 };
-            straighten_trees(&mut f, straighten, weight);
+            straighten_trees(&mut f, straighten, weight, self.quirks.any_span_drop);
         }
         realign(&f, below, self.d.near, self.quirks.loose_crossing)
     }
@@ -1070,7 +1074,7 @@ fn prune_tips(f: &mut Forest, prune: f64) {
 
 /// Straightens the chains of single-child nodes between junctions, leaves and roots, drops nodes that sit
 /// on a straight run between close neighbors, and moves junctions toward the pull of their neighbors.
-fn straighten_trees(f: &mut Forest, step: f64, weight: f64) {
+fn straighten_trees(f: &mut Forest, step: f64, weight: f64, any_span: bool) {
     let anchor = |f: &Forest, id: usize| {
         f.nodes
             .get(id)
@@ -1199,7 +1203,7 @@ fn straighten_trees(f: &mut Forest, step: f64, weight: f64) {
                 continue;
             }
             let (pq, pc, pn) = (f.pos(q), f.pos(c), node.p);
-            if dist(pc, pq) <= step && line_dist(pn, pq, pc) <= ON_LINE {
+            if (any_span || dist(pc, pq) <= step) && line_dist(pn, pq, pc) <= ON_LINE {
                 if let Some(qn) = f.nodes.get_mut(q) {
                     for k in &mut qn.kids {
                         if *k == id {
@@ -1621,7 +1625,7 @@ mod tests {
         let r = f.add([0.0, 0.0], None, None);
         let m = f.add([1.0, 1.0], Some(r), None);
         f.add([2.0, 0.0], Some(m), None);
-        straighten_trees(&mut f, 0.2, 1.0);
+        straighten_trees(&mut f, 0.2, 1.0, false);
         let p = f.pos(m);
         assert!((p[1] - 0.8).abs() < 1e-9 && (p[0] - 1.0).abs() < 1e-9, "{p:?}");
     }
@@ -1637,11 +1641,11 @@ mod tests {
             (f, j)
         };
         let (mut f, j) = build();
-        straighten_trees(&mut f, 0.2, 1.0);
+        straighten_trees(&mut f, 0.2, 1.0, false);
         let moved = dist(f.pos(j), [0.0, 5.0]);
         assert!((moved - 0.15).abs() < 1e-9, "{moved}");
         let (mut f, j) = build();
-        straighten_trees(&mut f, 0.2, 1e-3);
+        straighten_trees(&mut f, 0.2, 1e-3, false);
         assert!(dist(f.pos(j), [0.0, 5.0]) <= 0.003);
     }
 
