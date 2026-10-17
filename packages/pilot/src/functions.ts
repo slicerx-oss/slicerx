@@ -55,6 +55,7 @@ export const APP_FUNCTIONS = [
   'mesh_analyze',
   'mesh_repair',
   'hollow',
+  'walls',
   'emboss',
   'scale_with_tolerance',
   'threads_and_fits',
