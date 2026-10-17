@@ -40,6 +40,34 @@ fn native_client_reads_cosmetic_equivalence_without_granting_trust() {
 }
 
 #[test]
+fn prepares_an_inspectable_replacement_without_changing_the_original() {
+    let input = serde_json::json!({
+        "selected": {"model": "bambu-p1s", "firmware": "marlin"},
+        "declared": [], "key": "machine_pause_gcode",
+        "original": "M400 U1\r\n\r\nM500", "replacement": "M400 U1",
+    });
+    let (code, record) = run_args(&["prepare-script-replacement", "-"], &input.to_string());
+    assert_eq!(code, Some(0));
+    assert_eq!(record["decision"], "prepared");
+    assert_eq!(record["original"], input["original"]);
+    assert_eq!(record["replacement"], input["replacement"]);
+    assert_eq!(record["stockReview"]["reason"], "stock_equivalent");
+    let before: String = record["diff"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|line| line["operation"] != "add")
+        .map(|line| line["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(before, input["original"].as_str().unwrap());
+    let mut changed = input;
+    changed["replacement"] = serde_json::json!("M400 U1\nM500");
+    let (_, refused) = run_args(&["prepare-script-replacement", "-"], &changed.to_string());
+    assert_eq!(refused["decision"], "review");
+    assert_eq!(refused["reason"], "script_changed");
+}
+
+#[test]
 fn native_client_gets_a_structured_review_reason() {
     for source in ["{if enabled}\nM500", "; {\"a\r\nb\"}"] {
         let (code, result) = run(source);
