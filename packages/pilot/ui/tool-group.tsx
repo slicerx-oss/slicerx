@@ -187,6 +187,7 @@ function touched(row: ToolRowModel): string {
   if (row.source === 'skill') return `the ${t.replace(/_/g, ' ')} skill`
   if (row.source === 'plugin') return t.split('.')[0] ?? t
   if (t.startsWith('kb.')) return 'the guides'
+  if (t.startsWith('parts.')) return 'the parts table'
   if (t.startsWith('printer.') || t.startsWith('printers.')) return 'your printers'
   if (t.startsWith('settings.') || t.startsWith('profile.')) return 'the settings'
   if (t.startsWith('project.') || t.startsWith('plate.')) return 'the project'
