@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ApprovalToken, ApprovalVerifier, PilotContext, PrinterHost, SettingValue } from '@slicerx/contracts'
 import { hashParams } from '@slicerx/contracts'
-import { builtinTools, createAppFunctionTools, createCombinedPlanner, createKnowledgeBase, createShared, pluginToolsFrom, type GeomHost, type KbIndex, type KnowledgeBase, type PilotTool, type SettingsPlanner, type ToolContext, type ToolHost } from '@slicerx/pilot'
+import { builtinTools, createAppFunctionTools, createCombinedPlanner, createKnowledgeBase, createShared, pluginToolsFrom, type GeomHost, type KbIndex, type KnowledgeBase, type PartsTable, type PilotTool, type SettingsPlanner, type ToolContext, type ToolHost } from '@slicerx/pilot'
 import kbIndex from '@slicerx/pilot/kb.json' with { type: 'json' }
 import type { ProjectRef } from './tools'
 import type { McpProject } from './project'
@@ -20,11 +20,11 @@ const APP_ONLY = new Set(['pilot.report', 'web.lookup'])
  * mimir's built-in tools, minus the ones that need the app itself, plus the checks and project
  * operations the app runs as plain functions (gcode_inspect, risk_report, supports, ams_mapping and the
  * rest), so a client can do what a person does from the app's panels. They share one state, so the
- * checks read the plates slicerx_slice sliced.
+ * checks read the plates slicerx_slice sliced. `parts` replaces the bundled standard parts table.
  */
-export function pilotTools(planner: SettingsPlanner): PilotTool<never>[] {
+export function pilotTools(planner: SettingsPlanner, parts?: PartsTable): PilotTool<never>[] {
   const shared = createShared()
-  return [...builtinTools({ planner, commands: [], shared }), ...createAppFunctionTools(shared)].filter((t) => !APP_ONLY.has(t.name) && t.source !== 'command')
+  return [...builtinTools({ planner, commands: [], shared, ...(parts ? { parts } : {}) }), ...createAppFunctionTools(shared)].filter((t) => !APP_ONLY.has(t.name) && t.source !== 'command')
 }
 
 /**
