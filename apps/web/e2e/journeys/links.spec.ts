@@ -14,7 +14,7 @@ import { promisify } from 'node:util'
 import type { TopologyManifest } from '../../../../packages/cad-history/src/topology-manifest'
 import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
-import { plateReady, tab, viewSized, viewportReady } from '../fixtures'
+import { plateReady, sliceCount, sliced, tab, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
 import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
 
@@ -717,6 +717,101 @@ test('clients paint the live object through MCP and native CLI, read brush layer
       await undo.click()
     } finally {
       await editor.close()
+    }
+  })
+})
+
+test('clients edit brim ears through MCP and the native CLI, read them back, undo and slice actual discs', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page)
+  await command(page, 'Add a box')
+  await expect.poll(async () => (await sx.get(page, 'plate')).length).toBe(1)
+  type Ear = { index: number; bedMm: number[]; localMm: number[]; diameterMm: number; connected: boolean }
+  type Brim = { revision: string; changed?: boolean; objects: { id: string; enabled: boolean; ears: Ear[] }[] }
+  const brimType = page.locator('#expert-panel').getByLabel('Brim type', { exact: true })
+  let wasType: string | undefined
+  await scratch('brim', async (dir) => {
+    const reader = await session(link, page, dir, 'brim-reader', 'read')
+    try {
+      const state: Brim = await reader.ok('app_brim_ears')
+      expect(await reader.call('project_brim_ears', { object: state.objects[0]!.id, revision: state.revision, action: 'generate' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+    } finally {
+      await reader.close()
+    }
+    const editor = await session(link, page, dir, 'brim-editor', 'edit')
+    try {
+      const initial: Brim = await editor.ok('app_brim_ears')
+      const object = initial.objects[0]!.id
+      const read = (): Promise<Brim> => editor.ok('app_brim_ears', { object })
+      const edit = async (args: Record<string, unknown>): Promise<Brim> => editor.ok('project_brim_ears', { object, revision: (await read()).revision, ...args })
+      await edit({ action: 'generate', diameter_mm: 10 })
+      const generated = await read()
+      expect(generated.objects[0]!.ears.length).toBeGreaterThanOrEqual(3)
+      expect(generated.objects[0]!.ears.every((e) => e.connected)).toBe(true)
+      expect(await editor.call('project_brim_ears', { object, revision: initial.revision, action: 'clear' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      const undo = page.getByTestId('plate-tools-group').getByRole('button', { name: 'Undo', exact: true })
+      await undo.click()
+      expect((await read()).objects[0]!.ears).toEqual([])
+      const [x, y] = generated.objects[0]!.ears[0]!.bedMm
+      const actions = [
+        { action: 'add', x_mm: x, y_mm: y, diameter_mm: 10 },
+        { action: 'move', indices: [0], x_mm: x! + 0.5, y_mm: y },
+        { action: 'resize', indices: [0], diameter_mm: 12 },
+        { action: 'remove', indices: [0] },
+        { action: 'generate', diameter_mm: 10 },
+        { action: 'clear' },
+      ]
+      const outputs: Brim[] = []
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, editor.clientKey!, async (run) => {
+          for (const action of actions) {
+            const args = { object, revision: (await read()).revision, ...action }
+            const rows = await run('project_brim_ears', args, 'app_brim_ears', { object })
+            expect(rows).toHaveLength(2)
+            expect(rows.every((row) => row.ok)).toBe(true)
+            expect(rows[0].output.output.changed).toBe(true)
+            expect(rows[1].output.output.objects).toEqual(rows[0].output.output.objects)
+            expect((await read()).objects).toEqual(rows[1].output.output.objects)
+            outputs.push(rows[1].output.output)
+          }
+        })
+      } else {
+        for (const action of actions) {
+          await edit(action)
+          outputs.push(await read())
+        }
+      }
+      expect(outputs[0]!.objects[0]!.ears[0]!.bedMm[0]).toBeCloseTo(x!, 3)
+      expect(outputs[1]!.objects[0]!.ears[0]!.bedMm[0]).toBeCloseTo(x! + 0.5, 3)
+      expect(outputs[2]!.objects[0]!.ears[0]!.diameterMm).toBe(12)
+      expect(outputs[3]!.objects[0]!.ears).toEqual([])
+      expect(outputs[4]!.objects[0]!.ears.length).toBeGreaterThanOrEqual(3)
+      expect(outputs[5]!.objects[0]!.ears).toEqual([])
+      for (let i = outputs.length - 1; i >= 0; i--) {
+        await undo.click()
+        const ears = (await read()).objects[0]!.ears
+        expect(ears).toEqual(i === 0 ? [] : outputs[i - 1]!.objects[0]!.ears)
+      }
+      await edit({ action: 'generate', diameter_mm: 10 })
+      await page.keyboard.press('ControlOrMeta+k')
+      await page.locator('.sx-palette-input').fill('brim type')
+      await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+      wasType = await brimType.inputValue()
+      await brimType.selectOption('painted')
+      expect((await read()).objects[0]!.enabled).toBe(true)
+      const count = await sliceCount(page)
+      await page.getByRole('main').getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page, count)).toBeVisible({ timeout: 120_000 })
+      await page.evaluate(() => Reflect.deleteProperty(window, 'showSaveFilePicker'))
+      const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
+      const text = readFileSync(await download.path(), 'utf8')
+      const mark = text.includes('\n; CHANGE_LAYER\n') ? '; CHANGE_LAYER' : ';LAYER_CHANGE'
+      const firstLayer = text.slice(text.indexOf(mark), text.indexOf(mark, text.indexOf(mark) + 1))
+      expect(firstLayer).toMatch(/;\s*(?:TYPE|FEATURE):\s*Brim/)
+    } finally {
+      await editor.close()
+      // The brim type is a print setting the next test would find still on painted.
+      if (wasType !== undefined) await brimType.selectOption(wasType)
     }
   })
 })
