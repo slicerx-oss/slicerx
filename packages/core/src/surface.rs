@@ -268,10 +268,15 @@ pub(crate) fn fill_plane(
     let pieces: Vec<Vec<Pt>> = if pattern == Curve::Concentric {
         let mut loops = Vec::new();
         let mut cur = perimeters::offset(region, -crate::geom::mm(spacing / 2.0));
-        let mut last_area = f64::MAX;
+        let mut last_area = i128::MAX;
         while !cur.is_empty() && loops.len() < 400 {
             let before = loops.len();
-            let mut step_area = 0.0;
+            // holes grow during an inset but subtract from the remaining material.
+            let step_area: i128 = cur
+                .iter()
+                .flatten()
+                .map(|contour| i128::from(crate::geom::area2_int(contour)))
+                .sum();
             for mut r in rings(&cur) {
                 let n = r.len();
                 let area: f64 = (0..n)
@@ -285,13 +290,12 @@ pub(crate) fn fill_plane(
                 if area < spacing * spacing {
                     continue;
                 }
-                step_area += area;
                 if let Some(&f) = r.first() {
                     r.push(f);
                 }
                 loops.push(r);
             }
-            // An offset that no longer shrinks the region has run out of room.
+            // an offset that no longer shrinks the material has run out of room.
             if loops.len() == before || step_area >= last_area {
                 break;
             }
@@ -451,6 +455,33 @@ mod tests {
                 "{c:?} stays inside"
             );
         }
+    }
+
+    #[test]
+    fn concentric_fills_material_between_multiple_holes() {
+        let mut region = square(0.0, 0.0, 30.0, 30.0);
+        for x in [5.0, 13.0, 21.0] {
+            for y in [5.0, 13.0, 21.0] {
+                let mut hole = square(x, y, x + 4.0, y + 4.0).remove(0).remove(0);
+                hole.reverse();
+                region[0].push(hole);
+            }
+        }
+        let spacing = 0.4;
+        let lines = fill(&region, Curve::Concentric, spacing, 0.0);
+        let expected = (30.0 * 30.0 - 9.0 * 4.0 * 4.0) / spacing;
+        let actual = length(&lines);
+        assert!(
+            actual > expected * 0.7 && actual < expected * 1.2,
+            "concentric coverage: {actual} mm against {expected} mm"
+        );
+        let boundary = rings(&region);
+        assert!(
+            lines
+                .iter()
+                .flatten()
+                .all(|p| inside(&boundary, [p.x_mm(), p.y_mm()]))
+        );
     }
 
     #[test]
