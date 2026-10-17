@@ -14,9 +14,9 @@ import { promisify } from 'node:util'
 import type { TopologyManifest } from '../../../../packages/cad-history/src/topology-manifest'
 import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
-import { viewSized, viewportReady } from '../fixtures'
+import { plateReady, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
-import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, type Answer } from './lib/links'
+import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
 
 test.use({ journeyPrefs: linkPrefs })
 test.skip(linkMissing, 'SX_LINK_BIN is not set')
@@ -431,6 +431,68 @@ test('scoped exact hole edits use app revisions across a visible undo', async ({
       ;(window as unknown as { __sx: { setState(v: unknown): void } }).__sx.setState({ settingsMode: mode })
     }, mode)
   }
+})
+
+test('clients change display units with visible read-back, native CLI and persistent preferences', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page, 'design')
+  await scratch('units', async (dir) => {
+    const reader = await session(link, page, dir, 'units-reader', 'read')
+    try {
+      await command(page, 'Add a box')
+      await expect(page.getByLabel('Model size')).toContainText('20')
+      const before = await reader.ok('app_history')
+      const read = () => reader.ok('app_units')
+      const inches = await reader.ok('app_units_set', { length: 'in', precision: { decimals: 3 } })
+      expect(inches).toMatchObject({ available: true, length: 'in', precision: { decimals: 3 }, millimetersPerUnit: 25.4, dataUnit: 'mm' })
+      expect(await read()).toEqual(inches)
+      await expect(page.getByLabel('Model size')).toContainText('0.787 x 0.787 x 0.787 in')
+      const settings = async () => {
+        await page.getByRole('button', { name: 'Settings', exact: true }).click()
+        const dialog = page.getByRole('dialog', { name: 'Settings' })
+        await dialog.getByRole('button', { name: /Slicing and modeling|Modeling/ }).first().click()
+        return dialog
+      }
+      const dialog = await settings()
+      await expect(dialog.getByTestId('set-precision-pick')).toHaveValue('d3')
+      await dialog.getByTestId('set-precision-pick').selectOption('f32')
+      expect(await read()).toMatchObject({ length: 'in', precision: { fraction: 32 }, inchDigits: 3, inchFraction: 32 })
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+      await expect(page.getByLabel('Model size')).toContainText('25/32 x 25/32 x 25/32 in')
+      const unchanged = await read()
+      expect(await reader.call('app_units_set', { length: 'mm', precision: { fraction: 32 } })).toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } })
+      expect(await read()).toEqual(unchanged)
+      expect(await reader.ok('app_history')).toEqual(before)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_units_set', { length: 'mm', precision: { decimals: 2 } }, 'app_units')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output).toMatchObject({ length: 'mm', precision: { decimals: 2 }, millimetersPerUnit: 1, dataUnit: 'mm' })
+          }
+          expect(rows[0].output.output).toEqual(rows[1].output.output)
+          expect(await read()).toEqual(rows[1].output.output)
+        })
+        await expect(page.getByLabel('Model size')).toContainText('20 x 20 x 20 mm')
+      }
+      await reader.ok('app_units_set', { length: 'in' })
+      expect(await read()).toMatchObject({ length: 'in', precision: { fraction: 32 } })
+      expect(await reader.ok('app_history')).toEqual(before)
+      // A reload keeps the choice; the page pairs with the hub again on its own.
+      await page.reload()
+      await plateReady(page)
+      await expect.poll(async () => (await sx.get(page, 'bridgeStatus')).state, { timeout: 30_000 }).toBe('on')
+      const restored = await settings()
+      await expect(restored.getByTestId('set-precision-pick')).toHaveValue('f32')
+      await restored.getByTestId('set-units-mm').click()
+      await expect(restored.getByTestId('set-precision-pick')).toHaveValue(process.platform === 'win32' ? 'd2' : `d${inches.mmDigits}`)
+      await page.keyboard.press('Escape')
+    } finally {
+      await reader.close()
+    }
+  })
 })
 
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the

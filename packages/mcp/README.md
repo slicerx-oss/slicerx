@@ -397,3 +397,9 @@ Dependencies:
 ## Status
 
 Working: stdio and HTTP transports, the permission policy with elicitation and approval requests, the action log, file slicing with the `sx` engine or the stub, the MCP project with mimir's skills, the simulated printers, and every resource listed above. Theming tools build and check themes; applying one happens in your page with `applyTheme()` or `<ThemeProvider>`. Printer actions on real printers go through sx-link's broker (tested with the mock printers). Planned: publishing `@slicerx/mcp` to npm, and testing on physical printers.
+
+### Model display units
+
+`app_units` reads the active display unit, precision and remembered mm/inch preferences. `app_units_set` accepts `length: "mm"` or `"in"`, `precision: {decimals: n}`, or `precision: {fraction: n}`. Millimeters support 0-3 decimals; inches support 2-4 decimals or fractions to 1/16, 1/32 or 1/64. A precision applies to the requested unit, or the current unit when omitted. Switching units preserves each unit's last precision. Invalid combinations refuse before changing anything.
+
+Both tools use the app link's read grant and work through native `sx call --app`. They follow Settings, Display units and Precision, including normal preference persistence. They add no Undo step. Only Model display and bare-number input interpretation change: geometry, project files, print settings and all tool coordinates stay in mm. Read `app_units` again to verify the result.
