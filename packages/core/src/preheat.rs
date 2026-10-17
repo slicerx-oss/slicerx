@@ -176,4 +176,52 @@ mod tests {
             }
         }
     }
+    use std::fmt::Write;
+
+    #[test]
+    fn native_arc_preheat_keeps_the_requested_lead_and_motion() {
+        let cfg = PrintConfig::from_json(
+            &serde_json::to_vec(&serde_json::json!({
+                "gcode_flavor": "marlin",
+                "printer_model": "Bambu Lab H2D",
+                "ooze_prevention": true,
+                "single_extruder_multi_material": false,
+                "preheat_time": 5,
+                "preheat_steps": 1,
+                "nozzle_temperature": [220, 230],
+                "nozzle_temperature_initial_layer": [220, 230],
+                "filament_diameter": [1.75, 1.75],
+                "nozzle_diameter": [0.4, 0.4],
+                "filament_map": [1, 2],
+                "machine_max_acceleration_x": [10000],
+                "machine_max_acceleration_y": [10000],
+                "machine_max_acceleration_extruding": [10000]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(wanted(&cfg));
+        let mut code = String::from("G90\nM83\nG92 X10 Y0 E0\nM204 S10000\nT0\n");
+        for _ in 0..100 {
+            writeln!(code, "G3 X10 Y0 I-10 J0 E1 F21000").unwrap();
+        }
+        code.push_str("T1\nG1 X20 E1 F1200\nG1 X30 E1\n");
+        let output = apply(code.as_bytes(), &cfg);
+        let output_text = std::str::from_utf8(&output).unwrap();
+        let moves = |text: &str| {
+            text.lines()
+                .filter(|line| matches!(command(line), "G0" | "G1" | "G2" | "G3"))
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(moves(&code), moves(output_text));
+        let lines: Vec<_> = output_text.lines().collect();
+        let heat = lines.iter().position(|line| line.contains("preheat T1")).unwrap();
+        let change = lines.iter().position(|line| line.trim() == "T1").unwrap();
+        assert!(heat < change);
+        assert_eq!(lines.iter().filter(|line| line.contains("preheat T1")).count(), 1);
+        let times = crate::printtime::estimate(&output, &cfg, true).lines;
+        let lead = times[change - 1] - times[heat];
+        assert!((5.0..5.3).contains(&lead), "lead={lead}");
+    }
 }
