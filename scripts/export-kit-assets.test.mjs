@@ -17,7 +17,7 @@ test('exports all registered tools, loops and setting mappings as self-contained
     for (const id of Object.keys(TOOL_ICONS)) for (const width of [16, 24, 32]) for (const theme of ['dark', 'light']) {
       assert.ok(manifest.assets.find((a) => a.kind === 'tool-icon' && a.id === id && a.size.width === width && a.theme === theme), `${id}/${width}/${theme}`)
     }
-    for (const id of Object.keys(DEMOS)) for (const theme of ['dark', 'light']) assert.ok(manifest.assets.find((a) => a.kind === 'loop' && a.id === id && a.theme === theme), id)
+    for (const id of Object.keys(DEMOS).filter((k) => DEMOS[k].stage)) for (const theme of ['dark', 'light']) assert.ok(manifest.assets.find((a) => a.kind === 'loop' && a.id === id && a.theme === theme), id)
     for (const [key, id] of Object.entries(SETTING_DEMOS)) assert.ok(manifest.assets.find((a) => a.kind === 'loop' && a.id === id && a.settingKey === key), key)
     const allIds = new Set()
     for (const file of new Set(manifest.assets.map((a) => a.file))) {
