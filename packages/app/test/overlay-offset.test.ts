@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { describe, expect, it } from 'vitest'
-import { CHAT_LANE_MIN, OVERLAY_GAP, overlayBottom, TOAST_ROOM, toastPlace } from '../src/lib/overlay-offset'
+import { renderHook } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CHAT_LANE_MIN, OVERLAY_GAP, overlayBottom, TOAST_ROOM, toastPlace, useOverlayOffset } from '../src/lib/overlay-offset'
 
 const rect = (top: number, height: number, width = 100) => ({ top, bottom: top + height, height, width, left: 0, right: width, x: 0, y: top, toJSON: () => ({}) }) as DOMRectReadOnly
 
@@ -83,5 +84,39 @@ describe('where toasts sit', () => {
     const vp = box(0, 52, 700, 800)
     const place = toastPlace(vp, { bottom: [], chat: [box(0, 52, 700 - CHAT_LANE_MIN + 1, 800)] }, 852)
     expect(place).toMatchObject({ center: 350, width: 700 - 2 * OVERLAY_GAP })
+  })
+})
+
+describe('the toast offset follows a control that only moves', () => {
+  const at = (top: number, height: number) => () => ({ top, bottom: top + height, height, width: 300, left: 20, right: 320, x: 20, y: top, toJSON: () => ({}) }) as DOMRect
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    document.body.innerHTML = ''
+  })
+
+  it('measures again when the plate pills finish sliding up over the bottom panel', () => {
+    // Nothing is resized while the pills slide, so the size observer never fires: only the transition's end tells.
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => (cb(0), 0))
+    vi.stubGlobal('innerHeight', 900)
+    const vp = document.createElement('div')
+    const pills = document.createElement('div')
+    pills.className = 'hud-bl'
+    vp.append(pills)
+    document.body.append(vp)
+    vp.getBoundingClientRect = () => ({ top: 0, bottom: 900, height: 900, width: 1100, left: 0, right: 1100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+    pills.getBoundingClientRect = at(800, 40)
+    const ref = { current: vp }
+    const { unmount } = renderHook(() => useOverlayOffset(ref, { bottom: '.hud-bl' }))
+    const offset = () => document.documentElement.style.getPropertyValue('--overlay-bottom')
+    expect(offset()).toBe(`${900 - 800 + OVERLAY_GAP}px`)
+    for (const [type, top] of [['transitionend', 600], ['transitioncancel', 700]] as const) {
+      pills.getBoundingClientRect = at(top, 40)
+      pills.dispatchEvent(new Event(type, { bubbles: true }))
+      expect(offset()).toBe(`${900 - top + OVERLAY_GAP}px`)
+    }
+    unmount()
+    expect(offset()).toBe('')
   })
 })
