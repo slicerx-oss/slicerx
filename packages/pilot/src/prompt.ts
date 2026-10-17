@@ -16,7 +16,7 @@ export type HasTool = (name: string) => boolean
 const ALL_TOOLS: HasTool = () => true
 
 // one line for both scopes: a design request goes to the part tools, never through the knowledge base first
-const designLine = (has: HasTool): string => `- A request to make, model or design a part goes straight to text_to_part${has('make_model') ? ' (make_model for a multi-color model)' : ''}, not to the knowledge base. Build it in one call from the main dimensions, a few solids at a time. If it needs a feature the tools cannot make (rectangular cutouts in a wall, threads, curved shells), build the rest and say plainly what is left for the person to add in Model. If a size that matters is missing, ask one short question instead of guessing.`
+const designLine = (has: HasTool): string => `- A request to make, model or design a part goes straight to text_to_part${has('make_model') ? ' (make_model for a multi-color model)' : ''}, not to the knowledge base. Build it in one call from the main dimensions, a few solids at a time. If it needs a feature the tools cannot make (rectangular cutouts in a wall, threads, curved shells), build the rest and say plainly what is left for the person to add in Model. An existing part's walls or floor get thicker or thinner with walls, not a rebuild. If a size that matters is missing, ask one short question instead of guessing.`
 
 // one rule for every scope: a named part's sizes come from the parts table with their source, never from memory
 export const PARTS_LINE = `- For a named part or product (608 bearing, NEMA 17), call parts.lookup before building and cite each size's source; if not found, ask or look it up.`

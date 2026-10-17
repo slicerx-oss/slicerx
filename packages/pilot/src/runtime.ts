@@ -94,7 +94,7 @@ interface Pending {
 }
 
 /** The tools a host that only models offers mimir (besides its app commands): parts, the knowledge base and the project. */
-export const CAD_TOOLS: ReadonlySet<string> = new Set(['text_to_part', 'make_model', 'cut', 'material_recommend', 'kb.search', 'kb.filament', 'kb.printer', 'kb.workflow', 'kb.troubleshoot', 'kb.intent', 'kb.sources', 'parts.lookup', 'web.lookup', 'project.info', 'pilot.report'])
+export const CAD_TOOLS: ReadonlySet<string> = new Set(['text_to_part', 'make_model', 'cut', 'walls', 'material_recommend', 'kb.search', 'kb.filament', 'kb.printer', 'kb.workflow', 'kb.troubleshoot', 'kb.intent', 'kb.sources', 'parts.lookup', 'web.lookup', 'project.info', 'pilot.report'])
 
 /** The built-in tools the mimir tab keeps beside its design tools: knowledge, standard part and web lookups, never a part generator. */
 export const DESIGN_SCOPE_TOOLS: ReadonlySet<string> = new Set(['kb.search', 'kb.sources', 'parts.lookup', 'web.lookup'])
