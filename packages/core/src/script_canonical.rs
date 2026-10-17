@@ -4,6 +4,7 @@
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,13 +102,11 @@ pub fn canonicalize(input: &str) -> Result<CanonicalScript, String> {
                 '}' if braces > 0 => braces -= 1,
                 '[' => brackets += 1,
                 ']' if brackets > 0 => brackets -= 1,
-                ';' if braces == 0 && brackets == 0 => {
-                    if comment.is_none() {
-                        comment = Some(at);
-                        template_comment = raw[at + 1..].contains(['{', '}', '[', ']']);
-                        if !template_comment {
-                            break;
-                        }
+                ';' if braces == 0 && brackets == 0 && comment.is_none() => {
+                    comment = Some(at);
+                    template_comment = raw[at + 1..].contains(['{', '}', '[', ']']);
+                    if !template_comment {
+                        break;
                     }
                 }
                 _ => {}
@@ -161,7 +160,6 @@ pub fn canonicalize(input: &str) -> Result<CanonicalScript, String> {
         return Err("unclosed expression or quoted string in script".into());
     }
     let text = lines.join("\n");
-    use std::fmt::Write as _;
     let mut fingerprint = String::with_capacity(64);
     for byte in Sha256::digest(text.as_bytes()) {
         let _ = write!(fingerprint, "{byte:02x}");
