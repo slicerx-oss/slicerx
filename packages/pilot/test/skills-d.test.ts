@@ -93,6 +93,24 @@ describe('tool definitions', () => {
 })
 
 describe('toolhead_mapping', () => {
+  it('allows an unchanged single-filament queue without spool data but requires manual choices for multiple filaments', async () => {
+    const { ctxFor, shared } = setup()
+    const ctx = ctxFor('no-spools')
+    await createSlice(shared).run({}, ctx)
+    const plate = [...shared.slices.keys()][0]!
+    const upload = vi.fn()
+    const start = vi.fn()
+    ctx.host.printers = { ...ctx.host.printers, upload, start, planToolheads: async () => ({ ready: false, headDataAvailable: false, assignments: [], toolheads: [] }), list: async () => [{ id: 'u1', name: 'U1', model: 'U1', plugin: 'snapmaker', vendor: 'Snapmaker', nozzleCount: 4 }] as import('@slicerx/contracts').PrinterInfo[] }
+    const queue = printerTools(shared).find((t) => t.name === 'printer.queue') as unknown as PilotTool<Record<string, unknown>>
+    const entry = shared.slices.get(plate)!
+    entry.result.stats.filamentG = [2]
+    expect(await queue.approval!({ printerId: 'u1', plate }, ctx)).toMatchObject({ actions: expect.arrayContaining([expect.objectContaining({ action: 'printer.upload' })]) })
+    entry.result.stats.filamentG = [2, 1]
+    await expect(queue.approval!({ printerId: 'u1', plate }, ctx)).rejects.toThrow('toolhead_mapping')
+    expect(upload).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+  })
+
   it('requires reviewed toolhead preparation before queuing a U1 plate', async () => {
     const { ctxFor, shared } = setup()
     const ctx = ctxFor('unprepared')
