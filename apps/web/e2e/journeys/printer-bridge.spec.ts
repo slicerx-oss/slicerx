@@ -1036,7 +1036,11 @@ test.describe('Snapmaker U1', () => {
     test.slow()
     const sheet = await sheetOn(page, 'U1 Bay')
     const before = await printerActions()
+    await expect(sheet.getByRole('group', { name: 'Choose toolheads' })).toHaveCount(0)
+    await expect(sheet.locator('.ps-summary')).toContainText('Toolhead T1')
+    await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
     await sheet.locator('#ps-toolhead-0').selectOption('2')
+    await expect(sheet.locator('.ps-summary')).toContainText('Toolhead T2')
     await expect(sheet.locator('.ps-map-row .ps-row-warn')).toBeVisible()
     await expect(sheet.getByText('Checking toolhead choices', { exact: true })).toBeHidden()
     await sheet.getByRole('switch', { name: "Don't ask when everything matches" }).click()
@@ -1072,6 +1076,7 @@ test.describe('Snapmaker U1', () => {
   test('U1 upload-only uses the chosen loaded head without starting', async ({ page }) => {
     test.slow()
     const sheet = await sheetOn(page, 'U1 Bay')
+    await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
     await expect(sheet.getByRole('group', { name: 'Choose toolheads' })).toBeVisible()
     const before = await printerActions()
     await sheet.locator('#ps-toolhead-0').selectOption('4')
@@ -1088,6 +1093,7 @@ test.describe('Snapmaker U1', () => {
   test('U1 applies and verifies the map only after the person starts', async ({ page }) => {
     test.slow()
     const sheet = await sheetOn(page, 'U1 Bay')
+    await sheet.getByRole('button', { name: 'Change toolheads', exact: true }).click()
     await sheet.locator('#ps-toolhead-0').selectOption('4')
     const before = await printerActions()
     await start(sheet)
