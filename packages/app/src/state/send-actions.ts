@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Sending a sliced plate to a printer, queued starts, printer actions and G-code export: the parts of actions.ts the
 // startup shell does not need. actions.ts loads this on first use.
-import type { ApprovalHost, Host, JobFile, PrinterHost, PrinterInfo, PrinterStatus, SettingValue } from '@slicerx/contracts'
+import type { ApprovalHost, Host, JobFile, PrinterHost, PrinterInfo, PrinterStatus, SettingValue, ToolheadPlan } from '@slicerx/contracts'
 import { developerModeSure, followsSlotMap, grantApproval, pluginHas, slotMapLine } from '@slicerx/contracts'
 import { formatDuration } from '../lib/preview-stats'
 import { resolveSlots, usedSlots } from '../filament/slots'
@@ -20,6 +20,7 @@ import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/ba
 import { openLink } from '../lib/links'
 import { askApproval, buildApproval, developerModeReason, jobFileName, jobName, refusalReason, STALE_SLICE, storageFullReason } from './actions'
 import { plateSliceConfig } from './slice-plate'
+import { toolheadNeedsForPlate } from '../send/toolhead-map'
 
 /** "Desk hook" becomes "desk-hook_plate-1.gcode". */
 /** What a printer that does not follow a slot map does with a plain G-code file: each filament from the slot of its number. */
@@ -110,7 +111,23 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
   const filaments = resolveSlots(st0).filter((r) => r.used).map((r) => ({ index: r.index, color: r.color, type: r.type }))
   // A printer that follows a slot map starts from the loaded slot of the same material and closest color; one that
   // does not takes filament N from slot N, which is what the sheet shows.
-  const auto = ending === '.gcode.3mf' ? matchSlots(filaments, st0.printerSlots) : slotMapFor(filaments.map((f) => f.index), st0.printerSlots)
+  let auto = ending === '.gcode.3mf' ? matchSlots(filaments, st0.printerSlots) : slotMapFor(filaments.map((f) => f.index), st0.printerSlots)
+  const isU1 = ['snapmaker', 'moonraker'].includes(printer.plugin ?? '') && /\bU1\b/i.test(printer.model)
+  const toolheadNeeds = toolheadNeedsForPlate(s.result.stats.filamentG, plateSliceConfig(st0, st0.plates.find((p) => p.id === st0.activePlate)), resolveSlots(st0))
+  let toolheads: ToolheadPlan | undefined
+  if (isU1) {
+    if (!conn.printers.planToolheads || !conn.printers.prepareToolheads) {
+      toast('Update the printer connection to choose the U1 toolheads before sending', 'error')
+      return
+    }
+    try {
+      toolheads = await conn.printers.planToolheads(printer.id, toolheadNeeds)
+      auto = Object.fromEntries(toolheads.assignments.filter((a) => a.status === 'match' && a.physicalTool !== null).map((a) => [a.tool + 1, String(a.physicalTool! + 1)]))
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not read the U1 toolheads', 'error')
+      return
+    }
+  }
   const grams = s.result.stats.filamentG.reduce((a, b) => a + b, 0)
   const [{ bedStateFor, localPrintHost }, { preflight }, { bounds }] = await Promise.all([import('../send/bed-state'), import('../plate/preflight'), import('../plate/transform')])
   const bed = await bedStateFor(host, printer.id, status)
@@ -133,6 +150,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     filaments,
     slots: st0.printerSlots,
     auto,
+    ...(toolheads ? { toolheads } : {}),
     stats: { timeS: s.result.stats.timeS, grams, layers: s.result.layerCount },
     check: check0,
     ...(thumb0 ? { thumb: thumb0 } : {}),
@@ -210,6 +228,18 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     // "Send as plain G-code" sends the G-code itself, under the same name with a .gcode ending.
     const plain = !project || picked.plainGcode === true
     let file: JobFile = plain ? { name: withEnding(picked.name, '.gcode'), kind: 'gcode', data, sha256: plainSha } : { name: picked.name, kind: 'gcode.3mf', data: sent, sha256 }
+    if (isU1) {
+      if (!picked.toolheadMap || !conn?.printers.prepareToolheads) {
+        toast('Choose the U1 toolheads before sending', 'error')
+        return 'done'
+      }
+      try {
+        file = (await conn.printers.prepareToolheads(printer.id, file, toolheadNeeds, picked.toolheadMap)).file
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'Could not prepare the U1 toolhead choices', 'error')
+        return 'done'
+      }
+    }
     // A plugin that rewrites files (BamBuddy stamps a non-Bambu profile) prepares them first, so the hash on the
     // approval is the hash of the bytes that will be posted. Every other printer gets the file as it is.
     const prepare = conn?.printers.prepareUpload
@@ -227,7 +257,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
       if (Object.keys(slotMap).length) opts = { ...opts, slotMap }
     }
     const start = picked.start
-    const slotLine = slotMapLine(opts.slotMap) ?? (Object.keys(fixedSlots).length ? gcodeSlotsLine(fixedSlots) : null)
+    const slotLine = picked.toolheadMap ? `Toolheads: ${Object.entries(picked.toolheadMap).map(([tool, head]) => `filament ${Number(tool) + 1} to toolhead ${head + 1}`).join(', ')}` : slotMapLine(opts.slotMap) ?? (Object.keys(fixedSlots).length ? gcodeSlotsLine(fixedSlots) : null)
     const request = await buildApproval({
       tool: 'printer.send',
       permission: start ? 'start' : 'queue',

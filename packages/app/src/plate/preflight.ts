@@ -119,7 +119,8 @@ export function preflight(input: PreflightInput): Preflight {
 
   // Firmware flavor.
   const flavor = String(first(config['gcode_flavor']) ?? '').toLowerCase()
-  const allowed = FLAVORS[printer.plugin]
+  const isU1 = printer.plugin === 'snapmaker' && /\bU1\b/i.test(status?.model ?? printer.model)
+  const allowed = FLAVORS[isU1 ? 'moonraker' : printer.plugin]
   if (flavor && allowed && !allowed.includes(flavor)) errors.push(`The G-code is for ${flavor} firmware; ${printer.name} runs ${allowed[0]}. Pick this printer's profile and slice again.`)
 
   // Material against what is loaded.

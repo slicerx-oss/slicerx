@@ -3,7 +3,7 @@
 // Journey: the app against a real sx-link and the mock printers, end to end: pair, list, camera, send with preflight and
 // approval on a Klipper printer, the bridge's settings, and, in the Bambu Lab describe, the Print sheet for an A1 with
 // an AMS lite and an A1 mini with only the external spool (slot choice, the .gcode.3mf start, a client's queue send
-// over MCP with its matched slots, a refused start with its reason and the plain G-code offer) and the camera guard.
+// over MCP with its matched slots, a refused start with its reason and the plain G-code offer) and the camera guard, and, in the Snapmaker U1 describe, the Print sheet's toolhead choices.
 // The live view of one printer (printer-hud) runs first, on the demo fleet, before the page pairs, and the Print sheet
 // rows and the bridge section that need no hub follow it ('on the demo fleet'). The order is for speed only: every test
 // pairs the page itself when it is not paired, and loads it again when it needs the demo fleet.
@@ -14,10 +14,11 @@
 // once per printer (`sheetOn`). Needs SX_LINK_BIN (a built sx-link); the tests skip without it.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { PrinterHost } from '@slicerx/contracts'
 import { type Locator, type Page, type WebSocketRoute } from '@playwright/test'
 import { ONBOARDING_VERSION } from '../../../../packages/app/src/first-run/onboarding.ts'
 import type { ApprovalDone } from '../../../../packages/connect/link-client/src/index.ts'
-import { bridgeOn, connectApp, ctl, hub, mockLog, reportHand, resumeFromCard, sawToast, seed, start, useBridge } from '../bridge-hub'
+import { bridgeOn, connectApp, ctl, hub, logOf, mockLog, reportHand, resumeFromCard, sawToast, seed, start, useBridge } from '../bridge-hub'
 import { plateReady } from '../fixtures'
 import { expect, journey as test } from '../journey'
 import { boxOnPlate, calm, command, debugHooks, layeredX, patch, printerHud, sliceLayered, startSlice, toSlice } from './lib/slice'
@@ -37,7 +38,7 @@ let printersChanged = false
 // order the file keeps is that the Authorization Control step comes before the unsigned one, whose refusal leaves the
 // hub's reading of the printer with the Developer Mode flag; a hub that has not read it yet is what that step needs,
 // and file order gives it that, as a new hub after a failure does.
-useBridge(['moonraker', 'bambu'], async (ctl) => {
+useBridge(['moonraker', 'bambu', 'snapmaker-u1'], async (ctl) => {
   // The Bambu mock as an A1 with an AMS lite and white PLA on the side holder.
   await ctl('/bambu', { model: 'N2S', ams: 'lite', external: { type: 'PLA', color: '#FFFFFF' } })
   await hub.admin.addPrinter({ id: 'voron', name: 'Voron', plugin: 'moonraker', host: '127.0.0.1', port: hub.ports['moonraker'] ?? 0 }, { vendor: 'Voron', model: '2.4' })
@@ -995,6 +996,70 @@ test.describe(BAMBU, () => {
     } finally {
       await ctl('/bambu', { developerMode: null, cameraFrame: null })
     }
+  })
+})
+
+test.describe('Snapmaker U1', () => {
+  test.beforeAll(async ({}, testInfo) => {
+    if (testInfo.project.use.isMobile) return
+    await hub.admin.settings.set({ experimentalConnectors: true })
+    await hub.admin.addPrinter({ id: 'u1', name: 'U1 Bay', plugin: 'snapmaker', protocol: 'moonraker', host: '127.0.0.1', port: hub.ports['snapmaker-u1'], pollMs: 200 }, { vendor: 'Snapmaker', model: 'U1' })
+    printersChanged = true
+  })
+
+  // Not asking when everything matches is a stored preference of the shared page: put it back after each test.
+  test.afterEach(async ({ page }) => {
+    await patch(page, { toolheadSkipMatching: {} })
+  })
+
+  test.afterAll(async ({}, testInfo) => {
+    if (testInfo.project.use.isMobile) return
+    await hub.admin.removePrinter('u1')
+    await hub.admin.settings.set({ experimentalConnectors: false })
+    printersChanged = true
+  })
+
+  const printerActions = async () => (await logOf('snapmaker-u1')).filter((line) => line !== 'webcams list')
+
+  test('U1 planning refuses missing material and never uploads or starts', async () => {
+    const host = hub.admin as unknown as PrinterHost
+    const before = await printerActions()
+    const plan = await host.planToolheads!('u1', [{ tool: 0, material: 'ABS', color: '#ffffff' }])
+    expect(plan.ready).toBe(false)
+    expect(plan.assignments[0]?.status).toBe('unavailable')
+    expect(await printerActions()).toEqual(before)
+  })
+
+  test('U1 upload-only uses the chosen loaded head without starting', async ({ page }) => {
+    test.slow()
+    const sheet = await sheetOn(page, 'U1 Bay')
+    await expect(sheet.getByRole('group', { name: 'Choose toolheads' })).toBeVisible()
+    const before = await printerActions()
+    await sheet.locator('#ps-toolhead-0').selectOption('4')
+    expect(await printerActions()).toEqual(before)
+    await sheet.getByRole('button', { name: 'More ways to send' }).click()
+    await page.getByRole('menuitemcheckbox', { name: 'Upload only', exact: true }).click()
+    await sheet.getByRole('button', { name: 'Upload only', exact: true }).click()
+    await sawToast(page, /It has not started/)
+    const log = (await printerActions()).slice(before.length)
+    expect(log.some((line) => line.startsWith('upload '))).toBe(true)
+    expect(log.some((line) => line.startsWith('start ') || line.includes('SET_PRINT_EXTRUDER_MAP'))).toBe(false)
+  })
+
+  test('U1 applies and verifies the map only after the person starts', async ({ page }) => {
+    test.slow()
+    const sheet = await sheetOn(page, 'U1 Bay')
+    await sheet.locator('#ps-toolhead-0').selectOption('4')
+    const before = await printerActions()
+    await start(sheet)
+    await sawToast(page, /started on U1 Bay/, { timeout: 30_000 })
+    const log = (await printerActions()).slice(before.length)
+    const upload = log.findIndex((line) => line.startsWith('upload '))
+    const mapping = log.findIndex((line) => line.includes('SET_PRINT_EXTRUDER_MAP'))
+    const started = log.findIndex((line) => line.startsWith('start '))
+    expect(upload).toBeGreaterThanOrEqual(0)
+    expect(mapping).toBeGreaterThan(upload)
+    expect(started).toBeGreaterThan(mapping)
   })
 })
 

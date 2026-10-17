@@ -510,6 +510,35 @@ test('Snapmaker 2.0: lifecycle, the runout and door flags, offline hangs, no cam
   }
 })
 
+test('U1 mapping read-back retains uploaded bytes and only changes its map while idle', async () => {
+  const mocks = await startMocks({ only: ['snapmaker-u1'], state: 'idle' })
+  const u = (p: string) => url(mocks, 'snapmaker-u1', p)
+  try {
+    const data = 'T1\nG1 X10 E1\n'
+    const form = new FormData()
+    form.set('file', new Blob([data]), 'mapped.gcode')
+    form.set('checksum', createHash('sha256').update(data).digest('hex'))
+    assert.equal((await fetch(u('/server/files/upload'), { method: 'POST', body: form })).status, 201)
+    assert.equal(await (await fetch(u('/server/files/gcodes/mapped.gcode'))).text(), data)
+    const script = [0, 1, 2, 3].map((n) => `SET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=${n} MAP_EXTRUDER=${n}`).concat('SET_PRINT_USED_EXTRUDERS EXTRUDERS=1').join('\n')
+    const apply = () => fetch(u(`/printer/gcode/script?${new URLSearchParams({ script })}`), { method: 'POST' })
+    await post(mocks, '/u1', { ignoreToolheadUpdates: true })
+    assert.equal((await apply()).status, 200)
+    const ignored = (await json(await fetch(u('/printer/objects/query?print_task_config')))).result.status.print_task_config
+    assert.deepEqual(ignored.extruder_map_table, [1, 0, 3, 2])
+    await post(mocks, '/u1', { ignoreToolheadUpdates: false })
+    assert.equal((await apply()).status, 200)
+    const status = (await json(await fetch(u('/printer/objects/query?print_task_config&print_stats')))).result.status
+    assert.equal(status.print_stats.state, 'standby')
+    assert.deepEqual(status.print_task_config.extruder_map_table, [0, 1, 2, 3])
+    assert.deepEqual(status.print_task_config.extruders_used, [false, true, false, false])
+    assert.equal((await fetch(u('/printer/print/start?filename=mapped.gcode'), { method: 'POST' })).status, 200)
+    assert.equal((await apply()).status, 409)
+  } finally {
+    await mocks.stop()
+  }
+})
+
 test('Snapmaker U1: Moonraker with the U1 identity, a webcam showing the chosen frame, and faults', async () => {
   const { HAND_FRAME } = await import('./frames.ts')
   const { JPEG } = await import('./machine.ts')

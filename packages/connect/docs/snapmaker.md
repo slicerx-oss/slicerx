@@ -53,6 +53,23 @@ The U1's internal RTSP streams on 8554 and 8555 exist only on the community exte
 
 Printer config: `host`, optional `port`, `credentialRef` (keychain entry that holds the pairing token, or the Moonraker API key), `protocol` (`moonraker`, `luban` or `sacp`; probed when unset: port 8888 means SACP, else Moonraker on the configured port or 80, otherwise Luban on 8080), `pollMs` (default 2000 for 2.0 machines).
 
+### U1 toolhead choices
+
+The shared Print sheet reads the U1's loaded materials and colors before sending. It proposes exact matches, asks for a choice when colors differ or more than one head matches, and refuses a missing material. Carbon-fiber and glass-fiber materials remain distinct from their unfilled versions. Upload only prepares and uploads the same chosen mapping without starting it.
+
+Kit hosts expose `planToolheads(printerId, needs, selected?)` and `prepareToolheads(printerId, file, needs, selected)`. Both use zero-based logical and physical tool indices. Preparation returns a new file and a plan; keep the original file for later changes. Neither call uploads, changes the printer's map, or starts a print. Preparation requires a complete selection and a plain G-code file with supported tool references.
+
+The MCP tool `toolhead_mapping` returns assignments, compatible alternatives, loaded toolheads and refusal reasons. The CLI uses the same tool:
+
+```sh
+slicerx-mcp call toolhead_mapping '{"printerId":"u1","needs":[{"tool":0,"material":"PLA","color":"#ff0000"}]}'
+slicerx-mcp call toolhead_mapping '{"printerId":"u1","needs":[{"tool":0,"material":"PLA","color":"#ff0000"}],"selected":{"0":3},"preparePlate":1}'
+```
+
+`preparePlate` retains a mapped copy of an already sliced plate for that printer. Its read-back includes the original and prepared hashes. A later `printer.queue` requires that copy for a U1 and still requires the person's approval. Reslicing discards the prepared copy.
+
+The upload and separately approved start recheck the selected loaded materials. Before starting a prepared file, the U1 connection verifies its remote bytes, checks that the printer is idle, establishes and reads back an identity firmware map and the used physical heads, then starts. Failed verification prevents start. This avoids applying an old firmware map to already rewritten tool numbers. These paths require validation on physical U1 hardware in addition to the mock protocol tests.
+
 ### Discovery
 
 `discover` broadcasts the ASCII string `discover` to UDP 20054 from each local network, three times across the window, and reads the pipe separated replies, such as `A350-3DP@192.168.1.100|model:A350|status:IDLE`: the name and address before `|`, then `key:value` pairs. Only `model` and `SACP` are used; the key names are community knowledge. A reply without an address takes the sender's. A J1 or Artisan (by model or name, or `SACP:1`) is listed with port 8888, a 2.0 machine with 8080. `probe` sends the same string to a typed address alone.

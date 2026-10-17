@@ -35,6 +35,7 @@ pub mod drivers;
 pub mod mdns;
 pub mod netif;
 pub mod services;
+pub mod toolhead_map;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -104,6 +105,23 @@ pub trait PrinterConnector: Send + Sync {
 pub trait PrinterSession: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     async fn status(&self) -> Result<PrinterStatus>;
+    /// Reads loaded toolheads and proposes or checks a map without changing the printer.
+    async fn plan_toolheads(
+        &self,
+        _needs: &[toolhead_map::ToolheadNeed],
+        _selected: &std::collections::BTreeMap<u8, u8>,
+    ) -> Result<toolhead_map::ToolheadPlan> {
+        Err(Error::not_supported("printer", "toolhead mapping"))
+    }
+    /// Prepares reviewed physical tool assignments locally, without uploading or starting.
+    async fn prepare_toolheads(
+        &self,
+        _file: JobFile,
+        _needs: &[toolhead_map::ToolheadNeed],
+        _selected: &std::collections::BTreeMap<u8, u8>,
+    ) -> Result<(JobFile, toolhead_map::ToolheadPlan)> {
+        Err(Error::not_supported("printer", "toolhead mapping"))
+    }
     fn events(&self) -> BoxStream<'static, PrinterEvent>;
     /// The file [`Self::upload`] will send, with `sha256` of those bytes. The default
     /// returns the file unchanged. A connector that rewrites the file (BamBuddy stamps

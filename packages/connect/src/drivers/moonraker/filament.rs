@@ -160,13 +160,16 @@ pub(crate) fn u1_unit(status: &Value) -> Option<FilamentUnit> {
         .enumerate()
         .map(|(i, e)| {
             let loaded = e.as_bool().unwrap_or(false);
-            let material = loaded.then(|| {
-                let base = text_at(ptc.get("filament_type"), i).unwrap_or_else(|| "PLA".to_owned());
-                match text_at(ptc.get("filament_sub_type"), i) {
-                    Some(sub) => combine_type(&base, &sub),
-                    None => base.to_ascii_uppercase(),
-                }
-            });
+            let material = if loaded {
+                text_at(ptc.get("filament_type"), i).map(|base| {
+                    match text_at(ptc.get("filament_sub_type"), i) {
+                        Some(sub) => combine_type(&base, &sub),
+                        None => base.to_ascii_uppercase(),
+                    }
+                })
+            } else {
+                None
+            };
             let color = loaded
                 .then(|| text_at(ptc.get("filament_color_rgba"), i))
                 .flatten()
@@ -274,6 +277,20 @@ mod tests {
                 ("4", Some("PLA"), Some("#0000ff")),
             ]
         );
+    }
+
+    #[test]
+    fn a_loaded_u1_toolhead_with_unknown_material_does_not_claim_pla() {
+        let status = json!({"print_task_config": {
+            "filament_exist": [true, true, true, true],
+            "filament_type": ["", "NONE", null, "PETG"],
+            "filament_sub_type": ["", "", "", "CF"],
+            "filament_color_rgba": ["FF0000FF", "00FF00FF", "0000FFFF", "000000FF"]
+        }});
+        let unit = u1_unit(&status).unwrap();
+        assert!(unit.slots[..3].iter().all(|slot| slot.material.is_none()));
+        assert_eq!(unit.slots[0].color.as_deref(), Some("#ff0000"));
+        assert_eq!(unit.slots[3].material.as_deref(), Some("PETG-CF"));
     }
 
     #[test]
