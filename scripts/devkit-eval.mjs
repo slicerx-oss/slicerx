@@ -3,12 +3,12 @@
 // Usage: node scripts/devkit-eval.mjs [path/to/installed/mcp/dist/cli.js]
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const cli = resolve(process.argv[2] ?? 'packages/mcp/dist/cli.js')
-const project = mkdtempSync(join(tmpdir(), 'sx-devkit-eval-'))
+const project = realpathSync(mkdtempSync(join(tmpdir(), 'sx-devkit-eval-')))
 const args = [cli, 'register', '--client', 'codex', '--scope', 'project', '--allow-dir', 'models with spaces']
 const run = (extra = []) => JSON.parse(execFileSync(process.execPath, [...args, ...extra], { cwd: project, encoding: 'utf8' }))
 try {
