@@ -51,7 +51,10 @@ pub const EARLY_CSP: &str = r#"(() => {
 /// The web view's default arguments (no mini menu, no SmartScreen), then a run's own.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn browser_args(extra: &str) -> String {
-    format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection {}", extra.trim())
+    format!(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection {}",
+        extra.trim()
+    )
 }
 
 /// The store's 16 bytes: the same identifier gives the same store on every build, so a run finds the last one's data.
