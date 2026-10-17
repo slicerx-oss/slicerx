@@ -18,18 +18,6 @@
         "model": "anycubic-kobra-x",
         "firmware": "klipper"
       },
-      "key": "emit_machine_limits_to_gcode",
-      "source": "OrcaSlicer",
-      "version": "2.4.2",
-      "exactFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "canonicalVersion": 1,
-      "canonicalFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
-    },
-    {
-      "identity": {
-        "model": "anycubic-kobra-x",
-        "firmware": "klipper"
-      },
       "key": "layer_change_gcode",
       "source": "OrcaSlicer",
       "version": "2.4.2",
@@ -2814,18 +2802,6 @@
         "model": "creality-hi",
         "firmware": "klipper"
       },
-      "key": "emit_machine_limits_to_gcode",
-      "source": "OrcaSlicer",
-      "version": "2.4.2",
-      "exactFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "canonicalVersion": 1,
-      "canonicalFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
-    },
-    {
-      "identity": {
-        "model": "creality-hi",
-        "firmware": "klipper"
-      },
       "key": "layer_change_gcode",
       "source": "OrcaSlicer",
       "version": "2.4.2",
@@ -2910,18 +2886,6 @@
         "model": "creality-k1-max",
         "firmware": "klipper"
       },
-      "key": "emit_machine_limits_to_gcode",
-      "source": "OrcaSlicer",
-      "version": "2.4.2",
-      "exactFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "canonicalVersion": 1,
-      "canonicalFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
-    },
-    {
-      "identity": {
-        "model": "creality-k1-max",
-        "firmware": "klipper"
-      },
       "key": "layer_change_gcode",
       "source": "OrcaSlicer",
       "version": "2.4.2",
@@ -2994,18 +2958,6 @@
         "model": "creality-k1-se",
         "firmware": "klipper"
       },
-      "key": "emit_machine_limits_to_gcode",
-      "source": "OrcaSlicer",
-      "version": "2.4.2",
-      "exactFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "canonicalVersion": 1,
-      "canonicalFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
-    },
-    {
-      "identity": {
-        "model": "creality-k1-se",
-        "firmware": "klipper"
-      },
       "key": "layer_change_gcode",
       "source": "OrcaSlicer",
       "version": "2.4.2",
@@ -3072,18 +3024,6 @@
       "exactFingerprint": "7cdece34312ce0be47d840dcc30d59444589b6708ce9474b5a90c26a09535189",
       "canonicalVersion": 1,
       "canonicalFingerprint": "6fa57e8e5ee4901f554a0ac955332ef6f11eef042f1df9ce621c498ee4a3be50"
-    },
-    {
-      "identity": {
-        "model": "creality-k1",
-        "firmware": "klipper"
-      },
-      "key": "emit_machine_limits_to_gcode",
-      "source": "OrcaSlicer",
-      "version": "2.4.2",
-      "exactFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "canonicalVersion": 1,
-      "canonicalFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
     },
     {
       "identity": {
@@ -3168,18 +3108,6 @@
       "exactFingerprint": "7cdece34312ce0be47d840dcc30d59444589b6708ce9474b5a90c26a09535189",
       "canonicalVersion": 1,
       "canonicalFingerprint": "6fa57e8e5ee4901f554a0ac955332ef6f11eef042f1df9ce621c498ee4a3be50"
-    },
-    {
-      "identity": {
-        "model": "creality-k1c",
-        "firmware": "klipper"
-      },
-      "key": "emit_machine_limits_to_gcode",
-      "source": "OrcaSlicer",
-      "version": "2.4.2",
-      "exactFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "canonicalVersion": 1,
-      "canonicalFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
     },
     {
       "identity": {
@@ -4050,18 +3978,6 @@
         "model": "prusa-core-one-l",
         "firmware": "marlin2"
       },
-      "key": "emit_machine_limits_to_gcode",
-      "source": "OrcaSlicer",
-      "version": "2.4.2",
-      "exactFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "canonicalVersion": 1,
-      "canonicalFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
-    },
-    {
-      "identity": {
-        "model": "prusa-core-one-l",
-        "firmware": "marlin2"
-      },
       "key": "layer_change_gcode",
       "source": "OrcaSlicer",
       "version": "2.4.2",
@@ -4128,18 +4044,6 @@
       "exactFingerprint": "ff46fba07aec467bcf5ac0b3ea5b612ab026ff09663223bfa9379717836daa59",
       "canonicalVersion": 1,
       "canonicalFingerprint": "9f0036dc96bd979a55241ff7d4c3ec9d8832076e5bc4534ff8069b11be565cc3"
-    },
-    {
-      "identity": {
-        "model": "prusa-core-one",
-        "firmware": "marlin2"
-      },
-      "key": "emit_machine_limits_to_gcode",
-      "source": "OrcaSlicer",
-      "version": "2.4.2",
-      "exactFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-      "canonicalVersion": 1,
-      "canonicalFingerprint": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
     },
     {
       "identity": {

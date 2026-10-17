@@ -109,6 +109,7 @@ fn slicing_uses_the_same_review_and_checks_the_effective_firmware() {
     request["config"]["printer_model"] = serde_json::json!("Bambu Lab P1S");
     request["config"]["gcode_flavor"] = serde_json::json!("marlin");
     request["config"]["machine_pause_gcode"] = serde_json::json!("  M400 U1 ; pause\r\n");
+    request["config"]["emit_machine_limits_to_gcode"] = serde_json::json!("1");
     for (model, flavor, expected) in [
         ("Bambu Lab P1S", "marlin", "stock_equivalent"),
         ("bambu-p1s", "marlin", "stock_equivalent"),
@@ -144,6 +145,7 @@ fn slicing_uses_the_same_review_and_checks_the_effective_firmware() {
             .find_map(|line| line.strip_prefix("sx: script_reviews: "))
             .expect(&stderr);
         let reviews: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert_eq!(reviews.as_array().unwrap().len(), 1);
         assert_eq!(reviews[0]["reason"], expected);
         if flavor == "marlin" {
             assert!(out.status.success(), "{stderr}");

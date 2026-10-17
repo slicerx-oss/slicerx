@@ -161,7 +161,10 @@ pub fn reviewed_keys(
     }
     let mut trusted = Vec::new();
     let mut results = Vec::new();
-    for (key, value) in config.iter().filter(|(key, _)| key.ends_with("_gcode")) {
+    for (key, value) in config
+        .iter()
+        .filter(|(key, _)| key.ends_with("_gcode") && key.as_str() != "emit_machine_limits_to_gcode")
+    {
         let per_slot = value.is_array();
         let values = match value {
             Value::Array(values) => values.iter().collect(),
