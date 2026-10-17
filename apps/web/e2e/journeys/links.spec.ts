@@ -14,7 +14,7 @@ import { promisify } from 'node:util'
 import type { TopologyManifest } from '../../../../packages/cad-history/src/topology-manifest'
 import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
-import { plateReady, viewSized, viewportReady } from '../fixtures'
+import { plateReady, tab, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
 import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
 
@@ -491,6 +491,68 @@ test('clients change display units with visible read-back, native CLI and persis
       await page.keyboard.press('Escape')
     } finally {
       await reader.close()
+    }
+  })
+})
+
+test('a read client changes the real Model pick filter and reads UI picks through the SDK and native CLI', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page)
+  await scratch('pick-filter', async (dir) => {
+    const reader = await session(link, page, dir, 'pick-filter-reader', 'read')
+    try {
+      const read = () => reader.ok('app_pick_filter')
+      expect(await read()).toMatchObject({ available: false })
+      expect(await reader.call('app_pick_filter_set', { kind: 'object' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await tab(page, 'model').click()
+      await command(page, 'Add a box')
+      await expect.poll(async () => (await read()).objects.some((o: { name: string }) => o.name === 'Box')).toBe(true)
+      const id = (await read()).primary as string
+      const filter = (kind: string) => page.locator(`[data-testid="model-select-filter"][data-kind="${kind}"]`)
+      await expect(filter('face')).toBeVisible()
+      const history = await reader.ok('app_history')
+      const face = await reader.ok('app_pick_filter_set', { kind: 'face' })
+      expect(face).toMatchObject({ available: true, pickFilter: ['face'], primary: id })
+      await expect(filter('face')).toHaveAttribute('aria-pressed', 'true')
+      await expect(filter('object')).toHaveAttribute('aria-pressed', 'false')
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __vp: { rig: { move: unknown } } }).__vp.rig.move === null)).toBe(true)
+      const box = await bounds(page, id)
+      const point = await page.evaluate((p) => (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp.screenOf(p), [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, box.max[2]])
+      await page.mouse.click(point[0], point[1])
+      await expect.poll(async () => (await read()).picks.length).toBe(1)
+      expect((await read()).picks[0]).toMatchObject({ kind: 'face', objectId: id })
+      await reader.ok('app_pick_filter_set', { kind: 'edge', mode: 'toggle' })
+      expect(await read()).toMatchObject({ pickFilter: ['face', 'edge'], primary: id, picks: [{ kind: 'face' }] })
+      await expect(filter('edge')).toHaveAttribute('aria-pressed', 'true')
+      await filter('object').click()
+      expect(await read()).toMatchObject({ pickFilter: ['object'], primary: id, picks: [] })
+      await filter('face').click({ modifiers: ['Shift'] })
+      expect(await read()).toMatchObject({ pickFilter: ['object', 'face'] })
+      const before = await read()
+      expect(await reader.call('app_pick_filter_set', { kind: 'edge', mode: 'invalid' })).toMatchObject({ isError: true })
+      expect(await read()).toEqual(before)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_pick_filter_set', { kind: 'edge', mode: 'only' }, 'app_pick_filter')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output).toMatchObject({ available: true, pickFilter: ['edge'], primary: id, picks: [] })
+          }
+          expect(await read()).toMatchObject(rows[1].output.output)
+          await expect(filter('edge')).toHaveAttribute('aria-pressed', 'true')
+          await expect(filter('face')).toHaveAttribute('aria-pressed', 'false')
+        })
+      }
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await command(page, 'Push or pull a face')
+      await expect.poll(async () => (await read()).available).toBe(false)
+      expect(await reader.call('app_pick_filter_set', { kind: 'face' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      expect((await read()).pickFilter).toEqual(['edge'])
+    } finally {
+      await reader.close()
+      await page.keyboard.press('Escape')
+      await sx.set(page, { pickFilter: ['face'] })
     }
   })
 })
