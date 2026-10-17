@@ -3162,7 +3162,7 @@ impl SliceSession {
         let lo = top.saturating_sub(STEP);
         let out = self.slice_object_range_now(config, lo..top, &crate::NoProgress)?;
         if let Some(l) = out.layers.iter().rev().find(|l| !l.paths.is_empty()) {
-            return Ok((l.points.last().copied(), l.wipe_tail()));
+            return Ok((l.exit_point(), l.wipe_tail()));
         }
         Ok(out
             .layers
@@ -3579,7 +3579,7 @@ impl SliceSession {
         let mut below_wipe = crate::output::WipeTail::default();
         if layers.start < asked.start && !out_layers.is_empty() {
             let below = out_layers.remove(0);
-            below_end = below.points.last().copied();
+            below_end = below.exit_point();
             below_wipe = below.wipe_tail();
             // An empty layer below leaves the nozzle where the last layer with paths ended, as one range over
             // the whole plate carries it up.
@@ -3589,7 +3589,7 @@ impl SliceSession {
         }
         for l in &mut out_layers {
             l.enter_from = below_end;
-            below_end = l.points.last().copied().or(below_end);
+            below_end = l.exit_point().or(below_end);
             let tail = l.wipe_tail();
             l.below_wipe = if tail.points.is_empty() {
                 below_wipe.clone()
