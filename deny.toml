@@ -47,6 +47,12 @@ ignore = [
   "RUSTSEC-2025-0134",
   # proc-macro-error (unmaintained) is a build-time dependency of a macro crate, not shipped code.
   "RUSTSEC-2024-0370",
+  # zvariant, zbus_names and zvariant_derive (unmaintained, 2026-10-17) were folded into zbus 6. zbus 5 comes
+  # in on Linux through the keyring's Secret Service store and the Tauri opener and single-instance plugins,
+  # none of which has moved to zbus 6 yet. Remove when they do.
+  "RUSTSEC-2026-0370",
+  "RUSTSEC-2026-0371",
+  "RUSTSEC-2026-0372",
 ]
 
 [sources]
