@@ -18,7 +18,7 @@ it('lists the preview commands to an SDK client, forwards view settings and read
     return state
   })
   const ctx = await createContext({ printers: 'off', outDir: dir, profilesDir: join(dir, 'profiles') })
-  expect(ctx.tools.filter((t) => t.name.startsWith('app.preview'))).toHaveLength(2)
+  expect(ctx.tools.filter((t) => t.name === 'app.preview' || t.name === 'app.preview_set')).toHaveLength(2)
   ctx.tools = appPreviewTools({ call } as AppLinkCaller, 'SlicerX')
   const server = createSlicerxServer(ctx)
   const client = new Client({ name: 'preview-test', version: '1.0.0' })
