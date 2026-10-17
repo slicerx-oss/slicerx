@@ -25,6 +25,13 @@ pub fn open_main_window(app: &App) -> tauri::Result<()> {
     let builder = WebviewWindowBuilder::from_config(app.handle(), &conf)?.initialization_script(EARLY_CSP);
     #[cfg(target_os = "macos")]
     let builder = builder.data_store_identifier(store_id(&app.config().identifier));
+    // the web view's own arguments replace WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so a run's extra ones (a debugging
+    // port for a frame capture) are passed through here, after the defaults
+    #[cfg(windows)]
+    let builder = match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+        Ok(extra) if !extra.trim().is_empty() => builder.additional_browser_args(&browser_args(&extra)),
+        _ => builder,
+    };
     builder.build()?;
     Ok(())
 }
@@ -40,6 +47,12 @@ pub const EARLY_CSP: &str = r#"(() => {
     kept.push({ directive: e.effectiveDirective || e.violatedDirective || '', blocked: e.blockedURI || '', at: Date.now() });
   });
 })();"#;
+
+/// The web view's default arguments (no mini menu, no SmartScreen), then a run's own.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn browser_args(extra: &str) -> String {
+    format!("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection {}", extra.trim())
+}
 
 /// The store's 16 bytes: the same identifier gives the same store on every build, so a run finds the last one's data.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -58,7 +71,15 @@ pub fn store_id(identifier: &str) -> [u8; 16] {
 
 #[cfg(test)]
 mod tests {
-    use super::store_id;
+    use super::{browser_args, store_id};
+
+    #[test]
+    fn a_runs_own_browser_arguments_come_after_the_defaults() {
+        assert_eq!(
+            browser_args(" --remote-debugging-port=9333 "),
+            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9333"
+        );
+    }
 
     #[test]
     fn the_same_identifier_names_the_same_store_and_others_differ() {
