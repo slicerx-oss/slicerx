@@ -44,6 +44,8 @@ import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
 import { useCompactLayout, usePhoneLayout } from '../lib/phone-layout'
 import { ModeChip } from '../first-run/mode-chip'
 import { Loading } from '../shell/loading'
+// The ribbon's own styles, here so its placeholder has the ribbon's height before the ribbon's code arrives.
+import './design/ribbon.css'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'section-printer', label: 'Printer' },
@@ -233,7 +235,16 @@ export function Studio() {
     <div className="studio" data-mode="prepare" data-layers={layers || undefined} data-slice={sliceState} data-slices={slicesDone} data-model-mode={cad ? modelMode : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
       {/* on a phone Model's tools are a bar along the bottom of the view instead; the ribbon on a desktop */}
       {design && !phone ? (
-        <Suspense fallback={<div className="ribbon" data-size={ribbonSize} aria-hidden="true" />}>
+        // While the ribbon's code loads, an empty one of the same height holds its place, so the view does not jump
+        // down when the tools arrive (its styles load with the studio for that).
+        <Suspense
+          fallback={
+            <div className="ribbon" data-size={ribbonSize} aria-hidden="true">
+              <div className="rb-tabs" />
+              <div className="rb-body" />
+            </div>
+          }
+        >
           <Ribbon />
         </Suspense>
       ) : null}

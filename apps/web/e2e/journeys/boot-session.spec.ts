@@ -235,6 +235,23 @@ cold.describe('a part of the app that loads slowly', () => {
     await expect(loading).toHaveCount(0)
   })
 
+  // Model's ribbon loads on the first open of Model. Until it lands, an empty ribbon of its height holds its place: a
+  // 1 px placeholder let the view jump 111 px down when the tools arrived, so a box select started then missed (#1225).
+  cold("Model's ribbon holds its place while its code loads, and the view does not move when it arrives", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await open(page)
+    const release = await holdScripts(page)
+    await page.locator('.sx-tab[data-mode="design"]').click()
+    const ribbon = page.locator('.studio > .ribbon')
+    await expect(ribbon).toHaveAttribute('aria-hidden', 'true')
+    const view = page.locator('.vp-canvas').first()
+    const waiting = { ribbon: (await ribbon.boundingBox())!, view: (await view.boundingBox())! }
+    release()
+    await expect(page.getByTestId('model-shelf')).toBeVisible()
+    expect((await ribbon.boundingBox())!.height).toBeCloseTo(waiting.ribbon.height, 1)
+    expect(await view.boundingBox()).toEqual(waiting.view)
+  })
+
   // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
   cold.describe('shots', () => {
     cold.skip(!shotsOn(), 'SX_SHOTS=1 only')
