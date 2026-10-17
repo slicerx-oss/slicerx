@@ -16,6 +16,7 @@ import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import type { Page } from '@playwright/test'
 import { ONBOARDING_VERSION } from '../../../../../packages/app/src/first-run/onboarding.ts'
+import { withWindowsCredential } from '../../../../../packages/mcp/test/helpers/windows-credential'
 import type { Admin } from '../../bridge-hub'
 import { COLD_START_MS, plateReady } from '../../fixtures'
 import { withClientCredential } from '../../client-credential'
@@ -91,7 +92,7 @@ async function loadSdk(): Promise<{ Client: new (i: { name: string; version: str
 const cleanEnv = (drop: string): Record<string, string> => Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => typeof e[1] === 'string' && !e[0].startsWith(drop)))
 
 /** slicerx-mcp as a client runs it from source, checking the hub's key from the hub's state directory. */
-const serverArgs = (link: Link['hub'], dir: string) => [mcpRequire.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'stub', '--printers', 'link', '--link-url', link.url, '--link-state-dir', link.stateDir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
+const serverArgs = (link: Link['hub'], dir: string) => [mcpRequire.resolve('tsx/cli'), 'src/cli.ts', '--engine', 'sx', ...(process.env['SX_CLI_BIN'] ? ['--sx-bin', process.env['SX_CLI_BIN']] : []), '--printers', 'link', '--link-url', link.url, '--link-state-dir', link.stateDir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
 
 /**
  * `slicerx-mcp call` with only a hub code, as a script would run it: no key the hub remembers, so the app never asks
@@ -110,6 +111,8 @@ export interface Session {
   call(tool: string, args?: Record<string, unknown>): Promise<Answer>
   /** The output of a call that must succeed. */
   ok(tool: string, args?: Record<string, unknown>): Promise<any>
+  /** The client's key, for a command line that reads it from the system keychain (windowsCli). */
+  clientKey: string | undefined
   close(): Promise<void>
 }
 
@@ -131,6 +134,7 @@ export async function session(link: Link, page: Page, dir: string, name: string,
   expect((await pending).isError).not.toBe(true)
   return {
     call,
+    clientKey,
     ok: async (tool, args) => {
       const out = await call(tool, args)
       expect(out.isError, JSON.stringify(out)).not.toBe(true)
@@ -142,6 +146,25 @@ export async function session(link: Link, page: Page, dir: string, name: string,
       ctx.printers?.close?.()
     },
   }
+}
+
+/**
+ * The native `sx call --app` as a script runs it on Windows: the client's key comes from Credential Manager, never from
+ * the command line or the output. `run` takes the calls `Agent.cli` takes and returns the JSON line each one printed.
+ * Only Windows has a credential store to test, so a test calls this under `process.platform === 'win32'`.
+ */
+export async function windowsCli<T>(link: Link, dir: string, clientKey: string, use: (run: (...calls: (string | Record<string, unknown>)[]) => Promise<any[]>) => Promise<T>): Promise<T> {
+  const native = process.env['SX_CLI_BIN']!
+  expect(native, 'build and name the real sx CLI').toBeTruthy()
+  return withWindowsCredential(clientKey, async (ref, identifier) => {
+    const env = { ...cleanEnv('SLICERX_MCP_'), SLICERX_MCP_LINK_KEY_REF: ref, SLICERX_MCP_APP_IDENTIFIER: identifier, SLICERX_MCP_LINK_URL: link.hub.url, SLICERX_MCP_LINK_HUB_KEY: link.hub.admin.hubKey, SLICERX_MCP_CLI: join(mcpDir, 'dist/cli.js'), SLICERX_NODE_BIN: process.execPath }
+    return use(async (...calls) => {
+      const argv = calls.flatMap((c) => (typeof c === 'string' ? [c] : [JSON.stringify(c)]))
+      const result = await promisify(execFile)(native, ['call', '--app', '--engine', 'sx', '--sx-bin', native, '--policy', join(dir, 'policy.json'), '--out-dir', join(dir, 'cli'), '--profiles-dir', join(dir, 'profiles'), ...argv], { env, windowsHide: true, timeout: 60_000 })
+      expect(result.stdout + result.stderr).not.toContain(clientKey)
+      return result.stdout.trim().split('\n').map((line) => JSON.parse(line))
+    })
+  })
 }
 
 /** A directory for one test's scratch files and a policy file that allows everything; removed when `use` ends. */

@@ -14,6 +14,10 @@ export { appValueInputs, type AppValuesResult } from './app-values'
 
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
 
+export { appPlateInputs } from './app-plate-inputs'
+
+export { projectSettingsInput, projectSettingsReadInput } from './project-settings-input'
+
 const noFiles = (): never => {
   throw new ToolInputError('Model files are for the MCP server; here, give a design instead.', 'not_supported')
 }

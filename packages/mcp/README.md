@@ -18,7 +18,8 @@ Reading is always allowed. The permission class of the other tools decides what 
 | `slicerx_explain_setting`, `slicerx_find_settings`, `slicerx_validate_config` | Look up, search and check the 700 or so OrcaSlicer settings. | read |
 | `slicerx_knowledge_lookup` | Filament, printer, troubleshooting and workflow entries with sources. | read |
 | `slicerx_project_open`, `slicerx_project_add_model`, `slicerx_project_show` | Start a project with a printer and filament, add STL models with copies (a file of several bodies as one object, one object with parts, or an object per body), show it. | read |
-| `slicerx_project_set_overrides` | Change settings for the project (never a saved profile). | slice |
+| `slicerx_project_set_overrides` | Change or clear settings for the project (never a saved profile). With `--app`, edits the live project and returns its overrides and effective shown-plate values. | slice |
+| `slicerx_app_settings` | Read the open app's project print overrides and effective shown-plate values, with superseded keys in `shadowed`. Numeric, switch and choice process and filament settings, plus checked infill templates; no scripts, free text or printer configuration. | read |
 | `slicerx_project_add_filament`, `slicerx_project_set_filament` | Add a filament after the last one, or change one's material type or color, as on the app's filament rail. Both answer with the project; `slicerx_project_show` lists its `filaments` (number, type, color, and whether a client set it). The slice gets them as `filament_type` and `filament_colour`. | slice |
 | `slicerx_project_move`, `slicerx_project_rotate`, `slicerx_project_scale`, `slicerx_project_plate_add`, `slicerx_project_plate_remove`, `slicerx_project_move_to_plate`, `slicerx_project_remove_object` | Place an object by the center of its footprint in bed coordinates (or back in the automatic rows), rotate and scale it, add and remove plates, move an object to a plate, and take one out. Every object sits on the bed. Each answers with the project, whose plates list where every copy sits (`placements`). | slice |
 | `slicerx_project_duplicate`, `slicerx_project_rename`, `slicerx_project_lay_on_face` | The model ring's object and face verbs: duplicate an object as new objects of their own, rename one, and lay one on a face given by its outward normal (from `slicerx_geom_faces`). Each answers with the project. | slice |
@@ -79,6 +80,18 @@ An `unauthorized` app-link response means this setup is missing or the connectio
 
 `lastAt` is a UTC ISO 8601 timestamp, or null before the first notice. The count covers every `degrade` event emitted by the current viewport, including startup and plate-fit notices as well as GPU slowdowns. It persists across statistics resets and quality recovery, and starts over when a new viewport is created. It does not count repeated reads. `viewport` is null before a GPU view mounts, in the 2D fallback, and after unmount; older apps without this field return `not_supported` rather than invented values. Reading it changes nothing and does not require a debug build.
 
+### Slice preview markers
+
+`slicerx_app_preview_markers` reads the preview legend's retractions, seams, lifts (Z hops), wipes, toolChanges and pauses. Each row returns the `shown` preference, whether the loaded slice supports it (`available`), its data source, and its count when known. An absent count is unknown, not zero. G-code marker counts arrive asynchronously after a G-code marker is enabled.
+
+`slicerx_app_preview_markers_set` accepts one or more boolean switches, for example `{"seams":true,"wipes":true}`. It uses the same switches as the legend and returns read-back; poll the read command for later counts. The app must have a loaded slice on Slice with no paint, brim or face tool active. All inputs validate before anything changes. These view commands use the existing read grant, leave the project and its Undo history unchanged, and are also available through `sx call --app app_preview_markers_set '{"seams":true}' app_preview_markers`.
+
+### Slice playback
+
+With the app link on, `app_preview_playback` reads the playback bar's clock and `app_preview_playback_set` controls `playing`, `timeS`, `speed` and `followNozzle`. Both work through `sx call --app` with the existing read grant. The sliced toolpath bar must be open for changes; active modeling and object tools refuse them. No project or printer state changes.
+
+Time is in print seconds, including startup and tool changes. Read `durationS` before seeking. All inputs validate before any change. A combined request applies pause, preferences, seek, then play. Seek alone preserves playing; playing at the end restarts. A paused seek to the end stays there. Replacing or closing the bar pauses playback. Unavailable clocks return null times. Read again to observe ongoing playback or a person's UI changes.
+
 ### Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.
@@ -88,6 +101,17 @@ Pass that revision to `slicerx_app_undo` or `slicerx_app_redo` to take one step 
 These commands require the app link and an edit grant. They can reverse the person's last recorded edit as well as a command's edit. They affect only edits recorded by the toolbar, including transforms, plate edits, design changes and filament setup; they do not undo preferences, network actions or printing. `slicerx_design_undo` remains the separate command that removes a design's last feature.
 
 From the command line, use `slicerx-mcp --printers link call app_history`, then `slicerx-mcp --printers link call app_undo '{"revision":"<revision from the read>"}'`. `app_redo` takes the same argument. The app stays the source of the history; these commands do not fall back to a separate server project.
+
+### Slice preview
+
+`slicerx_app_preview` reads the open app's slice preview, including its visible layer range, colors, camera and toolhead/gantry switches. `slicerx_app_preview_set` changes those view settings and returns the resulting state. Both use the existing read grant. A loaded slice is required for layers and colors; changes refuse while Model or an object tool is active. Project geometry, settings and Undo history are preserved. Active playback is not paused, so visible layers may continue changing after a response.
+
+```sh
+sx call --app app_preview
+sx call --app app_preview_set '{"range":[2,10],"oneLayer":true,"colorMode":"speed","camera":"top"}' app_preview
+```
+
+Layers are 1-based. When combined, `range` applies first, then `layer` moves the top handle, then `oneLayer` chooses only that layer or restores the first layer to 1. Layer fields are absent when no slice is loaded. The read-back also reports whether toolpaths are shown, the top layer height in mm and whether the right pane and playback drawer are open.
 
 ### Shell and measure the open project
 
@@ -281,6 +305,15 @@ The browser build has no keychain, so it cannot hold a per-agent credential. The
 
 ### From a shell
 
+With the desktop app link enabled and this client allowed to edit, plate commands operate on the open project:
+
+```sh
+slicerx-mcp --printers link call app_plate_add '{"name":"Spare"}' app_plates
+slicerx-mcp --printers link call app_plate_settings '{"plate":1,"settings":{"sequence":"by-object"}}' app_plates
+```
+
+`app_plate_duplicate`, `app_plate_rename`, `app_plate_remove` and `app_plate_move` use the same plate numbers or stable ids returned by `app_plates`. Each edit returns all plates, their settings, and `entries` with concrete object ids, copy relationships, transforms and bounds in mm. `app_plate_move` takes `objects`, a list of ids on the shown plate; copies not named stay put. Removal of a populated plate needs `deleteObjects: true`. The last plate and locked objects cannot be removed. Each edit is one toolbar Undo step and refuses while the person is using a tool, loading, slicing, or editing history. These commands always require the open app; the `project_plate_*` commands still operate on the server's project.
+
 `slicerx-mcp call` runs tools without a client, in order and in one process, so a project the first calls build is there for the next. It prints one JSON line per call (`tool`, `ok`, `text`, `output`) and stops with exit code 1 at the first call that fails. Tool names may leave out the `slicerx_` prefix; the JSON after a name is its arguments.
 
 The native CLI also exposes these commands as `sx call`, with the same arguments, permissions and output. It needs Node.js 24+ and this package installed in the project, or `SLICERX_MCP_CLI` pointing to its built `dist/cli.js`. It uses the calling `sx` binary for slicing and a neighboring `sx-geom` for geometry unless explicitly configured. See [the native CLI guide](../core/cli/README.md#tool-commands) for runtime discovery and examples.
@@ -359,6 +392,8 @@ const ctx = await createContext({ extraTools: [myTool] })
 await createSlicerxServer(ctx).connect(transport)
 ```
 
+`app_preview_gcode` reads the open app's slice or G-code file by line. Each response is limited to 200 lines and a 65536-byte text window; the `next` cursor continues within a long line without dropping text. Hosts without ranged reads load the source as the panel does; the response limit does not cap that initial load. `app_preview_gcode_jump` selects a line through the same operation as the panel, returning the actual nozzle line and sliders along with text. Both work through `sx call --app` and the existing read grant. Reads refuse if the source changes while loading. Text and filenames are untrusted model data. These commands do not edit, execute or send G-code, and do not accept filesystem paths.
+
 ## Security
 
 - Model paths must be inside `--allow-dir` when it is set. HTTP mode reads no local path until you add one.
@@ -393,3 +428,16 @@ Dependencies:
 ## Status
 
 Working: stdio and HTTP transports, the permission policy with elicitation and approval requests, the action log, file slicing with the `sx` engine or the stub, the MCP project with mimir's skills, the simulated printers, and every resource listed above. Theming tools build and check themes; applying one happens in your page with `applyTheme()` or `<ThemeProvider>`. Printer actions on real printers go through sx-link's broker (tested with the mock printers). Planned: publishing `@slicerx/mcp` to npm, and testing on physical printers.
+
+## Print settings in the open app
+
+Use `--app` to change the project the person has open. The app link must be on and the person must allow edits. A read-only grant can use `app_settings` but cannot change overrides. An unavailable app refuses the edit. Without `--app`, an open server project takes precedence, even if it has no objects; without one, the live app takes the call while its link answers.
+
+```sh
+sx call --app project_set_overrides '{"changes":{"layer_height":0.2,"brim_type":"painted"}}' app_settings '{"keys":["layer_height","brim_type"]}'
+sx call --app project_set_overrides '{"clear":["layer_height"]}' app_settings '{"keys":["layer_height"]}'
+```
+
+`clear` removes an override and restores the current profile and Easy value. A key cannot appear in both `changes` and `clear`. The whole patch is checked before any value changes. Printer settings, scripts and free text remain in the app; supported keys are listed by `app_settings`. The global override editor follows the settings panel and does not add a plate Undo step.
+
+Read `effective` for the values the shown plate sends to slicing. Filament calibration, bed type and plate choices can supersede project overrides; `shadowed` identifies those keys. `readOnly` lists the plate type, filament mapping, print order and flush keys supplied by their own controls, which this override editor does not change. Object and part overrides may further change individual objects. These calls change print configuration, and do not start a slice or a print. The app marks the current slice stale; its normal Auto slice behavior still applies.

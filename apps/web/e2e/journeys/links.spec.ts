@@ -11,12 +11,14 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
+import type { Page } from '@playwright/test'
 import type { TopologyManifest } from '../../../../packages/cad-history/src/topology-manifest'
 import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
-import { viewSized, viewportReady } from '../fixtures'
+import { sliceCount, sliced, tab, viewSized, viewportReady } from '../fixtures'
 import { SMALL_3, plateProject } from '../plate-project'
-import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, type Answer } from './lib/links'
+import { cleanPlate, codeOnlyCli, expect, linkMissing, linkPrefs, mcpDir, mcpRequire, scratch, session, sx, test, windowsCli, type Answer } from './lib/links'
+import { boxOnPlate, calm, handPrinter, layeredX, patch, plain } from './lib/slice'
 
 test.use({ journeyPrefs: linkPrefs })
 test.skip(linkMissing, 'SX_LINK_BIN is not set')
@@ -431,6 +433,407 @@ test('scoped exact hole edits use app revisions across a visible undo', async ({
       ;(window as unknown as { __sx: { setState(v: unknown): void } }).__sx.setState({ settingsMode: mode })
     }, mode)
   }
+})
+
+/** An app that has sliced nothing: the example plate (or a 20 mm box) on the Slice tab with no result, as a client finds it before the first slice. */
+async function unsliced(page: Page, plate: 'layered' | 'box' = 'layered'): Promise<void> {
+  // The printer stays as the example plate set it; `calm` would put back the one the page was first showing.
+  await calm(page, 'advanced', { keepPrinter: true })
+  await plain(page)
+  if (plate === 'box') await boxOnPlate(page)
+  else await layeredX(page)
+  await patch(page, { slice: { status: 'idle' }, preview: null })
+  await expect(page.getByRole('button', { name: 'Slice plate', exact: true })).toBeVisible()
+}
+
+test('a read client controls the live slice preview through MCP and native CLI with independent read-back', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page, 'box')
+  const look = { showToolhead: await sx.get(page, 'showToolhead'), showGantry: await sx.get(page, 'showGantry'), colorMode: await sx.get(page, 'colorMode'), camera: await sx.get(page, 'camera') }
+  await scratch('preview', async (dir) => {
+    const reader = await session(link, page, dir, 'preview-reader', 'read')
+    try {
+      const empty = await reader.ok('app_preview')
+      expect(empty).toMatchObject({ sliced: false, toolpaths: false })
+      expect(empty.range).toBeUndefined()
+      expect(await reader.call('app_preview_set', { layer: 1 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      expect(await reader.ok('app_preview')).toEqual(empty)
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page)).toBeVisible({ timeout: 120_000 })
+      const initial = await reader.ok('app_preview')
+      expect(initial).toMatchObject({ sliced: true, toolpaths: true })
+      expect(initial.layers).toBeGreaterThan(6)
+      const history = await reader.ok('app_history')
+      expect(await reader.call('app_preview_set', { layer: initial.layers + 1, camera: 'top', toolhead: false })).toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } })
+      expect(await reader.ok('app_preview')).toEqual(initial)
+      const settings = { range: [2, 6], oneLayer: true, colorMode: 'speed', camera: 'front', toolhead: false, gantry: true }
+      expect(await reader.ok('app_preview_set', settings)).toMatchObject({ range: [6, 6], oneLayer: true, colorMode: 'speed', camera: 'front', toolhead: false, gantry: true })
+      expect(await reader.ok('app_preview')).toMatchObject({ range: [6, 6], colorMode: 'speed' })
+      await expect(page.locator('#pv-layer')).toHaveValue('6')
+      await expect(page.getByTestId('pv-show-toolhead')).not.toBeChecked()
+      await expect(page.getByTestId('pv-show-gantry')).toBeChecked()
+      await page.getByRole('button', { name: 'Next layer', exact: true }).click()
+      expect(await reader.ok('app_preview')).toMatchObject({ range: [6, 7], oneLayer: false })
+
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_preview_set', { layer: 4, oneLayer: false, colorMode: 'flow', toolhead: true }, 'app_preview')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) expect(row).toMatchObject({ ok: true, output: { output: { range: [1, 4], oneLayer: false, colorMode: 'flow', toolhead: true } } })
+          expect(await reader.ok('app_preview')).toMatchObject(rows[1].output.output)
+          await expect(page.locator('#pv-layer')).toHaveValue('4')
+        })
+      }
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await tab(page, 'model').click()
+      expect(await reader.call('app_preview_set', { layer: 2 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await expect(tab(page, 'model')).toHaveAttribute('aria-current', 'page')
+    } finally {
+      await reader.close()
+      // The Preview switches are the person's; the next test finds them as a first slice leaves them.
+      await sx.set(page, look)
+    }
+  })
+})
+
+test('a read client controls every preview marker and reads UI and native CLI changes back', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page)
+  await scratch('markers', async (dir) => {
+    const reader = await session(link, page, dir, 'marker-reader', 'read')
+    try {
+      const initial = await reader.ok('app_preview_markers')
+      expect(initial.sliced).toBe(false)
+      expect(initial.markers).toHaveLength(6)
+      for (const row of initial.markers) {
+        expect(row.available).toBe(false)
+        expect(row.count).toBeUndefined()
+      }
+      expect(await reader.call('app_preview_markers_set', { wipes: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page)).toBeVisible({ timeout: 120_000 })
+      const history = await reader.ok('app_history')
+      const loaded = await reader.ok('app_preview_markers')
+      for (const row of loaded.markers) expect(row.available).toBe(true)
+      const allOn = { retractions: true, seams: true, lifts: true, wipes: true, toolChanges: true, pauses: true }
+      await reader.ok('app_preview_markers_set', allOn)
+      const legend = page.getByRole('list', { name: 'Toolpath legend' })
+      const toggle = (label: string) => legend.locator('label').filter({ has: page.getByText(label, { exact: true }) }).getByRole('checkbox')
+      for (const row of (await reader.ok('app_preview_markers')).markers) {
+        expect(row.shown).toBe(true)
+        await expect(toggle(row.label)).toBeChecked()
+      }
+      await expect.poll(async () => (await reader.ok('app_preview_markers')).markers.filter((m: { source: string; count?: number }) => m.source === 'gcode' && m.count !== undefined).length).toBe(3)
+      await toggle('Seams').uncheck()
+      expect((await reader.ok('app_preview_markers')).markers.find((m: { kind: string }) => m.kind === 'seams').shown).toBe(false)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const allOff = Object.fromEntries(Object.keys(allOn).map((k) => [k, false]))
+          const rows = await run('app_preview_markers_set', allOff, 'app_preview_markers')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output.markers).toHaveLength(6)
+            for (const marker of row.output.output.markers) expect(marker.shown).toBe(false)
+          }
+          expect(await reader.ok('app_preview_markers')).toMatchObject(rows[1].output.output)
+          for (const row of loaded.markers) await expect(toggle(row.label)).not.toBeChecked()
+        })
+      }
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await tab(page, 'model').click()
+      expect(await reader.call('app_preview_markers_set', { wipes: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+    } finally {
+      await reader.close()
+    }
+  })
+})
+
+test('a read client plays, pauses and seeks the same clock as the UI and native CLI', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page)
+  // A Snapmaker U1, as the example plate's two filaments change at its tools; the page paired with the hub has no printer.
+  await handPrinter(page, { id: 'e2e-u1', name: 'Desk U1', profileId: 'snapmaker-u1', vendor: 'Snapmaker', model: 'U1', nozzleCount: 4 })
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { profile?: { printerId: string } } } }).__sx.getState().profile?.printerId)).toBe('snapmaker-u1')
+  await patch(page, { slice: { status: 'idle' }, preview: null })
+  await scratch('playback', async (dir) => {
+    const reader = await session(link, page, dir, 'playback-reader', 'read')
+    try {
+      const read = () => reader.ok('app_preview_playback')
+      expect(await read()).toMatchObject({ available: false, timeS: null, durationS: null })
+      expect(await reader.call('app_preview_playback_set', { playing: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page)).toBeVisible({ timeout: 120_000 })
+      await expect.poll(async () => (await read()).available).toBe(true)
+      const initial = await read()
+      const history = await reader.ok('app_history')
+      const total = initial.durationS as number
+      expect(total).toBeGreaterThan(10)
+      const dock = page.getByRole('group', { name: 'Layers and moves' })
+      const time = page.locator('#pv-time')
+      const drawn = () => page.evaluate(() => {
+        const tp = (window as unknown as { __vp: { toolpaths: { visibleRange(): [number, number]; hi: number; head: { visible: boolean } } } }).__vp.toolpaths
+        return { hi: tp.hi, to: tp.visibleRange()[1], head: tp.head.visible }
+      })
+      const seek = await reader.ok('app_preview_playback_set', { playing: false, timeS: total / 2, speed: 2, followNozzle: true })
+      await expect(dock.getByRole('button', { name: 'Play print', exact: true })).toBeVisible()
+      await expect(dock.getByRole('checkbox', { name: 'Follow nozzle', exact: true })).toBeChecked()
+      await expect.poll(async () => (await drawn()).hi).toBe(seek.layer - 1)
+      await expect.poll(async () => (await drawn()).head).toBe(true)
+      expect((await read()).timeS).toBeCloseTo(total / 2, 6)
+      const unchanged = await read()
+      expect(await reader.call('app_preview_playback_set', { playing: true, timeS: total + 1, speed: 5 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } })
+      expect(await read()).toEqual(unchanged)
+      await reader.ok('app_preview_playback_set', { timeS: total / 3, playing: true, speed: 10 })
+      await expect(dock.getByRole('button', { name: 'Pause playback' })).toBeVisible()
+      await expect.poll(async () => (await read()).timeS).toBeGreaterThan(total / 3 + 1)
+      await dock.getByRole('button', { name: 'Pause playback' }).click()
+      const paused = await read()
+      expect(paused.playing).toBe(false)
+      await expect(dock.getByRole('button', { name: 'Play print', exact: true })).toBeVisible()
+      await time.focus()
+      await page.keyboard.press('Home')
+      await expect.poll(async () => (await read()).timeS).toBe(0)
+      await page.keyboard.press('ArrowRight')
+      await expect.poll(async () => (await read()).timeS).toBe(1)
+      await dock.getByRole('button', { name: 'Play print', exact: true }).click()
+      await expect.poll(async () => (await read()).playing).toBe(true)
+      await reader.ok('app_preview_playback_set', { playing: false })
+      const stopped = await read()
+      await expect(dock.getByRole('button', { name: 'Play print', exact: true })).toBeVisible()
+      // Several independent reads after UI work must all keep the paused clock.
+      for (let i = 0; i < 3; i++) expect((await read()).timeS).toBe(stopped.timeS)
+      const change = await page.evaluate(() => (window as unknown as { __pv: { timeline: { changes: { segment: number; start: number; duration: number }[] } } }).__pv.timeline.changes[0])
+      expect(change).toBeDefined()
+      await reader.ok('app_preview_playback_set', { timeS: change!.start + change!.duration / 3 })
+      await page.locator('#pv-moves').focus()
+      await page.keyboard.press('ArrowRight')
+      const scrubbed = await read()
+      expect(scrubbed.toolChange.segment).toBe(change!.segment)
+      expect(scrubbed.timeS).toBeCloseTo(change!.start + scrubbed.toolChange.seconds, 6)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_preview_playback_set', { playing: false, timeS: total / 4, speed: 0.5, followNozzle: false }, 'app_preview_playback')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output).toMatchObject({ playing: false, timeS: total / 4, speed: 0.5, followNozzle: false })
+          }
+          expect(await read()).toMatchObject(rows[1].output.output)
+          await expect(dock.getByRole('checkbox', { name: 'Follow nozzle', exact: true })).not.toBeChecked()
+        })
+      }
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await reader.ok('app_preview_playback_set', { timeS: 1, playing: true })
+      await tab(page, 'model').click()
+      await expect.poll(async () => (await read()).available).toBe(false)
+      expect(await read()).toMatchObject({ playing: false, timeS: null })
+      expect(await reader.call('app_preview_playback_set', { playing: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+    } finally {
+      await reader.close()
+      await handPrinter(page, null)
+    }
+  })
+})
+
+test('a read client reads real slice text and selects the same G-code lines as the panel and native CLI', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page)
+  await scratch('gcode', async (dir) => {
+    const reader = await session(link, page, dir, 'gcode-reader', 'read')
+    try {
+      expect(await reader.call('app_preview_gcode')).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      const read = (args = {}) => reader.ok('app_preview_gcode', args)
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page)).toBeVisible({ timeout: 120_000 })
+      const initial = await read({ fromLine: 1, count: 3 })
+      expect(initial).toMatchObject({ source: { kind: 'slice' }, mapped: true, fromLine: 1, lines: [{ number: 1 }, { number: 2 }, { number: 3 }] })
+      expect(initial.totalLines).toBeGreaterThan(100)
+      expect(initial.currentLine).toBeGreaterThan(10)
+      const history = await reader.ok('app_history')
+      await page.getByRole('button', { name: 'G-code', exact: true }).click()
+      const panel = page.getByRole('complementary', { name: 'G-code', exact: true })
+      const go = panel.getByRole('textbox', { name: 'Go to line' })
+      await expect(go).toBeVisible()
+      await go.fill('1')
+      await go.press('Enter')
+      await expect.poll(async () => (await read()).currentLine).toBe(0)
+      await expect(panel.locator('.gc-row').filter({ has: page.locator('.gc-no', { hasText: /^1$/ }) }).locator('.gc-text')).toHaveText(initial.lines[0].text)
+      const last = await reader.ok('app_preview_gcode_jump', { line: initial.currentLine, count: 1 })
+      const selected = panel.getByRole('option', { selected: true })
+      await expect(selected.locator('.gc-no')).toHaveText(String(last.currentLine))
+      await expect(selected.locator('.gc-text')).toHaveText(last.lines[0].text)
+      expect(await read({ count: 1 })).toMatchObject({ currentLine: last.currentLine, layer: last.layer, moveShare: last.moveShare })
+      expect(await reader.call('app_preview_gcode_jump', { line: initial.totalLines + 1 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'invalid_input' } } })
+      expect((await read()).currentLine).toBe(last.currentLine)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_preview_gcode_jump', { line: 1, count: 1 }, 'app_preview_gcode', { fromLine: 1, count: 1 })
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output).toMatchObject({ source: initial.source, currentLine: 0, layer: 1, moveShare: 0, lines: [{ number: 1, text: initial.lines[0].text }] })
+          }
+          expect(await read({ fromLine: 1, count: 1 })).toMatchObject(rows[1].output.output)
+        })
+      }
+      const text = 'G90\nM83\n;LAYER_CHANGE\nG1 Z0.2\nG1 X0 Y0 F6000\nG1 X10 Y0 E1 F1200\nG1 X10 Y10 E1\n;LAYER_CHANGE\nG1 Z0.4\nG1 X0 Y10 E1\n'
+      const chooser = await expectFileDialog(page, () => command(page, 'Open a G-code file to view'))
+      await chooser.setFiles({ name: 'client-preview.gcode', mimeType: 'text/plain', buffer: Buffer.from(text) })
+      await expect.poll(async () => (await read()).source).toEqual({ kind: 'file', name: 'client-preview.gcode' })
+      expect(await reader.ok('app_preview_gcode_jump', { line: 6, count: 1 })).toMatchObject({ totalLines: 10, currentLine: 6, layer: 1, lines: [{ number: 6, text: 'G1 X10 Y0 E1 F1200' }] })
+      await expect(selected.locator('.gc-no')).toHaveText('6')
+      await expect(selected.locator('.gc-text')).toHaveText('G1 X10 Y0 E1 F1200')
+      await go.fill('10')
+      await go.press('Enter')
+      await expect.poll(async () => (await read()).currentLine).toBe(10)
+      expect(await read({ count: 1 })).toMatchObject({ layer: 2, lines: [{ number: 10, text: 'G1 X0 Y10 E1' }] })
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await tab(page, 'model').click()
+      expect((await read()).source).toEqual({ kind: 'file', name: 'client-preview.gcode' })
+      expect(await reader.call('app_preview_gcode_jump', { line: 6 })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+    } finally {
+      await reader.close()
+    }
+  })
+})
+
+test('plate edits through the hub preserve read grants, read back objects, and share toolbar Undo', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page)
+  type Entry = { id: string; transform: number[]; sizeMm: number[] }
+  type State = { shown: number; count: number; changedPlate?: string; plates: { id: string; name: string; objects: number; settings: Record<string, unknown>; entries: Entry[] }[] }
+  const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+  await chooser.setFiles({ name: 'Parts.3mf', mimeType: 'model/3mf', buffer: plateProject(['Base', 'Lid']) })
+  await expect(page.getByTestId('plate-picker-current').locator('.pp-of')).toHaveText('of 2', { timeout: 60_000 })
+  try {
+    await scratch('plate-edits', async (dir) => {
+      const reader = await session(link, page, dir, 'plate-reader', 'read')
+      try {
+        const first: State = await reader.ok('app_plates')
+        const objects = first.plates[0]!.entries.map((o) => o.id)
+        for (const [tool, args] of [
+          ['add', { name: 'Denied' }], ['duplicate', { plate: 1 }], ['rename', { plate: 1, name: 'Denied' }],
+          ['settings', { plate: 1, settings: { bedType: 'cool' } }], ['remove', { plate: 1, deleteObjects: true }], ['move', { plate: 2, objects }],
+        ] as const) expect(await reader.call(`app_plate_${tool}`, args)).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+        expect(await reader.ok('app_plates')).toEqual(first)
+      } finally {
+        await reader.close()
+      }
+
+      const editor = await session(link, page, dir, 'plate-editor', 'edit')
+      const call = (name: string, args = {}): Promise<State> => editor.ok(name, args)
+      try {
+        const original = await call('app_plates')
+        const source = original.plates[0]!
+        const object = source.entries[0]!
+        expect(object.sizeMm).toEqual([8, 8, 8])
+        const added = await call('app_plate_add', { name: 'Spare', settings: { sequence: 'by-object' } })
+        const spare = added.changedPlate!
+        expect(added).toMatchObject({ count: 3, shown: 3, plates: [{}, {}, { id: spare, name: 'Spare', settings: { sequence: 'by-object' }, entries: [] }] })
+        await expect(page.getByTestId('plate-picker-current').locator('.pp-no')).toHaveText('Plate 3')
+        await call('app_plate_show', { plate: source.id })
+        const moved = await call('app_plate_move', { plate: spare, objects: [object.id] })
+        expect(moved.plates[0]!.entries).toEqual([])
+        expect(moved.plates[2]!.entries[0]).toMatchObject({ id: object.id, sizeMm: object.sizeMm })
+        await page.getByTestId('plate-tools-group').getByRole('button', { name: 'Undo', exact: true }).click()
+        expect((await call('app_plates')).plates[0]!.entries).toEqual(source.entries)
+        await page.getByTestId('plate-tools-group').getByRole('button', { name: 'Redo', exact: true }).click()
+        expect((await call('app_plates')).plates).toEqual(moved.plates)
+        const copy = await call('app_plate_duplicate', { plate: spare, name: 'Spare copy' })
+        expect(copy.count).toBe(4)
+        const copyId = copy.changedPlate!
+        const copied = copy.plates.find((p) => p.id === copyId)!
+        expect(copied.entries[0]!.id).not.toBe(object.id)
+        expect(copied.entries[0]!.transform).toEqual(moved.plates[2]!.entries[0]!.transform)
+        await call('app_plate_rename', { plate: copyId, name: 'Top' })
+        const configured = await call('app_plate_settings', { plate: copyId, settings: { bedType: 'textured-pei', filamentOrder: [1] } })
+        expect(configured.plates.find((p) => p.id === copyId)).toMatchObject({ name: 'Top', settings: { sequence: 'by-object', bedType: 'textured-pei', filamentOrder: [1] } })
+        const beforeDelete = await call('app_plates')
+        expect(await editor.call('app_plate_remove', { plate: copyId })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+        expect(await call('app_plates')).toEqual(beforeDelete)
+        const removed = await call('app_plate_remove', { plate: copyId, deleteObjects: true })
+        expect(removed.count).toBe(3)
+        expect(removed.plates.some((p) => p.id === copyId)).toBe(false)
+        await page.getByTestId('plate-tools-group').getByRole('button', { name: 'Undo', exact: true }).click()
+        expect(await call('app_plates')).toEqual(beforeDelete)
+        const cleared = await call('app_plate_settings', { plate: copyId, settings: {}, replace: true })
+        expect(cleared.plates.find((p) => p.id === copyId)!.settings).toEqual({})
+      } finally {
+        await editor.close()
+      }
+    })
+  } finally {
+    await cleanPlate(page)
+  }
+})
+
+test('clients edit and reset live print settings, the panel reads them back, and the real slice uses them', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page)
+  type Settings = { overrides: Record<string, unknown>; effective: Record<string, unknown>; shadowed: string[] }
+  const was = await sx.get(page, 'overrides')
+  await scratch('settings', async (dir) => {
+    const reader = await session(link, page, dir, 'settings-reader', 'read')
+    try {
+      expect(await reader.call('project_set_overrides', { changes: { wall_loops: 5 } })).toMatchObject({ isError: true, structuredContent: { error: { code: 'not_supported' } } })
+    } finally {
+      await reader.close()
+    }
+    const editor = await session(link, page, dir, 'settings-editor', 'edit')
+    try {
+      const call = (name: string, args = {}): Promise<Settings> => editor.ok(name, args)
+      const initial = await call('app_settings', { keys: ['layer_height', 'wall_loops'] })
+      await call('project_set_overrides', { changes: { layer_height: 0.24, wall_loops: 4 } })
+      expect((await call('app_settings', { keys: ['layer_height', 'wall_loops'] })).effective).toEqual({ layer_height: 0.24, wall_loops: 4 })
+      await page.keyboard.press('ControlOrMeta+k')
+      await page.locator('.sx-palette-input').fill('layer height')
+      await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+      const row = page.getByRole('textbox', { name: 'Layer heightmm', exact: true })
+      await expect(row).toHaveValue('0.24')
+      await row.fill('0.28')
+      await row.press('Enter')
+      expect((await call('app_settings', { keys: ['layer_height'] })).effective.layer_height).toBe(0.28)
+      const before = await call('app_settings')
+      expect(await editor.call('project_set_overrides', { changes: { wall_loops: 8, missing_key: 1 } })).toMatchObject({ isError: true })
+      expect((await call('app_settings')).overrides).toEqual(before.overrides)
+      const commands = [
+        ['project_set_overrides', { clear: ['layer_height'] }],
+        ['app_settings', { keys: ['layer_height', 'wall_loops'] }],
+        ['project_set_overrides', { changes: { layer_height: 0.2, initial_layer_print_height: 0.2, smart_layer: 'off' } }],
+        ['app_settings', { keys: ['layer_height', 'smart_layer'] }],
+      ] as const
+      const answers: Settings[] = []
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, editor.clientKey!, async (run) => {
+          const lines = await run(...commands.flat())
+          expect(lines).toHaveLength(commands.length)
+          for (const line of lines) {
+            expect(line.ok, JSON.stringify(line)).toBe(true)
+            answers.push(line.output.output as Settings)
+          }
+        })
+      } else {
+        for (const [name, args] of commands) answers.push(await call(name, args))
+      }
+      expect(answers[1]!.overrides).toEqual({ wall_loops: 4 })
+      expect(answers[1]!.effective.layer_height).toBe(initial.effective.layer_height)
+      expect(answers[3]!.effective).toEqual({ layer_height: 0.2, smart_layer: 'off' })
+      expect((await call('app_settings', { keys: ['layer_height', 'smart_layer'] })).effective).toEqual(answers[3]!.effective)
+      const count = await sliceCount(page)
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page, count)).toBeVisible({ timeout: 120_000 })
+      await page.evaluate(() => Reflect.deleteProperty(window, 'showSaveFilePicker'))
+      const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
+      const gcode = readFileSync((await download.path())!, 'utf8')
+      expect(gcode).toMatch(/^; layer_height = 0\.2$/m)
+      expect(gcode).toMatch(/^; wall_loops = 4$/m)
+      expect(gcode).toMatch(/^G1 .*E[0-9]/m)
+    } finally {
+      await editor.close()
+      await sx.set(page, { overrides: was })
+    }
+  })
 })
 
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the

@@ -118,16 +118,30 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("volumes.set", LinkClass::Edit),
     ("volumes.copy", LinkClass::Edit),
     ("volumes.remove", LinkClass::Edit),
+    ("project.set_overrides", LinkClass::Edit),
+    ("settings.get", LinkClass::Read),
     // The slice preview: what it shows, and moving the layer slider, the colors and the camera.
     // Read: it changes only what the window shows, never the project.
     ("preview.get", LinkClass::Read),
     ("preview.set", LinkClass::Read),
+    ("preview.markers", LinkClass::Read),
+    ("preview.markers_set", LinkClass::Read),
+    ("preview.playback", LinkClass::Read),
+    ("preview.playback_set", LinkClass::Read),
+    ("preview.gcode", LinkClass::Read),
+    ("preview.gcode_jump", LinkClass::Read),
     // The project's plates with their slice states, and showing one of them (by number, or the next or previous).
     // Read: showing a plate changes only what the window shows, never the project.
     ("plates.list", LinkClass::Read),
     ("plates.show", LinkClass::Read),
+    ("plates.add", LinkClass::Edit),
+    ("plates.duplicate", LinkClass::Edit),
+    ("plates.rename", LinkClass::Edit),
+    ("plates.settings", LinkClass::Edit),
+    ("plates.remove", LinkClass::Edit),
+    ("plates.move", LinkClass::Edit),
     // Two view preferences from Settings, Look and feel: Frame the view and Toolbar size, read and set.
-    // Read: they change how the window behaves, never the project. No other setting is reachable.
+    // read: these change only how the window behaves; project print settings have separate methods.
     ("look.get", LinkClass::Read),
     ("look.set", LinkClass::Read),
     // The open sketch's dimension boxes: read them, and type a value into one, as the person does on the shape.
@@ -396,10 +410,24 @@ mod tests {
         ("volumes.set", LinkClass::Edit),
         ("volumes.copy", LinkClass::Edit),
         ("volumes.remove", LinkClass::Edit),
+        ("project.set_overrides", LinkClass::Edit),
+        ("settings.get", LinkClass::Read),
         ("preview.get", LinkClass::Read),
         ("preview.set", LinkClass::Read),
+        ("preview.markers", LinkClass::Read),
+        ("preview.markers_set", LinkClass::Read),
+        ("preview.playback", LinkClass::Read),
+        ("preview.playback_set", LinkClass::Read),
+        ("preview.gcode", LinkClass::Read),
+        ("preview.gcode_jump", LinkClass::Read),
         ("plates.list", LinkClass::Read),
         ("plates.show", LinkClass::Read),
+        ("plates.add", LinkClass::Edit),
+        ("plates.duplicate", LinkClass::Edit),
+        ("plates.rename", LinkClass::Edit),
+        ("plates.settings", LinkClass::Edit),
+        ("plates.remove", LinkClass::Edit),
+        ("plates.move", LinkClass::Edit),
         ("look.get", LinkClass::Read),
         ("look.set", LinkClass::Read),
         ("sketch.boxes", LinkClass::Read),
@@ -473,18 +501,43 @@ mod tests {
                 if word == "remove" && *m == "volumes.remove" {
                     continue;
                 }
+                // these read preview text or move its cursor, never execute g-code.
+                let preview_text = word == "gcode" && matches!(*m, "preview.gcode" | "preview.gcode_jump");
+                // these edit project plates, never files or printer configuration.
+                let plate_edit = matches!(
+                    (*m, word),
+                    ("plates.remove", "remove") | ("plates.settings", "setting")
+                );
                 assert!(
                     mesh_repair
+                        || preview_text
+                        || plate_edit
                         || !m.to_ascii_lowercase().contains(word)
-                        || (*m == "values.remove" && word == "remove"),
+                        || (*m == "values.remove" && word == "remove")
+                        || (*m == "settings.get" && word == "setting"),
                     "{m} looks like something a person keeps ({word})"
                 );
             }
         }
         assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
+        assert_eq!(link_class("settings.get"), Some(LinkClass::Read));
+        assert_eq!(link_class("project.set_overrides"), Some(LinkClass::Edit));
+        assert_eq!(link_class("settings.set"), None);
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("plates.remove"), Some(LinkClass::Edit));
+        assert_eq!(link_class("plates.settings"), Some(LinkClass::Edit));
+        for m in ["preview.gcode", "preview.gcode_jump"] {
+            assert_eq!(link_class(m), Some(LinkClass::Read));
+        }
+        for m in [
+            "preview.gcode_send",
+            "preview.gcode_execute",
+            "preview.gcode_write",
+        ] {
+            assert_eq!(link_class(m), None, "{m}");
+        }
         for m in ["volumes.remove_file", "volumes.remove_printer", "printer.remove"] {
             assert_eq!(link_class(m), None, "{m}");
         }
