@@ -6863,12 +6863,15 @@ impl SliceSession {
                     (islands, perimeters::union_all(&[&inner, &counterbore]))
                 }
                 _ => {
-                    // share neighbor walls only when this layer does not need its top context.
+                    // covered classic regions can share walls that do not read the top context.
                     let whole = self
                         .cache_for_walls()
                         .filter(|_| {
                             loops == cfg.wall_loops
-                                && top_ctx.is_none()
+                                && top_ctx.as_ref().is_none_or(|top| {
+                                    !cfg.arachne_walls()
+                                        && perimeters::difference(shapes, top.upper).is_empty()
+                                })
                                 && !top_or_bottom
                                 && *shapes == slice_shapes(here)
                         })
