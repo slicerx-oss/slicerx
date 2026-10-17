@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A swatch whose color is close to the panel behind it gets a contrast edge, on dark and light themes alike; the
 // distance is OKLab against the panel's resolved color, not a list of colors. The ring's data-edge in a browser is
-// checked in apps/web/e2e/filament-rail.spec.ts.
+// checked in apps/web/e2e/journeys/sidebar.spec.ts.
 import { describe, expect, it } from 'vitest'
 import { colorDistance, NEAR_PANEL, nearPanel, parseColor } from '../src/components/swatch-contrast'
 import { subban } from '../src/theme'

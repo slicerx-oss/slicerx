@@ -74,6 +74,6 @@ Accessibility: every control reachable by keyboard; found printers and slicer ca
 
 ## Acceptance
 
-- `apps/web/e2e/first-run.spec.ts`: the theme step, the scan path end to end, the hand-made path with a failed test, Escape and resume from Settings, Skip, use defaults, Settings > Look and feel, and a profile from an earlier onboarding going through it again with its settings kept.
+- `apps/web/e2e/journeys/boot-session.spec.ts` (and `phone-session.spec.ts` for a phone): the theme step, the scan path end to end, the hand-made path with a failed test, Escape and resume from Settings, Skip, use defaults, Settings > Look and feel, and a profile from an earlier onboarding going through it again with its settings kept.
 - No secret appears in any state dump, log or screenshot.
 - Every screen passes the rubric at 1440 and 390 in both themes (score at least 8.0).

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The specs drive the Slice button, so they start with Auto slice off, and with the plate reveal off. auto-slice.spec.ts uses the plain
-// test and gets the default (on); plate-reveal.spec.ts turns the reveal back on.
+// The specs drive the Slice button, so they start with Auto slice off, and with the plate reveal off. A test that needs
+// Auto slice turns it on in the store (the auto slice steps in journeys/slicing-preview.spec.ts); nightly/plate-reveal.spec.ts
+// turns the reveal back on.
 //
 // Cold start waits on the app's own ready mark, `data-sx-ready` on the root element: "engine" once the app is up
 // with the slicer loaded, "plate" once the first plate has loaded, "viewport" once the 3D view is up too. Nothing waits on a fixed time, so a slow
 // machine (software WebGL, many pages starting at once) only takes longer and a fast one does not wait.
 import { execFileSync, execSync } from 'node:child_process'
-import { expect, type Locator, type Page } from '@playwright/test'
+import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test'
 import { test as base } from './browser-launch'
 
 /** How long a cold start may take before a spec gives up, on a loaded machine with software graphics. */
@@ -111,42 +112,52 @@ export const test = base.extend<object, { graphics: void }>({
     { scope: 'worker', auto: true, timeout: 300_000 },
   ],
   context: async ({ context }, use) => {
-    await context.addInitScript(() => {
-      sessionStorage.setItem('sx-no-auto-slice', '1')
-      // A spec that turns auto slice on checks the background slice: Always, since Auto would hold a plate whose
-      // last slice took as long as a test runner's.
-      sessionStorage.setItem('sx-auto-slice-always', '1')
-      // The plate reveal plays on a window's first plate; specs that compare pictures want the plate as it settles.
-      sessionStorage.setItem('sx-reveal', 'off')
-    })
+    await prepareContext(context)
     await use(context)
   },
   page: async ({ page }, use) => {
-    // A reload can find the autosave of a plate a test never saved and offer it back before the reference plate
-    // loads. No spec tests that offer, so it is dismissed wherever it shows up. The handler runs in the middle of a
-    // spec's step, so it leaves the pointer where the spec put it: a click would move it onto Discard, and a spec that
-    // hovers a control and then presses a key (the ? tip) would find nothing under the pointer.
-    await page.addLocatorHandler(page.getByRole('dialog', { name: 'Restore unsaved work?' }), async (dialog) => {
-      await dialog.getByRole('button', { name: 'Discard' }).dispatchEvent('click')
-    })
-    // A page that goes to the app or reloads it has the app up, with the slicer loaded, before the spec goes on.
-    const goto = page.goto.bind(page)
-    const reload = page.reload.bind(page)
-    watchNetworkChange(page, reload)
-    page.goto = (async (...args: Parameters<Page['goto']>) => {
-      const response = await goto(...args)
-      await appReady(page)
-      return response
-    }) as Page['goto']
-    page.reload = (async (...args: Parameters<Page['reload']>) => {
-      const response = await reload(...args)
-      await appReady(page)
-      return response
-    }) as Page['reload']
+    await preparePage(page)
     await use(page)
   },
 })
 export { expect }
+
+/** The session flags every spec starts with: Auto slice off (Always when a spec turns it on), the plate reveal off. */
+export async function prepareContext(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    sessionStorage.setItem('sx-no-auto-slice', '1')
+    // A spec that turns auto slice on checks the background slice: Always, since Auto would hold a plate whose
+    // last slice took as long as a test runner's.
+    sessionStorage.setItem('sx-auto-slice-always', '1')
+    // The plate reveal plays on a window's first plate; specs that compare pictures want the plate as it settles.
+    sessionStorage.setItem('sx-reveal', 'off')
+  })
+}
+
+/** Dismisses the autosave offer wherever it shows up, and makes goto and reload wait until the app is up. */
+export async function preparePage(page: Page): Promise<void> {
+  // A reload can find the autosave of a plate a test never saved and offer it back before the reference plate
+  // loads. No spec tests that offer, so it is dismissed wherever it shows up. The handler runs in the middle of a
+  // spec's step, so it leaves the pointer where the spec put it: a click would move it onto Discard, and a spec that
+  // hovers a control and then presses a key (the ? tip) would find nothing under the pointer.
+  await page.addLocatorHandler(page.getByRole('dialog', { name: 'Restore unsaved work?' }), async (dialog) => {
+    await dialog.getByRole('button', { name: 'Discard' }).dispatchEvent('click')
+  })
+  // A page that goes to the app or reloads it has the app up, with the slicer loaded, before the spec goes on.
+  const goto = page.goto.bind(page)
+  const reload = page.reload.bind(page)
+  watchNetworkChange(page, reload)
+  page.goto = (async (...args: Parameters<Page['goto']>) => {
+    const response = await goto(...args)
+    await appReady(page)
+    return response
+  }) as Page['goto']
+  page.reload = (async (...args: Parameters<Page['reload']>) => {
+    const response = await reload(...args)
+    await appReady(page)
+    return response
+  }) as Page['reload']
+}
 
 /** A top tab by its id (`model`, `prepare` for Slice, `library`, `printers`). The look can rename a tab, so specs do not type its label. */
 export function tab(page: Page, id: string): Locator {

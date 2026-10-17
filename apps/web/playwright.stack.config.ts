@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// e2e/vault-flow.spec.ts against the stack from e2e/stack/vault-stack.sh. The app is built against that stack and
+// e2e/nightly/vault-flow.spec.ts against the stack from e2e/stack/vault-stack.sh. The app is built against that stack and
 // served on the origin the stack allows for sign-in links. SX_E2E_CHANNEL=chrome runs the installed Chrome.
 import { defineConfig } from '@playwright/test'
 
 const channel = process.env['SX_E2E_CHANNEL']
 export default defineConfig({
   testDir: 'e2e',
-  testMatch: 'vault-flow.spec.ts',
+  testMatch: '**/nightly/vault-flow.spec.ts',
   timeout: 600_000,
   retries: 0,
   workers: 1,

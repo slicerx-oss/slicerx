@@ -340,6 +340,18 @@ describe('device view of a printer with less', () => {
     expect(button('Pause')).toBeTruthy()
   })
 
+  // The Snapmaker A350 has no hub issue list: its open door and runout reach the live view only as the status
+  // message (packages/connect luban.rs parse_status). Moved here from the per-brand bridge e2e spec.
+  it('puts the status message in the alert strip while printing, and clears it with the message', async () => {
+    const { host } = fakeHost(false)
+    await show({ ...MK4S, status: { ...MK4S.status, message: 'Enclosure door is open' } }, host)
+    expect(q('.ph-alert')?.textContent).toContain('Enclosure door is open')
+    act(() => root?.unmount())
+    el?.remove()
+    await show(MK4S, host)
+    expect(q('.ph-alert')).toBeNull()
+  })
+
   it('has no temperature tab while the printer is offline', async () => {
     const { host } = fakeHost(false)
     await show({ ...MK4S, status: { ...MK4S.status, state: 'offline', nozzles: [], bed: undefined as never } }, host)

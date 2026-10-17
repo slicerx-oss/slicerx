@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 The SlicerX contributors
-# A throwaway stack for e2e/vault-flow.spec.ts: Supabase with its mail catcher,
+# A throwaway stack for e2e/nightly/vault-flow.spec.ts: Supabase with its mail catcher,
 # ClamAV, and the sx-cloud scan worker, on ports of their own so it never
 # touches the development stack. Run it on the build machine, which needs
 # Docker, the Supabase CLI and Rust.

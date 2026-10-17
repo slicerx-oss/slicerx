@@ -51,7 +51,7 @@ if (__SX_FEATURE_CONNECT__) {
   // with sx-link's. __SX_E2E__ folds the page's port away elsewhere.
   const pagePort = __SX_E2E__ ? (window as { __sxTestHubPort?: unknown }).__sxTestHubPort : undefined
   // An end-to-end page can stand in for the desktop shell's bridge whose start fails with the shell's words, as a Tauri
-  // command rejects: with a string. It counts the starts (e2e/bridge-port.spec.ts).
+  // command rejects: with a string. It counts the starts (packages/app/test/bridge-port.test.ts).
   const page = window as { __sxTestShellStartError?: unknown; __sxTestShellStarts?: number; __sxTestShell?: { url: string; code: string; hubKey?: string } }
   const shellFails = __SX_E2E__ ? page.__sxTestShellStartError : undefined
   const failedStart = (): Promise<never> => {
@@ -59,7 +59,7 @@ if (__SX_FEATURE_CONNECT__) {
     return Promise.reject(shellFails)
   }
   // It can also stand in for a shell whose start works, with the hub it started: the bridge then connects as the
-  // desktop app's does, app link included, which the browser build never hosts (e2e/plate-picker-link.spec.ts).
+  // desktop app's does, app link included, which the browser build never hosts (e2e/journeys/links.spec.ts).
   const shellStarted = __SX_E2E__ ? page.__sxTestShell : undefined
   const relay = editionFromBuild().backend.relay
   setBridgeConnector(
@@ -90,7 +90,7 @@ if (__SX_E2E__) {
 }
 
 // The end-to-end build exposes the browser's mimir cloud host, to point at a proxy the spec stubs
-// (apps/web/e2e/mimir-web-cloud.spec.ts) with a stand-in session token, or none for signed out.
+// (apps/web/e2e/journeys/mimir.spec.ts) with a stand-in session token, or none for signed out.
 if (__SX_E2E__ && __SX_FEATURE_PILOT__) {
   const { createBrowserMimirCloud } = await import('@slicerx/app/pilot-connect/browser-cloud')
   Object.assign(window, { __sxBrowserMimirCloud: (base: string, token: string | null) => createBrowserMimirCloud({ base, session: () => token }) })

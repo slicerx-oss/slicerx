@@ -743,6 +743,17 @@ mod tests {
         assert_eq!(s.progress, Some(0.25));
         assert_eq!(s.time_left_s, Some(900));
         assert_eq!(s.message.as_deref(), Some("Enclosure door is open"));
+        // A runout reads in the printer's words too, and the open door wins when both are set.
+        let out =
+            json!({ "status": "PAUSED", "fileName": "a.gcode", "progress": 0.5, "isFilamentOut": true });
+        let s = parse_status("x", &out, None, false);
+        assert_eq!(s.state, PrinterState::Paused);
+        assert_eq!(s.message.as_deref(), Some("Filament ran out"));
+        let both = json!({ "status": "PAUSED", "fileName": "a.gcode", "progress": 0.5, "isFilamentOut": true, "isEnclosureDoorOpen": true });
+        assert_eq!(
+            parse_status("x", &both, None, false).message.as_deref(),
+            Some("Enclosure door is open")
+        );
         assert_eq!(
             parse_status(
                 "x",

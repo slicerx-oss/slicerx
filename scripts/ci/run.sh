@@ -282,7 +282,8 @@ else
   # the list reporter names each failing test, which the rerun needs (CI=true would pick the dot reporter)
   # @gpu specs draw and time frames on a GPU: this machine's browsers draw in software, so toolchange-play counts 2 frames
   # where it needs 100 and fails every night. The project's GPU runners run them on main and in the merge queue.
-  step e2e pnpm --filter @slicerx/web e2e --reporter=list --grep-invert @gpu
+  # SX_E2E_NIGHTLY adds e2e/nightly/ and the @nightly tests, which pull requests and the merge queue leave out
+  step e2e env SX_E2E_NIGHTLY=1 pnpm --filter @slicerx/web e2e --reporter=list --grep-invert @gpu
   step devkit sh -c 'cargo build -p sx-cli --release && SLICERX_SX_BIN="${CARGO_TARGET_DIR:-$PWD/target}/release/sx" node examples/integrator-sample/scripts/integration.mjs'
   if [ "${SX_CI_BENCH:-0}" = 1 ]; then step speed-benchmark pnpm bench; else skip speed-benchmark "not the reference machine"; fi
 fi
