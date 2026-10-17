@@ -38,6 +38,20 @@ const GIVEN = [
   'Make a hook for my shelf: the board is 18 mm thick, 40 mm drop, 25 mm wide.',
   'A 608 bearing hub with a chamfer, a boss and holes',
 ]
+/** Parts that mate with a standard part, or name a size, or only stand on or show the person's things: nothing to measure. */
+const KNOWN = [
+  'Make a slim case for an iPhone 15 (147.6 x 71.6 x 7.8 mm), 1.5 mm walls, with a cutout for the camera bump.',
+  'Make a slim case for my Pixel 9, 1.5 mm walls, with a cutout for the camera bar.',
+  'Make me a wall hook for a 6 mm screw.',
+  'Make a pillow block for a 608 bearing, press fit, with two M4 mounting holes 40 mm apart.',
+  'Make an open tray for a Raspberry Pi 4 to sit in, with four standoffs under its mounting holes.',
+  'Make a desk dock that holds my iPhone 15 upright by its bottom edge, no case on the phone.',
+  'Make a little stand that holds one credit card upright on my desk.',
+  'Design a case for a Raspberry Pi 4 with screw posts and cable cutouts.',
+  'A statue of my dog, a labrador lying down.',
+]
+/** The same kinds of request where the person still has to say which thing, or measure it. */
+const WHICH = ['Make a case for my iPhone.', 'Make a bracket for a NEMA motor.', 'Make a mount for my GoPro that screws to my desk.']
 const CHAT = ["How's my print going?", 'Can the AMS 2 Pro dry nylon?', 'Make my print faster', 'Slice my model with 0.2 mm layers']
 
 describe('the person-size rule', () => {
@@ -49,10 +63,17 @@ describe('the person-size rule', () => {
     for (const p of [...GIVEN, ...CHAT]) expect(personSizes(p), p).toBe(false)
   })
 
+  it('leaves a standard part, a named size, a place it stands and a figure alone', () => {
+    for (const p of KNOWN) expect(personSizes(p), p).toBe(false)
+    for (const p of WHICH) expect(personSizes(p), p).toBe(true)
+  })
+
   it(`counts a request as sized once it gives ${SIZES_GIVEN} sizes`, () => {
     expect(personSizes('Make a replacement foot cap for my chair leg, 22 mm tube')).toBe(true)
     expect(personSizes('Make a replacement foot cap for my chair leg: 22 mm tube, 15 mm deep, 2 mm wall')).toBe(false)
     expect(personSizes('A bracket for my M3 screws, 20 mm and 1/2 in')).toBe(false)
+    expect(personSizes('A sleeve for my torch, 30 x 30 mm')).toBe(true)
+    expect(personSizes('A sleeve for my torch, 30 x 30 x 120 mm')).toBe(false)
   })
 })
 
@@ -75,7 +96,7 @@ describe('the full chat route', () => {
   })
 
   it('keeps sized parts and plain chat on huginn, and deep work stays deep', () => {
-    for (const p of [...GIVEN, ...CHAT]) expect(chatRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
+    for (const p of [...GIVEN, ...KNOWN, ...CHAT]) expect(chatRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
     expect(chatRoute('Why did my print fail?')).toEqual({ tier: MUNINN, reason: 'deep' })
   })
 
