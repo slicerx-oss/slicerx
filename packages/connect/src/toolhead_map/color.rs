@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// ciede2000, sharma/wu/dalal (2005), equations 2-22; unit weighting factors.
+// cie76 with d65 srgb conversion; keep the metric separate from conversion.
 
 pub(super) fn distance(left: [u8; 3], right: [u8; 3]) -> f64 {
-    delta_e(lab(left), lab(right))
+    delta_e76(lab(left), lab(right))
+}
+
+fn delta_e76(left: [f64; 3], right: [f64; 3]) -> f64 {
+    (left[0] - right[0])
+        .hypot(left[1] - right[1])
+        .hypot(left[2] - right[2])
 }
 
 fn lab(rgb: [u8; 3]) -> [f64; 3] {
@@ -16,26 +22,27 @@ fn lab(rgb: [u8; 3]) -> [f64; 3] {
         }
     });
     let xyz = [
-        (0.412_456_4 * red + 0.357_576_1 * green + 0.180_437_5 * blue) / 0.95047,
-        0.212_672_9 * red + 0.715_152_2 * green + 0.072_175_0 * blue,
-        (0.019_333_9 * red + 0.119_192_0 * green + 0.950_304_1 * blue) / 1.08883,
+        (0.4124 * red + 0.3576 * green + 0.1805 * blue) / 0.95047,
+        0.2126 * red + 0.7152 * green + 0.0722 * blue,
+        (0.0193 * red + 0.1192 * green + 0.9505 * blue) / 1.08883,
     ];
     let [x, y, z] = xyz.map(|value| {
-        let edge = 6.0_f64 / 29.0;
-        if value > edge.powi(3) {
+        if value > 0.008_856 {
             value.cbrt()
         } else {
-            value / (3.0 * edge.powi(2)) + 4.0 / 29.0
+            7.787 * value + 16.0 / 116.0
         }
     });
     [116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z)]
 }
 
+#[cfg(test)]
 fn chroma_ratio(chroma: f64) -> f64 {
     let power = chroma.powi(7);
     (power / (power + 25.0_f64.powi(7))).sqrt()
 }
 
+#[cfg(test)]
 fn hue(a: f64, b: f64) -> f64 {
     if a.abs() + b.abs() <= f64::EPSILON {
         0.0
@@ -44,6 +51,8 @@ fn hue(a: f64, b: f64) -> f64 {
     }
 }
 
+// ciede2000 migration reference, sharma/wu/dalal (2005), equations 2-22.
+#[cfg(test)]
 fn delta_e(left: [f64; 3], right: [f64; 3]) -> f64 {
     let [light_left, a_left, b_left] = left;
     let [light_right, a_right, b_right] = right;
@@ -115,6 +124,14 @@ mod tests {
             assert!((delta_e(left, right) - expected).abs() < 0.0001);
             assert!((delta_e(right, left) - expected).abs() < 0.0001);
         }
+    }
+
+    #[test]
+    fn cie76_threshold_does_not_silently_change_to_ciede2000() {
+        let wanted = [0, 255, 0];
+        let loaded = [0, 250, 0];
+        assert!(distance(wanted, loaded) > 2.0);
+        assert!(delta_e(lab(wanted), lab(loaded)) < 2.0);
     }
 
     #[test]

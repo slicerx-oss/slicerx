@@ -244,7 +244,7 @@ export function PrintSheet() {
   if (!ask) return null
   return (
     <Dialog open onClose={() => finish(null)} className={ask.refusal ? 'print-sheet ps-anchored' : 'print-sheet'} title={<SheetTitle ask={ask} />} footer={footer}>
-        <Summary ask={ask} fileName={fileName} map={mapping ? map : null} />
+        <Summary ask={ask} fileName={fileName} map={toolheads || mapping ? map : null} />
         {checking ? (
           <p className="ps-checking" aria-live="polite">
             <i className="ps-spin" aria-hidden="true" /> Checking the file against {ask.printer.name}
@@ -494,7 +494,7 @@ function Summary({ ask, fileName, map }: { ask: PrintSheetAsk; fileName: string;
               <i className="ps-swatch" style={{ background: f.color }} aria-hidden="true" />
               <span className="ps-fil-type">{f.type}</span>
               <span className="sx-muted">filament {f.index}</span>
-              {map ? <span className="ps-fil-slot">{slotText(map[f.index], externalSlots(ask.printer.plugin, ask.slots))}</span> : null}
+              {map ? <span className="ps-fil-slot">{ask.toolheads ? (map[f.index] ? `Toolhead T${map[f.index]}` : 'Not selected') : slotText(map[f.index], externalSlots(ask.printer.plugin, ask.slots))}</span> : null}
             </li>
           ))}
         </ul>

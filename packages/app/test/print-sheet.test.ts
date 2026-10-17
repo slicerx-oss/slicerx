@@ -70,6 +70,8 @@ describe('Print sheet summary', () => {
     const el = open(ask({ printer: { id: 'u1', name: 'U1', model: 'U1', vendor: 'Snapmaker', plugin: 'snapmaker' } as PrintSheetAsk['printer'], slots: [], auto: { 1: '2' }, resolve, showToolheads: false, toolheads: { ready: true, headDataAvailable: true, toolheads: [], assignments: [{ tool: 0, physicalTool: 1, alternatives: [0, 1, 2, 3], status: 'match', reason: 'Matched' }] } }))
     expect(el.querySelector('select')).toBeNull()
     expect(el.textContent).toContain('Change toolheads')
+    expect(el.querySelector('.ps-summary')?.textContent).toContain('Toolhead T2')
+    expect(el.querySelector('.ps-summary')?.textContent).not.toContain('External spool')
     flushSync(() => el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!.click())
     expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ toolheadMap: { 0: 1 } }))
   })

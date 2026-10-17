@@ -15,8 +15,10 @@ export function sameSelectedSpools(before: ToolheadPlan, after: ToolheadPlan, se
 /** Missing metadata needs manual choices only for a multi-filament job. */
 export function showToolheadChoices(plan: ToolheadPlan, skipMatching: boolean): boolean {
   if (plan.headDataAvailable === false) return plan.assignments.length > 1
-  const matches = plan.assignments.length > 0 && plan.assignments.every((a) => a.status === 'match' && !a.colorMismatch && !a.materialMismatch && !a.empty)
-  return !skipMatching || !matches
+  const matches = plan.assignments.length > 0 && plan.assignments.every((a) => (a.status === 'match' || a.status === 'selected') && !a.colorMismatch && !a.materialMismatch && !a.empty)
+  const selected = plan.assignments.flatMap((a) => a.physicalTool == null ? [] : [a.physicalTool])
+  const sharesSpool = new Set(selected).size < selected.length
+  return !matches || sharesSpool || (plan.assignments.length > 1 && !skipMatching)
 }
 
 /** Use the sliced plate's materials, including composites and support tools. */
