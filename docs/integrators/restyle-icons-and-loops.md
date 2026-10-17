@@ -199,12 +199,13 @@ For the covering source checks:
 pnpm --filter @slicerx/edition-config exec vitest run test/theme-tokens.test.ts
 pnpm --filter @slicerx/ui exec vitest run test/tool-icons.test.tsx test/theme-visuals.test.ts test/themefile.test.ts
 pnpm --filter @slicerx/viewport exec vitest run test/cadtools.test.ts
-pnpm --filter @slicerx/app exec vitest run test/edition-theme-tokens.test.ts test/demo-loop.test.ts test/ribbon-layout.test.ts
-pnpm --filter @slicerx/web exec playwright test e2e/edition-theme-tokens.spec.ts e2e/model-ribbon.spec.ts e2e/tips.spec.ts --project=desktop --retries=0
+pnpm --filter @slicerx/app exec vitest run test/edition-theme-tokens.test.ts test/demo-loop.test.ts test/tip-anchors.test.ts test/ribbon-layout.test.ts
+pnpm --filter @slicerx/web exec playwright test e2e/journeys/links.spec.ts -g "edition colors" --project=desktop --retries=0
+pnpm --filter @slicerx/web exec playwright test e2e/journeys/cad-ops.spec.ts -g "ribbon" --project=desktop --retries=0
 ```
 
 The browser tests use the repository's [Playwright configuration](../../apps/web/playwright.config.ts), which builds a fresh test bundle and runs a native slicing host. Build a real `sx` with `cargo build --release -p sx-cli` and set `SX_CLI_BIN` to its absolute path (`target/release/sx.exe` on Windows). Keep the required geometry WebAssembly output in place. Set `SLICERX_CONFIG` to the absolute edition configuration path when running the tests against your edition.
 
-The edition-color browser spec also needs a real `sx-link` (`cargo build --release -p sx-link`); set `SX_LINK_BIN` to that executable and `SX_LINK_REQUIRE=1`. It opens a temporary hub, grants a read client access, checks MCP read-back and saves desktop and 390 px screenshots in the Playwright results. To check your exact overrides, pass a JSON edition file in `SLICERX_CONFIG`; resolve a TypeScript config with `node packages/edition-config/src/cli.ts resolve <config>` first. The other specs cover the default control geometry and tooltip behavior.
+The edition-color browser spec also needs a real `sx-link` (`cargo build --release -p sx-link`); set `SX_LINK_BIN` to that executable and `SX_LINK_REQUIRE=1`. It opens a temporary hub, grants a read client access, checks MCP read-back and, with `SX_SHOTS=1`, saves desktop and 390 px screenshots in the Playwright results. To check your exact overrides, pass a JSON edition file in `SLICERX_CONFIG`; resolve a TypeScript config with `node packages/edition-config/src/cli.ts resolve <config>` first. The other specs cover the default control geometry and tooltip behavior.
 
 The open app's `slicerx_app_look` response includes `theme.scheme`, `theme.visuals` (active CSS property values), `theme.overrides` (shared and active edition values), `theme.scene` (the studio colors in use), `theme.sceneOverrides` (the studio colors your edition sets) and `viewport.scene` (the colors the 3D view was given). A missing glyph property means the renderer uses the studio-dependent default above. This is read-only; recoloring comes from your build configuration. Keep screenshots of the actual edition build alongside the results: passing tests alone does not prove your custom palette's contrast.

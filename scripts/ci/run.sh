@@ -277,7 +277,8 @@ else
   else skip pgtap "no local Supabase stack on $platform"; fi
   step e2e-browsers pnpm --filter @slicerx/web exec playwright install chromium
   # the list reporter names each failing test, which the rerun needs (CI=true would pick the dot reporter)
-  step e2e pnpm --filter @slicerx/web e2e --reporter=list
+  # SX_E2E_NIGHTLY adds e2e/nightly/ and the @nightly tests, which pull requests and the merge queue leave out
+  step e2e env SX_E2E_NIGHTLY=1 pnpm --filter @slicerx/web e2e --reporter=list
   step devkit sh -c 'cargo build -p sx-cli --release && SLICERX_SX_BIN="$PWD/target/release/sx" node examples/integrator-sample/scripts/integration.mjs'
   if [ "${SX_CI_BENCH:-0}" = 1 ]; then step speed-benchmark pnpm bench; else skip speed-benchmark "not the reference machine"; fi
 fi

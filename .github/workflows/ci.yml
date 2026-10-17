@@ -483,7 +483,7 @@ jobs:
       - run: SLICERX_WEB_SLICING=0 pnpm --filter @slicerx/web exec vite build --outDir dist-cad-only
       - run: node apps/web/scripts/check-test-host.mjs apps/web/dist apps/web/dist-cad-only
 
-  # The printer bridge (sx-link) for bridge.spec.ts, built beside the WASM modules so the shards do not wait longer.
+  # The printer bridge (sx-link) for journeys/printer-bridge.spec.ts and journeys/links.spec.ts, built beside the WASM modules so the shards do not wait longer.
   # A debug build without debug info: quicker to build, and a smaller artifact.
   sx-link:
     needs: detect
@@ -629,11 +629,14 @@ jobs:
 
   # The browser suite (apps/web/e2e) against `vite preview` of the web build. playwright.config.ts builds it with
   # no backend, so the store and feed run on the bundled demo catalog (features.demoData). Specs that need a
-  # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh. bridge.spec.ts
-  # runs on the sx-link built above; SX_LINK_REQUIRE makes a missing one fail it, not skip it. Most phone tests skip
-  # (desktop width only), so the desktop project gets twelve shards and the phone project four (six and two on a pull
-  # request, which runs the suite only with full-ci or a change to its harness); a new project in playwright.config.ts
-  # needs its own line in both lists.
+  # real service skip themselves: nightly/vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh. The
+  # bridge and link journeys run on the sx-link built above; SX_LINK_REQUIRE makes a missing one fail them, not skip
+  # them. The phone project runs only the phone journeys (journeys/phone-*.spec.ts), so the desktop project gets twelve
+  # shards and the phone project two (six and one on a pull request, which runs the suite only with full-ci or a change
+  # to its harness); a new project in playwright.config.ts needs its own line in both lists. e2e/nightly/ and tests
+  # tagged @nightly run only in the nightly (scripts/ci/run.sh nightly, SX_E2E_NIGHTLY=1).
+  # Each journey file shares one page per worker (e2e/journey.ts), so more shards means more cold starts, not only
+  # more parallel tests.
   # --fully-parallel spreads the tests of the big files over the shards. A GitHub runner has 4 cores and one worker
   # drawing WebGL in software takes about 2.3 of them, so each shard runs one worker, leaving room for the app's own
   # slicer workers. The e2e job after them is the one name to require.
@@ -657,7 +660,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') || needs.detect.outputs.shards == 'half' && fromJSON('[{"project":"desktop","shard":"1/6"},{"project":"desktop","shard":"2/6"},{"project":"desktop","shard":"3/6"},{"project":"desktop","shard":"4/6"},{"project":"desktop","shard":"5/6"},{"project":"desktop","shard":"6/6"},{"project":"phone","shard":"1/2"},{"project":"phone","shard":"2/2"}]') || fromJSON('[{"project":"desktop","shard":"1/12"},{"project":"desktop","shard":"2/12"},{"project":"desktop","shard":"3/12"},{"project":"desktop","shard":"4/12"},{"project":"desktop","shard":"5/12"},{"project":"desktop","shard":"6/12"},{"project":"desktop","shard":"7/12"},{"project":"desktop","shard":"8/12"},{"project":"desktop","shard":"9/12"},{"project":"desktop","shard":"10/12"},{"project":"desktop","shard":"11/12"},{"project":"desktop","shard":"12/12"},{"project":"phone","shard":"1/4"},{"project":"phone","shard":"2/4"},{"project":"phone","shard":"3/4"},{"project":"phone","shard":"4/4"}]') }}
+        include: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') || needs.detect.outputs.shards == 'half' && fromJSON('[{"project":"desktop","shard":"1/6"},{"project":"desktop","shard":"2/6"},{"project":"desktop","shard":"3/6"},{"project":"desktop","shard":"4/6"},{"project":"desktop","shard":"5/6"},{"project":"desktop","shard":"6/6"},{"project":"phone","shard":"1/1"}]') || fromJSON('[{"project":"desktop","shard":"1/12"},{"project":"desktop","shard":"2/12"},{"project":"desktop","shard":"3/12"},{"project":"desktop","shard":"4/12"},{"project":"desktop","shard":"5/12"},{"project":"desktop","shard":"6/12"},{"project":"desktop","shard":"7/12"},{"project":"desktop","shard":"8/12"},{"project":"desktop","shard":"9/12"},{"project":"desktop","shard":"10/12"},{"project":"desktop","shard":"11/12"},{"project":"desktop","shard":"12/12"},{"project":"phone","shard":"1/2"},{"project":"phone","shard":"2/2"}]') }}
     steps:
       - name: merge group still queued
         run: eval "$SX_GROUP_CHECK"
@@ -788,8 +791,8 @@ jobs:
         continue-on-error: true
         run: sh scripts/janitor-mac.sh --execute
 
-  # A pull request that touches the app but does not run the browser suite runs these few quick specs in one job: the
-  # app starts, loads the plate, slices, and draws each workspace (detect, "smoke"). Software WebGL, no sx-link.
+  # A pull request that touches the app but does not run the browser suite runs the few quick tests tagged @smoke in
+  # one job: the app starts, loads the plate, slices, and draws each workspace (detect, "smoke"). Software WebGL, no sx-link.
   e2e-smoke:
     name: e2e smoke
     needs: [detect, wasm, sx-cli]
@@ -823,7 +826,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
       # One retry per failing test, decided by the results as in e2e-shard.
-      - run: pnpm --filter @slicerx/web exec playwright test --project=desktop e2e/minimal.spec.ts e2e/blocked-slice.spec.ts e2e/slice-track.spec.ts e2e/icons.spec.ts --grep-invert @gpu --workers=1 --retries=1 --reporter=list,json --trace=retain-on-failure || echo "playwright exited $?"
+      - run: pnpm --filter @slicerx/web exec playwright test --project=desktop e2e/journeys --grep @smoke --grep-invert @gpu --workers=1 --retries=1 --reporter=list,json --trace=retain-on-failure || echo "playwright exited $?"
         env:
           SX_SLOW_GL: '3'
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
