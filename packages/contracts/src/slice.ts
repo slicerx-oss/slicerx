@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Slice requests and results. Mirrors sx-core's public types.
 import type { PrintConfig, SettingValue } from './settings'
+import type { ScriptReview, ScriptReviewInput } from './script-review'
 
 export type EngineId = 'sx' | 'orca'
 export type GcodeFlavor =
@@ -434,6 +435,8 @@ export interface SlicerHost {
   meshParts?(meshId: MeshHandle['id']): Promise<MeshPart[]>
   /** Settings entries of a 3MF project, without loading its geometry. Optional. */
   projectMetadata?(data: ArrayBuffer, fileName: string): Promise<ProjectMetadata>
+  /** Read-only stock comparison through the same engine used for slicing. */
+  reviewScripts?(inputs: ScriptReviewInput[]): Promise<ScriptReview[]>
   /** SXPV bytes for a slice result; parse with readPreview(). */
   getPreview(sliceId: string): Promise<ArrayBuffer>
   exportGcode(sliceId: string, target: GcodeTarget): Promise<GcodeExport>

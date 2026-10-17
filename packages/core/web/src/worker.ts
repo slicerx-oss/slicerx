@@ -57,6 +57,8 @@ self.onmessage = async (ev: MessageEvent<ToWorker>) => {
       post({ type: 'parts', call: msg.call, data }, [data])
     } else if (msg.type === 'metadata') {
       post({ type: 'metadata', call: msg.call, info: wasm.projectMetadata(msg.fileName, new Uint8Array(msg.data)) })
+    } else if (msg.type === 'reviewScripts') {
+      post({ type: 'reviewScripts', call: msg.call, reviews: msg.inputs.map((input) => wasm!.reviewScript(input)) })
     } else if (msg.type === 'finalize') {
       const thumb = msg.thumbnail ? { width: msg.thumbnail.width, height: msg.thumbnail.height, rgba: new Uint8Array(msg.thumbnail.rgba) } : undefined
       const text = (v: string | undefined) => (v ? new TextEncoder().encode(v) : undefined)

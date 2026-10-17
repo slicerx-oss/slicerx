@@ -6,6 +6,7 @@ import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, Permi
 import { grantApproval, hashParams } from '@slicerx/contracts'
 import type { QueueItem } from '../queue/queue'
 import { clearProject } from '../project/new'
+import { recognizedScript } from '../project/script-review'
 import { get, markStale, set, toast, type AppState, selectedIds, type PendingApproval, type ModelSource } from './store'
 
 
@@ -74,11 +75,11 @@ export function clearPlate(): void {
  * preset or project), except with a project's G-code the person chose in the project G-code dialog and has not edited
  * since. Everything else gets the strict linter.
  */
-export function trustOptions(s: Pick<AppState, 'profile' | 'overrides'> & Partial<Pick<AppState, 'vouchedGcode'>>): { trustedGcode?: true; machineLimits?: { nozzleMaxC?: number; bedMaxC?: number } } {
+export function trustOptions(s: Pick<AppState, 'profile' | 'overrides'> & Partial<Pick<AppState, 'vouchedGcode' | 'projectScriptReviews'>>): { trustedGcode?: true; machineLimits?: { nozzleMaxC?: number; bedMaxC?: number } } {
   const p = s.profile
   if (!p) return {}
   const vouched = s.vouchedGcode ?? {}
-  const own = (k: string): boolean => k in s.overrides && !(k in vouched && JSON.stringify(s.overrides[k]) === JSON.stringify(vouched[k]))
+  const own = (k: string): boolean => k in s.overrides && !(k in vouched && JSON.stringify(s.overrides[k]) === JSON.stringify(vouched[k])) && !recognizedScript(k, s.overrides[k], p.printerId, s.overrides, s.projectScriptReviews?.records ?? [])
   const edited = p.gcodeKeys.some(own) || GCODE_TEXT_KEYS.some(own)
   return { ...(p.shippedGcode && !edited ? { trustedGcode: true as const } : {}), ...(Object.keys(p.limits).length ? { machineLimits: p.limits } : {}) }
 }
