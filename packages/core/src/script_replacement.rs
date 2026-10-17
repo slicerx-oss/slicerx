@@ -41,6 +41,80 @@ pub struct DiffLine {
     pub text: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Choice {
+    pub key: String,
+    pub slot: Option<usize>,
+    pub original: String,
+    pub replacement: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedReplacement {
+    pub slot: Option<usize>,
+    #[serde(flatten)]
+    pub record: Replacement,
+}
+
+/// hosts supply the current explicit target and all current identity declarations.
+/// verifies every choice before modifying any setting; records retain the originals.
+pub fn apply_known(
+    config: &mut serde_json::Map<String, serde_json::Value>,
+    selected: Option<&Identity>,
+    declared: &[Identity],
+    choices: &[Choice],
+) -> Result<Vec<AppliedReplacement>, String> {
+    if choices.is_empty() || choices.len() > 64 {
+        return Err("script replacement requires between 1 and 64 choices".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut records = Vec::with_capacity(choices.len());
+    for choice in choices {
+        if !seen.insert((&choice.key, choice.slot)) {
+            return Err("duplicate script replacement choice".into());
+        }
+        let current = config.get(&choice.key).and_then(|value| match choice.slot {
+            Some(slot) => value.as_array()?.get(slot)?.as_str(),
+            None => value.as_str(),
+        });
+        if current != Some(choice.original.as_str()) {
+            return Err("script replacement original no longer matches current text".into());
+        }
+        let mut record = prepare_known(&ReplacementInput {
+            selected: selected.cloned(),
+            declared: declared.to_vec(),
+            key: choice.key.clone(),
+            original: choice.original.clone(),
+            replacement: choice.replacement.clone(),
+        })?;
+        if record.decision != "prepared" {
+            return Err(record.reason);
+        }
+        record.decision = "applied";
+        record.reason = "stock_replacement_applied".into();
+        records.push(AppliedReplacement {
+            slot: choice.slot,
+            record,
+        });
+    }
+    for choice in choices {
+        let value = config
+            .get_mut(&choice.key)
+            .ok_or("script replacement key disappeared")?;
+        let target = match choice.slot {
+            Some(slot) => value
+                .as_array_mut()
+                .and_then(|items| items.get_mut(slot))
+                .ok_or("script replacement slot disappeared")?,
+            None => value,
+        };
+        *target = serde_json::Value::String(choice.replacement.clone());
+    }
+    Ok(records)
+}
+
 /// keeps exact line endings and a linear-size diff, not a minimal edit script.
 fn diff(original: &str, replacement: &str) -> Vec<DiffLine> {
     let before: Vec<_> = original.split_inclusive('\n').collect();
@@ -147,6 +221,79 @@ mod tests {
             original: "M400 U1\r\n\r\nM500".into(),
             replacement: "M400 U1".into(),
         }
+    }
+
+    #[test]
+    fn application_is_atomic_and_preserves_other_settings() {
+        let request = input();
+        let mut config = serde_json::json!({
+            "machine_pause_gcode": [request.original, "second slot"],
+            "layer_height": 0.2,
+            "ordinary_setting": {"keep": [1, 2, 3]}
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let before = config.clone();
+        let mut choices = vec![
+            Choice {
+                key: request.key.clone(),
+                slot: Some(0),
+                original: request.original.clone(),
+                replacement: request.replacement.clone(),
+            },
+            Choice {
+                key: request.key.clone(),
+                slot: Some(1),
+                original: "stale".into(),
+                replacement: request.replacement.clone(),
+            },
+        ];
+        assert!(apply_known(&mut config, request.selected.as_ref(), &[], &choices).is_err());
+        assert_eq!(config, before);
+        choices.pop();
+        let records = apply_known(&mut config, request.selected.as_ref(), &[], &choices).unwrap();
+        assert_eq!(records.first().unwrap().record.original, request.original);
+        assert_eq!(records.first().unwrap().record.decision, "applied");
+        let mut expected = before;
+        expected.insert(
+            request.key,
+            serde_json::json!([request.replacement, "second slot"]),
+        );
+        assert_eq!(config, expected);
+        assert!(apply_known(&mut config, request.selected.as_ref(), &[], &choices).is_err());
+        assert_eq!(config, expected);
+    }
+
+    #[test]
+    fn application_rechecks_stock_and_current_target() {
+        let request = input();
+        let config = serde_json::json!({request.key.clone(): request.original})
+            .as_object()
+            .unwrap()
+            .clone();
+        let mut choices = vec![Choice {
+            key: request.key,
+            slot: None,
+            original: request.original,
+            replacement: request.replacement,
+        }];
+        let mut actual = config.clone();
+        let conflicting = Identity {
+            model: "bambu-a1".into(),
+            firmware: "marlin".into(),
+        };
+        assert_eq!(
+            apply_known(&mut actual, request.selected.as_ref(), &[conflicting], &choices).unwrap_err(),
+            "printer_identity_conflict"
+        );
+        assert_eq!(actual, config);
+        choices.first_mut().unwrap().replacement.push_str("\nM500");
+        assert_eq!(
+            apply_known(&mut actual, request.selected.as_ref(), &[], &choices).unwrap_err(),
+            "script_changed"
+        );
+        assert_eq!(actual, config);
     }
 
     #[test]
