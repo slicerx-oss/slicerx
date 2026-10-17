@@ -36,7 +36,7 @@ describe('real-app clips in tips', () => {
     expect(TIPS['plate.arrange'].demo).toBe('rec-arrange')
     const src = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8')
     expect(src('../src/workspaces/view-menus.tsx')).toMatch(/title: 'Toolpath colors'[^}]*demo: 'rec-color-by'/)
-    expect(src('../src/workspaces/preview/layer-track.tsx')).toMatch(/title: 'Add at this layer'[^}]*demo: 'rec-layer-add'/)
+    expect(src('../src/workspaces/preview/layer-track.tsx')).toMatch(/title: 'Add layer action'[^}]*demo: 'rec-layer-add'/)
     expect(src('../src/workspaces/preview/preview-hud.tsx')).toMatch(/title: 'Show toolhead'[^}]*demo: 'rec-toolhead'/)
     expect(src('../src/workspaces/preview/preview-hud.tsx')).toMatch(/title: 'Follow the nozzle'[^}]*demo: 'rec-follow'/)
   })

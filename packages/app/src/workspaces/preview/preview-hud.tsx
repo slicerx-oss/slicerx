@@ -31,9 +31,9 @@ const NARROW = 1000
 /** Playback speeds as the speed control shows them; the store keeps the number (PLAYBACK_SPEEDS). */
 const speedLabel = (v: number) => (v < 1 ? `${v === 0.25 ? '¼' : '½'}x` : `${v}x`)
 const speedTitle = (v: number) => (v === 1 ? 'Real time: as fast as the printer moves' : v < 1 ? `${v === 0.25 ? 'Quarter' : 'Half'} of real time` : `${v} times real time`)
-const TOOLHEAD_TIP = { title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.' }
+const TOOLHEAD_TIP = { title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.', demo: 'rec-toolhead' }
 const GANTRY_TIP = { title: 'Show gantry', body: 'Draw the gantry over the toolhead at the clearance height your printer profile gives, and the carriage a docked toolhead hangs on. A layer where the gantry would hit the print shows it either way.' }
-const FOLLOW_TIP = { title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.' }
+const FOLLOW_TIP = { title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.', demo: 'rec-follow' }
 
 /** The playback speed as one button showing the rate, for a narrow bar. */
 function SpeedMenu({ speed }: { speed: number }) {
