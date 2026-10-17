@@ -113,16 +113,30 @@ export type Route = PilotRoute & { tier: Tier }
 /** Why Auto started a run on its tier: deep work, a picture or PDF to build from, many steps, sizes only the person knows, or none. */
 export type RouteReason = PilotRoute['reason']
 
-/** Things a person owns: "my shelf", "our cabinet door". The words after "my" that name the app's own things don't count. */
-const POSSESSIVE = /\b(?:my|our)\s+(?:own\s+)?([a-z][a-z-]*)/g
+/**
+ * Things a person owns: "my shelf", "our cabinet door". The words after "my" that name the app's own things don't
+ * count, and neither does a place the part only stands ("on my desk") or what a figure shows ("a statue of my dog").
+ */
+const POSSESSIVE = /\b(?:(on|at|beside|near|by|(?:statue|figurine|sculpture|bust|portrait|replica|model|toy|carving) of)\s+)?(?:my|our)\s+(?:own\s+)?([a-z][a-z-]*)/g
 const APP_THINGS = new Set(['print', 'prints', 'printer', 'printers', 'profile', 'profiles', 'settings', 'filament', 'filaments', 'nozzle', 'bed', 'plate', 'ams', 'slicer', 'project', 'model', 'models', 'part', 'parts', 'design', 'designs', 'file', 'files', 'drawing', 'drawings', 'sketch', 'photo', 'picture', 'gcode', 'layer', 'layers', 'idea', 'first', 'last', 'next', 'previous', 'own'])
 
 /** A part that mates with something that already exists: a replacement, a press fit, a holder or cap for a thing. */
 const MATING =
   /\b(?:replacement|replaces?|spare|press[- ]?fits?|to fit|(?:fits?|fitting|slides?|clips?|snaps?|goes|hangs?|sits?|mounts?) (?:on|onto|over|into|in|around|between|under|inside)|(?:holder|mount|adapter|cap|lid|cover|case|sleeve|insert|plug|knob|bracket|stand|hook|clip|foot|feet|spacer) for (?:a|an|the|my|our|his|her|their)\b)/
 
+/**
+ * A named part with published sizes, which mimir looks up instead of asking: a bearing, motor, board, phone or cell by
+ * its model, a metric fastener, a GoPro mount. A phone or motor without its model still needs asking which.
+ */
+const STANDARD =
+  /\b(?:6\d{2,3}(?:-?(?:zz|2?rs))?\s+bearings?|nema\s?(?:8|11|14|17|23|34)\b|raspberry pi\s?(?:\d|zero|pico)|pi\s?[345]\b|pi zero|arduino (?:uno|nano|mega)|iphone\s?\d+|pixel\s?\d+|galaxy s\d+|18650|aaa?\s+(?:batter(?:y|ies)|cells?)|m\d{1,2}\s+(?:screws?|bolts?|nuts?|inserts?)|gopro)/
+
 /** A size stated with its unit or as a standard fastener (40 mm, 1/2 in, 3", M3). */
 const SIZE = /\b\d+(?:[.,]\d+)?(?:\s*\/\s*\d+)?\s*(?:mm|cm|in|inch|inches|"|\u2033)(?![a-z])|\bM\d{1,2}\b/gi
+/** The leading sides of a size given as a box ("147.6 x 71.6 x 7.8 mm"): each counts as one more size. */
+const BY = /\b\d+(?:[.,]\d+)?\s*[x\u00d7]\s*(?=\d)/g
+/** A size right after the thing a part mates with is named ("a hook for a 6 mm screw"). */
+const SIZED_NEXT = /^\s*(?:\d+(?:[.,]\d+)?\s*(?:mm|cm|in|inch|")|m\d{1,2}\b)/
 
 /** Sizes stated at which a request counts as having given its own: the measured thing and how the part sits on it. */
 export const SIZES_GIVEN = 3
@@ -130,13 +144,19 @@ export const SIZES_GIVEN = 3
 /**
  * Whether a build needs a size only the person knows: it is for something they own ("my shelf", "our door"), or it
  * mates with an existing thing (a replacement, a press fit, a holder for a jar), and the request does not already give
- * `SIZES_GIVEN` sizes. Read from the words alone, without a model call.
+ * `SIZES_GIVEN` sizes. A mate that is a standard part, or whose size follows its name, is known; so is something they
+ * own that is a standard part ("my iPhone 15"). Read from the words alone, without a model call.
  */
 export function personSizes(prompt: string): boolean {
   const text = prompt.toLowerCase()
-  if ((text.match(SIZE) ?? []).length >= SIZES_GIVEN) return false
-  if (MATING.test(text)) return true
-  for (const m of text.matchAll(POSSESSIVE)) if (!APP_THINGS.has(m[1]!)) return true
+  if ((text.match(SIZE) ?? []).length + (text.match(BY) ?? []).length >= SIZES_GIVEN) return false
+  const mate = MATING.exec(text)
+  if (mate && !STANDARD.test(text) && !SIZED_NEXT.test(text.slice(mate.index + mate[0].length))) return true
+  for (const m of text.matchAll(POSSESSIVE)) {
+    if (m[1] || APP_THINGS.has(m[2]!)) continue
+    if (STANDARD.test(text.slice(m.index! + m[0].length - m[2]!.length))) continue
+    return true
+  }
   return false
 }
 
