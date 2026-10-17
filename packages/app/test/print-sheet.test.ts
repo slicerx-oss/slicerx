@@ -64,6 +64,17 @@ function open(a: PrintSheetAsk): HTMLElement {
   return el
 }
 
+/** Open a toolhead picker and read its items, or choose one by its T number. */
+const headItems = (el: HTMLElement, tool: number): HTMLButtonElement[] => {
+  const trigger = el.querySelector<HTMLButtonElement>(`#ps-toolhead-${tool}`)!
+  if (trigger.getAttribute('aria-expanded') !== 'true') flushSync(() => trigger.click())
+  return [...el.ownerDocument.querySelectorAll<HTMLButtonElement>('.ps-head-menu [role=menuitemcheckbox]')]
+}
+const pickHead = (el: HTMLElement, tool: number, head: number) => {
+  const item = headItems(el, tool).find((i) => i.textContent?.startsWith(`T${head}`))!
+  flushSync(() => item.click())
+}
+
 describe('Print sheet summary', () => {
   it('keeps matching choices on approval when the mapping question is skipped', () => {
     const resolve = vi.fn()
@@ -81,9 +92,8 @@ describe('Print sheet summary', () => {
     let complete!: (result: typeof plan) => void
     const reviewToolheads = vi.fn(() => new Promise<typeof plan>((resolve) => { complete = resolve }))
     const el = open(ask({ slots: [], auto: { 1: '1' }, toolheads: plan, reviewToolheads }))
-    const select = el.querySelector<HTMLSelectElement>('#ps-toolhead-0')!
     const go = el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!
-    flushSync(() => { select.value = '2'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    pickHead(el, 0, 2)
     expect(reviewToolheads).toHaveBeenCalledWith({ 0: 1 })
     expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(true)
     complete({ ...plan, assignments: [{ ...plan.assignments[0]!, physicalTool: 1, status: 'selected', materialMismatch: true, reason: 'Different material: PETG instead of PLA' }] })
@@ -94,12 +104,11 @@ describe('Print sheet summary', () => {
 
   it('offers four manual heads without spool data and stores the preference for only this printer', () => {
     const el = open(ask({ slots: [], auto: {}, toolheads: { ready: false, headDataAvailable: false, toolheads: [], assignments: [0, 1].map((tool) => ({ tool, physicalTool: null, alternatives: [0, 1, 2, 3], status: 'unavailable', reason: 'Spool info unavailable' })) } }))
-    const choices = el.querySelectorAll<HTMLSelectElement>('select')
-    expect(choices).toHaveLength(2)
-    expect([...choices[0]!.options].slice(1).map((o) => o.textContent)).toEqual([1, 2, 3, 4].map((head) => `T${head}: Spool info unavailable`))
+    expect(el.querySelectorAll('.ps-head-btn')).toHaveLength(2)
+    expect(headItems(el, 0).map((o) => o.textContent)).toEqual([1, 2, 3, 4].map((head) => `T${head}`))
     flushSync(() => el.querySelector<HTMLButtonElement>('#ps-toolhead-skip')!.click())
     expect(get().toolheadSkipMatching).toEqual({ h2d: true })
-    expect(el.querySelectorAll('select')).toHaveLength(2)
+    expect(el.querySelectorAll('.ps-head-btn')).toHaveLength(2)
   })
 
   it('requires a U1 color choice and returns physical toolheads separately from slot maps', () => {
@@ -111,12 +120,14 @@ describe('Print sheet summary', () => {
     }))
     const go = el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')!
     expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(true)
-    const select = el.querySelector<HTMLSelectElement>('#ps-toolhead-0')!
-    expect([...select.options].map((o) => o.value)).toEqual(['', '2'])
-    flushSync(() => { select.value = '2'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    const trigger = el.querySelector<HTMLButtonElement>('#ps-toolhead-0')!
+    // a name and a color word, never the hex
+    expect(headItems(el, 0).map((o) => o.textContent)).toEqual(['T2 PLA Green'])
+    pickHead(el, 0, 2)
     expect(go.disabled || go.getAttribute('aria-disabled') === 'true').toBe(false)
     flushSync(() => set((state) => ({ printSheet: { ...state.printSheet!, check: { errors: [], warnings: [{ text: 'Check the plate' }], sha256: 'updated' } } })))
-    expect(select.value).toBe('2')
+    expect(trigger.textContent).toBe('T2 PLA Green')
+    expect(trigger.textContent).not.toContain('#')
     flushSync(() => go.click())
     expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ toolheadMap: { 0: 1 } }))
     expect(resolve.mock.calls[0]![0].slotMap).toBeUndefined()
