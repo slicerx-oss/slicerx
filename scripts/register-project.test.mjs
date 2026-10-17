@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { registerProject } from '../packages/mcp/src/register.ts'
 
 test('project registration previews, preserves existing settings and refuses user scope', (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'sx-register-'))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'sx-register-')))
   const previous = process.cwd()
   const args = ['--client', 'codex', '--scope', 'project', '--allow-dir', 'my models']
   const output = []
@@ -36,8 +36,8 @@ test('project registration previews, preserves existing settings and refuses use
 })
 
 test('project registration does not follow a config directory symlink', (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'sx-register-'))
-  const other = mkdtempSync(join(tmpdir(), 'sx-register-other-'))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'sx-register-')))
+  const other = realpathSync(mkdtempSync(join(tmpdir(), 'sx-register-other-')))
   const previous = process.cwd()
   try {
     process.chdir(root)
