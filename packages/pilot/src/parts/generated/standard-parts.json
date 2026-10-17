@@ -1,0 +1,3963 @@
+{
+  "schema_version": 1,
+  "license": "Facts transcribed from the published datasheets, drawings and charts each value names in source_url. The table is Apache-2.0; see REUSE.toml.",
+  "categories": [
+    {
+      "id": "arduino",
+      "words": [
+        "arduino",
+        "arduino board"
+      ],
+      "scope": "Board mounting data transcribed from the official Arduino datasheet drawings (docs.arduino.cc). Uno overall outline is not dimensioned in the official datasheet and is intentionally absent.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "bearings",
+      "words": [
+        "bearing",
+        "ball bearing"
+      ],
+      "scope": "Selected common metric 6xx, 6000 and 6200 series. No suffix substitution or fit allowance is implied.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "cells",
+      "words": [
+        "battery",
+        "cell"
+      ],
+      "scope": "Bare cell envelope limits from the manufacturer datasheet for the named cell only. Other 18650 cells differ; do not generalize. Excludes protection circuits, tabs and wrappers.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "heat-set-inserts",
+      "words": [
+        "insert",
+        "heat set insert",
+        "threaded insert"
+      ],
+      "scope": "Vendor-specific holes; actual insert length, material and polymer must be chosen before use.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "motors",
+      "words": [
+        "motor",
+        "stepper",
+        "stepper motor",
+        "nema"
+      ],
+      "scope": "Exact published motor models in NEMA 14/17/23 families. Not a claim that all motors in a family have identical hole type or depth.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "phones",
+      "words": [
+        "phone",
+        "smartphone",
+        "iphone",
+        "pixel"
+      ],
+      "scope": "Phone body height, width and depth as printed on the manufacturer tech specs pages. Both manufacturers state that size varies by configuration and manufacturing process. No case, camera bump or tolerance is implied.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "raspberry-pi",
+      "words": [
+        "raspberry pi",
+        "rpi"
+      ],
+      "scope": "Published PCB envelopes and explicitly dimensioned port centerlines. Not complete enclosure manufacturing data.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "screw-holes",
+      "words": [
+        "screw",
+        "bolt",
+        "clearance hole",
+        "tap drill"
+      ],
+      "scope": "Metric coarse cutting tap and clearance sizes. Close/normal/loose are separate fit choices; no printer compensation included.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "spools",
+      "words": [
+        "spool",
+        "filament spool",
+        "reel"
+      ],
+      "scope": "Published Polymaker spool variants; capacity is not a universal dimensional standard. Check the actual supplied revision.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    },
+    {
+      "id": "spur-gears",
+      "words": [
+        "gear",
+        "spur gear"
+      ],
+      "scope": "Standard external full-depth spur gears with zero profile shift and no backlash adjustment. m in mm, z tooth count, alpha an angle interpreted consistently by cos. Does not generate involute flanks, root fillets or certify undercut limits.",
+      "checked_utc": "2026-10-16T00:48:59Z"
+    }
+  ],
+  "records": [
+    {
+      "category": "arduino",
+      "id": "arduino-uno-r3",
+      "name": "Arduino UNO R3 (A000066)",
+      "aliases": [
+        "UNO R3",
+        "UNO",
+        "Arduino UNO R3",
+        "Arduino UNO",
+        "A000066"
+      ],
+      "info": {
+        "manufacturer": "Arduino",
+        "model": "UNO R3 (A000066)",
+        "coordinate_system": "Mounting-hole drawing, view from top side. Origin at the top-left corner of the board outline as drawn, x right, y down. The drawing does not dimension the overall board length or width."
+      },
+      "sizes": [
+        {
+          "key": "mount_hole_count",
+          "value": 4,
+          "unit": "count",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 3.2,
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_top_left_xy",
+          "value": [
+            15.24,
+            2.54
+          ],
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_right_upper_xy",
+          "value": [
+            66.04,
+            17.78
+          ],
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_right_lower_xy",
+          "value": [
+            66.04,
+            45.72
+          ],
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_bottom_left_y",
+          "value": 50.8,
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000066-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 5.4 Board Outline & Mounting Holes",
+          "verified_utc": "2026-10-16T00:48:59Z",
+          "note": "Only the vertical distance from the top edge is dimensioned for this hole; its x position is not."
+        }
+      ]
+    },
+    {
+      "category": "arduino",
+      "id": "arduino-nano",
+      "name": "Arduino Nano (A000005)",
+      "aliases": [
+        "Nano",
+        "Arduino Nano",
+        "A000005"
+      ],
+      "info": {
+        "manufacturer": "Arduino",
+        "model": "Nano (A000005)",
+        "coordinate_system": "Top view of the PCB as drawn."
+      },
+      "sizes": [
+        {
+          "key": "outline_xy",
+          "value": [
+            43.2,
+            18
+          ],
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000005-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 6 Mechanical Information",
+          "verified_utc": "2026-10-16T00:48:59Z",
+          "note": "Length by width of the PCB in the top view. The product page text says 45 mm length, which the drawing does not state."
+        },
+        {
+          "key": "mount_hole_count",
+          "value": 4,
+          "unit": "count",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000005-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 6 Mechanical Information",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 1.8,
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000005-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 6 Mechanical Information",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "mount_hole_spacing_xy",
+          "value": [
+            40.64,
+            15.24
+          ],
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000005-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 6 Mechanical Information",
+          "verified_utc": "2026-10-16T00:48:59Z",
+          "note": "Center to center, along the long and short sides."
+        },
+        {
+          "key": "header_pin_pitch",
+          "value": 2.54,
+          "unit": "mm",
+          "source_url": "https://docs.arduino.cc/resources/datasheets/A000005-datasheet.pdf",
+          "locator": "Datasheet PDF page 12, section 6 Mechanical Information",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "623",
+      "name": "623 bearing",
+      "aliases": [
+        "623ZZ",
+        "6232RS",
+        "623-2RS",
+        "623RS",
+        "623Z",
+        "6232Z",
+        "623-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 29"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 3,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 10,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 4,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "624",
+      "name": "624 bearing",
+      "aliases": [
+        "624ZZ",
+        "6242RS",
+        "624-2RS",
+        "624RS",
+        "624Z",
+        "6242Z",
+        "624-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 29"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 4,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 13,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 5,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "625",
+      "name": "625 bearing",
+      "aliases": [
+        "625ZZ",
+        "6252RS",
+        "625-2RS",
+        "625RS",
+        "625Z",
+        "6252Z",
+        "625-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 29"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 5,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 16,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 5,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "626",
+      "name": "626 bearing",
+      "aliases": [
+        "626ZZ",
+        "6262RS",
+        "626-2RS",
+        "626RS",
+        "626Z",
+        "6262Z",
+        "626-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 29"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 6,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 19,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 6,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "627",
+      "name": "627 bearing",
+      "aliases": [
+        "627ZZ",
+        "6272RS",
+        "627-2RS",
+        "627RS",
+        "627Z",
+        "6272Z",
+        "627-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 29"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 7,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 22,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 7,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "608",
+      "name": "608 bearing",
+      "aliases": [
+        "608ZZ",
+        "6082RS",
+        "608-2RS",
+        "608RS",
+        "608Z",
+        "6082Z",
+        "608-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 29"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 8,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 22,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 7,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "609",
+      "name": "609 bearing",
+      "aliases": [
+        "609ZZ",
+        "6092RS",
+        "609-2RS",
+        "609RS",
+        "609Z",
+        "6092Z",
+        "609-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 29"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 9,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 24,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 7,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6000",
+      "name": "6000 bearing",
+      "aliases": [
+        "6000ZZ",
+        "60002RS",
+        "6000-2RS",
+        "6000RS",
+        "6000Z",
+        "60002Z",
+        "6000-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 30"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 10,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 26,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 8,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6001",
+      "name": "6001 bearing",
+      "aliases": [
+        "6001ZZ",
+        "60012RS",
+        "6001-2RS",
+        "6001RS",
+        "6001Z",
+        "60012Z",
+        "6001-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 30"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 12,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 28,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 8,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6002",
+      "name": "6002 bearing",
+      "aliases": [
+        "6002ZZ",
+        "60022RS",
+        "6002-2RS",
+        "6002RS",
+        "6002Z",
+        "60022Z",
+        "6002-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 30"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 15,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 32,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 9,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6003",
+      "name": "6003 bearing",
+      "aliases": [
+        "6003ZZ",
+        "60032RS",
+        "6003-2RS",
+        "6003RS",
+        "6003Z",
+        "60032Z",
+        "6003-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 30"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 17,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 35,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 10,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6004",
+      "name": "6004 bearing",
+      "aliases": [
+        "6004ZZ",
+        "60042RS",
+        "6004-2RS",
+        "6004RS",
+        "6004Z",
+        "60042Z",
+        "6004-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 30"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 20,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 42,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 12,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6005",
+      "name": "6005 bearing",
+      "aliases": [
+        "6005ZZ",
+        "60052RS",
+        "6005-2RS",
+        "6005RS",
+        "6005Z",
+        "60052Z",
+        "6005-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 30"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 25,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 47,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 12,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6200",
+      "name": "6200 bearing",
+      "aliases": [
+        "6200ZZ",
+        "62002RS",
+        "6200-2RS",
+        "6200RS",
+        "6200Z",
+        "62002Z",
+        "6200-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 32"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 10,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 30,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 9,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6201",
+      "name": "6201 bearing",
+      "aliases": [
+        "6201ZZ",
+        "62012RS",
+        "6201-2RS",
+        "6201RS",
+        "6201Z",
+        "62012Z",
+        "6201-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 32"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 12,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 32,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 10,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6202",
+      "name": "6202 bearing",
+      "aliases": [
+        "6202ZZ",
+        "62022RS",
+        "6202-2RS",
+        "6202RS",
+        "6202Z",
+        "62022Z",
+        "6202-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 32"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 15,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 35,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 11,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6203",
+      "name": "6203 bearing",
+      "aliases": [
+        "6203ZZ",
+        "62032RS",
+        "6203-2RS",
+        "6203RS",
+        "6203Z",
+        "62032Z",
+        "6203-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 32"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 17,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 40,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 12,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6204",
+      "name": "6204 bearing",
+      "aliases": [
+        "6204ZZ",
+        "62042RS",
+        "6204-2RS",
+        "6204RS",
+        "6204Z",
+        "62042Z",
+        "6204-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 32"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 20,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 47,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 14,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "bearings",
+      "id": "6205",
+      "name": "6205 bearing",
+      "aliases": [
+        "6205ZZ",
+        "62052RS",
+        "6205-2RS",
+        "6205RS",
+        "6205Z",
+        "62052Z",
+        "6205-2Z"
+      ],
+      "info": {
+        "manufacturer": "NSK",
+        "locator": "PDF page 32"
+      },
+      "sizes": [
+        {
+          "key": "bore",
+          "value": 25,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 52,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        },
+        {
+          "key": "width",
+          "value": 15,
+          "unit": "mm",
+          "source_url": "https://www.nsk.com/content/dam/nsk/am/en_us/documents/bearings-americas/Bearing-and-Linear-Replacement-Guide.pdf"
+        }
+      ]
+    },
+    {
+      "category": "cells",
+      "id": "energizer-e91-aa",
+      "name": "Energizer E91 (AA)",
+      "aliases": [
+        "E91",
+        "Energizer E91",
+        "AA",
+        "AA battery",
+        "AA cell",
+        "15A",
+        "LR6"
+      ],
+      "info": {
+        "format": "AA",
+        "designation": "ANSI-15A, IEC-LR6",
+        "manufacturer": "Energizer",
+        "model": "E91",
+        "chemistry": "alkaline",
+        "note": "The datasheet drawing prints two values per dimension without Max/Min labels; the larger is recorded as the upper limit and the smaller as the lower limit."
+      },
+      "sizes": [
+        {
+          "key": "diameter_max",
+          "value": 14.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+          "locator": "Specifications drawing, form E91NA1018",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "diameter_min",
+          "value": 13.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+          "locator": "Specifications drawing, form E91NA1018",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "height_max",
+          "value": 50.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+          "locator": "Specifications drawing, form E91NA1018",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "height_min",
+          "value": 49.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e91.pdf",
+          "locator": "Specifications drawing, form E91NA1018",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "cells",
+      "id": "energizer-e92-aaa",
+      "name": "Energizer E92 (AAA)",
+      "aliases": [
+        "E92",
+        "Energizer E92",
+        "AAA",
+        "AAA battery",
+        "AAA cell",
+        "24A",
+        "LR03"
+      ],
+      "info": {
+        "format": "AAA",
+        "designation": "ANSI-24A, IEC-LR03",
+        "manufacturer": "Energizer",
+        "model": "E92",
+        "chemistry": "alkaline",
+        "note": "The datasheet drawing prints two values per dimension without Max/Min labels; the larger is recorded as the upper limit and the smaller as the lower limit."
+      },
+      "sizes": [
+        {
+          "key": "diameter_max",
+          "value": 10.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e92.pdf",
+          "locator": "Specifications drawing, form EBC-1103-M",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "diameter_min",
+          "value": 9.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e92.pdf",
+          "locator": "Specifications drawing, form EBC-1103-M",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "height_max",
+          "value": 44.5,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e92.pdf",
+          "locator": "Specifications drawing, form EBC-1103-M",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "height_min",
+          "value": 43.3,
+          "unit": "mm",
+          "source_url": "https://data.energizer.com/pdfs/e92.pdf",
+          "locator": "Specifications drawing, form EBC-1103-M",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "cells",
+      "id": "molicel-inr18650-m35a",
+      "name": "Molicel INR-18650-M35A (18650)",
+      "aliases": [
+        "INR-18650-M35A",
+        "Molicel INR-18650-M35A",
+        "18650",
+        "18650 battery",
+        "18650 cell"
+      ],
+      "info": {
+        "format": "18650",
+        "manufacturer": "Molicel (E-One Moli Energy)",
+        "model": "INR-18650-M35A",
+        "chemistry": "lithium-ion"
+      },
+      "sizes": [
+        {
+          "key": "diameter_max",
+          "value": 18.6,
+          "unit": "mm",
+          "source_url": "https://www.molicel.com/wp-content/uploads/INR18650M35A-V2-80096.pdf",
+          "locator": "Physical characteristics: Diameter 18.6 mm (Max)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "height_max",
+          "value": 65.2,
+          "unit": "mm",
+          "source_url": "https://www.molicel.com/wp-content/uploads/INR18650M35A-V2-80096.pdf",
+          "locator": "Physical characteristics: Height 65.2 mm (Max)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M2x0.4",
+      "name": "SPIROL M2 heat-set insert",
+      "aliases": [
+        "M2 insert",
+        "M2 heat set insert",
+        "M2 threaded insert",
+        "M2x0.4 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M2x0.4",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 3.2,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M2.5x0.45",
+      "name": "SPIROL M2.5 heat-set insert",
+      "aliases": [
+        "M2.5 insert",
+        "M2.5 heat set insert",
+        "M2.5 threaded insert",
+        "M2.5x0.45 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M2.5x0.45",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 3.99,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M3x0.5",
+      "name": "SPIROL M3 heat-set insert",
+      "aliases": [
+        "M3 insert",
+        "M3 heat set insert",
+        "M3 threaded insert",
+        "M3x0.5 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M3x0.5",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 3.99,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M3.5x0.6",
+      "name": "SPIROL M3.5 heat-set insert",
+      "aliases": [
+        "M3.5 insert",
+        "M3.5 heat set insert",
+        "M3.5 threaded insert",
+        "M3.5x0.6 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M3.5x0.6",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 4.78,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M4x0.7",
+      "name": "SPIROL M4 heat-set insert",
+      "aliases": [
+        "M4 insert",
+        "M4 heat set insert",
+        "M4 threaded insert",
+        "M4x0.7 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M4x0.7",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 5.61,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M5x0.8",
+      "name": "SPIROL M5 heat-set insert",
+      "aliases": [
+        "M5 insert",
+        "M5 heat set insert",
+        "M5 threaded insert",
+        "M5x0.8 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M5x0.8",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 6.4,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M6x1.0",
+      "name": "SPIROL M6 heat-set insert",
+      "aliases": [
+        "M6 insert",
+        "M6 heat set insert",
+        "M6 threaded insert",
+        "M6x1.0 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M6x1.0",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 8,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "heat-set-inserts",
+      "id": "SPIROL-29-30-M8x1.25",
+      "name": "SPIROL M8 heat-set insert",
+      "aliases": [
+        "M8 insert",
+        "M8 heat set insert",
+        "M8 threaded insert",
+        "M8x1.25 insert"
+      ],
+      "info": {
+        "locator": "PDF page 11, printed page 9",
+        "family": "SPIROL straight-hole heat/ultrasonic series 29 and 30",
+        "note": "Manufacturer recommendation for this family. Filled plastics require separate review. Not a universal heat-set hole."
+      },
+      "sizes": [
+        {
+          "key": "thread",
+          "value": "M8x1.25",
+          "unit": "designation",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 9.58,
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "hole_diameter_tolerance",
+          "value": [
+            0,
+            0.08
+          ],
+          "unit": "mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "minimum_hole_depth",
+          "value": "insert_length + 2 * thread_pitch",
+          "unit": "formula:mm",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        },
+        {
+          "key": "maximum_included_taper",
+          "value": 1,
+          "unit": "degree",
+          "source_url": "https://shop.spirol.com/Asset/Inserts-for-Plastics.pdf"
+        }
+      ]
+    },
+    {
+      "category": "motors",
+      "id": "SY35ST28-0504A",
+      "name": "SOYO SY35ST28-0504A (NEMA 14)",
+      "aliases": [
+        "NEMA 14",
+        "NEMA14"
+      ],
+      "info": {
+        "frame_family": "nema14",
+        "manufacturer": "SOYO",
+        "locator": "PDF page 1",
+        "coordinate_system": "Shaft center is origin; face viewed from shaft end."
+      },
+      "sizes": [
+        {
+          "key": "face_square",
+          "value": 35.2,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688",
+          "limit": "maximum"
+        },
+        {
+          "key": "hole_pitch_xy",
+          "value": [
+            26,
+            26
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688"
+        },
+        {
+          "key": "hole_pitch_tolerance",
+          "value": [
+            -0.2,
+            0.2
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688"
+        },
+        {
+          "key": "hole_centers",
+          "value": [
+            [
+              -13,
+              -13
+            ],
+            [
+              13,
+              -13
+            ],
+            [
+              -13,
+              13
+            ],
+            [
+              13,
+              13
+            ]
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688",
+          "status": "derived",
+          "derivation": "Square pattern centered on shaft; each coordinate is signed pitch/2."
+        },
+        {
+          "key": "hole_count",
+          "value": 4,
+          "unit": "count",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688"
+        },
+        {
+          "key": "pilot_boss_diameter",
+          "value": 22,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688"
+        },
+        {
+          "key": "pilot_boss_tolerance",
+          "value": [
+            -0.05,
+            0
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688"
+        },
+        {
+          "key": "hole_thread",
+          "value": "M3",
+          "unit": "designation",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688"
+        },
+        {
+          "key": "thread_depth",
+          "value": 3.5,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/download/SY35ST28-0504A.pdf?file_id=0J688",
+          "limit": "minimum"
+        }
+      ]
+    },
+    {
+      "category": "motors",
+      "id": "SY42STH38-1684A",
+      "name": "SOYO SY42STH38-1684A (NEMA 17)",
+      "aliases": [
+        "NEMA 17",
+        "NEMA17"
+      ],
+      "info": {
+        "frame_family": "nema17",
+        "manufacturer": "SOYO",
+        "locator": "PDF page 1",
+        "coordinate_system": "Shaft center is origin; face viewed from shaft end."
+      },
+      "sizes": [
+        {
+          "key": "face_square",
+          "value": 42.3,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+          "limit": "maximum"
+        },
+        {
+          "key": "hole_pitch_xy",
+          "value": [
+            31,
+            31
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "hole_pitch_tolerance",
+          "value": [
+            -0.2,
+            0.2
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "hole_centers",
+          "value": [
+            [
+              -15.5,
+              -15.5
+            ],
+            [
+              15.5,
+              -15.5
+            ],
+            [
+              -15.5,
+              15.5
+            ],
+            [
+              15.5,
+              15.5
+            ]
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+          "status": "derived",
+          "derivation": "Square pattern centered on shaft; each coordinate is signed pitch/2."
+        },
+        {
+          "key": "hole_count",
+          "value": 4,
+          "unit": "count",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "pilot_boss_diameter",
+          "value": 22,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "pilot_boss_tolerance",
+          "value": [
+            -0.05,
+            0
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "hole_thread",
+          "value": "M3",
+          "unit": "designation",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf"
+        },
+        {
+          "key": "thread_depth",
+          "value": 4.5,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J714/SY42STH38-1684A.pdf",
+          "limit": "nominal"
+        }
+      ]
+    },
+    {
+      "category": "motors",
+      "id": "SY57STH56-1006A",
+      "name": "SOYO SY57STH56-1006A (NEMA 23)",
+      "aliases": [
+        "NEMA 23",
+        "NEMA23"
+      ],
+      "info": {
+        "frame_family": "nema23",
+        "manufacturer": "SOYO",
+        "locator": "PDF page 1",
+        "coordinate_system": "Shaft center is origin; face viewed from shaft end."
+      },
+      "sizes": [
+        {
+          "key": "face_square",
+          "value": 56.4,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf",
+          "limit": "nominal"
+        },
+        {
+          "key": "hole_pitch_xy",
+          "value": [
+            47.1,
+            47.1
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf"
+        },
+        {
+          "key": "hole_pitch_tolerance",
+          "value": [
+            -0.2,
+            0.2
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf"
+        },
+        {
+          "key": "hole_centers",
+          "value": [
+            [
+              -23.55,
+              -23.55
+            ],
+            [
+              23.55,
+              -23.55
+            ],
+            [
+              -23.55,
+              23.55
+            ],
+            [
+              23.55,
+              23.55
+            ]
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf",
+          "status": "derived",
+          "derivation": "Square pattern centered on shaft; each coordinate is signed pitch/2."
+        },
+        {
+          "key": "hole_count",
+          "value": 4,
+          "unit": "count",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf"
+        },
+        {
+          "key": "pilot_boss_diameter",
+          "value": 38.1,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf"
+        },
+        {
+          "key": "pilot_boss_tolerance",
+          "value": [
+            -0.03,
+            0.03
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf"
+        },
+        {
+          "key": "hole_diameter",
+          "value": 5,
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf"
+        },
+        {
+          "key": "face_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://www.pololu.com/file/0J672/SY57STH56-1006A.pdf"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-13-mini",
+      "name": "Apple iPhone 13 mini",
+      "aliases": [
+        "iPhone 13 mini"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 13 mini"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 131.5,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111873",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 64.2,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111873",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.65,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111873",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-13",
+      "name": "Apple iPhone 13",
+      "aliases": [
+        "iPhone 13"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 13"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 146.7,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111872",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 71.5,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111872",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.65,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111872",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-13-pro",
+      "name": "Apple iPhone 13 Pro",
+      "aliases": [
+        "iPhone 13 Pro"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 13 Pro"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 146.7,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111871",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 71.5,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111871",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.65,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111871",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-13-pro-max",
+      "name": "Apple iPhone 13 Pro Max",
+      "aliases": [
+        "iPhone 13 Pro Max"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 13 Pro Max"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 160.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111870",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 78.1,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111870",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.65,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111870",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-14",
+      "name": "Apple iPhone 14",
+      "aliases": [
+        "iPhone 14"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 14"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 146.7,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111850",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 71.5,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111850",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111850",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-14-plus",
+      "name": "Apple iPhone 14 Plus",
+      "aliases": [
+        "iPhone 14 Plus"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 14 Plus"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 160.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111854",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 78.1,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111854",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111854",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-14-pro",
+      "name": "Apple iPhone 14 Pro",
+      "aliases": [
+        "iPhone 14 Pro"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 14 Pro"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 147.5,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111849",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 71.5,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111849",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.85,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111849",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-14-pro-max",
+      "name": "Apple iPhone 14 Pro Max",
+      "aliases": [
+        "iPhone 14 Pro Max"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 14 Pro Max"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 160.7,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111846",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 77.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111846",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.85,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111846",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-15",
+      "name": "Apple iPhone 15",
+      "aliases": [
+        "iPhone 15"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 15"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 147.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111831",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 71.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111831",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111831",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-15-plus",
+      "name": "Apple iPhone 15 Plus",
+      "aliases": [
+        "iPhone 15 Plus"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 15 Plus"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 160.9,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111830",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 77.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111830",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111830",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-15-pro",
+      "name": "Apple iPhone 15 Pro",
+      "aliases": [
+        "iPhone 15 Pro"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 15 Pro"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 146.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111829",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 70.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111829",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.25,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111829",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-15-pro-max",
+      "name": "Apple iPhone 15 Pro Max",
+      "aliases": [
+        "iPhone 15 Pro Max"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 15 Pro Max"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 159.9,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111828",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 76.7,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111828",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.25,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/111828",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-16",
+      "name": "Apple iPhone 16",
+      "aliases": [
+        "iPhone 16"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 16"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 147.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121029",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 71.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121029",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121029",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-16-plus",
+      "name": "Apple iPhone 16 Plus",
+      "aliases": [
+        "iPhone 16 Plus"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 16 Plus"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 160.9,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121030",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 77.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121030",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 7.8,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121030",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-16-pro",
+      "name": "Apple iPhone 16 Pro",
+      "aliases": [
+        "iPhone 16 Pro"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 16 Pro"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 149.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121031",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 71.5,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121031",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.25,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121031",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "iphone-16-pro-max",
+      "name": "Apple iPhone 16 Pro Max",
+      "aliases": [
+        "iPhone 16 Pro Max"
+      ],
+      "info": {
+        "manufacturer": "Apple",
+        "model": "iPhone 16 Pro Max"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 163,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121032",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 77.6,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121032",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.25,
+          "unit": "mm",
+          "source_url": "https://support.apple.com/en-us/121032",
+          "locator": "Size and Weight",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "pixel-7",
+      "name": "Google Pixel 7",
+      "aliases": [
+        "Pixel 7"
+      ],
+      "info": {
+        "manufacturer": "Google",
+        "model": "Pixel 7"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 155.6,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 7 tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 73.2,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 7 tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.7,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 7 tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "pixel-7-pro",
+      "name": "Google Pixel 7 Pro",
+      "aliases": [
+        "Pixel 7 Pro"
+      ],
+      "info": {
+        "manufacturer": "Google",
+        "model": "Pixel 7 Pro"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 162.9,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 7 Pro tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 76.6,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 7 Pro tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.9,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 7 Pro tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "pixel-8",
+      "name": "Google Pixel 8",
+      "aliases": [
+        "Pixel 8"
+      ],
+      "info": {
+        "manufacturer": "Google",
+        "model": "Pixel 8"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 150.5,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 8 tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 70.8,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 8 tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.9,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 8 tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "pixel-8-pro",
+      "name": "Google Pixel 8 Pro",
+      "aliases": [
+        "Pixel 8 Pro"
+      ],
+      "info": {
+        "manufacturer": "Google",
+        "model": "Pixel 8 Pro"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 162.6,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 8 Pro tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 76.5,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 8 Pro tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.8,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 8 Pro tech specs\", Dimensions",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "pixel-9",
+      "name": "Google Pixel 9",
+      "aliases": [
+        "Pixel 9"
+      ],
+      "info": {
+        "manufacturer": "Google",
+        "model": "Pixel 9"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 152.8,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 9 tech specs\", Dimensions (Rest of world row, mm)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 72,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 9 tech specs\", Dimensions (Rest of world row, mm)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.5,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 9 tech specs\", Dimensions (Rest of world row, mm)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "phones",
+      "id": "pixel-9-pro",
+      "name": "Google Pixel 9 Pro",
+      "aliases": [
+        "Pixel 9 Pro"
+      ],
+      "info": {
+        "manufacturer": "Google",
+        "model": "Pixel 9 Pro"
+      },
+      "sizes": [
+        {
+          "key": "height",
+          "value": 152.8,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 9 Pro tech specs\", Dimensions (Rest of world row, mm)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "width",
+          "value": 72,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 9 Pro tech specs\", Dimensions (Rest of world row, mm)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        },
+        {
+          "key": "depth",
+          "value": 8.5,
+          "unit": "mm",
+          "source_url": "https://support.google.com/pixelphone/answer/7158570?hl=en",
+          "locator": "\"Pixel 9 Pro tech specs\", Dimensions (Rest of world row, mm)",
+          "verified_utc": "2026-10-16T00:48:59Z"
+        }
+      ]
+    },
+    {
+      "category": "raspberry-pi",
+      "id": "pi3",
+      "name": "Raspberry Pi 3 Model B+",
+      "aliases": [
+        "Raspberry Pi 3",
+        "Pi 3",
+        "RPi 3"
+      ],
+      "info": {
+        "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+        "locator": "PDF page 1",
+        "ports.micro-USB power.edge": "bottom",
+        "ports.micro-USB power.centerline_axis": "x",
+        "ports.HDMI.edge": "bottom",
+        "ports.HDMI.centerline_axis": "x",
+        "ports.audio/video jack.edge": "bottom",
+        "ports.audio/video jack.centerline_axis": "x",
+        "ports.Ethernet.edge": "right",
+        "ports.Ethernet.centerline_axis": "y",
+        "ports.USB lower stack.edge": "right",
+        "ports.USB lower stack.centerline_axis": "y",
+        "ports.USB upper stack.edge": "right",
+        "ports.USB upper stack.centerline_axis": "y",
+        "ports.CSI ribbon.edge": "internal",
+        "ports.CSI ribbon.centerline_axis": "x"
+      },
+      "sizes": [
+        {
+          "key": "outline_xy",
+          "value": [
+            85,
+            56
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.micro-USB power.centerline",
+          "value": 10.6,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.HDMI.centerline",
+          "value": 32,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.audio/video jack.centerline",
+          "value": 53.5,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.Ethernet.centerline",
+          "value": 10.25,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB lower stack.centerline",
+          "value": 29,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB upper stack.centerline",
+          "value": 47,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.CSI ribbon.centerline",
+          "value": 45,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "HDMI center 32 plus dimensioned spacing 13."
+        },
+        {
+          "key": "mount_hole_centers",
+          "value": [
+            [
+              3.5,
+              3.5
+            ],
+            [
+              61.5,
+              3.5
+            ],
+            [
+              3.5,
+              52.5
+            ],
+            [
+              61.5,
+              52.5
+            ]
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "Left offset 3.5 plus horizontal pitch 58; lower offset 3.5 plus vertical pitch 49. For Zero 2 W right center is width 65 minus 3.5."
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 2.75,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        },
+        {
+          "key": "corner_radius",
+          "value": 3,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/532-raspberry-pi-3-model-b/documents/RP-008337-DS-2-raspberry-pi-3-b-plus-mechanical-drawing.pdf"
+        }
+      ]
+    },
+    {
+      "category": "raspberry-pi",
+      "id": "pi4",
+      "name": "Raspberry Pi 4 Model B",
+      "aliases": [
+        "Raspberry Pi 4",
+        "Pi 4",
+        "RPi 4"
+      ],
+      "info": {
+        "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+        "locator": "PDF page 1",
+        "ports.USB-C power.edge": "bottom",
+        "ports.USB-C power.centerline_axis": "x",
+        "ports.micro-HDMI left.edge": "bottom",
+        "ports.micro-HDMI left.centerline_axis": "x",
+        "ports.micro-HDMI right.edge": "bottom",
+        "ports.micro-HDMI right.centerline_axis": "x",
+        "ports.CSI ribbon.edge": "internal",
+        "ports.CSI ribbon.centerline_axis": "x",
+        "ports.audio/video jack.edge": "bottom",
+        "ports.audio/video jack.centerline_axis": "x",
+        "ports.USB lower stack.edge": "right",
+        "ports.USB lower stack.centerline_axis": "y",
+        "ports.USB upper stack.edge": "right",
+        "ports.USB upper stack.centerline_axis": "y",
+        "ports.Ethernet.edge": "right",
+        "ports.Ethernet.centerline_axis": "y"
+      },
+      "sizes": [
+        {
+          "key": "outline_xy",
+          "value": [
+            85,
+            56
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB-C power.centerline",
+          "value": 11.2,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "Mount center x 3.5 plus spacing 7.7."
+        },
+        {
+          "key": "ports.micro-HDMI left.centerline",
+          "value": 26,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "3.5 + 7.7 + 14.8."
+        },
+        {
+          "key": "ports.micro-HDMI right.centerline",
+          "value": 39.5,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "3.5 + 7.7 + 14.8 + 13.5."
+        },
+        {
+          "key": "ports.CSI ribbon.centerline",
+          "value": 46.5,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "Right micro-HDMI center 39.5 plus spacing 7."
+        },
+        {
+          "key": "ports.audio/video jack.centerline",
+          "value": 54,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "CSI center 46.5 plus spacing 7.5."
+        },
+        {
+          "key": "ports.USB lower stack.centerline",
+          "value": 9,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB upper stack.centerline",
+          "value": 27,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.Ethernet.centerline",
+          "value": 45.75,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "mount_hole_centers",
+          "value": [
+            [
+              3.5,
+              3.5
+            ],
+            [
+              61.5,
+              3.5
+            ],
+            [
+              3.5,
+              52.5
+            ],
+            [
+              61.5,
+              52.5
+            ]
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "Left offset 3.5 plus horizontal pitch 58; lower offset 3.5 plus vertical pitch 49. For Zero 2 W right center is width 65 minus 3.5."
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 2.7,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        },
+        {
+          "key": "corner_radius",
+          "value": 3,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/545-raspberry-pi-4-model-b/documents/RP-008343-DS-1-raspberry-pi-4-mechanical-drawing.pdf"
+        }
+      ]
+    },
+    {
+      "category": "raspberry-pi",
+      "id": "pi5",
+      "name": "Raspberry Pi 5",
+      "aliases": [
+        "Pi 5",
+        "RPi 5"
+      ],
+      "info": {
+        "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+        "locator": "PDF page 1",
+        "ports.USB-C power.edge": "bottom",
+        "ports.USB-C power.centerline_axis": "x",
+        "ports.micro-HDMI left.edge": "bottom",
+        "ports.micro-HDMI left.centerline_axis": "x",
+        "ports.micro-HDMI right.edge": "bottom",
+        "ports.micro-HDMI right.centerline_axis": "x",
+        "ports.Ethernet.edge": "right",
+        "ports.Ethernet.centerline_axis": "y",
+        "ports.USB lower stack.edge": "right",
+        "ports.USB lower stack.centerline_axis": "y",
+        "ports.USB upper stack.edge": "right",
+        "ports.USB upper stack.centerline_axis": "y",
+        "accuracy": "Manufacturer labels all dimensions approximate and for reference only, unsuitable as production data."
+      },
+      "sizes": [
+        {
+          "key": "outline_xy",
+          "value": [
+            85,
+            56
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB-C power.centerline",
+          "value": 11.2,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.micro-HDMI left.centerline",
+          "value": 25.8,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.micro-HDMI right.centerline",
+          "value": 39.2,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.Ethernet.centerline",
+          "value": 10.2,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB lower stack.centerline",
+          "value": 29.1,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.USB upper stack.centerline",
+          "value": 47,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 2.7,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf"
+        },
+        {
+          "key": "mount_hole_pitch_xy",
+          "value": [
+            58,
+            49
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/892-raspberry-pi-5/documents/RP-008347-DS-1-raspberry-pi-5-mechanical-drawing.pdf",
+          "note": "Dimensioned 58 horizontal and 49 vertical on the drawing. The vertical edge offset is not dimensioned on this drawing, so no absolute hole centers are given."
+        }
+      ]
+    },
+    {
+      "category": "raspberry-pi",
+      "id": "zero2",
+      "name": "Raspberry Pi Zero 2 W",
+      "aliases": [
+        "Pi Zero 2 W",
+        "RPi Zero 2 W"
+      ],
+      "info": {
+        "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+        "locator": "PDF page 1",
+        "ports.mini-HDMI.edge": "bottom",
+        "ports.mini-HDMI.centerline_axis": "x",
+        "ports.micro-USB data.edge": "bottom",
+        "ports.micro-USB data.centerline_axis": "x",
+        "ports.micro-USB power.edge": "bottom",
+        "ports.micro-USB power.centerline_axis": "x"
+      },
+      "sizes": [
+        {
+          "key": "outline_xy",
+          "value": [
+            65,
+            30
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/584-raspberry-pi-zero-2-w/documents/RP-008358-DS-1-raspberry-pi-zero-2-w-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.mini-HDMI.centerline",
+          "value": 12.4,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/584-raspberry-pi-zero-2-w/documents/RP-008358-DS-1-raspberry-pi-zero-2-w-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.micro-USB data.centerline",
+          "value": 41.4,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/584-raspberry-pi-zero-2-w/documents/RP-008358-DS-1-raspberry-pi-zero-2-w-mechanical-drawing.pdf"
+        },
+        {
+          "key": "ports.micro-USB power.centerline",
+          "value": 54,
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/584-raspberry-pi-zero-2-w/documents/RP-008358-DS-1-raspberry-pi-zero-2-w-mechanical-drawing.pdf"
+        },
+        {
+          "key": "mount_hole_centers",
+          "value": [
+            [
+              3.5,
+              3.5
+            ],
+            [
+              61.5,
+              3.5
+            ],
+            [
+              3.5,
+              26.5
+            ],
+            [
+              61.5,
+              26.5
+            ]
+          ],
+          "unit": "mm",
+          "source_url": "https://pip-assets.raspberrypi.com/categories/584-raspberry-pi-zero-2-w/documents/RP-008358-DS-1-raspberry-pi-zero-2-w-mechanical-drawing.pdf",
+          "status": "derived",
+          "derivation": "x: 3.5 and 65 minus 3.5 (3.5 is dimensioned at both ends); y: 3.5 and 3.5 plus dimensioned vertical pitch 23 (equals 30 minus 3.5, also dimensioned)."
+        }
+      ]
+    },
+    {
+      "category": "raspberry-pi",
+      "id": "pico",
+      "name": "Raspberry Pi Pico Rev3",
+      "aliases": [
+        "Raspberry Pi Pico",
+        "Pi Pico",
+        "RPi Pico"
+      ],
+      "info": {
+        "coordinate_system": "Component-side drawing view. Origin at lower left of PCB outline, x right, y up. Dimensions exclude connector overhang.",
+        "locator": "PDF page 7, printed page 6, Figure 3",
+        "ports.micro-USB.edge": "top"
+      },
+      "sizes": [
+        {
+          "key": "outline_xy",
+          "value": [
+            21,
+            51
+          ],
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf"
+        },
+        {
+          "key": "ports.micro-USB.body_width",
+          "value": 8,
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf"
+        },
+        {
+          "key": "ports.micro-USB.overhang",
+          "value": 1.3,
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf",
+          "limit": "typical"
+        },
+        {
+          "key": "pcb_thickness",
+          "value": 1,
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf"
+        },
+        {
+          "key": "mount_hole_diameter",
+          "value": 2.1,
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf"
+        },
+        {
+          "key": "mount_hole_diameter_tolerance",
+          "value": [
+            -0.05,
+            0.05
+          ],
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf"
+        },
+        {
+          "key": "mount_hole_x_coordinates",
+          "value": [
+            4.8,
+            16.2
+          ],
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf",
+          "status": "derived",
+          "derivation": "Left hole center 4.8; add dimensioned pitch 11.4."
+        },
+        {
+          "key": "mount_hole_top_y",
+          "value": 49,
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf",
+          "status": "derived",
+          "derivation": "Board length 51 minus dimensioned offset 2 from the top edge to the top hole center."
+        },
+        {
+          "key": "header_pin_pitch",
+          "value": 2.54,
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf"
+        },
+        {
+          "key": "header_row_pitch",
+          "value": 17.78,
+          "unit": "mm",
+          "source_url": "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf"
+        }
+      ]
+    },
+    {
+      "category": "screw-holes",
+      "id": "M2",
+      "name": "M2 screw",
+      "aliases": [
+        "M2 bolt"
+      ],
+      "info": {
+        "thread_series": "coarse"
+      },
+      "sizes": [
+        {
+          "key": "clearance_close",
+          "value": 2.2,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_normal",
+          "value": 2.4,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_loose",
+          "value": 2.6,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        }
+      ]
+    },
+    {
+      "category": "screw-holes",
+      "id": "M2.5",
+      "name": "M2.5 screw",
+      "aliases": [
+        "M2.5 bolt"
+      ],
+      "info": {
+        "thread_series": "coarse"
+      },
+      "sizes": [
+        {
+          "key": "clearance_close",
+          "value": 2.7,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_normal",
+          "value": 2.9,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_loose",
+          "value": 3.1,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        }
+      ]
+    },
+    {
+      "category": "screw-holes",
+      "id": "M3",
+      "name": "M3 screw",
+      "aliases": [
+        "M3 bolt"
+      ],
+      "info": {
+        "thread_series": "coarse"
+      },
+      "sizes": [
+        {
+          "key": "clearance_close",
+          "value": 3.2,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_normal",
+          "value": 3.4,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_loose",
+          "value": 3.6,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        }
+      ]
+    },
+    {
+      "category": "screw-holes",
+      "id": "M4",
+      "name": "M4 screw",
+      "aliases": [
+        "M4 bolt"
+      ],
+      "info": {
+        "thread_series": "coarse"
+      },
+      "sizes": [
+        {
+          "key": "clearance_close",
+          "value": 4.3,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_normal",
+          "value": 4.5,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_loose",
+          "value": 4.8,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        }
+      ]
+    },
+    {
+      "category": "screw-holes",
+      "id": "M5",
+      "name": "M5 screw",
+      "aliases": [
+        "M5 bolt"
+      ],
+      "info": {
+        "thread_series": "coarse"
+      },
+      "sizes": [
+        {
+          "key": "clearance_close",
+          "value": 5.3,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_normal",
+          "value": 5.5,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_loose",
+          "value": 5.8,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        }
+      ]
+    },
+    {
+      "category": "screw-holes",
+      "id": "M6",
+      "name": "M6 screw",
+      "aliases": [
+        "M6 bolt"
+      ],
+      "info": {
+        "thread_series": "coarse"
+      },
+      "sizes": [
+        {
+          "key": "clearance_close",
+          "value": 6.4,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_normal",
+          "value": 6.6,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_loose",
+          "value": 7,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        }
+      ]
+    },
+    {
+      "category": "screw-holes",
+      "id": "M8",
+      "name": "M8 screw",
+      "aliases": [
+        "M8 bolt"
+      ],
+      "info": {
+        "thread_series": "coarse"
+      },
+      "sizes": [
+        {
+          "key": "clearance_close",
+          "value": 8.4,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_normal",
+          "value": 9,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        },
+        {
+          "key": "clearance_loose",
+          "value": 10,
+          "unit": "mm",
+          "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+        }
+      ]
+    },
+    {
+      "category": "spools",
+      "id": "polymaker-0.5kg-cardboard",
+      "name": "Polymaker 0.5 kg cardboard spool",
+      "aliases": [
+        "Polymaker 0.5 kg",
+        "Polymaker 0.5kg spool"
+      ],
+      "info": {
+        "material": "cardboard"
+      },
+      "sizes": [
+        {
+          "key": "nominal_capacity",
+          "value": 0.5,
+          "unit": "kg",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore",
+          "value": 55,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 200,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width",
+          "value": 65.6,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width_tolerance",
+          "value": [
+            -2,
+            2
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        }
+      ]
+    },
+    {
+      "category": "spools",
+      "id": "polymaker-0.75kg-cardboard",
+      "name": "Polymaker 0.75 kg cardboard spool",
+      "aliases": [
+        "Polymaker 0.75 kg",
+        "Polymaker 0.75kg spool"
+      ],
+      "info": {
+        "material": "cardboard"
+      },
+      "sizes": [
+        {
+          "key": "nominal_capacity",
+          "value": 0.75,
+          "unit": "kg",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore",
+          "value": 55,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 200,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width",
+          "value": 50.6,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width_tolerance",
+          "value": [
+            -2,
+            2
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        }
+      ]
+    },
+    {
+      "category": "spools",
+      "id": "polymaker-1kg-cardboard",
+      "name": "Polymaker 1 kg cardboard spool",
+      "aliases": [
+        "Polymaker 1 kg",
+        "Polymaker 1kg spool"
+      ],
+      "info": {
+        "material": "cardboard"
+      },
+      "sizes": [
+        {
+          "key": "nominal_capacity",
+          "value": 1,
+          "unit": "kg",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore",
+          "value": 55,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 200,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width",
+          "value": 65.6,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width_tolerance",
+          "value": [
+            -2,
+            2
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        }
+      ]
+    },
+    {
+      "category": "spools",
+      "id": "polymaker-2kg-cardboard",
+      "name": "Polymaker 2 kg cardboard spool",
+      "aliases": [
+        "Polymaker 2 kg",
+        "Polymaker 2kg spool"
+      ],
+      "info": {
+        "material": "cardboard"
+      },
+      "sizes": [
+        {
+          "key": "nominal_capacity",
+          "value": 2,
+          "unit": "kg",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore",
+          "value": 55,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 250,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width",
+          "value": 117.2,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width_tolerance",
+          "value": [
+            -2,
+            2
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        }
+      ]
+    },
+    {
+      "category": "spools",
+      "id": "polymaker-3kg-cardboard",
+      "name": "Polymaker 3 kg cardboard spool",
+      "aliases": [
+        "Polymaker 3 kg",
+        "Polymaker 3kg spool"
+      ],
+      "info": {
+        "material": "cardboard"
+      },
+      "sizes": [
+        {
+          "key": "nominal_capacity",
+          "value": 3,
+          "unit": "kg",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore",
+          "value": 55,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 250,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width",
+          "value": 117.2,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width_tolerance",
+          "value": [
+            -2,
+            2
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        }
+      ]
+    },
+    {
+      "category": "spools",
+      "id": "polymaker-5kg-plastic",
+      "name": "Polymaker 5 kg plastic spool",
+      "aliases": [
+        "Polymaker 5 kg",
+        "Polymaker 5kg spool"
+      ],
+      "info": {
+        "material": "plastic"
+      },
+      "sizes": [
+        {
+          "key": "nominal_capacity",
+          "value": 5,
+          "unit": "kg",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore",
+          "value": 32,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "bore_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter",
+          "value": 300,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "outside_diameter_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width",
+          "value": 160,
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        },
+        {
+          "key": "width_tolerance",
+          "value": [
+            -1,
+            1
+          ],
+          "unit": "mm",
+          "source_url": "https://eu-wholesale.polymaker.com/products/polylite-silk-pla"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "reference_diameter",
+      "name": "spur gear reference diameter",
+      "aliases": [
+        "reference diameter",
+        "gear reference diameter"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "m*z",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.net/gear-knowledge/gear-technical-reference/calculation-gear-dimensions/"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "base_diameter",
+      "name": "spur gear base diameter",
+      "aliases": [
+        "base diameter",
+        "gear base diameter"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "d*cos(alpha)",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.net/gear-knowledge/gear-technical-reference/calculation-gear-dimensions/"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "addendum",
+      "name": "spur gear addendum",
+      "aliases": [
+        "gear addendum"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "m",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.net/gear-knowledge/gear-technical-reference/calculation-gear-dimensions/"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "whole_depth",
+      "name": "spur gear whole depth",
+      "aliases": [
+        "whole depth",
+        "gear whole depth"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "2.25*m",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.net/gear-knowledge/gear-technical-reference/calculation-gear-dimensions/"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "tip_diameter",
+      "name": "spur gear tip diameter",
+      "aliases": [
+        "tip diameter",
+        "gear tip diameter"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "d+2*m",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.net/gear-knowledge/gear-technical-reference/calculation-gear-dimensions/"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "root_diameter",
+      "name": "spur gear root diameter",
+      "aliases": [
+        "root diameter",
+        "gear root diameter"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "d-2.5*m",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.net/gear-knowledge/gear-technical-reference/calculation-gear-dimensions/"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "dedendum",
+      "name": "spur gear dedendum",
+      "aliases": [
+        "gear dedendum"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "1.25*m",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.us/media/fqrlut1m/abcs-of-gearing-b.pdf"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "circular_pitch",
+      "name": "spur gear circular pitch",
+      "aliases": [
+        "circular pitch",
+        "gear circular pitch"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "pi*m",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.us/media/fqrlut1m/abcs-of-gearing-b.pdf"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "reference_tooth_thickness",
+      "name": "spur gear reference tooth thickness",
+      "aliases": [
+        "reference tooth thickness",
+        "gear reference tooth thickness"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "pi*m/2",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.us/media/fqrlut1m/abcs-of-gearing-b.pdf"
+        }
+      ]
+    },
+    {
+      "category": "spur-gears",
+      "id": "center_distance",
+      "name": "spur gear center distance",
+      "aliases": [
+        "center distance",
+        "gear center distance"
+      ],
+      "info": {},
+      "sizes": [
+        {
+          "key": "formula",
+          "value": "(d1+d2)/2",
+          "unit": "formula:mm",
+          "source_url": "https://khkgears.net/gear-knowledge/gear-technical-reference/calculation-gear-dimensions/",
+          "status": "derived",
+          "derivation": "Reference circles are tangent for the standard pair; sum their radii."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Metric coarse cutting tap and clearance sizes. Close/normal/loose are separate fit choices; no printer compensation included.",
+  "verified_note": "Only measurements whose value was re-read in the cited source at checked_utc. Mismatched, not-stated, unsourced and null items were removed. Tap drill sizes were removed because the Accu page could not be loaded (HTTP 403 Cloudflare challenge). Verification time is the file-level checked_utc.",
+  "records": [
+    {
+      "id": "M3",
+      "thread_series": "coarse",
+      "clearance_close": {
+        "value": 3.2,
+        "unit": "mm",
+        "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+      },
+      "clearance_normal": {
+        "value": 3.4,
+        "unit": "mm",
+        "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+      },
+      "clearance_loose": {
+        "value": 3.6,
+        "unit": "mm",
+        "source_url": "https://www.albanycountyfasteners.com/media/6b/b8/g0/1764944339/clearance-hole-chart.pdf?ts=1764944339"
+      }
+    }
+  ]
+}

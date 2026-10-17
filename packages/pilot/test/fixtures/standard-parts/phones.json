@@ -1,0 +1,59 @@
+{
+  "schema_version": "1",
+  "checked_utc": "2026-10-16T00:48:59Z",
+  "scope": "Phone body height, width and depth as printed on the manufacturer tech specs pages. Both manufacturers state that size varies by configuration and manufacturing process. No case, camera bump or tolerance is implied.",
+  "records": [
+    {
+      "id": "iphone-15",
+      "manufacturer": "Apple",
+      "model": "iPhone 15",
+      "height": {
+        "value": 147.6,
+        "unit": "mm",
+        "source_url": "https://support.apple.com/en-us/111831",
+        "locator": "Size and Weight",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "width": {
+        "value": 71.6,
+        "unit": "mm",
+        "source_url": "https://support.apple.com/en-us/111831",
+        "locator": "Size and Weight",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "depth": {
+        "value": 7.8,
+        "unit": "mm",
+        "source_url": "https://support.apple.com/en-us/111831",
+        "locator": "Size and Weight",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      }
+    },
+    {
+      "id": "iphone-15-pro",
+      "manufacturer": "Apple",
+      "model": "iPhone 15 Pro",
+      "height": {
+        "value": 146.6,
+        "unit": "mm",
+        "source_url": "https://support.apple.com/en-us/111829",
+        "locator": "Size and Weight",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "width": {
+        "value": 70.6,
+        "unit": "mm",
+        "source_url": "https://support.apple.com/en-us/111829",
+        "locator": "Size and Weight",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      },
+      "depth": {
+        "value": 8.25,
+        "unit": "mm",
+        "source_url": "https://support.apple.com/en-us/111829",
+        "locator": "Size and Weight",
+        "verified_utc": "2026-10-16T00:48:59Z"
+      }
+    }
+  ]
+}
