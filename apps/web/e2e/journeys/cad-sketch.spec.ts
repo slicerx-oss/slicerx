@@ -1144,7 +1144,7 @@ test.describe('sketch-panel-cards', () => {
       return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
     })
 
-  test('a line takes a typed length and angle in the boxes on it, Tab moving between them', async ({ page }) => {
+  test('a line takes a typed length and angle in the boxes on it, Tab moving between them, and its actions fit the pane', async ({ page }) => {
     await sketchOnTop(page)
     const pills = page.getByTestId('sketch-pills')
     const boxes = page.getByRole('group', { name: 'Sizes of the shape being drawn' })
@@ -1177,6 +1177,19 @@ test.describe('sketch-panel-cards', () => {
     await toolPanel(page).getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Select' }).click()
     await sketchAt(page, 'click', [0, 10])
     await expect(page.getByTestId('sketch-picked')).toHaveText('Line, 20.00 mm')
+    // the picked loop's actions wrap inside the pane: none runs past its edge or sits clipped under it
+    const actions = toolPanel(page).locator('.sketch-loop-actions')
+    for (const name of ['Mirror', 'Construction', 'Delete loop']) {
+      const button = actions.getByRole('button', { name, exact: true })
+      await button.scrollIntoViewIfNeeded()
+      const [b, row] = [(await button.boundingBox())!, (await actions.boundingBox())!]
+      expect(b.x, name).toBeGreaterThanOrEqual(row.x)
+      expect(b.x + b.width, name).toBeLessThanOrEqual(row.x + row.width + 1)
+      expect(await button.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        return el.contains(document.elementFromPoint(r.right - 2, r.y + r.height / 2))
+      }), `${name} is not clipped`).toBe(true)
+    }
   })
 
   test('the solid card opens on a closed profile, and nothing above it moves', async ({ page }) => {
