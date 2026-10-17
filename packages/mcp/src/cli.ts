@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // slicerx-mcp: runs the SlicerX MCP server over stdio (default) or streamable HTTP.
+import { registerProject } from './register'
 import { randomBytes } from 'node:crypto'
 import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -24,6 +25,7 @@ import { hubUrlFromEnv } from '@slicerx/link-client'
 const HELP = `slicerx-mcp ${SERVER_VERSION}: SlicerX tools for MCP clients
 
 Usage: slicerx-mcp [options]
+       slicerx-mcp register --client codex --scope project [--allow-dir <dir>] [--dry-run]
        slicerx-mcp [options] call <tool> [<json>] [<tool> [<json>] ...]
 
 call runs tools once, in order, in one process, and prints one JSON line per call
@@ -111,6 +113,7 @@ const flag = (name: string): boolean => ['1', 'true', 'yes'].includes((env(name)
 let jsonErrors = false
 
 async function main(): Promise<void> {
+  if (process.argv[2] === 'register') return registerProject(process.argv.slice(3), process.argv[1]!)
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
