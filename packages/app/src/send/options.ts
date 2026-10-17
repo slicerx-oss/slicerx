@@ -146,6 +146,8 @@ export function optionLines(specs: readonly SendOptionSpec[], o: SendOptions): s
 
 /** What the send step returns: the print options, whether to start after the upload, and the file's name on the printer. */
 export interface SendChoice {
+  /** Zero-based logical tools mapped to the U1's physical toolheads. */
+  toolheadMap?: Record<number, number>
   options: SendOptions
   start: boolean
   name: string
