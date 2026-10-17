@@ -34,6 +34,26 @@ export function registerCommands(specs: readonly CommandSpec[]): () => void {
   }
 }
 
+const loading = new Set<Promise<unknown>>()
+
+/** Registers the commands a module brings once it has loaded. The command list is empty until then; `runCommand` waits for it. Returns the unregister. */
+export function registerCommandsLater(load: () => Promise<readonly CommandSpec[]>): () => void {
+  let off: (() => void) | undefined
+  let gone = false
+  const p: Promise<unknown> = load().then(
+    (specs) => {
+      if (!gone) off = registerCommands(specs)
+    },
+    () => undefined,
+  )
+  loading.add(p)
+  void p.finally(() => loading.delete(p))
+  return () => {
+    gone = true
+    off?.()
+  }
+}
+
 export function getCommand(id: string): CommandSpec | undefined {
   return commands.get(id)
 }
@@ -76,6 +96,7 @@ export function searchCommands(query: string, list: readonly CommandSpec[] = sna
 export type RunResult = { ok: true } | { ok: false; reason: 'unknown' | 'disabled' | 'failed'; message: string }
 
 export async function runCommand(id: string, input?: unknown): Promise<RunResult> {
+  if (!commands.has(id) && loading.size) await Promise.all(loading)
   const c = commands.get(id)
   if (!c) return { ok: false, reason: 'unknown', message: `No command ${id}` }
   if (!isEnabled(c)) return { ok: false, reason: 'disabled', message: `${c.title} is not available right now` }
