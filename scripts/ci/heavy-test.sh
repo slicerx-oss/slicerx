@@ -302,7 +302,9 @@ rm -f "$dir.gpu-engine"
 ehold p3; p3=$!
 ehold p4; p4=$!
 SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --gpu true 2> "$tmp/g6.err" > /dev/null &
-g6=$!; lpids="$lpids $!"; sleep 3
+g6=$!; lpids="$lpids $!"
+# A slow Git Bash waiter may take a few seconds to say it; wait for the line, then check it was said once.
+for _ in $(seq 30); do grep -q "; engine waiters pass it$" "$tmp/g6.err" 2> /dev/null && break; sleep 0.5; done
 name="a manual --gpu waiter blocked by the engine holds says so once, naming them, and that engine waiters pass it"
 ok eval '[ "$(grep -c "^heavy.sh: waiting:" "$tmp/g6.err")" = 1 ] && grep -q "waiting: 2 engine holds run" "$tmp/g6.err" \
   && grep -q "(pid $p3, pid $p4)\|(pid $p4, pid $p3)" "$tmp/g6.err" && grep -q "; engine waiters pass it$" "$tmp/g6.err"'
@@ -456,6 +458,70 @@ printf '%s\n' "$tmp/shared-target" > "$lock.target-dir"
 CARGO_TARGET_DIR=$tmp/own SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'printf %s "$CARGO_TARGET_DIR" > "$1"' sh "$tmp/td2"
 rm -f "$lock.target-dir"
 ok eval '[ "$(cat "$tmp/td1")" = "$tmp/shared-target" ] && [ "$(cat "$tmp/td2")" = "$tmp/own" ]'
+
+# Max hold: a command that runs past it is stopped with its children (TERM, then KILL after the grace), the slot is
+# freed, heavy.sh exits 124, and the history says so.
+# A process that is gone, or a zombie no one reaped yet (its parent was killed too).
+gone() { ! kill -0 "$1" 2> /dev/null || case $(ps -o stat= -p "$1" 2> /dev/null) in *Z*) true ;; *) false ;; esac; }
+name="a command past the max hold is stopped with its children, exits 124 and is logged"
+: > "$tmp/history.log"
+t0=$SECONDS
+SX_HEAVY_LOCK=$lock SX_HEAVY_MAX_HOLD=2 SX_HEAVY_KILL_GRACE=2 bash "$heavy" sh -c 'sleep 600 & echo $! > "$1"; wait' sh "$tmp/mh.kid" 2> /dev/null
+rc=$? secs=$((SECONDS - t0))
+ok eval '[ "$rc" = 124 ] && [ $secs -le 8 ] && [ ! -d "$dir" ] && gone "$(cat "$tmp/mh.kid")" &&
+  grep -q "	timeout	" "$tmp/history.log" && grep -q "	release	.*rc 124, .*stopped at the max hold of 2 s" "$tmp/history.log"'
+name="a command that ignores TERM is killed after the grace"
+t0=$SECONDS
+SX_HEAVY_LOCK=$lock SX_HEAVY_MAX_HOLD=1 SX_HEAVY_KILL_GRACE=2 bash "$heavy" sh -c 'trap "" TERM; sleep 600' 2> /dev/null
+rc=$? secs=$((SECONDS - t0))
+ok eval '[ "$rc" = 124 ] && [ $secs -le 8 ] && [ ! -d "$dir" ] && grep -q "	kill	" "$tmp/history.log"'
+name="a command within its max hold runs as before, and the record names the hold: 2 hours for --e2e, none for plain"
+SX_HEAVY_LOCK=$lock bash "$heavy" --e2e sh -c 'cat "$1/owner" > "$2"; exit 3' sh "$dir" "$tmp/rec.e2e"; rc3=$?
+SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'cat "$1/owner" > "$2"' sh "$dir" "$tmp/rec.plain"
+ok eval '[ "$rc3" = 3 ] && grep -qx "hold 7200 grace 60" "$tmp/rec.e2e" && grep -qx "hold 0 grace 60" "$tmp/rec.plain"'
+
+# A holder that cannot be proved dead but is past its max hold, twice its grace and 5 minutes more is taken over; one
+# within that is kept. A record from an older heavy.sh (no hold line) gets the machine's max hold for its class.
+name="a live holder past its max hold is taken over and logged as stale"
+fake $$ "$(my_identity right)
+hold 1 grace 0"
+touch -t 202601010000 "$dir/owner"
+waiter 10 S
+ok eval 'taken_over && [ $secs -le 5 ] && grep -q "	clear	.*stale holder: held [0-9]* s, max hold 1 s" "$tmp/history.log"'
+name="a live holder within its max hold is kept"
+fake $$ "$(my_identity right)
+hold 600 grace 0"
+touch -t 202601010000 "$dir/owner"
+touch "$dir/owner"
+waiter 3 S
+ok kept $$
+name="a record with no hold line gets the machine's max hold (for a plain one, none unless the machine sets it)"
+fake $$ "$(my_identity right)"
+touch -t 202601010000 "$dir/owner"
+waiter 3 S; plain_rc=$rc
+ok eval '[ "$plain_rc" = 75 ]'
+name="and once the machine sets a max hold for every class, it is taken over"
+echo 1 > "$lock.max-hold"
+waiter 10 S
+rm -f "$lock.max-hold"
+ok taken_over
+
+name="a holder whose slot was taken over leaves the new holder's slot alone"
+hold mo; mo=$!
+printf 'pid 1 since 2026-01-01 00:00:00: new holder\n' > "$dir/owner"
+release mo "$mo"
+ok eval '[ "$(head -n 1 "$dir/owner")" = "pid 1 since 2026-01-01 00:00:00: new holder" ]'
+rm -rf "$dir"
+
+# A waiter that is not a CI job is queued as one once its ticket is SX_HEAVY_PROMOTE_AFTER seconds old.
+name="a manual ticket is promoted to a CI one after SX_HEAVY_PROMOTE_AFTER and still runs"
+: > "$tmp/order"
+hold pr; pr=$!
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=30 SX_HEAVY_PROMOTE_AFTER=2 bash "$heavy" sh -c 'echo P >> "$1"' sh "$tmp/order" > /dev/null 2>&1 &
+pP=$!; lpids="$lpids $!"; sleep 4
+promoted=$(ls "$dir.queue" | grep -c '^0-')
+release pr "$pr"; wait "$pP"; rc=$?
+ok eval '[ "$promoted" = 1 ] && [ "$rc" = 0 ] && [ "$(cat "$tmp/order")" = P ] && grep -q "	promote	" "$tmp/history.log"'
 
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
