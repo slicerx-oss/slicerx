@@ -496,6 +496,59 @@ test('a read client controls the live slice preview through MCP and native CLI w
   })
 })
 
+test('a read client controls every preview marker and reads UI and native CLI changes back', async ({ page, link }) => {
+  test.slow()
+  await unsliced(page)
+  await scratch('markers', async (dir) => {
+    const reader = await session(link, page, dir, 'marker-reader', 'read')
+    try {
+      const initial = await reader.ok('app_preview_markers')
+      expect(initial.sliced).toBe(false)
+      expect(initial.markers).toHaveLength(6)
+      for (const row of initial.markers) {
+        expect(row.available).toBe(false)
+        expect(row.count).toBeUndefined()
+      }
+      expect(await reader.call('app_preview_markers_set', { wipes: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await page.getByRole('button', { name: 'Slice plate', exact: true }).click()
+      await expect(sliced(page)).toBeVisible({ timeout: 120_000 })
+      const history = await reader.ok('app_history')
+      const loaded = await reader.ok('app_preview_markers')
+      for (const row of loaded.markers) expect(row.available).toBe(true)
+      const allOn = { retractions: true, seams: true, lifts: true, wipes: true, toolChanges: true, pauses: true }
+      await reader.ok('app_preview_markers_set', allOn)
+      const legend = page.getByRole('list', { name: 'Toolpath legend' })
+      const toggle = (label: string) => legend.locator('label').filter({ has: page.getByText(label, { exact: true }) }).getByRole('checkbox')
+      for (const row of (await reader.ok('app_preview_markers')).markers) {
+        expect(row.shown).toBe(true)
+        await expect(toggle(row.label)).toBeChecked()
+      }
+      await expect.poll(async () => (await reader.ok('app_preview_markers')).markers.filter((m: { source: string; count?: number }) => m.source === 'gcode' && m.count !== undefined).length).toBe(3)
+      await toggle('Seams').uncheck()
+      expect((await reader.ok('app_preview_markers')).markers.find((m: { kind: string }) => m.kind === 'seams').shown).toBe(false)
+      if (process.platform === 'win32') {
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const allOff = Object.fromEntries(Object.keys(allOn).map((k) => [k, false]))
+          const rows = await run('app_preview_markers_set', allOff, 'app_preview_markers')
+          expect(rows).toHaveLength(2)
+          for (const row of rows) {
+            expect(row.ok).toBe(true)
+            expect(row.output.output.markers).toHaveLength(6)
+            for (const marker of row.output.output.markers) expect(marker.shown).toBe(false)
+          }
+          expect(await reader.ok('app_preview_markers')).toMatchObject(rows[1].output.output)
+          for (const row of loaded.markers) await expect(toggle(row.label)).not.toBeChecked()
+        })
+      }
+      expect((await reader.ok('app_history')).revision).toBe(history.revision)
+      await tab(page, 'model').click()
+      expect(await reader.call('app_preview_markers_set', { wipes: true })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+    } finally {
+      await reader.close()
+    }
+  })
+})
+
 // Run against the default app or a JSON edition named by SLICERX_CONFIG. Both modes must reach the rendered art and the
 // client read-back. The computed CSS on the SVG icons and loops is what no unit test sees, so this keeps all of it.
 test('edition colors reach icons, loops, the viewport and MCP in both themes', async ({ page, link }, info) => {

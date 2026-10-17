@@ -79,6 +79,12 @@ An `unauthorized` app-link response means this setup is missing or the connectio
 
 `lastAt` is a UTC ISO 8601 timestamp, or null before the first notice. The count covers every `degrade` event emitted by the current viewport, including startup and plate-fit notices as well as GPU slowdowns. It persists across statistics resets and quality recovery, and starts over when a new viewport is created. It does not count repeated reads. `viewport` is null before a GPU view mounts, in the 2D fallback, and after unmount; older apps without this field return `not_supported` rather than invented values. Reading it changes nothing and does not require a debug build.
 
+### Slice preview markers
+
+`slicerx_app_preview_markers` reads the preview legend's retractions, seams, lifts (Z hops), wipes, toolChanges and pauses. Each row returns the `shown` preference, whether the loaded slice supports it (`available`), its data source, and its count when known. An absent count is unknown, not zero. G-code marker counts arrive asynchronously after a G-code marker is enabled.
+
+`slicerx_app_preview_markers_set` accepts one or more boolean switches, for example `{"seams":true,"wipes":true}`. It uses the same switches as the legend and returns read-back; poll the read command for later counts. The app must have a loaded slice on Slice with no paint, brim or face tool active. All inputs validate before anything changes. These view commands use the existing read grant, leave the project and its Undo history unchanged, and are also available through `sx call --app app_preview_markers_set '{"seams":true}' app_preview_markers`.
+
 ### Undo and redo in the open project
 
 `slicerx_app_history` reads the app toolbar's Undo and Redo counts and an opaque `revision`. It also returns the current plates, object transforms and bounds, design step summaries, object settings, filament setup, flush settings and timeline marker. It does not include mesh buffers.
