@@ -61,8 +61,8 @@ export function allDimensions(plate: readonly PlateEntry[]): { owner: string; d:
 }
 
 /** Keeps a measurement on the model: anchors for one or two picks, stored on the first pick's object in one store update. */
-export async function keepDimension(kind: DimensionKind, picks: readonly ObjectPick[], value?: number): Promise<Dimension> {
-  const plate = get().plate
+export async function keepDimension(kind: DimensionKind, picks: readonly ObjectPick[], value?: number, beforeCommit?: () => void): Promise<Dimension> {
+  const { plate, activePlate } = get()
   const anchors = await Promise.all(
     picks.map(async (p) => {
       const e = plate.find((x) => x.id === p.objectId)
@@ -71,6 +71,9 @@ export async function keepDimension(kind: DimensionKind, picks: readonly ObjectP
       return r.anchor
     }),
   )
+  beforeCommit?.()
+  const now = get()
+  if (now.activePlate !== activePlate || picks.some((p) => now.plate.find((e) => e.id === p.objectId) !== plate.find((e) => e.id === p.objectId))) throw new Error('The measured objects changed. Measure again.')
   const [a, b] = anchors
   if (!a || ((kind === 'distance' || kind === 'angle') && !b)) throw new Error('Pick two places on objects for a distance or an angle.')
   const taken = new Set(allDimensions(get().plate).map((x) => x.d.id))
