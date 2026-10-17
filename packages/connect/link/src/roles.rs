@@ -105,6 +105,8 @@ pub(crate) enum LinkClass {
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("history.get", LinkClass::Read),
+    ("units.get", LinkClass::Read),
+    ("units.set", LinkClass::Read),
     ("history.undo", LinkClass::Edit),
     ("history.redo", LinkClass::Edit),
     ("plate.list", LinkClass::Read),
@@ -384,6 +386,8 @@ mod tests {
     const PINNED_APP_METHODS: &[(&str, LinkClass)] = &[
         ("app.info", LinkClass::Read),
         ("history.get", LinkClass::Read),
+        ("units.get", LinkClass::Read),
+        ("units.set", LinkClass::Read),
         ("history.undo", LinkClass::Edit),
         ("history.redo", LinkClass::Edit),
         ("plate.list", LinkClass::Read),
@@ -482,6 +486,8 @@ mod tests {
             }
         }
         assert_eq!(link_class("plate.list"), Some(LinkClass::Read));
+        assert_eq!(link_class("units.get"), Some(LinkClass::Read));
+        assert_eq!(link_class("units.set"), Some(LinkClass::Read));
         assert_eq!(link_class("geom.extrude"), Some(LinkClass::Edit));
         // removing a project value is an edit, never a file or printer action.
         assert_eq!(link_class("values.remove"), Some(LinkClass::Edit));
