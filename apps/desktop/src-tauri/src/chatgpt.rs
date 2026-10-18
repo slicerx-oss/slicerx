@@ -9,8 +9,8 @@ use std::time::Duration;
 use sx_llm::SystemKeySource;
 use sx_llm::chatgpt::{self, Account, ConnectOptions, Endpoints};
 
-/// Loopback port the sign-in page redirects to. sx-llm's default: the client OpenAI registers
-/// at the first sign-in is bound to this redirect, so every sign-in from this app uses the same one.
+/// Loopback port the sign-in page redirects to: sx-llm's default. When the phone listener holds
+/// it, sx-llm takes a free port and registers the app again for that redirect.
 const REDIRECT_PORT: u16 = chatgpt::DEFAULT_REDIRECT_PORT;
 /// How long the person has to finish in the browser.
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);

@@ -59,6 +59,8 @@ struct Mock {
     refreshes: usize,
     revoked: Vec<String>,
     auth_headers: Vec<String>,
+    /// The redirect URI of each code exchange.
+    exchange_redirects: Vec<String>,
     /// Requests to /v1/responses with an image are refused, as a plan without vision would.
     refuse_images: bool,
 }
@@ -92,6 +94,8 @@ fn route(m: &mut Mock, first: &str, body: &str, auth: Option<String>) -> (u16, S
         let f = form(body);
         match f.get("grant_type").map(String::as_str) {
             Some("authorization_code") => {
+                m.exchange_redirects
+                    .push(f.get("redirect_uri").cloned().unwrap_or_default());
                 let pkce = URL_SAFE_NO_PAD.encode(ring::digest::digest(
                     &ring::digest::SHA256,
                     f.get("code_verifier").unwrap().as_bytes(),
@@ -273,6 +277,121 @@ async fn connected(
     };
     let account = connect(&store, &opts).await.unwrap();
     (store, endpoints, mock, account)
+}
+
+/// What one sign-in sent: the authorize URL's client id, name hint and redirect URI, and
+/// the redirect URI of the code exchange.
+struct SignIn {
+    client_id: String,
+    hint: Option<String>,
+    redirect: String,
+    exchanged: String,
+}
+
+/// Signs in with `port` as the requested callback port; the browser finishes it.
+async fn sign_in_on(store: &MemStore, port: u16) -> SignIn {
+    let mock = Arc::new(Mutex::new(Mock::default()));
+    let base = serve(mock.clone()).await;
+    let seen: Arc<Mutex<HashMap<String, String>>> = Arc::default();
+    let (m, s) = (mock.clone(), seen.clone());
+    let open = move |url: &str| -> crate::Result<()> {
+        let u = reqwest::Url::parse(url).unwrap();
+        let q: HashMap<String, String> = u.query_pairs().into_owned().collect();
+        {
+            let mut m = m.lock().unwrap();
+            m.nonce.clone_from(&q["nonce"]);
+            m.challenge.clone_from(&q["code_challenge"]);
+        }
+        let redirect = q["redirect_uri"].clone();
+        let state = q["state"].clone();
+        *s.lock().unwrap() = q;
+        tokio::spawn(async move {
+            let status = get(&format!(
+                "{redirect}?code=good-code&state={state}&client_id=client-123"
+            ))
+            .await;
+            assert!(status.starts_with("HTTP/1.1 200"), "{status}");
+        });
+        Ok(())
+    };
+    let opts = ConnectOptions {
+        endpoints: Endpoints::custom(&base, &format!("{base}/v1")).unwrap(),
+        redirect_port: port,
+        app_name: "SlicerX",
+        open_url: &open,
+        timeout: Duration::from_secs(10),
+    };
+    connect(store, &opts).await.unwrap();
+    let q = seen.lock().unwrap().clone();
+    let exchanged = mock.lock().unwrap().exchange_redirects.concat();
+    SignIn {
+        client_id: q["client_id"].clone(),
+        hint: q.get("agent_name_hint").cloned(),
+        redirect: q["redirect_uri"].clone(),
+        exchanged,
+    }
+}
+
+/// A store holding a connection whose client id is `client-123`.
+fn stored_client() -> MemStore {
+    let store = MemStore::default();
+    let stored = serde_json::json!({
+        "client_id": "client-123", "access_token": "a", "refresh_token": "r", "expires_at": 0, "scopes": [],
+        "subject": "user-1", "email": null, "name": null, "connected_at": 0, "capabilities": null,
+    });
+    store
+        .set(
+            CHATGPT_KEYCHAIN_SERVICE,
+            CHATGPT_KEYCHAIN_ACCOUNT,
+            &stored.to_string(),
+        )
+        .unwrap();
+    store
+}
+
+fn port_of(uri: &str) -> u16 {
+    reqwest::Url::parse(uri).unwrap().port().unwrap()
+}
+
+// The only test that uses the real default port; every other one binds port 0. It runs its
+// steps in order so the port is held exactly when each step needs it.
+#[tokio::test]
+async fn signs_in_on_a_free_port_while_the_default_one_is_taken() {
+    // The phone listener (or anything else) holds 47616.
+    let holder = TcpListener::bind(("127.0.0.1", DEFAULT_REDIRECT_PORT)).await.ok();
+
+    // A first sign-in takes another port and names it in the authorize URL and the exchange.
+    let a = sign_in_on(&MemStore::default(), DEFAULT_REDIRECT_PORT).await;
+    let port = port_of(&a.redirect);
+    assert_ne!(port, DEFAULT_REDIRECT_PORT);
+    assert_eq!(a.redirect, format!("http://127.0.0.1:{port}{CALLBACK_PATH}"));
+    assert_eq!(a.exchanged, a.redirect);
+    assert_eq!(a.client_id, REGISTRATION_CLIENT_ID);
+    assert_eq!(a.hint.as_deref(), Some("SlicerX"));
+
+    // With a client stored, the fallback port registers again instead of reusing it.
+    let store = stored_client();
+    let b = sign_in_on(&store, DEFAULT_REDIRECT_PORT).await;
+    assert_ne!(port_of(&b.redirect), DEFAULT_REDIRECT_PORT);
+    assert_eq!(b.exchanged, b.redirect);
+    assert_eq!(b.client_id, REGISTRATION_CLIENT_ID);
+    assert_eq!(b.hint.as_deref(), Some("SlicerX"));
+    assert!(store.raw().contains("access-1"));
+
+    // With the default port free, nothing changes: 47616 and the stored client id.
+    let Some(holder) = holder else {
+        eprintln!("skipped the free-port step: another program holds 127.0.0.1:{DEFAULT_REDIRECT_PORT}");
+        return;
+    };
+    drop(holder);
+    let c = sign_in_on(&stored_client(), DEFAULT_REDIRECT_PORT).await;
+    assert_eq!(
+        c.redirect,
+        format!("http://127.0.0.1:{DEFAULT_REDIRECT_PORT}{CALLBACK_PATH}")
+    );
+    assert_eq!(c.exchanged, c.redirect);
+    assert_eq!(c.client_id, "client-123");
+    assert_eq!(c.hint, None);
 }
 
 #[tokio::test]

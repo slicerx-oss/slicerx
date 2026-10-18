@@ -134,18 +134,6 @@ async fn the_sign_in_pages_and_errors_name_the_edition() {
     assert!(page.contains("Go back to Acme Slicer and try again."), "{page}");
     assert!(!page.contains("SlicerX"), "{page}");
 
-    // The callback port is taken by another copy of the app.
-    let busy = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let opts = ConnectOptions {
-        redirect_port: busy.local_addr().unwrap().port(),
-        ..opts
-    };
-    let err = connect(&MemStore::default(), &opts)
-        .await
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("close the other copy of Acme Slicer"), "{err}");
-
     // Signing out where the server offers no revocation.
     let store = MemStore::default();
     let stored = serde_json::json!({
