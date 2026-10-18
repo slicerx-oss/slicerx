@@ -85,6 +85,7 @@ mod brick;
 )]
 mod bridging;
 mod brim;
+pub mod chamber;
 mod classify;
 #[doc(hidden)]
 pub mod collide;

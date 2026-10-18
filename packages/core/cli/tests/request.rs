@@ -1144,3 +1144,64 @@ fn lifts_climb_at_the_set_angle_from_where_the_nozzle_is() {
     assert!(layer_changes > 10, "{layer_changes} ramps at a layer change");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A project whose start G-code reads `chamber_cooling_mode` slices, and stderr says which mode it used and where
+/// it came from: the filaments, the project's own value, or `--config` over it.
+#[test]
+fn a_projects_chamber_cooling_mode_comes_from_its_filaments_or_its_settings() {
+    let dir = temp_dir(format!("sx-cli-chamber-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let start = "{if chamber_cooling_mode==0}\n; chamber: keep warm\n{elsif chamber_cooling_mode==2}\n; chamber: strong cooling\n{else}\n; chamber: weak cooling\n{endif}\n";
+    let project = |name: &str, extra: serde_json::Value| {
+        let mut settings = serde_json::json!({
+            "layer_height": "0.3",
+            "initial_layer_print_height": "0.3",
+            "machine_start_gcode": start,
+            "filament_type": ["PLA"],
+        });
+        if let (Some(m), Some(e)) = (settings.as_object_mut(), extra.as_object()) {
+            m.extend(e.clone());
+        }
+        let path = dir.join(name);
+        std::fs::write(&path, box_3mf(Some(&settings))).unwrap();
+        path
+    };
+    let slice = |model: &std::path::Path, extra: &[&str]| {
+        let out = sx()
+            .arg("slice")
+            .arg(model)
+            .args(["-o", "-"])
+            .args(extra)
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(out.status.success(), "{err}");
+        (String::from_utf8_lossy(&out.stdout).into_owned(), err)
+    };
+    let (gcode, err) = slice(&project("pla.3mf", serde_json::json!({})), &[]);
+    assert!(gcode.contains("; chamber: strong cooling"), "{err}");
+    assert!(
+        err.contains("sx: chamber: chamber cooling mode 2, strong cooling (external circulation), from the filaments: PLA (source derived)"),
+        "{err}"
+    );
+    let (gcode, err) = slice(
+        &project("abs.3mf", serde_json::json!({"filament_type": ["ABS"]})),
+        &[],
+    );
+    assert!(gcode.contains("; chamber: keep warm"), "{err}");
+    let own = project("own.3mf", serde_json::json!({"chamber_cooling_mode": "0"}));
+    let (gcode, err) = slice(&own, &[]);
+    assert!(gcode.contains("; chamber: keep warm"), "{err}");
+    assert!(
+        err.contains("chamber cooling mode 0, set by the settings (source project)"),
+        "{err}"
+    );
+    let preset = dir.join("preset.json");
+    std::fs::write(&preset, r#"{"chamber_cooling_mode": 1}"#).unwrap();
+    let (gcode, err) = slice(&own, &["--config", preset.to_str().unwrap()]);
+    assert!(gcode.contains("; chamber: weak cooling"), "{err}");
+    assert!(
+        err.contains("chamber cooling mode 1, set by the settings (source preset)"),
+        "{err}"
+    );
+}

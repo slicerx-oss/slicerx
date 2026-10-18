@@ -679,6 +679,24 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
     );
     plate_vars(&mut c, cfg, out, tools, out.plate_bounds.map(f64::from));
     add_defaults(&mut c, cfg, tools);
+    // The chamber airflow, when the settings do not set it: the plate's, else from the filaments these paths print.
+    let chamber = out.chamber.clone().or_else(|| {
+        if !crate::chamber::read_by_gcode(cfg) {
+            return None;
+        }
+        let mut slots: Vec<u8> = out
+            .layers
+            .iter()
+            .flat_map(|l| l.paths.iter().map(|p| p.tool))
+            .filter(|&t| t > 0)
+            .collect();
+        slots.sort_unstable();
+        slots.dedup();
+        crate::chamber::resolve(cfg, &slots).map(|(c, _)| c)
+    });
+    if let Some(ch) = chamber.filter(|ch| ch.source == crate::chamber::ChamberSource::Derived) {
+        c.vars.insert(crate::chamber::KEY.to_owned(), Value::Int(ch.mode));
+    }
     for (k, default) in [
         ("plate_name", ""),
         ("curr_bed_type", "Textured PEI Plate"),
@@ -1293,6 +1311,103 @@ pub(crate) fn filter_resume_start(text: &str, bottom_z: f64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::filter_resume_start;
+    use crate::config::PrintConfig;
+    use crate::output::SliceOutput;
+
+    /// The U1 Top Cover start G-code's branch on the chamber airflow.
+    const CHAMBER_START: &str = "{if chamber_cooling_mode==0}
+; keep warm
+{elsif chamber_cooling_mode==2}
+; strong cooling
+{else}
+; weak cooling
+{endif}
+";
+
+    /// The start G-code rendered for `types` with the plate printing `slots`, as the session resolves the mode.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "configs are built with json! at each call"
+    )]
+    fn start(extra: serde_json::Value, types: &[&str], slots: &[u8]) -> Result<String, String> {
+        let mut v = serde_json::json!({ "machine_start_gcode": CHAMBER_START, "filament_type": types });
+        if let (Some(m), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            m.extend(e.clone());
+        }
+        let cfg = PrintConfig::from_value(&v).unwrap();
+        let out = SliceOutput {
+            tool_count: slots.iter().copied().max().unwrap_or(1),
+            chamber: crate::chamber::resolve(&cfg, slots).map(|(c, _)| c),
+            ..SliceOutput::default()
+        };
+        let ctx = super::context(&cfg, &out);
+        super::render(&cfg, &ctx, "machine_start_gcode").map(Option::unwrap_or_default)
+    }
+
+    #[test]
+    fn the_chamber_cooling_mode_renders_each_branch() {
+        let branch = |r: Result<String, String>| r.unwrap().trim().to_owned();
+        // From the filaments.
+        assert_eq!(
+            branch(start(serde_json::json!({}), &["ABS"], &[1])),
+            "; keep warm"
+        );
+        assert_eq!(
+            branch(start(serde_json::json!({}), &["PLA", "PLA", "PLA"], &[1, 2, 3])),
+            "; strong cooling"
+        );
+        assert_eq!(
+            branch(start(serde_json::json!({}), &["PETG", "PLA"], &[1, 2])),
+            "; strong cooling"
+        );
+        assert_eq!(
+            branch(start(serde_json::json!({}), &["ABS", "PLA"], &[1, 2])),
+            "; weak cooling"
+        );
+        assert_eq!(
+            branch(start(serde_json::json!({}), &["FLEX"], &[1])),
+            "; weak cooling"
+        );
+        // The settings' own value wins over the filaments, as a number or as text.
+        assert_eq!(
+            branch(start(
+                serde_json::json!({"chamber_cooling_mode": 0}),
+                &["PLA"],
+                &[1]
+            )),
+            "; keep warm"
+        );
+        assert_eq!(
+            branch(start(
+                serde_json::json!({"chamber_cooling_mode": "1"}),
+                &["PLA"],
+                &[1]
+            )),
+            "; weak cooling"
+        );
+        assert_eq!(
+            branch(start(
+                serde_json::json!({"chamber_cooling_mode": 2}),
+                &["ABS"],
+                &[1]
+            )),
+            "; strong cooling"
+        );
+    }
+
+    #[test]
+    fn a_placeholder_no_setting_defines_is_still_refused() {
+        let e = start(
+            serde_json::json!({"machine_start_gcode": "{if chamber_heater_level==0}
+M141 S0
+{endif}
+"}),
+            &["PLA"],
+            &[1],
+        )
+        .unwrap_err();
+        assert!(e.contains("variable chamber_heater_level does not exist"), "{e}");
+    }
 
     #[test]
     fn the_start_is_made_safe_for_a_resume() {

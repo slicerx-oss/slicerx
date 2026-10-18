@@ -68,6 +68,12 @@ export interface SliceSummary {
    * expanded from one file, including objects with the same name; it is local to this slice.
    */
   feature_filaments?: { object?: string; engine_object?: string; name: string; features: Record<string, number[]> }[]
+  /**
+   * The chamber cooling mode the printer's G-code reads (`chamber_cooling_mode`, sx engine), when it reads one: 0 keep
+   * warm, 1 weak cooling, 2 strong cooling. `source` is where it came from: the project's settings, a preset or
+   * profile layer, or `derived` from the filament types the plate prints (`config` when the engine alone reports it).
+   */
+  chamber_cooling?: { mode: number; source: 'project' | 'preset' | 'derived' | 'config'; filaments?: string[]; text: string }
   /** The plate that was sliced, for a 3MF or .sx3mf project. */
   plate?: number
   gcode_path?: string

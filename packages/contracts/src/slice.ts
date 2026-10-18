@@ -383,6 +383,17 @@ export interface CollisionFix {
   closeCalls?: number
 }
 
+/** The chamber cooling mode a slice wrote, and where it came from. */
+export interface ChamberCooling {
+  /** 0 keep warm (internal circulation), 1 weak cooling, 2 strong cooling (external circulation). */
+  mode: number
+  /** project: the project's settings; preset: a profile or preset; config: the settings sent (the engine alone); derived: from the filament types the plate prints. */
+  source: 'project' | 'preset' | 'config' | 'derived'
+  /** With derived: the filament_type of each filament the plate prints, in slot order. */
+  filaments?: string[]
+  text: string
+}
+
 export interface SliceResult {
   id: string
   engine: EngineId
@@ -409,6 +420,8 @@ export interface SliceResult {
   filamentMap?: FilamentMapInfo
   /** The filaments each object's features printed with, one entry per plate object; absent when the host doesn't report it. */
   featureFilaments?: FeatureFilaments[]
+  /** The chamber cooling mode the printer's G-code reads (`chamber_cooling_mode`); absent when it reads none or the host doesn't report it. */
+  chamberCooling?: ChamberCooling
   /** Print by object: every place the head, gantry or tool changer would meet a printed part, in print order. */
   collisions?: Collision[]
   /** Fixes for the collisions. */

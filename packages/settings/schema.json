@@ -16,6 +16,7 @@
   "bottle_volume",
   "bottle_weight",
   "brim_ears",
+  "chamber_cooling_mode",
   "clone_objects",
   "compatible_machine_expression_group",
   "compatible_process_expression_group",
