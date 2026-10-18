@@ -514,6 +514,7 @@ A refused tool call has `isError: true` and `structuredContent.error` with a sta
 | `no_such_plate` | Re-read the plates with `slicerx_inspect_project`. |
 | `unknown_profile` | Re-list profiles; the id changed or was mistyped. |
 | `engine_unavailable` | `sx` is missing or the stub engine was asked for G-code. |
+| `slice_timeout` | `sx` hit its time limit (`details.limitMs`) before it finished. Show the message; a plate with fewer or smaller objects, or a larger layer height, slices sooner. |
 | `slice_failed`, `preflight_blocked` | Show the message. `preflight_blocked` means the engine's safety checks refused a setting, custom G-code or toolpaths off the bed. With `details.fix` `slicerx_arrange`, arrange the project's plate or move the object the message names. `details.layers` gives the layers its count covers. |
 | `project_gcode_review` | The project's printer G-code doesn't match the printer profile's. Show `details.summary` (one line) first, with `details.changes` (the diff and each flagged line with its reason) behind a toggle such as Show differences; `details.printer` is the printer it was compared with. If they want the printer profile's G-code, call again with `project_gcode: "profile"`. Never choose the project's G-code for them: no tool can, and the person does it in SlicerX. |
 | `printer_needed` | The project has its own printer G-code and no printer was named to check it against. Ask the person which printer the project is for and pass its `machine:` profile in `profiles`, or call again with `project_gcode: "profile"`. |

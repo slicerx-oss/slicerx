@@ -18,6 +18,7 @@ export const ERROR_CODES = [
   'invalid_settings',
   'engine_unavailable',
   'slice_failed',
+  'slice_timeout',
   'preflight_blocked',
   'project_gcode_review',
   'script_replacement_stale',
