@@ -162,6 +162,7 @@ Acts:
 | `app_slice` | Runs Slice the plate and waits for the summary: time, grams, layers, tool changes, warnings |
 | `app_export_gcode` | Writes the slice's G-code to `slicerx-agent-bridge/<pid>/` in the app's cache folder (`$XDG_RUNTIME_DIR` on Linux when it is set) and returns the path. Refuses a slice that is stale or unsafe to print |
 | `app_auth_callback` | Hands a sign-in callback link (`slicerx://auth/callback?...`) to the app through the deep link's path |
+| `app_focus_window` | Brings the window to the front and gives it the keyboard, as a click on it does. macOS applies `:focus` and `:focus-within` only in that window, so a run started from a terminal needs it before using controls that show on hover or focus |
 | `app_fonts` | Loads every font face the page declares (or those of `families`) and reports each one's family, weight, style, unicode-range and how it ended: `loaded`, `error` (refused by the content security policy, or broken) or `loading` (not done in 15 s). A face with a unicode-range is fetched even when no text needs it, so a refusal that stays silent on an English page shows here |
 
 Reads that keep a log take `since` (the marker from an earlier answer) and `limit`. Errors come back as

@@ -68,6 +68,8 @@ export async function openSignedOut(s) {
   if (who.signedIn) {
     // A profile used before (macOS keeps one): sign out from the account menu first.
     await s.feed()
+    // The Feed can show before the app has finished loading, and the account menu comes a moment later.
+    await s.waitFor('account-menu', 'visible', 60_000)
     await s.click('account-menu')
     if (await s.waitFor('account-sign-out', 'visible', 10_000)) await s.click('account-sign-out')
     const out = await waitUntil(async () => ((await s.user()).signedIn ? null : true), { timeoutMs: 15_000, everyMs: 500 })
@@ -90,6 +92,12 @@ export async function openSignedOut(s) {
   // rows are in the right pane, opened first when the window has it shut.
   const objects = await showObjects(s)
   s.check("the plate's objects list shows", objects.shown, objects.opened.length ? { opened: objects.opened } : undefined)
+  // macOS applies focus styles only in the window that has the keyboard, and a window started from a terminal never had
+  // it, so the row's tools would stay hidden with the row focused. The window is focused first, as a person's click does.
+  if (s.opts.platform === 'macos') {
+    const focused = await s.call('app_focus_window')
+    s.info('the app window has the keyboard', focused.error ?? focused.data)
+  }
   await s.click('object-select')
   await s.click('object-printable')
   const changed = await waitUntil(async () => ((await s.state()).plate.objects[0]?.printable === false ? true : null), { timeoutMs: 5000, everyMs: 200 })

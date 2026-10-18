@@ -308,6 +308,16 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     forward('auth_callback'),
   )
   server.registerTool(
+    'app_focus_window',
+    {
+      title: 'Focus the window',
+      description: 'Brings the app window to the front and gives it the keyboard, as a click on the window does. Controls that show on hover or focus need it when the app was started from a terminal: macOS applies focus styles only in the window that has the keyboard. Returns whether the window has focus.',
+      inputSchema: {},
+      annotations: { ...act, idempotentHint: true },
+    },
+    forward('focus_window'),
+  )
+  server.registerTool(
     'app_fonts',
     {
       title: 'Load the fonts',
@@ -347,5 +357,6 @@ export const TOOL_NAMES = [
   'app_slice',
   'app_export_gcode',
   'app_auth_callback',
+  'app_focus_window',
   'app_fonts',
 ] as const

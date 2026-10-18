@@ -10,8 +10,8 @@
 //! folder. No debugging port, WebDriver or CDP is involved, so it works the same on macOS, Windows and Linux.
 //!
 //! The shell answers what only it can do: screenshots (shot.rs), opening a file by path and handing over a sign-in
-//! link (the same code paths a double-clicked file and the deep link take), and writing the slice's G-code to a
-//! folder only this user can open (private.rs). Everything else goes to the page (packages/app/src/agent-bridge) as an
+//! link (the same code paths a double-clicked file and the deep link take), writing the slice's G-code to a
+//! folder only this user can open (private.rs), and bringing its window to the front. Everything else goes to the page (packages/app/src/agent-bridge) as an
 //! event and comes back through `agent_bridge_reply`. Nothing here prints, sends to a printer or deletes anything.
 
 mod http;
@@ -70,7 +70,13 @@ pub const PAGE_TOOLS: [&str; 20] = [
     "settings_view",
 ];
 /// Tools the shell answers itself.
-pub const SHELL_TOOLS: [&str; 4] = ["screenshot", "open_file", "auth_callback", "export_gcode"];
+pub const SHELL_TOOLS: [&str; 5] = [
+    "screenshot",
+    "open_file",
+    "auth_callback",
+    "export_gcode",
+    "focus_window",
+];
 
 /// Calls waiting for the page, and whether the page side is there to answer them.
 #[derive(Default)]
@@ -234,6 +240,7 @@ fn call(app: &AppHandle, tool: &str, args: Value) -> Result<Value, ToolError> {
         "open_file" => open_file(app, &args),
         "auth_callback" => auth_callback(app, &args),
         "export_gcode" => export_gcode(app, &args),
+        "focus_window" => focus_window(app),
         t if PAGE_TOOLS.contains(&t) => ask_page(app, t, args),
         t => Err(ToolError::new(
             "unknown_tool",
@@ -335,6 +342,19 @@ fn screenshot(app: &AppHandle) -> Result<Value, ToolError> {
         "bytes": png.len(),
         "data": base64::engine::general_purpose::STANDARD.encode(&png),
     }))
+}
+
+/// Brings the main window to the front and makes it the key window, as a person's click on it does. WebKit matches
+/// `:focus` and `:focus-within` only in the key window, so in a run started from a terminal, whose window never became
+/// key, controls shown on hover or focus stay hidden however the page moves focus (docs/release-gate.md).
+fn focus_window(app: &AppHandle) -> Result<Value, ToolError> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| ToolError::new("page_unavailable", "the main window is not open"))?;
+    window
+        .set_focus()
+        .map_err(|e| ToolError::new("focus_failed", e.to_string()))?;
+    Ok(json!({ "focused": window.is_focused().unwrap_or(false) }))
 }
 
 fn string_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, ToolError> {
