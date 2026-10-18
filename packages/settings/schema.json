@@ -16,7 +16,6 @@
   "bottle_volume",
   "bottle_weight",
   "brim_ears",
-  "chamber_cooling_mode",
   "clone_objects",
   "compatible_machine_expression_group",
   "compatible_process_expression_group",
@@ -9431,6 +9430,17 @@
    "label": "Auxiliary fan",
    "mode": "advanced",
    "default": false,
+   "group": "cooling",
+   "invalidates": "gcode"
+  },
+  {
+   "key": "chamber_cooling_mode",
+   "section": "printer",
+   "type": "int",
+   "label": "Chamber cooling mode",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
    "group": "cooling",
    "invalidates": "gcode"
   },

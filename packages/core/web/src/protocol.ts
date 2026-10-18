@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Messages between the pool and its workers.
 
-import type { Collision, CollisionFix, FilamentMapInfo, PrimeTowerPlacement, VaryLayerCost } from '@slicerx/contracts'
+import type { ChamberCooling, Collision, CollisionFix, FilamentMapInfo, PrimeTowerPlacement, VaryLayerCost } from '@slicerx/contracts'
 import type { ScriptReview, ScriptReviewInput } from '@slicerx/contracts'
 
 export type ToWorker =
@@ -31,6 +31,8 @@ export interface ShardInfo {
   varyLayerCost?: VaryLayerCost | null
   /** The filament map (every shard carries the same). */
   filamentMap?: FilamentMapInfo | null
+  /** The chamber cooling mode the G-code reads, worked out for the whole plate (every shard carries the same). */
+  chamberCooling?: ChamberCooling | null
   /** By object: the collision check's facts (shard 0 only) and what this shard's moves meet, as numbers for finalize. */
   collide?: { meta: unknown; hits: number[] } | null
 }

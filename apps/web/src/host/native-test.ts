@@ -6,7 +6,7 @@
 // sx-core the desktop app links, with the request and result shapes of the desktop's slicer
 // (apps/desktop/src/host/slicer.ts), so the browser suite tests what the desktop slices.
 import type { GcodeExport, MeshPart, ProjectMetadata, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
-import { encodeParts, sliceClock } from '@slicerx/slicer'
+import { chamberCoolingOf, encodeParts, sliceClock } from '@slicerx/slicer'
 import { createMeshHost } from './meshes'
 
 type Rec = Record<string, unknown>
@@ -22,6 +22,7 @@ export function toResult(id: string, v: unknown, wallMs: number): SliceResult {
   const stageMicros: SliceResult['stageMicros'] = {}
   if (isRec(v['stageMicros'])) for (const [k, x] of Object.entries(v['stageMicros'])) stageMicros[k as SliceStage] = Number(x) || 0
   const fm = v['filamentMap']
+  const chamber = chamberCoolingOf(v['chamberCooling'])
   const collisions = Array.isArray(v['collisions']) && v['collisions'].length ? { collisions: v['collisions'] as SliceResult['collisions'] & object, collisionFixes: (Array.isArray(v['collisionFixes']) ? v['collisionFixes'] : []) as SliceResult['collisionFixes'] & object } : {}
   return {
     id,
@@ -43,6 +44,7 @@ export function toResult(id: string, v: unknown, wallMs: number): SliceResult {
     ...(isRec(v['primeTower']) ? { primeTower: v['primeTower'] as unknown as NonNullable<SliceResult['primeTower']> } : {}),
     ...(isRec(v['varyLayerCost']) ? { varyLayerCost: v['varyLayerCost'] as unknown as NonNullable<SliceResult['varyLayerCost']> } : {}),
     ...(isRec(fm) ? { filamentMap: { extruders: nums(fm['extruders']), nozzles: nums(fm['nozzles']), auto: fm['auto'] === true } } : {}),
+    ...(chamber ? { chamberCooling: chamber } : {}),
     ...collisions,
   }
 }

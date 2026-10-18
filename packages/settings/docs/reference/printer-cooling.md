@@ -1,6 +1,6 @@
 # Printer: Cooling
 
-12 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+13 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `auxiliary_fan`
 
@@ -8,6 +8,16 @@
 
 - Type: boolean
 - Default: off
+- Changing it redoes: G-code only
+- mimir class: read (not in the catalog: never written)
+
+### `chamber_cooling_mode`
+
+**Chamber cooling mode**
+
+- Type: integer
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 

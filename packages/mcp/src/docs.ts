@@ -109,7 +109,7 @@ export function settingsReference(store: DataStore): string {
       lines.push(`### ${group}`, '', '| Key | Label | Unit | Default | Range |', '| --- | --- | --- | --- | --- |')
       for (const d of list.sort((a, b) => a.key.localeCompare(b.key))) {
         const range = d.min !== undefined || d.max !== undefined ? `${d.min ?? ''} to ${d.max ?? ''}` : d.enumValues ? d.enumValues.slice(0, 6).join(', ') + (d.enumValues.length > 6 ? ', ...' : '') : ''
-        lines.push(`| \`${d.key}\` | ${d.label.replace(/\|/g, '/')} | ${d.unit ?? ''} | ${JSON.stringify(d.default).slice(0, 40).replace(/\|/g, '/')} | ${range} |`)
+        lines.push(`| \`${d.key}\` | ${d.label.replace(/\|/g, '/')} | ${d.unit ?? ''} | ${d.default === undefined ? 'none' : JSON.stringify(d.default).slice(0, 40).replace(/\|/g, '/')} | ${range} |`)
       }
       lines.push('')
     }

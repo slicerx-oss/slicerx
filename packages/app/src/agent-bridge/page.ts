@@ -65,6 +65,8 @@ export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'a
         wallMs: Math.round(r.wallMs),
         fileName: jobFileName(s, r.fileName),
         warnings: r.warnings.map(warning),
+        // The chamber cooling mode the printer's G-code got (chamber_cooling_mode) and where it came from, when it reads one.
+        ...(r.chamberCooling ? { chamberCooling: r.chamberCooling } : {}),
       }
     }
   }

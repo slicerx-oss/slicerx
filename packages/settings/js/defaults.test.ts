@@ -11,8 +11,9 @@ describe('defaults entry point', () => {
   })
 
   it('is current: regenerate with `pnpm gen:defaults` after the schema changes', () => {
-    expect(Object.keys(small()).sort()).toEqual(SETTINGS.map((d) => d.key).sort())
-    for (const d of SETTINGS) expect(sectionOf(d.key), d.key).toBe(d.section)
+    // A setting with no default (the slice works it out) is not in the table.
+    expect(Object.keys(small()).sort()).toEqual(SETTINGS.filter((d) => d.default !== undefined).map((d) => d.key).sort())
+    for (const d of SETTINGS) if (d.default !== undefined) expect(sectionOf(d.key), d.key).toBe(d.section)
   })
 
   it('hands out copies, so one caller cannot change the defaults of another', () => {

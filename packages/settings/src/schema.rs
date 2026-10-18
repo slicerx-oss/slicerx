@@ -169,6 +169,9 @@ pub struct SettingDef {
     pub kind: SettingType,
     #[serde(default)]
     pub unit: Option<String>,
+    /// Null for a setting with no default (`chamber_cooling_mode`): the slice works it out when nothing sets it, so
+    /// a default config leaves it out.
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     pub default: serde_json::Value,
     #[serde(default)]
     pub min: Option<f64>,

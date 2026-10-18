@@ -66,7 +66,7 @@ function reasonFor(def: SettingDef | undefined, key: string, before: SettingValu
   }
   const parts: string[] = []
   if (before === undefined) parts.push(`${label} is now set to ${formatValue(def, after)}.`)
-  else if (after === undefined) parts.push(`${label} is no longer set; the default ${def ? formatValue(def, def.default) : 'value'} applies.`)
+  else if (after === undefined) parts.push(def && def.default === undefined ? `${label} is no longer set; it is worked out when slicing.` : `${label} is no longer set; the default ${def ? formatValue(def, def.default) : 'value'} applies.`)
   else {
     const b = firstNumber(before)
     const a = firstNumber(after)

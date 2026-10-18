@@ -31,8 +31,17 @@ describe('schema', () => {
     for (const d of SETTINGS) expect(SLICE_STAGES, d.key).toContain(d.invalidates)
   })
 
+  // The slice works these out when nothing sets them, so a default config leaves them out.
+  const NO_DEFAULT = ['chamber_cooling_mode']
+
+  it('gives every setting a default, except the ones the slice works out', () => {
+    expect(SETTINGS.filter((d) => d.default === undefined).map((d) => d.key)).toEqual(NO_DEFAULT)
+    for (const k of NO_DEFAULT) expect(k in defaultConfig(), k).toBe(false)
+  })
+
   it('has defaults that match the type and range', () => {
     for (const d of SETTINGS) {
+      if (NO_DEFAULT.includes(d.key)) continue
       const v = d.default
       if (d.type === 'float' || d.type === 'int' || d.type === 'percent') expect(typeof v, d.key).toBe('number')
       if (d.type === 'bool') expect(typeof v, d.key).toBe('boolean')

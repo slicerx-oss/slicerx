@@ -26,7 +26,7 @@
  ],
  "hiddenOther": [
   "compatible_prints", "compatible_prints_condition", "filament_extruder_compatibility", "filament_extruder_variant", "filament_plugin_config_overrides",
-  "default_filament_profile", "default_print_profile", "extruder_variant_list", "printer_extruder_id", "printer_extruder_variant", "printer_model",
+  "chamber_cooling_mode", "default_filament_profile", "default_print_profile", "extruder_variant_list", "printer_extruder_id", "printer_extruder_variant", "printer_model",
   "printer_structure", "printer_technology", "printer_variant", "upward_compatible_machine", "use_3mf"
  ],
  "develop": ["resolution", "slice_closing_radius"],

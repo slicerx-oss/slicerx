@@ -387,8 +387,8 @@ export interface CollisionFix {
 export interface ChamberCooling {
   /** 0 keep warm (internal circulation), 1 weak cooling, 2 strong cooling (external circulation). */
   mode: number
-  /** project: the project's settings; preset: a profile or preset; config: the settings sent (the engine alone); derived: from the filament types the plate prints. */
-  source: 'project' | 'preset' | 'config' | 'derived'
+  /** override: a client's overrides; project: the project's settings; preset: a profile or preset; config: the settings sent (the engine alone, and the app); derived: from the filament types the plate prints. */
+  source: 'override' | 'project' | 'preset' | 'config' | 'derived'
   /** With derived: the filament_type of each filament the plate prints, in slot order. */
   filaments?: string[]
   text: string

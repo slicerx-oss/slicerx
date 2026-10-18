@@ -3,7 +3,7 @@
 // The settings schema as data: facts (keys, types, units, defaults, ranges) and our own labels.
 // schema.json is checked in as our own data (key names follow OrcaSlicer's for profile interchange). sx-settings reads the same file.
 import { productName } from '@slicerx/contracts/brand'
-import type { SettingDef, SettingSection } from '@slicerx/contracts/settings'
+import type { SettingDef, SettingSection, SettingValue } from '@slicerx/contracts/settings'
 import type { SliceStage } from '@slicerx/contracts/slice'
 import notesJson from '../notes.json'
 import schemaJson from '../schema.json'
@@ -58,10 +58,10 @@ export function invalidates(key: string): SliceStage {
   return byKey.get(key)?.invalidates ?? 'layers'
 }
 
-/** A PrintConfig holding every key at its schema default. */
-export function defaultConfig(section?: SettingSection): Record<string, SettingDef['default']> {
-  const out: Record<string, SettingDef['default']> = {}
-  for (const d of SETTINGS) if (!section || d.section === section) out[d.key] = structuredClone(d.default)
+/** A PrintConfig holding every key at its schema default. A key with no default is left out. */
+export function defaultConfig(section?: SettingSection): Record<string, SettingValue> {
+  const out: Record<string, SettingValue> = {}
+  for (const d of SETTINGS) if ((!section || d.section === section) && d.default !== undefined) out[d.key] = structuredClone(d.default)
   return out
 }
 
