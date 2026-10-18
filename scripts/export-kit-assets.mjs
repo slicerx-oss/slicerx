@@ -212,7 +212,12 @@ try {
     }
   }
   document.body.dataset.ready = 'true';
-} catch (error) { document.body.dataset.error = String(error); throw error; }
+} catch (error) {
+  document.body.dataset.error = String(error);
+  // Opened straight from the folder, the browser refuses to load manifest.json: say how to view it
+  if (location.protocol === 'file:') document.querySelector('section p').textContent = 'Browsers do not load these files from a page opened straight from the folder. Serve the folder over HTTP (for example python3 -m http.server) and open example.html from there.';
+  throw error;
+}
 </script>
 `
 }
