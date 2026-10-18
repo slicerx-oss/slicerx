@@ -17,9 +17,9 @@ import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
 import { errorText, Message, Note, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, useRestored } from './park'
-import { applyPush, onFace, parseDistance, pickPushFace, pushWords, type PushFace } from './push'
+import { applyPush, onFace, parseDistance, pickPushFace, pushLimit, pushReason, pushWords, type PushFace } from './push'
 import { OP_LABEL, publishPush, pushActions as pushActionsOf, pushOperation, usePushSnapshot } from './push-session'
-import { previewMessage, publishPreview, reportOf, useOpPreview } from './op-preview'
+import { previewMessage, publishPreview, reportOf, sizeWords, useOpPreview } from './op-preview'
 
 /** The tool's state and its ties to the view. Mounted once while the tool is open, with the pane open or shut. */
 export function usePushTool(): void {
@@ -93,6 +93,12 @@ export function usePushTool(): void {
   const apply = useCallback(
     async (d: number | null, f: PushFace | null) => {
       if (!f || d === null || d === 0 || live.current.busy) return
+      // too far for the engine: say so here, before asking it
+      const tooFar = pushLimit(d)
+      if (tooFar) {
+        setNote(tooFar)
+        return
+      }
       setBusy(true)
       live.current.busy = true
       setNote(null)
@@ -111,7 +117,7 @@ export function usePushTool(): void {
         setText('')
         return true
       } catch (e) {
-        setNote(errorText(e))
+        setNote(sizeWords(errorText(e), d))
       } finally {
         live.current.busy = false
         setBusy(false)
@@ -150,7 +156,7 @@ export function usePushTool(): void {
     const ac = new AbortController()
     pushPreview(face, 1, ac.signal).then(
       (r) => !ac.signal.aborted && setPrism(r.tool),
-      (e: unknown) => !ac.signal.aborted && setPrismError(errorText(e)),
+      (e: unknown) => !ac.signal.aborted && setPrismError(sizeWords(errorText(e))),
     )
     return () => ac.abort()
   }, [face])
@@ -159,6 +165,7 @@ export function usePushTool(): void {
   useEffect(() => {
     if (!face || text.trim() === '') step({ type: 'clear' })
     else if (distance === null) step({ type: 'fail', message: 'Type a number, such as 5 or -3.' })
+    else if (pushLimit(distance)) step({ type: 'fail', message: pushLimit(distance)! })
     else if (prismError) step({ type: 'fail', message: prismError })
     else if (!prism) step({ type: 'request' })
     else step({ type: 'ok', value: distance })
@@ -246,6 +253,8 @@ export function PushTool() {
   const words = face ? pushWords(distance, face.thicknessMm) : null
   const message = s?.note ?? s?.previewError ?? null
   const op = pushOperation(distance, face?.thicknessMm ?? null)
+  // why Apply is off; the message above already says it when there is one
+  const reason = pushReason(face !== null, text, distance)
   return (
     <Shell title="Push and pull" aside={s?.editStep ? `Editing step ${s.editStep}` : face ? 'A face is picked' : 'No face yet'}>
       {!face ? <PointerHint text="Click a flat face, or drag one in or out. Hold Shift to move in 1 mm steps." /> : <Note status>{words}</Note>}
@@ -256,7 +265,8 @@ export function PushTool() {
         verbs={[OP_LABEL.cut, OP_LABEL.pull]}
         onApply={() => pushActionsOf()?.apply()}
         busy={s?.busy ?? false}
-        disabled={!face || !distance}
+        disabled={reason !== null}
+        reason={message ? null : reason}
       />
     </Shell>
   )

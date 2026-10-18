@@ -5,7 +5,7 @@
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { pushPreview } from '../src/geom/cad'
-import { applyPush, onFace, parseDistance, pickPushFace, pushWords, throughThickness } from '../src/cad/push'
+import { applyPush, onFace, parseDistance, pickPushFace, PUSH_MAX_MM, pushLimit, pushReason, pushWords, throughThickness } from '../src/cad/push'
 import { createHistory } from '../src/plate/history'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
@@ -32,6 +32,18 @@ describe('push words', () => {
     expect(pushWords(-25, 20)).toBe('Opens a hole')
     expect(pushWords(-25, null)).toBe('Cuts 25 mm')
     expect(pushWords(null, 20)).toMatch(/^Drag the face/)
+  })
+
+  it('says why Push and pull is off, and refuses a distance past the limit in plain words', () => {
+    expect(pushReason(false, '', null)).toBe('Pick a flat face to move.')
+    expect(pushReason(true, '', null)).toBe('Type a distance, or drag the face.')
+    expect(pushReason(true, 'abc', null)).toBe('Type a number, such as 5 or -3.')
+    expect(pushReason(true, '0', 0)).toBe("The distance can't be 0. Type how far to move the face.")
+    expect(pushReason(true, '20000', 20000)).toBe('The distance is too large. The most is 10000 mm.')
+    expect(pushReason(true, '5', 5)).toBeNull()
+    expect(pushLimit(-20000)).toBe('The distance is too large. The most is 10000 mm.')
+    expect(pushLimit(PUSH_MAX_MM)).toBeNull()
+    expect(pushLimit(null)).toBeNull()
   })
 
   it('reads typed distances, commas included', () => {

@@ -12,12 +12,13 @@ import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
 import { get, set, toast } from '../state/store'
 import { loopsOf } from './cad-ops'
-import { applyShell } from './holes'
+import { applyShell, shellReason } from './holes'
 import { keyOfTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, Message, num, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
+import { sizeWords } from './op-preview'
 
 interface Picked {
   objectId: string
@@ -83,7 +84,8 @@ export function ShellTool() {
     const id = get().selection
     return id && get().plate.some((p) => p.id === id) ? { objectId: id, partIndex: 0, faces: [] } : null
   })()
-  const ready = target !== null && Number.isFinite(wallMm) && wallMm > 0
+  const reason = shellReason(target !== null, wall, wallMm)
+  const ready = target !== null && reason === null
 
   const apply = async () => {
     if (!target || !ready || busy) return
@@ -103,7 +105,7 @@ export function ShellTool() {
       setPicked(null)
       return true
     } catch (err) {
-      setNote(errorText(err))
+      setNote(sizeWords(errorText(err), wallMm))
     } finally {
       bindNext(undefined)
       setBusy(false)
@@ -116,7 +118,7 @@ export function ShellTool() {
       <PointerHint text="Click the flat faces to leave open; click one again to close it." />
       <Num id="shell-wall" label="Wall" unit="mm" value={wall} onChange={setWall} onEnter={() => void apply()} />
       {note ? <Message text={note} /> : null}
-      <ToolFooter verb="Make shell" onApply={apply} busy={busy} disabled={!ready} />
+      <ToolFooter verb="Make shell" onApply={apply} busy={busy} disabled={!ready} reason={reason} />
     </Shell>
   )
 }

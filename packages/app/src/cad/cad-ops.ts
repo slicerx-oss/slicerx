@@ -151,13 +151,22 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   const part = entry?.parts[t?.partIndex ?? 0]
   const volume = `${Math.abs(r.report.volumeChangeMm3 / 1000).toFixed(2)} cm³`
   if (r.frame === 'target' && entry && part && t) {
+    // A shape that misses the body changes nothing and is not a step: the body keeps its mesh too. A join that
+    // would leave pieces floating off the body (text running past the face) counts as a miss.
+    if (!r.report.touches) {
+      const floating = operation === 'join' && Math.abs(r.report.volumeChangeMm3) > 1e-6
+      return {
+        message: floating
+          ? 'Part of the shape would float off the body, so nothing changed. Make it smaller or move it onto the face.'
+          : 'The shape does not reach the body, so nothing changed. Check the distance and the direction.',
+        warn: true,
+      }
+    }
     const parts = entry.parts.map((p, i) => (i === t.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
     const handle = await host.loadParts(entry.name, parts)
-    // A shape that misses the body changes nothing and is not a step.
-    const history = r.report.touches ? withStep(entry, t.partIndex, params) : entry.history
+    const history = withStep(entry, t.partIndex, params)
     if (!commitMade(entry.id, () => ({ handle, parts, ...historyField(history) }))) throw new Error('That object is gone.')
     markStale()
-    if (!r.report.touches) return { message: 'The shape does not reach the body, so nothing changed. Check the distance and the direction.', warn: true }
     return { message: operation === 'cut' ? `Cut ${volume} out of ${entry.name}.` : `Joined ${volume} to ${entry.name}.`, warn: !r.report.watertight }
   }
   // A new body arrives in bed coordinates. It keeps its place: centered on its own X and Y, moved back by its transform.

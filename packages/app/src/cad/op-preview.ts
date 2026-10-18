@@ -50,19 +50,52 @@ export function previewMessage(p: OpPreview<unknown>): string | null {
   return p.shown !== null ? `${p.error} Showing the last good preview.` : p.error
 }
 
-const SIZE_NAMES: Record<string, string> = { radiusMm: 'Radius', distanceMm: 'Distance', distance2Mm: 'The other distance' }
+const SIZE_NAMES: Record<string, string> = {
+  radiusMm: 'Radius',
+  distanceMm: 'Distance',
+  distance2Mm: 'The other distance',
+  wallMm: 'Wall',
+  diameterMm: 'Diameter',
+  depthMm: 'Depth',
+  heightMm: 'Height',
+  widthMm: 'Width',
+  sizeMm: 'Size',
+}
+
+const nameOf = (key: string): string | undefined => SIZE_NAMES[key.charAt(0).toLowerCase() + key.slice(1)]
+/** "Radius" reads "The radius" at the start of a sentence; "The other distance" keeps its own article. */
+const theName = (name: string) => (name.startsWith('The ') ? name : `The ${name.toLowerCase()}`)
+const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const whole = (v: number) => String(v)
 
 /**
  * An engine's size error in the person's words: the field's name instead of its key, and plain numbers
  * ("radiusMm: 30 mm does not fit on this face; at most 20.000 mm" reads "Radius 30 mm does not fit on this face; at most 20 mm.").
+ * The engine's range check ("distanceMm: must not be zero (at most 10000 mm)") says what is wrong with `value`, the
+ * number the person gave, when it is passed: too large, or 0. A key the list does not name is dropped, never shown,
+ * and a request the engine could not read (an empty box sends no number) asks for a number.
  */
-export function sizeWords(message: string): string {
-  const named = message.replace(/^\s*(\w+Mm):\s*/, (all, key: string) => {
-    const name = SIZE_NAMES[key.charAt(0).toLowerCase() + key.slice(1)]
-    return name ? `${name} ` : all
-  })
-  const plain = named.replace(/(\d+\.\d+)(?= ?mm)/g, (n) => String(Math.round(Number(n) * 100) / 100))
-  return /[.!?]$/.test(plain.trim()) ? plain.trim() : `${plain.trim()}.`
+export function sizeWords(message: string, value?: number): string {
+  const range = /^\s*(\w+Mm):\s*must (be above 0|not be zero) \(at most (\d+(?:\.\d+)?) mm\)\.?\s*$/.exec(message)
+  const rangeName = range ? nameOf(range[1]!) : undefined
+  if (range && rangeName) {
+    const the = theName(rangeName)
+    const most = Number(range[3])
+    const v = value !== undefined && Number.isFinite(value) ? value : null
+    if (v !== null && Math.abs(v) > most) return `${the} is too large. The most is ${whole(most)} mm.`
+    if (range[2] === 'not be zero') return v === 0 ? `${the} can't be 0 mm.` : `${the} must be between -${whole(most)} and ${whole(most)} mm, and not 0.`
+    return v !== null && v <= 0 ? `${the} must be more than 0 mm.` : `${the} must be more than 0 mm and at most ${whole(most)} mm.`
+  }
+  if (/invalid type: null|expected f64|missing field/.test(message)) return 'Type a number in every box.'
+  // "radiusMm: 30 mm ..." names the field; "wallMm: must be above 0" says the field must; any other words stand alone
+  const named = message.replace(/^\s*(\w+Mm):\s*(\S*)/, (_all, key: string, next: string) => {
+    const name = nameOf(key)
+    if (name && /^\d/.test(next)) return `${name} ${next}`
+    if (name && next === 'must') return `${theName(name)} must`
+    return next
+  }).replace(/must be above 0(?! ?mm)/, 'must be more than 0 mm')
+  const plain = upper(named.trim()).replace(/(\d+\.\d+)(?= ?mm)/g, (n) => String(Math.round(Number(n) * 100) / 100))
+  return /[.!?]$/.test(plain) ? plain : `${plain}.`
 }
 
 /** A tool's preview state, for React. */

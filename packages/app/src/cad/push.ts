@@ -41,6 +41,23 @@ export function parseDistance(text: string): number | null {
   return Number.isFinite(v) ? v : null
 }
 
+/** The farthest a face moves in one push, either way (the engine's limit). */
+export const PUSH_MAX_MM = 10_000
+
+/** What is wrong with a push distance the engine would refuse, in words, or null when it can run. */
+export function pushLimit(d: number | null): string | null {
+  return d !== null && Math.abs(d) > PUSH_MAX_MM ? `The distance is too large. The most is ${len(PUSH_MAX_MM)}.` : null
+}
+
+/** Why Push and pull can't run yet, for under the button, or null when it can. */
+export function pushReason(hasFace: boolean, text: string, d: number | null): string | null {
+  if (!hasFace) return 'Pick a flat face to move.'
+  if (!text.trim()) return 'Type a distance, or drag the face.'
+  if (d === null) return 'Type a number, such as 5 or -3.'
+  if (d === 0) return "The distance can't be 0. Type how far to move the face."
+  return pushLimit(d)
+}
+
 /** What a push of `d` mm does, in words. */
 export function pushWords(d: number | null, thicknessMm: number | null): string {
   if (d === null || d === 0) return 'Drag the face, or type a distance: positive pulls out, negative pushes in.'
