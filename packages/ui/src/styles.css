@@ -447,6 +447,10 @@ button { cursor: pointer; }
 .sx-modetab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 2px color-mix(in srgb, var(--orange) 22%, transparent); flex: none; }
 .sx-modetab-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--line); border-top-color: var(--cyan); animation: sx-spin 0.8s linear infinite; flex: none; }
 @keyframes sx-spin { to { transform: rotate(360deg); } }
+/* A button whose action is under way (Button busy): the mode tab's spinner in the icon's 16 px box, at full opacity, so nothing moves. */
+.sx-btn-spin { display: grid; place-items: center; width: 16px; height: 16px; flex: none; }
+.sx-btn-spin::before { content: ''; width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--line); border-top-color: var(--cyan); animation: sx-spin 0.8s linear infinite; }
+.sx-btn[aria-busy="true"] { cursor: progress; }
 /* The project's file name after the tabs, behind a thin divider. */
 .sx-projname { display: flex; align-items: center; height: 22px; padding-left: 26px; border-left: 1px solid var(--line-soft); font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .sx-projname b { color: var(--fg); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; }
