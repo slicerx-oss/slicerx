@@ -201,7 +201,10 @@ test.describe('phone', () => {
       // middle is the move arrows' origin, so the drag starts on the low X and Y side, away from all three arrows.
       const before = (await state(page)).plate[0]!.transform.join(',')
       const body = await screenOf(page, await pointIn(page, id, [0.2, 0.2, 0.5]))
-      await finger(cdp, body, { x: body.x + 60, y: body.y + 10 })
+      // In four steps, so the first move is already past the 8 px a held finger may wander. Each step waits for the
+      // page to take it, one a frame, so on a slow runner a drag still inside that read as a finger held for Select
+      // Other, whose list then took the arrow drag below.
+      await finger(cdp, body, { x: body.x + 60, y: body.y + 10 }, 0, 4)
       await page.waitForTimeout(300)
       expect((await state(page)).plate[0]!.transform.join(',')).toBe(before)
       // the X arrow: from the model's middle along X, most of the way to its tip
