@@ -189,7 +189,7 @@ describe('modeling results', () => {
     it(`CAD-005: ${name} drops the paint on the triangles it rebuilt`, async () => {
       const original: PlateEntry = { id: 'paint-body', name: 'paint-body', parts: [part()], handle, colors: ['#ffffff'], transform: [...IDENTITY], paint: { 0: { color: { 0: '2' }, support: { 0: '1' }, seam: { 0: '1' } } } }
       set({ plate: [original], selection: original.id, selectedIds: [original.id] })
-      const report = { before: 2, after: 1, materialSavedPercent: 40 }
+      const report = { trianglesBefore: 2, trianglesAfter: 1, materialSavedPercent: 40 }
       setGeomProvider({ call: async <R>() => ({ mesh: { ...mesh(), indices: [0, 2, 3] }, report }) as R })
       await run()
       expect(get().plate[0]!.parts[0]!.indices).toEqual(new Uint32Array([0, 2, 3]))

@@ -51,6 +51,26 @@ describe('operation preview state', () => {
     expect(sizeWords('The edge is gone.')).toBe('The edge is gone.')
   })
 
+  it("puts every tool's engine refusals in plain words, without its keys", () => {
+    // Push and pull at 20000 mm: the engine's range check, after errorText capitalized it
+    expect(sizeWords('DistanceMm: must not be zero (at most 10000 mm)', 20000)).toBe('The distance is too large. The most is 10000 mm.')
+    expect(sizeWords('distanceMm: must not be zero (at most 10000 mm)', -20000)).toBe('The distance is too large. The most is 10000 mm.')
+    expect(sizeWords('distanceMm: must not be zero (at most 10000 mm)', 0)).toBe("The distance can't be 0 mm.")
+    expect(sizeWords('distanceMm: must not be zero (at most 10000 mm)')).toBe('The distance must be between -10000 and 10000 mm, and not 0.')
+    // Shell
+    expect(sizeWords('WallMm: must be above 0 (at most 1000 mm)', 0)).toBe('The wall must be more than 0 mm.')
+    expect(sizeWords('wallMm: must be above 0 (at most 1000 mm)', 1500)).toBe('The wall is too large. The most is 1000 mm.')
+    expect(sizeWords('wallMm: the wall is too thick for this body; try a thinner one')).toBe('The wall is too thick for this body; try a thinner one.')
+    // Subtract
+    expect(sizeWords('diameterMm: must be above 0')).toBe('The diameter must be more than 0 mm.')
+    expect(sizeWords('Invalid type: null, expected f64')).toBe('Type a number in every box.')
+    // Fillet stays as it was
+    expect(sizeWords('radiusMm: must be above 0 (at most 1000 mm)', 0)).toBe('The radius must be more than 0 mm.')
+    // a key the list does not know is dropped, never shown
+    expect(sizeWords('offsetMm: the shape runs off the face')).toBe('The shape runs off the face.')
+    for (const m of ['DistanceMm: must not be zero (at most 10000 mm)', 'WallMm: must be above 0 (at most 1000 mm)', 'diameterMm: must be above 0', 'Invalid type: null, expected f64']) expect(sizeWords(m, 0)).not.toMatch(/\w+Mm\b|null|f64/)
+  })
+
   it('reports to the link what the view shows', () => {
     const kept = run<number>([{ type: 'ok', value: -4 }, { type: 'fail', message: 'Type a number, such as 5 or -3.' }])
     const r = reportOf('push', kept, { adds: false, removes: true })

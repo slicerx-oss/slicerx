@@ -48,6 +48,13 @@ export function scaleSelectedToSize(axis: 0 | 1 | 2, sizeMm: number, uniform: bo
 }
 
 export function dropSelectedToBed(id: string | null = selected()): boolean {
+  const target = id ? get().plate.find((p) => p.id === id) : undefined
+  const b = target && !target.locked ? bounds(target.parts, target.transform) : null
+  // already resting on it: say so, rather than doing nothing without a word (Model calls the bed the ground)
+  if (b && Math.abs(b.min[2]) < 0.001) {
+    toast(`${target!.name} is already on the ${modelMode() === 'slice' ? 'bed' : 'ground'}.`, 'info')
+    return false
+  }
   return updateObject(id, (p) => dropToBed(p.parts, p.transform))
 }
 

@@ -5,6 +5,8 @@
 import { Button, Dialog, Field, Input, Seg } from '@slicerx/ui'
 import { useState, type ReactNode } from 'react'
 import { bindNext } from '../../cad/history/record'
+import { sizeWords } from '../../cad/op-preview'
+import { sentence } from '../../cad/tool-panel'
 import { typedNumber } from '../../cad/value-table'
 import { useHost } from '../../host'
 import { hollowSelected, simplifySelected, subtractFromSelected } from '../../plate/geom-ops'
@@ -36,7 +38,8 @@ export function ToolDialog({ tool, onClose }: { tool: DialogTool; onClose: () =>
       await fn()
       onClose()
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'error')
+      // the engine's words with the field names a person reads, never its keys
+      toast(sizeWords(sentence(err instanceof Error ? err.message : String(err))), 'error')
     } finally {
       setBusy(false)
     }

@@ -20,7 +20,7 @@ beforeEach(() => {
   setGeomProvider({
     call: async <R,>(_op: string, request: unknown): Promise<R> => {
       const mesh = (request as { mesh: ReturnType<typeof toGeom> }).mesh
-      return { mesh: { ...mesh, indices: Uint32Array.from(mesh.indices).reverse() }, report: { before: 12, after: 12 } } as R
+      return { mesh: { ...mesh, indices: Uint32Array.from(mesh.indices).reverse() }, report: { trianglesBefore: 12, trianglesAfter: 12 } } as R
     },
   })
   const a = { ...boxMesh(10, 10, 10), name: 'a', slot: 1 }

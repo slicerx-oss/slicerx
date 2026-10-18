@@ -96,10 +96,10 @@ export async function simplifySelected(host: Loader, targetRatio: number): Promi
   let before = 0, after = 0
   const parts: MeshPart[] = []
   for (const p of e.parts) {
-    const r = await geom().call<{ mesh: GeomMesh; report: { before: number; after: number } }>('simplify', { mesh: toGeom(p), options: { targetRatio } })
+    const r = await geom().call<{ mesh: GeomMesh; report: { trianglesBefore: number; trianglesAfter: number } }>('simplify', { mesh: toGeom(p), options: { targetRatio } })
     parts.push(fromGeom(r.mesh, p.name, p.slot))
-    before += r.report.before
-    after += r.report.after
+    before += r.report.trianglesBefore
+    after += r.report.trianglesAfter
   }
   const dropped = await replace(host, e, parts, e.transform, { params: { op: 'simplify', targetRatio }, start: false })
   const msg = `Simplified from ${before.toLocaleString('en-US')} to ${after.toLocaleString('en-US')} triangles.${paintNote(dropped)}`
@@ -249,11 +249,29 @@ export interface HoleSpec {
   offset: [number, number]
 }
 
+/** The largest shape the engine cuts, mm. */
+const HOLE_MAX_MM = 10_000
+
+/** What is wrong with a subtract's sizes, in a sentence, or null when they can run. */
+export function holeProblem(spec: Pick<HoleSpec, 'shape' | 'sizeMm' | 'depthMm'>): string | null {
+  const size = spec.shape === 'cylinder' ? 'diameter' : 'width'
+  if (!Number.isFinite(spec.sizeMm)) return `Type a number for the ${size}.`
+  if (!Number.isFinite(spec.depthMm)) return 'Type a number for the depth.'
+  if (spec.sizeMm <= 0) return `The ${size} must be more than 0 mm.`
+  if (spec.sizeMm > HOLE_MAX_MM) return `The ${size} is too large. The most is ${HOLE_MAX_MM} mm.`
+  if (spec.depthMm <= 0) return 'The depth must be more than 0 mm, or nothing is cut.'
+  if (spec.depthMm > HOLE_MAX_MM) return `The depth is too large. The most is ${HOLE_MAX_MM} mm.`
+  return null
+}
+
 /** Boolean subtract: cuts a box or cylinder into the selected object from the top. */
 export async function subtractFromSelected(host: Loader, spec: HoleSpec): Promise<string> {
+  const e = need()
+  // Sizes the engine would refuse, or a depth that cuts nothing, stop here with nothing recorded.
+  const problem = holeProblem(spec)
+  if (problem) throw new Error(problem)
   // The faces this makes get the keys of the history step it records.
   void (await import('../cad/history/record')).reserveStepId()
-  const e = need()
   const world = worldParts(e)
   const b = bounds(world, identity())
   if (!b) throw new Error('The object has no geometry.')
