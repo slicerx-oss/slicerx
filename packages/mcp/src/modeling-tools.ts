@@ -3,7 +3,7 @@
 // Mesh modeling commands shared by the open app and the server. File access stays with the caller.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
-import { bakeMesh, direction, invert, multiply, point, stepName, type HistoryMesh, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, checkedTextFit, direction, invert, multiply, point, stepName, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
 import { designArg, designSummary, faceAt, item, type Design } from './design-tools'
 import { ToolInputError } from './errors'
@@ -50,6 +50,19 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   const added = (d: Design, verb: string) => {
     const s = d.history.steps[d.history.steps.length - 1]
     return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}`, output: designSummary(d) }
+  }
+  /** The text laid out on the step's frame against the picked face's outline, both in that frame. */
+  const textFitOn = async (ds: DesignHost, d: Design, f: { part: number; triangle: number }, frame: FaceFrame, at: V3, text: string, sizeMm: number) => {
+    const part = d.parts[f.part]!
+    const pick = (await ds.call('face.pick', { mesh: { mesh: { positions: Array.from(part.positions), indices: Array.from(part.indices) }, transform: d.transform }, triangle: f.triangle, at })) as { frame: FaceFrame; outline: Polygon[] }
+    const o = pick.frame
+    const toStep = ([x, y]: [number, number]): [number, number] => {
+      const w = [0, 1, 2].map((k) => o.origin[k]! + o.u[k]! * x + o.v[k]! * y - frame.origin[k]!)
+      return [w[0]! * frame.u[0] + w[1]! * frame.u[1] + w[2]! * frame.u[2], w[0]! * frame.v[0] + w[1]! * frame.v[1] + w[2]! * frame.v[2]]
+    }
+    const outline = pick.outline.map((pg) => ({ outer: pg.outer.map(toStep), holes: pg.holes.map((h) => h.map(toStep)) }))
+    const layout = async (s: number) => ((await ds.call('shape.profile', { shape: { type: 'text', text, sizeMm: s } })) as { polygons: Polygon[] }).polygons
+    return checkedTextFit(layout, await layout(sizeMm), outline, sizeMm)
   }
   const modelOpt = modelArg.optional().describe('Absolute path to an STL file, an http(s) URL, or a built-in model; or give "design" instead')
   /** A plane as the tools take it, as a point and a normal. */
@@ -241,7 +254,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
-    description: 'Raise (emboss) or cut in (deboss) text on a face of the model. Give the point on the surface where the text is centered, and the face normal if the point is on an edge. With "design" it adds a text step on the plane through the point (flat faces); with a model it writes a new STL.',
+    description: 'Raise (emboss) or cut in (deboss) text on a face of the model. Give the point on the surface where the text is centered, and the face normal if the point is on an edge. With "design" it adds a text step on the plane through the point (flat faces); with a model it writes a new STL. With a design, textFit in the reply compares the text with the face, along the text and across it (mm), and gives the largest letter height that fits (fitSizeMm).',
     input: z.object({
       model: modelOpt,
       design: designArg.optional(),
@@ -268,8 +281,18 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
         const uu: V3 = [u[0] / l, u[1] / l, u[2] / l]
         const frame = { origin: i.point, normal: n, u: uu, v: [n[1] * uu[2] - n[2] * uu[1], n[2] * uu[0] - n[0] * uu[2], n[0] * uu[1] - n[1] * uu[0]] as V3 }
         const params: StepParams = { op: 'shape.extrude', frame, shape: { type: 'text', text: i.text, sizeMm: i.size_mm }, spec: { distanceMm: i.depth_mm, operation: i.mode === 'deboss' ? 'cut' : 'join' } }
-        await ds.add(d, f.part, params)
-        return added(d, i.mode === 'deboss' ? 'Debossed' : 'Embossed')
+        // The text against the face it goes on, as the app's Text on a face checks it before Apply.
+        const fit = await textFitOn(ds, d, f, frame, i.point, i.text, i.size_mm)
+        const words = textFitMessage(fit)
+        try {
+          await ds.add(d, f.part, params)
+        } catch (e) {
+          // a join that runs off the face is refused; the refusal says by how much and what size fits
+          if (words && e instanceof Error) e.message = `${e.message} ${words}`
+          throw e
+        }
+        const r = added(d, i.mode === 'deboss' ? 'Debossed' : 'Embossed')
+        return { summary: words ? `${r.summary}. ${words}` : r.summary, output: { ...r.output, ...(fit ? { textFit: { ...fit, message: words } } : {}) } }
       }
       const out = await call('emboss', { mesh: await meshOut(model!), spec })
       return { summary: `${i.mode === 'deboss' ? 'Debossed' : 'Embossed'} "${i.text.slice(0, 40)}"`, output: out }

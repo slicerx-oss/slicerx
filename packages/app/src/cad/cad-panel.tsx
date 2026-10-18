@@ -3,7 +3,7 @@
 // The modeling tools that work in the 3D view, shown in the sidebar while one is on: a shape or text on a
 // face or the bed, arrays, and measure. The view is in probe mode meanwhile: a click is the tool's input
 // and nothing is selected or dragged. This file and everything it imports load on first use.
-import { patternCopies, patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
+import { checkedTextFit, patternCopies, patternFromFields, patternProblem, textFitMessage, type Pattern, type PatternFields, type TextFit } from '@slicerx/cad-history'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent } from '@slicerx/viewport'
 import { Button, Input, Seg, Select, Switch } from '@slicerx/ui'
@@ -125,6 +125,8 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   const [patternFields, setPatternFields] = useDraft<PatternFields>('patternFields', fieldsOf(edit?.pattern))
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(edit?.font && !font ? `Pick the font again: ${edit.font} is not loaded.` : null)
+  // Text against the picked face, from the preview's layout: kept until the next layout, so the message does not blink while typing.
+  const [fit, setFit] = useState<TextFit | null>(null)
   const op = face?.target ? operation : 'new'
 
   const onPick = useCallback((hit: PickEvent) => {
@@ -179,17 +181,27 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
 
   // The outline about to be extruded, drawn on the face a moment after the last change.
   useEffect(() => {
+    // Only text on a face with an outline is checked: the bed and a step being edited have none.
+    const checkFit = !!face && face.outline.length > 0 && typeof shape !== 'string' && shape.type === 'text' && placed
+    if (!checkFit) setFit(null)
     if (!face) return void cameraBus()?.guides?.({})
     const soft = loopsOf(face.frame, face.outline).map((points) => ({ points, soft: true }))
     if (typeof shape === 'string' || !placed) return void cameraBus()?.guides?.({ loops: soft })
     const ac = new AbortController()
+    const at = { center: [num(x), num(y)] as [number, number], rotationDeg: num(turn) }
     const t = setTimeout(() => {
-      shapeProfile(shape, { center: [num(x), num(y)], rotationDeg: num(turn) }, font?.base64, ac.signal).then(
+      shapeProfile(shape, at, font?.base64, ac.signal).then(
         (polygons) => {
           // Each copy of a pattern drawn too, moved on the face as the engine will move it.
           const copies = pattern && !patternProblem(pattern) ? patternCopies(pattern) : [(q: [number, number]) => q]
           const all = copies.flatMap((f) => polygons.map((pg) => ({ outer: pg.outer.map(f), holes: pg.holes.map((h) => h.map(f)) })))
           cameraBus()?.guides?.({ loops: [...soft, ...loopsOf(face.frame, all).map((points) => ({ points }))] })
+          if (!checkFit || shape.type !== 'text') return
+          const layout = (sizeMm: number) => shapeProfile({ ...shape, sizeMm }, at, font?.base64, ac.signal)
+          void checkedTextFit(layout, polygons, face.outline, shape.sizeMm, at.rotationDeg).then(
+            (f) => !ac.signal.aborted && setFit(f),
+            () => !ac.signal.aborted && setFit(null),
+          )
         },
         (e: unknown) => {
           if (!ac.signal.aborted) setNote(errorText(e))
@@ -236,6 +248,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
     }
   }
 
+  const fitWords = type === 'text' ? textFitMessage(fit) : null
   const first = type === 'slot' ? 'Length' : 'Width'
   const second = type === 'slot' ? 'Width' : 'Height'
   return (
@@ -341,7 +354,16 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
       />
       <Num id="cad-dist" label={op === 'cut' ? 'Depth into the face' : 'Height off the face'} unit="mm" value={distance} onChange={setDistance} />
       <PatternSection value={patternFields} onChange={setPatternFields} />
-      {note || (face && problem) ? <Message text={(note ?? problem)!} /> : null}
+      {note || (face && problem) ? <Message text={(note ?? problem)!} /> : fitWords && fit ? (
+        <>
+          <Message text={fitWords} testId="text-fit" />
+          {fit.fitSizeMm > 0 ? (
+            <Row label="">
+              <Button size="sm" className="tp-pill" data-testid="text-fit-use" onClick={() => setSize(String(fit.fitSizeMm))}>{`Use ${fit.fitSizeMm} mm`}</Button>
+            </Row>
+          ) : null}
+        </>
+      ) : null}
       <ToolFooter verb={op === 'cut' ? 'Cut' : op === 'join' ? 'Join' : 'Add body'} verbs={['Cut', 'Join', 'Add body']} onApply={apply} busy={busy} disabled={!face || problem !== null} />
     </Shell>
   )
