@@ -17,12 +17,23 @@ export function ProjectsDialog() {
   const [recovery, setRecovery] = useState<Snapshot | null>(null)
   const [recent, setRecent] = useState<Snapshot[]>([])
   const [busy, setBusy] = useState(false)
+  const close = () => set({ projectsDialog: null })
   useEffect(() => {
     if (!mode) return
-    void findRecovery().then(setRecovery)
-    void listRecent().then(setRecent)
+    let gone = false
+    void findRecovery().then((r) => {
+      if (gone) return
+      setRecovery(r)
+      // The offer at the start found work. Gone by the time the dialog reads it, there is nothing left to ask about.
+      if (!r && mode === 'recover') close()
+    })
+    void listRecent().then((r) => {
+      if (!gone) setRecent(r)
+    })
+    return () => {
+      gone = true
+    }
   }, [mode])
-  const close = () => set({ projectsDialog: null })
   const open = async (snap: Snapshot) => {
     setBusy(true)
     try {
@@ -67,10 +78,6 @@ export function ProjectsDialog() {
             </Button>
           </div>
         </section>
-      ) : mode === 'recover' ? (
-        <p className="sx-small sx-muted" data-testid="recover-nothing">
-          There is nothing to restore.
-        </p>
       ) : null}
       {mode === 'recent' ? (
         recent.length ? (
