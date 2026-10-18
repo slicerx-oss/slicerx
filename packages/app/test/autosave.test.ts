@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AUTOSAVE_ID, MAX_RECENT, SNAPSHOT_VERSION, findRecovery, nothingToLose, listRecent, memorySnapshots, projectSaved, recordRecent, setSnapshotStore, startAutosave, autosaveNow, snapshotStore } from '../src/project/autosave'
+import { AUTOSAVE_ID, MAX_RECENT, SNAPSHOT_VERSION, findRecovery, nothingToLose, listRecent, memorySnapshots, projectSaved, recordRecent, resetAutosaveSession, setSnapshotStore, startAutosave, autosaveNow, snapshotStore } from '../src/project/autosave'
 import { markClean, startDirtyTracking } from '../src/project/unsaved'
 import { get, set } from '../src/state/store'
 
@@ -9,6 +9,7 @@ const entry = (id: string) => ({ id, name: id, handle: { id, hash: id, name: id,
 
 beforeEach(() => {
   setSnapshotStore(memorySnapshots())
+  resetAutosaveSession()
   set({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'plate-1', plateLoading: false })
   startDirtyTracking()
   markClean()
@@ -32,10 +33,33 @@ describe('autosave and recent projects', () => {
     expect((await listRecent()).map((r) => r.name)).toEqual(['a.sx3mf'])
   })
 
-  it('clears the autosave when the plates are empty', async () => {
+  it('clears the autosave when the plates are emptied', async () => {
     await snapshotStore().put({ id: AUTOSAVE_ID, name: 'a.sx3mf', savedAt: 1, objects: 2, data: new Uint8Array([1]) })
+    set({ plate: [entry('a')] })
+    markClean()
+    expect(await autosaveNow()).toBe(false)
+    set({ plate: [] })
     expect(await autosaveNow()).toBe(false)
     expect(await findRecovery()).toBeNull()
+  })
+
+  it('keeps the last session autosave while the plates have held nothing yet, as at a slow start', async () => {
+    vi.useFakeTimers()
+    await snapshotStore().put({ id: AUTOSAVE_ID, name: 'a.sx3mf', savedAt: 1, objects: 2, data: new Uint8Array([1]), v: SNAPSHOT_VERSION })
+    const stop = startAutosave(4000)
+    // A change at the start, with the example plate (or a restore) still on its way.
+    set({ overrides: { layer_height: 0.16 } })
+    await vi.advanceTimersByTimeAsync(10_000)
+    vi.useRealTimers()
+    expect(await autosaveNow()).toBe(false)
+    expect((await findRecovery())?.name).toBe('a.sx3mf')
+    // Once the plates held something, emptying them clears it as before.
+    set({ plate: [entry('a')] })
+    set({ plate: [] })
+    expect(await autosaveNow()).toBe(false)
+    expect(await findRecovery()).toBeNull()
+    stop()
+    set({ overrides: {} })
   })
 
   it('writes a few seconds after the last change, and only once for a burst', async () => {
