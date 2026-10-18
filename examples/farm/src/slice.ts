@@ -64,9 +64,10 @@ function run(cmd: string, args: string[]): Promise<string> {
     p.stdout.on('data', (b: Buffer) => out.push(b))
     p.stderr.on('data', (b: Buffer) => err.push(b))
     p.on('error', fail)
-    p.on('close', (code) => {
+    p.on('close', (code, signal) => {
       if (code === 0) ok(Buffer.concat(out).toString('utf8'))
-      else fail(new Error(`${cmd} exited with ${code}: ${Buffer.concat(err).toString('utf8').trim()}`))
+      // A process stopped by a signal has no exit code, so name the signal instead.
+      else fail(new Error(`${cmd} ${code === null ? `was stopped (${signal ?? 'by a signal'})` : `exited with ${code}`}: ${Buffer.concat(err).toString('utf8').trim()}`))
     })
   })
 }
