@@ -26,6 +26,7 @@ import { bridgeConnector } from './link/connector'
 import { Status, ToastBridge } from './shell/overlays'
 import { TopBar } from './shell/top-bar'
 import { PhoneTabs } from './shell/phone-tabs'
+import { loadApprovalDialog } from './shell/approval-load'
 import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice } from './first-run/look'
 import { useAskForPrinter } from './first-run/ask-printer'
 import { addFileRefs } from './state/actions'
@@ -47,7 +48,7 @@ import { Loading } from './shell/loading'
 import './styles/app.css'
 
 const DeferredEffects = lazy(() => import('./shell/deferred-effects').then((m) => ({ default: m.DeferredEffects })))
-const ApprovalDialog = lazy(() => import('./shell/approval-dialog').then((m) => ({ default: m.ApprovalDialog })))
+const ApprovalDialog = lazy(() => loadApprovalDialog().then((m) => ({ default: m.ApprovalDialog })))
 const CalibrationDialog = lazy(() => import('./calibration/dialog').then((m) => ({ default: m.CalibrationDialog })))
 const UnsavedDialog = lazy(() => import('./project/unsaved-dialog').then((m) => ({ default: m.UnsavedDialog })))
 const MultiBodyDialog = lazy(() => import('./plate/multi-body-dialog').then((m) => ({ default: m.MultiBodyDialog })))

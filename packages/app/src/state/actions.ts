@@ -248,6 +248,8 @@ function afterPrefix(e: object, prefix: RegExp): string {
 
 /** The send and printer flow loads on first use, so the startup shell stays small (send-actions.ts). */
 const sendActions = () => import('./send-actions')
+/** The same module, fetched ahead of a press (a printer's live view starts it as it opens). */
+export const loadSendActions = sendActions
 
 export async function exportGcode(host: Host): Promise<void> {
   return (await sendActions()).exportGcode(host)

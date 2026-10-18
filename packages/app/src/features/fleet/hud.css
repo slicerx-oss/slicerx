@@ -93,6 +93,9 @@
 .ph-controls .sx-btn { min-height: var(--h-lg); }
 .ph-speed { display: flex; align-items: center; gap: var(--s-2); font-size: var(--fs-md); color: var(--muted); }
 .ph-speed select { min-height: var(--h-lg); }
+/* A speed change under way: the spinner sits over the select's arrow, so the select keeps its size and place. */
+.ph-speed { position: relative; }
+.ph-speed-spin { position: absolute; right: 10px; top: 50%; margin-top: -8px; pointer-events: none; }
 
 :root[data-motion="reduced"] .ph-bar i { transition: none; }
 
