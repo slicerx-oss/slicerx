@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // SlicerHost over the native `slice` commands. Geometry and results cross as
 // raw bytes; only the small request and info objects are JSON.
-import type { Collision, CollisionFix, GcodeExport, MeshHandle, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
-import { encodeParts, sliceClock } from '@slicerx/slicer'
+import type { ChamberCooling, Collision, CollisionFix, GcodeExport, MeshHandle, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import { chamberCoolingOf, encodeParts, sliceClock } from '@slicerx/slicer'
 import { Channel, invoke } from '@tauri-apps/api/core'
 
 // Small hand-written guards for the two info objects the Rust side returns. No schema library: the
@@ -52,6 +52,7 @@ interface SliceInfo {
   gcodeFormat?: 'bgcode'
   fileName?: string
   filamentMap?: { extruders: number[]; nozzles: number[]; auto: boolean }
+  chamberCooling?: ChamberCooling
   collisions?: Collision[]
   collisionFixes?: CollisionFix[]
 }
@@ -61,6 +62,7 @@ function parseSliceInfo(v: unknown): SliceInfo {
   const st = v['stats'] as Rec
   const stageMicros: Record<string, number> = {}
   if (isRec(v['stageMicros'])) for (const [k, x] of Object.entries(v['stageMicros'] as Rec)) stageMicros[k] = Number(x) || 0
+  const chamber = chamberCoolingOf(v['chamberCooling'])
   return {
     id: v['id'] as number,
     layerCount: Number(v['layerCount']) || 0,
@@ -73,6 +75,7 @@ function parseSliceInfo(v: unknown): SliceInfo {
     ...(v['gcodeFormat'] === 'bgcode' ? { gcodeFormat: 'bgcode' as const } : {}),
     ...(typeof v['fileName'] === 'string' && v['fileName'] ? { fileName: v['fileName'] } : {}),
     ...(isRec(v['filamentMap']) ? { filamentMap: { extruders: nums((v['filamentMap'] as Rec)['extruders']), nozzles: nums((v['filamentMap'] as Rec)['nozzles']), auto: (v['filamentMap'] as Rec)['auto'] === true } } : {}),
+    ...(chamber ? { chamberCooling: chamber } : {}),
     // The engine's own report of collisions and fixes, passed through as it wrote them.
     ...(Array.isArray(v['collisions']) && v['collisions'].length ? { collisions: v['collisions'] as Collision[], collisionFixes: Array.isArray(v['collisionFixes']) ? (v['collisionFixes'] as CollisionFix[]) : [] } : {}),
   }
@@ -177,6 +180,7 @@ export function createTauriSlicer(): SlicerHost {
         ...(info.gcodeFormat ? { gcodeFormat: info.gcodeFormat } : {}),
         ...(info.fileName ? { fileName: info.fileName } : {}),
         ...(info.filamentMap ? { filamentMap: info.filamentMap } : {}),
+        ...(info.chamberCooling ? { chamberCooling: info.chamberCooling } : {}),
         ...(info.collisions ? { collisions: info.collisions, collisionFixes: info.collisionFixes ?? [] } : {}),
       }
     },

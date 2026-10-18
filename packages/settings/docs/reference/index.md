@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 748 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 749 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -42,7 +42,7 @@ Material settings: temperatures, cooling, flow, retraction, drying.
 
 Machine settings: bed and nozzle geometry, motion limits, G-code, network.
 
-- [Cooling](printer-cooling.md): 12 settings
+- [Cooling](printer-cooling.md): 13 settings
 - [G-code](printer-gcode.md): 16 settings
 - [Machine](printer-machine.md): 67 settings
 - [Acceleration, jerk and machine limits](printer-motion.md): 35 settings
@@ -108,6 +108,7 @@ Alphabetical, each linking to its group file.
 - `brim_width`: Brim width, [process/adhesion](process-adhesion.md#brim_width)
 - `calib_flowrate_topinfill_special_order`: Special top infill order for flow tests, [process/special](process-special.md#calib_flowrate_topinfill_special_order)
 - `center_of_surface_pattern`: Center of surface pattern, [process/strength](process-strength.md#center_of_surface_pattern)
+- `chamber_cooling_mode`: Chamber cooling mode, [printer/cooling](printer-cooling.md#chamber_cooling_mode)
 - `chamber_minimal_temperature`: Chamber minimal temperature, [filament/temperature](filament-temperature.md#chamber_minimal_temperature)
 - `chamber_temperature`: Chamber temperature, [filament/temperature](filament-temperature.md#chamber_temperature)
 - `change_extrusion_role_gcode`: G-code on feature change, [printer/gcode](printer-gcode.md#change_extrusion_role_gcode)

@@ -3,6 +3,7 @@ additional_fan_full_speed_layer
 bottom_color_penetration_layers
 bottom_shell_layers
 bottom_surface_filament_id
+chamber_cooling_mode
 chamber_minimal_temperature
 chamber_temperature
 close_additional_fan_first_x_layers

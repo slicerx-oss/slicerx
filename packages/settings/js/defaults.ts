@@ -4,14 +4,14 @@
 // export) imports this entry point and stays small; labels, ranges, tiers and help come from the full schema
 // (`@slicerx/settings`), loaded when a screen needs them. defaults.json is generated from schema.json by
 // scripts/gen-defaults.mjs, and defaults.test.ts checks that it still matches.
-import type { SettingDef, SettingSection } from '@slicerx/contracts/settings'
+import type { SettingSection, SettingValue } from '@slicerx/contracts/settings'
 import defaultsJson from '../defaults.json'
 
-const table = defaultsJson as unknown as Record<string, [SettingSection, SettingDef['default']]>
+const table = defaultsJson as unknown as Record<string, [SettingSection, SettingValue]>
 
-/** A PrintConfig holding every key at its schema default; one section when given. */
-export function defaultConfig(section?: SettingSection): Record<string, SettingDef['default']> {
-  const out: Record<string, SettingDef['default']> = {}
+/** A PrintConfig holding every key at its schema default; one section when given. A key with no default is left out. */
+export function defaultConfig(section?: SettingSection): Record<string, SettingValue> {
+  const out: Record<string, SettingValue> = {}
   for (const [key, [s, value]] of Object.entries(table)) if (!section || s === section) out[key] = structuredClone(value)
   return out
 }

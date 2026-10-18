@@ -20,6 +20,7 @@ import type {
 } from '@slicerx/contracts'
 import type { FromWorker, MeshInfo, ShardInfo, ToWorker } from './protocol'
 import { decodeParts, encodeParts } from './parts'
+import { plateFacts } from './readback'
 import { shardCount } from './shards'
 import { stitchPreview } from './stitch'
 
@@ -500,9 +501,7 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
         warnings,
         ...(format === 'bgcode' ? { gcodeFormat: 'bgcode' as const } : {}),
         ...(fileName ? { fileName } : {}),
-        ...(infos[0]?.primeTower ? { primeTower: infos[0].primeTower } : {}),
-        ...(infos[0]?.varyLayerCost ? { varyLayerCost: infos[0].varyLayerCost } : {}),
-        ...(infos[0]?.filamentMap ? { filamentMap: infos[0].filamentMap } : {}),
+        ...plateFacts(infos),
         ...collisions,
       }
     },

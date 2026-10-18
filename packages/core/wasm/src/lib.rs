@@ -277,6 +277,7 @@ pub extern "C" fn sx_slice_shard(shard: u32, shards: u32) -> u32 {
             "primeTower": out.prime_tower,
             "varyLayerCost": out.vary_layer_cost,
             "filamentMap": out.filament_map.as_ref().map(api::FilamentMapReport::from),
+            "chamberCooling": out.chamber,
             "collide": session.collide_meta().map(|m| serde_json::json!({"meta": if shard == 0 { m.to_json() } else { serde_json::Value::Null }, "hits": out.collisions.to_numbers()})),
         });
         s.out = [
