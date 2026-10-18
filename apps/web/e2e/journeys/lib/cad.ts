@@ -154,6 +154,18 @@ export async function topMiddle(page: Page, id: string): Promise<{ x: number; y:
   return { x, y }
 }
 
+/**
+ * A finger tap on the 3D view at a point in client pixels, once nothing lies over that point. On a phone the toasts rest
+ * just above the docked sheet, which is over the middle of the view where a framed box sits, so the toast an earlier
+ * step left (a push says how much it added) takes a tap there until it times out.
+ */
+export async function tapView(page: Page, x: number, y: number): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.classList.contains('vp-canvas') ?? false, [x, y] as const))
+    .toBe(true)
+  await page.touchscreen.tap(x, y)
+}
+
 /** A click on the top face of a framed box, then Push and pull, with the right pane open or shut. */
 export async function pickThenPush(page: Page, id: string, pane: 'open' | 'shut' = 'open'): Promise<void> {
   const top = await topMiddle(page, id)
