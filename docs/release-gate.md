@@ -71,6 +71,11 @@ single-instance, so the gate refuses to start while the same build is already ru
 - **macOS**: there is no switch for a fresh web profile, so the run uses the bridge build's own data folder as it is.
   The gate copes with a profile that has been used before: it skips first run, adds the printer from Printers if it's
   missing, and signs out before the signed-out checks. Run it from a Terminal in the desktop session, not over ssh.
+  The gate keeps the display awake for the run (`caffeinate -d -u -i`, ended by its process id at the end): with the
+  display asleep, the web view holds the page's work back, and an open has waited five minutes in the 3MF read. WebKit
+  applies `:focus-within` only in the window that has the keyboard, which a window started from a terminal never gets,
+  so the object row's tools stay hidden. b1 leaves the object out of the print with its shortcut (V) there instead of
+  the row's toggle.
 
 ## Scenarios
 
