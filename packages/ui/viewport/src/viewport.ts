@@ -3193,7 +3193,8 @@ class ViewportImpl implements Viewport {
     let down: { x: number; y: number } | null = null
     // A touch held still this long asks for the menu, as a right click does; it is cleared by a move or a second finger.
     // With Select Other on (`holdPick`), a touch or a left press held still asks for its list instead (`holdpick`).
-    let press: { x: number; y: number; slop: number; timer: ReturnType<typeof setTimeout> } | null = null
+    // `held` is set once the hold time is up: the press then counts as held on the next frame or at its lift.
+    let press: { x: number; y: number; slop: number; timer: ReturnType<typeof setTimeout>; held?: () => void } | null = null
     const stopPress = (): void => {
       if (press) clearTimeout(press.timer)
       press = null
@@ -3330,12 +3331,21 @@ class ViewportImpl implements Viewport {
           y: e.clientY,
           slop: touch ? LONG_PRESS_SLOP_PX : HOLD_SLOP_PX,
           timer: setTimeout(() => {
-            press = null
-            // the lift is not a tap or a click now
-            down = null
-            if (!this.holdPick) return void this.emit('contextpick', contextAt(at))
-            this.dropStillDrag()
-            this.emit('holdpick', { screen: [at.clientX, at.clientY], touch, hits: this.patchesOf(under) })
+            // The browser hands a moving finger or pointer to the page once a frame, so a late frame can still hold a
+            // move made before now: the press counts as held on the next frame, or at the lift if that comes first
+            // (it comes after those moves), unless a move has ended it by then.
+            const p = press
+            if (!p) return
+            p.held = () => {
+              if (press !== p) return
+              press = null
+              // the lift is not a tap or a click now
+              down = null
+              if (!this.holdPick) return void this.emit('contextpick', contextAt(at))
+              this.dropStillDrag()
+              this.emit('holdpick', { screen: [at.clientX, at.clientY], touch, hits: this.patchesOf(under) })
+            }
+            requestAnimationFrame(p.held)
           }, LONG_PRESS_MS),
         }
       } else if (touch) stopPress()
@@ -3611,6 +3621,7 @@ class ViewportImpl implements Viewport {
       this.invalidate()
     }
     const onUp = (e: PointerEvent): void => {
+      press?.held?.()
       stopPress()
       if (this.boxDrag) {
         const bx = this.boxDrag
