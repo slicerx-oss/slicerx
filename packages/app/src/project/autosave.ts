@@ -116,14 +116,29 @@ export function leftoverExample(s: Snapshot): boolean {
 /** What an autosave reads: every project input except slicing state. */
 const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSettings', 'slotSetup', 'layerMarks', 'bed'] as const satisfies readonly (keyof AppState)[]
 
-/** Writes the project now, or clears the autosave when the plates are empty. */
+/**
+ * Whether the plates have held anything in this page's session. Until they have, empty plates are the start (the
+ * example or a restore still on its way), not plates someone emptied.
+ */
+let filled = false
+
+/** A new page session as far as the autosave goes: the plates have held nothing yet. */
+export function resetAutosaveSession(): void {
+  filled = false
+}
+
+/** Writes the project now, or clears the autosave when the plates were emptied. */
 export async function autosaveNow(): Promise<boolean> {
   const n = objectCount()
   if (n === 0) {
+    // The last session's autosave stays until the plates of this one have held something: a start slower than the
+    // autosave delay (a busy machine) would otherwise throw away the work the restore offer is asking about.
+    if (!filled) return false
     setLockedSession(null)
     await snapshotStore().remove(AUTOSAVE_ID)
     return false
   }
+  filled = true
   // A project with no change since it was opened or saved is in its file already (an opened one in the recent projects
   // too), so there is nothing to offer back after a crash; writing it again cost a big project seconds of the page's
   // time and over a gigabyte of memory right after it opened.
@@ -169,6 +184,7 @@ export function startAutosave(delayMs = AUTOSAVE_DELAY_MS, maxWaitMs = AUTOSAVE_
     void autosaveNow().catch(() => undefined)
   }
   const unsubscribe = appStore.subscribe((s, prev) => {
+    if (!filled && allPlates(s).some((p) => p.objects.length > 0)) filled = true
     if (INPUTS.some((k) => s[k] !== prev[k])) return later(delayMs)
     // A slice that finished (not one an edit canceled, which another follows) lets a held-back write go now.
     const finished = s.slice.status === 'error' || (s.slice.status === 'done' && !s.slice.stale)
