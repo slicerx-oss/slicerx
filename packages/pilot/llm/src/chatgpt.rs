@@ -37,8 +37,8 @@ pub const PLAN_SCOPE: &str = "chatgpt.tokens.use.direct";
 pub const REGISTRATION_CLIENT_ID: &str = "dynamic_agent_client";
 /// Path of the loopback callback.
 pub const CALLBACK_PATH: &str = "/auth/callback";
-/// Loopback port for the callback. Fixed, because the registered client is bound to its
-/// redirect URI. Next to sx-link's 47615.
+/// Loopback port for the callback, next to sx-link's 47615. The phone listener's default is
+/// the same port, so when it is taken [`connect`] takes any free port and registers again.
 pub const DEFAULT_REDIRECT_PORT: u16 = 47616;
 /// Tokens are refreshed this long before they expire.
 const REFRESH_MARGIN_S: u64 = 120;
@@ -561,7 +561,8 @@ pub struct ConnectOptions<'a> {
     /// Auth server and API.
     pub endpoints: Endpoints,
     /// Callback port on 127.0.0.1. The app passes [`DEFAULT_REDIRECT_PORT`]; 0 takes any free
-    /// port and the redirect URI names the one bound, so tests can run side by side.
+    /// port and the redirect URI names the one bound, so tests can run side by side. When the
+    /// port is in use, any free port is taken instead.
     pub redirect_port: u16,
     /// Shown by OpenAI when the app is registered: "SlicerX".
     pub app_name: &'a str,
@@ -585,14 +586,10 @@ pub async fn connect(store: &dyn SecretStore, opts: &ConnectOptions<'_>) -> Resu
     let nonce = random_b64()?;
     let verifier = random_b64()?;
     let d = discovery(&opts.endpoints).await?;
-    let listener = TcpListener::bind(("127.0.0.1", opts.redirect_port))
-        .await
-        .map_err(|_| {
-            auth_err(&format!(
-                "the sign-in port is in use; close the other copy of {} and try again",
-                crate::app_name()
-            ))
-        })?;
+    let (listener, fell_back) = bind_callback(opts.redirect_port).await?;
+    // A client OpenAI registered earlier may be bound to the redirect URI it was registered
+    // with, so a sign-in on another port registers again instead of reusing it.
+    let reuse = previous.as_ref().filter(|_| !fell_back);
     let port = listener
         .local_addr()
         .map_err(|_| auth_err("no callback port"))?
@@ -605,9 +602,7 @@ pub async fn connect(store: &dyn SecretStore, opts: &ConnectOptions<'_>) -> Resu
         let mut q = auth.query_pairs_mut();
         q.append_pair(
             "client_id",
-            previous
-                .as_ref()
-                .map_or(REGISTRATION_CLIENT_ID, |p| p.client_id.as_str()),
+            reuse.map_or(REGISTRATION_CLIENT_ID, |p| p.client_id.as_str()),
         )
         .append_pair("response_type", "code")
         .append_pair("redirect_uri", &redirect_uri)
@@ -617,7 +612,7 @@ pub async fn connect(store: &dyn SecretStore, opts: &ConnectOptions<'_>) -> Resu
         .append_pair("nonce", &nonce)
         .append_pair("code_challenge_method", "S256")
         .append_pair("code_challenge", &s256(&verifier));
-        if previous.is_none() {
+        if reuse.is_none() {
             q.append_pair("agent_name_hint", opts.app_name);
         }
     }
@@ -659,6 +654,27 @@ pub async fn connect(store: &dyn SecretStore, opts: &ConnectOptions<'_>) -> Resu
     };
     save(store, &s)?;
     Ok(s.account())
+}
+
+/// Binds the callback on 127.0.0.1. When `port` is in use (the phone listener defaults to
+/// the same one), takes any free port instead; the flag says so.
+async fn bind_callback(port: u16) -> Result<(TcpListener, bool)> {
+    let failed = || {
+        auth_err(&format!(
+            "the sign-in port is in use; close the other copy of {} and try again",
+            crate::app_name()
+        ))
+    };
+    match TcpListener::bind(("127.0.0.1", port)).await {
+        Ok(listener) => Ok((listener, false)),
+        Err(e) if port != 0 && e.kind() == std::io::ErrorKind::AddrInUse => {
+            TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .map(|listener| (listener, true))
+                .map_err(|_| failed())
+        }
+        Err(_) => Err(failed()),
+    }
 }
 
 /// The page the browser shows after the sign-in redirect, naming the app.
