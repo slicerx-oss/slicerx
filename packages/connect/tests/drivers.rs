@@ -796,6 +796,54 @@ async fn bambu_refused_project_start_says_why() {
     session.start(&rf, opts, &t).await.unwrap();
 }
 
+// Every client of a printer reads every command answer on its one report topic. A second session
+// on the same printer (another hub, or the printer added twice) starts a project and the printer
+// answers success; then the printer turns this session's start away as unsigned. The start fails
+// with needs_developer_mode: the other session's answer is never read as this one's, whatever
+// sequence ids the two sessions use.
+#[tokio::test]
+async fn bambu_start_never_takes_another_sessions_answer() {
+    use serde_json::json;
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    cfg.ftp_port = Some(mocks.port("bambu-ftp"));
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    mocks.set_state("bambu", "idle").await;
+    let c = BambuConnector::new(gate.clone());
+    let mine = c.connect(&cfg, &sec).await.unwrap();
+    let other = c.connect(&cfg, &sec).await.unwrap();
+    let file = job_file("cube.gcode.3mf", JobKind::Gcode3mf);
+    let up = || {
+        gate.mint(
+            Action::Upload,
+            "bay-1",
+            &params::upload("bay-1", &file.name, &file.sha256),
+        )
+    };
+    let opts = StartOptions::default();
+
+    let rf = other.upload(file.clone(), &up()).await.unwrap();
+    let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+    other.start(&rf, opts.clone(), &t).await.unwrap();
+    mocks.set_state("bambu", "idle").await;
+    wait_state(mine.as_ref(), PrinterState::Idle).await;
+
+    mocks
+        .control("/bambu", json!({ "authorizationControl": "verify" }))
+        .await;
+    let rf = mine.upload(file.clone(), &up()).await.unwrap();
+    let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+    match mine.start(&rf, opts, &t).await {
+        Err(e) => assert_eq!(e.code(), ErrorCode::NeedsDeveloperMode, "{e}"),
+        Ok(()) => panic!("a start the printer turned away read as started"),
+    }
+    assert_eq!(mocks.state().await["bambu"]["state"], "idle");
+}
+
 // A printer that refuses pause, resume or stop answers `result: fail` with its reason, as it does
 // a project start. The command fails with `refused` and the reason instead of reading as done, and
 // the printer keeps printing; once it accepts again, the pause goes through.
