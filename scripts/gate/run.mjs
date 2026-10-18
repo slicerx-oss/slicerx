@@ -7,7 +7,7 @@
 // It never prints, sends to a printer or deletes anything, and never reads mail or touches a sign-in code: where a
 // link must be opened it says which and waits for an operator.
 //   node scripts/gate/run.mjs --app <bridge build> --platform windows --account qa-win@qa.slicerx.app --out <dir>
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { release } from 'node:os'
 import { basename, join } from 'node:path'
@@ -65,8 +65,23 @@ async function main() {
   log(`release gate: ${opts.platform}, scenarios ${opts.run.join(' ')}, report in ${opts.out}`)
   let app = null
   let bridge = null
+  // On macOS the run keeps the display awake: with it asleep, the web view holds the page's work back (a design took
+  // five minutes to open, stuck in the 3MF read). caffeinate -w ends with this process; stop() ends it first, by pid.
+  let awake = null
+  if (opts.platform === 'macos' && process.platform === 'darwin') {
+    awake = spawn('caffeinate', ['-d', '-u', '-i', '-w', String(process.pid)], { stdio: 'ignore' })
+    awake.on('error', (e) => log(`could not keep the display awake: ${e.message}`))
+  }
   const stop = async () => {
     await bridge?.close()
+    if (awake?.pid && awake.exitCode === null) {
+      try {
+        process.kill(awake.pid)
+      } catch {
+        // already gone
+      }
+    }
+    awake = null
     if (app) {
       const stopped = await app.stop()
       log(`stopped the app, pid ${app.pid}${stopped ? '' : ' (it did not exit)'}`)
