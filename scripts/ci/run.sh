@@ -43,6 +43,7 @@ done
 export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" CI=true
 # Tests that drive the real engine (sx) or the cloud service (target/debug/sx-cloud) look for them here. sx-build
 # makes both from this commit before vitest: a binary left by an earlier run answered the cloud test from older code.
+# It makes sx-geom too: sx call (packages/mcp test/sx-call.test.ts) finds it beside sx and has no design tools without it.
 # A machine with a shared cargo target (heavy.sh's <lock>.target-dir) builds there, so the binaries are looked up there too:
 # the checkout's own target holds whatever an earlier run left.
 target=${CARGO_TARGET_DIR:-$WORK/target}
@@ -155,7 +156,10 @@ rerun_once() { # step names command...
       ( "$@" $files ) > "$rl" 2>&1
       local norm='s/^[✘✓ ]+[0-9]+ +//; s/ +\([0-9.]+m?s\)$//; s/ \(retry #[0-9]+\)$//'
       local passed; passed=$(sed -E 's/^ *(✓)/\1/' "$rl" | grep -E '^✓' | sed -E "$norm")
-      while IFS= read -r n; do grep -qxF -- "$(sed -E "$norm" <<< "$n")" <<< "$passed" && echo "$n"; done <<< "$names" ;;
+      # failures_of cuts a long line at 160 characters, so a name may be only the start of the title the rerun prints
+      while IFS= read -r n; do
+        SX_NAME=$(sed -E "$norm" <<< "$n") awk 'index($0, ENVIRON["SX_NAME"]) == 1 { hit = 1 } END { exit !hit }' <<< "$passed" && echo "$n"
+      done <<< "$names" ;;
   esac
   return 0
 }
@@ -253,7 +257,7 @@ if [ "$tier" = per-merge ]; then
   if [ -n "$base" ] && ! touched '\.(ts|tsx|js|mjs|json|css)$|(^|/)package\.json$|pnpm-lock\.yaml'; then
     skip vitest "no JS or TS change since ${base:0:8}"; skip tsc "no JS or TS change since ${base:0:8}"
   else
-    step sx-build sh -c 'cargo build -p sx-cli --release && cargo build -p sx-cloud'
+    step sx-build sh -c 'cargo build -p sx-cli -p sx-geom --release && cargo build -p sx-cloud'
     step vitest pnpm "${pnpm_scope[@]}" "${vitest_opts[@]}" --if-present test
     step tsc pnpm "${pnpm_scope[@]}" --no-bail --if-present typecheck
   fi
@@ -269,7 +273,7 @@ if [ "$tier" = per-merge ]; then
   else skip cargo-test "no crate changed since ${base:0:8}"; skip clippy "no crate changed since ${base:0:8}"; fi
   step gcode-goldens cargo test -p sx-core --test reference
 else
-  step sx-build sh -c 'cargo build -p sx-cli --release && cargo build -p sx-cloud'
+  step sx-build sh -c 'cargo build -p sx-cli -p sx-geom --release && cargo build -p sx-cloud'
   step vitest pnpm -r "${vitest_opts[@]}" --if-present test
   step tsc pnpm -r --no-bail --if-present typecheck
   step cargo-workspace cargo test --workspace
