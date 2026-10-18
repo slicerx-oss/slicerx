@@ -2231,12 +2231,15 @@ cold.describe('the slow 3D view notice', () => {
     await sketchOnTopRaw(page)
     // the boxes below follow their shape through the camera's turn square on to the face: read their places once it ends
     await still(page)
-    const reason = 'Hardware acceleration looks off in this browser. Turn it on in the browser settings and reload.'
+    // A browser without a GPU says this notice itself as the view starts, with the browser reason, and a notice is told
+    // once a visit: by the time the sketch is open that card can have timed out (on a slow machine, such as the nightly's),
+    // and the same words said again show nothing. So the test says it with a reason of its own, and counts by that reason.
+    const reason = 'Hardware acceleration looks off in this test. Turn it on in the browser settings and reload.'
     const degrade = () => page.evaluate((r) => (window as unknown as { __vp: { emit(e: string, p: unknown): void } }).__vp.emit('degrade', { message: 'The 3D view will be slow here.', details: r }), reason)
-    // the view may have said it as it started (this browser draws without a GPU); said again, it is still one card
+    // said twice, it is still one card
     await degrade()
     await degrade()
-    const notices = page.getByTestId('toast').filter({ hasText: 'The 3D view will be slow here.' })
+    const notices = page.getByTestId('toast').filter({ hasText: reason })
     await expect(notices).toHaveCount(1)
     const t = notices.first()
     await t.getByTestId('toast-details').click()
