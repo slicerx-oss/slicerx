@@ -19,6 +19,8 @@ import { replacementConfig } from '../script-replacement'
 import type { SliceSummary } from '../slicer'
 import type { ServerToolDeps } from './deps'
 
+const CHAMBER_KEY = 'chamber_cooling_mode'
+
 export const settingValue = z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])
 const overridesSchema = z
   .record(z.string(), settingValue)
@@ -116,6 +118,13 @@ export const summaryShape = {
     name: z.string(),
     features: z.record(z.string(), z.array(z.number())),
   })).optional(),
+  /** sx engine: the chamber cooling mode the printer's G-code reads (chamber_cooling_mode), when it reads one. */
+  chamber_cooling: z.object({
+    mode: z.number().describe('0 keep warm (internal circulation), 1 weak cooling, 2 strong cooling (external circulation)'),
+    source: z.enum(['project', 'preset', 'derived', 'config']).describe("project: the project's settings; preset: a profile, preset file or filament slot; derived: from the filament types the plate prints"),
+    filaments: z.array(z.string()).optional().describe('With derived: the filament_type of each filament the plate prints, in slot order'),
+    text: z.string(),
+  }).optional(),
   plate: z.number().optional(),
   gcode_path: z.string().optional(),
   gcode_sha256: z.string().optional(),
@@ -258,6 +267,11 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     result.gcode_3mf_path = path
   }
   await progress(1, 'Done')
+  // The engine knows only that the settings set the chamber mode; the layers say whether the project or a preset did.
+  if (result.chamber_cooling?.source === 'config') {
+    const own = project?.config[CHAMBER_KEY]
+    result.chamber_cooling.source = own !== undefined && String(own) === String(config[CHAMBER_KEY]) ? 'project' : 'preset'
+  }
   const walls: WallsNote = sliceWalls(config['wall_generator'], args.overrides, importReport?.walls)
   const notices = noPrinter ? [{ code: 'no_printer' as const, message: noPrinterMessage(config) }] : []
   for (const n of notices) result.warnings.push(n.message)
@@ -269,6 +283,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     ...(result.gcode_3mf_path ? [`G-code 3MF: ${result.gcode_3mf_path}`] : []),
     ...(result.preview_path ? [`Preview: ${result.preview_path}`] : []),
     `Walls: ${walls.text}`,
+    ...(result.chamber_cooling ? [`Chamber: ${result.chamber_cooling.text} (${result.chamber_cooling.source})`] : []),
     ...result.warnings.map((w) => `Warning: ${w}`),
     ...(importReport ? importReportLines(importReport, false).map((l) => `Project settings: ${l}`) : []),
     ...(result.note ? [result.note] : []),
