@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
 import { alike, cellsIn, diff, pops, recordFrames, spread, swaps, type Box, type Frame } from '../frames'
-import { appReady, plateReady } from '../fixtures'
+import { appReady, loadAgain, NETWORK_CHANGED, networkDropped, plateReady, watchNetworkChange } from '../fixtures'
 
 type Sx = { getState(): { slice: { status: string; stale?: boolean }; plate: { transform: number[] }[] }; setState(p: unknown): void }
 
@@ -16,9 +16,21 @@ const PANEL_LIMIT = 6
 /** The 3D view: how alike (correlation) a frame must be to the picture before the step or the one after. */
 const VIEW_LIKE = 0.8
 
-async function sliced(page: Page): Promise<void> {
+/**
+ * Waits until the slice is done and current. In setup, `reload` says the page has to load again (it reloaded, or a
+ * request of it was dropped): the wait ends there, and so it does when the page's context goes with a reload.
+ */
+async function sliced(page: Page, reload?: () => boolean): Promise<void> {
+  const current = () => page.evaluate(() => { const s = (window as unknown as { __sx?: Sx }).__sx?.getState().slice; return s?.status === 'done' && !s.stale })
   await expect
-    .poll(() => page.evaluate(() => { const s = (window as unknown as { __sx?: Sx }).__sx?.getState().slice; return s?.status === 'done' && !s.stale }), { timeout: 120_000 })
+    .poll(() => {
+      if (!reload) return current()
+      if (reload()) return true
+      return current().catch((e: unknown) => {
+        if (/Execution context was destroyed/.test(String(e))) return true
+        throw e
+      })
+    }, { timeout: 120_000 })
     .toBe(true)
 }
 
@@ -76,11 +88,37 @@ async function start(page: Page, workspace: 'prepare' | 'preview'): Promise<void
     localStorage.setItem('slicerx.debug', '1')
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: ws, settingsMode: 'advanced', pilot: { mode: 'off' } }))
   }, workspace)
+  // A network change on the test machine (a Wi-Fi roam between mesh points) makes the browser drop every request in
+  // flight, loopback ones too. Before the app is up, the ready waits load the page again for it (fixtures.ts). After,
+  // a page that lost a script chunk reloads itself (the app's chunk reload), and one that lost another request may
+  // never finish its slice. Setup measures nothing, so it goes on only with a page that came up once with nothing
+  // dropped, and loads it again (twice at most) when it did not. A reload with no network change is the app's own
+  // doing, and fails.
+  watchNetworkChange(page)
+  let loads = 0
+  let changed = ''
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) loads++
+  })
+  page.on('requestfailed', (request) => {
+    const why = request.failure()?.errorText ?? ''
+    if (NETWORK_CHANGED.test(why) && !changed) changed = `${why} ${request.url()}`
+  })
   await page.goto('./')
-  if (workspace === 'prepare') await plateReady(page)
-  else await appReady(page)
-  await sliced(page)
-  await settle(page)
+  for (let again = 0; ; again++) {
+    if (workspace === 'prepare') await plateReady(page)
+    else await appReady(page)
+    const at = loads
+    await sliced(page, () => loads !== at || networkDropped(page) !== undefined)
+    await settle(page)
+    const what = networkDropped(page)
+    if (loads === at && !what) return
+    if (!changed) throw new Error('the page reloaded during setup with no network change under it')
+    const why = what ? `dropped ${what}` : `reloaded itself after it dropped ${changed}`
+    if (again === 2) throw new Error(`the network kept changing under the page during setup (${why})`)
+    console.log(`the network changed under the page during setup (${why}); waiting for it to load again`)
+    if (loads === at) await loadAgain(() => page.reload())
+  }
 }
 
 /** A 20 mm cube as ASCII STL. */
