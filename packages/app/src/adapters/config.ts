@@ -19,7 +19,8 @@ export function baseConfig(): PrintConfig {
 }
 
 /** What a printer's shipped presets contribute under the Easy choices, and which Easy controls the person has moved. */
-let profile: { values: Record<string, SettingValue>; touched: ReadonlySet<string> } | null = null
+type ProfileLayer = { values: Record<string, SettingValue>; touched: ReadonlySet<string> }
+let profile: ProfileLayer | null = null
 
 /**
  * Sets the printer, filament and process layer (null for none). With a layer, Easy mode changes only the controls the
@@ -57,12 +58,26 @@ export function presetOwnValue(key: string): SettingValue | null {
   return text(theirs) === text(mine) ? null : theirs
 }
 
-export function resolveConfig(easy: EasySettings, overrides: Record<string, SettingValue>): PrintConfig {
+function computeConfig(easy: EasySettings, overrides: Record<string, SettingValue>): PrintConfig {
   // Without a printer the plate is the generic bed, not the schema's 200 mm default, so the slice and its preflight match the plate.
   const out = profile ? applyEasy(easy, { ...baseConfig(), ...profile.values } as PrintConfig, profile.touched) : applyEasy(easy, { ...baseConfig(), ...bedSettings(GENERIC_BED) } as PrintConfig)
   if (profile) for (const [k, v] of Object.entries(SLICERX_PRESET_DEFAULTS)) if (!(k in overrides)) out[k] = v
   for (const [k, v] of Object.entries(overrides)) out[k] = v
   return out
+}
+
+/** The last resolved config and what it was built from. The store replaces easy and overrides on every change, so the references are the key. */
+let last: { easy: EasySettings; overrides: Record<string, SettingValue>; profile: ProfileLayer | null; config: PrintConfig } | null = null
+
+/**
+ * The defaults, the profile layer, Easy mode and the overrides, in that order. Store subscribers call this on every store
+ * write, so the last result is kept until easy, overrides or the profile layer is a new object.
+ */
+export function resolveConfig(easy: EasySettings, overrides: Record<string, SettingValue>): PrintConfig {
+  let hit = last
+  if (!hit || hit.easy !== easy || hit.overrides !== overrides || hit.profile !== profile) hit = last = { easy, overrides, profile, config: computeConfig(easy, overrides) }
+  // Each caller gets its own object, as before the cache: some set keys on it, and that must not reach the next caller.
+  return { ...hit.config }
 }
 
 /**
