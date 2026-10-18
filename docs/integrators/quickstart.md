@@ -316,7 +316,8 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 | `unknown_profile` | No profile with that id or name |
 | `invalid_settings` | An override names an unknown setting or a value out of range |
 | `engine_unavailable` | No slicing engine, or the stub engine was asked for something only `sx` does |
-| `slice_failed` | The engine could not slice the model; the message has its reason |
+| `slice_failed` | The engine could not slice the model; the message has its reason, or the signal that stopped `sx` |
+| `slice_timeout` | `sx` hit its time limit before it finished; `details.limitMs` is the limit |
 | `preflight_blocked` | The engine's safety checks refused the settings, the custom G-code or toolpaths that leave the bed. The message leads with the first point and its object, and its count covers only the layers it names. `details.reason` is `outside_bed`, `outside_extruder_reach`, `in_exclusion_zone` or `over_height`, `details.layers` is `[first, last]`, and `details.fix` is `slicerx_arrange` for the bed and excluded areas |
 | `project_gcode_review` | The project's printer G-code doesn't match the printer profile's. `details.summary` is one line to show first, `details.printer` the printer it was compared with, and `details.changes` the diff and the flagged lines |
 | `printer_needed` | The project has its own printer G-code and no printer was named to check it against. Name the printer profile the project is for (a `machine:` profile in `profiles`), or call again with `project_gcode: "profile"` |
