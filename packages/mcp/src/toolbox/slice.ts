@@ -121,7 +121,7 @@ export const summaryShape = {
   /** sx engine: the chamber cooling mode the printer's G-code reads (chamber_cooling_mode), when it reads one. */
   chamber_cooling: z.object({
     mode: z.number().describe('0 keep warm (internal circulation), 1 weak cooling, 2 strong cooling (external circulation)'),
-    source: z.enum(['project', 'preset', 'derived', 'config']).describe("project: the project's settings; preset: a profile, preset file or filament slot; derived: from the filament types the plate prints"),
+    source: z.enum(['override', 'project', 'preset', 'derived', 'config']).describe("override: the overrides of this call; project: the project's settings; preset: a profile, preset file or filament slot; derived: from the filament types the plate prints"),
     filaments: z.array(z.string()).optional().describe('With derived: the filament_type of each filament the plate prints, in slot order'),
     text: z.string(),
   }).optional(),
@@ -267,10 +267,11 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     result.gcode_3mf_path = path
   }
   await progress(1, 'Done')
-  // The engine knows only that the settings set the chamber mode; the layers say whether the project or a preset did.
+  // The engine knows only that the settings set the chamber mode; the layers say whether an override, the project or a
+  // preset did. Overrides apply last, so one wins.
   if (result.chamber_cooling?.source === 'config') {
     const own = project?.config[CHAMBER_KEY]
-    result.chamber_cooling.source = own !== undefined && String(own) === String(config[CHAMBER_KEY]) ? 'project' : 'preset'
+    result.chamber_cooling.source = args.overrides?.[CHAMBER_KEY] !== undefined ? 'override' : own !== undefined && String(own) === String(config[CHAMBER_KEY]) ? 'project' : 'preset'
   }
   const walls: WallsNote = sliceWalls(config['wall_generator'], args.overrides, importReport?.walls)
   const notices = noPrinter ? [{ code: 'no_printer' as const, message: noPrinterMessage(config) }] : []

@@ -24,10 +24,26 @@ fn entries_are_complete_and_unique() {
     }
 }
 
+/// The settings with no default: the slice works each out when nothing sets it.
+const NO_DEFAULT: [&str; 1] = ["chamber_cooling_mode"];
+
+#[test]
+fn only_the_worked_out_settings_have_no_default() {
+    let none: Vec<&str> = settings()
+        .iter()
+        .filter(|d| d.default.is_null())
+        .map(|d| d.key.as_str())
+        .collect();
+    assert_eq!(none, NO_DEFAULT);
+}
+
 #[test]
 fn defaults_match_the_type_and_range() {
     for d in settings() {
         let v = &d.default;
+        if NO_DEFAULT.contains(&d.key.as_str()) {
+            continue;
+        }
         match d.kind {
             SettingType::Float | SettingType::Int | SettingType::Percent => {
                 assert!(v.is_number(), "{}", d.key);

@@ -8,6 +8,7 @@ import { createWasmSlicer } from './pool'
 export { createFakeSlicer, syntheticPreview, type FakeSlicerOptions } from './fake'
 export { createWasmSlicer, type PoolOptions } from './pool'
 export { decodeParts, encodeParts } from './parts'
+export { chamberCoolingOf, plateFacts } from './readback'
 export { stitchPreview } from './stitch'
 // The preview reader, SXPV constants and slice types, so embedders need one package.
 export {

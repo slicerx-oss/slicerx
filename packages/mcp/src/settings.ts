@@ -45,7 +45,8 @@ export interface SettingExplanation {
   group: string
   type: string
   unit?: string
-  default: SettingValue
+  /** Absent for a setting worked out when slicing unless something sets it. */
+  default?: SettingValue
   min?: number
   max?: number
   enum_values?: string[]
@@ -71,7 +72,7 @@ export function explainSetting(store: DataStore, key: string): SettingExplanatio
     group: def.group,
     type: def.type,
     ...(def.unit !== undefined ? { unit: def.unit } : {}),
-    default: def.default,
+    ...(def.default !== undefined ? { default: def.default } : {}),
     ...(def.min !== undefined ? { min: def.min } : {}),
     ...(def.max !== undefined ? { max: def.max } : {}),
     ...(def.enumValues ? { enum_values: def.enumValues } : {}),
@@ -357,7 +358,7 @@ function nozzleLayer(store: DataStore, nozzle: number, base: PrintConfig): Layer
 /** A full config from schema defaults, used when no profile is given. */
 export function defaultConfig(store: DataStore): PrintConfig {
   const cfg: Record<string, SettingValue> = {}
-  for (const def of store.settingsSchema()) cfg[def.key] = def.default
+  for (const def of store.settingsSchema()) if (def.default !== undefined) cfg[def.key] = def.default
   return cfg as PrintConfig
 }
 
