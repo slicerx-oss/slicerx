@@ -3,7 +3,7 @@
 // A slice that no longer matches the plate never passes for it: a stale slice can't be exported or sent, a slice
 // canceled (or whose plate was cleared) while it finished never lands as done, and a refused slice leaves no toolpaths
 // behind that look current.
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type Host, type SliceResult } from '@slicerx/contracts'
 import { clearProject } from '../src/project/new'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../src/state/actions'
@@ -61,6 +61,10 @@ const tick = async () => {
   for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 0))
 }
 
+/** Waits until the slice has reached a gate. A fixed number of ticks is not enough: slicePlate loads its module on first
+ * use, and on a busy machine (the nightly's) that took longer than the ticks, so the engine gate was not set yet. */
+const until = (gate: () => unknown) => vi.waitFor(() => expect(gate()).toBeTypeOf('function'), { timeout: 10_000, interval: 5 })
+
 const done = { status: 'done', result: { id: 'r0', fileName: 'a.gcode', layerCount: 1, stats: { filamentG: [1], timeS: 60, cost: 0, toolChanges: 0 } } as unknown as SliceResult, stale: false } as const
 
 beforeEach(() => set({ plate: [entry], slice: { status: 'idle' }, preview: null, resume: null, calibration: {}, layerMarks: {}, toast: null }))
@@ -87,9 +91,9 @@ describe('stale slices', () => {
     const before = readPreview(rawPreview())
     set({ slice: done, preview: before })
     const run = slicePlate(h)
-    await tick()
+    await until(() => gates.engine)
     gates.engine!()
-    await tick()
+    await until(() => gates.preview)
     cancelSlice({ quiet: true })
     gates.preview!()
     await run
@@ -101,7 +105,7 @@ describe('stale slices', () => {
   it('a plate cleared while it slices stays empty when the slice finishes', async () => {
     const { h, gates } = host()
     const run = slicePlate(h)
-    await tick()
+    await until(() => gates.engine)
     clearProject()
     gates.engine!()
     await tick()
@@ -116,7 +120,7 @@ describe('stale slices', () => {
     const { h, gates } = host('Blocked: an object reaches off the bed')
     set({ slice: done, preview: readPreview(rawPreview()) })
     const run = slicePlate(h, { auto: true })
-    await tick()
+    await until(() => gates.engine)
     gates.engine!()
     await run
     expect(get().slice).toMatchObject({ status: 'error' })

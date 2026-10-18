@@ -341,6 +341,10 @@ test.describe('the mimir tab', () => {
     await card.focus()
     await page.keyboard.press('Escape')
     await expect(card).toHaveCount(0)
+    // Each confirmed sheet builds a backplate. Wait for both builds: the page is shared, and a build still running
+    // lands its backplate on the next test's emptied plate.
+    const built = async () => ((await page.getByTestId('mimir-transcript').textContent()) ?? '').split('The backplate is on the plate:').length - 1
+    await expect.poll(built, { timeout: 30_000 }).toBe(2)
   })
 
   test('scripted mimir builds on the plate: each step lands in the history Model shows, and undo takes it back', async ({ page }, info) => {
