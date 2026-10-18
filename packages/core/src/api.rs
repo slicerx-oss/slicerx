@@ -372,6 +372,10 @@ pub struct SliceReport {
     /// Where the prime tower stands, its size and why, when the plate has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prime_tower: Option<crate::output::TowerPlacement>,
+    /// The chamber cooling mode the G-code reads (`chamber_cooling_mode`) and where it came from; absent when no
+    /// G-code reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chamber_cooling: Option<crate::chamber::ChamberCooling>,
     /// What variable layer heights cost in tool changes and purge against fixed layers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vary_layer_cost: Option<crate::output::VaryLayerCost>,
@@ -1558,6 +1562,9 @@ fn run_prepared_timed(
         if report.prime_tower.is_none() {
             report.prime_tower = out.prime_tower;
         }
+        if report.chamber_cooling.is_none() {
+            report.chamber_cooling = out.chamber.take();
+        }
         if report.vary_layer_cost.is_none() {
             report.vary_layer_cost = out.vary_layer_cost;
         }
@@ -1884,6 +1891,17 @@ pub const RESULT_SCHEMA: &str = r#"{
     "gcodeBytes": { "type": "integer" },
     "gcodeSha256": { "type": "string" },
     "fileName": { "type": "string", "description": "The G-code's file name from filename_format" },
+    "chamberCooling": {
+      "type": "object",
+      "description": "The chamber cooling mode the G-code reads (chamber_cooling_mode); absent when no G-code reads it",
+      "required": ["mode", "source", "text"],
+      "properties": {
+        "mode": { "type": "integer", "description": "0 keep warm (internal circulation), 1 weak cooling, 2 strong cooling (external circulation)" },
+        "source": { "enum": ["config", "derived"], "description": "config: the settings sent set it; derived: from the filaments the plate prints" },
+        "filaments": { "type": "array", "items": { "type": "string" }, "description": "With derived: the filament_type of each filament the plate prints, in slot order" },
+        "text": { "type": "string" }
+      }
+    },
     "previewBytes": { "type": "integer" },
     "filamentMap": {
       "type": "object",

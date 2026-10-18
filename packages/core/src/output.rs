@@ -417,6 +417,9 @@ pub struct SliceOutput {
     pub filament_map: Option<crate::nozzles::Map>,
     /// By object: what these layers' moves and tool changes meet of the other objects (`collide`).
     pub collisions: crate::collide::Hits,
+    /// The chamber cooling mode the G-code reads (`chamber_cooling_mode`), for the whole plate; None when no
+    /// G-code reads it.
+    pub chamber: Option<crate::chamber::ChamberCooling>,
 }
 
 /// The plate's first layer as the start G-code variables read it.

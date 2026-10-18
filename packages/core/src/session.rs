@@ -1975,6 +1975,25 @@ impl SliceSession {
         all
     }
 
+    /// The filament slots the whole plate prints, ascending: each object's planned tool order, or its own slots
+    /// when it prints with one filament.
+    pub(crate) fn plate_slots(&self) -> Vec<u8> {
+        let mut slots: Vec<u8> = self
+            .sequence()
+            .flat_map(|s| {
+                if s.tool_order.iter().any(|l| !l.is_empty()) {
+                    s.tool_order.iter().flatten().copied().collect::<Vec<u8>>()
+                } else {
+                    s.slots.clone()
+                }
+            })
+            .filter(|&t| t > 0)
+            .collect();
+        slots.sort_unstable();
+        slots.dedup();
+        slots
+    }
+
     /// Highest filament slot on the plate.
     pub fn tool_count(&self) -> u8 {
         self.tool_count
@@ -2000,6 +2019,20 @@ impl SliceSession {
         };
         crate::gcode::settle_cooling(&mut out, config);
         out.filament_map.clone_from(&self.nozzle_map);
+        // From the filaments the whole plate prints, so every range of layers reads the same mode.
+        if let Some((chamber, warning)) = crate::chamber::resolve(config, &self.plate_slots()) {
+            if let Some(message) = warning {
+                let w = SliceWarning {
+                    code: WarningCode::UnsupportedSetting,
+                    message,
+                    layer: None,
+                };
+                if !out.warnings.contains(&w) {
+                    out.warnings.push(w);
+                }
+            }
+            out.chamber = Some(chamber);
+        }
         Ok(out)
     }
 
@@ -3630,6 +3663,7 @@ impl SliceSession {
             vary_layer_cost: self.vary_cost,
             filament_map: self.nozzle_map.clone(),
             collisions: crate::collide::Hits::default(),
+            chamber: None,
             configs,
             stage_micros: StageMicros {
                 layers: self.prep_micros,

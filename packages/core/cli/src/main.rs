@@ -616,6 +616,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
     if let Some(why) = collision_refusal(&run.report, &req.plate.objects, args) {
         return fail(EXIT_INPUT, why);
     }
+    print_chamber(run.report.chamber_cooling.as_ref(), None);
     // The settings the slice did not use, as one block on stderr (stdout carries only the result).
     if let Some(r) = &run.report.config_report {
         if let Some(w) = &r.walls {
@@ -854,6 +855,21 @@ fn cmd_time(args: &[String]) -> Res<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// The chamber cooling mode the G-code read, on stderr: with `from` (the settings layer that set it, for `sx slice
+/// <model>`) the source too.
+fn print_chamber(c: Option<&sx_core::chamber::ChamberCooling>, from: Option<&str>) {
+    let Some(c) = c else { return };
+    match (c.source, from) {
+        (_, None) => eprintln!("sx: chamber: {}", c.text),
+        (sx_core::chamber::ChamberSource::Derived, Some(_)) => {
+            eprintln!("sx: chamber: {} (source derived)", c.text);
+        }
+        (sx_core::chamber::ChamberSource::Config, Some(from)) => {
+            eprintln!("sx: chamber: {} (source {from})", c.text);
+        }
+    }
+}
+
 /// Reads `value` over `config` a key at a time, and what it set that the engine does not use.
 fn read_config_value(config: &mut PrintConfig, value: &Value) -> Res<sx_core::api::ConfigReport> {
     let mut report = sx_core::api::ConfigReport {
@@ -874,15 +890,18 @@ fn read_config_value(config: &mut PrintConfig, value: &Value) -> Res<sx_core::ap
 
 /// The settings `sx slice <model>` prints with, lowest first: the engine's defaults, a project's own settings (our
 /// engine choices kept where it did not change them), the object's own settings, then `--config`; and what they set
-/// that the engine does not use.
+/// that the engine does not use; and which of them set `chamber_cooling_mode` last (`project` for the project's or the
+/// object's settings, `preset` for `--config`).
 fn layered_config(
     args: &[String],
     model: &str,
     bytes: &[u8],
     mesh: &Mesh,
-) -> Res<(PrintConfig, sx_core::api::ConfigReport)> {
+) -> Res<(PrintConfig, sx_core::api::ConfigReport, Option<&'static str>)> {
     let mut config = PrintConfig::default();
     let mut report = sx_core::api::ConfigReport::default();
+    let mut chamber_from = None;
+    let sets_chamber = |v: &Value| v.get(sx_core::chamber::KEY).is_some();
     let is_3mf = Path::new(model)
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("3mf"));
@@ -890,13 +909,20 @@ fn layered_config(
         && !has(args, "--no-project-settings")
         && let Some(project) = sx_core::api::project_config(bytes, model)?
     {
-        report.merge(read_config_value(&mut config, &Value::Object(project.settings))?);
+        let settings = Value::Object(project.settings);
+        if sets_chamber(&settings) {
+            chamber_from = Some("project");
+        }
+        report.merge(read_config_value(&mut config, &settings)?);
         report.not_applied.extend(project.dropped);
         report.not_applied.sort();
         report.kept = project.kept;
         report.walls = project.walls;
     }
     if let Some(m) = mesh.settings.as_object().filter(|m| !m.is_empty()) {
+        if sets_chamber(&mesh.settings) {
+            chamber_from = Some("project");
+        }
         report.merge(read_config_value(&mut config, &mesh.settings)?);
         if let Some(g) = sx_core::api::WallsNote::named(m) {
             report.walls = Some(sx_core::api::WallsNote {
@@ -908,6 +934,9 @@ fn layered_config(
     }
     if let Some(p) = flag(args, "--config") {
         let value: Value = serde_json::from_slice(&std::fs::read(p)?)?;
+        if sets_chamber(&value) {
+            chamber_from = Some("preset");
+        }
         report.merge(read_config_value(&mut config, &value)?);
         if let Some(g) = value.as_object().and_then(sx_core::api::WallsNote::named) {
             report.walls = Some(sx_core::api::WallsNote {
@@ -923,7 +952,7 @@ fn layered_config(
             "the settings",
         ));
     }
-    Ok((config, report))
+    Ok((config, report, chamber_from))
 }
 
 fn cmd_slice(args: &[String]) -> Res<ExitCode> {
@@ -943,7 +972,7 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         }
         None => Mesh::load(&bytes, model)?,
     };
-    let (mut config, report) = layered_config(args, model, &bytes, &mesh)?;
+    let (mut config, report, chamber_from) = layered_config(args, model, &bytes, &mesh)?;
     if let Some(w) = &report.walls {
         eprintln!("sx: walls: {}", w.text);
     }
@@ -1016,6 +1045,7 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     for w in &out.warnings {
         eprintln!("warning: {}", w.message);
     }
+    print_chamber(out.chamber.as_ref(), Some(chamber_from.unwrap_or("config")));
     if let Some(i) = sx_core::preflight::nozzle_hardness(&config, &stats.filament_mm) {
         eprintln!("warning: {}", i.message);
     }

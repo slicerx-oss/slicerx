@@ -236,6 +236,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         warnings?: { message?: string }[]
         files?: { gcode?: string; preview?: string } & Record<string, unknown>
         featureFilaments?: { object?: string; name?: string; features?: Record<string, number[]> }[]
+        chamberCooling?: { mode?: number; source?: string; filaments?: string[]; text?: string }
       }
       const sum = (v: number[] | undefined): number => (v ?? []).reduce((a, b) => a + b, 0)
       if (job.scriptReplacements && (!Array.isArray(out.script_replacements) || out.script_replacements.length !== job.scriptReplacements.length || job.scriptReplacements.some((choice, i) => {
@@ -258,6 +259,14 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         filaments: (out.stats?.filamentMm ?? []).map((mm, i) => ({ slot: i + 1, filament_mm: Math.round(mm), filament_g: Math.round((out.stats?.filamentG?.[i] ?? 0) * 10) / 10 })),
         ...(out.stats?.toolChanges !== undefined ? { tool_changes: out.stats.toolChanges } : {}),
         ...(out.featureFilaments?.length ? { feature_filaments: featureFilaments(out.featureFilaments, objects) } : {}),
+        ...(out.chamberCooling && typeof out.chamberCooling.mode === 'number' ? {
+          chamber_cooling: {
+            mode: out.chamberCooling.mode,
+            source: out.chamberCooling.source === 'derived' ? 'derived' as const : 'config' as const,
+            ...(out.chamberCooling.filaments?.length ? { filaments: out.chamberCooling.filaments.map(String) } : {}),
+            text: String(out.chamberCooling.text ?? ''),
+          },
+        } : {}),
         ...(job.modelPlate && !job.plate ? { plate: job.modelPlate } : {}),
         ...(job.emitGcode && out.gcodeSha256 ? { gcode_sha256: out.gcodeSha256 } : {}),
         warnings: (out.warnings ?? []).map((w) => String(w.message ?? '')),
