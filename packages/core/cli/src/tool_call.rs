@@ -49,8 +49,40 @@ pub(crate) fn run(args: &[String]) -> crate::Res<ExitCode> {
             Path::new(&node).display()
         )
     })?;
+    // A process stopped by a signal has no exit code; say which signal rather than failing silently.
+    if let Some(note) = stopped_note(stop_signal(status)) {
+        eprintln!("{note}");
+    }
     Ok(ExitCode::from(
         u8::try_from(status.code().unwrap_or(1)).unwrap_or(1),
+    ))
+}
+
+#[cfg(unix)]
+fn stop_signal(status: std::process::ExitStatus) -> Option<i32> {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal()
+}
+
+/// Windows has no signals: a stopped process there exits with a code.
+#[cfg(not(unix))]
+fn stop_signal(_status: std::process::ExitStatus) -> Option<i32> {
+    None
+}
+
+/// The line for a run of Node.js that a signal stopped, naming the common signals.
+fn stopped_note(signal: Option<i32>) -> Option<String> {
+    let name = match signal? {
+        1 => "SIGHUP".to_owned(),
+        2 => "SIGINT".to_owned(),
+        6 => "SIGABRT".to_owned(),
+        9 => "SIGKILL".to_owned(),
+        11 => "SIGSEGV".to_owned(),
+        15 => "SIGTERM".to_owned(),
+        n => format!("signal {n}"),
+    };
+    Some(format!(
+        "sx call: Node.js was stopped ({name}) before it finished"
     ))
 }
 
@@ -117,6 +149,23 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn names_the_signal_that_stopped_node() {
+        assert_eq!(stopped_note(None), None);
+        assert_eq!(
+            stopped_note(Some(15)).as_deref(),
+            Some("sx call: Node.js was stopped (SIGTERM) before it finished")
+        );
+        assert_eq!(
+            stopped_note(Some(9)).as_deref(),
+            Some("sx call: Node.js was stopped (SIGKILL) before it finished")
+        );
+        assert_eq!(
+            stopped_note(Some(64)).as_deref(),
+            Some("sx call: Node.js was stopped (signal 64) before it finished")
+        );
     }
 
     #[test]
