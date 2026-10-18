@@ -513,6 +513,8 @@ Ids that tests read for their text:
 | `push-view-op` | The operation under the value: Pull out, Cut or Cut through; `data-op` as on `push-in-view` |
 | `push-view-error` | The error under the value (a distance that does not read, an engine error); the view keeps the last good preview |
 | `op-preview-error` | A Model tool panel's preview error (push and pull, fillet and chamfer), saying the last good preview stays |
+| `text-fit` | Text on a face: the warning that the text is wider or taller than the picked face, with both sizes and a letter height that fits |
+| `text-fit-use` | Text on a face: the pill under that warning that sets the letter height to the one that fits |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
 | `sketch-dof` | The drawing card's status from the solver, in its header in short ("Defined", "4 DOF left", "Over-defined", "Not solved"), the whole line in its tooltip and accessible name; `data-dof` is the count |
 | `sketch-drawing` | The sketch panel's drawing card: the tools, grid and snap, what shows, and the picked loop's actions; `sketch-drawing-sub` is the tool's name after the card's title ("Drawing · Line") |
