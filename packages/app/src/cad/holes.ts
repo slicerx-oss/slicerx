@@ -34,7 +34,18 @@ export async function applyShell(host: Loader, objectId: string, partIndex: numb
     note = out.report.note
     return out
   })
-  return note ? { message: `${r.message} ${note}`, warn: true } : r
+  // a shell with no open face looks the same from outside: say where the hollow went
+  const message = params.open.length === 0 ? `${r.message} No face is open, so the hollow is sealed inside.` : r.message
+  return note ? { message: `${message} ${note}`, warn: true } : { ...r, message }
+}
+
+/** Why Make shell can't run yet, for under the button, or null when it can. */
+export function shellReason(hasTarget: boolean, wallText: string, wallMm: number): string | null {
+  if (!hasTarget) return 'Select a body, or click the flat faces to leave open.'
+  if (!wallText.trim()) return 'Type a wall thickness.'
+  if (!Number.isFinite(wallMm)) return 'Type a number for the wall, such as 2.'
+  if (wallMm <= 0) return 'The wall must be more than 0 mm.'
+  return null
 }
 
 async function applyPartStep(
