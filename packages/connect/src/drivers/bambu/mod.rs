@@ -827,6 +827,17 @@ struct Shared {
 /// Command answers kept for a start to find its own.
 const REPLIES_MAX: usize = 32;
 
+/// Where a session's command sequence ids start. Every client of a printer reads every command
+/// answer on the printer's one report topic, so two sessions that both counted from 1 (two hubs on
+/// one printer, or one printer added twice) took each other's answers: a start the printer turned
+/// away read as started when the other session's start under the same id had gone through. A
+/// random start keeps their ids apart, below 2^31 for firmware that reads the id as a 32-bit number.
+fn first_seq() -> u64 {
+    let mut raw = [0u8; 4];
+    let _ = getrandom::fill(&mut raw);
+    u64::from(u32::from_le_bytes(raw) % 1_000_000_000) + 1
+}
+
 /// Prints kept in a session's history.
 const HISTORY_MAX: usize = 50;
 
@@ -935,6 +946,14 @@ impl Shared {
         if !self.refused_send.swap(true, Ordering::Relaxed) {
             self.publish_changes();
         }
+    }
+
+    /// Drops the answers kept under `seq`. Every client of a printer reads every answer on its one
+    /// report topic, so an answer kept under the sequence id a command is about to use is another
+    /// client's (or an older command's), never the answer to that command.
+    fn forget_replies(&self, seq: &str) {
+        let mut r = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
+        r.retain(|v| v.get("sequence_id").and_then(Value::as_str) != Some(seq));
     }
 
     /// A start went through: the printer takes prints from this app.
@@ -1982,7 +2001,7 @@ impl BambuSession {
             gate,
             client,
             shared,
-            seq: AtomicU64::new(1),
+            seq: AtomicU64::new(first_seq()),
             _task: task,
         }))
     }
@@ -2008,6 +2027,15 @@ impl BambuSession {
     }
 
     async fn command(&self, body: Value) -> Result<()> {
+        // The command's answer is the first one under its sequence id from here on.
+        if let Some(seq) = body
+            .as_object()
+            .and_then(|o| o.values().next())
+            .and_then(|g| g.get("sequence_id"))
+            .and_then(Value::as_str)
+        {
+            self.shared.forget_replies(seq);
+        }
         let topic = format!("device/{}/request", self.serial);
         self.client
             .publish(topic, QoS::AtLeastOnce, false, body.to_string())
