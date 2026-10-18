@@ -8,7 +8,7 @@ import { journey as test, expect } from '../journey'
 import { test as cold } from '../fixtures'
 import { bounds, height } from '../cad-helpers'
 import {
-  boxOf, boxesOverControls, emit, inputOf, labels, loops, phoneBox, phoneStudio, rect, screenOf, settled, shot, shown, size, still, tapView, topMiddle,
+  boxOf, boxesOverControls, emit, inputOf, labels, loops, phoneBox, phoneStudio, pushReady, rect, screenOf, settled, shot, shown, size, still, tapView, topMiddle,
   type W,
 } from './lib/cad'
 
@@ -23,6 +23,7 @@ test('push and pull in the view: a tap picks the face, the box sits in the view,
   const id = await phoneBox(page)
   const h0 = await height(page, id)
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ objectTool: 'push' }))
+  await pushReady(page)
   await settled(page)
   const top = await topMiddle(page, id)
   await tapView(page, top.x, top.y)
@@ -49,6 +50,7 @@ test('operation preview: a cut typed with a finger is a ghost, and a value that 
   const id = await phoneBox(page)
   const h0 = await height(page, id)
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ objectTool: 'push' }))
+  await pushReady(page)
   await settled(page)
   const b = await bounds(page, id)
   const [x, y] = await screenOf(page, [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, b.max[2]])

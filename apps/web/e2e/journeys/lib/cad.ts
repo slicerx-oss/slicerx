@@ -166,6 +166,20 @@ export async function tapView(page: Page, x: number, y: number): Promise<void> {
   await page.touchscreen.tap(x, y)
 }
 
+/**
+ * Waits until Push and pull has the view. Its sheet shows as soon as the tool opens, but the view hands taps to the tool
+ * only once the tool's code has loaded and armed the view (the view's probe tool, with the tool's push state). On a busy
+ * machine that comes later, and a tap before it is Model's: it selects the body, and the tool never picks the face.
+ */
+export async function pushReady(page: Page): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => {
+      const vp = (window as unknown as { __vp: { tool: string; push: unknown } }).__vp
+      return vp.tool === 'probe' && vp.push !== null
+    }))
+    .toBe(true)
+}
+
 /** A click on the top face of a framed box, then Push and pull, with the right pane open or shut. */
 export async function pickThenPush(page: Page, id: string, pane: 'open' | 'shut' = 'open'): Promise<void> {
   const top = await topMiddle(page, id)
