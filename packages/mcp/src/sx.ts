@@ -3,7 +3,7 @@
 // The real engine: runs the `sx` CLI as a separate process and exchanges files
 // with it, so the server works with any build of the core, including one with
 // the optional OrcaSlicer-derived packages.
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { accessSync, constants, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, delimiter, extname, join } from 'node:path'
 import type { SettingValue, ScriptReview, ScriptReviewInput, ScriptReplacement, AppliedScriptReplacement } from '@slicerx/contracts'
@@ -57,18 +57,66 @@ export function findSx(explicit?: string): string | undefined {
   return findBinary('sx', explicit, [process.env['SLICERX_SX_BIN']])
 }
 
-function run(bin: string, args: string[], timeoutMs: number, input?: string): Promise<{ code: number; stdout: string; stderr: string }> {
+/** How a run of a binary ended: its exit code, or the signal that stopped it and whether that was the time limit. */
+export interface RunResult {
+  code: number | null
+  signal: NodeJS.Signals | null
+  timedOut: boolean
+  stdout: string
+  stderr: string
+}
+
+/**
+ * Runs a binary with its own time limit. A process stopped by a signal has no exit code, so the result keeps the
+ * signal and whether the limit stopped it. Only this timer's kill can do that on Windows: a process ended from outside
+ * there exits with a code. A process that ignores the first signal is killed outright a few seconds later.
+ */
+export function runSx(bin: string, args: string[], timeoutMs: number, input?: string, onSpawn?: (child: ChildProcess) => void): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs, windowsHide: true })
+    const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    let timedOut = false
+    let force: NodeJS.Timeout | undefined
+    const limit = setTimeout(() => {
+      timedOut = true
+      child.kill('SIGTERM')
+      force = setTimeout(() => child.kill('SIGKILL'), 5_000)
+    }, timeoutMs)
+    const stop = () => {
+      clearTimeout(limit)
+      clearTimeout(force)
+    }
+    // The limit keeps running after a refused input, so the process still cannot outlive it.
     child.stdin.on('error', reject)
     child.stdin.end(input)
     let stdout = ''
     let stderr = ''
     child.stdout.setEncoding('utf8').on('data', (d: string) => (stdout += d))
     child.stderr.setEncoding('utf8').on('data', (d: string) => (stderr += d))
-    child.on('error', reject)
-    child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }))
+    child.on('error', (e) => {
+      stop()
+      reject(e)
+    })
+    child.on('close', (code, signal) => {
+      stop()
+      resolve({ code, signal, timedOut, stdout, stderr })
+    })
+    onSpawn?.(child)
   })
+}
+
+/** A time limit in words: "10 min", "90 s", "500 ms". */
+export function formatLimit(ms: number): string {
+  if (ms >= 60_000) return `${Math.round(ms / 6_000) / 10} min`
+  if (ms >= 1_000) return `${Math.round(ms / 100) / 10} s`
+  return `${Math.round(ms)} ms`
+}
+
+/** The error for a run that ended without an exit code: the time limit, or another signal. Undefined for an exit code. */
+export function sxStopped(r: Pick<RunResult, 'code' | 'signal' | 'timedOut'>, limitMs: number): ToolInputError | undefined {
+  // A run that finished cleanly as the limit fired still counts.
+  if (r.timedOut && r.code !== 0) return new ToolInputError(`sx stopped after the ${formatLimit(limitMs)} time limit without finishing`, 'slice_timeout', { limitMs })
+  if (r.code === null) return new ToolInputError(`sx was stopped (${r.signal ?? 'by a signal'}) before it finished`, 'slice_failed', r.signal ? { signal: r.signal } : undefined)
+  return undefined
 }
 
 function scalar(v: SettingValue | undefined): number | undefined {
@@ -154,7 +202,7 @@ export function parseSxOutput(stdout: string): Parsed {
 export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBackend {
   async function reviewScripts(inputs: ScriptReviewInput[]): Promise<ScriptReview[]> {
     if (inputs.length === 0) return []
-    const result = await run(bin, ['review-script', '-', '--batch'], Math.min(timeoutMs, 30_000), JSON.stringify(inputs))
+    const result = await runSx(bin, ['review-script', '-', '--batch'], Math.min(timeoutMs, 30_000), JSON.stringify(inputs))
     if (result.code !== 0) throw new ToolInputError('The engine could not review the printer scripts', 'engine_unavailable')
     let reviews: unknown
     try { reviews = JSON.parse(result.stdout) } catch { throw new ToolInputError('The engine returned an unreadable script review', 'engine_unavailable') }
@@ -167,7 +215,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       return (await reviewScripts([input]))[0]!
     },
     async prepareScriptReplacement(input) {
-      const result = await run(bin, ['prepare-script-replacement', '-'], Math.min(timeoutMs, 30_000), JSON.stringify(input))
+      const result = await runSx(bin, ['prepare-script-replacement', '-'], Math.min(timeoutMs, 30_000), JSON.stringify(input))
       if (result.code !== 0) throw new ToolInputError('The engine could not prepare the stock-script replacement', 'engine_unavailable')
       let record: ScriptReplacement
       try { record = JSON.parse(result.stdout) } catch { throw new ToolInputError('The engine returned an unreadable replacement record', 'engine_unavailable') }
@@ -220,7 +268,10 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       }
       const requestPath = join(job.outDir, 'request.json')
       writeFileSync(requestPath, JSON.stringify(request))
-      const { code, stdout, stderr } = await run(bin, ['slice', '--request', requestPath, '--out-dir', job.outDir, ...(job.scriptPrinter ? ['--script-printer', job.scriptPrinter.model, '--script-firmware', job.scriptPrinter.firmware] : []), ...(job.allowCollisions ? ['--allow-collisions'] : [])], timeoutMs)
+      const ran = await runSx(bin, ['slice', '--request', requestPath, '--out-dir', job.outDir, ...(job.scriptPrinter ? ['--script-printer', job.scriptPrinter.model, '--script-firmware', job.scriptPrinter.firmware] : []), ...(job.allowCollisions ? ['--allow-collisions'] : [])], timeoutMs)
+      const stopped = sxStopped(ran, timeoutMs)
+      if (stopped) throw stopped
+      const { code, stdout, stderr } = ran
       if (code !== 0) {
         const why = stderr.trim().split('\n').slice(-3).join(' ') || 'no error output'
         // Collisions come back as their own code, in words for a person and with the objects and layers as details.
