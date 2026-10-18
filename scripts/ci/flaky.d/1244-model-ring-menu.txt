@@ -1,1 +1,0 @@
-a real right click on the model, the menu key, and a touch held still | subydoo-ci | 2026-10-18 | 2026-10-19 | https://github.com/slicerx-oss/slicerx/issues/1244 | failed 1 of 9 on main in local runs next to the Select Other tests (select-other not visible after the touch hold, line 868), though 15 of 15 run alone; the press can land before the camera frames the box
