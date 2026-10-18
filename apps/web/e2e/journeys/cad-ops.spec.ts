@@ -391,6 +391,39 @@ test('an SVG outline on the top face joins as a raised shape', async ({ page }) 
   expect(steps).toHaveLength(1)
 })
 
+test('text on a face says when it is wider than the face, and the letter height it suggests fits', async ({ page }) => {
+  test.slow()
+  await studio(page)
+  const id = await freshBox(page)
+  const before = await bounds(page, id)
+  await command(page, 'Text on a face')
+  const panel = toolPanel(page)
+  // the middle of the top face, so text that fits the face's size stays on it
+  await pick(page, await facePick(page, id, [0, 0, 1], [(before.min[0] + before.max[0]) / 2, (before.min[1] + before.max[1]) / 2, before.max[2]]))
+  await expect(panel).toContainText('A face of')
+  await panel.locator('#cad-text').fill('SlicerX')
+  await panel.locator('#cad-size').fill('8')
+  // Before Apply: both widths and a size that fits; Join stays on, as text may run onto a wall beside the face
+  const fit = panel.getByTestId('text-fit')
+  await expect(fit).toHaveText(/The text is [\d.]+ mm wide; the face is 20 mm\. A letter height of [\d.]+ mm fits\.$/)
+  const [, wide, suggested] = /The text is ([\d.]+) mm wide.*A letter height of ([\d.]+) mm fits/.exec(await fit.innerText())!
+  expect(Number(wide)).toBeGreaterThan(20)
+  expect(Number(suggested)).toBeLessThan(8)
+  await expect(panel.getByRole('button', { name: 'Join' })).toBeEnabled()
+  await panel.getByTestId('text-fit-use').click()
+  await expect(panel.locator('#cad-size')).toHaveValue(suggested!)
+  await expect(fit).toHaveCount(0)
+  await panel.getByRole('button', { name: 'Join' }).click()
+  await expect.poll(() => height(page, id), { timeout: 30_000 }).toBe(20.6)
+  // the text stays on the face: the body is no wider or deeper than before
+  const after = await bounds(page, id)
+  for (const k of [0, 1]) {
+    expect(after.min[k]).toBeCloseTo(before.min[k]!, 3)
+    expect(after.max[k]).toBeCloseTo(before.max[k]!, 3)
+  }
+  expect((await state(page)).plate.find((p) => p.id === id)?.history?.steps ?? []).toHaveLength(1)
+})
+
 // The fillet engine matches the picked edge to the mesh within 0.001 mm, so an edge is found wherever
 // the box stands (it used to miss at some positions after the JSON round trip).
 test('fillet works on a box edge wherever the box stands', async ({ page }) => {
