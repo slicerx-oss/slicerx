@@ -66,7 +66,7 @@ function entry(d) {
   const rows = []
   rows.push(['Type', TYPE[d.type] ?? d.type])
   if (d.unit) rows.push(['Unit', UNIT[d.unit] ?? d.unit])
-  rows.push(['Default', fmt(d.default)])
+  rows.push(['Default', d.default === undefined ? 'none (the slice works it out when nothing sets it)' : fmt(d.default)])
   if (d.min !== undefined || d.max !== undefined) rows.push(['Recommended range', `${d.min ?? 'no minimum'} to ${d.max ?? 'no maximum'}`])
   if (d.orcaMin !== undefined || d.orcaMax !== undefined) rows.push(['Orca limits', `${d.orcaMin === undefined ? (d.min ?? 'none') : (d.orcaMin ?? 'none')} to ${d.orcaMax === undefined ? (d.max ?? 'none') : (d.orcaMax ?? 'none')}`])
   if (d.auto) rows.push(['Automatic', 'The value 0 means automatic and is always allowed.'])

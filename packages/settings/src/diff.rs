@@ -177,6 +177,11 @@ fn reason_for(
     let mut parts: Vec<String> = Vec::new();
     match (before, after) {
         (None, Some(_)) => parts.push(format!("{label} is now set to {}.", format_value(def, after))),
+        (Some(_), None) if def.is_some_and(|d| d.default.is_null()) => {
+            parts.push(format!(
+                "{label} is no longer set; it is worked out when slicing."
+            ));
+        }
         (Some(_), None) => {
             let dv = def.and_then(|d| Value::from_json(&d.default));
             parts.push(format!(

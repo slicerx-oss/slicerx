@@ -33,7 +33,8 @@ export interface SettingDef {
   section: SettingSection
   type: SettingType
   unit?: SettingUnit
-  default: SettingValue
+  /** Absent for a setting the engine works out when nothing sets it (`chamber_cooling_mode`), so a default config leaves it unset. */
+  default?: SettingValue
   /** Recommended range. Where the knowledge catalog gives Pilot bounds these are those bounds. */
   min?: number
   max?: number
