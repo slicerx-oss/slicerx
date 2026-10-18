@@ -404,7 +404,7 @@ export async function usePrinter(page: Page, name: RegExp): Promise<void> {
  */
 export async function printerHud(page: Page, isMobile: boolean): Promise<void> {
   await goTab(page, 'printers')
-  await expect(page.getByRole('heading', { name: 'Printers' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Printers', exact: true })).toBeVisible()
   await page.locator('.pcard').filter({ hasText: 'Bay 1' }).getByRole('button', { name: 'Bay 1', exact: true }).click()
   const hud = page.getByRole('region', { name: 'Bay 1 live view' })
   await expect(hud).toBeVisible()

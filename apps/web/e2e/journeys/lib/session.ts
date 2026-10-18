@@ -228,7 +228,7 @@ export async function printersFleet(page: Page): Promise<void> {
   // an earlier run of this test may have left a printer's live view open
   const back = page.getByRole('button', { name: 'Back to all printers' })
   if (await back.isVisible()) await back.click()
-  await expect(page.getByRole('heading', { name: 'Printers' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Printers', exact: true })).toBeVisible()
   await expect(page.locator('.pcard')).toHaveCount(6)
   await expect(page.getByRole('list', { name: 'Printers by state' }).getByRole('listitem')).toHaveCount(5)
   await noHorizontalScroll(page)
