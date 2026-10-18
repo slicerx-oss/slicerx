@@ -878,7 +878,7 @@ test('clients change display units with visible read-back, native CLI and persis
           expect(rows[0].output.output).toEqual(rows[1].output.output)
           expect(await read()).toEqual(rows[1].output.output)
         })
-        await expect(page.getByLabel('Model size')).toContainText('20 x 20 x 20 mm')
+        await expect(page.getByLabel('Model size')).toContainText('20.00 x 20.00 x 20.00 mm')
       }
       await reader.ok('app_units_set', { length: 'in' })
       expect(await read()).toMatchObject({ length: 'in', precision: { fraction: 32 } })
