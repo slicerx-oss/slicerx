@@ -37,6 +37,24 @@ export function watchNetworkChange(page: Page, reload: () => Promise<unknown> = 
   })
 }
 
+/** The first request a network change dropped on a watched page since it last loaded, if any (watchNetworkChange). */
+export function networkDropped(page: Page): string | undefined {
+  return dropped.get(page)
+}
+
+/**
+ * Loads a page again after a network change dropped a request of it. A page that lost a script chunk may be reloading
+ * itself already (the app's chunk reload). The second reload then fails ("Not attached to an active page", or
+ * net::ERR_ABORTED when the page's own load takes over): the page is loading again either way, so that is no failure.
+ */
+export async function loadAgain(reload: () => Promise<unknown>): Promise<void> {
+  try {
+    await reload()
+  } catch (e) {
+    if (!/Not attached to an active page|net::ERR_ABORTED/.test(String(e))) throw e
+  }
+}
+
 /**
  * Waits for the app's ready mark `selector`. When a network change dropped one of the page's requests on the way, the
  * page cannot come up any more, so it is loaded again (twice at most), with the full time for each load. Used only for
@@ -56,7 +74,7 @@ async function untilReady(page: Page, selector: string): Promise<void> {
     if (!what || reloads >= 2) break
     console.log(`the network changed under the page and dropped ${what}; loading it again`)
     dropped.delete(page)
-    await (rawReload.get(page) ?? (() => page.reload()))()
+    await loadAgain(rawReload.get(page) ?? (() => page.reload()))
   }
   const what = dropped.get(page)
   throw new Error(`the app did not reach ${selector} within ${COLD_START_MS / 1000} s${what ? ` (the network changed under it again: ${what})` : ''}`)
