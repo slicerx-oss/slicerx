@@ -27,6 +27,7 @@ import {
   type Gauge, type SpeedLimits,
 } from './hud'
 import { adjustHub, setLight, setSpeed } from './hud-actions'
+import { preloadPrinterControls } from './preload'
 import { spoolLeft } from '../../filament/left'
 import './hud.css'
 
@@ -195,13 +196,20 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
   const isRunning = running(st.state)
   const hub = adjustHub(host)
   const [limits, setLimits] = useState<SpeedLimits | null>(null)
-  const [busy, setBusy] = useState(false)
+  // The control whose action is under way, from the press until its card is answered and the printer replies.
+  const [busy, setBusy] = useState<'pause' | 'resume' | 'cancel' | 'speed' | null>(null)
   const [editing, setEditing] = useState(false)
   const target = usePrinter().printer
   const printerSlots = useApp((s) => s.printerSlots)
   const sides = { left: temps.length > 0 || fanRows.length > 0, right: units }
   // On a phone one sheet shows at a time, the filament one when both were left open.
   const shown = (side: Side) => sides[side] && open[side] && !(phone && side === 'left' && open.right && sides.right)
+
+  // What the controls' approval cards need loads as the view opens, so a press brings its card up at once.
+  useEffect(() => {
+    if (!isExportOnly(row)) preloadPrinterControls()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!hub || !isRunning) return setLimits(null)
@@ -252,13 +260,16 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
   }
 
   const act = async (action: 'pause' | 'resume' | 'cancel') => {
-    setBusy(true)
+    if (busy) return
+    setBusy(action)
     try {
       await printerAction(host, row, action)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
+  // The pressed control shows it is working; the others rest until it is done.
+  const resting = (control: NonNullable<typeof busy>) => busy !== null && busy !== control
 
   const speeds = speedChoices(limits)
   const reported = speedProfile(st.live?.speedPercent)
@@ -426,15 +437,18 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
             {showSpeed ? (
               <label className="ph-speed">
                 <span>Speed</span>
+                {busy === 'speed' ? <i className="sx-btn-spin ph-speed-spin" aria-hidden="true" /> : null}
                 <select
                   className="sx-select"
                   value={reported ? String(reported.percent) : ''}
-                  disabled={!hub || busy || watchOnly}
+                  aria-busy={busy === 'speed' || undefined}
+                  disabled={!hub || resting('speed') || watchOnly}
                   {...tipAttrs(watchOnly ? watchTip('Speed') : hub ? undefined : { title: 'Speed', reason: `Speed changes need the ${appName()} link on your network.` })}
                   onChange={(e) => {
                     const v = Number(e.currentTarget.value)
-                    setBusy(true)
-                    void setSpeed(host, row, v).finally(() => setBusy(false))
+                    if (busy) return
+                    setBusy('speed')
+                    void setSpeed(host, row, v).finally(() => setBusy(null))
                   }}
                 >
                   {reported ? null : <option value="">{st.live?.speedPercent !== undefined ? `${st.live.speedPercent}%` : 'Choose'}</option>}
@@ -458,16 +472,16 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
               </Button>
             ) : null}
             {st.state === 'printing' ? (
-              <Button variant="primary" icon="pause" disabled={busy || watchOnly} {...(watchOnly ? { tip: watchTip('Pause') } : {})} onClick={() => void act('pause')}>
+              <Button variant="primary" icon="pause" busy={busy === 'pause'} disabled={resting('pause') || watchOnly} {...(watchOnly ? { tip: watchTip('Pause') } : {})} onClick={() => void act('pause')}>
                 Pause
               </Button>
             ) : st.state === 'paused' ? (
-              <Button variant="primary" icon="play" disabled={busy || watchOnly} {...(watchOnly ? { tip: watchTip('Resume') } : {})} onClick={() => void act('resume')}>
+              <Button variant="primary" icon="play" busy={busy === 'resume'} disabled={resting('resume') || watchOnly} {...(watchOnly ? { tip: watchTip('Resume') } : {})} onClick={() => void act('resume')}>
                 Resume
               </Button>
             ) : null}
             {isRunning ? (
-              <Button variant="danger" icon="stop" disabled={busy || watchOnly} {...(watchOnly ? { tip: watchTip('Stop') } : {})} onClick={() => void act('cancel')}>
+              <Button variant="danger" icon="stop" busy={busy === 'cancel'} disabled={resting('cancel') || watchOnly} {...(watchOnly ? { tip: watchTip('Stop') } : {})} onClick={() => void act('cancel')}>
                 Stop
               </Button>
             ) : null}

@@ -24,10 +24,13 @@ interface ButtonBase {
   children?: ReactNode
 }
 
-export interface ButtonProps extends ButtonBase, Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {}
+export interface ButtonProps extends ButtonBase, Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  /** Its action is under way: the icon turns into a spinner of the same size, and presses wait. It keeps its look and place. */
+  busy?: boolean
+}
 
 /** A button. Icon-only buttons must pass aria-label. */
-export function Button({ variant = 'default', size = 'md', icon, iconEnd, full, pressed, className, children, type = 'button', tip, disabled, onClick, ...rest }: ButtonProps) {
+export function Button({ variant = 'default', size = 'md', icon, iconEnd, full, pressed, className, children, type = 'button', tip, disabled, busy, onClick, ...rest }: ButtonProps) {
   const soft = tip !== undefined && disabled
   const iconOnly = !children && (icon || iconEnd) ? true : undefined
   return (
@@ -41,11 +44,12 @@ export function Button({ variant = 'default', size = 'md', icon, iconEnd, full, 
       aria-pressed={pressed}
       {...tipAttrs(tip)}
       {...rest}
+      aria-busy={busy || undefined}
       disabled={soft ? undefined : disabled}
       aria-disabled={soft ? true : undefined}
-      onClick={soft ? (e) => e.preventDefault() : onClick}
+      onClick={soft || busy ? (e) => e.preventDefault() : onClick}
     >
-      {icon ? <Icon name={icon} /> : null}
+      {busy && icon ? <i className="sx-btn-spin" aria-hidden="true" /> : icon ? <Icon name={icon} /> : null}
       {children}
       {iconEnd ? <Icon name={iconEnd} /> : null}
     </button>
