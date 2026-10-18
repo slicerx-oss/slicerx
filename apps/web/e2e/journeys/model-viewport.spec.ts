@@ -849,9 +849,8 @@ test.describe('Model ring menu', () => {
   })
 
   test('a real right click on the model, the menu key, and a touch held still', async ({ page }) => {
-    await modelReset(page)
-    await freshBox(page)
-    await designTab(page).click()
+    // the box framed and the view at rest first: a press while the camera still eases to it can land beside the box
+    await framedBox(page)
     const canvas = page.locator('canvas.vp-canvas').first()
     await expect(canvas).toBeVisible()
     const c = (await canvas.boundingBox())!
