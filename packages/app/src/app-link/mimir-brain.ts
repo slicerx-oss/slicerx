@@ -7,7 +7,7 @@
 import type { EditionConfig } from '@slicerx/edition-config'
 import { keptEditionDocs, TOOL_GROUPS, type KbIndex } from '@slicerx/pilot'
 import { currentEdition } from '../edition'
-import { editionKbIndex } from '../features/pilot/kb'
+import { editionKbIndex } from '../workspaces/mimir/kb'
 import { editionToolGroups } from '../pilot-connect/brain'
 import { CLOUD_MODEL } from '../pilot-connect/cloud-edition'
 

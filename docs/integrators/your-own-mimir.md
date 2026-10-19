@@ -19,7 +19,7 @@ The config is checked when it loads. A bad value stops it with the setting's pat
 
 ## What works today
 
-Every setting on this page is in effect in the app's mimir: the docked chat, the dock in the browser build, and the mimir tab. The voice goes into the assistant's instructions, your knowledge is searched and cited, switched-off tool groups are never offered, routing picks the models for a person's own key, and memory follows `memory.local` and `memory.sync` (see [Memory](#memory) for who saves notes and who only reads them). `slicerx_mimir_brain` reads back what the running app applies.
+Every setting on this page is in effect in the app's mimir, which runs in the mimir tab in the desktop app and in the browser build. The voice goes into the assistant's instructions, your knowledge is searched and cited, switched-off tool groups are never offered, routing picks the models for a person's own key, and memory follows `memory.local` and `memory.sync` (see [Memory](#memory) for who saves and reads notes). `slicerx_mimir_brain` reads back what the running app applies.
 
 ## Voice
 
@@ -72,7 +72,7 @@ The proxy knows your edition from the install's token, which the install got by 
 
 `memory.local` (default `true`) lets the assistant keep short notes about the person (their printers, filaments, preferences, sizes and what worked) on their computer, one store per edition. mimir asks before it saves a note, unless the person turned that off in Settings > Memory, where they can also see, edit, delete, export and clear their notes. A note that looks like a key, token, access code or serial is refused. With `local: false` mimir has no memory tools and reads no notes.
 
-The docked chat saves notes. The mimir tab reads them and can recall them, but it doesn't save new ones. MCP clients read notes with `slicerx_mimir_memory` and add them with `slicerx_mimir_memory_remember` over the app link. `slicerx_mimir_memory` is read class, so a client the person allowed to read only can read the notes, with keys, access codes and serials masked. Adding a note goes through the profile class and is refused for a read-only client.
+The mimir tab saves notes, asking first with a small chip that says where the note goes, and reads and recalls them. MCP clients read notes with `slicerx_mimir_memory` and add them with `slicerx_mimir_memory_remember` over the app link. `slicerx_mimir_memory` is read class, so a client the person allowed to read only can read the notes, with keys, access codes and serials masked. Adding a note goes through the profile class and is refused for a read-only client.
 
 `memory.sync` is `off` (the default) or `opt-in`. With `opt-in`, a signed-in person sees "Sync with my account" in Settings > Memory, off until they turn it on. While it is on, notes and deletions sync with their account when a chat starts and shortly after each change, with the same session the rest of the app's cloud calls use. Signed out, or with the switch off, nothing is sent.
 

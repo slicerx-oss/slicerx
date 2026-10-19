@@ -6,7 +6,7 @@ import { DEFAULT_POLICY, type Citation, type PilotEvent, type PrinterHost } from
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG } from '@slicerx/pilot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NEUTRAL, setCurrentEdition } from '../src/edition'
-import { bundledKb } from '../src/features/pilot/kb'
+import { bundledKb } from '../src/workspaces/mimir/kb'
 
 vi.mock('@slicerx/pilot/edition-kb', () => ({
   default: {

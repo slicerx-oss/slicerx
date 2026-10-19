@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The app's one memory handle: the dock, the mimir tab and the app link write through the same store, a removal keeps
+// The app's one memory handle: the mimir tab and the app link write through the same store, a removal keeps
 // its tombstone for a later sync, and the link answers that memory is off when the edition turns it off. Sync with the
 // account runs at a chat's start only when signed in, offered by the edition and switched on in Settings.
 import { DEFAULT_POLICY, type PrinterHost } from '@slicerx/contracts'
